@@ -85,6 +85,10 @@ export const LEAD_STAGES = [
   'Finance',
   'Transfer',
   'Registered / Closed',
+  'Viewing / Presentation',
+  'Unit Selection & Reservation',
+  'Buyer Onboarding',
+  'OTP',
   'Lost',
   'Nurture / Follow-up Later',
 ].filter((stage, index, stages) => stages.indexOf(stage) === index)

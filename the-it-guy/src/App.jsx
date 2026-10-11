@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppErrorBoundary from './components/AppErrorBoundary'
+import { getLocalPreviewTransaction } from './core/clients/localClientPreview'
 import WorkspaceLoadingScreen from './components/auth/WorkspaceLoadingScreen'
 import AccessState from './components/access/AccessState'
 import MobileLoginRedirectGate from './components/mobile-shell/MobileLoginRedirectGate'
@@ -291,6 +292,12 @@ const AgencyBranchWorkspacePage = lazy(() => import('./pages/agency/AgencyBranch
 const AssistantDashboardPage = lazy(() => import('./pages/agency/AssistantDashboardPage'))
 const BranchCommandCentrePage = lazy(() => import('./pages/agency/BranchCommandCentrePage'))
 const AppointmentRsvpPage = lazy(() => import('./pages/AppointmentRsvpPage'))
+const LocalClientTransactionPreviewPage = import.meta.env.DEV
+  ? lazy(() => import('./components/clients/ClientTransactionsPanel').then(module => ({ default: module.LocalClientTransactionPreviewPage })))
+  : null
+// Arch9 Legal shell integration (additive, disabled by default).
+import LegalWorkspaceProvider from './modules/legal/LegalWorkspaceProvider'
+const LegalWorkspacePage = lazy(() => import('./modules/legal/LegalWorkspacePage'))
 const AttorneyDashboardPage = lazy(() => import('./pages/AttorneyDashboardPage'))
 const AttorneyFirmPage = lazy(() => import('./pages/AttorneyFirmPage'))
 const AttorneyFirmSettingsPage = lazy(() => import('./pages/AttorneyFirmSettingsPage'))
@@ -622,6 +629,11 @@ function getStableRouteContentKey(pathname = '') {
 }
 
 function TransactionDetailRoute() {
+  const { transactionId } = useParams()
+  const { role, workspace } = useWorkspace()
+  const localPreview = import.meta.env.DEV && role === 'agent'
+    ? getLocalPreviewTransaction(transactionId, { organisationId: workspace?.id }) : null
+  if (localPreview) return <Suspense fallback={<TransactionDetailRouteShell />}><LocalClientTransactionPreviewPage preview={localPreview} /></Suspense>
   return (
     <Suspense fallback={<TransactionDetailRouteShell />}>
       <AttorneyTransactionDetail />
@@ -1896,6 +1908,7 @@ function AppRoutes() {
       <RecruitmentRouteAccess session={session} logout={logout} pendingInvitePath={pendingInvitePath} Loading={PageSkeleton}>
     <WorkspaceProvider user={session?.user || null} authBypassRole={devAuthRole}>
       <OrganisationProvider>
+        <LegalWorkspaceProvider>
         <EnvironmentValidationBanner />
         <RouteObservability />
         <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
@@ -2165,6 +2178,11 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              {/* Arch9 Legal routes: existing attorney routes stay unchanged. */}
+              <Route path="/legal/overview" element={<RoleRoute allowedRoles={['attorney']}><LegalWorkspacePage /></RoleRoute>} />
+              <Route path="/legal/matters" element={<RoleRoute allowedRoles={['attorney']}><LegalWorkspacePage /></RoleRoute>} />
+              <Route path="/legal/new" element={<RoleRoute allowedRoles={['attorney']}><LegalWorkspacePage /></RoleRoute>} />
+              <Route path="/legal/matters/:matterId" element={<RoleRoute allowedRoles={['attorney']}><LegalWorkspacePage /></RoleRoute>} />
               <Route
                 path="/attorney/onboarding"
                 element={
@@ -4194,6 +4212,7 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        </LegalWorkspaceProvider>
       </OrganisationProvider>
       </WorkspaceProvider>
       </RecruitmentRouteAccess>

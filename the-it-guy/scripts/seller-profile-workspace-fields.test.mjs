@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import {
+  SELLER_DATA_FIELDS,
+  SELLER_RECORD_OWNERSHIP,
+  getSellerFieldOwnership,
+  sellerPersonSourceKey,
+} from '../src/lib/sellerDataOwnershipContract.js'
 
 const agencySource = readFileSync(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 
@@ -90,7 +96,7 @@ assert.ok(
   'seller profile should resolve each owner, director, or trustee as a person-specific profile.',
 )
 
-for (const roleplayerSource of ['onboarding?.multipleOwners', 'onboarding?.companyDirectors', 'onboarding?.trustees']) {
+for (const roleplayerSource of ['profileModel.draft.multipleOwners', 'profileModel.draft.companyDirectors', 'profileModel.draft.trustees']) {
   assert.ok(workspaceSource.includes(roleplayerSource), `seller profile should resolve ${roleplayerSource} roleplayers.`)
 }
 
@@ -104,4 +110,56 @@ assert.ok(
   'seller profile person tabs should switch the displayed roleplayer.',
 )
 
-console.log('seller profile workspace fields contract passed')
+const formAliases = new Set()
+const canonicalPaths = new Set()
+for (const field of SELLER_DATA_FIELDS) {
+  assert.ok(SELLER_RECORD_OWNERSHIP[field.authority], `${field.key} must identify an existing authoritative record`)
+  assert.ok(field.scope && field.revision && field.editors.length && field.review && field.projections, `${field.key} must specify its save contract`)
+  assert.equal(field.empty.omitted, 'unchanged')
+  assert.equal(field.empty.false, 'value', 'false must not be treated as missing')
+  assert.equal(field.history, 'preserve_signed_evidence_and_deal_decisions')
+  for (const alias of field.formFields) {
+    assert.ok(!formAliases.has(alias), `form field ${alias} cannot have competing owners`)
+    formAliases.add(alias)
+  }
+  for (const path of field.canonicalPaths) {
+    assert.ok(!canonicalPaths.has(path), `canonical path ${path} cannot have competing owners`)
+    canonicalPaths.add(path)
+  }
+}
+for (const field of [
+  'sellerFirstName', 'sellerSurname', 'primaryContactName', 'email', 'sellerEmail', 'mobile',
+  'idNumber', 'dateOfBirth', 'nationality', 'residentialAddress', 'sellerTaxNumber',
+  'taxResident', 'vatRegistered', 'vatNumber', 'occupation', 'sourceOfFunds',
+  'politicallyExposedPerson', 'politicallyExposedDetails', 'maritalStatus', 'maritalRegime',
+  'companyRegistrationNumber', 'trustRegistrationNumber', 'estateReferenceNumber',
+  'spouseName', 'spouseIdNumber', 'powerOfAttorneyPrincipalName', 'powerOfAttorneyName',
+  'companyDirectors[2].idNumber', 'trustees.1.nationality', 'multipleOwners[0].ownershipShare',
+  'companyBeneficialOwners[0].controlBasis', 'trustFounders[0].residentialAddress',
+]) assert.equal(getSellerFieldOwnership(field)?.authority, 'private_listing_seller_onboarding', `${field} must resolve through current seller facts`)
+
+assert.equal(getSellerFieldOwnership('seller.contact.email', { source: 'canonical' }), getSellerFieldOwnership('sellerEmail'))
+assert.equal(getSellerFieldOwnership('seller.primary_contact.email', { source: 'canonical' }), getSellerFieldOwnership('email'))
+assert.notEqual(getSellerFieldOwnership('primaryContactName'), getSellerFieldOwnership('companyName'), 'contact and legal entity are distinct facts')
+assert.notEqual(getSellerFieldOwnership('powerOfAttorneyName'), getSellerFieldOwnership('powerOfAttorneyPrincipalName'), 'representative and principal are distinct facts')
+assert.notEqual(getSellerFieldOwnership('saResident'), getSellerFieldOwnership('taxResident'), 'residence and tax residence must not become one fact through a legacy fallback')
+assert.notEqual(getSellerFieldOwnership('unitNumber'), getSellerFieldOwnership('sectionNumber'), 'unit and registered section identifiers can differ')
+assert.equal(getSellerFieldOwnership('multipleOwners[0].email').scope, 'listing_person')
+assert.equal(getSellerFieldOwnership('multipleOwners[0].id').empty.explicit, 'reject_identity_removal')
+assert.deepEqual(getSellerFieldOwnership('multipleOwners[0].id').editors, ['system_or_reviewed_identity_link_assignment'])
+assert.equal(getSellerFieldOwnership('sellerBankPassword'), null, 'unknown fields must not inherit permission or authority')
+assert.throws(() => getSellerFieldOwnership('email', { source: 'crm' }), /source must/)
+assert.equal(getSellerFieldOwnership('askingPrice').authority, 'private_listings')
+assert.equal(getSellerFieldOwnership('propertyAddress').authorityBoundary, 'operational_listing_after_mandate_signed')
+assert.notEqual(sellerPersonSourceKey('onboarding-1', 'owner-1'), sellerPersonSourceKey('onboarding-2', 'owner-1'), 'local person ids must be scoped to the captured record')
+assert.notEqual(sellerPersonSourceKey('a:b', 'c'), sellerPersonSourceKey('a', 'b:c'), 'source references must not collide on delimiters')
+assert.equal(sellerPersonSourceKey('', 'owner-1'), '', 'missing references must never be fabricated')
+
+for (const component of ['listings/ListingSellerInformationEditor.jsx', 'onboarding/SellerFicaQuestions.jsx']) {
+  const source = readFileSync(new URL(`../src/components/${component}`, import.meta.url), 'utf8')
+  const exposedFields = [...source.matchAll(/\bfield="([^"]+)"|onChange\('([^']+)'/g)].map(match => match[1] || match[2])
+  assert.ok(exposedFields.length, `${component} must expose fields for the ownership coverage check`)
+  for (const path of exposedFields) assert.ok(getSellerFieldOwnership(path), `exposed capture field ${path} needs an ownership rule`)
+}
+
+console.log('seller profile workspace fields and data ownership contract passed')

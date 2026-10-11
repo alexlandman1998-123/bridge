@@ -1,3 +1,4 @@
+import { SPECIALIST_SALES_FIELD_KEYS } from '../listings/specialistSalesListingSchema.js'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 
@@ -697,5 +698,29 @@ describe('confirmed seller profile snapshots', () => {
     expect(saved.seller_onboarding_form_data.phone).toBe('new')
     expect(saved.sellerCanonicalFacts.seller.phone).toBe('new')
     expect(stale.sellerOnboarding.formData.phone).toBe('old')
+  })
+})
+
+
+describe('specialist listing guarded persistence', () => {
+  it('sends specialist edits and explicit clears in the same guarded canonical save', async () => {
+    let existing = { id: onboardingId, private_listing_id: listingId, updated_at: '2026-10-11T09:00:00Z',
+      form_data: { sellerName: 'Retained owner', zoning: 'Old zone', grossLettableArea: '900', loadingAccess: true } }
+    const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: existing, error: null }) }
+    client.from.mockReturnValue(query)
+    client.rpc.mockImplementation((name, args) => {
+      expect(name).toBe('save_private_listing_seller_onboarding_profile')
+      expect(args.p_revision).toEqual({ onboardingId, updatedAt: existing.updated_at })
+      existing = { ...existing, form_data: args.p_form_data }
+      return rpcResult(existing)
+    })
+    const save = formData => persistSellerProfileOnboardingFormData({ listingId, formData,
+      listingSnapshot: { sellerOnboarding: { id: onboardingId, updatedAt: existing.updated_at } },
+      allowProtectedSectionOverride: true, explicitClearFields: SPECIALIST_SALES_FIELD_KEYS })
+    const edited = await save({ propertyCategory: 'commercial', grossLettableArea: '1250.5', zoning: 'Business 4' })
+    expect(edited.form_data.canonicalSellerFacts.property.specialistFacts).toMatchObject({ grossLettableArea: '1250.5', zoning: 'Business 4', loadingAccess: true })
+    const cleared = await save({ grossLettableArea: '', zoning: '', loadingAccess: false })
+    expect(cleared.form_data.canonicalSellerFacts.property.specialistFacts).toMatchObject({ grossLettableArea: '', zoning: '', loadingAccess: false })
+    expect(cleared.form_data.sellerName).toBe('Retained owner')
   })
 })

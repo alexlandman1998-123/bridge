@@ -719,6 +719,17 @@ function buildSellerComplianceEvents(portalData = {}, clientRole = 'buyer') {
     })
   }
 
+  if (sellerComplianceSigning?.informationOnly) {
+    for (const document of sellerComplianceSigning.documentWorkflows || []) events.push({
+      id: `seller_document_workflow_${document.key}`, type: document.state === 'complete' ? 'document_approved' : 'document_workflow_updated',
+      timestamp, actor: 'Arch9', actorRole: 'System', visibility: 'client_visible',
+      metadata: { title: `${document.name}: ${document.label}`,
+        description: [document.detail, document.nextAction].filter(Boolean).join(' '),
+        audience: 'seller', category: 'documents', actionLabel: 'Open documents', actionRoute: 'documents' },
+    })
+    return events
+  }
+
   const signers = Array.isArray(sellerComplianceSigning?.signers)
     ? sellerComplianceSigning.signers
     : Array.isArray(sellerComplianceSigning?.signingState?.signers)

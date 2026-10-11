@@ -1,3 +1,6 @@
+// Kept in this dependency-free contract so seller readers can load independently.
+export const LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION = 'listing_seller_requirement_retirement_phase4_v1'
+
 export const SELLER_BASE_PACK_KEYS = Object.freeze({
   SIGNED_MANDATE: 'signed_mandate',
   SIGNED_DISCLOSURE_FORM: 'signed_disclosure_form',

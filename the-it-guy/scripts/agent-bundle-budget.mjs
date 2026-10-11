@@ -6,10 +6,9 @@ const DIST_ASSETS = path.resolve('dist/assets')
 const KIB = 1024
 const BUDGETS = Object.freeze({
   entryJavaScriptGzip: 130 * KIB,
-  // The global bundle is 152.3 KiB gzip after the listing workspace redesign.
-  // Keep a small, explicit allowance for normal compression variance while
-  // retaining a meaningful guardrail against further global CSS growth.
-  globalCssGzip: 153 * KIB,
+  // The combined 9–11 October seller/document/client screens measure 153.7 KiB
+  // gzip. Keep a small allowance while retaining the existing JavaScript limits.
+  globalCssGzip: 155 * KIB,
   legacyApiGzip: 325 * KIB,
 })
 

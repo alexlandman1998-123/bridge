@@ -746,7 +746,7 @@ export default function PublicAgencyIntakePage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [queryIntentApplied, setQueryIntentApplied] = useState(false)
 
-  const attribution = useMemo(() => readAgencyIntakeAttribution(searchParams), [searchParams])
+  const attribution = useMemo(() => readAgencyIntakeAttribution(searchParams, agencySlug), [searchParams, agencySlug])
   const activeAgencySlug = normalizeText(intake?.slug || agencySlug)
   const requestedIntent = normalizeText(searchParams.get('intent')).toLowerCase()
   const hasExplicitIntent = ['buy', 'sell'].includes(requestedIntent)

@@ -172,6 +172,7 @@ function instanceIdentity(instance = {}) {
 // The compatibility table has one row per document key, while canonical
 // instances may have one row per contact. Never guess which contact owns a row.
 export function reconcileRequiredDocumentInstanceLinks(rows = [], instances = []) {
+  const removed = (instances || []).filter((instance) => instance.applicability_override === 'removed')
   const active = (instances || []).filter((instance) => normalizeKey(instance.status) !== 'not_applicable')
   const instancesById = new Map(active.map((instance) => [instance.id, instance]))
   const instancesByIdentity = new Map()
@@ -185,6 +186,11 @@ export function reconcileRequiredDocumentInstanceLinks(rows = [], instances = []
     const identity = requiredDocumentIdentity(row)
     const candidates = instancesByIdentity.get(identity) || []
     const linkedId = row.canonical_requirement_instance_id
+    const removedMatch = removed.find((instance) => instanceIdentity(instance) === identity && instance.id === linkedId)
+    const allMatchingRemoved = !linkedId && !candidates.length && removed.some((instance) => instanceIdentity(instance) === identity)
+    if (removedMatch || allMatchingRemoved) {
+      return { ...row, enabled: false, is_required: false, status: 'not_required' }
+    }
     if (linkedId) {
       const linked = instancesById.get(linkedId)
       if (!linked || instanceIdentity(linked) !== identity) {
@@ -273,7 +279,7 @@ async function fetchExistingRequiredDocumentRows(client, transactionId) {
 async function fetchCanonicalRequirementInstances(client, transactionId) {
   const query = await client
     .from('document_requirement_instances')
-    .select('id, document_definition_key, requested_from_role, status')
+    .select('id, document_definition_key, requested_from_role, status, applicability_override')
     .eq('context_type', 'transaction')
     .eq('context_id', transactionId)
 

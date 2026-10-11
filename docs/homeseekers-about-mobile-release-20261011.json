@@ -1,0 +1,217 @@
+{
+  "status": "production_released_verified",
+  "approval": "The ongoing website update and production push; mobile clipping correction.",
+  "baseCommit": "edfbbedd0fe7f7682d7513b466c3aa33536a5869",
+  "commit": "0ce1372638fe33648b6c423510a40d2b4ad4d728",
+  "branch": "codex/homeseekers-about-mobile-production-20261011",
+  "target": {
+    "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+    "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+    "projectName": "home-seekers-website",
+    "environment": "production",
+    "domain": "homeseeker.co.za"
+  },
+  "previousDeployment": {
+    "id": "dpl_9cmrU1oPJm8s88fWSCjAzLUfS1yo",
+    "url": "https://home-seekers-website-e23s1oxlx-alexs-projects-f5496a21.vercel.app"
+  },
+  "scopedFiles": [
+    "the-it-guy/src/pages/HomeSeekersAboutNext.css"
+  ],
+  "databaseChanges": false,
+  "serverSourceChanges": false,
+  "sourcePublished": false,
+  "preparedAt": "2026-10-11T06:40:54.458427+00:00",
+  "checks": {
+    "standaloneBuild": "passed",
+    "deploymentTests": 17,
+    "serverArtifactsIdentical": true,
+    "previewBrowser": {
+      "browser": "WebKit",
+      "observations": [
+        {
+          "width": 320,
+          "storyWidth": 320,
+          "storyScrollWidth": 320,
+          "copyWidth": 320,
+          "pointCount": 3,
+          "pointColumns": "266px",
+          "failures": []
+        },
+        {
+          "width": 360,
+          "storyWidth": 360,
+          "storyScrollWidth": 360,
+          "copyWidth": 360,
+          "pointCount": 3,
+          "pointColumns": "306px",
+          "failures": []
+        },
+        {
+          "width": 375,
+          "storyWidth": 375,
+          "storyScrollWidth": 375,
+          "copyWidth": 375,
+          "pointCount": 3,
+          "pointColumns": "107px 107px 107px",
+          "failures": []
+        },
+        {
+          "width": 390,
+          "storyWidth": 390,
+          "storyScrollWidth": 390,
+          "copyWidth": 390,
+          "pointCount": 3,
+          "pointColumns": "112px 112px 112px",
+          "failures": []
+        },
+        {
+          "width": 428,
+          "storyWidth": 428,
+          "storyScrollWidth": 428,
+          "copyWidth": 428,
+          "pointCount": 3,
+          "pointColumns": "124.65625px 124.671875px 124.671875px",
+          "failures": []
+        },
+        {
+          "width": 640,
+          "storyWidth": 640,
+          "storyScrollWidth": 640,
+          "copyWidth": 640,
+          "pointCount": 3,
+          "pointColumns": "195.328125px 195.328125px 195.34375px",
+          "failures": []
+        },
+        {
+          "width": 768,
+          "storyWidth": 768,
+          "storyScrollWidth": 768,
+          "copyWidth": 768,
+          "pointCount": 3,
+          "pointColumns": "210.65625px 210.671875px 210.65625px",
+          "failures": []
+        },
+        {
+          "width": 900,
+          "storyWidth": 900,
+          "storyScrollWidth": 900,
+          "copyWidth": 900,
+          "pointCount": 3,
+          "pointColumns": "252px 252px 252px",
+          "failures": []
+        },
+        {
+          "width": 1440,
+          "storyWidth": 1440,
+          "storyScrollWidth": 1440,
+          "copyWidth": 720,
+          "pointCount": 3,
+          "pointColumns": "163.203125px 163.203125px 163.21875px",
+          "failures": []
+        }
+      ]
+    },
+    "liveBrowser": {
+      "browser": "WebKit",
+      "observations": [
+        {
+          "width": 320,
+          "storyWidth": 320,
+          "storyScrollWidth": 320,
+          "copyWidth": 320,
+          "pointCount": 3,
+          "pointColumns": "266px",
+          "failures": []
+        },
+        {
+          "width": 360,
+          "storyWidth": 360,
+          "storyScrollWidth": 360,
+          "copyWidth": 360,
+          "pointCount": 3,
+          "pointColumns": "306px",
+          "failures": []
+        },
+        {
+          "width": 375,
+          "storyWidth": 375,
+          "storyScrollWidth": 375,
+          "copyWidth": 375,
+          "pointCount": 3,
+          "pointColumns": "107px 107px 107px",
+          "failures": []
+        },
+        {
+          "width": 390,
+          "storyWidth": 390,
+          "storyScrollWidth": 390,
+          "copyWidth": 390,
+          "pointCount": 3,
+          "pointColumns": "112px 112px 112px",
+          "failures": []
+        },
+        {
+          "width": 428,
+          "storyWidth": 428,
+          "storyScrollWidth": 428,
+          "copyWidth": 428,
+          "pointCount": 3,
+          "pointColumns": "124.65625px 124.671875px 124.671875px",
+          "failures": []
+        },
+        {
+          "width": 640,
+          "storyWidth": 640,
+          "storyScrollWidth": 640,
+          "copyWidth": 640,
+          "pointCount": 3,
+          "pointColumns": "195.328125px 195.328125px 195.34375px",
+          "failures": []
+        },
+        {
+          "width": 768,
+          "storyWidth": 768,
+          "storyScrollWidth": 768,
+          "copyWidth": 768,
+          "pointCount": 3,
+          "pointColumns": "210.65625px 210.671875px 210.65625px",
+          "failures": []
+        },
+        {
+          "width": 900,
+          "storyWidth": 900,
+          "storyScrollWidth": 900,
+          "copyWidth": 900,
+          "pointCount": 3,
+          "pointColumns": "252px 252px 252px",
+          "failures": []
+        },
+        {
+          "width": 1440,
+          "storyWidth": 1440,
+          "storyScrollWidth": 1440,
+          "copyWidth": 720,
+          "pointCount": 3,
+          "pointColumns": "163.203125px 163.203125px 163.21875px",
+          "failures": []
+        }
+      ]
+    }
+  },
+  "artifactInventorySha256": "663bcfdb3a6406fd29b066a7786d781b4e445018393dc6182ca1dd5ef79ad222",
+  "verifiedAt": "2026-10-11T06:42:52.188744+00:00",
+  "deployment": {
+    "id": "dpl_3zjEXMvCCgGC552bdeGKnyHSxzkK",
+    "url": "https://home-seekers-website-ix2q2kd2a-alexs-projects-f5496a21.vercel.app",
+    "readyState": "READY",
+    "target": "production",
+    "aliasesVerified": [
+      "homeseeker.co.za",
+      "www.homeseeker.co.za"
+    ]
+  },
+  "cause": "The mobile numbered points had three 135px minimum widths. Their 405px total plus 54px copy padding expanded the story grid to 459px on a 428px phone. The About page overflow rule clipped the excess.",
+  "repair": "Constrained the mobile grid and copy to the viewport; made the three points shrink, stack at 360px and below, and made the heading scale and wrap.",
+  "verificationScope": "Built and packaged the actual public website; live WebKit checks of heading, paragraph and numbered-point text bounds at widths 320, 360, 375, 390, 428, 640, 768, 900 and 1440. No live forms submitted."
+}

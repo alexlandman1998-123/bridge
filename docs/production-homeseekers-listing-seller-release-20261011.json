@@ -1,0 +1,285 @@
+{
+  "capturedAt": "2026-10-10T23:14:59.988383+00:00",
+  "status": "production_released_verified",
+  "userAuthorization": "push all outstanding edits from today and yesterday specifically homeseekers, listing, seller edit and migrations to production",
+  "scope": [
+    "Primary Arch9 listing and seller workspaces",
+    "Home Seekers public website and recruitment contract portal",
+    "Shared property website sale status",
+    "Five reviewed migrations and three associated Edge Functions"
+  ],
+  "source": {
+    "commit": "61d3d64c656d8bf063162182ec8b41c3d27dee58",
+    "branch": "codex/production-homeseekers-listing-seller-20261011",
+    "baseProductionSource": "e4220f84e924396ea41ea5bcafb696c3ec7bc11d",
+    "frozenSourceFiles": 140,
+    "sourceHashesVerified": true,
+    "unrelatedActiveCheckoutChangesPreserved": true,
+    "excluded": "Older 9 October client/campaign sources and six unrelated older client/campaign migrations were not included in this reviewed release."
+  },
+  "target": {
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "supabaseEnvironment": "Arch9 SaaS production",
+    "vercelTeamId": "team_ezJ5RCE7qwTf14fw215IhPs5"
+  },
+  "production": {
+    "primary": {
+      "url": "https://app.arch9.co.za",
+      "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+      "previousDeployment": "dpl_6uMeWtuV7LKHqkH1imCeFHdxH2u9",
+      "liveDeployment": "dpl_5BRqZEHMcGvfaGJdz7M2XGwmP4pZ",
+      "deploymentUrl": "https://bridge-gn41vpw2o-alexs-projects-f5496a21.vercel.app",
+      "ready": true,
+      "promoted": true,
+      "liveAliasIndependentlyVerified": true,
+      "liveAssets": {
+        "version": "arch9_deployed_release_assets_v1",
+        "appUrl": "https://app.arch9.co.za",
+        "releaseId": "61d3d64c656d8bf063162182ec8b41c3d27dee58",
+        "manifestCacheControl": "no-cache, no-store, must-revalidate",
+        "indexCacheControl": "no-cache, no-store, must-revalidate",
+        "criticalAssetCount": 857,
+        "passed": true,
+        "failedAssets": []
+      },
+      "browser": "Sign-in page loaded. Public agent-assisted seller demo loaded, and Save Draft accepted incomplete details and displayed Draft saved. Demo saves are in memory only.",
+      "cancelledCandidate": "dpl_5boLWCG1AS6cDRrdYs96Tkwu2GtW was cancelled before promotion because its source marker metadata was missing; replacement is explicitly bound to the frozen source commit."
+    },
+    "homeSeekers": {
+      "url": "https://homeseeker.co.za",
+      "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+      "previousDeployment": "dpl_Ai36hgHKbZzJSiiedd35dmxmq9Ti",
+      "liveDeployment": "dpl_6iFNpEpYAx62Rs6t9k815JGmm4m5",
+      "deploymentUrl": "https://home-seekers-website-b2eumwm66-alexs-projects-f5496a21.vercel.app",
+      "ready": true,
+      "promoted": true,
+      "liveAliasIndependentlyVerified": true,
+      "liveEntryAsset": "/assets/home-seekers-BjhikBbG.js",
+      "publicSiteApiStatus": 200,
+      "publicListingCount": 0,
+      "browser": "Live joining page and contact-first application dialog loaded without submitting contacts, creating accounts or sending email.",
+      "screenshot": "tmp/production-home-seekers-20261011.png"
+    },
+    "sharedWebsite": {
+      "projectId": "prj_f6mDRM087y82S97FfEJ6s2vnAhRh",
+      "previousDeployment": "dpl_6qiPheneet23RNT5jWFEjxh8Mah3",
+      "liveDeployment": "dpl_8PM7tc99YKZswMTvGTjeitjoBKGZ",
+      "deploymentUrl": "https://arch9-websites-production-ju5ae593w-alexs-projects-f5496a21.vercel.app",
+      "ready": true,
+      "promoted": true,
+      "liveAliasIndependentlyVerified": true,
+      "genericHostHealthStatus": 503,
+      "genericHostHealthExpected": true,
+      "publishedTenantChecks": [
+        {
+          "path": "/api/health",
+          "finalPath": "/api/health",
+          "status": 200,
+          "tenantRendered": false,
+          "referenceRendered": null,
+          "body": {
+            "status": "ok"
+          }
+        },
+        {
+          "path": "/properties",
+          "finalPath": "/properties",
+          "status": 200,
+          "tenantRendered": true,
+          "referenceRendered": null
+        },
+        {
+          "path": "/properties/A9-ISELLPROPERT-000001",
+          "finalPath": "/properties/A9-ISELLPROPERT-000001",
+          "status": 200,
+          "tenantRendered": true,
+          "referenceRendered": true
+        },
+        {
+          "path": "/properties/A9-ISELLPROPERT-000002",
+          "finalPath": "/properties/A9-ISELLPROPERT-000002",
+          "status": 200,
+          "tenantRendered": true,
+          "referenceRendered": true
+        },
+        {
+          "path": "/properties/A9-ISELLPROPERT-000006",
+          "finalPath": "/properties/A9-ISELLPROPERT-000006",
+          "status": 200,
+          "tenantRendered": true,
+          "referenceRendered": true
+        },
+        {
+          "path": "/properties/A9-ISELLPROPERT-000008",
+          "finalPath": "/properties/A9-ISELLPROPERT-000008",
+          "status": 200,
+          "tenantRendered": true,
+          "referenceRendered": true
+        }
+      ],
+      "publishedTenantCheckEnvironment": "Exact production build served locally with production configuration, existing server-only production credential and the published tenant Host header; read-only data access. Sensitive production credential is not downloadable with Vercel pull and was injected only into the local server process.",
+      "domainLimitation": "The shared project has no registered tenant custom domains. This release does not claim to update a separate Kingdom custom-domain deployment."
+    }
+  },
+  "database": {
+    "migrations": [
+      {
+        "version": "20261010205014",
+        "file": "20261010205014_recruitment_contract_portal.sql",
+        "sha256": "5c5d1632129daad2a58b1523fe5a777117d47dfb6a303e62927bd6061c995865"
+      },
+      {
+        "version": "20261010214831",
+        "file": "20261010214831_website_listing_sale_status.sql",
+        "sha256": "ec4cd5a7c6ab1f0750be04c17323dff3851bb06df63e191f981dc027bbb69b6a"
+      },
+      {
+        "version": "20261010215549",
+        "file": "20261010215549_seller_save_concurrency_guards.sql",
+        "sha256": "72b1ad701c75cec4bb916732304329a122acef1ad118f81c084dc2cc3778f6de"
+      },
+      {
+        "version": "20261010223242",
+        "file": "20261010223242_listing_link_existing_seller_lead.sql",
+        "sha256": "1d3c910acf6506f3e14e13739be580e9debf7f654f0e8e594fd9e6231830bc7a"
+      },
+      {
+        "version": "20261010225607",
+        "file": "20261010225607_seller_canonical_revision_scope.sql",
+        "sha256": "9a81dcbb0ec46325ec7872e19f363ea5bc0bb2a3835d87f0bcb6ef066aa52433"
+      }
+    ],
+    "guard": "passed; no duplicate versions",
+    "recoveryGuard": "RECOVERY_LOCKED passed; backups and previously tested recovery confirmed",
+    "dryRun": "Exactly these five migrations; no include-all, seeds, roles or unrelated changes",
+    "push": "Guarded approved production push with --linked --skip-vault; completed successfully",
+    "historyAndAccessVerification": "All five migration receipts present; seller save and seller lead link functions SECURITY INVOKER; anon execute denied; private lock function unavailable to authenticated; contract return functions service-only; recruitment_contract_uploads RLS enabled; publication status snapshot functions present.",
+    "latestSellerProbe": "Using the latest assigned seller listing actor, stale canonical and profile save revisions were rejected with PT409. Probe transaction rolled back. No seller details were edited.",
+    "forwardCorrection": "Appended seller_canonical_revision_scope rather than editing an existing migration. Canonical seller saves with valid __sellerSave revision no longer conflict with unrelated whole-listing timestamp changes; legacy callers retain their original timestamp guard.",
+    "recoveryArtifacts": [
+      "/tmp/arch9-release-20261011-prestate.json",
+      "/tmp/arch9-release-20261011-restore-functions.sql",
+      "/tmp/arch9-release-20261011-edge-before/"
+    ],
+    "recoveryPolicy": "Restore reviewed previous function definitions/bundles if required; retain additive schema objects and document/signature data. No destructive database rollback."
+  },
+  "checks": {
+    "primaryApp": {
+      "lint": "0 errors; 604 existing warnings",
+      "defaultServiceBaseline": "9 suites passed",
+      "productionBuild": "passed",
+      "hostedBuild": "passed; 4779 modules; release budget, login, operational and schema checks passed"
+    },
+    "website": "check:website passed; production prebuilt build passed",
+    "homeSeekers": "standalone production package passed",
+    "focusedUiAndServices": "41 files; 549 tests passed",
+    "sharedLeadDependencies": "11 tests passed",
+    "homeSeekersServer": "29 tests passed",
+    "sellerCanonicalSave": "actual migrations and rollback/concurrency fixture passed",
+    "sellerSync": "7 suites passed",
+    "sellerCapture": "38 tests passed",
+    "marketing": "68 tests passed",
+    "sellerDocumentJourneys": "16 journeys; 54 PDFs; 293 pages; passed",
+    "edgeFunctions": "32 tests passed; 3 entrypoints typechecked",
+    "database": "5 migrations applied; history, function ACLs, RLS, status snapshot and stale-save guards verified",
+    "sourceManifest": "all 140 file hashes match the frozen release source"
+  },
+  "advisors": {
+    "preCount": 1937,
+    "postCount": 1938,
+    "added": [
+      {
+        "group": "authenticated_security_definer_function_executable",
+        "level": "WARN",
+        "metadata": {
+          "name": "recruitment_contract_applicant_ready",
+          "schema": "public",
+          "language": "plpgsql",
+          "arguments": "p_organisation_id uuid, p_lead_id uuid",
+          "security_definer": true
+        },
+        "detail": "Function `public.recruitment_contract_applicant_ready(p_organisation_id uuid, p_lead_id uuid)` can be executed by the `authenticated` role as a `SECURITY DEFINER` function via `/rest/v1/rpc/recruitment_contract_applicant_ready`. Revoke `EXECUTE` or switch it to `SECURITY INVOKER` if that is not intentional."
+      }
+    ],
+    "groups": [
+      {
+        "name": "rls_enabled_no_policy",
+        "count": 139,
+        "level": "INFO"
+      },
+      {
+        "name": "function_search_path_mutable",
+        "count": 170,
+        "level": "WARN"
+      },
+      {
+        "name": "materialized_view_in_api",
+        "count": 2,
+        "level": "WARN"
+      },
+      {
+        "name": "anon_security_definer_function_executable",
+        "count": 600,
+        "level": "WARN"
+      },
+      {
+        "name": "authenticated_security_definer_function_executable",
+        "count": 1026,
+        "level": "WARN"
+      },
+      {
+        "name": "auth_leaked_password_protection",
+        "count": 1,
+        "level": "WARN"
+      }
+    ]
+  },
+  "edges": [
+    {
+      "slug": "send-email",
+      "status": "ACTIVE",
+      "version": 172,
+      "verifyJwt": true,
+      "sha256": "77b8c6a4b2c804780d6a7e3745eadc63cff16762002cfd4eeadc7351ee1d396e"
+    },
+    {
+      "slug": "recruitment-submission-dispatcher",
+      "status": "ACTIVE",
+      "version": 3,
+      "verifyJwt": true,
+      "sha256": "d10c28749fccec5b040435220bfd1be5cfb2b72eefe13ca0bf9aa13fe65ea6cf"
+    },
+    {
+      "slug": "recruitment-contact-dispatcher",
+      "status": "ACTIVE",
+      "version": 4,
+      "verifyJwt": true,
+      "sha256": "62ead9044c457cc5f3cf38442048bf9a8c8fe92d34ef8947977034d90da3c586"
+    }
+  ],
+  "advisorReview": {
+    "newFinding": "recruitment_contract_applicant_ready",
+    "decision": "Reviewed intentional SECURITY DEFINER: returns a boolean for a verified applicant only after recruitment_assert_joining_manager checks the caller and organisation; anon EXECUTE revoked and empty search_path enforced."
+  },
+  "edgeAuthenticationChecks": [
+    {
+      "slug": "send-email",
+      "unauthenticatedGetStatus": 401,
+      "blocked": true
+    },
+    {
+      "slug": "recruitment-contact-dispatcher",
+      "unauthenticatedGetStatus": 401,
+      "blocked": true
+    },
+    {
+      "slug": "recruitment-submission-dispatcher",
+      "unauthenticatedGetStatus": 401,
+      "blocked": true
+    }
+  ],
+  "remainingManualVerification": [
+    "Kingdom should retry his latest seller save in a signed-in workspace; authenticated UI save was not performed on real customer data."
+  ],
+  "sideEffects": "Deployment and reviewed schema changes only. No canary emails, real applicant submissions, saved-listing publication, or seller data repair was performed."
+}

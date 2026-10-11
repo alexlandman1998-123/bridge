@@ -207,7 +207,7 @@ async function prepare(branch, mandateType, route = 'digital_pack', { agentAssis
   await assert.rejects(save(initial, { sellerTaxNumber: 'STALE-SAVE' }), error => error.code === '40001')
   const opened = await reopened(listingId)
   assert.equal(opened.sellerOnboarding.formData.sellerTaxNumber, 'ORIGINAL-TAX')
-  const approval = { ...copy.approval, signingRoute: route, selectedDocuments: ['fica', 'mandate'], documentRoutes: Object.fromEntries(keys.map(key => [key, route])) }
+  const approval = { ...copy.approval, signingRoute: route, selectedDocuments: ['disclosure', 'fica', 'mandate'], documentRoutes: Object.fromEntries(keys.map(key => [key, route])) }
   const savedForm = opened.sellerOnboarding.formData
   const drafts = buildSellerPostOnboardingDrafts({ formData: savedForm, listing: opened, branding: signingPack.branding })
   const prepared = createSellerOnboardingManualSigningPack({ formData: savedForm, signingPack, formalPackApproval: approval, postOnboardingDrafts: drafts, actor })

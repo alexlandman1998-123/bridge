@@ -1,0 +1,293 @@
+{
+  "status": "production_released_verified",
+  "approval": "push to production; correction of the same release",
+  "baseCommit": "fabb20ecac1d9e7ad1a809d26872f24d8e65def5",
+  "commit": "edfbbedd0fe7f7682d7513b466c3aa33536a5869",
+  "branch": "codex/homeseekers-css-repair-production-20261011",
+  "target": {
+    "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+    "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+    "projectName": "home-seekers-website",
+    "environment": "production",
+    "domain": "homeseeker.co.za"
+  },
+  "previousDeployment": {
+    "id": "dpl_4wFFQVN8RzWp1yio6oPzXpHkLFEX",
+    "url": "https://home-seekers-website-q4dltky3f-alexs-projects-f5496a21.vercel.app"
+  },
+  "recoveryDeployment": {
+    "id": "dpl_6iFNpEpYAx62Rs6t9k815JGmm4m5",
+    "url": "https://home-seekers-website-b2eumwm66-alexs-projects-f5496a21.vercel.app"
+  },
+  "scopedFiles": [
+    "the-it-guy/scripts/build-home-seekers-website.mjs",
+    "the-it-guy/server/tests/homeSeekersWebsiteDeployment.test.js"
+  ],
+  "restoredBuildInputs": [
+    "the-it-guy/postcss.config.js",
+    "the-it-guy/tailwind.config.js",
+    "the-it-guy/index.html"
+  ],
+  "sourcePublished": false,
+  "databaseChanges": false,
+  "serverSourceChanges": false,
+  "preparedAt": "2026-10-11T06:33:28.479837+00:00",
+  "checks": {
+    "standaloneBuild": "passed",
+    "compiledCss": "passed",
+    "packagedDeploymentTests": 17,
+    "focusedUiTests": 15,
+    "lint": "passed",
+    "serverArtifactsIdentical": true,
+    "browserWidths": [
+      320,
+      375,
+      390,
+      428,
+      1440
+    ],
+    "outerMargin": "0px",
+    "horizontalOverflow": false,
+    "liveBrowser": {
+      "observations": [
+        {
+          "route": "/guarantee",
+          "width": 320,
+          "body": {
+            "x": 0,
+            "width": 320,
+            "bottom": 10727.015625,
+            "margin": "0px"
+          },
+          "header": {
+            "x": 0,
+            "width": 320,
+            "bottom": 82,
+            "margin": "0px"
+          },
+          "heading": {
+            "x": 22,
+            "width": 276,
+            "bottom": 375.34375,
+            "margin": "0px"
+          },
+          "button": {
+            "x": 52.7578125,
+            "width": 214.484375,
+            "bottom": 562.9296875,
+            "margin": "0px"
+          },
+          "overflow": false
+        },
+        {
+          "route": "/guarantee",
+          "width": 375,
+          "body": {
+            "x": 0,
+            "width": 375,
+            "bottom": 10045.4140625,
+            "margin": "0px"
+          },
+          "header": {
+            "x": 0,
+            "width": 375,
+            "bottom": 82,
+            "margin": "0px"
+          },
+          "heading": {
+            "x": 22,
+            "width": 331,
+            "bottom": 337.90625,
+            "margin": "0px"
+          },
+          "button": {
+            "x": 80.2578125,
+            "width": 214.484375,
+            "bottom": 498.296875,
+            "margin": "0px"
+          },
+          "overflow": false
+        },
+        {
+          "route": "/guarantee",
+          "width": 390,
+          "body": {
+            "x": 0,
+            "width": 390,
+            "bottom": 9950.390625,
+            "margin": "0px"
+          },
+          "header": {
+            "x": 0,
+            "width": 390,
+            "bottom": 82,
+            "margin": "0px"
+          },
+          "heading": {
+            "x": 22,
+            "width": 346,
+            "bottom": 337.90625,
+            "margin": "0px"
+          },
+          "button": {
+            "x": 87.7578125,
+            "width": 214.484375,
+            "bottom": 498.296875,
+            "margin": "0px"
+          },
+          "overflow": false
+        },
+        {
+          "route": "/guarantee",
+          "width": 428,
+          "body": {
+            "x": 0,
+            "width": 428,
+            "bottom": 9635.921875,
+            "margin": "0px"
+          },
+          "header": {
+            "x": 0,
+            "width": 428,
+            "bottom": 82,
+            "margin": "0px"
+          },
+          "heading": {
+            "x": 22,
+            "width": 384,
+            "bottom": 345.78125,
+            "margin": "0px"
+          },
+          "button": {
+            "x": 106.7578125,
+            "width": 214.484375,
+            "bottom": 506.171875,
+            "margin": "0px"
+          },
+          "overflow": false
+        },
+        {
+          "route": "/guarantee",
+          "width": 1440,
+          "body": {
+            "x": 0,
+            "width": 1440,
+            "bottom": 7818.875,
+            "margin": "0px"
+          },
+          "header": {
+            "x": 0,
+            "width": 1440,
+            "bottom": 83.46875,
+            "margin": "0px"
+          },
+          "heading": {
+            "x": 340,
+            "width": 760,
+            "bottom": 509.1328125,
+            "margin": "0px"
+          },
+          "button": {
+            "x": 507.828125,
+            "width": 214.484375,
+            "bottom": 672.7265625,
+            "margin": "0px"
+          },
+          "overflow": false
+        },
+        {
+          "route": "/",
+          "width": 390,
+          "openPanels": 3,
+          "margin": "0px",
+          "overflow": false
+        },
+        {
+          "route": "/join",
+          "width": 390,
+          "rentalFee": "R420",
+          "agentRetains": "R780",
+          "margin": "0px",
+          "overflow": false
+        },
+        {
+          "route": "/",
+          "width": 1440,
+          "openPanels": 3,
+          "margin": "0px",
+          "overflow": false
+        },
+        {
+          "route": "/join",
+          "width": 1440,
+          "rentalFee": "R420",
+          "agentRetains": "R780",
+          "margin": "0px",
+          "overflow": false
+        }
+      ],
+      "errors": []
+    },
+    "liveSafari": {
+      "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1",
+      "viewport": {
+        "width": 428,
+        "height": 746,
+        "visualWidth": 428
+      },
+      "body": {
+        "x": 0,
+        "width": 428,
+        "height": 9641.703125,
+        "bottom": 9641.703125,
+        "fontSize": "15px",
+        "margin": "0px"
+      },
+      "heading": {
+        "x": 22,
+        "width": 384,
+        "height": 120.140625,
+        "bottom": 345.875,
+        "fontSize": "38.52px",
+        "margin": "0px"
+      },
+      "button": {
+        "x": 106.75,
+        "width": 214.484375,
+        "height": 48,
+        "bottom": 506.25,
+        "fontSize": "10px",
+        "margin": "0px"
+      },
+      "overflow": false
+    },
+    "liveSafariNavigation": {
+      "navigationFits": true,
+      "bounds": {
+        "x": 51.375,
+        "y": 0,
+        "width": 376.625,
+        "height": 746
+      },
+      "viewport": {
+        "width": 428,
+        "height": 746
+      }
+    }
+  },
+  "artifactInventorySha256": "a5e707442a65286c0b22798541b6c4b3880a1a794758faf760760db557e6fa59",
+  "verifiedAt": "2026-10-11T06:37:09.559737+00:00",
+  "deployment": {
+    "id": "dpl_9cmrU1oPJm8s88fWSCjAzLUfS1yo",
+    "url": "https://home-seekers-website-e23s1oxlx-alexs-projects-f5496a21.vercel.app",
+    "readyState": "READY",
+    "target": "production",
+    "aliasesVerified": [
+      "homeseeker.co.za",
+      "www.homeseeker.co.za"
+    ]
+  },
+  "cause": "The previous isolated source archive omitted PostCSS and Tailwind configuration. Vite left Tailwind directives in CSS, so browsers applied the default 8px body margin and fallback text spacing.",
+  "repair": "Restored the existing build configurations and added fail-fast build checks plus a compiled CSS regression assertion.",
+  "verificationScope": "Live guarantee, homepage and Join Us page; iPhone emulation in WebKit, phone widths 320, 375, 390 and 428, desktop width 1440. Mobile menu opened and closed. No forms submitted or live data changed."
+}

@@ -13,7 +13,6 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
-  Tag,
   Trash2,
   Upload,
   User2,
@@ -36,6 +35,7 @@ import { BUSINESS_WORKSPACES } from '../lib/businessWorkspaceAccess'
 import {
   loadAgentClientDirectory,
 } from '../core/clients/agentClientDirectory'
+import { clientMatchesStoredId } from '../core/clients/clientIdentity'
 import { deriveAttorneyClients } from '../core/clients/attorneyClientSelectors'
 import { buildAttorneyManualPartyRecord, readAttorneyManualParties, writeAttorneyManualParties } from '../core/clients/attorneyManualParties'
 import { useOrganisation } from '../context/OrganisationContext'
@@ -43,7 +43,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
 import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
-import { getClientMarketingWorkspace, saveClientMarketingTags, saveEmailAudience } from '../services/emailCampaignService'
+import { saveEmailAudience } from '../services/emailCampaignService'
 import { createAgencyCrmLeadRecord, deleteAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 
 let legacyClientApiPromise = null
@@ -916,56 +916,6 @@ function AddClientModal({
   )
 }
 
-function ClientMarketingProfileModal({ client, marketingContact, loading, error, onClose, onSaveTags }) {
-  const [tagInput, setTagInput] = useState('')
-  const [tags, setTags] = useState([])
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
-
-  useEffect(() => {
-    setTags(marketingContact?.tags || [])
-    setTagInput('')
-    setSaveError('')
-  }, [client?.id, marketingContact?.id])
-
-  if (!client) return null
-  const addTag = () => {
-    const next = tagInput.trim().toLowerCase()
-    if (!next) return
-    setTags((current) => current.includes(next) ? current : [...current, next])
-    setTagInput('')
-  }
-  const save = async () => {
-    setSaving(true)
-    setSaveError('')
-    try {
-      await onSaveTags(tags)
-    } catch (cause) {
-      setSaveError(cause.message || 'Unable to save client tags.')
-    } finally {
-      setSaving(false)
-    }
-  }
-  return (
-    <Modal open={Boolean(client)} onClose={onClose} title={client.name || 'Client profile'} subtitle="Client details and bulk-email tags stay in one place." className="max-w-4xl">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#73879d]">Contact</p>
-          <p className="mt-3 text-lg font-semibold text-[#10243a]">{client.name || 'Unnamed client'}</p>
-          <dl className="mt-4 space-y-3 text-sm"><div><dt className="text-[#73879d]">Email</dt><dd className="mt-1 font-medium text-[#29445f]">{client.email || 'No email address'}</dd></div><div><dt className="text-[#73879d]">Phone</dt><dd className="mt-1 font-medium text-[#29445f]">{client.phone || 'No phone number'}</dd></div><div><dt className="text-[#73879d]">Linked record</dt><dd className="mt-1 font-medium text-[#29445f]">{getLinkedRecordLabel(client, 'No linked record')}</dd></div></dl>
-        </section>
-        <section className="rounded-[18px] border border-[#dbe8f5] bg-white p-4">
-          <div className="flex items-start gap-3"><span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eaf3ff] text-[#1767b4]"><Tag size={17} /></span><div><p className="font-semibold text-[#17334f]">Bulk-email tags</p><p className="mt-1 text-sm leading-5 text-[#637890]">Tags organise audiences. They never override consent, unsubscribe, suppression, or subscription checks.</p></div></div>
-          {!client.email ? <p className="mt-4 rounded-xl border border-[#f1ddb2] bg-[#fff9ed] p-3 text-sm text-[#7f5b16]">Add an email address to this client before assigning marketing tags.</p> : null}
-          <div className="mt-4 flex flex-wrap gap-2">{tags.map((tag) => <button type="button" key={tag} className="inline-flex items-center gap-1 rounded-full border border-[#cfe1f2] bg-[#f3f8fd] px-3 py-1 text-sm font-semibold text-[#27516f]" onClick={() => setTags((current) => current.filter((item) => item !== tag))}>{tag}<span aria-hidden="true">×</span><span className="sr-only">Remove {tag}</span></button>)}{!tags.length ? <span className="text-sm text-[#73879d]">No tags yet.</span> : null}</div>
-          <div className="mt-4 flex gap-2"><input className="min-h-10 min-w-0 flex-1 rounded-xl border border-[#d7e3ef] px-3 text-sm" value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} placeholder="e.g. show-day" disabled={!client.email || loading || saving} /><Button type="button" variant="secondary" onClick={addTag} disabled={!client.email || !tagInput.trim() || loading || saving}>Add</Button></div>
-          {error || saveError ? <p className="mt-3 text-sm text-[#b42318]">{saveError || error}</p> : null}
-          <div className="mt-5 flex justify-end"><Button type="button" onClick={() => void save()} disabled={!client.email || loading || saving}>{saving ? 'Saving…' : 'Save tags'}</Button></div>
-        </section>
-      </div>
-    </Modal>
-  )
-}
 
 function ClientAudiencesTab({ audiences = [], loading, error, organisationId, userId, onSaved }) {
   const [name, setName] = useState('')
@@ -988,20 +938,21 @@ function Clients() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const directoryState = location.state?.clientsDirectoryState || {}
   const { profile, role, workspace, currentMembership, businessWorkspaceId } = useWorkspace()
   const { organisation } = useOrganisation()
   const [rows, setRows] = useState([])
   const [agentFilters, setAgentFilters] = useState({ sources: [], assignedAgents: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => typeof directoryState.search === 'string' ? directoryState.search : '')
   const [activeFilter, setActiveFilter] = useState('all')
-  const [roleFilter, setRoleFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [assignedAgentFilter, setAssignedAgentFilter] = useState('all')
-  const [matterTypeFilter, setMatterTypeFilter] = useState('all')
-  const [complianceFilter, setComplianceFilter] = useState('all')
-  const [viewMode, setViewMode] = useState('grid')
+  const [roleFilter, setRoleFilter] = useState(() => typeof directoryState.roleFilter === 'string' ? directoryState.roleFilter : 'all')
+  const [statusFilter, setStatusFilter] = useState(() => typeof directoryState.statusFilter === 'string' ? directoryState.statusFilter : 'all')
+  const [assignedAgentFilter, setAssignedAgentFilter] = useState(() => typeof directoryState.assignedAgentFilter === 'string' ? directoryState.assignedAgentFilter : 'all')
+  const [matterTypeFilter, setMatterTypeFilter] = useState(() => typeof directoryState.matterTypeFilter === 'string' ? directoryState.matterTypeFilter : 'all')
+  const [complianceFilter, setComplianceFilter] = useState(() => typeof directoryState.complianceFilter === 'string' ? directoryState.complianceFilter : 'all')
+  const [viewMode, setViewMode] = useState(() => directoryState.viewMode === 'list' ? 'list' : 'grid')
   const [archivedClientIds, setArchivedClientIds] = useState(() => readArchivedClientIds())
   const [deletedClientIds, setDeletedClientIds] = useState(() => readDeletedClientIds())
   const [manualAttorneyParties, setManualAttorneyParties] = useState(() => readAttorneyManualParties())
@@ -1011,8 +962,21 @@ function Clients() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showRentalImport, setShowRentalImport] = useState(false)
   const [directoryTab, setDirectoryTab] = useState('clients')
-  const [selectedAgentClient, setSelectedAgentClient] = useState(null)
-  const [marketingState, setMarketingState] = useState({ loading: false, error: '', marketingContact: null, savedAudiences: [] })
+  const [activityWarning, setActivityWarning] = useState('')
+  const loadGeneration = useRef(0)
+  const directoryProfile = useMemo(() => ({
+    id: profile?.id,
+    email: profile?.email,
+    fullName: profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' '),
+  }), [profile?.id, profile?.email, profile?.fullName, profile?.firstName, profile?.lastName])
+  const directoryWorkspace = useMemo(() => ({ id: workspace?.id }), [workspace?.id])
+  const directoryMembership = useMemo(() => ({
+    id: currentMembership?.id,
+    role: currentMembership?.role,
+    workspaceRole: currentMembership?.workspaceRole || currentMembership?.workspace_role,
+    branchId: currentMembership?.branchId || currentMembership?.branch_id,
+    status: currentMembership?.status,
+  }), [currentMembership?.id, currentMembership?.role, currentMembership?.workspaceRole, currentMembership?.workspace_role, currentMembership?.branchId, currentMembership?.branch_id, currentMembership?.status])
   const performanceBaselineRef = useRef(null)
   if (!performanceBaselineRef.current) {
     performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'clients', route: '/clients' })
@@ -1064,18 +1028,36 @@ function Clients() {
     }
   }, [])
 
-  const loadData = useCallback(async () => {
+
+  const loadData = useCallback(async ({ forceRefresh = false } = {}) => {
+    const request = ++loadGeneration.current
+    const current = () => request === loadGeneration.current
     if (isAgentClientDirectory) {
       try {
         setLoading(true)
         setError('')
-        const directory = await loadAgentClientDirectory({ profile, role, workspace })
+        setActivityWarning('')
+        const directory = await loadAgentClientDirectory({
+          profile: directoryProfile, role, workspace: directoryWorkspace,
+          currentMembership: directoryMembership, businessWorkspaceId,
+          forceRefresh, deferActivity: true,
+        })
+        if (!current()) return
+        setActivityWarning(directory.activityWarning || '')
         setRows(directory.clients || [])
         setAgentFilters(directory.filters || { sources: [], assignedAgents: [] })
+        if (directory.activityPromise) {
+          void directory.activityPromise.then((enriched) => {
+            if (!current()) return
+            setRows(enriched.clients || [])
+            setActivityWarning(enriched.activityWarning || '')
+          })
+        }
+        return directory
       } catch (loadError) {
-        setError(loadError.message || 'Unable to load contacts.')
+        if (current()) setError(loadError.message || 'Unable to load contacts.')
       } finally {
-        setLoading(false)
+        if (current()) setLoading(false)
       }
       return
     }
@@ -1093,22 +1075,22 @@ function Clients() {
       if (role === 'developer') {
         const { fetchDashboardOverview } = await loadLegacyClientApi()
         const overview = await fetchDashboardOverview({
-          developmentId: workspace.id === 'all' ? null : workspace.id,
+          developmentId: directoryWorkspace.id === 'all' ? null : directoryWorkspace.id,
         })
         transactionRows = filterSeedRows(overview?.rows || [])
-      } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
+      } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && directoryProfile.id) {
         transactionRows = await fetchTransactionsByParticipantSummary({
-          userId: profile.id,
+          userId: directoryProfile.id,
           roleType: role,
           organisationId: activeOrganisationId,
           identityContext: {
-            email: profile?.email || '',
-            fullName: profile?.fullName || '',
+            email: directoryProfile.email || '',
+            fullName: directoryProfile.fullName || '',
           },
         })
-        if (workspace.id !== 'all') {
+        if (directoryWorkspace.id !== 'all') {
           transactionRows = (transactionRows || []).filter((row) =>
-            (row?.development?.id || row?.unit?.development_id) === workspace.id,
+            (row?.development?.id || row?.unit?.development_id) === directoryWorkspace.id,
           )
         }
         transactionRows = filterSeedRows(transactionRows)
@@ -1116,16 +1098,17 @@ function Clients() {
         transactionRows = []
       }
 
-      setRows(transactionRows || [])
+      if (current()) setRows(transactionRows || [])
     } catch (loadError) {
-      setError(loadError.message || 'Unable to load clients.')
+      if (current()) setError(loadError.message || 'Unable to load clients.')
     } finally {
-      setLoading(false)
+      if (current()) setLoading(false)
     }
-  }, [activeOrganisationId, isAgentClientDirectory, profile, role, workspace])
+  }, [activeOrganisationId, businessWorkspaceId, directoryMembership, directoryProfile, directoryWorkspace, isAgentClientDirectory, role])
 
   useEffect(() => {
     void loadData()
+    return () => { loadGeneration.current += 1 }
   }, [loadData])
 
   useEffect(() => {
@@ -1157,22 +1140,6 @@ function Clients() {
     return () => window.cancelAnimationFrame(frameId)
   }, [activeOrganisationId, error, isPrimaryAgentClientsRoute, loading, profile?.id, rows.length])
 
-  const loadMarketingWorkspace = useCallback(async (client = selectedAgentClient) => {
-    if (!activeOrganisationId) return
-    setMarketingState((current) => ({ ...current, loading: true, error: '' }))
-    try {
-      const next = await getClientMarketingWorkspace({ organisationId: activeOrganisationId, email: client?.email })
-      setMarketingState({ loading: false, error: '', ...next })
-    } catch (marketingError) {
-      setMarketingState((current) => ({ ...current, loading: false, error: marketingError.message || 'Unable to load marketing details.' }))
-    }
-  }, [activeOrganisationId, selectedAgentClient])
-
-  useEffect(() => {
-    if (!isAgentClientDirectory || (!selectedAgentClient && directoryTab !== 'audiences')) return
-    void loadMarketingWorkspace()
-  }, [directoryTab, isAgentClientDirectory, loadMarketingWorkspace, selectedAgentClient])
-
   const developmentOptions = useMemo(() => getDevelopmentOptionsFromRows(rows), [rows])
   const sourceRows = useMemo(
     () => (isAgentClientDirectory ? rows : filterRowsByDevelopment(rows, selectedDevelopmentId)),
@@ -1192,9 +1159,9 @@ function Clients() {
       const archivedSet = new Set((archivedClientIds || []).map((id) => String(id || '').trim()))
       const deletedSet = new Set((deletedClientIds || []).map((id) => String(id || '').trim()))
       return (clients || [])
-        .filter((client) => !deletedSet.has(String(client.id || '').trim()))
+        .filter((client) => !clientMatchesStoredId(client, deletedSet))
         .map((client) => {
-          if (!archivedSet.has(String(client.id || '').trim())) return client
+          if (!clientMatchesStoredId(client, archivedSet)) return client
           return {
             ...client,
             status: 'archived',
@@ -1235,7 +1202,7 @@ function Clients() {
     [activeFilter, archivedClientIds, assignedAgentFilter, clients, complianceFilter, deletedClientIds, directoryCopy.linkedRecordFallback, isAttorneyClientDirectory, matterTypeFilter, roleFilter, search, statusFilter],
   )
   const summaryStats = useMemo(() => {
-    const visibleClients = (clients || []).filter((client) => !archivedClientIds.includes(client.id))
+    const visibleClients = (clients || []).filter((client) => !clientMatchesStoredId(client, new Set(archivedClientIds)))
     const activeTransactionIds = new Set()
     for (const client of visibleClients) {
       if (Number(client.activeTransactions || 0) <= 0) continue
@@ -1331,12 +1298,13 @@ function Clients() {
   }
 
   function handleOpenClient(client) {
-    if (isAgentClientDirectory) {
-      setOpenActionMenuId('')
-      setSelectedAgentClient(client)
-      return
-    }
-    navigate(`${isBondClientsRoute ? '/bond/clients' : '/clients'}/${client.id}`)
+    setOpenActionMenuId('')
+    navigate(`${isBondClientsRoute ? '/bond/clients' : '/clients'}/${encodeURIComponent(client.id)}`, {
+      state: {
+        clientsReturnTo: `${location.pathname}${location.search}`,
+        clientsDirectoryState: { search, roleFilter, statusFilter, assignedAgentFilter, matterTypeFilter, complianceFilter, viewMode },
+      },
+    })
   }
 
   function handleArchiveClient(client) {
@@ -1364,8 +1332,7 @@ function Clients() {
       writeDeletedClientIds(nextDeleted)
       setOpenActionMenuId('')
       setDeleteClientTarget(null)
-      if (selectedAgentClient?.id === client.id) setSelectedAgentClient(null)
-      await loadData()
+      await loadData({ forceRefresh: true })
     } catch (deleteError) {
       setError(deleteError.message || 'Unable to delete this client.')
     } finally {
@@ -1394,7 +1361,7 @@ function Clients() {
 
   async function handleAddClientSaved(payload) {
     if (!isAttorneyClientDirectory) {
-      void loadData()
+      void loadData({ forceRefresh: true })
       return
     }
     let createdParty = buildAttorneyManualPartyRecord(payload)
@@ -1444,7 +1411,7 @@ function Clients() {
       data-performance-core-ready={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
       data-performance-settled={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
     >
-      {showRentalImport && isRentalClientsDirectory ? <RentalClientImportModal key={activeOrganisationId} organisationId={activeOrganisationId} actorId={profile?.id} existingClients={clients} onClose={() => setShowRentalImport(false)} onImported={loadData} /> : null}
+      {showRentalImport && isRentalClientsDirectory ? <RentalClientImportModal key={activeOrganisationId} organisationId={activeOrganisationId} actorId={profile?.id} existingClients={clients} onClose={() => setShowRentalImport(false)} onImported={() => loadData({ forceRefresh: true })} /> : null}
       <section className="grid gap-4 xl:grid-cols-4">
         {[
           isAttorneyClientDirectory
@@ -1594,6 +1561,7 @@ function Clients() {
           ) : null}
         </div>
 
+        {activityWarning && isAgentClientDirectory ? <p role="status" className="mx-4 mt-3 rounded-xl bg-[#fff9ed] p-3 text-sm text-[#7f5b16]">{activityWarning}</p> : null}
         {error ? (
           <div className="m-4 rounded-[18px] border border-[#f6d4d4] bg-[#fff5f5] px-5 py-4 text-sm text-[#b42318]">
             {error}
@@ -1640,7 +1608,9 @@ function Clients() {
                   key={client.id}
                   className={`group relative flex ${isAttorneyClientDirectory ? 'min-h-[380px]' : 'min-h-[290px]'} cursor-pointer flex-col overflow-visible rounded-[22px] border border-[#dfe7f1] border-l-4 ${meta.cardAccent} bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                   onClick={() => handleOpenClient(client)}
+                  aria-label={isAgentClientDirectory ? `Open client workspace for ${client.name}` : `Open ${directoryCopy.profileLabel} for ${client.name}`}
                   onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
                       handleOpenClient(client)
@@ -1668,7 +1638,7 @@ function Clients() {
                       </button>
                       {openActionMenuId === client.id ? (
                         <div className="absolute right-0 top-10 z-30 grid min-w-[170px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_16px_36px_rgba(15,23,42,0.12)]">
-                          <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>Open profile</button>
+                          <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>{isAgentClientDirectory ? 'Open workspace' : 'Open profile'}</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
@@ -1796,7 +1766,9 @@ function Clients() {
                       key={client.id}
                       className="ui-data-row-clickable"
                       onClick={() => handleOpenClient(client)}
+                      aria-label={isAgentClientDirectory ? `Open client workspace for ${client.name}` : `Open ${directoryCopy.profileLabel} for ${client.name}`}
                       onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           handleOpenClient(client)
@@ -1873,7 +1845,7 @@ function Clients() {
                           </button>
                           {openActionMenuId === client.id ? (
                         <div className="absolute right-0 top-10 z-20 grid min-w-[160px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
-                              <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>Open profile</button>
+                              <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>{isAgentClientDirectory ? 'Open workspace' : 'Open profile'}</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
@@ -1900,17 +1872,6 @@ function Clients() {
         matterOptions={matterOptions}
         organisationId={activeOrganisationId || null}
         onSaved={handleAddClientSaved}
-      />
-      <ClientMarketingProfileModal
-        client={selectedAgentClient}
-        marketingContact={marketingState.marketingContact}
-        loading={marketingState.loading}
-        error={marketingState.error}
-        onClose={() => setSelectedAgentClient(null)}
-        onSaveTags={async (tags) => {
-          const marketingContact = await saveClientMarketingTags({ organisationId: activeOrganisationId, client: selectedAgentClient, tags })
-          setMarketingState((current) => ({ ...current, marketingContact, error: '' }))
-        }}
       />
       <ConfirmDialog
         open={Boolean(deleteClientTarget)}

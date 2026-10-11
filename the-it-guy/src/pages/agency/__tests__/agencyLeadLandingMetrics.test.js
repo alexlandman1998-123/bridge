@@ -18,6 +18,6 @@ assert.equal(metrics.topSource, 'Property24')
 assert.equal(metrics.topSourceCount, 3)
 assert.equal(metrics.lostLeads, 1)
 assert.equal(metrics.lostRate, 17)
-assert.deepEqual(metrics.categoryCounts, { buyer: 3, seller: 2, archived: 1 })
+assert.deepEqual(metrics.categoryCounts, { buyer: 3, seller: 2, development: 0, archived: 1 })
 
 console.log('agency lead landing metrics tests passed')

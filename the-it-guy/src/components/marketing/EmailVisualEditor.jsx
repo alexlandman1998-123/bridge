@@ -1,4 +1,5 @@
 import EmailRichText from "./EmailRichText";
+import EmailCampaignImages from "./EmailCampaignImages";
 import { useRef, useState } from "react";
 import {
   AlignLeft,
@@ -39,6 +40,7 @@ const BLOCKS = [
   ["footer", "Footer", PanelBottom],
 ];
 export default function EmailVisualEditor({
+  organisationId,
   document,
   onChange,
   templates,
@@ -467,6 +469,7 @@ export default function EmailVisualEditor({
                   />
                 )}
                 {field("Image URL", "src", "url")}
+                {organisationId && <EmailCampaignImages key={`${organisationId}-${block.id}`} organisationId={organisationId} onSelect={(image) => update({ src: image.public_url })} />}
                 <small>
                   Use a permanent public image URL, or choose listing media
                   below.

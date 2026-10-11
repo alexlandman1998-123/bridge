@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { documentRequirementTypeKey } from '../../core/documents/documentRequirementIdentity.js'
 import {
   CANONICAL_RESOLVER_SOURCE,
   CANONICAL_RESOLVER_VERSION,
@@ -518,7 +519,7 @@ function getDefinition(instance = {}) {
 
 function getDefinitionLabel(instance = {}) {
   const definition = getDefinition(instance)
-  return definition.display_label || instance.display_label || instance.document_definition_key || 'Document'
+  return instance.custom_label || definition.display_label || instance.display_label || instance.document_definition_key || 'Document'
 }
 
 function getDefinitionDescription(instance = {}) {
@@ -579,13 +580,13 @@ export function canonicalInstanceToPrivateListingRequirement(instance = {}, exis
   return {
     ...(existing?.id ? { id: existing.id } : {}),
     private_listing_id: listingId,
-    requirement_key: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
+    requirement_key: canonicalDefinitionKeyToLegacyKey(documentRequirementTypeKey(instance)),
     requirement_name: getDefinitionLabel(instance),
     requirement_description: getDefinitionDescription(instance),
     requirement_group: packKeyToLegacyRequirementGroup(instance.pack_key),
     document_visibility: privateListingVisibility(instance),
     status,
-    is_required: canonicalLevelToLegacyRequired(instance.requirement_level),
+    is_required: instance.applicability_override !== 'removed' && canonicalLevelToLegacyRequired(instance.requirement_level),
     generated_from: generatedFrom,
     canonical_requirement_instance_id: instance.id || null,
   }
@@ -600,9 +601,9 @@ export function canonicalInstanceToTransactionRequiredDocument(instance = {}, ex
   return {
     ...(existing?.id ? { id: existing.id } : {}),
     transaction_id: instance.transaction_id,
-    document_key: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
+    document_key: canonicalDefinitionKeyToLegacyKey(documentRequirementTypeKey(instance)),
     document_label: getDefinitionLabel(instance),
-    is_required: canonicalLevelToLegacyRequired(instance.requirement_level),
+    is_required: instance.applicability_override !== 'removed' && canonicalLevelToLegacyRequired(instance.requirement_level),
     is_uploaded: ['uploaded', 'under_review', 'accepted'].includes(status),
     status,
     enabled: instance.status !== REQUIREMENT_STATUSES.notApplicable,
@@ -621,7 +622,7 @@ export function canonicalInstanceToDocumentRequest(instance = {}, existing = nul
     ...(existing?.id ? { id: existing.id } : {}),
     transaction_id: instance.transaction_id,
     category: instance.pack_key,
-    document_type: canonicalDefinitionKeyToLegacyKey(instance.document_definition_key),
+    document_type: canonicalDefinitionKeyToLegacyKey(documentRequirementTypeKey(instance)),
     title: getDefinitionLabel(instance),
     description: getDefinitionDescription(instance),
     priority: instance.requirement_level === REQUIREMENT_LEVELS.optional ? 'optional' : instance.requirement_level === REQUIREMENT_LEVELS.recommended ? 'important' : 'required',
@@ -802,7 +803,7 @@ export async function syncCanonicalToPrivateListingRequirements({ contextId, lis
 
   const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'requirement_key'])
   const rows = dedupeTransactionProjectionRows((instanceResult.data || []).map((instance) => {
-    const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+    const legacyKey = canonicalDefinitionKeyToLegacyKey(documentRequirementTypeKey(instance))
     const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`requirement_key:${legacyKey}`) || null
     return canonicalInstanceToPrivateListingRequirement(instance, existing)
   }))
@@ -843,7 +844,7 @@ export async function syncCanonicalToTransactionRequiredDocuments({ transactionI
   const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'document_key'])
   const rows = (instanceResult.data || []).map((instance) => {
     const instanceWithTransaction = { ...instance, transaction_id: instance.transaction_id || transactionId }
-    const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+    const legacyKey = canonicalDefinitionKeyToLegacyKey(documentRequirementTypeKey(instance))
     const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`document_key:${legacyKey}`) || null
     return canonicalInstanceToTransactionRequiredDocument(instanceWithTransaction, existing)
   })
@@ -881,7 +882,7 @@ export async function syncCanonicalInstancesToTransactionRequiredDocuments({
   const definitionsByKey = new Map(normalizeArray(definitions).map((definition) => [definition.key, definition]))
   const legacyByLinkOrKey = indexedBy(legacyResult.data || [], ['canonical_requirement_instance_id', 'document_key'])
   const rows = dedupeTransactionProjectionRows(canonicalInstances.map((instance) => {
-    const legacyKey = canonicalDefinitionKeyToLegacyKey(instance.document_definition_key)
+    const legacyKey = canonicalDefinitionKeyToLegacyKey(documentRequirementTypeKey(instance))
     const existing = legacyByLinkOrKey.get(`canonical_requirement_instance_id:${instance.id}`) || legacyByLinkOrKey.get(`document_key:${legacyKey}`) || null
     return canonicalInstanceToTransactionRequiredDocument({
       ...instance,

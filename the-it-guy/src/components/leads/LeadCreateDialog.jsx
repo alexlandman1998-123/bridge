@@ -34,6 +34,7 @@ function createLeadCreateDraft(overrides = {}) {
     source: 'Other',
     property: '',
     listingId: '',
+    developmentId: '',
     notes: '',
     agentId: '',
     ...overrides,
@@ -54,6 +55,9 @@ function LeadCreateDialogContent({
   listingOptions = [],
   listingOptionsLoading = false,
   listingOptionsError = '',
+  developmentOptions = [],
+  developmentOptionsLoading = false,
+  developmentOptionsError = '',
   showAgentAssignment = true,
   onChange,
   onClose,
@@ -81,7 +85,7 @@ function LeadCreateDialogContent({
     <Modal
       open
       onClose={saving ? undefined : onClose}
-      title={`Add ${buyer ? 'Buyer' : 'Seller'} Lead`}
+      title={`Add ${category === 'development' ? 'Development' : buyer ? 'Buyer' : 'Seller'} Lead`}
       subtitle={lockProperty && propertyLabel
         ? `Capture the contact details now. This lead will be linked to ${propertyLabel}.`
         : 'Capture the contact details now and complete the full workspace afterwards.'}
@@ -146,7 +150,16 @@ function LeadCreateDialogContent({
           ) : null}
         </div>
 
-        {buyer && !lockProperty ? (
+        {category === 'development' && !lockProperty ? (
+          <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
+            Development
+            <Field as="select" required value={form.developmentId || ''} onChange={(event) => setField('developmentId', event.target.value)} disabled={developmentOptionsLoading || Boolean(developmentOptionsError)}>
+              <option value="">{developmentOptionsLoading ? 'Loading developments...' : 'Select a development'}</option>
+              {developmentOptions.map((development) => <option key={development.id} value={development.id}>{development.label}</option>)}
+            </Field>
+            {developmentOptionsError ? <span role="alert" className="text-xs font-normal text-[#9f3028]">{developmentOptionsError}</span> : null}
+          </label>
+        ) : buyer && !lockProperty ? (
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
             Listing
             <Field

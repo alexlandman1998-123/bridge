@@ -293,7 +293,7 @@ await test('supports multiple-owner draft mutations', () => {
 await test('prefills owner cards from saved seller facts and known mandate parties', () => {
   const listing = {
     sellerType: 'multiple_owners',
-    sellerOnboarding: { formData: { multipleOwners: [] } },
+    sellerOnboarding: { formData: {} },
     sellerCanonicalFacts: { seller: { owners: [
       { first_name: 'Ava', surname: 'Owner', id_number: '8001010000001', email: 'ava@example.test', phone: '0821111111' },
       { first_name: 'Ben', surname: 'Owner', id_number: '8001010000002', email: 'ben@example.test' },
@@ -361,14 +361,14 @@ await test('property category, building type, and title type can be selected ind
   assert.equal(saved.propertyType, 'House')
   assert.equal(buildListingSellerProfileFormPatch(saved).propertyType, 'House')
   const sectionalIdentifier = updateListingSellerProfileDraftField({ sectionNumber: '1', unitNumber: '1' }, 'sectionNumber', '7')
-  assert.equal(sectionalIdentifier.unitNumber, '7')
+  assert.equal(sectionalIdentifier.unitNumber, '1')
   const capture = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
   const editor = await readFile(new URL('../src/components/listings/ListingSellerInformationEditor.jsx', import.meta.url), 'utf8')
   const sellerOnboarding = await readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
   assert.equal((capture.match(/<ListingSellerInformationEditor/g) || []).length, 2)
   const propertySection = editor.slice(editor.indexOf('Property and ownership details'), editor.indexOf('<SellerMandateDetailsEditor'))
   assert.ok(propertySection.indexOf('Property title type') < propertySection.indexOf('Property address'))
-  for (const label of ['Scheme name', 'Unit / section number', 'Managing agent name (optional)', 'Bond account number']) assert.ok(propertySection.includes(label))
+  for (const label of ['Scheme name', 'Section number', 'Unit number', 'Managing agent name (optional)', 'Bond account number']) assert.ok(propertySection.includes(label))
   assert.equal(propertySection.includes('Body corporate name'), false)
   assert.equal(editor.includes('Body corporate name'), false)
   assert.equal(sellerOnboarding.includes('Body corporate name'), false)

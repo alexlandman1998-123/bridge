@@ -16,6 +16,18 @@ const MIXED_SCENARIO = Object.freeze({
   gasInstallation: true,
 })
 
+test('manual removal disables an exact linked row without discarding evidence or another person’s requirement', () => {
+  const row = { document_key: 'buyer_id_document', required_from_role: 'buyer', canonical_requirement_instance_id: 'removed', uploaded_document_id: 'retained-file', enabled: true, is_required: true }
+  const removed = { id: 'removed', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', status: 'not_applicable', applicability_override: 'removed' }
+  const active = { ...removed, id: 'other-person', status: 'pending', applicability_override: null }
+  const exact = reconcileRequiredDocumentInstanceLinks([row], [removed, active]).rows[0]
+  assert.equal(exact.enabled, false)
+  assert.equal(exact.uploaded_document_id, 'retained-file')
+  const aggregate = { ...row, canonical_requirement_instance_id: null }
+  assert.equal(reconcileRequiredDocumentInstanceLinks([aggregate], [removed, active]).rows[0].enabled, true)
+  assert.equal(reconcileRequiredDocumentInstanceLinks([aggregate], [removed]).rows[0].enabled, false)
+})
+
 function keySet(rows = []) {
   return new Set(rows.map((row) => row.document_key))
 }

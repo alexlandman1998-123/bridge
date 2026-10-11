@@ -1,0 +1,833 @@
+{
+  "capturedAt": "2026-10-10T18:25:17.557784+00:00",
+  "status": "production_released_arch9_recruitment_sender_verified",
+  "scope": [
+    "Primary Arch9 listing workspace",
+    "Shared public property website price terms",
+    "Home Seekers website and recruitment"
+  ],
+  "userDecisions": {
+    "productionReleaseAndMigrationsApproved": true,
+    "homeSeekersSavedListings": "keep private",
+    "emailSender": "thomas@homeseekers.co.za",
+    "emailDnsOwner": "domain administrator will add prepared records",
+    "releaseRecruitmentBeforeEmailDns": true,
+    "latestReleaseInstruction": "until the dns is live can we use the arch9 domain to send?",
+    "temporaryRecruitmentSender": "Use verified Arch9 domain until Home Seekers DNS is ready",
+    "authorizedTestRecipient": "alex@arch9.co.za",
+    "authorizedTestEmailCount": 1
+  },
+  "target": {
+    "supabaseProjectRef": "isdowlnollckzvltkasn",
+    "vercelTeamId": "team_ezJ5RCE7qwTf14fw215IhPs5"
+  },
+  "source": {
+    "listingBranch": "codex/listings-production-20261010",
+    "listingCommit": "8630404aa1d08b219bc027ac662aa0d5ca5d7983",
+    "fullBranch": "codex/listings-homeseekers-recruitment-release-20261010",
+    "fullCommit": "e4220f84e924396ea41ea5bcafb696c3ec7bc11d",
+    "unrelatedActiveCheckoutChangesPreserved": true,
+    "frontendReleaseCommit": "aed23c53137592490f8570b5eefee45b9b20c1a0",
+    "finalSourceChange": "Home Seekers verification-email endpoint independently validates differing server credentials against this production project’s Auth admin permission. Exact configured credentials retain the existing fast path. Ordinary users and forged credentials remain blocked. Temporary Arch9 sender remains active; no frontend or schema change."
+  },
+  "production": {
+    "primary": {
+      "url": "https://app.arch9.co.za",
+      "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+      "previousDeployment": "dpl_GPAXokjuDNB3ahqya4enh1jDpyeY",
+      "liveDeployment": "dpl_6uMeWtuV7LKHqkH1imCeFHdxH2u9",
+      "deploymentUrl": "https://bridge-ny51g5zer-alexs-projects-f5496a21.vercel.app",
+      "finalPromotionResponse": "409 already current production; independently confirmed project production target, READY state and app.arch9.co.za manifest match the full frontend release.",
+      "previousListingOnlyDeployment": "dpl_BdKP6RF9EWHcyzNwyvvsp6FWGWyV",
+      "releaseManifestMatchesFullFrontendCommit": true
+    },
+    "sharedWebsite": {
+      "projectId": "prj_f6mDRM087y82S97FfEJ6s2vnAhRh",
+      "previousDeployment": "dpl_7iWauokRUCdcNM2TdNtLX9dBqfRu",
+      "liveDeployment": "dpl_6qiPheneet23RNT5jWFEjxh8Mah3",
+      "deploymentUrl": "https://arch9-websites-production-3scdxxvgu-alexs-projects-f5496a21.vercel.app",
+      "promoted": true,
+      "realPropertyDetailChecks": [
+        {
+          "slug": "A9-ISELLPROPERT-000001",
+          "status": 200,
+          "referenceRendered": true,
+          "tenantRendered": true
+        },
+        {
+          "slug": "A9-ISELLPROPERT-000002",
+          "status": 200,
+          "referenceRendered": true,
+          "tenantRendered": true
+        },
+        {
+          "slug": "A9-ISELLPROPERT-000006",
+          "status": 200,
+          "referenceRendered": true,
+          "tenantRendered": true
+        },
+        {
+          "slug": "A9-ISELLPROPERT-000008",
+          "status": 200,
+          "referenceRendered": true,
+          "tenantRendered": true
+        }
+      ],
+      "detailChecksEnvironment": "Exact production build served locally with production configuration, read-only database access and correct published tenant hostname. No browser interaction.",
+      "productionTenantDomainLimitation": "This shared Vercel project has no registered tenant custom domains. Its generic Vercel hostname correctly fails tenant resolution (health 503). Do not claim the separate Kingdom custom-domain deployment was updated.",
+      "temporaryRollback": "A test using Node fetch supplied the wrong local hostname and returned 404. Rolled back, corrected Host using explicit HTTP requests, verified all four property detail pages returned 200, then promoted the same reviewed candidate."
+    },
+    "homeSeekers": {
+      "url": "https://homeseeker.co.za",
+      "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+      "liveDeployment": "dpl_Ai36hgHKbZzJSiiedd35dmxmq9Ti",
+      "newRecruitmentCandidate": "dpl_Ai36hgHKbZzJSiiedd35dmxmq9Ti",
+      "newRecruitmentCandidateReady": true,
+      "newRecruitmentCandidatePromoted": true,
+      "savedPrivateListings": 19,
+      "preparedWebsiteProjectionStatuses": {
+        "Draft": 4
+      },
+      "websitePublications": 0,
+      "liveSiteApiPublicListings": 0,
+      "previousDeployment": "dpl_6fqwZNjYaAP7VisjgPpb4mLVMmig",
+      "deploymentUrl": "https://home-seekers-website-n3rkepc7z-alexs-projects-f5496a21.vercel.app",
+      "desktopAndMobileServeSameNewPreparedBuild": true,
+      "liveAssets": [
+        "/assets/home-seekers-jj-8g1bA.js",
+        "/assets/home-seekers-CX_3cJg2.css"
+      ],
+      "htmlCacheControl": "no-store"
+    }
+  },
+  "database": {
+    "applied": [
+      {
+        "file": "20261010094542_seller_existing_evidence_agent_access.sql",
+        "sha256": "5335eb016e5af8b3e1943940a97d959d40d51779af5cb90ee061e12404fca75b"
+      },
+      {
+        "file": "20261010111500_website_listing_public_price_terms.sql",
+        "sha256": "bebf4c8cda99b4ad788e76806d5bc37f24b2442a66a857674d057a6932794e2b"
+      },
+      {
+        "file": "20261010135448_listing_background_publication_jobs.sql",
+        "sha256": "63c273441b9287a69fd5e5be918a92d0a11c1eb5d3c5798715f299a81a1152c0"
+      },
+      {
+        "file": "20261010185500_listing_editor_publication_updates.sql",
+        "sha256": "c14a640c75a27e924c36500eb27287c54a50b8b277eee1d7e9c0710f94dcb40e"
+      },
+      {
+        "file": "20261010195200_private_listing_unit_summary_compatibility.sql",
+        "sha256": "37017e9a08313db51ef118c0fce2ba40aa266be9cd431753e3e2fad7e86abd11"
+      },
+      {
+        "file": "20261010142843_home_seekers_recruitment_journey.sql",
+        "sha256": "3c69e9a8b8e378fdbe32e46a2b9871425368b0749ecc4fa66daef8196095864c"
+      },
+      {
+        "file": "20261010145840_recruitment_applicant_arch9_setup.sql",
+        "sha256": "3f4a59d6686f72b45a8ab3d307100900768cfe035ede156ca7b07f60605a2805"
+      },
+      {
+        "file": "20261010150417_recruitment_applicant_login_gate.sql",
+        "sha256": "483e50a2b6cf71de2c25fbc35b931ee36cdadc67e6c53d438ea0128dc3d21ec0"
+      },
+      {
+        "file": "20261010151044_recruitment_activation_access_gate.sql",
+        "sha256": "cdc986a60fac2124f5aec45824fe17c3dd562eac4d689a58f090dd714b78f69c"
+      },
+      {
+        "file": "20261010153201_home_seekers_recruitment_contact_notifications.sql",
+        "sha256": "2f517fdea3e07767471a7116cee716933e165530d959189b9c9abd9ee1ef2da8"
+      },
+      {
+        "file": "20261010154503_home_seekers_recruitment_email_flow.sql",
+        "sha256": "ff17d5e6e40bdc3280aa2a65a2922f6387c603ce025d49ac9b00c7166120d76e"
+      },
+      {
+        "file": "20261010162130_home_seekers_unified_login.sql",
+        "sha256": "198afcbc45342eeb3faab3f4095350479651e8e07b7a0c2bb67066e189ae1fa4"
+      }
+    ],
+    "pendingRecruitment": [],
+    "guardPassed": true,
+    "recoveryLockPassed": true,
+    "recoveryEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/function-recovery.sql",
+    "exactScopeEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-approved-late-dns-exact-dry-run.json",
+    "listingQueueRlsEnabled": true,
+    "listingQueueRowsAfterRollbackCanary": 0,
+    "rollbackOnlyProductionCanary": "passed - authenticated ownership, idempotent queue/update, service dispatch claim and unsafe retry rejection; transaction rolled back",
+    "unitLinkCorrection": {
+      "liveColumnVerified": true,
+      "existingRowsPreserved": 462,
+      "existingHomeSeekersListingsPreserved": 19,
+      "nonNullUnitLinksAfterMigration": 0,
+      "rlsStillEnabled": true,
+      "foreignKeyDeleteBehavior": "SET NULL",
+      "fixtureResult": "Preserved existing records, rejected nonexistent unit, cleared optional link on unit deletion",
+      "recovery": "tmp/outstanding-release-evidence-20261010/unit-link-recovery.sql"
+    },
+    "pendingRecruitmentPushRequiresIncludeAll": false,
+    "newlyAppliedRecruitment": [
+      {
+        "file": "20261010142843_home_seekers_recruitment_journey.sql",
+        "sha256": "3c69e9a8b8e378fdbe32e46a2b9871425368b0749ecc4fa66daef8196095864c"
+      },
+      {
+        "file": "20261010145840_recruitment_applicant_arch9_setup.sql",
+        "sha256": "3f4a59d6686f72b45a8ab3d307100900768cfe035ede156ca7b07f60605a2805"
+      },
+      {
+        "file": "20261010150417_recruitment_applicant_login_gate.sql",
+        "sha256": "483e50a2b6cf71de2c25fbc35b931ee36cdadc67e6c53d438ea0128dc3d21ec0"
+      },
+      {
+        "file": "20261010151044_recruitment_activation_access_gate.sql",
+        "sha256": "cdc986a60fac2124f5aec45824fe17c3dd562eac4d689a58f090dd714b78f69c"
+      },
+      {
+        "file": "20261010153201_home_seekers_recruitment_contact_notifications.sql",
+        "sha256": "2f517fdea3e07767471a7116cee716933e165530d959189b9c9abd9ee1ef2da8"
+      },
+      {
+        "file": "20261010154503_home_seekers_recruitment_email_flow.sql",
+        "sha256": "ff17d5e6e40bdc3280aa2a65a2922f6387c603ce025d49ac9b00c7166120d76e"
+      },
+      {
+        "file": "20261010162130_home_seekers_unified_login.sql",
+        "sha256": "198afcbc45342eeb3faab3f4095350479651e8e07b7a0c2bb67066e189ae1fa4"
+      }
+    ],
+    "reviewedMigrationCountApplied": 12,
+    "latestGuardEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-approved-late-dns-push-guard.log",
+    "latestRecoveryEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-approved-late-dns-recovery.log",
+    "preChangeFunctionDefinitions": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-approved-late-dns-pre-functions.json",
+    "latestPushEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-approved-late-dns-migration-push.json",
+    "postReleaseScopeUpToDate": true,
+    "postSchema": [
+      {
+        "check_name": "migrations",
+        "result": [
+          "20261010142843",
+          "20261010145840",
+          "20261010150417",
+          "20261010151044",
+          "20261010153201",
+          "20261010154503",
+          "20261010162130"
+        ]
+      },
+      {
+        "check_name": "rls",
+        "result": [
+          {
+            "table": "private_listings",
+            "enabled": true
+          },
+          {
+            "table": "recruitment_applicant_uploads",
+            "enabled": true
+          },
+          {
+            "table": "recruitment_approval_email_queue",
+            "enabled": true
+          },
+          {
+            "table": "recruitment_contact_notifications",
+            "enabled": true
+          },
+          {
+            "table": "recruitment_submission_email_queue",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "check_name": "rpc_acl",
+        "result": [
+          {
+            "anon": false,
+            "function": "recruitment_applicant_account_receipt(uuid)",
+            "settings": [
+              "search_path=\"\""
+            ],
+            "service_role": true,
+            "authenticated": false,
+            "security_definer": false
+          },
+          {
+            "anon": false,
+            "function": "recruitment_applicant_portal_required()",
+            "settings": [
+              "search_path=\"\""
+            ],
+            "service_role": true,
+            "authenticated": true,
+            "security_definer": true
+          },
+          {
+            "anon": false,
+            "function": "recruitment_claim_approval_emails(integer)",
+            "settings": [
+              "search_path=\"\""
+            ],
+            "service_role": true,
+            "authenticated": false,
+            "security_definer": false
+          },
+          {
+            "anon": false,
+            "function": "recruitment_claim_contact_notifications(integer)",
+            "settings": [
+              "search_path=\"\""
+            ],
+            "service_role": true,
+            "authenticated": false,
+            "security_definer": false
+          },
+          {
+            "anon": false,
+            "function": "recruitment_claim_submission_emails(integer)",
+            "settings": [
+              "search_path=\"\""
+            ],
+            "service_role": true,
+            "authenticated": false,
+            "security_definer": false
+          }
+        ]
+      },
+      {
+        "check_name": "private_home_listings",
+        "result": {
+          "count": 19
+        }
+      }
+    ],
+    "securityAdvisorComparison": [
+      {
+        "name": "rls_enabled_no_policy",
+        "level": "INFO",
+        "before": 134,
+        "after": 139,
+        "added": [
+          {
+            "detail": "Table \\`public.recruitment_applicant_photo_uploads\\` has RLS enabled, but no policies exist",
+            "metadata": {
+              "name": "recruitment_applicant_photo_uploads",
+              "type": "table",
+              "schema": "public"
+            }
+          },
+          {
+            "detail": "Table \\`public.recruitment_applicant_uploads\\` has RLS enabled, but no policies exist",
+            "metadata": {
+              "name": "recruitment_applicant_uploads",
+              "type": "table",
+              "schema": "public"
+            }
+          },
+          {
+            "detail": "Table \\`public.recruitment_approval_email_queue\\` has RLS enabled, but no policies exist",
+            "metadata": {
+              "name": "recruitment_approval_email_queue",
+              "type": "table",
+              "schema": "public"
+            }
+          },
+          {
+            "detail": "Table \\`public.recruitment_contact_notifications\\` has RLS enabled, but no policies exist",
+            "metadata": {
+              "name": "recruitment_contact_notifications",
+              "type": "table",
+              "schema": "public"
+            }
+          },
+          {
+            "detail": "Table \\`public.recruitment_submission_email_queue\\` has RLS enabled, but no policies exist",
+            "metadata": {
+              "name": "recruitment_submission_email_queue",
+              "type": "table",
+              "schema": "public"
+            }
+          }
+        ]
+      },
+      {
+        "name": "function_search_path_mutable",
+        "level": "WARN",
+        "before": 170,
+        "after": 170,
+        "added": []
+      },
+      {
+        "name": "materialized_view_in_api",
+        "level": "WARN",
+        "before": 2,
+        "after": 2,
+        "added": []
+      },
+      {
+        "name": "anon_security_definer_function_executable",
+        "level": "WARN",
+        "before": 600,
+        "after": 600,
+        "added": []
+      },
+      {
+        "name": "authenticated_security_definer_function_executable",
+        "level": "WARN",
+        "before": 1024,
+        "after": 1025,
+        "added": [
+          {
+            "detail": "Function `public.recruitment_applicant_portal_required()` can be executed by the `authenticated` role as a `SECURITY DEFINER` function via `/rest/v1/rpc/recruitment_applicant_portal_required`. Revoke `EXECUTE` or switch it to `SECURITY INVOKER` if that is not intentional.",
+            "metadata": {
+              "name": "recruitment_applicant_portal_required",
+              "schema": "public",
+              "language": "sql",
+              "arguments": "",
+              "security_definer": true
+            }
+          }
+        ]
+      },
+      {
+        "name": "auth_leaked_password_protection",
+        "level": "WARN",
+        "before": 1,
+        "after": 1,
+        "added": []
+      }
+    ],
+    "securityAdvisorAssessment": "Five new upload/queue tables intentionally have RLS with no client policies and service-role-only grants. The one new authenticated SECURITY DEFINER gate accepts no arguments and reads only auth.uid() linked applicants, with fixed empty search_path and no anonymous execution. Pre-existing warnings unchanged."
+  },
+  "edgeFunctions": {
+    "deployed": [
+      "website-listing-publication",
+      "website-partner-listing-publication",
+      "recruitment-approval-dispatcher",
+      "recruitment-submission-dispatcher",
+      "recruitment-contact-dispatcher",
+      "send-email"
+    ],
+    "pending": [],
+    "previousBundlesSaved": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/edge-before",
+    "temporarySenderDiagnosticDeleted": true,
+    "liveRecruitmentFunctions": [
+      {
+        "id": "f5b78e5b-70c2-4935-a7da-251d867c1ddc",
+        "slug": "send-email",
+        "name": "send-email",
+        "status": "ACTIVE",
+        "version": 171,
+        "created_at": 1776616691170,
+        "updated_at": 1791657861132,
+        "verify_jwt": true,
+        "import_map": true,
+        "entrypoint_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_f5b78e5b-70c2-4935-a7da-251d867c1ddc_171/source/supabase/functions/send-email/index.ts",
+        "import_map_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_f5b78e5b-70c2-4935-a7da-251d867c1ddc_171/source/supabase/functions/send-email/deno.json",
+        "ezbr_sha256": "9d1bc9452b546bd79de83d64f82fccfa51ae60058c2f7811f0f6507379e42a90"
+      },
+      {
+        "id": "fa625c3c-6a89-40c0-80f3-69da8813f2f0",
+        "slug": "recruitment-approval-dispatcher",
+        "name": "recruitment-approval-dispatcher",
+        "status": "ACTIVE",
+        "version": 2,
+        "created_at": 1791656469055,
+        "updated_at": 1791656469055,
+        "verify_jwt": true,
+        "import_map": true,
+        "entrypoint_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_fa625c3c-6a89-40c0-80f3-69da8813f2f0_1/source/supabase/functions/recruitment-approval-dispatcher/index.ts",
+        "import_map_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_fa625c3c-6a89-40c0-80f3-69da8813f2f0_1/source/supabase/functions/send-email/deno.json",
+        "ezbr_sha256": "7a5ae3da02564f4382694d4266e69db3d5409394b847f91176cca6035e265725"
+      },
+      {
+        "id": "5bd1ac8e-043f-4637-8644-3aded03048ff",
+        "slug": "recruitment-submission-dispatcher",
+        "name": "recruitment-submission-dispatcher",
+        "status": "ACTIVE",
+        "version": 2,
+        "created_at": 1791656469055,
+        "updated_at": 1791656469055,
+        "verify_jwt": true,
+        "import_map": true,
+        "entrypoint_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_5bd1ac8e-043f-4637-8644-3aded03048ff_1/source/supabase/functions/recruitment-submission-dispatcher/index.ts",
+        "import_map_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_5bd1ac8e-043f-4637-8644-3aded03048ff_1/source/supabase/functions/send-email/deno.json",
+        "ezbr_sha256": "4e1e3120c73bcb21d5d83bbc3a9ede9bea6aeb857a16a5162b9fded402b6ae02"
+      },
+      {
+        "id": "6bb5b6c9-16d4-4008-941f-4caf7a5a3e1c",
+        "slug": "recruitment-contact-dispatcher",
+        "name": "recruitment-contact-dispatcher",
+        "status": "ACTIVE",
+        "version": 3,
+        "created_at": 1791656469055,
+        "updated_at": 1791657133641,
+        "verify_jwt": true,
+        "import_map": true,
+        "entrypoint_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_6bb5b6c9-16d4-4008-941f-4caf7a5a3e1c_3/source/supabase/functions/recruitment-contact-dispatcher/index.ts",
+        "import_map_path": "file:///tmp/user_fn_isdowlnollckzvltkasn_6bb5b6c9-16d4-4008-941f-4caf7a5a3e1c_3/source/supabase/functions/send-email/deno.json",
+        "ezbr_sha256": "022b189db0baf672bbad088b9c90e876346716b50b8811564fd8e379e7f6abf9"
+      }
+    ],
+    "httpChecks": {
+      "checkedAt": "2026-10-10T18:22:48.992Z",
+      "noEmailsRequested": true,
+      "results": [
+        {
+          "slug": "send-email",
+          "anonymousPostStatus": 401,
+          "authenticatedGetStatus": 405
+        },
+        {
+          "slug": "recruitment-approval-dispatcher",
+          "anonymousPostStatus": 401,
+          "authenticatedGetStatus": 405
+        },
+        {
+          "slug": "recruitment-submission-dispatcher",
+          "anonymousPostStatus": 401,
+          "authenticatedGetStatus": 405
+        },
+        {
+          "slug": "recruitment-contact-dispatcher",
+          "anonymousPostStatus": 401,
+          "authenticatedGetStatus": 405
+        }
+      ]
+    },
+    "deploymentConfigurationCorrection": "Initial worker bundling failed because their deployment configuration was omitted from the isolated clone. Included the existing scoped configuration, checked all three entrypoints with Deno, retried successfully, and confirmed ACTIVE status, JWT protection and import maps.",
+    "scheduledWorkers": "All three minute schedules active; recent cron runs succeeded; empty queues at release verification.",
+    "temporaryArch9SenderDiagnosticDeleted": true,
+    "temporaryCodeDeliveryDiagnosticDeleted": true
+  },
+  "email": {
+    "provider": "Resend",
+    "domain": "homeseekers.co.za",
+    "providerDomainId": "09e62a37-803b-490f-b349-c6514d16d435",
+    "providerStatus": "not_started",
+    "databaseIdentityStatus": "pending",
+    "dnsRecordsFile": "/Users/alexanderlandman/the-it-guy/docs/homeseekers-email-dns-20261010.txt",
+    "dnsVerified": false,
+    "emailSentDuringThisRelease": true,
+    "inboxDeliveryVerified": true,
+    "dnsFinalCheckAt": "2026-10-10T18:06:21.555Z",
+    "expectedDnsRecordsPresent": 0,
+    "releaseProceedsWithDnsDeferred": true,
+    "databaseDomainStatus": "pending",
+    "manualEmailSentDuringThisRelease": true,
+    "functionalLimitation": "The actual verification-email request through the live Home Seekers website was accepted, provider delivery was verified and the user confirmed receipt. Email-code entry, profile/upload, staff approval and activation remain user journey steps; no synthetic applicant was created and no staff approval or activation was performed.",
+    "providerDeliveryVerified": true,
+    "inboxContentsInspected": false,
+    "temporarySender": {
+      "enabled": true,
+      "from": "Home Seekers <notifications@arch9.co.za>",
+      "replyTo": "thomas@homeseekers.co.za",
+      "runtimeVariable": "HOME_SEEKERS_RECRUITMENT_FALLBACK_FROM",
+      "runtimeValue": "notifications@arch9.co.za",
+      "providerDomain": "arch9.co.za",
+      "providerStatus": "verified",
+      "scope": "Home Seekers recruitment only",
+      "globalPlatformSenderUnchanged": "Arch9 Concierge <onboarding@resend.dev>",
+      "verifiedHomeSeekersIdentityTakesPrecedence": true,
+      "sourceCommit": "171e926e1077148d3576337fc782b75e9c8299fa"
+    },
+    "testEmail": {
+      "checkedAt": "2026-10-10T18:34:26.269Z",
+      "httpStatus": 200,
+      "accepted": true,
+      "from": "Home Seekers <notifications@arch9.co.za>",
+      "replyTo": [
+        "thomas@homeseekers.co.za"
+      ],
+      "to": [
+        "alex@arch9.co.za"
+      ],
+      "emailId": "01a12718-1078-7947-aeb1-570c2dd195c0",
+      "providerStatus": 200,
+      "lastEvent": "delivered",
+      "createdAt": "2026-10-10 18:34:11.102000+00",
+      "approvedByUser": true,
+      "emailCount": 1,
+      "providerIdempotencyKey": "home-seekers-arch9-sender-test-20261010-1",
+      "recipientServerDeliveryConfirmed": true,
+      "evidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/arch9-temporary-sender-test-delivery.json"
+    },
+    "temporarySenderRecovery": {
+      "previousSourceArchive": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/arch9-temporary-sender-previous-source.tar",
+      "previousSourceCommit": "d7cdb6a54e14e0766ae3425a81a3717e196b6c97",
+      "action": "Unset the scoped fallback secret and redeploy the prior send-email and recruitment-contact-dispatcher source. No schema rollback required."
+    },
+    "userConfirmedInboxDelivery": true,
+    "verificationCode": {
+      "recipient": "alexlandman1998@gmail.com",
+      "websiteRequest": {
+        "checkedAt": "2026-10-10T18:44:56.649Z",
+        "url": "https://homeseeker.co.za/api/home-seekers/recruitment",
+        "action": "send_verification",
+        "recipient": "alexlandman1998@gmail.com",
+        "status": 202,
+        "body": {
+          "verificationRequested": true,
+          "resendAfterSeconds": 60,
+          "codeLength": 8
+        }
+      },
+      "providerReceipt": {
+        "emailId": "01a12721-e9dc-7596-9f6b-48d5d81c86fb",
+        "from": "Home Seekers <notifications@arch9.co.za>",
+        "to": [
+          "alexlandman1998@gmail.com"
+        ],
+        "replyTo": [
+          "thomas@homeseekers.co.za"
+        ],
+        "subject": "Your Home Seekers verification code",
+        "lastEvent": "delivered",
+        "createdAt": "2026-10-10 18:44:56.555000+00"
+      },
+      "userConfirmedReceived": true,
+      "codeLength": 8,
+      "codeReadOrDisclosed": false,
+      "existingAuthAccountConfirmedBeforeRetry": true,
+      "savedLeadStatusAfterRetry": "lead_received",
+      "applicationSubmittedAtAfterRetry": null
+    }
+  },
+  "checks": {
+    "primaryCheckApp": "passed before route module extraction; focused lint and 24 route/access/setup tests passed after extraction",
+    "websiteCheck": "typecheck, tests and build passed",
+    "listingModels": "81 passed",
+    "listingBackground": "9 checks passed including real PostgreSQL fixture execution",
+    "listingAndRecruitmentUi": "Focused checks passed after correcting a stale details selector and waiting for async signup validation. The non-Vitest portal model harness passed with Node. See logs for separate runners.",
+    "edgeFunctions": "41 tests passed; six entrypoints typechecked",
+    "standalonePackaging": "16 tests passed",
+    "liveHttp": [
+      {
+        "url": "https://homeseeker.co.za/",
+        "status": 200
+      },
+      {
+        "url": "https://homeseeker.co.za/buying",
+        "status": 200
+      },
+      {
+        "url": "https://homeseeker.co.za/renting",
+        "status": 200
+      },
+      {
+        "url": "https://homeseeker.co.za/join",
+        "status": 200
+      },
+      {
+        "url": "https://homeseeker.co.za/about",
+        "status": 200
+      },
+      {
+        "url": "https://homeseeker.co.za/api/home-seekers/site",
+        "status": 200,
+        "publicListingCount": 0
+      },
+      {
+        "url": "https://app.arch9.co.za/release-manifest.json",
+        "releaseId": "8630404aa1d08b219bc027ac662aa0d5ca5d7983",
+        "supabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co",
+        "listingDetailAssetDetected": true
+      }
+    ],
+    "security": {
+      "capturedAt": "2026-10-10T17:40:15Z",
+      "scope": "Four listing migrations",
+      "categories": [
+        {
+          "name": "rls_enabled_no_policy",
+          "level": "INFO",
+          "before": 134,
+          "after": 134
+        },
+        {
+          "name": "function_search_path_mutable",
+          "level": "WARN",
+          "before": 170,
+          "after": 170
+        },
+        {
+          "name": "materialized_view_in_api",
+          "level": "WARN",
+          "before": 2,
+          "after": 2
+        },
+        {
+          "name": "anon_security_definer_function_executable",
+          "level": "WARN",
+          "before": 600,
+          "after": 600
+        },
+        {
+          "name": "authenticated_security_definer_function_executable",
+          "level": "WARN",
+          "before": 1022,
+          "after": 1024
+        },
+        {
+          "name": "auth_leaked_password_protection",
+          "level": "WARN",
+          "before": 1,
+          "after": 1
+        }
+      ],
+      "reviewedNewFindings": [
+        "enqueue_listing_publication(uuid,text[])",
+        "enqueue_listing_publication_update(uuid,text[],uuid)"
+      ],
+      "newFindingsAccess": "Authenticated callers must pass actor ownership and active membership checks. Neither function is executable by anon. Queue has RLS."
+    },
+    "authenticatedBrowser": {
+      "userSignedIn": true,
+      "dashboard": "passed",
+      "savedListingDetail": "passed",
+      "listingEditorPropertyFields": "passed",
+      "listingEditorMarketingPhotos": "passed - 9 saved images",
+      "listingEditorChannels": "passed - no external channels selected",
+      "listingEditorReview": "passed",
+      "exitWithoutSaving": "passed",
+      "salesRentalCategoryCorrection": "passed - sales excludes the four rental records",
+      "contactForm": "opened without submitting",
+      "publicBuying": "zero published homes as requested",
+      "publicRenting": "zero published rentals as requested",
+      "currentSalesVisible": 13,
+      "currentRentalDraftsVisible": 4,
+      "commercialFilter": "passed - empty category",
+      "residentialFilter": "passed",
+      "addressSearch": "passed - two matching records for 409",
+      "priceSort": "passed - R1,000,000 before R5,995,000",
+      "rentalDetail": "passed - saved monthly rent, facts, and no channels published"
+    },
+    "permissionModels": "Three focused query scope / bond permission model checks passed. Broader existing modulePermissionIsolation fixture fails its agency admin expectation, also reproduced unchanged in the listing release baseline; no permission rules changed.",
+    "recruitmentBuildLocal": {
+      "status": "passed",
+      "entryGzipBytes": 127164,
+      "entryBudgetBytes": 133120,
+      "operationalDeploymentAudit": "passed",
+      "schemaContract": "passed",
+      "compiledPermissionRegistry": "six exported permission data models exactly match source; access rules unchanged"
+    },
+    "recruitmentBuildHosted": "passed - size budget, operational deployment audit and schema compatibility contract; exact source manifest confirmed; candidate held for email DNS",
+    "temporaryRecruitmentSender": {
+      "focusedDenoTests": "35 passed",
+      "typecheck": "send-email and recruitment-contact-dispatcher passed",
+      "diffWhitespace": "passed",
+      "liveFromAndReplyTo": "matched expected headers",
+      "providerDelivery": "delivered to alex@arch9.co.za",
+      "deployment": "send-email and recruitment-contact-dispatcher ACTIVE with JWT protection",
+      "diagnosticCleanup": "deleted and independently verified absent"
+    },
+    "verificationEmailRepair": {
+      "owningProduct": "Home Seekers recruitment; shared send-email function",
+      "sourceCommit": "e4220f84e924396ea41ea5bcafb696c3ec7bc11d",
+      "before": "Website signup accepted (201), verification-email request failed (503); independently valid server credential rejected by the email endpoint (403).",
+      "change": "Independently validate server admin permission instead of requiring all valid server credentials to match one injected credential.",
+      "focusedDenoTests": "15 passed",
+      "typecheck": "send-email entrypoint passed",
+      "diffWhitespace": "passed",
+      "liveAuthorization": "valid server credential proceeds to lead validation (400); anonymous request blocked (401)",
+      "liveWebsite": "send_verification accepted (202) with 8-digit code acknowledgement",
+      "providerDelivery": "delivered",
+      "userConfirmedInbox": "Yes, it arrived",
+      "diagnosticCleanup": "deleted and independently verified absent",
+      "recovery": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-code-before-auth-fix.tar",
+      "evidenceDirectory": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010"
+    }
+  },
+  "recruitmentAppCandidate": {
+    "deploymentId": "dpl_6uMeWtuV7LKHqkH1imCeFHdxH2u9",
+    "url": "https://bridge-ny51g5zer-alexs-projects-f5496a21.vercel.app",
+    "promoted": true,
+    "buildStatus": "READY",
+    "sourceCommit": "aed23c53137592490f8570b5eefee45b9b20c1a0",
+    "note": "Full frontend release is live. All recruitment migrations applied and matching Edge Functions deployed. Home Seekers DNS is deferred; the verified temporary Arch9 recruitment sender was enabled and one approved test was delivered.",
+    "releaseManifestMatchesSource": true,
+    "entryGzipBytes": 128947,
+    "entryBudgetBytes": 133120
+  },
+  "remaining": [
+    "Domain administrator must add the four prepared Home Seekers email DNS records. Verify the Resend domain and Thomas sender identity; the verified unpaused Home Seekers identity will then take precedence over the temporary Arch9 sender.",
+    "Verify the complete recruitment journey with a real consenting applicant: email code, restricted profile, upload, staff approval and activation. The transport test did not create or alter applicant or Auth records.",
+    "Keep all 19 saved Home Seekers listings private as instructed."
+  ],
+  "evidenceDirectory": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010",
+  "postReleaseVerification": {
+    "checkedAt": "2026-10-10T18:24:42.592Z",
+    "desktopHome": true,
+    "mobileViewport": {
+      "width": 390,
+      "height": 844,
+      "temporaryOverrideReset": true
+    },
+    "mobileHome": true,
+    "mobileMenu": true,
+    "mobileRecruitmentPage": true,
+    "mobileSignupFormLoaded": true,
+    "signupSubmitted": false,
+    "staffDashboard": true,
+    "staffRecruitmentLeadList": true,
+    "staffRecruitmentExistingApplicationReview": true,
+    "staffRecruitmentDocumentControls": true,
+    "salesListings": 13,
+    "rentalListings": 4,
+    "publicBuyingEmpty": true,
+    "publicRentingEmpty": true,
+    "consoleErrorsInCheckedBrowsers": 0,
+    "syntheticEmailsSent": false,
+    "liveHttpEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/home-approved-late-dns-live-http.json",
+    "publicApiEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/home-approved-late-dns-public-listings.json",
+    "senderAndPrivacyEvidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-approved-late-dns-privacy-sender.json",
+    "runtimeErrorScan": {
+      "homeSeekers": {
+        "deployment": "dpl_Ai36hgHKbZzJSiiedd35dmxmq9Ti",
+        "since": "2026-10-10T18:19:00Z",
+        "errorEntries": 0
+      },
+      "primary": {
+        "deployment": "dpl_6uMeWtuV7LKHqkH1imCeFHdxH2u9",
+        "since": "2026-10-10T18:21:30Z",
+        "errorEntries": 0
+      },
+      "limitPerProject": 30
+    },
+    "originalSalesViewRestored": true,
+    "temporaryBrowserTabsClosed": true,
+    "temporaryArch9Sender": {
+      "checkedAt": "2026-10-10T18:34:26.269Z",
+      "from": "Home Seekers <notifications@arch9.co.za>",
+      "replyTo": "thomas@homeseekers.co.za",
+      "to": "alex@arch9.co.za",
+      "providerLastEvent": "delivered",
+      "syntheticApplicantCreated": false,
+      "realApplicantStatusChanged": false,
+      "temporaryDiagnosticRemoved": true,
+      "evidence": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/arch9-temporary-sender-test-delivery.json"
+    },
+    "verificationEmailRepair": {
+      "owningProduct": "Home Seekers recruitment; shared send-email function",
+      "sourceCommit": "e4220f84e924396ea41ea5bcafb696c3ec7bc11d",
+      "before": "Website signup accepted (201), verification-email request failed (503); independently valid server credential rejected by the email endpoint (403).",
+      "change": "Independently validate server admin permission instead of requiring all valid server credentials to match one injected credential.",
+      "focusedDenoTests": "15 passed",
+      "typecheck": "send-email entrypoint passed",
+      "diffWhitespace": "passed",
+      "liveAuthorization": "valid server credential proceeds to lead validation (400); anonymous request blocked (401)",
+      "liveWebsite": "send_verification accepted (202) with 8-digit code acknowledgement",
+      "providerDelivery": "delivered",
+      "userConfirmedInbox": "Yes, it arrived",
+      "diagnosticCleanup": "deleted and independently verified absent",
+      "recovery": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010/recruitment-code-before-auth-fix.tar",
+      "evidenceDirectory": "/Users/alexanderlandman/the-it-guy/tmp/outstanding-release-evidence-20261010"
+    }
+  },
+  "updatedAt": "2026-10-10T18:46:27.022Z"
+}

@@ -374,8 +374,14 @@ function BusinessWorkspaceSwitcher({ currentWorkspace = null, workspaces = [], v
   )
 }
 
+// Arch9 Legal navigation integration.
+import LegalWorkspaceSwitcher from '../modules/legal/LegalWorkspaceSwitcher'
+import LegalNavigation from '../modules/legal/LegalNavigation'
+import { useLegalWorkspace } from '../modules/legal/LegalWorkspaceContext'
+
 function Sidebar() {
   const workspaceContext = useWorkspace()
+  const legalWorkspace = useLegalWorkspace()
   const { workspace, role, baseRole, profile } = workspaceContext
   const {
     branding,
@@ -740,10 +746,13 @@ function Sidebar() {
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
           )}
+          <LegalWorkspaceSwitcher />
           <OrganisationWorkspaceSwitcher
             currentWorkspace={workspaceContext.currentWorkspace}
             memberships={workspaceContext.activeMemberships}
-            onChange={(workspaceId) => workspaceContext.setWorkspace({ id: workspaceId })}
+            onChange={(workspaceId) => {
+              if (!legalWorkspace?.available || !location.pathname.startsWith('/legal') || legalWorkspace.confirmLeave()) return workspaceContext.setWorkspace({ id: workspaceId })
+            }}
           />
           {role !== 'bond_originator' ? (
             <>
@@ -763,7 +772,7 @@ function Sidebar() {
       </div>
 
       <div className="ui-sidebar-nav-scroll" aria-label="Primary Navigation">
-        {role === 'bond_originator' ? (
+        {role === 'attorney' && location.pathname.startsWith('/legal') ? <LegalNavigation /> : role === 'bond_originator' ? (
           <div className="space-y-4">
             {bondGroupedNavSections.map((section) => (
               <nav key={section.key} className="ui-nav-stack ui-sidebar-bond-section">
@@ -780,9 +789,9 @@ function Sidebar() {
         )}
       </div>
 
-      {firmNavItems.length ? <div className="ui-sidebar-divider" /> : null}
+      {firmNavItems.length && !location.pathname.startsWith('/legal') ? <div className="ui-sidebar-divider" /> : null}
 
-      {firmNavItems.length ? (
+      {firmNavItems.length && !location.pathname.startsWith('/legal') ? (
         <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
           {firmNavItems.map((item) => renderNavItem(item))}
         </nav>

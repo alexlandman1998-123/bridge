@@ -1,0 +1,54 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {PGlite} from '@electric-sql/pglite';
+test('Trusts pilot requires version-specific firm review and preserves existing work through pause and recovery',async()=>{
+ const db=new PGlite(),firm=randomUUID(),user=randomUUID(),director=randomUUID(),foreign=randomUUID();
+ await db.exec(`create role anon;create role authenticated;create schema auth;create schema storage;
+ create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ grant usage on schema auth,storage to authenticated,anon;
+ create table attorney_firms(id uuid primary key,is_active boolean,organisation_id uuid);create table attorney_firm_members(firm_id uuid,user_id uuid,status text,role text,professional_role text);create table profiles(id uuid primary key,full_name text);
+ create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+ create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,metadata jsonb,unique(bucket_id,name));alter table storage.objects enable row level security;
+ create table transactions(status text);insert into transactions values('unchanged');`);
+ for(const id of [firm,foreign])await db.query('insert into attorney_firms values($1,true,$2)',[id,randomUUID()]);
+ for(const id of [user,director]){await db.query('insert into auth.users values($1)',[id]);await db.query('insert into profiles values($1,$2)',[id,id===user?'Attorney':'Partner']);await db.query("insert into attorney_firm_members values($1,$2,'active',$3,$3)",[firm,id,id===director?'director_partner':'attorney_conveyancer']);}
+ for(const file of ['20261011145029_arch9_legal_matter_foundation.sql','20261011145949_arch9_legal_workspace_commands.sql','20261011155632_arch9_legal_work_and_documents.sql','20261011162425_arch9_legal_firm_overview.sql','20261011163733_arch9_legal_trusts_pilot.sql'])await db.exec(await readFile(new URL('../../supabase/migrations/'+file,import.meta.url),'utf8'));
+ async function rpc(actor,name,args){return db.transaction(async tx=>{await tx.exec('set local role '+(actor?'authenticated':'anon'));await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[actor||'']);return (await tx.query(`select public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) result`,args)).rows[0].result;});}
+ const grant=id=>({user_id:id,disciplines:['trusts','wills_estates'],can_create:true,can_edit:true,can_review:true,can_manage:id===director});
+ await rpc(director,'arch9_legal_command',[firm,randomUUID(),'configure',{enabled:true,disciplines:['trusts','wills_estates'],grants:[user,director].map(grant),expected_revision:0}]);
+ const create=async(discipline='trusts',restricted=false)=>(await rpc(user,'arch9_legal_create',[firm,randomUUID(),{discipline,title:'Manual matter',client:{kind:'individual',name:'Client'},responsible_user_id:user,user_ids:[user],restricted}])).matter;
+ const m=await create(),wills=await create('wills_estates'),secret=await create('trusts',true);
+ const cmd=(action,payload,actor=user,request=randomUUID())=>rpc(actor,'arch9_legal_trust_pilot_command',[firm,request,action,payload]);
+ const read=()=>rpc(user,'arch9_legal_work_read',[firm,m.id]);
+ const counts=async()=>(await db.query('select (select count(*) from legal_private.tasks) tasks,(select count(*) from legal_private.events) events,(select count(*) from legal_private.receipts) receipts,(select count(*) from legal_private.work_state) work')).rows;
+ assert.equal((await rpc(user,'arch9_legal_trust_pilot_read',[firm])).settings,null);
+ const start={matter_id:m.id,expected_revision:0,template_version:'trust_setup_manual_v1'};
+ let before=await counts();await assert.rejects(()=>cmd('start_trusts',start),e=>e.code==='42501');assert.deepEqual(await counts(),before);
+ const approval={enabled:true,template_version:'trust_setup_manual_v1',review_note:'Firm reviewed representative setup matters, roles, evidence and closure review',expected_revision:0};
+ await assert.rejects(()=>cmd('configure_trusts',approval),e=>e.code==='42501');
+ await assert.rejects(()=>cmd('configure_trusts',{...approval,template_version:'unreviewed_v2'},director),e=>e.code==='22023');
+ await assert.rejects(()=>cmd('configure_trusts',{...approval,review_note:''},director));
+ await db.query('update legal_private.capabilities set can_review=false where user_id=$1',[director]);await assert.rejects(()=>cmd('configure_trusts',approval,director),e=>e.code==='42501');await db.query('update legal_private.capabilities set can_review=true where user_id=$1',[director]);
+ const approvalRequest=randomUUID();await cmd('configure_trusts',approval,director,approvalRequest);assert.equal((await cmd('configure_trusts',approval,director,approvalRequest)).deduplicated,true);
+ await assert.rejects(()=>cmd('configure_trusts',approval,director),e=>e.code==='40001');
+ before=await counts();await assert.rejects(()=>cmd('start_trusts',{...start,matter_id:wills.id}),e=>e.code==='42501');await assert.rejects(()=>cmd('start_trusts',{...start,matter_id:secret.id},director),e=>e.code==='42501');assert.deepEqual(await counts(),before);
+ const request=randomUUID();const result=await cmd('start_trusts',start,user,request);assert.equal(result.tasks.length,5);assert.equal(result.work.template_version,'trust_setup_manual_v1');assert.equal(result.work.revision,1);assert.ok(result.tasks.every(t=>t.owner_id===user&&t.status==='pending'));
+ assert.equal((await cmd('start_trusts',start,user,request)).deduplicated,true);assert.equal((await read()).tasks.length,5);
+ await assert.rejects(()=>cmd('start_trusts',{...start,expected_revision:1}),e=>e.code==='22023');
+ const dates={matter_id:m.id,expected_revision:1,dates:{instructions_on:'2026-10-11',setup_on:'2026-10-12',handover_on:null,custody_on:'2026-10-10'}};
+ const saved=await cmd('save_trust_dates',dates);assert.equal(saved.work.dates.setup_on,'2026-10-12');assert.equal(saved.work.dates.custody_on,'2026-10-10');
+ before=await counts();await assert.rejects(()=>cmd('save_trust_dates',{...dates,expected_revision:2,dates:{setup_on:'2026-02-30'}}));await assert.rejects(()=>cmd('save_trust_dates',dates),e=>e.code==='40001');assert.deepEqual(await counts(),before);
+ await cmd('configure_trusts',{...approval,enabled:false,expected_revision:1,review_note:'Pause new starts pending review'},director);
+ const newMatter=await create();await assert.rejects(()=>cmd('start_trusts',{...start,matter_id:newMatter.id}),e=>e.code==='42501');assert.equal((await read()).work.template_version,'trust_setup_manual_v1');assert.equal((await read()).tasks.length,5);
+ await cmd('save_trust_dates',{...dates,expected_revision:2}); // Existing work continues while new starts are paused.
+ const task=(await read()).tasks[0];await rpc(user,'arch9_legal_work_command',[firm,randomUUID(),'save_task',{matter_id:m.id,expected_revision:3,task_id:task.id,title:task.title,owner_id:user,due_on:null,status:'complete',note:'Instructions and supporting evidence reviewed manually'}]);
+ assert.equal((await read()).tasks[0].status,'complete');
+ await db.query("update legal_private.matters set status='closed' where id=$1",[m.id]);await assert.rejects(()=>cmd('save_trust_dates',{...dates,expected_revision:4}),e=>e.code==='22023');
+ await rpc(user,'arch9_legal_work_command',[firm,randomUUID(),'start_wills',{matter_id:wills.id,expected_revision:0}]);assert.equal((await rpc(user,'arch9_legal_work_read',[firm,wills.id])).work.template_version,'wills_manual_v1');
+ await db.query("update attorney_firm_members set status='suspended' where user_id=$1",[user]);await assert.rejects(()=>cmd('start_trusts',start,user,request),e=>e.code==='42501');await assert.rejects(()=>rpc(user,'arch9_legal_trust_pilot_read',[firm]),e=>e.code==='42501');
+ await assert.rejects(()=>rpc(director,'arch9_legal_trust_pilot_read',[foreign]),e=>e.code==='42501');await assert.rejects(()=>rpc(null,'arch9_legal_trust_pilot_read',[firm]),e=>e.code==='42501');
+ assert.ok((await db.query("select p.prosecdef,has_function_privilege('anon',p.oid,'execute') anonymous from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'arch9_legal_trust_pilot_%'")).rows.every(p=>!p.prosecdef&&!p.anonymous));
+ assert.equal((await db.query('select status from transactions')).rows[0].status,'unchanged');await db.close();
+});

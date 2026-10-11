@@ -1,3 +1,5 @@
+import { LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION } from './sellerBasePackContract.js'
+import { normalizeMaritalRegime } from '../services/documents/sellerOnboardingFactTransformer.js'
 import { readSellerMandateTerms, buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, normalizeSellerMandateType } from './sellerMandateCapture.js'
 import { resolveSellerBondStatus, sellerBondDeclaration } from './sellerBondStatus.js'
 import { buildSellerPopiConsentPatch, sellerPopiConsentDisplayValue } from '../core/documents/sellerOnboardingConsent.js'
@@ -16,7 +18,6 @@ import {
 } from './propertyTaxonomy.js'
 import { resolveListingSellerAuthorityContract } from './sellerPartyAuthorityContract.js'
 import {
-  LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION as SELLER_REQUIREMENT_RETIREMENT_VERSION,
   getSellerRequirementProfile,
   syncSellerDocumentRequirements,
 } from './privateListingRequirementEngine.js'
@@ -24,7 +25,7 @@ import {
 export const LISTING_SELLER_PROFILE_BUILDER_VERSION = 'listing_seller_profile_builder_phase2_v1'
 export const LISTING_SELLER_PROFILE_CAPTURE_SOURCE = 'listing_seller_profile_capture'
 export const LISTING_SELLER_REQUIREMENT_PROJECTION_VERSION = 'listing_seller_requirement_projection_phase3_v1'
-export const LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION = SELLER_REQUIREMENT_RETIREMENT_VERSION
+export { LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION } from './sellerBasePackContract.js'
 
 export const LISTING_SELLER_PROFILE_BRANCHES = [
   { value: '', label: 'Not identified yet' },
@@ -127,6 +128,12 @@ function pickFirst(...values) {
   return values.find((value) => value !== undefined && value !== null && normalizeText(value) !== '')
 }
 
+// A supplied blank is a saved clearing; only absent keys may use legacy fallbacks.
+function savedField(source, keys, ...fallbacks) {
+  for (const key of keys) if (Object.hasOwn(source, key) && source[key] !== undefined) return source[key] ?? ''
+  return fallbacks.find((value) => value !== undefined)
+}
+
 function splitName(fullName = '') {
   const parts = normalizeText(fullName).split(/\s+/).filter(Boolean)
   if (!parts.length) return { firstName: '', surname: '' }
@@ -211,6 +218,7 @@ export function getListingSellerFormData(listing = {}) {
 
   return mergeObjects(
     sellerFacts,
+    ...(sellerFacts.contact ? [sellerFacts.contact] : sellerFacts.primary_contact ? [sellerFacts.primary_contact] : []),
     propertyFacts,
     canonicalFacts,
     listing?.seller_onboarding_form_data,
@@ -221,11 +229,11 @@ export function getListingSellerFormData(listing = {}) {
 }
 
 function getCanonicalFacts(listing = {}) {
-  return listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
-    ? listing.sellerCanonicalFacts
-    : listing?.seller_canonical_facts_json && typeof listing.seller_canonical_facts_json === 'object'
-      ? listing.seller_canonical_facts_json
-      : {}
+  const onboarding = listing.sellerOnboarding || listing.seller_onboarding || {}
+  const form = onboarding.formData || onboarding.form_data || listing.sellerOnboardingFormData || listing.seller_onboarding_form_data || {}
+  return [onboarding.storedCanonicalFacts, onboarding.canonicalFacts, onboarding.canonical_facts_json,
+    listing.sellerCanonicalFacts, listing.seller_canonical_facts_json, form.canonicalSellerFacts, form.canonicalFacts, form.canonical_facts]
+    .find((facts) => facts && typeof facts === 'object' && !Array.isArray(facts) && Object.keys(facts).length) || {}
 }
 
 export function isListingSellerOwnershipUnidentified(listing = {}) {
@@ -263,8 +271,10 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
   const mandateDraft = listing?.mandateDraft && typeof listing.mandateDraft === 'object' ? listing.mandateDraft : {}
   const facts = getCanonicalFacts(listing)
   const sellerFacts = facts.seller && typeof facts.seller === 'object' ? facts.seller : facts
-  const canonicalCompany = sellerFacts.company && typeof sellerFacts.company === 'object' ? sellerFacts.company : {}
-  const canonicalTrust = sellerFacts.trust && typeof sellerFacts.trust === 'object' ? sellerFacts.trust : {}
+  const canonicalCompany = form.company || sellerFacts.company || {}
+  const canonicalTrust = form.trust || sellerFacts.trust || {}
+  const canonicalSignatory = canonicalCompany.authorised_signatory || canonicalCompany.authorisedSignatory || {}
+  const canonicalTrustee = canonicalTrust.authorised_trustee || canonicalTrust.authorisedTrustee || {}
   const canonicalProperty = facts.property && typeof facts.property === 'object' ? facts.property : {}
   const canonicalFinance = facts.finance && typeof facts.finance === 'object' ? facts.finance : {}
   const sellerName = normalizeText(
@@ -283,122 +293,125 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
   const split = splitName(sellerName)
   const branch = resolveListingSellerProfileBranch(form, listing)
   const ownerFallback = {
-    name: pickFirst(form.sellerFirstName, form.firstName, ['individual', 'married', 'foreign_individual'].includes(branch) ? split.firstName : ''),
-    surname: pickFirst(form.sellerSurname, form.lastName, ['individual', 'married', 'foreign_individual'].includes(branch) ? split.surname : ''),
-    email: form.email ?? form.sellerEmail ?? pickFirst(listing?.sellerEmail, listing?.seller?.email, mandateDraft.sellerEmail),
-    phone: form.phone ?? form.sellerPhone ?? form.mobile ?? pickFirst(listing?.sellerPhone, listing?.seller?.phone, mandateDraft.sellerPhone),
-    idNumber: pickFirst(form.idNumber, form.sellerIdNumber, mandateDraft.sellerIdNumber),
+    name: savedField(form, ['sellerFirstName', 'firstName', 'first_name'], sellerFacts.first_name, ['individual', 'married', 'foreign_individual'].includes(branch) ? split.firstName : ''),
+    surname: savedField(form, ['sellerSurname', 'lastName', 'surname', 'last_name'], sellerFacts.surname, ['individual', 'married', 'foreign_individual'].includes(branch) ? split.surname : ''),
+    email: savedField(form, ['email', 'sellerEmail']) ?? savedField(sellerFacts.contact || {}, ['email'], sellerFacts.email, listing?.sellerEmail, listing?.seller?.email, mandateDraft.sellerEmail),
+    phone: savedField(form, ['phone', 'sellerPhone', 'mobile']) ?? savedField(sellerFacts.contact || {}, ['phone'], sellerFacts.phone, listing?.sellerPhone, listing?.seller?.phone, mandateDraft.sellerPhone),
+    idNumber: savedField(form, ['idNumber', 'id_number', 'sellerIdNumber'], sellerFacts.id_number, mandateDraft.sellerIdNumber),
   }
-  const savedOwners = [form.multipleOwners, form.owners, sellerFacts.owners, mandateDraft.sellerParties]
-    .find((owners) => Array.isArray(owners) && owners.length) || []
-  const propertyCategory = normalizePropertyCategory(pickFirst(form.propertyCategory, canonicalProperty.property_category, listing?.propertyCategory), { fallback: 'residential' })
+  const savedOwners = savedField(form, ['multipleOwners', 'owners'], sellerFacts.owners, mandateDraft.sellerParties) || []
+  const propertyCategory = normalizePropertyCategory(savedField(form, ['propertyCategory'], canonicalProperty.property_category, listing?.propertyCategory), { fallback: 'residential' })
   const propertyTypeOptions = getPropertyTypeOptionsByCategory(propertyCategory)
-  const savedPropertyType = normalizeText(pickFirst(form.propertyType, canonicalProperty.property_type, listing?.propertyType))
+  const savedPropertyType = normalizeText(savedField(form, ['propertyType'], canonicalProperty.property_type, listing?.propertyType))
   const bondStatus = resolveSellerBondStatus(form.bondStatus, form.propertyBondStatus, form.bond_status, form.existingBond, form.sellerHasExistingBond, form.bondExists, canonicalFinance.existing_bond)
 
   return {
     branch,
-    primaryContactName: normalizeText(pickFirst(form.primaryContactName, form.contactName, sellerFacts.contact?.name, [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' '))),
+    primaryContactName: normalizeText(savedField(form, ['primaryContactName', 'primary_contact_name', 'contactName'], sellerFacts.contact?.name ?? sellerFacts.primary_contact?.name, [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || undefined, listing?.seller?.name, listing?.sellerName)),
     sellerFirstName: normalizeText(ownerFallback.name),
     sellerSurname: normalizeText(ownerFallback.surname),
     email: normalizeText(ownerFallback.email).toLowerCase(),
     phone: normalizeText(ownerFallback.phone),
     idNumber: normalizeText(ownerFallback.idNumber),
-    residentialAddress: normalizeText(form.residentialAddress ?? form.residential_address ?? form.residentialStreet ?? form.physicalAddress ?? sellerFacts.residential_address),
-    dateOfBirth: normalizeText(form.dateOfBirth ?? form.date_of_birth ?? form.birthDate ?? sellerFacts.date_of_birth),
-    nationality: normalizeText(form.nationality ?? sellerFacts.nationality),
-    incomeTaxNumber: normalizeText(form.incomeTaxNumber ?? form.income_tax_number ?? form.sellerTaxNumber ?? form.taxNumber ?? form.tax_number ?? sellerFacts.tax_number),
-    saResident: sellerYesNoValue(form.saResident ?? form.sa_resident ?? form.taxResident ?? form.tax_resident ?? sellerFacts.sa_resident),
-    vatRegistered: sellerYesNoValue(form.vatRegistered ?? form.vat_registered ?? sellerFacts.vat_registered),
-    alternativeContact: normalizeText(pickFirst(form.alternativeContact, form.alternativeNumber, form.alternative_number, form.alternateContact, form.secondaryPhone, form.alternativePhone)),
-    preferredContactMethod: normalizeText(pickFirst(form.preferredContactMethod, form.contactPreference)),
-    vatNumber: normalizeText(form.vatNumber ?? form.vat_number ?? sellerFacts.vat_number),
-    spousePhone: normalizeText(form.spousePhone ?? sellerFacts.spouse?.phone),
-    authorisedSignatoryPhone: normalizeText(form.authorisedSignatoryPhone ?? canonicalCompany.authorised_signatory?.phone),
-    authorisedTrusteePhone: normalizeText(form.authorisedTrusteePhone ?? canonicalTrust.authorised_trustee?.phone),
-    executorPhone: normalizeText(form.executorPhone ?? sellerFacts.deceased_estate?.executor?.phone),
-    powerOfAttorneyPhone: normalizeText(form.powerOfAttorneyPhone ?? sellerFacts.power_of_attorney?.representative?.phone),
-    maritalStatus: normalizeText(pickFirst(form.maritalStatus, form.marital_status, sellerFacts.marital_status)),
-    spouseName: normalizeText(pickFirst(form.spouseName, form.spouseFullName, form.spouse?.fullName, sellerFacts.spouse?.full_name)),
-    spouseEmail: normalizeText(pickFirst(form.spouseEmail, form.spouse?.email, sellerFacts.spouse?.email)).toLowerCase(),
-    spouseIdNumber: normalizeText(pickFirst(form.spouseIdNumber, form.spouse?.idNumber, sellerFacts.spouse?.id_number)),
-    multipleOwners: normalizePersonCollectionForSellerProfile(savedOwners, ownerFallback, 'Owner'),
-    companyAuthorityBasis: normalizeText(pickFirst(form.companyAuthorityBasis, canonicalCompany.authority_basis)),
-    companyResolutionDate: normalizeText(pickFirst(form.companyResolutionDate, canonicalCompany.resolution_date)),
-    trustAuthorityBasis: normalizeText(pickFirst(form.trustAuthorityBasis, canonicalTrust.authority_basis)),
-    executorAuthorityDetails: normalizeText(pickFirst(form.executorAuthorityDetails, sellerFacts.deceased_estate?.authority_details)),
-    powerOfAttorneyAuthorityDetails: normalizeText(pickFirst(form.powerOfAttorneyAuthorityDetails, sellerFacts.power_of_attorney?.authority_details)),
-    otherAuthorityDetails: normalizeText(pickFirst(form.otherAuthorityDetails, sellerFacts.other_entity?.authority_details)),
-    companyName: normalizeText(pickFirst(form.companyName, canonicalCompany.name)),
-    companyRegistrationNumber: normalizeText(pickFirst(form.companyRegistrationNumber, form.foreignRegistrationNumber, canonicalCompany.registration_number, canonicalCompany.registrationNumber)),
-    companyRegisteredAddress: normalizeText(pickFirst(form.companyRegisteredAddress, canonicalCompany.registered_address, canonicalCompany.registeredAddress)),
-    companyDirectors: normalizePersonCollectionForSellerProfile(form.companyDirectors || canonicalCompany.directors || [], null, 'Director'),
-    companyBeneficialOwners: normalizePersonCollectionForSellerProfile(form.companyBeneficialOwners ?? form.company_beneficial_owners ?? canonicalCompany.beneficial_owners ?? [], null, 'Beneficial Owner'),
-    authorisedSignatoryName: normalizeText(pickFirst(form.authorisedSignatoryName, canonicalCompany.authorised_signatory?.full_name, canonicalCompany.authorised_signatory?.name)),
-    authorisedSignatoryCapacity: normalizeText(pickFirst(form.authorisedSignatoryCapacity, canonicalCompany.authorised_signatory?.capacity)),
-    authorisedSignatoryEmail: normalizeText(pickFirst(form.authorisedSignatoryEmail, canonicalCompany.authorised_signatory?.email)).toLowerCase(),
-    authorisedSignatoryIdNumber: normalizeText(pickFirst(form.authorisedSignatoryIdNumber, canonicalCompany.authorised_signatory?.id_number)),
-    authorisedSignatoryNationality: normalizeText(pickFirst(form.authorisedSignatoryNationality, canonicalCompany.authorised_signatory?.nationality)),
-    authorisedSignatoryAddress: normalizeText(pickFirst(form.authorisedSignatoryAddress, canonicalCompany.authorised_signatory?.residential_address)),
-    trustName: normalizeText(pickFirst(form.trustName, canonicalTrust.name)),
-    trustRegistrationNumber: normalizeText(pickFirst(form.trustRegistrationNumber, form.foreignRegistrationNumber, canonicalTrust.registration_number, canonicalTrust.registrationNumber)),
-    trustRegisteredAddress: normalizeText(pickFirst(form.trustRegisteredAddress, canonicalTrust.registered_address, canonicalTrust.registeredAddress)),
-    trustees: normalizePersonCollectionForSellerProfile(form.trustees || canonicalTrust.trustees || [], null, 'Trustee'),
-    trustFounders: normalizePersonCollectionForSellerProfile(form.trustFounders ?? form.trust_founders ?? canonicalTrust.founders ?? [], null, 'Founder'),
-    trustBeneficiaries: normalizePersonCollectionForSellerProfile(form.trustBeneficiaries ?? form.trust_beneficiaries ?? form.beneficiaries ?? canonicalTrust.beneficiaries ?? [], null, 'Beneficiary'),
-    trustBeneficiaryClass: normalizeText(form.trustBeneficiaryClass ?? form.trust_beneficiary_class ?? canonicalTrust.beneficiary_class),
-    authorisedTrusteeName: normalizeText(pickFirst(form.authorisedTrusteeName, canonicalTrust.authorised_trustee?.full_name, canonicalTrust.authorised_trustee?.name)),
-    authorisedTrusteeCapacity: normalizeText(pickFirst(form.authorisedTrusteeCapacity, canonicalTrust.authorised_trustee?.capacity)),
-    authorisedTrusteeEmail: normalizeText(pickFirst(form.authorisedTrusteeEmail, canonicalTrust.authorised_trustee?.email)).toLowerCase(),
-    authorisedTrusteeIdNumber: normalizeText(pickFirst(form.authorisedTrusteeIdNumber, canonicalTrust.authorised_trustee?.id_number)),
-    authorisedTrusteeNationality: normalizeText(pickFirst(form.authorisedTrusteeNationality, canonicalTrust.authorised_trustee?.nationality)),
-    authorisedTrusteeAddress: normalizeText(pickFirst(form.authorisedTrusteeAddress, canonicalTrust.authorised_trustee?.residential_address)),
-    occupation: normalizeText(form.occupation ?? sellerFacts.occupation),
-    sourceOfFunds: normalizeText(form.sourceOfFunds ?? form.source_of_funds ?? sellerFacts.source_of_funds),
-    politicallyExposedPerson: sellerYesNoValue(form.politicallyExposedPerson ?? form.politically_exposed_person ?? sellerFacts.politically_exposed_person),
-    politicallyExposedDetails: normalizeText(form.politicallyExposedDetails ?? form.politically_exposed_details ?? sellerFacts.politically_exposed_details),
-    deceasedEstateName: normalizeText(pickFirst(form.deceasedEstateName, sellerFacts.deceased_estate?.name)),
-    estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, form.estateReference, sellerFacts.deceased_estate?.reference_number, sellerFacts.deceased_estate?.estate_reference)),
-    executorName: normalizeText(pickFirst(form.executorName, sellerFacts.deceased_estate?.executor?.full_name, sellerFacts.deceased_estate?.executor?.name)),
-    executorEmail: normalizeText(pickFirst(form.executorEmail, sellerFacts.deceased_estate?.executor?.email)).toLowerCase(),
-    powerOfAttorneyPrincipalName: normalizeText(pickFirst(form.powerOfAttorneyPrincipalName, form.power_of_attorney_principal_name, sellerFacts.power_of_attorney?.principal?.full_name, sellerFacts.power_of_attorney?.principal?.name)),
-    powerOfAttorneyPrincipalIdNumber: normalizeText(pickFirst(form.powerOfAttorneyPrincipalIdNumber, form.power_of_attorney_principal_id_number, sellerFacts.power_of_attorney?.principal?.id_number)),
-    powerOfAttorneyName: normalizeText(pickFirst(form.powerOfAttorneyName, form.power_of_attorney_name, sellerFacts.power_of_attorney?.representative?.full_name, sellerFacts.power_of_attorney?.representative?.name)),
-    powerOfAttorneyEmail: normalizeText(pickFirst(form.powerOfAttorneyEmail, form.power_of_attorney_email, sellerFacts.power_of_attorney?.representative?.email)).toLowerCase(),
-    otherEntityName: normalizeText(pickFirst(form.otherEntityName, form.entityName, sellerFacts.other_entity?.name)),
-    otherEntityRegistrationNumber: normalizeText(pickFirst(form.otherEntityRegistrationNumber, form.entityRegistrationNumber, sellerFacts.other_entity?.registration_number)),
-    foreignOwnerCountry: normalizeText(pickFirst(form.foreignOwnerCountry, sellerFacts.foreign?.country)),
-    foreignPassportNumber: normalizeText(pickFirst(form.foreignPassportNumber, sellerFacts.foreign?.passport_number, sellerFacts.foreign?.passportNumber)),
-    foreignRegistrationNumber: normalizeText(pickFirst(form.foreignRegistrationNumber, sellerFacts.foreign?.registration_number, sellerFacts.foreign?.registrationNumber)),
-    foreignResidencyStatus: normalizeText(pickFirst(form.foreignResidencyStatus, sellerFacts.foreign?.residency_status, sellerFacts.foreign?.residencyStatus)),
-    propertyAddress: normalizeText(pickFirst(form.propertyAddress, form.addressLine1, canonicalProperty.address, listing?.propertyAddress, listing?.addressLine1, listing?.formattedAddress, listing?.listingTitle)),
-    propertyStructureType: normalizeText(pickFirst(form.propertyStructureType, canonicalProperty.property_structure_type, listing?.propertyStructureType, 'full_title')),
+    residentialAddress: normalizeText(savedField(form, ['residentialAddress', 'residential_address', 'residentialStreet', 'physicalAddress']) ?? sellerFacts.residential_address),
+    dateOfBirth: normalizeText(savedField(form, ['dateOfBirth', 'date_of_birth', 'birthDate']) ?? sellerFacts.date_of_birth),
+    nationality: normalizeText(savedField(form, ['nationality']) ?? sellerFacts.nationality),
+    incomeTaxNumber: normalizeText(savedField(form, ['incomeTaxNumber', 'income_tax_number', 'sellerTaxNumber', 'taxNumber', 'tax_number']) ?? sellerFacts.tax_number),
+    saResident: sellerYesNoValue(savedField(form, ['saResident', 'sa_resident'], sellerFacts.sa_resident)),
+    taxResident: sellerYesNoValue(savedField(form, ['taxResident', 'tax_resident'], sellerFacts.tax_resident)),
+    maritalRegime: normalizeText(savedField(form, ['maritalRegime', 'marital_regime'], sellerFacts.marital_regime, normalizeMaritalRegime(form))),
+    vatRegistered: sellerYesNoValue(savedField(form, ['vatRegistered', 'vat_registered']) ?? sellerFacts.vat_registered),
+    alternativeContact: normalizeText(savedField(form, ['alternativeContact', 'alternativeNumber', 'alternative_number', 'alternatePhone', 'alternate_phone', 'alternateContact', 'secondaryPhone', 'alternativePhone'])),
+    preferredContactMethod: normalizeText(savedField(form, ['preferredContactMethod', 'contactPreference'])),
+    vatNumber: normalizeText(savedField(form, ['vatNumber', 'vat_number']) ?? sellerFacts.vat_number),
+    spousePhone: normalizeText(savedField(form, ['spousePhone'], form.spouse?.phone, sellerFacts.spouse?.phone)),
+    authorisedSignatoryPhone: normalizeText(savedField(form, ['authorisedSignatoryPhone', 'authorised_signatory_phone']) ?? canonicalSignatory.phone),
+    authorisedTrusteePhone: normalizeText(savedField(form, ['authorisedTrusteePhone', 'authorised_trustee_phone']) ?? canonicalTrustee.phone),
+    executorPhone: normalizeText(savedField(form, ['executorPhone']) ?? sellerFacts.deceased_estate?.executors?.[0]?.phone),
+    powerOfAttorneyPhone: normalizeText(savedField(form, ['powerOfAttorneyPhone']) ?? sellerFacts.power_of_attorney?.representatives?.[0]?.phone),
+    maritalStatus: (() => { const status = normalizeText(savedField(form, ['maritalStatus', 'marital_status'], sellerFacts.marital_status)); return status.startsWith('married') ? 'married' : ['not_married', 'never_married'].includes(status) ? 'single' : status })(),
+    spouseName: normalizeText(savedField(form, ['spouseName', 'spouseFullName'], form.spouse?.fullName, form.spouse?.full_name, form.spouse?.name, sellerFacts.spouse?.name)),
+    spouseEmail: normalizeText(savedField(form, ['spouseEmail'], form.spouse?.email, sellerFacts.spouse?.email)).toLowerCase(),
+    spouseIdNumber: normalizeText(savedField(form, ['spouseIdNumber'], form.spouse?.idNumber, form.spouse?.id_number, sellerFacts.spouse?.id_number)),
+    multipleOwners: normalizePersonCollectionForSellerProfile(savedOwners, Object.hasOwn(form, 'multipleOwners') || Object.hasOwn(form, 'owners') ? null : ownerFallback, 'Owner'),
+    executors: normalizePersonCollectionForSellerProfile(savedField(form, ['executors'], sellerFacts.deceased_estate?.executors) || [], null, 'Executor'),
+    powerOfAttorneyRepresentatives: normalizePersonCollectionForSellerProfile(savedField(form, ['powerOfAttorneyRepresentatives'], sellerFacts.power_of_attorney?.representatives) || [], null, 'Representative'),
+    companyAuthorityBasis: normalizeText(savedField(form, ['companyAuthorityBasis', 'company_authority_basis'], canonicalCompany.authority_basis)),
+    companyResolutionDate: normalizeText(savedField(form, ['companyResolutionDate', 'company_resolution_date'], canonicalCompany.resolution_date)),
+    trustAuthorityBasis: normalizeText(savedField(form, ['trustAuthorityBasis', 'trust_authority_basis'], canonicalTrust.authority_basis)),
+    executorAuthorityDetails: normalizeText(savedField(form, ['executorAuthorityDetails'], sellerFacts.deceased_estate?.authority_details)),
+    powerOfAttorneyAuthorityDetails: normalizeText(savedField(form, ['powerOfAttorneyAuthorityDetails'], sellerFacts.power_of_attorney?.authority_details)),
+    otherAuthorityDetails: normalizeText(savedField(form, ['otherAuthorityDetails'], sellerFacts.other_entity?.authority_details)),
+    companyName: normalizeText(savedField(form, ['companyName', 'company_name'], canonicalCompany.name)),
+    companyRegistrationNumber: normalizeText(savedField(form, ['companyRegistrationNumber', 'foreignRegistrationNumber'], canonicalCompany.registration_number, canonicalCompany.registrationNumber)),
+    companyRegisteredAddress: normalizeText(savedField(form, ['companyRegisteredAddress', 'company_registered_address'], canonicalCompany.registered_address, canonicalCompany.registeredAddress)),
+    companyDirectors: normalizePersonCollectionForSellerProfile(savedField(form, ['companyDirectors', 'company_directors', 'directors'], canonicalCompany.directors) || [], null, 'Director'),
+    companyBeneficialOwners: normalizePersonCollectionForSellerProfile(savedField(form, ['companyBeneficialOwners', 'company_beneficial_owners']) ?? canonicalCompany.beneficial_owners ?? [], null, 'Beneficial Owner'),
+    authorisedSignatoryName: normalizeText(savedField(form, ['authorisedSignatoryName', 'authorised_signatory_name'], canonicalSignatory.full_name, canonicalSignatory.name)),
+    authorisedSignatoryCapacity: normalizeText(savedField(form, ['authorisedSignatoryCapacity', 'authorised_signatory_capacity'], canonicalSignatory.capacity)),
+    authorisedSignatoryEmail: normalizeText(savedField(form, ['authorisedSignatoryEmail', 'authorised_signatory_email'], canonicalSignatory.email)).toLowerCase(),
+    authorisedSignatoryIdNumber: normalizeText(savedField(form, ['authorisedSignatoryIdNumber', 'authorised_signatory_id_number'], canonicalSignatory.id_number)),
+    authorisedSignatoryNationality: normalizeText(savedField(form, ['authorisedSignatoryNationality', 'authorised_signatory_nationality'], canonicalSignatory.nationality)),
+    authorisedSignatoryAddress: normalizeText(savedField(form, ['authorisedSignatoryAddress', 'authorised_signatory_address'], canonicalSignatory.residential_address)),
+    trustName: normalizeText(savedField(form, ['trustName', 'trust_name'], canonicalTrust.name)),
+    trustRegistrationNumber: normalizeText(savedField(form, ['trustRegistrationNumber', 'foreignRegistrationNumber'], canonicalTrust.registration_number, canonicalTrust.registrationNumber)),
+    trustRegisteredAddress: normalizeText(savedField(form, ['trustRegisteredAddress', 'trust_registered_address'], canonicalTrust.registered_address, canonicalTrust.registeredAddress)),
+    trustees: normalizePersonCollectionForSellerProfile(savedField(form, ['trustees', 'trust_trustees'], canonicalTrust.trustees) || [], null, 'Trustee'),
+    trustFounders: normalizePersonCollectionForSellerProfile(savedField(form, ['trustFounders', 'trust_founders']) ?? canonicalTrust.founders ?? [], null, 'Founder'),
+    trustBeneficiaries: normalizePersonCollectionForSellerProfile(savedField(form, ['trustBeneficiaries', 'trust_beneficiaries', 'beneficiaries']) ?? canonicalTrust.beneficiaries ?? [], null, 'Beneficiary'),
+    trustBeneficiaryClass: normalizeText(savedField(form, ['trustBeneficiaryClass', 'trust_beneficiary_class']) ?? canonicalTrust.beneficiary_class),
+    authorisedTrusteeName: normalizeText(savedField(form, ['authorisedTrusteeName', 'authorised_trustee_name'], canonicalTrustee.full_name, canonicalTrustee.name)),
+    authorisedTrusteeCapacity: normalizeText(savedField(form, ['authorisedTrusteeCapacity', 'authorised_trustee_capacity'], canonicalTrustee.capacity)),
+    authorisedTrusteeEmail: normalizeText(savedField(form, ['authorisedTrusteeEmail', 'authorised_trustee_email'], canonicalTrustee.email)).toLowerCase(),
+    authorisedTrusteeIdNumber: normalizeText(savedField(form, ['authorisedTrusteeIdNumber', 'authorised_trustee_id_number'], canonicalTrustee.id_number)),
+    authorisedTrusteeNationality: normalizeText(savedField(form, ['authorisedTrusteeNationality', 'authorised_trustee_nationality'], canonicalTrustee.nationality)),
+    authorisedTrusteeAddress: normalizeText(savedField(form, ['authorisedTrusteeAddress', 'authorised_trustee_address'], canonicalTrustee.residential_address)),
+    occupation: normalizeText(savedField(form, ['occupation']) ?? sellerFacts.occupation),
+    sourceOfFunds: normalizeText(savedField(form, ['sourceOfFunds', 'source_of_funds']) ?? sellerFacts.source_of_funds),
+    politicallyExposedPerson: sellerYesNoValue(savedField(form, ['politicallyExposedPerson', 'politically_exposed_person']) ?? sellerFacts.politically_exposed_person),
+    politicallyExposedDetails: normalizeText(savedField(form, ['politicallyExposedDetails', 'politically_exposed_details']) ?? sellerFacts.politically_exposed_details),
+    deceasedEstateName: normalizeText(savedField(form, ['deceasedEstateName'], sellerFacts.deceased_estate?.name)),
+    estateReferenceNumber: normalizeText(savedField(form, ['estateReferenceNumber', 'deceasedEstateReferenceNumber', 'estateReference'], sellerFacts.deceased_estate?.reference_number, sellerFacts.deceased_estate?.estate_reference)),
+    executorName: normalizeText(savedField(form, ['executorName'], sellerFacts.deceased_estate?.executors?.[0]?.full_name, sellerFacts.deceased_estate?.executors?.[0]?.name)),
+    executorEmail: normalizeText(savedField(form, ['executorEmail'], sellerFacts.deceased_estate?.executors?.[0]?.email)).toLowerCase(),
+    powerOfAttorneyPrincipalName: normalizeText(savedField(form, ['powerOfAttorneyPrincipalName', 'power_of_attorney_principal_name'], sellerFacts.power_of_attorney?.principal?.full_name, sellerFacts.power_of_attorney?.principal?.name)),
+    powerOfAttorneyPrincipalIdNumber: normalizeText(savedField(form, ['powerOfAttorneyPrincipalIdNumber', 'power_of_attorney_principal_id_number'], sellerFacts.power_of_attorney?.principal?.id_number)),
+    powerOfAttorneyName: normalizeText(savedField(form, ['powerOfAttorneyName', 'power_of_attorney_name'], sellerFacts.power_of_attorney?.representatives?.[0]?.full_name, sellerFacts.power_of_attorney?.representatives?.[0]?.name)),
+    powerOfAttorneyEmail: normalizeText(savedField(form, ['powerOfAttorneyEmail', 'power_of_attorney_email'], sellerFacts.power_of_attorney?.representatives?.[0]?.email)).toLowerCase(),
+    otherEntityName: normalizeText(savedField(form, ['otherEntityName', 'entityName'], sellerFacts.other_entity?.name)),
+    otherEntityRegistrationNumber: normalizeText(savedField(form, ['otherEntityRegistrationNumber', 'entityRegistrationNumber'], sellerFacts.other_entity?.registration_number)),
+    foreignOwnerCountry: normalizeText(savedField(form, ['foreignOwnerCountry'], sellerFacts.foreign?.country)),
+    foreignPassportNumber: normalizeText(savedField(form, ['foreignPassportNumber'], sellerFacts.foreign?.passport_number, sellerFacts.foreign?.passportNumber)),
+    foreignRegistrationNumber: normalizeText(savedField(form, ['foreignRegistrationNumber'], sellerFacts.foreign?.registration_number, sellerFacts.foreign?.registrationNumber)),
+    foreignResidencyStatus: normalizeText(savedField(form, ['foreignResidencyStatus'], sellerFacts.foreign?.residency_status, sellerFacts.foreign?.residencyStatus)),
+    propertyAddress: normalizeText(savedField(form, ['propertyAddress', 'addressLine1'], canonicalProperty.address, listing?.propertyAddress, listing?.addressLine1, listing?.formattedAddress, listing?.listingTitle)),
+    propertyStructureType: normalizeText(savedField(form, ['propertyStructureType'], canonicalProperty.property_structure_type, listing?.propertyStructureType, 'full_title')),
     propertyCategory,
     propertyType: savedPropertyType || propertyTypeOptions[0]?.value || '',
-    schemeName: normalizeText(pickFirst(form.schemeName, canonicalProperty.scheme?.name, canonicalProperty.scheme_name)),
-    sectionNumber: normalizeText(pickFirst(form.sectionNumber, form.unitNumber, canonicalProperty.scheme?.section_number, canonicalProperty.section_number)),
-    unitNumber: normalizeText(pickFirst(form.unitNumber, form.sectionNumber, canonicalProperty.scheme?.unit_number, canonicalProperty.unit_number)),
-    schemeBodyCorporateName: normalizeText(pickFirst(form.schemeBodyCorporateName, canonicalProperty.scheme?.body_corporate_name)),
-    schemeManagingAgentName: normalizeText(pickFirst(form.schemeManagingAgentName, canonicalProperty.scheme?.managing_agent?.name)),
-    schemeManagingAgentEmail: normalizeText(pickFirst(form.schemeManagingAgentEmail, canonicalProperty.scheme?.managing_agent?.email)),
-    schemeManagingAgentPhone: normalizeText(pickFirst(form.schemeManagingAgentPhone, canonicalProperty.scheme?.managing_agent?.phone)),
-    schemeLevies: normalizeText(pickFirst(form.schemeLevies, canonicalProperty.scheme?.levies)),
+    schemeName: normalizeText(savedField(form, ['schemeName'], canonicalProperty.scheme?.name, canonicalProperty.scheme_name)),
+    sectionNumber: normalizeText(savedField(form, ['sectionNumber'], canonicalProperty.scheme?.section_number, canonicalProperty.section_number)),
+    unitNumber: normalizeText(savedField(form, ['unitNumber'], canonicalProperty.scheme?.unit_number, canonicalProperty.unit_number)),
+    schemeBodyCorporateName: normalizeText(savedField(form, ['schemeBodyCorporateName'], canonicalProperty.scheme?.body_corporate_name)),
+    schemeManagingAgentName: normalizeText(savedField(form, ['schemeManagingAgentName'], canonicalProperty.scheme?.managing_agent?.name)),
+    schemeManagingAgentEmail: normalizeText(savedField(form, ['schemeManagingAgentEmail'], canonicalProperty.scheme?.managing_agent?.email)),
+    schemeManagingAgentPhone: normalizeText(savedField(form, ['schemeManagingAgentPhone'], canonicalProperty.scheme?.managing_agent?.phone)),
+    schemeLevies: normalizeText(savedField(form, ['schemeLevies'], canonicalProperty.scheme?.levies)),
     schemeRulesAvailable: Boolean(form.schemeRulesAvailable ?? canonicalProperty.scheme?.rules ?? false),
-    titleDeedNumber: normalizeText(pickFirst(form.titleDeedNumber, form.deedNumber, form.titleReference)),
+    titleDeedNumber: normalizeText(savedField(form, ['titleDeedNumber', 'deedNumber', 'titleReference'])),
     bondStatus,
-    bondHolder: bondStatus === 'bonded' ? normalizeText(pickFirst(form.bondHolder, form.bondBank, form.mortgageBank, canonicalFinance.bond_bank)) : '',
-    bondAccountReference: bondStatus === 'bonded' ? normalizeText(pickFirst(form.bondAccountReference, canonicalFinance.bond_account_reference)) : '',
-    outstandingBond: bondStatus === 'bonded' ? normalizeText(pickFirst(form.outstandingBond, form.estimatedSettlementAmount, form.bondSettlementAmount, canonicalFinance.estimated_settlement_amount)) : '',
+    bondHolder: bondStatus === 'bonded' ? normalizeText(savedField(form, ['bondHolder', 'bondBank', 'mortgageBank'], canonicalFinance.bond_bank)) : '',
+    bondAccountReference: bondStatus === 'bonded' ? normalizeText(savedField(form, ['bondAccountReference'], canonicalFinance.bond_account_reference)) : '',
+    outstandingBond: bondStatus === 'bonded' ? normalizeText(savedField(form, ['outstandingBond', 'estimatedSettlementAmount', 'bondSettlementAmount'], canonicalFinance.estimated_settlement_amount)) : '',
     multipleBonds: bondStatus === 'bonded' && Boolean(form.multipleBonds ?? canonicalFinance.multiple_bonds ?? false),
     accessBond: bondStatus === 'bonded' && Boolean(form.accessBond ?? canonicalFinance.access_bond ?? false),
     cancellationRequired: bondStatus === 'bonded' && Boolean(form.cancellationRequired ?? canonicalFinance.cancellation_required ?? false),
-    coOwnerDetails: normalizeText(pickFirst(form.coOwnerDetails, form.coOwners)),
-    ratesTaxes: normalizeText(pickFirst(form.ratesTaxes, listing?.ratesTaxes)),
-    levies: normalizeText(pickFirst(form.levies, listing?.levies)),
-    leviesNotApplicable: Boolean(form.leviesNotApplicable ?? form.levies_not_applicable ?? false),
-    waterBillingType: normalizeText(pickFirst(form.waterBillingType, form.water_billing_type, 'municipal')),
+    coOwnerDetails: normalizeText(savedField(form, ['coOwnerDetails', 'coOwners'])),
+    ratesTaxes: normalizeText(savedField(form, ['ratesTaxes'], listing?.ratesTaxes)),
+    levies: normalizeText(savedField(form, ['levies'], listing?.levies)),
+    leviesNotApplicable: Boolean(savedField(form, ['leviesNotApplicable', 'levies_not_applicable']) ?? false),
+    waterBillingType: normalizeText(savedField(form, ['waterBillingType', 'water_billing_type'], 'municipal')),
     mandateType: Object.hasOwn(form, 'mandateType') ? mandateTerms.mandateType : mandateTerms.mandateType || normalizeText(listing?.mandate?.type) || 'sole',
-    otherAgencyName: normalizeText(form.otherAgencyName ?? form.coAgencyName),
+    otherAgencyName: normalizeText(savedField(form, ['otherAgencyName', 'coAgencyName'])),
     askingPrice: mandateTerms.askingPrice,
     mandateStartDate: mandateTerms.startDate,
     expiryDate: mandateTerms.endDate,
@@ -410,8 +423,8 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     vatHandling: mandateTerms.vatHandling,
     ...(form.mandateCapture !== undefined ? { mandateCapture: mandateTerms.mandateCapture } : {}),
     ...(mandateTerms.mandateAcceptanceReview ? { mandateAcceptanceReview: mandateTerms.mandateAcceptanceReview } : {}),
-    commissionPreference: normalizeText(pickFirst(form.commissionPreference, form.commissionType, form.commissionStructure)),
-    mandateTerms: normalizeText(pickFirst(form.mandateTerms, form.mandateCommissionTerms)),
+    commissionPreference: normalizeText(savedField(form, ['commissionPreference', 'commissionType', 'commissionStructure'])),
+    mandateTerms: normalizeText(savedField(form, ['mandateTerms', 'mandateCommissionTerms'])),
     popiConsent: sellerPopiConsentDisplayValue(form),
   }
 }
@@ -448,7 +461,7 @@ export function updateListingSellerProfileDraftPerson(draft = {}, key = 'multipl
 
 export function updateListingSellerProfileDraftField(draft = {}, field = '', value = '') {
   const next = { ...draft, [field]: value }
-  if (field === 'sectionNumber') next.unitNumber = value
+  if (field === 'maritalStatus' && ['single', 'divorced', 'widowed', 'not_married'].includes(value)) next.maritalRegime = 'not_applicable'
   return next
 }
 
@@ -488,8 +501,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   const maritalStatus = normalizeText(draft.maritalStatus)
   const normalizedMaritalStatus = maritalStatus.toLowerCase()
   const maritalRegime = ['single', 'not married', 'not-married', 'not_married', 'notmarried', 'unmarried', 'never married', 'never-married', 'never_married'].includes(normalizedMaritalStatus)
-    ? 'single'
-    : maritalStatus
+    ? 'not_applicable'
+    : draft.maritalRegime !== undefined ? normalizeText(draft.maritalRegime) : normalizeMaritalRegime({ maritalStatus })
   const base = {
     companyAuthorityBasis: normalizeText(draft.companyAuthorityBasis),
     companyResolutionDate: normalizeText(draft.companyResolutionDate),
@@ -543,8 +556,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     tax_number: normalizeText(draft.incomeTaxNumber),
     saResident: normalizeText(draft.saResident),
     sa_resident: normalizeText(draft.saResident),
-    taxResident: normalizeText(draft.saResident),
-    tax_resident: normalizeText(draft.saResident),
+    taxResident: normalizeText(draft.taxResident),
+    tax_resident: normalizeText(draft.taxResident),
     vatRegistered: normalizeText(draft.vatRegistered),
     vat_registered: normalizeText(draft.vatRegistered),
     maritalStatus,
@@ -554,6 +567,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     spouseName: normalizeText(draft.spouseName),
     spouseEmail: normalizeText(draft.spouseEmail).toLowerCase(),
     spouseIdNumber: normalizeText(draft.spouseIdNumber),
+    spousePhone: normalizeText(draft.spousePhone),
     propertyAddress: normalizeText(draft.propertyAddress),
     addressLine1: normalizeText(draft.propertyAddress),
     propertyStructureType: normalizeText(draft.propertyStructureType) || 'full_title',
@@ -562,8 +576,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     sectionalTitle: ['sectional_title', 'share_block'].includes(normalizePropertyStructureType(draft.propertyStructureType, { fallback: '' })),
     bodyCorporate: ['sectional_title', 'share_block'].includes(normalizePropertyStructureType(draft.propertyStructureType, { fallback: '' })),
     schemeName: normalizeText(draft.schemeName),
-    sectionNumber: normalizeText(draft.sectionNumber || draft.unitNumber),
-    unitNumber: normalizeText(draft.unitNumber || draft.sectionNumber),
+    sectionNumber: normalizeText(draft.sectionNumber),
+    unitNumber: normalizeText(draft.unitNumber),
     schemeBodyCorporateName: normalizeText(draft.schemeBodyCorporateName),
     schemeManagingAgentName: normalizeText(draft.schemeManagingAgentName),
     schemeManagingAgentEmail: normalizeText(draft.schemeManagingAgentEmail),
@@ -635,6 +649,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.authorisedSignatoryIdNumber = normalizeText(draft.authorisedSignatoryIdNumber)
     base.authorisedSignatoryNationality = normalizeText(draft.authorisedSignatoryNationality)
     base.authorisedSignatoryAddress = normalizeText(draft.authorisedSignatoryAddress)
+    base.authorisedSignatoryPhone = normalizeText(draft.authorisedSignatoryPhone)
   }
   if (branch === 'trust' || branch === 'foreign_trust') {
     base.trustName = normalizeText(draft.trustName)
@@ -651,6 +666,7 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.authorisedTrusteeIdNumber = normalizeText(draft.authorisedTrusteeIdNumber)
     base.authorisedTrusteeNationality = normalizeText(draft.authorisedTrusteeNationality)
     base.authorisedTrusteeAddress = normalizeText(draft.authorisedTrusteeAddress)
+    base.authorisedTrusteePhone = normalizeText(draft.authorisedTrusteePhone)
   }
   if (branch === 'deceased_estate') {
     base.deceasedEstateName = normalizeText(draft.deceasedEstateName)
@@ -658,7 +674,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.estateReference = base.estateReferenceNumber
     base.executorName = normalizeText(draft.executorName)
     base.executorEmail = normalizeText(draft.executorEmail).toLowerCase()
-    base.executors = base.executorName ? [{ name: base.executorName, fullName: base.executorName, email: base.executorEmail, roleTitle: 'Executor', signingAuthority: true }] : []
+    base.executorPhone = normalizeText(draft.executorPhone)
+    base.executors = draft.executors?.length ? normalizePersonCollectionForSellerProfile(draft.executors, null, 'Executor') : base.executorName ? [{ name: base.executorName, fullName: base.executorName, email: base.executorEmail, roleTitle: 'Executor', signingAuthority: true }] : []
     base.deceased_estate = { name: base.deceasedEstateName, estate_reference: base.estateReferenceNumber, reference_number: base.estateReferenceNumber, executor: { full_name: base.executorName, email: base.executorEmail }, executors: base.executors }
   }
   if (branch === 'power_of_attorney') {
@@ -670,6 +687,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.power_of_attorney_name = base.powerOfAttorneyName
     base.powerOfAttorneyEmail = normalizeText(draft.powerOfAttorneyEmail).toLowerCase()
     base.power_of_attorney_email = base.powerOfAttorneyEmail
+    base.powerOfAttorneyPhone = normalizeText(draft.powerOfAttorneyPhone)
+    base.powerOfAttorneyRepresentatives = normalizePersonCollectionForSellerProfile(draft.powerOfAttorneyRepresentatives || [], null, 'Representative')
     base.power_of_attorney = {
       principal: { full_name: base.powerOfAttorneyPrincipalName, id_number: base.powerOfAttorneyPrincipalIdNumber },
       representative: { full_name: base.powerOfAttorneyName, email: base.powerOfAttorneyEmail },
@@ -856,8 +875,8 @@ export function buildListingSellerDocumentReadiness(listing = {}, commission = {
     // These are seller-completed questionnaires. They must be available in a
     // secure pack before their answers exist; otherwise the form can never do
     // the job it was sent to do.
-    { key: 'disclosure', title: 'Property disclosure form', copy: 'The seller completes the property-condition questionnaire in the secure link.', ready: true, missing: [] },
-    { key: 'fica', title: 'Seller FICA declaration', copy: 'The seller confirms and completes outstanding FICA information in the secure link.', ready: true, missing: [] },
+    { key: 'disclosure', title: 'Property disclosure form', copy: 'Capture the seller’s disclosure answers in Documents, then choose download or signature links.', ready: true, missing: [] },
+    { key: 'fica', title: 'Seller FICA declaration', copy: 'Prepare the FICA declaration independently. Supporting identity and authority evidence is reviewed separately.', ready: true, missing: [] },
   ]
   return { version: 'listing_seller_document_readiness_v1', documents, byKey: Object.fromEntries(documents.map((document) => [document.key, document])) }
 }

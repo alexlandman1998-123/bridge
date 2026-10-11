@@ -1,5 +1,7 @@
 import {
   ArrowUpRight,
+  ArrowLeft,
+  ArrowRight,
   BedDouble,
   Building2,
   CalendarClock,
@@ -8,16 +10,17 @@ import {
   Copy,
   Filter,
   Home,
+  LayoutGrid,
+  List,
   LockKeyhole,
   MapPinned,
-  Maximize2,
+  MapPin,
   MessageSquare,
   Minus,
   PencilLine,
   Plus,
   RotateCcw,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Tag,
   Upload,
@@ -25,9 +28,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Button from "../ui/Button";
 import Field from "../ui/Field";
+import Modal from "../ui/Modal";
 import DevelopmentVisualMappingStudio from "./DevelopmentVisualMappingStudio";
 import { buildDevelopmentStructurePathMap } from "../../core/developments/developmentStructureModel";
 import { buildCataloguePriceByUnitType } from "../../core/developments/developmentProductCatalogueModel";
@@ -154,7 +158,7 @@ function StatusPill({ status }) {
   const meta = STATUS_META[status] || STATUS_META.available;
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.7rem] font-bold uppercase tracking-[0.08em] ${meta.tone}`}
+      className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.7rem] font-bold uppercase tracking-[0.08em] ${meta.tone}`}
     >
       <span
         className={`h-1.5 w-1.5 rounded-full ${meta.dot}`}
@@ -214,14 +218,25 @@ export default function DevelopmentAvailabilityWorkspace({
   onOpenSitePlanPublicationControls,
   onSetReleaseState,
   onSaveUnitPrice,
+  onEditUnit,
+  inventoryManagement = null,
   legacySalesPanelEnabled = false,
 }) {
+  const [workspaceView, setWorkspaceView] = useState("availability");
+  const [inventoryDisplay, setInventoryDisplay] = useState("list");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [blockFilter, setBlockFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [structureFilter, setStructureFilter] = useState("all");
   const [selectedUnitId, setSelectedUnitId] = useState("");
+  const [unitDetailsOpen, setUnitDetailsOpen] = useState(false);
+  const unitDetailsContent = useRef(null);
+
+  function selectUnit(unit) {
+    setSelectedUnitId(unit.id);
+    setUnitDetailsOpen(true);
+  }
   const [mapSelectionActive, setMapSelectionActive] = useState(false);
   const [mappingStudioOpen, setMappingStudioOpen] = useState(false);
   const [sitePlanReviewOpen, setSitePlanReviewOpen] = useState(false);
@@ -373,6 +388,13 @@ export default function DevelopmentAvailabilityWorkspace({
     inventory.find((unit) => unit.id === selectedUnitId) ||
     visibleUnits[0] ||
     null;
+  const selectedUnitIndex = visibleUnits.findIndex(unit => unit.id === selectedUnit?.id);
+  function navigateUnit(direction) {
+    const nextUnit = visibleUnits[selectedUnitIndex + direction];
+    if (controlSaving || selectedUnitIndex < 0 || !nextUnit) return;
+    selectUnit(nextUnit);
+    unitDetailsContent.current?.closest('.ui-modal-body')?.scrollTo({ top: 0 });
+  }
   const notShownIds = useMemo(
     () => new Set((Array.isArray(sitePlanNotShownUnitIds) ? sitePlanNotShownUnitIds : []).map((id) => String(id || "").trim())),
     [sitePlanNotShownUnitIds],
@@ -443,6 +465,10 @@ export default function DevelopmentAvailabilityWorkspace({
       selectedUnit?.displayPrice ? currency.format(selectedUnit.displayPrice) : "",
     );
   }, [selectedUnit?.id, selectedUnit?.displayPrice]);
+  useEffect(() => {
+    setControlMessage("");
+    setControlError("");
+  }, [selectedUnit?.id]);
   function reviewSitePlanPlacement() {
     setZoom(1);
     setMapSelectionActive(false);
@@ -595,7 +621,7 @@ export default function DevelopmentAvailabilityWorkspace({
                       key={unit.id}
                       type="button"
                       onClick={() => {
-                        setSelectedUnitId(unit.id);
+                        selectUnit(unit);
                         setPresentationMode(false);
                       }}
                       className="rounded-[16px] border border-white/15 bg-[#f9fcfa] p-4 text-left transition hover:-translate-y-0.5 hover:bg-white"
@@ -626,6 +652,86 @@ export default function DevelopmentAvailabilityWorkspace({
           </div>
         </div>
       </section>
+    );
+  }
+
+  const inventoryFilters = (<>
+    <label className="relative block">
+      <span className="sr-only">Search availability</span>
+      <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8497aa]" />
+      <Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 !py-2 pl-9 pr-3 text-sm" placeholder="Search unit, type, block, or buyer" />
+    </label>
+    <Field as="select" aria-label="Filter by block" value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All blocks</option>{blocks.map((block) => <option key={block} value={block}>{block}</option>)}</Field>
+    <Field as="select" aria-label="Filter by floor or structure" value={structureFilter} onChange={(event) => setStructureFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All floors / structures</option>{structureOptions.map((item) => <option key={item.id} value={item.id}>{item.labelPath}</option>)}</Field>
+    <Field as="select" aria-label="Filter by unit type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All unit types</option>{unitTypes.map((type) => <option key={type} value={type}>{type}</option>)}</Field>
+    <Field as="select" aria-label="Filter by availability" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All availability</option>{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</Field>
+  </>);
+
+  function renderUnitDetails() {
+    if (!selectedUnit) return null;
+    return (
+      <div ref={unitDetailsContent} className="mx-auto max-w-[1280px] p-4 sm:p-8 lg:p-10">
+        <header className="relative overflow-hidden rounded-[24px] bg-[#102e2b] p-5 text-white sm:p-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(69,160,124,0.35),transparent_65%)]" aria-hidden="true" />
+          <div className="relative grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.6fr)]">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#a6d5bf]"><Home size={16} aria-hidden="true" />Selected unit</span>
+                <StatusPill status={selectedUnit.inventoryStatus} />
+              </div>
+              <h3 className="mt-5 break-words text-[2rem] font-semibold leading-tight tracking-[-0.045em] text-white sm:text-[2.75rem]">Unit {selectedUnit.displayNumber}</h3>
+              <p className="mt-2 break-words text-base font-medium leading-6 text-[#e0eee8]">{selectedUnit.displayType}</p>
+              <p className="mt-3 flex items-start gap-2 text-sm leading-6 text-[#abc5ba]"><MapPin size={16} className="mt-1 shrink-0" aria-hidden="true" />{selectedUnit.location}</p>
+            </div>
+            <div className="min-w-0 rounded-[18px] border border-white/15 bg-white/[0.07] p-4 sm:p-6">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#b6d2c5]">Asking price</span>
+              <strong className="mt-3 block whitespace-nowrap text-[clamp(1.15rem,2.8vw,2rem)] font-semibold tracking-[-0.035em] text-white tabular-nums">{selectedUnit.displayPrice ? currency.format(selectedUnit.displayPrice) : "Price on request"}</strong>
+              {selectedUnit.displayPrice && selectedUnit.priceSource === "catalogue" ? <span className="mt-2 block text-xs leading-5 text-[#b6d2c5]">From the unit type’s price list</span> : null}
+            </div>
+          </div>
+        </header>
+        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+          <section className="min-w-0 rounded-[22px] border border-[#dce7e0] bg-white p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#243d56]">Unit at a glance</h4>
+              {canManageInventory && onEditUnit ? <Button type="button" variant="secondary" size="sm" className="border-[#cfe0d6] text-[#236c4e]" onClick={() => { setUnitDetailsOpen(false); onEditUnit(selectedUnit); }}><PencilLine size={15} />Edit unit</Button> : null}
+            </div>
+            <dl className="mt-5 grid grid-cols-2 gap-3 sm:gap-4">
+              {[
+                [<BedDouble key="bedrooms" size={18} />, "Bedrooms", selectedUnit.bedrooms ?? "—"],
+                [<Home key="bathrooms" size={18} />, "Bathrooms", selectedUnit.bathrooms ?? "—"],
+                [<MapPinned key="size" size={18} />, "Size", selectedUnit.sizeSqm ? `${selectedUnit.sizeSqm} m²` : "—"],
+                [<Building2 key="floorplan" size={18} />, "Floorplan", selectedUnit.floorplanUrl || selectedUnit.floorplan_url ? <a className="text-base text-[#236c4e] underline underline-offset-2" href={selectedUnit.floorplanUrl || selectedUnit.floorplan_url} target="_blank" rel="noreferrer">View floorplan</a> : selectedUnit.floorplanName || "—"],
+              ].map(([icon, label, value]) => (
+                <div key={label} className="min-w-0 rounded-[16px] border border-[#e4ebe7] bg-[#f8faf9] p-4 sm:p-5">
+                  <dt className="flex flex-wrap items-center gap-2 text-xs font-medium text-[#71867c]"><span className="text-[#44745d]">{icon}</span>{label}</dt>
+                  <dd className="mt-4 break-words text-xl font-semibold text-[#263d52]">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+          {canManageInventory ? <section className="min-w-0 rounded-[22px] border border-[#dce7e0] bg-white p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-[#edf5ef] text-[#38664f]"><LockKeyhole size={18} /></span>
+              <div>
+                <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#243d56]">Developer controls</h4>
+                <p className="mt-1 text-sm leading-6 text-[#718299]">Manage this unit’s price and release status.</p>
+              </div>
+            </div>
+            <div className="mt-6">
+              <label htmlFor="availability-unit-price" className="block text-sm font-semibold text-[#38516b]">Price (ZAR)</label>
+              <div className="mt-2 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Field id="availability-unit-price" inputMode="numeric" value={priceDraft} disabled={controlSaving} onChange={event => setPriceDraft(event.target.value)} onBlur={() => priceIsValid && setPriceDraft(currency.format(parsedPriceDraft))} placeholder="R 0" />
+                <Button type="button" disabled={controlSaving || !priceHasChanged} onClick={() => void savePrice()}>{controlSaving ? "Saving…" : "Save price"}</Button>
+              </div>
+            </div>
+            <div className="mt-6 rounded-[16px] border border-[#e0e9e3] bg-[#f7faf8] p-4 text-sm leading-6 text-[#60758d]"><strong className="block font-semibold text-[#29425e]">Reservation default:</strong><p className="mt-1">{reservationDepositConfigured ? reservationDepositSummary || "No reservation deposit required" : "No reservation deposit required"}</p></div>
+            {canMoveToUnreleased ? <Button type="button" variant="secondary" className="mt-4 w-full border-[#d7e3dc] text-[#285f47]" disabled={controlSaving} onClick={() => { setUnitDetailsOpen(false); setReleaseConfirmationOpen(true); }}>Move to unreleased</Button> : null}
+            {controlMessage ? <p role="status" className="mt-4 rounded-xl bg-[#edf7f0] px-4 py-3 text-sm font-semibold text-[#167044]">{controlMessage}</p> : null}
+            {controlError ? <p role="alert" className="mt-4 rounded-xl bg-[#fff3f0] px-4 py-3 text-sm font-semibold text-[#b74334]">{controlError}</p> : null}
+          </section> : <section className="rounded-[22px] border border-[#dce7e0] bg-white p-6"><h4 className="text-lg font-semibold text-[#243d56]">Pricing & availability</h4><p className="mt-3 text-sm leading-7 text-[#60758d]">Price and stock changes are managed by the development team.</p></section>}
+        </div>
+      </div>
     );
   }
 
@@ -662,24 +768,29 @@ export default function DevelopmentAvailabilityWorkspace({
                 progress for the development team.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
-                <SlidersHorizontal size={14} />
-                {isAgency ? "Agency sales view" : "Developer inventory view"}
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => setPresentationMode(true)}
-              >
-                <Maximize2 size={14} />
-                Client presentation
-              </Button>
-            </div>
+            <nav className="grid gap-2 sm:grid-cols-2 xl:shrink-0" aria-label="Inventory view">
+              {[
+                ["availability", "Availability", <Home size={17} className="shrink-0" aria-hidden="true" />],
+                ["site-plan", "Interactive site plan", <MapPinned size={17} className="shrink-0" aria-hidden="true" />],
+              ].map(([view, label, icon]) => (
+                <Button
+                  key={view}
+                  type="button"
+                  variant={workspaceView === view ? "secondary" : "ghost"}
+                  aria-pressed={workspaceView === view}
+                  className={`h-auto min-h-12 whitespace-normal border px-4 ${workspaceView === view ? "border-white bg-white text-[#142132] hover:bg-[#f0f7f3]" : "border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"}`}
+                  onClick={() => { setUnitDetailsOpen(false); setWorkspaceView(view); }}
+                >
+                  {icon}
+                  {label}
+                </Button>
+              ))}
+            </nav>
           </div>
         </div>
       </section>
+      {workspaceView === "availability" ? <section className="grid gap-2.5 rounded-[18px] border border-[#dce5ee] bg-white p-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Availability filters">{inventoryFilters}</section> : null}
+      {workspaceView === "site-plan" ? (
       <section className="overflow-hidden rounded-[22px] border border-[#dce5ee] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -751,15 +862,7 @@ export default function DevelopmentAvailabilityWorkspace({
               Browse by
             </span>
             <div className="mt-3 grid gap-2.5">
-              <label className="relative block">
-                <span className="sr-only">Search availability</span>
-                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8497aa]" />
-                <Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 !py-2 pl-9 pr-3 text-sm" placeholder="Search unit, type, block, or buyer" />
-              </label>
-              <Field as="select" value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All blocks</option>{blocks.map((block) => <option key={block} value={block}>{block}</option>)}</Field>
-              <Field as="select" value={structureFilter} onChange={(event) => setStructureFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All floors / structures</option>{structureOptions.map((item) => <option key={item.id} value={item.id}>{item.labelPath}</option>)}</Field>
-              <Field as="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All unit types</option>{unitTypes.map((type) => <option key={type} value={type}>{type}</option>)}</Field>
-              <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All availability</option>{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</Field>
+              {inventoryFilters}
             </div>
             <div className="mt-4 border-t border-[#e4ece6] pt-3">
               <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Legend</span>
@@ -795,7 +898,7 @@ export default function DevelopmentAvailabilityWorkspace({
                   aria-label={`Select unit ${unit.displayNumber}`}
                   onClick={(event) => {
                     event.stopPropagation();
-                    setSelectedUnitId(unit.id);
+                    selectUnit(unit);
                     setMapSelectionActive(true);
                   }}
                   className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[5px] border px-2 py-1 text-[0.68rem] font-bold shadow-[0_3px_8px_rgba(15,23,42,0.14)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#173f38] ${selected ? "border-[#163f36] bg-[#163f36] text-white ring-2 ring-white/80" : `${meta.tone} border-white/90`}`}
@@ -815,7 +918,7 @@ export default function DevelopmentAvailabilityWorkspace({
                   aria-label={`Review suggested placement for unit ${unit.displayNumber}`}
                   onClick={(event) => {
                     event.stopPropagation();
-                    setSelectedUnitId(unit.id);
+                    selectUnit(unit);
                     setMapSelectionActive(true);
                   }}
                   className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[5px] border-2 border-dashed border-[#b87908] bg-[#fffaf0] px-2 py-1 text-[0.68rem] font-bold text-[#8b5d0b] shadow-[0_3px_8px_rgba(15,23,42,0.14)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#b87908] ${selected ? "ring-2 ring-[#fff1cb]" : ""}`}
@@ -867,7 +970,7 @@ export default function DevelopmentAvailabilityWorkspace({
               </div>
               <p className="mt-2 text-xs leading-5 text-[#60758d]">{hasSitePlanIssues ? "Resolve each check, or explicitly mark a unit as not shown on this plan. Only then can the public map be published." : "Every unit is placed or intentionally not shown. The map is ready for public review."}</p>
               {hasSitePlanIssues ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">Map checks need attention</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">These checks do not change saved coordinates. Review each item before relying on the public map.</p><div className="mt-2 grid gap-1.5">{sitePlanQuality.issues.slice(0, 4).map((issue) => <button key={`${issue.type}-${issue.unitIds.join('-')}`} type="button" className="rounded-md border border-[#efd7a3] bg-white px-2 py-1.5 text-left text-[0.68rem] font-semibold text-[#76531a] hover:bg-[#fffdf8]" onClick={() => { setSelectedUnitId(issue.unitIds[0]); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{issue.type === "missing" ? `Place Unit ${issue.label}` : issue.type === "invalid" ? `Reposition Unit ${issue.label}` : `Separate Units ${issue.label}${issue.distance ? ` (${issue.distance}% apart)` : ""}`}</button>)}{sitePlanQuality.issues.length > 4 ? <span className="px-1 text-[0.68rem] font-semibold text-[#8b6c2c]">+{sitePlanQuality.issues.length - 4} more checks</span> : null}</div></div> : null}
-              {unplacedUnits.length ? <div className="mt-3 flex flex-wrap gap-1.5">{unplacedUnits.slice(0, 4).map((unit) => <button key={unit.id} type="button" className="rounded-md border border-[#d9e5df] bg-white px-2 py-1 text-[0.68rem] font-semibold text-[#315c4a] hover:bg-[#eef8f1]" onClick={() => { setSelectedUnitId(unit.id); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{unit.displayNumber}</button>)}{unplacedUnits.length > 4 ? <span className="px-1 py-1 text-[0.68rem] font-semibold text-[#718398]">+{unplacedUnits.length - 4} more</span> : null}</div> : null}
+              {unplacedUnits.length ? <div className="mt-3 flex flex-wrap gap-1.5">{unplacedUnits.slice(0, 4).map((unit) => <button key={unit.id} type="button" className="rounded-md border border-[#d9e5df] bg-white px-2 py-1 text-[0.68rem] font-semibold text-[#315c4a] hover:bg-[#eef8f1]" onClick={() => { selectUnit(unit); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{unit.displayNumber}</button>)}{unplacedUnits.length > 4 ? <span className="px-1 py-1 text-[0.68rem] font-semibold text-[#718398]">+{unplacedUnits.length - 4} more</span> : null}</div> : null}
               {notShownUnits.length ? <p className="mt-3 rounded-[9px] bg-[#f3f6f8] px-2.5 py-2 text-[0.7rem] leading-4 text-[#60758d]">Not on this plan: {notShownUnits.slice(0, 4).map((unit) => unit.displayNumber).join(', ')}{notShownUnits.length > 4 ? ` +${notShownUnits.length - 4}` : ''}</p> : null}
               <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e4ece6] pt-3">
                 {onPreviewPublicSitePlan ? <Button type="button" size="sm" variant="secondary" onClick={onPreviewPublicSitePlan}><ArrowUpRight size={13} /> Preview {sitePlanPubliclyVisible ? "live map" : "page"}</Button> : null}
@@ -892,12 +995,13 @@ export default function DevelopmentAvailabilityWorkspace({
           </div>
           <article className="flex h-[470px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[#dce5ee] bg-white xl:h-[540px]">
             <div className="flex items-center justify-between border-b border-[#e8eef5] bg-[#fbfcfe] px-4 py-3"><div><h3 className="text-sm font-semibold tracking-[-0.02em] text-[#142132]">Unit availability</h3><p className="mt-0.5 text-xs text-[#6b7d93]">{visibleUnits.length} of {metrics.total} units shown</p></div><button type="button" className="text-xs font-semibold text-[#327553]" onClick={() => { setQuery(""); setStatusFilter("all"); setBlockFilter("all"); setStructureFilter("all"); setTypeFilter("all"); }}>Clear</button></div>
-            {visibleUnits.length ? <div className="min-h-0 flex-1 overflow-y-auto">{visibleUnits.map((unit) => { const selected = unit.id === selectedUnit?.id; const meta = STATUS_META[unit.inventoryStatus] || STATUS_META.available; return <button key={unit.id} type="button" onClick={() => setSelectedUnitId(unit.id)} className={`grid w-full grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[#edf2f7] px-4 py-3 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}><strong className="text-sm font-semibold text-[#182b3d]">{unit.displayNumber}</strong><span className="min-w-0"><strong className="block truncate text-xs font-semibold text-[#30485f]">{unit.displayType}</strong><small className="mt-0.5 block truncate text-[0.68rem] text-[#78899c]">{unit.location}</small></span><span className="text-right"><strong className="block whitespace-nowrap text-xs text-[#24394e]">{unit.displayPrice ? currency.format(unit.displayPrice) : "POR"}</strong><small className="mt-1 inline-flex items-center gap-1 text-[0.65rem] font-bold text-[#60758d]"><i className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />{meta.label}</small></span></button>; })}</div> : <div className="px-6 py-14 text-center"><Home className="mx-auto text-[#a2b0bf]" size={28} /><strong className="mt-4 block text-sm text-[#30485f]">No units match this view</strong><p className="mt-1 text-sm text-[#6b7d93]">Change the filters or add units in the stock master.</p></div>}
+            {visibleUnits.length ? <div className="min-h-0 flex-1 overflow-y-auto">{visibleUnits.map((unit) => { const selected = unit.id === selectedUnit?.id; const meta = STATUS_META[unit.inventoryStatus] || STATUS_META.available; return <button key={unit.id} type="button" onClick={() => selectUnit(unit)} className={`grid w-full grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-[#edf2f7] px-4 py-3 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}><strong className="text-sm font-semibold text-[#182b3d]">{unit.displayNumber}</strong><span className="min-w-0"><strong className="block truncate text-xs font-semibold text-[#30485f]">{unit.displayType}</strong><small className="mt-0.5 block truncate text-[0.68rem] text-[#78899c]">{unit.location}</small></span><span className="text-right"><strong className="block whitespace-nowrap text-xs text-[#24394e]">{unit.displayPrice ? currency.format(unit.displayPrice) : "POR"}</strong><small className="mt-1 inline-flex items-center gap-1 text-[0.65rem] font-bold text-[#60758d]"><i className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />{meta.label}</small></span></button>; })}</div> : <div className="px-6 py-14 text-center"><Home className="mx-auto text-[#a2b0bf]" size={28} /><strong className="mt-4 block text-sm text-[#30485f]">No units match this view</strong><p className="mt-1 text-sm text-[#6b7d93]">Change the filters or add units in the stock master.</p></div>}
           </article>
         </div>
       </section>
-      <section className="grid gap-5">
-        <article className="hidden" aria-hidden="true">
+      ) : null}
+      <section className={workspaceView === "availability" ? "grid min-w-0 gap-5" : "contents"}>
+        {workspaceView === "availability" ? <article className="min-w-0 overflow-hidden rounded-[20px] border border-[#dce5ee] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
           <div className="flex flex-col gap-3 border-b border-[#e8eef5] bg-[#fbfcfe] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="whitespace-nowrap text-[1.02rem] font-semibold tracking-[-0.025em] text-[#142132]">
@@ -907,11 +1011,48 @@ export default function DevelopmentAvailabilityWorkspace({
                 {visibleUnits.length} of {metrics.total} units shown
               </p>
             </div>
-            <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#687c91]">
-              <Filter size={13} /> Live filters
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#687c91]">
+                <Filter size={13} /> Live filters
+              </span>
+              <nav className="inline-flex gap-1 rounded-xl border border-[#dce5ee] bg-[#edf2f6] p-1" aria-label="Unit availability layout">
+                {[
+                  ["list", "List", <List size={15} aria-hidden="true" />],
+                  ["cards", "Cards", <LayoutGrid size={15} aria-hidden="true" />],
+                ].map(([view, label, icon]) => (
+                  <Button key={view} type="button" size="sm" variant="ghost" aria-pressed={inventoryDisplay === view} className={`h-9 rounded-lg px-3 text-xs ${inventoryDisplay === view ? "bg-white text-[#176447] shadow-sm hover:bg-white hover:text-[#176447]" : "text-[#687c91]"}`} onClick={() => setInventoryDisplay(view)}>
+                    {icon}{label}
+                  </Button>
+                ))}
+              </nav>
+            </div>
           </div>
           {visibleUnits.length ? (
+            inventoryDisplay === "cards" ? (
+              <div className="grid max-h-[620px] grid-cols-[repeat(auto-fill,minmax(min(100%,230px),1fr))] gap-4 overflow-auto p-4">
+                {visibleUnits.map((unit) => {
+                  const selected = unit.id === selectedUnit?.id;
+                  return (
+                    <button key={unit.id} type="button" aria-pressed={selected} onClick={() => selectUnit(unit)} className={`flex min-w-0 flex-col rounded-[16px] border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f8f5c] focus-visible:ring-offset-2 ${selected ? "border-[#2f8f5c] bg-[#eff7f2] shadow-[inset_0_3px_0_#2f8f5c]" : "border-[#dce5ee] bg-white hover:border-[#a8cdb8] hover:bg-[#f8fbf9]"}`}>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <strong className="break-words text-base font-semibold text-[#182b3d]">Unit {unit.displayNumber}</strong>
+                        <StatusPill status={unit.inventoryStatus} />
+                      </div>
+                      <strong className="mt-4 break-words text-sm font-semibold text-[#30485f]">{unit.displayType}</strong>
+                      <span className="mt-1 break-words text-xs leading-5 text-[#78899c]">{unit.location}</span>
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#60758d]">
+                        {unit.bedrooms != null ? <span className="inline-flex items-center gap-1.5"><BedDouble size={14} aria-hidden="true" />{unit.bedrooms} {Number(unit.bedrooms) === 1 ? "bedroom" : "bedrooms"}</span> : null}
+                        {unit.sizeSqm ? <span className="inline-flex items-center gap-1.5"><Building2 size={14} aria-hidden="true" />{unit.sizeSqm} m²</span> : null}
+                      </div>
+                      <div className="mt-auto pt-5">
+                        <strong className="block whitespace-nowrap text-[1.15rem] font-semibold tracking-[-0.025em] text-[#24394e] tabular-nums sm:text-xl">{unit.displayPrice ? currency.format(unit.displayPrice) : "Price pending"}</strong>
+                        <span className="mt-3 flex items-center justify-between border-t border-[#dce5ee] pt-3 text-xs font-semibold text-[#327553]">{selected ? "Selected unit" : "View unit"}<ArrowUpRight size={15} aria-hidden="true" /></span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
             <div className="max-h-[620px] overflow-auto">
               <div className="min-w-[650px]">
                 <div className="grid grid-cols-[minmax(90px,0.55fr)_minmax(150px,1fr)_minmax(125px,0.75fr)_minmax(145px,0.8fr)_auto] gap-3 border-b border-[#e8eef5] bg-[#f7f9fc] px-5 py-3 text-[0.67rem] font-bold uppercase tracking-[0.11em] text-[#7c8da1]">
@@ -927,7 +1068,8 @@ export default function DevelopmentAvailabilityWorkspace({
                     <button
                       key={unit.id}
                       type="button"
-                      onClick={() => setSelectedUnitId(unit.id)}
+                      aria-pressed={selected}
+                      onClick={() => selectUnit(unit)}
                       className={`grid w-full grid-cols-[minmax(90px,0.55fr)_minmax(150px,1fr)_minmax(125px,0.75fr)_minmax(145px,0.8fr)_auto] items-center gap-3 border-b border-[#edf2f7] px-5 py-4 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}
                     >
                     <strong className="text-sm font-semibold text-[#182b3d]">
@@ -953,6 +1095,7 @@ export default function DevelopmentAvailabilityWorkspace({
                 })}
               </div>
             </div>
+            )
           ) : (
             <div className="px-6 py-14 text-center">
               <Home className="mx-auto text-[#a2b0bf]" size={28} />
@@ -964,65 +1107,7 @@ export default function DevelopmentAvailabilityWorkspace({
               </p>
             </div>
           )}
-        </article>
-        {selectedUnit ? <article className="w-full rounded-[20px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.045)] sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <span className="block text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#76899d]">Selected unit</span>
-              <h3 className="mt-1 text-[1.65rem] font-semibold tracking-[-0.045em] text-[#142132]">Unit {selectedUnit.displayNumber}</h3>
-              <p className="mt-1 text-sm text-[#64778d]">{selectedUnit.displayType} · {selectedUnit.location}</p>
-              <strong className="mt-3 block text-[1.5rem] font-semibold tracking-[-0.04em] text-[#173149]">{selectedUnit.displayPrice ? currency.format(selectedUnit.displayPrice) : "Price on request"}</strong>
-            </div>
-            <StatusPill status={selectedUnit.inventoryStatus} />
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            {[
-              [<BedDouble key="bedrooms" size={16} />, "Bedrooms", selectedUnit.bedrooms || "—"],
-              [<Home key="bathrooms" size={16} />, "Bathrooms", selectedUnit.bathrooms || "—"],
-              [<MapPinned key="size" size={16} />, "Size", selectedUnit.sizeSqm ? `${selectedUnit.sizeSqm} m²` : "—"],
-              [<Building2 key="floorplan" size={16} />, "Floorplan", selectedUnit.floorplanUrl || selectedUnit.floorplan_url ? <a className="text-[#236c4e] underline underline-offset-2" href={selectedUnit.floorplanUrl || selectedUnit.floorplan_url} target="_blank" rel="noreferrer">View floorplan</a> : selectedUnit.floorplanName || "—"],
-            ].map(([icon, label, value]) => (
-              <div key={label} className="min-h-[92px] rounded-[14px] border border-[#e1e9f2] bg-[#f7faff] p-3">
-                <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#eaf1f8] text-[#52728f]">{icon}</span>
-                <span className="mt-2 block text-[0.63rem] font-semibold uppercase tracking-[0.1em] text-[#7b8da1]">{label}</span>
-                <strong className="mt-1 block text-sm text-[#263d52]">{value}</strong>
-              </div>
-            ))}
-          </div>
-
-          {canManageInventory ? <section className="mt-5 rounded-[16px] border border-[#d8e2ee] bg-[#f7f9fc] p-4">
-            <div className="flex items-start gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f0f8] text-[#466987]"><LockKeyhole size={15} /></span>
-              <div>
-                <span className="block text-[0.68rem] font-bold uppercase tracking-[0.11em] text-[#3d5978]">Developer controls</span>
-                <p className="mt-1 text-xs text-[#62758d]">Release stock and apply governed pricing.</p>
-              </div>
-            </div>
-            <label className="mt-4 block text-xs font-semibold text-[#38516b]">
-              Price (ZAR)
-              <div className="mt-1.5 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                <Field
-                  inputMode="numeric"
-                  value={priceDraft}
-                  disabled={controlSaving}
-                  onChange={(event) => setPriceDraft(event.target.value)}
-                  onBlur={() => priceIsValid && setPriceDraft(currency.format(parsedPriceDraft))}
-                  placeholder="R 0"
-                />
-                <Button type="button" size="sm" disabled={controlSaving || !priceHasChanged} onClick={() => void savePrice()}>
-                  {controlSaving ? "Saving…" : "Save price"}
-                </Button>
-              </div>
-            </label>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#dde6ef] pt-3">
-              <span className="text-xs text-[#60758d]"><strong className="font-semibold text-[#29425e]">Reservation default:</strong> {reservationDepositConfigured ? reservationDepositSummary || "No reservation deposit required" : "No reservation deposit required"}</span>
-              {canMoveToUnreleased ? <button type="button" disabled={controlSaving} className="text-xs font-semibold text-[#285f47] hover:underline disabled:cursor-not-allowed disabled:text-[#91a2b2]" onClick={() => setReleaseConfirmationOpen(true)}>Move to unreleased</button> : null}
-            </div>
-            {controlMessage ? <p role="status" className="mt-3 text-xs font-semibold text-[#167044]">{controlMessage}</p> : null}
-            {controlError ? <p role="alert" className="mt-3 text-xs font-semibold text-[#b74334]">{controlError}</p> : null}
-          </section> : <p className="mt-5 rounded-[14px] border border-[#e2e9f1] bg-[#fafcff] px-4 py-3 text-xs text-[#60758d]">You do not have permission to change this unit’s stock or price.</p>}
-        </article> : <article className="rounded-[20px] border border-dashed border-[#dce5ee] bg-white px-5 py-10 text-center text-sm text-[#60758d]">Select a unit from the map or availability list to view its details.</article>}
+        </article> : null}
 
         {/* Kept out of the render tree while the legacy sales panel is retired. */}
         {/* eslint-disable no-undef */}
@@ -1438,7 +1523,23 @@ export default function DevelopmentAvailabilityWorkspace({
         </aside> : null}
         {/* eslint-enable no-undef */}
       </section>
+      {workspaceView === "availability" ? inventoryManagement : null}
     </section>
+    <Modal
+      open={unitDetailsOpen && Boolean(selectedUnit)}
+      onClose={() => setUnitDetailsOpen(false)}
+      title="Unit workspace"
+      className="fixed inset-0 !m-0 h-dvh !max-h-[100dvh] !w-screen !max-w-none !rounded-none !border-0 [&_.ui-modal-body]:bg-[#f5f8f6] [&_.ui-modal-body]:p-0 [&_.ui-modal-head]:px-5 [&_.ui-modal-head]:py-4 sm:[&_.ui-modal-head]:px-8 [&_.ui-modal-footer]:px-5 [&_.ui-modal-footer]:py-4 sm:[&_.ui-modal-footer]:px-8"
+      footer={
+        <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between gap-3">
+          <Button type="button" variant="secondary" size="sm" disabled={controlSaving || selectedUnitIndex <= 0} onClick={() => navigateUnit(-1)}><ArrowLeft size={16} aria-hidden="true" /><span className="hidden sm:inline">Previous unit</span><span className="sm:hidden">Previous</span></Button>
+          <span className="text-center text-xs font-medium text-[#718299]" aria-live="polite">{selectedUnitIndex >= 0 ? `${selectedUnitIndex + 1} of ${visibleUnits.length} units` : 'Outside current filters'}</span>
+          <Button type="button" variant="secondary" size="sm" disabled={controlSaving || selectedUnitIndex < 0 || selectedUnitIndex >= visibleUnits.length - 1} onClick={() => navigateUnit(1)}><span className="hidden sm:inline">Next unit</span><span className="sm:hidden">Next</span><ArrowRight size={16} aria-hidden="true" /></Button>
+        </div>
+      }
+    >
+      {renderUnitDetails()}
+    </Modal>
     {releaseConfirmationOpen && selectedUnit ? (
       <div className="fixed inset-0 z-[80] grid place-items-center bg-[#081c20]/55 p-4" role="dialog" aria-modal="true" aria-labelledby="move-unit-to-unreleased-title">
         <section className="w-full max-w-md overflow-hidden rounded-[20px] bg-white shadow-2xl">

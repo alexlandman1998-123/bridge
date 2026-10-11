@@ -21,10 +21,9 @@ export function createSellerOnboardingManualSigningPack({ existing = {}, formalP
   const includeMandate = selected.includes('mandate')
   const includeDisclosure = !disclosureSigned && (approval.documentRoutes && Object.keys(approval.documentRoutes).length
     ? ['manual_upload', 'digital_pack'].includes(approval.documentRoutes.signed_disclosure_form)
-    : selected.includes('disclosure') || selected.includes('signed_disclosure_form') || includeFica || includeMandate)
+    : selected.includes('disclosure') || selected.includes('signed_disclosure_form'))
   if (!includeFica && !includeMandate && !includeDisclosure) throw new Error('Choose a document before preparing signing copies.')
   if (includeFica && !ficaDraft) throw new Error('The approved FICA declaration draft is unavailable.')
-  const disclosureComplete = disclosureSigned === true
   const disclosureDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_disclosure_form')
   if (includeDisclosure && approval.documentRoutes?.signed_disclosure_form && !text(disclosureDraft?.generatedHtml)) {
     throw new Error('The reviewed defects disclosure is unavailable. Rebuild the onboarding drafts before sending it for signature.')
@@ -133,7 +132,7 @@ export function createSellerOnboardingSigningCopyPack({ existing = {}, formalPac
   const includeMandate = selected.includes('mandate')
   const includeDisclosure = !disclosureSigned && (approval.documentRoutes && Object.keys(approval.documentRoutes).length
     ? ['manual_upload', 'digital_pack'].includes(approval.documentRoutes.signed_disclosure_form)
-    : selected.includes('disclosure') || selected.includes('signed_disclosure_form') || includeFica || includeMandate)
+    : selected.includes('disclosure') || selected.includes('signed_disclosure_form'))
   if (!includeFica && !includeMandate && !includeDisclosure) throw new Error('Choose a document before preparing signing copies.')
   const drafts = Array.isArray(record(postOnboardingDrafts).documents) ? postOnboardingDrafts.documents : []
   const ficaDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_fica_declaration')

@@ -536,6 +536,39 @@ Focused checks: `npm run verify:seller-onboarding-profile-sync`,
 `npx vitest run src/components/onboarding/__tests__/SellerOnboardingCapture.test.jsx src/components/listings/__tests__/ListingSellerInformationEditor.test.jsx`.
 These use local fixtures and do not send mail or write hosted records.
 
+The unreleased seller alignment repair now uses one current profile model in
+the lead, listing, seller portal and transaction seller details. Entity/person
+handoff preserves saved source ids and full captured fields; ambiguous legacy
+links require review. Its guarded-save and current-profile SQL migrations must
+ship with the compatible frontend after approval. Local checks and remaining
+legacy/release work are recorded in
+[the seller saving repair report](docs/audits/seller-saving-repair-2026-10-11.md#phase-3-profile-alignment).
+
+`npm run test:seller-profile-alignment-journey` checks the current seller editors
+against isolated PostgreSQL migration RPCs in two browser sessions. It covers
+conflicts, retained drafts, rollback, retry receipts, clearing and entity/person
+continuity. Auth, navigation and initial transaction creation are synthetic;
+the check makes no hosted writes. Evidence and the final app-check result are
+recorded in the report's Phase 5 checkpoint.
+
+Phase 6 separates information submission from document preparation. Seller
+onboarding has three steps: seller information, property information and review/
+submission. Disclosure answers and signatures are captured afterwards through
+Documents. Mandate, disclosure and FICA each offer **Upload manually**, **Generate
+and download**, and **Generate and send for signature**. Preparing one does not
+implicitly generate the other two. Agent review, protected fact corrections,
+accepted version history and the portal's agency-managed upload permissions remain
+in force. Listing preparation uses the same guarded canonical save as profile
+editing and only downloads or sends after that save is confirmed.
+
+The local `20261011111846_seller_portal_document_progress.sql` migration extends
+the existing protected seller readers with current document versions, signature
+counts and review state. It delegates token/session checks to the existing readers
+and exposes no recipient identities, signing tokens or document HTML. Release it
+with the compatible frontend and the required alignment guards after approval.
+The Phase 6 checkpoint in the saving report records local checks and limitations;
+no hosted migrations or deployment were performed.
+
 ## Transaction buyer and seller capture
 
 The agent's Create Transaction → Buyer & Seller step captures each legal entity
@@ -4330,3 +4363,272 @@ Focused checks cover the recruitment database, applicant API, contract component
 workspace, signing model and service in `src/pages/recruitment/__tests__`, plus the
 recruitment email content and dispatcher tests. `npm run check:app` covers the
 primary app lint, established service baseline and production build.
+
+## Flexible document requirements: identity foundation
+
+Stage 1 extends the existing `document_requirement_instances` records. Standard
+items retain their definition key. Custom items have `requirement_origin: manual`,
+a local `custom_label`, and no global definition; their type key is derived from
+the instance UUID using `documentRequirementTypeKey`. Person, entity and property
+subjects retain their explicit identity. Requests, files and reviews remain
+separate records linked to the requirement.
+
+An explicit removal uses `applicability_override: removed`, a reason, actor and
+timestamp. It reserves the original identity, preserves the previous status and
+evidence, and survives both JavaScript and database matrix recalculation. Clearing
+the override restores the previous status. Ordinary rule-driven inapplicability
+can still reactivate when the transaction facts change. Removal/restoration is
+recorded in the existing requirement history.
+
+During transaction requirement generation, eligible manual items and explicit
+removals from linked buyer leads, seller leads and private listings retain their
+instance IDs. Handover verifies the organisation, source access and buyer/seller
+role. `document_requirement_context_links` preserves the originating context.
+The authorised reconciliation reader follows these links, so regenerating the
+original lead/listing cannot reintroduce an item handed over to the transaction.
+Retries reuse the same records; another transaction does not inherit that
+transaction's decisions. Conflicting existing target identities stop the handover
+for explicit reconciliation rather than merging evidence by name.
+
+The append-only migration is
+`supabase/migrations/20261011112703_flexible_document_requirement_identity.sql`.
+Apply it before releasing these service changes. It introduces no browser write
+permissions or public handover endpoint. The stage 2 command layer below adds
+authorised mutations. All workspace readers following context links, portal
+controls and reliable notification delivery remain later stages. This foundation does not send email or delete stored files.
+
+Focused local checks (no hosted writes):
+
+- `node --test src/services/documents/__tests__/documentRequirementIdentity.database.test.js src/services/documents/__tests__/documentRequestCanonicalRequiredDocumentSyncService.test.js`
+- `node --test src/services/documents/__tests__/documentRequirementIdentity.adapters.test.js`
+- `node scripts/canonical-document-resolver.test.mjs`
+- `node scripts/transaction-canonical-document-engine.test.mjs`
+
+The database test executes the migration and real resolver in isolated PGlite,
+including persistence, exact-party identity, handover rollback and browser access
+denial. Hosted migration application, security advisors and live cross-workspace
+verification remain release checks.
+
+
+### Flexible document requirements: shared commands (stage 2)
+
+`src/services/documents/documentRequirementCommandService.js` is the common
+service for adding, removing, restoring and uploading a requirement. Apply
+`supabase/migrations/20261011114048_flexible_document_requirement_commands.sql`
+after the stage 1 identity migration before wiring callers to this service.
+No existing screens have switched to these commands yet.
+
+Each operation requires a caller-retained UUID `commandId`, a context type/ID,
+and a payload. Remove, restore and upload also require the requirement ID and
+its current `command_revision` as `expectedRevision`. Reuse the **entire same
+command** after an unconfirmed response; a new intent needs a new ID. Receipts
+return the original result, and access is rechecked even on replay. Refresh the
+authoritative requirements after confirmation; receipt rows are save receipts,
+not the latest state. `refreshContexts` includes versions for all retained
+source contexts. Transaction changes also use the existing refresh triggers.
+
+- Add accepts `party`, optional `definitionKey` or custom `label`, and optional
+  `subjectKind`/`subjectId`. Person/entity identities must already belong to the
+  scoped party (including transaction onboarding people); unknown identities
+  are rejected. It creates a local type, never a global catalogue definition.
+- Remove and restore require a reason. Removal preserves evidence/reviews and
+  cancels active linked requests and pending canonical reminders. Restoring
+  revives the same checklist identity and prior status; cancelled solicitations
+  remain cancelled until explicitly requested again. Attorney removals retain
+  the principal/conveyancer boundary.
+- `prepareDocumentRequirementUpload` validates the file and returns a serializable
+  command with a content digest. Callers must retain it until confirmed and use
+  `uploadDocumentRequirementFile` to save. Bytes upload to a private immutable
+  path first; the database then verifies the storage metadata and atomically saves
+  the file link, request state, audit event, refresh versions and receipt. A lost
+  response never triggers file deletion. Retrying checks for a receipt before
+  uploading; an already uploaded path can complete its original save.
+- Pre-transaction evidence lives in a private upload registry. Handover creates
+  transaction document records with the same UUID/path, without copying bytes.
+  Replacement keeps previous evidence and reopens review. SQL metadata validation
+  is not malware scanning or server-side hashing of the file contents.
+
+The stage 3 readers and stage 4 controls must consume these commands; notification
+outbox integration, legacy listing projections and automatic email delivery are
+not introduced here. No hosted migration, storage write or email was performed.
+
+Focused command checks, from `the-it-guy/`:
+
+- `node --test src/services/documents/__tests__/documentRequirementCommands.database.test.js src/services/documents/__tests__/documentRequirementCommandService.test.js`
+- `npx eslint src/services/documents/documentRequirementCommandService.js src/services/documents/__tests__/documentRequirementCommandService.test.js src/services/documents/__tests__/documentRequirementCommands.database.test.js`
+
+The database suite executes the real migrations and request lifecycle triggers in
+isolated PostgreSQL (PGlite), including denied access, stale revisions, receipt
+replay, rollback after audit failure, storage immutability and upload handover.
+It does not replace hosted storage/portal or concurrent-connection release checks.
+
+### Flexible document requirements: shared readers (stage 3)
+
+Apply `supabase/migrations/20261011115118_flexible_document_requirement_read_model.sql`
+after stages 1 and 2, before deploying these readers. The new read-only
+`bridge_document_requirement_context` returns requirements, permitted evidence
+(including retained versions), and a context version. It follows saved handover
+links and explicit same-organisation lead/listing relationships. It does not
+match people by name or copy documents between matters. Source access cannot
+bypass revoked transaction access; requirement audiences and stored-file
+permissions still apply.
+
+The primary workspace now consumes this shared model in buyer/seller lead
+checklists, the single-listing seller document view, the transaction requirement
+reader and canonical document workspace. Custom names retain their instance IDs;
+removal tombstones replace older linked checklist rows before filtering. Only a
+unique known standard type with the same party/contact can replace an unlinked
+legacy row. Unrelated legacy documents remain visible. Current evidence is
+selected explicitly; older approved files cannot replace a newer pending review.
+The existing buyer and transaction seller/professional portal projections now
+include custom requirements without changing their token/session authorisation.
+
+Open lead/listing document views refresh on focus, shared command completion and
+15-second polling while visible. Refresh failures are surfaced and do not turn
+into a successful empty response. Private requirement tables remain inaccessible
+to browser subscriptions. New shared rows expose downloads; mutation controls are
+stage 4. Seller pre-transaction portal integration and request/email delivery
+remain part of the subsequent portal/request work.
+
+Focused stage 3 checks, from `the-it-guy/`:
+
+- `node --test src/services/documents/__tests__/documentRequirementRead.database.test.js src/services/documents/__tests__/documentRequirementReadService.test.js src/services/documents/__tests__/buyerLeadDocumentReadService.test.js`
+- `npm run test:canonical-document-workspace`
+- `node scripts/canonical-document-resolver.test.mjs`
+- `node scripts/transaction-canonical-document-engine.test.mjs`
+- `node scripts/canonical-document-required-role.test.mjs`
+
+The PostgreSQL suite exercises the real read migration and both existing portal
+projection functions, alongside stages 1–2. It covers shared identity, removal,
+restore, upload history, scoped links, role audiences and access revocation.
+Hosted migration application and real portal/storage smoke checks are release
+work; no deployment or hosted data change is implied by these local checks.
+
+### Flexible document requirements: professional controls (stage 4)
+
+Document-type suggestions (phase 1): the shared add/request form searches active
+catalogue names, keys and descriptions for the selected buyer or seller role.
+Agents explicitly choose an existing type or **Create a custom document**.
+Selecting a type sends its catalogue identity and retains its standard name;
+editing the search or changing the requested party clears the selection. Custom
+names stay scoped to the matter. Catalogue failures are visible and still allow
+explicit custom requests. This uses the existing command API with no migration.
+Phase 2 detects exact duplicates in the current source workspace or handed-over
+transaction, for the same buyer/seller and person, entity, property or party.
+Catalogue identities match by key; custom names match ignoring case and repeated
+whitespace. Similar names and different subjects stay separate. Choosing a
+custom name identical to an existing catalogue requirement also offers reuse.
+The form blocks another add and opens the existing upload/replacement controls;
+removed requirements offer review and restoration. Historical duplicates remain
+separate choices and are never silently merged or deleted.
+
+Migration `20261011124827_prevent_duplicate_document_requests.sql` adds the same
+check inside the existing add command, after receipt recovery and under its
+existing transaction/source lock. A rejected duplicate creates no receipt,
+request or email job. The form refreshes after rejection so the existing request
+can be selected. Deploy the migration with the UI for save-time enforcement;
+it has not been applied to a hosted database. Local Supabase advisors were
+unavailable because no local stack was running; the migration was exercised in
+the isolated PostgreSQL delivery tests.
+
+Focused checks: the existing `DocumentRequirementManager.test.jsx` suite and
+`node --test src/services/documents/__tests__/documentTypeSuggestionService.test.js`.
+Phase 2 additionally uses `documentRequirementDuplicateService.test.js` and
+`documentRequirementDelivery.database.test.js` in that service test directory,
+the portal document-trust suite and the existing Deno email-dispatcher tests.
+
+The Documents views on buyer/seller leads, private listings and transaction
+workspaces now include **Manage document requirements**. Staff can add a named
+requirement for the buyer or seller, reuse an existing requirement's authoritative
+person/entity/property scope, upload or replace its evidence, remove it with a
+reason, and restore an explicitly removed requirement. These controls manage
+canonical instances; legacy-only rows still use their existing workflow until
+reconciled. Removed instances stay available in the selector with their reason.
+Evidence and review history are retained by the shared commands.
+
+New requirements use the current transaction after an unambiguous handover.
+When a source spans multiple transactions, staff must open the intended matter.
+Existing requirement changes use that instance's current context and revision.
+The database remains the authority for professional access, protected attorney
+requirements and stale-change rejection. No browser role bypass is introduced.
+
+Each save retains its immutable command envelope in browser local storage,
+scoped to the project, signed-in account and source workspace. This contains
+the document name/reason and file metadata needed for retries, never file bytes
+or credentials. An uncertain result blocks new changes until the same command
+is recovered. Upload recovery checks the server receipt first; if still unsaved,
+staff reselect the original file and its digest is verified. Confirmed saves and
+definite database rejections clear the envelope. A stale revision refreshes the
+workspace and requires a new user action. If recovery storage is unavailable,
+the controls fail before attempting a save.
+
+Shared readers refresh lead/listing views. The transaction manager also reloads
+the document workspace when its shared context version changes. Browser session
+or workspace changes recheck access rather than reusing another account's form.
+Stages 1–3 migrations are prerequisites; this stage adds no schema migration.
+Automatic email requests and seller pre-transaction portal uploads remain in the
+subsequent request/portal stage. No hosted changes or email delivery are implied.
+
+Focused checks, from `the-it-guy/`:
+
+- `npx vitest run src/components/documents/__tests__/DocumentRequirementManager.test.jsx`
+- `node --test src/services/documents/__tests__/documentRequirementCommandService.test.js src/services/documents/__tests__/documentRequirementCommands.database.test.js src/services/documents/__tests__/documentRequirementRead.database.test.js src/services/documents/__tests__/documentRequirementReadService.test.js`
+
+The interaction checks cover scoped additions, immutable retry after remount,
+stale removal, restoration, replacement, account isolation and context changes.
+The PostgreSQL checks continue to cover command permissions and the shared read
+model. Hosted storage and authenticated browser smoke checks remain release work.
+
+### Flexible document requirements: portal requests and delivery (stage 5)
+
+New add commands now create a durable email job in the same database transaction.
+Transaction requirements also link to the existing document-request module.
+Replayed commands create neither duplicate requests nor duplicate jobs. Historical
+requirements are not backfilled with emails, and restoring a removed requirement
+does not send another request. Removing or satisfying a requirement cancels its
+pending delivery; an email already submitted to the provider cannot be recalled.
+
+The dispatcher uses the existing branded additional-document email and Resend
+transport. It resolves an active portal and matching recipient, rechecks them
+before sending, freezes the provider payload, and retries with one idempotency
+key. Leases fence competing workers. Unknown provider outcomes stop before the
+24-hour idempotency window expires (23-hour cutoff), with at most eight attempts.
+The professional document manager shows queue status. “Sent” means provider
+acceptance, not confirmed inbox delivery. Missing portal details remain in
+`waiting_portal`; exhausted attempts require operational attention.
+
+Seller listing and explicitly linked seller-lead requirements are available in
+the authenticated seller portal before handover. Custom labels survive checklist
+generation, removed requirements stay removed, and uploads use immutable paths,
+revision checks and recoverable command receipts. Handover retains the same file
+and requirement IDs. Existing signed-document workflows remain protected.
+Buyer transaction portals retain custom labels and stable upload keys; custom
+uploads require review. Buyer-lead email jobs wait until a transaction has a
+supported active buyer portal. Person-specific requests require the portal
+recipient to match that contact; no fallback recipient is silently substituted.
+
+Release prerequisites (not performed by implementation):
+
+- Apply stages 1–3 and migrations `20261011121724`, `20261011121850` and
+  `20261011122133` through the database release procedure.
+- Deploy `supabase/functions/document-requirement-dispatcher`. It needs the
+  existing Supabase service credentials and `RESEND_API_KEY`; `ARCH9_APP_URL`
+  defaults to `https://app.arch9.co.za`. Set `DOCUMENT_REQUEST_EMAILS_ENABLED=false`
+  to pause sending while retaining queued requests.
+- The minute scheduler uses existing `pg_cron`, `pg_net`, and Vault secrets
+  `arch9_project_url` and `arch9_service_role_key`. Missing secrets skip dispatch.
+- Verify authenticated seller upload/download before and after handover, buyer
+  custom upload, removal across views, and one controlled provider receipt in
+  the approved target environment. No hosted migration or live email was run here.
+
+Focused local checks:
+
+- `node --test src/services/documents/__tests__/documentRequirementDelivery.database.test.js src/services/documents/__tests__/sellerRequirementUploadService.test.js src/services/documents/__tests__/documentRequirementReadService.test.js`
+- `npx vitest run src/services/__tests__/clientPortalWorkspacePhase4DocumentTrust.test.js`
+- `node --test src/services/__tests__/clientPortalWorkspaceService.sellerDocumentVisibility.test.js`
+- From the repository root: `deno test --allow-env --config supabase/functions/document-requirement-dispatcher/deno.json supabase/functions/_shared/documentRequirementDelivery.test.ts`
+
+The database checks execute the migrations in isolated PostgreSQL (PGlite),
+including replay, cancellation, portal session isolation, immutable uploads,
+handover, recipient changes and retry cutoff. The local Supabase advisors require
+a running local stack and were unavailable during this implementation.

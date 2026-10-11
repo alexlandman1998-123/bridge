@@ -37,7 +37,7 @@ assert.match(
 
 assert.match(
   developmentDetailSource,
-  /stakeholderTeams:\s*\{\s*\.\.\.existingStakeholderTeams,\s*agents: normalizedAgents,/s,
+  /stakeholderTeams:\s*\{\s*\.\.\.existingStakeholderTeams,\s*agents: normalizedAgents,?\s*\}/s,
   'Saving agent assignments should preserve existing stakeholder team settings and update only agents.',
 )
 

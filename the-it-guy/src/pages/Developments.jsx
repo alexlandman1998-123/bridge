@@ -19,6 +19,7 @@ import { selectBottlenecks, selectDevelopmentPerformance, selectPortfolioMetrics
 import { fetchDevelopmentsData } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 
 function toLifecycleStatus(rawStatus, summary) {
   const normalized = String(rawStatus || '').trim().toLowerCase()
@@ -137,7 +138,8 @@ function getDevelopmentProgress(totalUnits, inProgressCount, completedCount) {
 
 function Developments() {
   const navigate = useNavigate()
-  const { currentWorkspace, role } = useWorkspace()
+  const { currentWorkspace, role, can } = useWorkspace()
+  const canCreateDevelopment = can(PERMISSIONS.editDevelopments)
   const currentWorkspaceId = String(currentWorkspace?.id || '').trim()
   const [data, setData] = useState({
     metrics: {
@@ -158,7 +160,7 @@ function Developments() {
   const [sortBy, setSortBy] = useState('most_active')
 
   const loadData = useCallback(async () => {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !currentWorkspaceId) {
       setLoading(false)
       return
     }
@@ -389,7 +391,7 @@ function Developments() {
                     Developments
                   </h1>
                   <p className="mt-3 max-w-[620px] text-[1rem] font-medium leading-7 text-white">
-                    Oversee your entire portfolio. Build better. Sell faster.
+                    {role === 'agent' ? 'Your developments, available stock and sales activity in one place.' : 'Oversee your entire portfolio. Build better. Sell faster.'}
                   </p>
                 </div>
 
@@ -484,10 +486,10 @@ function Developments() {
                   <RefreshCw size={16} />
                   Refresh
                 </Button>
-                <Button onClick={() => setShowCreateModal(true)} disabled={!isSupabaseConfigured}>
+                {canCreateDevelopment ? <Button onClick={() => setShowCreateModal(true)} disabled={!isSupabaseConfigured}>
                   <Plus size={16} />
                   Add Development
-                </Button>
+                </Button> : null}
               </div>
             </div>
           </section>
@@ -649,24 +651,24 @@ function Developments() {
                     Reset Filters
                   </Button>
                 ) : null}
-                <Button onClick={() => setShowCreateModal(true)}>
+                {canCreateDevelopment ? <Button onClick={() => setShowCreateModal(true)}>
                   <Plus size={16} />
                   Add Development
-                </Button>
+                </Button> : null}
               </div>
             </section>
           )}
         </>
       ) : null}
 
-      <AddDevelopmentModal
+      {canCreateDevelopment ? <AddDevelopmentModal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreated={() => {
           window.dispatchEvent(new Event('itg:developments-changed'))
           void loadData()
         }}
-      />
+      /> : null}
     </section>
   )
 }

@@ -106,3 +106,366 @@ Release dependencies, not yet applied: migration `20261010135448_listing_backgro
 Verification includes executable local PostgreSQL queue/RLS/claim tests, API acknowledgement tests, worker outcome and actor tests, original-file IndexedDB tests, creation/retry handlers, rental UI tests, and website function type/security checks. A Chromium reload check restored the original photo bytes, cover and listing identity for sales, rentals and developer drafts. The final `npm run check:app` passed: lint had no errors (existing warnings remain), baseline tests passed, and the production build passed. Evidence is recorded in `tmp/listing-durable-recovery-20261010/check-app-final.log` at repository root.
 
 Not included in this delivery: uploading photos before submission, further Private Property query consolidation, cross-device recovery of unsaved drafts, or a production latency benchmark.
+
+## Diagnostic repair baseline — 11 October 2026
+
+Phase 1 establishes repeatable checks for the repair programme; it changes no
+listing behaviour. The primary application owns the checks. The complete
+18-finding register is
+[`scripts/fixtures/listing-diagnostic/findings.json`](../scripts/fixtures/listing-diagnostic/findings.json).
+Each entry has a stable ID, affected scope, reproducer, acceptance criterion and
+an explicit automated/manual verification classification. UX-06 through UX-11
+have browser/usability/performance procedures; they are not automated passes.
+
+Run from the repository root:
+
+```sh
+# Fast API/schema baseline: no network requests or provider credentials.
+npm --prefix the-it-guy run test:listing-diagnostic -- --baseline
+
+# Include actual sales/rental forms in an isolated Chromium fixture.
+npm --prefix the-it-guy run test:listing-diagnostic -- --baseline --browser
+
+# Desired behaviour gate: deliberately exits nonzero while defects remain.
+npm --prefix the-it-guy run test:listing-diagnostic -- --browser
+```
+
+Prerequisites: the primary app dependencies, Node 22 (repository target), Python 3,
+`xmllint`, and Google Chrome for the optional browser run. The authoring environment
+used Node 24.11.1; this does not certify the Node 22 release runtime. The browser
+fixture uses loopback port 4241, refuses port fallback, disables project Vite
+configuration/environment loading, blocks browser requests outside loopback,
+and substitutes storage/provider/account services. Rental persistence uses the
+existing isolated PostgreSQL fixture. Sales persistence is simulated; UX-03
+inspects the real form's outgoing save requests, not hosted SQL. Do not point
+this fixture at a production app or replace its stubs with real credentials.
+
+The initial baseline is **108 contract/worker checks: 65 passing and 43 known
+failures**, plus **40 browser assertions reproducing known failures**, with no
+browser setup errors. These are repeated category checks, not 83 distinct bugs.
+`--baseline` returns success only when the reviewed baseline is reproduced; it
+does **not** mean the product is ready to release. Unexpected failures, missing
+checks and newly passing known failures all require review and return nonzero.
+After a fix, verify the intended outcome, then remove only its resolved names
+from the failure lists; retain the test inventory. Never regenerate the baseline
+to hide failures. The intentional failing cases use an explicit `.cases.mjs`
+entry point, so ordinary test discovery does not import them accidentally. Default mode continues to fail while any desired outcome fails.
+
+The runner writes results and a **28-row category × transaction × portal matrix**
+to repository-root `output/playwright/listing-diagnostic/`. That matrix separates
+local readiness from independently checked vendor structure and leaves live
+acceptance explicitly unverified. Snapshots of official P24 v55 OpenAPI and PP
+production WSDL include hashes and retrieval details in `sources.json`; a changed
+snapshot fails the baseline until its provenance is reviewed. Python checks P24
+required fields, types, enums, names, nullability and date-time shape, not every
+OpenAPI/business constraint. `xmllint` checks the full extracted PP XSD. Negative
+controls establish that the validators reject invalid input. Moving only the
+rent-frequency XML element in control copies resolves all seven rental XSD
+failures; application serialization remains unchanged.
+
+Existing focused protection checks were rerun separately: 35 form/save/field-rule
+Vitest checks and five publication-worker/local-persistence Node checks passed.
+The earlier broad diagnostic's two Vitest and 44 Node failures remain historical,
+untriaged evidence; this focused baseline does not reclassify them or certify the
+whole application. Raw runs remain in
+`output/playwright/listing-matrix-20261011/phase-1/` at repository root.
+
+Two external verification items remain open:
+
+- The official P24 index still advertises v55 as its newest Listing Service,
+  and the downloaded schema is unchanged. The authenticated property-type
+  catalogue and agency entitlements remain unverified: the public GET returns
+  401, and the local app configuration has no P24 basic-auth credentials. Existing
+  synthetic catalogue IDs are test inputs, not authenticated evidence.
+- The current PP production WSDL was retrieved again and is unchanged. The
+  available partner document records revision 4.7 dated 20 July 2026, with a stale
+  4.6 cover. [PP distributes the document through feed support](https://helpdesk.privateproperty.co.za/portal/en/kb/articles/getting-started-with-a-feed-integration);
+  a newer distributed revision has not been confirmed. No support email was sent.
+
+Complete those external checks with the agency's configured integration before
+claiming current catalogue/entitlement coverage or live portal certification.
+The browser probe covers offered rental creation categories; mixed-use creation
+is tested as missing, not bypassed and counted as working. Its portal payloads are
+still included in the 28-row matrix. Full hosted create/edit/readback, all remaining
+subtypes and optional combinations, observed novice usability and production
+speed measurements remain acceptance work for the later phases.
+
+
+### Phase 2 repair — 11 October 2026
+
+The primary app now keeps rental Continue separate from final submission, accepts
+fractional bathrooms and areas without removing decimal points, saves specialist
+sale values through the guarded seller command and checks their saved copies,
+and preserves rental/deposit cents in the Property24 adapter. Specialist blanks
+and false values can deliberately clear saved answers. Confirmed seller receipts
+advance the editor's revision, including when a later step needs a retry.
+
+`npm run test:listing-diagnostic -- --baseline --browser` now runs 175 checks:
+132 pass, 43 reproduce the reviewed remaining defects, and none are unexpected
+or missing. The four repaired findings are UX-01, UX-02, UX-03 and API-07; all 40
+original regression cases for them now pass. The 27 added checks cover repeated
+saves, reopening, explicit final rental submission, readback mismatches, supported
+rental frequencies and outgoing general area/bathroom precision. The strict
+(non-baseline) diagnostic remains red until the later-phase defects are repaired.
+
+Focused verification also passed 95 Vitest form/service cases and 49 Node
+SQL/worker cases. Sales browser storage is simulated with the real canonical
+projection and a revision check; a separate migrated PGlite test covers specialist
+save/readback/clearing and stale rejection across all seven categories. Rental
+browser saves execute the real SQL; provider responses remain simulated.
+
+Property24's whole-square-metre commercial specialist restriction remains enforced.
+Fractional specialist values are retained without rounding; a blocked commercial
+GLA needs the API/workflow phase's explanation or mapping decision. General floor
+and land areas retain decimals in both portal payloads.
+
+See `../../output/playwright/listing-matrix-20261011/report.html` and its
+`phase-2/status.json` for current build results, remaining checks and evidence.
+Nothing was deployed, applied to hosted data or published. This repair uses the
+existing seller-save guard migrations; the coordinated frontend/database release
+and hosted/provider readback remain separate, explicitly approved work.
+
+## Diagnostic Phase 3 repairs — 11 October 2026
+
+The primary workspace now repairs API-01, API-02, API-03, API-04 and API-06 from
+[the consolidated diagnostic](../../output/playwright/listing-matrix-20261011/report.html).
+This is local implementation; no listings were published or hosted data changed.
+
+- Private Property rental XML places `RentalPriceType` after `HideUnitNumber`, as
+  required by the production WSDL. Independent XSD checks cover all seven
+  categories, monthly/weekly/daily rent, and permitted per-square-metre pricing.
+  Annual rent remains blocked for PP.
+- PP sales send `SalesPricePresentation=Poa` when POA is selected. The sales
+  Review label and provider preview summary also identify POA. A retained
+  asking price is hidden by that presentation. A missing/non-positive asking
+  price is blocked with plain-English guidance rather than inventing a price:
+  Rev 4.7 says POA ignores Price but also requires Price greater than zero. The
+  existing R10,000 sale minimum remains. Zero-price POA needs vendor confirmation.
+- PP office, retail, distribution-centre, industrial-park, shopping-centre and
+  agricultural-land aliases use their supported meanings. P24 penthouses use
+  the existing Apartment / Flat type. The report enumerates 59 category/type
+  choices across both transactions. A vacant stand under Residential remains
+  the existing UX-05 category-choice issue; choose Vacant Land instead.
+- The form and PP mapper share title checks for contact details, website
+  addresses, unsupported punctuation and the 200-character limit. Correction
+  links target the title field. These requirements apply only to selected PP
+  publication, leaving P24 and website requirements independent.
+- Publication jobs no longer replace the saved P24 expiry with today plus 90
+  days. Provider plans resolve the current saved date at dispatch. Explicit API
+  dates remain explicit; the environment default is a fallback only when no date
+  is saved. Expired or malformed saved dates remain blocked, including delayed
+  jobs. PP's deprecated `ExpiryDate` does not control removal from PP.
+
+Verification: the combined diagnostic has **182 checks: 171 pass, 11 reviewed
+later-phase failures, no unexpected failures or missing checks**. All 32 original
+Phase 3 assertions now pass; seven additional grouped checks exercise contract
+edge cases. The 64 browser checks retain 57 passes and seven known category-choice
+failures. Focused form tests pass (42). Publishing checks pass (14), with one
+unrelated legacy source-text check still expecting “Add manual/live link” in the
+unchanged listing-detail page. See the report's Phase 3 status for the app check
+and exact evidence, rather than treating the baseline as a green release gate.
+
+The current P24 v55 JSON and PP production WSDL were downloaded again and match
+the recorded hashes. Latest PP partner prose revision, current authenticated P24
+catalogue/agency entitlements and actual hosted/provider readback remain open.
+Commercial P24 GLA still requires whole square metres; general area decimals and
+saved specialist values remain unchanged. API-05 image-change detection belongs
+to the later performance phase.
+
+
+## Phase 4 — simpler listing capture and review (11 October 2026)
+
+Implemented in the primary Arch9 workspace, covering UX-04 through UX-10:
+
+- Mixed-use rental creation is available without a seeded or existing record.
+  Sales category changes keep only compatible property types, including a
+  separate vacant-land category without prominent room controls.
+- Rental counters show unanswered values as blank, allow explicit studio/zero
+  bedrooms, and accept half bathrooms. Both zero and 1.5 bathrooms are checked
+  through the real local SQL save and editor readback.
+- Advertising websites can be chosen at the start. Their requirements appear
+  when leaving each relevant step. Correction buttons name the field, open
+  collapsed details, focus the control and keep one issue visible until fixed.
+- Optional feature groups have clear skip guidance and no unanswered-question
+  totals. Specialist sale fields no longer show misleading required asterisks;
+  measurement units remain visible after entry.
+- Shared review sections show readable property types, full descriptions,
+  measurements, rent frequency, price/deposit, and public-address settings.
+  Editing a review section returns to its capture step.
+- Rental edits say Check & save and Save rental changes. They continue to save
+  without queuing portal updates, and the saved listing carries a dismissible
+  notice explaining that adverts need a separate update. Creation says Save
+  and publish when destinations are selected, or Save listing when none are.
+
+Verification and exact counts are recorded in the consolidated report's
+`phase-4/status.json`, including the 105-check browser matrix and focused form
+checks. The diagnostic baseline was reviewed: all seven remaining category
+failures passed before removal from the expected-failure list. The visible
+land-area labels were renamed, and vacant-land room-entry assertions were
+replaced with a room-absence check; contract tests still cover area decimals
+in all categories. No new failures were accepted into the baseline.
+
+This is local implementation, with simulated accounts, storage and provider
+responses; rental saves use real isolated SQL. No deployment, hosted write or
+live advert was performed. First-time-agent usability sessions and hosted/
+provider readback remain pending. Phase 5 retains editor loading (UX-11) and
+unnecessary photo transfer (API-05).
+
+## Phase 5 — editor loading and unchanged photos (11 October 2026)
+
+Implemented locally in the primary workspace. The sales editor now loads only
+its selected listing and assignment/branch choices. It does not fetch the stock
+list, participant transactions or per-card website statuses. Development choices
+load only for a development workflow. The selected listing's website status
+remains necessary to retain the correct advertising selections. Unchanged edit
+steps skip repeat saves; changed steps still use the guarded save and readback,
+and the final save/publish action remains explicit.
+
+In the isolated before/after comparison, a new editor with 10 properties made
+17 instrumented workspace/inventory calls before and 2 after. With 1,000
+properties it made 1,007 before and 2 after. This counts the instrumented data
+services, not every browser asset or authentication request. Cold/warm Vite
+observations are recorded separately and are not production latency measurements.
+The large shared application bundles remain a profiling concern; this change
+removes unnecessary data work without claiming a complete bundle rewrite.
+
+Queued P24 and PP jobs now ask for automatic photo comparison. Provider plans
+compare the current gallery with the last successfully submitted gallery for the
+same destination, environment and advert identity. The fingerprint covers source
+objects, order, cover, captions and relevant media metadata. Uploaded object paths
+are unique; renewed signed URLs and recreated database row IDs do not imply a new
+photo. Changed/replaced galleries and missing, legacy or failed receipts resend.
+Fingerprints are stored in existing sync-summary JSON after provider acceptance;
+Phase 5 requires no database migration. Older adverts send their gallery once to
+establish this evidence. An explicit forced P24 transfer remains supported.
+
+Unchanged P24 photos are `null`, and their bytes are neither downloaded nor
+converted. PP uses `PhotoUrls xsi:nil="true"`, so it does not receive image URLs
+again. Removing every photo is blocked rather than silently sending an empty
+replacement gallery. Synthetic P24 payloads with three 1 MiB photos fell from
+about 4.2 MB to around 1 KB; PP fixture XML omitted all three photo URLs. Provider
+processing time and actual image readback still need authorised live checks.
+
+Evidence and the current verification results are in
+`output/playwright/listing-matrix-20261011/phase-5/` at the repository root. The
+combined report preserves the original failures as history and distinguishes
+local implementation from release acceptance. No deployment, remote data write
+or actual advert submission was performed. Phase 6 still includes hosted save /
+portal readback, production device/network timing and first-time-agent sessions.
+
+Final local verification: 237/237 diagnostic checks (119 contract/provider and
+118 browser), 36 photo/worker tests, five existing provider/API script groups and
+19 focused save/recovery/keyboard/channel tests pass.
+`KNOWLEDGE_FACTORY_RUN_LOGIN_PROBE=false npm run check:app` passes lint (zero
+errors, 615 existing workspace warnings), all nine baseline groups and the
+production build (1m 24s). Existing bundle/circular-import warnings and the
+Node 24 local versus Node 22 release difference remain recorded in the report.
+
+## Phase 6 — acceptance and release verification (11 October 2026)
+
+The existing diagnostic now supports a repeatable constrained mobile run:
+
+```sh
+npm --prefix the-it-guy run test:listing-diagnostic -- --baseline --browser --profile=mobile-slow
+```
+
+It runs the same complete category/transaction checks at 390 × 844 with touch,
+four-times CPU slowdown and 200 ms added to each browser fixture data request.
+It retains the loopback-only network boundary. Vite assets are not throttled:
+these are functional checks under slower conditions, not production load-time
+benchmarks or a substitute for a physical phone. Profile settings and the number
+of delayed requests are saved with the results. Mobile evidence has its own
+output directory so it cannot replace the ordinary desktop run.
+
+The consolidated report's `phase-6/` directory contains current results, a
+28-row portal acceptance checklist (seven categories × sale/rental × two
+portals), a 14-row hosted save checklist, a source comparison and the remaining
+human checks. Empty or pending evidence is never a passed acceptance check.
+
+Read-only production inspection found release
+`61d3d64c656d8bf063162182ec8b41c3d27dee58`: its shell/manifest markers agree and
+all 857 manifest assets return the expected content types. The deployment's
+recorded commit differs from the local listing changes, including the photo
+comparison service. This metadata comparison is not proof of exact CLI-uploaded
+server bytes. A matching, scoped deployment must be established before live
+acceptance can certify these fixes. The current Vercel project reports Node
+24.x; earlier phase notes about a Node 22 target are historical, not the current
+project setting.
+
+### Hosted acceptance procedure
+
+After explicit approval for the target deployment and disposable test records:
+
+1. Record the immutable deployment ID, release marker, scoped source hashes,
+   database prerequisites, test agency/agent and recovery version. Preserve
+   unrelated checkout changes. Follow the database release runbook if any
+   required schema correction is absent; do not apply all pending migrations.
+2. In every category and transaction combination, create a disposable listing
+   with realistic, authorised location/agency data. Confirm Continue does not
+   publish; inspect review, save, reload in a fresh session, edit and clear optional
+   specialist values, then compare the server readback. Exercise decimals, studio
+   zero, units, price/POA, rental cadence/deposit and public-address privacy.
+3. Verify actual Storage upload/download, cover and image order; retry a failed
+   upload and save without duplicates. Verify a second authorised agent's access
+   and rejection of an unauthorised organisation. Do not use service-role access
+   as evidence of ordinary agent permissions.
+4. For all 28 portal combinations, record authenticated category/subtype IDs and
+   agency/agent entitlement, exact submitted fields, job receipt and provider
+   readback. Inspect the resulting advert and images. An HTTP success or queued
+   job alone is insufficient. Confirm unsupported combinations are explained
+   before publication instead of forcing a mismatched category.
+5. Edit text/price without changing photos; verify the existing gallery survives
+   on the portal. Change cover/order and replace a photo; verify the new gallery.
+   Exercise failed-channel-only retry and uncertain-status readback without
+   duplicate adverts. Verify expiry/withdrawal and record cleanup. Also verify
+   the agency website when it is a selected destination.
+6. Record the current authenticated P24 catalogue and entitlements, and obtain
+   PP's confirmation of the current partner document. Public OpenAPI/WSDL
+   validation cannot replace these checks. Contacting providers needs a separate
+   instruction to send the prepared request.
+
+For each case, retain redacted expected/actual values, listing and provider IDs,
+timestamps, deployment identity and evidence locations in the checklist. Keep
+tokens, credentials and personal seller information out of the report. Failed
+or unsupported cases need a recorded resolution and a repeated check.
+
+### Speed and first-time-agent acceptance
+
+On the matching hosted release, measure cold and warm editor readiness, save
+acknowledgement, upload progress and time from queued publication to portal
+readback separately. Use desktop and a real modest Android phone, plus a
+reproducible 1.6 Mbps / 150 ms latency / 4× CPU browser profile. Take at least
+three samples per condition; retain raw samples and report the median and range.
+Do not include a human's typing time in system latency or infer provider time
+from local payload size. Record portfolio size, browser/device and connection.
+Investigate shared bundle cost if the editor still loads slowly.
+
+Observe at least three agents who have not used the revised journey. Across
+their sessions cover sales, rentals and each property category. Give them the
+property facts and desired result, without telling them which buttons to press:
+
+- Create a listing, skip unnecessary extras and choose where it should appear.
+- Correct an incorrect price or size from review and explain which address
+  details will be public.
+- Save or publish, then reopen and update it; explain when changes reach adverts.
+- Recover from a missing required field or failed upload.
+
+Record task completion, time, mistakes, help requested and words that caused
+hesitation. Use anonymous participant codes. Accept the wording only when
+participants can complete the tasks without coaching and correctly distinguish
+saving from publishing. Fix critical misunderstandings and repeat the affected
+tasks. Automated clicks do not count as human usability evidence.
+
+The implementation and local checks can be completed independently, but Phase 6
+acceptance remains open until the matching hosted release, provider readback,
+production measurements and observed sessions have evidence. No deployment,
+remote test record, provider submission or provider message is authorised merely
+by the existence of this checklist.
+
+Final local results: **237/237 checks pass in each profile**, desktop and
+constrained mobile, with no known/unexpected failures or missing checks. Mobile
+exercised 240 delayed data requests. All 42 assertions in the current supplemental
+seller-save script pass. The slow profile exposed a diagnostic receipt race:
+Reopen editor defaulted to sales before the saved record arrived. The fixture
+now waits for the record. Initial unsuccessful runs remain as historical
+evidence. No application runtime change or new migration was needed in Phase 6.

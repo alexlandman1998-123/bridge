@@ -27,8 +27,8 @@ import {
   Users,
   Zap,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import JourneyStageOverrideActions from '../components/journey/JourneyStageOverrideActions'
 import {
   DEVELOPER_LEAD_PHASE16_CONTRACT,
@@ -79,6 +79,7 @@ import {
   DEVELOPER_LEAD_STATUS_OPTIONS,
   createDeveloperFedLead,
   findDeveloperLeadDuplicateWarnings,
+  fetchDeveloperLeadIntake,
   listDeveloperLeadIntake,
   requestAgencyLeadHandover,
   updateDeveloperLeadWorkspaceSetup,
@@ -1570,8 +1571,9 @@ function DeveloperLeadWorkspacePanel({
   onUpdateLeadSetup,
   onJourneyOverrideCreated,
   onJourneyOverrideError,
+  initialWorkspaceTab = 'overview',
 }) {
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => ['overview', 'buyer_profile', 'onboarding_otp', 'development', 'documents', 'activity'].includes(initialWorkspaceTab) ? initialWorkspaceTab : 'overview')
   const [selectedJourneyStage, setSelectedJourneyStage] = useState('captured')
   const [leadUnits, setLeadUnits] = useState([])
   const [leadUnitsLoading, setLeadUnitsLoading] = useState(false)
@@ -1586,9 +1588,9 @@ function DeveloperLeadWorkspacePanel({
   })
 
   useEffect(() => {
-    setActiveTab('overview')
+    setActiveTab(['overview', 'buyer_profile', 'onboarding_otp', 'development', 'documents', 'activity'].includes(initialWorkspaceTab) ? initialWorkspaceTab : 'overview')
     setSelectedJourneyStage('captured')
-  }, [lead?.developerLeadId])
+  }, [lead?.developerLeadId, initialWorkspaceTab])
 
   useEffect(() => {
     setSelectedPreferredUnitId(normalizeText(lead?.preferredUnitId))
@@ -2432,14 +2434,19 @@ function DeveloperLeadWorkspacePanel({
 
 export default function DeveloperLeadsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { developerLeadId: routeDeveloperLeadId = '' } = useParams()
   const { currentWorkspace } = useWorkspace()
-  const developerOrgId = normalizeText(currentWorkspace?.id)
+  const workspaceOrgId = normalizeText(currentWorkspace?.id)
+  const loadRequestId = useRef(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [leads, setLeads] = useState([])
+  const developerOrgId = routeDeveloperLeadId
+    ? normalizeText(leads.find(lead => lead.developerLeadId === routeDeveloperLeadId)?.developerOrgId)
+    : workspaceOrgId
   const [developments, setDevelopments] = useState([])
   const [agents, setAgents] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -2458,30 +2465,39 @@ export default function DeveloperLeadsPage() {
   const [selectedLeadJourneyOverrides, setSelectedLeadJourneyOverrides] = useState([])
 
   const loadData = useCallback(async () => {
-    if (!isSupabaseConfigured || !developerOrgId) {
+    const requestId = ++loadRequestId.current
+    if (!isSupabaseConfigured || !workspaceOrgId) {
+      setLeads([])
       setLoading(false)
       return
     }
     try {
       setError('')
       setLoading(true)
+      const linkedLead = routeDeveloperLeadId ? await fetchDeveloperLeadIntake({ developerLeadId: routeDeveloperLeadId }) : null
+      if (requestId !== loadRequestId.current) return
+      const ownerOrgId = routeDeveloperLeadId ? normalizeText(linkedLead?.developerOrgId) : workspaceOrgId
       const [leadRows, developmentRows, userRows] = await Promise.all([
-        listDeveloperLeadIntake({ developerOrgId, status: statusFilter, source: sourceFilter }),
-        fetchDevelopmentOptions({ organisationId: developerOrgId }).catch(() => []),
+        routeDeveloperLeadId ? Promise.resolve(linkedLead ? [linkedLead] : []) : listDeveloperLeadIntake({ developerOrgId: ownerOrgId, status: statusFilter, source: sourceFilter }),
+        ownerOrgId ? fetchDevelopmentOptions({ organisationId: ownerOrgId }).catch(() => []) : Promise.resolve([]),
         listOrganisationUsers().catch(() => []),
       ])
+      if (requestId !== loadRequestId.current) return
       setLeads(leadRows)
       setDevelopments(developmentRows)
       setAgents((userRows || []).filter((user) => normalizeLower(user.status || user.membershipStatus) !== 'inactive'))
     } catch (loadError) {
+      if (requestId !== loadRequestId.current) return
+      setLeads([])
       setError(loadError.message || 'Developer leads could not be loaded.')
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestId.current) setLoading(false)
     }
-  }, [developerOrgId, sourceFilter, statusFilter])
+  }, [workspaceOrgId, routeDeveloperLeadId, sourceFilter, statusFilter])
 
   useEffect(() => {
     void loadData()
+    return () => { loadRequestId.current += 1 }
   }, [loadData])
 
   useEffect(() => {
@@ -2633,7 +2649,8 @@ export default function DeveloperLeadsPage() {
   }
 
   function handleCloseLeadWorkspace() {
-    navigate('/developer/leads')
+    const returnTo = location.state?.returnTo
+    navigate(typeof returnTo === 'string' && /^\/developments\/[0-9a-f-]+(?:\?[^#]*)?$/i.test(returnTo) ? returnTo : '/developer/leads')
   }
 
   function handleOpenTransaction(transactionId) {
@@ -2792,6 +2809,8 @@ export default function DeveloperLeadsPage() {
               </div>
             ) : null}
             <DeveloperLeadWorkspacePanel
+              key={`${selectedLead.developerLeadId}:${new URLSearchParams(location.search).get('workspaceTab') || 'overview'}`}
+              initialWorkspaceTab={new URLSearchParams(location.search).get('workspaceTab') || 'overview'}
               lead={selectedLead}
               developments={developments}
               agents={agents}
@@ -2813,7 +2832,7 @@ export default function DeveloperLeadsPage() {
           </>
         ) : routeDeveloperLeadId && !loading ? (
           <section className="developer-leads-panel rounded-[12px] border border-[#f0dfb8] bg-[#fff9ec] p-4 text-sm text-[#8a5a12]">
-            This developer lead could not be found in the current workspace.
+            {error || 'This developer lead is unavailable or you do not have access to it.'}
           </section>
         ) : (
           <DeveloperLeadList

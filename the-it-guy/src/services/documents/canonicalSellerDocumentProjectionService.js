@@ -1,3 +1,4 @@
+import { requirementLinkId } from './documentRequirementReadService.js'
 import {
   projectSellerDocumentArtifact,
   SELLER_DOCUMENT_ARTIFACT_STAGES,
@@ -67,6 +68,7 @@ function presentationCategory(definition = null, fallback = '') {
 }
 
 function projectionIdentity(row = {}, canonicalKey = '') {
+  if (requirementLinkId(row)) return `requirement:${requirementLinkId(row)}`
   const context = key(row.contextId || row.context_id || row.private_listing_id || row.listingId || row.listing_id || 'listing')
   const party = key(row.partyId || row.party_id || row.sellerId || row.seller_id || row.partyRole || row.party_role || 'seller')
   return `${context}:${party}:${canonicalKey}`
@@ -126,7 +128,7 @@ function originalRows(row = {}) {
 }
 
 function mergeProjectionRows(current = {}, incoming = {}) {
-  const preferred = projectionScore(incoming) > projectionScore(current) ? incoming : current
+  const preferred = incoming.sharedRequirement ? incoming : current.sharedRequirement ? current : projectionScore(incoming) > projectionScore(current) ? incoming : current
   const secondary = preferred === current ? incoming : current
   const required = current.required === true || incoming.required === true
     ? true

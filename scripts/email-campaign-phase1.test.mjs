@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const migration = readFileSync(resolve('supabase/migrations/20260909113000_email_campaigns_foundation.sql'), 'utf8')
-const worker = readFileSync(resolve('supabase/functions/email-campaign-worker/index.ts'), 'utf8')
+const worker = readFileSync(resolve('supabase/functions/email-campaign-worker/handler.ts'), 'utf8')
 const preferences = readFileSync(resolve('supabase/functions/email-preference-centre/index.ts'), 'utf8')
 
 for (const expected of [

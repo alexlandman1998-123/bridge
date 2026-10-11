@@ -1,3 +1,5 @@
+import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
+import { documentRequirementLabel, documentRequirementTypeKey } from '../core/documents/documentRequirementIdentity.js'
 import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
@@ -831,6 +833,8 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     listing,
     portalData: {
       ...context,
+      requiredDocuments: sellerRequiredDocuments,
+      documents,
       listing,
       onboarding,
       sellerOnboarding,
@@ -1930,7 +1934,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
     embeddedLinkedDocument ||
     (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
-  const uploadAllowed = !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
+  const uploadAllowed = requirement?.canUpload !== false && !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
   const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
 
   return {
@@ -3263,6 +3267,15 @@ function resolveSellerPortalRawDocuments(portalData = {}) {
         : []
 }
 
+function mergeSellerPortalSharedRequirements(rows, listing = {}) {
+  if (!listing.canonicalDocumentSnapshot) return rows
+  return mergeDocumentRequirementRows(rows, listing.canonicalDocumentSnapshot, { party: 'seller' }).map(row => row.sharedRequirement
+    ? mapSellerRequiredDocument({ ...row, visibility: 'seller_visible',
+      canUpload: (row.original?.requirement?.uploadable_by_roles || []).includes('seller')
+        && !/(signed_|mandate|disclosure|fica_declaration|signature)/.test(row.original?.requirement?.document_definition_key || '') })
+    : row)
+}
+
 export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspaceMode = 'selling') {
   const rawRequirements = resolveSellerPortalRawRequirements(portalData)
   const retiredRequirements = filterSellerPortalRequirements(
@@ -3325,10 +3338,12 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
     mandatePacket,
     mandateSigned,
   })
-  const requiredDocuments = (Array.isArray(pack.requirements) ? pack.requirements : activeRequirements)
+  const legacyRequiredDocuments = (Array.isArray(pack.requirements) ? pack.requirements : activeRequirements)
     .filter((requirement) => !isRetiredSellerPortalRequirement(requirement))
     .filter((requirement) => !(mandateSigned && isSignedMandateRequirement(requirement)))
     .map((requirement) => mapSellerRequiredDocument(requirement))
+
+  const requiredDocuments = mergeSellerPortalSharedRequirements(legacyRequiredDocuments, listing)
 
   return {
     ...pack,
@@ -3409,7 +3424,8 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       && requirement.uploadable_by_roles.some((candidate) =>
         [role, 'client', ...(role === 'buyer' ? ['purchaser'] : ['vendor', 'selling_client'])].includes(normalizeValue(candidate)),
       )
-    const title = String(definition?.display_label || requirement?.display_label || requirement?.document_definition_key || 'Document').trim()
+    const title = documentRequirementLabel(requirement, definition)
+    const typeKey = documentRequirementTypeKey(requirement)
     const categoryKey = canonicalBuyerDocumentCategory(packKey)
     return {
       id: `canonical_requirement_${id}`,
@@ -3418,7 +3434,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       authoritativeSource: 'canonical_projection',
       canonicalRequirementInstanceId: id,
       canonical_requirement_instance_id: id,
-      key: String(requirement?.document_definition_key || '').trim(),
+      key: typeKey,
       title,
       description: String(definition?.description || requirement?.description || 'Supporting document required for your transaction.').trim(),
       group: packKey,
@@ -3437,9 +3453,9 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
         ? {
             type: 'canonical_requirement',
             requirementInstanceId: id,
-            requirementKey: String(requirement?.document_definition_key || '').trim(),
-            documentDefinitionKey: String(requirement?.document_definition_key || '').trim(),
-            documentType: String(requirement?.document_definition_key || '').trim(),
+            requirementKey: typeKey,
+            documentDefinitionKey: typeKey,
+            documentType: typeKey,
             category: packKey,
           }
         : null,
@@ -3567,7 +3583,8 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
   const downloadableDocumentsByKey = buildSellerDownloadableDocumentLookup(portalData, workspaceMode)
   const requiredDocuments = normalizeBuyerPortalRequiredDocuments(filterRequiredDocumentsByWorkspace(
-    mergeCanonicalRequiredDocuments(requiredDocumentsRaw, canonicalDocumentRequestPlan?.requiredDocuments || []),
+    workspaceMode === 'selling' ? mergeSellerPortalSharedRequirements(mergeCanonicalRequiredDocuments(requiredDocumentsRaw, canonicalDocumentRequestPlan?.requiredDocuments || []), portalData?.listing)
+      : mergeCanonicalRequiredDocuments(requiredDocumentsRaw, canonicalDocumentRequestPlan?.requiredDocuments || []),
     workspaceMode,
   ), workspaceMode)
     .filter((requirement) => !isRetiredSellerPortalRequirement(requirement))

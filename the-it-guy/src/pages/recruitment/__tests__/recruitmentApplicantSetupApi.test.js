@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { createRecruitmentApplicantSetupResponse } from '../../../../server/services/recruitmentApplicantSetupApi'
+import { recruitmentSignupRequest } from '../../../services/recruitmentSignupService'
 const org = '2958d402-368e-43c9-b728-0098e10505f1', user = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', requestId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const headers = { host: 'app.arch9.test', origin: 'https://app.arch9.test', cookie: `a9_recruitment_${org.replaceAll('-', '')}=${'a'.repeat(64)}` }
 function fixture() {
@@ -94,4 +95,34 @@ it('uses immutable upload URLs, handles an already committed request and refuses
   expect((await f.run({ action: 'download_contract' }, { headers: { ...headers, origin: 'https://foreign.test' } })).status).toBe(403)
   f.db.rpc.mockResolvedValueOnce({ data: { path: 'saved', committed: true } })
   expect((await f.run({ action: 'prepare_contract_return', requestId, document })).body.committed).toBe(true)
+})
+it('carries browser contract requests through upload confirmation and downloads the saved signed copy', async () => {
+  const f = contractFixture(), original = f.db.rpc.getMockImplementation()
+  f.db.rpc.mockImplementation(async (name, args) => {
+    if (name === 'recruitment_applicant_contract' && args.p_return_id === requestId) return { data: { bucket: 'recruitment-signed-contracts', path: `${org}/own/${requestId}`, downloadName: 'Signed.pdf' } }
+    return original(name, args)
+  })
+  const endpoint = '/api/recruitment/applicant-profile'
+  const fetcher = vi.fn(async (url, options) => {
+    expect(url).toBe(endpoint)
+    expect(options.credentials).toBe('same-origin')
+    const response = await f.run(JSON.parse(options.body))
+    return { ok: response.status === 200, status: response.status, json: async () => response.body }
+  })
+  const options = { endpoint, fetcher }, forged = { organisationId: 'foreign', leadId: 'foreign', path: 'foreign', bucket: 'foreign', password: 'private' }
+  const document = { name: 'Signed.pdf', size: 128, mimeType: 'application/pdf' }
+  await expect(recruitmentSignupRequest('download_contract', forged, options)).resolves.toHaveProperty('downloadUrl')
+  expect(f.storage.createSignedUrl).toHaveBeenLastCalledWith(`${org}/own/contract`, 300, { download: 'Contract.pdf' })
+  await expect(recruitmentSignupRequest('prepare_contract_return', { ...forged, requestId, document: { ...document, path: 'foreign' } }, options)).resolves.toHaveProperty('uploadUrl')
+  await expect(recruitmentSignupRequest('commit_contract_return', { ...forged, requestId, document: { ...document, path: 'foreign' } }, options)).resolves.toMatchObject({ saved: true })
+  await expect(recruitmentSignupRequest('download_contract', { ...forged, returnId: requestId }, options)).resolves.toHaveProperty('downloadUrl')
+  expect(f.db.rpc).toHaveBeenLastCalledWith('recruitment_applicant_contract', { p_organisation_id: org, p_token_hash: expect.any(String), p_return_id: requestId })
+  expect(f.db.storage.from).toHaveBeenLastCalledWith('recruitment-signed-contracts')
+  expect(f.storage.createSignedUrl).toHaveBeenLastCalledWith(`${org}/own/${requestId}`, 300, { download: 'Signed.pdf' })
+  expect(fetcher.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
+    { action: 'download_contract' },
+    { action: 'prepare_contract_return', requestId, document },
+    { action: 'commit_contract_return', requestId, document },
+    { action: 'download_contract', returnId: requestId },
+  ])
 })

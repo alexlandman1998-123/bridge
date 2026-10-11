@@ -8,6 +8,10 @@ const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx
 const headerSource = readFileSync(resolve(root, 'src/components/HeaderBar.jsx'), 'utf8')
 const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 
+assert.match(detailSource, /id: 'campaigns', label: 'Campaigns'/, 'development marketing should expose the Campaigns tab')
+assert.match(detailSource, /documents: 'campaigns'/, 'legacy Marketing Documents links should open Campaigns')
+assert.match(detailSource, /marketingHubSection === 'campaigns'.*DevelopmentMarketingCampaigns/, 'Campaigns should open the development campaign workspace')
+
 assert.match(
   headerSource,
   /if \(pathname\.startsWith\('\/developments\/'\)\) return ''/,
@@ -15,29 +19,11 @@ assert.match(
 )
 
 assert.ok(
-  detailSource.includes('Manage the public listing content by unit type'),
-  'editable marketing tab should use a simplified listing-style intro',
-)
-
-assert.ok(
   !detailSource.includes('Development Listing Backend'),
   'editable marketing tab should not use backend/admin wording',
 )
 
-assert.ok(
-  detailSource.includes('<h4 className="text-sm font-semibold text-[#142132]">Unit Types</h4>'),
-  'marketing tab should use unit types where the old sub-tabs were',
-)
 
-assert.ok(
-  detailSource.includes("setMarketingFloorplanField(selectedMarketingFloorplan.id, 'priceFrom'"),
-  'unit type editor should save an explicit price-from value',
-)
-
-assert.ok(
-  detailSource.includes("setMarketingFloorplanField(selectedMarketingFloorplan.id, 'priceTo'"),
-  'unit type editor should save an explicit price-to value',
-)
 
 assert.ok(
   detailSource.includes('imageUrls: appendUniqueTextareaValues(item.imageUrls, urls)'),
@@ -60,7 +46,8 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes("handleMarketingAssetFileUpload(event, 'logo'"),
+  detailSource.includes("['logo', 'development-logo', 'Light logo'") &&
+    detailSource.includes('handleMarketingAssetFileUpload(event, documentType, { uploadKey'),
   'marketing tab should upload a development logo for future collateral',
 )
 

@@ -14,6 +14,9 @@ export const HOME_SEEKERS_VERCEL_PROJECT = {
 export const HOME_SEEKERS_FUNCTIONS = ['site', 'leads', 'analytics', 'applications', 'recruitment']
 
 export async function buildHomeSeekersFrontend(frontendDirectory) {
+  // Isolated releases need the same CSS pipeline as the full checkout. Vite
+  // otherwise succeeds while leaving Tailwind directives for browsers to ignore.
+  await Promise.all(['postcss.config.js', 'tailwind.config.js'].map((name) => readFile(join(packageRoot, name), 'utf8')))
   // Use the public route entry rather than building the frequently active CRM
   // checkout. Server credentials are only read by the packaged functions.
   const result = await build({
@@ -28,6 +31,10 @@ export async function buildHomeSeekersFrontend(frontendDirectory) {
       rollupOptions: { input: join(packageRoot, 'home-seekers.html') },
     },
   })
+  const stylesheets = result.output.filter((item) => item.type === 'asset' && item.fileName.endsWith('.css'))
+  if (!stylesheets.length || stylesheets.some((item) => /@(?:tailwind|apply)\b/.test(String(item.source)))) {
+    throw new Error('Home Seekers CSS was not compiled. Include the PostCSS and Tailwind configuration in the release source.')
+  }
   await rename(join(frontendDirectory, 'home-seekers.html'), join(frontendDirectory, 'index.html'))
   return result
 }

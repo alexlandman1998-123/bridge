@@ -1,5 +1,21 @@
 import { expect, test } from 'vitest'
-import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter } from '../clientPortalWorkspaceService.js'
+import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter, buildDocumentCenter } from '../clientPortalWorkspaceService.js'
+
+test('seller portal retains custom requirements and suppresses removed checklist defaults', () => {
+  const centre = buildDocumentCenter({
+    requiredDocuments: [{ id: 'legacy-title', key: 'seller_title_deed', label: 'Title deed', visibility: 'seller_visible', status: 'required' }],
+    listing: { canonicalDocumentSnapshot: {
+      requirements: [
+        { id: 'removed-title', document_definition_key: 'seller_title_deed', requested_from_role: 'seller', applicability_override: 'removed', status: 'not_applicable' },
+        { id: 'custom-sars', custom_label: 'Additional SARS communication', requested_from_role: 'seller', status: 'requested', uploadable_by_roles: ['seller'], requirement_level: 'required' },
+      ], documents: [],
+    } },
+  }, 'selling')
+  expect(centre.requiredDocuments.some(row => row.key === 'seller_title_deed' || row.id === 'removed-title')).toBe(false)
+  expect(centre.requiredDocuments.find(row => row.id === 'custom-sars')).toMatchObject({
+    label: 'Additional SARS communication', canUpload: true,
+  })
+})
 
 test('Phase 4 buyer document centre uses only exact canonical projection documents', () => {
   const centre = buildCanonicalBuyerDocumentCenter({
@@ -102,4 +118,11 @@ test('seller transaction requirements replace legacy checklist rows but retain l
   expect(centre.items.map((item) => item.sourceId)).not.toContain('legacy-duplicate')
   expect(centre.standaloneDocuments.map((item) => item.id)).toContain('signed-mandate')
   expect(centre.saleDocuments).toHaveLength(1)
+})
+
+test('custom buyer requirements retain a usable canonical upload key and label', () => {
+  const centre = buildCanonicalBuyerDocumentCenter({ requirements: [{ id: 'custom-id', custom_label: 'SARS letter', document_definition_key: null,
+    requested_from_role: 'buyer', pack_key: 'buyer_identity_fica', status: 'pending', uploadable_by_roles: ['buyer'] }], documents: [] })
+  expect(centre.requiredDocuments[0].title).toBe('SARS letter')
+  expect(centre.requiredDocuments[0].uploadSpec).toMatchObject({ requirementInstanceId: 'custom-id', requirementKey: 'custom_custom-id' })
 })

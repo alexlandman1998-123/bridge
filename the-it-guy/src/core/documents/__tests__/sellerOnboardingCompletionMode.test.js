@@ -33,3 +33,12 @@ test('reads legacy aliases and defaults safely to self service', () => {
   assert.equal(record.agentAssisted, false)
   assert.equal(record.completedBy, 'seller@example.test')
 })
+
+
+test('information completion records the separate documents step without rewriting historical records', () => {
+  const completion = createSellerOnboardingCompletionRecord({ informationOnly: true, completedAt: '2026-10-11T10:00:00Z' })
+  assert.equal(completion.nextStep, 'documents')
+  assert.equal(completion.informationOnly, true)
+  assert.equal(readSellerOnboardingCompletionRecord({ sellerOnboardingCompletion: completion }).informationOnly, true)
+  assert.equal(createSellerOnboardingCompletionRecord({ completedAt: '2026-09-01T10:00:00Z' }).informationOnly, undefined)
+})

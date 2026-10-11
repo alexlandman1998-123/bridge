@@ -19,6 +19,7 @@ import {
 import { useAuthSession } from "../../context/AuthSessionContext";
 import {
   createEmailSender,
+  checkEmailCampaignContent,
   createEmailSendingDomain,
   getEmailDraft,
   getEmailRevisions,
@@ -34,17 +35,20 @@ import {
 import { getOrganisationPrivateListings } from "../../services/privateListingService";
 import {
   createEmailDocument,
-  emailIssues,
   mergeEmail,
   normalizeDocument,
   renderEmail,
 } from "../../../../supabase/functions/_shared/emailDocument.js";
 import EmailVisualEditor from "./EmailVisualEditor";
+import EmailCampaignImages from "./EmailCampaignImages";
+import EmailCampaignImport from "./EmailCampaignImport";
+import { inspectCampaignEmail } from "../../../../supabase/functions/_shared/emailContent.js";
 import "./EmailCampaignBuilder.css";
 
 const STEPS = ["Details", "Audience", "Content", "Review"];
 const fromRow = (row, brand) => ({
   id: row.id,
+  developmentContext: row.content_json?.arch9_context || null,
   name: row.name,
   subject: row.subject,
   previewText: row.preview_text || "",
@@ -77,6 +81,7 @@ export default function EmailCampaignBuilder({
   onBack,
   campaignId,
   onDraftCreated,
+  developmentContext,
 }) {
   const {
     organisationId,
@@ -98,7 +103,7 @@ export default function EmailCampaignBuilder({
     }),
     [currentWorkspace],
   );
-  const [draft, setDraft] = useState(() => blank(brand));
+  const [draft, setDraft] = useState(() => ({ ...blank(brand), ...(developmentContext ? { name: `${developmentContext.development_name} campaign`, developmentContext } : {}) }));
   const [ready, setReady] = useState(!campaignId);
   const [step, setStep] = useState(0);
   const [saveState, setSaveState] = useState("Changes not saved");
@@ -109,6 +114,7 @@ export default function EmailCampaignBuilder({
   const [listings, setListings] = useState([]);
   const [modal, setModal] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
+  const [checkedContent, setCheckedContent] = useState(null);
   const [testEmail, setTestEmail] = useState(authState?.user?.email || "");
   const [testRecipient, setTestRecipient] = useState("");
   const [templateName, setTemplateName] = useState("");
@@ -168,7 +174,15 @@ export default function EmailCampaignBuilder({
     senderIdentityId: !sender ? "Select a verified, active sender." : "",
   };
   const detailsReady = !Object.values(missing).some(Boolean);
-  const contentIssues = emailIssues(draft.contentJson);
+  const localContentCheck = useMemo(() => inspectCampaignEmail({ contentJson: draft.contentJson }, {
+    agencyName: brand.name || sender?.display_name,
+    senderEmail: sender?.from_email,
+    previewText: draft.previewText,
+  }), [draft.contentJson, draft.previewText, brand.name, sender?.display_name, sender?.from_email]);
+  const contentIssues = localContentCheck.errors;
+  const contentKey = JSON.stringify([organisationId, draft.contentJson, draft.previewText, draft.senderIdentityId]);
+  const serverContentCheck = checkedContent?.key === contentKey ? checkedContent.report : null;
+  const compatibilityWarnings = [...new Set([...localContentCheck.warnings, ...(serverContentCheck?.warnings || [])])];
   const update = (patch) => {
     setDraft((d) => ({ ...d, ...patch }));
     setSaveState("Changes not saved");
@@ -500,6 +514,7 @@ export default function EmailCampaignBuilder({
         <div className="eb-header-actions">
           {step === 2 && (
             <>
+              <button onClick={() => setModal("import")}>Upload email</button>
               <button
                 aria-label="Undo"
                 onClick={undo}
@@ -630,12 +645,7 @@ export default function EmailCampaignBuilder({
           {step === 0 && (
             <div className="eb-details-layout">
               <section className="eb-basics">
-                <span className="eb-eyebrow">CAMPAIGN SETUP</span>
                 <h1>Set up your email</h1>
-                <p className="eb-intro">
-                  Choose how this campaign appears in the inbox and who it is
-                  sent from.
-                </p>
                 {field(
                   "Internal campaign name",
                   "name",
@@ -834,29 +844,7 @@ export default function EmailCampaignBuilder({
                     Return to visual editor
                   </button>
                 </div>
-                <label className="eb-field">
-                  Import HTML
-                  <input
-                    type="file"
-                    accept=".html,.htm,text/html"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      e.target.value = "";
-                      if (!/\.html?$/i.test(file.name) && file.type !== "text/html") return setError("Choose an .html or .htm file.");
-                      if (file.size > 750 * 1024)
-                        return setError("HTML must be smaller than 750 KB.");
-                      void file
-                        .text()
-                        .then((advancedHtml) =>
-                          changeDocument({
-                            ...draft.contentJson,
-                            advancedHtml,
-                          }),
-                        ).catch((cause) => setError(cause.message || "Unable to read HTML."));
-                    }}
-                  />
-                </label>
+                <p>Use Upload email to import a designer’s HTML and host its images.</p>
                 <label className="eb-field">
                   Email HTML
                   <textarea
@@ -874,9 +862,13 @@ export default function EmailCampaignBuilder({
                 <p>
                   Unsubscribe and sender details will be appended automatically.
                 </p>
+                {contentIssues.length > 0 && <div className="eb-import-error" role="status"><ul>{contentIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+                {compatibilityWarnings.length > 0 && <div className="eb-content-warnings"><strong>Inbox compatibility</strong><ul>{compatibilityWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul><p>A browser preview cannot confirm how every inbox will display an email. Send a test and check your recipients’ usual email clients.</p></div>}
+                <EmailCampaignImages key={organisationId} organisationId={organisationId} />
               </section>
             ) : (
               <EmailVisualEditor
+                organisationId={organisationId}
                 document={draft.contentJson}
                 onChange={changeDocument}
                 templates={templates}
@@ -938,6 +930,19 @@ export default function EmailCampaignBuilder({
                   {issue}
                 </p>
               ))}
+              <section className="eb-content-check" aria-label="Email content checks">
+                <h2>Email content checks</h2>
+                <p>{serverContentCheck ? serverContentCheck.ready ? "Server content and hosted image checks passed." : "Resolve these issues before sending." : "Hosted images will be checked again before scheduling and delivery."}</p>
+                <button disabled={busy || contentIssues.length > 0} onClick={() => void run(async () => {
+                  const key = contentKey;
+                  const id = await persist();
+                  const report = await checkEmailCampaignContent(id);
+                  setCheckedContent({ key, report });
+                })}>Check content and hosted images</button>
+                {serverContentCheck?.errors?.length > 0 && <div className="eb-import-error" role="alert"><ul>{serverContentCheck.errors.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+                {compatibilityWarnings.length > 0 && <div className="eb-content-warnings"><strong>Inbox compatibility</strong><ul>{compatibilityWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
+                <p>Preview shows the layout in a browser. Use a test email to check the inboxes your recipients use.</p>
+              </section>
             </section>
           )}
         </>
@@ -996,7 +1001,8 @@ export default function EmailCampaignBuilder({
                     busy ||
                     !detailsReady ||
                     !audienceCount ||
-                    Boolean(contentIssues.length)
+                    Boolean(contentIssues.length) ||
+                    serverContentCheck?.ready === false
                   }
                   onClick={() =>
                     void run(async () => {
@@ -1007,8 +1013,10 @@ export default function EmailCampaignBuilder({
                         throw new Error("Choose a future send time.");
                       const id = await persist();
                       const preflight = await preflightEmailCampaign(id);
+                      if (preflight.contentCheck) setCheckedContent({ key: contentKey, report: preflight.contentCheck });
                       if (!preflight.ready)
                         throw new Error(
+                          preflight.contentCheck?.errors?.[0] ||
                           "Pre-send checks found an issue. Check sender, consent, sending policy and audience.",
                         );
                       await scheduleEmailCampaign(
@@ -1037,7 +1045,7 @@ export default function EmailCampaignBuilder({
         <div className="eb-modal-backdrop">
           <section
             ref={dialogRef}
-            className={`eb-modal ${modal === "preview" ? "eb-preview-modal" : ""}`}
+            className={`eb-modal ${modal === "preview" ? "eb-preview-modal" : ""} ${modal === "import" ? "eb-import-modal" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label={modal}
@@ -1059,6 +1067,11 @@ export default function EmailCampaignBuilder({
                 />
               </>
             )}
+            {modal === "import" && <EmailCampaignImport key={organisationId} organisationId={organisationId} onImported={({ html: importedHtml, manifest }) => {
+              changeDocument({ ...draft.contentJson, mode: "advanced", advancedHtml: importedHtml, importedEmail: manifest });
+              setModal("");
+              setNotice("Email imported. Its images are hosted and ready for preview.");
+            }} />}
             {modal === "advanced" && (
               <>
                 <h2>Switch to Advanced HTML</h2>
@@ -1086,6 +1099,7 @@ export default function EmailCampaignBuilder({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (contentIssues.length) return setError(contentIssues[0]);
                   void run(async () => {
                     await persist();
                     const result = await sendEmailCampaignTest({
@@ -1099,7 +1113,7 @@ export default function EmailCampaignBuilder({
                       previewRecipientId: testRecipient || undefined,
                     });
                     setNotice(
-                      `Test sent to ${result.deliveredTo}. Excluded from campaign analytics and recipient totals.`,
+                      `Test accepted for delivery to ${result.deliveredTo}. Excluded from campaign analytics and recipient totals.`,
                     );
                   });
                 }}
@@ -1129,7 +1143,8 @@ export default function EmailCampaignBuilder({
                     ))}
                   </select>
                 </label>
-                <button className="eb-primary" disabled={busy || !sender}>
+                {contentIssues.length > 0 && <p role="alert">{contentIssues[0]}</p>}
+                <button className="eb-primary" disabled={busy || !sender || contentIssues.length > 0}>
                   {busy ? "Sending…" : "Send test"}
                 </button>
               </form>

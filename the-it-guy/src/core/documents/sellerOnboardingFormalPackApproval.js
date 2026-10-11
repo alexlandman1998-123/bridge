@@ -25,8 +25,8 @@ export function validateSellerOnboardingFormalPackApproval({
   const vatHandling = text(commission?.vatHandling || commission?.vat_handling)
   const missing = []
   if (!reviewApproved) missing.push('Approve seller onboarding')
+  if (!selected.length) missing.push('Choose at least one document')
   if (mandateSource && !['arch9_generated', 'agency_upload'].includes(mandateSource)) missing.push('Choose a mandate document source')
-  if (mandateSource === 'agency_upload' && !selected.includes('fica')) missing.push('Include FICA')
   if (mandateSource === 'agency_upload' && includesMandate) missing.push('Upload the agency mandate separately in Documents')
   if (includesMandate && value <= 0) missing.push(basis === 'fixed' ? 'Fixed commission amount' : 'Commission percentage')
   if (includesMandate && !vatHandling) missing.push('VAT treatment')

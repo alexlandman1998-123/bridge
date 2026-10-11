@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "recordedOn": "2026-10-11",
+  "repositoryHead": "904d53fad03ffef376f6a0101c78f8ea3bb76f34",
+  "scope": "Current local source including pre-existing uncommitted work; not production state or a clean-release certification.",
+  "policy": "Protected code is outside the additive Legal foundation. Shared-surface changes require explicit preservation review. Never automatically refresh hashes to clear a failure.",
+  "protectedFiles": [
+    {
+      "path": "the-it-guy/src/constants/attorneyWorkflowStages.js",
+      "sha256": "003784ab856998073c6752c07e06daf2b10a267f1ec5e37ae525121d66636691",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/constants/attorneyRoleCatalog.js",
+      "sha256": "ef075297bf536b2f38ef02679247d595e8c32c162d8ec37e0c1cf968f933180f",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/lib/attorneyPermissions.js",
+      "sha256": "6384c302b0f68d9aa9c89b3465fd1c5c2f1163192c4fcab474976fa37b8c3f61",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/lib/attorneyModuleSettings.js",
+      "sha256": "021741629f2ebc020742617d9fadae19ba85441f9679a3a733f3db4450bc63ee",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/core/transactions/attorneyMatterScope.js",
+      "sha256": "2fa2e386bdf410a9d98375047ba8859fc6768c9779331bea0d49413fd1f32855",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/core/transactions/sharedMatterJourneyContract.js",
+      "sha256": "bf6b26c79643175320295a2cd82234690ba714cec7377224a6684cf0865b66aa",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/core/transactions/attorneyTaskOperationalContract.js",
+      "sha256": "8cd37522e00a0fdf9deadb1e74091c95d283f508e13948228e3ff2d6bbd5fc5b",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/core/transactions/attorneyIncomingMatterContract.js",
+      "sha256": "46b24b77913de1b767f7421555e24272fab378483ae7eede4d36bbb794bae7b7",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/matterWorkflowPlanService.js",
+      "sha256": "f5d21bbba08e0efc00b628f426f3a1e3112b9a88be27eee5e59777376340fc2b",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/sharedJourneyCommandService.js",
+      "sha256": "a9fb11891c78d36cde530e39550b293404d9b3da4b50b2e6b40cb859455ccd79",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/attorneyWorkflowLaneService.js",
+      "sha256": "67a9d2d02789f9bf90a3e82d7f44e13d47c5ced49e03e563ee5fac3dc2590f1d",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/transferPhase4Policy.js",
+      "sha256": "9a2582f5b4153a59be07c794b6709b055cbb4b04564efbd28c80878d9dcec645",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/stageFiveLodgementReview.js",
+      "sha256": "e2c93be69f895d8cba541a6de4cb9eed235c41de4eb39c36b0e7e1cd85ed7242",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/stageSixClosureReview.js",
+      "sha256": "37d0080834578a2fc0b6246cc076541637e06855d2a02815cf1806f8b9b6f9d8",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyWorkflow/attorneyDocumentRequirementsResolver.js",
+      "sha256": "66c885efa7fa036e23adac09c13e9d0f5961a603b2db3651454ef5656df95ad0",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/permissions/attorneyPermissionService.js",
+      "sha256": "fc6a264bb8908eba8d193c110909601a818218bbfff31038d0b9dd9f84604d4a",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyMatterWorkspace.js",
+      "sha256": "faa6c1ddfd158bc97a81bdfee1ba39b6197aa73346d58bee65da4d8786337f60",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyMatterTeamService.js",
+      "sha256": "36cabca8a533594b7af6a8972f5ecd273d5a3eba65977189fd4dfda52f034f02",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyMatterNumberService.js",
+      "sha256": "8759c350134f7b955031cef71c40e30c46262d68c3b1383fe12fd76003bdb13a",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyIncomingMatterInstructionActions.js",
+      "sha256": "642b6c17d67231d470b363ceb13ce5e82f28481335fb7137db678406f020f29e",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/sharedMatterJourneyReader.js",
+      "sha256": "8a510032680256b23e7da53d255ec147908155c3ab23204c8c5327e9ca86ba76",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/documents/attorneyDocumentPersistence.js",
+      "sha256": "79e299769efc1e5669e5c318c33bd9d276b8fed72d4d09642948ca59a51035b7",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/documents/attorneyDocumentVersionModel.js",
+      "sha256": "67b2d909b4bf25ce8420ee9160741924a4a75ae481e27c1043eaa20eee15f01b",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyAppointmentManagement.js",
+      "sha256": "46ee822709669cb8ef40d2571fbb933c44865b21d82cfa5c1f146062c0b2f1d7",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/hooks/useAttorneyDashboardLiveRefresh.js",
+      "sha256": "dd0e5e3c4905b5eefe37e39ec599e7a21c69fdd8f5d11c48a4dc34a291869986",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/components/AttorneyMatterAccountsPanel.jsx",
+      "sha256": "5b7df0a0d05e8f5c10ac6765beb4e04db1e99befda139ee797dffbab3cdd174b",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "supabase/migrations/202605090011_transaction_attorney_assignments_foundation.sql",
+      "sha256": "ed8b4b7f3dec3f232e13ef8ab5c1a96880ef80baac62dfee36d4ff6e78dbe1c5",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/202607180025_attorney_accounting_phase1_1_canonical_model.sql",
+      "sha256": "faefa78f22004b9e4334ac393b9e13eeae5360b426f93d4ed690a7edc8a2695d",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20260908144636_shared_matter_journey_atomic_commands.sql",
+      "sha256": "1043a4a3fa3541df0b19406b1731e3f797c25f018b02b6c8c8146247797a1ac3",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20260926131822_attorney_matter_team_scope.sql",
+      "sha256": "b6d6c124051f868013ee3e8337e67dcd3a3d9084997f2789f2b25f8605d89752",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20260926132034_attorney_phase1_readiness_gates.sql",
+      "sha256": "bb760bd1801f8aa480082ef52832883ac7647bcf2facbd92659c3659fa0d333c",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20260926142602_attorney_phase4_tax_clearance_conditions.sql",
+      "sha256": "fe5b9475b62a8ac8ccfb76e5789d97f5bcddc7416f78e0f8764384020211a1fe",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20260926191847_attorney_stage6_closure_audience_gates.sql",
+      "sha256": "96e16e1144cf59398c539f4438ccfcab9946ae0002709059a9fd0b3394416d44",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20261003173649_attorney_document_persistence.sql",
+      "sha256": "35424f2f167d63387502fdd846a9300c1900938b974249ba272c0d9f67d7b423",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/migrations/20261003204422_attorney_calendar_durable_delivery.sql",
+      "sha256": "252168c4e0d6e98c1eafe9598d624650e3f7fcccd3d036dde4f6ca85365484ce",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/functions/attorney-appointment-delivery-worker/index.ts",
+      "sha256": "79981e94513a8a1e7bfa2e78a6e65b48a49622ce7d6e8bdd3c96c8c589b66cbc",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "supabase/functions/seller-portal-document-signing/index.ts",
+      "sha256": "85087ee3478e9e19dd7456687b61680c64953671bc55712c1b8692fd579823a4",
+      "workingTreeChanged": true
+    }
+  ],
+  "reviewFiles": [
+    {
+      "path": "the-it-guy/src/App.jsx",
+      "sha256": "17d6f5439c5ae68c4803afa2ff9f5348b7fe186f9a5520741114eb33bebd80c3",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/components/Sidebar.jsx",
+      "sha256": "ae462d1e15fd9cbf56b15665caee17219e27759c9ade00fe7096b24ce69ab24b",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/context/WorkspaceContext.jsx",
+      "sha256": "480528f3d7fdbb494dcf9d35905e502512025582ea19ef44f17b8053175aeafb",
+      "workingTreeChanged": false
+    },
+    {
+      "path": "the-it-guy/src/lib/api.js",
+      "sha256": "8c07da3496676d409f1ef81f4c850f362cb491577d6d4ddf8221f3241b80c00f",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/pages/AttorneyDashboardPage.jsx",
+      "sha256": "4ce6e4662a0b3344124a3923aa88893b4d9b8a8cf5970205b6cd842acb7fbb60",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/pages/AttorneyTransactionDetail.jsx",
+      "sha256": "16b9eae030c03300ef616fb97702d90ace652c38bedc546d4edd53e2dffe7ab3",
+      "workingTreeChanged": true
+    },
+    {
+      "path": "the-it-guy/src/services/attorneyOperations.js",
+      "sha256": "f03de8f75a5b08584cf22a911a8a18509ac0d463c1583ff970f6271986404bfe",
+      "workingTreeChanged": false
+    }
+  ]
+}

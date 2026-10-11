@@ -22,6 +22,7 @@ export function createSellerOnboardingCompletionRecord({
   completedBy = '',
   completedAt = '',
   notes = '',
+  informationOnly = false,
 } = {}) {
   const source = existing && typeof existing === 'object' ? existing : {}
   const completionMode = normalizeSellerOnboardingCompletionMode(mode || source.mode || source.completionMode || source.completion_mode)
@@ -30,6 +31,7 @@ export function createSellerOnboardingCompletionRecord({
   return {
     contract: SELLER_ONBOARDING_COMPLETION_CONTRACT,
     mode: completionMode,
+    ...(informationOnly || source.informationOnly ? { informationOnly: true, nextStep: 'documents' } : {}),
     completedBy: actor,
     completed_by: actor,
     completedAt: at,

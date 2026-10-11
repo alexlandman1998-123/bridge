@@ -1,0 +1,116 @@
+{
+  "status": "production_released_verified",
+  "approval": "push to production",
+  "baseCommit": "61d3d64c656d8bf063162182ec8b41c3d27dee58",
+  "commit": "fabb20ecac1d9e7ad1a809d26872f24d8e65def5",
+  "branch": "codex/homeseekers-copy-production-20261011",
+  "target": {
+    "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+    "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+    "projectName": "home-seekers-website",
+    "environment": "production",
+    "domain": "homeseeker.co.za"
+  },
+  "previousDeployment": {
+    "id": "dpl_6iFNpEpYAx62Rs6t9k815JGmm4m5",
+    "url": "https://home-seekers-website-b2eumwm66-alexs-projects-f5496a21.vercel.app"
+  },
+  "scopedFiles": [
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersDemo.jsx",
+      "sha256": "d3e65026d8aba29c3e15a3074101b8912acab3258bcd3facb05bf008f726b91e",
+      "bytes": 22295
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersBrand.css",
+      "sha256": "b5add2a5843d81567e8847d7f47e32f9952cd299047c72d227880f91fbf58a25",
+      "bytes": 14230
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersJoin.jsx",
+      "sha256": "7098aa13407afcf7b62edc6f85ef089ae4efb35e9519a7339f0eaf5e934541f2",
+      "bytes": 36385
+    },
+    {
+      "path": "the-it-guy/src/pages/__tests__/HomeSeekersJoin.test.jsx",
+      "sha256": "c022487b921148b0d838e7489a7cec56b608b961b22d934d1e3131d2bc9b365b",
+      "bytes": 1480
+    }
+  ],
+  "databaseChanges": false,
+  "serverSourceChanges": false,
+  "capturedAt": "2026-10-11T06:26:11.284644+00:00",
+  "deployment": {
+    "id": "dpl_4wFFQVN8RzWp1yio6oPzXpHkLFEX",
+    "url": "https://home-seekers-website-q4dltky3f-alexs-projects-f5496a21.vercel.app",
+    "readyState": "READY",
+    "target": "production",
+    "liveUrl": "https://homeseeker.co.za",
+    "aliasesVerified": [
+      "homeseeker.co.za",
+      "www.homeseeker.co.za"
+    ]
+  },
+  "checks": {
+    "focusedUiTests": 16,
+    "lint": "passed",
+    "isolatedProductionBuild": "passed",
+    "sourceScopeVerified": true,
+    "liveBrowser": {
+      "observations": [
+        {
+          "width": 390,
+          "openPanels": 3,
+          "homeOverflow": false,
+          "joinStatus": 200,
+          "rentRows": [
+            "R1\u00a0200",
+            "R420",
+            "R780 / month"
+          ],
+          "popupRows": [
+            "R1\u00a0200",
+            "R420",
+            "R780 / month"
+          ],
+          "bookRows": [
+            "R600\u00a0000",
+            "R60\u00a0000",
+            "R21\u00a0000"
+          ],
+          "income": "R39\u00a0000\nremaining each month, R468\u00a0000 a year",
+          "joinOverflow": false
+        },
+        {
+          "width": 1440,
+          "openPanels": 3,
+          "homeOverflow": false,
+          "joinStatus": 200,
+          "rentRows": [
+            "R1\u00a0200",
+            "R420",
+            "R780 / month"
+          ],
+          "popupRows": [
+            "R1\u00a0200",
+            "R420",
+            "R780 / month"
+          ],
+          "bookRows": [
+            "R600\u00a0000",
+            "R60\u00a0000",
+            "R21\u00a0000"
+          ],
+          "income": "R39\u00a0000\nremaining each month, R468\u00a0000 a year",
+          "joinOverflow": false
+        }
+      ],
+      "errors": [],
+      "failed": []
+    }
+  },
+  "artifactInventorySha256": "d31cfed976b773c36355adfb56c229eb9fb846f2d2c9f4b84cd6e5230e424c76",
+  "sourcePublished": false,
+  "teamPricingChange": "Audit only; no team-pricing changes included.",
+  "verificationScope": "Homepage and Join Us page, expandable panels and rental popup at widths 390 and 1440. No forms submitted or applicant accounts created. Existing favicon.ico request returns 404."
+}

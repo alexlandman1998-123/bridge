@@ -2,34 +2,20 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { normalizeSellerOnboardingFormalSigningSelection, validateSellerOnboardingFormalSigningSelection } from '../sellerOnboardingFormalSigningPack.js'
 
-test('the post-review signing pack contains FICA and mandate, never the already signed disclosure', () => {
-  assert.deepEqual(normalizeSellerOnboardingFormalSigningSelection({ disclosure: true, fica: true, mandate: true }), {
-    disclosure: false,
-    fica: true,
-    mandate: true,
-  })
-  assert.deepEqual(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: true }), {
-    contract: 'arch9-seller-onboarding-formal-signing-pack-v1',
-    valid: true,
-    selectedDocuments: ['fica', 'mandate'],
-    missing: [],
-  })
+test('every document may be prepared independently after information review', () => {
+  for (const key of ['mandate', 'disclosure', 'fica']) {
+    const selection = { [key]: true }
+    const result = validateSellerOnboardingFormalSigningSelection(selection)
+    assert.equal(result.valid, true)
+    assert.deepEqual(result.selectedDocuments, [key])
+    assert.deepEqual(result.missing, [])
+  }
+  assert.deepEqual(normalizeSellerOnboardingFormalSigningSelection({ disclosure: true, fica: true, mandate: true }), { disclosure: true, fica: true, mandate: true })
+  assert.equal(validateSellerOnboardingFormalSigningSelection({}).valid, false)
 })
 
-test('does not allow a mandate-only post-review signing pack', () => {
-  assert.deepEqual(validateSellerOnboardingFormalSigningSelection({ mandate: true }).missing, ['fica'])
-})
-
-test('allows a mandate-only pack when replacing an already reviewed mandate', () => {
-  assert.equal(validateSellerOnboardingFormalSigningSelection({ mandate: true }, { mandateReplacement: true }).valid, true)
-})
-
-
-test('an explicitly selected agency mandate permits FICA-only preparation while the mandate stays a separate upload', () => {
-  const selection = { fica: true, mandate: false }
-  assert.equal(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource: 'agency_upload' }).valid, true)
-  assert.deepEqual(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource: 'agency_upload' }).selectedDocuments, ['fica'])
-  for (const mandateSource of ['', 'arch9_generated', 'unknown']) assert.equal(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource }).valid, false)
-  assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: true }, { mandateSource: 'agency_upload' }).valid, false)
+test('an agency mandate remains a separate upload without forcing FICA generation', () => {
+  for (const selection of [{ fica: true }, { disclosure: true }]) assert.equal(validateSellerOnboardingFormalSigningSelection(selection, { mandateSource: 'agency_upload' }).valid, true)
+  assert.equal(validateSellerOnboardingFormalSigningSelection({ mandate: true }, { mandateSource: 'agency_upload' }).valid, false)
   assert.equal(validateSellerOnboardingFormalSigningSelection({}, { mandateSource: 'agency_upload' }).valid, false)
 })

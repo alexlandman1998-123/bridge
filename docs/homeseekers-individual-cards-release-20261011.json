@@ -1,0 +1,61 @@
+{
+  "status": "production_released_verified",
+  "approval": "Existing ongoing Home Seekers production push, with individual card copy and team information inside option details.",
+  "baseCommit": "0ce1372638fe33648b6c423510a40d2b4ad4d728",
+  "commit": "c0ca6f8e8e3c7178bc82c648dee0066e49ea6296",
+  "branch": "codex/homeseekers-individual-cards-production-20261011",
+  "target": {
+    "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+    "projectId": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+    "projectName": "home-seekers-website",
+    "environment": "production",
+    "domain": "homeseeker.co.za"
+  },
+  "previousDeployment": {
+    "id": "dpl_3zjEXMvCCgGC552bdeGKnyHSxzkK",
+    "url": "https://home-seekers-website-ix2q2kd2a-alexs-projects-f5496a21.vercel.app"
+  },
+  "scopedFiles": [
+    "the-it-guy/src/pages/homeSeekersRecruitment.js",
+    "the-it-guy/src/pages/HomeSeekersJoin.jsx",
+    "the-it-guy/src/pages/__tests__/HomeSeekersJoin.test.jsx"
+  ],
+  "databaseChanges": false,
+  "serverSourceChanges": false,
+  "sourcePublished": false,
+  "preparedAt": "2026-10-11T06:53:22.027517+00:00",
+  "checks": {
+    "standaloneBuild": "passed",
+    "focusedTests": 2,
+    "lint": "passed",
+    "serverArtifactsIdentical": true,
+    "previewBrowser": {
+      "individualCards": true,
+      "teamDetailsOnOpen": true,
+      "browser": "Codex In-app Browser"
+    },
+    "liveBrowser": {
+      "browser": "Codex In-app Browser",
+      "individualCards": true,
+      "teamDetailsOnOpen": true,
+      "upfrontCardFits425pxViewport": true,
+      "screenshots": [
+        "live-cards.jpg",
+        "live-team-popup.jpg"
+      ]
+    }
+  },
+  "artifactInventorySha256": "d22cbe5a2240b313d79fa41333852a2950c6d313ea383b61e8eecacf9ef06621",
+  "verifiedAt": "2026-10-11T06:56:39.519630+00:00",
+  "deployment": {
+    "id": "dpl_BFDbYPdY6BmP7K12Y8NL3whUEqDq",
+    "url": "https://home-seekers-website-fh6nfy5mn-alexs-projects-f5496a21.vercel.app",
+    "readyState": "READY",
+    "target": "production",
+    "aliasesVerified": [
+      "homeseeker.co.za",
+      "www.homeseeker.co.za"
+    ]
+  },
+  "verificationScope": "Public join page cards and option detail popup; no forms submitted or remote data changed."
+}

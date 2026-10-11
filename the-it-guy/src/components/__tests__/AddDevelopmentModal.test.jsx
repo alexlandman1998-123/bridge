@@ -2,18 +2,21 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import AddDevelopmentModal from '../AddDevelopmentModal.jsx'
-import { createDevelopmentWorkspace, fetchDeveloperPartnersWorkspace } from '../../lib/api.js'
+import { createDevelopmentWorkspace, createDeveloperPartnerInvite, fetchDeveloperPartnersWorkspace } from '../../lib/api.js'
 import { sendWhatsAppNotification } from '../../lib/whatsapp'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { invokeEdgeFunction } from '../../lib/supabaseClient.js'
+import { listOrganisationUsers } from '../../lib/settingsApi.js'
 
 vi.mock('../../lib/api.js', () => ({
   createDevelopmentWorkspace: vi.fn(),
+  createDeveloperPartnerInvite: vi.fn(async () => ({ id: 'partner-invite', invitationDelivery: { emailResult: { sent: true } } })),
   fetchDeveloperAccessOptions: vi.fn(async () => []),
   fetchDeveloperPartnersWorkspace: vi.fn(async () => ({ relationships: [], preferredPartners: [] })),
 }))
 vi.mock('../../lib/location/upsertArea', () => ({ upsertAreaFromAddress: vi.fn(async () => null) }))
+vi.mock('../../lib/settingsApi.js', () => ({ listOrganisationUsers: vi.fn(async () => []) }))
 vi.mock('../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, invokeEdgeFunction: vi.fn(async () => ({})) }))
 vi.mock('../../lib/whatsapp', () => ({ formatSouthAfricanWhatsAppNumber: (number) => number, sendWhatsAppNotification: vi.fn(async () => ({})) }))
 vi.mock('../../context/WorkspaceContext', () => {
@@ -26,8 +29,10 @@ const testWorkspace = { profile: { fullName: 'Test Agent', email: 'agent@example
 beforeEach(() => {
   window.localStorage.clear()
   vi.clearAllMocks()
+  listOrganisationUsers.mockResolvedValue([])
   useWorkspace.mockReturnValue(testWorkspace)
   createDevelopmentWorkspace.mockResolvedValue({ id: 'saved-development', warnings: [] })
+  createDeveloperPartnerInvite.mockResolvedValue({ id: 'partner-invite', invitationDelivery: { emailResult: { sent: true } } })
   upsertAreaFromAddress.mockResolvedValue(null)
 })
 afterEach(cleanup)
@@ -46,7 +51,7 @@ function review() { details(); next(); next(); next() }
 function layout(fields = {}, save = true) {
   fireEvent.click(screen.getByRole('button', { name: 'Add unit layout' }))
   const values = { 'Layout name': 'A1', 'Property type': 'Apartment', Bedrooms: '2', Bathrooms: '2', 'Size (m²)': '80', 'List price (R)': '1500000', 'How many units?': '4', ...fields }
-  Object.entries(values).forEach(([label, value]) => fireEvent.change(screen.getByLabelText(label), { target: { value } }))
+  Object.entries(values).forEach(([label, value]) => fireEvent.change(label === 'Property type' ? screen.getByRole('combobox', { name: label }) : screen.getByLabelText(label), { target: { value } }))
   if (save) fireEvent.click(screen.getByRole('button', { name: 'Save layout' }))
 }
 function setupLayouts() {
@@ -300,7 +305,7 @@ it('requires a valid reservation amount when the deposit default is enabled', ()
   next()
   expect(screen.getByRole('alert').textContent).toContain('positive reservation deposit amount')
   expect(createDevelopmentWorkspace).not.toHaveBeenCalled()
-  fireEvent.change(screen.getByLabelText(/^Reservation Deposit Amount/), { target: { value: '5000' } })
+  fireEvent.change(screen.getByLabelText(/^amount/), { target: { value: '5000' } })
   next()
   expect(screen.getByText(/^R5\s?000$/)).toBeTruthy()
 })
@@ -379,36 +384,30 @@ it('edits details directly from Review, validates them, and returns without crea
   expect(createDevelopmentWorkspace.mock.calls[0][0].details.name).toBe('Willow Gardens')
 })
 
-it('keeps extra sales settings collapsed and retains changes after direct review editing', async () => {
+it('removes More settings and retains reservation choices after direct review editing', async () => {
   open(); review()
   fireEvent.click(screen.getByRole('button', { name: 'Edit sales setup' }))
-  const more = screen.getByText('More settings').closest('details')
-  expect(more.open).toBe(false)
-  more.open = true
-  fireEvent.click(screen.getByLabelText('Multiple agents allowed'))
-  fireEvent.click(screen.getByLabelText('Buyer may use own bond originator'))
-  fireEvent.click(screen.getByLabelText('Auto-invite selected bond originator'))
-  expect(screen.getByLabelText('Approve buyer-appointed originators').disabled).toBe(true)
+  expect(screen.queryByText('More settings')).toBeNull()
+  expect(screen.getByRole('radiogroup', { name: 'Attorney setup' })).toBeTruthy()
+  expect(screen.getByRole('radiogroup', { name: 'Bond originator setup' })).toBeTruthy()
   fireEvent.click(screen.getByLabelText('Reservation deposit applies'))
   fireEvent.change(screen.getByLabelText('Amount Type'), { target: { value: 'percentage' } })
-  fireEvent.change(screen.getByLabelText(/^Reservation Deposit Amount/), { target: { value: '101' } })
+  fireEvent.change(screen.getByLabelText(/^amount/), { target: { value: '101' } })
   fireEvent.click(screen.getByRole('button', { name: 'Back to review' }))
   expect(screen.getByRole('alert').textContent).toContain('100 or less')
-  fireEvent.change(screen.getByLabelText(/^Reservation Deposit Amount/), { target: { value: '5' } })
+  fireEvent.change(screen.getByLabelText(/^amount/), { target: { value: '5' } })
   fireEvent.change(screen.getByLabelText('Payable To'), { target: { value: 'agency_trust' } })
-  more.open = false
   fireEvent.click(screen.getByRole('button', { name: 'Back to review' }))
   expect(screen.getByText('5%')).toBeTruthy()
   expect(screen.getByText('Agency trust account')).toBeTruthy()
   expect(createDevelopmentWorkspace).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Edit sales setup' }))
-  expect(screen.getByLabelText('Multiple agents allowed').checked).toBe(false)
-  expect(screen.getByLabelText('Auto-invite selected bond originator').checked).toBe(true)
+  expect(screen.getByRole('radio', { name: 'Sort out later for attorney' }).checked).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Back to review' }))
   fireEvent.click(screen.getByRole('button', { name: 'Create Development →' }))
   await waitFor(() => expect(createDevelopmentWorkspace).toHaveBeenCalledTimes(1))
   const settings = createDevelopmentWorkspace.mock.calls[0][0].developmentSettings
-  expect(settings.rolePlayerDefaults).toMatchObject({ multipleAgentsAllowed: false, buyerAppointedBondOriginatorAllowed: false, buyerAppointedBondOriginatorRequiresApproval: false, autoInviteSelectedBondOriginator: true })
+  expect(settings.rolePlayerDefaults).toMatchObject({ defaultTransferAttorneySource: 'none', defaultBondOriginatorSource: 'none' })
   expect(settings).toMatchObject({ reservation_deposit_amount: 5, reservation_deposit_amount_type: 'percentage', reservation_deposit_payable_to: 'agency_trust' })
 })
 
@@ -465,34 +464,162 @@ it('shows invitation recipients before save and sends nothing while reviewing or
 })
 
 
-it('keeps partner defaults optional and saves the selected preferred sales team', async () => {
-  fetchDeveloperPartnersWorkspace.mockResolvedValueOnce({ defaults: [{ id: 'agency-default', relationshipId: 'agency-relationship', partnerType: 'agency', companyName: 'Preferred Agency', isActive: true, isPreferredDefault: true }] })
+it('shows branded partner cards, retains the attorney selection and clears a deferred bond originator', async () => {
+  fetchDeveloperPartnersWorkspace.mockResolvedValueOnce({ defaults: [
+    { id: 'stbb-default', relationshipId: 'stbb-relationship', partnerOrganisationId: 'stbb-org', partnerType: 'transfer_attorney', companyName: 'STBB', email: 'attorney@example.test', isActive: true, isPreferredDefault: true },
+    { id: 'ooba-default', partnerType: 'bond_originator', companyName: 'ooba', email: 'bond@example.test', isActive: true, isPreferredDefault: true },
+  ], relationships: [{ id: 'stbb-relationship', partnerOrganisation: { logoUrl: '/stbb.svg' } }] })
   open(); details(); next(); next()
-  await screen.findByRole('option', { name: 'Preferred Agency (preferred partner)' })
-  const agent = screen.getByLabelText('Selling agent')
-  expect(agent.value).toBe('none')
-  fireEvent.change(agent, { target: { value: 'developer_partner_default' } })
+  const attorney = await screen.findByRole('radio', { name: 'Use STBB as attorney' })
+  expect(attorney.checked).toBe(false)
+  expect(screen.getByRole('radio', { name: 'Sort out later for attorney' }).checked).toBe(true)
+  expect(screen.getByRole('radiogroup', { name: 'Attorney setup' }).querySelector('img').getAttribute('src')).toBe('/stbb.svg')
+  fireEvent.click(attorney)
+  fireEvent.click(screen.getByRole('radio', { name: 'Use ooba as bond originator' }))
   next()
-  expect(screen.getByText('Preferred Agency')).toBeTruthy()
+  expect(screen.getByText('STBB')).toBeTruthy()
+  expect(screen.getByText('ooba')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Edit sales setup' }))
-  expect(screen.getByLabelText('Selling agent').value).toBe('developer_partner_default')
+  expect(screen.getByRole('radio', { name: 'Use STBB as attorney' }).checked).toBe(true)
+  fireEvent.click(screen.getByRole('radio', { name: 'Sort out later for bond originator' }))
   fireEvent.click(screen.getByRole('button', { name: 'Back to review' }))
   fireEvent.click(screen.getByRole('button', { name: 'Create Development →' }))
   await waitFor(() => expect(createDevelopmentWorkspace).toHaveBeenCalledTimes(1))
-  expect(createDevelopmentWorkspace.mock.calls[0][0].developmentSettings.rolePlayerDefaults).toMatchObject({ defaultAgentSource: 'developer_partner_default', defaultAgentRelationshipId: 'agency-relationship', defaultAgentPreferredPartnerId: 'agency-default', defaultAgentName: 'Preferred Agency' })
+  const payload = createDevelopmentWorkspace.mock.calls[0][0]
+  expect(payload.developmentSettings.rolePlayerDefaults).toMatchObject({ defaultTransferAttorneySource: 'developer_partner_default', defaultTransferAttorneyRelationshipId: 'stbb-relationship', defaultTransferAttorneyPreferredPartnerId: 'stbb-default', defaultTransferAttorneyOrganisationId: 'stbb-org', defaultTransferAttorneyName: 'STBB', defaultTransferAttorneyEmail: 'attorney@example.test', defaultBondOriginatorSource: 'none', defaultBondOriginatorName: '' })
+  expect(payload.developmentSettings.stakeholderTeams.conveyancers[0]).toMatchObject({ firmName: 'STBB', email: 'attorney@example.test' })
+  expect(payload.developmentSettings.stakeholderTeams.bondOriginators).toEqual([])
+  expect(payload.legal.bondOriginatorName).toBe('')
+  expect(createDeveloperPartnerInvite).not.toHaveBeenCalled()
+})
+
+it('recovers partner invitation choices, validates them and sends development-scoped invites only after saving', async () => {
+  open(); details(); next(); next()
+  fireEvent.click(screen.getByRole('radio', { name: 'Invite new attorney' }))
+  next()
+  expect(screen.getByRole('alert').textContent).toContain('Attorney company name and invitation email are required')
+  fireEvent.change(screen.getByLabelText('Attorney company name'), { target: { value: 'New Firm' } })
+  fireEvent.change(screen.getByLabelText('Attorney invitation email'), { target: { value: 'invalid' } })
+  next()
+  expect(screen.getByRole('alert').textContent).toContain('valid attorney invitation email')
+  fireEvent.change(screen.getByLabelText('Attorney invitation email'), { target: { value: 'legal@example.test' } })
+  fireEvent.click(screen.getByRole('radio', { name: 'Invite new bond originator' }))
+  fireEvent.change(screen.getByLabelText('Bond originator company name'), { target: { value: 'New Bonds' } })
+  fireEvent.change(screen.getByLabelText('Bond originator invitation email'), { target: { value: 'bond@example.test' } })
+  await screen.findByText('Saved on this device')
+  cleanup(); open()
+  fireEvent.click(screen.getByRole('button', { name: 'Resume draft' }))
+  await screen.findByLabelText('Attorney company name')
+  expect(screen.getByLabelText('Attorney invitation email').value).toBe('legal@example.test')
+  expect(screen.getByLabelText('Bond originator company name').value).toBe('New Bonds')
+  next()
+  expect(screen.getByText('On save: attorney invitation to legal@example.test. Access starts after acceptance.')).toBeTruthy()
+  expect(createDeveloperPartnerInvite).not.toHaveBeenCalled()
+  expect(createDevelopmentWorkspace).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Create Development →' }))
+  await waitFor(() => expect(createDeveloperPartnerInvite).toHaveBeenCalledTimes(2))
+  expect(createDevelopmentWorkspace.mock.invocationCallOrder[0]).toBeLessThan(createDeveloperPartnerInvite.mock.invocationCallOrder[0])
+  expect(createDeveloperPartnerInvite).toHaveBeenCalledWith({ developerOrganisationId: 'agency', partnerType: 'transfer_attorney', partnerDisplayName: 'New Firm', partnerInvitationEmail: 'legal@example.test', scopeType: 'specific_developments', scopeJson: { developmentIds: ['saved-development'] }, sendEmail: true })
+  const payload = createDevelopmentWorkspace.mock.calls[0][0]
+  expect(payload.developmentSettings.stakeholderTeams.conveyancers).toEqual([])
+  expect(payload.developmentSettings.stakeholderTeams.bondOriginators).toEqual([])
+  expect(payload.legal.primaryContactEmail).toBe('')
+  expect(payload.developmentSettings.rolePlayerDefaults.defaultTransferAttorneySource).toBe('none')
+  await screen.findByText('Ready to go')
+})
+
+it('reports partner invitation delivery failures without retrying the saved development', async () => {
+  createDeveloperPartnerInvite.mockResolvedValueOnce({ invitationDelivery: { emailResult: { sent: false } } })
+  open(); details(); next(); next()
+  fireEvent.click(screen.getByRole('radio', { name: 'Invite new attorney' }))
+  fireEvent.change(screen.getByLabelText('Attorney company name'), { target: { value: 'New Firm' } })
+  fireEvent.change(screen.getByLabelText('Attorney invitation email'), { target: { value: 'legal@example.test' } })
+  next(); fireEvent.click(screen.getByRole('button', { name: 'Create Development →' }))
+  await screen.findByText("New Firm's invitation was created, but email delivery was not confirmed. Resend it from Partners.")
+  expect(createDevelopmentWorkspace).toHaveBeenCalledTimes(1)
+  expect(screen.queryByRole('button', { name: 'Create Development →' })).toBeNull()
+})
+
+it('does not send partner invitations when development creation fails', async () => {
+  createDevelopmentWorkspace.mockRejectedValueOnce(new Error('Creation unavailable'))
+  open(); details(); next(); next()
+  fireEvent.click(screen.getByRole('radio', { name: 'Invite new attorney' }))
+  fireEvent.change(screen.getByLabelText('Attorney company name'), { target: { value: 'New Firm' } })
+  fireEvent.change(screen.getByLabelText('Attorney invitation email'), { target: { value: 'legal@example.test' } })
+  next(); fireEvent.click(screen.getByRole('button', { name: 'Create Development →' }))
+  await screen.findByText('Creation unavailable')
+  expect(createDeveloperPartnerInvite).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Create Development →' })).toBeTruthy()
+})
+
+it('selects organisation sales agents, recovers their cards and saves the actual team without partner defaults replacing it', async () => {
+  listOrganisationUsers.mockResolvedValue([
+    { id: 'membership-alex', userId: 'user-alex', fullName: 'Alex Agent', email: 'alex@example.test', avatarUrl: '/alex.jpg', role: 'agent', status: 'active', organisationId: 'agency' },
+    { id: 'membership-sam', userId: 'user-sam', fullName: 'Sam Agent', email: 'sam@example.test', role: 'agent', status: 'active', organisationId: 'agency' },
+    { id: 'inactive', fullName: 'Inactive Agent', role: 'agent', status: 'inactive' },
+    { id: 'other-org', fullName: 'Other Org Agent', role: 'agent', status: 'active', organisationId: 'other' },
+  ])
+  fetchDeveloperPartnersWorkspace.mockResolvedValueOnce({ defaults: [{ id: 'partner-agency', partnerType: 'agency', companyName: 'Partner Agency', isActive: true, isPreferredDefault: true }] })
+  open()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close dialog' })))
+  details(); next(); next()
+  fireEvent.click(screen.getByRole('button', { name: /Choose sales team/ }))
+  await screen.findByRole('checkbox', { name: 'Select Alex Agent' })
+  expect(screen.queryByRole('checkbox', { name: 'Select Inactive Agent' })).toBeNull()
+  expect(screen.queryByRole('checkbox', { name: 'Select Other Org Agent' })).toBeNull()
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search sales agents' }), { target: { value: 'alex@example' } })
+  expect(screen.queryByRole('checkbox', { name: 'Select Sam Agent' })).toBeNull()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select Alex Agent' }))
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search sales agents' }), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select Sam Agent' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Test Agent from sales team' }))
+  const cards = screen.getByRole('list', { name: 'Selected sales team' })
+  expect(within(cards).getAllByRole('listitem')).toHaveLength(2)
+  expect(within(cards).getByText('alex@example.test')).toBeTruthy()
+  expect(cards.querySelector('img').getAttribute('src')).toBe('/alex.jpg')
+  await screen.findByText('Saved on this device')
+  cleanup(); open()
+  fireEvent.click(screen.getByRole('button', { name: 'Resume draft' }))
+  await screen.findByRole('list', { name: 'Selected sales team' })
+  expect(within(screen.getByRole('list', { name: 'Selected sales team' })).getAllByRole('listitem')).toHaveLength(2)
+  expect(createDevelopmentWorkspace).not.toHaveBeenCalled()
+  next()
+  expect(screen.getByText('Alex Agent, Sam Agent')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Create Development →' }))
+  await waitFor(() => expect(createDevelopmentWorkspace).toHaveBeenCalledTimes(1))
+  expect(createDevelopmentWorkspace.mock.calls[0][0].developmentSettings.stakeholderTeams.agents).toMatchObject([
+    { userId: 'user-alex', name: 'Alex Agent', email: 'alex@example.test', company: 'Test Agency' },
+    { userId: 'user-sam', name: 'Sam Agent', email: 'sam@example.test', company: 'Test Agency' },
+  ])
+  expect(invokeEdgeFunction).not.toHaveBeenCalled()
+  expect(sendWhatsAppNotification).not.toHaveBeenCalled()
+})
+
+it('lets users retry a failed sales directory without losing their selected team', async () => {
+  listOrganisationUsers.mockRejectedValueOnce(new Error('offline'))
+  open()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close dialog' })))
+  details(); next(); next()
+  fireEvent.click(screen.getByRole('button', { name: /Choose sales team/ }))
+  await screen.findByText('Unable to load your sales agents.')
+  listOrganisationUsers.mockResolvedValueOnce([{ id: 'alex', fullName: 'Alex Agent', email: 'alex@example.test', role: 'agent', status: 'active' }])
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  await screen.findByRole('checkbox', { name: 'Select Alex Agent' })
+  expect(screen.getByRole('checkbox', { name: 'Select Test Agent' }).checked).toBe(true)
 })
 
 it('recovers the current screen and sales choices after a remount without saving remotely', async () => {
   open(); details(); next(); next()
   fireEvent.click(screen.getByLabelText('Reservation deposit applies'))
-  fireEvent.change(screen.getByLabelText(/^Reservation Deposit Amount/), { target: { value: '5000' } })
+  fireEvent.change(screen.getByLabelText(/^amount/), { target: { value: '5000' } })
   await screen.findByText('Saved on this device')
   cleanup(); open()
   expect(screen.getByText('Continue your draft?')).toBeTruthy()
   expect(screen.queryByLabelText('Development Name')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Resume draft' }))
   await screen.findByLabelText('Developer / Organisation')
-  expect(screen.getByLabelText(/^Reservation Deposit Amount/).value).toBe('5000')
+  expect(screen.getByLabelText(/^amount/).value).toBe('5000')
   expect(screen.getByLabelText('Reservation deposit applies').checked).toBe(true)
   next()
   expect(screen.getByRole('heading', { name: 'Willow Park' })).toBeTruthy()

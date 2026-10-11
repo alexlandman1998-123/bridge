@@ -172,6 +172,20 @@ try {
   await fetchTransactionsByParticipantSummary(options)
   assert.equal(calls.length, callCount, 'the second request should reuse the 60-second cache')
 
+  const beforeDirectory = calls.length
+  const directoryRows = await fetchTransactionsByParticipantSummary({ ...options, includePropertyDetails: false })
+  const directoryCalls = calls.slice(beforeDirectory)
+  assert.equal(directoryRows[0].buyer.name, 'Buyer A')
+  assert.equal(directoryRows[0].development.name, 'Development A')
+  assert.equal(directoryRows[0].unit.unit_number, 'A1')
+  assert.equal(directoryRows[0].development.cover_image_url, undefined)
+  assert.equal(directoryCalls.some((call) => ['development_profiles', 'development_documents', 'units', 'developments'].includes(call.table)), false, 'client directories must not hydrate property images or details')
+  assert.equal(directoryCalls.some((call) => call.table === 'transactions' && call.selection !== 'id' && !call.selection.includes('buyer:buyers')), false, 'client directories retain assignment id lookups but skip the extra image and property queries')
+  assert.equal((await fetchTransactionsByParticipantSummary(options))[0].development.cover_image_url, 'https://example.test/development-a.jpg', 'the light directory cache must not replace detailed rows')
+  const afterDirectory = calls.length
+  await fetchTransactionsByParticipantSummary({ ...options, includePropertyDetails: false })
+  assert.equal(calls.length, afterDirectory, 'light directory summaries retain their own cache')
+
   transactions[0].buyer_name = 'Reviewed Buyer A'
   transactions[0].primary_buyer_participant_id = 'primary-a'
   transactions[0].deal_review_details = { buyer: { profileId: 'buyer-a', participantId: 'primary-a', savedPrimaryId: 'primary-a' } }

@@ -1,3 +1,5 @@
+import { buildSellerDisclosurePreparationPatch } from '../src/lib/sellerAgentAssistedDisclosure.js'
+import { PROPERTY_DISCLOSURE_QUESTIONS } from '../src/lib/propertyDisclosure.js'
 import { sellerGeneratedDocumentSelection, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../src/core/documents/sellerDocumentWorkflow.js'
 import { readSellerOnboardingReview, recordSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS } from '../src/core/documents/sellerOnboardingReview.js'
 import { createSellerOnboardingCorrectionControl } from '../src/core/documents/sellerOnboardingCorrectionControl.js'
@@ -467,9 +469,10 @@ const leadPreparationAction = leadPageSource.slice(
 async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false, routes = null, sendFailureAt = 0, uploads = [], downloadKey = '' } = {}) {
   const events = { leadPatches: [], downloads: [], tabs: [], saves: [], sends: [], errors: [], listingWrites: [] }
   const originalForm = { ...listing.sellerOnboarding.formData, otherAgencyName: 'Old Agency', coAgencyName: 'Old Agency',
-    askingPrice: '1000000', mandateType: 'sole', mandateSignatureRoute: 'manual_upload', propertyDisclosure: { comments: 'Retain this explanation.' } }
+    askingPrice: '1000000', mandateType: 'sole', mandateSignatureRoute: 'manual_upload', propertyDisclosure: { comments: 'Retain this explanation.', responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no', note: '' }])) } }
   const currentListing = priorListing || { ...listing, sellerOnboarding: { status: 'completed', formData: originalForm } }
   const scope = {
+    sellerSigningPackBaselineRef: { current: currentListing }, sellerDisclosureDraft: originalForm.propertyDisclosure, buildSellerDisclosurePreparationPatch,
     getSellerMandatePreparationIssues, sellerGeneratedDocumentSelection, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence,
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: currentListing,
     selectedLead: { leadId: 'lead-1', sellerOnboarding: { formData: { ...originalForm, sellerSurname: 'Stale CRM' } } },
@@ -711,6 +714,7 @@ async function runOnboardingReview({ error = null } = {}) {
   const committedTimestamp = '2026-10-09T07:10:00.123456Z'
   const scope = {
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: before,
+    sellerSigningPackBaselineRef: { current: before },
     selectedLead: { leadId: 'fixture-lead' }, sellerOnboardingReviewSaving: false,
     currentAgent: { id: 'fixture-agent' }, organisationId: listing.organisationId,
     sellerOnboardingCorrectionReason: '', normalizeText: value => String(value ?? '').trim(),
@@ -776,6 +780,7 @@ for (const failRead of [false, true]) {
     const scope = {
       sellerSigningPackSaving: false, selectedLeadLinkedListingId: listing.id,
       normalizeText: value => String(value ?? '').trim(), retainLatestSellerListing,
+      sellerSigningPackBaselineRef: { current: listing },
       sellerSigningPackTerms: mandateEntries,
       getPrivateListing: async (id, options) => {
         events.reads++
@@ -847,4 +852,105 @@ await test('a lead-stage failure cannot turn successful delivery into a failed s
   const events = await runPortalAction({ stageFailure: true })
   assert.deepEqual(events.errors, []); assert.equal(events.requests[0].status, 'sent')
   assert.ok(events.messages.some(message => /action completed.*stage could not be refreshed/.test(message)))
+})
+
+// Execute the listing's real document preparation action. It must save terms,
+// answers and frozen copies atomically before any delivery or download.
+const listingActionSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const { SELLER_DOCUMENT_SELECTION_KEYS } = await import('../src/core/documents/sellerDocumentWorkflow.js')
+const individualAction = listingActionSource.slice(listingActionSource.indexOf('  function prepareSellerDocumentAction('), listingActionSource.indexOf('\n  async function refreshSellerDocumentSigning()', listingActionSource.indexOf('  function prepareSellerDocumentAction(')))
+await test('individual document actions clear an unrelated active pack before preparation', () => {
+  for (const [documentKey, key] of Object.entries(SELLER_DOCUMENT_SELECTION_KEYS)) {
+    const state = { group: 'another-document-active-pack', reason: 'unrelated replacement reason' }
+    const scope = { SELLER_DOCUMENT_SELECTION_KEYS,
+      openSellerDocumentSend: selection => { state.openSelection = selection },
+      setSellerDocumentSendSelection: value => { state.selection = value },
+      setSellerDocumentPreparationKey: value => { state.key = value },
+      setSellerMandateDocumentSource: value => { state.source = value },
+      setSellerDocumentReplacementGroupId: value => { state.group = value },
+      setSellerDocumentReplacementReason: value => { state.reason = value },
+      setSellerMandateSignatureRoute: value => { state.route = value },
+    }
+    Function(...Object.keys(scope), `${individualAction};prepareSellerDocumentAction(${JSON.stringify(documentKey)}, 'digital_pack')`)(...Object.values(scope))
+    assert.equal(state.group, '')
+    assert.equal(state.reason, '')
+    assert.equal(state.source, key === 'mandate' ? 'arch9_generated' : '')
+    assert.equal(state.key, documentKey)
+    assert.deepEqual(Object.entries(state.selection).filter(([, value]) => value).map(([selected]) => selected), [key])
+  }
+})
+const listingPreparationAction = listingActionSource.slice(listingActionSource.indexOf('  async function saveSellerDocumentSendSelection()'), listingActionSource.indexOf('\n  async function saveMandateSetup()', listingActionSource.indexOf('  async function saveSellerDocumentSendSelection()')))
+const { validateSellerOnboardingFormalSigningSelection } = await import('../src/core/documents/sellerOnboardingFormalSigningPack.js')
+const validLeadPreparation = await runLeadPreparation({ routes: { signed_mandate: 'manual_upload' } })
+const validSnapshot = validLeadPreparation.saves[0].nextFormData.sellerOnboardingManualSigningPack.signingPackSnapshot
+async function runListingPreparation(key, { digital = false, conflict = false, warning = false } = {}) {
+  const events = { saves: [], sends: [], downloads: [], errors: [], messages: [] }
+  const answers = { responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no', note: '' }])) }
+  const form = { ...listing.sellerOnboarding.formData, propertyDisclosure: answers, sellerOnboardingReview: { status: 'approved' } }
+  const before = { ...listing, updatedAt: '2026-10-11T10:00:00Z', sellerOnboarding: { ...listing.sellerOnboarding, status: 'completed', formData: form } }
+  const scope = {
+    SELLER_PORTAL_SIGNING_ENABLED: true, sellerMandateSignatureRoute: digital ? 'digital_pack' : 'manual_upload',
+    sellerDocumentSendSelection: { [key]: true }, sellerMandateDocumentSource: key === 'mandate' ? 'arch9_generated' : '',
+    sellerDocumentPreparationKey: Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).find(k => SELLER_DOCUMENT_SELECTION_KEYS[k] === key),
+    sellerDocumentPreparationBaselineRef: { current: before }, sellerDisclosureDraft: answers,
+    listingRecord: before, listingActor: { id: '33333333-3333-4333-8333-333333333333' }, profile: {}, listingOrganisationId: listing.organisationId,
+    isSupabaseConfigured: true, isUuidLike: () => true, isValidEmail: value => value.includes('@'),
+    sellerDocumentReplacementGroupId: '', mandateReplacementIntent: false, sellerDocumentReplacementReason: '',
+    sellerDocumentSource: { rows: [] }, sellerPortalSigningRequests: [],
+    commissionDraft: { basis: 'fixed', amount: '75000', percentage: '', vatHandling: 'inclusive' }, marketingDraft: { mandateType: 'sole' },
+    preferredTransferAttorneyOptions: [], preferredTransferAttorneyOptionId: '',
+    getSellerSigningDocumentOptions: () => ({ documents: ['mandate','disclosure','fica'].map(k => ({ key: k, ready: true })) }),
+    hasIdentifiedSellerEntity: () => true, getSellerSigningPlan: () => ({ ready: true, recipients: validSnapshot.signers }),
+    getListingMandateReadiness: () => ({ ready: true }), getListingSellerFormData: row => row.sellerOnboarding.formData,
+    getSellerOnboardingReviewChecklist: () => ({ ready: true }), readSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS,
+    validateSellerOnboardingFormalSigningSelection, getSellerMandatePreparationIssues, requireSellerMandateWording,
+    buildSellerDisclosurePreparationPatch, buildSellerMandateTermsFormPatch: buildSellerLeadSigningPackTermsPatch,
+    buildSellerSigningPackSnapshot: (selected, formOverride = form) => buildSellerOnboardingSigningPackSnapshot({
+      formData: formOverride, listing: before, recipients: validSnapshot.signers, selectedDocuments: selected,
+      mandate: validSnapshot.mandate, branding: validSnapshot.branding,
+    }),
+    buildSellerPostOnboardingDrafts, createSellerOnboardingFormalPackApproval, createSellerOnboardingSigningCopyPack,
+    createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex,
+    SELLER_DOCUMENT_SELECTION_KEYS, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence,
+    hasCompletedSellerDisclosure: () => false,
+    createSellerOnboardingSigningLifecycle: value => value, SELLER_ONBOARDING_SIGNING_STAGES: { manualAwaitingUpload: 'manual_awaiting_upload', packPrepared: 'pack_prepared' },
+    listSellerPortalSigningRequests: async () => ({ documents: [], uploads: [] }),
+    saveListingSellerCanonicalUpdate: async input => {
+      events.saves.push(input)
+      if (conflict) throw Object.assign(new Error('Another seller save changed this record.'), { code: 'PT409' })
+      const saved = await saveListingSellerCanonicalUpdate({ ...input, remote: false })
+      if (warning) saved.warnings.push({ message: 'Copies saved but checklist refresh failed.' })
+      return saved
+    },
+    updatePrivateListing: () => { throw Error('Document preparation must not make a separate listing write') },
+    updatePrivateListingOnboardingFormData: () => { throw Error('Document preparation must use the canonical save') },
+    saveCommissionDraft: () => { throw Error('Document preparation must not save commission separately') },
+    sendSellerDocumentForSignature: async (_id, documentKey) => events.sends.push(documentKey),
+    handleOpenSellerDocument: async copy => events.downloads.push(copy), patchListing: callback => { events.listing = callback(before) },
+    setSellerMandateSignatureRoute: () => {}, setSellerDocumentSendSaving: () => {}, setSellerDocumentSendOpen: () => {},
+    setMandateReplacementIntent: () => {}, setSellerWorkspaceTab: () => {}, setSellerPortalSigningRequests: () => {},
+    setDetailError: value => { if (value) events.errors.push(value) }, setDetailMessage: value => { if (value) events.messages.push(value) },
+  }
+  await Function(...Object.keys(scope), `${listingPreparationAction};return saveSellerDocumentSendSelection()`)(...Object.values(scope))
+  return events
+}
+for (const key of ['mandate', 'disclosure', 'fica']) for (const digital of [false, true]) await test(`actual listing ${key} preparation saves only that document before ${digital ? 'sending' : 'download'}`, async () => {
+  const result = await runListingPreparation(key, { digital })
+  assert.deepEqual(result.errors, [])
+  assert.equal(result.saves.length, 1)
+  assert.equal(result.saves[0].listing.updatedAt, '2026-10-11T10:00:00Z')
+  assert.deepEqual(result.saves[0].formPatch.sellerOnboardingManualSigningPack.documents.map(copy => SELLER_DOCUMENT_SELECTION_KEYS[copy.key]), [key])
+  assert.equal(result.saves[0].formPatch.propertyDisclosure.signature, key === 'disclosure' ? '' : undefined)
+  assert.deepEqual(result.sends, digital ? [scopeKey(key)] : [])
+  assert.equal(result.downloads.length, digital ? 0 : 1)
+})
+function scopeKey(key) { return Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).find(k => SELLER_DOCUMENT_SELECTION_KEYS[k] === key) }
+for (const failure of ['conflict', 'warning']) await test(`listing document ${failure} preserves evidence and blocks dispatch`, async () => {
+  const result = await runListingPreparation('fica', { digital: true, [failure]: true })
+  assert.equal(result.saves.length, 1)
+  assert.deepEqual(result.sends, [])
+  assert.deepEqual(result.downloads, [])
+  assert.equal(result.errors.length, 1)
+  if (failure === 'conflict') assert.equal(result.listing, undefined)
+  else assert.ok(result.listing.sellerOnboarding.formData.sellerOnboardingManualSigningPack)
 })

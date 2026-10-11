@@ -37,6 +37,7 @@ function getPageTitle(pathname, stateTitle, role) {
   }
   if (pathname.startsWith('/transactions/')) return role === 'attorney' ? 'Matters' : isAgentWorkspaceRole ? '' : 'Transactions'
   if (pathname.startsWith('/developments/')) return ''
+  if (pathname === '/developments') return ''
   if (pathname === '/bond/files' || pathname.startsWith('/bond/files/')) return ''
   if (role === 'bond_originator' && pathname === '/documents') return ''
 
@@ -47,7 +48,6 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/setup' || pathname.startsWith('/setup/')) return ''
   if (pathname === '/agent/rentals' || pathname.startsWith('/agent/rentals/')) return ''
   if (pathname === '/dashboard' || pathname === '/') return 'Dashboard'
-  if (pathname === '/developments') return 'Developments'
   if (pathname === '/units') return role === 'developer' ? 'Units' : role === 'bond_originator' ? 'Applications' : 'Transactions'
   if (pathname === '/deals') return 'Transactions'
   if (pathname === '/listings' || pathname.startsWith('/listings/')) return ''

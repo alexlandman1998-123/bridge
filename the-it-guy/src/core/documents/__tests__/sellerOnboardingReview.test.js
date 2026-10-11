@@ -17,7 +17,7 @@ test('agent checklist blocks missing submitted facts and separates later evidenc
   const ready = buildSellerOnboardingReviewChecklist({ formData: completeForm })
   assert.equal(ready.ready, true)
   assert.deepEqual(ready.missing, [])
-  assert.ok(ready.followUps.some((item) => item.includes('Property Disclosure')))
+  assert.ok(ready.followUps.some((item) => /disclosure.*Documents/i.test(item)))
 
   const missing = buildSellerOnboardingReviewChecklist({ formData: { ...completeForm, sourceOfFunds: '', politicallyExposedPerson: '' } })
   assert.equal(missing.ready, false)

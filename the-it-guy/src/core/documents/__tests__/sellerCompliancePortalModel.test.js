@@ -6,6 +6,7 @@ import {
   getRequiredSellerDocuments,
 } from '../../../lib/sellerDocumentRequirementEngine.js'
 import { buildSellerCompliancePortalModel } from '../sellerCompliancePortalModel.js'
+import { buildSellerDocumentWorkflow } from '../sellerDocumentWorkflow.js'
 
 test('spouse consent is a signing task on the compliance pack, not a standalone document', () => {
   const profile = buildSellerRequirementProfile({
@@ -161,4 +162,52 @@ test('buildSellerCompliancePortalModel resets a duplicated secondary signature f
   assert.equal(model.signers.find((signer) => signer.id === 'seller-1').status, 'signed')
   assert.equal(model.signers.find((signer) => signer.id === 'spouse').status, 'pending')
   assert.equal(model.signatureRequests[0].signerId, 'spouse')
+})
+
+
+test('information-only submission directs sellers to three independent document states without legacy signing links', () => {
+  const formData = { ownershipType: 'individual', sellerFirstName: 'Sam', sellerSurname: 'Seller', email: 'sam@example.test',
+    sellerOnboardingCompletion: { informationOnly: true },
+    sellerOnboardingManualSigningPack: { documents: [{ key: 'signed_fica_declaration', versionId: 'frozen-fica', signingRoute: 'manual_upload' }] } }
+  const model = buildSellerCompliancePortalModel({ formData, token: 'local-token', portalData: { requiredDocuments: [
+    { key: 'signed_mandate', status: 'approved' }, { key: 'signed_disclosure_form', status: 'uploaded' }, { key: 'signed_fica_declaration', status: 'required' },
+  ] } })
+  assert.equal(model.informationOnly, true)
+  assert.deepEqual(model.signatureRequests, [])
+  assert.equal(model.actions[0].to, 'documents')
+  assert.equal(model.complete, false)
+  assert.deepEqual(model.documentWorkflows.map(item => [item.key, item.state]), [
+    ['signed_mandate', 'complete'], ['signed_disclosure_form', 'review'], ['signed_fica_declaration', 'prepared'],
+  ])
+  assert.equal(model.documentWorkflows[1].nextActor, 'agent')
+  assert.equal(model.documentWorkflows[2].nextActor, 'seller')
+  assert.equal(model.documentWorkflows[2].versionId, 'frozen-fica')
+  assert.deepEqual(model.documentWorkflows[2].permittedActors.upload, ['agent'])
+  assert.equal(model.progressLabel, '1 of 3 documents reviewed')
+  assert.equal(model.nextSigner, null)
+})
+
+test('protected core portal progress matches the agent workflow for the current document version', () => {
+  const copy = { key: 'signed_fica_declaration', versionId: 'current', signingRoute: 'digital_pack' }
+  const request = { document_key: copy.key, version_id: 'current', status: 'partially_signed', signed_count: 1, signer_count: 2 }
+  const portalData = { sellerSigningProgressAvailable: true,
+    sellerDocumentWorkspace: { informationOnly: true, documents: [copy] },
+    sellerPortalSigningRequests: [{ ...request, version_id: 'historical', status: 'reviewed' }, request] }
+  const model = buildSellerCompliancePortalModel({ portalData })
+  const seller = model.documentWorkflows.find(item => item.key === copy.key)
+  const agent = buildSellerDocumentWorkflow({ item: { lockedByTeam: true }, copy, request })
+  for (const key of ['state', 'detail', 'label', 'nextActor', 'versionId']) assert.equal(seller[key], agent[key])
+  assert.equal(seller.state, 'signing')
+  assert.match(seller.detail, /1 of 2/)
+  assert.equal(model.complete, false)
+})
+
+test('unavailable protected progress never claims that prepared signature links were not sent', () => {
+  const model = buildSellerCompliancePortalModel({ portalData: { sellerSigningProgressAvailable: false,
+    sellerDocumentWorkspace: { informationOnly: true, documents: [{ key: 'signed_mandate', versionId: 'current', signingRoute: 'digital_pack' }] } } })
+  const mandate = model.documentWorkflows[0]
+  assert.match(mandate.label, /progress unavailable/)
+  assert.doesNotMatch(mandate.detail, /not been sent/)
+  assert.equal(mandate.nextActor, 'agent')
+  assert.match(mandate.nextAction, /confirms/)
 })

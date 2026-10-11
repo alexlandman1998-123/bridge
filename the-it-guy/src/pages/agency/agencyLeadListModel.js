@@ -1,6 +1,6 @@
-import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
-import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
-import { BUYER_LEAD_LIST_STAGES, resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle'
+import { inferLeadCategoryFromRecord } from '../../lib/leadCategory.js'
+import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection.js'
+import { BUYER_LEAD_LIST_STAGES, resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle.js'
 import { DEVELOPMENT_LEAD_STAGES, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 
 export const LEAD_LIST_PAGE_SIZE = 25

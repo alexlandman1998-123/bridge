@@ -335,6 +335,26 @@ function formatProfessionalRole(role = '') {
   return labels[role] || String(role || 'Team Member').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function ActiveMatterPartnerBrand({ name = '', logoUrl = '' }) {
+  const [failedUrl, setFailedUrl] = useState(null)
+  const partnerName = normalizeText(name)
+  const partnerLogo = normalizeText(logoUrl)
+  if (!partnerName) return null
+
+  return (
+    <span className="mt-3 flex min-w-0 items-center gap-2" title={partnerName}>
+      <span className="flex h-7 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200/80 bg-white px-1.5">
+        {partnerLogo && failedUrl !== partnerLogo ? (
+          <img src={partnerLogo} alt="" loading="lazy" className="h-full w-full object-contain" onError={() => setFailedUrl(partnerLogo)} />
+        ) : (
+          <span className="text-[10px] font-semibold text-slate-500" aria-hidden="true">{getInitials(partnerName)}</span>
+        )}
+      </span>
+      <span className="truncate text-[11px] font-medium text-slate-500">{partnerName}</span>
+    </span>
+  )
+}
+
 function ActiveMatterStrip({ lanes = {} }) {
   const rows = getActiveMatterRows(lanes)
   const railRef = useRef(null)
@@ -396,6 +416,7 @@ function ActiveMatterStrip({ lanes = {} }) {
                   <section className="mt-4 min-w-0">
                     <p className="line-clamp-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">{propertyLabel}</p>
                     <p className="mt-1.5 truncate text-xs font-medium text-slate-500">{matter.contextLabel || matter.buyerSellerName || matter.buyerName || 'Workflow progressing'}</p>
+                    <ActiveMatterPartnerBrand name={matter.referralPartnerName} logoUrl={matter.referralPartnerLogoUrl} />
                   </section>
 
                   <section className="mt-4 grid grid-cols-2 divide-x divide-slate-200">

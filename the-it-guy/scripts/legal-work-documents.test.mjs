@@ -1,0 +1,55 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {PGlite} from '@electric-sql/pglite';
+test('manual work and private versions enforce rollback, stale saves, immutable files and revocation',async()=>{
+ const db=new PGlite(),firm=randomUUID(),user=randomUUID(),other=randomUUID(),director=randomUUID();
+ await db.exec(`create role anon;create role authenticated;create schema auth;create schema storage;
+ create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ grant usage on schema auth,storage to authenticated,anon;
+ create table attorney_firms(id uuid primary key,is_active boolean,organisation_id uuid);create table attorney_firm_members(firm_id uuid,user_id uuid,status text,role text,professional_role text);create table profiles(id uuid primary key,full_name text);
+ create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+ create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,metadata jsonb,unique(bucket_id,name));alter table storage.objects enable row level security;
+ grant select,insert,update,delete on storage.objects to authenticated,anon;
+ create policy existing_permissive_policy on storage.objects for all to public using(true) with check(true);
+ create table transactions(status text);insert into transactions values('unchanged');insert into storage.objects(bucket_id,name,metadata) values('legacy','unchanged','{}');`);
+ await db.query('insert into attorney_firms values($1,true,$2)',[firm,randomUUID()]);
+ for(const id of [user,other,director]){await db.query('insert into auth.users values($1)',[id]);await db.query('insert into profiles values($1,$2)',[id,'Attorney']);await db.query("insert into attorney_firm_members values($1,$2,'active',$3,$3)",[firm,id,id===director?'director_partner':'attorney_conveyancer']);}
+ for(const file of ['20261011145029_arch9_legal_matter_foundation.sql','20261011145949_arch9_legal_workspace_commands.sql','20261011155632_arch9_legal_work_and_documents.sql'])await db.exec(await readFile(new URL('../../supabase/migrations/'+file,import.meta.url),'utf8'));
+ async function as(actor,sql,args=[]){return db.transaction(async tx=>{await tx.exec('set local role '+(actor?'authenticated':'anon'));await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[actor||'']);return (await tx.query(sql,args)).rows;});}
+ async function rpc(actor,name,args){return (await as(actor,`select public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')}) result`,args))[0].result;}
+ const grant=id=>({user_id:id,disciplines:['wills_estates'],can_create:true,can_edit:true,can_review:true,can_manage:id===director});
+ await rpc(director,'arch9_legal_command',[firm,randomUUID(),'configure',{enabled:true,disciplines:['wills_estates'],grants:[user,other,director].map(grant),expected_revision:0}]);
+ const create=async title=>(await rpc(user,'arch9_legal_create',[firm,randomUUID(),{discipline:'wills_estates',title,client:{kind:'individual',name:'Client'},responsible_user_id:user,user_ids:[user,other],restricted:true}])).matter;
+ const m=await create('Will'),m2=await create('Separate matter');
+ const read=()=>rpc(user,'arch9_legal_work_read',[firm,m.id]);
+ const cmd=(action,payload,request=randomUUID(),actor=user)=>rpc(actor,'arch9_legal_work_command',[firm,request,action,{matter_id:m.id,...payload}]);
+ const counts=async()=>(await db.query(`select (select count(*) from legal_private.work_state) work,(select count(*) from legal_private.tasks) tasks,(select count(*) from legal_private.events) events,(select count(*) from legal_private.receipts) receipts,(select count(*) from legal_private.documents) docs,(select count(*) from legal_private.document_versions) versions`)).rows;
+ let before=await counts();await assert.rejects(()=>cmd('save_task',{expected_revision:0,title:'Invalid',owner_id:randomUUID(),status:'pending'}),e=>e.code==='22023');assert.deepEqual(await counts(),before);
+ let request=randomUUID();const started=await cmd('start_wills',{expected_revision:0},request);assert.equal(started.work.template_version,'wills_manual_v1');assert.equal((await read()).tasks.length,4);assert.equal((await cmd('start_wills',{expected_revision:0},request)).deduplicated,true);
+ await assert.rejects(()=>cmd('start_wills',{expected_revision:1}),e=>e.code==='22023');
+ await cmd('save_dates',{expected_revision:1,dates:{instructions_on:'2026-10-11',execution_on:null}});assert.equal((await read()).work.dates.instructions_on,'2026-10-11');
+ before=await counts();await assert.rejects(()=>cmd('save_dates',{expected_revision:2,dates:{review_on:'2026-02-30'}}));assert.deepEqual(await counts(),before);await assert.rejects(()=>cmd('save_dates',{expected_revision:1,dates:{}}),e=>e.code==='40001');
+ const task=(await read()).tasks[0],payload={expected_revision:2,task_id:task.id,title:task.title,owner_id:other,due_on:'2026-10-12',status:'complete',note:'Firm reviewed evidence'};
+ await cmd('save_task',payload);await cmd('save_task',{...payload,expected_revision:3,status:'pending',note:'Further review needed'});assert.equal((await read()).tasks[0].status,'pending');
+ const history=(await db.query("select details from legal_private.events where action='work_save_task' order by created_at,id")).rows;assert.equal(history.length,2);assert.equal(history[1].details.before.status,'complete');
+ await assert.rejects(()=>cmd('save_task',{...payload,expected_revision:4,status:'complete',note:''}),e=>e.code==='22023');await assert.rejects(()=>cmd('save_task',{...payload,expected_revision:4,task_id:randomUUID()}),e=>e.code==='42501');
+ const file={expected_version:0,title:'Original will',filename:'will.pdf',mime_type:'application/pdf',byte_size:10,sha256:'a'.repeat(64)};
+ before=await counts();await assert.rejects(()=>cmd('reserve_document',{...file,mime_type:'text/html'}),e=>e.code==='23514');assert.deepEqual(await counts(),before);
+ request=randomUUID();const version=(await cmd('reserve_document',file,request)).version;assert.equal((await cmd('reserve_document',file,request)).deduplicated,true);assert.equal((await read()).documents.length,0);
+ await assert.rejects(()=>cmd('commit_document',{version_id:version.id},version.id),e=>e.code==='22023');
+ const put=async(v,actor=user)=>as(actor,'insert into storage.objects(bucket_id,name,metadata) values($1,$2,$3)',['arch9-legal-matters',v.path,{size:10,mimetype:'application/pdf'}]);
+ const files=actor=>as(actor,"select * from storage.objects where bucket_id='arch9-legal-matters'");
+ await assert.rejects(()=>put(version,other),e=>e.code==='42501');await put(version);assert.equal((await files(other)).length,0);
+ await cmd('commit_document',{version_id:version.id},version.id);assert.equal((await cmd('commit_document',{version_id:version.id},version.id)).deduplicated,true);assert.equal((await read()).documents[0].current_version,1);assert.equal((await files(other)).length,1);
+ await assert.rejects(()=>rpc(user,'arch9_legal_work_command',[firm,randomUUID(),'commit_document',{matter_id:m2.id,version_id:version.id}]),e=>e.code==='42501');await assert.rejects(()=>cmd('reserve_document',{...file,expected_version:0,document_id:version.document_id}),e=>e.code==='40001');
+ const a=(await cmd('reserve_document',{...file,document_id:version.document_id,expected_version:1,sha256:'b'.repeat(64)})).version,b=(await cmd('reserve_document',{...file,document_id:version.document_id,expected_version:1,sha256:'c'.repeat(64)})).version;
+ await put(a);await put(b);await cmd('commit_document',{version_id:a.id},a.id);before=await counts();await assert.rejects(()=>cmd('commit_document',{version_id:b.id},b.id),e=>e.code==='40001');assert.deepEqual(await counts(),before);await cmd('cancel_document',{version_id:b.id});assert.equal((await read()).documents[0].versions.length,2);
+ assert.equal((await as(user,"update storage.objects set name='changed' where name=$1 returning *",[version.path])).length,0);assert.equal((await as(user,'delete from storage.objects where name=$1 returning *',[version.path])).length,0);await assert.rejects(()=>db.query('update storage.objects set metadata=$1 where name=$2',[{},version.path]),e=>e.code==='42501');
+ assert.equal((await as(user,"update storage.objects set metadata='{}' where bucket_id='legacy' returning *")).length,1);await assert.rejects(()=>rpc(director,'arch9_legal_work_read',[firm,m.id]),e=>e.code==='42501');
+ await db.query('update legal_private.team set removed_at=now() where matter_id=$1 and user_id=$2',[m.id,other]);assert.equal((await files(other)).length,0);await assert.rejects(()=>rpc(other,'arch9_legal_work_read',[firm,m.id]),e=>e.code==='42501');
+ await rpc(director,'arch9_legal_work_command',[firm,randomUUID(),'configure_work',{tasks_enabled:true,documents_enabled:false,expected_revision:0}]);assert.equal((await read()).documents_enabled,false);assert.equal((await files(user)).length,0);await assert.rejects(()=>cmd('commit_document',{version_id:version.id},version.id),e=>e.code==='42501');
+ await rpc(director,'arch9_legal_work_command',[firm,randomUUID(),'configure_work',{tasks_enabled:true,documents_enabled:true,expected_revision:1}]);await db.query("update attorney_firm_members set status='suspended' where user_id=$1",[user]);await assert.rejects(()=>cmd('reserve_document',file,request),e=>e.code==='42501');assert.equal((await files(user)).length,0);await assert.rejects(()=>as(null,"insert into storage.objects(bucket_id,name,metadata) values('arch9-legal-matters','guessed','{}')"));
+ assert.ok((await db.query("select p.prosecdef,has_function_privilege('anon',p.oid,'execute') anonymous from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'arch9_legal_work_%'")).rows.every(p=>!p.prosecdef&&!p.anonymous));assert.equal((await db.query('select status from transactions')).rows[0].status,'unchanged');await db.close();
+});

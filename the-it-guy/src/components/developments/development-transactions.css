@@ -1,0 +1,57 @@
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel { padding: 0; }
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel .development-transactions-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 8px 18px;
+  padding: 16px;
+  border: 1px solid #e3ebf4;
+  border-radius: 16px;
+  background: #f7f9fc;
+}
+.development-transactions-toolbar .ui-search-input { flex: 1; min-width: 240px; }
+.development-transactions-toolbar select { width: 210px; }
+.development-transactions-count { color: #62758b; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.development-transactions-backfill { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 0 8px 18px; padding: 20px; border: 1px solid #ecdbb7; border-radius: 16px; background: #fffbf3; }
+.development-transactions-backfill strong { color: #705321; font-size: 14px; }
+.development-transactions-backfill p { max-width: 680px; margin-top: 5px; color: #88714d; font-size: 13px; line-height: 1.6; }
+.development-transactions-backfill-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: #f8ecd5; color: #977137; }
+.development-transaction-agency { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.development-transaction-agency-logo { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; border: 1px solid #dbe5ef; border-radius: 11px; background: white; color: #35546c; font-weight: 700; }
+.development-transaction-agency-logo img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
+.development-transaction-agency > span:last-child { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-width: 0; white-space: normal; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; line-height: 1.5; color: #516980; }
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table th:nth-child(4),
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(4) { width: 19%; }
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table th:last-child,
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table td:last-child { width: 12%; }
+.development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-progress-track span { background: linear-gradient(90deg, #257451, #5da482); }
+
+@media (max-width: 860px) {
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-table-card-head { padding: 20px 16px; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .agent-transactions-header-actions { justify-content: flex-start; }
+
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .table-wrap { max-height: none; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .development-transactions-toolbar { margin-inline: 0; }
+  .development-transactions-toolbar .ui-search-input { flex-basis: 100%; min-width: 0; }
+  .development-transactions-toolbar select { width: 100%; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table { width: 100%; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table thead { display: none; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(n) { width: 100%; min-width: 0; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(4),
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table td:last-child { width: 100%; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .ui-data-table.agent-transactions-table .agent-transactions-sticky-first { width: 100%; min-width: 0; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-property-cell { grid-template-columns: 1fr; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-property-thumb { display: none; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-buyer-profile { grid-template-columns: 1fr; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-buyer-avatar { display: none; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-property-copy,
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-buyer-copy { width: 100%; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-buyer-name,
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-buyer-meta,
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-property-title,
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .transaction-property-suburb { white-space: normal; overflow-wrap: anywhere; }
+  .development-transactions-workspace.transactions-page-compact.agent-transactions-panel .development-transactions-backfill { display: grid; grid-template-columns: 1fr; margin-inline: 0; padding: 16px; }
+  .development-transactions-backfill-icon { display: none; }
+  .development-transactions-backfill > button { width: 100%; }
+}

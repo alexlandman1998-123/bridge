@@ -30,6 +30,7 @@ export const SELLER_LEGAL_TYPES = Object.freeze([
 export const MARITAL_REGIMES = Object.freeze([
   'in_community',
   'out_of_community',
+  'out_of_community_with_accrual',
   'anc',
   'foreign_marriage',
   'unknown',
@@ -207,6 +208,16 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
   const firstName = normalizeText(entry.first_name || entry.firstName || suppliedGivenName)
   const surname = explicitSurname || split.surname
   const record = {
+    ...(normalizeText(entry.id) ? { id: normalizeText(entry.id) } : {}),
+    ...(Object.hasOwn(entry, 'sourcePersonId') ? { sourcePersonId: normalizeText(entry.sourcePersonId) } : {}),
+    date_of_birth: normalizeText(entry.dateOfBirth ?? entry.date_of_birth),
+    tax_number: normalizeText(entry.incomeTaxNumber ?? entry.tax_number),
+    sa_resident: normalizeText(entry.saResident ?? entry.sa_resident),
+    tax_resident: normalizeText(entry.taxResident ?? entry.tax_resident),
+    marital_status: normalizeText(entry.maritalStatus ?? entry.marital_status),
+    marital_regime: normalizeText(entry.maritalRegime ?? entry.marital_regime),
+    ...(entry.spouse && typeof entry.spouse === 'object' ? { spouse: normalizePersonRecord({ ...entry.spouse, spouse: undefined }, 0, { defaultRoleTitle: 'Spouse' }) } : {}),
+    primaryContact: entry.primaryContact === true,
     index: index + 1,
     full_name: normalizeText([firstName, surname].filter(Boolean).join(' ') || fullName),
     name: normalizeText([firstName, surname].filter(Boolean).join(' ') || fullName),
@@ -288,7 +299,8 @@ export function normalizeMaritalRegime(form = {}) {
   const explicit = normalizeKey(form.maritalRegime || form.marriageRegime || form.maritalStatus)
   if (['in_community', 'married_cop', 'cop', 'community_of_property', 'married_in_community', 'married_in_community_of_property'].includes(explicit)) return 'in_community'
   if (explicit === 'married_anc' || explicit === 'anc') return 'anc'
-  if (['out_of_community', 'out_of_community_without_accrual', 'out_of_community_with_accrual', 'married_out_of_community', 'married_out_of_community_of_property'].includes(explicit)) return 'out_of_community'
+  if (explicit === 'out_of_community_with_accrual') return 'out_of_community_with_accrual'
+  if (['out_of_community', 'out_of_community_without_accrual', 'married_out_of_community', 'married_out_of_community_of_property'].includes(explicit)) return 'out_of_community'
   if (explicit === 'foreign' || explicit === 'foreign_marriage') return 'foreign_marriage'
 
   const ownershipType = normalizeKey(form.ownerStructureType || form.owner_structure_type || form.ownershipType)
@@ -465,8 +477,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   )
   const propertyAddress = buildPropertyAddressFacts(form, listingSource)
   const propertyAddressDisplay = formatPropertyAddress(propertyAddress)
-  const sectionIdentifier = normalizeText(form.sectionNumber || form.unitNumber)
-  const unitIdentifier = normalizeText(form.unitNumber || form.sectionNumber)
+  const sectionIdentifier = normalizeText(form.sectionNumber)
+  const unitIdentifier = normalizeText(form.unitNumber)
   const schemeManagingAgent = {
     name: normalizeText(form.schemeManagingAgentName || form.schemeManagementContact),
     email: normalizeText(form.schemeManagingAgentEmail),
@@ -539,8 +551,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
       tax_number: normalizeText(form.sellerTaxNumber ?? form.incomeTaxNumber ?? form.income_tax_number ?? form.taxNumber ?? form.tax_number),
-      sa_resident: normalizeText(form.saResident ?? form.sa_resident ?? form.taxResident ?? form.tax_resident),
-      tax_resident: normalizeText(form.taxResident ?? form.tax_resident ?? form.saResident ?? form.sa_resident),
+      sa_resident: normalizeText(form.saResident ?? form.sa_resident),
+      tax_resident: normalizeText(form.taxResident ?? form.tax_resident),
       popi_consent: popiConsentAccepted ? 'Accepted' : '',
       popi_consent_accepted: popiConsentAccepted,
       popi_consent_accepted_at: popiConsentAccepted
@@ -905,7 +917,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false, requi
   push(missingIf(Boolean(facts.seller?.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(facts.seller.email), 'seller_email_invalid', 'Add a valid seller email address.'))
   push(missingIf(!facts.seller?.phone, 'seller_phone_missing', 'Seller phone is required.'))
   push(missingIf(!facts.seller?.tax_number, 'seller_tax_number_missing', 'Seller tax number is required.'))
-  push(missingIf(!hasValue(facts.seller?.sa_resident || facts.seller?.tax_resident), 'seller_tax_residency_missing', 'Seller SA residency status is required.'))
+  push(missingIf(!hasValue(facts.seller?.sa_resident), 'seller_tax_residency_missing', 'Seller SA residency status is required.'))
   push(missingIf(!facts.seller?.popi_consent_accepted, 'seller_popi_consent_missing', 'POPI consent is required.'))
   push(missingIf(!hasValue(facts.seller?.owner_entity_type), 'owner_entity_type_missing', 'Owner entity type is required.'))
   push(missingIf(!hasValue(facts.seller?.owner_structure_type), 'owner_structure_type_missing', 'Owner structure type is required.'))
@@ -963,11 +975,11 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false, requi
   push(missingIf(!Number.isFinite(facts.property?.rates_taxes), 'rates_taxes_missing', 'Rates and taxes are required.'))
   push(missingIf(!hasValue(facts.property?.levies) && !facts.property?.levies_not_applicable, 'levies_missing', 'Levies are required, or must be marked not applicable.'))
   push(missingIf(!hasValue(facts.property?.utilities?.water_billing_type || facts.property?.water_billing_type), 'water_billing_type_missing', 'Water billing type is required.'))
-  push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Mandate type is required.'))
+  push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Choose the mandate type when preparing the mandate document.', 'recommended'))
   push(missingIf(
     !facts.property_disclosure?.digitally_complete && !facts.property_disclosure?.uploadedDocumentReviewed && !facts.property_disclosure?.uploaded_document_reviewed,
     'property_disclosure_missing',
-    'Property Disclosure declaration is required before seller onboarding can be completed.',
+    'Complete the disclosure separately in Documents before it can be reviewed and accepted.',
     'recommended',
   ))
   push(missingIf(!hasValue(facts.property?.address_details?.municipality || facts.property?.municipality), 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
@@ -1020,7 +1032,7 @@ export function calculateSellerFactReadiness(facts = {}, { requireEmail = false 
       requireEmail ? facts.seller?.email : true,
       facts.seller?.phone,
       facts.seller?.tax_number,
-      facts.seller?.sa_resident || facts.seller?.tax_resident,
+      facts.seller?.sa_resident,
       facts.seller?.popi_consent_accepted,
       naturalPerson ? (foreignPerson ? facts.seller?.foreign?.passport_number || facts.seller?.id_number : facts.seller?.id_number) : true,
       sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.date_of_birth : true,

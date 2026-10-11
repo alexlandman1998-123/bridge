@@ -1,3 +1,4 @@
+import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { workflowActionLabel, workflowTaskButtonLabel } from '../lib/workflowActionLabel.js'
 import { resolveLegalTaskUploadRequirement } from '../core/transactions/legalTaskDocumentTarget.js'
@@ -22721,9 +22722,6 @@ function AttorneyTransactionDetail() {
       buyerName: roleplayerForm.buyerName,
       buyerEmail: roleplayerForm.buyerEmail,
       buyerPhone: roleplayerForm.buyerPhone,
-      sellerName: roleplayerForm.sellerName,
-      sellerEmail: roleplayerForm.sellerEmail,
-      sellerPhone: roleplayerForm.sellerPhone,
       agentName: roleplayerForm.agentName,
       agentEmail: roleplayerForm.agentEmail,
       attorneyName: roleplayerForm.attorneyName,
@@ -22742,19 +22740,21 @@ function AttorneyTransactionDetail() {
     return refreshed
   }
 
-  async function saveDealSetupSellerDetails(sellerDetails) {
-    const refreshed = await updateTransactionStakeholderContacts({
+  async function saveDealSetupSellerDetails(sellerDetails, saveOptions) {
+    const receipt = await updateTransactionStakeholderContacts({
       transactionId: transaction.id,
       sellerOnly: true,
       sellerName: sellerDetails.name,
       sellerEmail: sellerDetails.email,
       sellerPhone: sellerDetails.phone,
+      sellerSaveContext: saveOptions.context,
+      sellerMutationId: saveOptions.mutationId,
       actorRole: workspaceRole,
     })
-    if (refreshed) setData(refreshed)
     try { await loadData({ background: true }) }
     catch { setError('Seller details were saved, but the latest transaction view could not be refreshed. Refresh the page.') }
     window.dispatchEvent(new Event('itg:transaction-updated'))
+    return receipt
   }
 
   async function assignImportedTransferPartner(option) {
@@ -24382,6 +24382,7 @@ function AttorneyTransactionDetail() {
             } : null}
             onSaveSellerDetails={saveDealSetupSellerDetails}
             onEditSellerProfile={openRoutingProfileModal}
+            onOpenLinkedSellerProfile={(listingId) => navigate(`/agent/listings/${encodeURIComponent(listingId)}?tab=seller`)}
           />
         ) : null}
 
@@ -24754,6 +24755,8 @@ function AttorneyTransactionDetail() {
             />
           </section>
         ) : null}
+
+        {activeWorkspaceMenu === 'documents' ? <DocumentRequirementManager client={supabase} contextType="transaction" contextId={transaction?.id} onChange={loadDocumentsWorkspace} /> : null}
 
         {activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' && !isTransactionOperatorView ? (
           <section className="space-y-5">
@@ -26473,7 +26476,7 @@ function AttorneyTransactionDetail() {
           }}>
             {legalTaskDrawerError ? <p role="alert" className="text-red-700">{legalTaskDrawerError}</p> : null}
             {legalTaskDrawerMessage ? <p role="status" className="text-emerald-800">{legalTaskDrawerMessage}</p> : null}
-            <div className="grid gap-4 sm:grid-cols-2">{['buyer', 'seller'].map(party => <fieldset key={party} className="space-y-3 rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold capitalize">{party}</legend>{[['Name', 'Name', 'text'], ['Email', 'Email', 'email'], ['Phone', 'Phone', 'tel']].map(([key, label, type]) => <label key={key} className="grid gap-1 text-sm">{label}<Field type={type} value={roleplayerForm[party + key] || ''} disabled={legalTaskDrawerBusy} onChange={event => setRoleplayerForm(previous => ({ ...previous, [party + key]: event.target.value }))} /></label>)}</fieldset>)}</div>
+            <div className="grid gap-4 sm:grid-cols-2">{['buyer', 'seller'].map(party => <fieldset key={party} className="space-y-3 rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold capitalize">{party}</legend>{party === 'seller' ? <p className="text-sm text-slate-600">Update seller contacts in Deal Setup → Seller, and legal identity in the listing seller profile.</p> : null}{[['Name', 'Name', 'text'], ['Email', 'Email', 'email'], ['Phone', 'Phone', 'tel']].map(([key, label, type]) => <label key={key} className="grid gap-1 text-sm">{label}<Field type={type} value={roleplayerForm[party + key] || ''} disabled={legalTaskDrawerBusy || party === 'seller'} onChange={event => setRoleplayerForm(previous => ({ ...previous, [party + key]: event.target.value }))} /></label>)}</fieldset>)}</div>
             <Button type="submit" disabled={legalTaskDrawerBusy}>{legalTaskDrawerBusy ? 'Saving…' : 'Save party details'}</Button>
           </form>
           <Button type="button" variant="secondary" onClick={openRoutingProfileModal}>Edit entity and transaction details</Button>

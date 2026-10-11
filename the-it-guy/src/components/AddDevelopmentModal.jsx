@@ -1,7 +1,12 @@
-import { Building2, Check, House, Plus, Trash2, Trees, Users, Wallet } from 'lucide-react'
+import { Building2, Check, House, Plus, Trash2, Trees, Users, Wallet, Landmark, Scale } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { createDevelopmentWorkspace, fetchDeveloperAccessOptions, fetchDeveloperPartnersWorkspace } from '../lib/api'
+import { createDevelopmentWorkspace, createDeveloperPartnerInvite, fetchDeveloperAccessOptions, fetchDeveloperPartnersWorkspace } from '../lib/api'
+import { listOrganisationUsers } from '../lib/settingsApi'
+import { buildAgentOptions, getAgentProfileAvatarUrl } from './agentAssignmentSelectModel'
+import DevelopmentSalesTeamSelect from './developments/DevelopmentSalesTeamSelect'
+import DevelopmentPartnerSetupCard from './developments/DevelopmentPartnerSetupCard'
+import { buildDevelopmentPartnerOptions } from './developments/developmentPartnerSetupModel'
 import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
@@ -83,10 +88,14 @@ const DEFAULT_TRANSACTION_DEFAULTS = {
   defaultTransferAttorneyRelationshipId: '',
   defaultTransferAttorneyPreferredPartnerId: '',
   defaultTransferAttorneyName: '',
+  defaultTransferAttorneyEmail: '',
+  defaultTransferAttorneyOrganisationId: '',
   defaultBondOriginatorSource: 'none',
   defaultBondOriginatorRelationshipId: '',
   defaultBondOriginatorPreferredPartnerId: '',
   defaultBondOriginatorName: '',
+  defaultBondOriginatorEmail: '',
+  defaultBondOriginatorOrganisationId: '',
   buyerAppointedBondOriginatorAllowed: true,
   buyerAppointedBondOriginatorRequiresApproval: true,
   autoInviteSelectedBondOriginator: false,
@@ -130,7 +139,8 @@ function buildInitialLegal(profile = null, workspace = null) {
   const defaultAgentEmail = String(profile?.email || '').trim()
   const defaultAgentCompany = String(profile?.agencyName || profile?.company || workspace?.name || '').trim()
   const seedAgent = defaultAgentName || defaultAgentEmail || defaultAgentCompany
-    ? { name: defaultAgentName, email: defaultAgentEmail, company: defaultAgentCompany }
+    ? { name: defaultAgentName, email: defaultAgentEmail, company: defaultAgentCompany,
+        userId: profile?.userId || profile?.id || '', avatarUrl: getAgentProfileAvatarUrl(profile || {}) }
     : buildEmptyAgent()
 
   return {
@@ -301,52 +311,6 @@ function mergeDevelopmentAddress(previous = {}, value = null) {
   }
 }
 
-function getPreferredDeveloperPartnerDefault(defaults = [], partnerType = '') {
-  return (defaults || []).find((item) => item?.partnerType === partnerType && item?.isPreferredDefault) ||
-    (defaults || []).find((item) => item?.partnerType === partnerType) ||
-    null
-}
-
-function partnerDefaultName(defaultRecord = null, fallback = '') {
-  return String(defaultRecord?.companyName || defaultRecord?.contactPerson || defaultRecord?.email || fallback || '').trim()
-}
-
-function applyDeveloperPartnerDefaultsToLegal(previous = {}, defaults = []) {
-  const agency = getPreferredDeveloperPartnerDefault(defaults, 'agency')
-  const transferAttorney = getPreferredDeveloperPartnerDefault(defaults, 'transfer_attorney')
-  const bondOriginator = getPreferredDeveloperPartnerDefault(defaults, 'bond_originator')
-
-  return {
-    ...previous,
-    agents: agency
-      ? [{
-          ...buildEmptyAgent(),
-          name: agency.contactPerson || agency.companyName || '',
-          email: agency.email || '',
-          company: agency.companyName || '',
-        }]
-      : previous.agents,
-    conveyancers: transferAttorney
-      ? [{
-          ...buildEmptyConveyancer(),
-          firmName: transferAttorney.companyName || '',
-          contactName: transferAttorney.contactPerson || '',
-          email: transferAttorney.email || '',
-          phone: transferAttorney.phone || '',
-        }]
-      : previous.conveyancers,
-    bondOriginators: bondOriginator
-      ? [{
-          ...buildEmptyBondOriginator(),
-          name: bondOriginator.companyName || '',
-          contactName: bondOriginator.contactPerson || '',
-          email: bondOriginator.email || '',
-          phone: bondOriginator.phone || '',
-        }]
-      : previous.bondOriginators,
-  }
-}
-
 function buildFloorplanDocumentsFromUnitTypes(unitTypes) {
   const seen = new Set()
 
@@ -397,8 +361,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const [developerOptionsLoading, setDeveloperOptionsLoading] = useState(false)
   const [developerOptionsError, setDeveloperOptionsError] = useState('')
   const [partnerDefaults, setPartnerDefaults] = useState([])
+  const [partnerRelationships, setPartnerRelationships] = useState([])
   const [partnerDefaultsLoading, setPartnerDefaultsLoading] = useState(false)
   const [partnerDefaultsError, setPartnerDefaultsError] = useState('')
+  const [salesUsers, setSalesUsers] = useState([])
+  const [salesUsersLoading, setSalesUsersLoading] = useState(false)
+  const [salesUsersError, setSalesUsersError] = useState('')
+  const [salesUsersRetry, setSalesUsersRetry] = useState(0)
   const [units, setUnits] = useState([])
   const [documents, setDocuments] = useState([buildEmptyDocument()])
   const [developmentType, setDevelopmentType] = useState('residential')
@@ -426,6 +395,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const maxStepIndex = Math.max(activeSteps.length - 1, 0)
   const progressSteps = activeSteps.filter((step) => step.id !== 'unit_setup')
   const progressStepIndex = progressSteps.findIndex((step) => step.id === (currentStepId === 'unit_setup' ? 'units' : currentStepId))
+  const salesAgents = useMemo(() => buildAgentOptions(salesUsers, profile || {}).map((agent) => ({
+    ...agent, company: workspace?.name || '',
+  })), [salesUsers, profile, workspace?.name])
 
   const draftData = useMemo(() => ({ details, financials, transactionDefaults, legal, developerAccess, documents,
     developmentType, unitConfigurationMethod, stockPlan, stockEditor, stepId: currentStepId, stockStepIndex, reviewEditing,
@@ -474,6 +446,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setDeveloperOptionsLoading(false)
     setDeveloperOptionsError('')
     setPartnerDefaults([])
+    setPartnerRelationships([])
     setPartnerDefaultsLoading(false)
     setPartnerDefaultsError('')
     setUnits([])
@@ -514,6 +487,21 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   }, [open, recovery, savedDevelopment, hasDraftChanges, draftStatus])
 
   useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    const organisationId = workspace?.id || workspace?.organisation_id || workspace?.organisationId
+    setSalesUsers([])
+    setSalesUsersLoading(true)
+    setSalesUsersError('')
+    listOrganisationUsers().then((users) => {
+      if (!cancelled) setSalesUsers(users.filter((user) => !user.organisationId || user.organisationId === organisationId))
+    }).catch(() => {
+      if (!cancelled) setSalesUsersError('Unable to load your sales agents.')
+    }).finally(() => { if (!cancelled) setSalesUsersLoading(false) })
+    return () => { cancelled = true }
+  }, [open, workspace?.id, workspace?.organisation_id, workspace?.organisationId, salesUsersRetry])
+
+  useEffect(() => {
     if (!open || !isSupabaseConfigured) return
     const workspaceId = String(workspace?.id || workspace?.organisation_id || workspace?.organisationId || '').trim()
     if (!workspaceId) return
@@ -526,14 +514,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         setPartnerDefaultsError('')
         const snapshot = await fetchDeveloperPartnersWorkspace({ organisationId: workspaceId })
         if (cancelled) return
-        const defaults = (snapshot.defaults || []).filter((item) => item?.isActive && item?.isPreferredDefault)
+        const defaults = (snapshot.defaults || []).filter((item) => item?.isActive)
         setPartnerDefaults(defaults)
-        if (defaults.length && !restoredDraft.current) {
-          setLegal((previous) => applyDeveloperPartnerDefaultsToLegal(previous, defaults))
-        }
+        setPartnerRelationships(snapshot.relationships || [])
       } catch (loadError) {
         if (cancelled) return
         setPartnerDefaults([])
+        setPartnerRelationships([])
         setPartnerDefaultsError(loadError?.message || 'Unable to load partner defaults.')
       } finally {
         if (!cancelled) {
@@ -787,6 +774,12 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   }
 
   function validateSalesSetup() {
+    for (const [title, members] of [['Attorney', legal.conveyancers], ['Bond originator', legal.bondOriginators]]) {
+      const invite = members.find((member) => member.inviteOnSave)
+      if (!invite) continue
+      if (!String(invite.firmName || invite.name || '').trim() || !String(invite.email || '').trim()) throw new Error(`${title} company name and invitation email are required.`)
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(invite.email.trim())) throw new Error(`Enter a valid ${title.toLowerCase()} invitation email.`)
+    }
     if (isAgentContext && hasDeveloperAccessDraft()) {
       if (developerAccess.mode === 'invite') {
         if (
@@ -807,6 +800,39 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         throw new Error('Enter a positive reservation deposit amount. A percentage must be 100 or less.')
       }
     }
+  }
+
+  function chooseSetupPartner(role, mode, partner) {
+    const attorney = role === 'transfer_attorney'
+    const list = attorney ? 'conveyancers' : 'bondOriginators'
+    const prefix = attorney ? 'defaultTransferAttorney' : 'defaultBondOriginator'
+    const member = mode === 'existing' && partner ? {
+      ...(attorney ? buildEmptyConveyancer() : buildEmptyBondOriginator()),
+      ...(attorney ? { firmName: partner.name } : { name: partner.name }),
+      contactName: partner.contactName || '', email: partner.email || '', phone: partner.phone || '',
+    } : mode === 'invite' ? {
+      ...(attorney ? buildEmptyConveyancer() : buildEmptyBondOriginator()), inviteOnSave: true,
+    } : null
+    const source = mode !== 'existing' ? 'none' : partner?.preferredPartnerId || partner?.relationshipId
+      ? 'developer_partner_default' : attorney ? 'first_conveyancer' : 'first_bond_originator'
+    setLegal((previous) => ({ ...previous, [list]: member ? [member] : [] }))
+    setTransactionDefaults((previous) => ({ ...previous,
+      [`${prefix}Source`]: source,
+      [`${prefix}RelationshipId`]: mode === 'existing' ? partner?.relationshipId || '' : '',
+      [`${prefix}PreferredPartnerId`]: mode === 'existing' ? partner?.preferredPartnerId || '' : '',
+      [`${prefix}OrganisationId`]: mode === 'existing' ? partner?.organisationId || '' : '',
+      [`${prefix}Name`]: mode === 'existing' ? partner?.name || '' : '',
+      [`${prefix}Email`]: mode === 'existing' ? partner?.email || '' : '',
+    }))
+  }
+
+  function updateSetupPartnerInvite(role, field, value) {
+    const attorney = role === 'transfer_attorney'
+    const list = attorney ? 'conveyancers' : 'bondOriginators'
+    const nameField = attorney ? 'firmName' : 'name'
+    const prefix = attorney ? 'defaultTransferAttorney' : 'defaultBondOriginator'
+    setLegal((previous) => ({ ...previous, [list]: previous[list].map((member, index) => index === 0 ? { ...member, [field === 'companyName' ? nameField : field]: value } : member) }))
+    setTransactionDefaults((previous) => ({ ...previous, [`${prefix}${field === 'companyName' ? 'Name' : 'Email'}`]: value }))
   }
 
   function validateCurrentStep() {
@@ -954,8 +980,10 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       setSaving(true)
 
       const effectiveDetails = { ...details, status: statusOverride || 'active' }
-      const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
-      const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
+      const assignedConveyancers = transactionDefaults.defaultTransferAttorneySource === 'none' ? [] : legal.conveyancers.filter((item) => !item.inviteOnSave && String(item.firmName || item.contactName || item.email || '').trim())
+      const assignedOriginators = transactionDefaults.defaultBondOriginatorSource === 'none' ? [] : legal.bondOriginators.filter((item) => !item.inviteOnSave && String(item.name || item.contactName || item.email || '').trim())
+      const primaryConveyancer = assignedConveyancers[0]
+      const primaryBondOriginator = assignedOriginators[0]
       const commissionType = primaryBondOriginator?.commission_type || legal.commission_type || 'purchase_price'
       const commissionPercentage = normalizeOptionalNumber(primaryBondOriginator?.commission_percentage ?? legal.commission_percentage)
       const developerTeam = buildDeveloperTeamFromAccess()
@@ -975,10 +1003,14 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         defaultTransferAttorneyRelationshipId: transactionDefaults.defaultTransferAttorneyRelationshipId,
         defaultTransferAttorneyPreferredPartnerId: transactionDefaults.defaultTransferAttorneyPreferredPartnerId,
         defaultTransferAttorneyName: transactionDefaults.defaultTransferAttorneyName,
+        defaultTransferAttorneyEmail: transactionDefaults.defaultTransferAttorneyEmail,
+        defaultTransferAttorneyOrganisationId: transactionDefaults.defaultTransferAttorneyOrganisationId,
         defaultBondOriginatorSource: transactionDefaults.defaultBondOriginatorSource,
         defaultBondOriginatorRelationshipId: transactionDefaults.defaultBondOriginatorRelationshipId,
         defaultBondOriginatorPreferredPartnerId: transactionDefaults.defaultBondOriginatorPreferredPartnerId,
         defaultBondOriginatorName: transactionDefaults.defaultBondOriginatorName,
+        defaultBondOriginatorEmail: transactionDefaults.defaultBondOriginatorEmail,
+        defaultBondOriginatorOrganisationId: transactionDefaults.defaultBondOriginatorOrganisationId,
         buyerAppointedBondOriginatorAllowed: transactionDefaults.buyerAppointedBondOriginatorAllowed,
         buyerAppointedBondOriginatorRequiresApproval:
           transactionDefaults.buyerAppointedBondOriginatorRequiresApproval,
@@ -1035,8 +1067,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           enabledModules: legal.enabledModules,
           stakeholderTeams: {
             agents: legal.agents.filter((item) => String(item.name || item.email || item.company || '').trim()),
-            conveyancers: legal.conveyancers.filter((item) => String(item.firmName || item.contactName || item.email || '').trim()),
-            bondOriginators: legal.bondOriginators.filter((item) => String(item.name || item.contactName || item.email || '').trim()),
+            conveyancers: assignedConveyancers,
+            bondOriginators: assignedOriginators,
             developers: developerTeam,
             rolePlayerDefaults,
           },
@@ -1071,6 +1103,24 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       }
 
       if (sessionRef.current !== submissionSession || !submissionSession.open) return
+      for (const [partnerType, members] of [['transfer_attorney', legal.conveyancers], ['bond_originator', legal.bondOriginators]]) {
+        const invite = members.find((member) => member.inviteOnSave)
+        if (!invite) continue
+        const companyName = String(invite.firmName || invite.name || '').trim()
+        try {
+          const result = await createDeveloperPartnerInvite({
+            developerOrganisationId: workspace?.id || workspace?.organisation_id || workspace?.organisationId,
+            partnerType, partnerDisplayName: companyName, partnerInvitationEmail: invite.email.trim(),
+            scopeType: 'specific_developments', scopeJson: { developmentIds: [created.id] }, sendEmail: true,
+          })
+          if (!(result.invitationDelivery?.emailResult?.ok || result.invitationDelivery?.emailResult?.sent)) {
+            warnings.push({ message: `${companyName}'s invitation was created, but email delivery was not confirmed. Resend it from Partners.` })
+          }
+        } catch {
+          warnings.push({ message: `${companyName}'s invitation could not be created. The development is saved; invite ${invite.email} from Partners.` })
+        }
+      }
+      if (sessionRef.current !== submissionSession || !submissionSession.open) return
       if (isAgentContext && developerAccess.mode === 'invite') {
         const inviteEntry = developerTeam[0] || null
         if (inviteEntry?.onboardingLink) {
@@ -1087,8 +1137,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
       if (sessionRef.current !== submissionSession || !submissionSession.open) return
       onCreated?.(created)
+      if (!warnings.length) {
+        try { clearDevelopmentDraft(draftScope) }
+        catch { warnings.push({ message: 'Saved. Local draft cleanup failed; open this development before starting another.' }) }
+      }
       setSaveWarnings(warnings)
-      if (!warnings.length) clearDevelopmentDraft(draftScope)
     } catch (submitError) {
       if (submitError.developmentId) {
         const existing = { id: submitError.developmentId, name: details.name }
@@ -1136,26 +1189,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     return null
   }
 
-  const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
-  const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
-  const defaultAgency = getPreferredDeveloperPartnerDefault(partnerDefaults, 'agency')
-  const defaultTransferAttorney = getPreferredDeveloperPartnerDefault(partnerDefaults, 'transfer_attorney')
-  const defaultBondOriginator = getPreferredDeveloperPartnerDefault(partnerDefaults, 'bond_originator')
-  const transferAttorneyDefaultName =
-    transactionDefaults.defaultTransferAttorneyName ||
-    partnerDefaultName(defaultTransferAttorney) ||
-    primaryConveyancer?.firmName ||
-    ''
-  const bondOriginatorDefaultName =
-    transactionDefaults.defaultBondOriginatorName ||
-    partnerDefaultName(defaultBondOriginator) ||
-    primaryBondOriginator?.name ||
-    ''
-  const agencyDefaultName =
-    transactionDefaults.defaultAgentName ||
-    partnerDefaultName(defaultAgency) ||
-    legal.agents.find((item) => String(item.company || item.name || item.email || '').trim())?.company ||
-    ''
   const reviewLayouts = unitConfigurationMethod === 'generate_range'
     ? stockPlan.unitTypes.flatMap((type) => type.floorplans.map((layout) => ({ type, layout })))
     : []
@@ -1168,6 +1201,25 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       ? `${transactionDefaults.reservationDepositAmount}%`
       : formatCurrency(transactionDefaults.reservationDepositAmount)
     : 'No default deposit'
+  const partnerCards = [
+    { role: 'transfer_attorney', title: 'Attorney', roleLabel: 'attorney', Icon: Scale, list: 'conveyancers', prefix: 'defaultTransferAttorney' },
+    { role: 'bond_originator', title: 'Bond originator', roleLabel: 'bond originator', Icon: Landmark, list: 'bondOriginators', prefix: 'defaultBondOriginator' },
+  ].map((card) => {
+    const member = legal[card.list].find((item) => item.inviteOnSave || item.firmName || item.name || item.email)
+    const mode = member?.inviteOnSave ? 'invite' : transactionDefaults[`${card.prefix}Source`] === 'none' ? 'later' : 'existing'
+    const options = buildDevelopmentPartnerOptions(partnerDefaults, partnerRelationships, card.role)
+    let selectedKey = options.find((option) => option.preferredPartnerId === transactionDefaults[`${card.prefix}PreferredPartnerId`] && option.preferredPartnerId
+      || option.relationshipId === transactionDefaults[`${card.prefix}RelationshipId`] && option.relationshipId)?.key || ''
+    if (mode === 'existing' && !selectedKey && (member || transactionDefaults[`${card.prefix}Name`])) {
+      const name = transactionDefaults[`${card.prefix}Name`] || member?.firmName || member?.name
+      options.push({ key: 'saved-partner', name, email: transactionDefaults[`${card.prefix}Email`] || member?.email || '',
+        preferredPartnerId: transactionDefaults[`${card.prefix}PreferredPartnerId`] || '', relationshipId: transactionDefaults[`${card.prefix}RelationshipId`] || '',
+        organisationId: transactionDefaults[`${card.prefix}OrganisationId`] || '', contactName: member?.contactName || '', phone: member?.phone || '' })
+      selectedKey = 'saved-partner'
+    }
+    return { ...card, options, selectedKey, mode, draft: { companyName: member?.firmName || member?.name || '', email: member?.email || '' },
+      summary: mode === 'invite' ? `Invite ${member?.firmName || member?.name}` : mode === 'later' ? 'Sort out later' : transactionDefaults[`${card.prefix}Name`] || options.find((option) => option.key === selectedKey)?.name }
+  })
   const returningToReview = reviewEditing && (currentStepId === 'basic' || currentStepId === 'financials' || (currentStepId === 'units' && unitConfigurationMethod === 'later') || (currentStepId === 'unit_setup' && stockStepIndex === 2))
   return (
     <Modal
@@ -1416,6 +1468,10 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               </section>
               <section className="development-sales-card" aria-labelledby="development-team-heading">
                 <div className="development-sales-heading"><Users size={20} aria-hidden="true" /><h4 id="development-team-heading">Sales team</h4><span>Optional</span></div>
+                <DevelopmentSalesTeamSelect agents={salesAgents} value={legal.agents}
+                  loading={salesUsersLoading} error={salesUsersError}
+                  onRetry={() => setSalesUsersRetry((previous) => previous + 1)}
+                  onChange={(agents) => setLegal((previous) => ({ ...previous, agents }))} />
                     <label className="development-sales-toggle">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Developer selling directly</strong>
@@ -1432,24 +1488,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                <div className="development-create-fields">
-                  <label className="full-width">Selling agent
-                    <select value={transactionDefaults.defaultAgentSource} disabled={transactionDefaults.developerSellingDirectly} onChange={(event) => {
-                      const value = event.target.value
-                      setTransactionDefaults((previous) => ({
-                        ...previous, defaultAgentSource: value,
-                        defaultAgentRelationshipId: value === 'developer_partner_default' ? defaultAgency?.relationshipId || '' : '',
-                        defaultAgentPreferredPartnerId: value === 'developer_partner_default' ? defaultAgency?.id || '' : '',
-                        defaultAgentName: value === 'none' ? '' : agencyDefaultName,
-                      }))
-                    }}>
-                      <option value="none">Choose per transaction</option>
-                      {agencyDefaultName ? <option value={defaultAgency ? 'developer_partner_default' : 'first_agent'}>{agencyDefaultName}{defaultAgency ? ' (preferred partner)' : ''}</option> : null}
-                    </select>
-                  </label>
-                </div>
-                {partnerDefaultsLoading ? <p className="development-create-hint">Loading partners…</p> : null}
-                {partnerDefaultsError ? <p className="text-sm text-[#b42318]">{partnerDefaultsError}</p> : null}
               </section>
               <section className="development-sales-card" aria-labelledby="development-deposit-heading">
                 <div className="development-sales-heading"><Wallet size={20} aria-hidden="true" /><h4 id="development-deposit-heading">Reservation deposit</h4><span>Optional</span></div>
@@ -1471,7 +1509,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 {transactionDefaults.reservationDepositEnabled ? (
                     <div className="development-create-fields">
                       <label>
-                        Reservation Deposit Amount
+                        amount
                         <span className="relative block">
                           {transactionDefaults.reservationDepositAmountType === 'fixed' ? (
                             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#6b7d93]">R</span>
@@ -1529,111 +1567,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
                 ) : null}
               </section>
-              <details className="development-sales-more">
-                <summary>More settings</summary>
-                <div className="development-sales-extras">
-                  <div className="development-create-fields">
-                  {[
-                    {
-                      title: 'Transfer Attorney', value: transactionDefaults.defaultTransferAttorneySource,
-                      preferredValue: defaultTransferAttorney ? 'developer_partner_default' : 'first_conveyancer',
-                      partnerName: transferAttorneyDefaultName, defaultRecord: defaultTransferAttorney,
-                      onChange: (value) => setTransactionDefaults((previous) => ({
-                        ...previous, defaultTransferAttorneySource: value,
-                        defaultTransferAttorneyRelationshipId: value === 'developer_partner_default' ? defaultTransferAttorney?.relationshipId || '' : '',
-                        defaultTransferAttorneyPreferredPartnerId: value === 'developer_partner_default' ? defaultTransferAttorney?.id || '' : '',
-                        defaultTransferAttorneyName: value === 'none' ? '' : transferAttorneyDefaultName,
-                      })),
-                    },
-                    {
-                      title: 'Bond Originator', value: transactionDefaults.defaultBondOriginatorSource,
-                      preferredValue: defaultBondOriginator ? 'developer_partner_default' : 'first_bond_originator',
-                      partnerName: bondOriginatorDefaultName, defaultRecord: defaultBondOriginator,
-                      onChange: (value) => setTransactionDefaults((previous) => ({
-                        ...previous, defaultBondOriginatorSource: value,
-                        defaultBondOriginatorRelationshipId: value === 'developer_partner_default' ? defaultBondOriginator?.relationshipId || '' : '',
-                        defaultBondOriginatorPreferredPartnerId: value === 'developer_partner_default' ? defaultBondOriginator?.id || '' : '',
-                        defaultBondOriginatorName: value === 'none' ? '' : bondOriginatorDefaultName,
-                      })),
-                    },
-                  ].map((card) => (
-                    <label key={card.title}>
-                      {card.title}
-                      <select value={card.value} disabled={card.disabled} onChange={(event) => card.onChange(event.target.value)}>
-                        <option value="none">Choose per transaction</option>
-                        {card.partnerName ? <option value={card.preferredValue}>{card.partnerName}{card.defaultRecord ? ' (preferred partner)' : ''}</option> : null}
-                      </select>
-                    </label>
-                  ))}
-
-                  </div>
-                    <label className="development-sales-toggle">
-                      <span>
-                        <strong className="block text-sm font-semibold text-[#142132]">Multiple agents allowed</strong>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={transactionDefaults.multipleAgentsAllowed}
-                        disabled={transactionDefaults.developerSellingDirectly}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            multipleAgentsAllowed: event.target.checked,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className="development-sales-toggle">
-                      <span>
-                        <strong className="block text-sm font-semibold text-[#142132]">Buyer may use own bond originator</strong>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={transactionDefaults.buyerAppointedBondOriginatorAllowed}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            buyerAppointedBondOriginatorAllowed: event.target.checked,
-                            buyerAppointedBondOriginatorRequiresApproval:
-                              event.target.checked && previous.buyerAppointedBondOriginatorRequiresApproval,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className="development-sales-toggle">
-                      <span>
-                        <strong className="block text-sm font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={transactionDefaults.buyerAppointedBondOriginatorRequiresApproval}
-                        disabled={!transactionDefaults.buyerAppointedBondOriginatorAllowed}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            buyerAppointedBondOriginatorRequiresApproval: event.target.checked,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className="development-sales-toggle">
-                    <span>
-                      <strong className="block text-sm font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={transactionDefaults.autoInviteSelectedBondOriginator}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          autoInviteSelectedBondOriginator: event.target.checked,
-                        }))
-                      }
-                    />
-                    </label>
-                  <p className="development-create-hint">Originator invites are sent when assigned to a transaction.</p>
-                </div>
-              </details>
+              {partnerCards.map((card) => <DevelopmentPartnerSetupCard key={card.role} {...card}
+                loading={partnerDefaultsLoading} error={partnerDefaultsError}
+                onModeChange={(mode, partner) => chooseSetupPartner(card.role, mode, partner)}
+                onPartnerChange={(partner) => chooseSetupPartner(card.role, 'existing', partner)}
+                onDraftChange={(field, value) => updateSetupPartnerInvite(card.role, field, value)} />)}
             </div>
           ) : null}
 
@@ -2019,23 +1957,14 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   {[
                     ['Developer', developerName],
                     ...(isAgentContext ? [['Developer access', developerInvited ? developerAccess.inviteContactName : hasDeveloperAccessDraft() ? developerAccess.selectedDeveloperName : 'Add later']] : []),
-                    ['Selling agent', transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : transactionDefaults.defaultAgentSource === 'none' ? 'Choose per transaction' : agencyDefaultName],
+                    ['Sales team', legal.agents.map((agent) => agent.name || agent.email).filter(Boolean).join(', ') || 'Add later'],
                     ['Reservation deposit', depositSummary],
                     ...(transactionDefaults.reservationDepositEnabled ? [['Payable to', { developer: 'Developer', agency_trust: 'Agency trust account', attorney_trust: 'Attorney trust account' }[transactionDefaults.reservationDepositPayableTo]]] : []),
-                    ['Transfer attorney', transactionDefaults.defaultTransferAttorneySource === 'none' ? 'Choose per transaction' : transferAttorneyDefaultName],
-                    ['Bond originator', transactionDefaults.defaultBondOriginatorSource === 'none' ? 'Choose per transaction' : bondOriginatorDefaultName],
+                    ...partnerCards.map((card) => [card.title, card.summary]),
                   ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
                 </dl>
-                <details className="development-review-settings">
-                  <summary>More settings</summary>
-                  <dl className="development-review-facts">
-                    {[
-                      ['Multiple agents', transactionDefaults.multipleAgentsAllowed && !transactionDefaults.developerSellingDirectly ? 'Allowed' : 'Off'],
-                      ['Buyer’s own originator', transactionDefaults.buyerAppointedBondOriginatorAllowed ? transactionDefaults.buyerAppointedBondOriginatorRequiresApproval ? 'Approval required' : 'Allowed' : 'Off'],
-                      ['Originator invites', transactionDefaults.autoInviteSelectedBondOriginator ? 'When assigned' : 'Off'],
-                    ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-                  </dl>
-                </details>
+                {partnerCards.filter((card) => card.mode === 'invite').map((card) => <p key={card.role} className="development-review-invite">On save: {card.roleLabel} invitation to {card.draft.email}. Access starts after acceptance.</p>)}
+
                 {developerInvited ? <p className="development-review-invite">On save: email invitation to {developerAccess.inviteEmail}{formatSouthAfricanWhatsAppNumber(developerAccess.invitePhone) ? ` + WhatsApp to ${developerAccess.invitePhone}` : ''}.</p> : null}
                 {transactionDefaults.autoInviteSelectedBondOriginator ? <p className="development-create-hint">Originator invites are sent when assigned to a transaction.</p> : null}
               </section>

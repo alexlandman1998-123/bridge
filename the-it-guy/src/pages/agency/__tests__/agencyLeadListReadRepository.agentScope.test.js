@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from '../agencyLeadAgentScope'
 import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords } from '../agencyLeadListReadRepository'
-const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], legacy: false }))
+const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false }))
 vi.mock('../../../lib/supabaseClient', async () => {
   const { createClient } = await import('@supabase/supabase-js')
   return {
@@ -9,6 +9,11 @@ vi.mock('../../../lib/supabaseClient', async () => {
     supabase: createClient('http://localhost:55555', 'local-test-key', { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: async (input) => {
       const url = new URL(String(input))
       fixture.urls.push(url)
+      if (url.pathname.endsWith('/developer_leads')) {
+        const ids = url.searchParams.get('source_lead_id').slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
+        return new Response(JSON.stringify(fixture.developerLinks.filter((row) => ids.includes(row.source_lead_id))), { headers: { 'Content-Type': 'application/json' } })
+      }
+      if (url.pathname.endsWith('/private_listings')) return new Response(JSON.stringify(fixture.listings), { headers: { 'Content-Type': 'application/json' } })
       if (url.pathname.endsWith('/contacts')) {
         const ids = url.searchParams.get('contact_id').slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
         const rows = fixture.contacts.filter((row) => ids.includes(row.contact_id) && `eq.${row.organisation_id}` === url.searchParams.get('organisation_id'))
@@ -40,6 +45,8 @@ beforeEach(() => {
   fixture.urls = []
   fixture.legacy = false
   fixture.contacts = []
+  fixture.developerLinks = []
+  fixture.listings = []
   fixture.leads = [...Array.from({ length: 40 }, (_, i) => makeLead(i, b)), ...Array.from({ length: 26 }, (_, i) => makeLead(i + 40))]
 })
 it('filters the real Supabase query before pagination and uses the assigned total count', async () => {
@@ -181,4 +188,20 @@ it('keeps complete category snapshots and their contacts isolated between agents
   expect(first.metricLeads.map((lead) => lead.leadId)).toEqual(['lead-1'])
   expect(first.contacts.map((contact) => contact.contactId)).toEqual(['a-contact'])
   expect(second.contacts.map((contact) => contact.contactId)).toEqual(['b-contact'])
+})
+
+it('routes development-linked buyers before pagination and preserves the same lead in core loading', async () => {
+  const developmentId = '00000000-0000-4000-8000-000000000030'
+  const developmentLeads = Array.from({ length: 26 }, (_, i) => ({ ...makeLead(i + 100), lead_id: `00000000-0000-4000-8000-${String(i + 100).padStart(12, '0')}` }))
+  fixture.leads = [...Array.from({ length: 55 }, (_, i) => makeLead(i)), ...developmentLeads]
+  fixture.developerLinks = developmentLeads.map((lead) => ({ source_lead_id: lead.lead_id, primary_development_id: developmentId, preferred_unit_id: null, reservation_state: 'none' }))
+  const result = await listAgencyLeadListRecords(org, { category: 'development', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })
+  expect(result.totalCount).toBe(26)
+  expect(result.leads).toHaveLength(25)
+  expect(result.leads.every((lead) => lead.developmentId === developmentId)).toBe(true)
+  expect(result.metricLeads).toHaveLength(81)
+  const second = await listAgencyLeadListRecords(org, { category: 'development', scopedAgent: a, includeRelatedRecords: false, pageSize: 25, page: 1 })
+  expect(second.leads).toHaveLength(1)
+  expect((await listAgencyLeadListRecords(org, { category: 'buyer', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })).totalCount).toBe(55)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/developer_leads')).every((url) => url.searchParams.get('or').includes(`source_agency_org_id.eq.${org}`))).toBe(true)
 })

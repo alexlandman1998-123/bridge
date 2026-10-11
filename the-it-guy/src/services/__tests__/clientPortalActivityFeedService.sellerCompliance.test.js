@@ -3,6 +3,22 @@ import test from 'node:test'
 
 import { buildClientPortalActivityFeedModel } from '../clientPortalActivityFeedService.js'
 
+test('information-only activity reports individual document states without requesting the legacy combined signature', () => {
+  const signing = { informationOnly: true, complete: false, signers: [{ id: 'seller-1', name: 'Sam', status: 'pending' }],
+    signingState: { complete: false, requiredCount: 1, remainingCount: 1 },
+    documentWorkflows: [
+      { key: 'signed_mandate', name: 'Mandate', state: 'complete', label: 'Reviewed and complete', nextAction: 'Evidence retained.' },
+      { key: 'signed_disclosure_form', name: 'Disclosure', state: 'review', label: 'Uploaded — awaiting agent review', nextAction: 'The agent reviews it.' },
+      { key: 'signed_fica_declaration', name: 'FICA', state: 'signing', label: 'Awaiting remaining signatures', detail: '1 of 2 required signers signed.', nextAction: 'The remaining seller signs.' },
+    ] }
+  const model = buildClientPortalActivityFeedModel({ portalData: { lastUpdated: '2026-10-11T12:00:00Z', sellerComplianceSigning: signing } }, 'seller')
+  assert.equal(model.items.some(item => item.type.startsWith('seller_compliance_')), false)
+  const documents = model.items.filter(item => item.id.startsWith('seller_document_workflow_'))
+  assert.equal(documents.length, 3)
+  assert.match(documents.find(item => item.id.endsWith('signed_fica_declaration')).description, /1 of 2/)
+  assert.match(documents.find(item => item.id.endsWith('signed_disclosure_form')).description, /agent reviews/)
+})
+
 test('seller activity feed shows pending compliance signature instead of pretending completion', () => {
   const model = buildClientPortalActivityFeedModel({
     portalData: {

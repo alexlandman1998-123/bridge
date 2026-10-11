@@ -1,3 +1,5 @@
+import { captureAgencyIntakeAttribution } from '../core/clients/utmAttribution'
+
 export const AGENCY_PUBLIC_INTAKE_PRIVACY_VERSION = 'agency-public-intake-v1'
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]+$/
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128
@@ -70,13 +72,14 @@ export function rotateAgencyIntakeIdempotencyKey(slug = '', intent = '') {
   return next
 }
 
-export function readAgencyIntakeAttribution(searchParams) {
+export function readAgencyIntakeAttribution(searchParams, agencySlug = '') {
   const params = searchParams || new URLSearchParams()
-  const utm = {}
-  for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
-    const value = normalizeText(params.get(key))
-    if (value) utm[key] = value
-  }
+  const clientAttribution = captureAgencyIntakeAttribution(params, agencySlug, {
+    storage: getStorage(),
+    pageUrl: typeof window !== 'undefined' ? window.location.href : '',
+    referrer: typeof document !== 'undefined' ? document.referrer : '',
+  })
+  const { lastTouch } = clientAttribution
 
   const listingId = normalizeText(params.get('listingId') || params.get('listing_id'))
   const listingSlug = normalizeText(params.get('listing') || params.get('listingSlug') || params.get('listing_slug'))
@@ -84,13 +87,14 @@ export function readAgencyIntakeAttribution(searchParams) {
   const listingPrice = normalizeText(params.get('listingPrice') || params.get('listing_price') || params.get('price'))
 
   return {
-    sourceChannel: normalizeLower(params.get('source') || params.get('channel') || params.get('utm_source') || 'website'),
-    campaignCode: normalizeLower(params.get('campaign') || params.get('campaign_code') || params.get('utm_campaign')),
-    utm,
+    sourceChannel: lastTouch.sourceChannel,
+    campaignCode: normalizeLower(lastTouch.campaignCode),
+    utm: lastTouch.utm,
     selectedListings: listingId || listingSlug ? [{ id: listingId, slug: listingSlug, title: listingTitle, askingPrice: listingPrice }] : [],
     context: {
       pageUrl: typeof window !== 'undefined' ? window.location.href : '',
       referrer: typeof document !== 'undefined' ? document.referrer : '',
+      clientAttribution,
     },
   }
 }

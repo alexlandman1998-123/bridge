@@ -76,8 +76,9 @@ export default function ListingSellerInformationEditor({
           <Input label="First name" field="sellerFirstName" draft={draft} onChange={onChange} />
           <Input label="Surname" field="sellerSurname" draft={draft} onChange={onChange} />
           <Input label={foreign ? 'Passport number' : 'ID number'} field={foreign ? 'foreignPassportNumber' : 'idNumber'} draft={draft} onChange={onChange} />
-          <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Marital status<Field as="select" value={draft.maritalStatus || ''} onChange={(event) => onChange('maritalStatus', event.target.value)}><option value="">Not captured</option><option value="single">Single</option><option value="married_in_community">Married in community</option><option value="married_out_of_community">Married out of community</option><option value="divorced">Divorced</option><option value="widowed">Widowed</option></Field></label>
+          <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Marital status<Field as="select" value={draft.maritalStatus || ''} onChange={(event) => onChange('maritalStatus', event.target.value)}><option value="">Not captured</option><option value="single">Single</option><option value="married">Married</option><option value="divorced">Divorced</option><option value="widowed">Widowed</option></Field></label>
           {branch === 'married' || String(draft.maritalStatus || '').startsWith('married') ? <>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Marriage regime<Field as="select" value={draft.maritalRegime || ''} onChange={(event) => onChange('maritalRegime', event.target.value)}><option value="">Not captured</option><option value="in_community">In community of property</option><option value="out_of_community">Out of community without accrual</option><option value="out_of_community_with_accrual">Out of community with accrual</option><option value="foreign_marriage">Foreign marriage</option></Field></label>
             <Input label="Spouse full name" field="spouseName" draft={draft} onChange={onChange} />
             <Input label="Spouse ID number" field="spouseIdNumber" draft={draft} onChange={onChange} />
             <Input label="Spouse email" field="spouseEmail" type="email" draft={draft} onChange={onChange} />
@@ -137,6 +138,7 @@ export default function ListingSellerInformationEditor({
         {company || trust ? <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">VAT registered<Field as="select" value={sellerYesNoValue(draft.vatRegistered)} onChange={(event) => onChange('vatRegistered', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label> : null}
         {sellerYesNoValue(draft.vatRegistered) === 'yes' ? <Input label="VAT number" field="vatNumber" draft={draft} onChange={onChange} /> : null}
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">SA resident<Field as="select" value={sellerYesNoValue(draft.saResident)} onChange={(event) => onChange('saResident', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label>
+        <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Tax resident (optional)<Field as="select" value={sellerYesNoValue(draft.taxResident)} onChange={(event) => onChange('taxResident', event.target.value)}><option value="">Not captured</option><option value="yes">Yes</option><option value="no">No</option></Field></label>
         {showConsent ? <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">POPI consent<Field as="select" value={draft.popiConsent || ''} onChange={(event) => onChange('popiConsent', event.target.value)}><option value="" disabled={Boolean(draft.popiConsent)}>Not captured</option><option value="Accepted">Seller gave consent</option><option value="No">Seller has not given consent</option></Field><span className="text-xs font-normal text-[#607387]">Record the seller’s permission to process these details. This does not sign any document.</span></label> : null}
       </section>
 
@@ -151,7 +153,8 @@ export default function ListingSellerInformationEditor({
         {['sectional_title', 'share_block'].includes(draft.propertyStructureType) ? <>
           <div className="sm:col-span-2 text-sm font-semibold text-[#243d56]">Sectional title / scheme details</div>
           <Input label="Scheme name" field="schemeName" draft={draft} onChange={onChange} />
-          <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Unit / section number<Field value={draft.sectionNumber || draft.unitNumber || ''} onChange={(event) => onChange('sectionNumber', event.target.value)} /></label>
+          <Input label="Section number" field="sectionNumber" draft={draft} onChange={onChange} />
+          <Input label="Unit number" field="unitNumber" draft={draft} onChange={onChange} />
           <Input label="Managing agent name (optional)" field="schemeManagingAgentName" draft={draft} onChange={onChange} />
           <Input label="Managing agent email (optional)" field="schemeManagingAgentEmail" type="email" draft={draft} onChange={onChange} />
           <Input label="Managing agent phone (optional)" field="schemeManagingAgentPhone" type="tel" draft={draft} onChange={onChange} />

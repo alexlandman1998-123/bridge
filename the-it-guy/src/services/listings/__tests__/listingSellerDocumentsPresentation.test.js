@@ -95,3 +95,12 @@ test('shows request before reminder and reserves review actions for supplied fil
   assert.equal(review.canReview, true)
   assert.equal(review.canRemind, false)
 })
+
+test('shared requirement readers expose downloads without routing canonical IDs into legacy mutation handlers', () => {
+  const actions = resolveListingSellerDocumentActions({ id: 'canonical-slot', sharedRequirement: true, status: 'pending', canUpload: false, filePath: 'document-requirements/file.pdf' })
+  assert.equal(actions.canRequest, false)
+  assert.equal(actions.canRemind, false)
+  assert.equal(actions.canReview, false)
+  assert.equal(actions.canUpload, false)
+  assert.equal(actions.canOpen, true)
+})

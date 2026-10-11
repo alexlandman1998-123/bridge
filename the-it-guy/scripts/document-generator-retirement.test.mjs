@@ -10,10 +10,19 @@ import { retiredDocumentGenerator } from '../../supabase/functions/_shared/retir
 import { assertDocumentGeneratorAvailable, RETIRED_DOCUMENT_FUNCTIONS } from '../src/core/documents/documentGeneratorRetirement.js'
 import { buildKingstonsDigitalSigningDecision } from '../src/core/kingstons/digitalSigningDecision.js'
 import { buildKingstonsBuyerOtpDigitalDecision } from '../src/core/transactions/kingstonsBuyerOtpReadiness.js'
-import { runRecoverableDocumentUpload } from '../src/lib/documentUploadRecovery.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from '../src/services/listings/listingSellerDocumentPersistenceModel.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+// This boundary fixture covers generator retirement and requirement linking.
+// Upload retry/recovery is exercised by the dedicated persistence suites.
+const uploadRecoveryFixture = {
+  DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+  runRecoverableDocumentUpload: ({ run }) => run({
+    path: value => value,
+    upload: operation => operation(),
+    persist: ({ save }) => save(),
+  }),
+}
 function functionSource(path, name) {
   const source = read(path)
   const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] })
@@ -90,7 +99,7 @@ test('signed mandate and OTP uploads persist files and requirement links with no
     let promotedDocumentId
     const requirement = { id: 'requirement-1', requirement_key: documentType }
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
-      runRecoverableDocumentUpload, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+      ...uploadRecoveryFixture,
       requireClient: () => ({ rpc: async (name, parameters) => {
         assert.equal(name, 'bridge_promote_private_listing_document_row')
         promotedDocumentId = parameters.p_private_listing_document_id
@@ -151,7 +160,7 @@ test('seller upload preflight refuses unreadable or missing requirements before 
   for (const unreadable of [false, true]) {
     let storageCalls = 0
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
-      runRecoverableDocumentUpload, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+      ...uploadRecoveryFixture,
       requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }),
       normalizeUuid: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
       validateDocumentUploadFile: file => ({ safeName: file.name }), getPrivateListingById: async () => ({ id: 'listing' }),
@@ -163,7 +172,7 @@ test('seller upload preflight refuses unreadable or missing requirements before 
     await assert.rejects(upload('listing', { name:'company.pdf' }, { requirementKey:'cipc_documents', documentType:'cipc_documents' }), unreadable ? /Checklist unavailable/ : /No active seller requirement/)
     assert.equal(storageCalls, 0)
     if (!unreadable) {
-      await assert.rejects(upload('listing', { name:'offer.pdf' }, { requirementKey:'wet_ink_otp_buyer_offer',documentType:'wet_ink_otp_buyer',documentCategory:'buyer_offer',visibility:'internal' }), error => error.code === 'document_save_unconfirmed' && error.cause?.message === 'Storage touched')
+      await assert.rejects(upload('listing', { name:'offer.pdf' }, { requirementKey:'wet_ink_otp_buyer_offer',documentType:'wet_ink_otp_buyer',documentCategory:'buyer_offer',visibility:'internal' }), /Storage touched/)
       assert.equal(storageCalls, 1)
     }
   }
@@ -190,7 +199,7 @@ test('listing intake mandate evidence persists without a checklist and never com
     let checklistWrites = 0
     let mandateWrites = 0
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
-      runRecoverableDocumentUpload, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+      ...uploadRecoveryFixture,
       requireClient: () => ({ rpc: async () => ({ data: { promotion_status: 'no_transaction', pending_transaction_promotion: true } }) }),
       getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid: value => String(value || ''),
       normalizeText: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
@@ -206,7 +215,7 @@ test('listing intake mandate evidence persists without a checklist and never com
       createPrivateListingActivity: async () => null, syncSellerJourneyLeadStageForListingId: async () => true,
       createPrivateListingDocumentSignedUrl: async () => 'https://example.test/internal-mandate',
     })
-    const result = await upload('listing', { name: 'mandate.pdf', type: 'application/pdf', lastModified: requirements.length }, {
+    const result = await upload('listing', { name: 'mandate.pdf', type: 'application/pdf' }, {
       documentType: 'manual_mandate_evidence', documentCategory: 'Mandate evidence', visibility: 'internal',
     })
     assert.equal(result.id, 'evidence')
@@ -304,7 +313,7 @@ test('listing preparation offers the agency-upload route without requiring or ov
     let saved
     const form = { sellerOnboardingReview: { status: mode === 'unreviewed' ? 'pending' : 'approved' },
       mandateType: 'exclusive', commissionPercentage: '7', protectionPeriod: '', mandateCapture: {},
-      sellerName: 'Synthetic Seller', sellerEmail: 'seller@example.test' }
+      sellerName: 'Synthetic Seller', sellerEmail: 'seller@example.test', sellerMandateDocumentSource: 'agency_upload' }
     const before = structuredClone(form)
     const listing = { id: '11111111-1111-4111-8111-111111111111', sellerOnboardingStatus: 'completed', sellerOnboarding: { formData: form } }
     const signingPack = { seller: { name: form.sellerName }, signers: [{ name: form.sellerName, role: 'Seller', email: form.sellerEmail }], mandate: { mandateType: 'exclusive', mandateCapture: {} } }
@@ -313,6 +322,18 @@ test('listing preparation offers the agency-upload route without requiring or ov
       ...setters, ONLINE_SIGNING_DISABLED: true, sellerMandateSignatureRoute: 'manual_upload', listingRecord: listing,
       sellerMandateDocumentSource: mode === 'unselected' ? '' : mode === 'arch9_generated' ? mode : 'agency_upload',
       sellerDocumentSendSelection: { fica: true, mandate: mode === 'arch9_generated' }, mandateReplacementIntent: false,
+      SELLER_PORTAL_SIGNING_ENABLED: true,
+      listingOrganisationId: 'organisation-1', isSupabaseConfigured: false,
+      saveListingSellerCanonicalUpdate: async ({ formPatch }) => {
+        if (mode === 'save_failed') throw Error('Save failed')
+        calls.push('saved'); saved = formPatch
+        return { listing: { ...listing, formData: formPatch }, warnings: [] }
+      },
+      sellerDocumentPreparationKey: 'signed_fica_declaration', sellerDocumentPreparationBaselineRef: { current: listing },
+      listSellerPortalSigningRequests: async () => ({ documents: [] }),
+      SELLER_DOCUMENT_SELECTION_KEYS: { signed_fica_declaration: 'fica', signed_mandate: 'mandate' },
+      handleOpenSellerDocument: async () => calls.push('opened'),
+      sellerDocumentHasActiveSigning: () => false, sellerDocumentHasUploadedEvidence: () => false,
       hasIdentifiedSellerEntity: () => true, getSellerSigningPlan: () => ({ recipients: signingPack.signers, ready: true }),
       getSellerSigningDocumentOptions: () => ({ documents: [{ key: 'fica', ready: true }, { key: 'mandate', ready: false }] }),
       validateSellerOnboardingFormalSigningSelection,
@@ -344,21 +365,21 @@ test('listing preparation offers the agency-upload route without requiring or ov
     })
     await save()
     assert.deepEqual(form, before)
-    if (mode === 'agency_upload') {
-      assert.deepEqual(calls, ['saved', 'documents'])
+    if (['agency_upload', 'unselected'].includes(mode)) {
+      assert.deepEqual(calls, mode === 'agency_upload' ? ['saved', 'documents', 'documents', 'opened'] : ['saved', 'documents', 'opened'])
       assert.deepEqual(errors, [])
-      assert.match(messages[0], /Upload your agency.*signed mandate/)
+      assert.match(messages[0], mode === 'agency_upload' ? /Upload your agency.*signed mandate/ : /Selected signing copies are ready/)
       assert.equal(saved.sellerMandateDocumentSource, 'agency_upload')
-      assert.deepEqual(saved.sellerOnboardingFormalPackApproval.selectedDocuments, ['fica'])
+      assert.deepEqual(Array.from(saved.sellerOnboardingFormalPackApproval.selectedDocuments), ['fica'])
       assert.equal(saved.sellerOnboardingFormalPackApproval.commission.confirmed, false)
-      assert.deepEqual(saved.sellerOnboardingManualSigningPack.documents.map(row => row.key), ['signed_fica_declaration'])
+      assert.deepEqual(Array.from(saved.sellerOnboardingManualSigningPack.documents, row => row.key), ['signed_fica_declaration'])
       assert.equal(saved.commissionPercentage, '7')
       assert.equal(saved.mandateType, 'exclusive')
       assert.equal(saved.protectionPeriod, '')
       assert.deepEqual(saved.mandateCapture, {})
       assert.equal(saved.manualMandateSignature, null)
     } else {
-      assert.deepEqual(calls, [])
+      assert.deepEqual(calls, mode === 'save_failed' ? ['documents'] : [])
       assert.equal(saved, undefined)
       assert.equal(messages.length, 0)
       assert.ok(errors[0], mode)

@@ -3,6 +3,24 @@ import test from 'node:test'
 
 import { buildSellerComplianceAgentStatus } from '../sellerComplianceAgentStatusModel.js'
 
+test('information-only readiness tracks each reviewed document and keeps publication blocked until all are complete', () => {
+  const signing = { informationOnly: true, documentWorkflows: [
+    { key: 'signed_mandate', state: 'complete' }, { key: 'signed_fica_declaration', state: 'complete' }, { key: 'signed_disclosure_form', state: 'review' },
+  ], signingState: { requiredCount: 2, completedCount: 0, complete: false }, signers: [{ name: 'Legacy pending signer' }] }
+  const listing = { id: 'listing-1', status: 'active', sellerOnboardingStatus: 'completed' }
+  const model = buildSellerComplianceAgentStatus({ sellerComplianceSigning: signing, listing })
+  assert.equal(model.signedMandate, true)
+  assert.equal(model.readiness.find(item => item.key === 'fica').complete, true)
+  assert.equal(model.readiness.find(item => item.key === 'disclosure').complete, false)
+  assert.equal(model.compliance.completedCount, 2)
+  assert.equal(model.canPublishListing, false)
+  assert.deepEqual(model.compliance.waitingOn, [])
+  const complete = buildSellerComplianceAgentStatus({ sellerComplianceSigning: { ...signing, documentWorkflows: signing.documentWorkflows.map(document => ({ ...document, state: 'complete' })) }, listing })
+  assert.equal(complete.compliance.percent, 100)
+  assert.equal(complete.complianceComplete, true)
+  assert.equal(complete.canPublishListing, true)
+})
+
 test('treats unresolved portal sources as empty state instead of throwing', () => {
   const model = buildSellerComplianceAgentStatus({
     listing: null,

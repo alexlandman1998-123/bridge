@@ -174,7 +174,7 @@ function normalizedIdentity(identityContext = {}) {
 
 function participantCacheKey(options = {}) {
   const identity = normalizedIdentity(options.identityContext)
-  return `participant:${text(options.userId)}:${comparable(options.roleType)}:${text(options.organisationId)}:${identity.email}:${comparable(identity.fullName)}`
+  return `participant:${text(options.userId)}:${comparable(options.roleType)}:${text(options.organisationId)}:${identity.email}:${comparable(identity.fullName)}:${options.includePropertyDetails !== false}`
 }
 
 function listCacheKey(options = {}) {
@@ -184,6 +184,7 @@ function listCacheKey(options = {}) {
     stage: options.stage || 'all',
     financeType: options.financeType || 'all',
     activeTransactionsOnly: options.activeTransactionsOnly !== false,
+    includePropertyDetails: options.includePropertyDetails !== false,
   })}`
 }
 
@@ -330,6 +331,7 @@ async function transactionRows(client, {
   developmentId = null,
   organisationId = '',
   activeTransactionsOnly = true,
+  includePropertyDetails = true,
 } = {}) {
   if (Array.isArray(transactionIds) && transactionIds.length === 0) return []
   let query = client.from('transactions').select(SUMMARY_SELECT)
@@ -347,6 +349,7 @@ async function transactionRows(client, {
   }
   if (result.error) throw result.error
   const rows = normalizeSummaryRows((result.data || []).filter((row) => row?.is_active !== false))
+  if (!includePropertyDetails) return rows
   return hydrateSummaryPropertyContext(client, await hydrateSummaryMedia(client, rows))
 }
 
@@ -390,6 +393,7 @@ export async function fetchTransactionsByParticipantSummary(options = {}) {
     roleType: comparable(roleType),
     organisationId: text(organisationId),
     identityContext,
+    includePropertyDetails: options.includePropertyDetails !== false,
   }
   return cached(participantCacheKey(normalized), async () => {
     const transactionIds = await resolveAccessibleTransactionIds(client, normalized)
@@ -397,6 +401,7 @@ export async function fetchTransactionsByParticipantSummary(options = {}) {
       transactionIds,
       organisationId: normalized.organisationId,
       activeTransactionsOnly: true,
+      includePropertyDetails: normalized.includePropertyDetails,
     })
   }, { forceRefresh: options.forceRefresh === true })
 }

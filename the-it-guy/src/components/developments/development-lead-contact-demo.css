@@ -1,0 +1,118 @@
+.development-contact-action > button { display:flex; align-items:center; gap:7px; min-height:34px; padding:6px 12px; border:1px solid #dbe3e0; border-radius:10px; background:#fff; color:#355e50; font-size:12px; font-weight:600; cursor:pointer; }
+.development-contact-action > button:hover { background:#f1f6f3; border-color:#8cb7a4; }
+.development-contact-dialog.ui-modal { width:calc(100vw - 32px); max-width:620px; border-radius:24px; background:#fff; box-shadow:0 24px 90px #162d2530; }
+.development-contact-dialog .ui-modal-head { padding:20px 24px 16px; }
+.development-contact-dialog .ui-modal-body { padding:18px 24px 20px; }
+.development-contact-dialog button { cursor:pointer; }
+.development-contact-dialog button:disabled { opacity:.5; cursor:default; }
+.development-contact-dialog :is(button,input,textarea):focus-visible, .development-contact-action > button:focus-visible { outline:2px solid #328965; outline-offset:3px; }
+.development-contact-topline { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:20px; font-size:12px; color:#738078; }
+.development-contact-topline > button { display:flex; align-items:center; gap:6px; color:#416052; background:transparent; border:0; padding:3px 0; }
+.development-contact-demo-badge { border:1px solid #e3d7b5; color:#917035; background:#fbf7ec; border-radius:7px; padding:3px 8px; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+.development-contact-lead { display:flex; align-items:center; gap:14px; margin:0 0 22px; }
+.development-contact-avatar { display:grid; place-items:center; width:46px; height:46px; flex-shrink:0; border-radius:50%; background:#e4ede7; color:#446952; font-size:14px; font-weight:600; }
+.development-contact-lead > div { min-width:0; }
+.development-contact-lead strong { display:block; color:#223b30; font-size:19px; letter-spacing:-.03em; }
+.development-contact-lead div > span { display:block; margin-top:4px; font-size:12px; color:#758379; overflow-wrap:anywhere; }
+.development-contact-property { display:flex; gap:14px; padding:12px; border:1px solid #e8ece7; border-radius:15px; background:#f9faf7; margin-bottom:22px; }
+.development-contact-property img { width:83px; height:78px; border-radius:10px; object-fit:cover; }
+.development-contact-property > div { display:flex; flex-direction:column; justify-content:center; gap:4px; min-width:0; }
+.development-contact-property strong { font-size:14px; color:#344f41; }
+.development-contact-property span { font-size:12px; color:#738078; }
+.development-contact-property small { font-size:11px; color:#849088; }
+.development-contact-channels { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.development-contact-channels > button { display:flex; flex-direction:column; align-items:flex-start; gap:7px; padding:18px 14px; border:1px solid #e1e8e3; border-radius:16px; background:#fff; text-align:left; transition:background .15s, border-color .15s, transform .15s; }
+.development-contact-channels > button:hover { background:#f8fbf8; border-color:#91b39f; transform:translateY(-2px); }
+.development-contact-channel-icon { display:grid; place-items:center; width:44px; height:44px; margin-bottom:9px; border-radius:13px; }
+.development-contact-channel-icon img { width:27px; height:27px; }
+.development-contact-channel-icon.is-whatsapp { background:#e7f6ed; }
+.development-contact-channel-icon.is-email { background:#f7f0e2; color:#9e7c45; }
+.development-contact-channel-icon.is-phone { background:#edf0f3; color:#5e7080; }
+.development-contact-channels strong { color:#263c30; font-size:14px; }
+.development-contact-channels button > span:last-child { color:#879088; font-size:10px; }
+.development-contact-demo-note { text-align:center; margin:18px 0 0; font-size:10px; color:#8a948f; }
+.development-contact-whatsapp { border:1px solid #dce5de; border-radius:16px; overflow:hidden; }
+.development-contact-whatsapp > header { display:flex; align-items:center; gap:11px; padding:14px 16px; background:#f2f6f2; color:#718077; }
+.development-contact-whatsapp > header .development-contact-avatar { width:38px; height:38px; font-size:12px; }
+.development-contact-whatsapp > header strong { display:block; font-size:13px; color:#30493b; }
+.development-contact-whatsapp > header div > span { display:block; margin-top:2px; font-size:10px; color:#448362; }
+.development-contact-chat-brand { margin-left:auto; }
+.development-contact-chat-brand img { width:20px; height:20px; }
+.development-contact-chat { display:flex; flex-direction:column; gap:12px; min-height:280px; max-height:350px; overflow-y:auto; padding:18px 17px; background-color:#eeeae1; background-image:radial-gradient(#b7baa92c 1px,transparent 1px); background-size:18px 18px; }
+.development-contact-chat-day { align-self:center; background:#fff9; border-radius:6px; padding:4px 12px; color:#7e837a; font-size:10px; margin-bottom:6px; }
+.development-contact-bubble { max-width:86%; border-radius:10px; padding:11px 12px 7px; font-size:12px; line-height:1.65; color:#35483a; box-shadow:0 1px 1px #253c2410; overflow-wrap:anywhere; white-space:pre-wrap; }
+.development-contact-bubble.is-incoming { align-self:flex-start; background:#fff; border-top-left-radius:2px; }
+.development-contact-bubble.is-outgoing { align-self:flex-end; background:#dcefd3; border-top-right-radius:2px; }
+.development-contact-bubble small { display:flex; align-items:center; justify-content:flex-end; gap:5px; font-size:9px; color:#8a9486; margin-top:4px; }
+.development-contact-bubble .is-read { color:#419bab; }
+.development-contact-typing { display:flex; gap:4px; padding:12px 15px; border-radius:10px; background:#fff; align-self:flex-start; }
+.development-contact-typing i { width:5px; height:5px; border-radius:50%; background:#9cafa0; animation:development-contact-typing 1s ease-in-out infinite alternate; }
+.development-contact-typing i:nth-child(2) { animation-delay:.2s; }
+.development-contact-typing i:nth-child(3) { animation-delay:.4s; }
+.development-contact-chat-composer { display:flex; align-items:center; gap:10px; padding:12px; background:#f3f5f2; color:#839184; }
+.development-contact-chat-composer textarea { width:100%; resize:vertical; min-height:44px; max-height:130px; background:#fff; border:1px solid #e6ebe4; border-radius:11px; padding:10px 12px; font-size:12px; line-height:1.5; color:#344a3b; }
+.development-contact-chat-composer button { width:38px; height:38px; flex-shrink:0; display:grid; place-items:center; border:0; border-radius:50%; background:#217753; color:#fff; }
+.development-contact-dialog--email.ui-modal { max-width:680px; }
+.development-contact-email { border:1px solid #e3e8e3; border-radius:16px; overflow:hidden; }
+.development-contact-email-heading { display:flex; justify-content:space-between; align-items:center; background:#f5f6f3; border-bottom:1px solid #e4e9e2; padding:15px 18px; color:#526451; }
+.development-contact-email-heading > span { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; }
+.development-contact-email-heading > small { font-size:10px; color:#8e978b; }
+.development-contact-email-address, .development-contact-email-subject { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 18px; padding:12px 0; border-bottom:1px solid #edf0eb; font-size:11px; color:#5a6a5c; }
+.development-contact-email-address > span:first-child, .development-contact-email-subject > span { width:42px; color:#90998b; flex-shrink:0; }
+.development-contact-email-address strong { font-size:11px; font-weight:500; }
+.development-contact-email-address > small { font-size:10px; color:#96a08f; }
+.development-contact-email-recipient { border:1px solid #e2e8de; border-radius:7px; background:#f6f8f3; padding:5px 8px; overflow-wrap:anywhere; }
+.development-contact-email-recipient small { color:#8a9583; }
+.development-contact-email-subject input { flex:1; min-width:100px; border:0; background:transparent; font-size:12px; color:#3e513e; padding:2px; }
+.development-contact-email form > textarea { width:100%; min-height:225px; padding:19px; resize:vertical; font-size:12px; line-height:1.8; color:#465545; background:#fff; border:0; }
+.development-contact-email-attachment { display:flex; align-items:center; gap:7px; margin:0 18px 12px; padding:10px; border:1px solid #e5e9e2; border-radius:8px; font-size:10px; color:#5f7259; flex-wrap:wrap; }
+.development-contact-email-attachment small { font-size:9px; color:#96a08e; }
+.development-contact-email-attachment button { margin-left:auto; padding:2px 5px; border:0; background:transparent; }
+.development-contact-email-toolbar { display:flex; align-items:center; gap:10px; padding:14px 18px; border-top:1px solid #edf0e9; }
+.development-contact-email-toolbar > button { display:flex; align-items:center; justify-content:center; min-height:36px; gap:8px; border:0; border-radius:9px; background:transparent; color:#798975; padding:8px; }
+.development-contact-email-toolbar .development-contact-send-email { background:#246b4d; color:#fff; padding:9px 14px; font-size:12px; font-weight:600; }
+.development-contact-email-toolbar > span { margin-left:auto; font-size:10px; color:#9aa48f; }
+.development-contact-email-success { display:flex; align-items:center; flex-direction:column; padding:50px 22px; text-align:center; }
+.development-contact-email-success > span { display:grid; place-items:center; width:58px; height:58px; border-radius:50%; background:#eaf5e9; color:#47805e; }
+.development-contact-email-success h4 { margin:18px 0 9px; font-size:18px; color:#345139; }
+.development-contact-email-success p { font-size:12px; color:#7d8c77; }
+.development-contact-email-success small { margin-top:8px; font-size:11px; color:#98a08e; }
+.development-contact-email-success button { margin-top:25px; border:1px solid #dce7d7; border-radius:9px; padding:10px 16px; background:#f7faf5; font-size:12px; color:#50754e; }
+.development-contact-dialog--phone.ui-modal { max-width:470px; }
+.development-contact-caller { padding:16px 25px 20px; border-radius:20px; background:linear-gradient(150deg,#344a42,#1c2e28); color:#fff; text-align:center; }
+.development-contact-call-brand { display:flex; align-items:center; justify-content:space-between; font-size:10px; color:#acbdb3; }
+.development-contact-call-brand > span { display:flex; align-items:center; gap:6px; }
+.development-contact-call-brand i { width:5px; height:5px; background:#8ec69a; border-radius:50%; }
+.development-contact-call-avatar { display:grid; place-items:center; width:68px; height:68px; border-radius:50%; margin:22px auto 16px; background:#6d88795c; border:1px solid #b8ccbe40; color:#d6e5d8; font-size:23px; letter-spacing:-.04em; }
+.development-contact-call-avatar.is-ringing { animation:development-contact-ring 1.8s ease-out infinite; }
+.development-contact-caller h4 { margin:0; font-size:23px; letter-spacing:-.025em; font-weight:500; color:#f3f7f1; }
+.development-contact-caller > p { font-size:12px; color:#afc3b5; margin:6px 0 12px; }
+.development-contact-call-status { font-size:11px; color:#b3d4bb; }
+.development-contact-call-duration { display:block; margin:4px 0 12px; font-size:23px; font-weight:400; font-variant-numeric:tabular-nums; color:#e7efe8; }
+.development-contact-call-context { display:inline-block; border:1px solid #c6d3c02e; background:#d7e9d508; border-radius:7px; padding:6px 10px; font-size:9px; color:#b3c3b7; }
+.development-contact-call-controls { display:flex; justify-content:center; gap:28px; margin:18px 0; }
+.development-contact-call-controls button { display:flex; align-items:center; flex-direction:column; gap:9px; font-size:10px; color:#bdccc1; border:0; background:transparent; padding:0; }
+.development-contact-call-controls button > span { width:48px; height:48px; display:grid; place-items:center; border-radius:50%; border:1px solid #bbd0bc26; background:#c9dcc014; }
+.development-contact-call-controls button[aria-pressed=true] > span { background:#e1ecdf; color:#31503b; }
+.development-contact-end-call, .development-contact-call-again { display:flex; align-items:center; justify-content:center; gap:9px; margin:0 auto; border:0; border-radius:12px; min-height:44px; padding:10px 26px; font-size:12px; background:#c65852; color:#fff; }
+.development-contact-call-again { margin-top:28px; background:#5d8c6c; }
+.development-contact-keypad { max-width:240px; margin:0 auto 22px; }
+.development-contact-keypad output { display:block; min-height:26px; font-size:17px; letter-spacing:.15em; overflow-wrap:anywhere; }
+.development-contact-keypad > div { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+.development-contact-keypad button { min-height:40px; border:1px solid #c7d5be24; border-radius:10px; background:#d7e0c810; color:#e4eddf; font-size:18px; }
+@keyframes development-contact-ring { 0% { box-shadow:0 0 0 0 #b8dcc62e; } 100% { box-shadow:0 0 0 18px #b8dcc600; } }
+@keyframes development-contact-typing { to { opacity:.4; transform:translateY(-2px); } }
+@media (max-width:540px) {
+  .development-contact-dialog .ui-modal-head { padding:16px 18px 12px; }
+  .development-contact-dialog .ui-modal-body { padding:14px 16px 18px; }
+  .development-contact-lead div > span { line-height:1.6; }
+  .development-contact-channels { gap:7px; }
+  .development-contact-channels > button { padding:14px 9px; }
+  .development-contact-channels button > span:last-child { font-size:9px; line-height:1.4; }
+  .development-contact-email-address { align-items:flex-start; }
+  .development-contact-email-address > small { margin-left:50px; }
+  .development-contact-chat-composer > svg { display:none; }
+  .development-contact-caller { padding:18px 16px 23px; }
+  .development-contact-call-controls { gap:24px; }
+}
+@media (prefers-reduced-motion:reduce) { .development-contact-dialog *, .development-contact-dialog *::before { animation:none !important; transition:none !important; } }

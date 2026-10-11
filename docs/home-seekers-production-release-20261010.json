@@ -1,0 +1,411 @@
+{
+  "capturedAt": "2026-10-10T14:06:05.072806+00:00",
+  "status": "production_released",
+  "approval": "Push all the updates up until this point for homeseeker to production -> this chat and the other ones",
+  "productionBase": "7d9d298677611b86db3ef68296ffe14bc81c16e7",
+  "commit": "2fc83d3939a85efc7ce190bf2940d9d4219c20f8",
+  "database": {
+    "projectId": "isdowlnollckzvltkasn",
+    "environment": "production",
+    "guard": "passed, zero duplicate versions",
+    "recovery": "RECOVERY_LOCKED",
+    "dryRun": [
+      "20261010131128_home_seekers_recruitment_package_preference.sql"
+    ],
+    "sha256": "1c1c32803aa7982f1401c8ea51af61373e217210a54e82e32e88fcd388018cea",
+    "excludedOtherPendingMigrations": 9,
+    "recoveryFile": "package-preference-recovery.sql",
+    "applied": true,
+    "postReleasePermissions": "server only; anon and staff cannot execute applicant RPCs",
+    "securityAdvisors": "6 baseline notices, no new notices"
+  },
+  "checks": {
+    "recruitmentAndHomeUi": 336,
+    "websiteAndPackagedHandlers": 39,
+    "emailHandlers": 11,
+    "recoveryRehearsal": 90,
+    "standaloneBuild": "passed",
+    "edgeTypeCheck": "passed",
+    "app": "passed: lint, nine baseline suites, production build and login probe",
+    "lint": "0 errors, 577 existing warnings",
+    "hostedWebsiteCandidate": {
+      "context": "email_code and packagePreferenceRequired=true",
+      "contactPopup": "contact fields with no password",
+      "emailPopup": "6 or 8 digit code in the same tab, no activation CTA",
+      "mobileDialogWidth": 344,
+      "mobileDialogScrollWidth": 344,
+      "inboxEmailSent": false
+    }
+  },
+  "sourceFiles": [
+    {
+      "path": "the-it-guy/scripts/build-home-seekers-website.mjs",
+      "new": false,
+      "bytes": 5259,
+      "sha256": "bb0c23ec1f037b338d00c212b06942bc55a07fa551a8f39e1575e812b3339e1b"
+    },
+    {
+      "path": "the-it-guy/server/services/homeSeekersRecruitmentApi.js",
+      "new": false,
+      "bytes": 3543,
+      "sha256": "17bb3c10084a17c307488805216f407d0f8afc15844f2f2b464b113de6191751"
+    },
+    {
+      "path": "the-it-guy/server/services/homeSeekersRecruitmentSignupApi.js",
+      "new": false,
+      "bytes": 2223,
+      "sha256": "ab1491ef7104a90ef3015efefd5a8b8f06200103120a023b5c9667db00c33e4e"
+    },
+    {
+      "path": "the-it-guy/server/services/recruitmentApplicantAccess.js",
+      "new": false,
+      "bytes": 13397,
+      "sha256": "ee93d5f96ea35ab16ee1201a961af10f272504cfe16da7c2e59197621d4e3bde"
+    },
+    {
+      "path": "the-it-guy/server/services/recruitmentApplicantSignup.js",
+      "new": false,
+      "bytes": 2723,
+      "sha256": "159d6342c7479780d711852bf2e8f34337073376c3acd52de6864be7356b3586"
+    },
+    {
+      "path": "the-it-guy/server/services/recruitmentIntakeApi.js",
+      "new": false,
+      "bytes": 10293,
+      "sha256": "87b339905cb2a2c109d6d0e20ca7f4c4fac50e2f8ad6ac1b018c95d70b7d7dd6"
+    },
+    {
+      "path": "the-it-guy/server/tests/homeSeekersRecruitment.test.js",
+      "new": false,
+      "bytes": 10643,
+      "sha256": "ecd80e923614be0db8229a1024fae50717ebb5c4072425bb285b41992594fe65"
+    },
+    {
+      "path": "the-it-guy/server/tests/homeSeekersWebsiteBridge.test.js",
+      "new": false,
+      "bytes": 11327,
+      "sha256": "9583e95d27c02f1b54469f194e2e8827044ff7ab56fee4a9bad33213ec8566a4"
+    },
+    {
+      "path": "the-it-guy/server/tests/homeSeekersWebsiteDeployment.test.js",
+      "new": false,
+      "bytes": 35493,
+      "sha256": "31ff1e6b30eba0e2487977433e46047e4e1ca8f459cf0d53d82aed7f0add769a"
+    },
+    {
+      "path": "the-it-guy/src/homeSeekersMain.jsx",
+      "new": false,
+      "bytes": 3448,
+      "sha256": "b4e78114cf293a11a15885dc967d785a25f37cd526faa2517b534e70294cbed7"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersAbout.jsx",
+      "new": false,
+      "bytes": 8308,
+      "sha256": "2349106311d6fdf51aad086283d47a6ae402d56bc7119298bd72d6156ba23dd1"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersAreaAtlas.jsx",
+      "new": false,
+      "bytes": 2339,
+      "sha256": "d9a03422df236cd28a2f0822b0faf2fc29356e91091f46a6cdab2af2d2483a8f"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersAreas.jsx",
+      "new": false,
+      "bytes": 2713,
+      "sha256": "d10bdbce21894e33b3d709efccc92b7e928042d9fcee83aea78091a7aa48257d"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersBuy.jsx",
+      "new": false,
+      "bytes": 6363,
+      "sha256": "3f1c5b3bb8b9b25b88e1b6df4b8a388cc466ca3dc00799c1d07f16564e6f80b7"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersBuying.jsx",
+      "new": false,
+      "bytes": 10356,
+      "sha256": "cccf995ba5c06cfdcd244612649062b30f81e3332256384ef0dc9de4e802e8f1"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersContact.jsx",
+      "new": false,
+      "bytes": 6315,
+      "sha256": "85dcc92b16c20cd6ff884b07c1e29ca1c5b3fb7a69dc2f9d8cd779a15ce3788a"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersDemo.jsx",
+      "new": false,
+      "bytes": 21026,
+      "sha256": "0c928573330cff19d45e1715fca2d683dfdbc753f293e0ac135094b9201086a8"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersDevelopments.jsx",
+      "new": false,
+      "bytes": 9963,
+      "sha256": "1da0950452f2209cfc4622300c242cc09039e70d26235d9f9a40afc18c983708"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersFastTrack.jsx",
+      "new": false,
+      "bytes": 2749,
+      "sha256": "aee07ff98996b26f9f1cdfa6fbd48c0f9ca0c0948be7fa8e18cb92c032a96db8"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersFeaturedHomes.jsx",
+      "new": false,
+      "bytes": 2546,
+      "sha256": "76f1db81da39ccd0db4ae389c1ca3596c3f5e78cea18e3656700da86f9eebdab"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersFooter.jsx",
+      "new": false,
+      "bytes": 1504,
+      "sha256": "281a1cedebae7bd1053ad2ed859024a0826f40351a1c3ed1217c4d648e804256"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersJoin.css",
+      "new": false,
+      "bytes": 25693,
+      "sha256": "4e75638e9d9a07f015338922d5f3808dee68dc73021eb450a55832ac72235a89"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersJoin.jsx",
+      "new": false,
+      "bytes": 32534,
+      "sha256": "122b0857e2187be5a9a5f93fcb51b3e5345cdad140974ed0b6e1e19453137dc0"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersPageShell.jsx",
+      "new": false,
+      "bytes": 2694,
+      "sha256": "1a6161f9996d9216db48ba696f49e61773f6a92bbb61f8ec6a7f792cdad5a000"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersPeople.jsx",
+      "new": false,
+      "bytes": 6400,
+      "sha256": "229901967294db708a016e7a97f834994c91b6d0c5dc196a17672481a064c3fd"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersProperty.jsx",
+      "new": false,
+      "bytes": 6379,
+      "sha256": "2dc8acb9d1cbd85c5e38f0bcae6fc01d99bc6c9086b3796c8c7f25d2012b7ffe"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersRent.jsx",
+      "new": false,
+      "bytes": 6126,
+      "sha256": "bec3b4f3c0f2b3282899bb5b63a2de925ca50015169e852cea9f866eef837093"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersRenting.jsx",
+      "new": false,
+      "bytes": 7593,
+      "sha256": "8f80f9e8cab8e528f4a9d7c1e59da612f73963a42124993e3082d5c0d5ac1bc7"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersSell.jsx",
+      "new": false,
+      "bytes": 4851,
+      "sha256": "d0292769c0a59de5c5a36d7092471fe090087433be56e23b9b84e4aca855015e"
+    },
+    {
+      "path": "the-it-guy/src/pages/HomeSeekersSelling.jsx",
+      "new": false,
+      "bytes": 10121,
+      "sha256": "f48b884150d51d90c1ad46788f55ff8ac2755fae8047a02650b01b269ff67117"
+    },
+    {
+      "path": "the-it-guy/src/pages/__tests__/HomeSeekersListings.test.jsx",
+      "new": false,
+      "bytes": 6473,
+      "sha256": "f53e289053e25bee604d2f76262d9a607810b5843875ab848938b44e9cbb427b"
+    },
+    {
+      "path": "the-it-guy/src/pages/homeSeekersRecruitment.js",
+      "new": false,
+      "bytes": 6227,
+      "sha256": "d0c77c3f87bd7408f66434d85bbbe6cec9bdb95a2ded2441be4f7dff51ee684b"
+    },
+    {
+      "path": "the-it-guy/src/pages/homeSeekersRoutes.js",
+      "new": true,
+      "bytes": 402,
+      "sha256": "e4326c27b757bea7bf9aca0e19266e9a922f8bc5fe7d694b53cfe8218d6eb05c"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/RecruitmentApplicantAccess.jsx",
+      "new": false,
+      "bytes": 7000,
+      "sha256": "4ed69e1bc0b65c226ffdd9c29c1ece728fa0f8cdc1c9caea95cb128207235346"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/RecruitmentContactReceipt.jsx",
+      "new": false,
+      "bytes": 2642,
+      "sha256": "1088303dfd2e8e52cca871f6e0cc186227538f2793b8ca63dfec2cb2ab2014f1"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/RecruitmentProfileQuestionnaire.css",
+      "new": false,
+      "bytes": 6676,
+      "sha256": "b21a5e92d493bfd55df5da174183f2936e6b050774912b0f3b3a0d630cdf5ddc"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/RecruitmentProfileQuestionnaire.jsx",
+      "new": false,
+      "bytes": 20501,
+      "sha256": "799fe1a462ee0b50dc3732cae822af96fcf828175163b6257f35cb79406ba6b3"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/RecruitmentProfileReview.jsx",
+      "new": false,
+      "bytes": 5601,
+      "sha256": "ac8939aa8c012e6970bcb8113bad8fc604fc61fa44d1524bd302ce4da6472dce"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/RecruitmentSignupModal.jsx",
+      "new": false,
+      "bytes": 14691,
+      "sha256": "74db4d3c1a4625cf278bc178769b9811651e30cc4e85e7253f707a48493327ea"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/__tests__/RecruitmentProfileQuestionnaire.test.jsx",
+      "new": false,
+      "bytes": 23830,
+      "sha256": "f2066544b02445b608deee591410d83b4421fe968d5b65fbb069359da2094f60"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/__tests__/RecruitmentSignupModal.test.jsx",
+      "new": false,
+      "bytes": 29302,
+      "sha256": "70caf1e10027084b69dd9f21ae333dedc809c8f5aa025167af903a26b79f675e"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/__tests__/recruitmentApplicantAccess.test.js",
+      "new": false,
+      "bytes": 11304,
+      "sha256": "1d53b830ad73731bfd886f6415684621b8c96037acfaf5e2ecd06555fc07b28b"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/__tests__/recruitmentDatabase.test.js",
+      "new": false,
+      "bytes": 175018,
+      "sha256": "48c00067a5974ab4f876c261a52d1195d83ff85fa70a9700c8024dafd723eb26"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/__tests__/recruitmentProfileModel.test.js",
+      "new": false,
+      "bytes": 5450,
+      "sha256": "af8e941549dd7f3bd8fc5a5054bb681bb83022e2dc5c05380dce7ba635e92dc3"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/__tests__/recruitmentSignup.test.js",
+      "new": false,
+      "bytes": 11650,
+      "sha256": "1bada1fe82584b6b2a2a09eafe617cea5becd0bc89f52b6743489986d7e1ff21"
+    },
+    {
+      "path": "the-it-guy/src/pages/recruitment/recruitmentProfileModel.js",
+      "new": false,
+      "bytes": 9721,
+      "sha256": "1b95b10dca491cb0bd8d67723ace2bc88810b05c95a1e9ae32df63c39f83bdff"
+    },
+    {
+      "path": "the-it-guy/src/services/recruitmentSignupService.js",
+      "new": false,
+      "bytes": 3696,
+      "sha256": "930b17e850651b6c4af8f2266617d6f2f4f2294d6a9f618106e737e7f5fa9c83"
+    },
+    {
+      "path": "the-it-guy/api/home-seekers/analytics.js",
+      "bytes": 2604,
+      "sha256": "3cf49788c1334415df5c95a086649d5b792a9264ff4834e2ff6b8caccdb05332"
+    },
+    {
+      "path": "the-it-guy/server/services/homeSeekersWebsiteBridge.js",
+      "bytes": 4846,
+      "sha256": "f227899f463cd7f256e0b0a1706f0153b8d6176606b18d176d84df07abeff755"
+    },
+    {
+      "path": "supabase/migrations/20261010131128_home_seekers_recruitment_package_preference.sql",
+      "bytes": 18322,
+      "sha256": "1c1c32803aa7982f1401c8ea51af61373e217210a54e82e32e88fcd388018cea"
+    },
+    {
+      "path": "supabase/functions/send-email/index.ts",
+      "bytes": 52896,
+      "sha256": "1904187892fca94f3ec6e9a3fb1e65e84106e98e8922c8ae02d7dea945bbca21"
+    },
+    {
+      "path": "supabase/functions/send-email/handlers/recruitmentVerificationCode.ts",
+      "bytes": 5179,
+      "sha256": "23cf3213d7fbc2399110abe90a73a295d04124ca4cb4baffc8bdedf847299247"
+    },
+    {
+      "path": "supabase/functions/send-email/handlers/recruitmentVerificationCode.test.ts",
+      "bytes": 7744,
+      "sha256": "80a9361d87bde555219515f2cd7f43993298097fddccfd5755331d98f83856ce"
+    },
+    {
+      "path": "supabase/functions/send-email/content/recruitmentVerificationCode.ts",
+      "bytes": 1812,
+      "sha256": "710a559cf491a8677ac061157ed2da693a7b1006b6dd403d162c4794aaca790a"
+    },
+    {
+      "path": "the-it-guy/server/services/homeSeekersLeadCaptureApi.js",
+      "bytes": 7173,
+      "sha256": "ec44c536cfc3548cfb47193c1a3d8761ca1f3ef2c2e675cbc26ca5811cfba9ee"
+    }
+  ],
+  "newJourneyProposal": "Excluded from this release; local implementation resumed after user clarified contact and restricted document access.",
+  "emailCanary": "No real inbox email has been sent by the agent.",
+  "recovery": {
+    "primaryDeployment": "dpl_BKJj3fh5pQcoEVfoiSBMKQWekZ4L",
+    "websiteDeployment": "dpl_6xz8QhSpSpVVMwfBMwnmPgP9sG8u",
+    "sendEmailVersion": 166
+  },
+  "emailFunction": {
+    "version": 167,
+    "status": "ACTIVE",
+    "verifyJwt": true,
+    "changedFiles": [
+      "send-email/index.ts"
+    ],
+    "newFiles": [
+      "send-email/handlers/recruitmentVerificationCode.ts",
+      "send-email/content/recruitmentVerificationCode.ts"
+    ],
+    "otherRuntimeFiles": "verified unchanged"
+  },
+  "sourcePublished": "https://github.com/alexlandman1998-123/bridge/tree/codex/homeseekers-production-20261010",
+  "deployments": {
+    "primary": {
+      "id": "dpl_GPAXokjuDNB3ahqya4enh1jDpyeY",
+      "status": "READY",
+      "promoted": true,
+      "url": "https://app.arch9.co.za"
+    },
+    "homeSeekers": {
+      "id": "dpl_6fqwZNjYaAP7VisjgPpb4mLVMmig",
+      "status": "READY",
+      "promoted": true,
+      "url": "https://homeseeker.co.za",
+      "aliases": [
+        "www.homeseeker.co.za",
+        "home-seekers-website-alpha.vercel.app"
+      ]
+    }
+  },
+  "postReleaseVerification": {
+    "databaseDryRun": "up to date; no pending scoped migrations",
+    "securityAdvisors": "6 baseline notices; no new notices",
+    "emailFunction": "ACTIVE version 167; runtime changes verified",
+    "http": "7 live checks passed",
+    "browser": "8 canonical routes and 4 legacy redirects passed; desktop and mobile email-code form passed; no JavaScript errors",
+    "logs": "40 seconds observed; no errors on either deployment"
+  }
+}

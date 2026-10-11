@@ -12,7 +12,7 @@ import { resolveSellerLeadOwnershipRoute } from './sellerLeadOwnershipSetupModel
 import { getSellerFicaOnboardingMissing } from './sellerFicaOnboardingFields.js'
 import { readSellerPopiConsent, sellerPopiConsentDisplayValue } from '../core/documents/sellerOnboardingConsent.js'
 import { normalizePropertyDisclosure } from './propertyDisclosure.js'
-import { buildSellerAgentAssistedDisclosurePatch, getSellerDisclosureQuestionMissing, isSellerDisclosureCaptureLocked } from './sellerAgentAssistedDisclosure.js'
+import { buildSellerAgentAssistedDisclosurePatch, isSellerDisclosureCaptureLocked } from './sellerAgentAssistedDisclosure.js'
 
 function text(value = '') {
   return String(value ?? '').trim()
@@ -67,7 +67,8 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
     dateOfBirth: text(source.dateOfBirth ?? source.date_of_birth),
     nationality: text(source.nationality),
     incomeTaxNumber: text(source.incomeTaxNumber ?? source.income_tax_number ?? source.sellerTaxNumber ?? source.taxNumber),
-    saResident: text(source.saResident ?? source.sa_resident ?? source.taxResident),
+    saResident: text(captureValue('saResident', 'sa_resident')),
+    taxResident: text(captureValue('taxResident', 'tax_resident')),
     vatRegistered: text(source.vatRegistered ?? source.vat_registered),
     vatNumber: text(captureValue('vatNumber', 'vat_number')),
     alternativeContact: text(captureValue('alternativeContact', 'alternativeNumber', 'alternative_number')),
@@ -192,7 +193,6 @@ export function buildSellerLeadAgentOnboardingSubmission({ draft = {}, listing =
   if (!saveAsDraft) {
     errors.push(...getSellerFicaOnboardingMissing(draft))
     if (!draft.popiConsentAccepted) errors.push('Confirm that the seller gave POPI consent before submitting.')
-    if (!isSellerDisclosureCaptureLocked(existingFormData)) errors.push(...getSellerDisclosureQuestionMissing(draft.propertyDisclosure))
   }
   const { formPatch } = buildListingSellerProfileCapturePayload(draft, listing, { draft: saveAsDraft, existingFormData })
   const formData = {

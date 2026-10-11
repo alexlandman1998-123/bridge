@@ -1,3 +1,4 @@
+import { readDocumentRequirementContext, mergeDocumentRequirementRows } from './documentRequirementReadService.js'
 import { resolveCanonicalDocumentRequestsForScenario } from '../../core/documents/documentRequestCanonicalMatrix.js'
 import { getTransactionParties, transactionPartyDocumentSubjects } from '../../core/transactions/transactionPartyProfile.js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
@@ -563,6 +564,7 @@ function buildProjectionRow({
   explicitMeta = {},
   includeOutsideStage = false,
 } = {}) {
+  if (instance?.applicability_override === 'removed') return null
   const definitionKey = generated.document_definition_key || definition.key
   const packKey = generated.pack_key || definition.pack_key
   const baseMeta = workflowMetaFromPack(packKey, definitionKey)
@@ -1176,7 +1178,7 @@ export async function resolveTransactionDocumentRequirements({
       })
 
   const instancesBySignature = new Map(
-    normalizeArray(canonicalSync.instances).map((instance) => [buildInstanceSignature(instance), instance]),
+    normalizeArray(canonicalSync.allInstances || canonicalSync.instances).map((instance) => [buildInstanceSignature(instance), instance]),
   )
 
   const projectionRows = candidates
@@ -1246,6 +1248,10 @@ export async function fetchTransactionDocumentRequirementsByTransactionIds({
     if (!grouped[row.transaction_id]) grouped[row.transaction_id] = []
     grouped[row.transaction_id].push(mapProjectionRowToRequirement(row))
   }
+  await Promise.all(ids.map(async transactionId => {
+    const snapshot = await readDocumentRequirementContext(db, { contextType: 'transaction', contextId: transactionId })
+    grouped[transactionId] = mergeDocumentRequirementRows(grouped[transactionId] || [], snapshot)
+  }))
   return grouped
 }
 

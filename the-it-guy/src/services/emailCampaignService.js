@@ -29,6 +29,26 @@ export async function getClientMarketingWorkspace({ organisationId, email = '' }
   return { marketingContact: contactResult.data || null, savedAudiences: audiencesResult.data || [] }
 }
 
+export async function getClientAudienceMemberships({ organisationId, marketingContact, savedAudiences = [] }) {
+  if (!organisationId || !marketingContact || marketingContact.organisation_id !== organisationId) return []
+  const audiences = savedAudiences.filter(audience => audience.organisation_id === organisationId && !audience.archived_at)
+  const matches = await Promise.all(audiences.map(async audience => {
+    const filter = audience.filter_json || {}
+    // Delivery applies these legacy constraints alongside structured rules.
+    for (const field of ['role_type', 'branch_id', 'assigned_user_id', 'lead_stage', 'area']) {
+      if (filter[field] != null && String(marketingContact[field] ?? '') !== String(filter[field])) return false
+    }
+    if (filter.tag != null && !marketingContact.tags?.includes(filter.tag)) return false
+    if (filter.contact_ids?.length && !filter.contact_ids.includes(marketingContact.id)) return false
+    if (!Array.isArray(filter.rules)) return true
+    // Evaluate this one persisted contact with the same matcher as audience previews.
+    const { data, error } = await supabase.rpc('email_audience_rule_matches', { p_contact: marketingContact, p_rule: filter })
+    if (error) throw error
+    return data === true
+  }))
+  return audiences.filter((_, index) => matches[index])
+}
+
 export async function getSavedAudiences(organisationId) {
   if (!organisationId) return []
   const { data, error } = await supabase
@@ -116,7 +136,7 @@ export async function saveEmailCampaign({ campaign, organisationId, userId }) {
     name: clean(campaign.name), subject: clean(campaign.subject), preview_text: clean(campaign.previewText),
     sender_identity_id: campaign.senderIdentityId || null, reply_to_email: clean(campaign.replyToEmail) || null,
     subscription_type_id: campaign.subscriptionTypeId || null,
-    audience_filter: campaign.audienceFilter || {}, content_json: campaign.contentJson || {}, html: campaign.html || '',
+    audience_filter: campaign.audienceFilter || {}, content_json: { ...(campaign.contentJson || {}), ...(campaign.developmentContext ? { arch9_context: campaign.developmentContext } : {}) }, html: campaign.html || '',
     updated_by: userId || null,
   }
   if (!payload.name) throw new Error('Add a campaign name before saving.')
@@ -129,6 +149,8 @@ export async function saveEmailCampaign({ campaign, organisationId, userId }) {
 }
 
 export async function scheduleEmailCampaign(campaignId, scheduledFor) {
+  const contentCheck = await checkEmailCampaignContent(campaignId)
+  if (!contentCheck.ready) throw new Error(contentCheck.errors?.[0] || 'Resolve the campaign content issues before scheduling.')
   const { data, error } = await supabase.rpc('email_campaign_prepare_dispatch', { p_campaign_id: campaignId, p_send_at: scheduledFor || new Date().toISOString() })
   if (error) throw error
   return data
@@ -140,8 +162,17 @@ export async function cancelEmailCampaign(campaignId) {
 }
 
 export async function preflightEmailCampaign(campaignId) {
+  const contentCheck = await checkEmailCampaignContent(campaignId)
   const { data, error } = await supabase.rpc('email_campaign_preflight', { p_campaign_id: campaignId })
   if (error) throw error
+  return { ...data, ready: Boolean(data?.ready && contentCheck.ready), contentCheck, checks: [...(data?.checks || []), { key: 'content', ok: contentCheck.ready }] }
+}
+
+export async function checkEmailCampaignContent(campaignId) {
+  const { data, error } = await supabase.functions.invoke('email-campaign-content-check', { body: { campaignId } })
+  if (error) throw new Error('Email content checking is unavailable. Ask your workspace administrator to enable it, then try again.')
+  if (data?.error) throw new Error(data.error)
+  if (!data || typeof data.ready !== 'boolean' || !Array.isArray(data.errors) || !Array.isArray(data.warnings)) throw new Error('The email content check could not be confirmed. Try again before sending.')
   return data
 }
 

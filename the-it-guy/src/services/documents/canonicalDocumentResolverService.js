@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { documentRequirementIdentity, effectiveDocumentRequirements, preservesManualRequirement } from '../../core/documents/documentRequirementIdentity.js'
 
 export const CANONICAL_RESOLVER_VERSION = 'canonical_document_resolver_v1'
 export const CANONICAL_RESOLVER_SOURCE = 'canonical_document_resolver'
@@ -326,12 +327,7 @@ export function buildRequirementInstance(rule = {}, input = {}) {
 }
 
 export function buildInstanceSignature(instance = {}) {
-  return [
-    instance.context_type || '',
-    instance.context_id || '',
-    instance.document_definition_key || '',
-    instance.requested_from_contact_id || '',
-  ].join('::')
+  return documentRequirementIdentity(instance)
 }
 
 function hasSafeFieldChanges(existing = {}, generated = {}) {
@@ -368,6 +364,7 @@ function buildSafeUpdate(existing = {}, generated = {}, status = existing.status
 }
 
 function shouldManageExisting(instance = {}, options = {}) {
+  if (preservesManualRequirement(instance)) return false
   const sourceSystem = normalizeText(options.sourceSystem) || CANONICAL_RESOLVER_SOURCE
   if (normalizeText(instance.source_system) === sourceSystem) return true
   if (instance.rule_id) return true
@@ -383,7 +380,12 @@ export function reconcileRequirementInstances(existingInstances = [], generatedI
   const packKeys = normalizeStringArray(options.packKeys)
   const existingBySignature = new Map()
   for (const instance of existingInstances) {
-    const signature = buildInstanceSignature(instance)
+    // Context-linked rows keep their persisted context after handover. Compare
+    // their identity in the context being reconciled without moving them back.
+    const signature = buildInstanceSignature({ ...instance,
+      context_type: options.contextType || instance.context_type,
+      context_id: options.contextId || instance.context_id,
+    })
     const bucket = existingBySignature.get(signature) || []
     bucket.push(instance)
     existingBySignature.set(signature, bucket)
@@ -411,6 +413,10 @@ export function reconcileRequirementInstances(existingInstances = [], generatedI
     }
 
     matchedExistingIds.add(existing.id)
+    if (preservesManualRequirement(existing)) {
+      unchanged.push(existing)
+      continue
+    }
     if (existing.status === REQUIREMENT_STATUSES.notApplicable) {
       const update = buildSafeUpdate(existing, generated, REQUIREMENT_STATUSES.pending)
       toUpdate.push(update)
@@ -702,25 +708,13 @@ export async function loadDocumentDefinitionsForRules(client, rules = [], { bypa
 export async function getActiveRequirementsForContext({ contextType, contextId, client = supabase } = {}) {
   assertResolverInput({ contextType, contextId })
   const db = requireClient(client)
-  const result = await db
-    .from('document_requirement_instances')
-    .select('*')
-    .eq('context_type', contextType)
-    .eq('context_id', contextId)
-    .neq('status', REQUIREMENT_STATUSES.notApplicable)
-    .order('pack_key', { ascending: true })
-    .order('document_definition_key', { ascending: true })
-
-  if (result.error) throw result.error
-  return result.data || []
+  return effectiveDocumentRequirements(await getRequirementsForReconciliation(db, { contextType, contextId }))
 }
 
 async function getRequirementsForReconciliation(client, { contextType, contextId } = {}) {
-  const result = await client
-    .from('document_requirement_instances')
-    .select('*')
-    .eq('context_type', contextType)
-    .eq('context_id', contextId)
+  const result = await client.rpc('bridge_read_document_requirements_for_reconciliation', {
+    p_context_type: contextType, p_context_id: contextId,
+  })
 
   if (result.error) throw result.error
   return result.data || []
@@ -745,6 +739,8 @@ function eventForInstance(instance = {}, eventType, input = {}, extra = {}) {
 export async function syncRequirementInstances({ input = {}, generatedInstances = [], client = supabase } = {}) {
   assertResolverInput(input)
   const options = {
+    contextType: input.contextType,
+    contextId: input.contextId,
     regenerate: Boolean(input.options?.regenerate),
     sourceSystem: normalizeText(input.options?.sourceSystem) || CANONICAL_RESOLVER_SOURCE,
     resolverVersion: normalizeText(input.options?.resolverVersion) || CANONICAL_RESOLVER_VERSION,
@@ -759,11 +755,16 @@ export async function syncRequirementInstances({ input = {}, generatedInstances 
   const reconciliation = reconcileRequirementInstances(existingInstances, generatedInstances, options)
 
   if (dryRun) {
+    const removedIds = new Set(reconciliation.toMarkNotApplicable.map((row) => row.id))
+    const updates = new Map(reconciliation.toUpdate.map((row) => [row.id, row]))
     return {
       dryRun: true,
       existingInstances,
       reconciliation,
-      instances: generatedInstances,
+      instances: effectiveDocumentRequirements([
+        ...existingInstances.filter((row) => !removedIds.has(row.id)).map((row) => ({ ...row, ...updates.get(row.id) })),
+        ...reconciliation.toCreate,
+      ]),
       events: [],
     }
   }
@@ -816,6 +817,11 @@ export async function syncRequirementInstances({ input = {}, generatedInstances 
     updated,
     events,
     instances: active,
+    allInstances: [
+      ...existingInstances.filter((row) => !updated.some((saved) => saved.id === row.id)),
+      ...created,
+      ...updated,
+    ],
   }
 }
 
@@ -839,7 +845,8 @@ export async function syncTransactionRequirementInstancesForCreation({
   if (result.error) throw result.error
 
   const instances = normalizeArray(result.data?.instances)
-  if (!instances.length) {
+  const allInstances = normalizeArray(result.data?.allInstances || result.data?.all_instances || instances)
+  if (!allInstances.length) {
     const error = new Error('Canonical transaction requirements were not persisted.')
     error.code = 'CANONICAL_REQUIREMENT_PERSISTENCE_INCOMPLETE'
     throw error
@@ -848,7 +855,7 @@ export async function syncTransactionRequirementInstancesForCreation({
   return {
     ...(result.data || {}),
     instances,
-    allInstances: normalizeArray(result.data?.allInstances || result.data?.all_instances || instances),
+    allInstances,
     source: 'transaction_creation_rpc',
   }
 }

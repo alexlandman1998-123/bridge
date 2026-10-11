@@ -7,12 +7,14 @@ function Input({ label, value, onChange, type = 'text' }) {
 function Select({ label, value, onChange, options }) {
   return <label className="block space-y-1 text-sm text-slate-700"><span>{label}</span><select className={inputClass} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
 }
-export default function TransactionPartyCapture({ side, value, onChange }) {
-  const patch = (changes) => onChange({ ...value, ...changes })
+export default function TransactionPartyCapture({ side, value, onChange, readOnly = false }) {
+  const patch = (changes) => !readOnly && onChange({ ...value, ...changes })
   const personPatch = (id, changes) => patch({ people: value.people.map((person) => person.id === id ? { ...person, ...changes } : changes.primaryContact === true ? { ...person, primaryContact: false } : person) })
   const missing = transactionPartyMissingDetails(value, side)
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label={`${side} party details`}>
     <h3 className="font-semibold text-slate-800">{side} entity and people</h3>
+    {readOnly ? <p className="text-sm text-slate-600">These details come from the linked listing. Make corrections in its seller profile before creating the transaction.</p> : null}
+    <fieldset disabled={readOnly} className="space-y-3">
     <Select label={`${side} entity type`} value={value.entityType} options={PARTY_ENTITY_OPTIONS.filter((option) => side === 'Seller' || option.value !== 'deceased_estate')} onChange={(entityType) => patch({ entityType })} />
     {!isNaturalParty(value.entityType) && value.entityType !== 'unknown' ? <div className="grid gap-3 sm:grid-cols-2">
       <Input label={`${side} registered entity name`} value={value.name} onChange={(name) => patch({ name })} />
@@ -36,6 +38,13 @@ export default function TransactionPartyCapture({ side, value, onChange }) {
       <button type="button" className="text-sm font-medium text-red-700" onClick={() => patch({ people: value.people.filter((other) => other.id !== person.id).map((other) => other.spouseOfId === person.id ? { ...other, spouseOfId: '' } : other) })}>Remove person</button>
     </fieldset>)}
     <button type="button" className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold" onClick={() => patch({ people: [...value.people, createTransactionPartyPerson(isNaturalParty(value.entityType) ? 'owner' : value.entityType.includes('trust') ? 'trustee' : value.entityType === 'deceased_estate' ? 'executor' : 'authorised_representative')] })}>Add {side.toLowerCase()} person</button>
+    </fieldset>
+    {readOnly ? <fieldset className="space-y-2 text-sm text-slate-700">
+      <legend className="font-semibold">Signers for this transaction</legend>
+      {value.people.filter((person) => person.id && person.sourceLinkStatus !== 'review_required').map((person) => <label key={person.id} className="flex items-center gap-2">
+        <input type="checkbox" checked={person.signatory} onChange={(event) => onChange({ ...value, people: value.people.map((saved) => saved.id === person.id ? { ...saved, signatory: event.target.checked } : saved) })} />{person.name || 'Unnamed person'}
+      </label>)}
+    </fieldset> : null}
     {missing.length ? <details className="text-sm text-amber-800"><summary>{missing.length} details still to confirm</summary><ul className="mt-2 list-disc space-y-1 pl-5">{missing.map((item) => <li key={item}>{item}</li>)}</ul></details> : <p className="text-sm text-emerald-800">Party details captured. Documents still need to be provided and reviewed.</p>}
   </section>
 }

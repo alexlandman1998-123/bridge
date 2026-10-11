@@ -1,6 +1,8 @@
+import { mergeDocumentEvidence } from './documentRequirementReadService.js'
 import { BUYER_LEAD_DOCUMENT_TYPES, resolveBuyerLeadDocumentTarget } from '../../core/documents/buyerLeadDocumentContract.js'
 
 const buyerSources = new Set([
+  'document_requirement_command',
   'agent_buyer_document_upload',
   'developer_buyer_document_upload',
   'client_portal_atomic_upload',
@@ -17,22 +19,22 @@ function value(input) { return String(input || '').trim() }
 
 function isBuyerVisibleDocument(row) {
   if (!row || !buyerSources.has(value(row.source))) return false
-  if (row.is_client_visible !== true || value(row.visibility_scope).toLowerCase() !== 'shared') return false
-  return value(row.client_recipient_role).toLowerCase() === 'buyer' ||
-    value(row.uploaded_by_party).toLowerCase() === 'buyer'
+  if (row.is_client_visible !== true || !['shared', 'client', 'client_visible'].includes(value(row.visibility_scope).toLowerCase())) return false
+  const recipient = value(row.client_recipient_role).toLowerCase()
+  return recipient === 'buyer' || (!recipient && value(row.uploaded_by_party).toLowerCase() === 'buyer')
 }
 
 function canonicalUpload(row) {
   const key = sourceKeyByDefinition.get(value(row.document_type)) || value(row.document_type)
   const linked = Boolean(row.canonical_requirement_instance_id)
-  const reviewStatus = value(row.review_status || row.status).toLowerCase()
+  const reviewStatus = value(row.requirement_status || row.review_status || row.status).toLowerCase()
   const reviewed = ['approved', 'completed'].includes(reviewStatus) && linked
   const rejected = ['rejected', 'declined'].includes(reviewStatus)
   const awaitingMatch = ['agent_buyer_document_upload', 'developer_buyer_document_upload'].includes(value(row.source)) && !linked
   return {
     id: value(row.id),
     key,
-    label: labelBySourceKey.get(key) || value(row.name) || 'Buyer document',
+    label: value(row.requirement_label) || labelBySourceKey.get(key) || value(row.name) || 'Buyer document',
     fileName: value(row.file_name || row.name),
     storageBucket: value(row.file_bucket) || 'documents',
     storagePath: value(row.file_path),
@@ -64,17 +66,19 @@ function stagedUpload(row, { hasTransaction }) {
   }
 }
 
-export function buildBuyerLeadDocumentReadModel({ leadRows = [], canonicalRows = [], hasTransaction = false } = {}) {
+export function buildBuyerLeadDocumentReadModel({ leadRows = [], canonicalRows = [], hasTransaction = false, snapshot = null } = {}) {
+  const blockedPaths = new Set((snapshot?.documents || []).filter(row => row.applicability_override === 'removed' || row.is_current_evidence === false).map(row => `${row.file_bucket || 'documents'}:${row.file_path}`))
   const uploadsByPath = new Map()
   for (const row of leadRows) {
     if (!row || !value(row.storagePath || row.storage_path)) continue
     const normalized = stagedUpload(row, { hasTransaction })
-    uploadsByPath.set(`${normalized.storageBucket}:${normalized.storagePath}`, normalized)
+    if (!blockedPaths.has(`${normalized.storageBucket}:${normalized.storagePath}`)) uploadsByPath.set(`${normalized.storageBucket}:${normalized.storagePath}`, normalized)
   }
-  for (const row of canonicalRows) {
+  for (const row of snapshot ? mergeDocumentEvidence(canonicalRows, snapshot) : canonicalRows) {
+    if (row.applicability_override === 'removed' || row.is_current_evidence === false) continue
     if (!isBuyerVisibleDocument(row) || !value(row.file_path)) continue
     const normalized = canonicalUpload(row)
-    uploadsByPath.set(`${normalized.storageBucket}:${normalized.storagePath}`, normalized)
+    if (!blockedPaths.has(`${normalized.storageBucket}:${normalized.storagePath}`)) uploadsByPath.set(`${normalized.storageBucket}:${normalized.storagePath}`, normalized)
   }
   const uploads = [...uploadsByPath.values()]
     .sort((a, b) => Date.parse(b.uploadedAt || 0) - Date.parse(a.uploadedAt || 0))

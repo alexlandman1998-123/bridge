@@ -7,6 +7,13 @@ test('mixed choices generate only selected documents', () => {
   assert.deepEqual(sellerGeneratedDocumentSelection({ signed_mandate: 'upload_existing' }), [])
 })
 
+test('agency-managed upload permissions remain visible without offering sellers permission', () => {
+  const workflow = buildSellerDocumentWorkflow({ item: { lockedByTeam: true } })
+  assert.deepEqual(workflow.permittedActors.upload, ['agent'])
+  assert.match(workflow.nextAction, /The agent can upload/)
+  assert.deepEqual(buildSellerDocumentWorkflow().permittedActors.upload, ['agent', 'seller'])
+})
+
 test('prepared, sent, partially signed, signed and reviewed are distinct', () => {
   const copy = { signingRoute: 'digital_pack' }
   const prepared = buildSellerDocumentWorkflow({ copy })
@@ -44,4 +51,16 @@ test('current active request wins over a newer failed attempt; old versions stay
   assert.equal(getSellerDocumentSigningRequest(requests.filter(row => row.id !== 'active'), 'signed_mandate', 'current').id, 'failed')
   assert.equal(sellerDocumentHasActiveSigning(requests, 'signed_mandate'), true)
   assert.equal(sellerDocumentHasActiveSigning(requests, 'signed_fica_declaration'), false)
+})
+
+test('an older accepted upload cannot complete or hide a new version signing or retry state', () => {
+  const item = { status: 'approved', linkedDocument: { id: 'old-upload', status: 'approved', reviewed_signing_version_id: 'old', storage_path: 'old.pdf' } }
+  const copy = { versionId: 'new', signingRoute: 'digital_pack' }
+  for (const [status, state] of [['sent', 'signing'], ['signed', 'review'], ['revoked', 'retry'], ['reviewed', 'complete']]) {
+    const flow = buildSellerDocumentWorkflow({ item, copy, request: { status, version_id: 'new' } })
+    assert.equal(flow.state, state)
+    assert.equal(flow.versionId, 'new')
+  }
+  assert.equal(buildSellerDocumentWorkflow({ item, copy }).state, 'prepared')
+  assert.equal(buildSellerDocumentWorkflow({ item }).state, 'complete', 'Existing accepted history remains complete')
 })

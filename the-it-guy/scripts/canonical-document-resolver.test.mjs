@@ -203,7 +203,28 @@ try {
   assert.equal(reconciliation.toMarkNotApplicable[0].id, 'obsolete-req')
 
   const sellerSignature = buildInstanceSignature(candidates.generatedInstances[0])
-  assert.equal(sellerSignature, `${input.contextType}::${input.contextId}::seller_id_document::seller::`)
+  assert.equal(sellerSignature, `${input.contextType}::${input.contextId}::seller_id_document::`)
+  assert.equal(buildInstanceSignature({ ...candidates.generatedInstances[0], requested_from_role: 'agent' }), sellerSignature)
+
+  const removed = { ...existingSellerId, status: 'not_applicable', applicability_override: 'removed', override_reason: 'Not needed' }
+  const manual = { ...obsolete, requirement_origin: 'manual' }
+  const custom = { ...manual, id: 'custom-sars', document_definition_key: null, custom_label: 'SARS correspondence' }
+  const preserved = reconcileRequirementInstances([removed, manual, custom], candidates.generatedInstances, { regenerate: true, sourceSystem: 'test_resolver' })
+  assert.equal(preserved.reactivated.length, 0)
+  assert.equal(preserved.toMarkNotApplicable.length, 0)
+  assert.equal(preserved.toUpdate.length, 0)
+  assert.equal(preserved.toCreate.length, 1)
+  assert.notEqual(buildInstanceSignature(custom), buildInstanceSignature({ ...custom, id: 'custom-divorce' }))
+  const preview = await resolveRequirements({ ...input, options: { ...input.options, existingInstances: [removed, manual, custom] } }, { client: null, rules, definitions })
+  assert(!preview.instances.some((row) => row.id === removed.id))
+  assert(preview.instances.some((row) => row.id === custom.id))
+  const handedOff = { ...removed, context_type: 'transaction', context_id: 'later-transaction', transaction_id: 'later-transaction' }
+  const sourceRecalculation = reconcileRequirementInstances([handedOff], [candidates.generatedInstances[0]], {
+    contextType: input.contextType, contextId: input.contextId, regenerate: true,
+  })
+  assert.equal(sourceRecalculation.toCreate.length, 0)
+  assert.equal(sourceRecalculation.toUpdate.length, 0)
+  assert.equal(sourceRecalculation.reactivated.length, 0)
 
   const readinessRequirements = [
     {

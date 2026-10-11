@@ -69,7 +69,7 @@ async function prepare(branch = 'multiple_owners', format = 'current', generator
   const signingPack = copy.pack.signingPackSnapshot
   signingPack.mandate.mandateType = mandateType
   if (mandateType === 'dual') signingPack.mandate.otherAgencyName = 'Second Synthetic Agency'
-  const approval = { ...copy.approval, selectedDocuments: ['fica', 'mandate'], signingRoute: 'digital_pack' }
+  const approval = { ...copy.approval, selectedDocuments: ['disclosure', 'fica', 'mandate'], signingRoute: 'digital_pack' }
   const drafts = buildSellerPostOnboardingDrafts({ formData: copy.form, listing: { id: listingId }, branding: signingPack.branding, generatedAt: copyTime })
   const createPack = generator === 'manual-generator' ? createSellerOnboardingManualSigningPack : createSellerOnboardingSigningCopyPack
   const prepared = createPack({ formData: copy.form, formalPackApproval: approval, signingPack, postOnboardingDrafts: drafts, actor: 'synthetic-agent', generatedAt: copyTime })

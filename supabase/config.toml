@@ -297,12 +297,20 @@ entrypoint = "./functions/knowledge-factory-fica-discovery/index.ts"
 [functions.email-campaign-worker]
 enabled = true
 verify_jwt = false
+import_map = "./functions/email-campaign-worker/deno.json"
 entrypoint = "./functions/email-campaign-worker/index.ts"
 
 [functions.email-campaign-test]
 enabled = true
 verify_jwt = true
+import_map = "./functions/email-campaign-test/deno.json"
 entrypoint = "./functions/email-campaign-test/index.ts"
+
+[functions.email-campaign-content-check]
+enabled = true
+verify_jwt = true
+import_map = "./functions/email-campaign-content-check/deno.json"
+entrypoint = "./functions/email-campaign-content-check/index.ts"
 
 [functions.email-unsubscribe]
 enabled = true
@@ -389,3 +397,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/send-email/deno.json"
 entrypoint = "./functions/recruitment-contact-dispatcher/index.ts"
+
+[functions.document-requirement-dispatcher]
+enabled = true
+verify_jwt = true
+import_map = "./functions/document-requirement-dispatcher/deno.json"
+entrypoint = "./functions/document-requirement-dispatcher/index.ts"

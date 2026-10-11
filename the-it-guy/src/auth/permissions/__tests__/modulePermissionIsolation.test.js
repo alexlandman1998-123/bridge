@@ -70,8 +70,8 @@ try {
   const agencyAdminContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'admin' })
   const agencyAdminItems = filterNavigationItems(getRoleNavItems('agent', { membershipRole: 'admin' }), agencyAdminContext)
   const agencyAdminKeys = visibleKeys(agencyAdminItems)
-  assert.equal(can(PERMISSIONS.manageUsers, agencyAdminContext), true, 'agency admin should manage the organisation like a principal')
-  assert.equal(can(PERMISSIONS.editTransactions, agencyAdminContext), true, 'agency admin should manage all agency transactions')
+  assert.equal(can(PERMISSIONS.manageUsers, agencyAdminContext), false, 'a descriptive admin title must not grant principal authority')
+  assert.equal(can(PERMISSIONS.editTransactions, agencyAdminContext), true, 'agency admin retains assigned transaction editing')
   assert.equal(can(PERMISSIONS.viewCommissionStructures, agencyAdminContext), false, 'agency admin must not view commission structures')
   assert.equal(can(PERMISSIONS.manageCommissionStructures, agencyAdminContext), false, 'agency admin must not manage commission structures')
   assert.equal(agencyAdminKeys.includes('agency_commission'), false, 'commission navigation must be hidden for agency admin')
@@ -139,6 +139,7 @@ try {
     assert.equal(can(PERMISSIONS.createDevelopments, agentContext), true, `${workspaceRole} should create developments from agency listings`)
     assert.equal(can(PERMISSIONS.editDevelopments, agentContext), true, `${workspaceRole} should manage developments they create`)
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), agentContext).ok, true, `${workspaceRole} should access residential leads`)
+    assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developer/leads/example-lead-id'), agentContext).ok, true, `${workspaceRole} should open a linked development lead through its row-level access checks`)
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/canvassing'), agentContext).ok, true, `${workspaceRole} should access residential canvassing`)
     assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developments/example-development-id'), agentContext).ok, true, `${workspaceRole} should open development detail after creating it`)
   }
@@ -146,23 +147,30 @@ try {
   const agencyTeamLeadContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole: 'team_lead' })
   assert.equal(can(PERMISSIONS.viewAgencyDashboard, agencyTeamLeadContext), true, 'agency team lead should view dashboard after invite acceptance')
   assert.equal(can(PERMISSIONS.viewLeads, agencyTeamLeadContext), true, 'agency team lead should view residential leads')
-  assert.equal(can(PERMISSIONS.assignLeads, agencyTeamLeadContext), true, 'agency team lead should assign leads')
+  assert.equal(can(PERMISSIONS.assignLeads, agencyTeamLeadContext), false, 'a descriptive team-lead title must not grant organisation assignment authority')
 
   const developerContext = context({ appRole: 'developer', workspaceType: 'developer_company', workspaceRole: 'owner' })
   const developerKeys = visibleKeys(filterNavigationItems(getRoleNavItems('developer'), developerContext))
   assert.equal(developerKeys.includes('developer_leads'), true)
-  assert.equal(developerKeys.includes('agency_pipeline'), true)
+  assert.equal(developerKeys.includes('agency_pipeline'), false, 'developer leads remain in the developer navigation')
   assert.equal(developerKeys.includes('developments'), true)
   assert.equal(developerKeys.includes('listings'), true)
   assert.equal(developerKeys.includes('developer_partners'), true)
   assert.equal(developerKeys.includes('developer_agencies'), true)
-  assert.equal(developerKeys.includes('developer_snags'), false)
+  assert.equal(developerKeys.includes('developer_snags'), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, developerContext), true)
   assert.equal(can(PERMISSIONS.viewListings, developerContext), true)
   assert.equal(can(PERMISSIONS.viewLeads, developerContext), true)
   assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), developerContext).ok, true)
   assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developer/leads/example-lead-id'), developerContext).ok, true)
-  assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developer/leads/example-lead-id'), agencyTeamLeadContext).ok, false)
+  assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developer/leads/example-lead-id'), agencyTeamLeadContext).ok, true)
+  const developerLeadRequirement = getRouteAccessRequirement('/developer/leads/example-lead-id')
+  for (const status of ['suspended', 'inactive', 'pending']) {
+    const blockedContext = { ...agencyTeamLeadContext, currentMembership: { ...agencyTeamLeadContext.currentMembership, status } }
+    assert.equal(evaluateAccessRequirement(developerLeadRequirement, blockedContext).ok, false, `${status} agency memberships must remain blocked`)
+  }
+  assert.equal(evaluateAccessRequirement(developerLeadRequirement, context({ appRole: 'client', workspaceType: 'agency', workspaceRole: 'client' })).ok, false, 'buyers cannot enter the professional lead workspace')
+  assert.equal(evaluateAccessRequirement(developerLeadRequirement, context({ appRole: 'attorney', workspaceType: 'attorney_firm' })).ok, false, 'agency lead access must not open unrelated professional workspaces')
 
   const clientKeys = visibleKeys(filterNavigationItems(getRoleNavItems('client'), {
     appRole: 'client',

@@ -119,6 +119,13 @@
 .stock-floor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: end; }
 .stock-layout-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
 .stock-layout-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.stock-layout-cards.is-empty { grid-template-columns: minmax(0, 1fr); }
+.stock-layout-add { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; min-width: 0; min-height: 240px; padding: 32px 24px; border: 1px dashed #a9c6b8; border-radius: 12px; background: #f7faf8; color: #176447; font: inherit; text-align: center; cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
+.stock-layout-add:hover { border-color: #1f7a5a; background: #eef7f1; }
+.stock-layout-add:focus-visible { outline: 2px solid #1f7a5a; outline-offset: 3px; }
+.stock-layout-add-icon { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; background: #e5f2ea; }
+.stock-layout-add-title { color: #233247; font-size: 15px; font-weight: 600; }
+.stock-layout-add-hint { max-width: 280px; color: #6b7d93; font-size: 12px; line-height: 1.6; }
 .stock-layout-card { min-width: 0; border: 1px solid #dce5ef; border-radius: 12px; overflow: hidden; }
 .stock-card-preview { display: flex; justify-content: center; align-items: center; gap: 10px; min-height: 140px; background: #f5f8fa; color: #6b7d93; overflow-wrap: anywhere; padding: 16px; font-size: 12px; }
 .stock-card-preview img { width: 100%; height: 140px; object-fit: contain; }
@@ -130,17 +137,26 @@
 .stock-layout-editor { display: grid; gap: 20px; }
 .stock-editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
 .stock-editor-image { max-width: 320px; }
-.stock-layout-empty { padding: 24px 0; color: #6b7d93; font-size: 14px; }
 .stock-allocation-warning { color: #8a641d; font-size: 12px; }
-.stock-review-intro { margin: 0; color: #233247; font-size: 14px; }
-.stock-review-list { margin: 0; padding: 0; list-style: none; }
-.stock-review-list li { display: flex; justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid #e4ebf1; color: #233247; font-size: 14px; }
-.stock-review-list li > div { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
-.stock-review-list li > div:last-child { text-align: right; }
-.stock-review-list span { color: #6b7d93; font-size: 12px; }
-.stock-numbering { color: #35546c; font-size: 13px; }
-.stock-numbering summary { cursor: pointer; }
-.stock-numbering .development-create-fields { margin-top: 20px; }
+.stock-review-heading { display: grid; gap: 8px; }
+.stock-review-intro { margin: 0; color: #6b7d93; font-size: 13px; line-height: 1.6; }
+.stock-review-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.stock-review-card { min-width: 0; overflow-wrap: anywhere; border: 1px solid #dce5ef; border-radius: 12px; background: #fff; }
+.stock-review-card:only-child { grid-column: 1 / -1; }
+.stock-review-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 20px; background: #f7faf8; border-radius: 12px 12px 0 0; }
+.stock-review-card-heading > div { display: grid; gap: 6px; min-width: 0; }
+.stock-review-card-heading p { margin: 0; color: #6b7d93; font-size: 12px; }
+.stock-review-count { flex-shrink: 0; padding: 5px 10px; border-radius: 20px; background: #e5f2ea; color: #176447; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.stock-review-card-details { display: grid; gap: 16px; margin: 0; padding: 20px; border-top: 1px solid #e4ebf1; }
+.stock-review-card-details > div { display: grid; gap: 6px; }
+.stock-review-card-details dt { color: #6b7d93; font-size: 12px; }
+.stock-review-card-details dd { margin: 0; color: #233247; font-size: 14px; font-weight: 500; }
+.stock-review-numbers { font-variant-numeric: tabular-nums; }
+.stock-review-note { margin: 0; line-height: 1.6; }
+.stock-numbering { padding: 16px 20px; border: 1px solid #dce5ef; border-radius: 12px; color: #35546c; font-size: 13px; }
+.stock-numbering summary { cursor: pointer; border-radius: 2px; }
+.stock-numbering summary:focus-visible { outline: 2px solid #1f7a5a; outline-offset: 4px; }
+.stock-numbering .development-create-fields { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e4ebf1; }
 .stock-unit-type { display: grid; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #e4ebf1; }
 .stock-layout { display: grid; gap: 16px; padding-top: 20px; border-top: 1px solid #edf2f7; }
 .stock-allocation { display: grid; gap: 12px; }
@@ -193,6 +209,7 @@
   .stock-floors { grid-template-columns: minmax(0, 1fr); }
   .stock-group { padding: 16px; }
   .stock-layout-cards { grid-template-columns: minmax(0, 1fr); }
+  .stock-review-list { grid-template-columns: minmax(0, 1fr); }
   .stock-layout-heading { flex-wrap: wrap; }
   .stock-review-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .stock-review-table, .stock-review-table tbody { display: block; }
@@ -217,10 +234,7 @@
 .development-create-form .development-sales-toggle { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; }
 .development-sales-toggle > input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #1f7a5a; }
 .development-sales-toggle strong { font-weight: 500; }
-.development-sales-more { padding: 16px 20px; border: 1px solid #dce5ef; border-radius: 14px; color: #35546c; font-size: 13px; }
-.development-sales-more summary { cursor: pointer; font-weight: 600; }
-.development-sales-more summary:focus-visible, .development-review-edit:focus-visible { outline: 2px solid #1f7a5a; outline-offset: 4px; border-radius: 3px; }
-.development-sales-extras { display: grid; gap: 20px; padding-top: 20px; }
+.development-review-edit:focus-visible { outline: 2px solid #1f7a5a; outline-offset: 4px; border-radius: 3px; }
 .development-review-hero { padding: 24px; border: 1px solid #d8e9df; border-radius: 14px; background: #f3f9f5; color: #35546c; overflow-wrap: anywhere; }
 .development-review-hero > h4 { margin: 16px 0 8px; color: #142132; font-size: 26px; font-weight: 600; letter-spacing: -0.03em; }
 .development-review-hero > p { margin: 0; font-size: 14px; }
@@ -254,9 +268,6 @@
   .development-review-metrics strong { font-size: 18px; }
 }
 
-.development-review-settings { color: #35546c; font-size: 12px; }
-.development-review-settings summary { cursor: pointer; }
-.development-review-settings .development-review-facts { margin-top: 16px; }
 
 .development-draft-status { margin: 0; color: #6b7d93; font-size: 12px; }
 .development-draft-recovery { display: grid; gap: 12px; padding: 24px; border: 1px solid #d8e9df; border-radius: 14px; background: #f3f9f5; color: #142132; }

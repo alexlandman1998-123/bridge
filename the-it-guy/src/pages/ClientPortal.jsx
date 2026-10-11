@@ -1,9 +1,11 @@
+import { buildListingSellerInformationModel } from '../services/listings/listingSellerInformationModel.js'
 import { DOCUMENT_IMAGE_UPLOAD_ACCEPT, DOCUMENT_IMAGE_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy.js'
 import { appointmentStartIso, calendarOperationalStatus, sastDateKey, sastParts } from '../core/appointments/attorneyCalendarModel.js'
 import ConnectedBuyerBondApplication from '../modules/bond/application/workspace/ConnectedBuyerBondApplication.jsx'
 import { fetchBuyerBondApplicationRuntime, saveBuyerBondApplicationRuntimeDraft } from '../lib/clientPortalApi.js'
 import BondApplicationTaskWorkspace from '../modules/bond/application/workspace/BondApplicationTaskWorkspace.jsx'
 import ClientDocumentUploadButton from '../components/client-portal/documents/ClientDocumentUploadButton'
+import { recordClientPortalVisit } from '../services/clientActivityService'
 import SellerChecklistSummary from '../components/client-portal/documents/SellerChecklistSummary.jsx'
 import { sellerContactEmail } from '../core/clientPortal/sellerContactDetails.js'
 import SellerTeamWorkspace from '../components/client-portal/team/SellerTeamWorkspace.jsx'
@@ -801,7 +803,14 @@ function buildSellerPortalDetailsSections({ formData = {}, propertyAddress = '',
     },
   ]
 
-  return sections
+  const profile = buildListingSellerInformationModel({
+    propertyAddress,
+    sellerCanonicalFacts: details.canonicalSellerFacts || details.canonicalFacts || details.canonical_facts || {},
+    sellerOnboarding: { formData: details },
+  })
+  const sharedSections = profile.groups.map((group) => ({ key: group.key, title: group.title, items: group.rows.map((row) => ({ label: row.label, value: row.displayValue })) }))
+  if (profile.requiresPersonReview) sharedSections.unshift({ key: 'personReview', title: 'Person relationships', items: [{ label: 'Review required', value: 'Some saved person references need review before linking people across the journey.' }] })
+  return [...sharedSections, ...sections.filter((section) => ['property', 'declarations', 'documents'].includes(section.key)).map((section) => section.key === 'property' ? { ...section, key: 'saleContext', title: 'Property and sale context' } : section)]
     .map((section) => ({
       ...section,
       items: Array.isArray(section.items) ? section.items.filter((item) => String(item?.value || '').trim()) : [],
@@ -6458,6 +6467,18 @@ function SellerCompliancePackCard({
   compact = false,
 }) {
   if (!model?.signingState) return null
+  if (model.informationOnly) return <article id="seller-onboarding-signatures" className="rounded-[18px] border border-[#dbe5ef] bg-white p-4">
+    <h3 className="text-sm font-semibold text-[#142132]">Mandate, disclosure and FICA</h3>
+    <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{model.nextMessage}</p>
+    <div className="mt-3 grid gap-3 sm:grid-cols-3">{model.documentWorkflows.map(document => <section key={document.key} className="rounded-xl border border-[#dbe5ef] p-3">
+      <h4 className="text-sm font-semibold">{document.name}</h4>
+      <p className="mt-1 text-xs font-semibold" role="status">{document.label}</p>
+      {document.detail ? <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{document.detail}</p> : null}
+      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{document.nextAction}</p>
+      {document.versionId ? <p className="mt-1 break-all text-xs text-[#6b7d93]">Version: {document.versionId}</p> : null}
+    </section>)}</div>
+    <SellerPortalAction token={token} workspaceNavigationScope={workspaceNavigationScope} action={{ key: 'open_documents', to: 'documents' }} className="mt-4 inline-flex min-h-[44px] items-center rounded-xl border border-[#dbe5ef] px-4 py-2 text-sm font-semibold">Open documents</SellerPortalAction>
+  </article>
   const state = model.signingState
   const percent = Math.max(0, Math.min(100, Number(state.percent || 0)))
   const signers = Array.isArray(model.signers) ? model.signers : []
@@ -7692,6 +7713,7 @@ function ClientPortal() {
   const [openingDocumentPath, setOpeningDocumentPath] = useState('')
   const [appointmentActionPending, setAppointmentActionPending] = useState('')
   const appointmentResponseCommandsRef = useRef(new Map())
+  const portalActivityVisitRef = useRef('')
   const [appointmentFeedback, setAppointmentFeedback] = useState('')
   const notificationsRef = useRef(null)
   const reservationProofInputRef = useRef(null)
@@ -9517,6 +9539,11 @@ function ClientPortal() {
     }
   }
 
+  function recordPortalDocumentAccess() {
+    if (isDemoMode) return
+    void recordClientPortalVisit({ token, sellerAccessToken: sellerPortalAccessToken, section: 'document_access_requested', requestId: crypto.randomUUID() }).catch(() => {})
+  }
+
   async function handleOpenFinalSignedPortalDocument({ packetId, packetVersionId, documentId = '', openingKey = '' } = {}) {
     const normalizedPacketId = String(packetId || '').trim()
     const normalizedPacketVersionId = String(packetVersionId || '').trim()
@@ -9583,6 +9610,7 @@ function ClientPortal() {
       if (access?.available !== true || !signedUrl) {
         throw new Error(access?.message || 'The final signed document is still being securely published.')
       }
+      recordPortalDocumentAccess()
       if (targetWindow) {
         targetWindow.location.href = signedUrl
       } else if (typeof window !== 'undefined') {
@@ -9628,6 +9656,7 @@ function ClientPortal() {
         } else {
           openGeneratedPortalDocumentHtml(html, fileName)
         }
+        recordPortalDocumentAccess()
       } catch (openError) {
         setDocumentActionError(openError.message || 'Unable to open this document right now.')
       } finally {
@@ -9665,6 +9694,7 @@ function ClientPortal() {
         throw new Error('Unable to open this document right now.')
       }
       window.open(signedUrl, '_blank', 'noopener,noreferrer')
+      recordPortalDocumentAccess()
     } catch (openError) {
       setDocumentActionError(openError.message || 'Unable to open this document right now.')
     } finally {
@@ -9971,6 +10001,15 @@ function ClientPortal() {
       navigate(getPortalWorkspacePath(token, effectiveWorkspace === 'buyer' ? 'buyer' : 'buyer_explicit', 'overview'), { replace: true })
     }
   }, [activeSection, effectiveWorkspace, navigate, portal, requestedSection, token])
+
+  useEffect(() => {
+    if (loading || !portal || isDemoMode) return
+    const scope = `${token}:${sellerPortalAccessToken}:${activeSection}`
+    if (portalActivityVisitRef.current === scope) return
+    portalActivityVisitRef.current = scope
+    // Do not log credentials or let optional navigation telemetry block the portal.
+    void recordClientPortalVisit({ token, sellerAccessToken: sellerPortalAccessToken, section: activeSection, requestId: crypto.randomUUID() }).catch(() => {})
+  }, [activeSection, isDemoMode, loading, portal, sellerPortalAccessToken, token])
 
   if (loading) {
     return (

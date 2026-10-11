@@ -10,6 +10,8 @@ const STRUCTURES = [
 ]
 
 const UPLOAD_POLICY = getDocumentUploadPolicy({ surface: 'development_plan' })
+const PROPERTY_TYPES = ['Apartment', 'House', 'Townhouse', 'Duplex']
+const unitCountLabel = (count) => `${count} ${Number(count) === 1 ? 'unit' : 'units'}`
 
 export function LayoutPreview({ file, fileUrl, name, emptyLabel = 'Add a floor plan or image' }) {
   const imageRef = useRef(null)
@@ -75,7 +77,7 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer, planne
     try {
       const layout = { ...editor.layout, name: editor.layout.name.trim() }
       if (layout.recoveryFileName) throw new Error('Reattach or remove the missing attachment.')
-      if (!layout.propertyType.trim()) throw new Error('Enter a property type.')
+      if (!layout.propertyType.trim()) throw new Error('Choose a property type.')
       if (editor.bedrooms === '' || editor.bathrooms === '') throw new Error('Enter the bedrooms and bathrooms for this layout.')
       const name = `${layout.propertyType.trim()} ${layout.name}`.trim()
       if (plan.unitTypes.some((type) => type.id !== editor.typeId && type.name.toLowerCase() === name.toLowerCase())) throw new Error('This layout already exists. Use a different layout name.')
@@ -169,7 +171,13 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer, planne
         <div><h5 id="stock-editor-heading">{editor.isNew ? 'Add unit layout' : `Edit ${editor.layout.name}`}</h5><p className="development-create-hint">Describe this layout once, then choose how many units to create.</p></div>
         <div className="development-create-fields">
           <label>Layout name<input autoFocus value={editor.layout.name} placeholder="e.g. A2" onChange={(event) => updateDraft({ name: event.target.value })} /></label>
-          <label>Property type<input list="stock-property-types" value={editor.layout.propertyType} onChange={(event) => updateDraft({ propertyType: event.target.value })} /><datalist id="stock-property-types"><option value="Apartment" /><option value="House" /><option value="Townhouse" /><option value="Duplex" /></datalist></label>
+          <label>Property type
+            <select value={editor.layout.propertyType} onChange={(event) => updateDraft({ propertyType: event.target.value })}>
+              <option value="">Choose a property type</option>
+              {editor.layout.propertyType && !PROPERTY_TYPES.includes(editor.layout.propertyType) ? <option value={editor.layout.propertyType}>{editor.layout.propertyType}</option> : null}
+              {PROPERTY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </label>
           <label>Bedrooms<input type="number" min="0" step="1" value={editor.bedrooms} onChange={(event) => setEditor((previous) => ({ ...previous, bedrooms: event.target.value }))} /></label>
           <label>Bathrooms<input type="number" min="0" step="0.5" value={editor.bathrooms} onChange={(event) => setEditor((previous) => ({ ...previous, bathrooms: event.target.value }))} /></label>
           <label>Size (m²)<input type="number" min="0.01" step="0.01" value={editor.layout.sizeSqm} onChange={(event) => updateDraft({ sizeSqm: event.target.value })} /></label>
@@ -187,28 +195,37 @@ export default function StockMasterSetup({ plan, onChange, step, onDefer, planne
         {editorError ? <p className="stock-validation" role="alert">{editorError}</p> : null}
         <div className="stock-editor-actions"><Button type="button" variant="secondary" aria-keyshortcuts="Escape" title="Cancel layout (Esc)" onClick={closeEditor}>Cancel layout</Button><Button type="button" aria-keyshortcuts="Control+Enter Meta+Enter Control+s Meta+s" title="Save layout (Ctrl/⌘ + Enter)" onClick={saveLayout}>Save layout</Button></div>
       </section> : <>
-        <div className="stock-layout-heading"><h5>What unit layouts are available?</h5><span className="development-create-hint" role="status">{totalUnits}{plannedUnits ? ` of ${plannedUnits} planned` : ''} units</span></div>
-        <p className="development-create-hint">Add one layout for each floor plan.</p>
-        {layouts.length ? <div className="stock-layout-cards">{layouts.map(({ type, layout }) => {
+        <div className="stock-layout-heading"><h5>Unit layouts</h5><span className="development-create-hint" role="status">{plannedUnits ? `${totalUnits} of ${plannedUnits} planned ${Number(plannedUnits) === 1 ? 'unit' : 'units'}` : unitCountLabel(totalUnits)}</span></div>
+        <div className={`stock-layout-cards${layouts.length ? '' : ' is-empty'}`}>{layouts.map(({ type, layout }) => {
           const allocated = (layout.allocations || []).filter((entry) => targets.some((target) => target.id === entry.targetId)).reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0)
           return <article key={layout.id} className="stock-layout-card" aria-label={`Layout ${layout.name}`}>
             <LayoutPreview file={layout.file} fileUrl={layout.fileUrl} name={layout.name} />
-            <div className="stock-card-content">{layout.recoveryFileName ? <p className="stock-allocation-warning">Reattach {layout.recoveryFileName}</p> : null}<h6>{layout.name} · {layout.propertyType || type.name}</h6><p>{type.bedrooms ?? '—'} bed · {type.bathrooms ?? '—'} bath · {layout.sizeSqm} m²</p><p className="development-create-hint">R {Number(layout.listPrice).toLocaleString('en-ZA')} · {layout.storeys || 1} {Number(layout.storeys || 1) === 1 ? 'storey' : 'storeys'}</p><strong>{layout.quantity} units</strong>
+            <div className="stock-card-content">{layout.recoveryFileName ? <p className="stock-allocation-warning">Reattach {layout.recoveryFileName}</p> : null}<h6>{layout.name} · {layout.propertyType || type.name}</h6><p>{type.bedrooms ?? '—'} bed · {type.bathrooms ?? '—'} bath · {layout.sizeSqm} m²</p><p className="development-create-hint">R {Number(layout.listPrice).toLocaleString('en-ZA')} · {layout.storeys || 1} {Number(layout.storeys || 1) === 1 ? 'storey' : 'storeys'}</p><strong>{unitCountLabel(layout.quantity)}</strong>
               {targets.length > 1 ? <p className={allocated === Number(layout.quantity) ? 'development-create-hint' : 'stock-allocation-warning'}>{allocated === Number(layout.quantity) ? `${allocated} units assigned to buildings / floors` : `${allocated} of ${layout.quantity} assigned — update locations`}</p> : plan.structureType !== 'none' ? <p className="development-create-hint">{targets[0]?.label}</p> : null}
               <div className="stock-card-actions"><Button type="button" variant="secondary" size="sm" aria-label={`Edit layout ${layout.name}`} onClick={() => openEditor(type, layout)}>Edit</Button><Button type="button" variant="ghost" size="sm" aria-label={`Duplicate layout ${layout.name}`} onClick={() => duplicateLayout(type, layout)}><Copy size={14} aria-hidden="true" />Duplicate</Button><Button type="button" variant="ghost" size="sm" aria-label={`Remove layout ${layout.name}`} onClick={() => removeLayout(type.id, layout.id)}><Trash2 size={14} aria-hidden="true" /></Button></div>
             </div>
           </article>
-        })}</div> : <p className="stock-layout-empty">Add your first layout.</p>}
-        <div><Button ref={addRef} type="button" variant="secondary" onClick={() => openEditor()}><Plus size={14} />Add unit layout</Button></div>
+        })}
+          <button ref={addRef} type="button" className="stock-layout-add" aria-label="Add unit layout" onClick={() => openEditor()}>
+            <span className="stock-layout-add-icon"><Plus size={28} aria-hidden="true" /></span>
+            <span className="stock-layout-add-title">Add unit layout</span>
+            <span className="stock-layout-add-hint">Add a floor plan, price and unit quantity.</span>
+          </button>
+        </div>
       </>}
     </div> : null}
 
     {step === 2 ? <div className="stock-master-panel">
-      <div className="stock-layout-heading"><h5>Check your units</h5><strong>{summary.totalUnits} units</strong></div>
+      <div className="stock-review-heading"><h5>Check your units</h5>{!summary.warnings.length ? <p className="stock-review-intro">{unitCountLabel(summary.totalUnits)} will be created from {layouts.length} {layouts.length === 1 ? 'layout' : 'layouts'}.</p> : null}</div>
       {summary.warnings.length ? <div className="stock-validation" role="status">{summary.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <>
-        <p className="stock-review-intro">{summary.totalUnits} units will be created from {layouts.length} {layouts.length === 1 ? 'layout' : 'layouts'}.</p>
-        <ul className="stock-review-list" aria-label="Units to create">{summary.rows.map((row) => <li key={row.key}><div><strong>{row.layout}</strong><span>{row.type}</span>{plan.structureType !== 'none' ? <span>{row.location}</span> : null}<span>{row.storeys} {row.storeys === 1 ? 'storey' : 'storeys'} per unit</span></div><div><strong>{row.quantity} units</strong><span>{row.firstNumber}{row.quantity > 1 ? `–${row.lastNumber}` : ''}</span></div></li>)}</ul>
-        <p className="development-create-hint">Automatic unit numbers. Saved with the development.</p>
+        <ul className="stock-review-list" aria-label="Units to create">{summary.rows.map((row) => <li key={row.key} className="stock-review-card">
+          <div className="stock-review-card-heading"><div><h6>{row.type}</h6><p>{row.storeys} {row.storeys === 1 ? 'storey' : 'storeys'} per unit</p></div><span className="stock-review-count">{unitCountLabel(row.quantity)}</span></div>
+          <dl className="stock-review-card-details">
+            {plan.structureType !== 'none' ? <div><dt>Location</dt><dd>{row.location}</dd></div> : null}
+            <div><dt>{row.quantity === 1 ? 'Unit number' : 'Unit numbers'}</dt><dd className="stock-review-numbers">{row.firstNumber}{row.quantity > 1 ? `–${row.lastNumber}` : ''}</dd></div>
+          </dl>
+        </li>)}</ul>
+        <p className="development-create-hint stock-review-note">Unit numbers are assigned automatically and saved with the development.</p>
       </>}
       <details className="stock-numbering"><summary>Change unit numbering</summary><div className="development-create-fields">
         <label>Numbering format<select value={plan.numberingStrategy} onChange={(event) => onChange((previous) => ({ ...previous, numberingStrategy: event.target.value }))}><option value="sequential">Sequential (001, 002)</option>{plan.structureType !== 'none' ? <option value="structure">Building / floor prefix</option> : null}</select></label>

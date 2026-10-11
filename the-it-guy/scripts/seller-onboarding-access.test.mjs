@@ -1,7 +1,10 @@
+import { buildCanonicalSellerOnboardingPayload } from '../src/services/documents/sellerOnboardingFactTransformer.js'
+import { buildSpecialistSalesFacts, getSpecialistSalesListingSchema } from '../src/services/listings/specialistSalesListingSchema.js'
+import { buildListingSellerInformationModel } from '../src/services/listings/listingSellerInformationModel.js'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { PGlite } from '@electric-sql/pglite'
+import { uuid, listingA, listingB, agentA, agentB, adminA, outsider, fixture, actor, rpc, installCanonicalSave, guardedFixture, transactionSellerFixture } from './fixtures/seller-alignment-database.mjs'
 import { buildSellerLeadAgentOnboardingSubmission, createSellerLeadAgentOnboardingDraft, buildSellerLeadManualCapturePayload, buildSellerLeadSigningPackTermsPatch } from '../src/lib/sellerLeadManualCaptureModel.js'
 import { PROPERTY_DISCLOSURE_QUESTIONS, isPropertyDisclosureDigitallyComplete } from '../src/lib/propertyDisclosure.js'
 import { buildListingSellerCanonicalUpdate, applyListingSellerCanonicalUpdateSnapshot, applyListingSellerOnboardingSaveSnapshot, getSellerOnboardingSaveRevision } from '../src/services/listings/listingSellerCanonicalUpdateModel.js'
@@ -11,78 +14,6 @@ import { buildSellerPostOnboardingDrafts } from '../src/core/documents/sellerPos
 import { createSellerOnboardingSigningCopyPack } from '../src/core/documents/sellerOnboardingManualSigningPack.js'
 import { createSellerReviewedDocumentVersions, verifySellerReviewedDocumentVersion } from '../src/core/documents/sellerReviewedDocumentVersions.js'
 import { buildSellerDocumentSourceOfTruth } from '../src/services/sellerDocumentRequirementsService.js'
-
-const migration = readFileSync(new URL('../../supabase/migrations/20261001092739_seller_onboarding_access_enforcement.sql', import.meta.url), 'utf8')
-const completionMigration = readFileSync(new URL('../../supabase/migrations/20260906163555_corrective_seller_onboarding_receipt.sql', import.meta.url), 'utf8')
-const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
-const listingA = uuid(1), listingB = uuid(2), agentA = uuid(11), agentB = uuid(12), adminA = uuid(13), outsider = uuid(14)
-
-async function fixture() {
-  const db = new PGlite()
-  await db.exec(`
-    create role anon; create role authenticated; create role service_role;
-    create schema auth; create schema extensions;
-    create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid$$;
-    grant usage on schema auth to anon, authenticated;
-    create function extensions.digest(text, text) returns bytea language sql immutable as $$select sha256(convert_to($1, 'UTF8'))$$;
-    create table private_listings (
-      id uuid primary key, organisation_id uuid, assigned_agent_id uuid,
-      listing_status text default 'seller_lead', seller_onboarding_status text default 'not_started',
-      seller_type text, seller_canonical_facts_json jsonb default '{}', seller_canonical_fact_readiness_json jsonb default '{}',
-      seller_canonical_facts_updated_at timestamptz, updated_at timestamptz,
-      originating_crm_lead_id uuid, seller_lead_id uuid
-    );
-    create table private_listing_seller_onboarding (
-      id uuid primary key default gen_random_uuid(), private_listing_id uuid not null references private_listings(id),
-      token text unique not null, token_expires_at timestamptz, seller_portal_token text,
-      seller_portal_password_hash text, seller_portal_access_token_hash text,
-      seller_portal_recovery_token_hash text, seller_portal_invite_token_hash text,
-      seller_portal_invite_consumed_at timestamptz, seller_portal_invite_expires_at timestamptz,
-      seller_portal_access_token_expires_at timestamptz, seller_portal_link_expires_at timestamptz,
-      seller_portal_link_active boolean default true, status text default 'not_started',
-      form_data jsonb default '{}', seller_type text, ownership_structure text, marital_regime text,
-      canonical_facts_json jsonb default '{}', canonical_fact_readiness_json jsonb default '{}',
-      canonical_facts_updated_at timestamptz, updated_at timestamptz, submitted_at timestamptz
-    );
-    -- This fixture supplies the existing listing permission contract; the
-    -- migration under test must not replace or broaden that helper.
-    create function bridge_can_access_private_listing(target_listing_id uuid) returns boolean
-    language sql stable security definer set search_path = '' as $$
-      select coalesce((select assigned_agent_id = auth.uid() or
-        (organisation_id = '${uuid(21)}' and auth.uid() = '${adminA}')
-        from public.private_listings where id = target_listing_id), false)
-    $$;
-    create function bridge_private_listing_seller_portal_link_is_active(o jsonb, l jsonb) returns boolean
-    language sql stable as $$select coalesce((o->>'seller_portal_link_active')::boolean,true)
-      and (o->>'seller_portal_link_expires_at' is null or (o->>'seller_portal_link_expires_at')::timestamptz > now())$$;
-    grant all on private_listing_seller_onboarding to anon, authenticated;
-    alter table private_listing_seller_onboarding enable row level security;
-    create policy private_listing_seller_onboarding_mutate_member on private_listing_seller_onboarding for all to authenticated using (true) with check (true);
-    create policy private_listing_seller_onboarding_select_token on private_listing_seller_onboarding for select to anon using (token is not null);
-    create policy unexpected_historical_allow on private_listing_seller_onboarding for all to public using (true) with check (true);
-    insert into private_listings(id, organisation_id, assigned_agent_id) values
-      ('${listingA}','${uuid(21)}','${agentA}'), ('${listingB}','${uuid(22)}','${agentB}');
-    insert into private_listing_seller_onboarding(id,private_listing_id,token,seller_portal_token,form_data,
-      seller_portal_password_hash,seller_portal_access_token_hash,seller_portal_invite_token_hash,seller_portal_recovery_token_hash) values
-      ('${uuid(31)}','${listingA}','token-a','stable-a','{"sellerName":"Owner A","currentStep":2}', 'password-secret','access-secret','invite-secret','recovery-secret'),
-      ('${uuid(32)}','${listingB}','token-b','stable-b','{"sellerName":"Owner B"}', null,null,null,null);
-    insert into private_listing_seller_onboarding(id,private_listing_id,token,token_expires_at,seller_portal_token) values
-      ('${uuid(33)}','${listingB}','expired',now()-interval '1 second','stable-expired-legacy');
-  `)
-  await db.exec(completionMigration)
-  await db.exec(migration)
-  return db
-}
-async function actor(db, role, id = '') {
-  await db.exec('reset role')
-  await db.query("select set_config('request.jwt.claim.sub',$1,false)", [id])
-  await db.exec(`set role ${role}`)
-}
-async function rpc(db, name, token, data = undefined) {
-  const args = data === undefined ? [token] : [token, JSON.stringify(data)]
-  const sqlArgs = data === undefined ? '$1' : '$1, p_form_data := $2::jsonb'
-  return (await db.query(`select public.${name}(${sqlArgs}) result`, args)).rows[0].result
-}
 
 test('assisted disclosure drafts and completed intake round-trip through the real token RPCs without signing', async () => {
   const db = await fixture()
@@ -251,21 +182,6 @@ test('agent canonical save persists listing and onboarding together, rejects sta
   } finally { await db.close() }
 })
 
-async function installCanonicalSave(db) {
-    await db.exec(`
-      alter table private_listings add column address_line_1 text, add column asking_price numeric, add column mandate_type text;
-      create table private_listing_activity (id uuid default gen_random_uuid(), private_listing_id uuid, activity_type text, activity_title text,
-        activity_description text, performed_by uuid, visibility text, metadata jsonb);
-      create function extensions.gen_random_bytes(integer) returns bytea language sql as $$select decode(repeat('ab', $1), 'hex')$$;
-      grant usage on schema extensions to authenticated;
-      grant select, update on private_listings to authenticated;
-      grant select, insert on private_listing_activity to authenticated;
-      alter table private_listings enable row level security;
-      create policy listing_member on private_listings for all to authenticated using (bridge_can_access_private_listing(id)) with check (bridge_can_access_private_listing(id));
-    `)
-    await db.exec(readFileSync(new URL('../../supabase/migrations/20260924151653_listing_seller_canonical_update_phase2.sql', import.meta.url), 'utf8'))
-}
-
 test('prepared mandate terms persist in both database snapshots and rollback together on onboarding failure', async () => {
   const db = await fixture()
   try {
@@ -381,7 +297,7 @@ test('manual seller matrix survives persisted capture, listing edit and reviewed
         for (const mandateType of ['sole', 'open', 'dual']) {
           const signingPack = buildSellerOnboardingSigningPackSnapshot({ formData, listing, recipients: plan.recipients,
             mandate: { mandateType, otherAgencyName: 'Second Synthetic Agency', askingPrice: 1000000 }, branding, generatedAt })
-          const approval = { status: 'approved', signingRoute: 'manual_upload', selectedDocuments: ['fica', 'mandate'],
+          const approval = { status: 'approved', signingRoute: 'manual_upload', selectedDocuments: ['disclosure', 'fica', 'mandate'],
             commission: { confirmed: true, basis: 'percentage', percentage: '5', vatHandling: 'inclusive' } }
           const manual = createSellerOnboardingSigningCopyPack({ formalPackApproval: approval, signingPack, postOnboardingDrafts: drafts, formData, generatedAt })
           const frozen = await createSellerReviewedDocumentVersions({ manualSigningPack: manual, formalPackApproval: approval, signingPack, actor: agentA, approvedAt: generatedAt })
@@ -414,13 +330,6 @@ test('manual seller matrix survives persisted capture, listing edit and reviewed
   } finally { await db.close() }
 })
 
-async function guardedFixture() {
-  const db = await fixture()
-  await installCanonicalSave(db)
-  await db.exec(readFileSync(new URL('../../supabase/migrations/20261006095510_seller_save_non_retryable_conflict.sql', import.meta.url), 'utf8'))
-  await db.exec(readFileSync(new URL('../../supabase/migrations/20261010215549_seller_save_concurrency_guards.sql', import.meta.url), 'utf8'))
-  return db
-}
 const revisionOf = (onboarding) => ({ onboardingId: onboarding.id, updatedAt: onboarding.updated_at })
 async function savedState(db) {
   await actor(db, 'postgres')
@@ -576,5 +485,408 @@ test('profile creation checks the absence of an onboarding row under the listing
     assert.equal(saved.form_data.sellerName, 'New owner')
     await assert.rejects(create(), error => error.code === 'PT409')
     assert.equal((await db.query('select count(*)::int n from private_listing_seller_onboarding where private_listing_id=$1', [uuid(3)])).rows[0].n, 1)
+  } finally { await db.close() }
+})
+
+async function transactionSellerContext(db) {
+  return (await db.query('select bridge_get_transaction_seller_edit_context($1) result', [uuid(801)])).rows[0].result
+}
+async function saveTransactionSeller(db, context, patch, mutation = uuid(805)) {
+  return (await db.query('select bridge_save_transaction_seller_details($1,$2::jsonb,$3::jsonb,$4) result', [uuid(801), context.revision, patch, mutation])).rows[0].result
+}
+async function transactionSellerState(db) {
+  await db.exec('reset role')
+  return { capture: (await db.query('select form_data,canonical_facts_json,updated_at from private_listing_seller_onboarding where id=$1', [uuid(31)])).rows[0],
+    listing: (await db.query('select seller_canonical_facts_json,updated_at from private_listings where id=$1', [listingA])).rows[0],
+    transaction: (await db.query('select * from transactions')).rows,
+    participants: (await db.query('select * from transaction_participants order by id')).rows,
+    form: (await db.query('select * from onboarding_form_data')).rows,
+    receipts: (await db.query('select * from seller_save_private.transaction_receipts')).rows }
+}
+
+test('transaction and seller portal saves reject both stale interleavings and update all current contact projections', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const original = await transactionSellerContext(db)
+    const baseline = await savedState(db)
+    await guardedProgress(db, baseline, { ...baseline.onboarding.form_data, email: 'portal@example.com', canonicalSellerFacts: { seller: { name: 'Owner A', contact: { email: 'portal@example.com', phone: 'old-phone' } } } })
+    await actor(db, 'authenticated', agentA)
+    await assert.rejects(saveTransactionSeller(db, original, { phone: 'stale-phone' }), e => e.code === 'PT409')
+    const refreshed = await transactionSellerContext(db)
+    const agentBaseline = await savedState(db)
+    await actor(db, 'authenticated', agentA)
+    const receipt = await saveTransactionSeller(db, refreshed, { email: '', phone: 'transaction-phone' })
+    assert.equal(receipt.details.email, '')
+    assert.equal(receipt.details.phone, 'transaction-phone')
+    assert.notDeepEqual(receipt.revision, original.revision)
+    await assert.rejects(guardedAgentSave(db, agentBaseline, uuid(806), 'Stale agent'), e => e.code === 'PT409')
+    const state = await transactionSellerState(db)
+    assert.equal(state.capture.form_data.otherSavedFact, 'keep')
+    assert.equal(state.capture.form_data.phone, 'transaction-phone')
+    assert.equal(state.capture.canonical_facts_json.seller.contact.phone, 'transaction-phone')
+    assert.deepEqual(state.capture.canonical_facts_json, state.listing.seller_canonical_facts_json)
+    assert.equal(state.transaction[0].seller_phone, 'transaction-phone')
+    assert.equal(state.participants[0].participant_phone, 'transaction-phone')
+    assert.equal(state.participants[0].participant_email, null)
+    assert.equal(state.form[0].form_data.seller_phone, 'transaction-phone')
+    assert.equal(state.form[0].form_data.__bridge_transaction_parties.seller.people[0].phone, 'transaction-phone')
+    assert.equal(state.form[0].form_data.__bridge_transaction_parties.seller.people[0].identityNumber, 'saved-id')
+    assert.equal(state.form[0].form_data.unrelated, 'preserve')
+    assert.equal(state.form[0].form_data.__bridge_transaction_parties.buyer.people[0].name, 'Buyer')
+  } finally { await db.close() }
+})
+
+test('projection failure rolls back authority, transaction, participants, form and receipt', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const context = await transactionSellerContext(db)
+    const before = await transactionSellerState(db)
+    await db.exec(`create function reject_seller_projection() returns trigger language plpgsql as $$begin if new.participant_phone='reject-me' then raise exception 'projection failed'; end if; return new; end$$;
+      create trigger fail_seller_projection before update on transaction_participants for each row execute function reject_seller_projection();`)
+    await actor(db, 'authenticated', agentA)
+    await assert.rejects(saveTransactionSeller(db, context, { phone: 'reject-me' }), /projection failed/)
+    assert.deepEqual(await transactionSellerState(db), before)
+    assert.equal((await db.query('select count(*)::int n from seller_save_private.authorised_commands')).rows[0].n, 0)
+  } finally { await db.close() }
+})
+
+test('confirmed retry returns the original receipt without overwriting a later seller save', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const context = await transactionSellerContext(db)
+    const receipt = await saveTransactionSeller(db, context, { phone: 'first-phone' })
+    const baseline = await savedState(db)
+    await guardedProgress(db, baseline, { ...baseline.onboarding.form_data, phone: 'newer-phone' })
+    await actor(db, 'authenticated', agentA)
+    assert.deepEqual(await saveTransactionSeller(db, context, { phone: 'first-phone' }), receipt)
+    await assert.rejects(saveTransactionSeller(db, context, { phone: 'different-phone' }), e => e.code === 'PT409')
+    assert.equal((await transactionSellerContext(db)).details.phone, 'newer-phone')
+  } finally { await db.close() }
+})
+
+test('transaction primary contact updates preserve the other owner and block ambiguous source links', async () => {
+  const db = await transactionSellerFixture({ multi: true, linked: false })
+  try {
+    const context = await transactionSellerContext(db)
+    const before = await transactionSellerState(db)
+    await actor(db, 'authenticated', agentA)
+    await saveTransactionSeller(db, context, { phone: 'primary-phone' })
+    const after = await transactionSellerState(db)
+    assert.deepEqual(after.participants[1], before.participants[1])
+    assert.deepEqual(after.form[0].form_data.__bridge_transaction_parties.seller.people[1], before.form[0].form_data.__bridge_transaction_parties.seller.people[1])
+    assert.equal(after.participants[0].participant_phone, 'primary-phone')
+  } finally { await db.close() }
+  const linked = await transactionSellerFixture({ multi: true })
+  try {
+    const context = await transactionSellerContext(linked)
+    assert.match(context.blockedReason, /source needs review/)
+    await assert.rejects(saveTransactionSeller(linked, context, { phone: 'no-guess' }), e => e.code === 'PT409')
+    await linked.exec('reset role')
+    await linked.exec('begin')
+    await linked.query('select seller_save_private.authorise($1)', [uuid(801)])
+    await linked.query("update transaction_participants set seller_source_onboarding_id=$1,seller_source_contact_key='primary_contact' where id=$2", [uuid(31),uuid(802)])
+    await linked.exec('delete from seller_save_private.authorised_commands; commit')
+    const before = await transactionSellerState(linked)
+    await actor(linked, 'authenticated', agentA)
+    const reviewed = await transactionSellerContext(linked)
+    assert.equal(reviewed.blockedReason, null)
+    await saveTransactionSeller(linked, reviewed, { phone: 'reviewed-primary-phone' })
+    const after = await transactionSellerState(linked)
+    assert.deepEqual(after.participants[1], before.participants[1])
+    assert.deepEqual(after.form[0].form_data.__bridge_transaction_parties.seller.people[1], before.form[0].form_data.__bridge_transaction_parties.seller.people[1])
+  } finally { await linked.close() }
+})
+
+test('server enforces seller field permissions and blocks legacy writes and forged command flags', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const context = await transactionSellerContext(db)
+    await assert.rejects(saveTransactionSeller(db, context, { name: 'Unreviewed legal name' }), e => e.code === '42501')
+    await assert.rejects(saveTransactionSeller(db, context, { organisation_id: uuid(22) }), e => e.code === '22023')
+    await assert.rejects(db.query('update transactions set seller_phone=$1 where id=$2', ['bypass',uuid(801)]), e => e.code === 'PT409')
+    await assert.rejects(db.query('update transaction_participants set participant_phone=$1 where id=$2', ['bypass',uuid(802)]), e => e.code === 'PT409')
+    await assert.rejects(db.query("update onboarding_form_data set form_data=jsonb_set(form_data,'{__bridge_transaction_parties,seller,name}','\"bypass\"')"), e => e.code === 'PT409')
+    await assert.rejects(db.query('insert into seller_save_private.authorised_commands values(pg_current_xact_id(),$1)', [uuid(801)]), /permission denied/)
+    await assert.rejects(db.query('select seller_save_private.authorise($1)', [uuid(801)]), /permission denied/)
+    await assert.rejects(db.query("insert into transaction_participants(id,transaction_id,role_type,seller_source_onboarding_id,seller_source_contact_key) values($1,$2,'seller',$3,'primary_contact')", [uuid(850),uuid(801),uuid(31)]), e => e.code === 'PT409')
+    await actor(db, 'authenticated', outsider)
+    await assert.rejects(transactionSellerContext(db), e => e.code === '42501')
+    await assert.rejects(saveTransactionSeller(db, context, { phone: 'outsider' }), e => e.code === '42501')
+    await db.exec("reset role; update organisation_users set status='inactive'")
+    await actor(db, 'authenticated', agentA)
+    await assert.rejects(transactionSellerContext(db), e => e.code === '42501')
+    await actor(db, 'anon')
+    await assert.rejects(transactionSellerContext(db), /permission denied/)
+  } finally { await db.close() }
+})
+
+test('workflow status commands merge current capture fields and never regress a later stage', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const context = await transactionSellerContext(db)
+    await saveTransactionSeller(db, context, { phone: 'new-contact' })
+    const result = (await db.query("select bridge_advance_seller_workflow($1,'mandate_signed') result", [listingA])).rows[0].result
+    assert.equal(result.form_data.phone, 'new-contact')
+    assert.equal(result.form_data.otherSavedFact, 'keep')
+    assert.equal(result.form_data.sellerWorkflow.stage, 'documents_prepared')
+    const later = (await db.query("select bridge_advance_seller_workflow($1,'fica_requested') result", [listingA])).rows[0].result
+    assert.equal(later.form_data.sellerWorkflow.stage, 'documents_prepared')
+    assert.equal(later.form_data.sellerWorkflow.history.length, 1)
+    await assert.rejects(db.query("select bridge_advance_seller_workflow($1,'replace_profile')", [listingA]), e => e.code === '22023')
+    await actor(db, 'authenticated', outsider)
+    await assert.rejects(db.query("select bridge_advance_seller_workflow($1,'fica_requested')", [listingA]), e => e.code === '42501')
+  } finally { await db.close() }
+})
+
+test('seller link preparation rejects stale or unguarded forms and cannot reopen completed capture', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const baseline = await savedState(db)
+    const context = await transactionSellerContextAfterActor(db)
+    await saveTransactionSeller(db, context, { phone: 'new-contact' })
+    const prepare = async (revision, form = baseline.onboarding.form_data) => (await db.query("select bridge_prepare_seller_onboarding_link($1,'token-a',now()+interval '1 day',$2::jsonb,'individual','individual','single',$3) result",
+      [listingA,{ ...form, __sellerSave: revision },agentA])).rows[0].result
+    await assert.rejects(prepare(revisionOf(baseline.onboarding)), e => e.code === 'PT409')
+    await assert.rejects(prepare(undefined), e => e.code === 'PT409')
+    const current = await savedState(db)
+    await actor(db, 'authenticated', agentA)
+    const deferred = await prepare({ ...revisionOf(current.onboarding), deferStatusTransition: true }, current.onboarding.form_data)
+    assert.equal(deferred.onboarding.status, current.onboarding.status)
+    assert.equal(deferred.onboarding.form_data.__sellerSave, undefined)
+    const beforeSent = await savedState(db)
+    await actor(db, 'authenticated', agentA)
+    const sent = await prepare(revisionOf(beforeSent.onboarding), beforeSent.onboarding.form_data)
+    assert.equal(sent.onboarding.status, 'sent')
+    assert.equal(sent.onboarding.form_data.phone, 'new-contact')
+    const latest = await savedState(db)
+    await actor(db, 'anon')
+    await rpc(db,'bridge_complete_private_listing_seller_onboarding','token-a',{ ...latest.onboarding.form_data, __sellerSave: revisionOf(latest.onboarding) })
+    const completed = await savedState(db)
+    await actor(db, 'authenticated', agentA)
+    const receipt = await prepare(revisionOf(completed.onboarding))
+    assert.equal(receipt.onboarding.status, 'completed')
+    assert.equal(receipt.onboarding.form_data.phone, 'new-contact')
+    assert.equal(receipt.onboarding.seller_portal_password_hash, undefined)
+    await assert.rejects(db.query("select seller_save_private.prepare_link_before_guard($1,'token-a',now(),'{}',null,null,null,null)",[listingA]), /permission denied/)
+  } finally { await db.close() }
+})
+async function transactionSellerContextAfterActor(db) {
+  await actor(db, 'authenticated', agentA)
+  return transactionSellerContext(db)
+}
+
+test('the transaction API routes seller-only saves through the guarded command before any table writes', async () => {
+  const source = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+  const start = source.indexOf('export async function updateTransactionStakeholderContacts(')
+  const body = source.slice(start, source.indexOf('\nexport ', start + 10)).replace('export async function', 'async function')
+  const client = { from() { throw new Error('unguarded table access') } }
+  const calls = []
+  const handler = new Function('requireClient','saveTransactionSellerDetails',`${body}; return updateTransactionStakeholderContacts`)(() => client, async (args) => { calls.push(args); return { confirmed: true } })
+  const context = { details: { phone: 'shown' }, revision: { transactionUpdatedAt: 'original' } }
+  assert.deepEqual(await handler({ transactionId: uuid(801), sellerOnly: true, sellerPhone: 'new', sellerSaveContext: context, sellerMutationId: uuid(805) }), { confirmed: true })
+  assert.equal(calls[0].context, context)
+  assert.equal(calls[0].mutationId, uuid(805))
+  assert.equal(calls[0].client, client)
+  await assert.rejects(handler({ transactionId: uuid(801), sellerPhone: 'legacy edit' }), /seller details editor/)
+  assert.equal(calls.length, 1)
+})
+
+test('a seller-only save preserves a newer listing operation; an actual property edit requires its displayed revision', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const baseline = await savedState(db)
+    await db.query("update private_listings set asking_price=999,address_line_1='New listing address',updated_at=clock_timestamp() where id=$1", [listingA])
+    await actor(db, 'authenticated', agentA)
+    const save = async (changedFields, mutation) => db.query(`select save_private_listing_seller_canonical_update($1,$2::jsonb,$3::jsonb,'{}','{"askingPrice":1,"addressLine1":"Old address"}','in_progress','individual','individual','single',$4,'seller_edit','test',$5::text[],$6)`,
+      [listingA,{ ...baseline.onboarding.form_data, email: 'corrected@example.com', __sellerSave: revisionOf(baseline.onboarding) },baseline.onboarding.canonical_facts_json,mutation,changedFields,baseline.listing.updated_at])
+    await assert.rejects(save(['askingPrice'],uuid(820)), e => e.code === 'PT409')
+    await save(['email'],uuid(821))
+    const current = await savedState(db)
+    assert.equal(current.listing.asking_price,999)
+    assert.equal(current.listing.address_line_1,'New listing address')
+    assert.equal(current.onboarding.form_data.email,'corrected@example.com')
+  } finally { await db.close() }
+})
+
+
+test('current transaction seller profile reads the linked capture after saves instead of stale deal summaries', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    const original = await transactionSellerContext(db)
+    await saveTransactionSeller(db, original, { phone: 'current-phone', email: '' })
+    const result = (await db.query('select bridge_get_transaction_seller_profile($1) result', [uuid(801)])).rows[0].result
+    assert.equal(result.status, 'current')
+    assert.equal(result.listing.sellerOnboarding.formData.phone, 'current-phone')
+    const shared = buildListingSellerInformationModel(result.listing)
+    assert.equal(shared.draft.phone, 'current-phone')
+    assert.equal(shared.draft.email, '')
+    assert.equal(JSON.stringify(result).includes('password_hash'), false)
+    assert.equal(JSON.stringify(result).includes('seller_portal_token'), false)
+    assert.equal(JSON.stringify(result).includes('__bridge_transaction_parties'), false)
+  } finally { await db.close() }
+})
+
+test('current transaction profile follows full captured identity fields independently of its old contact snapshot', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    await db.exec('reset role')
+    const form = { ownerStructureType: 'trust', trustName: 'Current Trust', trustRegistrationNumber: 'TRUST-REG', primaryContactName: 'Current Office', email: 'office@example.com', trustees: [{ id: 'saved-trustee', name: 'Dina', surname: 'Trustee', nationality: 'ZA', residentialAddress: 'Saved Home' }], saResident: 'yes', taxResident: 'no', incomeTaxNumber: 'saved-tax' }
+    await db.query('update private_listing_seller_onboarding set form_data=$1::jsonb where id=$2', [form, uuid(31)])
+    await actor(db, 'authenticated', agentA)
+    const result = (await db.query('select bridge_get_transaction_seller_profile($1) result', [uuid(801)])).rows[0].result
+    const model = buildListingSellerInformationModel(result.listing)
+    assert.equal(model.profileType, 'trust')
+    assert.equal(model.draft.trustRegistrationNumber, 'TRUST-REG')
+    assert.equal(model.draft.trustees[0].id, 'saved-trustee')
+    assert.equal(model.draft.trustees[0].residentialAddress, 'Saved Home')
+    assert.equal(model.draft.saResident, 'yes'); assert.equal(model.draft.taxResident, 'no')
+  } finally { await db.close() }
+})
+
+test('current profile rejects unauthorised and anonymous callers and exposes no cross-agency facts', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    await actor(db, 'authenticated', outsider)
+    await assert.rejects(db.query('select bridge_get_transaction_seller_profile($1)', [uuid(801)]), /access denied/i)
+    await actor(db, 'anon', agentA)
+    await assert.rejects(db.query('select bridge_get_transaction_seller_profile($1)', [uuid(801)]), /permission denied/i)
+    await db.exec('reset role')
+    await db.query('update transactions set organisation_id=$1 where id=$2', [uuid(22), uuid(801)])
+    await actor(db, 'authenticated', agentA)
+    const result = (await db.query('select bridge_get_transaction_seller_profile($1) result', [uuid(801)])).rows[0].result
+    assert.deepEqual(result, { status: 'relationship_review_required' })
+  } finally { await db.close() }
+})
+
+test('current profile retains supported legacy entity aliases and excludes unrelated capture payloads', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    await db.exec('reset role')
+    const form = {
+      ownerStructureType: 'company', company: {
+        name: 'Legacy Company', registration_number: 'LEGACY-REG', registered_address: 'Legacy Address',
+        directors: [{ id: 'legacy-saved-director', name: 'Dina', surname: 'Director', residential_address: 'Director Home' }],
+        signing_token: 'nested-secret',
+      },
+      company_authority_basis: 'Saved resolution', primary_contact_name: 'Current Office',
+      seller_portal_token: 'form-secret', signature: 'signature-evidence', askingPrice: 123,
+    }
+    const olderFacts = { seller: { company: { name: 'Old Company', registration_number: 'OLD-REG', registered_address: 'Old Address', directors: [{ id: 'old-director', name: 'Old Director' }] } } }
+    await db.query('update private_listing_seller_onboarding set form_data=$1::jsonb,canonical_facts_json=$2::jsonb where id=$3', [form, olderFacts, uuid(31)])
+    await actor(db, 'authenticated', agentA)
+    const result = (await db.query('select bridge_get_transaction_seller_profile($1) result', [uuid(801)])).rows[0].result
+    const model = buildListingSellerInformationModel(result.listing)
+    assert.equal(model.draft.companyName, 'Legacy Company')
+    assert.equal(model.draft.companyRegistrationNumber, 'LEGACY-REG')
+    assert.equal(model.draft.companyRegisteredAddress, 'Legacy Address')
+    assert.equal(model.draft.companyDirectors[0].id, 'legacy-saved-director')
+    assert.equal(model.draft.companyDirectors[0].residentialAddress, 'Director Home')
+    assert.equal(model.draft.companyAuthorityBasis, 'Saved resolution')
+    assert.equal(model.draft.primaryContactName, 'Current Office')
+    for (const excluded of ['form-secret', 'nested-secret', 'signature-evidence', 'askingPrice']) {
+      assert.equal(JSON.stringify(result).includes(excluded), false)
+    }
+  } finally { await db.close() }
+})
+
+test('ambiguous linked captures never select a latest winner for transaction profile display', async () => {
+  const db = await transactionSellerFixture()
+  try {
+    await db.exec('reset role; drop index seller_capture_listing_unique')
+    await db.query("insert into private_listing_seller_onboarding(private_listing_id,token,form_data) values($1,'ambiguous-profile-capture',$2::jsonb)", [listingA, { email: 'different@example.com' }])
+    await actor(db, 'authenticated', agentA)
+    const result = (await db.query('select bridge_get_transaction_seller_profile($1) result', [uuid(801)])).rows[0].result
+    assert.deepEqual(result, { status: 'relationship_review_required' })
+  } finally { await db.close() }
+})
+
+test('unlinked profile reads only its own saved transaction seller capture', async () => {
+  const db = await transactionSellerFixture({ linked: false })
+  try {
+    const result = (await db.query('select bridge_get_transaction_seller_profile($1) result', [uuid(801)])).rows[0].result
+    assert.equal(result.status, 'transaction_capture')
+    assert.equal(result.partyProfile.people[0].id, uuid(802))
+    assert.equal(result.listing, undefined)
+    assert.equal(JSON.stringify(result).includes('Buyer'), false)
+  } finally { await db.close() }
+})
+
+
+test('specialist sale values survive guarded SQL saves, readback, partial saves and explicit clearing in every category', async () => {
+  const db = await guardedFixture()
+  try {
+    for (const category of ['residential', 'commercial', 'industrial', 'retail', 'agricultural', 'mixed_use', 'vacant_land']) {
+      const specialist = buildSpecialistSalesFacts({ grossLettableArea: '1250.5', zoning: 'Business 4', parking: '18 bays', listingTerms: 'Vacant occupation', warehouseOrFactoryArea: '2200.5', yardSize: '900.5', powerSupply: '250 kVA', loadingAccess: true, farmSize: '42.5', waterSupplyOrRights: 'Borehole rights', agriculturalUse: 'Citrus', erfSize: '500.5' })
+      const form = { sellerName: 'Saved Owner', propertyCategory: category, ...specialist }
+      const baseline = await savedState(db)
+      form.canonicalSellerFacts = buildCanonicalSellerOnboardingPayload(form).canonicalSellerFacts
+      await guardedProfile(db, baseline, form)
+      const saved = await savedState(db)
+      for (const { key } of getSpecialistSalesListingSchema(category).fields) {
+        assert.equal(saved.onboarding.form_data[key], specialist[key], `${category}/${key} raw save`)
+        assert.equal(saved.listing.seller_canonical_facts_json.property.specialistFacts[key], specialist[key], `${category}/${key} readback`)
+      }
+      await assert.rejects(guardedProfile(db, baseline, { ...form, zoning: 'Stale overwrite' }), { code: 'PT409' })
+      const partial = buildCanonicalSellerOnboardingPayload({ sellerName: 'Contact correction' }, { sellerCanonicalFacts: saved.listing.seller_canonical_facts_json }).canonicalSellerFacts
+      assert.deepEqual(partial.property.specialistFacts, specialist, `${category} preserves absent controls`)
+      const cleared = { ...form, ...buildSpecialistSalesFacts() }
+      cleared.canonicalSellerFacts = buildCanonicalSellerOnboardingPayload(cleared, { sellerCanonicalFacts: saved.listing.seller_canonical_facts_json }).canonicalSellerFacts
+      await guardedProfile(db, saved, cleared)
+      const reopened = await savedState(db)
+      assert.deepEqual(reopened.listing.seller_canonical_facts_json.property.specialistFacts, buildSpecialistSalesFacts(), `${category} clears instead of restoring old facts`)
+    }
+  } finally { await db.close() }
+})
+
+// The new migration delegates all token/password/session decisions to the
+// existing protected readers. This fixture supplies their access contract only.
+test('protected seller readers share live document progress without exposing recipients or changing access', async () => {
+  const db = await guardedFixture()
+  try {
+    await actor(db, 'postgres')
+    await db.exec(`create table private_listing_seller_portal_signing_documents(id uuid primary key,private_listing_id uuid,document_key text,version_id uuid,status text,created_at timestamptz default now(),sent_at timestamptz,signed_at timestamptz,reviewed_at timestamptz,revoked_at timestamptz,revoke_reason text,reviewed_html text);
+      create table private_listing_seller_portal_signing_recipients(id uuid,signing_document_id uuid,status text,email text,token_hash text);
+      revoke all on private_listing_seller_portal_signing_documents,private_listing_seller_portal_signing_recipients from public,anon,authenticated;
+      insert into private_listing_seller_portal_signing_documents(id,private_listing_id,document_key,version_id,status,reviewed_html) values
+      ('${uuid(901)}','${listingA}','signed_fica_declaration','${uuid(911)}','partially_signed','private HTML'),
+      ('${uuid(902)}','${listingB}','signed_mandate','${uuid(912)}','sent','other listing HTML'),
+      ('${uuid(903)}','${listingA}','internal_document','${uuid(913)}','sent','internal HTML');
+      insert into private_listing_seller_portal_signing_recipients values ('${uuid(921)}','${uuid(901)}','signed','private@example.test','secret-hash'),('${uuid(922)}','${uuid(901)}','pending','another@example.test','another-secret');
+      update private_listing_seller_onboarding set form_data='{"sellerOnboardingCompletion":{"informationOnly":true},"sellerOnboardingManualSigningPack":{"documents":[{"key":"signed_fica_declaration","versionId":"${uuid(911)}","signingRoute":"digital_pack","generatedHtml":"private reviewed copy"}]}}' where id='${uuid(31)}';`)
+    for (const name of ['bridge_private_listing_seller_portal_payload','bridge_private_listing_seller_portal_core_payload']) await db.exec(`create function public.${name}(p_token text,p_access_token text default null,p_require_access boolean default false) returns jsonb language plpgsql security definer set search_path='' as $$begin
+      if p_token='invalid' then return null; end if;
+      if p_require_access and (p_token <> 'token-a' or p_access_token is distinct from 'session-a') then return '{"authRequired":true,"sessionExpired":true}'::jsonb; end if;
+      return jsonb_build_object('listing',jsonb_build_object('id','${listingA}'),'onboarding',jsonb_build_object('id','${uuid(31)}','private_listing_id','${listingA}'),'requirements','[]'::jsonb,'documents','[]'::jsonb);
+      end$$;`)
+    await db.exec(readFileSync(new URL('../../supabase/migrations/20261011111846_seller_portal_document_progress.sql', import.meta.url), 'utf8'))
+    await actor(db, 'anon')
+    for (const name of ['bridge_private_listing_seller_portal_payload','bridge_private_listing_seller_portal_core_payload']) {
+      const read = async (token, access, required) => (await db.query(`select public.${name}($1,$2,$3) as result`, [token,access,required])).rows[0].result
+      assert.equal(await read('invalid','session-a',true), null)
+      assert.deepEqual(await read('token-a','expired-session',true), { authRequired: true, sessionExpired: true })
+      assert.equal((await read('token-a',null,false)).sellerPortalSigningRequests, undefined, 'Public intake does not acquire private signing progress')
+      const payload = await read('token-a','session-a',true)
+      assert.equal(payload.sellerPortalSigningRequests.length, 1)
+      const current = payload.sellerPortalSigningRequests[0]
+      assert.equal(current.status, 'partially_signed'); assert.equal(current.signer_count, 2); assert.equal(current.signed_count, 1)
+      assert.equal(current.version_id, uuid(911))
+      assert.equal(payload.sellerDocumentWorkspace.informationOnly, true)
+      assert.equal(payload.sellerDocumentWorkspace.documents[0].versionId, uuid(911))
+      assert.doesNotMatch(JSON.stringify(payload), /secret-hash|@example|HTML|reviewed copy|internal_document/)
+    }
+    await assert.rejects(db.query('select * from private_listing_seller_portal_signing_recipients'), error => error.code === '42501')
+    await assert.rejects(db.query(`select seller_document_progress_private.with_document_progress('{}'::jsonb,true)`), error => error.code === '42501')
+    await actor(db,'postgres')
+    await db.exec(`update private_listing_seller_portal_signing_documents set status='reviewed' where id='${uuid(901)}'`)
+    await actor(db,'anon')
+    const { rows: [latest] } = await db.query("select public.bridge_private_listing_seller_portal_core_payload('token-a','session-a',true) as result")
+    assert.equal(latest.result.sellerPortalSigningRequests[0].status, 'reviewed', 'Refresh reads current review evidence')
+    await actor(db,'postgres')
+    await db.exec(`update private_listing_seller_onboarding set form_data='{"sellerOnboardingCompletion":{"informationOnly":"legacy-invalid"},"sellerOnboardingManualSigningPack":{"documents":null}}' where id='${uuid(31)}'`)
+    await actor(db,'anon')
+    const legacy = (await db.query("select public.bridge_private_listing_seller_portal_core_payload('token-a','session-a',true) as result")).rows[0].result
+    assert.equal(legacy.sellerDocumentWorkspace.informationOnly, false)
+    assert.deepEqual(legacy.sellerDocumentWorkspace.documents, [])
+    assert.equal(legacy.sellerPortalSigningRequests[0].status, 'reviewed', 'Malformed legacy workflow metadata does not break protected reads')
   } finally { await db.close() }
 })

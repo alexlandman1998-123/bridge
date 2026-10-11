@@ -1,3 +1,4 @@
+import { buildSellerDisclosurePreparationPatch } from '../sellerAgentAssistedDisclosure.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -45,7 +46,7 @@ test('incomplete capture saves as a draft and reopens without inventing unanswer
   assert.equal(reopened.propertyDisclosure.comments, 'Call electrician.')
   assert.match(getSellerDisclosureQuestionMissing(reopened.propertyDisclosure)[0], /19 remaining/)
   const submitted = buildSellerLeadAgentOnboardingSubmission({ draft: reopened, existingFormData: saved.formData })
-  assert.ok(submitted.errors.some(message => /19 remaining/.test(message)))
+  assert.ok(!submitted.errors.some(message => /remaining|Annexure/.test(message)), 'Disclosure questions cannot block information submission')
 })
 
 test('deliberate explanation and quantity clears survive normalization and reopen', () => {
@@ -141,4 +142,16 @@ test('actual assisted autosave keeps capture timestamps out of dirty-input compa
   assert.equal(stored[0].propertyDisclosure.signature, '')
   assert.equal(current.sellerDisclosureCapture, undefined)
   assert.equal(last.current, signature(current, 2))
+})
+
+
+test('document preparation requires its own answers, strips forged attestation and preserves accepted evidence', () => {
+  assert.throws(() => buildSellerDisclosurePreparationPatch({ disclosure: {} }), /20 remaining/)
+  const captured = buildSellerDisclosurePreparationPatch({ disclosure: { ...answers(), signature: 'forged', signedAt: at, declarationAccepted: true } })
+  assert.equal(captured.propertyDisclosure.signature, '')
+  assert.equal(captured.propertyDisclosure.declarationAccepted, false)
+  const existingFormData = { propertyDisclosure: { ...answers(), signature: 'accepted-original' } }
+  const original = JSON.stringify(existingFormData)
+  assert.throws(() => buildSellerDisclosurePreparationPatch({ disclosure: answers(), existingFormData }), /replacement workflow/)
+  assert.equal(JSON.stringify(existingFormData), original)
 })

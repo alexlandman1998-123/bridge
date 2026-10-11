@@ -1,3 +1,4 @@
+import { sellerYesNoValue } from '../src/lib/sellerFicaOnboardingFields.js'
 import { resolveSellerLeadOwnershipRoute } from '../src/lib/sellerLeadOwnershipSetupModel.js'
 import { buildSellerLeadManualCapturePayload } from '../src/lib/sellerLeadManualCaptureModel.js'
 import { formatPropertyAddress } from '../src/lib/sellerPropertyAddress.js'
@@ -61,6 +62,7 @@ const peopleHelpers = loadFunctions('splitKingstonsSellerProfileList', 'normaliz
   isPlainObject, normalizeText,
 }, '({ format: formatKingstonsSellerProfilePeople, build: buildKingstonsSellerProfilePeople })')
 const director = {
+  id: 'saved-director-id',
   full_name: 'Captured Director', id_number: '8001015009087', nationality: 'South African',
   residential_address: '1 Residential Road', email: 'director@example.test',
 }
@@ -73,7 +75,7 @@ const canonicalFacts = { seller: {
 const staleForm = {
   ownerEntityType: 'company', ownerStructureType: 'company', ownershipType: 'company',
   companyName: 'Captured Company', companyRegistrationNumber: '2020/000001/07', companyRegisteredAddress: '2 Registered Road',
-  companyDirectors: [{ name: 'Captured Director' }], authorisedSignatoryName: 'Captured Director',
+  companyDirectors: [director], authorisedSignatoryName: 'Captured Director',
 }
 const hydrated = readWorkspace({
   sellerCanonicalFacts: { seller: { company: { directors: [{ name: 'Captured Director' }] } } },
@@ -109,7 +111,7 @@ console.log('seller profile captured identity and CRM mismatch regression: ok')
 
 
 const buildEditorSave = loadFunctions('splitKingstonsSellerProfileList', 'hasLeadSellerOnboardingFormData', {
-  isPlainObject, normalizeText, formatPropertyAddress, resolveSellerLeadOwnershipRoute,
+  isPlainObject, normalizeText, formatPropertyAddress, resolveSellerLeadOwnershipRoute, sellerYesNoValue,
   normalizeKey: value => normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
   joinSellerNameParts: (first, last) => [first, last].filter(Boolean).join(' '),
 }, 'buildKingstonsSellerProfileFormData')

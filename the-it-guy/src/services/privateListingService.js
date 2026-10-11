@@ -1,3 +1,5 @@
+import { uploadSellerRequirementFile } from './documents/sellerRequirementUploadService.js'
+import { readDocumentRequirementContext } from './documents/documentRequirementReadService.js'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../lib/documentUploadRecovery.js'
 import { readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import { normalizeListingExternalLinkStatus } from '../lib/listingExternalLinkStatus.js'
@@ -111,7 +113,6 @@ const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_i
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
 let sellerPortalPayloadRpcUnavailable = false
 let sellerPortalCorePayloadRpcUnavailable = false
-let sellerOnboardingPrepareRpcUnavailable = false
 const ORGANISATION_BRANDING_CACHE_TTL_MS = 60_000
 const SELLER_ONBOARDING_COMPLETION_TIMEOUT_MS = 12_000
 const SELLER_ONBOARDING_RECOVERY_TIMEOUT_MS = 3_000
@@ -1913,6 +1914,10 @@ function normalizeRequirementRows(rows = []) {
       is_required: row?.is_required !== false,
       generated_from: row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {},
       canonical_requirement_instance_id: normalizeText(row?.canonical_requirement_instance_id || ''),
+      canonical_shared_requirement: row?.canonical_shared_requirement === true,
+      command_revision: row?.command_revision,
+      latest_upload_id: row?.latest_upload_id || null,
+      uploadable_by_roles: row?.uploadable_by_roles || [],
       requested_from_role: normalizeText(row?.requested_from_role || row?.requestedFromRole || ''),
       request_stage: normalizeText(row?.request_stage || row?.requestStage || ''),
       request_priority: normalizeText(row?.request_priority || row?.requestPriority || ''),
@@ -3841,8 +3846,21 @@ function mapSellerClientPortalPayload(payload) {
   )
   const safeMandatePacket = sanitizeSellerPortalMandatePacket(mandatePacket)
   const listingWithPayloadFields = mergeSellerPortalListingPayloadFields(mappedListing, listingRow)
+  if (Array.isArray(payload.sharedDocumentRequirements)) {
+    listingWithPayloadFields.canonicalDocumentPortal = true
+    listingWithPayloadFields.canonicalDocumentSnapshot = {
+      requirements: payload.sharedDocumentRequirements,
+      documents: documents.map(document => ({ ...document, file_path: document.storage_path, file_name: document.document_name,
+        file_bucket: 'documents', is_current_evidence: payload.sharedDocumentRequirements.some(requirement =>
+          requirement.latest_upload_id === document.id || requirement.satisfied_by_document_id === document.id) })),
+    }
+  }
+
   return {
     onboarding: onboardingRow,
+    sellerPortalSigningRequests: Array.isArray(payload?.sellerPortalSigningRequests) ? payload.sellerPortalSigningRequests : [],
+    sellerDocumentWorkspace: payload?.sellerDocumentWorkspace || null,
+    sellerSigningProgressAvailable: Array.isArray(payload?.sellerPortalSigningRequests),
     appointments,
     mandatePacket: safeMandatePacket,
     transaction: mapSellerPortalTransactionTracking(payload?.transaction),
@@ -3890,6 +3908,9 @@ function mapSellerClientPortalCorePayload(payload) {
   const listingWithPayloadFields = mergeSellerPortalListingPayloadFields(mappedListing, listingRow)
   return {
     onboarding: onboardingRow,
+    sellerPortalSigningRequests: Array.isArray(payload?.sellerPortalSigningRequests) ? payload.sellerPortalSigningRequests : [],
+    sellerDocumentWorkspace: payload?.sellerDocumentWorkspace || null,
+    sellerSigningProgressAvailable: Array.isArray(payload?.sellerPortalSigningRequests),
     appointments: [],
     mandatePacket: safeMandatePacket,
     transaction: mapSellerPortalTransactionTracking(payload?.transaction),
@@ -6201,10 +6222,10 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
   const existingPublicationData = existingPublication.data && typeof existingPublication.data === 'object'
     ? existingPublication.data
     : {}
-  if (!publicationPayload.description && existingPublicationData.description) {
+  if (!publicationPayload.description && payload.allowBlankDescription !== true && existingPublicationData.description) {
     publicationPayload.description = normalizeNullableText(existingPublicationData.description)
   }
-  if (!publicationPayload.features.length && Array.isArray(existingPublicationData.features) && existingPublicationData.features.length) {
+  if (!publicationPayload.features.length && payload.allowBlankFeatures !== true && Array.isArray(existingPublicationData.features) && existingPublicationData.features.length) {
     publicationPayload.features = existingPublicationData.features
   }
   if (!publicationPayload.amenities.length && Array.isArray(existingPublicationData.amenities) && existingPublicationData.amenities.length) {
@@ -6302,7 +6323,7 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     includeWithdrawnListings: includePreviousListings,
   })) return null
   if (!includeRelatedData) return mapPrivateListingRow(query.data)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, mediaMap, assignedAgentsMap, canonicalDocumentSnapshot] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
@@ -6311,8 +6332,10 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [query.data]) : Promise.resolve(new Map()),
     fetchMediaRowsForListings(client, [query.data.id], { strict: requireDistributionData }),
     fetchAssignedAgentProfilesForListings(client, [query.data]),
+    includeRequirementsAndDocuments ? readDocumentRequirementContext(client, { contextType: 'private_listing', contextId: normalizedId }) : Promise.resolve(null),
   ])
   const listing = mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
+  listing.canonicalDocumentSnapshot = canonicalDocumentSnapshot
   return attachDistributionMediaToListing(listing, mediaMap.get(String(query.data.id)) || [])
 }
 
@@ -7488,87 +7511,18 @@ async function recordSellerFicaRequestWorkflowStage(client, listing = {}, requir
   )
   if (!hasFicaRequests || !listing?.id) return null
 
-  const onboardingResult = await client
-    .from('private_listing_seller_onboarding')
-    .select('id, form_data')
-    .eq('private_listing_id', listing.id)
-    .maybeSingle()
-  if (onboardingResult.error) {
-    if (isMissingTableError(onboardingResult.error, 'private_listing_seller_onboarding')) return null
-    throw onboardingResult.error
-  }
-  if (!onboardingResult.data?.id) return null
-
-  const formData = onboardingResult.data.form_data && typeof onboardingResult.data.form_data === 'object'
-    ? onboardingResult.data.form_data
-    : {}
-  const currentStage = String(formData?.sellerWorkflow?.stage || formData?.seller_workflow?.stage || '').trim()
-  if (Object.values(SELLER_WORKFLOW_STAGES).indexOf(currentStage) >= Object.values(SELLER_WORKFLOW_STAGES).indexOf(SELLER_WORKFLOW_STAGES.ficaDocumentsRequested)) {
-    return onboardingResult.data
-  }
-  const nextWorkflow = advanceSellerWorkflowState(
-    formData.sellerWorkflow || formData.seller_workflow || createSellerWorkflowState(),
-    { stage: SELLER_WORKFLOW_STAGES.ficaDocumentsRequested, preserveLaterStage: true },
-  )
-  const update = await client
-    .from('private_listing_seller_onboarding')
-    .update({ form_data: { ...formData, sellerWorkflow: nextWorkflow } })
-    .eq('id', onboardingResult.data.id)
-    .select('id, form_data')
-    .single()
-  if (update.error) throw update.error
-  return update.data
+  const result = await client.rpc('bridge_advance_seller_workflow', { p_listing_id: listing.id, p_action: 'fica_requested' })
+  if (result.error) throw result.error
+  return result.data
 }
 
-async function recordSellerMandateSignedWorkflowStage(client, listingId, { performedBy = '', signedAt = '' } = {}) {
+async function recordSellerMandateSignedWorkflowStage(client, listingId, { signedAt = '' } = {}) {
   const normalizedListingId = normalizeUuid(listingId)
   if (!normalizedListingId) return null
 
-  const onboardingResult = await client
-    .from('private_listing_seller_onboarding')
-    .select('id, form_data')
-    .eq('private_listing_id', normalizedListingId)
-    .maybeSingle()
-  if (onboardingResult.error) {
-    if (isMissingTableError(onboardingResult.error, 'private_listing_seller_onboarding')) return null
-    throw onboardingResult.error
-  }
-  if (!onboardingResult.data?.id) return null
-
-  const formData = onboardingResult.data.form_data && typeof onboardingResult.data.form_data === 'object'
-    ? onboardingResult.data.form_data
-    : {}
-  const completedAt = normalizeText(signedAt) || new Date().toISOString()
-  const nextWorkflow = advanceSellerWorkflowState(
-    formData.sellerWorkflow || formData.seller_workflow || createSellerWorkflowState(),
-    {
-      stage: SELLER_WORKFLOW_STAGES.documentsPrepared,
-      at: completedAt,
-      actor: normalizeText(performedBy),
-      preserveLaterStage: true,
-    },
-  )
-  const listingCreation = {
-    status: 'created',
-    createdAt: completedAt,
-    created_at: completedAt,
-    source: 'signed_mandate_upload',
-  }
-  const update = await client
-    .from('private_listing_seller_onboarding')
-    .update({
-      form_data: {
-        ...formData,
-        sellerWorkflow: nextWorkflow,
-        sellerListingCreation: listingCreation,
-        seller_listing_creation: listingCreation,
-      },
-    })
-    .eq('id', onboardingResult.data.id)
-    .select('id, form_data')
-    .single()
-  if (update.error) throw update.error
-  return update.data
+  const result = await client.rpc('bridge_advance_seller_workflow', { p_listing_id: normalizedListingId, p_action: 'mandate_signed', p_at: normalizeText(signedAt) || null })
+  if (result.error) throw result.error
+  return result.data
 }
 
 export async function syncPrivateListingRequirements(listingOrId, { emitActivity = true, reason = 'system', formData = null } = {}) {
@@ -7854,104 +7808,31 @@ export async function sendSellerOnboarding(
     status: 'sent',
   }
 
-  let persistedOnboarding = null
-  let atomicPrepared = false
-  if (!sellerOnboardingPrepareRpcUnavailable && !deferStatusTransition) {
-    const prepareResult = await client.rpc('bridge_prepare_seller_onboarding_link', {
-      p_listing_id: listing.id,
-      p_token: token,
-      p_token_expires_at: expiresAt,
-      p_form_data: payload.form_data,
-      p_seller_type: payload.seller_type,
-      p_ownership_structure: payload.ownership_structure,
-      p_marital_regime: payload.marital_regime,
-      p_performed_by: normalizeUuid(performedByUserId) || null,
-    })
-    if (!prepareResult.error) {
-      persistedOnboarding = prepareResult.data?.onboarding || null
-      atomicPrepared = true
-    } else if (['PGRST202', '42883'].includes(normalizeText(prepareResult.error?.code).toUpperCase())) {
-      sellerOnboardingPrepareRpcUnavailable = true
-    } else {
-      throw prepareResult.error
-    }
-  }
+  const canonicalPayload = getCanonicalSellerPayloadFromFormData(payload.form_data, listing, { draft: true, source: 'seller_onboarding_link' })
+  if (canonicalPayload.facts) { payload.form_data.canonicalSellerFacts = canonicalPayload.facts; payload.form_data.canonicalSellerFactReadiness = canonicalPayload.readiness || {} }
 
-  if (!atomicPrepared) {
-    const upsert = await client
-      .from('private_listing_seller_onboarding')
-      .upsert(payload, { onConflict: 'private_listing_id' })
-      .select('*')
-      .single()
-    if (upsert.error) {
-      if (isMissingTableError(upsert.error, 'private_listing_seller_onboarding')) {
-        const errorSummary = buildSupabaseErrorSummary(upsert.error)
-        throw new Error(
-          `Seller onboarding table is unavailable to this API context. ` +
-          `Run sql/20260509_private_listing_foundation.sql on the same Supabase project as this app and reload schema. ` +
-          `(${errorSummary})`,
-        )
-      }
-      throw upsert.error
-    }
-    persistedOnboarding = upsert.data
+  const prepareResult = await client.rpc('bridge_prepare_seller_onboarding_link', {
+    p_listing_id: listing.id, p_token: token, p_token_expires_at: expiresAt,
+    p_form_data: { ...payload.form_data, __sellerSave: { ...getSellerOnboardingSaveRevision({ sellerOnboarding: existingOnboarding }), deferStatusTransition } },
+    p_seller_type: payload.seller_type, p_ownership_structure: payload.ownership_structure,
+    p_marital_regime: payload.marital_regime, p_performed_by: normalizeUuid(performedByUserId) || null,
+  })
+  if (prepareResult.error) {
+    if (['PGRST202','42883'].includes(normalizeText(prepareResult.error.code).toUpperCase())) throw new Error('Safe seller link preparation is unavailable. Apply the seller saving migration before preparing a link.')
+    if (['40001','PT409'].includes(prepareResult.error.code)) throw sellerSaveConflict(prepareResult.error)
+    throw prepareResult.error
   }
-
-  const currentLifecycle = getPrivateListingLifecycleState(listing)
-  if (!atomicPrepared && currentLifecycle === 'seller_lead' && !deferStatusTransition) {
-    const transitionSellerLead = async () => {
-      let transitionPerformedBy = performedByUserId
-      if (!transitionPerformedBy) {
-        const user = await getCurrentUser(client)
-        transitionPerformedBy = normalizeText(user?.id)
-      }
-      return transitionPrivateListingStatus(listing.id, 'onboarding_sent', {
-        metadata: {
-          onboardingToken: token,
-          sellerContactEmail,
-          sellerContactPhone,
-        },
-        performedBy: transitionPerformedBy,
-        patch: {
-          sellerOnboardingStatus: 'sent',
-        },
-        allowOverride: false,
-        includeRequirementsAndDocuments: false,
-      })
-    }
-    await transitionSellerLead()
-  }
-
-  const leadOrganisationId = normalizeText(listing?.organisationId)
-  const leadIdsToSync = Array.from(new Set([
-    normalizeText(listing?.sellerLeadId),
-    normalizeText(listing?.originatingCrmLeadId),
-  ].filter(Boolean)))
-  const sentAtIso = new Date().toISOString()
-  if (!atomicPrepared && !deferStatusTransition) {
-    void syncSellerJourneyLeadStage(client, {
-      organisationId: leadOrganisationId,
-      leadIds: leadIdsToSync,
-      onboardingToken: token,
-      listingId: listing.id,
-      targetStage: 'Seller Onboarding Sent',
-      targetStatus: 'Sent',
-      extraPayload: {
-        seller_onboarding_status: 'sent',
-        seller_onboarding_token: normalizeNullableText(token),
-        listing_id: listing.id,
-        updated_at: sentAtIso,
-      },
-    }).catch(() => false)
-  }
+  const persistedOnboarding = prepareResult.data?.onboarding
+  if (!persistedOnboarding?.id) throw new Error('Seller link preparation returned no confirmation. Reload before trying again.')
+  const preparedToken = normalizeText(persistedOnboarding.token) || token
 
   return {
     onboarding: persistedOnboarding,
-    token,
-    link: buildSellerOnboardingLink(token),
-    expiresAt,
+    token: preparedToken,
+    link: buildSellerOnboardingLink(preparedToken),
+    expiresAt: persistedOnboarding.token_expires_at || expiresAt,
     preparationMs: Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - preparationStartedAt)),
-    persistenceMode: atomicPrepared ? 'targeted_rpc' : 'compatibility_fallback',
+    persistenceMode: 'targeted_rpc',
   }
 }
 
@@ -8678,6 +8559,23 @@ export async function uploadSellerClientPortalDocument({
     requirements: requiredDocuments,
     requirementKey: normalizedRequirementKey,
   })
+  if (matchedRequirement?.canonical_shared_requirement) {
+    if (canonicalRequirementInstanceId && canonicalRequirementInstanceId !== matchedRequirement.canonical_requirement_instance_id) throw new Error('This upload does not match the selected request.')
+    const { result, command } = await uploadSellerRequirementFile({ client: storageClient, token: normalizedToken, accessToken: resolvedAccessToken,
+      listingId: listing.id, requirement: matchedRequirement, file })
+    const row = normalizeDocumentRows([{ id: result.uploadId, private_listing_id: listing.id,
+      requirement_id: matchedRequirement.id, canonical_requirement_instance_id: matchedRequirement.canonical_requirement_instance_id,
+      document_type: matchedRequirement.requirement_key, document_name: command.payload.fileName,
+      storage_path: command.payload.filePath, storage_bucket: 'documents', status: result.requirement.status }])[0]
+    const transactionId = result.requirement.transaction_id || null
+    return { ...row, name: row.document_name, file_path: row.storage_path, privateListingId: listing.id,
+      requirementId: matchedRequirement.id, requirementKey: matchedRequirement.requirement_key,
+      canonicalRequirementInstanceId: matchedRequirement.canonical_requirement_instance_id,
+      transactionId, sharedDocumentId: transactionId ? result.uploadId : null, pendingTransactionPromotion: !transactionId,
+      persistence: buildPrivateListingDocumentPersistenceReceipt({ documentRow: row, storagePath: row.storage_path,
+        requirementStatusUpdated: true, requirementStatusApplicable: true, promotionAttempted: true,
+        promotion: { pending_transaction_promotion: !transactionId } }) }
+  }
   let canonicalRequirement = null
   if (canonicalRequirementInstanceId) {
     const linkedCanonicalId = normalizeUuid(matchedRequirement?.canonical_requirement_instance_id || matchedRequirement?.canonicalRequirementInstanceId)
@@ -9160,11 +9058,19 @@ export async function createSellerClientPortalDocumentSignedUrl({
   const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
 
   const context = await getSellerOnboardingByToken(normalizedToken, {
-    includeRequirementsAndDocuments: false,
+    includeRequirementsAndDocuments: normalizedFilePath.startsWith('document-requirements/'),
     requirePortalAccess: true,
     sellerPortalAccessToken: resolvedAccessToken,
   })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
+  if (normalizedFilePath.startsWith('document-requirements/')) {
+    const linked = context.listing.documents?.some(document => document.storage_path === normalizedFilePath && document.canonical_requirement_instance_id)
+    if (!linked) throw new Error('This document is not available in this client portal.')
+    const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
+    const { data, error } = await storageClient.storage.from('documents').createSignedUrl(normalizedFilePath, expiresInSeconds)
+    if (error || !data?.signedUrl) throw error || new Error('Unable to open this document right now.')
+    return data.signedUrl
+  }
   const downloadContext = await resolvePrivateListingDocumentDownload(client, context.listing.id, normalizedFilePath)
   if (!downloadContext.linked) {
     throw new Error('This document is not available in this client portal.')

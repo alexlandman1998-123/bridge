@@ -206,6 +206,14 @@ function hasSellerOnboardingSubmitted({ listing = {}, activeSellingContext = {},
 }
 
 function getComplianceState(sellerComplianceSigning = null) {
+  if (sellerComplianceSigning?.informationOnly) {
+    const documents = toArray(sellerComplianceSigning.documentWorkflows)
+    const completedCount = documents.filter(document => document.state === 'complete').length
+    return { required: true, complete: documents.length === 3 && completedCount === 3,
+      status: sellerComplianceSigning.status, percent: Math.round(completedCount / 3 * 100),
+      requiredCount: 3, completedCount, remainingCount: 3 - completedCount,
+      signers: [], waitingOn: [], documents }
+  }
   const state = sellerComplianceSigning?.signingState || sellerComplianceSigning || {}
   const signers = toArray(sellerComplianceSigning?.signers || state.signers)
   const requiredCount = Number(state.requiredCount || signers.filter((signer) => signer.required !== false).length || 0)
@@ -238,7 +246,9 @@ export function buildSellerComplianceAgentStatus({
     portal: portal || {},
   }
   const compliance = getComplianceState(sellerComplianceSigning)
-  const signedMandate = hasSignedMandateEvidence({ requirements, documents, ...sources })
+  const independentDocuments = sellerComplianceSigning?.informationOnly ? toArray(sellerComplianceSigning.documentWorkflows) : null
+  const documentComplete = documentKey => independentDocuments?.some(document => document.key === documentKey && document.state === 'complete')
+  const signedMandate = documentComplete(SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) || hasSignedMandateEvidence({ requirements, documents, ...sources })
   const onboardingSubmitted = hasSellerOnboardingSubmitted(sources)
   const listingDraftExists = hasListingShell(sources)
   const rawListingLiveSignal = hasRawListingLiveSignal(sources)
@@ -260,7 +270,7 @@ export function buildSellerComplianceAgentStatus({
     } : null,
     compliance.required && !compliance.complete ? {
       key: 'seller_compliance_pack',
-      label: 'Seller compliance signatures incomplete',
+      label: independentDocuments ? 'Seller documents incomplete' : 'Seller compliance signatures incomplete',
       action: sellerComplianceSigning?.nextMessage || 'Complete all required disclosure and FICA signatures.',
     } : null,
     !listingDraftExists ? {
@@ -294,8 +304,8 @@ export function buildSellerComplianceAgentStatus({
     readiness: [
       { key: 'onboarding', label: 'Onboarding', complete: onboardingSubmitted },
       { key: 'mandate', label: 'Mandate', complete: signedMandate },
-      { key: 'fica', label: 'FICA', complete: complianceComplete && compliance.required },
-      { key: 'disclosure', label: 'Disclosure', complete: complianceComplete && compliance.required },
+      { key: 'fica', label: 'FICA', complete: independentDocuments ? documentComplete(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION) : complianceComplete && compliance.required },
+      { key: 'disclosure', label: 'Disclosure', complete: independentDocuments ? documentComplete(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) : complianceComplete && compliance.required },
       { key: 'listing_draft', label: 'Listing draft', complete: listingDraftExists },
     ],
     compliance,

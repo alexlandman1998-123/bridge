@@ -1271,12 +1271,19 @@ function AgentNewDealWizard({
     people: [{ id: form.buyerPersonId, role: 'owner', name: [form.clientName, form.clientSurname].filter(Boolean).join(' '), email: form.clientEmail, phone: form.clientPhone, maritalStatus: 'unknown', isOwner: true, primaryContact: true, signatory: false }],
   })
   const listingSellerForCapture = getListingSeller(selectedPrivateListing)
-  const listingSellerFacts = selectedPrivateListing?.sellerCanonicalFacts || selectedPrivateListing?.sellerOnboarding?.formData || {}
-  const sellerPartyProfile = form.sellerPartyProfile ? normalizeTransactionPartyProfile(form.sellerPartyProfile) : transactionSellerProfileFromSource({
+  const listingSellerFacts = selectedPrivateListing?.sellerCanonicalFacts || {}
+  const inheritedSellerPartyProfile = !selectedPrivateListing?.id && form.sellerPartyProfile ? normalizeTransactionPartyProfile(form.sellerPartyProfile) : transactionSellerProfileFromSource({
     facts: form.propertyMode === PROPERTY_MODE_IMPORT ? {} : { ...listingSellerFacts, sellerEntityType: listingSellerFacts.sellerEntityType || selectedPrivateListing?.sellerEntityType },
     contact: form.propertyMode === PROPERTY_MODE_IMPORT ? { name: form.importSellerName, email: form.importSellerEmail, phone: form.importSellerPhone } : listingSellerForCapture,
+    formData: form.propertyMode === PROPERTY_MODE_IMPORT ? {} : selectedPrivateListing?.sellerOnboarding?.formData,
+    onboardingId: form.propertyMode === PROPERTY_MODE_IMPORT ? '' : selectedPrivateListing?.sellerOnboarding?.id,
+    updatedAt: selectedPrivateListing?.sellerOnboarding?.updatedAt,
     personId: form.sellerPersonId,
   })
+  const sellerPartyProfile = selectedPrivateListing?.id ? {
+    ...inheritedSellerPartyProfile,
+    people: inheritedSellerPartyProfile.people.map((person) => ({ ...person, signatory: form.sellerPartyProfile?.people?.find((saved) => saved.id === person.id)?.signatory ?? person.signatory })),
+  } : inheritedSellerPartyProfile
   const transactionParties = buildTransactionPartiesSnapshot({ buyer: form.connectBuyerNow ? buyerPartyProfile : { entityType: 'unknown', people: [] }, seller: sellerPartyProfile })
   const captureFinance = buildTransactionCaptureFinance(form, inheritedDealTerms.salePrice)
   const buyerCaptureLabels = getBuyerCaptureLabels(form.purchaserType)
@@ -3046,7 +3053,7 @@ function AgentNewDealWizard({
                   {sellerLeadRows.map((lead) => <option key={lead.id} value={lead.id}>{lead.name} • {lead.email || lead.phone || 'No contact details'}</option>)}
                 </select>
               </Field> : null}
-              <TransactionPartyCapture side="Seller" value={sellerPartyProfile} onChange={(value) => updateField('sellerPartyProfile', value)} />
+              <TransactionPartyCapture side="Seller" value={sellerPartyProfile} readOnly={Boolean(selectedPrivateListing?.id)} onChange={(value) => updateField('sellerPartyProfile', value)} />
               <TransactionPartyDocumentPreview parties={transactionParties} financeType={form.financeType} sellerHasExistingBond={form.sellerBondStatus === 'yes'} />
             </> : null}
 

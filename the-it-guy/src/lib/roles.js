@@ -150,6 +150,7 @@ export const APP_NAV_BY_ROLE = {
       to: '/listings',
       activeMatch: ['/listings', '/agent/listings'],
     },
+    { key: 'developments', label: 'Developments', to: '/developments', activeMatch: ['/developments'] },
     {
       key: 'marketing_workspace',
       label: 'Marketing',
@@ -581,6 +582,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       to: '/listings',
       activeMatch: ['/listings', '/agent/listings'],
     },
+    { key: 'developments', label: 'Developments', to: '/developments', activeMatch: ['/developments'] },
     {
       key: 'marketing_workspace',
       label: 'Marketing',

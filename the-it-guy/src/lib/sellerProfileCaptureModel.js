@@ -33,8 +33,8 @@ export function areCanonicalSellerFactsEnabled(env = (typeof import.meta !== 'un
 }
 
 export function normalizePersonRecordForSellerProfile(entry = {}, index = 0, roleTitle = 'Person') {
-  const explicitSurname = normalizeText(entry.surname || entry.last_name)
-  const explicitFirstName = normalizeText(entry.first_name)
+  const explicitSurname = normalizeText(entry.surname ?? entry.last_name ?? entry.lastName)
+  const explicitFirstName = normalizeText(entry.first_name ?? entry.firstName)
   const nameValue = normalizeText(entry.name)
   const fullName = normalizeText(entry.fullName || entry.full_name || entry.contact_name || (!explicitSurname && !explicitFirstName && nameValue.includes(' ') ? nameValue : ''))
   const split = splitName(fullName || nameValue)
@@ -47,7 +47,17 @@ export function normalizePersonRecordForSellerProfile(entry = {}, index = 0, rol
     phone: normalizeText(entry.phone),
     residentialAddress: normalizeText(entry.residentialAddress || entry.residential_address || entry.address),
     idNumber: normalizeText(entry.idNumber || entry.id_number || entry.identityNumber || entry.identity_number || entry.passportNumber || entry.passport_number),
-    nationality: normalizeText(entry.nationality || entry.citizenship),
+    nationality: normalizeText(entry.nationality ?? entry.citizenship),
+    capacity: normalizeText(entry.capacity ?? entry.roleCapacity ?? entry.role_capacity),
+    dateOfBirth: normalizeText(entry.dateOfBirth ?? entry.date_of_birth),
+    incomeTaxNumber: normalizeText(entry.incomeTaxNumber ?? entry.tax_number),
+    saResident: entry.saResident ?? entry.sa_resident ?? '',
+    taxResident: entry.taxResident ?? entry.tax_resident ?? '',
+    maritalStatus: normalizeText(entry.maritalStatus ?? entry.marital_status),
+    maritalRegime: normalizeText(entry.maritalRegime ?? entry.marital_regime),
+    spouse: entry.spouse && typeof entry.spouse === 'object' ? normalizePersonRecordForSellerProfile({ ...entry.spouse, spouse: undefined }, 0, 'Spouse') : null,
+    primaryContact: entry.primaryContact === true,
+    sourcePersonId: Object.hasOwn(entry, 'sourcePersonId') ? normalizeText(entry.sourcePersonId) : normalizeText(entry.id),
     ownershipShare: normalizeText(entry.ownershipShare || entry.ownership_share),
     controlBasis: normalizeText(entry.controlBasis || entry.control_basis || entry.authority_details),
     consentToSell: Boolean(entry.consentToSell ?? entry.consent_to_sell),
@@ -313,7 +323,7 @@ export default {
 
 // The committed listing facts own the people roster. CRM summaries can contain
 // only names; they must not shadow captured identities in the seller workspace.
-export function projectSellerProfilePeople(formData = {}, canonicalFacts = {}) {
+export function projectSellerProfilePeople(formData = {}, canonicalFacts = {}, { preferCaptured = false } = {}) {
   const seller = canonicalFacts.seller || {}
   const result = { ...formData }
   for (const [field, value, role] of [
@@ -324,7 +334,8 @@ export function projectSellerProfilePeople(formData = {}, canonicalFacts = {}) {
     ['trustBeneficiaries', seller.trust?.beneficiaries, 'Beneficiary'],
     ['multipleOwners', seller.owners, 'Owner'],
   ]) {
-    if (Array.isArray(value)) result[field] = value.map((entry, index) => ({
+    const entries = preferCaptured && Object.hasOwn(formData, field) ? formData[field] : value
+    if (Array.isArray(entries)) result[field] = entries.map((entry, index) => ({
       ...entry, ...normalizePersonRecordForSellerProfile(entry, index, role),
     }))
   }
@@ -337,7 +348,10 @@ export function projectSellerProfilePeople(formData = {}, canonicalFacts = {}) {
     for (const [suffix, value] of Object.entries({
       Name: normalized.fullName, IdNumber: normalized.idNumber, Nationality: normalized.nationality,
       Address: normalized.residentialAddress, Email: normalized.email, Phone: normalized.phone, Capacity: normalized.capacity,
-    })) result[`${prefix}${suffix}`] = value
+    })) {
+      const field = `${prefix}${suffix}`
+      if (!preferCaptured || !Object.hasOwn(formData, field)) result[field] = value
+    }
   }
   return result
 }

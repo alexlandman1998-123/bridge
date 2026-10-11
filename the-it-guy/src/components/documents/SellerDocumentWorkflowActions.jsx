@@ -7,12 +7,14 @@ export default function SellerDocumentWorkflowActions({ item, copy, request, bus
   return <div className="w-full min-w-0 space-y-2" aria-label={`${item?.label || copy?.name || 'Seller document'} workflow`}>
     <p role="status" className="text-xs font-semibold text-[#243d56]">{workflow.label}</p>
     {workflow.detail ? <p className="text-xs leading-5 text-[#607387]">{workflow.detail}</p> : null}
+    <p className="text-xs leading-5 text-[#607387]">{workflow.nextAction}</p>
+    {workflow.versionId ? <p className="text-xs text-[#607387]">Document version: {workflow.versionId}</p> : null}
     <div className="flex flex-wrap gap-2">
       {copy || workflow.canPrepare ? <button type="button" className={buttonClass} disabled={busy} onClick={onDownload}>{copy ? 'Download reviewed copy' : 'Generate and download'}</button> : null}
       {workflow.canSend ? <button type="button" className={buttonClass} disabled={busy || !onlineEnabled} onClick={onSend}>{workflow.sendLabel}</button> : null}
       {workflow.canUpload && item?.canUpload !== false && item?.can_upload !== false ? <label className={`${buttonClass} ${busy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-        Upload existing
-        <input type="file" className="sr-only" aria-label={`Upload existing ${item?.label || copy?.name || 'seller document'}`} accept={accept} disabled={busy} onChange={onUpload} />
+        Upload manually
+        <input type="file" className="sr-only" aria-label={`Upload manually ${item?.label || copy?.name || 'seller document'}`} accept={accept} disabled={busy} onChange={onUpload} />
       </label> : null}
       {workflow.canReview ? <button type="button" className={buttonClass} disabled={busy} onClick={onReview}>Review signed copy</button> : null}
       {workflow.canRefresh ? <button type="button" className={buttonClass} disabled={busy} onClick={onRefresh}>Refresh signing status</button> : null}

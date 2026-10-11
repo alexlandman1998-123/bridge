@@ -6,15 +6,16 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
 const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const developmentTabsSource = detailSource.match(/const DEVELOPMENT_TABS = \[[\s\S]*?\n\]/)?.[0] || ''
 
 assert.match(
-  detailSource,
-  /const DEVELOPMENT_TABS = \[\s*\{ id: 'overview', label: 'Overview' \},\s*\{ id: 'units', label: 'Units' \},\s*\{ id: 'leads', label: 'Leads' \},\s*\{ id: 'transactions', label: 'Transactions' \},\s*\{ id: 'performance', label: 'Performance' \},\s*\{ id: 'marketing', label: 'Marketing' \},\s*\{ id: 'configuration', label: 'Configuration' \},\s*\]/,
-  'development tabs should be ordered as Overview, Units, Leads, Transactions, Performance, Marketing, Configuration',
+  developmentTabsSource,
+  /const DEVELOPMENT_TABS = \[\s*\{ id: 'overview', label: 'Overview' \},\s*\{ id: 'availability', label: 'Availability' \},\s*\{ id: 'leads', label: 'Leads' \},\s*\{ id: 'transactions', label: 'Transactions' \},\s*\{ id: 'performance', label: 'Performance' \},\s*\{ id: 'marketing', label: 'Marketing' \},\s*\{ id: 'snags', label: 'Snags' \},\s*\{ id: 'configuration', label: 'Configuration' \},?\s*\]/,
+  'development tabs should be ordered as Overview, Availability, Leads, Transactions, Performance, Marketing, Snags, Configuration',
 )
 
 assert.ok(
-  !detailSource.includes("{ id: 'documents', label: 'Documents' }"),
+  !developmentTabsSource.includes("{ id: 'documents', label: 'Documents' }"),
   'Documents should be removed from the development page menu',
 )
 
@@ -23,8 +24,9 @@ assert.ok(
   'development page shortcuts should not route users to the removed Documents tab',
 )
 
-assert.ok(
-  detailSource.includes("import { listDeveloperLeadIntake } from '../services/developerLeadService'"),
+assert.match(
+  detailSource,
+  /import\s*\{[^}]*\blistDeveloperLeadIntake\b[^}]*\}\s*from\s*'\.\.\/services\/developerLeadService'/,
   'development leads should come from the existing developer lead intake service',
 )
 
@@ -55,7 +57,7 @@ assert.ok(
 
 assert.ok(
   detailSource.includes('function canViewDevelopmentLeadPrivateDetails') &&
-    detailSource.includes('assignedKeys.some((key) => accessKeys.has(key))'),
+    /assignedKeys\.some\(\(?key\)?\s*=>\s*accessKeys\.has\(key\)\)/.test(detailSource),
   'buyer private details should still require a current-user assigned agent match',
 )
 
@@ -74,4 +76,20 @@ assert.ok(
   'lead rows should clearly distinguish openable leads from protected leads',
 )
 
+assert.ok(
+  !detailSource.includes('{formatNumber(developmentLeadFunnelItems.total)} leads'),
+  'the development lead total pill should be removed',
+)
+assert.ok(
+  detailSource.includes('<DevelopmentLeadViewSwitch') &&
+    detailSource.includes("developmentLeadView === 'kanban'") &&
+    detailSource.includes("developmentLeadView === 'list'"),
+  'development leads should offer mutually exclusive list and kanban views',
+)
+assert.ok(
+  detailSource.includes('name: getDevelopmentLeadDisplayName(lead, canViewDetails)') &&
+    detailSource.includes('contactLine: getDevelopmentLeadContactLine(lead, canViewDetails)') &&
+    detailSource.includes('const contactLine = getDevelopmentLeadContactLine(lead, canViewDetails)'),
+  'both views must use the assigned-agent privacy check for buyer contact details',
+)
 console.log('development leads tab security checks passed')

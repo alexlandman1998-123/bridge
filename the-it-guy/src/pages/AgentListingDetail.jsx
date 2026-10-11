@@ -1,3 +1,7 @@
+import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
+import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
+import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
+import { buildSellerDisclosurePreparationPatch } from '../lib/sellerAgentAssistedDisclosure.js'
 import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, requireSettledListingPublication } from '../services/listings/listingInitialPublicationService'
 import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
 import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
@@ -3797,6 +3801,8 @@ function AgentListingDetail() {
   const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
   const [mandateSetupDraft, setMandateSetupDraft] = useState({ sellerName: '', sellerEmail: '', propertyAddress: '' })
   const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
+  const sellerDocumentPreparationBaselineRef = useRef(null)
+  const [sellerDisclosureDraft, setSellerDisclosureDraft] = useState({})
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
   const [sellerOnboardingReviewSaving, setSellerOnboardingReviewSaving] = useState(false)
   const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
@@ -4025,6 +4031,28 @@ function AgentListingDetail() {
       window.removeEventListener('itg:pipeline-updated', refreshListingData)
     }
   }, [loadListingData])
+
+  useEffect(() => {
+    if (!needsListingDocuments || !isSupabaseConfigured || !listingId || listingId.startsWith('development-')) return undefined
+    let cancelled = false
+    let generation = 0
+    const refresh = async () => {
+      const request = ++generation
+      try {
+        const snapshot = await readDocumentRequirementContext(supabase, { contextType: 'private_listing', contextId: listingId })
+        if (!cancelled && request === generation) setPrivateListings(rows => rows.map(row => getPrivateListingRecordId(row) === listingId
+          ? { ...row, canonicalDocumentSnapshot: snapshot, canonicalDocumentError: '' } : row))
+      } catch (error) {
+        if (!cancelled && request === generation) {
+          setDetailError(error?.message || 'Shared documents could not be refreshed.')
+          setPrivateListings(rows => rows.map(row => getPrivateListingRecordId(row) === listingId
+            ? { ...row, canonicalDocumentSnapshot: null, canonicalDocumentError: 'Shared documents are unavailable. Refresh before relying on this checklist.' } : row))
+        }
+      }
+    }
+    const stop = watchDocumentRequirementContext(refresh)
+    return () => { cancelled = true; stop() }
+  }, [listingId, needsListingDocuments])
 
   const listingRecord = useMemo(() => {
     return findPrivateListingById(privateListings, listingId)
@@ -7308,7 +7336,13 @@ function AgentListingDetail() {
         doc?.source?.document === 'document_packets.final_signed_artifact' ||
         doc?.source === 'document_packets.final_signed_artifact' ||
         (normalizeKey(doc.key).includes('mandate') && doc.packetId && doc.packetVersionId)
-      const downloadUrl = isFinalSignedMandateArtifact && doc.packetId && doc.packetVersionId
+      let sharedDownloadUrl = ''
+      if (doc.sharedRequirement && filePath) {
+        const signed = await supabase.storage.from(doc.storageBucket || 'documents').createSignedUrl(filePath, 300)
+        if (signed.error) throw signed.error
+        sharedDownloadUrl = signed.data?.signedUrl || ''
+      }
+      const downloadUrl = doc.sharedRequirement ? sharedDownloadUrl : isFinalSignedMandateArtifact && doc.packetId && doc.packetVersionId
         ? (await requestPersistedPdfAccess({
             packetId: doc.packetId,
             versionId: doc.packetVersionId,
@@ -7974,8 +8008,8 @@ function AgentListingDetail() {
     }, { mandateTerms: getSellerDocumentMandateTerms() })
   }
 
-  function buildSellerSigningPackSnapshot(selectedDocuments = ['mandate']) {
-    const form = getListingSellerFormData(listingRecord)
+  function buildSellerSigningPackSnapshot(selectedDocuments = ['mandate'], formOverride = null) {
+    const form = formOverride || getListingSellerFormData(sellerDocumentPreparationBaselineRef.current || listingRecord)
     const terms = getSellerDocumentMandateTerms()
     const signingPlan = getSellerSigningPlan()
     const signedRequirementKeys = new Set(selectedDocuments.flatMap((documentKey) => {
@@ -8022,6 +8056,9 @@ function AgentListingDetail() {
   }
 
   function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
+    sellerDocumentPreparationBaselineRef.current = structuredClone(listingRecord)
+    const savedForm = getListingSellerFormData(listingRecord)
+    setSellerDisclosureDraft(savedForm.propertyDisclosure || savedForm.property_disclosure || {})
     setSellerDocumentPreparationKey('')
     resetSellerDocumentMandateTerms()
     const replacement = Boolean(correctionRequest?.metadata?.mandateReplacementIntent)
@@ -8144,8 +8181,9 @@ function AgentListingDetail() {
         { listingSnapshot: listingRecord, reopenForCorrection: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested, status: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? 'in_progress' : (listingRecord?.sellerOnboardingStatus || 'completed'), syncRequirements: false },
       )
       patchListing((row) => applyListingSellerOnboardingSaveSnapshot(row, savedOnboarding))
+      sellerDocumentPreparationBaselineRef.current = applyListingSellerOnboardingSaveSnapshot(listingRecord, savedOnboarding)
       setDetailMessage(status === SELLER_ONBOARDING_REVIEW_STATUS.approved
-        ? 'Seller onboarding reviewed and approved. You can now prepare the FICA and mandate signing pack.'
+        ? 'Seller onboarding reviewed and approved. You can now prepare mandate, disclosure and FICA documents independently.'
         : 'Seller onboarding returned for correction. The seller can use the existing onboarding link to update the shared facts.')
       if (status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) setSellerDocumentSendOpen(false)
     } catch (reviewError) {
@@ -8191,7 +8229,10 @@ function AgentListingDetail() {
     openSellerDocumentSend({ fica: key === 'fica', mandate: key === 'mandate', disclosure: key === 'disclosure' })
     setSellerDocumentSendSelection({ fica: key === 'fica', mandate: key === 'mandate', disclosure: key === 'disclosure' })
     setSellerDocumentPreparationKey(documentKey)
-    setSellerMandateDocumentSource('arch9_generated')
+    setSellerMandateDocumentSource(key === 'mandate' ? 'arch9_generated' : '')
+    // Another document's active pack is not a replacement of this document.
+    setSellerDocumentReplacementGroupId('')
+    setSellerDocumentReplacementReason('')
     setSellerMandateSignatureRoute(route)
   }
 
@@ -8220,7 +8261,7 @@ function AgentListingDetail() {
       return
     }
     const { documents } = getSellerSigningDocumentOptions()
-    if (!['arch9_generated', 'agency_upload'].includes(sellerMandateDocumentSource)) {
+    if (sellerDocumentSendSelection.mandate && !['arch9_generated', 'agency_upload'].includes(sellerMandateDocumentSource)) {
       setDetailError('Choose an Arch9-generated mandate or your agency’s own mandate before continuing.')
       return
     }
@@ -8286,12 +8327,12 @@ function AgentListingDetail() {
     }
     try {
       setSellerDocumentSendSaving(true)
-      let commissionSaveResult = null
-      if (sellerDocumentSendSelection.mandate) {
-        commissionSaveResult = await saveCommissionDraft()
-        if (!commissionSaveResult) return
-      }
-      const existingForm = commissionSaveResult?.formData || getListingSellerFormData(listingRecord)
+      const preparationBaseline = sellerDocumentPreparationBaselineRef.current || listingRecord
+      const savedForm = getListingSellerFormData(preparationBaseline)
+      const disclosurePatch = selected.includes('disclosure') ? buildSellerDisclosurePreparationPatch({
+        disclosure: sellerDisclosureDraft, existingFormData: savedForm, capturedBy: String(listingActor?.id || profile?.id || ''),
+      }) : {}
+      const existingForm = { ...savedForm, ...disclosurePatch }
       const onboardingReview = readSellerOnboardingReview(existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review)
       if (onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
         throw new Error('The seller onboarding is awaiting correction. Review the resubmitted onboarding before preparing another signing pack.')
@@ -8300,7 +8341,7 @@ function AgentListingDetail() {
         throw new Error('The seller onboarding approval changed. Review the latest details before preparing documents.')
       }
       const currentRequests = await listSellerPortalSigningRequests(listingRecord.id)
-      const generatedKeys = sellerDocumentPreparationKey ? [sellerDocumentPreparationKey] : Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).filter(key => selected.includes(SELLER_DOCUMENT_SELECTION_KEYS[key]) || key === 'signed_disclosure_form' && !hasCompletedSellerDisclosure({ formData: existingForm, documentRows: sellerDocumentSource?.rows }))
+      const generatedKeys = sellerDocumentPreparationKey ? [sellerDocumentPreparationKey] : Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).filter(key => selected.includes(SELLER_DOCUMENT_SELECTION_KEYS[key]))
       if (generatedKeys.some(key => sellerDocumentHasActiveSigning(currentRequests.documents || [], key))) throw new Error('A signing request already exists for this document. Track or retry its reviewed version in Documents.')
       if (generatedKeys.some(key => sellerDocumentHasUploadedEvidence(currentRequests.uploads || [], key, { replacement: mandateReplacementIntent }))) throw new Error('This document already has signed evidence. Review it in Documents or use the replacement workflow.')
       const documentRoutes = Object.fromEntries(generatedKeys.map(key => [key, sellerMandateSignatureRoute]))
@@ -8317,11 +8358,11 @@ function AgentListingDetail() {
         },
         signingRoute: sellerMandateSignatureRoute,
         documentRoutes,
-        mandateSource: sellerDocumentPreparationKey && !selected.includes('mandate') ? '' : sellerMandateDocumentSource,
+        mandateSource: !selected.includes('mandate') ? '' : sellerMandateDocumentSource,
         actor: String(listingActor?.id || profile?.id || ''),
       })
       const proposedTransferAttorney = preferredTransferAttorneyOptions.find((partner) => String(partner?.id || '') === preferredTransferAttorneyOptionId) || null
-      const signingPackSnapshot = buildSellerSigningPackSnapshot(selected)
+      const signingPackSnapshot = buildSellerSigningPackSnapshot(selected, existingForm)
       const postOnboardingDrafts = buildSellerPostOnboardingDrafts({
         formData: existingForm,
         listing: listingRecord || {},
@@ -8393,12 +8434,27 @@ function AgentListingDetail() {
           requestedBy: String(listingActor?.id || profile?.id || ''),
         } : existingForm.mandateReplacementRequest || null,
       }
-      const listingPatch = selected.includes('mandate') ? { mandateType } : {}
-      if (selected.includes('mandate')) await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
-      const savedOnboarding = await updatePrivateListingOnboardingFormData(listingRecord.id, {
-        ...nextFormData,
-      }, { listingSnapshot: listingRecord, status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
-      patchListing((row) => applyListingSellerOnboardingSaveSnapshot({ ...row, ...listingPatch }, savedOnboarding))
+      const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
+        listing: preparationBaseline,
+        formPatch: nextFormData,
+        onboardingStatus: preparationBaseline?.sellerOnboarding?.status || preparationBaseline?.sellerOnboardingStatus || 'completed',
+        mutationType: 'seller_signing_pack_preparation',
+        source: 'agent_listing_seller_documents',
+        organisationId: listingOrganisationId,
+        remote: isSupabaseConfigured && isUuidLike(listingRecord.id),
+        syncLinkedCrmContact: false,
+        forceRequirementSync: true,
+        includeRequirementsAndDocuments: false,
+      })
+      patchListing(() => canonicalSaveResult.listing)
+      sellerDocumentPreparationBaselineRef.current = canonicalSaveResult.listing
+      if (canonicalSaveResult.warnings.length) {
+        setSellerDocumentSendOpen(false)
+        setSellerWorkspaceTab('documents')
+        setDetailMessage('Reviewed copies were saved. Refresh Documents before continuing; the checklist needs to be confirmed. No signing links were sent.')
+        setDetailError(canonicalSaveResult.warnings.map(warning => warning.message).join(' '))
+        return
+      }
       setSellerDocumentSendOpen(false)
       setMandateReplacementIntent(false)
       if (sellerMandateSignatureRoute === 'digital_pack') {
@@ -9783,7 +9839,7 @@ function AgentListingDetail() {
   }, [listingRecord, mandateWorkspace])
 
   const sellerDocumentSource = useMemo(() => {
-    if (!listingRecord) return null
+    if (!listingRecord || (isSupabaseConfigured && needsListingDocuments && !listingRecord.canonicalDocumentSnapshot)) return null
     const mandatePacket = buildListingMandatePacketSummary(listingRecord, mandateWorkspace)
 
     return buildSellerDocumentSourceOfTruth({
@@ -9795,7 +9851,7 @@ function AgentListingDetail() {
       formData: getListingSellerFormData(listingRecord),
       mandatePacket,
     })
-  }, [dynamicSellerRequirements, listingRecord, mandateWorkspace])
+  }, [dynamicSellerRequirements, listingRecord, mandateWorkspace, needsListingDocuments])
 
   const sellerDocumentTrackerRows = useMemo(
     () => (sellerDocumentSource?.rows || [])
@@ -13056,7 +13112,7 @@ function AgentListingDetail() {
           </div>
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
             <legend className="px-1 text-sm font-semibold text-[#2d445e]">Include in the secure signing link</legend>
-            <p className="text-sm leading-5 text-[#607387]">A completed seller profile unlocks the combined disclosure, FICA and mandate pack. Until then, you can send a mandate-only link.</p>
+            <p className="text-sm leading-5 text-[#607387]">Submit and review seller information first, then choose a separate action for mandate, disclosure and FICA in Documents.</p>
             {getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
               <label key={document.key} className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-sm ${document.ready ? 'border-[#dce6f2] bg-white text-[#2d445e]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
                 <input type="checkbox" className="mt-0.5 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
@@ -13178,7 +13234,7 @@ function AgentListingDetail() {
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving || !sellerMandateDocumentSource || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving || (sellerDocumentSendSelection.mandate && !sellerMandateDocumentSource) || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send for online signature'}
             </Button>
@@ -13251,6 +13307,7 @@ function AgentListingDetail() {
               <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
             </label>
           </> : null}
+          {sellerDocumentSendSelection.disclosure ? <SellerDisclosurePreparation disclosure={sellerDisclosureDraft} onChange={setSellerDisclosureDraft} disabled={sellerDocumentSendSaving} /> : null}
           <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-xl border border-[#dce6f2] p-4">
             <legend className="px-1 text-sm font-semibold">Choose a document action</legend>
             {SELLER_DOCUMENT_ACTIONS.map(([value, label, description]) => <label key={value} className="flex items-start gap-3 text-sm">
@@ -16614,6 +16671,7 @@ function AgentListingDetail() {
                       </Button>
                     </div>
                     <div className="mt-5 space-y-5">
+                      {sellerInformationModel.requiresPersonReview ? <p className="text-sm text-[#8a641d]">Some saved person references need review before linking people across the journey.</p> : null}
                       {sellerInformationGroups.map((group) => (
                         <div key={group.title}>
                           <h4 className="text-xs font-semibold text-[#243d56]">{group.title}</h4>
@@ -16621,7 +16679,7 @@ function AgentListingDetail() {
                             {group.rows.map((row) => (
                               <div key={`${group.key}-${row.key}`} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] gap-3 py-2">
                                 <span className="text-xs font-semibold text-[#6b7d93]">{row.label}</span>
-                                <span className="break-words text-right text-sm font-semibold leading-5 text-[#243d56]">{presentSellerWorkspaceValue(row.value)}</span>
+                                <span className="break-words text-right text-sm font-semibold leading-5 text-[#243d56]">{row.displayValue}</span>
                               </div>
                             ))}
                           </div>
@@ -16840,6 +16898,7 @@ function AgentListingDetail() {
           {sellerWorkspaceTab === 'documents' && listingSupportingDataLoading ? <p role="status" className="p-5 text-sm text-[#607387]">Loading seller documents…</p> : null}
           {sellerWorkspaceTab === 'documents' && listingSupportingDataReady ? (
             <section className="space-y-5">
+          <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" />
               {sellerDocumentSource?.requirementState?.provisional ? (
                 <div className="flex items-start gap-3 rounded-[18px] border border-[#f0d7a8] bg-[#fffaf0] px-4 py-3 text-[#815919]" role="status">
                   <CircleAlert size={18} className="mt-0.5 shrink-0" />
@@ -17304,6 +17363,7 @@ function AgentListingDetail() {
 
       {activeTab === 'documents' && listingSupportingDataReady ? (
         <section className="space-y-5">
+          <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" />
           {sellerDocumentSource?.requirementState?.provisional ? (
             <section data-testid="listing-seller-document-provisional-state" className="flex items-start justify-between gap-4 rounded-[20px] border border-[#f0d7a8] bg-[#fffaf0] p-4 text-[#815919]" role="status">
               <div className="flex items-start gap-3">

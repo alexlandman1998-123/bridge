@@ -1,7 +1,8 @@
+import { saveTransactionSellerDetails } from '../services/transactionSellerSaveService.js'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation.js'
 import { createFreshDocumentSignedUrl } from './documentAccess.js'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from './documentUploadRecovery.js'
-import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed } from '../core/transactions/transactionPartyProfile.js'
+import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed, transactionSellerContactSlotId } from '../core/transactions/transactionPartyProfile.js'
 import { validateDevelopmentStructureNodes } from '../core/developments/developmentStructureModel.js'
 import { fetchDashboardOverview as fetchScopedDashboardOverview } from '../domains/reporting/api.js'
 import { readTransactionHandoffDispatchMode } from '../services/transactionHandoffRegisterService.js'
@@ -10849,7 +10850,7 @@ async function upsertTransactionParticipantsRowsWithFallback(
   return result
 }
 
-async function ensureTransactionParticipants(client, { transaction, buyer, explicitCapture = null }) {
+async function ensureTransactionParticipants(client, { transaction, buyer, explicitCapture = null, sellerContactSlotId = null }) {
   if (!transaction?.id) {
     return {
       participants: [],
@@ -10869,7 +10870,11 @@ async function ensureTransactionParticipants(client, { transaction, buyer, expli
 
   const participantPolicy = await resolveTransactionCaptureParticipantPolicy({ client, transactionId: transaction.id, explicitCapture,
     defaults: buildDefaultParticipantRows(transaction, buyer, inheritedParticipants) })
-  const defaults = participantPolicy.defaults
+  // Loading a transaction or saving other roleplayers must never rewrite a
+  // seller person from the transaction's older contact summary.
+  const existingSellers = await client.from('transaction_participants').select('id').eq('transaction_id', transaction.id).eq('role_type', 'seller').is('removed_at', null).limit(1)
+  if (existingSellers.error && !isMissingSchemaError(existingSellers.error)) throw existingSellers.error
+  const defaults = existingSellers.data?.length ? participantPolicy.defaults.filter((row) => row.role_type !== 'seller') : participantPolicy.defaults.map((row) => row.role_type === 'seller' && sellerContactSlotId ? { ...row, id: sellerContactSlotId } : row)
   const rowSelect = TRANSACTION_PARTICIPANT_FULL_SELECT
 
   const profileIdByEmail = await resolveProfileIdsByEmail(
@@ -31876,6 +31881,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   try {
     const participantsResult = await ensureTransactionParticipants(client, {
       explicitCapture: Boolean(finance.captureSnapshot),
+      sellerContactSlotId: transactionSellerContactSlotId(transactionParties?.seller),
       transaction: {
         ...transactionPayload,
         id: transaction.id,
@@ -39716,6 +39722,8 @@ export async function updateTransactionStakeholderContacts({
   sellerName,
   sellerEmail,
   sellerPhone,
+  sellerSaveContext,
+  sellerMutationId,
   agentName,
   agentEmail,
   attorneyName,
@@ -39730,6 +39738,12 @@ export async function updateTransactionStakeholderContacts({
   }
 
   const client = requireClient()
+  if (sellerOnly) {
+    return saveTransactionSellerDetails({ transactionId, details: { name: sellerName, email: sellerEmail, phone: sellerPhone }, context: sellerSaveContext, mutationId: sellerMutationId, client })
+  }
+  if ([sellerName, sellerEmail, sellerPhone].some((value) => value !== undefined)) {
+    throw new Error('Save seller contacts from the seller details editor so the original saved revision can be checked.')
+  }
   const actorProfile = await resolveActiveProfileContext(client)
   const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'attorney')
   if (!['attorney', 'developer', 'internal_admin', 'agent'].includes(normalizedActorRole)) {
@@ -39785,12 +39799,9 @@ export async function updateTransactionStakeholderContacts({
     throw new Error('Transaction not found.')
   }
 
-  const normalizedBuyerName = sellerOnly ? null : normalizeNullableText(buyerName)
-  const normalizedBuyerEmail = sellerOnly ? null : normalizeNullableText(buyerEmail)?.toLowerCase() || null
-  const normalizedBuyerPhone = sellerOnly ? null : normalizeNullableText(buyerPhone)
-  const normalizedSellerName = normalizeNullableText(sellerName)
-  const normalizedSellerEmail = normalizeNullableText(sellerEmail)?.toLowerCase() || null
-  const normalizedSellerPhone = normalizeNullableText(sellerPhone)
+  const normalizedBuyerName = normalizeNullableText(buyerName)
+  const normalizedBuyerEmail = normalizeNullableText(buyerEmail)?.toLowerCase() || null
+  const normalizedBuyerPhone = normalizeNullableText(buyerPhone)
 
   let buyer = null
   let effectiveBuyerId = transaction.buyer_id || null
@@ -39834,12 +39845,7 @@ export async function updateTransactionStakeholderContacts({
     buyer = buyerUpdate.data
   }
 
-  const transactionPayload = sellerOnly ? {
-    seller_name: normalizedSellerName,
-    seller_email: normalizedSellerEmail,
-    seller_phone: normalizedSellerPhone,
-    updated_at: new Date().toISOString(),
-  } : {
+  const transactionPayload = {
     buyer_id: effectiveBuyerId,
     assigned_agent: normalizeNullableText(agentName),
     assigned_agent_email: normalizeNullableText(agentEmail)?.toLowerCase() || null,
@@ -39848,9 +39854,6 @@ export async function updateTransactionStakeholderContacts({
     bond_originator: normalizeNullableText(bondOriginatorName),
     assigned_bond_originator_email: normalizeNullableText(bondOriginatorEmail)?.toLowerCase() || null,
     matter_owner: normalizeNullableText(matterOwner),
-    seller_name: normalizedSellerName,
-    seller_email: normalizedSellerEmail,
-    seller_phone: normalizedSellerPhone,
     updated_at: new Date().toISOString(),
   }
 
@@ -39860,14 +39863,9 @@ export async function updateTransactionStakeholderContacts({
     'assigned_attorney_email',
     'assigned_bond_originator_email',
     'matter_owner',
-    'seller_name',
-    'seller_email',
-    'seller_phone',
   ]
 
-  let transactionUpdate = sellerOnly
-    ? await client.from('transactions').update(transactionPayload).eq('id', transactionId).select('id').single()
-    : await client.from('transactions').update(transactionPayload).eq('id', transactionId)
+  let transactionUpdate = await client.from('transactions').update(transactionPayload).eq('id', transactionId)
 
   if (transactionUpdate.error) {
     let fallbackPayload = { ...transactionPayload }
@@ -39880,8 +39878,6 @@ export async function updateTransactionStakeholderContacts({
         break
       }
 
-      if (sellerOnly && missingColumns.some((column) => column.startsWith('seller_'))) break
-
       const beforeKeys = Object.keys(fallbackPayload).length
       missingColumns.forEach((column) => {
         delete fallbackPayload[column]
@@ -39890,9 +39886,7 @@ export async function updateTransactionStakeholderContacts({
         break
       }
 
-      const fallbackResult = sellerOnly
-        ? await client.from('transactions').update(fallbackPayload).eq('id', transactionId).select('id').single()
-        : await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
+      const fallbackResult = await client.from('transactions').update(fallbackPayload).eq('id', transactionId)
       transactionUpdate = fallbackResult
       fallbackError = fallbackResult.error
       fallbackAttempts += 1
@@ -39927,14 +39921,9 @@ export async function updateTransactionStakeholderContacts({
         existingFormData[key] = String(value)
       }
 
-      if (!sellerOnly) {
-        applyFormDataValue('full_name', normalizedBuyerName || buyer?.name || '')
-        applyFormDataValue('email', normalizedBuyerEmail || buyer?.email || '')
-        applyFormDataValue('phone', normalizedBuyerPhone || buyer?.phone || '')
-      }
-      applyFormDataValue('seller_name', normalizedSellerName)
-      applyFormDataValue('seller_email', normalizedSellerEmail)
-      applyFormDataValue('seller_phone', normalizedSellerPhone)
+      applyFormDataValue('full_name', normalizedBuyerName || buyer?.name || '')
+      applyFormDataValue('email', normalizedBuyerEmail || buyer?.email || '')
+      applyFormDataValue('phone', normalizedBuyerPhone || buyer?.phone || '')
 
       const onboardingFormDataUpsert = await client.from('onboarding_form_data').upsert(
         {
@@ -39964,15 +39953,6 @@ export async function updateTransactionStakeholderContacts({
   }
 
   try {
-    if (sellerOnly) {
-      const sellerParticipantUpdate = await client.from('transaction_participants')
-        .update({ participant_name: normalizedSellerName, participant_email: normalizedSellerEmail })
-        .eq('transaction_id', transactionId)
-        .eq('role_type', 'seller')
-      if (sellerParticipantUpdate.error && !isMissingTableError(sellerParticipantUpdate.error, 'transaction_participants')) {
-        throw sellerParticipantUpdate.error
-      }
-    } else {
       await ensureTransactionParticipants(client, {
         transaction: {
           ...transaction,
@@ -39987,7 +39967,6 @@ export async function updateTransactionStakeholderContacts({
         },
         buyer,
       })
-    }
   } catch (participantError) {
     if (!isMissingSchemaError(participantError)) {
       throw participantError
@@ -40000,14 +39979,12 @@ export async function updateTransactionStakeholderContacts({
     createdBy: actorProfile.userId || null,
     createdByRole: normalizedActorRole,
     eventData: {
-      source: sellerOnly ? 'update_transaction_seller_contacts' : 'update_transaction_stakeholders',
+      source: 'update_transaction_stakeholders',
       buyerName: normalizedBuyerName || buyer?.name || null,
       buyerEmail: normalizedBuyerEmail || buyer?.email || null,
-      sellerName: normalizedSellerName,
-      sellerEmail: normalizedSellerEmail,
-      assignedAgent: sellerOnly ? transaction.assigned_agent : transactionPayload.assigned_agent,
-      assignedAttorney: sellerOnly ? transaction.attorney : transactionPayload.attorney,
-      assignedBondOriginator: sellerOnly ? transaction.bond_originator : transactionPayload.bond_originator,
+      assignedAgent: transactionPayload.assigned_agent,
+      assignedAttorney: transactionPayload.attorney,
+      assignedBondOriginator: transactionPayload.bond_originator,
     },
   })
 

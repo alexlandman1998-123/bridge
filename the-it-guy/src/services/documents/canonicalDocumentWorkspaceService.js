@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { readDocumentRequirementContext, watchDocumentRequirementContext } from './documentRequirementReadService.js'
+import { documentRequirementTypeKey, documentRequirementLabel, documentRequirementIdentity } from '../../core/documents/documentRequirementIdentity.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import {
   calculateMissingBlockers,
@@ -273,7 +275,7 @@ function getGeneratedDocumentMatchForRequirement(requirement = {}, documentCente
     ...normalizeArray(documentCenter.generatedDocuments),
     ...normalizeArray(documentCenter.uploadedDocuments).filter((document) => /signed|signature|generated|packet|mandate|otp|addendum/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)),
   ]
-  const explicitlyLinked = allGenerated.find((document) => isExactCanonicalDocumentLink(document, requirement))
+  const explicitlyLinked = allGenerated.filter(document => document.is_current_evidence !== false).find((document) => isExactCanonicalDocumentLink(document, requirement))
   if (explicitlyLinked) return { document: explicitlyLinked, linkKind: 'exact' }
 
   // Older generated/signed artifacts predate canonical_requirement_instance_id.
@@ -314,14 +316,17 @@ function getGeneratedDocumentMatchForRequirement(requirement = {}, documentCente
 
 function getUploadedDocumentForRequirement(requirement = {}, documentCenter = {}) {
   const uploaded = normalizeArray(documentCenter.uploadedDocuments)
-  return uploaded.find((document) => isExactCanonicalDocumentLink(document, requirement)) || null
+  const currentId = requirement.satisfied_by_document_id || requirement.latest_upload_id
+  if (currentId) return uploaded.find(document => document.id === currentId) || null
+  return uploaded.find(document => document.is_current_evidence === true && isExactCanonicalDocumentLink(document, requirement)) ||
+    uploaded.find(document => document.is_current_evidence !== false && isExactCanonicalDocumentLink(document, requirement)) || null
 }
 
 export function normalizeCanonicalRequirement(instance = {}, { documentCenter = {}, role = 'seller' } = {}) {
   const definition = getDefinition(instance)
   const pack = getPack(instance)
   const packKey = normalizeText(instance.pack_key || definition.pack_key || pack.key || 'uncategorised')
-  const definitionKey = normalizeText(instance.document_definition_key || definition.key)
+  const definitionKey = documentRequirementTypeKey(instance) || normalizeText(definition.key)
   const documentReference = resolveCrossModuleDocumentReference(definitionKey, {
     packKey,
     requestedFromRole: instance.requested_from_role || instance.requestedFromRole,
@@ -332,7 +337,7 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
   const uploadedDocument = getUploadedDocumentForRequirement({ ...instance, documentDefinitionKey: definitionKey }, documentCenter)
   const generatedMatch = getGeneratedDocumentMatchForRequirement({ ...instance, documentDefinitionKey: definitionKey }, documentCenter)
   const generatedDocument = generatedMatch.document
-  const linkedDocument = generatedDocument || uploadedDocument || null
+  const linkedDocument = uploadedDocument || generatedDocument || null
   const hasLinkedDocument = Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.storage_path || linkedDocument?.url)
   const projectionStatus = uploadedDocument || generatedMatch.linkKind === 'exact'
     ? 'linked'
@@ -380,7 +385,7 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
     pack_key: packKey,
     pack,
     packMeta: getPackMeta(packKey, pack),
-    title: normalizeText(definition.display_label || instance.display_label || definitionKey) || 'Document',
+    title: documentRequirementLabel(instance, definition),
     description: normalizeText(definition.description || instance.description || 'This document is required for your transaction.'),
     requirementLevel,
     requirement_level: requirementLevel,
@@ -446,7 +451,7 @@ export function buildCanonicalDocumentWorkspaceModel({ requirements = [], docume
     .filter((item) =>
       item.id &&
       item.visible &&
-      item.status !== 'not_applicable' &&
+      item.status !== 'not_applicable' && item.applicability_override !== 'removed' &&
       !RETIRED_REQUIREMENT_KEYS.has(normalizeKey(item.documentDefinitionKey)),
     )
 
@@ -455,12 +460,7 @@ export function buildCanonicalDocumentWorkspaceModel({ requirements = [], docume
   // same state while the database reconciliation migration is rolling out.
   const byIdentity = new Map()
   for (const requirement of visibleRequirements) {
-    const identity = [
-      normalizeText(requirement.context_type || requirement.contextType),
-      normalizeText(requirement.context_id || requirement.contextId),
-      normalizeKey(requirement.documentDefinitionKey),
-      normalizeText(requirement.requested_from_contact_id || requirement.requestedFromContactId),
-    ].join('::')
+    const identity = documentRequirementIdentity(requirement)
     const current = byIdentity.get(identity)
     const currentScore = (REQUIREMENT_STATUS_PRIORITY[current?.status] || 0) + (current?.hasLinkedDocument ? 100 : 0)
     const nextScore = (REQUIREMENT_STATUS_PRIORITY[requirement.status] || 0) + (requirement.hasLinkedDocument ? 100 : 0)
@@ -537,16 +537,8 @@ export function buildCanonicalDocumentWorkspaceModel({ requirements = [], docume
 export async function getCanonicalRequirementsForContext({ contextType, contextId, client = supabase } = {}) {
   const db = client || supabase
   if (!isSupabaseConfigured || !db || !contextType || !contextId) return []
-  const result = await db
-    .from('document_requirement_instances')
-    .select('*, document_definitions(*), document_packs(*)')
-    .eq('context_type', contextType)
-    .eq('context_id', contextId)
-    .neq('status', 'not_applicable')
-    .order('pack_key', { ascending: true })
-    .order('document_definition_key', { ascending: true })
-  if (result.error) throw result.error
-  return result.data || []
+  const snapshot = await readDocumentRequirementContext(db, { contextType, contextId })
+  return snapshot.requirements
 }
 
 export async function getCanonicalRequirementsForListing({ listingId, client = supabase } = {}) {
@@ -598,6 +590,7 @@ export async function getCanonicalBuyerPortalDocumentProjection({ client = supab
 }
 
 export function useCanonicalRequirements({ contextType, contextId, documentCenter = {}, role = 'seller', enabled = true } = {}) {
+  const requestSequence = useRef(0)
   const [state, setState] = useState({
     loading: Boolean(enabled && contextType && contextId),
     error: null,
@@ -606,18 +599,20 @@ export function useCanonicalRequirements({ contextType, contextId, documentCente
   })
 
   const load = useCallback(async () => {
+    const request = ++requestSequence.current
+    const commit = next => { if (request === requestSequence.current) setState(next) }
     if (!enabled || !contextType || !contextId || !isCanonicalDocumentWorkspaceEnabled()) {
-      setState({ loading: false, error: null, requirements: [], projectionDocumentCenter: null })
+      commit({ loading: false, error: null, requirements: [], projectionDocumentCenter: null })
       return
     }
-    setState((previous) => ({ ...previous, loading: true, error: null }))
+    commit((previous) => ({ ...previous, loading: true, error: null }))
     try {
       if (normalizeRole(role) === 'buyer' && contextType === 'transaction') {
         const projection = await getCanonicalBuyerPortalDocumentProjection()
         if (projection.transactionId && projection.transactionId !== contextId) {
           throw new Error('The buyer portal document projection does not match this transaction.')
         }
-        setState({
+        commit({
           loading: false,
           error: null,
           requirements: projection.requirements,
@@ -625,18 +620,19 @@ export function useCanonicalRequirements({ contextType, contextId, documentCente
         })
         return
       }
-      const requirements = await getCanonicalRequirementsForContext({ contextType, contextId })
-      setState({ loading: false, error: null, requirements, projectionDocumentCenter: null })
+      const snapshot = await readDocumentRequirementContext(supabase, { contextType, contextId })
+      commit({ loading: false, error: null, requirements: snapshot.requirements, projectionDocumentCenter: { uploadedDocuments: snapshot.documents } })
     } catch (error) {
-      setState({ loading: false, error, requirements: [], projectionDocumentCenter: null })
+      commit({ loading: false, error, requirements: [], projectionDocumentCenter: null })
     }
   }, [contextType, contextId, enabled, role])
 
   useEffect(() => {
-    queueMicrotask(() => {
-      void load()
-    })
-  }, [load])
+    let active = true
+    queueMicrotask(() => { if (active) void load() })
+    const stop = enabled ? watchDocumentRequirementContext(load) : () => {}
+    return () => { active = false; requestSequence.current += 1; stop() }
+  }, [load, enabled])
 
   const model = useMemo(
     () => buildCanonicalDocumentWorkspaceModel({

@@ -51,3 +51,13 @@ export function buildSellerAgentAssistedDisclosurePatch({
     },
   }
 }
+
+/** Only the selected disclosure requires answers; information intake never does. */
+export function buildSellerDisclosurePreparationPatch({ disclosure = {}, existingFormData = {}, capturedBy = '' } = {}) {
+  if (isSellerDisclosureCaptureLocked(existingFormData)) {
+    throw new Error('The existing disclosure has signed evidence. Use the document replacement workflow; its answers are preserved.')
+  }
+  const missing = getSellerDisclosureQuestionMissing(disclosure)
+  if (missing.length) throw new Error(missing.join(' '))
+  return buildSellerAgentAssistedDisclosurePatch({ disclosure, existingFormData, capturedBy })
+}

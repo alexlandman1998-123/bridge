@@ -31,6 +31,7 @@
   display: none !important;
 }
 .hs-brief-join .hs-academy-image-note {
+  display: none;
   right: 30px;
   bottom: 30px;
   max-width: 18ch;
@@ -38,6 +39,7 @@
 }
 .hs-brief-join .hs-academy-image::after {
   display: block !important;
+  content: "" !important;
   z-index: 1;
   top: auto;
   right: 0;
@@ -65,12 +67,74 @@
   font-size: 17px;
   line-height: 1.6;
 }
+.hs-brief-join > .hs-academy-panels {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-self: stretch;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  background: #1e1e1e;
+  color: #fff;
+}
+.hs-academy-panels details + details {
+  border-left: 1px solid rgba(255, 255, 255, .25);
+}
+.hs-academy-panels summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 22px 24px;
+  cursor: pointer;
+  list-style: none;
+  font: 700 11px/1.45 Montserrat, Arial, sans-serif;
+  letter-spacing: .025em;
+}
+.hs-academy-panels summary::-webkit-details-marker { display: none; }
+.hs-academy-panels summary b { color: #ff6319; }
+.hs-academy-panels summary span { flex: 1; min-width: 0; }
+.hs-academy-panels summary svg { flex-shrink: 0; color: #ff6319; }
+.hs-academy-panels details[open] summary svg { transform: rotate(45deg); }
+.hs-academy-panels summary:focus-visible {
+  outline: 2px solid #ff6319;
+  outline-offset: -4px;
+}
+.hs-brief-join .hs-academy-panels details p {
+  max-width: none;
+  margin: 0;
+  padding: 0 24px 26px;
+  color: #ddd;
+  font-size: 15px;
+  line-height: 1.65;
+}
 
 @media (max-width: 760px) {
   .hs-brief-join { grid-template-columns: 1fr !important; }
-  .hs-brief-join .hs-academy-image { min-height: 430px !important; }
-  .hs-brief-join .hs-academy-image::before { inset: 42px 26px auto; }
-  .hs-brief-join > div.hs-academy-copy { padding: 60px 24px 90px !important; }
+  .hs-brief-join .hs-academy-image {
+    width: 100%;
+    max-width: none;
+    min-height: 0 !important;
+    padding: 32px 24px 44px !important;
+  }
+  .hs-brief-join .hs-academy-image::before { display: none !important; }
+  .hs-brief-join .hs-academy-image-note {
+    position: static;
+    display: block;
+    max-width: 12ch;
+    color: #fff !important;
+    font: 800 clamp(38px, 10vw, 64px)/1 Montserrat, Arial, sans-serif;
+    letter-spacing: -.065em;
+    text-align: left;
+  }
+  .hs-brief-join > div.hs-academy-copy { padding: 60px 24px 48px !important; }
+  .hs-brief-join > .hs-academy-panels { grid-template-columns: 1fr; }
+  .hs-academy-panels details + details {
+    border-top: 1px solid rgba(255, 255, 255, .25);
+    border-left: 0;
+  }
+  .hs-academy-panels summary { min-height: 68px; }
 }
 
 /* Campaign-led landing hero: built from the 45-day promise, not a brochure. */

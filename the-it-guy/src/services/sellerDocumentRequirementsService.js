@@ -1,3 +1,4 @@
+import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
@@ -2241,17 +2242,13 @@ function getOnboardingDisclosure(formData = {}) {
 function getOnboardingDisclosureSigningState(formData = {}, listing = {}) {
   const disclosure = getOnboardingDisclosure(formData)
   if (!disclosure || !Object.keys(disclosure).length) return null
-  const hasPrimarySignature = Boolean(
-    normalizeText(disclosure.signature || disclosure.signatureValue || disclosure.signature_value) &&
-    normalizeText(disclosure.signedAt || disclosure.signed_at),
-  )
-  // Captured answers and canonical defaults are unsigned facts, not an
-  // onboarding signing artifact that can replace the document requirement.
-  if (!hasPrimarySignature) return null
   const signing = buildSellerCompliancePortalModel({ formData, listing })
   return {
     complete: hasCompletedOnboardingDisclosureSignature(formData) && signing.complete,
-    hasPrimarySignature,
+    hasPrimarySignature: Boolean(
+      normalizeText(disclosure.signature || disclosure.signatureValue || disclosure.signature_value) &&
+      normalizeText(disclosure.signedAt || disclosure.signed_at),
+    ),
   }
 }
 
@@ -3088,9 +3085,7 @@ export function buildSellerDocumentSourceOfTruth({
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
     ...(sellerFicaDeclarationDocument ? [sellerFicaDeclarationDocument] : []),
     ...manualSigningDocuments,
-    // Unsigned review drafts stay in onboarding preparation. They must not
-    // occupy a signed requirement or suppress download/send/upload choices.
-    ...postOnboardingDraftDocuments.filter((document) => document.documentContract?.stage !== 'review_draft'),
+    ...postOnboardingDraftDocuments,
   ]
   const sourceListing = {
     ...listing,
@@ -3114,9 +3109,14 @@ export function buildSellerDocumentSourceOfTruth({
     mandateStatus: mandatePacket?.state || sourceListing?.mandateStatus || sourceListing?.mandate_status,
     mandateExecutionMode: sourceListing?.mandateExecutionMode || sourceListing?.mandate_execution_mode || sourceListing?.mandate?.executionMode,
   })
-  const projectedRows = projectCanonicalSellerDocumentRows(candidateRows)
-  const rows = projectedRows.map((row) => ({
+  const projectedRows = projectCanonicalSellerDocumentRows(mergeDocumentRequirementRows(candidateRows, listing.canonicalDocumentSnapshot, { party: 'seller' }))
+  const rows = (listing.canonicalDocumentError ? [] : projectedRows).map((row) => ({
     ...row,
+    ...(listing.canonicalDocumentPortal && row.sharedRequirement ? {
+      canUpload: (row.original?.requirement?.uploadable_by_roles || []).includes('seller')
+        && !['approved', 'completed', 'waived', 'not_applicable'].includes(row.status)
+        && !/(signed_|mandate|disclosure|fica_declaration|signature)/.test(row.original?.requirement?.document_definition_key || ''),
+    } : {}),
     signingStatus: getSellerSigningStatusForDocument(row.key || row.requirementKey, signingStatus),
     sellerSubject: sellerSubjectContext,
   }))

@@ -1,0 +1,21 @@
+DNS records for homeseekers.co.za
+
+Sender: thomas@homeseekers.co.za
+Add these records at the current DNS provider. Keep existing records. TTL may be Auto or 300 seconds.
+
+Type: TXT
+Name: resend._domainkey
+Value: p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDURu9PF4fDkXaVNxfbywjmKkPSQXzsJkrsYQpweMjJCaVm2lC6BqchSm6ZnJWsDx8293297NfjyEa7PfNniXk7yWd7+pA0RNr1i6hwFU364+PYPn9/+p6aCNpZpBh4rIM2hTToC+5j4iDlsqnGkuWfQHxW3IN5pEgLomYH+wNXKwIDAQAB
+
+Type: MX
+Name: send
+Value: feedback-smtp.us-east-1.amazonses.com
+Priority: 10
+
+Type: TXT
+Name: send
+Value: v=spf1 include:amazonses.com ~all
+
+Type: CNAME
+Name: rsend
+Value: send.forge.rmta.net

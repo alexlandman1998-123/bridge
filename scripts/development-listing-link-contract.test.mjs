@@ -15,6 +15,6 @@ assert.match(listingWorkspace, /activityType: selectedDevelopmentLinkId \? 'deve
 assert.match(leadIngestion, /development_id, assigned_agent_id/, 'Listing lookup reads an existing development association')
 assert.match(leadIngestion, /linked_listing_development_id/, 'Inbound listing enquiries inherit the linked development')
 assert.match(leadIngestion, /developmentMatch: resolvedDevelopmentMatch/, 'The development lead mirror uses the resolved listing association')
-assert.match(developmentWorkspace, /Agent and Direct Listings/, 'Developer workspace presents linked agency and direct listings')
+assert.match(developmentWorkspace, /<DevelopmentMarketingListings listings=\{linkedListingRows\}/, 'Developer workspace presents linked agency and direct listings')
 
 console.log('development listing link contract checks passed')

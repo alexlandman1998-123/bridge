@@ -1,4 +1,4 @@
-import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
+import { inferLeadCategoryFromRecord } from '../../lib/leadCategory.js'
 import { getDevelopmentLeadStage, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 
 export const BUYER_LEAD_LIST_STAGES = Object.freeze([

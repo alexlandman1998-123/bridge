@@ -41,7 +41,7 @@ test('records the agency-upload choice without approving its mandate or confirmi
   assert.equal(approval.commission.confirmed, false)
   assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, reviewApproved: false }), /Approve seller onboarding/)
   assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, selectedDocuments: ['fica', 'mandate'] }), /Upload the agency mandate separately/)
-  assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, selectedDocuments: [] }), /Include FICA/)
+  assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, selectedDocuments: [] }), /Choose at least one document/)
   assert.throws(() => createSellerOnboardingFormalPackApproval({ ...input, mandateSource: 'unknown' }), /Choose a mandate document source/)
 })
 

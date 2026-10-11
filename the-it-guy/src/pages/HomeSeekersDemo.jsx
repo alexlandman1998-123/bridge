@@ -1,6 +1,6 @@
 import HomeSeekersLoginLink from './HomeSeekersLoginLink'
 import { homeSeekersPath } from './homeSeekersRoutes.js'
-import { ArrowRight, Bath, BedDouble, Car, Search } from "lucide-react";
+import { ArrowRight, Bath, BedDouble, Car, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
@@ -31,6 +31,11 @@ const nav = [
   ["Renting", homeSeekersPath("/renting")],
   ["About", homeSeekersPath("/about")],
   ["Join us", homeSeekersPath("/join")],
+];
+const agentProposition = [
+  ["01", "KEEP 100% OF YOUR COMMISSION", "No split and no cap. You write it, you keep it. We charge a fee for carrying the business, not a share of your deals, which means we have no reason to be in your pocket and every reason to help you build something."],
+  ["02", "ONE FIXED FEE, PRINTED", "R10,000 a month paid from your deals, R9,000 a month on debit order, or R100,000 for the year upfront. R1,500 per registered sale. No joining fee, no desk fee, no royalty, no marketing levy. Every price we charge is on this website."],
+  ["03", "WE ARE NOT FOR EVERYBODY", "Five registered sales in the last twelve months, or R6 million of property. Below that the fee costs you more than it saves you and we will say so on the first call. The fee is the filter, which is why nobody here is doing two deals a year."],
 ];
 
 function Eyebrow({ children }) {
@@ -341,10 +346,12 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
           <Eyebrow>
             RECENTLY <strong>SOLD</strong>
           </Eyebrow>
-          <h2>Sold quicker than the estate WhatsApp can start speculating.</h2>
+          <h2>Sold before the neighbour could tell you the market is slow.</h2>
           <p>
-            The deck records sales in 12 hours, one day, two days and beyond.
-            The point is not the boast - it is a system that leaves a paper trail.
+            Twelve hours, one day, two days. Some of these never reached a portal,
+            because we already had the buyer on file. We work buyers as hard as we
+            work sellers, which is why the right house often sells before anybody
+            else knows it is for sale.
           </p>
         </div>
         <article className="hs-results-ledger">
@@ -463,30 +470,32 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
         </div>
         <div className="hs-academy-copy">
           <Eyebrow>
-            NOT YOUR AVERAGE <strong>AGENCY</strong>
+            A PRICE, <strong>NOT A PERCENTAGE</strong>
           </Eyebrow>
           <h2>
-            If “just checking in” is not your career plan, <em>we should talk.</em>
+            Your commission is <em>not our business model.</em>
           </h2>
           <p>
-            Learn the craft, get proper backup and build a pipeline that is not
-            made of wishful thinking. We train people who want to become the
-            name their suburb recommends.
+            One fixed fee a month. You keep one hundred percent of what you write.
+            No split, no cap, no royalty, and no percentage that quietly starts
+            growing the day you get good at this. Whether you write two million
+            or twenty, our number does not move.
           </p>
           <a className="hs-academy-link" href={homeSeekersPath("/join")}>
             See what you are signing up for <ArrowRight size={18} />
           </a>
         </div>
-        <div className="hs-academy-strip">
-          <span>
-            <b>01</b> Learn the craft
-          </span>
-          <span>
-            <b>02</b> Get real backup
-          </span>
-          <span>
-            <b>03</b> Earn the referral
-          </span>
+        <div className="hs-academy-panels">
+          {agentProposition.map(([number, label, description]) => (
+            <details key={number}>
+              <summary>
+                <b>{number}</b>
+                <span>{label}</span>
+                <Plus size={18} aria-hidden="true" />
+              </summary>
+              <p>{description}</p>
+            </details>
+          ))}
         </div>
       </section>
 

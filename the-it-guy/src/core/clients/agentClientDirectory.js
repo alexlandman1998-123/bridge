@@ -1,6 +1,9 @@
+import { clientMatchesStoredId, clientSourceKey, normalizeClientPhone, resolveClientRedirect } from './clientIdentity'
+import { loadClientIdentities } from '../../services/clientIdentityService'
+import { loadLatestClientActivity } from '../../services/clientActivityService'
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
 import { listCanvassingWorkspace } from '../../lib/canvassingRepository'
-import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
+import { fetchOrganisationSettings, listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../../lib/transactionsListApi'
 import { getOrganisationPrivateListings } from '../../services/privateListingService'
@@ -17,20 +20,29 @@ const TYPE_PRIORITY = [
   'Client',
 ]
 
+const DIRECTORY_CACHE_TTL_MS = 30_000
+const directoryCache = new Map()
+const directoryInflight = new Map()
+let directoryGeneration = 0
+
+export function invalidateAgentClientDirectoryCache() {
+  directoryGeneration += 1
+  directoryCache.clear()
+  directoryInflight.clear()
+}
+
+// Cache only in memory, and discard it whenever the signed-in session changes.
+const authSubscription = typeof window !== 'undefined'
+  ? supabase?.auth?.onAuthStateChange?.(invalidateAgentClientDirectoryCache)?.data?.subscription
+  : null
+if (import.meta.hot) import.meta.hot.dispose(() => authSubscription?.unsubscribe())
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
-}
-
-function normalizePhone(value) {
-  const digits = normalizeText(value).replace(/\D/g, '')
-  if (!digits) return ''
-  if (digits.startsWith('27') && digits.length >= 11) return digits
-  if (digits.startsWith('0') && digits.length === 10) return `27${digits.slice(1)}`
-  return digits
 }
 
 function isUuidLike(value) {
@@ -194,27 +206,29 @@ function typeFilterKeys(typeLabels = []) {
 }
 
 function sourceKeys(source = {}) {
-  const keys = []
+  if (source.identityId) return [`client:${source.identityId}`]
+  const organisationId = normalizeText(source.organisationId)
   const email = normalizeLower(source.email)
-  const phone = normalizePhone(source.phone)
-  const name = normalizeLower(source.name)
-  if (email) keys.push(`email:${email}`)
-  if (phone) keys.push(`phone:${phone}`)
-  if (name && !['unnamed lead', 'unnamed contact', 'unnamed client', 'seller', 'buyer'].includes(name)) keys.push(`name:${name}`)
-  if (!keys.length) {
-    const recordId = normalizeLower(source.sourceRecordId || source.leadId || source.listingId || source.transactionId || source.contactId || source.prospectId)
-    if (recordId) keys.push(`record:${recordId}`)
-  }
-  return keys
+  // Names and phones only suggest duplicates. They never combine records.
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return [`email:${organisationId}:${email}`]
+  const recordId = clientSourceKey(source)
+  return recordId ? [`record:${organisationId}:${recordId}`] : []
 }
 
 function createEmptyClient(source = {}) {
   const fallbackId = source.sourceRecordId || source.leadId || source.transactionId || source.contactId || source.prospectId || source.name
   return {
     id: sourceKeys(source)[0] || `client:${normalizeLower(fallbackId) || Date.now()}`,
-    name: source.name || 'Unnamed contact',
-    email: normalizeLower(source.email),
-    phone: normalizeText(source.phone),
+    identityId: source.identityId || null,
+    identityVersion: source.identityProfile?.version || null,
+    identityAvailable: Boolean(source.identityAvailable),
+    canManageIdentity: Boolean(source.canManageIdentity && source.identityId),
+    mergedIdentityIds: source.mergedIdentityIds || [],
+    emails: source.identityIdentifiers?.filter((item) => item.kind === 'email').map((item) => item.value) || [],
+    phones: source.identityIdentifiers?.filter((item) => item.kind === 'phone').map((item) => item.value) || [],
+    name: source.identityProfile?.name || source.name || 'Unnamed contact',
+    email: normalizeLower(source.identityProfile ? source.identityProfile.primary_email : source.email),
+    phone: normalizeText(source.identityProfile ? source.identityProfile.primary_phone : source.phone),
     organisationId: normalizeText(source.organisationId),
     assignedAgentId: normalizeText(source.assignedAgentId),
     assignedAgentName: normalizeText(source.assignedAgentName),
@@ -248,8 +262,11 @@ function mergeClientSource(client, source = {}) {
   const nextPhone = normalizeText(source.phone)
   const nextName = normalizeText(source.name)
   if ((!client.name || client.name === 'Unnamed contact') && nextName) client.name = nextName
-  if (!client.email && nextEmail) client.email = nextEmail
-  if (!client.phone && nextPhone) client.phone = nextPhone
+  if (!client.identityId && !client.email && nextEmail) client.email = nextEmail
+  if (nextEmail && !client.emails.includes(nextEmail)) client.emails.push(nextEmail)
+  if (!client.identityId && !client.phone && nextPhone) client.phone = nextPhone
+  const normalizedPhone = normalizeClientPhone(nextPhone)
+  if (normalizedPhone && !client.phones.some((phone) => normalizeClientPhone(phone) === normalizedPhone)) client.phones.push(client.identityId ? normalizedPhone : nextPhone)
   if (!client.organisationId && source.organisationId) client.organisationId = normalizeText(source.organisationId)
   if (!client.assignedAgentId && source.assignedAgentId) client.assignedAgentId = normalizeText(source.assignedAgentId)
   if (!client.assignedAgentName && source.assignedAgentName) client.assignedAgentName = normalizeText(source.assignedAgentName)
@@ -300,6 +317,8 @@ function finalizeClient(client) {
     statusLabel,
     linkedRecordLabel,
     latestPropertyLabel,
+    ...client.emails,
+    ...client.phones,
     ...client.linkedRecords.map((item) => `${item?.label || ''} ${item?.reference || ''}`),
   ]
     .map((value) => normalizeLower(value))
@@ -400,6 +419,7 @@ function buildLeadSources({ leads = [], contacts = [], leadActivities = [], task
     const latestActivity = latestActivityByLeadId.get(leadId)
     const lastActivityAt = latestDate(latestActivity?.activityDate, latestActivity?.createdAt, lead?.updatedAt, lead?.createdAt)
     return {
+      identitySource: { kind: 'lead', id: leadId },
       sourceRecordId: leadId,
       name: contact.name,
       email: contact.email,
@@ -436,6 +456,7 @@ function buildLeadSources({ leads = [], contacts = [], leadActivities = [], task
       const contactId = normalizeText(contact?.contactId || contact?.contact_id)
       const name = fullName(contact?.firstName || contact?.first_name, contact?.lastName || contact?.last_name) || 'Unnamed contact'
       return {
+        identitySource: { kind: 'contact', id: contactId },
         sourceRecordId: contactId,
         name,
         email: normalizeLower(contact?.email),
@@ -479,6 +500,7 @@ function buildProspectSources({ prospects = [], activities = [], organisationId 
     const lastActivityAt = latestDate(latestActivity?.activityDate, latestActivity?.createdAt, prospect?.updatedAt, prospect?.createdAt)
     const propertyLabel = normalizeText(prospect?.area || prospect?.propertyType || prospect?.interest || prospect?.timeline)
     return {
+      identitySource: { kind: 'prospect', id: prospectId },
       sourceRecordId: prospectId,
       prospectId,
       name: normalizeText(prospect?.name) || fullName(prospect?.firstName, prospect?.lastName) || 'Unnamed prospect',
@@ -518,6 +540,7 @@ function buildTransactionBuyerSources(rows = []) {
       const propertyLabel = getPropertyLabelFromTransactionRow(row)
       const lastActivityAt = latestDate(transaction?.updated_at, transaction?.created_at, row?.unit?.updated_at, row?.unit?.created_at)
       return {
+        identitySource: { kind: 'transaction_buyer', id: transactionId },
         sourceRecordId: buyer?.id || transactionId,
         name: normalizeText(buyer?.name) || 'Buyer pending',
         email: normalizeLower(buyer?.email),
@@ -562,6 +585,7 @@ function buildTransactionSellerSources(rows = [], sellerRows = []) {
       const propertyLabel = getPropertyLabelFromTransactionRow(row)
       const lastActivityAt = latestDate(seller?.updated_at, transaction?.updated_at, transaction?.created_at)
       return {
+        identitySource: { kind: 'transaction_seller', id: transactionId },
         sourceRecordId: `seller:${transactionId}`,
         name: name || 'Seller',
         email,
@@ -595,6 +619,8 @@ function buildTransactionSellerSources(rows = [], sellerRows = []) {
 
 function buildManualBuyerSources(rows = []) {
   return (rows || []).map((buyer) => ({
+    identitySource: { kind: 'buyer', id: buyer?.id },
+    organisationId: normalizeText(buyer?.organisation_id),
     sourceRecordId: buyer?.id,
     name: normalizeText(buyer?.name) || 'Unnamed client',
     email: normalizeLower(buyer?.email),
@@ -685,6 +711,7 @@ function buildPrivateListingSellerSources(rows = []) {
       )
       const lastActivityAt = latestDate(listing?.updatedAt, listing?.updated_at, listing?.createdAt, listing?.created_at)
       return {
+        identitySource: { kind: 'listing_seller', id: listingId },
         sourceRecordId: `listing:${listingId}`,
         name: sellerName || `Seller for ${propertyLabel}`,
         email,
@@ -796,13 +823,58 @@ async function resolveAgentOrganisationId({ profile = {}, role = 'agent', worksp
   return organisationId
 }
 
-function buildDirectory(sourceRows = []) {
+export function buildAgentClientDirectory(sourceRows = [], identities = {}) {
+  const profiles = identities.profiles || []
+  const profilesById = new Map(profiles.map((profile) => [profile.id, profile]))
+  const identifiersByClient = new Map()
+  for (const identifier of identities.identifiers || []) {
+    const values = identifiersByClient.get(identifier.client_id) || []
+    values.push(identifier)
+    identifiersByClient.set(identifier.client_id, values)
+  }
+  const redirectsByClient = new Map()
+  for (const profile of profiles) {
+    if (!profile.merged_into) continue
+    const values = redirectsByClient.get(profile.merged_into) || []
+    values.push(profile.id)
+    redirectsByClient.set(profile.merged_into, values)
+  }
+  const links = new Map((identities.links || []).map((link) => [`${link.source_kind}:${link.source_id}`, link.client_id]))
   const grouped = { clients: new Map(), keyIndex: new Map() }
-  for (const source of sourceRows) addSource(grouped, source)
+  const represented = new Set()
+  const enrich = (source, identityProfile) => ({
+    ...source,
+    identityId: identityProfile?.id,
+    identityProfile,
+    identityAvailable: identities.available,
+    canManageIdentity: identities.canManage,
+    mergedIdentityIds: redirectsByClient.get(identityProfile?.id) || [],
+    identityIdentifiers: identifiersByClient.get(identityProfile?.id) || [],
+  })
+  for (const source of sourceRows) {
+    const identityProfile = resolveClientRedirect(profilesById, links.get(clientSourceKey(source)))
+    if (identityProfile) represented.add(identityProfile.id)
+    addSource(grouped, enrich(source, identityProfile))
+  }
+  for (const profile of profiles) {
+    if (profile.merged_into || represented.has(profile.id)) continue
+    addSource(grouped, enrich({ sourceRecordId: profile.id, organisationId: profile.organisation_id, name: profile.name,
+      sourceLabel: 'Client profile', typeLabel: 'Client', status: 'Active', createdAt: profile.created_at, updatedAt: profile.updated_at }, profile))
+  }
   return [...grouped.clients.values()]
-    .map((client) => finalizeClient(client))
+    .map((client) => finalizeClient({ ...client,
+      legacyDirectoryIds: [...new Set(client.sources.flatMap((source) => [
+        source.email ? `email:${normalizeLower(source.email)}` : '',
+        source.phone ? `phone:${normalizeClientPhone(source.phone)}` : '',
+        source.name ? `name:${normalizeLower(source.name)}` : '',
+      ].filter(Boolean)))],
+      transactions: [...new Map(client.transactions.map((row) => [row.transaction?.id, row])).values()],
+      linkedRecords: [...new Map(client.linkedRecords.map((record) => [`${record.kind}:${record.id}`, record])).values()],
+    }))
     .sort((left, right) => toDateValue(right.lastActivityAt) - toDateValue(left.lastActivityAt))
 }
+
+const buildDirectory = buildAgentClientDirectory
 
 function buildFilterOptions(clients = [], users = []) {
   const sourceOptions = [...new Set(clients.flatMap((client) => client.sourceLabels || []))].filter(Boolean).sort()
@@ -829,96 +901,112 @@ function buildFilterOptions(clients = [], users = []) {
   }
 }
 
-export async function loadAgentClientDirectory({ profile = {}, role = 'agent', workspace = null } = {}) {
+async function readAgentClientDirectory({ organisationId, profile, role, currentAgent, forceRefresh }) {
+  // Only seller rows depend on the transaction result. Everything else can start
+  // together once the workspace is known.
+  const transactions = isSupabaseConfigured && profile?.id
+    ? fetchTransactionsByParticipantSummary({
+        userId: profile.id,
+        roleType: role,
+        organisationId,
+        identityContext: { email: currentAgent.email, fullName: currentAgent.fullName },
+        includePropertyDetails: false,
+        forceRefresh,
+      }).then((rows) => rows.filter((row) => !isSeedOrDemoRow(row?.transaction || row) && !isSeedOrDemoRow(row?.buyer || {})))
+    : Promise.resolve([])
+  const transactionSources = transactions.then(async (transactionRows) => ({
+    transactionRows,
+    sellerRows: await fetchTransactionSellerRows(transactionRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean)),
+  }))
+  const [crm, transaction, buyers, listings, canvassing, identitiesResult, usersResult] = await Promise.allSettled([
+    listAgencyCrmLeadContacts(organisationId, { includeLocalFallback: false }),
+    transactionSources,
+    fetchManualBuyerRows({ organisationId }),
+    getOrganisationPrivateListings(organisationId, {
+      includeRequirementsAndDocuments: false,
+      includeExternalLinks: false,
+      includePublicationDetails: false,
+    }),
+    listCanvassingWorkspace(organisationId, { includeLocalFallback: false }),
+    loadClientIdentities(organisationId),
+    listOrganisationUsersForWorkspace({ organisationId }),
+  ])
+  if (crm.status === 'rejected') throw crm.reason
+  if (identitiesResult.status === 'rejected') throw identitiesResult.reason
+  const identities = identitiesResult.value
+  const transactionRows = transaction.status === 'fulfilled' ? transaction.value.transactionRows : []
+  const sellerRows = transaction.status === 'fulfilled' ? transaction.value.sellerRows : []
+  const users = usersResult.status === 'fulfilled' && usersResult.value?.length
+    ? usersResult.value
+    : [{ id: currentAgent.id, userId: currentAgent.id, fullName: currentAgent.fullName, email: currentAgent.email }]
+  const sourceRows = [
+    ...buildLeadSources(crm.value),
+    ...buildProspectSources({ ...(canvassing.status === 'fulfilled' ? canvassing.value : {}), organisationId, sourceLabel: 'Canvassing' }),
+    ...buildTransactionBuyerSources(transactionRows),
+    ...buildTransactionSellerSources(transactionRows, sellerRows),
+    ...buildManualBuyerSources(buyers.status === 'fulfilled' ? buyers.value : []),
+    ...buildPrivateListingSellerSources(listings.status === 'fulfilled' ? listings.value : []),
+  ]
+  const clients = buildDirectory(sourceRows, identities)
+  const directory = {
+    clients,
+    activityWarning: '',
+    organisationId,
+    identityAvailable: identities.available,
+    canManageIdentities: identities.canManage,
+    users,
+    filters: buildFilterOptions(clients, users),
+  }
+  // Keep the core list usable while activity loads. Enrichment creates new rows
+  // so a cached list and another caller's render cannot be mutated underneath it.
+  if (identities.available) {
+    directory.activityPromise = loadLatestClientActivity(organisationId).then((latest) => ({
+      ...directory,
+      clients: clients.map((client) => ({ ...client, lastActivityAt: latestDate(client.lastActivityAt, latest.get(client.identityId)) }))
+        .sort((left, right) => toDateValue(right.lastActivityAt) - toDateValue(left.lastActivityAt)),
+    })).catch(() => ({ ...directory, activityWarning: 'Recent client activity could not load. Open the client activity timeline to retry.' }))
+  }
+  // Preserve existing optional-source fallbacks, but retry them on the next visit.
+  const cacheable = [transaction, buyers, listings, canvassing, usersResult].every((result) => result.status === 'fulfilled')
+  return { directory, cacheable }
+}
+
+export async function loadAgentClientDirectory({
+  profile = {}, role = 'agent', workspace = null, currentMembership = null,
+  businessWorkspaceId = '', forceRefresh = false, deferActivity = false,
+} = {}) {
   const currentAgent = {
     id: normalizeText(profile?.id || profile?.email),
     email: normalizeLower(profile?.email),
     fullName: normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
   }
-
-  let organisationId = normalizeText(workspace?.id)
-  let users = []
-  try {
-    const [settingsResult, usersResult] = await Promise.allSettled([
-      fetchOrganisationSettings(),
-      listOrganisationUsers(),
-    ])
-    const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null
-    const rawOrganisationId = normalizeText(settings?.organisation?.id)
-    organisationId = isUuidLike(organisationId) ? organisationId : rawOrganisationId
-    users = usersResult.status === 'fulfilled' ? usersResult.value || [] : []
-  } catch (error) {
-    console.warn('[agentClientDirectory] workspace settings lookup failed', error)
-  }
-  assertResolvedWorkspaceContext({ organisationId, profile, appRole: role }, { service: 'agentClientDirectory.loadAgentClientDirectory' })
-  if (!users.length) {
-    users = [{
-      id: currentAgent.id,
-      userId: currentAgent.id,
-      fullName: currentAgent.fullName,
-      email: currentAgent.email,
-    }]
-  }
-
-  let crmSnapshot = {
-    contacts: [],
-    leads: [],
-    leadActivities: [],
-    tasks: [],
-  }
-  crmSnapshot = await listAgencyCrmLeadContacts(organisationId, { includeLocalFallback: false })
-
-  let transactionRows = []
-  if (isSupabaseConfigured && profile?.id) {
-    try {
-      transactionRows = await fetchTransactionsByParticipantSummary({
-        userId: profile.id,
-        roleType: role,
-        organisationId,
-        identityContext: {
-          email: profile?.email || '',
-          fullName: currentAgent.fullName,
-        },
-      })
-      transactionRows = transactionRows.filter((row) => !isSeedOrDemoRow(row?.transaction || row) && !isSeedOrDemoRow(row?.buyer || {}))
-    } catch {
-      transactionRows = []
-    }
-  }
-
-  const transactionIds = transactionRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean)
-  const [sellerRows, manualBuyerRows] = await Promise.all([
-    fetchTransactionSellerRows(transactionIds),
-    fetchManualBuyerRows({ organisationId }),
+  // WorkspaceContext already resolved this identity; avoid bootstrapping it again.
+  const organisationId = await resolveAgentOrganisationId({ profile, role, workspace })
+  const key = JSON.stringify([
+    organisationId, currentAgent.id, currentAgent.email, currentAgent.fullName, role, businessWorkspaceId,
+    currentMembership?.id, currentMembership?.role, currentMembership?.workspaceRole || currentMembership?.workspace_role,
+    currentMembership?.branchId || currentMembership?.branch_id, currentMembership?.status,
   ])
-  let privateListingRows = []
-  try {
-    privateListingRows = await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
-  } catch {
-    privateListingRows = []
+  if (forceRefresh) invalidateAgentClientDirectoryCache()
+  let directory = directoryCache.get(key)?.expiresAt > Date.now() ? directoryCache.get(key).directory : null
+  if (!directory) {
+    let request = directoryInflight.get(key)
+    if (!request) {
+      const generation = directoryGeneration
+      request = readAgentClientDirectory({ organisationId, profile, role, currentAgent, forceRefresh }).then(({ directory: result, cacheable }) => {
+        if (generation === directoryGeneration && cacheable) {
+          for (const [cacheKey, entry] of directoryCache) if (entry.expiresAt <= Date.now()) directoryCache.delete(cacheKey)
+          directoryCache.set(key, { directory: result, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS })
+        }
+        return result
+      }).finally(() => {
+        if (directoryInflight.get(key) === request) directoryInflight.delete(key)
+      })
+      directoryInflight.set(key, request)
+    }
+    directory = await request
   }
-  let canvassingStore = { prospects: [], activities: [] }
-  try {
-    canvassingStore = await listCanvassingWorkspace(organisationId, { includeLocalFallback: false })
-  } catch {
-    canvassingStore = { prospects: [], activities: [] }
-  }
-  const sourceRows = [
-    ...buildLeadSources(crmSnapshot),
-    ...buildProspectSources({ ...canvassingStore, organisationId, sourceLabel: 'Canvassing' }),
-    ...buildTransactionBuyerSources(transactionRows),
-    ...buildTransactionSellerSources(transactionRows, sellerRows),
-    ...buildManualBuyerSources(manualBuyerRows),
-    ...buildPrivateListingSellerSources(privateListingRows),
-  ]
-
-  const clients = buildDirectory(sourceRows)
-  return {
-    clients,
-    organisationId,
-    users,
-    filters: buildFilterOptions(clients, users),
-  }
+  return !deferActivity && directory.activityPromise ? directory.activityPromise : directory
 }
 
 export async function loadAgentClientProfile({ clientId = '', profile = {}, role = 'agent', workspace = null } = {}) {
@@ -927,6 +1015,8 @@ export async function loadAgentClientProfile({ clientId = '', profile = {}, role
   if (recordType !== 'buyer' || !isUuidLike(recordId)) return undefined
 
   const organisationId = await resolveAgentOrganisationId({ profile, role, workspace })
+  const identities = await loadClientIdentities(organisationId)
+  if (identities.available) return undefined
   const buyer = await fetchManualBuyerRow({ buyerId: recordId, organisationId })
   if (!buyer) return null
 
@@ -944,7 +1034,7 @@ export function filterAgentClientDirectory(
   const archivedSet = new Set((archivedIds || []).map(normalizeText))
   return (clients || [])
     .map((client) => {
-      if (!archivedSet.has(normalizeText(client.id))) return client
+      if (!clientMatchesStoredId(client, archivedSet)) return client
       return {
         ...client,
         status: 'archived',
@@ -967,7 +1057,14 @@ export function filterAgentClientDirectory(
 
 export function getAgentClientProfile(clients = [], clientId = '') {
   const decodedId = decodeURIComponent(normalizeText(clientId))
-  const client = (clients || []).find((item) => normalizeText(item.id) === normalizeText(clientId) || decodeURIComponent(normalizeText(item.id)) === decodedId)
+  const [legacyKind, ...legacyParts] = decodedId.split(':')
+  const legacyId = legacyParts.join(':')
+  const matches = (clients || []).filter((item) => normalizeText(item.id) === normalizeText(clientId) || decodeURIComponent(normalizeText(item.id)) === decodedId
+    || (item.mergedIdentityIds || []).includes(decodedId.replace(/^client:/, ''))
+    || (['buyer', 'contact'].includes(legacyKind) && (item.sources || []).some((source) => source.identitySource?.kind === legacyKind && source.identitySource?.id === legacyId))
+    || (legacyKind === 'email' && (item.emails || []).includes(legacyId))
+    || (item.legacyDirectoryIds || []).includes(decodedId))
+  const client = matches.length === 1 ? matches[0] : null
   if (!client) return null
   const transactions = (client.transactions || [])
     .map((row) => ({
@@ -980,6 +1077,14 @@ export function getAgentClientProfile(clients = [], clientId = '') {
       typeLabel: row?.transaction?.transaction_type === 'private_property' ? 'Private' : 'Transaction',
       status: normalizeLower(row?.stage || row?.transaction?.stage).includes('registered') ? 'Completed' : 'Active',
       lastActivityAt: latestDate(row?.transaction?.updated_at, row?.transaction?.created_at),
+      imageUrl: [row?.transaction?.property_image_url, row?.transaction?.listing_image_url, row?.transaction?.primary_image_url, row?.transaction?.cover_image_url, row?.transaction?.hero_image_url, row?.transaction?.image_url, row?.transaction?.thumbnail_url, row?.unit?.cover_image_url, row?.unit?.primary_image_url, row?.unit?.image_url, row?.unit?.thumbnail_url, row?.unit?.gallery_images?.[0]?.url || row?.unit?.gallery_images?.[0], row?.development?.cover_image_url].find(value => typeof value === 'string' && value.trim()) || '',
+      price: Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price) || null,
+      deposit: Number(row?.transaction?.deposit_amount) || null,
+      financeLabel: normalizeText(row?.transaction?.finance_type).replaceAll('_', ' '),
+      assignedAgentName: normalizeText(row?.transaction?.assigned_agent),
+      attorneyName: normalizeText(row?.transaction?.attorney),
+      expectedTransferDate: row?.transaction?.expected_transfer_date || null,
+      nextAction: normalizeText(row?.transaction?.next_action),
     }))
     .sort((left, right) => toDateValue(right.lastActivityAt) - toDateValue(left.lastActivityAt))
 

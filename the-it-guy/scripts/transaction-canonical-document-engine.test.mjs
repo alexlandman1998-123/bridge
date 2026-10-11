@@ -4,6 +4,10 @@ import { createServer } from 'vite'
 const server = await createServer({
   root: process.cwd(),
   logLevel: 'silent',
+  define: {
+    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify('https://document-fixture.invalid'),
+    'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify('sb_publishable_document_fixture'),
+  },
   server: { middlewareMode: true },
 })
 
@@ -12,6 +16,7 @@ try {
     buildProjectedTransactionRequirementCandidates,
     buildTransactionDocumentFacts,
     shouldDisplayRequirementAtStage,
+    resolveTransactionDocumentRequirements,
   } = await server.ssrLoadModule('/src/services/documents/transactionCanonicalDocumentRequirementService.js')
   const { BUYER_ONBOARDING_FLOW_VERSION } = await server.ssrLoadModule('/src/lib/buyerOnboardingFlowContract.js')
 
@@ -346,6 +351,43 @@ try {
   assert.equal(electricalFacts({ certificates: { electrical: 'no' } }), false)
   assert.equal(electricalFacts({ certificates: { electrical: 'yes' } }), false)
   assert.equal(electricalFacts({}), false)
+
+  // Execute the save/projection path: an all-removed canonical result is a
+  // valid save, and must retire the old projection rather than recreate it.
+  let projection = [{ id: 'previous', document_key: 'buyer_id_document', requested_from: 'buyer', visible_section: 'buyer_documents', superseded_at: null }]
+  let upserted = []
+  const db = {
+    rpc: async (name, args) => {
+      assert.equal(name, 'bridge_sync_transaction_document_requirement_instances')
+      return { error: null, data: { instances: [], allInstances: args.p_generated_instances.map((row, index) => ({ ...row, id: `removed-${index}`, status: 'not_applicable', applicability_override: 'removed' })) } }
+    },
+    from(table) {
+      let write = null, ids = []
+      const query = {
+        select() { return query }, eq() { return query }, is() { return query }, order() { return query },
+        in(_key, values) { ids = values; return query },
+        upsert(rows) { upserted = rows; return query },
+        update(patch) { write = patch; return query },
+        then(resolve, reject) {
+          if (table === 'transaction_document_requirements' && write) projection = projection.map(row => ids.includes(row.id) ? { ...row, ...write } : row)
+          const data = table === 'document_requirement_rules' ? rules
+            : table === 'document_definitions' ? definitions
+              : projection.filter(row => !row.superseded_at)
+          return Promise.resolve({ data, error: null }).then(resolve, reject)
+        },
+      }
+      return query
+    },
+  }
+  const removedResult = await resolveTransactionDocumentRequirements({
+    transaction: { ...otpBondTransaction, id: 'removed-fixture', listing: {} },
+    formData: {}, documents: [], subprocesses: [], client: db,
+    persistenceMode: 'transaction_creation_rpc',
+  })
+  assert(removedResult.canonicalSync.allInstances.length > 0)
+  assert.equal(upserted.length, 0)
+  assert.equal(removedResult.requirements.length, 0)
+  assert(projection[0].superseded_at)
 
   console.log('transaction canonical document engine tests passed')
 } finally {

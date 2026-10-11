@@ -47,9 +47,18 @@ assert.match(panelSource, /publishMatterFinancialDocument/, 'Panel must wire doc
 assert.match(panelSource, /reverseMatterFinancialEntry/, 'Panel must wire entry reversal')
 assert.match(panelSource, /Enable portal/, 'Panel must let attorneys enable buyer/seller portal visibility')
 
-assert.match(detailSource, /import AttorneyMatterAccountsPanel/, 'Attorney transaction detail must import the Phase 2 panel')
+assert.match(
+  detailSource,
+  /(?:import\s+AttorneyMatterAccountsPanel\s+from\s+['"]\.\.\/components\/AttorneyMatterAccountsPanel(?:\.jsx)?['"]|const\s+AttorneyMatterAccountsPanel\s*=\s*lazy\(\s*\(\)\s*=>\s*import\(['"]\.\.\/components\/AttorneyMatterAccountsPanel(?:\.jsx)?['"]\)\s*\))/,
+  'Attorney transaction detail must load the actual matter accounts panel, directly or lazily',
+)
 assert.match(detailSource, /<AttorneyMatterAccountsPanel/, 'Attorney transaction finance tab must render the Phase 2 panel')
 assert.match(detailSource, /workspaceRole === 'attorney'[\s\S]*<AttorneyMatterAccountsPanel/, 'Phase 2 panel should be scoped to the attorney module')
+assert.match(
+  detailSource,
+  /matterAccountsPanel=\{workspaceRole === 'attorney' && transaction\?\.id \? \([\s\S]*?<AttorneyMatterAccountsPanel\s+transactionId=\{transaction\.id\}/,
+  'The finance workspace must receive the attorney accounts panel bound to the current transaction',
+)
 
 assert.doesNotMatch(
   phaseOneMigrationSource,

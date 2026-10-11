@@ -9,6 +9,8 @@ import { getAgencyLeadViewPreference, saveAgencyLeadViewPreference } from '../..
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import LeadListPage from './LeadListPage'
 import { filterAgencyLeadsForAgent } from './agencyLeadAgentScope'
+import { listBuyerLeadDevelopmentOptions } from '../../services/developmentBuyerLeadService.js'
+import { isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 import {
   invalidateAgencyLeadListCache,
   listAgencyLeadListRecords,
@@ -71,7 +73,7 @@ function toCurrentListingOption(listing = {}) {
   const title = normalizeText(listing.listingTitle || listing.title || listing.propertyAddress) || 'Untitled listing'
   const area = normalizeText(listing.suburb || listing.city)
   const reference = normalizeText(listing.listingReference)
-  return { id, label: [title, area, reference].filter(Boolean).join(' · ') }
+  return { id, label: [title, area, reference].filter(Boolean).join(' · '), developmentId: listing.developmentId || listing.development_id || '' }
 }
 
 function resolveMembershipRole(currentMembership = {}, fallback = '') {
@@ -141,6 +143,9 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const [listingOptions, setListingOptions] = useState([])
   const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
   const [listingOptionsError, setListingOptionsError] = useState('')
+  const [developmentOptions, setDevelopmentOptions] = useState([])
+  const [developmentOptionsLoading, setDevelopmentOptionsLoading] = useState(false)
+  const [developmentOptionsError, setDevelopmentOptionsError] = useState('')
   const [creating, setCreating] = useState(false)
   const [archiveDialog, setArchiveDialog] = useState({ open: false, leadId: '' })
   const [archiving, setArchiving] = useState(false)
@@ -206,6 +211,22 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
       }
     }
     void loadListings()
+    return () => { cancelled = true }
+  }, [createDialog.open, createDialog.category, organisationId])
+
+  useEffect(() => {
+    if (!createDialog.open || createDialog.category !== 'development' || !organisationId) return undefined
+    let cancelled = false
+    setDevelopmentOptions([])
+    setDevelopmentOptionsError('')
+    setDevelopmentOptionsLoading(true)
+    void listBuyerLeadDevelopmentOptions(organisationId).then((options) => {
+      if (!cancelled) setDevelopmentOptions(options)
+    }).catch(() => {
+      if (!cancelled) setDevelopmentOptionsError('Developments could not be loaded. Close and reopen this form to retry.')
+    }).finally(() => {
+      if (!cancelled) setDevelopmentOptionsLoading(false)
+    })
     return () => { cancelled = true }
   }, [createDialog.open, createDialog.category, organisationId])
 
@@ -297,11 +318,17 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const pageEnd = pageStart ? pageStart + listModel.rows.length - 1 : 0
   const pageRows = listModel.rows
   const sources = useMemo(() => records.sources || [...new Set(records.leads.map((lead) => normalizeText(lead?.leadSource)).filter(Boolean))].sort(), [records])
-  const categoryTitle = category === 'seller' ? 'Seller Leads' : category === 'archived' ? 'Archived Leads' : 'Buyer Leads'
+  const categoryTitle = category === 'seller' ? 'Seller Leads' : category === 'archived' ? 'Archived Leads' : category === 'development' ? 'Development Leads' : 'Buyer Leads'
 
   const handleCreateLead = async (form) => {
     if (!organisationId || creating) return
     const selectedListing = listingOptions.find((listing) => listing.id === normalizeText(form.listingId))
+    const selectedDevelopment = developmentOptions.find((development) => development.id === normalizeText(form.developmentId))
+    if (form.category === 'development' && !selectedDevelopment) {
+      setError('Select a development from the list.')
+      return
+    }
+    const leadCategory = form.category === 'seller' ? 'seller' : 'buyer'
     if (form.category === 'buyer' && form.listingId && !selectedListing) {
       setError('Select a current listing from the list.')
       return
@@ -311,21 +338,23 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
     try {
       const { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } = await loadLeadMutationActions()
       const assignedAgent = selectedAgent || agentOptions.find((agent) => normalizeKey(agent.id) === normalizeKey(form.agentId)) || currentAgent
-      const created = await createAgencyCrmLeadRecord(organisationId, {
-        contact: { firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, notes: form.notes, contactType: form.category },
+      const createdRecord = await createAgencyCrmLeadRecord(organisationId, {
+        contact: { firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, notes: form.notes, contactType: leadCategory },
         assignedAgent,
         assignedUserId: assignedAgent.userId || assignedAgent.id,
         createdBy: currentAgent.userId || currentAgent.id,
-        leadCategory: form.category,
+        leadCategory,
         leadDirection: 'Inbound',
         leadSource: form.source,
         stage: 'New Lead',
         priority: 'Medium',
-        propertyInterest: form.category === 'buyer' ? normalizeText(form.property || selectedListing?.label) : '',
+        propertyInterest: leadCategory === 'buyer' ? normalizeText(form.property || selectedListing?.label || selectedDevelopment?.label) : '',
         listingId: form.category === 'buyer' ? selectedListing?.id || '' : '',
         sellerPropertyAddress: form.category === 'seller' ? form.property : '',
+        ...(selectedDevelopment ? { rawEnquiryPayload: { development_id: selectedDevelopment.id } } : {}),
         notes: form.notes,
       }, { actor: currentAgent })
+      const created = { ...createdRecord, ...(selectedDevelopment || selectedListing?.developmentId ? { developmentId: selectedDevelopment?.id || selectedListing.developmentId } : {}) }
       const createdContact = {
         contactId: created.contactId,
         organisationId,
@@ -336,7 +365,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
         lastName: form.lastName.trim(),
         phone: form.phone.trim(),
         email: form.email.trim().toLowerCase(),
-        contactType: form.category,
+        contactType: leadCategory,
         notes: form.notes.trim(),
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
@@ -354,7 +383,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
       }))
       setTotalLeadCount((count) => count + 1)
       setCreateDialog((previous) => ({ ...previous, open: false }))
-      setCategory(form.category)
+      setCategory(isDevelopmentBuyerLead(created) ? 'development' : leadCategory)
       setPage(1)
       setMessage('Lead created.')
       invalidateAgencyLeadListCache(organisationId)
@@ -476,7 +505,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
         agents={agentOptions}
         isPrincipal={isPrincipal && !scopedAgent}
         category={category}
-        categoryLabel={category === 'seller' ? 'Seller' : 'Buyer'}
+        categoryLabel={category === 'seller' ? 'Seller' : category === 'development' ? 'Development' : 'Buyer'}
         categoryTitle={categoryTitle}
         categoryCounts={landingMetrics.categoryCounts}
         categoryTabs={AGENCY_LEAD_CATEGORY_TABS}
@@ -495,7 +524,11 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
         pageEnd={pageEnd}
         onFiltersChange={(patch) => { setPage(1); setFilters((previous) => ({ ...previous, ...patch })) }}
         onResetFilters={() => { setPage(1); setFilters({ ...DEFAULT_AGENCY_LEAD_FILTERS }) }}
-        onCategoryChange={(nextCategory) => { setPage(1); setCategory(nextCategory) }}
+        onCategoryChange={(nextCategory) => {
+          setPage(1)
+          setCategory(nextCategory)
+          setFilters((previous) => ({ ...previous, stage: 'all' }))
+        }}
         onViewModeChange={handleViewModeChange}
         refreshing={refreshing}
         onRefresh={() => void loadLeads({ forceRefresh: true, requestedPage: currentPage })}
@@ -503,7 +536,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
         onAddLead={(nextCategory) => {
           void loadLeadMutationActions().catch(() => null)
           setError('')
-          setCreateDialog({ open: true, category: nextCategory === 'seller' ? 'seller' : 'buyer' })
+          setCreateDialog({ open: true, category: ['seller', 'development'].includes(nextCategory) ? nextCategory : 'buyer' })
         }}
         onLeadIntent={handleLeadIntent}
         onOpenLead={(leadId) => {
@@ -520,7 +553,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}?tab=${encodeURIComponent(tab || 'activity')}`)
         }}
       />
-      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={selectedAgent || currentAgent} showAgentAssignment={!scopedAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={selectedAgent || currentAgent} showAgentAssignment={!scopedAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} developmentOptions={developmentOptions} developmentOptionsLoading={developmentOptionsLoading} developmentOptionsError={developmentOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
       <ConfirmDialog
         open={archiveDialog.open}
         title={`Archive ${category === 'seller' ? 'seller' : 'buyer'} lead?`}

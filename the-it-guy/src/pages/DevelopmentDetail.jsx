@@ -1,9 +1,20 @@
 import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
-import { AlertTriangle, ArrowLeft, ArrowUpRight, Building2, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, CircleDollarSign, Copy, Download, EyeOff, FileText, FolderKanban, HandCoins, Home, ImagePlus, Mail, LandPlot, MapPin, MoreVertical, PencilLine, PieChart, Plus, Receipt, Search, ShieldCheck, Trash2, TrendingUp, Upload, UserPlus, Users, WalletCards, Workflow, XCircle } from 'lucide-react'
-import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Building2, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, CircleDollarSign, Copy, Download, EyeOff, FileText, FolderKanban, Globe2, HandCoins, Home, ImagePlus, Mail, LandPlot, MapPin, MoreVertical, PencilLine, PieChart, Plus, Receipt, Search, ShieldCheck, Trash2, TrendingUp, Upload, UserPlus, Users, WalletCards, Workflow, XCircle } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
-import DevelopmentVisualAnalyticsPanel from '../components/developments/DevelopmentVisualAnalyticsPanel'
+import DevelopmentTransactionsWorkspace from '../components/developments/DevelopmentTransactionsWorkspace.jsx'
+import DevelopmentSnagsWorkspace from '../components/developments/DevelopmentSnagsWorkspace.jsx'
+import DevelopmentConfigurationWorkspace from '../components/developments/DevelopmentConfigurationWorkspace.jsx'
+import DevelopmentMarketingOverview from '../components/developments/DevelopmentMarketingOverview.jsx'
+import DevelopmentMarketingListings from '../components/developments/DevelopmentMarketingListings.jsx'
+import DevelopmentMarketingEvents from '../components/developments/DevelopmentMarketingEvents.jsx'
+import DevelopmentMarketingCampaigns from '../components/developments/DevelopmentMarketingCampaigns.jsx'
+import { DevelopmentLeadAgent, DevelopmentLeadPropertyImage, DevelopmentLeadSource } from '../components/developments/DevelopmentLeadVisuals.jsx'
+import DevelopmentLeadsKanban, { DevelopmentLeadViewSwitch } from '../components/developments/DevelopmentLeadsKanban.jsx'
+import DevelopmentLeadContactDemo from '../components/developments/DevelopmentLeadContactDemo.jsx'
+import { getDevelopmentLeadAssignedAgent, getDevelopmentLeadSourceBrand, getDevelopmentLeadUnitImage } from '../components/developments/developmentLeadVisualsModel.js'
+import DevelopmentWebsiteAnalytics from '../components/developments/DevelopmentWebsiteAnalytics'
 import DevelopmentDemandIntelligencePanel from '../components/developments/DevelopmentDemandIntelligencePanel'
 import DevelopmentProductCatalogueModal from '../components/developments/DevelopmentProductCatalogueModal'
 import DevelopmentStructureSetupModal from '../components/developments/DevelopmentStructureSetupModal'
@@ -24,11 +35,13 @@ import { buildPdfSitePlanUnitSuggestions } from '../core/developments/developmen
 import { evaluateDevelopmentSitePlanQuality } from '../core/developments/developmentSitePlanQuality'
 import { hydrateVisualMapMediaLibrary, remapVisualMapSceneViewport, retireLegacyVisualMapFields, setVisualMapPublicationStatus, updateMasterplanScene } from '../core/developments/developmentVisualMap.js'
 import { buildDevelopmentVisualPreviewReadiness } from '../core/developments/developmentVisualPreview.js'
-import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, createDevelopmentMarketingAccess, createDevelopmentMarketingEvent, sendDevelopmentMarketingAccessInvite, fetchDevelopmentDetail, fetchDevelopmentDocumentRequirements, saveDevelopmentDetails, saveDevelopmentDocument, saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings, upsertTransactionHandover, fetchDeveloperPartnersWorkspace, createDeveloperPartnerInvite } from '../lib/developmentDetailApi'
+import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, createDevelopmentMarketingEvent, fetchDevelopmentDetail, fetchDevelopmentDocumentRequirements, saveDevelopmentDetails, saveDevelopmentDocument, saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings, upsertTransactionHandover, fetchDeveloperPartnersWorkspace, createDeveloperPartnerInvite } from '../lib/developmentDetailApi'
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { markRouteMilestone } from '../lib/performanceTrace'
 import { createAgencyIntroducedDeveloperLead, createDeveloperFedLead, listDeveloperLeadIntake, updateDeveloperLeadWorkspaceSetup } from '../services/developerLeadService'
+import { DEVELOPMENT_LEAD_BOARD_STAGES, getDevelopmentLeadBoardStage, resolveDevelopmentLeadBoardMove } from '../core/developments/developmentLeadBoard.js'
+import { saveDevelopmentLeadBoardStage } from '../services/developmentLeadBoardService.js'
 
 const DevelopmentAttorneyCommercialSetup = lazy(() => import('../components/DevelopmentAttorneyCommercialSetup'))
 const DevelopmentBondCommercialSetup = lazy(() => import('../components/DevelopmentBondCommercialSetup'))
@@ -49,31 +62,40 @@ const currencyWithCents = new Intl.NumberFormat('en-ZA', {
 const DEVELOPMENT_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'availability', label: 'Availability' },
-  { id: 'units', label: 'Units' },
   { id: 'leads', label: 'Leads' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'performance', label: 'Performance' },
   { id: 'marketing', label: 'Marketing' },
-  { id: 'listings', label: 'Listings' },
+  { id: 'snags', label: 'Snags' },
   { id: 'configuration', label: 'Configuration' }
 ]
 
 const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter(tab => tab.id !== 'performance')
-const DEVELOPMENT_CONFIGURATION_SECTION_IDS = new Set(['general', 'seller-entity', 'deposits', 'transaction-routing', 'team-access', 'danger-zone'])
+const DEVELOPMENT_CONFIGURATION_SECTION_IDS = new Set(['general', 'seller-entity', 'deposits', 'transaction-routing', 'team-access', 'danger-zone', 'bond-originator'])
 
 const MARKETING_HUB_SECTIONS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'content', label: 'Development Content' },
-  { id: 'public-page', label: 'Public Page' },
-  { id: 'ci-setup', label: 'CI Setup' },
-  { id: 'media', label: 'Media Library' },
-  { id: 'floor-plans', label: 'Floor Plans' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'events', label: 'Events' },
-  { id: 'partners', label: 'Partners & Access' }
+  { id: 'overview', label: 'Overview', icon: PieChart },
+  { id: 'listings', label: 'Listings', icon: FolderKanban },
+  { id: 'website', label: 'Website', icon: Globe2 },
+  { id: 'media', label: 'Media', icon: ImagePlus },
+  { id: 'events', label: 'Events', icon: CalendarDays },
+  { id: 'campaigns', label: 'Campaigns', icon: Mail }
 ]
 
 const MARKETING_HUB_SECTION_IDS = new Set(MARKETING_HUB_SECTIONS.map(section => section.id))
+const MARKETING_HUB_SECTION_ALIASES = {
+  documents: 'campaigns',
+  content: 'listings',
+  'public-page': 'website',
+  'ci-setup': 'website',
+  'floor-plans': 'media',
+  partners: 'overview'
+}
+const MARKETING_HUB_LEGACY_FOCUS = { content: 'content', 'ci-setup': 'brand', partners: 'partners' }
+function normalizeMarketingHubSection(sectionId) {
+  const section = MARKETING_HUB_SECTION_ALIASES[sectionId] || sectionId
+  return MARKETING_HUB_SECTION_IDS.has(section) ? section : 'overview'
+}
 
 const DOCUMENT_TYPE_OPTIONS = [
   { value: 'logo', label: 'Development Logo' },
@@ -624,21 +646,7 @@ const DEVELOPMENT_UNIT_STATUS_LOOKUP = new Map(
   ])
 )
 
-const DEVELOPMENT_LEAD_FUNNEL_STAGES = [
-  { key: 'new', label: 'Captured', statuses: ['new', 'captured'] },
-  {
-    key: 'contacted',
-    label: 'Contacted',
-    statuses: ['contacted', 'qualified']
-  },
-  {
-    key: 'viewing',
-    label: 'Viewing',
-    statuses: ['viewing', 'reserved', 'onboarding_sent', 'onboarding_submitted']
-  },
-  { key: 'otp', label: 'OTP', statuses: ['otp'] },
-  { key: 'converted', label: 'Converted', statuses: ['converted'] }
-]
+const DEVELOPMENT_LEAD_FUNNEL_STAGES = DEVELOPMENT_LEAD_BOARD_STAGES
 
 const CARD_SHELL = 'rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
 const SHOW_LEGACY_MARKETING_EDITOR = false
@@ -1777,24 +1785,6 @@ function getDevelopmentLeadContactLine(lead = {}, canViewDetails = false) {
   return normalizeDevelopmentLeadText(lead.buyerEmail || lead.buyerPhone) || 'No contact captured'
 }
 
-function formatDevelopmentLeadBudget(lead = {}) {
-  const min = Number(lead.budgetMin || 0)
-  const max = Number(lead.budgetMax || 0)
-  if (min > 0 && max > 0) return `${currency.format(min)} - ${currency.format(max)}`
-  if (max > 0) return `Up to ${currency.format(max)}`
-  if (min > 0) return `From ${currency.format(min)}`
-  return 'Budget pending'
-}
-
-function getDevelopmentLeadAssignedLabel(lead = {}, organisationUsers = []) {
-  const assignedId = normalizeDevelopmentLeadKey(lead.assignedAgentId || lead.sourceAgentUserId)
-  const assignedUser = organisationUsers.find(user => [user?.id, user?.userId, user?.user_id, user?.email].map(normalizeDevelopmentLeadKey).includes(assignedId))
-  if (assignedUser) {
-    return normalizeDevelopmentLeadText(assignedUser.fullName || [assignedUser.firstName, assignedUser.lastName].filter(Boolean).join(' ') || assignedUser.email) || 'Assigned agent'
-  }
-  return normalizeDevelopmentLeadText(lead.assignedAgentEmail) || (assignedId ? 'Assigned agent' : 'Unassigned')
-}
-
 function getTransactionMonetaryValue(row = {}) {
   const numeric = Number(row?.transaction?.sales_price ?? row?.transaction?.purchase_price ?? row?.unit?.list_price ?? row?.unit?.listPrice ?? row?.unit?.price)
   return Number.isFinite(numeric) ? numeric : 0
@@ -1805,30 +1795,6 @@ function getTransactionProgressPercent(row = {}) {
   const stageIndex = TRANSACTION_MAIN_STAGE_ORDER.indexOf(stageKey)
   if (stageIndex <= 0) return 0
   return Math.round((stageIndex / (TRANSACTION_MAIN_STAGE_ORDER.length - 1)) * 100)
-}
-
-function getTransactionProgressToneClass(stageKey) {
-  if (stageKey === 'REG') {
-    return 'bg-gradient-to-r from-[#16a34a] to-[#22c55e]'
-  }
-
-  if (['FIN', 'ATTY', 'XFER'].includes(stageKey)) {
-    return 'bg-gradient-to-r from-[#f59e0b] to-[#fbbf24]'
-  }
-
-  return 'bg-gradient-to-r from-[#ef4444] to-[#f97316]'
-}
-
-function getTransactionStagePillClassName(stageKey) {
-  if (stageKey === 'REG') {
-    return 'border-[#b7e4c7] bg-[#f1fbf4] text-[#166534]'
-  }
-
-  if (['FIN', 'ATTY', 'XFER'].includes(stageKey)) {
-    return 'border-[#f6dec7] bg-[#fff7ed] text-[#b45309]'
-  }
-
-  return 'border-[#f7d6d8] bg-[#fff5f5] text-[#b42318]'
 }
 
 function getHandoverPillClassName(status) {
@@ -2071,18 +2037,6 @@ function firstTextValue(...values) {
   return ''
 }
 
-function getAgencyInitials(name = '') {
-  const initials = String(name || '')
-    .split(/\s+/)
-    .map(part => part[0])
-    .filter(Boolean)
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-
-  return initials || 'AG'
-}
-
 function resolveResponsibleAgency(row = {}, currentWorkspace = {}) {
   if (!row?.transaction?.id) {
     return null
@@ -2104,26 +2058,6 @@ function resolveResponsibleAgency(row = {}, currentWorkspace = {}) {
   }
 }
 
-function ResponsibleAgencyBadge({ agency }) {
-  const [logoFailed, setLogoFailed] = useState(false)
-  const name = firstTextValue(agency?.name, 'Responsible agency')
-  const logoUrl = firstTextValue(agency?.logoUrl)
-
-  if (!agency) {
-    return (
-      <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-dashed border-[#d8e2ee] bg-[#f8fafc] text-xs font-semibold text-[#94a3b8]" title="No transaction agency yet">
-        -
-      </span>
-    )
-  }
-
-  return (
-    <span className="inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-[#dbe5ef] bg-white text-xs font-semibold text-[#24445f] shadow-sm" title={name}>
-      {logoUrl && !logoFailed ? <img src={logoUrl} alt={`${name} logo`} className="h-full w-full object-contain p-1.5" onError={() => setLogoFailed(true)} /> : <span>{getAgencyInitials(name)}</span>}
-    </span>
-  )
-}
-
 function DevelopmentDetail() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -2133,12 +2067,19 @@ function DevelopmentDetail() {
   const [loading, setLoading] = useState(true)
   const loadedDevelopmentIdRef = useRef('')
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(location.search).get('tab')
+    return DEVELOPMENT_PRIMARY_TABS.some(tab => tab.id === requested) ? requested : 'overview'
+  })
+  useEffect(() => {
+    if (activeTab === 'units') setActiveTab('availability')
+  }, [activeTab])
   const [configurationSection, setConfigurationSection] = useState(() => {
     const requestedSection = new URLSearchParams(location.search).get('section')
-    return DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(requestedSection) ? requestedSection : 'seller-entity'
+    return DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(requestedSection) ? requestedSection : 'general'
   })
   const [marketingHubSection, setMarketingHubSection] = useState('overview')
+  const [marketingHubFocus, setMarketingHubFocus] = useState('')
   const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
   const [marketingUnitTab, setMarketingUnitTab] = useState('overview')
   const [marketingFeatureDraft, setMarketingFeatureDraft] = useState('')
@@ -2157,6 +2098,10 @@ function DevelopmentDetail() {
   const [developmentLeads, setDevelopmentLeads] = useState([])
   const [developmentLeadsLoading, setDevelopmentLeadsLoading] = useState(false)
   const [developmentLeadsError, setDevelopmentLeadsError] = useState('')
+  const [developmentLeadView, setDevelopmentLeadView] = useState(() => new URLSearchParams(location.search).get('leadView') === 'kanban' ? 'kanban' : 'list')
+  const [developmentLeadMovingId, setDevelopmentLeadMovingId] = useState('')
+  const [developmentLeadMoveMessage, setDevelopmentLeadMoveMessage] = useState('')
+  const developmentLeadMoveLock = useRef(false)
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
   const [reservationSettingsForm, setReservationSettingsForm] = useState(DEFAULT_RESERVATION_SETTINGS_FORM)
   const [unitForm, setUnitForm] = useState(DEFAULT_UNIT_FORM)
@@ -2191,21 +2136,6 @@ function DevelopmentDetail() {
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
   const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
   const [sitePlanSuggestions, setSitePlanSuggestions] = useState({})
-  const [marketingAccessDraft, setMarketingAccessDraft] = useState({
-    email: '',
-    organisationId: '',
-    accessRole: 'viewer'
-  })
-  const [marketingAccessSaving, setMarketingAccessSaving] = useState(false)
-  const [marketingAccessResendingId, setMarketingAccessResendingId] = useState('')
-  const [marketingInviteLinks, setMarketingInviteLinks] = useState({})
-  const [marketingEventDraft, setMarketingEventDraft] = useState({
-    title: '',
-    eventType: 'show_day',
-    startsAt: '',
-    location: '',
-    description: ''
-  })
   const [marketingEventSaving, setMarketingEventSaving] = useState(false)
   const [marketingDocumentSavingId, setMarketingDocumentSavingId] = useState('')
   const [emailComposeOpen, setEmailComposeOpen] = useState(false)
@@ -2216,7 +2146,7 @@ function DevelopmentDetail() {
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('')
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
-  const [generalDetailsExpanded, setGeneralDetailsExpanded] = useState(false)
+  const [generalDetailsExpanded, setGeneralDetailsExpanded] = useState(true)
   const [sellerDetailsExpanded, setSellerDetailsExpanded] = useState(true)
   const [reservationSettingsExpanded, setReservationSettingsExpanded] = useState(true)
   const [routingDefaultsExpanded, setRoutingDefaultsExpanded] = useState(true)
@@ -2239,15 +2169,17 @@ function DevelopmentDetail() {
   const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'developer' || role === 'internal_admin'
   const canCreateTransactions = can(PERMISSIONS.manageDeveloperTransactions) || role === 'attorney'
   const canEditMarketing = canManageDevelopment || role === 'agent'
+  const canEditDevelopmentLeads = can(PERMISSIONS.editLeads) || role === 'developer' || role === 'internal_admin'
   const developerOrganisationId = data?.development?.organisation_id || data?.development?.organisationId || currentWorkspace?.id || ''
 
   const openMarketingHubSection = useCallback(
     sectionId => {
-      const nextSection = MARKETING_HUB_SECTION_IDS.has(sectionId) ? sectionId : 'overview'
+      const nextSection = normalizeMarketingHubSection(sectionId)
       const params = new URLSearchParams(location.search)
       params.set('marketingSection', nextSection)
       setActiveTab('marketing')
       setMarketingHubSection(nextSection)
+      setMarketingHubFocus(MARKETING_HUB_LEGACY_FOCUS[sectionId] || '')
       navigate({
         pathname: location.pathname,
         search: `?${params.toString()}`
@@ -2258,6 +2190,10 @@ function DevelopmentDetail() {
 
   const openDevelopmentTab = useCallback(
     tabId => {
+      if (tabId === 'listings') {
+        openMarketingHubSection('listings')
+        return
+      }
       if (tabId === 'marketing') {
         openMarketingHubSection(marketingHubSection)
         return
@@ -2275,12 +2211,17 @@ function DevelopmentDetail() {
   )
 
   useEffect(() => {
+    if (activeTab === 'listings') openMarketingHubSection('listings')
+  }, [activeTab, openMarketingHubSection])
+
+  useEffect(() => {
     const requestedSection = new URLSearchParams(location.search).get('marketingSection')
     if (!requestedSection) return
 
-    const nextSection = MARKETING_HUB_SECTION_IDS.has(requestedSection) ? requestedSection : 'overview'
+    const nextSection = normalizeMarketingHubSection(requestedSection)
 
     if (requestedSection !== nextSection) {
+      setMarketingHubFocus(MARKETING_HUB_LEGACY_FOCUS[requestedSection] || '')
       const params = new URLSearchParams(location.search)
       params.set('marketingSection', nextSection)
       navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true })
@@ -2571,8 +2512,7 @@ function DevelopmentDetail() {
     let protectedCount = 0
 
     developmentLeadRows.forEach(lead => {
-      const status = normalizeDevelopmentLeadKey(lead?.leadStatus || 'new')
-      const stage = DEVELOPMENT_LEAD_FUNNEL_STAGES.find(item => item.statuses.includes(status)) || DEVELOPMENT_LEAD_FUNNEL_STAGES[0]
+      const stage = getDevelopmentLeadBoardStage(lead)
       counts.set(stage.key, Number(counts.get(stage.key) || 0) + 1)
       if (!canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)) {
         protectedCount += 1
@@ -3254,148 +3194,9 @@ function DevelopmentDetail() {
       listingStatus: marketingForm.listingOverview.listingStatus || 'draft'
     }
   }, [marketingAssetDocuments.length, marketingForm])
-  const marketingAccessRecords = Array.isArray(data?.marketingAccess) ? data.marketingAccess : []
-  const marketingPartnerOptions = useMemo(() => {
-    const seen = new Set()
-    const connectedOrganisationIds = new Set(marketingAccessRecords.filter(access => access?.organisationId && ['pending', 'active'].includes(access.status)).map(access => access.organisationId))
-    return (partnerWorkspace?.relationships || [])
-      .filter(relationship => relationship?.partnerOrganisationId && !connectedOrganisationIds.has(relationship.partnerOrganisationId) && !['archived', 'suspended'].includes(relationship?.status))
-      .map(relationship => ({
-        organisationId: relationship.partnerOrganisationId,
-        name: relationship.partnerName || 'Connected partner',
-        partnerType: relationship.partnerType || ''
-      }))
-      .filter(partner => {
-        if (seen.has(partner.organisationId)) return false
-        seen.add(partner.organisationId)
-        return true
-      })
-  }, [marketingAccessRecords, partnerWorkspace])
-  const marketingActivityRecords = Array.isArray(data?.marketingActivity) ? data.marketingActivity : []
   const marketingEventRecords = Array.isArray(data?.marketingEvents) ? data.marketingEvents : []
-  const marketingHubOverview = useMemo(() => {
-    const galleryAssets = marketingAssetGroups.find(group => group.key === 'gallery')?.items || []
-    const planAssets = marketingAssetGroups.find(group => group.key === 'plans')?.items || []
-    const documentAssets = marketingAssetGroups.find(group => group.key === 'documents')?.items || []
-    const readinessItems = [
-      {
-        id: 'content',
-        label: 'Development overview',
-        complete: Boolean(String(marketingForm.listingOverview.listingDescription || '').trim())
-      },
-      {
-        id: 'media',
-        label: 'Images & renders',
-        complete: galleryAssets.length > 0
-      },
-      {
-        id: 'floor-plans',
-        label: 'Floor plans',
-        complete: planAssets.length > 0 || marketingForm.floorplans.length > 0
-      },
-      {
-        id: 'documents',
-        label: 'Brochure & documents',
-        complete: documentAssets.length > 0
-      }
-    ]
-    const completeCount = readinessItems.filter(item => item.complete).length
-    const readinessPercent = Math.round((completeCount / readinessItems.length) * 100)
-    const recordedActivity = marketingActivityRecords.map(activity => ({
-      id: `activity-${activity.id}`,
-      type: activity.actionType,
-      title: activity.metadata?.title || toTitleLabel(activity.actionType || 'marketing activity'),
-      detail: activity.metadata?.document_type ? `${getDocTypeLabel(activity.metadata.document_type)} · ${toTitleLabel(activity.actionType)}` : toTitleLabel(activity.actionType || 'Marketing activity'),
-      occurredAt: activity.occurredAt
-    }))
-    const recentActivity = (
-      recordedActivity.length
-        ? recordedActivity
-        : [
-            ...marketingAssetDocuments.map(asset => ({
-              id: `asset-${asset.id}`,
-              type: 'upload',
-              title: asset.title,
-              detail: `${asset.typeLabel} added to the development library`,
-              occurredAt: asset.uploadedAt || asset.createdAt
-            })),
-            ...linkedListingRows.map(listing => ({
-              id: `listing-${listing.id}`,
-              type: 'listing',
-              title: listing.title,
-              detail: `Listing status: ${toTitleLabel(listing.status || 'draft')}`,
-              occurredAt: listing.updatedAt
-            }))
-          ]
-    )
-      .filter(item => item.occurredAt)
-      .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
-      .slice(0, 4)
-
-    const today = new Date().setHours(0, 0, 0, 0)
-    const savedEvents = marketingEventRecords
-      .filter(event => event.startsAt && new Date(event.startsAt).getTime() >= today)
-      .map(event => ({
-        id: event.id,
-        title: event.title,
-        date: event.startsAt,
-        detail: event.location || data?.development?.name || 'Development'
-      }))
-    const launchDate = detailsForm.launchDate ? new Date(detailsForm.launchDate) : null
-    const upcomingEvents = savedEvents.length
-      ? savedEvents
-      : launchDate && !Number.isNaN(launchDate.getTime()) && launchDate.getTime() >= today
-        ? [
-            {
-              id: 'development-launch',
-              title: 'Development launch',
-              date: detailsForm.launchDate,
-              detail: data?.development?.name || 'Development'
-            }
-          ]
-        : []
-
-    return {
-      readinessItems,
-      readinessPercent,
-      galleryAssets,
-      planAssets,
-      documentAssets,
-      recentActivity,
-      upcomingEvents
-    }
-  }, [data?.development?.name, detailsForm.launchDate, linkedListingRows, marketingActivityRecords, marketingAssetDocuments, marketingAssetGroups, marketingEventRecords, marketingForm.floorplans.length, marketingForm.listingOverview.listingDescription])
   const marketingSellingPointEntries = useMemo(() => parseSellingPointEntries(marketingForm.sellingPoints.items), [marketingForm.sellingPoints.items])
   const marketingAgencyEntries = useMemo(() => (Array.isArray(marketingForm.agencies) ? marketingForm.agencies : []).map((item, index) => normalizeMarketingAgency(item, index + 1)), [marketingForm.agencies])
-  const directDeveloperListingCandidates = useMemo(() => {
-    return unitRows
-      .filter(unit => !unit.currentTransactionId && isAvailableDevelopmentUnitStatus(unit.status))
-      .map(unit => ({
-        id: unit.id,
-        unitNumber: unit.unitNumber || unit.unit_number || 'Unit',
-        unitType: unit.unitType || unit.unit_type || unit.floorplanName || 'Unit type pending',
-        price: Number(unit.currentPrice || unit.listPrice || unit.salesPrice || 0) || 0,
-        status: unit.status || 'Available',
-        floorplanName: unit.floorplanName || ''
-      }))
-  }, [unitRows])
-  const developmentListingSummary = useMemo(() => {
-    const agencyNames = new Set(linkedListingRows.map(listing => String(listing.agencyName || '').trim()).filter(Boolean))
-    const liveListings = linkedListingRows.filter(listing => {
-      const status = String(listing.status || '').toLowerCase()
-      const visibility = String(listing.visibility || '').toLowerCase()
-      return ['active', 'under_offer', 'sold'].includes(status) || ['active_market', 'public'].includes(visibility)
-    })
-    const portalSignals = linkedListingRows.reduce((sum, listing) => sum + (Number(listing.portalSignals || 0) > 0 ? 1 : 0), 0)
-
-    return {
-      linkedCount: linkedListingRows.length,
-      agencyCount: agencyNames.size,
-      liveCount: liveListings.length,
-      portalSignals,
-      directCandidateCount: directDeveloperListingCandidates.length
-    }
-  }, [directDeveloperListingCandidates.length, linkedListingRows])
 
   useEffect(() => {
     if (!marketingForm.floorplans.length) {
@@ -3436,7 +3237,6 @@ function DevelopmentDetail() {
     { id: 'transaction-routing', label: 'Routing', complete: routingComplete, optional: false },
     { id: 'team-access', label: 'Team access', complete: agentAssignments.length > 0, optional: false }
   ]
-  const configurationCompletedCount = configurationStatusItems.filter(item => item.complete).length
 
   useEffect(() => {
     const requestedSection = new URLSearchParams(location.search).get('section')
@@ -5380,96 +5180,29 @@ function DevelopmentDetail() {
     }
   }
 
-  async function handleMarketingAccessCreate(event) {
-    event.preventDefault()
-    if (!canManageDevelopment) return
-    try {
-      setMarketingAccessSaving(true)
-      setError('')
-      setFeedback('')
-      const isExistingPartner = Boolean(marketingAccessDraft.organisationId)
-      const createdAccess = await createDevelopmentMarketingAccess({
-        developmentId: data.development.id,
-        inviteeEmail: isExistingPartner ? '' : marketingAccessDraft.email,
-        organisationId: isExistingPartner ? marketingAccessDraft.organisationId : null,
-        accessRole: marketingAccessDraft.accessRole
-      })
-      if (createdAccess?.invitationDelivery?.inviteLink) {
-        setMarketingInviteLinks(current => ({
-          ...current,
-          [createdAccess.id]: createdAccess.invitationDelivery.inviteLink
-        }))
-      }
-      setMarketingAccessDraft({
-        email: '',
-        organisationId: '',
-        accessRole: 'viewer'
-      })
-      if (isExistingPartner) {
-        setFeedback('Existing partner connected to the Marketing Hub. This does not grant operational development access.')
-      } else if (createdAccess?.invitationDelivery?.ok) {
-        setFeedback('Marketing invitation sent. It only grants scoped marketing-library access.')
-      } else {
-        setFeedback('Marketing invitation created, but email delivery needs attention. Copy the invitation link and send it manually.')
-      }
-      await loadData()
-    } catch (inviteError) {
-      setError(inviteError.message)
-    } finally {
-      setMarketingAccessSaving(false)
-    }
-  }
-
-  async function handleMarketingAccessResend(access) {
-    if (!canManageDevelopment || !access?.id || !access?.inviteeEmail) return
-    try {
-      setMarketingAccessResendingId(access.id)
-      setError('')
-      setFeedback('')
-      const delivery = await sendDevelopmentMarketingAccessInvite(access.id)
-      if (delivery?.inviteLink) {
-        setMarketingInviteLinks(current => ({
-          ...current,
-          [access.id]: delivery.inviteLink
-        }))
-      }
-      setFeedback(delivery?.ok ? 'Marketing invitation resent. It remains separate from operational development access.' : 'A fresh marketing invitation link was created, but email delivery needs attention. Copy the link and send it manually.')
-    } catch (inviteError) {
-      setError(inviteError.message)
-    } finally {
-      setMarketingAccessResendingId('')
-    }
-  }
-
-  async function handleMarketingEventCreate(event) {
-    event.preventDefault()
-    if (!canManageDevelopment) return
+  async function handleMarketingEventCreate(draft) {
+    if (!canManageDevelopment) return false
     try {
       setMarketingEventSaving(true)
       setError('')
       setFeedback('')
-      const startsAt = marketingEventDraft.startsAt ? new Date(marketingEventDraft.startsAt).toISOString() : null
+      const startsAt = draft.startsAt ? new Date(draft.startsAt).toISOString() : null
       await createDevelopmentMarketingEvent({
         developmentId: data.development.id,
         organisationId: data.development.organisationId || data.development.organisation_id,
         developmentName: data.development.name,
-        title: marketingEventDraft.title,
-        eventType: marketingEventDraft.eventType,
+        title: draft.title,
+        eventType: draft.eventType,
         startsAt,
-        location: marketingEventDraft.location,
-        description: marketingEventDraft.description
-      })
-      setMarketingEventDraft({
-        title: '',
-        eventType: 'show_day',
-        startsAt: '',
-        location: '',
-        description: ''
+        location: draft.location,
+        description: draft.description
       })
       setFeedback('Marketing event created.')
       await loadData()
+      return true
     } catch (eventError) {
       setError(eventError.message)
+      return false
     } finally {
       setMarketingEventSaving(false)
     }
@@ -5943,6 +5676,46 @@ function DevelopmentDetail() {
     return createdLead
   }
 
+  function canMoveDevelopmentLead(lead) {
+    return Boolean(lead?.developerLeadId && canEditDevelopmentLeads && (canManageDevelopment || can(PERMISSIONS.assignLeads) || canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)))
+  }
+
+  function openDevelopmentLeadWorkspace(id, tab = 'overview') {
+    const params = new URLSearchParams(location.search)
+    params.set('tab', 'leads')
+    params.set('leadView', developmentLeadView)
+    navigate(`/developer/leads/${encodeURIComponent(id)}?workspaceTab=${encodeURIComponent(tab)}`, {
+      state: { returnTo: `${location.pathname}?${params.toString()}` }
+    })
+  }
+
+  async function handleDevelopmentLeadMove(id, targetKey) {
+    const lead = developmentLeads.find(item => item.developerLeadId === id)
+    if (!lead || !canMoveDevelopmentLead(lead) || developmentLeadMoveLock.current) return
+    const move = resolveDevelopmentLeadBoardMove(lead, targetKey)
+    if (move.kind === 'noop') return
+    if (move.kind === 'workflow') {
+      if (move.transactionId) openDevelopmentTransactionWorkspace({ transactionId: move.transactionId })
+      else openDevelopmentLeadWorkspace(id, move.tab)
+      return
+    }
+    developmentLeadMoveLock.current = true
+    setDevelopmentLeadMovingId(id)
+    setDevelopmentLeadMoveMessage('Saving lead stage…')
+    setDevelopmentLeadsError('')
+    try {
+      const saved = await saveDevelopmentLeadBoardStage({ lead, targetKey })
+      setDevelopmentLeads(current => current.map(item => item.developerLeadId === id ? { ...item, leadStatus: saved.leadStatus, updatedAt: saved.updatedAt } : item))
+      setDevelopmentLeadMoveMessage(`Lead moved to ${move.label}.`)
+    } catch (moveError) {
+      setDevelopmentLeadsError(moveError?.message || 'Unable to move this lead. Its stage is unchanged.')
+      setDevelopmentLeadMoveMessage('Lead stage could not be saved.')
+    } finally {
+      developmentLeadMoveLock.current = false
+      setDevelopmentLeadMovingId('')
+    }
+  }
+
   async function handleAvailabilityLeadAction({ lead, unit, action, note = '' } = {}) {
     const developerOrgId = normalizeDevelopmentLeadText(data?.development?.organisation_id || data?.development?.organisationId || currentWorkspace?.id)
     if (!developerOrgId || !lead?.developerLeadId) {
@@ -6300,186 +6073,44 @@ function DevelopmentDetail() {
     navigate({ pathname: location.pathname, search: `?${query.toString()}` }, { replace: true })
   }
 
-  function renderMarketingHubOverview() {
-    const categoryCards = [
-      {
-        id: 'media',
-        title: 'Images & Renders',
-        count: marketingHubOverview.galleryAssets.length,
-        label: 'assets',
-        icon: ImagePlus,
-        asset: marketingHubOverview.galleryAssets.find(item => isLikelyImageUrl(item.fileUrl))
-      },
-      {
-        id: 'floor-plans',
-        title: 'Floor Plans',
-        count: marketingHubOverview.planAssets.length || marketingForm.floorplans.length,
-        label: marketingHubOverview.planAssets.length ? 'files' : 'unit types',
-        icon: LandPlot,
-        asset: marketingHubOverview.planAssets.find(item => isLikelyImageUrl(item.fileUrl))
-      },
-      {
-        id: 'documents',
-        title: 'Brochures & Documents',
-        count: marketingHubOverview.documentAssets.length,
-        label: 'files',
-        icon: FileText,
-        asset: marketingHubOverview.documentAssets.find(item => isLikelyImageUrl(item.fileUrl))
-      },
-      {
-        id: 'content',
-        title: 'Approved Copy',
-        count: marketingHubOverview.readinessItems.find(item => item.id === 'content')?.complete ? 1 : 0,
-        label: 'content set',
-        icon: Copy,
-        asset: null
-      }
-    ]
-
-    return (
-      <section className="grid gap-5">
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:col-span-2">
-            <div className="flex items-center gap-4">
-              <div
-                className="grid h-16 w-16 shrink-0 place-items-center rounded-full"
-                style={{
-                  background: `conic-gradient(#168a57 ${marketingHubOverview.readinessPercent * 3.6}deg, #e8eef3 0deg)`
+  function renderBondOriginatorConfiguration() {
+    return <Suspense fallback={<section className={CARD_SHELL} aria-busy="true">Loading bond originator settings…</section>}>
+<section className="grid gap-4">
+            {canManageDevelopment ? (
+              <DevelopmentBondCommercialSetup
+                developmentId={data.development.id}
+                onSaved={() => {
+                  void loadData()
                 }}
-                aria-label={`${marketingHubOverview.readinessPercent}% marketing readiness`}>
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-sm font-semibold text-[#18344b]">{marketingHubOverview.readinessPercent}%</span>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[#142132]">Marketing readiness</p>
-                <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{marketingHubOverview.readinessPercent === 100 ? 'Core marketing content is in place.' : 'Complete the remaining essentials to reach 100%.'}</p>
-              </div>
-            </div>
-          </article>
-
-          <article className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#eaf7ef] text-[#168a57]">
-              <FolderKanban size={19} />
-            </span>
-            <p className="mt-4 text-sm font-semibold text-[#52667d]">Shared assets</p>
-            <strong className="mt-1 block text-[1.8rem] leading-none tracking-[-0.04em] text-[#142132]">{marketingAssetDocuments.length}</strong>
-            <p className="mt-2 text-xs leading-5 text-[#718299]">Available in the development library</p>
-          </article>
-
-          <article className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#edf4ff] text-[#2f6fec]">
-              <Users size={19} />
-            </span>
-            <p className="mt-4 text-sm font-semibold text-[#52667d]">Marketing partners</p>
-            <strong className="mt-1 block text-[1.8rem] leading-none tracking-[-0.04em] text-[#142132]">{marketingAgencyEntries.length}</strong>
-            <p className="mt-2 text-xs leading-5 text-[#718299]">Current agencies on the development</p>
-          </article>
-        </section>
-
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
-          <article className={`${CARD_SHELL}`}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing Library</h4>
-                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Browse the existing approved development material by category.</p>
-              </div>
-              <button type="button" onClick={() => openMarketingHubSection('media')} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[#2171c7] hover:text-[#14569f]">
-                View library <ArrowUpRight size={15} />
-              </button>
-            </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {categoryCards.map(card => {
-                const Icon = card.icon
-                return (
-                  <button key={card.id} type="button" onClick={() => openMarketingHubSection(card.id)} className="group overflow-hidden rounded-[16px] border border-[#e3ebf4] bg-white text-left transition hover:-translate-y-0.5 hover:border-[#c8d9ea] hover:shadow-[0_10px_22px_rgba(15,23,42,0.08)]">
-                    <div className="relative flex h-28 items-center justify-center overflow-hidden bg-[#eef4f8]">
-                      {card.asset ? <img src={card.asset.fileUrl} alt="" className="h-full w-full object-cover" /> : <Icon size={28} className="text-[#64819c]" aria-hidden="true" />}
-                      <span className="absolute inset-0 bg-[#142132]/[0.08]" aria-hidden="true" />
-                    </div>
-                    <div className="p-3.5">
-                      <strong className="block text-sm font-semibold text-[#142132]">{card.title}</strong>
-                      <span className="mt-1 block text-xs text-[#6b7d93]">
-                        {card.count} {card.label}
-                      </span>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </article>
-
-          <aside className={`${CARD_SHELL}`}>
-            <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing Readiness</h4>
-            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Core items sourced from the current development configuration.</p>
-            <div className="mt-4 grid gap-3">
-              {marketingHubOverview.readinessItems.map(item => (
-                <button key={item.id} type="button" onClick={() => openMarketingHubSection(item.id)} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6edf5] bg-[#fbfcfe] px-3 py-2.5 text-left hover:border-[#c8d9ea]">
-                  <span className="inline-flex items-center gap-2 text-sm font-medium text-[#30485f]">
-                    <CheckCircle2 size={16} className={item.complete ? 'text-[#168a57]' : 'text-[#a8b7c6]'} />
-                    {item.label}
-                  </span>
-                  <span className={`text-xs font-semibold ${item.complete ? 'text-[#168a57]' : 'text-[#77899d]'}`}>{item.complete ? 'Complete' : 'Incomplete'}</span>
-                </button>
-              ))}
-            </div>
-          </aside>
-        </section>
-
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
-          <article className={CARD_SHELL}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Upcoming Events</h4>
-                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Development launch dates currently configured in this workspace.</p>
-              </div>
-              <button type="button" onClick={() => openMarketingHubSection('events')} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[#2171c7] hover:text-[#14569f]">
-                View events <ArrowUpRight size={15} />
-              </button>
-            </div>
-            {marketingHubOverview.upcomingEvents.length ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {marketingHubOverview.upcomingEvents.map(event => (
-                  <article key={event.id} className="flex items-center gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5">
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4ff] text-[#2f6fec]">
-                      <CalendarDays size={18} />
-                    </span>
-                    <div>
-                      <strong className="block text-sm text-[#142132]">{event.title}</strong>
-                      <span className="mt-1 block text-xs text-[#6b7d93]">
-                        {formatDate(event.date)} · {event.detail}
-                      </span>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              />
             ) : (
-              <p className="mt-4 rounded-[15px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-6 text-sm text-[#6b7d93]">No upcoming development events are configured yet.</p>
-            )}
-          </article>
+              <section className={CARD_SHELL}>
+                <div className="mb-5">
+                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Bond Originator Contact</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Assigned bond originator and contact details for this development.</p>
+                </div>
 
-          <aside className={CARD_SHELL}>
-            <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Recent Activity</h4>
-            <div className="mt-4 grid gap-3">
-              {marketingHubOverview.recentActivity.length ? (
-                marketingHubOverview.recentActivity.map(activity => (
-                  <article key={activity.id} className="flex gap-3 rounded-[12px] border border-[#e6edf5] bg-[#fbfcfe] p-3">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#eaf7ef] text-[#168a57]">
-                      <Upload size={15} />
-                    </span>
-                    <div className="min-w-0">
-                      <strong className="block truncate text-sm text-[#20364c]">{activity.title}</strong>
-                      <p className="mt-0.5 text-xs leading-5 text-[#6b7d93]">{activity.detail}</p>
-                      <span className="mt-1 block text-xs text-[#8a9aad]">{formatDate(activity.occurredAt)}</span>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">Recent marketing activity will appear once assets or listings are updated.</p>
-              )}
-            </div>
-          </aside>
-        </section>
-      </section>
-    )
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['Bond Originator', data?.bondConfig?.bondOriginatorName || 'Not assigned'],
+                    ['Primary Contact', data?.bondConfig?.primaryContactName || 'Not set'],
+                    ['Contact Email', data?.bondConfig?.primaryContactEmail || 'Not set'],
+                    ['Contact Phone', data?.bondConfig?.primaryContactPhone || 'Not set']
+                  ].map(([label, value]) => (
+                    <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+                      <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+          </section>
+    </Suspense>
+  }
+
+  function renderMarketingHubOverview() {
+    return <DevelopmentMarketingOverview listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
   }
 
   function renderMarketingAssetSection({ title, description, items, documentType, emptyMessage }) {
@@ -6535,79 +6166,6 @@ function DevelopmentDetail() {
         ) : (
           <section className={`${CARD_SHELL} border-dashed text-center text-sm text-[#6b7d93]`}>{emptyMessage}</section>
         )}
-      </section>
-    )
-  }
-
-  function renderMarketingPublicPageSection() {
-    const configuration = marketingForm.listingConfiguration
-    const listingSlug = configuration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
-    const publicUrl = buildPublicDevelopmentUrl(listingSlug)
-    const isPublished = configuration.publicVisibility && String(configuration.marketingStatus || '').toLowerCase() === 'live'
-
-    return (
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <form onSubmit={handleSavePublicPageSettings} className={`${CARD_SHELL} order-2 xl:order-1`}>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Public Page</h4>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6b7d93]">Configure the published landing page separately from the private Marketing Hub. Saving these settings never publishes material by itself.</p>
-            </div>
-            <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${isPublished ? 'bg-[#e8f7ee] text-[#167a4b]' : 'bg-[#f1f4f7] text-[#61778f]'}`}>{isPublished ? 'Live' : 'Not published'}</span>
-          </div>
-          <fieldset disabled={!canManageDevelopment} className="mt-6 grid gap-4 md:grid-cols-2 disabled:cursor-not-allowed disabled:opacity-70">
-            <DetailField label="Public URL slug">
-              <Field value={configuration.listingSlug} onChange={event => setMarketingField('listingConfiguration', 'listingSlug', event.target.value)} placeholder={listingSlug} />
-            </DetailField>
-            <DetailField label="SEO title">
-              <Field value={marketingForm.listingOverview.seoTitle} onChange={event => setMarketingField('listingOverview', 'seoTitle', event.target.value)} placeholder={`${data.development.name} | New homes`} />
-            </DetailField>
-            <DetailField label="SEO meta description">
-              <Field value={marketingForm.listingOverview.seoMetaDescription} onChange={event => setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)} placeholder="Short description shown in search results." />
-            </DetailField>
-            <DetailField label="Public call-to-action URL">
-              <Field value={configuration.ctaUrl} onChange={event => setMarketingField('listingConfiguration', 'ctaUrl', event.target.value)} placeholder="https://…" />
-            </DetailField>
-          </fieldset>
-          {canManageDevelopment ? (
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-[#e6edf5] pt-4">
-              <Button type="submit" variant="secondary" disabled={detailsSaving}>
-                {detailsSaving ? 'Saving…' : 'Save public page settings'}
-              </Button>
-            </div>
-          ) : null}
-        </form>
-
-        <aside className={`${CARD_SHELL} order-1 xl:order-2`}>
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#edf4ff] text-[#2f6fec]">
-            <ArrowUpRight size={19} />
-          </span>
-          <h4 className="mt-4 text-base font-semibold text-[#142132]">Publication controls</h4>
-          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">The public page reads only the approved, explicitly live development record.</p>
-          <div className="mt-4 rounded-[13px] border border-[#e3ebf4] bg-[#fbfcfe] p-3">
-            <span className="block break-all text-xs leading-5 text-[#61778f]">{publicUrl}</span>
-          </div>
-          <div className="mt-4 grid gap-2">
-            <Button type="button" variant="secondary" onClick={() => void handleCopyMarketingValue(publicUrl, 'Public page link')}>
-              <Copy size={15} /> Copy link
-            </Button>
-            <Button type="button" variant="secondary" onClick={handlePreviewPublicListing}>
-              <ArrowUpRight size={15} /> Preview page
-            </Button>
-            {canManageDevelopment ? (
-              isPublished ? (
-                <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handleUnpublishDevelopmentMarketing()}>
-                  <EyeOff size={15} /> Unpublish page
-                </Button>
-              ) : (
-                <Button type="button" disabled={detailsSaving} onClick={() => void handlePublishDevelopmentMarketing()}>
-                  <ArrowUpRight size={15} /> Publish page
-                </Button>
-              )
-            ) : null}
-          </div>
-        </aside>
-        <DevelopmentVisualAnalyticsPanel analytics={data.visualAnalytics} />
       </section>
     )
   }
@@ -6683,295 +6241,100 @@ function DevelopmentDetail() {
   }
 
   function renderMarketingEventsSection() {
-    return (
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className={`${CARD_SHELL} order-2 xl:order-1`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Events</h4>
-              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Launches and show days linked directly to this development.</p>
-            </div>
-            <CalendarDays size={21} className="text-[#2f6fec]" />
-          </div>
-          <div className="mt-5 grid gap-3">
-            {marketingEventRecords.length ? (
-              marketingEventRecords.map(item => (
-                <article key={item.id} className="flex items-center gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4ff] text-[#2f6fec]">
-                    <CalendarDays size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <strong className="block truncate text-sm text-[#142132]">{item.title}</strong>
-                    <span className="mt-1 block text-xs text-[#6b7d93]">
-                      {formatDate(item.startsAt)} · {item.location || 'Location to be confirmed'} · {toTitleLabel(item.status)}
-                    </span>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="rounded-[15px] border border-dashed border-[#d8e3ef] px-4 py-8 text-center text-sm text-[#6b7d93]">No development marketing events yet.</p>
-            )}
-          </div>
-        </section>
-        {canManageDevelopment ? (
-          <form onSubmit={handleMarketingEventCreate} className={`${CARD_SHELL} order-1 xl:order-2`}>
-            <h4 className="text-base font-semibold text-[#142132]">Schedule event</h4>
-            <div className="mt-4 grid gap-3">
-              <Field
-                value={marketingEventDraft.title}
-                onChange={event =>
-                  setMarketingEventDraft(current => ({
-                    ...current,
-                    title: event.target.value
-                  }))
-                }
-                placeholder="Event title"
-                required
-              />
-              <Field
-                as="select"
-                value={marketingEventDraft.eventType}
-                onChange={event =>
-                  setMarketingEventDraft(current => ({
-                    ...current,
-                    eventType: event.target.value
-                  }))
-                }>
-                <option value="show_day">Show day</option>
-                <option value="launch">Launch</option>
-              </Field>
-              <Field
-                type="datetime-local"
-                value={marketingEventDraft.startsAt}
-                onChange={event =>
-                  setMarketingEventDraft(current => ({
-                    ...current,
-                    startsAt: event.target.value
-                  }))
-                }
-              />
-              <Field
-                value={marketingEventDraft.location}
-                onChange={event =>
-                  setMarketingEventDraft(current => ({
-                    ...current,
-                    location: event.target.value
-                  }))
-                }
-                placeholder="Location"
-              />
-              <Field
-                as="textarea"
-                value={marketingEventDraft.description}
-                onChange={event =>
-                  setMarketingEventDraft(current => ({
-                    ...current,
-                    description: event.target.value
-                  }))
-                }
-                placeholder="Optional event notes"
-                rows={3}
-              />
-              <Button type="submit" disabled={marketingEventSaving}>
-                {marketingEventSaving ? 'Saving…' : 'Create event'}
-              </Button>
-            </div>
-          </form>
-        ) : null}
-      </section>
-    )
+    return <DevelopmentMarketingEvents
+      key={data.development.id}
+      events={marketingEventRecords}
+      organisationUsers={organisationUsers}
+      canManage={canManageDevelopment}
+      saving={marketingEventSaving}
+      onCreate={handleMarketingEventCreate}
+    />
   }
 
-  function renderMarketingPartnersSection() {
+  function renderMarketingListingsSection() {
+    return <DevelopmentMarketingListings listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+  }
+
+  function renderMarketingBrandSection() {
+    const lightLogo = marketingForm.mediaLibrary.developmentLogoLightUrl || marketingForm.mediaLibrary.developmentLogoUrl
+    const darkLogo = marketingForm.mediaLibrary.developmentLogoDarkUrl
+    const coverImage = marketingForm.mediaLibrary.coverImageUrl || marketingForm.mediaLibrary.heroImageUrl
+    const handleDrop = (event, documentType, options) => {
+      event.preventDefault()
+      void handleMarketingAssetFileUpload({ target: { files: event.dataTransfer.files, value: '' } }, documentType, options)
+    }
     return (
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className={`${CARD_SHELL} order-2 xl:order-1`}>
-          <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Partners & Access</h4>
-          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Marketing collaboration is intentionally separate from operational developer access.</p>
-          <div className="mt-5 grid gap-3">
-            {marketingAccessRecords.length ? (
-              marketingAccessRecords.map(access => {
-                const pendingEmailInvite = Boolean(access.inviteeEmail && access.status === 'pending')
-                const inviteLink = marketingInviteLinks[access.id]
-                return (
-                  <article key={access.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5">
-                    <div className="min-w-0">
-                      <strong className="block truncate text-sm text-[#142132]">{access.inviteeEmail || 'Connected organisation partner'}</strong>
-                      <span className="mt-1 block text-xs text-[#6b7d93]">
-                        {toTitleLabel(access.accessRole)} · {toTitleLabel(access.status)}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {pendingEmailInvite && canManageDevelopment ? (
-                        <Button type="button" variant="secondary" className="!px-3 !py-2 text-xs" onClick={() => void handleMarketingAccessResend(access)} disabled={marketingAccessResendingId === access.id}>
-                          {marketingAccessResendingId === access.id ? 'Sending…' : 'Resend invite'}
-                        </Button>
-                      ) : null}
-                      {inviteLink && canManageDevelopment ? (
-                        <Button type="button" variant="secondary" className="!px-3 !py-2 text-xs" onClick={() => void handleCopyMarketingValue(inviteLink, 'Marketing invitation link')}>
-                          <Copy size={14} /> Copy link
-                        </Button>
-                      ) : null}
-                      <Users size={18} className="shrink-0 text-[#3b69a4]" />
-                    </div>
-                  </article>
-                )
-              })
-            ) : (
-              <p className="rounded-[15px] border border-dashed border-[#d8e3ef] px-4 py-8 text-center text-sm text-[#6b7d93]">No marketing access invitations yet.</p>
-            )}
+      <div className="space-y-5">
+        <form onSubmit={handleMarketingSave} className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-[#142132]">Website colour scheme</h3>
+              <p className="mt-1 text-sm text-[#60758c]">These three colours are used by the public development website for its core surfaces, calls to action and accents.</p>
+            </div>
+            {canManageDevelopment ? <Button type="submit" variant="secondary" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save CI colours'}</Button> : null}
+          </div>
+          <fieldset disabled={!canManageDevelopment} className="mt-5 grid gap-4 md:grid-cols-3 disabled:opacity-70">
+            {[
+              ['primaryColour', 'Primary', 'Main dark sections and buttons'],
+              ['accentColour', 'Accent', 'Calls to action and highlights'],
+              ['surfaceColour', 'Surface', 'Light page background']
+            ].map(([field, label, hint]) => (
+              <label key={field} className="rounded-xl border border-[#dbe6f2] bg-white p-3">
+                <span className="block text-sm font-semibold text-[#20364c]">{label}</span>
+                <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
+                <span className="mt-3 flex items-center gap-3">
+                  <input type="color" value={marketingForm.mediaLibrary[field] || '#073e32'} onChange={event => setMarketingField('mediaLibrary', field, event.target.value)} className="h-10 w-12 cursor-pointer rounded border border-[#cbd8e5] bg-white p-1" />
+                  <span className="font-mono text-sm text-[#526a82]">{marketingForm.mediaLibrary[field] || 'Not set'}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        </form>
+        <section className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
+          <h3 className="text-base font-semibold text-[#142132]">Development brand</h3>
+          <p className="mt-1 text-sm text-[#60758c]">Upload both logo versions once. These previews show how they will appear on the public website.</p>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {[
+              ['logo', 'development-logo', 'Light logo', 'Use on dark sections', lightLogo, 'bg-[#062c26]'],
+              ['logo-dark', 'development-logo-dark', 'Dark logo', 'Use on light sections', darkLogo, 'bg-white']
+            ].map(([documentType, uploadKey, label, hint, value, previewClass]) => (
+              <label key={documentType} className="cursor-pointer overflow-hidden rounded-xl border border-[#d7e1ec] bg-white">
+                <div className={`flex h-36 items-center justify-center p-6 ${previewClass}`}>
+                  {value ? <img src={value} alt={`${label} preview`} className="max-h-full max-w-full object-contain" /> : <span className="text-sm font-medium text-[#73869b]">No {label.toLowerCase()} uploaded</span>}
+                </div>
+                <div className="border-t border-[#e9eff5] px-4 py-3">
+                  <span className="block text-sm font-semibold text-[#20364c]"><ImagePlus size={15} className="mr-2 inline" />{marketingAssetUploading === uploadKey ? 'Uploading…' : `Upload ${label}`}</span>
+                  <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
+                </div>
+                <input type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept} className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, documentType, { uploadKey, successMessage: `${label} uploaded.` })} />
+              </label>
+            ))}
           </div>
         </section>
-        {canManageDevelopment ? (
-          <form onSubmit={handleMarketingAccessCreate} className={`${CARD_SHELL} order-1 xl:order-2`}>
-            <h4 className="text-base font-semibold text-[#142132]">Connect or invite</h4>
-            <p className="mt-1 text-xs leading-5 text-[#718299]">Connect a current partner, or invite someone new to Arch9. Neither option grants unit, transaction, finance, or operational development permissions.</p>
-            <div className="mt-4 grid gap-3">
-              <Field
-                as="select"
-                value={marketingAccessDraft.organisationId}
-                onChange={event =>
-                  setMarketingAccessDraft(current => ({
-                    ...current,
-                    organisationId: event.target.value,
-                    email: ''
-                  }))
-                }>
-                <option value="">Invite someone new to Arch9</option>
-                {marketingPartnerOptions.map(partner => (
-                  <option key={partner.organisationId} value={partner.organisationId}>
-                    {partner.name}
-                    {partner.partnerType ? ` · ${toTitleLabel(partner.partnerType)}` : ''}
-                  </option>
-                ))}
-              </Field>
-              {!marketingAccessDraft.organisationId ? (
-                <Field
-                  type="email"
-                  value={marketingAccessDraft.email}
-                  onChange={event =>
-                    setMarketingAccessDraft(current => ({
-                      ...current,
-                      email: event.target.value
-                    }))
-                  }
-                  placeholder="partner@agency.co.za"
-                  required
-                />
-              ) : null}
-              <Field
-                as="select"
-                value={marketingAccessDraft.accessRole}
-                onChange={event =>
-                  setMarketingAccessDraft(current => ({
-                    ...current,
-                    accessRole: event.target.value
-                  }))
-                }>
-                <option value="viewer">Viewer</option>
-                <option value="contributor">Contributor</option>
-                <option value="approver">Approver</option>
-              </Field>
-              <Button type="submit" disabled={marketingAccessSaving}>
-                <UserPlus size={16} /> {marketingAccessSaving ? 'Saving…' : marketingAccessDraft.organisationId ? 'Connect partner' : 'Invite to Arch9'}
-              </Button>
-            </div>
-          </form>
-        ) : null}
-      </section>
+        <section className="overflow-hidden rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
+          <h3 className="text-base font-semibold text-[#142132]">Cover photo</h3>
+          <p className="mt-1 text-sm text-[#60758c]">This appears behind the headline on the public development page.</p>
+          <label onDragOver={event => event.preventDefault()} onDrop={event => handleDrop(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} className="mt-4 flex min-h-[190px] cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#aebfd2] bg-white">
+            {coverImage ? <img src={coverImage} alt="Cover photo preview" className="h-full w-full object-cover" /> : <span className="text-sm font-semibold text-[#526a82]"><ImagePlus size={16} className="mr-2 inline" />Drop a cover photo here or browse</span>}
+            <input type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept} className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} />
+          </label>
+        </section>
+      </div>
     )
   }
 
   function renderMarketingHubSection() {
     if (marketingHubSection === 'overview') return renderMarketingHubOverview()
-    if (marketingHubSection === 'public-page') return renderMarketingPublicPageSection()
-    if (marketingHubSection === 'ci-setup') {
-      const lightLogo = marketingForm.mediaLibrary.developmentLogoLightUrl || marketingForm.mediaLibrary.developmentLogoUrl
-      const darkLogo = marketingForm.mediaLibrary.developmentLogoDarkUrl
-      const coverImage = marketingForm.mediaLibrary.coverImageUrl || marketingForm.mediaLibrary.heroImageUrl
-      const handleDrop = (event, documentType, options) => {
-        event.preventDefault()
-        void handleMarketingAssetFileUpload({ target: { files: event.dataTransfer.files, value: '' } }, documentType, options)
-      }
-      return (
-        <div className="space-y-5">
-          <form onSubmit={handleMarketingSave} className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-[#142132]">Website colour scheme</h3>
-                <p className="mt-1 text-sm text-[#60758c]">These three colours are used by the public development website for its core surfaces, calls to action and accents.</p>
-              </div>
-              {canManageDevelopment ? <Button type="submit" variant="secondary" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save CI colours'}</Button> : null}
-            </div>
-            <fieldset disabled={!canManageDevelopment} className="mt-5 grid gap-4 md:grid-cols-3 disabled:opacity-70">
-              {[
-                ['primaryColour', 'Primary', 'Main dark sections and buttons'],
-                ['accentColour', 'Accent', 'Calls to action and highlights'],
-                ['surfaceColour', 'Surface', 'Light page background']
-              ].map(([field, label, hint]) => (
-                <label key={field} className="rounded-xl border border-[#dbe6f2] bg-white p-3">
-                  <span className="block text-sm font-semibold text-[#20364c]">{label}</span>
-                  <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
-                  <span className="mt-3 flex items-center gap-3">
-                    <input type="color" value={marketingForm.mediaLibrary[field] || '#073e32'} onChange={event => setMarketingField('mediaLibrary', field, event.target.value)} className="h-10 w-12 cursor-pointer rounded border border-[#cbd8e5] bg-white p-1" />
-                    <span className="font-mono text-sm text-[#526a82]">{marketingForm.mediaLibrary[field] || 'Not set'}</span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          </form>
-          <section className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
-            <h3 className="text-base font-semibold text-[#142132]">Development brand</h3>
-            <p className="mt-1 text-sm text-[#60758c]">Upload both logo versions once. These previews show how they will appear on the public website.</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {[
-                ['logo', 'development-logo', 'Light logo', 'Use on dark sections', lightLogo, 'bg-[#062c26]'],
-                ['logo-dark', 'development-logo-dark', 'Dark logo', 'Use on light sections', darkLogo, 'bg-white']
-              ].map(([documentType, uploadKey, label, hint, value, previewClass]) => (
-                <label key={documentType} className="cursor-pointer overflow-hidden rounded-xl border border-[#d7e1ec] bg-white">
-                  <div className={`flex h-36 items-center justify-center p-6 ${previewClass}`}>
-                    {value ? <img src={value} alt={`${label} preview`} className="max-h-full max-w-full object-contain" /> : <span className="text-sm font-medium text-[#73869b]">No {label.toLowerCase()} uploaded</span>}
-                  </div>
-                  <div className="border-t border-[#e9eff5] px-4 py-3">
-                    <span className="block text-sm font-semibold text-[#20364c]"><ImagePlus size={15} className="mr-2 inline" />{marketingAssetUploading === uploadKey ? 'Uploading…' : `Upload ${label}`}</span>
-                    <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
-                  </div>
-                  <input type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept} className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, documentType, { uploadKey, successMessage: `${label} uploaded.` })} />
-                </label>
-              ))}
-            </div>
-          </section>
-          <section className="overflow-hidden rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
-            <h3 className="text-base font-semibold text-[#142132]">Cover photo</h3>
-            <p className="mt-1 text-sm text-[#60758c]">This appears behind the headline on the public development page.</p>
-            <label onDragOver={event => event.preventDefault()} onDrop={event => handleDrop(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} className="mt-4 flex min-h-[190px] cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#aebfd2] bg-white">
-              {coverImage ? <img src={coverImage} alt="Cover photo preview" className="h-full w-full object-cover" /> : <span className="text-sm font-semibold text-[#526a82]"><ImagePlus size={16} className="mr-2 inline" />Drop a cover photo here or browse</span>}
-              <input type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText} accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept} className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} />
-            </label>
-          </section>
-        </div>
-      )
-    }
-    if (marketingHubSection === 'media')
-      return renderMarketingAssetSection({
-        title: 'Media library',
-        description: 'Drop photos here or use Upload. Every image can be opened or deleted from this library.',
-        items: marketingAssetGroups.find(group => group.key === 'gallery')?.items || [],
-        documentType: 'marketing',
-        emptyMessage: 'Drop photos here or use Upload to build the media library.'
-      })
-    if (marketingHubSection === 'floor-plans')
-      return renderMarketingAssetSection({
-        title: 'Floor Plans',
-        description: 'Floor plans and site plans already attached to this development.',
-        items: marketingAssetGroups.find(group => group.key === 'plans')?.items || [],
-        documentType: 'floorplan',
-        emptyMessage: 'Upload a floor plan or site plan to make it available here.'
-      })
-    if (marketingHubSection === 'documents') return renderMarketingDocumentsSection()
+    if (marketingHubSection === 'website') return <DevelopmentWebsiteAnalytics key={data.development.id} development={data.development} />
+    if (marketingHubSection === 'media') return (
+      <div className="space-y-5">
+        {renderMarketingAssetSection({ title: 'Media library', description: 'Drop photos here or use Upload. Every image can be opened or deleted from this library.', items: marketingAssetGroups.find(group => group.key === 'gallery')?.items || [], documentType: 'marketing', emptyMessage: 'Drop photos here or use Upload to build the media library.' })}
+        {renderMarketingAssetSection({ title: 'Floor Plans', description: 'Floor plans and site plans already attached to this development.', items: marketingAssetGroups.find(group => group.key === 'plans')?.items || [], documentType: 'floorplan', emptyMessage: 'Upload a floor plan or site plan to make it available here.' })}
+      </div>
+    )
+    if (marketingHubSection === 'campaigns') return <DevelopmentMarketingCampaigns key={`${currentWorkspace?.id || ''}:${data.development.id}`} development={data.development} organisationUsers={organisationUsers} canManage={canManageDevelopment} />
     if (marketingHubSection === 'events') return renderMarketingEventsSection()
-    if (marketingHubSection === 'partners') return renderMarketingPartnersSection()
-    return renderEditableMarketingContent()
+    return renderMarketingHubOverview()
   }
 
   function renderEditableMarketingContent() {
@@ -7611,11 +6974,11 @@ function DevelopmentDetail() {
 
         <section className="relative z-20 -mt-12 px-0 sm:px-4">
           <div className="rounded-[26px] border border-white/70 bg-white/50 p-3 shadow-[0_18px_44px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:p-4">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5 xl:gap-4">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-4">
             {summaryItems.map(item => {
               const Icon = item.icon
               return (
-                <article key={item.label} className="relative flex min-h-[190px] flex-col overflow-hidden rounded-[18px] border border-[#dce6f0] bg-white px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.055)]">
+                <article key={item.label} className="relative flex min-h-[190px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[#dce6f0] bg-white px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.055)] [container-type:inline-size]">
                   <span className="absolute inset-x-0 top-0 h-1 bg-[#239a5b]" aria-hidden="true" />
                   <div className="flex items-start justify-between gap-3">
                     <span className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#70839a]">Performance</span>
@@ -7625,9 +6988,9 @@ function DevelopmentDetail() {
                       </span>
                     ) : null}
                   </div>
-                  <span className="mt-4 block text-sm font-semibold tracking-[-0.01em] text-[#52677f]">{item.label}</span>
-                  <strong className="mt-1 block break-words text-[clamp(1.65rem,2vw,2.05rem)] font-semibold leading-[1.08] tracking-[-0.04em] text-[#142132] tabular-nums">{item.value}</strong>
-                  <span className="mt-auto pt-4 text-sm font-medium leading-5 text-[#6b7d93]">{item.meta}</span>
+                  <span className="mt-4 block min-h-10 text-sm font-semibold leading-5 tracking-[-0.01em] text-[#52677f]">{item.label}</span>
+                  <strong className="mt-1 block whitespace-nowrap text-[clamp(1.25rem,12cqi,2.05rem)] font-semibold leading-[1.08] tracking-[-0.04em] text-[#142132] tabular-nums">{item.value}</strong>
+                  <span className="mt-auto min-h-[56px] pt-4 text-sm font-medium leading-5 text-[#6b7d93]">{item.meta}</span>
                 </article>
               )
             })}
@@ -7636,7 +6999,7 @@ function DevelopmentDetail() {
         </section>
 
         <section className="mt-6 rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-8" role="tablist" aria-label="Development workspace tabs">
+          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7" role="tablist" aria-label="Development workspace tabs">
             {DEVELOPMENT_PRIMARY_TABS.map(tab => {
               const isActive = activeTab === tab.id
               return (
@@ -7764,7 +7127,7 @@ function DevelopmentDetail() {
                 ) : (
                   <p className="mt-5 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-8 text-sm text-[#6b7d93]">No units configured yet.</p>
                 )}
-                <Button variant="ghost" className="mt-5 w-full justify-between border-t border-[#e6edf5] px-0 pt-4" onClick={() => setActiveTab('units')}>
+                <Button variant="ghost" className="mt-5 w-full justify-between border-t border-[#e6edf5] px-0 pt-4" onClick={() => setActiveTab('availability')}>
                   View units
                   <ArrowUpRight size={14} />
                 </Button>
@@ -7801,7 +7164,7 @@ function DevelopmentDetail() {
 
         {activeTab === 'performance' ? (
           <>
-            <DevelopmentDemandIntelligencePanel intelligence={demandIntelligence} onOpenLeads={() => setActiveTab('leads')} onOpenUnits={() => setActiveTab('units')} />
+            <DevelopmentDemandIntelligencePanel intelligence={demandIntelligence} onOpenLeads={() => setActiveTab('leads')} onOpenUnits={() => setActiveTab('availability')} />
 
             <section className={`${CARD_SHELL} mt-4 p-4`}>
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -7809,7 +7172,7 @@ function DevelopmentDetail() {
                   <h3 className="text-[1.05rem] font-semibold tracking-[-0.025em] text-[#142132]">Active Transactions</h3>
                   <p className="mt-1 text-sm text-[#6b7d93]">Scrollable row of live matters linked to this development.</p>
                 </div>
-                <Button variant="secondary" onClick={() => setActiveTab('units')}>
+                <Button variant="secondary" onClick={() => setActiveTab('availability')}>
                   View All Units
                 </Button>
               </div>
@@ -8043,7 +7406,7 @@ function DevelopmentDetail() {
                     <TrendingUp size={15} />
                     Marketing
                   </Button>
-                  <Button variant="ghost" onClick={() => setActiveTab('units')}>
+                  <Button variant="ghost" onClick={() => setActiveTab('availability')}>
                     <Building2 size={15} />
                     Stock Master
                   </Button>
@@ -8059,7 +7422,7 @@ function DevelopmentDetail() {
                     <ShieldCheck size={15} />
                     Conveyancing
                   </Button>
-                  <Button variant="ghost" onClick={() => setActiveTab('bond_originators')}>
+                  <Button variant="ghost" onClick={() => { setActiveTab('configuration'); selectConfigurationSection('bond-originator') }}>
                     <CircleDollarSign size={15} />
                     Bond Originators
                   </Button>
@@ -8077,72 +7440,12 @@ function DevelopmentDetail() {
           <section className="mt-4 grid gap-4">
             <div className={`grid gap-4 ${activeTab === 'performance' && canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
               {activeTab === 'configuration' ? (
-                <div className="grid gap-4">
-                  <div className="flex flex-col gap-4 rounded-[22px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#1f7a45]">Configuration</p>
-                      <h3 className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#142132]">Development setup</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Set up how this development is sold, governed and accessed.</p>
-                    </div>
-                    <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => setActiveTab('transactions')}>
-                      <Workflow size={14} />
-                      Preview Buyer Journey
-                    </Button>
-                  </div>
-
-                  <section className="flex flex-col gap-4 rounded-[18px] border border-[#d9ece5] bg-[#f7fcfa] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="shrink-0">
-                      <h4 className="text-sm font-semibold text-[#142132]">Development setup</h4>
-                      <p className="mt-1 text-sm text-[#607891]">{configurationCompletedCount} of {configurationStatusItems.length} complete</p>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
-                      {configurationStatusItems.map(item => {
-                        const Icon = item.complete ? CheckCircle2 : item.optional ? CircleDollarSign : AlertTriangle
-                        const tone = item.complete ? 'text-[#157a45]' : item.optional ? 'text-[#8a9aab]' : 'text-[#b86f12]'
-                        return (
-                          <button key={item.id} type="button" onClick={() => selectConfigurationSection(item.id)} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-left text-xs font-semibold transition ${configurationSection === item.id ? 'border-[#cbe8d7] bg-white text-[#142132] shadow-sm' : 'border-[#dce9e5] bg-white/70 text-[#35546c] hover:bg-white'}`}>
-                            <Icon size={16} className={tone} />
-                            {item.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </section>
-
-                  <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-                    <aside className="rounded-[18px] border border-[#dde6f0] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                      <div className="grid gap-5">
-                        {[
-                          ['General', configurationStatusItems.slice(0, 1)],
-                          ['Commercial setup', configurationStatusItems.slice(1, 3)],
-                          ['Operations', configurationStatusItems.slice(3)]
-                        ].map(([label, items]) => (
-                          <div key={label}>
-                            <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[#71839a]">{label}</p>
-                            <div className="mt-2 grid gap-1">
-                              {items.map(item => {
-                                const Icon = item.complete ? CheckCircle2 : item.optional ? CircleDollarSign : AlertTriangle
-                                const tone = item.complete ? 'text-[#16814a]' : item.optional ? 'text-[#8495a8]' : 'text-[#c27a17]'
-                                return <button key={item.id} type="button" onClick={() => selectConfigurationSection(item.id)} className={`relative flex min-h-11 items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition ${configurationSection === item.id ? 'bg-[#edf9f3] text-[#142132]' : 'text-[#35546c] hover:bg-[#f7fafc]'}`}>
-                                  {configurationSection === item.id ? <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[#198451]" /> : null}
-                                  <Icon size={17} className={tone} />
-                                  <span>{item.label === 'Seller entity' ? 'Seller / developer entity' : item.label === 'Deposit rules' ? 'Reservation & deposits' : item.label === 'Routing' ? 'Transaction routing' : item.label}</span>
-                                </button>
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                        <div className="border-t border-[#e4ebf3] pt-4">
-                          <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[#71839a]">Advanced</p>
-                          <button type="button" onClick={() => selectConfigurationSection('danger-zone')} className={`relative mt-2 flex min-h-11 w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium ${configurationSection === 'danger-zone' ? 'bg-[#fff3f1] text-[#b42318]' : 'text-[#b42318] hover:bg-[#fff8f7]'}`}>
-                            <Trash2 size={17} /> Danger zone
-                          </button>
-                        </div>
-                      </div>
-                    </aside>
-
-                    <div className="min-w-0">
-
+                <DevelopmentConfigurationWorkspace
+                  section={configurationSection}
+                  statuses={configurationStatusItems}
+                  onSelectSection={selectConfigurationSection}
+                >
+                  <div className="min-w-0">
                   {configurationSection === 'general' ? (
                   <ConfigurationCard
                     icon={Building2}
@@ -9162,9 +8465,9 @@ function DevelopmentDetail() {
                     </div>
                   </section>
                   ) : null}
-                    </div>
+                  {configurationSection === 'bond-originator' ? renderBondOriginatorConfiguration() : null}
                   </div>
-                </div>
+                </DevelopmentConfigurationWorkspace>
               ) : null}
 
               {activeTab === 'performance' && canManageDevelopment ? (
@@ -9731,1019 +9034,45 @@ function DevelopmentDetail() {
 
         {activeTab === 'marketing' ? (
           <section className="mt-4">
-            <section className={`${CARD_SHELL} mb-4`}>
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f7a45]">Marketing Hub</p>
-                  <h3 className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-[#142132]">Development marketing</h3>
-                  <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#6b7d93]">A single place for approved development content and future marketing collaboration.</p>
+            <section className="relative mb-5 overflow-hidden rounded-[24px] border border-[#183a3c] bg-[#0c2527] shadow-[0_20px_48px_rgba(15,23,42,0.14)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_0%,rgba(69,160,124,0.34),transparent_45%),radial-gradient(circle_at_95%_10%,rgba(225,179,85,0.18),transparent_30%)]" aria-hidden="true" />
+              <div className="relative flex flex-col gap-6 px-6 py-7 lg:flex-row lg:items-center lg:justify-between lg:px-7">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-[#a6d5bf]">Marketing Hub</p>
+                  <h2 className="mt-2 text-[1.65rem] font-semibold tracking-[-0.04em] text-white">Marketing workspace</h2>
+                  <p className="mt-2 max-w-[680px] text-sm leading-6 text-[#d4e5df]">Manage listings, your development website and the assets your team shares with buyers.</p>
                 </div>
-                <span className="inline-flex w-fit items-center rounded-full border border-[#d8e3ef] bg-[#f7fafd] px-3 py-1 text-[0.76rem] font-semibold text-[#5b7288]">Foundation release</span>
+                <div className="flex shrink-0 flex-wrap items-center gap-3">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"><Globe2 size={14} aria-hidden="true" />Website: {marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live' ? 'Live' : 'Not published'}</span>
+                  <Button type="button" variant="secondary" onClick={() => window.open(buildPublicDevelopmentUrl(marketingForm.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)), '_blank', 'noopener,noreferrer')}><ArrowUpRight size={15} aria-hidden="true" />Preview website</Button>
+                </div>
               </div>
-              <nav className="mt-5 flex gap-2 overflow-x-auto pb-1" aria-label="Marketing Hub sections">
+            </section>
+            <nav className="mb-6 snap-x snap-mandatory overflow-x-auto rounded-[22px] border border-[#d8e5de] bg-gradient-to-br from-[#f3f8f5] to-[#eaf2ee] p-2 shadow-[0_8px_24px_rgba(28,63,45,0.04)]" aria-label="Marketing Hub sections">
+              <div className="grid min-w-[720px] grid-cols-6 gap-2">
                 {MARKETING_HUB_SECTIONS.map(section => {
                   const isActive = marketingHubSection === section.id
+                  const Icon = section.icon
                   return (
-                    <button key={section.id} type="button" aria-current={isActive ? 'page' : undefined} onClick={() => openMarketingHubSection(section.id)} className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-semibold transition ${isActive ? 'border-[#cfe1f7] bg-[#35546c] text-white' : 'border-[#dbe5ef] bg-white text-[#5c7289] hover:border-[#c6d5e5] hover:bg-[#f8fbff]'}`}>
-                      {section.label}
+                    <button
+                      key={section.id}
+                      type="button"
+                      aria-current={isActive ? 'page' : undefined}
+                      onClick={() => openMarketingHubSection(section.id)}
+                      className={`group relative flex min-h-[104px] min-w-0 snap-start flex-col items-center justify-center gap-2.5 rounded-[16px] border px-3 py-4 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#238355] focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.985] motion-reduce:transition-none ${isActive ? 'border-[#bdd8c8] bg-white text-[#154d36] shadow-[0_5px_18px_rgba(28,63,45,0.08)]' : 'border-transparent text-[#667a6e] hover:border-[#d2e2d8] hover:bg-white/70 hover:text-[#176447]'}`}
+                    >
+                      <span className={`grid h-9 w-9 place-items-center rounded-xl transition-colors duration-200 ${isActive ? 'bg-[#176447] text-white shadow-[0_3px_8px_rgba(23,100,71,0.18)]' : 'bg-white/80 text-[#6a8879] group-hover:bg-[#e3f0e8] group-hover:text-[#176447]'}`}>
+                        <Icon size={20} aria-hidden="true" />
+                      </span>
+                      <span className="whitespace-nowrap">{section.label}</span>
+                      <span className={`absolute inset-x-8 bottom-0 h-[3px] rounded-t-full bg-[#238355] transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`} aria-hidden="true" />
                     </button>
                   )
                 })}
-              </nav>
-            </section>
-
-            {marketingHubSection === 'content' ? (
-              <>
-                {!canEditMarketing ? (
-                  <section className={`${CARD_SHELL} space-y-5`}>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Listing Content</h3>
-                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Read-only inherited listing content from the owner workspace (developer / agent). This view reflects owner updates automatically.</p>
-                      </div>
-                      <span className="inline-flex items-center rounded-full border border-[#d8e3ef] bg-[#f7fafd] px-3 py-1 text-[0.76rem] font-semibold text-[#5b7288]">Read-only inherited view</span>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      {[
-                        ['Price Range', marketingFloorplanPriceRange || marketingForm.listingOverview.priceRange || 'Not set'],
-                        ['Floorplans', `${marketingReadinessSummary.floorplanCount}`],
-                        ['Local Assets', `${marketingReadinessSummary.assetCount}`],
-                        ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus)]
-                      ].map(([label, value]) => (
-                        <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                          <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                          <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                        </article>
-                      ))}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { id: 'overview', label: 'Listing Overview' },
-                        { id: 'floorplans', label: 'Floorplans & Options' },
-                        { id: 'media', label: 'Media & Assets' },
-                        { id: 'seo', label: 'SEO' },
-                        { id: 'agencies', label: 'Agencies' },
-                        { id: 'selling_points', label: 'Selling Points' }
-                      ].map(item => (
-                        <button key={item.id} type="button" onClick={() => setMarketingEditorSection(item.id)} className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${marketingEditorSection === item.id ? 'border-[#2f6fec] bg-[#e9f0ff] text-[#1d4db3]' : 'border-[#dbe5ef] bg-white text-[#5c7289] hover:border-[#c6d5e5]'}`}>
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {marketingEditorSection === 'overview' ? (
-                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="mb-4 flex items-start justify-between gap-3">
-                          <div>
-                            <h4 className="text-sm font-semibold text-[#142132]">Listing Overview</h4>
-                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Shared listing identity and development-level positioning configured by the owner module.</p>
-                          </div>
-                          <Button type="button" size="sm" variant="secondary" onClick={() => void handleCopyMarketingValue(marketingForm.listingOverview.listingDescription, 'Listing description')}>
-                            <Copy size={14} />
-                            Copy Description
-                          </Button>
-                        </div>
-
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                          {[
-                            ['Listing Title', marketingForm.listingOverview.listingTitle],
-                            ['Listing Heading', marketingForm.listingOverview.listingHeading],
-                            ['Ownership Type', toTitleLabel(marketingForm.listingOverview.ownershipType)],
-                            ['Location Label', marketingForm.listingOverview.locationLabel],
-                            ['Address', marketingForm.listingOverview.address],
-                            ['Listing Status', toTitleLabel(marketingForm.listingOverview.listingStatus)]
-                          ].map(([label, value]) => (
-                            <article key={label} className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
-                              <strong className="mt-1.5 block text-sm font-medium text-[#1f344a]">{String(value || '').trim() || 'Not set'}</strong>
-                            </article>
-                          ))}
-                        </div>
-
-                        <div className="mt-4 grid gap-3">
-                          <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing Description</span>
-                            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">{marketingForm.listingOverview.listingDescription || 'No listing description added yet.'}</p>
-                          </article>
-                          <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
-                            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">{marketingForm.listingOverview.notes || 'No notes added yet.'}</p>
-                          </article>
-                        </div>
-
-                        <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-                          {[
-                            ['Internet Access (Fibre Ready)', marketingForm.listingOverview.fibreReady],
-                            ['Borehole', marketingForm.listingOverview.borehole],
-                            ['Backup Battery / Inverter', marketingForm.listingOverview.backupBatteryInverter],
-                            ['Gas Geyser', marketingForm.listingOverview.gasGeyser],
-                            ['Solar Geyser', marketingForm.listingOverview.solarGeyser],
-                            ['Solar Panels', marketingForm.listingOverview.solarPanels],
-                            ['Water Tanks', marketingForm.listingOverview.waterTanks],
-                            ['Pets Allowed', marketingForm.listingOverview.petsAllowed]
-                          ].map(([label, value]) => (
-                            <article key={label} className="rounded-[11px] border border-[#e3ebf4] bg-white px-3 py-2.5">
-                              <span className="block text-xs text-[#5f7288]">{label}</span>
-                              <strong className={`mt-1 block text-sm ${value ? 'text-[#1f7a45]' : 'text-[#7b8ca2]'}`}>{value ? 'Yes' : 'No'}</strong>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-                    ) : null}
-
-                    {marketingEditorSection === 'floorplans' ? (
-                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="mb-4">
-                          <h4 className="text-sm font-semibold text-[#142132]">Floorplans &amp; Options</h4>
-                          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Read-only option set inherited from the owner workspace.</p>
-                        </div>
-
-                        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-                          <aside className="rounded-[14px] border border-[#e3ebf4] bg-white p-2">
-                            <div className="grid gap-1.5">
-                              {marketingForm.floorplans.map(item => (
-                                <button key={item.id} type="button" onClick={() => setSelectedFloorplanId(item.id)} className={`rounded-[10px] border px-3 py-2 text-left ${selectedMarketingFloorplan?.id === item.id ? 'border-[#2f6fec] bg-[#e9f0ff]' : 'border-transparent hover:border-[#d7e4f2] hover:bg-[#f8fbff]'}`}>
-                                  <strong className="block text-sm text-[#142132]">{item.name || 'Untitled option'}</strong>
-                                  <span className="mt-1 block text-xs text-[#6b7d93]">{formatMarketingFloorplanPriceSummary(item) || 'No price'}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </aside>
-
-                          {selectedMarketingFloorplan ? (
-                            <div className="rounded-[14px] border border-[#e3ebf4] bg-white p-4">
-                              <h5 className="text-sm font-semibold text-[#142132]">Floorplan Details</h5>
-                              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                {[
-                                  ['Erf Size', selectedMarketingFloorplan.erfSize],
-                                  ['Floor Size', selectedMarketingFloorplan.floorSize],
-                                  ['Bedrooms', selectedMarketingFloorplan.bedrooms],
-                                  ['Bathrooms', selectedMarketingFloorplan.bathrooms],
-                                  ['Garage', selectedMarketingFloorplan.garage],
-                                  ['Pool', selectedMarketingFloorplan.pool],
-                                  ['Price', formatMarketingFloorplanPriceSummary(selectedMarketingFloorplan) || 'Not set'],
-                                  ['Rates & Taxes', selectedMarketingFloorplan.ratesAndTaxes],
-                                  ['Levies', selectedMarketingFloorplan.levies],
-                                  ['No Transfer Duty', selectedMarketingFloorplan.noTransferDuty ? 'Yes' : 'No'],
-                                  ['Customisation Options', selectedMarketingFloorplan.customisationOptions ? 'Yes' : 'No']
-                                ].map(([label, value]) => (
-                                  <article key={label} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfcfe] px-3.5 py-3">
-                                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
-                                    <strong className="mt-1.5 block text-sm font-medium text-[#1f344a]">{String(value || '').trim() || 'Not set'}</strong>
-                                  </article>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      </section>
-                    ) : null}
-
-                    {marketingEditorSection === 'media' ? (
-                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="mb-4">
-                          <h4 className="text-sm font-semibold text-[#142132]">Media &amp; Assets</h4>
-                          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Local files inherited from owner-side listing content. Download and view are enabled.</p>
-                        </div>
-
-                        <div className="grid gap-4">
-                          {marketingAssetGroups.map(group => (
-                            <section key={group.key} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
-                              <div className="mb-3 flex items-center justify-between gap-2">
-                                <strong className="text-[0.82rem] font-semibold uppercase tracking-[0.08em] text-[#5c7289]">{group.title}</strong>
-                                <span className="text-[0.74rem] font-semibold text-[#7b8ca2]">{group.items.length} assets</span>
-                              </div>
-
-                              {group.items.length ? (
-                                <div className="grid gap-2.5 md:grid-cols-2">
-                                  {group.items.map(item => (
-                                    <article key={item.id} className="rounded-[12px] border border-[#e8eef6] bg-[#fbfcff] px-3 py-2.5">
-                                      <span className="inline-flex rounded-full border border-[#dbe7f5] bg-white px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607a95]">{item.typeLabel}</span>
-                                      <strong className="mt-2 block text-sm font-semibold text-[#1f344a]">{item.title}</strong>
-                                      <p className="mt-1 line-clamp-2 text-xs text-[#6b7d93]">{item.description || 'No description'}</p>
-                                      <div className="mt-2 flex items-center gap-2">
-                                        <Button type="button" size="sm" variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
-                                          View
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="secondary"
-                                          onClick={() =>
-                                            void handleDownloadMarketingResource({
-                                              key: item.id,
-                                              label: item.title,
-                                              url: item.fileUrl
-                                            })
-                                          }>
-                                          <Download size={13} />
-                                          Download
-                                        </Button>
-                                      </div>
-                                    </article>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">No local assets mapped yet.</p>
-                              )}
-                            </section>
-                          ))}
-                        </div>
-
-                        <div className="mt-4 grid gap-3 md:grid-cols-2">
-                          {[
-                            {
-                              key: 'video',
-                              title: 'Video',
-                              count: marketingVideoDocuments.length,
-                              uploadKey: 'development-video',
-                              accept: 'video/*',
-                              message: 'Development video uploaded.'
-                            },
-                            {
-                              key: 'virtual_tour',
-                              title: 'Virtual Tour',
-                              count: marketingVirtualTourDocuments.length,
-                              uploadKey: 'development-tour',
-                              accept: 'video/*,.zip,.html',
-                              message: 'Development virtual tour uploaded.'
-                            }
-                          ].map(item => (
-                            <label key={item.key} className="flex min-h-[92px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
-                              <span className="inline-flex items-center gap-2">
-                                <Upload size={15} />
-                                {marketingAssetUploading === item.uploadKey ? 'Uploading...' : `Upload ${item.title}`}
-                              </span>
-                              <span className="mt-1 text-xs font-medium text-[#6b7d93]">{item.count ? `${item.count} uploaded` : 'No file uploaded'}</span>
-                              <input
-                                type="file"
-                                accept={item.accept}
-                                className="hidden"
-                                disabled={Boolean(marketingAssetUploading)}
-                                onChange={event =>
-                                  void handleMarketingAssetFileUpload(event, item.key, {
-                                    uploadKey: item.uploadKey,
-                                    successMessage: item.message
-                                  })
-                                }
-                              />
-                            </label>
-                          ))}
-                        </div>
-                      </section>
-                    ) : null}
-
-                    {marketingEditorSection === 'seo' ? (
-                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="mb-4">
-                          <h4 className="text-sm font-semibold text-[#142132]">SEO</h4>
-                          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Read-only SEO details from owner listing configuration.</p>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">SEO Title</span>
-                            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">{marketingForm.listingOverview.seoTitle || 'Not set'}</p>
-                          </article>
-                          <article className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                            <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">SEO Meta Description</span>
-                            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-[#30485f]">{marketingForm.listingOverview.seoMetaDescription || 'Not set'}</p>
-                          </article>
-                        </div>
-                      </section>
-                    ) : null}
-
-                    {marketingEditorSection === 'agencies' ? (
-                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="mb-4">
-                          <h4 className="text-sm font-semibold text-[#142132]">Assigned Agencies</h4>
-                          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Agency partners configured by the owner module for this development.</p>
-                        </div>
-
-                        {marketingAgencyEntries.length ? (
-                          <div className="grid gap-3 md:grid-cols-2">
-                            {marketingAgencyEntries.map(agency => (
-                              <article key={`readonly-agency-${agency.id}`} className="rounded-[12px] border border-[#e3ebf4] bg-white px-3.5 py-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <strong className="block text-sm font-semibold text-[#1f344a]">{agency.name || 'Unnamed agency'}</strong>
-                                    <p className="mt-1 text-xs text-[#5f7288]">{agency.contactName || 'No contact assigned'}</p>
-                                  </div>
-                                  {agency.isPreferred ? <span className="inline-flex rounded-full border border-[#d5e7dc] bg-[#f2faf5] px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#1f7a45]">Preferred</span> : null}
-                                </div>
-                                <div className="mt-3 grid gap-2 text-xs text-[#5f7288]">
-                                  <p>Email: {agency.contactEmail || 'Not set'}</p>
-                                  <p>Phone: {agency.contactPhone || 'Not set'}</p>
-                                  <p className="line-clamp-2">Notes: {agency.notes || 'No notes added'}</p>
-                                </div>
-                              </article>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">No agencies assigned to this development yet.</p>
-                        )}
-                      </section>
-                    ) : null}
-
-                    {marketingEditorSection === 'selling_points' ? (
-                      <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="mb-4 flex items-start justify-between gap-3">
-                          <div>
-                            <h4 className="text-sm font-semibold text-[#142132]">Key Selling Points</h4>
-                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Read-only highlights configured by the owner listing team.</p>
-                          </div>
-                          {marketingSellingPointEntries.length ? (
-                            <Button type="button" size="sm" variant="secondary" onClick={() => void handleCopyMarketingValue(marketingSellingPointEntries.map(item => (item.note ? `${item.title}: ${item.note}` : item.title)).join('\n'), 'Selling points')}>
-                              <Copy size={13} />
-                              Copy All
-                            </Button>
-                          ) : null}
-                        </div>
-
-                        {marketingSellingPointEntries.length ? (
-                          <div className="grid gap-3 md:grid-cols-2">
-                            {marketingSellingPointEntries.map((entry, index) => (
-                              <article key={`selling-point-readonly-${index}`} className="rounded-[12px] border border-[#e3ebf4] bg-white p-3.5">
-                                <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">Point {index + 1}</span>
-                                <strong className="mt-2 block text-sm font-semibold text-[#142132]">{entry.title || 'Untitled point'}</strong>
-                                {entry.note ? <p className="mt-1.5 text-sm leading-6 text-[#30485f]">{entry.note}</p> : null}
-                              </article>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">No selling points added yet.</p>
-                        )}
-                      </section>
-                    ) : null}
-                  </section>
-                ) : (
-                  <>
-                    <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
-                      {renderEditableMarketingContent()}
-                    </form>
-                    {SHOW_LEGACY_MARKETING_EDITOR ? (
-                      <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div>
-                            <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing</h3>
-                            <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Manage the public listing content by unit type, with clear pricing, descriptions, images, and floorplans.</p>
-                          </div>
-                          <label className={`inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-4 text-sm font-semibold transition ${marketingAssetUploading ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#dbe6f2] bg-white text-[#20364c] shadow-[0_8px_16px_rgba(21,38,59,0.06)] hover:border-[#b9cadb] hover:bg-[#f8fbff]'}`}>
-                            <Upload size={15} />
-                            Upload Images
-                            <input
-                              type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                              accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                              multiple
-                              className="hidden"
-                              disabled={Boolean(marketingAssetUploading)}
-                              onChange={event =>
-                                void handleMarketingAssetFileUpload(event, 'marketing', {
-                                  uploadKey: 'gallery',
-                                  successMessage: 'Marketing images uploaded.'
-                                })
-                              }
-                            />
-                          </label>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                          {[
-                            ['Price Range', marketingFloorplanPriceRange || 'Not set'],
-                            ['Unit Types', `${marketingReadinessSummary.floorplanCount}`],
-                            ['Assets', `${marketingReadinessSummary.assetCount}`],
-                            ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus)]
-                          ].map(([label, value]) => (
-                            <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                              <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                              <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                            </article>
-                          ))}
-                        </div>
-
-                        <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <h4 className="text-sm font-semibold text-[#142132]">Unit Types</h4>
-                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Select a unit type to edit its description, price range, images, and floorplans.</p>
-                            </div>
-                            <Button type="button" size="sm" variant="secondary" onClick={addMarketingFloorplan}>
-                              <Plus size={14} />
-                              Add Unit Type
-                            </Button>
-                          </div>
-
-                          <div className="flex gap-2 overflow-x-auto pb-1">
-                            {marketingForm.floorplans.map((item, index) => {
-                              const priceSummary = formatMarketingFloorplanPriceSummary(item)
-                              return (
-                                <button key={item.id} type="button" onClick={() => setSelectedFloorplanId(item.id)} className={`min-w-[180px] rounded-[14px] border px-4 py-3 text-left transition ${selectedMarketingFloorplan?.id === item.id ? 'border-[#1f7a45] bg-[#edf9f1] text-[#123322]' : 'border-[#dbe5ef] bg-white text-[#31475c] hover:border-[#bcd0e4]'}`}>
-                                  <strong className="block text-sm font-semibold">{item.name || `Unit Type ${index + 1}`}</strong>
-                                  <span className="mt-1 block text-xs text-[#64788f]">{priceSummary || 'Price not set'}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </section>
-
-                        <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                          <div className="mb-4">
-                            <h4 className="text-sm font-semibold text-[#142132]">Listing Description</h4>
-                            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">This is the shared development copy that appears above the selected unit types.</p>
-                          </div>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <DetailField label="Listing Title">
-                              <Field value={marketingForm.listingOverview.listingTitle} onChange={event => setMarketingField('listingOverview', 'listingTitle', event.target.value)} placeholder="Amari Residence" />
-                            </DetailField>
-                            <DetailField label="Listing Heading">
-                              <Field value={marketingForm.listingOverview.listingHeading} onChange={event => setMarketingField('listingOverview', 'listingHeading', event.target.value)} placeholder="Modern apartments in Pomona" />
-                            </DetailField>
-                            <DetailField label="Ownership Type">
-                              <Field as="select" value={marketingForm.listingOverview.ownershipType} onChange={event => setMarketingField('listingOverview', 'ownershipType', event.target.value)}>
-                                {MARKETING_OWNERSHIP_TYPE_OPTIONS.map(option => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </Field>
-                            </DetailField>
-                            <DetailField label="Listing Status">
-                              <Field as="select" value={marketingForm.listingOverview.listingStatus} onChange={event => setMarketingField('listingOverview', 'listingStatus', event.target.value)}>
-                                {MARKETING_LISTING_STATUS_OPTIONS.map(option => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </Field>
-                            </DetailField>
-                            <DetailField label="Description" className="md:col-span-2">
-                              <Field as="textarea" rows={6} value={marketingForm.listingOverview.listingDescription} onChange={event => setMarketingField('listingOverview', 'listingDescription', event.target.value)} placeholder="Describe the development, location, buyer appeal, and main lifestyle benefits." />
-                            </DetailField>
-                            <DetailField label="Location Label">
-                              <Field value={marketingForm.listingOverview.locationLabel} onChange={event => setMarketingField('listingOverview', 'locationLabel', event.target.value)} placeholder="Pomona, Kempton Park" />
-                            </DetailField>
-                            <DetailField label="Address">
-                              <Field value={marketingForm.listingOverview.address} onChange={event => setMarketingField('listingOverview', 'address', event.target.value)} placeholder="254 Outeniqua Street" />
-                            </DetailField>
-                          </div>
-                        </section>
-
-                        <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                          <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                              <h4 className="text-sm font-semibold text-[#142132]">Listing Media</h4>
-                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Upload images, floorplans, video links, tour links, and the development logo from this tab.</p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${marketingAssetUploading ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#1f7a45] bg-[#1f7a45] text-white shadow-[0_8px_14px_rgba(31,122,69,0.16)] hover:bg-[#176339]'}`}>
-                                <ImagePlus size={14} />
-                                Upload Images
-                                <input
-                                  type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                  accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                  multiple
-                                  className="hidden"
-                                  disabled={Boolean(marketingAssetUploading)}
-                                  onChange={event =>
-                                    void handleMarketingAssetFileUpload(event, 'marketing', {
-                                      uploadKey: 'gallery',
-                                      successMessage: 'Marketing images uploaded.'
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${marketingAssetUploading ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#dbe6f2] bg-white text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]'}`}>
-                                <FileText size={14} />
-                                Upload Floorplans
-                                <input
-                                  type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
-                                  accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
-                                  multiple
-                                  className="hidden"
-                                  disabled={Boolean(marketingAssetUploading)}
-                                  onChange={event =>
-                                    void handleMarketingAssetFileUpload(event, 'floorplan', {
-                                      uploadKey: 'floorplan',
-                                      successMessage: 'Floorplans uploaded.'
-                                    })
-                                  }
-                                />
-                              <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
-                              <label className={`inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3 text-xs font-semibold transition ${marketingAssetUploading ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#9aa9ba]' : 'border-[#dbe6f2] bg-white text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]'}`}>
-                                <Upload size={14} />
-                                Upload Logo
-                                <input
-                                  type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                  accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                  className="hidden"
-                                  disabled={Boolean(marketingAssetUploading)}
-                                  onChange={event =>
-                                    void handleMarketingAssetFileUpload(event, 'logo', {
-                                      uploadKey: 'logo',
-                                      title: `${data.development.name || 'Development'} logo`,
-                                      successMessage: 'Development logo uploaded.'
-                                    })
-                                  }
-                                />
-                              </label>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                            <div className="grid gap-4">
-                              <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
-                                <div className="mb-3 flex items-center justify-between gap-3">
-                                  <h5 className="text-sm font-semibold text-[#20364c]">Main Cover Image</h5>
-                                  {marketingCoverImageUrl ? (
-                                    <Button type="button" size="sm" variant="secondary" onClick={() => window.open(marketingCoverImageUrl, '_blank', 'noopener,noreferrer')}>
-                                      View
-                                    </Button>
-                                  ) : null}
-                                </div>
-                                {marketingCoverImageUrl && isLikelyImageUrl(marketingCoverImageUrl) ? (
-                                  <img src={marketingCoverImageUrl} alt={`${data.development.name || 'Development'} cover`} className="h-[220px] w-full rounded-[14px] object-cover" />
-                                ) : (
-                                  <label className="flex h-[220px] cursor-pointer flex-col items-center justify-center rounded-[14px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] text-center text-sm font-semibold text-[#587089]">
-                                    <ImagePlus size={24} className="mb-2" />
-                                    Add cover image
-                                    <input
-                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                      accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                      className="hidden"
-                                      disabled={Boolean(marketingAssetUploading)}
-                                      onChange={event =>
-                                        void handleMarketingAssetFileUpload(event, 'cover', {
-                                          uploadKey: 'cover',
-                                          successMessage: 'Cover image uploaded.'
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                )}
-                              </article>
-
-                              <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
-                                <div className="mb-3 flex items-center justify-between gap-3">
-                                  <h5 className="text-sm font-semibold text-[#20364c]">Development Logo</h5>
-                                  <span className="text-xs font-semibold text-[#7b8ca2]">{marketingLogoUrl ? 'Saved' : 'Not uploaded'}</span>
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-[170px_minmax(0,1fr)] sm:items-center">
-                                  <div className="flex h-24 items-center justify-center rounded-[14px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] p-3">{marketingLogoUrl ? <img src={marketingLogoUrl} alt={`${data.development.name || 'Development'} logo`} className="max-h-full max-w-full object-contain" /> : <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Logo</span>}</div>
-                                  <div className="min-w-0">
-                                    <p className="text-sm leading-6 text-[#5c7289]">Store the development logo for listing artwork and future marketing collateral.</p>
-                                    <label className="mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]">
-                                      <Upload size={13} />
-                                      {marketingLogoUrl ? 'Replace Logo' : 'Upload Logo'}
-                                      <input
-                                        type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                        accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                        className="hidden"
-                                        disabled={Boolean(marketingAssetUploading)}
-                                        onChange={event =>
-                                          void handleMarketingAssetFileUpload(event, 'logo', {
-                                            uploadKey: 'logo',
-                                            title: `${data.development.name || 'Development'} logo`,
-                                            successMessage: 'Development logo uploaded.'
-                                          })
-                                        }
-                                      />
-                                    </label>
-                                  </div>
-                                </div>
-                              </article>
-                            </div>
-
-                            <div className="grid gap-4">
-                              <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
-                                <div className="mb-3 flex items-center justify-between gap-3">
-                                  <h5 className="text-sm font-semibold text-[#20364c]">Gallery Images ({marketingGalleryDocuments.filter(item => item.type === 'marketing').length})</h5>
-                                  <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] border border-[#dbe6f2] bg-white px-2.5 text-xs font-semibold text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]">
-                                    <ImagePlus size={13} />
-                                    Add More
-                                    <input
-                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                      accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                      multiple
-                                      className="hidden"
-                                      disabled={Boolean(marketingAssetUploading)}
-                                      onChange={event =>
-                                        void handleMarketingAssetFileUpload(event, 'marketing', {
-                                          uploadKey: 'gallery',
-                                          successMessage: 'Marketing images uploaded.'
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                </div>
-                                {marketingGalleryDocuments.filter(item => item.type === 'marketing').length ? (
-                                  <div className="grid gap-3 md:grid-cols-2">
-                                    {marketingGalleryDocuments
-                                      .filter(item => item.type === 'marketing')
-                                      .slice(0, 4)
-                                      .map(item => (
-                                        <article key={item.id} className="overflow-hidden rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe]">
-                                          {isLikelyImageUrl(item.fileUrl) ? <img src={item.fileUrl} alt={item.title} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center bg-[#eef4fa] text-xs font-semibold text-[#6b7d93]">Media file</div>}
-                                          <div className="flex items-center justify-between gap-3 px-3 py-2">
-                                            <span className="min-w-0 truncate text-xs font-semibold text-[#20364c]">{item.title}</span>
-                                            <Button type="button" size="sm" variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
-                                              View
-                                            </Button>
-                                          </div>
-                                        </article>
-                                      ))}
-                                  </div>
-                                ) : (
-                                  <label className="flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-[14px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] text-center text-sm font-semibold text-[#587089]">
-                                    <ImagePlus size={24} className="mb-2" />
-                                    Add gallery images
-                                    <input
-                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                      accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                      multiple
-                                      className="hidden"
-                                      disabled={Boolean(marketingAssetUploading)}
-                                      onChange={event =>
-                                        void handleMarketingAssetFileUpload(event, 'marketing', {
-                                          uploadKey: 'gallery',
-                                          successMessage: 'Marketing images uploaded.'
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                )}
-                              </article>
-
-                              <article className="rounded-[16px] border border-[#dbe6f2] bg-white p-3">
-                                <div className="mb-3 flex items-center justify-between gap-3">
-                                  <h5 className="text-sm font-semibold text-[#20364c]">Floorplans ({floorplanDocumentOptions.length})</h5>
-                                  <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] border border-[#dbe6f2] bg-white px-2.5 text-xs font-semibold text-[#20364c] hover:border-[#b9cadb] hover:bg-[#f8fbff]">
-                                    <FileText size={13} />
-                                    Upload Floorplan
-                                    <input
-                                      type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
-                                      accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
-                                      multiple
-                                      className="hidden"
-                                      disabled={Boolean(marketingAssetUploading)}
-                                      onChange={event =>
-                                        void handleMarketingAssetFileUpload(event, 'floorplan', {
-                                          uploadKey: 'floorplan',
-                                          successMessage: 'Floorplans uploaded.'
-                                        })
-                                      }
-                                    />
-                                  <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
-                                </div>
-                                {floorplanDocumentOptions.length ? (
-                                  <div className="grid gap-2">
-                                    {floorplanDocumentOptions.slice(0, 4).map(item => (
-                                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e3ebf4] bg-[#fbfcfe] px-3 py-2.5">
-                                        <div className="min-w-0">
-                                          <strong className="block truncate text-sm text-[#20364c]">{item.title}</strong>
-                                          <span className="block truncate text-xs text-[#6b7d93]">{item.description || 'Floorplan asset'}</span>
-                                        </div>
-                                        <Button type="button" size="sm" variant="secondary" onClick={() => window.open(item.fileUrl, '_blank', 'noopener,noreferrer')}>
-                                          View
-                                        </Button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="rounded-[12px] border border-dashed border-[#cbd9e8] bg-[#f8fbff] px-4 py-5 text-sm text-[#6b7d93]">No floorplans uploaded yet.</div>
-                                )}
-                              </article>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            {[
-                              {
-                                key: 'video',
-                                title: 'Video',
-                                count: marketingVideoDocuments.length,
-                                uploadKey: 'development-video',
-                                accept: 'video/*',
-                                message: 'Development video uploaded.'
-                              },
-                              {
-                                key: 'virtual_tour',
-                                title: 'Virtual Tour',
-                                count: marketingVirtualTourDocuments.length,
-                                uploadKey: 'development-tour',
-                                accept: 'video/*,.zip,.html',
-                                message: 'Development virtual tour uploaded.'
-                              }
-                            ].map(item => (
-                              <label key={item.key} className="flex min-h-[92px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
-                                <span className="inline-flex items-center gap-2">
-                                  <Upload size={15} />
-                                  {marketingAssetUploading === item.uploadKey ? 'Uploading...' : `Upload ${item.title}`}
-                                </span>
-                                <span className="mt-1 text-xs font-medium text-[#6b7d93]">{item.count ? `${item.count} uploaded` : 'No file uploaded'}</span>
-                                <input
-                                  type="file"
-                                  accept={item.accept}
-                                  className="hidden"
-                                  disabled={Boolean(marketingAssetUploading)}
-                                  onChange={event =>
-                                    void handleMarketingAssetFileUpload(event, item.key, {
-                                      uploadKey: item.uploadKey,
-                                      successMessage: item.message
-                                    })
-                                  }
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        </section>
-
-                        {selectedMarketingFloorplan ? (
-                          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.42fr)]">
-                            <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                              <div className="mb-4 flex items-center justify-between gap-3">
-                                <div>
-                                  <h4 className="text-sm font-semibold text-[#142132]">Unit Type Details</h4>
-                                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Keep the selling copy and price range specific to this unit type.</p>
-                                </div>
-                                <Button type="button" size="sm" variant="ghost" className="text-[#b42318] hover:bg-[#fff1f1]" onClick={() => removeMarketingFloorplan(selectedMarketingFloorplan.id)}>
-                                  Remove
-                                </Button>
-                              </div>
-
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <DetailField label="Unit Type Name" className="md:col-span-2">
-                                  <Field value={selectedMarketingFloorplan.name} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'name', event.target.value)} placeholder="2 Bedroom Apartment" />
-                                </DetailField>
-                                <DetailField label="Description" className="md:col-span-2">
-                                  <Field as="textarea" rows={5} value={selectedMarketingFloorplan.description} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'description', event.target.value)} placeholder="Describe this specific unit type, layout, finishes, and buyer appeal." />
-                                </DetailField>
-                                <DetailField label="Price From">
-                                  <Field inputMode="numeric" value={selectedMarketingFloorplan.priceFrom} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'priceFrom', event.target.value)} placeholder="950000" />
-                                </DetailField>
-                                <DetailField label="Price To">
-                                  <Field inputMode="numeric" value={selectedMarketingFloorplan.priceTo} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'priceTo', event.target.value)} placeholder="1250000" />
-                                </DetailField>
-                                <DetailField label="Bedrooms">
-                                  <Field value={selectedMarketingFloorplan.bedrooms} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bedrooms', event.target.value)} />
-                                </DetailField>
-                                <DetailField label="Bathrooms">
-                                  <Field value={selectedMarketingFloorplan.bathrooms} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'bathrooms', event.target.value)} />
-                                </DetailField>
-                                <DetailField label="Parking">
-                                  <Field value={selectedMarketingFloorplan.garage} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'garage', event.target.value)} />
-                                </DetailField>
-                                <DetailField label="Floor Size">
-                                  <Field value={selectedMarketingFloorplan.floorSize} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'floorSize', event.target.value)} placeholder="74 sqm" />
-                                </DetailField>
-                                <DetailField label="Levies">
-                                  <Field value={selectedMarketingFloorplan.levies} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'levies', event.target.value)} placeholder="1450" />
-                                </DetailField>
-                                <DetailField label="Rates & Taxes">
-                                  <Field value={selectedMarketingFloorplan.ratesAndTaxes} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'ratesAndTaxes', event.target.value)} placeholder="850" />
-                                </DetailField>
-                                <DetailField label="No Transfer Duty">
-                                  <Field as="select" value={selectedMarketingFloorplan.noTransferDuty ? 'yes' : 'no'} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'noTransferDuty', event.target.value === 'yes')}>
-                                    <option value="yes">Yes</option>
-                                    <option value="no">No</option>
-                                  </Field>
-                                </DetailField>
-                                <DetailField label="Customisation Options">
-                                  <Field as="select" value={selectedMarketingFloorplan.customisationOptions ? 'yes' : 'no'} onChange={event => setMarketingFloorplanField(selectedMarketingFloorplan.id, 'customisationOptions', event.target.value === 'yes')}>
-                                    <option value="yes">Yes</option>
-                                    <option value="no">No</option>
-                                  </Field>
-                                </DetailField>
-                              </div>
-                            </div>
-
-                            <div className="grid gap-5">
-                              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                                <div className="mb-4 flex items-start justify-between gap-3">
-                                  <div>
-                                    <h4 className="text-sm font-semibold text-[#142132]">Upload Images</h4>
-                                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{selectedMarketingUnitImageDocuments.length ? `${selectedMarketingUnitImageDocuments.length} image file${selectedMarketingUnitImageDocuments.length === 1 ? '' : 's'} uploaded.` : 'No images uploaded yet.'}</p>
-                                  </div>
-                                  <Upload size={16} className="text-[#607891]" />
-                                </div>
-                                <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-                                  <Upload size={13} />
-                                  {marketingAssetUploading === `unit-images-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Images'}
-                                  <input
-                                    type="file" title={getDocumentUploadPolicy({ surface: 'development_image' }).helpText}
-                                    accept={getDocumentUploadPolicy({ surface: 'development_image' }).accept}
-                                    multiple
-                                    className="hidden"
-                                    disabled={Boolean(marketingAssetUploading)}
-                                    onChange={event =>
-                                      void handleMarketingAssetFileUpload(event, 'marketing', {
-                                        uploadKey: `unit-images-${selectedMarketingFloorplan.id}`,
-                                        linkedUnitType: selectedMarketingFloorplan.id,
-                                        successMessage: 'Unit type images uploaded.'
-                                      })
-                                    }
-                                  />
-                                </label>
-                              </section>
-
-                              <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                                <div className="mb-4 flex items-start justify-between gap-3">
-                                  <div>
-                                    <h4 className="text-sm font-semibold text-[#142132]">Upload Floorplans</h4>
-                                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{selectedMarketingUnitFloorplanDocuments.length ? `${selectedMarketingUnitFloorplanDocuments.length} floorplan file${selectedMarketingUnitFloorplanDocuments.length === 1 ? '' : 's'} uploaded.` : 'No floorplans uploaded yet.'}</p>
-                                  </div>
-                                  <Upload size={16} className="text-[#607891]" />
-                                </div>
-                                <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-                                  <Upload size={13} />
-                                  {marketingAssetUploading === `unit-floorplans-${selectedMarketingFloorplan.id}` ? 'Uploading...' : 'Upload Floorplans'}
-                                  <input
-                                    type="file" title={getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}
-                                    accept={getDocumentUploadPolicy({ surface: 'development_plan' }).accept}
-                                    multiple
-                                    className="hidden"
-                                    disabled={Boolean(marketingAssetUploading)}
-                                    onChange={event =>
-                                      void handleMarketingAssetFileUpload(event, 'floorplan', {
-                                        uploadKey: `unit-floorplans-${selectedMarketingFloorplan.id}`,
-                                        linkedUnitType: selectedMarketingFloorplan.id,
-                                        successMessage: 'Unit type floorplans uploaded.'
-                                      })
-                                    }
-                                  />
-                                <span className="block text-xs font-normal text-slate-500">{getDocumentUploadPolicy({ surface: 'development_plan' }).helpText}</span></label>
-                              </section>
-                            </div>
-                          </section>
-                        ) : (
-                          <section className="rounded-[18px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-6 text-sm text-[#6b7d93]">Add a unit type to start configuring marketing content.</section>
-                        )}
-
-                        <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <h4 className="text-sm font-semibold text-[#142132]">Selling Points</h4>
-                              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Add the short highlights agents need for this development listing.</p>
-                            </div>
-                            <Button type="button" size="sm" variant="secondary" onClick={addMarketingSellingPointEntry}>
-                              <Plus size={14} />
-                              Add Point
-                            </Button>
-                          </div>
-
-                          <div className="grid gap-3">
-                            {marketingSellingPointEntries.map((entry, index) => (
-                              <article key={`selling-point-${index}`} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3.5">
-                                <div className="mb-3 flex items-center justify-between gap-2">
-                                  <span className="inline-flex rounded-full border border-[#d8e4f2] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#627d98]">Point {index + 1}</span>
-                                  <Button type="button" size="sm" variant="ghost" className="text-[#b42318] hover:bg-[#fff1f1]" onClick={() => removeMarketingSellingPointEntry(index)}>
-                                    Remove
-                                  </Button>
-                                </div>
-                                <div className="grid gap-3 md:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
-                                  <DetailField label="Headline">
-                                    <Field value={entry.title} onChange={event => updateMarketingSellingPointEntry(index, 'title', event.target.value)} placeholder="Secure estate access" />
-                                  </DetailField>
-                                  <DetailField label="Supporting Text">
-                                    <Field value={entry.note} onChange={event => updateMarketingSellingPointEntry(index, 'note', event.target.value)} placeholder="24/7 access control with patrol response." />
-                                  </DetailField>
-                                </div>
-                              </article>
-                            ))}
-                          </div>
-
-                          {!marketingSellingPointEntries.length ? <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-white px-4 py-6 text-sm text-[#6b7d93]">No selling points added yet.</p> : null}
-                        </section>
-
-                        <div className="flex items-center justify-end border-t border-[#e6edf5] pt-4">
-                          <Button type="submit" disabled={detailsSaving}>
-                            {detailsSaving ? 'Saving…' : 'Save Marketing Content'}
-                          </Button>
-                        </div>
-                      </form>
-                    ) : null}
-                  </>
-                )}
-              </>
-            ) : (
-              renderMarketingHubSection()
-            )}
-          </section>
-        ) : null}
-
-        {activeTab === 'listings' ? (
-          <section className="mt-4 grid gap-5">
-            <section className={CARD_SHELL}>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                {[
-                  ['Linked listings', developmentListingSummary.linkedCount, FolderKanban, 'border-t-[#76c6fb]', 'bg-[#e8f4ff] text-[#2363a0]'],
-                  ['Agencies / teams', developmentListingSummary.agencyCount, Users, 'border-t-[#38d39f]', 'bg-[#e4fbf3] text-[#0b9270]'],
-                  ['Live / public', developmentListingSummary.liveCount, TrendingUp, 'border-t-[#6e91ff]', 'bg-[#edf1ff] text-[#365caf]'],
-                  ['Portal signals', developmentListingSummary.portalSignals, Upload, 'border-t-[#f9b528]', 'bg-[#fff3d9] text-[#aa7416]'],
-                  ['Direct stock ready', developmentListingSummary.directCandidateCount, Building2, 'border-t-[#9baabd]', 'bg-[#f2f5f8] text-[#526b83]']
-                ].map(([label, value, Icon, accent, iconTone]) => (
-                  <article key={label} className={`flex min-h-[178px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-5 ${accent}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-[0.9rem] font-semibold text-[#637996]">{label}</span>
-                      <span className={`grid h-10 w-10 place-items-center rounded-[12px] ${iconTone}`}><Icon size={18} /></span>
-                    </div>
-                    <strong className="mt-5 block text-[2.6rem] font-semibold leading-none tracking-[-0.055em] text-[#10243a]">{formatNumber(value)}</strong>
-                  </article>
-                ))}
               </div>
-            </section>
+            </nav>
 
-            <section>
-              <section className={CARD_SHELL}>
-                {linkedListingRows.length ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {linkedListingRows.map(listing => (
-                      <article key={listing.id} className="group overflow-hidden rounded-[18px] border border-[#e0e9f2] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-                        <div className="relative h-36 bg-[#eaf0f5]">
-                          {listing.coverImageUrl ? <img src={listing.coverImageUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" loading="lazy" /> : <div className="flex h-full items-center justify-center bg-[#edf3f7] text-[#7890a6]"><Building2 size={28} /></div>}
-                          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#10243a]/60 to-transparent" aria-hidden="true" />
-                          <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-                            <span className="rounded-full bg-white/95 px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#315a7b]">{toTitleLabel(listing.status)}</span>
-                            {listing.unitNumber ? <span className="rounded-full bg-[#10243a]/80 px-2.5 py-1 text-[0.65rem] font-bold text-white">Unit {listing.unitNumber}</span> : null}
-                          </div>
-                        </div>
-                        <div className="p-4">
-                          <h5 className="truncate text-base font-semibold tracking-[-0.025em] text-[#142132]">{listing.title}</h5>
-                          <p className="mt-1 truncate text-sm text-[#607387]">{listing.location}</p>
-                          <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-[#142132]">{listing.price ? currency.format(listing.price) : 'Price pending'}</p>
-                          <div className="mt-3 grid gap-1.5 border-t border-[#e9eef4] pt-3 text-xs">
-                            <span className="truncate text-[#607387]"><strong className="font-semibold text-[#35546c]">Agent:</strong> {listing.assignedAgent}</span>
-                            <span className="truncate text-[#607387]"><strong className="font-semibold text-[#35546c]">Agency:</strong> {listing.agencyName}</span>
-                            <span className="truncate text-[#607387]"><strong className="font-semibold text-[#35546c]">Platform:</strong> {listing.platforms?.length ? listing.platforms.join(' · ') : 'Not published'}</span>
-                          </div>
-                          <Button type="button" size="sm" variant="secondary" className="mt-4 w-full" onClick={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`)}>Open Listing <ArrowUpRight size={14} /></Button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
-                    <Building2 className="mx-auto text-[#8da0b5]" size={24} />
-                    <p className="mt-3 text-base font-semibold text-[#142132]">No linked agent listings yet.</p>
-                    <p className="mx-auto mt-1 max-w-xl text-sm leading-6 text-[#6b7d93]">Once agency or direct listings store this development/unit reference, they will appear here across all connected teams.</p>
-                  </div>
-                )}
-              </section>
-
-              <aside className="hidden">
-                <section className={CARD_SHELL}>
-                  <div className="mb-5">
-                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Developer Direct Stock</h4>
-                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Available units the developer can sell directly or turn into direct listings.</p>
-                  </div>
-                  {directDeveloperListingCandidates.length ? (
-                    <div className="grid gap-3">
-                      {directDeveloperListingCandidates.slice(0, 8).map(unit => (
-                        <article key={unit.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-[#142132]">Unit {unit.unitNumber}</p>
-                              <p className="mt-1 text-xs text-[#607387]">{unit.unitType}</p>
-                            </div>
-                            <span className="rounded-full border border-[#d8ecdf] bg-[#f2fbf6] px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f7d44]">{toTitleLabel(unit.status)}</span>
-                          </div>
-                          <div className="mt-3 flex items-center justify-between gap-3">
-                            <span className="text-sm font-semibold text-[#35546c]">{unit.price ? currency.format(unit.price) : 'Price pending'}</span>
-                            <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/developments?developmentId=${encodeURIComponent(data.development.id)}&unitId=${encodeURIComponent(unit.id)}`)}>
-                              Load Listing
-                            </Button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6b7d93]">No available direct-sale units at the moment.</p>
-                  )}
-                </section>
-
-                <section className={CARD_SHELL}>
-                  <div className="mb-4">
-                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Shared Marketing Collateral</h4>
-                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Agents use the Marketing tab to download floorplans, pricing sheets, media and sales pack assets.</p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                    {[
-                      ['Assets', marketingReadinessSummary.assetCount],
-                      ['Floorplans', marketingReadinessSummary.floorplanCount],
-                      ['Selling points', marketingReadinessSummary.highlightsCount]
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
-                        <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                        <strong className="mt-1 block text-lg font-semibold text-[#142132]">{formatNumber(value)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                  <Button type="button" variant="secondary" className="mt-4 w-full" onClick={() => openMarketingHubSection('content')}>
-                    Open Marketing
-                  </Button>
-                </section>
-              </aside>
-            </section>
+            {marketingHubSection === 'listings' ? renderMarketingListingsSection() : renderMarketingHubSection()}
           </section>
         ) : null}
 
@@ -10800,279 +9129,265 @@ function DevelopmentDetail() {
                   }
                 )
               }
+              inventoryManagement={
+                <details className="rounded-[22px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+                  <summary className="cursor-pointer text-sm font-semibold text-[#35546c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1f7a5a]">Manage units</summary>
+                  <section className="mt-4">
+                    <section className={CARD_SHELL}>
+                      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                          <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Manage development units</h3>
+                          <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Add units, organise stock, and update unit records.</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Field as="select" className="min-w-[180px]" value={unitStatusFilter} onChange={event => setUnitStatusFilter(event.target.value)}>
+                            <option value="all">All statuses</option>
+                            {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Field>
+                          <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
+                            <Plus size={15} />
+                            Add Bulk
+                          </Button>
+                          {canManageDevelopment ? (
+                            <>
+                              <Button variant="secondary" className="whitespace-nowrap" onClick={() => setProductCatalogueOpen(true)}>
+                                <FolderKanban size={15} />
+                                Product Catalogue
+                              </Button>
+                              <Button variant="secondary" className="whitespace-nowrap" onClick={() => setStructureSetupOpen(true)}>
+                                <Building2 size={15} />
+                                Structure Setup
+                              </Button>
+                            </>
+                          ) : null}
+                          <Button className="whitespace-nowrap" onClick={() => openUnitModal()}>
+                            <Plus size={15} />
+                            Add Unit
+                          </Button>
+                        </div>
+                      </div>
+
+                      {remainingPlannedUnits > 0 ? (
+                        <div className="mb-5 flex flex-col gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="min-w-0">
+                            <strong className="block text-sm font-semibold text-[#142132]">Populate planned stock faster</strong>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                              This development is set to {formatNumber(expectedUnitCount)} expected units and currently has {formatNumber(unitRows.length)} in the stock master.
+                              {` ${formatNumber(remainingPlannedUnits)} still need to be created.`}
+                            </p>
+                          </div>
+                          <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
+                            <Plus size={15} />
+                            Populate Remaining Units
+                          </Button>
+                        </div>
+                      ) : null}
+
+                      {filteredUnits.length ? (
+                        <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4]">
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-[#e8eef5]">
+                              <thead className="bg-[#f8fafc]">
+                                <tr>
+                                  {['Block', 'Unit', 'Purchaser', 'Status', 'Sales Price', 'Handover Date', 'Floorplan'].map(heading => (
+                                    <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                                      {heading}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#edf2f7] bg-white">
+                                {filteredUnits.map(unit => (
+                                  <tr key={unit.id} className="transition hover:bg-[#f8fbff]">
+                                    <td className="px-5 py-4 align-middle">
+                                      <input
+                                        className={`${UNIT_QUICK_FIELD_CLASS} max-w-[120px]`}
+                                        defaultValue={unit.block || ''}
+                                        placeholder="Block"
+                                        disabled={unitQuickSavingKey === `${unit.id}:block`}
+                                        aria-label={`Update block for unit ${unit.unitNumber}`}
+                                        onClick={event => event.stopPropagation()}
+                                        onBlur={event => {
+                                          const nextBlock = event.target.value.trim()
+                                          if (nextBlock === String(unit.block || '').trim()) return
+                                          void handleUnitQuickSave(
+                                            unit,
+                                            { block: nextBlock },
+                                            {
+                                              field: 'block',
+                                              feedbackLabel: `Unit ${unit.unitNumber} block updated.`
+                                            }
+                                          )
+                                        }}
+                                      />
+                                    </td>
+                                    <td className="px-5 py-4 align-middle">
+                                      <button type="button" className="group inline-flex min-w-[118px] items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm font-semibold text-[#173149] transition hover:bg-[#eef8f2] hover:text-[#167044] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e8b67]" onClick={() => openUnitModal(unit)} aria-label={`Open Unit ${unit.unitNumber || 'details'} for editing`}>
+                                        <span>{unit.unitNumber || 'Unnamed unit'}</span>
+                                        <PencilLine size={14} className="text-[#7d8fa3] transition group-hover:text-[#167044]" />
+                                      </button>
+                                      <span className="mt-1 block pl-2.5 text-[0.68rem] font-medium text-[#8292a4]">Open details</span>
+                                    </td>
+                                    <td className="px-5 py-4 text-sm text-[#44576d]">
+                                      {unit.currentTransactionId ? (
+                                        <button
+                                          type="button"
+                                          className="max-w-[220px] truncate text-left text-sm font-semibold text-[#1f4f76] hover:text-[#0f6c43]"
+                                          title={unit.buyerName || 'Open linked transaction'}
+                                          onClick={() =>
+                                            openDevelopmentTransactionWorkspace({
+                                              transactionId: unit.currentTransactionId,
+                                              unitId: unit.id,
+                                              unitNumber: unit.unitNumber,
+                                              title: unit.buyerName || `Unit ${unit.unitNumber}`
+                                            })
+                                          }>
+                                          {unit.buyerName || 'Open linked transaction'}
+                                        </button>
+                                      ) : (
+                                        <div className="flex flex-col items-start gap-1.5">
+                                          <span>No purchaser assigned</span>
+                                          {requiresDevelopmentTransaction(unit.status) ? (
+                                            <button type="button" className="text-xs font-semibold text-[#1f7a43] hover:text-[#0f5f32]" onClick={() => void handleUnitTransactionRecovery(unit)}>
+                                              Capture transaction
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-5 py-4" onClick={event => event.stopPropagation()}>
+                                      <div className="grid min-w-[180px] gap-1.5">
+                                        <Field
+                                          as="select"
+                                          className={`h-10 rounded-full border px-3 py-1 text-xs font-semibold ${getDevelopmentUnitStatusPillClassName(unit.status)}`}
+                                          value={getDevelopmentUnitStatusOption(unit.status).value}
+                                          disabled={unitStatusSavingId === unit.id}
+                                          aria-label={`Update status for unit ${unit.unitNumber}`}
+                                          onMouseDown={event => event.stopPropagation()}
+                                          onClick={event => event.stopPropagation()}
+                                          onChange={event => {
+                                            event.stopPropagation()
+                                            void handleUnitStatusQuickChange(unit, event.target.value)
+                                          }}>
+                                          {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
+                                            <option key={option.value} value={option.value}>
+                                              {option.label}
+                                            </option>
+                                          ))}
+                                        </Field>
+                                        {!unit.currentTransactionId && !isAvailableDevelopmentUnitStatus(unit.status) ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Manual / external</span> : unit.currentTransactionId ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#1f7a43]">Transaction linked</span> : null}
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-4 align-middle">
+                                      <input
+                                        className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px] font-medium text-[#44576d]`}
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        defaultValue={Number.isFinite(Number(unit.salesPrice)) ? Number(unit.salesPrice) : ''}
+                                        placeholder="0"
+                                        disabled={unitQuickSavingKey === `${unit.id}:salesPrice`}
+                                        aria-label={`Update sales price for unit ${unit.unitNumber}`}
+                                        onClick={event => event.stopPropagation()}
+                                        onBlur={event => {
+                                          const nextValue = event.target.value
+                                          const currentValue = Number.isFinite(Number(unit.salesPrice)) ? String(Number(unit.salesPrice)) : ''
+                                          if (String(nextValue || '') === currentValue) return
+                                          void handleUnitQuickSave(
+                                            unit,
+                                            { salesPrice: nextValue },
+                                            {
+                                              field: 'salesPrice',
+                                              feedbackLabel: `Unit ${unit.unitNumber} sales price updated.`
+                                            }
+                                          )
+                                        }}
+                                      />
+                                    </td>
+                                    <td className="px-5 py-4 align-middle">
+                                      <input
+                                        className={`${UNIT_QUICK_FIELD_CLASS} max-w-[160px] font-medium text-[#44576d]`}
+                                        type="date"
+                                        defaultValue={normalizeDateInput(unit.handover?.handoverDate || '')}
+                                        disabled={!unit.currentTransactionId || unitQuickSavingKey === `${unit.id}:handoverDate`}
+                                        aria-label={`Update handover date for unit ${unit.unitNumber}`}
+                                        title={unit.currentTransactionId ? 'Update handover date' : 'Handover date is available once a transaction is linked'}
+                                        onClick={event => event.stopPropagation()}
+                                        onChange={event => {
+                                          void handleUnitHandoverDateQuickChange(unit, event.target.value)
+                                        }}
+                                      />
+                                    </td>
+                                    <td className="px-5 py-4 align-middle">
+                                      <Field
+                                        as="select"
+                                        className="h-10 min-w-[190px] rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-[#44576d] hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white"
+                                        value={unit.floorplanId || ''}
+                                        disabled={unitQuickSavingKey === `${unit.id}:floorplanId`}
+                                        aria-label={`Update floorplan for unit ${unit.unitNumber}`}
+                                        onClick={event => event.stopPropagation()}
+                                        onChange={event => {
+                                          void handleUnitQuickSave(
+                                            unit,
+                                            { floorplanId: event.target.value || null },
+                                            {
+                                              field: 'floorplanId',
+                                              feedbackLabel: `Unit ${unit.unitNumber} floorplan updated.`
+                                            }
+                                          )
+                                        }}>
+                                        <option value="">No floorplan assigned</option>
+                                        {floorplanDocumentOptions.map(item => (
+                                          <option key={item.id} value={item.id}>
+                                            {item.title}
+                                          </option>
+                                        ))}
+                                      </Field>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
+                          <p className="text-sm text-[#6b7d93]">No units added yet.</p>
+                          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                            <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
+                              Add Bulk
+                            </Button>
+                            <Button variant="secondary" className="whitespace-nowrap" onClick={() => openUnitModal()}>
+                              Add Unit
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  </section>
+                </details>
+              }
             />
           </>
         ) : null}
 
-        {activeTab === 'units' ? (
-          <section className="mt-4">
-            <section className={CARD_SHELL}>
-              <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Stock Master</h3>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Maintain the unit master for this development here. Transactions, handover, and snag tracking read from these records, while the portfolio units screen stays operational.</p>
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Field as="select" className="min-w-[180px]" value={unitStatusFilter} onChange={event => setUnitStatusFilter(event.target.value)}>
-                    <option value="all">All statuses</option>
-                    {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Field>
-                  <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
-                    <Plus size={15} />
-                    Add Bulk
-                  </Button>
-                  {canManageDevelopment ? (
-                    <>
-                      <Button variant="secondary" className="whitespace-nowrap" onClick={() => setProductCatalogueOpen(true)}>
-                        <FolderKanban size={15} />
-                        Product Catalogue
-                      </Button>
-                      <Button variant="secondary" className="whitespace-nowrap" onClick={() => setStructureSetupOpen(true)}>
-                        <Building2 size={15} />
-                        Structure Setup
-                      </Button>
-                    </>
-                  ) : null}
-                  <Button className="whitespace-nowrap" onClick={() => openUnitModal()}>
-                    <Plus size={15} />
-                    Add Unit
-                  </Button>
-                </div>
-              </div>
-
-              {remainingPlannedUnits > 0 ? (
-                <div className="mb-5 flex flex-col gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <strong className="block text-sm font-semibold text-[#142132]">Populate planned stock faster</strong>
-                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                      This development is set to {formatNumber(expectedUnitCount)} expected units and currently has {formatNumber(unitRows.length)} in the stock master.
-                      {` ${formatNumber(remainingPlannedUnits)} still need to be created.`}
-                    </p>
-                  </div>
-                  <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
-                    <Plus size={15} />
-                    Populate Remaining Units
-                  </Button>
-                </div>
-              ) : null}
-
-              {filteredUnits.length ? (
-                <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4]">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-[#e8eef5]">
-                      <thead className="bg-[#f8fafc]">
-                        <tr>
-                          {['Block', 'Unit', 'Purchaser', 'Status', 'Sales Price', 'Handover Date', 'Floorplan'].map(heading => (
-                            <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-                              {heading}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#edf2f7] bg-white">
-                        {filteredUnits.map(unit => (
-                          <tr key={unit.id} className="transition hover:bg-[#f8fbff]">
-                            <td className="px-5 py-4 align-middle">
-                              <input
-                                className={`${UNIT_QUICK_FIELD_CLASS} max-w-[120px]`}
-                                defaultValue={unit.block || ''}
-                                placeholder="Block"
-                                disabled={unitQuickSavingKey === `${unit.id}:block`}
-                                aria-label={`Update block for unit ${unit.unitNumber}`}
-                                onClick={event => event.stopPropagation()}
-                                onBlur={event => {
-                                  const nextBlock = event.target.value.trim()
-                                  if (nextBlock === String(unit.block || '').trim()) return
-                                  void handleUnitQuickSave(
-                                    unit,
-                                    { block: nextBlock },
-                                    {
-                                      field: 'block',
-                                      feedbackLabel: `Unit ${unit.unitNumber} block updated.`
-                                    }
-                                  )
-                                }}
-                              />
-                            </td>
-                            <td className="px-5 py-4 align-middle">
-                              <button type="button" className="group inline-flex min-w-[118px] items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm font-semibold text-[#173149] transition hover:bg-[#eef8f2] hover:text-[#167044] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e8b67]" onClick={() => openUnitModal(unit)} aria-label={`Open Unit ${unit.unitNumber || 'details'} for editing`}>
-                                <span>{unit.unitNumber || 'Unnamed unit'}</span>
-                                <PencilLine size={14} className="text-[#7d8fa3] transition group-hover:text-[#167044]" />
-                              </button>
-                              <span className="mt-1 block pl-2.5 text-[0.68rem] font-medium text-[#8292a4]">Open details</span>
-                            </td>
-                            <td className="px-5 py-4 text-sm text-[#44576d]">
-                              {unit.currentTransactionId ? (
-                                <button
-                                  type="button"
-                                  className="max-w-[220px] truncate text-left text-sm font-semibold text-[#1f4f76] hover:text-[#0f6c43]"
-                                  title={unit.buyerName || 'Open linked transaction'}
-                                  onClick={() =>
-                                    openDevelopmentTransactionWorkspace({
-                                      transactionId: unit.currentTransactionId,
-                                      unitId: unit.id,
-                                      unitNumber: unit.unitNumber,
-                                      title: unit.buyerName || `Unit ${unit.unitNumber}`
-                                    })
-                                  }>
-                                  {unit.buyerName || 'Open linked transaction'}
-                                </button>
-                              ) : (
-                                <div className="flex flex-col items-start gap-1.5">
-                                  <span>No purchaser assigned</span>
-                                  {requiresDevelopmentTransaction(unit.status) ? (
-                                    <button type="button" className="text-xs font-semibold text-[#1f7a43] hover:text-[#0f5f32]" onClick={() => void handleUnitTransactionRecovery(unit)}>
-                                      Capture transaction
-                                    </button>
-                                  ) : null}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-5 py-4" onClick={event => event.stopPropagation()}>
-                              <div className="grid min-w-[180px] gap-1.5">
-                                <Field
-                                  as="select"
-                                  className={`h-10 rounded-full border px-3 py-1 text-xs font-semibold ${getDevelopmentUnitStatusPillClassName(unit.status)}`}
-                                  value={getDevelopmentUnitStatusOption(unit.status).value}
-                                  disabled={unitStatusSavingId === unit.id}
-                                  aria-label={`Update status for unit ${unit.unitNumber}`}
-                                  onMouseDown={event => event.stopPropagation()}
-                                  onClick={event => event.stopPropagation()}
-                                  onChange={event => {
-                                    event.stopPropagation()
-                                    void handleUnitStatusQuickChange(unit, event.target.value)
-                                  }}>
-                                  {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </Field>
-                                {!unit.currentTransactionId && !isAvailableDevelopmentUnitStatus(unit.status) ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Manual / external</span> : unit.currentTransactionId ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#1f7a43]">Transaction linked</span> : null}
-                              </div>
-                            </td>
-                            <td className="px-5 py-4 align-middle">
-                              <input
-                                className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px] font-medium text-[#44576d]`}
-                                type="number"
-                                min="0"
-                                step="1"
-                                defaultValue={Number.isFinite(Number(unit.salesPrice)) ? Number(unit.salesPrice) : ''}
-                                placeholder="0"
-                                disabled={unitQuickSavingKey === `${unit.id}:salesPrice`}
-                                aria-label={`Update sales price for unit ${unit.unitNumber}`}
-                                onClick={event => event.stopPropagation()}
-                                onBlur={event => {
-                                  const nextValue = event.target.value
-                                  const currentValue = Number.isFinite(Number(unit.salesPrice)) ? String(Number(unit.salesPrice)) : ''
-                                  if (String(nextValue || '') === currentValue) return
-                                  void handleUnitQuickSave(
-                                    unit,
-                                    { salesPrice: nextValue },
-                                    {
-                                      field: 'salesPrice',
-                                      feedbackLabel: `Unit ${unit.unitNumber} sales price updated.`
-                                    }
-                                  )
-                                }}
-                              />
-                            </td>
-                            <td className="px-5 py-4 align-middle">
-                              <input
-                                className={`${UNIT_QUICK_FIELD_CLASS} max-w-[160px] font-medium text-[#44576d]`}
-                                type="date"
-                                defaultValue={normalizeDateInput(unit.handover?.handoverDate || '')}
-                                disabled={!unit.currentTransactionId || unitQuickSavingKey === `${unit.id}:handoverDate`}
-                                aria-label={`Update handover date for unit ${unit.unitNumber}`}
-                                title={unit.currentTransactionId ? 'Update handover date' : 'Handover date is available once a transaction is linked'}
-                                onClick={event => event.stopPropagation()}
-                                onChange={event => {
-                                  void handleUnitHandoverDateQuickChange(unit, event.target.value)
-                                }}
-                              />
-                            </td>
-                            <td className="px-5 py-4 align-middle">
-                              <Field
-                                as="select"
-                                className="h-10 min-w-[190px] rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-[#44576d] hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white"
-                                value={unit.floorplanId || ''}
-                                disabled={unitQuickSavingKey === `${unit.id}:floorplanId`}
-                                aria-label={`Update floorplan for unit ${unit.unitNumber}`}
-                                onClick={event => event.stopPropagation()}
-                                onChange={event => {
-                                  void handleUnitQuickSave(
-                                    unit,
-                                    { floorplanId: event.target.value || null },
-                                    {
-                                      field: 'floorplanId',
-                                      feedbackLabel: `Unit ${unit.unitNumber} floorplan updated.`
-                                    }
-                                  )
-                                }}>
-                                <option value="">No floorplan assigned</option>
-                                {floorplanDocumentOptions.map(item => (
-                                  <option key={item.id} value={item.id}>
-                                    {item.title}
-                                  </option>
-                                ))}
-                              </Field>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
-                  <p className="text-sm text-[#6b7d93]">No units added yet.</p>
-                  <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                    <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
-                      Add Bulk
-                    </Button>
-                    <Button variant="secondary" className="whitespace-nowrap" onClick={() => openUnitModal()}>
-                      Add Unit
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </section>
-          </section>
-        ) : null}
+        {activeTab === 'snags' ? <DevelopmentSnagsWorkspace key={data?.development?.id || developmentId} developmentId={data?.development?.id || developmentId} /> : null}
 
         {activeTab === 'leads' ? (
           <section className="mt-4">
             <section className={CARD_SHELL}>
-              <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Leads</h3>
-                  <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">Buyer leads allocated to this development. Contact details and buyer lead access are only available to the receiving agent.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
-                    <Users size={13} />
-                    {formatNumber(developmentLeadFunnelItems.total)} leads
-                  </span>
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <DevelopmentLeadViewSwitch value={developmentLeadView} onChange={setDevelopmentLeadView} />
                   {developmentLeadFunnelItems.protectedCount ? (
                     <span className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
                       <EyeOff size={13} />
                       {formatNumber(developmentLeadFunnelItems.protectedCount)} protected
                     </span>
                   ) : null}
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-5">
-                {developmentLeadFunnelItems.items.map(stage => (
-                  <article key={stage.key} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{stage.label}</span>
-                    <strong className="mt-2 block text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{formatNumber(stage.count)}</strong>
-                  </article>
-                ))}
               </div>
 
               {developmentLeadsLoading ? (
@@ -11081,7 +9396,8 @@ function DevelopmentDetail() {
                 </div>
               ) : null}
 
-              {developmentLeadsError ? <p className="mt-5 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{developmentLeadsError}</p> : null}
+              {developmentLeadsError ? <p role="alert" className="mt-5 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{developmentLeadsError}</p> : null}
+              <p role="status" className={developmentLeadMoveMessage ? 'mt-3 text-sm text-[#28724e]' : 'sr-only'}>{developmentLeadMoveMessage}</p>
 
               {!developmentLeadsLoading && !developmentLeadRows.length ? (
                 <div className="mt-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
@@ -11089,13 +9405,42 @@ function DevelopmentDetail() {
                 </div>
               ) : null}
 
-              {developmentLeadRows.length ? (
+              {developmentLeadRows.length > 0 && developmentLeadView === 'kanban' ? (
+                <DevelopmentLeadsKanban
+                  columns={DEVELOPMENT_LEAD_FUNNEL_STAGES}
+                  cards={developmentLeadRows.map(lead => {
+                    const canOpen = canOpenDevelopmentLead(lead)
+                    const canViewDetails = canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)
+                    return {
+                      id: lead.developerLeadId || lead.sourceLeadId || `${lead.publicReference}-${lead.createdAt}`,
+                      columnKey: getDevelopmentLeadBoardStage(lead).key,
+                      name: getDevelopmentLeadDisplayName(lead, canViewDetails),
+                      contactLine: getDevelopmentLeadContactLine(lead, canViewDetails),
+                      imageUrl: getDevelopmentLeadUnitImage(lead, rows),
+                      fallbackImageUrl: developmentHeroImageUrl,
+                      source: lead.leadSource,
+                      brand: getDevelopmentLeadSourceBrand(lead, currentWorkspace),
+                      agent: getDevelopmentLeadAssignedAgent(lead, organisationUsers),
+                      stage: getDevelopmentLeadStagePresentation(lead.leadStatus),
+                      lastActivity: formatDate(lead.updatedAt || lead.createdAt),
+                      canOpen,
+                      canMove: canMoveDevelopmentLead(lead),
+                      accessLabel: lead.sourceLeadId ? 'Protected' : 'No developer lead link'
+                    }
+                  })}
+                  onOpen={id => openDevelopmentLeadWorkspace(id)}
+                  onMove={(id, targetKey) => void handleDevelopmentLeadMove(id, targetKey)}
+                  movingId={developmentLeadMovingId}
+                />
+              ) : null}
+
+              {developmentLeadRows.length > 0 && developmentLeadView === 'list' ? (
                 <div className="mt-5 overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-[#e8eef5]">
                       <thead className="bg-[#f8fafc]">
                         <tr>
-                          {['Lead', 'Interest', 'Assigned To', 'Stage', 'Last Activity', 'Access'].map(heading => (
+                          {['Lead', 'Source', 'Assigned To', 'Stage', 'Last Activity', 'Access'].map(heading => (
                             <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                               {heading}
                             </th>
@@ -11107,9 +9452,10 @@ function DevelopmentDetail() {
                           const sourceLeadId = normalizeDevelopmentLeadText(lead.sourceLeadId)
                           const canOpenLead = canOpenDevelopmentLead(lead, developmentLeadAccessKeys)
                           const stage = getDevelopmentLeadStagePresentation(lead.leadStatus)
-                          const displayName = getDevelopmentLeadDisplayName(lead, canOpenLead)
-                          const contactLine = getDevelopmentLeadContactLine(lead, canOpenLead)
-                          const assignedLabel = getDevelopmentLeadAssignedLabel(lead, organisationUsers)
+                          const canViewDetails = canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)
+                          const displayName = getDevelopmentLeadDisplayName(lead, canViewDetails)
+                          const contactLine = getDevelopmentLeadContactLine(lead, canViewDetails)
+                          const assignedAgent = getDevelopmentLeadAssignedAgent(lead, organisationUsers)
                           return (
                             <tr
                               key={lead.developerLeadId || lead.sourceLeadId || `${displayName}-${lead.createdAt}`}
@@ -11118,25 +9464,29 @@ function DevelopmentDetail() {
                                 if (!canOpenLead || !lead.developerLeadId) return
                                 navigate(`/developer/leads/${encodeURIComponent(lead.developerLeadId)}`)
                               }}>
-                              <td className="px-5 py-4 align-top">
-                                <strong className="block text-sm font-semibold text-[#142132]">{displayName}</strong>
-                                <span className="mt-1 block text-xs text-[#6b7d93]">{contactLine}</span>
+                              <td className="px-5 py-4 align-middle">
+                                <div className="flex min-w-[230px] items-center gap-4">
+                                  <DevelopmentLeadPropertyImage src={getDevelopmentLeadUnitImage(lead, rows)} fallbackSrc={developmentHeroImageUrl} name={displayName} />
+                                  <span><strong className="block text-sm font-semibold text-[#142132]">{displayName}</strong><span className="mt-1 block text-xs text-[#6b7d93]">{contactLine}</span></span>
+                                </div>
                               </td>
-                              <td className="px-5 py-4 align-top">
-                                <span className="block text-sm font-semibold text-[#30485f]">{formatDevelopmentLeadBudget(lead)}</span>
-                                <span className="mt-1 block text-xs text-[#6b7d93]">{normalizeDevelopmentLeadText(lead.unitTypeInterest) || 'Unit interest pending'}</span>
+                              <td className="px-5 py-4 align-middle">
+                                <DevelopmentLeadSource source={lead.leadSource} brand={getDevelopmentLeadSourceBrand(lead, currentWorkspace)} />
                               </td>
-                              <td className="px-5 py-4 align-top text-sm text-[#44576d]">{assignedLabel}</td>
+                              <td className="px-5 py-4 align-middle"><DevelopmentLeadAgent agent={assignedAgent} /></td>
                               <td className="px-5 py-4 align-top">
                                 <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${stage.className}`}>{stage.label}</span>
                               </td>
                               <td className="px-5 py-4 align-top text-sm text-[#44576d]">{formatDate(lead.updatedAt || lead.createdAt)}</td>
                               <td className="px-5 py-4 align-top">
                                 {canOpenLead ? (
-                                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
-                                    Open developer lead
-                                    <ArrowUpRight size={12} />
-                                  </span>
+                                  <div className="flex flex-col items-start gap-2">
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
+                                      Open developer lead
+                                      <ArrowUpRight size={12} />
+                                    </span>
+                                    <DevelopmentLeadContactDemo />
+                                  </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#64748b]">
                                     <EyeOff size={12} />
@@ -11158,147 +9508,28 @@ function DevelopmentDetail() {
 
         {activeTab === 'transactions' ? (
           <section className="mt-4">
-            <section className={CARD_SHELL}>
-              <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Transactions In This Development</h3>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. Available units start new sales; progressed units without a transaction can be backfilled below.</p>
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={event => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or email" />
-                  <Field as="select" className="min-w-[180px]" value={transactionStageFilter} onChange={event => setTransactionStageFilter(event.target.value)}>
-                    <option value="all">All stages</option>
-                    {Array.from(new Set([...allDevelopmentTransactionRows.map(row => String(row?.transaction?.stage || '').trim()).filter(Boolean), ...DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => option.value)])).map(stage => (
-                      <option key={stage} value={stage}>
-                        {toTitleLabel(stage)}
-                      </option>
-                    ))}
-                  </Field>
-                  <Button className="whitespace-nowrap" onClick={openDevelopmentTransactionWizard}>
-                    <Plus size={15} />
-                    Add Transaction
-                  </Button>
-                </div>
-              </div>
-
-              {unlinkedProgressedUnits.length ? (
-                <div className="mb-5 flex flex-col gap-3 rounded-[16px] border border-[#f0d4a5] bg-[#fffbf2] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-[#6b4917]">
-                      {unlinkedProgressedUnits.length} progressed unit
-                      {unlinkedProgressedUnits.length === 1 ? '' : 's'} {unlinkedProgressedUnits.length === 1 ? 'has' : 'have'} no transaction yet.
-                    </p>
-                    <p className="mt-1 text-sm leading-5 text-[#806132]">Backfill creates one incomplete transaction per unit at its current status. Buyer, finance and attorney details remain ready for capture; no placeholder information is created.</p>
-                  </div>
-                  <Button className="shrink-0 whitespace-nowrap" onClick={() => void handleUnitTransactionBackfill()} disabled={unitTransactionBackfillSaving}>
-                    <Plus size={15} />
-                    {unitTransactionBackfillSaving ? `Backfilling ${unitTransactionBackfillProgress.completed} of ${unitTransactionBackfillProgress.total}…` : `Backfill ${unlinkedProgressedUnits.length} transaction${unlinkedProgressedUnits.length === 1 ? '' : 's'}`}
-                  </Button>
-                </div>
-              ) : null}
-
-              {transactionRows.length ? (
-                <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
-                  <div className="h-[520px] overflow-y-auto overflow-x-hidden">
-                    <table className="w-full table-fixed divide-y divide-[#e8eef5]">
-                      <colgroup>
-                        <col className="w-[15%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[22%]" />
-                        <col className="w-[22%]" />
-                        <col className="w-[22%]" />
-                        <col className="w-[10%]" />
-                      </colgroup>
-                      <thead className="bg-[#f8fafc]">
-                        <tr>
-                          {['Unit', 'Agency', 'Progress', 'Buyer Name', 'Email', 'Stage'].map(heading => (
-                            <th key={heading} className="sticky top-0 z-10 bg-[#f8fafc] px-4 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-                              {heading}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#edf2f7] bg-white">
-                        {transactionRows.map(row => {
-                          const canOpenTransaction = Boolean(getDevelopmentRecordTransactionId(row) || row.unit?.id)
-                          const needsTransactionCapture = !row?.transaction?.id && Boolean(row?.unit?.id)
-
-                          return (
-                            <tr
-                              key={row.transaction?.id || row.unit?.id}
-                              className={`h-[64px] align-middle ${canOpenTransaction ? 'cursor-pointer hover:bg-[#f8fbff]' : ''}`}
-                              onClick={() => {
-                                if (needsTransactionCapture) {
-                                  void handleUnitTransactionRecovery(row.unit)
-                                } else if (canOpenTransaction) {
-                                  openDevelopmentTransactionWorkspace(row)
-                                }
-                              }}>
-                              <td className="px-4 py-3 align-middle">
-                                <strong className="block w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#22384c]" title={`Unit ${row.unit?.unit_number || '—'}`}>
-                                  {`Unit ${row.unit?.unit_number || '—'}`}
-                                </strong>
-                              </td>
-                              <td className="px-4 py-3 align-middle">
-                                <ResponsibleAgencyBadge agency={row.responsibleAgency} />
-                              </td>
-                              <td className="px-4 py-3 align-middle">
-                                <div className="flex items-center gap-2.5 whitespace-nowrap">
-                                  <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[#e7edf5]">
-                                    <span
-                                      className={`block h-full rounded-full ${getTransactionProgressToneClass(row.mainStageKey)}`}
-                                      style={{
-                                        width: `${Math.max(0, row.progressPercent || 0)}%`
-                                      }}
-                                    />
-                                  </div>
-                                  <span className="w-10 text-right text-xs font-semibold text-[#5f748c]">{row.progressPercent}%</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 align-middle">
-                                {needsTransactionCapture ? (
-                                  <button
-                                    type="button"
-                                    className="block max-w-full truncate whitespace-nowrap text-left text-sm font-semibold leading-6 text-[#1f7a43] hover:text-[#0f5f32]"
-                                    title="Capture buyer and transaction details"
-                                    onClick={event => {
-                                      event.stopPropagation()
-                                      void handleUnitTransactionRecovery(row.unit)
-                                    }}>
-                                    Capture transaction
-                                  </button>
-                                ) : (
-                                  <strong className="block truncate whitespace-nowrap text-sm font-semibold leading-6 text-[#1f3145]" title={row.buyerDisplayName}>
-                                    {row.buyerDisplayName}
-                                  </strong>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 align-middle">
-                                <span className="block truncate whitespace-nowrap text-sm leading-6 text-[#556a80]" title={row.buyerEmail}>
-                                  {needsTransactionCapture ? 'Buyer details pending' : row.buyerEmail}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 align-middle">
-                                <span className={`inline-flex max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${getTransactionStagePillClassName(row.mainStageKey)}`} title={row.transaction?.stage || row.unit?.status || 'Available'}>
-                                  {toTitleLabel(row.transaction?.stage || row.unit?.status || 'available')}
-                                </span>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
-                  <p className="text-sm text-[#6b7d93]">No transactions for this development yet.</p>
-                  <div className="mt-4">
-                    <Button onClick={openDevelopmentTransactionWizard}>Add Transaction</Button>
-                  </div>
-                </div>
-              )}
-            </section>
+            <DevelopmentTransactionsWorkspace
+              rows={transactionRows}
+              search={transactionSearch}
+              onSearchChange={setTransactionSearch}
+              stageFilter={transactionStageFilter}
+              onStageChange={setTransactionStageFilter}
+              stages={Array.from(new Set([...allDevelopmentTransactionRows.map(row => String(row?.transaction?.stage || '').trim()).filter(Boolean), ...DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => option.value)]))}
+              developmentName={data?.development?.name || ''}
+              coverImageUrl={developmentHeroImageUrl}
+              onCreateTransaction={openDevelopmentTransactionWizard}
+              onOpenTransaction={row => {
+                if (!row?.transaction?.id && row?.unit?.id) {
+                  void handleUnitTransactionRecovery(row.unit)
+                } else if (getDevelopmentRecordTransactionId(row) || row.unit?.id) {
+                  openDevelopmentTransactionWorkspace(row)
+                }
+              }}
+              unlinkedCount={unlinkedProgressedUnits.length}
+              backfillSaving={unitTransactionBackfillSaving}
+              backfillProgress={unitTransactionBackfillProgress}
+              onBackfill={() => void handleUnitTransactionBackfill()}
+            />
           </section>
         ) : null}
 
@@ -11482,39 +9713,7 @@ function DevelopmentDetail() {
           </section>
         ) : null}
 
-        {activeTab === 'bond_originators' ? (
-          <section className="mt-4 grid gap-4">
-            {canManageDevelopment ? (
-              <DevelopmentBondCommercialSetup
-                developmentId={data.development.id}
-                onSaved={() => {
-                  void loadData()
-                }}
-              />
-            ) : (
-              <section className={CARD_SHELL}>
-                <div className="mb-5">
-                  <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Bond Originator Contact</h3>
-                  <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Assigned bond originator and contact details for this development.</p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    ['Bond Originator', data?.bondConfig?.bondOriginatorName || 'Not assigned'],
-                    ['Primary Contact', data?.bondConfig?.primaryContactName || 'Not set'],
-                    ['Contact Email', data?.bondConfig?.primaryContactEmail || 'Not set'],
-                    ['Contact Phone', data?.bondConfig?.primaryContactPhone || 'Not set']
-                  ].map(([label, value]) => (
-                    <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                      <span className="block text-[0.76rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                      <strong className="mt-2 block text-sm font-semibold text-[#142132]">{value}</strong>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            )}
-          </section>
-        ) : null}
+        {activeTab === 'bond_originators' ? renderBondOriginatorConfiguration() : null}
 
         <Modal open={emailComposeOpen} onClose={emailSending ? undefined : closeDocumentEmailComposer} title="Send Document via Email" subtitle="Compose an email for the selected development document. Arch9 will prefill the document context and file link." className="max-w-[640px]">
           <form className="space-y-4" onSubmit={handleSendDocumentEmail}>

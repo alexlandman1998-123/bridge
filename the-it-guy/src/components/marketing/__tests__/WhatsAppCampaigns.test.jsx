@@ -20,6 +20,15 @@ beforeEach(() => { mocks.org = 'org-one'; mocks.request.mockImplementation(async
   if (action === 'dispatch') return { campaign: { recipients: 1, queued: 0, accepted: 1 } }
   throw new Error(`Unexpected ${action}`)
 }) })
+it('saves a development-linked WhatsApp draft without putting context into template variables', async () => {
+  const context = { development_id: 'harbour', development_name: 'Harbour Heights' }
+  render(<CreateWhatsAppCampaign developmentContext={context} onBack={vi.fn()} />)
+  expect((await screen.findByLabelText('Campaign name')).value).toBe('Harbour Heights campaign')
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+  await screen.findByText('Draft saved.')
+  const save = mocks.request.mock.calls.find(call => call[1] === 'save')
+  expect(save[2].campaign.parameter_values).toEqual({ __arch9_context: context })
+})
 it('shows a real empty state and filters campaigns without sample rows', async () => {
   const row = (id, name, status) => ({ id, name, display_status: status, status: status === 'draft' ? 'draft' : 'sending', template, contact_ids: ['contact-one'], recipients: 1, delivered: 0, read: 0, failed: 0, skipped: 0 })
   mocks.request.mockResolvedValue({ ...emptyWorkspace, campaigns: [row('1', 'September homes', 'sent'), row('2', 'Buyer draft', 'draft')] })

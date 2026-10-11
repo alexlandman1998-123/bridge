@@ -397,6 +397,33 @@ export async function listAgencyIntroducedDeveloperLeadsForAgency({ sourceAgency
   }))
 }
 
+// A linked lead may belong to a developer other than the active agency.
+// Resolve only this record through the signed-in client's existing row policies.
+export async function fetchDeveloperLeadIntake({ developerLeadId = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase) return null
+  const leadId = normalizeUuid(developerLeadId)
+  if (!leadId) return null
+  const client = requireClient()
+  const { data, error } = await client
+    .from('developer_leads')
+    .select(DEVELOPER_LEAD_SELECT)
+    .eq('developer_lead_id', leadId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+
+  const [privateById, interestsById, onboardingByTransactionId] = await Promise.all([
+    fetchPrivateDetailsByLeadIds(client, [leadId]),
+    fetchInterestsByLeadIds(client, [leadId]),
+    fetchOnboardingFormDataByTransactionIds(client, [data.converted_transaction_id].filter(Boolean)),
+  ])
+  return mapDeveloperLead(data, {
+    privateDetails: privateById.get(leadId) || null,
+    interests: interestsById.get(leadId) || [],
+    onboardingFormData: onboardingByTransactionId.get(data.converted_transaction_id) || null,
+  })
+}
+
 export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'all', source = 'all', throwOnUnavailable = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const orgId = requireDeveloperOrgId(developerOrgId)

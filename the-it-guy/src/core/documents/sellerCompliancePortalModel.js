@@ -1,3 +1,5 @@
+import { buildSellerDocumentWorkflow, getSellerDocumentSigningRequest } from './sellerDocumentWorkflow.js'
+import { normalizeSellerBasePackKey } from '../../lib/sellerBasePackContract.js'
 import { transformSellerOnboardingToFacts } from '../../services/documents/sellerOnboardingFactTransformer.js'
 import { resolveSellerComplianceRequiredSigners } from './sellerComplianceSignerResolver.js'
 import { SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS } from './sellerComplianceSignerModel.js'
@@ -290,6 +292,29 @@ export function buildSellerCompliancePortalModel({
     statusLabel: getSignerStatusLabel(signer),
   }))
   const nextSigner = state.nextSigner || null
+  const completion = safeFormData.sellerOnboardingCompletion || safeFormData.seller_onboarding_completion || {}
+  const informationOnly = completion.informationOnly === true || safePortalData.sellerDocumentWorkspace?.informationOnly === true
+  const copies = toArray((safeFormData.sellerOnboardingManualSigningPack || safeFormData.seller_onboarding_manual_signing_pack || {}).documents || safePortalData.sellerDocumentWorkspace?.documents)
+  const requirements = toArray(safePortalData.requiredDocuments || safePortalData.documentCenter?.items || safeListing.documentRequirements)
+  const uploads = toArray(safePortalData.documents || safeListing.documents)
+  const requests = toArray(safePortalData.sellerPortalSigningRequests)
+  const documentWorkflows = informationOnly ? [
+    ['signed_mandate', 'Mandate'], ['signed_disclosure_form', 'Disclosure'], ['signed_fica_declaration', 'FICA'],
+  ].map(([key, name]) => {
+    const requirement = requirements.find(item => normalizeSellerBasePackKey(item.requirement_key || item.key || item.requirementKey) === key) || {}
+    const uploaded = uploads.find(item => normalizeSellerBasePackKey(item.document_type || item.documentType || item.requirement_key || item.key) === key && ['approved', 'completed'].includes(item.status))
+      || uploads.find(item => normalizeSellerBasePackKey(item.document_type || item.documentType || item.requirement_key || item.key) === key && ['uploaded', 'under_review'].includes(item.status))
+    const copy = copies.find(item => item.key === key)
+    const request = getSellerDocumentSigningRequest(requests, key, copy?.versionId)
+    // The portal document centre reserves base-pack uploads for the agency.
+    const item = { ...requirement, lockedByTeam: true, ...(uploaded ? { status: uploaded.status, linkedDocument: uploaded } : {}) }
+    const workflow = buildSellerDocumentWorkflow({ item, copy, request })
+    if (safePortalData.sellerSigningProgressAvailable === false && copy?.signingRoute === 'digital_pack' && workflow.state === 'prepared') {
+      return { key, name, ...workflow, label: 'Prepared — signing progress unavailable', detail: 'Ask your agent to confirm the current signatures and review state.', nextActor: 'agent', nextAction: 'The agent confirms the current signing and review state.' }
+    }
+    return { key, name, ...workflow }
+  }) : []
+  const documentComplete = informationOnly && documentWorkflows.every(item => item.state === 'complete')
 
   return {
     contract: SELLER_COMPLIANCE_PORTAL_MODEL_CONTRACT,
@@ -301,14 +326,16 @@ export function buildSellerCompliancePortalModel({
       ...state,
       signers,
     },
-    complete: Boolean(state.complete),
-    status: state.status || 'pending',
-    statusLabel: getStatusLabel(state),
-    progressLabel: `${state.completedCount || 0} of ${state.requiredCount || signers.length} complete`,
-    nextMessage: getNextMessage(state),
-    nextSigner,
-    signatureRequests: buildSignatureRequests({ token, signers }),
-    actions: buildSignerActionModel({
+    informationOnly,
+    documentWorkflows,
+    complete: informationOnly ? documentComplete : Boolean(state.complete),
+    status: informationOnly ? documentComplete ? 'documents_reviewed' : 'documents_pending' : state.status || 'pending',
+    statusLabel: informationOnly ? documentComplete ? 'Documents reviewed' : 'Documents follow information review' : getStatusLabel(state),
+    progressLabel: informationOnly ? `${documentWorkflows.filter(item => item.state === 'complete').length} of 3 documents reviewed` : `${state.completedCount || 0} of ${state.requiredCount || signers.length} complete`,
+    nextMessage: informationOnly ? 'Mandate, disclosure and FICA follow separate routes in Documents. Preparing or uploading a copy does not complete agent review.' : getNextMessage(state),
+    nextSigner: informationOnly ? null : nextSigner,
+    signatureRequests: informationOnly ? [] : buildSignatureRequests({ token, signers }),
+    actions: informationOnly ? [{ key: 'open_documents', label: 'Open documents', to: 'documents', tone: 'primary' }] : buildSignerActionModel({
       token,
       workspacePath,
       nextSigner,

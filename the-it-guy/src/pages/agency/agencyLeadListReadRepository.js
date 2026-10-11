@@ -1,6 +1,7 @@
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from './agencyLeadAgentScope'
 import { buildAgencyLeadListModel } from './agencyLeadListModel'
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
+import { enrichDevelopmentBuyerLeads } from '../../services/developmentBuyerLeadService.js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import {
   deleteAgencyLeadCoreCache,
@@ -229,7 +230,7 @@ async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0
         : { data: [], error: null }
       if (contacts.error && !isUnavailable(contacts.error)) throw contacts.error
       const data = {
-        leads: leadRows.map(mapLead),
+        leads: await enrichDevelopmentBuyerLeads(workspaceId, leadRows.map(mapLead)),
         contacts: Array.isArray(contacts.data) ? contacts.data.map(mapContact) : [],
         totalCount: Number(leads.count || leadRows.length),
         page: normalizedPage,
@@ -275,7 +276,7 @@ async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false, agen
       page += 1
       hasMore = Boolean(rows.length && rows.length === pageSize && leads.length < totalCount)
     }
-    const data = { leads, totalCount: Number(totalCount || leads.length), source: 'remote' }
+    const data = { leads: await enrichDevelopmentBuyerLeads(workspaceId, leads), totalCount: Number(totalCount || leads.length), source: 'remote' }
     landingMetricsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
     return data
   })().catch((error) => {
@@ -344,7 +345,7 @@ export async function preloadAgencyLeadCoreRecord(organisationId, leadId) {
   const promise = selectCompatibleLeads(workspaceId, resolvedLeadId).then(async (leadResult) => {
     if (leadResult.error && !isUnavailable(leadResult.error)) throw leadResult.error
     if (!leadResult.data) return null
-    const lead = mapLead(leadResult.data)
+    const [lead] = await enrichDevelopmentBuyerLeads(workspaceId, [mapLead(leadResult.data)])
     let contact = null
     if (lead.contactId) {
       const contactResult = await supabase
@@ -409,7 +410,7 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
 
   const includePrimaryRecords = options.includePrimaryRecords !== false
   const includeRelatedRecords = options.includeRelatedRecords !== false
-  const category = ['buyer', 'seller', 'archived'].includes(options.category) ? options.category : ''
+  const category = ['buyer', 'seller', 'development', 'archived'].includes(options.category) ? options.category : ''
   const agentScope = agencyLeadAgentScope(options.scopedAgent)
   const empty = Promise.resolve({ data: [], error: null })
   const requests = [

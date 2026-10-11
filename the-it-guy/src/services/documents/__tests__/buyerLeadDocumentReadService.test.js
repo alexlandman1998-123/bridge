@@ -69,3 +69,14 @@ test('agent read returns only buyer-visible files from the linked transaction', 
   const visible = await fetchBuyerLeadCanonicalDocumentRows(client, { transactionId, organisationId: id, leadId })
   assert.deepEqual(visible.map((row) => row.id), ['document-1'])
 })
+
+test('shared custom uploads use current requirement review state and suppress removed or superseded staged mirrors', () => {
+  const current = { ...sharedBuyer, id: 'new', file_path: 'new.pdf', source: 'document_requirement_command', visibility_scope: 'client_visible', document_type: 'custom_slot', canonical_requirement_instance_id: 'slot', requirement_label: 'Divorce papers', requirement_status: 'under_review', review_status: 'approved', is_current_evidence: true }
+  const previous = { ...current, id: 'old', file_path: 'old.pdf', is_current_evidence: false }
+  const snapshot = { requirements: [{ id: 'slot' }], documents: [current, previous] }
+  const model = buildBuyerLeadDocumentReadModel({ leadRows: [{ storageBucket: 'documents', storagePath: 'old.pdf' }], snapshot })
+  assert.equal(model.uploads.length, 1)
+  assert.equal(model.uploads[0].label, 'Divorce papers')
+  assert.equal(model.uploads[0].status, 'under_review')
+  assert.equal(buildBuyerLeadDocumentReadModel({ snapshot: { ...snapshot, documents: [{ ...current, applicability_override: 'removed' }] } }).uploads.length, 0)
+})

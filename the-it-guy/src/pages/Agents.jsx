@@ -54,6 +54,9 @@ import Modal from '../components/ui/Modal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { useOptionalOrganisation } from '../context/OrganisationContext'
+import { resolveDocumentBrandPalette } from '../lib/onboardingBranding'
+import './AgentProfile.css'
 import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles'
 import { saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
@@ -125,6 +128,7 @@ const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
 
 const AGENT_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview', icon: Grid2X2 },
+  { key: 'profile', label: 'Profile', icon: IdCard },
   { key: 'transactions', label: 'Transactions', icon: BriefcaseBusiness },
   { key: 'listings', label: 'Listings', icon: Building2 },
   { key: 'leads', label: 'Leads', icon: Users },
@@ -3833,7 +3837,7 @@ function CommissionSummarySection({ title, children }) {
   )
 }
 
-function AgentCommissionStructureSummary({ summary, statusLabel = 'Active', loading = false }) {
+function AgentCommissionStructureSummary({ summary, statusLabel = 'Active', loading = false, showCompanyTarget = true }) {
   const achievedProgress = Math.max(0, Number(summary?.companyContributionProgress || 0))
   const progress = Math.min(100, achievedProgress)
   const projectedProgress = Math.max(0, Number(summary?.companyContributionProjectedProgress || 0))
@@ -3865,7 +3869,7 @@ function AgentCommissionStructureSummary({ summary, statusLabel = 'Active', load
         <CommissionSummaryRow label="Status" value={statusLabel} />
       </CommissionSummarySection>
 
-      <CommissionSummarySection title="Commission to Company Target">
+      {showCompanyTarget ? <CommissionSummarySection title="Commission to Company Target">
         <div className="mb-3 grid min-w-0 grid-cols-3 overflow-hidden rounded-xl border border-[#dfe8f3] bg-[#f8fbff] p-1">
           {['monthly', 'quarterly', 'yearly'].map((item) => (
             <span
@@ -3900,7 +3904,7 @@ function AgentCommissionStructureSummary({ summary, statusLabel = 'Active', load
         <CommissionSummaryRow label="Forecast" value={targetAmount > 0 ? `${formatCurrency(summary?.companyContributionProjectedAmount || 0)} (${Math.round(projectedProgress)}%)` : formatCurrency(summary?.companyContributionProjectedAmount || 0)} />
         <CommissionSummaryRow label="Period ends" value={tracker.periodEnd ? formatDate(tracker.periodEnd) : '—'} />
         {loading ? <p className="mt-2 text-xs font-semibold text-[#8294aa]">Syncing saved commission data…</p> : null}
-      </CommissionSummarySection>
+      </CommissionSummarySection> : null}
     </div>
   )
 }
@@ -4107,6 +4111,14 @@ function getLeadType(row = {}) {
 
 export function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, appointmentLoad = null, branchOptions = [], onRefresh }) {
   const navigate = useNavigate()
+  const organisation = useOptionalOrganisation()
+  const palette = resolveDocumentBrandPalette(organisation?.onboarding, organisation?.organisationSettings, organisation?.organisation)
+  const profileBrandStyle = {
+    '--agent-profile-primary': palette.primaryInk,
+    '--agent-profile-accent': palette.accentInk,
+    '--agent-profile-accent-colour': palette.accentColour,
+    '--agent-profile-tint': palette.accentTint,
+  }
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [modalMode, setModalMode] = useState('')
@@ -4690,14 +4702,14 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
   ]
 
   return (
-    <section className="min-w-0 space-y-5 overflow-hidden pb-6">
+    <section className="agent-profile-workspace min-w-0 space-y-5 overflow-hidden pb-6" style={profileBrandStyle}>
       {actionNotice ? (
         <div className="rounded-2xl border border-[#dbe6f4] bg-[#f4f8ff] px-4 py-3 text-sm font-semibold text-[#244e70]">
           {actionNotice}
         </div>
       ) : null}
 
-      <section className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 sm:p-5">
+      <section className="agent-profile-identity min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 sm:p-5">
         <div className="mb-4 flex min-w-0 flex-wrap items-center gap-2 text-xs font-semibold text-[#6f839a]">
           <button type="button" className="hover:text-[#10243a]" onClick={() => navigate('/agency')}>Agency</button>
           <span>/</span>
@@ -4733,6 +4745,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+            {canManageSettings ? <button type="button" className="agent-profile-primary-button" onClick={() => openManagementModal('profile')}><Edit3 size={15} /> Edit profile</button> : null}
             {agent.email ? <a href={`mailto:${agent.email}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] hover:bg-[#f7fafc]"><Mail size={16} /> Email</a> : null}
             {agent.mobile || agent.phone ? <a href={`tel:${String(agent.mobile || agent.phone).replace(/[^+\d]/g, '')}`} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] hover:bg-[#f7fafc]"><Phone size={16} /> Call</a> : null}
             {headerActionPermissions.canViewCalendar ? (
@@ -4770,7 +4783,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
         </div>
       </section>
 
-      <nav className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm">
+      <nav aria-label="Agent workspace" className="agent-profile-tabs min-w-0 max-w-full overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm">
         <div className="flex min-w-max items-center gap-1 lg:min-w-full">
           {AGENT_WORKSPACE_TABS.map((tab) => {
             const Icon = tab.icon
@@ -4778,6 +4791,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
               <button
                 key={tab.key}
                 type="button"
+                aria-current={effectiveActiveTab === tab.key ? 'page' : undefined}
                 onClick={() => setActiveTab(tab.key)}
                 className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-semibold transition lg:flex-1 ${
                   effectiveActiveTab === tab.key
@@ -4792,6 +4806,41 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
           })}
         </div>
       </nav>
+
+      {effectiveActiveTab === 'profile' ? (
+        <section aria-label="Agent profile" className="agent-profile-panel min-w-0 space-y-4">
+          <div className="agent-profile-section-heading">
+            <div><p className="agent-profile-eyebrow">People & organisation</p><h2>Agent profile</h2></div>
+            <p>Contact details, branch allocation and account access.</p>
+          </div>
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <AgentManagementCard title="Contact details" actionLabel={canManageSettings ? 'Edit contact' : ''} onAction={() => openManagementModal('profile')} className="agent-profile-card">
+              <dl className="agent-profile-contact-list">
+                <div><span className="agent-profile-icon"><Mail size={18} /></span><div><dt>Email address</dt><dd>{agent.email ? <a href={`mailto:${agent.email}`}>{agent.email}</a> : 'Not captured'}</dd></div></div>
+                <div><span className="agent-profile-icon"><Phone size={18} /></span><div><dt>Mobile number</dt><dd>{agent.mobile || agent.phone ? <a href={`tel:${String(agent.mobile || agent.phone).replace(/[^+\d]/g, '')}`}>{agent.mobile || agent.phone}</a> : 'Not captured'}</dd></div></div>
+              </dl>
+            </AgentManagementCard>
+            <AgentManagementCard title="Organisation & branch" actionLabel={canManageSettings ? 'Edit branch' : ''} onAction={() => openManagementModal('profile')} className="agent-profile-card">
+              <div className="agent-profile-branch"><span className="agent-profile-icon"><Building2 size={20} /></span><div><p>{branchName}</p><span>{agent.organisationName || organisation?.branding?.organisationLabel || 'Organisation'}</span></div></div>
+              <dl className="agent-profile-facts"><div><dt>Role</dt><dd>{agentRoleTitle}</dd></div><div><dt>Joined</dt><dd>{joinedDate ? formatDate(joinedDate) : 'Not captured'}</dd></div></dl>
+              <dl className="agent-profile-allocation">
+                <div><dt>Listings assigned</dt><dd>{allListings.length}</dd></div>
+                <div><dt>Deals assigned</dt><dd>{agent.deals.length}</dd></div>
+                <div><dt>Active clients</dt><dd>{activeClientCount}</dd></div>
+              </dl>
+            </AgentManagementCard>
+            <AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openManagementModal('profile')} className="agent-profile-card">
+              <div className="agent-profile-access"><ShieldCheck size={22} /><div><p>{formatRoleLabel(agent.role)}</p><span>{roleAccessSummary.workspaceAccess}</span></div></div>
+              <details className="agent-profile-details"><summary>View permissions</summary><dl className="agent-profile-permissions">{permissionRows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>
+              <dl className="agent-profile-facts"><div><dt>Account status</dt><dd>{getAgentStatusMeta(agent).label}</dd></div><div><dt>Last login</dt><dd>{getWorkspaceDisplayValue(agent.lastActiveAt, formatDateTime)}</dd></div></dl>
+            </AgentManagementCard>
+            <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openManagementModal('commission')} className="agent-profile-card">
+              <AgentCommissionStructureSummary summary={commissionSummary} statusLabel={getAgentStatusMeta(agent).label} loading={commissionSummaryLoading} showCompanyTarget={false} />
+              <button type="button" className="agent-profile-target-link" onClick={() => setActiveTab('performance')}>View commission targets <ArrowRight size={14} /></button>
+            </AgentManagementCard>
+          </div>
+        </section>
+      ) : null}
 
       {effectiveActiveTab === 'overview' ? (
         <section className="min-w-0 space-y-4">
@@ -4979,7 +5028,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                 <AgentWorkspaceKpiCard key={label} label={label} value={value} icon={Trophy} />
               ))}
             </div>
-            <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-3">
+            <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-2">
               <AgentManagementCard title="Monthly Performance">
                 <div className="space-y-1">
                   {monthSummary.map((metric) => (
@@ -4993,13 +5042,6 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                   statusLabel={getAgentStatusMeta(agent).label}
                   loading={commissionSummaryLoading}
                 />
-              </AgentManagementCard>
-              <AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openManagementModal('profile')}>
-                <div className="space-y-1">
-                  {[...contactRows.slice(0, 4), ...permissionRows.slice(0, 4), ...teamAllocationRows.slice(0, 3)].map(([label, value]) => (
-                    <DetailInfoRow key={label} label={label} value={value} />
-                  ))}
-                </div>
               </AgentManagementCard>
             </div>
           </PrincipalAgentTabShell>
@@ -5182,6 +5224,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
               <Button
                 type="button"
                 onClick={handleSaveProfileAssignment}
+                style={{ backgroundColor: palette.primaryInk, color: '#ffffff' }}
                 disabled={!canManageSettings || profileSaving || profileUploading || !agent.organisationUserId}
               >
                 <Save size={16} />
@@ -5445,14 +5488,14 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
             ) : null}
           </div>
         ) : modalMode === 'profile' ? (
-          <div className="space-y-4">
+          <div className="agent-profile-editor space-y-4" style={profileBrandStyle}>
             {profileError ? (
               <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
                 {profileError}
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-4 rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4 sm:flex-row sm:items-center">
+            <div className="agent-profile-editor-identity flex flex-col gap-4 rounded-2xl border border-[#dfe8f2] p-4 sm:flex-row sm:items-center">
               <div className="relative shrink-0">
                 <button
                   type="button"
@@ -5464,9 +5507,9 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                   <AgentAvatar
                     agent={{ ...agent, avatarUrl: profileForm.avatarUrl, profilePhotoUrl: profileForm.avatarUrl }}
                     initials={getAgentInitials({ ...agent, firstName: profileForm.firstName, lastName: profileForm.lastName })}
-                    className="h-20 w-20 bg-[#1f4f78] text-lg font-semibold text-white ring-4 ring-white"
+                    className="agent-profile-editor-avatar h-20 w-20 text-lg font-semibold text-white ring-4 ring-white"
                   />
-                  <span className="absolute -bottom-1 -right-1 inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d9e3ef] bg-white text-[#1769d1] shadow-sm">
+                  <span className="agent-profile-editor-camera absolute -bottom-1 -right-1 inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d9e3ef] bg-white shadow-sm">
                     <Camera size={15} />
                   </span>
                 </button>
@@ -5485,7 +5528,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                 </p>
                 <p className="mt-1 truncate text-sm font-medium text-[#60758d]">{profileForm.email || 'No email captured'}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-[#d7e6f7] bg-[#eef6ff] px-3 py-1 text-xs font-semibold text-[#1769d1]">
+                  <span className="agent-profile-role rounded-full border px-3 py-1 text-xs font-semibold">
                     {formatRoleLabel(profileForm.role)}
                   </span>
                   <span className="rounded-full border border-[#e2eaf3] bg-white px-3 py-1 text-xs font-semibold text-[#526981]">
@@ -5501,9 +5544,9 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
               </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4">
               <AgentManagementCard title="Contact Details">
-                <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <label className="grid gap-1.5">
                     <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">First Name</span>
                     <Field
@@ -5543,8 +5586,8 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                 </div>
               </AgentManagementCard>
 
-              <AgentManagementCard title="Workspace Access">
-                <div className="grid gap-3">
+              <AgentManagementCard title="Branch & role" className="agent-profile-card">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <label className="grid gap-1.5">
                     <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Role / Permission</span>
                     <Field
@@ -5576,7 +5619,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                       ))}
                     </Field>
                   </label>
-                  <div className="rounded-xl border border-[#e6edf5] bg-[#fbfcfe] px-3 py-2.5">
+                  <div className="agent-profile-editor-access rounded-xl border border-[#e6edf5] px-3 py-2.5 sm:col-span-2">
                     <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Access Preview</p>
                     <p className="mt-1 text-sm font-semibold text-[#20364d]">{getAgentRoleAccessSummary(profileForm.role).workspaceAccess}</p>
                     <p className="mt-1 text-xs font-medium text-[#6f839a]">{getAgentRoleAccessSummary(profileForm.role).listings}</p>
@@ -5584,23 +5627,6 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                 </div>
               </AgentManagementCard>
 
-              <AgentManagementCard title="Team Allocation">
-                <div className="space-y-1">
-                  {teamAllocationRows.map(([label, value]) => (
-                    <DetailInfoRow key={label} label={label} value={value} />
-                  ))}
-                </div>
-              </AgentManagementCard>
-
-              <AgentManagementCard title="Profile Source">
-                <div className="space-y-1">
-                  <DetailInfoRow label="User ID" value={getWorkspaceDisplayValue(agent.userId || agent.id)} />
-                  <DetailInfoRow label="Organisation User" value={getWorkspaceDisplayValue(agent.organisationUserId)} />
-                  <DetailInfoRow label="Organisation" value={getWorkspaceDisplayValue(agent.organisationName)} />
-                  <DetailInfoRow label="Invite" value={getWorkspaceDisplayValue(agent.inviteId)} />
-                  <DetailInfoRow label="Photo" value={getAgentAvatarUrl(agent) ? 'Available' : 'Initials fallback'} />
-                </div>
-              </AgentManagementCard>
             </div>
           </div>
         ) : null}

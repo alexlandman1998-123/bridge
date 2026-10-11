@@ -12,6 +12,8 @@ export async function recruitmentSignupRequest(action, details = {}, { endpoint 
     : action === 'prepare_document' ? { action, requestId: details.requestId, document: Object.fromEntries(['name', 'type', 'mimeType', 'size'].map(key => [key, details.document?.[key]])) }
     : action === 'commit_document' ? { action, requestId: details.requestId }
     : action === 'download_document' ? { action, documentPath: details.documentPath }
+    : ['prepare_contract_return', 'commit_contract_return'].includes(action) ? { action, requestId: details.requestId, document: Object.fromEntries(['name', 'mimeType', 'size'].map(key => [key, details.document?.[key]])) }
+    : action === 'download_contract' ? { action, returnId: details.returnId }
     : ['send_verification', 'verify_email', 'sign_in'].includes(action)
       ? { action, email: details.email, ...(details.submissionKey ? { submissionKey: details.submissionKey } : {}), ...(action === 'verify_email' ? { code: details.code } : {}), ...(action === 'sign_in' ? { password: details.password } : {}) }
       : { action: ['resume', 'sign_out', 'open_account'].includes(action) ? action : 'context' }

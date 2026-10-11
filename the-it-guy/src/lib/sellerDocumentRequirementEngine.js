@@ -11,7 +11,8 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from './sellerPropertyAddress.js'
-import { SELLER_BASE_PACK_KEYS } from './sellerBasePackContract.js'
+import { SELLER_BASE_PACK_KEYS, LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION } from './sellerBasePackContract.js'
+export { LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION } from './sellerBasePackContract.js'
 import { withCanonicalDocumentRequestMetadata } from '../core/documents/documentRequestCanonicalAdapter.js'
 import {
   isSellerStructuredFactRequirement,
@@ -28,7 +29,6 @@ import { resolveListingSellerAuthorityContract } from './sellerPartyAuthorityCon
 
 const COMPLETED_REQUIREMENT_STATUSES = new Set(['approved', 'completed'])
 const ACTIVE_REQUIREMENT_STATUSES = new Set(['required', 'requested', 'uploaded', 'under_review', 'rejected'])
-export const LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION = 'listing_seller_requirement_retirement_phase4_v1'
 
 const MANDATE_SIGNED_STATUSES = new Set(['signed', 'signed_uploaded'])
 const DOCUMENT_STATUSES = ['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable']

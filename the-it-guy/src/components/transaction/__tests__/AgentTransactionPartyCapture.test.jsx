@@ -76,7 +76,7 @@ async function startBackfill() {
 it('captures actual sale terms and uploads existing documents only after the transaction is saved', async () => {
   const stage = await startBackfill()
   uploadDocument.mockResolvedValue({ id: 'saved-file' })
-  fireEvent.change(screen.getByLabelText('Choose documents'), { target: { files: [new File(['signed'], 'signed-otp.pdf', { type: 'application/pdf' })] } })
+  fireEvent.change(screen.getByLabelText(/^Choose documents/), { target: { files: [new File(['signed'], 'signed-otp.pdf', { type: 'application/pdf' })] } })
   expect(screen.getByText('Ready to upload after creation')).toBeTruthy()
   expect(uploadDocument).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
@@ -96,7 +96,7 @@ it('captures actual sale terms and uploads existing documents only after the tra
 it('retries a failed file against the saved transaction without creating another deal', async () => {
   await startBackfill()
   uploadDocument.mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce({ id: 'retry-file' })
-  fireEvent.change(screen.getByLabelText('Choose documents'), { target: { files: [new File(['signed'], 'retry.pdf', { type: 'application/pdf' })] } })
+  fireEvent.change(screen.getByLabelText(/^Choose documents/), { target: { files: [new File(['signed'], 'retry.pdf', { type: 'application/pdf' })] } })
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
   fireEvent.click(screen.getByRole('button', { name: 'Create Transaction' }))
@@ -121,7 +121,7 @@ it('allows a backfill without documents and keeps missing evidence as follow-up 
 
 it('rejects unsupported evidence before creation and rejects negative prices', async () => {
   await startBackfill()
-  fireEvent.change(screen.getByLabelText('Choose documents'), { target: { files: [new File(['data'], 'unsafe.exe', { type: 'application/octet-stream' })] } })
+  fireEvent.change(screen.getByLabelText(/^Choose documents/), { target: { files: [new File(['data'], 'unsafe.exe', { type: 'application/octet-stream' })] } })
   expect(screen.getByRole('alert').textContent).toContain('Unsupported file type')
   fireEvent.click(screen.getByRole('button', { name: 'Back' }))
   fireEvent.click(screen.getByRole('button', { name: 'Back' }))
@@ -226,7 +226,7 @@ it('starts a fresh capture on reopen without carrying over the property, evidenc
   fireEvent.change(screen.getByLabelText('Property Address'), { target: { value: 'Previous property' } })
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-  fireEvent.change(screen.getByLabelText('Choose documents'), { target: { files: [new File(['old'], 'previous.pdf', { type: 'application/pdf' })] } })
+  fireEvent.change(screen.getByLabelText(/^Choose documents/), { target: { files: [new File(['old'], 'previous.pdf', { type: 'application/pdf' })] } })
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
   fireEvent.change(screen.getAllByLabelText('Selection Mode')[0], { target: { value: 'buyer' } })
   fireEvent.change(screen.getByLabelText('Seller-Appointed Firm'), { target: { value: 'Previous Firm' } })
