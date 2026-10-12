@@ -73,6 +73,30 @@ export async function previewSavedAudience({ organisationId, rules, limit = 8, o
   return data || { count: 0, contacts: [] }
 }
 
+export async function getAudienceFilterOptions(organisationId) {
+  const options = { lead_stage: [], preferred_area: [], tags: [] }
+  if (!organisationId) return options
+  const values = { lead_stage: new Set(), preferred_area: new Set(), tags: new Set() }
+  // Read every page so choices are not limited to the campaign contact sample.
+  const pageSize = 500
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase.from('email_marketing_contacts')
+      .select('id,lead_stage,area,tags').eq('organisation_id', organisationId)
+      .order('id').range(offset, offset + pageSize - 1)
+    if (error) throw error
+    for (const contact of data || []) {
+      if (clean(contact.lead_stage)) values.lead_stage.add(clean(contact.lead_stage))
+      if (clean(contact.area)) values.preferred_area.add(clean(contact.area))
+      for (const tag of contact.tags || []) if (clean(tag)) values.tags.add(clean(tag))
+    }
+    if ((data || []).length < pageSize) break
+  }
+  for (const field of Object.keys(options)) {
+    options[field] = [...values[field]].sort((a, b) => a.localeCompare(b))
+  }
+  return options
+}
+
 export async function saveClientMarketingTags({ organisationId, client, tags }) {
   const email = normalizeEmail(client?.email)
   if (!organisationId) throw new Error('Select an organisation before updating client tags.')

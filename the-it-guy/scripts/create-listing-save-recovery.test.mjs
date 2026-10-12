@@ -342,6 +342,21 @@ test('retry updates the original listing and opens it only after verified persis
   assert.equal(context.completedCreateListingRef.current, true)
 })
 
+test('an unconfirmed publishing request retains the saved record and form without reporting completion', async () => {
+  const { context, data, calls, save, createdCount } = saveContext()
+  context.resolvedListingStatus = 'active'
+  context.publishInitialListingChannels = async () => { throw Error('Connection lost') }
+  context.readInitialListingChannelResults = () => [{ key: 'private_property', status: 'uncertain' }]
+  context.setInitialChannelResults = value => { context.channelResults = value }
+  await assert.rejects(save(), /listing is saved.*not confirmed.*Check advertising status.*form has been kept/)
+  assert.equal(createdCount(), 1)
+  assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
+  assert.equal(JSON.parse(data.get('draft')).__draftRecovery.pendingListingId, 'listing-1')
+  assert.equal(context.completedCreateListingRef.current, false)
+  assert.equal(calls.some(([action]) => ['reset', 'success', 'navigate'].includes(action)), false)
+  assert.equal(context.channelResults[0].status, 'uncertain')
+})
+
 test('blocked browser cleanup cannot turn a verified creation into a failed save', async () => {
   const { context, calls, save, createdCount } = saveContext()
   let released = false
@@ -502,14 +517,14 @@ test('the real creation mapper persists the listing price and developer stock re
 test('final edit save sends updates while an intermediate step only saves', async () => {
   const calls = []
   const context = {
-    floorplanUploading: false, isListingSaving: false, isCreateListingWorkspace: false, isEditListingWorkspace: true,
+    floorplanUploading: false, isListingSaving: false, isCreateListingWorkspace: false, isEditListingWorkspace: true, editorRelistChannel: '',
     form: { listingStatus: 'active' }, listingFieldIssues: [], listingSaveInFlightRef: { current: false },
     setError() {}, setWorkflowMessage() {}, setIsListingSaving() {}, console: quietConsole,
     performUpdateExistingListing: async options => calls.push(options),
   }
   const submit = bind(context, between('async function handleSaveListing(', 'function requestListingDeletion('), 'handleSaveListing')
   await submit({ preventDefault() {} })
-  assert.deepEqual(calls, [{ sendUpdates: true }])
+  assert.deepEqual(calls, [{ sendUpdates: true, relistChannel: '' }])
   const nextSource = between('async function goToNextCreateListingStep(', 'function goToPreviousCreateListingStep(')
   assert.doesNotMatch(nextSource, /sendUpdates: true/)
 })

@@ -20,7 +20,7 @@ import HomeSeekersLeadForm from './HomeSeekersLeadForm';
 import { homeSeekersCard, useHomeSeekersWebsiteData } from './homeSeekersWebsiteData';
 import "./HomeSeekersBuying.css";
 
-const buyingHeroImage = 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif'
+const buyingHeroImage = '/brand/homeseekers/buying-luxury-hero.webp'
 const navigation = [
   ["Selling", "selling"],
   ["Buying", "buying"],
@@ -43,7 +43,7 @@ function PropertyCard({ listing, featured }) {
       </div>
       <div className="hs-buying-card__body">
         <p>
-          <MapPin size={14} /> {listing.address}
+          <MapPin size={16} aria-hidden="true" /> <span>{listing.address}</span>
         </p>
         <h2>{listing.price}</h2>
         {featured && <strong>{listing.feature}</strong>}
@@ -51,19 +51,19 @@ function PropertyCard({ listing, featured }) {
         <div className="hs-buying-card__meta">
           {listing.beds ? (
             <span>
-              <BedDouble size={16} /> {listing.beds}
+              <BedDouble size={22} strokeWidth={2} aria-hidden="true" /> {listing.beds} beds
             </span>
           ) : (
             <span>Vacant land</span>
           )}
           {listing.baths && (
             <span>
-              <Bath size={16} /> {listing.baths}
+              <Bath size={22} strokeWidth={2} aria-hidden="true" /> {listing.baths} baths
             </span>
           )}
           {listing.parking && (
             <span>
-              <Car size={16} /> {listing.parking}
+              <Car size={22} strokeWidth={2} aria-hidden="true" /> {listing.parking} parking
             </span>
           )}
         </div>

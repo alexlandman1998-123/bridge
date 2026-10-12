@@ -3,13 +3,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../documentUploadRecovery.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from '../../services/listings/listingSellerDocumentPersistenceModel.js'
+import { createDocumentUploadProgressReporter, withDocumentUploadDeadline } from '../documentUploadLifecycle.js'
 
 function extract(path, name, values) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8')
   const start = source.indexOf(`export async function ${name}(`)
   assert.ok(start >= 0)
   const body = source.slice(start, source.indexOf('\n}\n', start) + 2).replace(/^export /, '')
-  const scope = new Proxy({ runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection, buildPrivateListingDocumentPersistenceReceipt, ...values }, {
+  const scope = new Proxy({ runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection, buildPrivateListingDocumentPersistenceReceipt, createDocumentUploadProgressReporter, withDocumentUploadDeadline, ...values }, {
     has: () => true,
     get: (object, key) => key === Symbol.unscopables ? undefined : key in object ? object[key] : key in globalThis ? globalThis[key] : () => null,
   })
@@ -49,6 +50,7 @@ function fixture() {
   const noop = async () => null
   const text = value => String(value || '').trim()
   const values = {
+    buildPrivateListingDocumentUploadPreparation: () => ({ missingRows: [], currentOptionalRequirementKeys: [] }),
     DOCUMENTS_BUCKET_CANDIDATES: ['documents'], requireClient: () => client, requireClientPortalTokenClient: () => client, requirePortalClient: () => client,
     resolveClientPortalLinkByToken: async () => ({ transaction_id: id, development_id: id }),
     ensureDevelopmentSettings: async () => ({ client_portal_enabled: true }),
@@ -84,6 +86,29 @@ function fixture() {
     insertPrivateListingDocumentRow: async (_client, payload) => { state.saves++; state.row = { ...payload, id: crypto.randomUUID() }; return { error: new TypeError('Insert reply lost after commit') } },
   }
   return { id, file, state, values }
+}
+
+test('listing upload confirms its saved row before stalled transaction handoff and retains the same receipt on retry', async () => {
+  const f = fixture(), events = []
+  const client = f.values.requireClient()
+  const rpc = client.rpc
+  client.rpc = (name, args) => name === 'bridge_promote_private_listing_document_row' ? new Promise(() => {}) : rpc(name, args)
+  f.values.runRecoverableDocumentUpload = options => runRecoverableDocumentUpload({ ...options, timeouts: { followUp: 10 } })
+  const action = extract('../../services/privateListingService.js', 'uploadPrivateListingDocument', f.values)
+  const result = await action(f.id, f.file, { onProgress: event => events.push(event) })
+  expectSaved(result, f)
+  assert.equal(events.find(event => event.stage === 'complete').document.id, f.state.row.id)
+  assert.equal(result.postUploadProcessing, 'pending')
+  assert.equal((await action(f.id, f.file)).id, result.id)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+  assert.equal(f.state.deletes, 0)
+})
+
+function expectSaved(result, f) {
+  assert.equal(result.id, f.state.row.id)
+  assert.equal(result.saved, true)
+  assert.equal(result.persistence.recordVerified, true)
 }
 
 for (const [label, path, name, parameters] of [

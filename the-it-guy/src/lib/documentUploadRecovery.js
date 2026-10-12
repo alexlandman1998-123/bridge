@@ -1,4 +1,5 @@
 import { reportDocumentUploadTelemetry } from './documentUploadObservability.js'
+import { createDocumentUploadProgressReporter, DOCUMENT_UPLOAD_TIMEOUTS, withDocumentUploadDeadline } from './documentUploadLifecycle.js'
 
 // Keep only object references in browser recovery storage. Never cache portal
 // credentials, document contents, or a saved row: recovery must recheck access.
@@ -61,18 +62,21 @@ export async function readSavedUploadByPath(client, { table = 'documents', colum
   return result.data ? { data: result.data, error: null } : null
 }
 
-export async function runRecoverableDocumentUpload({ client, scope, file, run, toSavedReceipt = savedReceipt, storageBuckets = ['documents'], storageResult = bucket => bucket, monitorSurface = null }) {
+export async function runRecoverableDocumentUpload({ client, scope, file, run, toSavedReceipt = savedReceipt, storageBuckets = ['documents'], storageResult = bucket => bucket, monitorSurface = null, onProgress = null, timeouts = {} }) {
+  const report = createDocumentUploadProgressReporter(onProgress)
+  const limits = { ...DOCUMENT_UPLOAD_TIMEOUTS, ...timeouts }
+  report('preparing', '', { fileName: file?.name })
   // Commercial metadata-only records do not upload a Storage object.
   if (!file) return run({ path: value => value, upload: upload => upload(), persist: async ({ save }) => { const result = await save(); if (result?.error) throw result.error; return result } })
   // Content, target and audience are part of the identity. Different files with
   // identical names/metadata must never recover one another's saved record.
   const fileDigest = file.arrayBuffer && globalThis.crypto?.subtle
-    ? await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+    ? await withDocumentUploadDeadline(async () => crypto.subtle.digest('SHA-256', await file.arrayBuffer()), { timeoutMs: limits.preparing })
     : null
   const hex = bytes => Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
   let actor = ''
   if (client?.auth?.getUser) {
-    const result = await client.auth.getUser()
+    const result = await withDocumentUploadDeadline(() => client.auth.getUser(), { timeoutMs: limits.preparing, message: 'Your sign-in could not be checked in time. Please retry.' })
     // Token-scoped public portals intentionally have no Auth session. A
     // failed identity lookup for a signed-in user must not change the retry key.
     if (result.error && result.error.name !== 'AuthSessionMissingError') throw result.error
@@ -85,6 +89,15 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
   const execute = async () => {
     const state = readReceipt(key)
     let confirmed = null
+    let followUpTimer
+    let rejectFollowUp
+    const followUpDeadline = new Promise((_, reject) => { rejectFollowUp = reject })
+    const confirm = result => {
+      confirmed = result
+      const document = toSavedReceipt(result)
+      report('complete', 'Uploaded', { document, documentId: rowOf(result)?.id, fileName: file.name, postUploadProcessing: 'pending' })
+      if (!followUpTimer) followUpTimer = setTimeout(() => rejectFollowUp(Object.assign(new Error('Document saved; linked views are still updating.'), { code: 'document_upload_follow_up_timeout' })), limits.followUp)
+    }
     let monitoringStage = 'preparing'
     const recovering = Boolean(state.saveStarted || state.storageStarted)
     const attemptId = state.monitorAttemptId || crypto.randomUUID()
@@ -104,7 +117,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
       fileFingerprint: fileDigest ? hex(fileDigest) : null,
       get context() { return state.context },
       setContext(value) { state.context = value; writeReceipt(key, state) },
-      saved(result) { confirmed = result },
+      saved(result) { confirm(result) },
       path(candidate) {
         if (!state.path) {
           const slash = candidate.lastIndexOf('/')
@@ -115,6 +128,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
       },
       async upload(upload) {
         monitoringStage = 'uploading'
+        report('uploading', '', { fileName: file.name })
         if (state.uploaded) return state.uploaded
         // A lost Storage response is retained too. Reconciliation must prove
         // the object exists before any metadata is submitted.
@@ -122,7 +136,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
           let allMissing = storageBuckets.length > 0
           for (const bucket of storageBuckets) {
             try {
-              const result = await client.storage.from(bucket).createSignedUrl(state.path, 60)
+              const result = await withDocumentUploadDeadline(() => client.storage.from(bucket).createSignedUrl(state.path, 60), { timeoutMs: limits.recovery })
               if (!result.error && result.data?.signedUrl) {
                 state.uploaded = storageResult(bucket, state.path)
                 writeReceipt(key, state)
@@ -140,7 +154,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
         state.storageStarted = true
         writeReceipt(key, state)
         try {
-          state.uploaded = await upload()
+          state.uploaded = await withDocumentUploadDeadline(upload, { timeoutMs: limits.uploading, message: 'The transfer took too long. Retry will check this file before sending it again.' })
           writeReceipt(key, state)
           return state.uploaded
         } catch (error) {
@@ -155,10 +169,11 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
       },
       async persist({ save, read, cleanup = null, isSaved = result => Boolean(rowOf(result)?.id) }) {
         monitoringStage = 'saving'
+        report('saving', '', { fileName: file.name })
         const recover = async () => {
-          const result = await read()
+          const result = await withDocumentUploadDeadline(read, { timeoutMs: limits.recovery })
           if (!isSaved(result)) return null
-          confirmed = result
+          confirm(result)
           state.confirmed = true
           writeReceipt(key, state)
           return result
@@ -173,10 +188,10 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
         let result
         let failure
         try {
-          result = await save()
+          result = await withDocumentUploadDeadline(save, { timeoutMs: limits.saving, message: 'The save took too long. Checking whether the document was saved…' })
           if (result?.error) throw result.error
           if (!isSaved(result)) throw unconfirmed()
-          confirmed = result
+          confirm(result)
           state.confirmed = true
           writeReceipt(key, state)
           return result
@@ -188,7 +203,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
         if (isDefiniteUploadSaveRejection(failure) && failure?.code !== '23505') {
           // Cleanup is only allowed for a definite rejection of this first
           // submission. No earlier uncertain mutation was replayed.
-          try { await cleanup?.() } catch { /* Retain an unlinked object rather than obscure the rejection. */ }
+          try { if (cleanup) await withDocumentUploadDeadline(cleanup, { timeoutMs: limits.recovery }) } catch { /* Retain an unlinked object rather than obscure the rejection. */ }
           forgetReceipt(key)
           throw failure
         }
@@ -196,28 +211,45 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
       },
     }
     try {
-      const result = await run(attempt)
+      const result = await Promise.race([Promise.resolve().then(() => run(attempt)), followUpDeadline])
       monitoringStage = 'persistence'
       telemetry(result?.persistenceWarnings?.length ? 'attention' : recovering ? 'recovered' : 'succeeded')
+      report('complete', 'Uploaded', { document: result, documentId: result?.id || rowOf(confirmed)?.id, fileName: file.name, warnings: result?.persistenceWarnings || result?.persistence?.warnings || [] })
       return result
     } catch (error) {
       if (!confirmed) {
         telemetry(error?.code === 'document_save_unconfirmed' ? 'unconfirmed' : 'failed', error)
+        report('failed', error?.message || '', { fileName: file.name, error })
         throw error
       }
       monitoringStage = 'followUp'
       telemetry('attention', error)
       const receipt = toSavedReceipt(confirmed)
       const warning = 'Document saved, but a follow-up or preview could not be refreshed. Reopen the record; the file does not need to be uploaded again.'
+      report('complete', 'Uploaded', { document: receipt, documentId: rowOf(confirmed)?.id, fileName: file.name, warnings: [warning], postUploadProcessing: 'pending' })
       return { ...receipt, saved: true, postUploadProcessing: 'pending', persistenceWarnings: [warning],
         persistence: { ...receipt.persistence, status: 'verified_with_attention', recordVerified: true, warnings: [warning] } }
-    }
+    } finally { clearTimeout(followUpTimer) }
   }
   // Web Locks coordinate the same retry across tabs. Every recovered record is
   // still read through the caller's current authenticated/token-scoped client.
-  const operation = globalThis.navigator?.locks?.request
-    ? navigator.locks.request(key, execute)
-    : execute()
+  const acquireAndExecute = async () => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), limits.preparing)
+    try {
+      return await navigator.locks.request(key, { signal: controller.signal }, () => {
+        // Only queueing is bounded here; the granted upload has its own deadlines.
+        clearTimeout(timer)
+        return execute()
+      })
+    } catch (error) {
+      if (!controller.signal.aborted) throw error
+      const busy = Object.assign(new Error('This file is being processed in another tab. Close that upload or wait briefly, then retry.'), { code: 'document_upload_busy' })
+      report('failed', busy.message, { fileName: file.name, error: busy })
+      throw busy
+    } finally { clearTimeout(timer) }
+  }
+  const operation = globalThis.navigator?.locks?.request ? acquireAndExecute() : execute()
   operations.set(key, operation)
   try { return await operation } finally { operations.delete(key) }
 }

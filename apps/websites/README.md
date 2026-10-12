@@ -59,3 +59,47 @@ Cards and detail pages display Sold or Under offer from that accepted snapshot.
 Legacy snapshots retain For sale until updated; rentals retain To let. This does
 not publish, withdraw or rewrite existing adverts. The primary app owns the
 all-channel sale-status action and per-channel removal controls.
+
+## Partner listing statistics correction (12 October 2026, prepared)
+
+Published partner property pages now render the same listing-view tracker as
+native pages. The database correction
+`20261012110258_listing_website_partner_statistics.sql` permits tracking only
+for published partner channels with an enabled, correctly scoped grant. It also
+includes approved partner publication sites and enquiry receipts in the owning
+listing's statistics. Existing hostname, event and owner/member checks remain
+in force; the migration preserves installed RPC grants and recruitment events.
+
+Apply the database correction before releasing this website tracker change.
+The primary app additionally displays today's recorded website views separately
+from its completed-day report. These changes require separate website and app
+releases; none has been deployed for this correction. Unrecorded historical
+partner visits are not reconstructed.
+
+The read-only active-listing audit found I Sell's A9-ISELLPROPERT-000008 published
+as a partner on Kingdom's site, and A9-KING-000243 published natively. Only one
+listing-view event existed for the rental, dated 12 October, which the existing
+completed-day report excluded. This diagnosis concerns Arch9's first-party
+website tracking, not Vercel visitor counts or an external analytics provider.
+
+## Kingdom recently sold
+
+Kingdom's `/recently-sold` page, main menu/footer links and homepage collection
+read the current CRM `Sold` status for Kingdom Real Estate and ISellProperty.co.za.
+The latter requires Kingdom's existing enabled partner grant. Other tenants,
+active/under-offer stock, rentals and demo rows are excluded. No publication or
+CRM status is changed by viewing the collection. The collection remains empty
+until genuine records are marked Sold; the 12 October read-only audit found none.
+
+Only public property facts are returned. Cards show suburb, property title,
+features, agency attribution and **Last asking price**, not a claimed sale price.
+There is no recorded sold date in the current schema: display order follows the
+latest CRM update, without displaying it as a sale date. Photos reuse copied
+public website images, including retained snapshots after an advert is removed.
+Never-advertised sold records appear with a photo placeholder; private files are
+not signed or exposed. Sold cards do not link to a withdrawn property's page.
+
+Verification: `node --test lib/kingdom-recently-sold.test.mjs` and root
+`npm run check:website`. The connected local browser fixture covers the page,
+filters, homepage and mobile menu with synthetic records, without remote writes.
+A separate approved Kingdom website deployment is required to make this live.

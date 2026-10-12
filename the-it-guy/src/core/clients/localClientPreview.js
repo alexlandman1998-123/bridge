@@ -24,14 +24,15 @@ export function getLocalClientPreview(profileData, {
     event('offer', 'offer', 'Offer accepted', 'The buyer’s offer for 18 Willow Lane was accepted. Signed documents received from both parties.', 26),
     event('fica', 'document', 'FICA documents uploaded', 'Alexander uploaded his identity document and proof of address for the Cicely Street purchase.', 48, 'client'),
     event('viewing', 'appointment', 'Property viewing completed', 'Viewed 694 Cicely Street and discussed the garden, home office and preferred transfer date.', 72),
-    event('call', 'interaction', 'Follow-up call logged', 'Confirmed a budget of R3.2m and preference for a three-bedroom home with space to work from home.', 96),
-    event('rsvp', 'interaction', 'Show-day RSVP confirmed', 'Alexander replied to the Spring show-day invitation and confirmed attendance for Saturday at 11:00.', 120),
+    { ...event('call', 'interaction', 'Follow-up call logged', 'Confirmed a budget of R3.2m and preference for a three-bedroom home with space to work from home.', 96), origin_table: 'manual', event_type: 'interaction.call' },
+    ...[['clicked', 142], ['opened', 143], ['delivered', 143.95], ['sent', 144]].map(([kind, hoursAgo]) => ({ ...event(`campaign-${kind}`, 'interaction', `Campaign ${kind}`, 'Spring show-day invitation', hoursAgo, 'system'), event_type: `campaign.${kind}`, origin_table: 'email_campaign_recipients', origin_id: 'preview-recipient-spring' })),
+    { ...event('rsvp', 'interaction', 'Show-day RSVP confirmed', 'Alexander replied to the Spring show-day invitation and confirmed attendance for Saturday at 11:00.', 120), event_type: 'campaign.response', origin_table: 'agency_client_campaign_responses', origin_id: 'preview-response-rsvp' },
     event('enquiry', 'enquiry', 'Website enquiry received', 'Requested a viewing of 694 Cicely Street after discovering the listing on Instagram.', 168, 'client'),
     event('portal', 'portal', 'Client portal opened', 'Reviewed the purchase milestones and outstanding documents in the client portal.', 192, 'client'),
     event('task', 'task', 'Buyer follow-up completed', 'Sent a shortlist of family homes matching Alexander’s preferred areas and budget.', 240),
     event('registration', 'transaction', 'Transfer registered', 'Transfer completed for 42 Oak Avenue, Newlands. Handover and key collection confirmed.', 1104, 'system'),
   ]
-  const touch = (id, source, medium, campaign, hoursAgo, extra = {}) => ({ id: `preview-source-${id}`, lead_id: `preview-lead-${id}`, utm_source: source, utm_medium: medium, utm_campaign: campaign, occurred_at: at(hoursAgo), landing_host: 'revoproperty.co.za', ...extra })
+  const touch = (id, source, medium, campaign, hoursAgo, extra = {}) => ({ id: `preview-source-${id}`, evidence_kind: 'enquiry_record', touch_type: 'enquiry', lead_id: `preview-lead-${id}`, utm_source: source, utm_medium: medium, utm_campaign: campaign, occurred_at: at(hoursAgo), landing_host: 'revoproperty.co.za', ...extra })
   const touches = [
     touch('newsletter', 'revo_newsletter', 'email', 'spring-show-days', 120, { campaign_code: 'REVO-SPRING-26', utm_content: 'cicely-viewing-invite' }),
     touch('instagram', 'instagram', 'paid_social', 'spring-family-homes', 168, { campaign_code: 'REVO-SPRING-26', utm_content: 'cicely-garden-carousel', referrer_host: 'instagram.com' }),
@@ -41,8 +42,8 @@ export function getLocalClientPreview(profileData, {
   const campaign = (id, name, subject, hoursAgo, extra = {}) => ({ id: `preview-recipient-${id}`, campaign_id: `preview-campaign-${id}`, campaign_name: name, subject, email: original.email, status: 'delivered', created_at: at(hoursAgo + 24), sent_at: at(hoursAgo), delivered_at: at(hoursAgo - 0.05), opened_at: null, clicked_at: null, open_count: 0, click_count: 0, response_count: 0, responses: [], ...extra })
   const campaigns = [
     campaign('weekend', 'Weekend property edit', 'Your next home could be in this weekend’s selection', -72, { status: 'queued', created_at: at(3), sent_at: null, delivered_at: null }),
-    campaign('spring', 'Spring show-day invitation', 'You’re invited: view 694 Cicely Street this Saturday', 144, { status: 'clicked', opened_at: at(143), clicked_at: at(142), open_count: 3, click_count: 2, response_count: 1, responses: [{ id: 'preview-response-rsvp', response_kind: 'rsvp', detail: 'Confirmed attendance for Saturday at 11:00. RSVP received by email and verified by Jamie.', occurred_at: at(120) }] }),
-    campaign('shortlist', 'Buyer shortlist · October', 'Three family homes selected for you', 240, { status: 'opened', opened_at: at(238), open_count: 2 }),
+    campaign('spring', 'Spring show-day invitation', 'You’re invited: view 694 Cicely Street this Saturday', 144, { artwork_url: '/demo-listing-images/revo-sales-cover.png', status: 'clicked', opened_at: at(143), clicked_at: at(142), open_count: 3, click_count: 2, response_count: 1, responses: [{ id: 'preview-response-rsvp', response_kind: 'rsvp', detail: 'Confirmed attendance for Saturday at 11:00. RSVP received by email and verified by Jamie.', occurred_at: at(120) }] }),
+    campaign('shortlist', 'Buyer shortlist · October', 'Three family homes selected for you', 240, { artwork_url: '/brand/agency-intake-buy.jpg', status: 'opened', opened_at: at(238), open_count: 2 }),
     campaign('market', 'September market update', 'Your neighbourhood property update', 480),
   ]
   return {

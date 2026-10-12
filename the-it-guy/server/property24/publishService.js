@@ -1,3 +1,4 @@
+import { additionalListingAgentIds, validateAdditionalListingAgents, contactAgentError } from '../services/listingContactAgents.js'
 import { resolveListingPhotoChange } from '../services/listingPhotoChangeService.js'
 import { beginRentalPublicationAttempt, updateRentalPublicationAttempt, retainUncertainRentalPublication, isDefinitePortalRejection, publicRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
 import {
@@ -290,6 +291,21 @@ export async function resolveProperty24ListingPublishConfiguration({
   }
 
   const agentId = mapping?.property24AgentId || config.explicitAgentId || config.agentId
+  const additionalIds = additionalListingAgentIds(listing)
+  const additionalMembers = await validateAdditionalListingAgents({ client: supabase, organisationId, agentIds: additionalIds })
+  const contactAgentIds = [agentId]
+  if (additionalIds.length && (!mapping?.property24AgentId || !['active', 'mapped'].includes(mapping.matchStatus))) {
+    throw contactAgentError('Connect the primary agent to Property24 before sending multiple contacts.', 'property24_contact_agent_mapping_missing')
+  }
+  for (const member of additionalMembers) {
+    const additionalIdentity = { userId: member.user_id, membershipId: member.id, email: normalizeLower(member.email) }
+    const additionalMapping = findResolvedAgentMapping({ mappings: tableMappings, identity: additionalIdentity }) ||
+      findResolvedAgentMapping({ mappings: accountSettings.agentMappings, identity: additionalIdentity })
+    if (!additionalMapping?.property24AgentId || !['active', 'mapped'].includes(additionalMapping.matchStatus)) {
+      throw contactAgentError('Connect every additional agent to Property24 before publishing or updating this listing.', 'property24_contact_agent_mapping_missing')
+    }
+    contactAgentIds.push(additionalMapping.property24AgentId)
+  }
   const agentSourceReference = mapping?.sourceReference ||
     config.explicitAgentSourceReference ||
     config.agentSourceReference
@@ -305,6 +321,7 @@ export async function resolveProperty24ListingPublishConfiguration({
     organisationId,
     agencyId,
     agentId,
+    contactAgentIds: [...new Set(contactAgentIds.filter(Boolean))],
     agentSourceReference,
     ...(credentials ? {
       property24Username: credentials.username,
@@ -363,6 +380,7 @@ export async function buildProperty24ListingSubmitPlan({
   listingId,
   agencyId,
   agentId,
+  contactAgentIds,
   agentSourceReference,
   environment = 'exdev',
   sandboxPayloadTestMode = false,
@@ -380,6 +398,13 @@ export async function buildProperty24ListingSubmitPlan({
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
   const bundle = await fetchArch9ListingForProperty24Preview({ client: supabase, listingId })
+  if (additionalListingAgentIds(bundle.listing).length) {
+    const resolved = await resolveProperty24ListingPublishConfiguration({ supabase, listingId, config: { agencyId, environment } })
+    if (String(resolved.agencyId) !== String(agencyId)) throw contactAgentError('The portal agency must match the listing agency.')
+    contactAgentIds = resolved.contactAgentIds
+    agentId = resolved.agentId
+    agentSourceReference = resolved.agentSourceReference
+  }
   const destinationNumber = bundle.existingSync?.listing_number || listingNumber || ''
   const photoChange = resolveListingPhotoChange({
     media: bundle.media, existingSync: bundle.existingSync,
@@ -416,6 +441,7 @@ export async function buildProperty24ListingSubmitPlan({
     media: loaded.media,
     agentMapping: {
       property24AgentId: agentId,
+      contactAgentIds,
       sourceReference: agentSourceReference,
     },
     catalogMapping: {
@@ -454,6 +480,7 @@ export async function buildProperty24RentalListingSubmitPlan({
   listingId,
   agencyId,
   agentId,
+  contactAgentIds,
   agentSourceReference,
   environment = 'exdev',
   apiVersion,
@@ -471,6 +498,13 @@ export async function buildProperty24RentalListingSubmitPlan({
 } = {}) {
   if (!supabase) throw new Error('Supabase client is required.')
   const bundle = await fetchArch9ListingForProperty24Preview({ client: supabase, listingId })
+  if (additionalListingAgentIds(bundle.listing).length) {
+    const resolved = await resolveProperty24ListingPublishConfiguration({ supabase, listingId, config: { agencyId, environment } })
+    if (String(resolved.agencyId) !== String(agencyId)) throw contactAgentError('The portal agency must match the listing agency.')
+    contactAgentIds = resolved.contactAgentIds
+    agentId = resolved.agentId
+    agentSourceReference = resolved.agentSourceReference
+  }
   if (!isRentalListingBundle(bundle)) {
     const error = new Error('This endpoint only supports rental listings.')
     error.code = 'rental_listing_required'
@@ -513,6 +547,7 @@ export async function buildProperty24RentalListingSubmitPlan({
     media: loaded.media,
     agentMapping: {
       property24AgentId: agentId,
+      contactAgentIds,
       sourceReference: agentSourceReference,
     },
     catalogMapping: {

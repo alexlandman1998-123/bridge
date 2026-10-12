@@ -30,6 +30,11 @@ class FakeSupabaseQuery {
     return this
   }
 
+  in(column, values) {
+    this.filters.push({ column, values })
+    return this
+  }
+
   or() {
     return this
   }
@@ -52,7 +57,7 @@ class FakeSupabaseQuery {
   }
 
   applyFilters() {
-    return this.rows.filter((row) => this.filters.every(({ column, value }) => String(row[column] ?? '') === String(value ?? '')))
+    return this.rows.filter((row) => this.filters.every(({ column, value, values }) => values ? values.includes(row[column]) : String(row[column] ?? '') === String(value ?? '')))
   }
 }
 
@@ -665,3 +670,34 @@ assert.match(apiSource, /authenticateBrowserProperty24ListingRequest/)
 assert.match(apiSource, /const listingRoutes = \[.*'publishListing'.*'reassignListingAgent'.*'updateListingStatus'.*'listingLeads'.*\]/)
 
 console.log('Property24 publish mapping resolution contract passed')
+
+const additionalUser = '00000000-0000-4000-8000-000000000077'
+const multiTables = structuredClone(baseTables)
+multiTables.private_listings[0].additional_agent_ids = [additionalUser, additionalUser, userId]
+multiTables.organisation_users.push({ id: 'extra-member', user_id: additionalUser, organisation_id: organisationId, role: 'agent', status: 'active' })
+multiTables.property24_agent_mappings.push({ organisation_id: organisationId, agency_id: 31382, environment: 'exdev', status: 'active', arch9_user_id: additionalUser, property24_agent_id: 77970, source_reference: 'EXTRA' })
+const resolveMulti = (tables) => resolveProperty24ListingPublishConfiguration({ supabase: createFakeSupabase(tables), listingId, config: { environment: 'exdev' } })
+assert.deepEqual((await resolveMulti(multiTables)).contactAgentIds, ['77959', '77970'])
+for (const change of ['missing', 'inactive', 'wrong_agency', 'wrong_environment']) {
+ const tables = structuredClone(multiTables)
+ if (change === 'missing') tables.property24_agent_mappings = []
+ if (change === 'inactive') tables.property24_agent_mappings[0].status = 'inactive'
+ if (change === 'wrong_agency') tables.property24_agent_mappings[0].agency_id = 999
+ if (change === 'wrong_environment') tables.property24_agent_mappings[0].environment = 'production'
+ await assert.rejects(resolveMulti(tables), { code: 'property24_contact_agent_mapping_missing' })
+}
+const inactiveContact = structuredClone(multiTables)
+inactiveContact.organisation_users[1].status = 'inactive'
+await assert.rejects(resolveMulti(inactiveContact), { code: 'listing_contact_agent_invalid' })
+const foreignContact = structuredClone(multiTables)
+foreignContact.organisation_users[1].organisation_id = 'another-agency'
+await assert.rejects(resolveMulti(foreignContact), { code: 'listing_contact_agent_invalid' })
+multiTables.private_listings[0].additional_agent_ids = []
+assert.deepEqual((await resolveMulti(multiTables)).contactAgentIds, ['77959'])
+console.log('Property24 multiple-contact resolution passed')
+
+const reviewRequired = structuredClone(baseTables)
+reviewRequired.private_listings[0].additional_agent_ids = [additionalUser]
+reviewRequired.organisation_users.push({ id: 'extra-member', user_id: additionalUser, organisation_id: organisationId, role: 'agent', status: 'active' })
+reviewRequired.organisation_settings[0].settings_json.property24.agentMappings.push({ arch9UserId: additionalUser, property24AgentId: '77970', sourceReference: 'EXTRA', matchStatus: 'needs_review' })
+await assert.rejects(resolveMulti(reviewRequired), { code: 'property24_contact_agent_mapping_missing' })

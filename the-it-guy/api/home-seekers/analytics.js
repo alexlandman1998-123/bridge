@@ -1,5 +1,6 @@
-import { getHomeSeekersWebsiteConnection, homeSeekersPagePath, HOME_SEEKERS_PUBLIC_PATH, isHomeSeekersPageUrl } from '../../server/services/homeSeekersWebsiteBridge.js'
+import { getHomeSeekersWebsiteConnection, homeSeekersPagePath, isHomeSeekersPageUrl } from '../../server/services/homeSeekersWebsiteBridge.js'
 import { writeHomeSeekersJsonResponse as writeNodeJsonResponse } from '../../server/services/homeSeekersApiResponse.js'
+import { isHomeSeekersPublicTraffic } from '../../src/pages/homeSeekersPublicTraffic.js'
 
 async function readBody(request) {
   if (request.body && typeof request.body === 'object') return request.body
@@ -21,6 +22,11 @@ export default async function handler(request, response) {
   const body = await readBody(request).catch(() => ({}))
   const eventType = String(body.eventType || '')
   const path = String(body.path || '')
+  let refererSearch = ''
+  try { refererSearch = new URL(String(request.headers.referer || '')).search } catch { /* Origin is checked above. */ }
+  if (body.trackingVersion !== 1 || !isHomeSeekersPublicTraffic({ hostname: host, pathname: path, search: refererSearch }) ||
+    /bot|crawler|spider|headless|playwright|puppeteer/i.test(String(request.headers['user-agent'] || '')) ||
+    ['iframe', 'frame'].includes(String(request.headers['sec-fetch-dest'] || ''))) return ignore()
   const conversion = ['guarantee_opened', 'ppra_letter_opened'].includes(eventType)
   const listingId = String(body.listingId || '') || null
   if (!['site_visit', 'page_view', 'listing_view', 'guarantee_opened', 'ppra_letter_opened'].includes(eventType)
@@ -29,13 +35,13 @@ export default async function handler(request, response) {
     || (eventType === 'listing_view' && !listingId)
     || (eventType !== 'listing_view' && listingId)) return ignore()
   try {
-    const { client, hostname } = await getHomeSeekersWebsiteConnection()
-    const { error } = await client.rpc('website_record_analytics_event', {
-      p_hostname: hostname,
+    const { client } = await getHomeSeekersWebsiteConnection()
+    const { error } = await client.rpc('home_seekers_record_public_analytics_event', {
+      p_hostname: host,
       p_event_type: eventType,
       // Conversion events retain the existing database's /join attribution
       // contract. Page and listing views record their actual public URL.
-      p_page_path: conversion ? `${HOME_SEEKERS_PUBLIC_PATH}/join` : path,
+      p_page_path: path,
       p_listing_id: listingId,
     })
     if (error) throw error

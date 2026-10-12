@@ -21,8 +21,8 @@ export function describeRentalPortalRequirement(value, channel, source = 'listin
     return { key:code, label, detail, action:null, category }
   }
   if (/agent.*(id|mapping)|mapping.*agent/.test(code)) {
-    label = 'Assigned agent needs a portal mapping'
-    detail = `Ask your organisation administrator to connect the assigned agent to ${channel === 'property24' ? 'Property24' : 'Private Property'} in portal settings.`
+    label = code.includes('additional') ? 'Additional agents need portal mappings' : 'Assigned agent needs a portal mapping'
+    detail = `Ask your organisation administrator to connect ${code.includes('additional') ? 'every additional agent' : 'the assigned agent'} to ${channel === 'property24' ? 'Property24' : 'Private Property'} in portal settings.`
     action = settings(channel); category = 'Agent mapping'
   } else if (/agency|branch_guid|credential|runtime_secret|config|go_live|production_approval|live_publish|allowlist|pilot|sandbox/.test(code)) {
     label = suppliedMessage || (/branch_guid/.test(code) ? 'Office branch is not connected to the portal' : /agency.*id/.test(code) ? 'Agency portal ID is missing' : /credential|runtime_secret/.test(code) ? 'Portal credentials need configuration' : /go_live|production.*approved|production_approval/.test(code) ? 'Production publishing approval is missing' : label)

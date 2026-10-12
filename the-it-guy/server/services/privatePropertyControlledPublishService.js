@@ -51,7 +51,7 @@ function createPreviewOptions({ readiness = {}, overrides = {} } = {}) {
     ...overrides,
     ...(readiness.locationResolution?.suburbId ? { suburbId: readiness.locationResolution.suburbId } : {}),
     branchGuid: normalizePrivatePropertyText(overrides.branchGuid) || normalizePrivatePropertyText(readiness.agencyConfig?.branchGuid),
-    agentIds: normalizePrivatePropertyText(overrides.agentIds) || normalizePrivatePropertyText(readiness.agentMapping?.agentIds),
+    agentIds: readiness.agentMapping?.hasAdditionalAgents ? normalizePrivatePropertyText(readiness.agentMapping.agentIds) : (normalizePrivatePropertyText(overrides.agentIds) || normalizePrivatePropertyText(readiness.agentMapping?.agentIds)),
   }
 }
 

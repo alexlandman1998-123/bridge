@@ -28,7 +28,7 @@ test('overview counts agree with the sample records and the source profile remai
   expect(result.client.activeTransactions).toBe(result.transactions.filter(row => row.status === 'Active').length)
   expect(result.client.completedTransactions).toBe(result.transactions.filter(row => row.status === 'Completed').length)
   expect(result.client.lastActivityAt).toBe(result.preview.activity.events[0].occurred_at)
-  expect(result.preview.activity.events).toHaveLength(10)
+  expect(result.preview.activity.events).toHaveLength(14)
   expect(result.preview.sources.touches).toHaveLength(4)
   expect(result.preview.campaigns.campaigns).toHaveLength(4)
   expect(result.preview.campaigns.summary.sentCount).toBe(result.preview.campaigns.campaigns.filter(row => row.sent_at).length)

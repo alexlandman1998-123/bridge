@@ -708,7 +708,7 @@ function AppointmentsOverviewCard({
         <AppointmentMetric label="Needs follow-up" value={counts.needsFollowUp || 0} tone="amber" />
       </div>
 
-      {data?.followUpAppointments?.length ? <AppointmentTimelineGroup group={{ label: 'Needs follow-up', appointments: data.followUpAppointments }} maxRows={4} onOpenAppointment={manageHandler} onViewAll={viewCalendarHandler} /> : null}
+      {data?.followUpAppointments?.length ? <div className="mt-4"><AppointmentTimelineGroup group={{ label: 'Needs follow-up', appointments: data.followUpAppointments }} maxRows={4} onOpenAppointment={manageHandler} onViewAll={viewCalendarHandler} /></div> : null}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <CompactNextAppointmentCard
           appointment={nextAppointment}

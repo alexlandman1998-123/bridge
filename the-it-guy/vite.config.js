@@ -242,6 +242,31 @@ function missionControlApiPlugin() {
           writeNodeJsonResponse(response, await createHomeSeekersSignupResponse({ method: request.method, headers: request.headers, body, preview: true }))
         } catch { writeNodeJsonResponse(response, { status: 400, body: { error: 'Invalid recruitment request.' } }) }
       })
+      // Preview the same published stock as the public website without loading
+      // production credentials or enabling writes against its database.
+      server.middlewares.use('/api/home-seekers/site', async (request, response) => {
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (request.method !== 'GET') return writeNodeJsonResponse(response, {
+          status: 405, headers: { Allow: 'GET' }, body: { error: 'method_not_allowed' },
+        })
+        try {
+          const upstream = await fetch('https://www.homeseeker.co.za/api/home-seekers/site', {
+            signal: AbortSignal.timeout(20000),
+          })
+          if (!upstream.ok) throw new Error('Public listing feed unavailable.')
+          const data = await upstream.json()
+          if (!Array.isArray(data.listings)) throw new Error('Invalid public listing feed.')
+          writeNodeJsonResponse(response, {
+            status: 200, headers: { 'Cache-Control': 'no-store' }, body: { listings: data.listings },
+          })
+        } catch (error) {
+          console.warn('[home-seekers-local-feed] read failed', { name: error?.name, code: error?.cause?.code })
+          writeNodeJsonResponse(response, {
+            status: 503, headers: { 'Cache-Control': 'no-store' },
+            body: { error: 'Website listings are temporarily unavailable.' },
+          })
+        }
+      })
       server.middlewares.use('/api/home-seekers/applications', (_request, response) => writeNodeJsonResponse(response, { status: 503, headers: { 'Cache-Control': 'no-store' }, body: { error: 'Applications are not enabled in this local preview. Your answers have not been sent.' } }))
       server.middlewares.use('/api/home-seekers/analytics', (_request, response) => { response.statusCode = 204; response.end() })
       for (const [path, handler] of [['/api/public/rental-application', handlePublicRentalApplication], ['/api/rentals/application-documents', handleRentalAgentDocumentUpload], ['/api/rentals/landlord-onboarding', handleRentalLandlordOnboarding], ['/api/public/rental-landlord-onboarding', handlePublicRentalLandlordOnboarding]]) {

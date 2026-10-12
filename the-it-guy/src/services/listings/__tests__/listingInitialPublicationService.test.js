@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../../../lib/supabaseClient', () => ({ supabase: null }))
-import { publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, mapPublicationJobs, refreshListingPublicationResults, retryFailedListingChannels, requireSettledListingPublication } from '../listingInitialPublicationService'
+import { publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, mapPublicationJobs, refreshListingPublicationResults, retryFailedListingChannels, requireSettledListingPublication, listingPublicationBlockMessage } from '../listingInitialPublicationService'
 let listingId='00000000-0000-4000-8000-000000000001'
+it('explains why an under-review listing sends no adverts and how to continue', () => {
+ expect(listingPublicationBlockMessage('listing_review')).toMatch(/No adverts will be sent.*Documents.*activate.*publish/)
+ expect(listingPublicationBlockMessage('draft')).toMatch(/draft.*activated/)
+ expect(listingPublicationBlockMessage('active')).toBe('')
+ expect(listingPublicationBlockMessage('under_offer')).toBe('')
+})
 const input = (channels=['property24']) => ({ listingId, listingStatus:'active', channels })
 function dependencies() {
  return { client:{auth:{getSession:async()=>({data:{session:{access_token:'test-session'}}})}}, fetch:vi.fn(async()=>({ok:true,json:async()=>({jobs:[{id:'job',channel:'property24',state:'queued',message:'Queued for publication.'}]})})) }

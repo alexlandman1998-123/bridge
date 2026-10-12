@@ -1,6 +1,145 @@
 # bridge.
 
+
+## Multiple listing agents (prepared)
+
+Sale and rental listing Overview now offers **Edit additional agents** below the
+primary agent. Choose active agents from the same agency, then save. The primary
+agent keeps ownership; additional contacts do not receive workspace permissions,
+commission allocation or enquiry routing changes. Publish or update each portal
+to send the saved selection. Saving contacts alone does not update an advert.
+
+Property24 sends the primary contact first in `contactAgentIds`, followed by each
+mapped additional contact. Private Property sends the same selection as a comma
+separated `AgentId`. Missing/inactive mappings, another agency's contacts and
+incorrect portal environments block submission. Private Property additional
+contacts require exact user mappings in the primary contact's agency feed config;
+branch defaults cannot substitute for a selected contact. Removing an unavailable
+agent is supported. Concurrent saves require refreshing the assignment.
+
+Apply `supabase/migrations/20261012180210_listing_additional_agents.sql` before
+releasing the primary app. It adds an empty-by-default UUID array and validates
+agency membership in a trigger, without changing existing listing access policies.
+No migration, deployment or live portal submission has been performed here.
+
+Contract evidence: the current [P24 v55 schema](https://api.property24.com/swagger/v55-listing/docs)
+defines an integer array for listing contact IDs. The supplied Private Property
+feed specification documents multiple IDs on page 14. PP distributes revisions
+through [feed support](https://helpdesk.privateproperty.co.za/portal/en/kb/articles/getting-started-with-a-feed-integration);
+the latest available revision has not been independently confirmed.
+
+Focused checks, from `the-it-guy/`: `node --test scripts/listing-contact-agents.test.mjs`,
+`node scripts/property24-listing-agent-reassignment.test.mjs`,
+`node scripts/property24-publish-mapping-resolution.test.mjs`,
+`node scripts/property24-phase2-mapper.test.mjs`,
+`node scripts/rental-property24-backend-adapter.test.mjs`,
+`node scripts/private-property-phase8-agent-mapping.test.mjs`,
+`node scripts/private-property-listing-preview.test.mjs`, and
+`npx vitest run src/components/listings/__tests__/ListingAgentReassignmentPanel.test.jsx`.
+
+
 High-end React + Vite + Supabase transaction workspace for Samlin Construction.
+
+## Printable mandate and signed upload
+
+Seller lead Documents and listing Sale Documents offer **Create printable
+mandate**. This opens the listing's manual-copy preparation with saved seller
+facts and terms. Only missing commercial terms are requested; other saved terms
+remain visible for review. Preparation saves a frozen reviewed copy before PDF
+download and leaves FICA and disclosure unchanged. Upload signed copy saves the
+returned file against its exact requirement and copy version; approval remains
+a separate agent review. Conflicts are shown inside preparation with a read-only
+refresh that retains the agent's edits. The retired packet generator and online
+signing endpoints stay disabled.
+
+Checks: `npm run test:listing-seller-canonical-update`, the PrintableMandateTerms
+and document-action component suites, `node --test
+scripts/document-generator-retirement.test.mjs`, `npm run
+test:seller-document-journey`, and root `npm run check:app`.
+
+## Listing publication recovery
+
+A listing under review now explains that no adverts will be sent and directs the
+agent to Seller and Documents, activation, then Review. An unconfirmed initial
+publication request retains the saved listing ID and form instead of completing
+the wizard. The forward migration
+`20261012152243_seller_property_address_identity_reconciliation.sql` prevents
+formatted addresses with repeated locality fields from resetting the mandate.
+Different streets, cities, units and place IDs still retire property-specific
+mandates. This correction does not restore an already-retired file or publish
+existing listings. Checks: `node scripts/seller-listing-hydration-authority.test.mjs`,
+`node --test scripts/create-listing-save-recovery.test.mjs` and the initial
+publication service/editor Vitest suites.
+
+## Seller onboarding review conflicts
+
+Seller document approval and manual reminders use the portal context's text
+listing ID for email-recipient lookup. Release the forward migration
+`20261012150343_seller_document_review_portal_listing_text_id.sql` before testing
+those actions live. It preserves ownership, exact-requirement, signing-version,
+revision and audit guards and does not approve existing files or send mail.
+The signed FICA declaration appears under FICA even when its legacy checklist
+group is legal. Focused checks: `node scripts/seller-document-journey.test.mjs
+--review-only` and `node scripts/seller-document-conditional-logic-phase2.test.mjs`.
+
+Review submitted seller onboarding keeps the displayed listing version with its
+save revision. If another save changes that version, approval and correction
+requests pause until the agent selects **Load latest seller details and keep
+signing choices**. This read retains document routes and the correction note;
+the agent must review the latest facts and approve again. A failed refresh keeps
+saving blocked. Refresh does not save, approve, reopen seller onboarding, or send
+signing links.
+
+Focused check: `npm run test:listing-seller-canonical-update`.
+
+## Document upload feedback
+
+Seller uploads on listings, leads and contacts show progress through preparation,
+transfer and saving, then **Uploaded** when the file and its record are confirmed.
+Review and signing completion remain separate. Slow handoff or refresh work does
+not hold that confirmation or turn a saved file into an upload failure.
+
+Transfers time out after two minutes and record saves after thirty seconds.
+An uncertain response keeps the recovery reference: retry checks the same file
+and record before another write. No uploaded bytes are deleted after an uncertain
+save. These limits bound the UI wait; they cannot establish that a timed-out
+server request was rolled back. Subsequent view refreshes may still be pending.
+
+Focused checks: the document upload recovery/progress tests in `src/lib/__tests__`,
+the document requirement command tests, and the document progress/manager tests.
+
+## Client audiences
+
+Clients → Audiences offers starting points for Buyers, Sellers, Investors,
+clients by area and clients by tag. Starting points open an editable draft;
+nothing is saved until Save audience. Area, lead status and tag choices come
+from the organisation's existing marketing contacts. Multiple selected values
+match any value within one filter; separate filters match together.
+
+Click a saved audience's matching-contact count, or View matching clients in
+the builder, to browse all matches in pages of 25. Closing the matching-client
+view preserves the builder draft. Membership uses the existing audience matcher;
+campaign consent, suppression and delivery eligibility remain separate checks.
+This version adds no nested segments or database changes.
+
+Focused checks: `npx vitest run src/components/clients/ClientAudiences.test.jsx
+src/services/__tests__/audienceFilterOptions.test.js
+src/services/__tests__/clientAudienceMemberships.test.js --maxWorkers=1`.
+
+## Client enquiry history
+
+Client Overview shows distinct recorded enquiries and a Repeat enquirer badge
+after two enquiries. The card shows the five most recent records, with View all
+to expand the full history. It reads permanent client-to-lead links within the
+organisation, then accessible enquiry logs; it does not match names or phone
+numbers or merge profiles. Duplicate deliveries, duplicate reviews and failed
+ingestion records do not increase the count. A linked lead with no ingestion
+history contributes one enquiry. Missing historical records cannot be recovered,
+and an enquiry's property is shown only when recorded on that enquiry.
+
+Focused checks: `npx vitest run src/services/__tests__/clientEnquiryHistory.test.js
+src/components/clients/ClientEnquiryHistoryPanel.test.jsx
+src/services/__tests__/clientIdentityService.test.js --maxWorkers=1`.
 
 ## Mobile push notification test
 
@@ -1761,6 +1900,14 @@ and pass in the Phase 5 acceptance run below.
 
 ## Seller saving, synchronisation and signer acceptance
 
+The listing editor now reads the saved Seller ownership structure before the
+listing's broad entity field. It retains marriage and signing-authority detail,
+and successful seller receipts refresh both the displayed and stored canonical
+facts before another save. This prevents stale local ownership comparisons;
+genuine entity changes and inconsistent single-owner records remain blocked.
+The correction is local pending a primary-app release. Focused regression check:
+`node --test src/services/listings/__tests__/listingEditorSellerOwnership.test.js`.
+
 Phase 3 uses the existing atomic seller-save RPC for linked seller lead edits and
 listing seller edits. Canonical document facts are rebuilt from the complete saved
 form. CRM contact updates follow the listing save; a failed CRM refresh is reported
@@ -2254,6 +2401,12 @@ remote writes.
 
 ### Home Seekers CRM listings
 
+The local Vite preview reads the public listing feed from
+`https://www.homeseeker.co.za/api/home-seekers/site` through a GET-only local route.
+This lets `/demo/homeseekers` show current published homes without production
+credentials. It requires internet access and an available public website;
+local analytics remain disabled.
+
 The home, Buying and Renting pages use the approved CRM website publication
 snapshots. The featured section has no sample fallback: loading, an unavailable
 feed and no published stock each have an explicit visitor message. An empty feed
@@ -2284,6 +2437,35 @@ tenant isolation, sales/rental detail pages and the absence of sample stock.
 No migration or remote listing publication is performed. Rebuild the standalone
 package after frontend changes; the main CRM needs its own approved frontend
 release for the corrected publication links to reach agents.
+
+### Home Seekers public traffic reporting (prepared)
+
+The Marketing website report now reads `home_seekers_public_dashboard_analytics`
+for the Home Seekers site only. The standalone analytics endpoint requires the
+new tracker version and the actual request hostname to be `homeseeker.co.za` or
+`www.homeseeker.co.za`. Arch9 demo paths, hosted previews, embedded pages,
+marked staff-preview tabs and known automated browsers are excluded. Preview
+links from Marketing mark the tab so following its public-page links remains
+excluded. Visits expire after 30 minutes of inactivity in the same browser tab;
+they are browser sessions rather than unique people. Unidentified bots or staff
+who independently open the normal public URL cannot be distinguished from public
+visitors by this aggregate-only tracker.
+
+New aggregate dimensions use a `public-v1:` hostname prefix and South African
+calendar dates. Historical mixed traffic remains stored but is not reported as
+verified public traffic. Public enquiry/lead counters likewise require the new
+hostname/version attribution; older submissions remain available in the enquiry
+workspace. The visit chart uses visits, and zero days remain zero. The report
+does not substitute legacy counts when its new RPC is unavailable.
+
+Release migration `20261012124805_homeseekers_public_traffic_analytics.sql` before
+the primary-app Marketing screen and the separate Home Seekers website package.
+No migration or deployment has been performed for this correction. Use
+`node --test server/tests/homeSeekersPublicTraffic.test.js
+server/tests/homeSeekersWebsiteBridge.test.js server/tests/homeSeekersLeads.test.js
+server/tests/homeSeekersWebsiteDeployment.test.js` and the HomeSeekersListings
+and HomeSeekersLeadForms Vitest checks. Database checks run in isolated PGlite;
+the deployment fixture builds the standalone site and calls only loopback APIs.
 
 ### Home Seekers website enquiries
 
@@ -2749,6 +2931,25 @@ ownership and linked-workflow checks. Local verification:
 `node --test scripts/private-listing-deletion.test.mjs` and the Vitest
 `RentalListingsPage.actions` / `rentalListingDeletionService` tests.
 
+Permanent deletion now distinguishes protected workflow links from an inactive
+partner-website projection left by withdrawal. The forward migration
+`20261012083836_listing_delete_unpublished_partner_cleanup.sql` removes only
+unpublished partner projections inside the same transaction as permanent listing
+deletion. Published adverts, ownership checks, website launches and genuine
+workflow references remain protected. A linked-workflow failure restores the
+projection too. This migration is prepared locally and requires release approval;
+it has not been applied to the hosted database.
+
+Sales and rental delete dialogs offer **Open withdrawal controls** when permanent
+deletion is blocked. Sales Quick listing actions also expose **Withdraw listing**.
+Withdrawal preserves linked history and archives working stock only after active
+channels confirm removal; it does not call the deletion RPC. Focused checks:
+`node --test scripts/private-listing-deletion.test.mjs`,
+`node src/services/listings/__tests__/listingWithdrawalModel.test.js`,
+`node scripts/agent-listings-delete-ui.test.mjs`, and the Vitest
+`ListingDeletionBlockedNotice`, `RentalListingsPage.actions` and
+`rentalListingDeletionService` tests.
+
 Rental edits now save listing facts, publication details and gallery changes in one
 transaction. Photo edits retain existing video, tour, floor-plan and external-link
 records, as well as IDs for retained photos. P24 expiry is saved separately in
@@ -2796,6 +2997,39 @@ status explicitly probes the provider using the existing authenticated API route
 Manage portal settings offers Property24 rental lifecycle statuses and Private
 Property ToLet/Inactive, with the existing reactivation and readiness protections.
 Update listing remains gated by each portal's readiness preview.
+
+Sales Listing Channels now offer **Relist** and **Update and relist** for existing
+portal adverts, including withdrawn/inactive adverts. **Update and relist** opens
+the property editor and retains the chosen portal. **Save and continue to relist**
+saves and verifies the edited property and publication details without sending
+ordinary portal updates, then returns to Marketing with that portal selected in
+the relist confirmation. A failed save stays in the editor; cancelling does not
+relist. Relisting sends the newly saved content against the existing identity.
+
+Quick listing actions also offer **Relist listing**
+for an existing Property24 or Private Property advert. Confirm that it is the
+same property and choose the portals to restore. Edited details and materialized
+photos are saved before readiness is checked. Property24 receives an Active
+content update against its existing advert number and the chosen future expiry
+date. Private Property verifies its retained address, requests ForSale (or ToLet
+for a rental record), waits for confirmed activation, and then sends the saved
+content against the existing feed identity. An address mismatch blocks that
+portal and shows both addresses; Relist does not create a fresh identity or
+promise a new listing date. Sold/under-offer listings require outcome review.
+
+Each portal has its own result. **Check and continue** observes an accepted
+activation/content request without repeating it, and skips completed portals.
+Send intent and acceptance are retained in existing listing activity so a page
+refresh cannot silently repeat a request whose response was lost. An ambiguous
+content send requires checking the advert rather than an automatic retry.
+Accepted content and active status still require checking the public page's
+displayed details. Restoring a withdrawn Arch9 listing makes it private working
+stock; website publication is a separate action. No new migration is required.
+
+Focused checks: `npx vitest run src/services/listings/__tests__/listingRelistService.test.js
+src/components/listings/__tests__/ListingRelistDialog.test.jsx --maxWorkers=1`,
+plus the existing Private Property readiness, post-submit monitor and controlled
+publish checks. These use fixtures and make no hosted writes.
 
 Submissions, acceptances, withdrawals and failures are recorded in the existing listing
 activity store. Portal acceptance does not imply a verified public page. A user may
@@ -4181,8 +4415,28 @@ Client and source permissions apply to every read. Restricted documents and
 professional notes remain restricted; removing a source can hide its original
 content while generic CRM removal evidence remains. Each page is bounded and
 uses a timestamp/ID cursor; latest activity in the directory includes accessible
-journal entries. Missing setup and load failures are shown explicitly. UTM
-attribution and campaign engagement remain separate later phases.
+journal entries. Missing setup and load failures are shown explicitly. Source
+attribution and detailed campaign reporting have their own tabs; recorded campaign
+milestones also appear in Activity.
+
+The Activity screen groups entries by day, with Incoming, Outgoing, In progress
+and Campaigns views, expandable details, local search and inclusive date filters.
+Campaign provider milestones are grouped only by the exact recipient ID; confirmed
+staff responses remain separate because their journal rows have no recipient ID.
+Search, dates and view counts describe loaded history; Load older activity extends
+that history. In progress shows workflow events, including completed milestones,
+not a live count of unfinished tasks. Last logged interaction is drawn from manual/CRM
+interaction entries in the loaded category. Auto update reads every 30 seconds
+while visible, preserving expanded entries and older pages; it pauses during
+logging and can be switched off. Quick contact actions open the existing logger.
+
+Read-only local design preview:
+`http://127.0.0.1:5173/server/tests/fixtures/client-activity-preview.html`.
+The preview includes illustrative campaign milestones and disables all writes.
+Existing capture boundaries still apply: offline contact requires manual logging,
+portal visits are best effort, and repeated campaign opens/clicks are not all copied
+to the journal. Mailbox replies need a connector or a staff-confirmed response.
+No database migration is required for this presentation change.
 
 Focused verification: `node scripts/client-activity.test.mjs` executes the actual
 identity and activity migrations in an isolated PostgreSQL fixture. It checks
@@ -4223,6 +4477,21 @@ campaign strings and website hostnames; it never copies raw forms, URL queries,
 access credentials, email addresses or contact IDs. Newly attributed enquiries
 also appear in the activity timeline. Campaign delivery/response tracking is described below.
 
+Sources & discovery now presents a first/latest source journey, clickable channel
+counts, a chronological/recent enquiry switch, search, tracking-tag filters and
+expandable evidence. First/latest and tracking coverage use the server summary
+across accessible history; channel counts and search use loaded enquiry pages.
+Load older enquiries extends that scope. A channel is derived from recorded
+source/medium values; no source is invented for an untagged enquiry. Tracking
+coverage measures completeness, not conversion, revenue or marketing causality.
+UTM codes, content, search terms and website hosts remain in the evidence inspector.
+Refresh retains filters and expanded entries. Source records are read-only here.
+
+Local design preview:
+`http://127.0.0.1:5173/server/tests/fixtures/client-sources-preview.html`.
+It uses illustrative data only on localhost during development and opens no fake
+lead routes. The source redesign adds no schema changes or provider connections.
+
 Focused checks: `node scripts/client-attribution.test.mjs` executes all three
 client migrations in an isolated PostgreSQL fixture. It verifies historical
 dates, normalisation, automatic matching, late receipt enrichment, merges, old
@@ -4259,6 +4528,25 @@ First-observed milestones enter Activity once per recipient/type; repeated opens
 clicks and ordinary saves do not flood the journal. Historical capture keeps the
 original occurrence dates. Provider evidence may arrive out of order; the panel
 uses the earliest timestamp available from recipient fields and event records.
+
+The Campaigns & engagement view presents one card per addressed email, with
+saved campaign artwork (when available), a designed text cover otherwise, and
+independent sent/delivered/opened/clicked milestones. Search and status filters
+apply to loaded recipient history, with newest-added and latest-activity order.
+Campaign totals remain distinct from addressed email counts. Delivery evidence
+expands inside each card; Open campaign links to the existing Marketing detail.
+Refresh preserves loaded older cards, filters and expanded delivery details.
+
+Artwork enrichment reads only the permitted page's campaign IDs within the
+selected organisation under existing RLS. It projects a cover from authored
+image/property blocks and preview text, and does not render email HTML or fetch
+tracking pixels. Artwork lookup failures retain delivery history. The artwork
+is from the saved design, not an exact rendering of the delivered email.
+
+Read-only local design preview:
+`http://127.0.0.1:5173/server/tests/fixtures/client-campaigns-preview.html`.
+Its campaign artwork is illustrative; response logging and navigation to mock
+campaigns are disabled. No remote writes or campaign sends occur in the preview.
 
 A staff member with access to the client and campaign can record a confirmed
 email reply, phone response, enquiry, RSVP or other response, with details and its
@@ -4634,11 +4922,143 @@ handover, recipient changes and retry cutoff. The local Supabase advisors requir
 a running local stack and were unavailable during this implementation.
 
 
-Sales listing channel management offers Relist and Update and relist for existing
-Property24 and Private Property adverts. Update and relist saves the property
-editor first and returns to the selected portal's explicit relist confirmation.
-Saved details are resent against the existing identity; Private Property address
-checks remain enforced. Accepted or uncertain requests are not blindly repeated.
-Linked records block permanent deletion separately from withdrawing adverts.
-The listing-delete cleanup migration removes unpublished partner publications
-only inside a successful authorised permanent delete.
+Relist now performs a coordinated withdrawal and republish for the selected
+Property24/Private Property adverts. Both existing portals are selected by
+default from the sales Marketing menu and editor return. All selected portals
+pass readiness/address checks before withdrawal; every selected advert must be
+confirmed offline before any content is republished. Already inactive adverts
+skip withdrawal. Withdrawal intent/confirmation uses the existing relist activity
+checkpoints, so a lost response or a refreshed page cannot repeat a withdrawal.
+Check and continue includes portals already offline in the same run. Existing
+activation/content checkpoints resume without withdrawing a republished advert.
+Private Property's retained address and advert identity rules still apply.
+This change does not delete listings or add/apply a database migration.
+
+
+The prepared migration `20261012101600_listing_delete_completed_portal_history.sql`
+allows an authorised permanent delete to retain completed portal attempts in
+`rental_publication_attempt_archives`. It copies the complete journal row and a
+small listing identity snapshot before releasing the original journal link.
+Pending/uncertain attempts and terminal attempts without a resolution timestamp
+block deletion. The existing live-channel, ownership, signing/document and
+linked-workflow guards remain. A later deletion failure rolls back the archive
+and all housekeeping. Archived receipts have RLS and no browser grants; only
+server-side audit reads/inserts are allowed. The migration has not been applied
+to a hosted database. No live listing is deleted by preparing this change.
+Focused verification: `node --test scripts/private-listing-deletion.test.mjs`.
+
+### Kingdom seller upload and review correction (12 October 2026, prepared)
+
+The primary app now prepares an exact missing seller checklist target from the
+saved property/ownership model before Storage is touched. Current optional
+requirements can accept files without being made mandatory. Explicit request
+IDs, retired requests and version-bound signing uploads retain their strict
+identity checks. Seller document review controls appear beside uploaded files,
+outside the Actions menu; signed evidence confirmation is unchanged. Rental
+stock that is published on Property24 or Private Property no longer opens as a
+capture draft merely because its internal seller-lead workflow is unfinished.
+
+`20261012114500_seller_optional_document_upload_review.sql` corrects the database
+upload-link and review guards for optional items while retaining the current
+function bodies, grants, review conflicts and audit behavior. It does not
+backfill requirements, review mandates or alter stored documents. It must be
+applied with the app release; this correction has not been deployed.
+
+The read-only Kingdom audit found three saved seller files, all present in
+Storage and linked to exact checklist requests. The mandate is under review;
+the electric-fence and solar documents await review. Optional checklist rows
+were offered for upload although both the service and database rejected them.
+This confirms a code defect, but the original failed file cannot be identified
+from a pre-storage validation error alone.
+
+Focused verification uses the seller-access Vitest suite, generator-retirement
+upload preflight suite, seller-document journey (real local PostgreSQL commands
+and browser signing/upload/review), document action component suites, rental
+listing data contract, and app build. Local acceptance uses synthetic Auth,
+Storage and email infrastructure; it is not a production upload or delivery.
+
+Verification passed: 65 seller-access tests, 13 upload preflight/retirement
+tests, 6 document presentation tests, 6 review/action component tests, rental
+data-contract and upload-persistence checks, and 17 connected document journeys
+with 54 actual PDF downloads. The app build passed; focused ESLint had zero
+errors and existing warnings. No production writes or email delivery occurred.
+Evidence logs: `tmp/kingdom-document-journey-20261012.log`,
+`tmp/kingdom-upload-preflight-20261012.log`,
+`tmp/kingdom-document-lint-20261012.log`, and
+`tmp/kingdom-document-build-20261012.log`.
+
+### Seller lead/listing document feedback follow-up (12 October 2026, prepared)
+
+Lead and listing document screens now show saved-file and awaiting-review
+counts separately from checklist approval. The same stored file is counted
+once, and an empty requirement or unsigned generated draft cannot contribute a
+saved-file count. Lead uploads keep the server-confirmed requirement ID and
+refresh the linked listing after normal uploads as well as signing-copy uploads.
+The mandate upload route now refreshes the linked listing too. File/display row
+IDs no longer stand in for requirement IDs in these upload handlers.
+
+The read-only Kingdom contact audit found 56 leads, all linked to existing
+Kingdom contacts, with no dangling contact links. There were no document
+requirement instances in those lead contexts. This establishes the relationship
+links but does not establish which lead Kevin was viewing. All three known
+seller uploads remain saved against A9-KING-000245 and awaiting review.
+
+Both remaining active adverts were confirmed in Private Property and Property24
+branch feeds. Neither active listing has saved public portal URLs; the Kingdom
+rental is missing its local PP reference too. Verified PP public pages match
+RR4789012 and T5650610. A scoped, rollback-only repair is prepared in
+`tmp/kingdom-private-property-link-repair-20261012.sql`; it has not been executed.
+Property24's public URLs have not been independently resolved. No URL is guessed
+and no portal publication is changed by these prepared corrections.
+
+Focused evidence: `tmp/kingdom-lead-upload-tests-20261012.log`,
+`tmp/kingdom-lead-link-lint-20261012.log`,
+`tmp/kingdom-lead-contact-audit-20261012.jsonl`, and
+`tmp/kingdom-active-links-20261012.jsonl`. No current follow-up changes have been
+deployed or applied to production.
+
+### Website-to-listing statistics correction (12 October 2026, prepared)
+
+Listing statistics now preserve a separate same-day website view count and date
+without adding them to completed-day portal comparisons. The website RPC
+correction in `20261012110258_listing_website_partner_statistics.sql` scopes
+partner view history and enquiry receipts to approved publication sites and the
+listing owner; other organisations and ungranted websites stay excluded.
+The website property page also enables tracking for published partner listings.
+No production analytics, publication records or migrations were changed.
+
+Verification: focused database, service, component and connected statistics
+tests; `npm run check:website`; focused ESLint; and the primary app build. Logs
+are `tmp/website-statistics-tests-final-20261012.log`,
+`tmp/website-statistics-website-check-20261012.log`,
+`tmp/website-statistics-lint-20261012.log`, and
+`tmp/website-statistics-app-build-20261012.log`. Release the database correction
+before the separate website/app changes. Historic visits that were never
+recorded cannot be filled in with assumed traffic.
+
+### FICA preparation timeout confirmation (12 October 2026, prepared)
+
+The 12:33 report was traced to A9-ISELLPROPERT-000008. Read-only records confirm
+the FICA-only preparation committed at 12:32:39 SAST and its matching reviewed
+version has one current signing request, marked Sent at 12:32:40 SAST. This
+verifies the saved/request state, not inbox delivery or a completed signature.
+No request was resent and no saved evidence was changed during the audit.
+
+The timeout-recovery verifier compared every property summary field, although
+the guarded seller save only projects property fields explicitly changed by
+the mutation. The saved onboarding's formatted address differs from the
+listing's first address line, and address was not changed by this FICA request.
+Recovery now compares address, price and mandate type only for actual changes,
+while still requiring the exact mutation on both records, full canonical facts,
+onboarding state and frozen document contents. This corrects an identified
+confirmation defect; the initial browser-side timeout itself is not explained
+by the successful server request alone.
+
+Verification passed: 52 canonical-update checks, 66 seller-access/service tests,
+focused ESLint and primary app build. Logs are
+`tmp/fica-timeout-model-20261012.log`,
+`tmp/fica-timeout-service-20261012.log`,
+`tmp/fica-timeout-lint-20261012.log` and
+`tmp/fica-timeout-build-20261012.log`. The read-only evidence is
+`tmp/fica-preparation-audit-20261012.json`. No production release or migration
+was performed for this correction.

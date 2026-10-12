@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Copy, Download, ExternalLink, IdCard, Mail, MessageCircle, Pencil, Phone, QrCode, X } from 'lucide-react'
 
-const controlClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50'
+const controlClass = 'inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50'
 const buttonClass = `${controlClass} border-[#dde4ee] bg-white text-[#253d55] hover:bg-[#f7fafc]`
 const primaryClass = `${controlClass} border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800`
 const number = new Intl.NumberFormat('en-ZA')
@@ -58,24 +58,28 @@ export default function AgentDigitalCardPanel({
 
   return (
     <section aria-label="My digital business card" className="mt-6 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e8eef4] px-5 py-5 sm:px-6">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#e8eef4] px-5 py-4 sm:px-6">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-medium tracking-tight text-[#162334]"><IdCard size={20} className="text-emerald-700" /> My digital business card</h2>
           <p className="mt-1 text-sm text-[#71849a]">Your profile, enquiries and sharing tools in one place.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-medium ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{loading ? 'Loading…' : active ? 'Active' : link?.status === 'draft' ? 'Draft' : link ? 'Inactive' : 'Not set up'}</span>
+          {features.share !== false ? <>
+            <button type="button" disabled={disabled || !active || Boolean(draft)} title={active ? 'Copy your card link' : 'Activate your card to copy its link'} className={buttonClass} onClick={() => onCopy?.(shareUrl, 'Card link copied')}><Copy size={15} />Copy link</button>
+            <button type="button" disabled={disabled || !active || Boolean(draft)} title={active ? 'Share your card on WhatsApp' : 'Activate your card to share it'} className={buttonClass} onClick={onShareWhatsApp}><MessageCircle size={15} />Share on WhatsApp</button>
+          </> : null}
           {canManage && !draft ? <button className={active ? buttonClass : primaryClass} disabled={disabled} onClick={startEditing}><Pencil size={15} />{link ? 'Edit card' : 'Set up card'}</button> : null}
         </div>
       </header>
-      <div className="grid gap-6 p-5 sm:p-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <article className="min-w-0 rounded-2xl border border-[#dce8e2] bg-[#f6faf8] p-5 sm:p-6">
+      <div className="grid items-start gap-5 p-5 sm:p-6 xl:grid-cols-2">
+        <article className="min-w-0 rounded-2xl border border-[#e8eef4] bg-[#fbfdfc] p-5">
           <div className="flex items-center gap-4">
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-emerald-100 bg-white text-2xl font-medium text-emerald-800">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-emerald-100 bg-white text-2xl font-medium text-emerald-800">
               {avatarUrl && failedAvatar !== avatarUrl ? <img src={avatarUrl} alt={`${display.name || 'Agent'} profile`} className="h-full w-full object-cover" onError={() => setFailedAvatar(avatarUrl)} /> : <span aria-label="Profile initials">{initials}</span>}
             </div>
             <div className="min-w-0">
-              <h3 className="break-words text-xl font-medium tracking-tight text-[#162334]">{display.name || 'Agent'}</h3>
+              <h3 className="break-words text-lg font-semibold tracking-tight text-[#162334]">{display.name || 'Agent'}</h3>
               <p className="mt-1 text-sm text-[#536b61]">{display.jobTitle || 'Property Practitioner'}</p>
               <p className="mt-1 text-sm text-[#7a8d83]">{organisationName || 'Agency'}</p>
             </div>
@@ -86,7 +90,20 @@ export default function AgentDigitalCardPanel({
             {display.phone ? <a href={`tel:${display.phone}`} className="flex items-center gap-2"><Phone size={15} />{display.phone}</a> : null}
             {!display.email && !display.phone ? <p>Add your contact details when setting up your card.</p> : null}
           </div>
-          {!active && !draft ? <p className="mt-5 text-sm leading-6 text-[#71849a]">{canManage ? 'Add your photo and details, then activate your card here to start sharing.' : 'Your principal or admin can activate your card. Your sharing tools will appear here when it is ready.'}</p> : null}
+          {!active && !draft ? <p className="mt-5 text-sm leading-6 text-[#71849a]">{canManage ? 'Add your photo and details, then activate your card here to start sharing.' : 'Your principal or admin can activate your card to enable sharing.'}</p> : null}
+              {active ? <>
+                <div className="mt-5 rounded-xl border border-[#e8eef4] bg-[#f9fbfc] p-3"><p className="text-xs text-[#71849a]">Your card link</p><a href={shareUrl} target="_blank" rel="noreferrer" className="mt-1 block break-all text-sm text-emerald-700">{shareUrl}</a></div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button disabled={disabled} className={buttonClass} onClick={onOpenPreview}><ExternalLink size={16} />Preview card</button>
+                  {features.qr !== false ? <button disabled={disabled} className={buttonClass} onClick={onDownloadQr}><QrCode size={16} />{busyAction === 'qr' ? 'Preparing…' : 'Download QR'}</button> : null}
+                  {features.vcf !== false ? <button disabled={disabled} className={buttonClass} onClick={onDownloadVcard}><Download size={16} />Download contact</button> : null}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-emerald-700">
+                  {link.enabledIntents?.includes('buy') && urls.buyerUrl ? <a href={urls.buyerUrl} target="_blank" rel="noreferrer">Buyer enquiry ↗</a> : null}
+                  {link.enabledIntents?.includes('rent') && urls.rentalUrl ? <a href={urls.rentalUrl} target="_blank" rel="noreferrer">Rental enquiry ↗</a> : null}
+                  {link.enabledIntents?.includes('sell') && urls.sellerUrl ? <a href={urls.sellerUrl} target="_blank" rel="noreferrer">Seller enquiry ↗</a> : null}
+                </div>
+              </> : null}
         </article>
         <div className="flex min-w-0 flex-col">
           {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
@@ -106,25 +123,11 @@ export default function AgentDigitalCardPanel({
           ) : (
             <>
               <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-medium text-[#253d55]">Card performance</h3><span className="text-xs text-[#71849a]">Last {insights?.windowDays || 30} days</span></div>
-              <dl className="mt-3 grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
-                {stats.map(([label, key]) => <div key={key} className="rounded-xl border border-[#e8eef4] p-3"><dt className="text-xs text-[#71849a]">{label}</dt><dd className="mt-1 text-xl font-medium tabular-nums text-[#162334]">{insights?.summary && !insights.missingSchema ? number.format(insights.summary[key] || 0) : '—'}</dd></div>)}
+              <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {stats.map(([label, key]) => <div key={key} className={`rounded-xl border border-[#e8eef4] p-3 ${key === 'views' ? 'col-span-2 flex items-center justify-between bg-[#f7fafc] sm:col-span-3' : ''}`}><dt className="text-xs text-[#71849a]">{label}</dt><dd className="mt-1 text-xl font-medium tabular-nums text-[#162334]">{insights?.summary && !insights.missingSchema ? number.format(insights.summary[key] || 0) : '—'}</dd></div>)}
               </dl>
               {!insights?.summary || insights?.missingSchema ? <p className="mt-2 text-xs text-[#71849a]">{active ? 'Card statistics are currently unavailable.' : 'Statistics will appear once your card is active and receives visits.'}</p> : null}
-              {active ? <>
-                <div className="mt-5 rounded-xl border border-[#e8eef4] bg-[#f9fbfc] p-3"><p className="text-xs text-[#71849a]">Your card link</p><a href={shareUrl} target="_blank" rel="noreferrer" className="mt-1 block break-all text-sm text-emerald-700">{shareUrl}</a></div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {features.share !== false ? <button disabled={disabled} className={buttonClass} onClick={() => onCopy(shareUrl, 'Card link copied')}><Copy size={16} />Copy link</button> : null}
-                  <button disabled={disabled} className={buttonClass} onClick={onOpenPreview}><ExternalLink size={16} />Preview card</button>
-                  {features.share !== false ? <button disabled={disabled} className={buttonClass} onClick={onShareWhatsApp}><MessageCircle size={16} />Share on WhatsApp</button> : null}
-                  {features.qr !== false ? <button disabled={disabled} className={buttonClass} onClick={onDownloadQr}><QrCode size={16} />{busyAction === 'qr' ? 'Preparing…' : 'Download QR'}</button> : null}
-                  {features.vcf !== false ? <button disabled={disabled} className={`${buttonClass} sm:col-span-2`} onClick={onDownloadVcard}><Download size={16} />Download contact</button> : null}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-emerald-700">
-                  {link.enabledIntents?.includes('buy') && urls.buyerUrl ? <a href={urls.buyerUrl} target="_blank" rel="noreferrer">Buyer enquiry ↗</a> : null}
-                  {link.enabledIntents?.includes('rent') && urls.rentalUrl ? <a href={urls.rentalUrl} target="_blank" rel="noreferrer">Rental enquiry ↗</a> : null}
-                  {link.enabledIntents?.includes('sell') && urls.sellerUrl ? <a href={urls.sellerUrl} target="_blank" rel="noreferrer">Seller enquiry ↗</a> : null}
-                </div>
-              </> : null}
+
             </>
           )}
           <p role="status" aria-live="polite" className={`${feedback ? 'mt-3' : ''} text-sm text-emerald-700`}>{feedback}</p>

@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { websiteAnalyticsRpc } from './websiteAnalyticsScope.js'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -171,13 +172,15 @@ export async function getMarketingOverviewDashboard({ organisationId = '', range
   let websiteAnalyticsError = ''
   const websiteRangeAvailable = period.days <= 90 && isoDay(period.end) === isoDay(new Date())
   if (siteResult.data?.id && websiteRangeAvailable) {
-    const result = await supabase.rpc('website_dashboard_analytics', { p_website_site_id: siteResult.data.id, p_days: period.days })
+    const result = await supabase.rpc(websiteAnalyticsRpc(siteResult.data.id), { p_website_site_id: siteResult.data.id, p_days: period.days })
     websiteAnalytics = result.data || null
     websiteAnalyticsError = result.error?.message || ''
   } else if (siteResult.data?.id) {
     websiteAnalyticsError = 'Website visit aggregates are currently available for ranges up to 90 days ending today.'
   }
-  const websiteLeadCount = inPeriod.filter((lead) => normaliseMarketingLeadSource(lead.lead_source).key === 'website').length
+  const websiteLeadCount = websiteAnalytics?.trafficScope === 'homeseeker.co.za'
+    ? number(websiteAnalytics.leadsCreated)
+    : inPeriod.filter((lead) => normaliseMarketingLeadSource(lead.lead_source).key === 'website').length
   const websiteSeries = Array.isArray(websiteAnalytics?.dailyTraffic) ? websiteAnalytics.dailyTraffic : []
   const topPages = [...(websiteAnalytics?.topPages || []), ...(websiteAnalytics?.topListings || [])].slice(0, 5)
   const emailSourceLeads = leadSources.find((row) => row.key === 'email_campaign')?.count || 0

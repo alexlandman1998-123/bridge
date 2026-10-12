@@ -4,6 +4,7 @@ import { hasPublishedBlogPosts } from '@/lib/site-repository'
 import type { ResolvedSite } from '@/lib/types'
 import { hasEditorialPropertyExperience, usesEditorialTemplate, templateNavigation } from '@/lib/site-templates'
 import { selectWebsiteLogo } from '@/lib/website-brand'
+import { isKingdomSoldSite } from '@/lib/kingdom-recently-sold'
 import { ResponsiveSiteHeader } from './responsive-site-header'
 
 function resourceLinks(hasBlogPosts: boolean) {
@@ -35,6 +36,7 @@ export async function SiteFooter({ site }: { site: ResolvedSite }) {
     { href: '/properties?type=sale', label: 'Buy' }, { href: '/properties?type=rental', label: 'Rent' }, { href: '/valuation', label: 'Sell' }, { href: '/properties', label: 'Developments' },
   ] : templateNavigation(site.templateKey)
   const agency = editorialTemplate ? [{ href: '/about', label: 'About us' }, { href: '/about', label: 'Our team' }, { href: '/contact', label: 'Contact' }] : templateNavigation(site.templateKey)
+  if (isKingdomSoldSite(site)) explore.push({ href: '/recently-sold', label: 'Recently sold' })
   explore.push(...resources)
   const social = Object.entries(site.socialLinks || {}) as Array<[string, string]>
 

@@ -1882,6 +1882,9 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
   ].filter(Boolean).join(' '))
 
   if (group === 'additional' || category === 'additional_requests' || signal.includes('additional_request')) return 'additional'
+  // The signed FICA declaration belongs with identity compliance even when an
+  // older checklist assigns all three signing-pack documents to the legal group.
+  if (documentKeys.some(key => normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)) return 'fica'
   if (
     requirementKey === 'rates_account' ||
     documentKeys.includes('rates_account') ||

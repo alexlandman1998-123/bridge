@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Modal from '../ui/Modal.jsx'
+import DocumentUploadProgress from './DocumentUploadProgress.jsx'
+import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../../services/documents/documentRequirementReadService.js'
 import { executeDocumentRequirementCommand, prepareDocumentRequirementUpload, uploadDocumentRequirementFile } from '../../services/documents/documentRequirementCommandService.js'
 import { clearRequirementCommand, readRequirementCommand, requirementAddContext, requirementRecoveryKey, retainRequirementCommand } from '../../services/documents/documentRequirementCommandRecovery.js'
@@ -37,6 +39,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
   const [reason, setReason] = useState('')
   const [file, setFile] = useState(null)
   const [uploadStep, setUploadStep] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)
   const lock = useRef(false)
   const fileInput = useRef(null)
   const existingControls = useRef(null)
@@ -57,6 +60,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
     setReason('')
     setFile(null)
     setNotice('')
+    setUploadProgress(null)
   }, [presentation, open])
 
   useEffect(() => {
@@ -81,10 +85,10 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
     const refresh = async () => {
       const current = ++readGeneration.current
       try {
-        const { data, error: authError } = await client.auth.getUser()
+        const { data, error: authError } = await withDocumentUploadDeadline(() => client.auth.getUser())
         if (authError || !data?.user?.id) throw new Error('Sign in to manage document requirements.')
         const actor = data.user.id
-        const next = await readDocumentRequirementContext(client, { contextType, contextId })
+        const next = await withDocumentUploadDeadline(() => readDocumentRequirementContext(client, { contextType, contextId }))
         if (cancelled || current !== readGeneration.current) return
         const recovered = readRequirementCommand(window.localStorage, requirementRecoveryKey(client, actor, contextType, contextId))
         setActorId(actor)
@@ -117,6 +121,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
         setSelectedId('')
         setSubjectRequirementId('')
         setUploadStep(false)
+        setUploadProgress(null)
         setNotice('')
       }
       setTimeout(() => { if (!cancelled && !lock.current) void refresh() }, 0)
@@ -148,11 +153,12 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
     setBusy(true)
     setError('')
     setNotice('')
+    if (action !== 'upload') setUploadProgress(null)
     let command = retry ? pending : null
     const accountAtStart = accountRevision.current
     let key
     try {
-      const { data, error: authError } = await client.auth.getUser()
+      const { data, error: authError } = await withDocumentUploadDeadline(() => client.auth.getUser())
       if (authError || data?.user?.id !== actorId) throw new Error('Your account changed. Refresh before saving.')
       key = requirementRecoveryKey(client, actorId, contextType, contextId)
       if (!retry) {
@@ -173,7 +179,8 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
           command = { commandId: crypto.randomUUID(), action, contextType: selected.context_type, contextId: selected.context_id, requirementId: selected.id, expectedRevision: selected.command_revision }
           if (action === 'upload') {
             if (!file) throw new Error('Choose a file first.')
-            command = await prepareDocumentRequirementUpload(file, { ...command, actorId, replacesUploadId: selected.latest_upload_id || null })
+            setUploadProgress(createDocumentUploadProgress('preparing', '', { fileName: file.name }))
+            command = await withDocumentUploadDeadline(() => prepareDocumentRequirementUpload(file, { ...command, actorId, replacesUploadId: selected.latest_upload_id || null }))
           } else {
             const changeReason = removalMode && action === 'remove' ? 'Not relevant to this matter' : reason.trim()
             if (!changeReason) throw new Error('Enter a reason for this change.')
@@ -185,21 +192,29 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
       retainRequirementCommand(window.localStorage, key, command)
       setPending(command)
       const result = command.action === 'upload'
-        ? await uploadDocumentRequirementFile(client, command, file)
+        ? await uploadDocumentRequirementFile(client, command, file, { onProgress: progress => { if (alive.current && accountAtStart === accountRevision.current) setUploadProgress(progress) } })
         : await executeDocumentRequirementCommand(client, command)
       clearRequirementCommand(window.localStorage, key, command)
       if (!alive.current || accountAtStart !== accountRevision.current) return
       setPending(null)
+      if (command.action === 'upload') setUploadProgress(createDocumentUploadProgress('complete', 'Uploaded', { fileName: command.payload.fileName, documentId: result.uploadId }))
+      setSnapshot(current => current ? {
+        ...current,
+        requirements: (current.requirements || []).some(row => row.id === result.requirement.id)
+          ? current.requirements.map(row => row.id === result.requirement.id ? { ...row, ...result.requirement } : row)
+          : [...(current.requirements || []), result.requirement],
+      } : current)
       setLabel(''); setTypeChoice('')
       setReason('')
       setFile(null)
       if (fileInput.current) fileInput.current.value = ''
       setSelectedId(result.requirement.id)
       if (presentation === 'dialog' && command.action === 'add') setUploadStep(intent === 'upload')
-      await refreshRef.current?.()
-      setNotice('Document change saved. Linked workspaces will refresh. Existing files and review history are retained.')
+      setNotice(command.action === 'upload' ? 'Uploaded. Linked views are updating.' : 'Document change saved. Linked workspaces will refresh. Existing files and review history are retained.')
+      void refreshRef.current?.()
       if (removalMode && command.action === 'remove') onClose?.()
     } catch (failure) {
+      if (command?.action === 'upload' && alive.current && accountAtStart === accountRevision.current) setUploadProgress(createDocumentUploadProgress('failed', failure.message, { fileName: command.payload?.fileName }))
       if (command && key && isDefiniteUploadSaveRejection(failure)) {
         clearRequirementCommand(window.localStorage, key, command)
         if (alive.current && accountAtStart === accountRevision.current) { setPending(null); await refreshRef.current?.() }
@@ -216,7 +231,8 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
       <p className="text-sm text-slate-600">{presentation === 'dialog' ? 'Name the document, then request it from the seller or continue to upload a file. Documents stay in sync across linked workspaces.' : 'Changes apply across linked workspaces for this matter. Removing a requirement keeps its files and history. New requirements queue a secure portal email. Delivery waits for an active portal and a matching recipient.'}</p>
       {error ? <div className="space-y-2"><p role="alert" className="text-sm text-red-700">{error}</p>{!snapshot ? <button type="button" disabled={busy} className={buttonClass} onClick={() => void refreshRef.current?.()}>Refresh requirements</button> : null}</div> : null}
       {notice ? <p role="status" className="text-sm text-green-800">{notice}</p> : null}
-      {busy ? <p role="status">Saving document change…</p> : null}
+      <DocumentUploadProgress progress={uploadProgress} />
+      {busy && !uploadProgress ? <p role="status">Saving document change…</p> : null}
       {!snapshot && !error ? <p role="status">Loading requirements…</p> : null}
       {pending && !busy ? <div className="space-y-2 rounded-lg bg-amber-50 p-3" role="status">
         <p>An unfinished {pending.action === 'upload' ? 'upload' : 'document change'} needs recovery before another change can be made.</p>

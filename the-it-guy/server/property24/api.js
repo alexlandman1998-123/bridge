@@ -1060,6 +1060,8 @@ export async function createProperty24ApiResponse({
         supabase,
         listingId: config.listingId,
         targetAgentId,
+        additionalAgentIds: payload.additionalAgentIds,
+        expectedAdditionalAgentIds: payload.expectedAdditionalAgentIds,
         environment: config.environment,
       })
       const expectedListingType = route.name === 'reassignRentalListingAgent' ? 'rental' : 'sale'
@@ -1078,6 +1080,7 @@ export async function createProperty24ApiResponse({
           listingId: plan.listingId,
           reassignment: plan,
           property24: null,
+          portalUpdateRequired: Boolean(plan.contactAgentsOnly),
         })
       }
 
@@ -1148,6 +1151,7 @@ export async function createProperty24ApiResponse({
             listingId: publishConfig.listingId,
             agencyId: publishConfig.agencyId,
             agentId: publishConfig.agentId,
+            contactAgentIds: publishConfig.contactAgentIds,
             agentSourceReference: publishConfig.agentSourceReference,
             environment: publishConfig.environment,
             sandboxPayloadTestMode: false,
@@ -1203,6 +1207,7 @@ export async function createProperty24ApiResponse({
             plan,
             assignedAgentId: plan.previousAgentId,
             expectedCurrentAgentId: plan.targetAgentId,
+            restoreContacts: true,
           })
           rollbackApplied = true
         } catch (error) {
@@ -1244,6 +1249,7 @@ export async function createProperty24ApiResponse({
         listing,
         reassignment: plan,
         property24: property24Report,
+        portalUpdateRequired: Boolean(plan.contactAgentsOnly),
         activity,
       })
     }
@@ -1278,6 +1284,7 @@ export async function createProperty24ApiResponse({
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
+        contactAgentIds: resolvedConfig.contactAgentIds,
         agentSourceReference: resolvedConfig.agentSourceReference,
         environment: resolvedConfig.environment,
         sandboxPayloadTestMode,
@@ -1334,6 +1341,7 @@ export async function createProperty24ApiResponse({
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
+        contactAgentIds: resolvedConfig.contactAgentIds,
         agentSourceReference: resolvedConfig.agentSourceReference,
         environment: resolvedConfig.environment,
         apiVersion: resolvedConfig.property24ApiVersion,
@@ -1391,6 +1399,7 @@ export async function createProperty24ApiResponse({
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
+        contactAgentIds: resolvedConfig.contactAgentIds,
         agentSourceReference: resolvedConfig.agentSourceReference,
         environment: resolvedConfig.environment,
         suburbId: resolvedConfig.suburbId,
@@ -1485,6 +1494,7 @@ export async function createProperty24ApiResponse({
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
+        contactAgentIds: resolvedConfig.contactAgentIds,
         agentSourceReference: resolvedConfig.agentSourceReference,
         environment: resolvedConfig.environment,
         apiVersion: resolvedConfig.property24ApiVersion,

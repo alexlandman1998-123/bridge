@@ -568,3 +568,7 @@ for (const answer of [true, false, 'unknown']) {
 }
 
 console.log('Private Property phase 3 listing preview contract passed')
+
+const multipleContacts = createPrivatePropertyArch9ListingPreview({ ...fixture, agentMapping: { agentIds: ['PP-PRIMARY', 'PP-EXTRA'] }, options: { ...fixture.options, branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '12345', includeSubmitPayload: true } })
+assert.deepEqual(multipleContacts.payloadPreview.agentIds, ['PP-PRIMARY', 'PP-EXTRA'])
+assert.match(multipleContacts.listingXml, /<AgentId>PP-PRIMARY,PP-EXTRA<\/AgentId>/)

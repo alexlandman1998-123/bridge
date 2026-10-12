@@ -1,5 +1,6 @@
 import { validateDocumentUploadFile, withDocumentUploadMimeType } from '../../lib/documentUploadPolicy.js'
 import { isDefiniteUploadSaveRejection } from '../../lib/documentUploadRecovery.js'
+import { createDocumentUploadProgressReporter, DOCUMENT_UPLOAD_TIMEOUTS, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const unconfirmed = (cause) => Object.assign(new Error('The save could not be confirmed. Retry this same command to recover the result.'), {
@@ -7,7 +8,10 @@ const unconfirmed = (cause) => Object.assign(new Error('The save could not be co
 })
 async function rpc(client, name, args) {
   let response
-  try { response = await client.rpc(name, args) } catch (error) { throw unconfirmed(error) }
+  try { response = await withDocumentUploadDeadline(signal => {
+    const request = client.rpc(name, args)
+    return typeof request.abortSignal === 'function' ? request.abortSignal(signal) : request
+  }, { timeoutMs: DOCUMENT_UPLOAD_TIMEOUTS.saving }) } catch (error) { throw unconfirmed(error) }
   if (response?.error) {
     if (isDefiniteUploadSaveRejection(response.error)) throw response.error
     throw unconfirmed(response.error)
@@ -25,6 +29,8 @@ export async function executeDocumentRequirementCommand(client, command) {
     p_requirement_id: requirementId, p_expected_revision: expectedRevision, p_payload: payload,
   })
   if (result?.saved !== true || result.commandId !== commandId || !result.requirement?.id) throw unconfirmed()
+  if (requirementId && result.requirement.id !== requirementId) throw unconfirmed()
+  if (action === 'upload' && !uuid.test(result.uploadId || '')) throw unconfirmed()
   if (globalThis.window && typeof CustomEvent !== 'undefined') {
     globalThis.window.dispatchEvent(new CustomEvent('arch9:document-requirements-changed', { detail: result.refreshContexts }))
   }
@@ -49,25 +55,37 @@ export async function prepareDocumentRequirementUpload(file, { commandId, actorI
   }
 }
 
-export async function uploadDocumentRequirementFile(client, command, file) {
+export async function uploadDocumentRequirementFile(client, command, file, { onProgress = null } = {}) {
+  const report = createDocumentUploadProgressReporter(onProgress)
+  const fileName = file?.name || command.payload?.fileName
+  report('preparing', '', { fileName })
   if (command.action !== 'upload' || !uuid.test(command.commandId || '')) throw new Error('Prepare the upload before saving.')
   const receipt = await rpc(client, 'bridge_document_requirement_command_receipt', { p_command_id: command.commandId })
   // Let the command RPC compare the entire immutable envelope and recheck access.
-  if (receipt) return executeDocumentRequirementCommand(client, command)
+  if (receipt) {
+    report('saving', 'Checking the saved upload…', { fileName })
+    const result = await executeDocumentRequirementCommand(client, command)
+    report('complete', 'Uploaded', { fileName })
+    return result
+  }
   if (!file) throw Object.assign(new Error('Choose the original file to finish this upload.'), { code: 'upload_file_required' })
   const actorId = command.payload.filePath.split('/')[2]
   const prepared = await prepareDocumentRequirementUpload(file, { ...command, actorId, replacesUploadId: command.payload.replacesUploadId })
   if (Object.keys(prepared.payload).some(key => prepared.payload[key] !== command.payload[key])) throw new Error('Choose the same file to retry this upload.')
   let upload
+  report('uploading', '', { fileName })
   try {
-    upload = await client.storage.from('documents').upload(command.payload.filePath,
+    upload = await withDocumentUploadDeadline(() => client.storage.from('documents').upload(command.payload.filePath,
       withDocumentUploadMimeType(file, command.payload.mimeType), {
         upsert: false, contentType: command.payload.mimeType, metadata: { sha256: command.payload.sha256 },
-      })
+      }), { timeoutMs: DOCUMENT_UPLOAD_TIMEOUTS.uploading })
   } catch (error) { throw unconfirmed(error) }
   // A previous attempt may already have saved the immutable bytes. The server
   // validates owner, path, size, MIME and digest metadata before linking them.
   if (upload.error && ![upload.error.statusCode, upload.error.code].some(code => ['409', 'Duplicate', 'ResourceAlreadyExists'].includes(String(code)))) throw unconfirmed(upload.error)
   // Never delete bytes on an uncertain database response. Retry the same envelope.
-  return executeDocumentRequirementCommand(client, command)
+  report('saving', '', { fileName })
+  const result = await executeDocumentRequirementCommand(client, command)
+  report('complete', 'Uploaded', { fileName, documentId: result.uploadId })
+  return result
 }

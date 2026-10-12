@@ -51,7 +51,7 @@ import { isUnconvertedSellerLeadIntake, isUnpublishedDraftListing } from '../lib
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
 import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../lib/listingMarketingPropertyFactRecovery'
 import { listingPropertySaveErrorMessage, verifyListingPropertyPersistenceCopies } from '../lib/listingPropertySaveVerification'
-import { assertListingEditorSellerOwnership } from '../services/listings/listingSellerHistoricalNormalizationModel'
+import { assertListingEditorSellerOwnership, getListingEditorSellerOwnershipFields } from '../services/listings/listingSellerHistoricalNormalizationModel'
 import { buildListingSellerLeadPayload } from '../lib/listingSellerLeadPayload'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
@@ -126,7 +126,7 @@ import MobileListingProgress from './mobile/MobileListingProgress.jsx'
 import './mobile/mobile-listing-editor.css'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 import { getListingEditChannels } from '../services/listings/listingEditChannels'
-import { INITIAL_LISTING_PUBLICATION_EVENT, publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, retryFailedListingChannels } from '../services/listings/listingInitialPublicationService'
+import { INITIAL_LISTING_PUBLICATION_EVENT, listingPublicationBlockMessage, publishInitialListingChannels, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, retryFailedListingChannels } from '../services/listings/listingInitialPublicationService'
 import { buildListingPublicationSnapshot } from '../services/listings/listingPublicationState'
 import useListingWebsitePublications from '../hooks/useListingWebsitePublications'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation'
@@ -1194,8 +1194,9 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
   const onboardingFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
     ? listing.sellerOnboarding.formData
     : {}
-  const canonicalFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
-    ? listing.sellerCanonicalFacts
+  const savedSellerFacts = listing?.sellerOnboarding?.storedCanonicalFacts || listing?.sellerCanonicalFacts
+  const canonicalFacts = savedSellerFacts && typeof savedSellerFacts === 'object'
+    ? savedSellerFacts
     : {}
   const canonicalSeller = canonicalFacts.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
   const canonicalProperty = canonicalFacts.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
@@ -1215,14 +1216,8 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
       canonicalSeller.fullName ||
       seller.name,
   )
-  const sellerType = normalizeDirectListingKey(
-    listing.sellerType ||
-      listing.seller_type ||
-      canonicalSeller.sellerLegalType ||
-      canonicalSeller.legalType ||
-      onboardingFormData.sellerType ||
-      'individual',
-  )
+  const sellerOwnershipFields = getListingEditorSellerOwnershipFields(listing)
+  const sellerType = sellerOwnershipFields.sellerType
   const ownerCards = normalizeCreateListingOwnerCards(
     canonicalSeller.owners ||
       canonicalSeller.multipleOwners ||
@@ -1287,6 +1282,8 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     sellerEmail: normalizeText(listing.sellerEmail || canonicalFacts.email || canonicalFacts.sellerEmail || canonicalSeller.email || seller.email),
     sellerPhone: normalizeText(listing.sellerPhone || canonicalFacts.phone || canonicalFacts.sellerPhone || canonicalFacts.mobile || canonicalSeller.phone || seller.phone),
     sellerType: DIRECT_LISTING_SELLER_TYPE_OPTIONS.some((option) => option.value === sellerType) ? sellerType : 'unknown',
+    ownerStructureType: sellerOwnershipFields.ownerStructureType,
+    ownerEntityType: sellerOwnershipFields.ownerEntityType,
     sellerRegistrationNumber: normalizeText(canonicalFacts.idNumber || canonicalFacts.identityNumber || canonicalSeller.idNumber || seller.registrationNumber),
     companyName: normalizeText(canonicalSeller.companyName || onboardingFormData.companyName || (['company', 'close_corporation', 'other'].includes(sellerType) ? sellerName : '')),
     companyRegistrationNumber: normalizeText(canonicalSeller.registrationNumber || onboardingFormData.companyRegistrationNumber),
@@ -4370,6 +4367,11 @@ function AgentListings({ mobileEditor = false } = {}) {
   function updateForm(key, value) {
     setForm((previous) => {
       const next = key === 'propertyCategory' ? salesCategoryChange(previous, value) : { ...previous, [key]: key === 'sellerType' ? normalizeSellerEntityType(value) : value }
+      if (key === 'sellerType' && next.sellerType !== previous.sellerType) {
+        // A deliberate selector change must not retain the prior hidden model.
+        next.ownerStructureType = next.sellerType === 'unknown' ? '' : next.sellerType
+        next.ownerEntityType = ''
+      }
       if (key === 'propertyType' && normalizePropertyStructureType(value, { fallback: '' }) === 'sectional_title') {
         next.propertyStructureType = 'sectional_title'
       }
@@ -5403,6 +5405,9 @@ function AgentListings({ mobileEditor = false } = {}) {
     setCloudSave({ status: 'saved', savedAt: new Date().toISOString() })
     setSavedChangesNotSent(!relistChannel && ['active', 'under_offer'].includes(listingPatch.listingStatus) && form.selectedSyndicationChannels?.some(key => ['property24', 'private_property', 'agency_website'].includes(key)))
     setError('')
+    if (sendUpdates && !relistChannel && listingPublicationBlockMessage(listingPatch.listingStatus) && form.selectedSyndicationChannels?.some(key => ['property24', 'private_property', 'agency_website'].includes(key))) {
+      successMessage = `Listing saved. ${listingPublicationBlockMessage(listingPatch.listingStatus)}`
+    }
     if (sendUpdates && !relistChannel && isSupabaseConfigured && isUuidLike(listingId) && ['active', 'under_offer'].includes(listingPatch.listingStatus)) {
       listingUpdateRequestRef.current ||= crypto.randomUUID()
       try {
@@ -6599,7 +6604,10 @@ function AgentListings({ mobileEditor = false } = {}) {
               galleryImages: listingDistributionSync.uploadedImages || [],
               coverImageId: form.coverImageId,
             }),
-          }).catch(() => null)
+          }).catch((publicationError) => {
+            setInitialChannelResults(readInitialListingChannelResults(createdListingId))
+            throw new Error(`The listing is saved, but its publishing request was not confirmed: ${publicationError.message} Check advertising status before sending again. Your form has been kept.`)
+          })
           initialPublicationResults = readInitialListingChannelResults(createdListingId)
           setInitialChannelResults(initialPublicationResults)
         }
@@ -8704,7 +8712,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   </> : null}
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <p className="text-sm font-bold text-[#142132]">Publishing readiness</p>
-                    <p className="mt-1 text-xs text-[#607387]">{editorRelistChannel ? 'Save and continue to relist opens the selected portal’s relist confirmation.' : isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'The final button saves the listing and sends it to any websites you selected.'} Each channel confirms when it is live.</p>
+                    <p className="mt-1 text-xs text-[#607387]">{editorRelistChannel ? 'Save and continue to relist opens the selected portal’s relist confirmation.' : listingPublicationBlockMessage(form.listingStatus) || (isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'The final button saves the listing and sends it to any websites you selected.')} Each channel confirms when it is live.</p>
                     <div className="mt-3 grid gap-2">
                       {selectedCreateListingPortalStatuses.map((portal) => (
                         <div key={portal.key} className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-[#dce6f2] bg-white p-3">

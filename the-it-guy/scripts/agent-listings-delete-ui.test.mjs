@@ -127,7 +127,10 @@ assert(
 
 assert(
   deletePrivateListingSource.includes("throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')") &&
-    deletePrivateListingSource.includes("throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')"),
+    deletePrivateListingSource.includes("'This listing cannot be permanently deleted until its linked workflows are resolved.'") &&
+    deletePrivateListingSource.includes('code: result.data?.code') &&
+    deletePrivateListingSource.includes('error.deletionBlock = block') &&
+    deletePrivateListingSource.includes('throw error'),
   'the client must explain permission denials and structured deletion blockers instead of reporting false success.',
 )
 

@@ -190,7 +190,11 @@ try {
      const seed = await page.request.post(fixture.origin + '/fixture/create', { data: { payload, options: { creationId: id } } })
      assert.equal((await seed.json()).error, null)
      await page.goto(fixture.origin + `/listings/${id}/edit?step=property&scope=listing-publication`, { waitUntil: 'domcontentloaded' })
-     for (const channel of ['Property24', 'Private Property', 'Website']) await page.getByRole('checkbox', { name: channel === 'Website' ? /website/i : channel, exact: true }).check()
+     await page.getByRole('button', { name: /Step .*Where to advertise/ }).click()
+     for (const channel of ['Property24', 'Private Property', 'Agency website']) {
+      const choice = page.getByRole('button', { name: channel, exact: true })
+      if (await choice.getAttribute('aria-pressed') !== 'true') await choice.click()
+     }
      await page.getByRole('button', { name: /Step .*Check/ }).click()
     }
     await fail('private_property')

@@ -46,7 +46,7 @@ create table private_listing_documents(
   promoted_transaction_id uuid, promoted_document_id uuid, promotion_status text, promotion_error text
 );
 create table documents(id uuid, transaction_id uuid, canonical_requirement_instance_id uuid);
-create table client_portal_contexts(id uuid primary key, listing_id uuid, context_type text, status text, client_email text, updated_at timestamptz);
+create table client_portal_contexts(id uuid primary key, listing_id text, context_type text, status text, client_email text, updated_at timestamptz);
 create table private_listing_activity(id uuid primary key default gen_random_uuid(), private_listing_id uuid, activity_type text,
   activity_title text, activity_description text, performed_by uuid, visibility text, metadata jsonb);
 create table notification_automation_definitions(automation_key text primary key, display_name text, category text, trigger_type text,

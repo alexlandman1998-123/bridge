@@ -27,6 +27,7 @@ export function templateNavigation(templateKey: WebsiteTemplateKey) {
       { href: '/properties?type=sale', label: 'Buy' },
       { href: '/valuation', label: 'Sell' },
       { href: '/properties?type=rental', label: 'Rent' },
+      ...(templateKey === KINGDOM_TEMPLATE_KEY ? [{ href: '/recently-sold', label: 'Recently sold' }] : []),
       { href: '/about', label: 'Our people' },
       { href: '/about', label: 'About' },
       { href: '/contact', label: 'Contact' },

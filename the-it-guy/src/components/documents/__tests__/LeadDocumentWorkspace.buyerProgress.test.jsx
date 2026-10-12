@@ -11,6 +11,12 @@ const categories = [{
 }]
 const getStatusMeta = (row) => ({ state: row.state, label: row.state, pillClass: '', iconClass: '' })
 
+test('printable mandate entry is available only in seller Documents', () => {
+  const props = { categories, getStatusMeta, createMandateAction: () => {} }
+  expect(renderToStaticMarkup(<LeadDocumentWorkspace {...props} partyType="seller" />)).toContain('Create printable mandate')
+  expect(renderToStaticMarkup(<LeadDocumentWorkspace {...props} partyType="buyer" />)).not.toContain('Create printable mandate')
+})
+
 test('buyer uploads under review do not count as completed requirements', () => {
   const html = renderToStaticMarkup(<LeadDocumentWorkspace partyType="buyer" categories={categories} getStatusMeta={getStatusMeta} />)
   expect(html).toContain('1 of 2 complete')

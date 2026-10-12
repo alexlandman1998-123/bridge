@@ -17,7 +17,7 @@ function formatReassignmentError(payload = {}) {
   return normalizeText(payload.message || payload.error) || 'Unable to reassign this listing.'
 }
 
-export async function reassignListingAgent(listingId, assignedAgentId, { listingType = 'sale' } = {}) {
+export async function reassignListingAgent(listingId, assignedAgentId, { listingType = 'sale', additionalAgentIds, expectedAdditionalAgentIds } = {}) {
   const normalizedListingId = normalizeText(listingId)
   const normalizedAgentId = normalizeText(assignedAgentId)
   if (!normalizedListingId) throw new Error('Listing ID is required.')
@@ -35,7 +35,7 @@ export async function reassignListingAgent(listingId, assignedAgentId, { listing
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ assignedAgentId: normalizedAgentId }),
+    body: JSON.stringify({ assignedAgentId: normalizedAgentId, additionalAgentIds, expectedAdditionalAgentIds }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {

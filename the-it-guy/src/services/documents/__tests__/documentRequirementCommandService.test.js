@@ -5,7 +5,8 @@ import { addDocumentRequirement, executeDocumentRequirementCommand, prepareDocum
 
 const contextId = randomUUID(), requirementId = randomUUID(), actorId = randomUUID()
 const newCommand = () => ({ commandId: randomUUID(), contextType: 'transaction', contextId, payload: { party: 'buyer', label: 'Divorce papers' } })
-const saved = command => ({ saved: true, commandId: command.commandId, requirement: { id: requirementId } })
+const uploadId = randomUUID()
+const saved = command => ({ saved: true, commandId: command.commandId, requirement: { id: requirementId }, uploadId: command.action === 'upload' ? uploadId : null })
 const file = text => new File([text], 'divorce papers.pdf', { type: 'application/pdf' })
 const prepare = input => prepareDocumentRequirementUpload(input, { commandId: randomUUID(), actorId, requirementId, contextId, contextType: 'transaction', expectedRevision: 3 })
 
@@ -28,6 +29,14 @@ test('transport failures and malformed success are unconfirmed; definite databas
     { rpc: async () => ({ error: { code: '08006' } }) },
   ]) await assert.rejects(executeDocumentRequirementCommand(client, command), error => error.code === 'document_save_unconfirmed')
   await assert.rejects(executeDocumentRequirementCommand({ rpc: async () => ({ error: { code: '40001', message: 'Reload' } }) }, command), error => error.code === '40001')
+})
+
+test('an upload receipt must identify both the exact requirement and a saved file before claiming Uploaded', async () => {
+  const command = await prepare(file('mandate'))
+  for (const response of [{ ...saved(command), uploadId: null }, { ...saved(command), requirement: { id: randomUUID() } }]) {
+    const client = { rpc: async () => ({ data: response }) }
+    await assert.rejects(executeDocumentRequirementCommand(client, command), { code: 'document_save_unconfirmed' })
+  }
 })
 
 test('prepare validates and hashes bytes; private upload is immutable and database confirmation uses same envelope', async () => {

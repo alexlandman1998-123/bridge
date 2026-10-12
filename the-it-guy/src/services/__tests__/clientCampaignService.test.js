@@ -46,3 +46,19 @@ test('invalid telemetry-as-response, oversized notes and unconfirmed saves are r
   transport.rpc.mockResolvedValue({ error: { message: 'Denied' } })
   await expect(logClientCampaignResponse(client, entry)).rejects.toMatchObject({ message: 'Denied' })
 })
+
+test('artwork lookup is scoped to the organisation and permitted page and projects no HTML', async () => {
+  transport.rpc.mockImplementation(name => Promise.resolve({ data: name.endsWith('summary') ? { campaignCount: 1 } : [{ id: 'r', campaign_id: 'c', created_at: '2026-10-09' }] }))
+  const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), in: vi.fn().mockResolvedValue({ data: [{ id: 'c', preview_text: 'Preview', content_json: { blocks: [{ type: 'image', src: 'javascript:bad' }, { type: 'property', listings: [{ image: 'https://assets.example.test/home.jpg' }] }] } }, { id: 'not-permitted', content_json: { blocks: [] } }] }) }
+  transport.from = vi.fn().mockReturnValue(query)
+  const result = await loadClientCampaigns({ ...client, organisationId: 'agency' })
+  expect(query.eq).toHaveBeenCalledWith('organisation_id', 'agency')
+  expect(query.in).toHaveBeenCalledWith('id', ['c'])
+  expect(query.select).toHaveBeenCalledWith('id,preview_text,content_json')
+  expect(result.campaigns[0]).toMatchObject({ artwork_url: 'https://assets.example.test/home.jpg', preview_text: 'Preview' })
+  expect(result.campaigns[0].content_json).toBeUndefined()
+  query.in.mockResolvedValue({ error: { message: 'Unavailable' } })
+  const fallback = await loadClientCampaigns({ ...client, organisationId: 'agency' })
+  expect(fallback.artworkUnavailable).toBe(true)
+  expect(fallback.campaigns).toHaveLength(1)
+})

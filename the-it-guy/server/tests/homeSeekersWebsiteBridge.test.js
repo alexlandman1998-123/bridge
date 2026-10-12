@@ -94,7 +94,7 @@ test('clean buying and renting enquiries retain their CRM intent', async () => {
       let attribution
       const result = await createHomeSeekersLeadCaptureResponse({
         headers: { host: 'homeseeker.co.za' },
-        body: { type: 'general_enquiry', name: 'Fixture Visitor', email: 'visitor@example.test', privacyAccepted: true, pageUrl: `https://homeseeker.co.za${path}`, idempotencyKey: 'fixture-enquiry-123456' },
+        body: { type: 'general_enquiry', name: 'Fixture Visitor', email: 'visitor@example.test', privacyAccepted: true, publicTrackingVersion: 1, pageUrl: `https://homeseeker.co.za${path}`, idempotencyKey: 'fixture-enquiry-123456' },
         getConnection: async () => ({ site: { id: SITE_ID, published_revision_id: REVISION_ID }, hostname: 'homeseeker.co.za', client: {
           from() { return pageQuery([], 'home') },
           async rpc(_name, params) { attribution = params.p_attribution; return { data: { accepted: true } } },
@@ -102,6 +102,8 @@ test('clean buying and renting enquiries retain their CRM intent', async () => {
       })
       assert.equal(result.status, 201)
       assert.equal(attribution.leadIntent, intent)
+      assert.equal(attribution.publicHostname, 'homeseeker.co.za')
+      assert.equal(attribution.publicTrackingVersion, 1)
     }
     const rejected = await createHomeSeekersLeadCaptureResponse({
       headers: { host: 'homeseeker.co.za' },

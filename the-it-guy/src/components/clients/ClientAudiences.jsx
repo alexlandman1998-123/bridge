@@ -1,19 +1,21 @@
 import { Copy, Eye, Plus, Search, Trash2, UsersRound, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import Modal from '../ui/Modal'
 import {
   archiveEmailAudience,
   getSavedAudiences,
+  getAudienceFilterOptions,
   previewSavedAudience,
   saveEmailAudience,
 } from '../../services/emailCampaignService'
 
 const FIELD_OPTIONS = [
   { value: 'contact_type', label: 'Contact type', kind: 'select', options: ['buyer', 'seller', 'investor', 'tenant', 'landlord', 'lead'] },
-  { value: 'lead_stage', label: 'Lead status', kind: 'text', placeholder: 'e.g. qualified' },
-  { value: 'preferred_area', label: 'Preferred area', kind: 'text', placeholder: 'e.g. Cape Town' },
-  { value: 'tags', label: 'Tags', kind: 'text', placeholder: 'e.g. investor' },
+  { value: 'lead_stage', label: 'Lead status' },
+  { value: 'preferred_area', label: 'Preferred area' },
+  { value: 'tags', label: 'Tags' },
 ]
 
 const EMPTY_RULE = { field: 'contact_type', operator: 'in', value: ['buyer'] }
@@ -34,47 +36,88 @@ const valuesFor = (rule) => Array.isArray(rule?.value) ? rule.value : [rule?.val
 const ruleIsComplete = (rule) => Boolean(rule?.field && valuesFor(rule).some((value) => String(value || '').trim()))
 const rulesValid = (rules) => Array.isArray(rules?.rules) && rules.rules.length > 0 && rules.rules.every(ruleIsComplete)
 
-function RuleRow({ rule, index, onChange, onRemove, canRemove }) {
+const STARTING_POINTS = [
+  { name: 'Buyers', field: 'contact_type', value: ['buyer'], detail: 'People looking to buy' },
+  { name: 'Sellers', field: 'contact_type', value: ['seller'], detail: 'People looking to sell' },
+  { name: 'Investors', field: 'contact_type', value: ['investor'], detail: 'Investment contacts' },
+  { name: 'Clients by area', field: 'preferred_area', value: [], detail: 'Choose an existing area' },
+  { name: 'Clients by tag', field: 'tags', value: [], detail: 'Choose an existing tag' },
+]
+
+function RuleRow({ rule, index, onChange, onRemove, canRemove, filterOptions, optionsLoading }) {
   const field = FIELD_OPTIONS.find((item) => item.value === rule.field) || FIELD_OPTIONS[0]
   const values = valuesFor(rule)
-  const value = values.join(', ')
-  return <div className="grid gap-2 md:grid-cols-[92px_1fr_145px_minmax(180px,1fr)_36px] md:items-center">
-    <span className={`inline-flex h-9 items-center justify-center rounded-lg bg-[#f2f5f8] px-2 text-xs font-semibold text-[#5d718b] ${index === 0 ? 'invisible' : ''}`}>AND</span>
-    <select className="min-h-11 rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value={rule.field} onChange={(event) => onChange({ ...rule, field: event.target.value, value: [] })}>
+  // Preserve saved selections even if that value is no longer used by a contact.
+  const options = [...new Set([...(field.options || filterOptions[field.value] || []), ...values])]
+  return <div className="grid gap-2 md:grid-cols-[60px_1fr_145px_minmax(180px,1fr)_36px] md:items-start">
+    <span className={`inline-flex h-11 items-center justify-center text-xs font-semibold text-[#5d718b] ${index === 0 ? 'invisible' : ''}`}>AND</span>
+    <select aria-label={`Filter ${index + 1} field`} className="min-h-11 rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value={rule.field} onChange={(event) => onChange({ ...rule, field: event.target.value, value: [] })}>
       {FIELD_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
     </select>
-    <select className="min-h-11 rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value={rule.operator || 'in'} onChange={(event) => onChange({ ...rule, operator: event.target.value })}>
+    <select aria-label={`Filter ${index + 1} comparison`} className="min-h-11 rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value={rule.operator || 'in'} onChange={(event) => onChange({ ...rule, operator: event.target.value })}>
       <option value="in">is any of</option><option value="not_in">is none of</option><option value="contains">contains</option>
     </select>
-    {field.kind === 'select' ? <select className="min-h-11 rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value={values[0] || ''} onChange={(event) => onChange({ ...rule, value: event.target.value ? [event.target.value] : [] })}>
-      <option value="">Choose a type</option>{field.options.map((option) => <option key={option} value={option}>{option[0].toUpperCase() + option.slice(1)}</option>)}
-    </select> : <input className="min-h-11 rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value={value} placeholder={field.placeholder} onChange={(event) => onChange({ ...rule, value: event.target.value.split(',').map((item) => item.trim()).filter(Boolean) })} />}
-    <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-[#60758d] hover:bg-[#fff0f0] hover:text-[#ae3434] disabled:opacity-40" disabled={!canRemove} onClick={onRemove} aria-label="Remove filter"><X size={18} /></button>
+    <div className="space-y-2">
+      <select aria-label={`Filter ${index + 1} ${field.label}`} className="min-h-11 w-full rounded-xl border border-[#dce6ed] bg-white px-3 text-sm" value="" disabled={optionsLoading && !field.options} onChange={(event) => { if (event.target.value) onChange({ ...rule, value: [...values, event.target.value] }) }}>
+        <option value="">{optionsLoading && !field.options ? 'Loading choices…' : `Choose ${field.label.toLowerCase()}`}</option>
+        {options.filter(option => !values.includes(option)).map(option => <option key={option} value={option}>{option}</option>)}
+      </select>
+      {values.length ? <div className="flex flex-wrap gap-1">{values.map(value => <button type="button" key={value} className="inline-flex items-center gap-1 rounded-lg bg-[#edf7f3] px-2 py-1 text-xs text-[#244f43]" aria-label={`Remove ${value} from filter ${index + 1}`} onClick={() => onChange({ ...rule, value: values.filter(item => item !== value) })}>{value}<X size={12} /></button>)}</div> : !optionsLoading && !options.length ? <p className="text-xs text-[#688098]">No existing {field.label.toLowerCase()} values yet.</p> : null}
+    </div>
+    <button type="button" className="inline-flex h-11 w-9 items-center justify-center rounded-lg text-[#60758d] hover:bg-[#fff0f0] hover:text-[#ae3434] disabled:opacity-40" disabled={!canRemove} onClick={onRemove} aria-label={`Remove filter ${index + 1}`}><X size={18} /></button>
   </div>
 }
 
-function AudienceBuilder({ audience, organisationId, userId, onClose, onSaved }) {
+function MatchingClients({ organisationId, audience, onClose }) {
+  const [page, setPage] = useState(0)
+  const [result, setResult] = useState({ count: 0, contacts: [] })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const pageSize = 25
+  const changePage = next => { setLoading(true); setError(''); setResult({ count: 0, contacts: [] }); setPage(next) }
+  useEffect(() => {
+    let active = true
+    previewSavedAudience({ organisationId, rules: audience.rules || normaliseRules(audience.filter_json), limit: pageSize, offset: page * pageSize })
+      .then(next => { if (active) setResult(next) })
+      .catch(cause => { if (active) setError(cause.message || 'Unable to load matching clients.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [organisationId, audience, page, retry])
+  return <Modal open title={`Matching clients · ${audience.name || 'Untitled audience'}`} subtitle="Membership updates as contact details change. Campaign eligibility is checked separately before sending." onClose={onClose} className="w-full max-w-5xl">
+    {loading ? <p role="status" className="py-6 text-sm text-[#687e86]">Loading matching clients…</p> : error ? <div role="alert" className="py-6"><p className="text-sm text-[#b42318]">{error}</p><Button variant="secondary" onClick={() => { setLoading(true); setError(''); setRetry(value => value + 1) }}>Try again</Button></div> : <>
+      <p className="mb-4 text-sm font-semibold text-[#244f43]">{result.count} matching clients</p>
+      <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-[#f5f7f8] text-[#667b88]"><tr>{['Client', 'Type', 'Area', 'Lead status', 'Tags'].map(label => <th key={label} className="px-3 py-3 font-semibold">{label}</th>)}</tr></thead><tbody>{result.contacts.map(contact => <tr key={contact.id} className="border-b border-[#e8edef]"><td className="px-3 py-3"><strong className="block text-[#15332d]">{contact.name}</strong><span className="text-[#70828a]">{contact.email}</span></td><td className="px-3 py-3">{contact.contactType || '—'}</td><td className="px-3 py-3">{contact.area || '—'}</td><td className="px-3 py-3">{contact.leadStage || '—'}</td><td className="px-3 py-3">{contact.tags?.join(', ') || '—'}</td></tr>)}</tbody></table></div>
+      {!result.contacts.length ? <p className="py-6 text-sm text-[#70828a]">No clients match these filters.</p> : null}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="text-sm text-[#70828a]">{result.count ? `${page * pageSize + 1}–${page * pageSize + result.contacts.length} of ${result.count}` : '0 clients'}</span><div className="flex gap-2"><Button variant="secondary" disabled={page === 0} onClick={() => changePage(page - 1)}>Previous</Button><Button variant="secondary" disabled={(page + 1) * pageSize >= result.count} onClick={() => changePage(page + 1)}>Next</Button></div></div>
+    </>}
+  </Modal>
+}
+
+function AudienceBuilder({ audience, organisationId, userId, onClose, onSaved, filterOptions, optionsLoading, optionsError }) {
   const [draft, setDraft] = useState(() => audience ? { ...audience, rules: copyRules(audience.rules || audience.filter_json) } : { name: '', description: '', rules: emptyRules() })
   const [preview, setPreview] = useState({ count: 0, contacts: [] })
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const requestRef = useRef(0)
+  const [matchingAudience, setMatchingAudience] = useState(null)
   const valid = draft.name.trim() && rulesValid(draft.rules)
 
   useEffect(() => {
-    if (!rulesValid(draft.rules)) { setPreview({ count: 0, contacts: [] }); return undefined }
+    let active = true
+    if (!rulesValid(draft.rules)) { setPreview({ count: 0, contacts: [] }); setLoadingPreview(false); return undefined }
+    setLoadingPreview(true)
+    setPreview({ count: 0, contacts: [] })
     const timer = window.setTimeout(async () => {
-      const requestId = ++requestRef.current
       setLoadingPreview(true)
       try {
         const next = await previewSavedAudience({ organisationId, rules: draft.rules })
-        if (requestId === requestRef.current) setPreview(next)
+        if (active) { setPreview(next); setError('') }
       } catch (cause) {
-        if (requestId === requestRef.current) setError(cause.message || 'Unable to preview this audience.')
-      } finally { if (requestId === requestRef.current) setLoadingPreview(false) }
+        if (active) setError(cause.message || 'Unable to preview this audience.')
+      } finally { if (active) setLoadingPreview(false) }
     }, 500)
-    return () => window.clearTimeout(timer)
+    return () => { active = false; window.clearTimeout(timer) }
   }, [draft.rules, organisationId])
 
   const updateRule = (index, nextRule) => setDraft((current) => ({ ...current, rules: { ...current.rules, rules: current.rules.rules.map((rule, ruleIndex) => ruleIndex === index ? nextRule : rule) } }))
@@ -89,29 +132,57 @@ function AudienceBuilder({ audience, organisationId, userId, onClose, onSaved })
 
   return <section className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(290px,0.8fr)]">
     <div className="rounded-[14px] border border-[#dfe7eb] bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3"><input className="min-w-[260px] flex-1 border-0 bg-transparent text-2xl font-semibold tracking-[-0.03em] text-[#031011] outline-none" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Name this audience" /><button type="button" className="text-sm font-semibold text-[#52708a]" onClick={onClose}>Close</button></div>
-      <div className="mt-5 flex items-center justify-between rounded-xl border border-[#d5eee4] bg-[#edf9f4] px-4 py-4 text-[#07543d]"><div className="flex items-center gap-3"><span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#44b982] text-white"><UsersRound size={19} /></span><strong>{loadingPreview ? 'Updating matches…' : `${preview.count || 0} contacts match this audience`}</strong></div><button type="button" className="text-sm font-semibold underline underline-offset-4" onClick={() => document.getElementById('audience-preview')?.scrollIntoView({ behavior: 'smooth' })}>Preview contacts →</button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><input aria-label="Audience name" className="min-w-0 flex-1 border-0 bg-transparent text-2xl font-semibold tracking-[-0.03em] text-[#031011] outline-none" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Name this audience" /><button type="button" className="text-sm font-semibold text-[#52708a]" onClick={onClose}>Close</button></div>
+      <div className="mt-5 flex items-center justify-between rounded-xl border border-[#d5eee4] bg-[#edf9f4] px-4 py-4 flex-wrap gap-3 text-[#07543d]"><div className="flex items-center gap-3"><span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#44b982] text-white"><UsersRound size={19} /></span><strong>{loadingPreview ? 'Updating matches…' : `${preview.count || 0} contacts match this audience`}</strong></div><button type="button" className="text-sm font-semibold underline underline-offset-4" disabled={!rulesValid(draft.rules) || loadingPreview} onClick={() => setMatchingAudience({ name: draft.name, rules: copyRules(draft.rules) })}>View matching clients →</button></div>
       <p className="mt-5 text-sm font-semibold text-[#425e79]">Match contacts where</p>
-      <div className="mt-3 space-y-3">{draft.rules.rules.map((rule, index) => <RuleRow key={index} rule={rule} index={index} canRemove={draft.rules.rules.length > 1} onChange={(next) => updateRule(index, next)} onRemove={() => setDraft((current) => ({ ...current, rules: { ...current.rules, rules: current.rules.rules.filter((_, ruleIndex) => ruleIndex !== index) } }))} />)}</div>
+      <div className="mt-3 space-y-3">{draft.rules.rules.map((rule, index) => <RuleRow key={index} rule={rule} index={index} canRemove={draft.rules.rules.length > 1} filterOptions={filterOptions} optionsLoading={optionsLoading} onChange={(next) => updateRule(index, next)} onRemove={() => setDraft((current) => ({ ...current, rules: { ...current.rules, rules: current.rules.rules.filter((_, ruleIndex) => ruleIndex !== index) } }))} />)}</div>
       <div className="mt-4 flex flex-wrap gap-3"><Button type="button" variant="secondary" onClick={() => setDraft((current) => ({ ...current, rules: { ...current.rules, rules: [...current.rules.rules, { ...EMPTY_RULE }] } }))}><Plus size={16} /> Add filter</Button></div>
-      <p className="mt-3 text-xs leading-5 text-[#688098]">All filters are matched together. More advanced OR groups and behavioural filters arrive with the next audience-data release.</p>
+      <p className="mt-3 text-xs leading-5 text-[#688098]">All filters are matched together. Choose more than one value to match any of those values within a filter.</p>
+      {optionsError ? <p role="alert" className="mt-4 text-sm text-[#b42318]">{optionsError}</p> : null}
       {error ? <p className="mt-4 text-sm text-[#b42318]">{error}</p> : null}
       <div className="mt-6 flex justify-end gap-3 border-t border-[#e6edf0] pt-4"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="button" disabled={!valid || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save audience'}</Button></div>
     </div>
     <aside className="rounded-[14px] border border-[#dfe7eb] bg-white p-5 shadow-sm"><h2 className="text-xl font-semibold text-[#031011]">Audience details</h2><label className="mt-4 grid gap-2 text-sm font-semibold text-[#425e79]">Description<textarea className="min-h-28 rounded-xl border border-[#dce6ed] p-3 font-normal" value={draft.description || ''} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Who is this audience for?" /></label><div id="audience-preview" className="mt-6 border-t border-[#e5ecef] pt-5"><p className="text-sm font-semibold text-[#425e79]">Preview contacts</p><div className="mt-3 space-y-2">{preview.contacts?.length ? preview.contacts.map((contact) => <div key={contact.id} className="rounded-lg bg-[#f6f8f8] px-3 py-2 text-sm"><strong className="block text-[#15332d]">{contact.name}</strong><span className="text-[#698078]">{contact.contactType || 'Contact'}{contact.area ? ` · ${contact.area}` : ''}</span></div>) : <p className="text-sm text-[#74878d]">Add a complete filter to see matching contacts.</p>}</div></div><div className="mt-6 rounded-xl bg-[#eff8f4] p-4 text-sm leading-6 text-[#3d6f5d]">Audience membership updates automatically as contact data changes.</div></aside>
+    {matchingAudience ? <MatchingClients organisationId={organisationId} audience={matchingAudience} onClose={() => setMatchingAudience(null)} /> : null}
   </section>
 }
 
 export default function ClientAudiences({ organisationId, userId }) {
   const [audiences, setAudiences] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [query, setQuery] = useState(''); const [editing, setEditing] = useState(null); const [deleteTarget, setDeleteTarget] = useState(null)
-  const refresh = async () => { if (!organisationId) return; setLoading(true); try { const saved = await getSavedAudiences(organisationId); const withCounts = await Promise.all(saved.map(async (audience) => ({ ...audience, matchCount: (await previewSavedAudience({ organisationId, rules: normaliseRules(audience.filter_json), limit: 1 })).count }))); setAudiences(withCounts); setError('') } catch (cause) { setError(cause.message || 'Unable to load audiences.') } finally { setLoading(false) } }
-  useEffect(() => { void refresh() }, [organisationId])
+  const [matchingAudience, setMatchingAudience] = useState(null)
+  const [filterOptions, setFilterOptions] = useState({})
+  const [optionsLoading, setOptionsLoading] = useState(true)
+  const [optionsError, setOptionsError] = useState('')
+  useEffect(() => {
+    let active = true
+    setFilterOptions({}); setOptionsLoading(true); setOptionsError(''); setEditing(null); setMatchingAudience(null); setDeleteTarget(null)
+    getAudienceFilterOptions(organisationId).then(options => { if (active) setFilterOptions(options) }).catch(() => { if (active) setOptionsError('Unable to load existing filter values. Close and reopen Audiences to retry.') }).finally(() => { if (active) setOptionsLoading(false) })
+    return () => { active = false }
+  }, [organisationId])
+  const refreshRequest = useRef(0)
+  const refresh = useCallback(async () => {
+    const request = ++refreshRequest.current
+    setAudiences([]); setLoading(true)
+    try {
+      const saved = await getSavedAudiences(organisationId)
+      const withCounts = await Promise.all(saved.map(async audience => ({ ...audience, matchCount: (await previewSavedAudience({ organisationId, rules: normaliseRules(audience.filter_json), limit: 1 })).count })))
+      if (request === refreshRequest.current) { setAudiences(withCounts); setError('') }
+    } catch (cause) {
+      if (request === refreshRequest.current) setError(cause.message || 'Unable to load audiences.')
+    } finally { if (request === refreshRequest.current) setLoading(false) }
+  }, [organisationId])
+  useEffect(() => {
+    void refresh()
+    return () => { refreshRequest.current += 1 }
+  }, [refresh])
   const visible = useMemo(() => audiences.filter((audience) => `${audience.name} ${audience.description || ''}`.toLowerCase().includes(query.toLowerCase())), [audiences, query])
   const duplicate = (audience) => setEditing({ ...audience, id: null, name: `${audience.name} (copy)` })
   const remove = async () => { try { await archiveEmailAudience({ organisationId, audienceId: deleteTarget.id }); setDeleteTarget(null); await refresh() } catch (cause) { setError(cause.message || 'Unable to delete this audience.') } }
   return <section className="bg-[#f7f8f8] p-5 md:p-7">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#031011]">Audiences</h1><p className="mt-2 text-[#60758a]">Create saved groups of contacts for campaigns, follow-ups and outreach.</p></div><Button type="button" onClick={() => setEditing({ name: '', description: '', rules: emptyRules() })}><Plus size={17} /> Create audience</Button></div>
-    {editing ? <AudienceBuilder key={editing.id || 'new'} audience={editing} organisationId={organisationId} userId={userId} onClose={() => setEditing(null)} onSaved={refresh} /> : <div className="rounded-[14px] border border-[#dfe7eb] bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-[#031011]">Saved audiences</h2><label className="flex min-w-[230px] items-center gap-2 rounded-xl border border-[#dce6ed] px-3"><Search size={16} className="text-[#71828b]" /><input className="h-10 w-full border-0 outline-none" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search audiences" /></label></div>{error ? <p className="mt-4 text-sm text-[#b42318]">{error}</p> : null}<div className="mt-5 overflow-hidden rounded-xl border border-[#e3eaed]"><div className="grid grid-cols-[minmax(0,1fr)_130px_130px_150px] gap-3 bg-[#f5f7f8] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[#667b88]"><span>Audience</span><span>Matching contacts</span><span>Last updated</span><span>Actions</span></div>{loading ? <p className="p-5 text-sm text-[#687e86]">Loading audiences…</p> : visible.length ? visible.map((audience) => <div key={audience.id} className="grid grid-cols-[minmax(0,1fr)_130px_130px_150px] items-center gap-3 border-t border-[#e8edef] px-4 py-4 text-sm"><div><strong className="block text-[#15332d]">{audience.name}</strong><span className="mt-1 block truncate text-[#70828a]">{audience.description || 'No description'}</span></div><span className="font-semibold text-[#244f43]">{audience.matchCount ?? '—'}</span><span className="text-[#70828a]">{relative(audience.updated_at)}</span><div className="flex gap-1"><button type="button" className="rounded-lg p-2 hover:bg-[#edf7f3]" onClick={() => setEditing(audience)} aria-label={`Edit ${audience.name}`}><Eye size={16} /></button><button type="button" className="rounded-lg p-2 hover:bg-[#edf7f3]" onClick={() => duplicate(audience)} aria-label={`Duplicate ${audience.name}`}><Copy size={16} /></button><button type="button" className="rounded-lg p-2 text-[#a43838] hover:bg-[#fff0f0]" onClick={() => setDeleteTarget(audience)} aria-label={`Delete ${audience.name}`}><Trash2 size={16} /></button></div></div>) : <div className="p-9 text-center"><UsersRound className="mx-auto text-[#6ba78f]" /><strong className="mt-3 block text-[#15332d]">Create your first audience to target the right contacts at the right time.</strong><Button type="button" className="mt-4" onClick={() => setEditing({ name: '', description: '', rules: emptyRules() })}>Create audience</Button></div>}</div></div>}
+    {!editing ? <div className="mb-6"><h2 className="text-sm font-semibold text-[#425e79]">Start with a group</h2><p className="mt-1 text-sm text-[#60758a]">Choose a starting point, then adjust its filters before saving.</p><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{STARTING_POINTS.map(point => <button type="button" key={point.name} className="rounded-xl border border-[#dfe7eb] bg-white p-4 text-left hover:border-[#6ba78f]" onClick={() => setEditing({ name: point.name, description: '', rules: { operator: 'AND', rules: [{ field: point.field, operator: 'in', value: [...point.value] }] } })}><strong className="block text-[#15332d]">{point.name}</strong><span className="mt-1 block text-xs text-[#70828a]">{point.detail}</span></button>)}</div></div> : null}
+    {editing ? <AudienceBuilder key={editing.id || 'new'} audience={editing} organisationId={organisationId} userId={userId} onClose={() => setEditing(null)} onSaved={refresh} filterOptions={filterOptions} optionsLoading={optionsLoading} optionsError={optionsError} /> : <div className="rounded-[14px] border border-[#dfe7eb] bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold text-[#031011]">Saved audiences</h2><label className="flex min-w-[230px] items-center gap-2 rounded-xl border border-[#dce6ed] px-3"><Search size={16} className="text-[#71828b]" /><input className="h-10 w-full border-0 outline-none" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search audiences" /></label></div>{error ? <p className="mt-4 text-sm text-[#b42318]">{error}</p> : null}<div className="mt-5 overflow-x-auto rounded-xl border border-[#e3eaed]"><div className="min-w-[650px]"><div className="grid grid-cols-[minmax(0,1fr)_130px_130px_150px] gap-3 bg-[#f5f7f8] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[#667b88]"><span>Audience</span><span>Matching contacts</span><span>Last updated</span><span>Actions</span></div>{loading ? <p className="p-5 text-sm text-[#687e86]">Loading audiences…</p> : visible.length ? visible.map((audience) => <div key={audience.id} className="grid grid-cols-[minmax(0,1fr)_130px_130px_150px] items-center gap-3 border-t border-[#e8edef] px-4 py-4 text-sm"><div><strong className="block text-[#15332d]">{audience.name}</strong><span className="mt-1 block truncate text-[#70828a]">{audience.description || 'No description'}</span></div><button type="button" className="text-left font-semibold text-[#244f43] underline underline-offset-4" onClick={() => setMatchingAudience(audience)} aria-label={`View matching clients for ${audience.name}`}>{audience.matchCount ?? '—'}</button><span className="text-[#70828a]">{relative(audience.updated_at)}</span><div className="flex gap-1"><button type="button" className="rounded-lg p-2 hover:bg-[#edf7f3]" onClick={() => setEditing(audience)} aria-label={`Edit ${audience.name}`}><Eye size={16} /></button><button type="button" className="rounded-lg p-2 hover:bg-[#edf7f3]" onClick={() => duplicate(audience)} aria-label={`Duplicate ${audience.name}`}><Copy size={16} /></button><button type="button" className="rounded-lg p-2 text-[#a43838] hover:bg-[#fff0f0]" onClick={() => setDeleteTarget(audience)} aria-label={`Delete ${audience.name}`}><Trash2 size={16} /></button></div></div>) : <div className="p-9 text-center"><UsersRound className="mx-auto text-[#6ba78f]" /><strong className="mt-3 block text-[#15332d]">Create your first audience to target the right contacts at the right time.</strong><Button type="button" className="mt-4" onClick={() => setEditing({ name: '', description: '', rules: emptyRules() })}>Create audience</Button></div>}</div></div></div>}
+    {matchingAudience ? <MatchingClients organisationId={organisationId} audience={matchingAudience} onClose={() => setMatchingAudience(null)} /> : null}
     <ConfirmDialog open={Boolean(deleteTarget)} title="Delete this audience?" description="This removes the saved audience, not any of its contacts." confirmLabel="Delete audience" variant="destructive" onConfirm={() => void remove()} onCancel={() => setDeleteTarget(null)} />
   </section>
 }

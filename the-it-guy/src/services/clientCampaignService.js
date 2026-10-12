@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { campaignArtwork } from '../core/clients/clientCampaignCards'
 
 export const CLIENT_CAMPAIGN_RESPONSE_TYPES = [
   ['email_reply', 'Email reply'], ['phone_reply', 'Phone response'], ['enquiry', 'Enquiry'], ['rsvp', 'RSVP'], ['other', 'Other response'],
@@ -18,9 +19,21 @@ export async function loadClientCampaigns(client, { cursor = null, pageSize = 25
     }
   }
   if (includeSummary && !summary.data) throw new Error('This client profile is unavailable or you no longer have access. Reload the client directory.')
-  const campaigns = (page.data || []).slice(0, size)
+  let campaigns = (page.data || []).slice(0, size)
+  let artworkUnavailable = false
+  // Enrich only the permitted recipient page, under the existing campaign RLS.
+  // Never fetch HTML, provider payloads or recipient tracking URLs for cards.
+  if (campaigns.length && client.organisationId) {
+    try {
+      const ids = [...new Set(campaigns.map(row => row.campaign_id))]
+      const artwork = await supabase.from('email_campaigns').select('id,preview_text,content_json').eq('organisation_id', client.organisationId).in('id', ids)
+      if (artwork.error) throw artwork.error
+      const content = new Map((artwork.data || []).filter(row => ids.includes(row.id)).map(row => [row.id, row]))
+      campaigns = campaigns.map(row => ({ ...row, artwork_url: campaignArtwork(content.get(row.campaign_id)?.content_json), preview_text: content.get(row.campaign_id)?.preview_text || '' }))
+    } catch { artworkUnavailable = true }
+  }
   const last = campaigns.at(-1)
-  return { available: true, campaigns, summary: summary.data, nextCursor: page.data?.length > size ? { created_at: last.created_at, id: last.id } : null }
+  return { available: true, campaigns, summary: summary.data, artworkUnavailable, nextCursor: page.data?.length > size ? { created_at: last.created_at, id: last.id } : null }
 }
 export async function logClientCampaignResponse(client, { recipientId, requestId, kind, detail, occurredAt } = {}) {
   if (!client?.identityId || !isSupabaseConfigured || !supabase) throw new Error('A permanent client profile and database connection are required.')

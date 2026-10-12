@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import ClientActivityPanel from './ClientActivityPanel'
 import { loadClientActivity, logClientInteraction } from '../../services/clientActivityService'
@@ -9,7 +9,7 @@ const client = { id: 'client:a', identityId: 'a', identityVersion: 3, organisati
 const event = { id: 'event-a', title: 'Call logged', detail: 'Confirmed viewing', actor_kind: 'staff', actor_name: 'Alex Agent', source_kind: 'lead', source_id: 'lead-a', occurred_at: '2026-10-09T10:00:00Z' }
 const show = (props = {}) => render(<MemoryRouter><ClientActivityPanel client={client} {...props} /></MemoryRouter>)
 beforeEach(() => { loadClientActivity.mockResolvedValue({ available: true, events: [event], nextCursor: null }); logClientInteraction.mockResolvedValue('saved') })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
 
 test('renders dates, actor and source links, and filters through the paged reader', async () => {
   show()
@@ -85,4 +85,58 @@ test('a campaign response refresh signal reloads the activity panel', async () =
   await waitFor(() => expect(loadClientActivity).toHaveBeenCalledTimes(1))
   rerender(<MemoryRouter><ClientActivityPanel client={client} refreshToken={1} /></MemoryRouter>)
   await waitFor(() => expect(loadClientActivity).toHaveBeenCalledTimes(2))
+})
+
+test('incoming and outgoing views distinguish a campaign response from provider tracking', async () => {
+  loadClientActivity.mockResolvedValue({ available: true, nextCursor: null, events: [
+    { ...event, id: 'response', title: 'Campaign response recorded', event_type: 'campaign.response', category: 'interaction' },
+    { ...event, id: 'sent', title: 'Campaign sent', event_type: 'campaign.sent', category: 'interaction', origin_table: 'email_campaign_recipients', origin_id: 'recipient' },
+    { ...event, id: 'open', title: 'Campaign opened', event_type: 'campaign.opened', category: 'interaction', origin_table: 'email_campaign_recipients', origin_id: 'recipient' },
+  ] })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: /Incoming/ }))
+  await screen.findByRole('button', { name: 'Campaign response recorded' })
+  expect(screen.queryByRole('button', { name: 'Confirmed viewing' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /Outgoing/ }))
+  const campaign = screen.getByRole('button', { name: 'Confirmed viewing' })
+  expect(screen.queryByRole('button', { name: 'Campaign response recorded' })).toBeNull()
+  fireEvent.click(campaign)
+  expect(campaign.getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByText(/Only a recorded response confirms a reply/)).toBeTruthy()
+})
+
+test('refresh preserves expanded details, search and previously loaded older history', async () => {
+  const old = { ...event, id: 'older', title: 'Earlier enquiry', occurred_at: '2026-10-08T10:00:00Z' }
+  loadClientActivity.mockResolvedValueOnce({ available: true, events: [event], nextCursor: { id: event.id, occurred_at: event.occurred_at } })
+    .mockResolvedValueOnce({ available: true, events: [old], nextCursor: null })
+    .mockResolvedValueOnce({ available: true, events: [{ ...event, id: 'new', title: 'New update' }, event], nextCursor: { id: event.id, occurred_at: event.occurred_at } })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Load older activity' }))
+  const entry = await screen.findByRole('button', { name: 'Earlier enquiry' })
+  fireEvent.click(entry)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search activity' }), { target: { value: 'Earlier' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(loadClientActivity).toHaveBeenCalledTimes(3))
+  expect(screen.getByRole('button', { name: 'Earlier enquiry' }).getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByRole('textbox', { name: 'Search activity' }).value).toBe('Earlier')
+})
+
+
+test('automatic updates preserve expansion and stop while updates are paused', async () => {
+  show()
+  const entry = await screen.findByRole('button', { name: 'Call logged' })
+  fireEvent.click(entry)
+  fireEvent.click(screen.getByRole('switch'))
+  vi.useFakeTimers()
+  fireEvent.click(screen.getByRole('switch'))
+  loadClientActivity.mockResolvedValue({ available: true, nextCursor: null, events: [
+    { ...event, id: 'new-update', title: 'New incoming lead', occurred_at: '2026-10-10T10:00:00Z' }, event,
+  ] })
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  expect(screen.getByRole('button', { name: 'Call logged' }).getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByRole('button', { name: 'New incoming lead' })).toBeTruthy()
+  const requests = loadClientActivity.mock.calls.length
+  fireEvent.click(screen.getByRole('switch'))
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
+  expect(loadClientActivity).toHaveBeenCalledTimes(requests)
 })

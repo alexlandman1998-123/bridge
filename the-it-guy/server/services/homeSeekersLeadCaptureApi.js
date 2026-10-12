@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { getHomeSeekersWebsiteConnection, homeSeekersPagePath, isHomeSeekersPageUrl } from './homeSeekersWebsiteBridge.js'
+import { isHomeSeekersPublicTraffic } from '../../src/pages/homeSeekersPublicTraffic.js'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/
@@ -115,6 +116,8 @@ export async function createHomeSeekersLeadCaptureResponse({ method = 'POST', he
       p_request_fingerprint: fingerprint(headers, websiteHostname),
       p_attribution: {
         pagePath: page.pathname,
+        ...(payload.publicTrackingVersion === 1 && isHomeSeekersPublicTraffic({ hostname, pathname: page.pathname, search: page.search })
+          ? { publicHostname: hostname, publicTrackingVersion: 1 } : {}),
         userAgent: text(headers['user-agent'] || headers['User-Agent'], 512),
         leadIntent: type === 'valuation_request' ? 'sell'
           : type === 'general_enquiry' ? (['buy', 'sell', 'rent', 'other'].includes(leadIntent) ? leadIntent

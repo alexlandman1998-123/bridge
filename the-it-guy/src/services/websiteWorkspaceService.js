@@ -1,4 +1,5 @@
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { websiteAnalyticsRpc } from './websiteAnalyticsScope.js'
 
 const WEBSITE_BRAND_PUBLICATION_FUNCTION = 'website-brand-publication'
 const WEBSITE_DOMAIN_MANAGEMENT_FUNCTION = 'website-domain-management'
@@ -63,7 +64,7 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
     supabase.from('website_pages').select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks, revision_id, updated_at').eq('website_site_id', site.id).order('page_kind').order('slug'),
     supabase.from('website_publication_events').select('id, action, from_revision_id, source_revision_id, to_revision_id, content_fingerprint, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
     supabase.from('website_management_events').select('id, action, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
-    supabase.rpc('website_dashboard_analytics', { p_website_site_id: site.id, p_days: 30 }),
+    supabase.rpc(websiteAnalyticsRpc(site.id), { p_website_site_id: site.id, p_days: 30 }),
     supabase.rpc('website_workspace_leads', { p_website_site_id: site.id, p_days: Math.max(1, Math.min(Number(leadWindowDays) || 30, 90)) }),
     supabase.from('website_blog_posts').select('id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, content_blocks, author_name, status, lifecycle_status, scheduled_for, published_at, seo_title, seo_description, created_at, updated_at').eq('website_site_id', site.id).order('updated_at', { ascending: false }),
     supabase.from('website_media_assets').select('id, website_site_id, storage_path, public_url, alt_text, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }),

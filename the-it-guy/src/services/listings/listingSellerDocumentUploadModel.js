@@ -24,6 +24,7 @@ export function buildSellerDocumentUploadQueue(documents = [], progressByKey = {
         uploadStatus: progress?.status || 'idle',
         uploadFileName: progress?.fileName || '',
         uploadError: progress?.error || '',
+        uploadProgress: progress,
       }
     })
   const required = rows.filter((row) => row.required !== false)

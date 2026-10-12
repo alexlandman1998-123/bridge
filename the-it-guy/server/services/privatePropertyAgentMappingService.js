@@ -1,3 +1,4 @@
+import { additionalListingAgentIds, validateAdditionalListingAgents } from './listingContactAgents.js'
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
 import {
   buildPrivatePropertyAgencyConfigReadiness,
@@ -154,7 +155,7 @@ async function fetchListingContext({ client, listingId } = {}) {
   return fetchOptionalSingle({
     client,
     table: 'private_listings',
-    select: 'id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, created_by',
+    select: '*',
     filters: [['eq', 'id', normalizedListingId]],
   })
 }
@@ -419,6 +420,20 @@ export async function resolvePrivatePropertyAgentMapping({
   const readiness = buildReadiness(match?.row || null, match?.source || 'none')
   const blockers = [...(effectiveConfigResolution?.ready === false ? effectiveConfigResolution.blockers : []), ...readiness.blockers]
   const warnings = [...(effectiveConfigResolution?.warnings || []), ...readiness.warnings]
+  const additionalIds = additionalListingAgentIds(listing || {})
+  const contactIds = [readiness.mapping?.privatePropertyAgentId].filter(Boolean)
+  const effectiveConfigId = effectiveConfigResolution?.config?.id || readiness.mapping?.agencyConfigId
+  if (additionalIds.length) {
+    await validateAdditionalListingAgents({ client, organisationId: resolvedOrganisationId, agentIds: additionalIds })
+    if (match?.source !== 'arch9_user') blockers.push('missing_private_property_primary_agent_mapping')
+    for (const userId of additionalIds) {
+      // Additional contacts must be exact user matches in the same PP branch/config.
+      const row = rows.map(normalizeMappingRow).find((item) => item.arch9UserId === userId && item.agencyConfigId === effectiveConfigId && item.status === 'active')
+      const additionalReadiness = buildReadiness(row)
+      if (!additionalReadiness.ready) blockers.push('missing_private_property_additional_agent_mapping')
+      else contactIds.push(row.privatePropertyAgentId)
+    }
+  }
 
   return {
     version: PRIVATE_PROPERTY_AGENT_MAPPING_SERVICE_VERSION,
@@ -432,7 +447,8 @@ export async function resolvePrivatePropertyAgentMapping({
     agencyConfig: effectiveConfigResolution?.config || null,
     mapping: readiness.mapping,
     agentMapping: {
-      agentIds: readiness.mapping?.privatePropertyAgentId || '',
+      agentIds: [...new Set(contactIds)].join(','),
+      hasAdditionalAgents: additionalIds.length > 0,
       privatePropertyAgentId: readiness.mapping?.privatePropertyAgentId || '',
     },
     blockers: [...new Set(blockers)],

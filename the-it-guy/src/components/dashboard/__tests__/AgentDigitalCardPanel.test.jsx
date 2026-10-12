@@ -67,3 +67,30 @@ it('enables a rental-only card with a custom label and preserves it when editing
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ rentEnabled: true, buyEnabled: false, sellEnabled: false, rentalCtaLabel: 'Find a rental' }), 'active'))
 })
+
+it('shows copy and share in the header and passes the active card link to the existing handlers', () => {
+  const onCopy = vi.fn(), onShareWhatsApp = vi.fn()
+  const shareUrl = 'https://example.test/card/alex'
+  render(<AgentDigitalCardPanel agent={agent} link={{ ...link, agentDigitalCard: { features: {} } }} shareUrl={shareUrl} onCopy={onCopy} onShareWhatsApp={onShareWhatsApp} />)
+  const copy = screen.getByRole('button', { name: 'Copy link' })
+  const share = screen.getByRole('button', { name: 'Share on WhatsApp' })
+  expect(copy.closest('header')).toBeTruthy()
+  expect(share.closest('header')).toBeTruthy()
+  fireEvent.click(copy)
+  fireEvent.click(share)
+  expect(onCopy).toHaveBeenCalledWith(shareUrl, 'Card link copied')
+  expect(onShareWhatsApp).toHaveBeenCalledOnce()
+})
+
+it('keeps sharing visible but disabled for draft cards', () => {
+  const onCopy = vi.fn(), onShareWhatsApp = vi.fn()
+  render(<AgentDigitalCardPanel canManage agent={agent} link={{ id: 'draft', status: 'draft' }} shareUrl="https://example.test/card/draft" onCopy={onCopy} onShareWhatsApp={onShareWhatsApp} />)
+  const copy = screen.getByRole('button', { name: 'Copy link' })
+  const share = screen.getByRole('button', { name: 'Share on WhatsApp' })
+  expect(copy.disabled).toBe(true)
+  expect(share.disabled).toBe(true)
+  fireEvent.click(copy)
+  fireEvent.click(share)
+  expect(onCopy).not.toHaveBeenCalled()
+  expect(onShareWhatsApp).not.toHaveBeenCalled()
+})

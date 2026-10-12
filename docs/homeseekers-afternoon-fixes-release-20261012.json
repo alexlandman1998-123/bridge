@@ -1,0 +1,76 @@
+{
+  "released_at": "2026-10-12",
+  "timezone": "Africa/Johannesburg",
+  "scope": [
+    "Website publication authorization and safe failure details",
+    "Seller-onboarding polling fix preserved from existing afternoon release",
+    "Home Seekers Join us ticks verified live"
+  ],
+  "source": {
+    "commit": "3df953c988f0ebeab8fab3d58656eeeaecd3043a",
+    "branch": "main",
+    "base_production_commit": "a298b27e9b31da203a504992cb9a4641d7ebbfa9",
+    "preserved_afternoon_release": "401b2a030c03770708000aab4f3370803fed5c0c"
+  },
+  "app": {
+    "project": "bridge",
+    "deployment_id": "dpl_7z1sjaM1BQGfJJTnQFG5518xPeXS",
+    "deployment_url": "https://bridge-mveobcr99-alexs-projects-f5496a21.vercel.app",
+    "status": "READY",
+    "live_url": "https://app.arch9.co.za",
+    "live_login_http": 200,
+    "live_release_marker": "3df953c988f0ebeab8fab3d58656eeeaecd3043a"
+  },
+  "supabase": {
+    "project_ref": "isdowlnollckzvltkasn",
+    "functions": [
+      {
+        "name": "website-listing-publication",
+        "version": 24,
+        "verify_jwt": true
+      },
+      {
+        "name": "website-partner-listing-publication",
+        "version": 9,
+        "verify_jwt": true
+      }
+    ],
+    "database_migrations_applied": [],
+    "recovery_guard": "RECOVERY_LOCKED"
+  },
+  "listing": {
+    "reference": "PRV-202610121214-P2E9",
+    "id": "b1f59206-30c4-4916-ad73-ea266419f586",
+    "public_url": "https://homeseeker.co.za/properties/b1f59206-30c4-4916-ad73-ea266419f586",
+    "website_status": "published",
+    "projection_status": "Published",
+    "job_status": "accepted",
+    "photos": 3,
+    "public_feed_http": 200,
+    "public_feed_found": true,
+    "browser_heading": "Lovely",
+    "browser_images_loaded": true,
+    "retry_scope": "Only the existing agency website job for this listing was reset, conditionally on there being no published record or copied media. A first guarded retry exposed raw secret API key forwarding; the corrected second retry succeeded."
+  },
+  "verification": {
+    "focused_tests": 31,
+    "edge_function_type_checks": "passed",
+    "production_guard": "passed",
+    "join_ticks": {
+      "left": 4,
+      "right": 3
+    },
+    "database_logs_sample": {
+      "window_sast": "14:20–14:37",
+      "requests": 1752,
+      "onboarding_reads": 20,
+      "p95_origin_ms": 474,
+      "server_errors": 0
+    }
+  },
+  "recovery": {
+    "previous_app_deployment": "dpl_7hj9hsNj7mEEgj7Q6MtdAVEfe97h",
+    "edge_function_source_backups": "output/homeseekers-afternoon-release-recovery/"
+  },
+  "remaining": "No required release work remains. Current performance sample is not a guarantee against future slowdowns."
+}

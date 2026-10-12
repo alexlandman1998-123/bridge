@@ -1,6 +1,8 @@
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import ListingDocumentActions from '../components/documents/ListingDocumentActions.jsx'
+import DocumentUploadProgress from '../components/documents/DocumentUploadProgress.jsx'
+import { withDocumentUploadDeadline } from '../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
 import { buildSellerDisclosurePreparationPatch } from '../lib/sellerAgentAssistedDisclosure.js'
@@ -10,6 +12,7 @@ import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDoc
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
 import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
+import PrintableMandateTerms from '../components/documents/PrintableMandateTerms.jsx'
 import { buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, isMandateCalendarDate, readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import SellerPortalAccessControls from '../components/client-portal/SellerPortalAccessControls.jsx'
 import SellerPropertyGallery from '../components/client-portal/seller/SellerPropertyGallery.jsx'
@@ -1706,6 +1709,8 @@ function getListingDocumentGroupingKey(document = {}) {
     document?.sourceLabel,
     document?.fileName,
   ].map((value) => String(value || '').toLowerCase()).join(' ')
+
+  if (category === 'fica' || /signed[_ ]fica|fica[_ ]declaration/.test(source)) return 'fica'
 
   if (
     category === 'sales' ||
@@ -3773,6 +3778,7 @@ function AgentListingDetail() {
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
   const [sellerSectionReturnToDocuments, setSellerSectionReturnToDocuments] = useState(false)
   const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
+  const sellerDocumentUploadAttemptRef = useRef(0)
   const [sellerDocumentUploadModalOpen, setSellerDocumentUploadModalOpen] = useState(false)
   const [newListingDocumentOpen, setNewListingDocumentOpen] = useState(false)
   const [listingDocumentToRemove, setListingDocumentToRemove] = useState(null)
@@ -3786,9 +3792,6 @@ function AgentListingDetail() {
   const [preferredTransferAttorneyOptionId, setPreferredTransferAttorneyOptionId] = useState('')
   const [preferredTransferAttorneyChoiceTouched, setPreferredTransferAttorneyChoiceTouched] = useState(false)
   const [preferredTransferAttorneyLoading, setPreferredTransferAttorneyLoading] = useState(false)
-  const [mandateStartOpen, setMandateStartOpen] = useState(false)
-  const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
-  const [mandateSetupDraft, setMandateSetupDraft] = useState({ sellerName: '', sellerEmail: '', propertyAddress: '' })
   const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
   const sellerDocumentPreparationBaselineRef = useRef(null)
   const [sellerDisclosureDraft, setSellerDisclosureDraft] = useState({})
@@ -3806,7 +3809,11 @@ function AgentListingDetail() {
   const [mandateReplacementReason, setMandateReplacementReason] = useState('')
   const [mandateReplacementIntent, setMandateReplacementIntent] = useState(false)
   const [sellerDocumentPreparationKey, setSellerDocumentPreparationKey] = useState('')
+  const [printableMandateTerms, setPrintableMandateTerms] = useState(null)
+  const [printableMandateInitialTerms, setPrintableMandateInitialTerms] = useState(null)
+  const [sellerDocumentPreparationNeedsRefresh, setSellerDocumentPreparationNeedsRefresh] = useState(false)
   const [sellerMandateSignatureRoute, setSellerMandateSignatureRouteState] = useState('manual_upload')
+  const preparingPrintableMandate = sellerDocumentPreparationKey === 'signed_mandate' && sellerMandateSignatureRoute === 'manual_upload'
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
   const [sellerPortalSignedPreview, setSellerPortalSignedPreview] = useState(null)
@@ -4075,16 +4082,27 @@ function AgentListingDetail() {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const requestedAction = params.get('sellerDocumentAction')
-    if (!['digital_pack', 'manual_upload'].includes(requestedAction) || !listingRecord?.id) return
+    if (!['digital_pack', 'manual_upload'].includes(requestedAction) || !listingRecord?.id || !listingSupportingDataReady) return
 
-    openSellerDocumentSend({ fica: true, mandate: true })
-    setSellerMandateSignatureRoute(requestedAction)
+    if (params.get('sellerDocumentKey') === 'signed_mandate') prepareSellerDocumentAction('signed_mandate', 'manual_upload')
+    else { openSellerDocumentSend({ fica: true, mandate: true }); setSellerMandateSignatureRoute(requestedAction) }
     params.delete('sellerDocumentAction')
+    params.delete('sellerDocumentKey')
     navigate({
       pathname: location.pathname,
       search: params.toString() ? `?${params.toString()}` : '',
     }, { replace: true })
-  }, [listingRecord?.id, location.pathname, location.search, navigate])
+  }, [listingRecord?.id, listingSupportingDataReady, location.pathname, location.search, navigate])
+
+  useEffect(() => {
+    const channel = relistChannelFromSearch(location.search)
+    if (!channel || !listingRecord?.id || !listingSupportingDataReady) return
+    setSellerWorkspaceTab('marketing')
+    setRelistChannel(channel)
+    const params = new URLSearchParams(location.search)
+    params.delete('relist')
+    navigate({ pathname: location.pathname, search: `?${params}` }, { replace: true, state: location.state })
+  }, [listingRecord?.id, listingSupportingDataReady, location.pathname, location.search, location.state, navigate])
 
   useEffect(() => {
     const channel = relistChannelFromSearch(location.search)
@@ -7985,58 +8003,6 @@ function AgentListingDetail() {
     }
   }
 
-  async function handleGenerateMandateFollowUp({ silent = false } = {}) {
-    if (!listingRecord?.id) return
-    setDetailError('')
-    if (!silent) setDetailMessage('')
-    try {
-      setFollowUpActionId('generate_mandate')
-      const preparedAt = new Date().toISOString()
-      const localListing = patchListing((row) => ({
-        ...row,
-        mandateStatus: 'ready',
-        mandate: {
-          ...(row?.mandate || {}),
-          status: 'ready',
-          preparedAt,
-          updatedAt: preparedAt,
-          preparedBy: String(profile?.id || profile?.email || 'agent').trim(),
-        },
-        updatedAt: preparedAt,
-      }))
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        const savedListing = await updatePrivateListing(listingRecord.id, { mandateStatus: 'ready' }, { includeRequirementsAndDocuments: false })
-        if (savedListing?.id) {
-          setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localListing, savedListing)))
-        }
-      }
-      if (!silent) {
-        setDetailMessage('Mandate marked ready for generation. Complete seller facts and commission before sending it out.')
-      }
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to prepare the mandate.')
-    } finally {
-      setFollowUpActionId('')
-    }
-  }
-
-  function openMandateSetup() {
-    setCommissionDraft((previous) => ({ ...previous, basis: previous.basis === 'fixed' ? 'fixed' : 'percentage', digitalMandateRequested: false }))
-    setMandateSetupDraft({
-      sellerName: resolveSellerNameFromListing(listingRecord),
-      sellerEmail: resolveSellerEmailFromListing(listingRecord),
-      propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || '',
-    })
-    setSellerDocumentSendSelection({
-      disclosure: false,
-      fica: false,
-      mandate: true,
-    })
-    setDetailError('')
-    setDetailMessage('')
-    setMandateSetupOpen(true)
-  }
-
   function hasIdentifiedSellerEntity() {
     return Boolean(resolveListingSellerProfileBranch(getListingSellerFormData(listingRecord), listingRecord))
   }
@@ -8049,6 +8015,7 @@ function AgentListingDetail() {
   function getSellerDocumentMandateTerms() {
     const terms = readSellerMandateTerms(getListingSellerFormData(listingRecord), listingRecord || {})
     if (!sellerDocumentSendOpen) return terms
+    if (preparingPrintableMandate && printableMandateTerms) return printableMandateTerms
     return {
       ...terms,
       endDate: sellerDocumentMandateEndDate.trim(),
@@ -8065,27 +8032,24 @@ function AgentListingDetail() {
   }
 
   function getListingMandateReadiness() {
-    return buildListingMandateReadiness(listingRecord || {}, {
-      basis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
-      percentage: commissionDraft.percentage,
-      amount: commissionDraft.amount,
-      vatHandling: commissionDraft.vatHandling,
-    }, { mandateTerms: getSellerDocumentMandateTerms() })
+    const terms = getSellerDocumentMandateTerms()
+    return buildListingMandateReadiness(listingRecord || {}, getSellerDocumentCommission(), { mandateTerms: terms })
+  }
+
+  function getSellerDocumentCommission() {
+    const terms = getSellerDocumentMandateTerms()
+    return preparingPrintableMandate ? { basis: terms.commissionBasis, percentage: terms.commissionPercentage, amount: terms.commissionAmount, vatHandling: terms.vatHandling } : commissionDraft
   }
 
   function getSellerSigningDocumentOptions() {
-    return buildListingSellerDocumentReadiness(listingRecord || {}, {
-      basis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
-      percentage: commissionDraft.percentage,
-      amount: commissionDraft.amount,
-      vatHandling: commissionDraft.vatHandling,
-    }, { mandateTerms: getSellerDocumentMandateTerms() })
+    return buildListingSellerDocumentReadiness(listingRecord || {}, getSellerDocumentCommission(), { mandateTerms: getSellerDocumentMandateTerms() })
   }
 
   function buildSellerSigningPackSnapshot(selectedDocuments = ['mandate'], formOverride = null) {
     const form = formOverride || getListingSellerFormData(sellerDocumentPreparationBaselineRef.current || listingRecord)
     const terms = getSellerDocumentMandateTerms()
     const signingPlan = getSellerSigningPlan()
+    const commission = getSellerDocumentCommission()
     const signedRequirementKeys = new Set(selectedDocuments.flatMap((documentKey) => {
       if (documentKey === 'mandate') return ['signed_mandate', 'mandate_to_sell']
       if (documentKey === 'disclosure') return ['signed_disclosure_form', 'property_condition_disclosure']
@@ -8113,6 +8077,7 @@ function AgentListingDetail() {
       branding: signingBranding,
       sellerPortalTasks,
       mandate: {
+        ...terms,
         mandateType: marketingDraft.mandateType || listingRecord?.mandateType || form.mandateType || 'sole',
         otherAgencyName: terms.otherAgencyName,
         protectionPeriodDays: terms.protectionPeriod,
@@ -8120,16 +8085,17 @@ function AgentListingDetail() {
         askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
         startDate: terms.startDate,
         endDate: terms.endDate,
-        commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
-        commissionPercentage: commissionDraft.basis === 'fixed' ? '' : String(commissionDraft.percentage || ''),
-        commissionAmount: commissionDraft.basis === 'fixed' ? String(commissionDraft.amount || '') : '',
-        vatHandling: String(commissionDraft.vatHandling || ''),
-        specialConditions: String(form.mandateTerms || form.mandateCommissionTerms || form.specialConditions || ''),
+        commissionBasis: commission.basis === 'fixed' ? 'fixed' : 'percentage',
+        commissionPercentage: commission.basis === 'fixed' ? '' : String(commission.percentage || ''),
+        commissionAmount: commission.basis === 'fixed' ? String(commission.amount || '') : '',
+        vatHandling: String(commission.vatHandling || ''),
+        specialConditions: terms.specialConditions,
       },
     })
   }
 
   function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
+    setSellerDocumentPreparationNeedsRefresh(false)
     sellerDocumentPreparationBaselineRef.current = structuredClone(listingRecord)
     const savedForm = getListingSellerFormData(listingRecord)
     setSellerDisclosureDraft(savedForm.propertyDisclosure || savedForm.property_disclosure || {})
@@ -8308,6 +8274,11 @@ function AgentListingDetail() {
     setSellerDocumentReplacementGroupId('')
     setSellerDocumentReplacementReason('')
     setSellerMandateSignatureRoute(route)
+    if (key === 'mandate' && route === 'manual_upload') {
+      const terms = readSellerMandateTerms(getListingSellerFormData(listingRecord), listingRecord || {})
+      setPrintableMandateTerms(terms)
+      setPrintableMandateInitialTerms(terms)
+    }
   }
 
   async function refreshSellerDocumentSigning() {
@@ -8319,6 +8290,7 @@ function AgentListingDetail() {
   }
 
   async function saveSellerDocumentSendSelection() {
+    if (sellerDocumentPreparationNeedsRefresh) return
     if (!SELLER_PORTAL_SIGNING_ENABLED && sellerMandateSignatureRoute !== 'manual_upload') {
       setSellerMandateSignatureRoute('manual_upload')
       setDetailError('Online seller signing is currently unavailable. Choose download or upload existing.')
@@ -8381,7 +8353,8 @@ function AgentListingDetail() {
         return
       }
     }
-    const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const commission = getSellerDocumentCommission()
+    const commissionBasis = commission.basis === 'fixed' ? 'fixed' : 'percentage'
     const mandateType = marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType || 'sole'
     if (selected.includes('mandate')) {
       try {
@@ -8426,9 +8399,9 @@ function AgentListingDetail() {
         selectedDocuments: selected,
         commission: {
           basis: commissionBasis,
-          percentage: commissionDraft.percentage,
-          amount: commissionDraft.amount,
-          vatHandling: commissionDraft.vatHandling,
+          percentage: commission.percentage,
+          amount: commission.amount,
+          vatHandling: commission.vatHandling,
         },
         signingRoute: sellerMandateSignatureRoute,
         documentRoutes,
@@ -8553,122 +8526,46 @@ function AgentListingDetail() {
     } catch (error) {
       setSellerWorkspaceTab('documents')
       try { const refreshed = await listSellerPortalSigningRequests(listingRecord.id); setSellerPortalSigningRequests(refreshed.documents || []) } catch { /* Preserve the preparation/send error. */ }
+      if (['SELLER_UPDATE_CONFLICT', 'PT409', '40001', 'SELLER_PROFILE_SAVE_TIMEOUT'].includes(error?.code)) setSellerDocumentPreparationNeedsRefresh(true)
       setDetailError(`${error?.message || 'Unable to save the selected seller documents.'} Any saved copies remain in Documents; retry the outstanding send there.`)
     } finally {
       setSellerDocumentSendSaving(false)
     }
   }
 
-  async function saveMandateSetup() {
-    if (!hasIdentifiedSellerEntity()) {
-      setDetailError('Identify the seller entity in the Seller Profile before generating a mandate.')
-      return
-    }
-    const signingPlan = getSellerSigningPlan()
-    if (!signingPlan.ready) {
-      setDetailError(signingPlan.missing[0] || 'Complete the required signer details before generating a mandate.')
-      return
-    }
-    const mandateReadiness = getListingMandateReadiness()
-    if (!mandateReadiness.ready) {
-      setDetailError(mandateReadiness.missing[0] || 'Complete the listing details required for the mandate before preparing it.')
-      return
-    }
-    const sellerName = String(mandateSetupDraft.sellerName || signingPlan.recipients[0]?.name || '').trim()
-    const sellerEmail = String(mandateSetupDraft.sellerEmail || signingPlan.recipients[0]?.email || '').trim().toLowerCase()
-    const propertyAddress = String(mandateSetupDraft.propertyAddress || '').trim()
-    if (!isValidEmail(sellerEmail)) {
-      setDetailError('Add a valid seller email before preparing the mandate.')
-      return
-    }
-    const saved = await saveCommissionDraft()
-    if (!saved) return
-    const now = new Date().toISOString()
-    const existingForm = getListingSellerFormData(listingRecord)
-    const sellerCanonicalFacts = {
-      ...(listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}),
-      sellerName,
-      name: sellerName,
-      fullName: sellerName,
-      sellerEmail,
-      email: sellerEmail,
-    }
-    const listingPatch = {
-      sellerName,
-      sellerEmail,
-      propertyAddress,
-      addressLine1: propertyAddress,
-      sellerCanonicalFacts,
-      sellerCanonicalFactReadiness: {
-        ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
-        sellerName: Boolean(sellerName),
-        sellerEmail: Boolean(sellerEmail),
-        propertyAddress: Boolean(propertyAddress),
-      },
-      sellerCanonicalFactsUpdatedAt: now,
-    }
+  async function refreshSellerDocumentPreparation() {
+    if (sellerDocumentSendSaving || !listingRecord?.id) return
+    setSellerDocumentSendSaving(true)
+    setDetailError('')
     try {
-      patchListing((row) => ({
-        ...row,
-        ...listingPatch,
-        seller: { ...(row?.seller || {}), name: sellerName, email: sellerEmail },
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          formData: { ...existingForm, sellerName, fullName: sellerName, sellerEmail, email: sellerEmail, propertyAddress, addressLine1: propertyAddress, sellerDocumentSendSelection },
-        },
-      }))
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
-        const savedOnboarding = await updatePrivateListingOnboardingFormData(listingRecord.id, {
-          ...existingForm,
-          sellerName,
-          fullName: sellerName,
-          sellerEmail,
-          email: sellerEmail,
-          propertyAddress,
-          addressLine1: propertyAddress,
-          sellerDocumentSendSelection,
-        }, { listingSnapshot: listingRecord, status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
-        patchListing((row) => applyListingSellerOnboardingSaveSnapshot(row, savedOnboarding))
-      }
+      const latest = await getPrivateListing(listingRecord.id, { includeRequirementsAndDocuments: false })
+      if (latest?.id !== listingRecord.id) throw new Error('The latest seller record could not be loaded. Try again.')
+      const latestTerms = readSellerMandateTerms(getListingSellerFormData(latest), latest)
+      const edits = Object.fromEntries(Object.entries(printableMandateTerms || {}).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(printableMandateInitialTerms?.[key])))
+      setPrintableMandateTerms({ ...latestTerms, ...edits })
+      setPrintableMandateInitialTerms(latestTerms)
+      sellerDocumentPreparationBaselineRef.current = latest
+      patchListing(row => mergeListingRecord(row, latest))
+      setSellerDocumentPreparationNeedsRefresh(false)
+      setDetailMessage('Latest seller details loaded. Your mandate entries are retained. Review the saved facts before preparing the copy again.')
     } catch (error) {
-      setDetailError(error?.message || 'Mandate commission was saved, but the listing details could not be updated.')
-      return
-    }
-    setMandateSetupOpen(false)
-    setDetailMessage('Mandate details and selected documents saved. You can now send one secure signing link to the seller.')
+      setSellerDocumentPreparationNeedsRefresh(true)
+      setDetailError(error?.message || 'Unable to load the latest seller record.')
+    } finally { setSellerDocumentSendSaving(false) }
   }
 
   async function handleStartListingMandateDocument(selection = {}) {
     if (!listingRecord?.id) return
-    if (listingKingstonsDigitalSigningDecision.blocked) {
-      setMandateStartOpen(false)
-      openSellerWorkspaceSection('documents')
-      return
-    }
     const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
     setDetailError('')
     setDetailMessage('')
-    setMandateStartOpen(false)
 
     if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
       await handleSendSellerOnboardingFollowUp()
       return
     }
 
-    await handleGenerateMandateFollowUp({ silent: true })
-
-    const params = new URLSearchParams()
-    const sellerLeadId = resolveSellerLeadIdFromListing(listingRecord)
-    if (sellerLeadId) params.set('leadId', sellerLeadId)
-    params.set('mode', 'generate')
-    params.set('sourceMode', sourceMode)
-    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
-    params.set('listingId', String(listingRecord.id))
-    appendDocumentStartLegalScenarioParams(params, selection?.legalScenario || {}, 'mandate')
-    params.set('returnTo', `/agent/listings/${encodeURIComponent(String(listingRecord.id))}?tab=seller`)
-
-    navigate(`/agent/listings/${encodeURIComponent(String(listingRecord.id))}/legal/mandate?${params.toString()}`)
+    prepareSellerDocumentAction('signed_mandate', 'manual_upload')
   }
 
   function getCanonicalOfferActor() {
@@ -11643,6 +11540,7 @@ function AgentListingDetail() {
     }
 
     const uploadKey = getSellerDocumentUploadKey(doc) || file.name
+    const uploadAttempt = ++sellerDocumentUploadAttemptRef.current
     setSellerDocumentUploadKey(uploadKey)
     setSellerDocumentUploadProgress((current) => ({
       ...current,
@@ -11651,8 +11549,8 @@ function AgentListingDetail() {
     setDetailError('')
     setDetailMessage('')
     try {
-      if (SELLER_DOCUMENT_SELECTION_KEYS[doc.key]) await assertSellerDocumentUploadAvailable(listingRecord.id, doc.key)
-      const signingCopy = !doc.uploadExisting && getSellerPhysicalSigningCopy(doc) ? await requireSellerPhysicalSigningCopy(doc) : null
+      if (SELLER_DOCUMENT_SELECTION_KEYS[doc.key]) await withDocumentUploadDeadline(() => assertSellerDocumentUploadAvailable(listingRecord.id, doc.key))
+      const signingCopy = !doc.uploadExisting && getSellerPhysicalSigningCopy(doc) ? await withDocumentUploadDeadline(() => requireSellerPhysicalSigningCopy(doc)) : null
       const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
         requirementId: doc.requirementId || doc.requirement_id || '',
         requirementKey: doc.key || doc.requirementKey || doc.requirement_key || '',
@@ -11663,13 +11561,23 @@ function AgentListingDetail() {
         status: 'uploaded',
         deferMandateSigning: Boolean(SELLER_DOCUMENT_SELECTION_KEYS[doc.key]) || Boolean(signingCopy) || (getListingSellerFormData(listingRecord).sellerMandateDocumentSource === 'agency_upload' && (doc.key || doc.requirementKey) === 'signed_mandate'),
         existingSignedEvidence: doc.uploadExisting === true,
+        onProgress: progress => {
+          if (uploadAttempt !== sellerDocumentUploadAttemptRef.current) return
+          setSellerDocumentUploadProgress(current => ({ ...current, [uploadKey]: { ...progress, status: progress.stage === 'complete' ? 'complete' : progress.stage === 'failed' ? 'error' : 'uploading', error: progress.stage === 'failed' ? progress.message : '' } }))
+          if (progress.stage === 'complete' && progress.document?.id) {
+            patchListing(row => ({ ...row, documents: [...(row.documents || []).filter(item => item.id !== progress.document.id), progress.document] }))
+            setDetailMessage(`${file.name || 'Document'} uploaded. Review is separate.`)
+            setSellerDocumentUploadKey(current => current === uploadKey ? '' : current)
+          }
+        },
         reviewedSigningVersionId: signingCopy?.versionId || '',
         reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
+      if (uploadAttempt !== sellerDocumentUploadAttemptRef.current) return
       patchListing((row) => ({
         ...row,
         documents: [
-          ...(Array.isArray(row?.documents) ? row.documents : []),
+          ...(Array.isArray(row?.documents) ? row.documents.filter(document => document.id !== uploadedDocument?.id) : []),
           {
             ...uploadedDocument,
             id: uploadedDocument?.id || generateId('seller-document'),
@@ -11688,9 +11596,11 @@ function AgentListingDetail() {
         ...current,
         [uploadKey]: {
           status: 'complete',
+          stage: 'complete',
           fileName: file.name || 'Document',
           error: '',
           warning: uploadedDocument?.persistence?.warnings?.join(' ') || '',
+          warnings: uploadedDocument?.persistenceWarnings || uploadedDocument?.persistence?.warnings || [],
         },
       }))
       const persistenceWarnings = Array.isArray(uploadedDocument?.persistence?.warnings)
@@ -11701,16 +11611,16 @@ function AgentListingDetail() {
         : signingCopy
           ? `${file.name || 'Document'} uploaded and awaiting agent review.`
           : `${file.name || 'Document'} uploaded and verified in the seller document centre.`)
-      await loadListingData()
-      await loadSellerDocumentDeliveries()
+      void withDocumentUploadDeadline(() => loadSellerDocumentDeliveries()).catch(() => null)
     } catch (error) {
+      if (uploadAttempt !== sellerDocumentUploadAttemptRef.current) return
       setSellerDocumentUploadProgress((current) => ({
         ...current,
-        [uploadKey]: { status: 'error', fileName: file.name || 'Document', error: error?.message || 'Upload failed.' },
+        [uploadKey]: { status: 'error', stage: 'failed', message: error?.message || 'Upload failed.', fileName: file.name || 'Document', error: error?.message || 'Upload failed.' },
       }))
       setDetailError(error?.message || 'Unable to upload seller document.')
     } finally {
-      setSellerDocumentUploadKey('')
+      if (uploadAttempt === sellerDocumentUploadAttemptRef.current) setSellerDocumentUploadKey(current => current === uploadKey ? '' : current)
       event.target.value = ''
     }
   }
@@ -12148,13 +12058,13 @@ function AgentListingDetail() {
     setViewingRequestDraft((previous) => ({ ...previous, [key]: value }))
   }
 
-  function splitBuyerName(value = '') {
+  const splitBuyerName = useCallback((value = '') => {
     const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
     return {
       firstName: parts.shift() || '',
       lastName: parts.join(' '),
     }
-  }
+  }, [])
 
   function openBuyerLeadModal() {
     setBuyerLeadDraft(createListingBuyerLeadDraft())
@@ -12169,7 +12079,7 @@ function AgentListingDetail() {
     setBuyerLeadFeedback({ kind: '', message: '' })
   }
 
-  function openViewingRequestModal(lead = null) {
+  const openViewingRequestModal = useCallback((lead = null) => {
     const selectedLead = lead && typeof lead === 'object' ? lead : null
     const name = splitBuyerName(selectedLead?.name)
     setViewingRequestDraft(createListingViewingDraft({
@@ -12186,13 +12096,21 @@ function AgentListingDetail() {
     setViewingRequestFeedback({ kind: '', message: '' })
     setDetailError('')
     setViewingRequestModalOpen(true)
-  }
+  }, [sellerViewingContact, splitBuyerName])
 
   function closeViewingRequestModal() {
     if (viewingRequestSaving) return
     setViewingRequestModalOpen(false)
     setViewingRequestFeedback({ kind: '', message: '' })
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('scheduleViewing') !== '1' || !listingSupportingDataReady || String(listingRecord?.id || '') !== String(listingId || '')) return
+    openViewingRequestModal()
+    params.delete('scheduleViewing')
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : '' }, { replace: true, state: location.state })
+  }, [listingId, listingRecord?.id, listingSupportingDataReady, location.pathname, location.search, location.state, navigate, openViewingRequestModal])
 
   function selectViewingBuyerLead(leadId) {
     const lead = listingLeadRows.find((row) => String(row?.leadId || row?.id || '') === String(leadId || ''))
@@ -13115,102 +13033,6 @@ function AgentListingDetail() {
         </div>
       </Modal>
       <Modal
-        open={mandateSetupOpen}
-        onClose={savingCommission ? undefined : () => setMandateSetupOpen(false)}
-        title="Generate mandate"
-        subtitle="Confirm the saved details, then prepare the mandate as the secure HTML signing draft. No email is sent yet."
-        className="max-w-2xl"
-        footer={(
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="secondary" onClick={() => setMandateSetupOpen(false)} disabled={savingCommission}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={() => void saveMandateSetup()} disabled={savingCommission}>
-              {savingCommission ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-              {savingCommission ? 'Saving...' : 'Generate HTML mandate'}
-            </Button>
-          </div>
-        )}
-      >
-        <div className="space-y-5">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
-            Property, agency, and assigned-agent details are already taken from this listing. Only seller contact and commission details need confirmation.
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Seller
-              <Field value={mandateSetupDraft.sellerName} onChange={(event) => setMandateSetupDraft((previous) => ({ ...previous, sellerName: event.target.value }))} placeholder="Seller name" />
-            </label>
-            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Seller email
-              <Field type="email" value={mandateSetupDraft.sellerEmail} onChange={(event) => setMandateSetupDraft((previous) => ({ ...previous, sellerEmail: event.target.value }))} placeholder="seller@example.com" />
-            </label>
-            <label className="grid gap-2 text-sm font-semibold text-[#2d445e] md:col-span-2">
-              Property
-              <Field value={mandateSetupDraft.propertyAddress} onChange={(event) => setMandateSetupDraft((previous) => ({ ...previous, propertyAddress: event.target.value }))} placeholder="Property address" />
-            </label>
-          </div>
-          {!isValidEmail(mandateSetupDraft.sellerEmail) ? (
-            <div className="flex flex-col gap-3 rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17] sm:flex-row sm:items-center sm:justify-between">
-              <span>Enter a valid seller email above before generating the mandate.</span>
-            </div>
-          ) : null}
-          {(() => {
-            const signingPlan = getSellerSigningPlan()
-            return <section className={`rounded-[16px] border p-4 ${signingPlan.ready ? 'border-[#cfe9dc] bg-[#f4fbf7]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
-              <p className="text-sm font-semibold text-[#243d56]">Required signers</p>
-              {signingPlan.recipients.length ? <div className="mt-2 space-y-1.5">{signingPlan.recipients.map((recipient) => <p key={`${recipient.role}-${recipient.email}`} className="text-sm text-[#47637d]">{recipient.name || 'Name missing'} · {recipient.role} · {recipient.email || 'email missing'}</p>)}</div> : null}
-              {!signingPlan.ready ? <p className="mt-2 text-sm leading-5 text-[#8a641d]">{signingPlan.missing[0] || 'Complete signer details in the Seller Profile before continuing.'}</p> : <p className="mt-2 text-sm text-[#28734b]">Each required signer will receive an individual secure link when the multi-signer packet is dispatched.</p>}
-            </section>
-          })()}
-          <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 md:grid-cols-2">
-            <fieldset className="grid gap-2 md:col-span-2">
-              <legend className="text-sm font-semibold text-[#2d445e]">Commission type</legend>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="flex items-center gap-2 rounded-xl border border-[#dce6f2] px-3 py-2 text-sm font-medium text-[#2d445e]">
-                  <input type="radio" name="mandate-commission-basis" value="percentage" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} />
-                  Percentage of sale price
-                </label>
-                <label className="flex items-center gap-2 rounded-xl border border-[#dce6f2] px-3 py-2 text-sm font-medium text-[#2d445e]">
-                  <input type="radio" name="mandate-commission-basis" value="fixed" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} />
-                  Fixed Rand amount
-                </label>
-              </div>
-            </fieldset>
-            {commissionDraft.basis === 'fixed' ? (
-              <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                Fixed commission amount (R)
-                <Field type="number" min="0" step="0.01" value={commissionDraft.amount} onChange={(event) => updateCommissionDraft('amount', event.target.value)} placeholder="50000" />
-              </label>
-            ) : (
-              <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-                Commission percentage
-                <Field type="number" min="0" step="0.01" value={commissionDraft.percentage} onChange={(event) => updateCommissionDraft('percentage', event.target.value)} placeholder="5" />
-              </label>
-            )}
-            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              VAT treatment
-              <Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}>
-                <option value="">Select VAT treatment</option>
-                <option value="no">No VAT</option>
-                <option value="exclusive">VAT exclusive</option>
-                <option value="inclusive">VAT inclusive</option>
-              </Field>
-            </label>
-          </div>
-          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-            <legend className="px-1 text-sm font-semibold text-[#2d445e]">Include in the secure signing link</legend>
-            <p className="text-sm leading-5 text-[#607387]">Submit and review seller information first, then choose a separate action for mandate, disclosure and FICA in Documents.</p>
-            {getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
-              <label key={document.key} className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-sm ${document.ready ? 'border-[#dce6f2] bg-white text-[#2d445e]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
-                <input type="checkbox" className="mt-0.5 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
-                <span><span className="block font-semibold">{document.title}</span><span className="mt-0.5 block text-xs leading-5">{document.ready ? document.copy : document.missing[0]}</span></span>
-              </label>
-            ))}
-          </fieldset>
-        </div>
-      </Modal>
-      <Modal
         open={sellerDocumentUploadModalOpen}
         onClose={sellerDocumentUploadKey ? undefined : () => setSellerDocumentUploadModalOpen(false)}
         title="Upload seller documents"
@@ -13234,16 +13056,16 @@ function AgentListingDetail() {
             <p className="mt-2 text-xs leading-5 text-[#607387]">{sellerDocumentUploadQueue.uploading ? 'Uploading and saving the selected document…' : sellerDocumentUploadQueue.complete ? 'All required seller documents are complete.' : `${sellerDocumentUploadQueue.outstandingRequired} required document${sellerDocumentUploadQueue.outstandingRequired === 1 ? '' : 's'} still outstanding.`}</p>
           </section>
 
-          {sellerDocumentUploadQueue.outstanding.length ? (
+          {sellerDocumentUploadQueue.rows.some(document => !document.complete || document.uploadProgress) ? (
             <div className="divide-y divide-[#edf2f7] rounded-[16px] border border-[#dce6f2] bg-white px-4">
-              {sellerDocumentUploadQueue.outstanding.map((document) => (
+              {sellerDocumentUploadQueue.rows.filter(document => !document.complete || document.uploadProgress).map((document) => (
                 <div key={document.uploadKey} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="break-words text-sm font-semibold text-[#243d56]">{document.label || document.documentName || 'Seller document'}</p>
                       <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${document.required !== false ? 'bg-[#fff3dd] text-[#8a641d]' : 'bg-[#eef3f8] text-[#607387]'}`}>{document.required !== false ? 'Required' : 'Optional'}</span>
                     </div>
-                    {document.uploadStatus === 'uploading' ? <p className="mt-1 text-xs font-semibold text-[#315879]">Uploading {document.uploadFileName}…</p> : null}
+                    <DocumentUploadProgress progress={document.uploadProgress} />
                     {document.uploadStatus === 'error' ? <p className="mt-1 text-xs font-semibold text-[#b42318]">{document.uploadError}</p> : <p className="mt-1 text-xs leading-5 text-[#607387]">{document.description || document.sourceLabel || 'Select the matching document from your computer.'}</p>}
                   </div>
                   <label className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
@@ -13316,20 +13138,25 @@ function AgentListingDetail() {
       <Modal
         open={sellerDocumentSendOpen}
         onClose={sellerDocumentSendSaving ? undefined : () => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}
-        title={mandateReplacementIntent ? 'Prepare replacement mandate copies' : 'Prepare seller documents'}
-        subtitle="Generate copies for download, send private online signing links, or upload an existing signed document."
+        title={preparingPrintableMandate ? 'Create printable mandate' : mandateReplacementIntent ? 'Prepare replacement mandate copies' : 'Prepare seller documents'}
+        subtitle={preparingPrintableMandate ? 'Review saved seller details, complete missing terms, then download the mandate for signing.' : 'Generate copies for download, send private online signing links, or upload an existing signed document.'}
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving || (sellerDocumentSendSelection.mandate && !sellerMandateDocumentSource) || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving || sellerDocumentPreparationNeedsRefresh || (sellerDocumentSendSelection.mandate && !sellerMandateDocumentSource) || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send for online signature'}
+              {sellerDocumentSendSaving ? 'Preparing...' : preparingPrintableMandate ? 'Prepare and download mandate' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send for online signature'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-4">
+          {detailError ? <div role="alert" className="rounded-xl border border-[#f3d2cc] bg-[#fef3f2] p-3 text-sm text-[#b42318]">
+            {detailError}
+            {sellerDocumentPreparationNeedsRefresh ? <Button type="button" variant="secondary" className="mt-3" disabled={sellerDocumentSendSaving} onClick={() => void refreshSellerDocumentPreparation()}>Load latest seller details and keep mandate entries</Button> : null}
+          </div> : null}
+          {detailMessage ? <p role="status" className="text-sm text-[#47637d]">{detailMessage}</p> : null}
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
             {mandateReplacementIntent
               ? 'This creates a traceable replacement pack. The previous signed mandate remains preserved and the new mandate only becomes current after every required signer completes it.'
@@ -13369,6 +13196,7 @@ function AgentListingDetail() {
           </fieldset> : <p className="text-sm font-semibold">Preparing {SELLER_DOCUMENT_SELECTION_KEYS[sellerDocumentPreparationKey]} only. Other documents keep their reviewed copies.</p>}
           {sellerMandateDocumentSource === 'agency_upload' ? <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Your agency mandate remains a separate required document. Upload the signed copy in Documents for review; the selected route does not mark it signed or approved.</div> : null}
           {sellerDocumentSendSelection.mandate && sellerMandateDocumentSource === 'arch9_generated' ? <>
+            {preparingPrintableMandate ? <PrintableMandateTerms value={printableMandateTerms || getSellerDocumentMandateTerms()} initialValue={printableMandateInitialTerms || getSellerDocumentMandateTerms()} onChange={setPrintableMandateTerms} disabled={sellerDocumentSendSaving} /> : null}
             {(() => {
               const mandateReadiness = getListingMandateReadiness()
               return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
@@ -13378,10 +13206,10 @@ function AgentListingDetail() {
               </div>
             })()}
 
-            {(marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType) === 'dual' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Second agency named in the dual mandate
+            {!preparingPrintableMandate && (marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType) === 'dual' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Second agency named in the dual mandate
               <Field value={sellerDocumentOtherAgencyName} onChange={(event) => setSellerDocumentOtherAgencyName(event.target.value)} placeholder="Other agency name" />
             </label> : null}
-            {getSellerDocumentMandateTerms().mandateDuration === 'fixed' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Mandate end date
+            {!preparingPrintableMandate && getSellerDocumentMandateTerms().mandateDuration === 'fixed' ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Mandate end date
               <Field type="date" value={sellerDocumentMandateEndDate} onChange={(event) => setSellerDocumentMandateEndDate(event.target.value)} />
               {(() => {
                 const form = getListingSellerFormData(listingRecord)
@@ -13391,12 +13219,12 @@ function AgentListingDetail() {
                   : null
               })()}
             </label> : null}
-            <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
+            {!preparingPrintableMandate ? <label className="grid gap-1.5 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Introduced-buyer protection period (calendar days)
               <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
-            </label>
+            </label> : null}
           </> : null}
           {sellerDocumentSendSelection.disclosure ? <SellerDisclosurePreparation disclosure={sellerDisclosureDraft} onChange={setSellerDisclosureDraft} disabled={sellerDocumentSendSaving} /> : null}
-          <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-xl border border-[#dce6f2] p-4">
+          {!preparingPrintableMandate ? <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-xl border border-[#dce6f2] p-4">
             <legend className="px-1 text-sm font-semibold">Choose a document action</legend>
             {SELLER_DOCUMENT_ACTIONS.map(([value, label, description]) => <label key={value} className="flex items-start gap-3 text-sm">
               <input type="radio" name="seller-document-action" checked={sellerMandateSignatureRoute === value} disabled={value === 'digital_pack' && !SELLER_PORTAL_SIGNING_ENABLED} onChange={() => {
@@ -13405,7 +13233,7 @@ function AgentListingDetail() {
               }} className="mt-1" />
               <span><span className="block font-semibold">{label}</span><span className="text-xs text-[#607387]">{description}</span></span>
             </label>)}
-          </fieldset>
+          </fieldset> : <p className="text-sm text-[#47637d]">Sign the downloaded copy, then use Upload signed copy in Documents. Uploading saves the file; agent review approves it.</p>}
         </div>
       </Modal>
       <Modal
@@ -13444,23 +13272,6 @@ function AgentListingDetail() {
           </div>
         </div>
       </Modal>
-      <StartDocumentModal
-        open={mandateStartOpen && !listingHasKingstonsSellerProcess}
-        onClose={() => setMandateStartOpen(false)}
-        entryPoint={DOCUMENT_START_ENTRY_POINTS.listingMandate}
-        packetType={DOCUMENT_START_PACKET_TYPES.mandate}
-        documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
-        initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
-        hasExistingContext={Boolean(listingRecord?.id)}
-        hasClientContact={Boolean(resolveSellerEmailFromListing(listingRecord) || formatSouthAfricanWhatsAppNumber(resolveSellerPhoneFromListing(listingRecord)))}
-        hasParentDocument
-        contextSummary={listingMandateStartSummary}
-        initialLegalScenario={listingMandateLegalScenario}
-        title="Create Mandate"
-        subtitle="Start from saved listing details, enter the missing fields manually, or send seller onboarding."
-        busy={followUpActionId === 'generate_mandate' || followUpActionId === 'send_onboarding'}
-        onContinue={(selection) => void handleStartListingMandateDocument(selection)}
-      />
       <StartDocumentModal
         open={Boolean(acceptedOfferOtpStartOffer) && !listingKingstonsBuyerOtpDigitalDecision.blocked}
         onClose={() => setAcceptedOfferOtpStartOffer(null)}
@@ -15949,9 +15760,9 @@ function AgentListingDetail() {
                   listing={listingRecord}
                   agent={overviewListingAgent}
                   listingType="sale"
-                  onReassigned={async () => {
+                  onReassigned={async (result) => {
                     await loadListingData({ showLoading: false })
-                    setDetailMessage('Listing agent reassigned successfully.')
+                    setDetailMessage(result.portalUpdateRequired ? 'Additional agents saved. Publish or update each portal to send them.' : 'Listing agent reassigned successfully.')
                   }}
                 />
                 <article className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] border border-[#dde4ee] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-marketing-hero">
@@ -17022,6 +16833,7 @@ function AgentListingDetail() {
                         </div>
                       </div>
                       <div className="mr-5 mt-4 flex flex-wrap items-center gap-2">
+                        {group.key === 'sales' ? <Button type="button" size="sm" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => void handleStartListingMandateDocument()}>Create printable mandate</Button> : null}
                         <Button type="button" size="sm" variant="secondary" onClick={() => setNewListingDocumentOpen(true)}>
                           <Upload size={14} />
                           Upload/Request New Document

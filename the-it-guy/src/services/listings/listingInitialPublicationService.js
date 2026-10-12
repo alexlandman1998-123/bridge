@@ -2,6 +2,11 @@ import { supabase } from '../../lib/supabaseClient'
 
 const CHANNELS = { property24: 'Property24', private_property: 'Private Property', agency_website: 'Agency Website' }
 export const INITIAL_LISTING_PUBLICATION_EVENT = 'itg:initial-listing-publication'
+export function listingPublicationBlockMessage(status) {
+  if (['active', 'under_offer'].includes(status)) return ''
+  if (status === 'draft') return 'This listing is a draft. No adverts will be sent until it is activated.'
+  return 'This listing is still under review. No adverts will be sent. Check Seller and Documents, resolve the outstanding requirements, activate the listing, then return here to publish.'
+}
 const latestResults = new Map()
 const expectedUpdates = new Map()
 export function readInitialListingChannelResults(listingId) { return latestResults.get(listingId) || [] }

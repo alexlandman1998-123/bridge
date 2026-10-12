@@ -271,7 +271,7 @@ export function createProperty24RentalListingPlan({
   const fieldComparison = buildRentalProperty24FieldComparison(listing, {
     resolution: {
       agencyId: options.agencyId,
-      contactAgentIds: resolvedAgentId ? [resolvedAgentId] : [],
+      contactAgentIds: [...new Set([resolvedAgentId, ...(Array.isArray(agentMapping.contactAgentIds) ? agentMapping.contactAgentIds.map(toProperty24Integer) : [])].filter(Boolean))],
       agentSourceReference: resolvedAgentSourceReference,
       suburbId: catalogMapping.suburbId || catalogMapping.suburb_id,
       propertyTypeId: catalogMapping.propertyTypeId || catalogMapping.property_type_id,

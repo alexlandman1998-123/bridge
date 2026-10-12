@@ -121,6 +121,27 @@ const RESIDENTIAL_QUICK_CREATE_GROUPS = [
   },
 ]
 
+const AGENT_QUICK_CREATE_GROUPS = RESIDENTIAL_QUICK_CREATE_GROUPS.map((group) => ({
+  ...group,
+  items: group.items
+    .filter((item) => item.type !== 'prospect')
+    .map((item) => {
+      if (item.type === 'client') {
+        return { ...item, helper: 'Add a client to your workspace', state: { openAddClient: true } }
+      }
+      if (item.type === 'listing') {
+        return { ...item, helper: 'Open the listing creation wizard', to: '/listings/new', state: undefined }
+      }
+      if (item.type === 'appointment') {
+        return { ...item, helper: 'Book through the calendar scheduler', action: 'route', to: '/pipeline/calendar?schedule=1' }
+      }
+      if (item.type === 'viewing') {
+        return { ...item, helper: 'Choose a property, then select or add the buyer', action: 'viewing' }
+      }
+      return item
+    }),
+}))
+
 const COMMERCIAL_QUICK_CREATE_GROUPS = [
   {
     label: 'Demand',
@@ -948,6 +969,29 @@ function QuickCreateModal({
   )
 }
 
+function QuickCreateViewingPicker({ options, loading, error, listingId, onChange, onClose, onContinue, onRetry }) {
+  const canContinue = !loading && !error && options.some((option) => option.id === listingId)
+  return (
+    <Modal open onClose={onClose} title="Choose a property for the viewing" subtitle="Next, select an existing buyer lead or add buyer details in the property's viewing form." className="max-w-xl" footer={(
+      <div className="flex justify-end gap-2">
+        <button type="button" className="ui-shell-create-button" onClick={onClose}>Cancel</button>
+        <button type="button" className="ui-shell-create-button disabled:cursor-not-allowed disabled:opacity-50" disabled={!canContinue} onClick={onContinue}>Continue to viewing</button>
+      </div>
+    )}>
+      {loading ? <p role="status">Loading current properties…</p> : error ? (
+        <div><p role="alert">{error}</p><button type="button" className="mt-3 underline" onClick={onRetry}>Try again</button></div>
+      ) : options.length ? (
+        <FormField label="Property">
+          <select className="rounded-xl border border-[#d8e3ef] bg-white p-3" value={listingId} onChange={(event) => onChange(event.target.value)} autoFocus>
+            <option value="">Select a property</option>
+            {options.map((option) => <option key={option.id} value={option.id}>{[option.label, option.meta].filter(Boolean).join(' · ')}</option>)}
+          </select>
+        </FormField>
+      ) : <p>No current properties are available for a viewing. Add a listing first.</p>}
+    </Modal>
+  )
+}
+
 function QuickCreateDropdown({ className = '', initialOpen = false }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -961,6 +1005,7 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
   const [feedback, setFeedback] = useState({ kind: '', message: '' })
   const [listingOptions, setListingOptions] = useState([])
   const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
+  const [listingOptionsReloadKey, setListingOptionsReloadKey] = useState(0)
   const [agentOptions, setAgentOptions] = useState([])
   const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const containerRef = useRef(null)
@@ -984,7 +1029,8 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
     () => {
       if (role === 'bond_originator') return BOND_ORIGINATOR_QUICK_CREATE_GROUPS
       if (role === 'attorney') return ATTORNEY_QUICK_CREATE_GROUPS
-      return location.pathname.startsWith('/commercial') ? COMMERCIAL_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS
+      if (location.pathname.startsWith('/commercial')) return COMMERCIAL_QUICK_CREATE_GROUPS
+      return ['agent', 'principal', 'headquarters'].includes(role) ? AGENT_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS
     },
     [location.pathname, role],
   )
@@ -1036,14 +1082,15 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
   }, [activeType, open, pendingCreateKind, saving])
 
   useEffect(() => {
-    if (activeType !== 'lead') return undefined
+    if (activeType !== 'lead' && activeType !== 'viewing') return undefined
     let isCancelled = false
 
     async function loadCurrentListings() {
-      const localOptions = dedupeListingOptions(readAgentPrivateListings())
+      const localOptions = activeType === 'viewing' ? [] : dedupeListingOptions(readAgentPrivateListings())
       if (!isCancelled) {
         setListingOptions(localOptions)
         setListingOptionsLoading(true)
+        if (activeType === 'viewing') setFeedback({ kind: '', message: '' })
       }
 
       try {
@@ -1052,12 +1099,13 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
         if (!isCancelled) {
           setListingOptions(dedupeListingOptions([
             ...(Array.isArray(remoteListings) ? remoteListings : []),
-            ...readAgentPrivateListings(),
+            ...(activeType === 'viewing' ? [] : readAgentPrivateListings()),
           ]))
         }
       } catch {
         if (!isCancelled) {
           setListingOptions(localOptions)
+          if (activeType === 'viewing') setFeedback({ kind: 'error', message: 'We could not load your properties. Try again before choosing a viewing.' })
         }
       } finally {
         if (!isCancelled) {
@@ -1071,7 +1119,7 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
     return () => {
       isCancelled = true
     }
-  }, [activeType])
+  }, [activeType, listingOptionsReloadKey])
 
   useEffect(() => {
     if (activeType !== 'lead' && activeType !== 'prospect') return undefined
@@ -1132,6 +1180,12 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
   }
 
   function handleItemSelect(item) {
+    if (item.action === 'viewing') {
+      setListingOptions([])
+      setListingOptionsLoading(true)
+      openModal('viewing', { listingId: '' })
+      return
+    }
     if (item.action === 'route' && item.to) {
       setOpen(false)
       setPendingCreateKind('')
@@ -1431,7 +1485,7 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
                       className="group flex w-full items-start gap-3 rounded-[18px] px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#f7fafc] focus-visible:bg-[#f7fafc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#274c69]/15"
                       onClick={() => handleItemSelect(item)}
                       role="menuitem"
-                      aria-haspopup={item.type === 'lead' || item.type === 'prospect' ? 'dialog' : undefined}
+                      aria-haspopup={item.type === 'lead' || item.type === 'prospect' || item.action === 'viewing' ? 'dialog' : undefined}
                       data-testid={`quick-create-${item.type}`}
                     >
                       <span className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] transition group-hover:bg-white ${iconTileClass}`}>
@@ -1450,8 +1504,23 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
         ) : null}
       </div>
 
+      {activeType === 'viewing' ? <QuickCreateViewingPicker
+        options={listingOptions}
+        loading={listingOptionsLoading}
+        error={feedback.kind === 'error' ? feedback.message : ''}
+        listingId={form.listingId || ''}
+        onChange={(listingId) => setForm((previous) => ({ ...previous, listingId }))}
+        onClose={closeModal}
+        onRetry={() => setListingOptionsReloadKey((previous) => previous + 1)}
+        onContinue={() => {
+          if (listingOptionsLoading || feedback.kind === 'error' || !listingOptions.some((option) => option.id === form.listingId)) return
+          closeModal()
+          navigate(`/agent/listings/${encodeURIComponent(form.listingId)}?tab=leads&scheduleViewing=1`)
+        }}
+      /> : null}
+
       <QuickCreateModal
-        type={activeType}
+        type={activeType === 'viewing' ? '' : activeType}
         form={form}
         setForm={setForm}
         onClose={closeModal}

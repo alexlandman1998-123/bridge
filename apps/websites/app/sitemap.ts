@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { getPublicBlogPosts, getPublicPages, getPublicProperties, propertySlug, resolveSite } from '@/lib/site-repository'
+import { isKingdomSoldSite } from '@/lib/kingdom-recently-sold'
 import { publicOrigin } from '@/lib/public-origin'
 
 export const dynamic = 'force-dynamic'
@@ -14,6 +15,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     { url: origin, changeFrequency: 'weekly', priority: 1 },
     { url: `${origin}/properties`, changeFrequency: 'daily', priority: 0.9 },
+    ...(isKingdomSoldSite(site) ? [{ url: `${origin}/recently-sold`, changeFrequency: 'daily' as const, priority: 0.8 }] : []),
     ...(posts.length ? [{ url: `${origin}/blog`, changeFrequency: 'weekly' as const, priority: 0.7 }] : []),
     ...['calculators', 'preapproval'].map(slug => ({ url: `${origin}/${slug}`, changeFrequency: 'weekly' as const, priority: 0.7 })),
     ...posts.map(post => ({ url: `${origin}/blog/${post.slug}`, lastModified: new Date(post.publishedAt), changeFrequency: 'monthly' as const, priority: 0.6 })),

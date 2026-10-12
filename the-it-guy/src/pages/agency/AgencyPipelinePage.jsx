@@ -1,4 +1,6 @@
 import DocumentRequirementManager from '../../components/documents/DocumentRequirementManager.jsx'
+import DocumentUploadProgress from '../../components/documents/DocumentUploadProgress.jsx'
+import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, mergeDocumentRequirementRows, watchDocumentRequirementContext } from '../../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../../components/documents/SellerDisclosurePreparation.jsx'
 import { buildSellerDisclosurePreparationPatch } from '../../lib/sellerAgentAssistedDisclosure.js'
@@ -349,7 +351,6 @@ import {
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
-const SELLER_LEAD_DOCUMENT_UPLOAD_TIMEOUT_MS = 30000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const SELLER_DOCUMENT_HYDRATION_TIMEOUT_MS = 20000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
@@ -11735,6 +11736,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerDraftListingCreating, setSellerDraftListingCreating] = useState(false)
   const sellerDraftListingCreatingRef = useRef(false)
   const [sellerLeadDocumentUploadingKey, setSellerLeadDocumentUploadingKey] = useState('')
+  const [sellerLeadUploadProgress, setSellerLeadUploadProgress] = useState(null)
+  const sellerUploadLeadRef = useRef('')
+  const sellerLeadUploadAttemptRef = useRef(0)
   const [sellerLeadDocumentReviewAction, setSellerLeadDocumentReviewAction] = useState('')
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
@@ -11930,6 +11934,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [sellerOnboardingReviewSaving, setSellerOnboardingReviewSaving] = useState(false)
   const [sellerOnboardingReviewError, setSellerOnboardingReviewError] = useState('')
+  const [sellerOnboardingReviewNeedsRefresh, setSellerOnboardingReviewNeedsRefresh] = useState(false)
+  const [sellerOnboardingReviewNotice, setSellerOnboardingReviewNotice] = useState('')
+  const [sellerOnboardingReviewListing, setSellerOnboardingReviewListing] = useState(null)
   const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
   const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRouteState] = useState('manual_upload')
   const setSellerOnboardingReviewRoute = useCallback((route) => {
@@ -14502,15 +14509,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return () => { active = false }
   }, [selectedLeadLinkedListingId])
   const selectedLeadReviewFormData = useMemo(() => sellerOnboardingReviewModalOpen
-    ? getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
-    : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing])
+    ? getSellerLeadReviewFormData(selectedLead, sellerOnboardingReviewListing || selectedLeadLinkedListing)
+    : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing, sellerOnboardingReviewListing])
   const selectedLeadOnboardingReviewChecklist = useMemo(() => sellerOnboardingReviewModalOpen && selectedLead
     ? buildSellerOnboardingReviewChecklist({
         formData: selectedLeadReviewFormData,
-        listing: selectedLeadLinkedListing || {},
+        listing: sellerOnboardingReviewListing || selectedLeadLinkedListing || {},
         lead: selectedLead,
       })
-    : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing, selectedLeadReviewFormData])
+    : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing, selectedLeadReviewFormData, sellerOnboardingReviewListing])
   const selectedLeadIdentityKey = normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadId)
   const selectedLeadPrivateListingActivityKey = [
     normalizeText(organisationId),
@@ -15408,6 +15415,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.lead_id ||
       (isLeadWorkspaceRoute ? routeLeadId : selectedLeadId),
   )
+  sellerUploadLeadRef.current = selectedLeadRecordId
   useEffect(() => {
     const transactionId = normalizeText(selectedLeadLinkedTransactionId)
     const leadId = selectedLeadRecordId
@@ -26438,6 +26446,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function reflectSellerLeadUpload(progress, file, targetListingId, leadId, uploadAttempt) {
+    if (sellerUploadLeadRef.current !== leadId || sellerLeadUploadAttemptRef.current !== uploadAttempt) return
+    setSellerLeadUploadProgress({ ...progress, leadId, fileName: file.name })
+    if (progress.stage !== 'complete' || !progress.document?.id) return
+    const document = progress.document
+    setSelectedLeadHydratedListing(current => current?.id && current.id !== targetListingId ? current : {
+      ...(current || selectedLeadLinkedListing || {}), id: targetListingId,
+      listingOptionSourceAuthority: 'canonical_hydrated_listing',
+      documents: [...(current?.documents || selectedLeadLinkedListing?.documents || []).filter(row => row.id !== document.id), document],
+    })
+    setMessage(`${file.name} uploaded. Review status is shown in Documents.`)
+    setSellerLeadDocumentUploadingKey('')
+    setSellerLeadMandateUploading(false)
+  }
+
   async function handleSellerLeadSignedMandateUpload(event = null, documentRow = {}) {
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
@@ -26453,9 +26476,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setSellerLeadMandateUploading(true)
     setError('')
+    setSellerLeadUploadProgress({ ...createDocumentUploadProgress('preparing', '', { fileName: file.name }), leadId: selectedLead.leadId })
+    let savedDocument = null
+    const uploadAttempt = ++sellerLeadUploadAttemptRef.current
     try {
-      const signingCopy = !documentRow.uploadExisting && getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
-      if (selectedLeadLinkedListingId) await assertSellerDocumentUploadAvailable(selectedLeadLinkedListingId, 'signed_mandate')
+      const signingCopy = !documentRow.uploadExisting && getSellerPhysicalSigningCopy(documentRow) ? await withDocumentUploadDeadline(() => requireSellerPhysicalSigningCopy(documentRow)) : null
+      if (selectedLeadLinkedListingId) await withDocumentUploadDeadline(() => assertSellerDocumentUploadAvailable(selectedLeadLinkedListingId, 'signed_mandate'))
       let targetListingId = normalizeText(
         selectedLeadLinkedListing?.id ||
           selectedLeadLinkedListing?.listingId ||
@@ -26492,13 +26518,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'uploaded',
         deferMandateSigning: true,
         existingSignedEvidence: documentRow.uploadExisting === true,
+        onProgress: progress => {
+          if (progress.stage === 'complete' && progress.document?.id) savedDocument = progress.document
+          reflectSellerLeadUpload(progress, file, targetListingId, selectedLead.leadId, uploadAttempt)
+        },
         reviewedSigningVersionId: signingCopy?.versionId || '',
         reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
       })
 
-      await updatePrivateListing(targetListingId, {
+      if (uploadAttempt !== sellerLeadUploadAttemptRef.current || sellerUploadLeadRef.current !== selectedLead.leadId) return
+      await withDocumentUploadDeadline(() => updatePrivateListing(targetListingId, {
         mandateStatus: 'signed_uploaded',
-      }, { includeRequirementsAndDocuments: false })
+      }, { includeRequirementsAndDocuments: false }))
 
       const leadPatch = {
         status: 'Mandate uploaded — awaiting agent review',
@@ -26511,15 +26542,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+      await withDocumentUploadDeadline(() => updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch))
+      await withDocumentUploadDeadline(() => createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Document Uploaded',
         activityNote: 'Existing signed mandate uploaded; awaiting agent review.',
         outcome: 'Mandate awaiting review',
         activityDate: uploadedAt,
-      }, { actor: currentAgent })
-      await createPrivateListingActivity({
+      }, { actor: currentAgent }))
+      await withDocumentUploadDeadline(() => createPrivateListingActivity({
         privateListingId: targetListingId,
         activityType: 'document_uploaded',
         activityTitle: 'Mandate uploaded for review',
@@ -26535,15 +26566,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           reviewedSigningVersionId: signingCopy?.versionId || '',
           reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
         },
-      }).catch(() => null)
+      })).catch(() => null)
 
-      const refreshedListing = await getPrivateListing(targetListingId, { includeRequirementsAndDocuments: true }).catch(() => null)
-      if (refreshedListing) setSelectedLeadHydratedListing({ ...refreshedListing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
+      if (uploadAttempt !== sellerLeadUploadAttemptRef.current || sellerUploadLeadRef.current !== selectedLead.leadId) return
       setMessage('Mandate uploaded. Review the signed evidence in Documents before marking it complete.')
     } catch (uploadError) {
+      if (uploadAttempt !== sellerLeadUploadAttemptRef.current || sellerUploadLeadRef.current !== selectedLead.leadId) return
+      if (savedDocument?.id) {
+        setMessage(`${file.name} uploaded. Linked views may need a refresh; do not upload this file again.`)
+        return
+      }
+      setSellerLeadUploadProgress({ ...createDocumentUploadProgress('failed', uploadError?.message, { fileName: file.name }), leadId: selectedLead.leadId })
       setError(uploadError?.message || 'Unable to upload the signed mandate right now.')
     } finally {
-      setSellerLeadMandateUploading(false)
+      if (uploadAttempt === sellerLeadUploadAttemptRef.current) setSellerLeadMandateUploading(false)
     }
   }
 
@@ -26659,9 +26695,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const documentLabel = getSellerLeadDocumentCanonicalLabel(documentRow)
     setSellerLeadDocumentUploadingKey(uploadKey)
     setError('')
+    setSellerLeadUploadProgress({ ...createDocumentUploadProgress('preparing', '', { fileName: file.name }), leadId: selectedLead.leadId })
+    let savedDocument = null
+    const uploadAttempt = ++sellerLeadUploadAttemptRef.current
     try {
-      const signingCopy = !documentRow.uploadExisting && getSellerPhysicalSigningCopy(documentRow) ? await requireSellerPhysicalSigningCopy(documentRow) : null
-      if (SELLER_DOCUMENT_SELECTION_KEYS[documentKey] && selectedLeadLinkedListingId) await assertSellerDocumentUploadAvailable(selectedLeadLinkedListingId, documentKey)
+      const signingCopy = !documentRow.uploadExisting && getSellerPhysicalSigningCopy(documentRow) ? await withDocumentUploadDeadline(() => requireSellerPhysicalSigningCopy(documentRow)) : null
+      if (SELLER_DOCUMENT_SELECTION_KEYS[documentKey] && selectedLeadLinkedListingId) await withDocumentUploadDeadline(() => assertSellerDocumentUploadAvailable(selectedLeadLinkedListingId, documentKey))
       let targetListingId = normalizeText(
         selectedLeadLinkedListing?.id ||
           selectedLeadLinkedListing?.listingId ||
@@ -26685,30 +26724,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         throw new Error('Create or link a listing draft before uploading seller documents.')
       }
 
-      const uploadedDocument = await withPipelineTimeout(
-        uploadPrivateListingDocument(targetListingId, file, {
-          requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id),
-          requirementKey: normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentKey),
-          documentType: normalizeText(documentRow?.documentType || documentRow?.document_type || documentKey) || 'seller_document',
-          documentCategory: normalizeText(
-            documentRow?.documentCategory ||
-              documentRow?.document_category ||
-              documentRow?.category ||
-              category?.key ||
-              getSellerLeadDocumentCategoryKey(documentRow),
-          ) || 'seller',
-          documentName: normalizeText(file.name || documentLabel || documentRow?.title) || 'Seller document',
-          visibility: resolveSellerLeadUploadVisibility(documentRow),
-          status: 'uploaded',
-          deferMandateSigning: Boolean(signingCopy) || Boolean(SELLER_DOCUMENT_SELECTION_KEYS[documentKey]),
-          existingSignedEvidence: documentRow.uploadExisting === true,
-          reviewedSigningVersionId: signingCopy?.versionId || '',
-          reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
-        }),
-        `${documentLabel} upload is still processing. Refresh the checklist before trying again to avoid a duplicate.`,
-        SELLER_LEAD_DOCUMENT_UPLOAD_TIMEOUT_MS,
-      )
+      const uploadedDocument = await uploadPrivateListingDocument(targetListingId, file, {
+        requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id),
+        requirementKey: normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentKey),
+        documentType: normalizeText(documentRow?.documentType || documentRow?.document_type || documentKey) || 'seller_document',
+        documentCategory: normalizeText(
+          documentRow?.documentCategory ||
+            documentRow?.document_category ||
+            documentRow?.category ||
+            category?.key ||
+            getSellerLeadDocumentCategoryKey(documentRow),
+        ) || 'seller',
+        documentName: normalizeText(file.name || documentLabel || documentRow?.title) || 'Seller document',
+        visibility: resolveSellerLeadUploadVisibility(documentRow),
+        status: 'uploaded',
+        deferMandateSigning: Boolean(signingCopy) || Boolean(SELLER_DOCUMENT_SELECTION_KEYS[documentKey]),
+        existingSignedEvidence: documentRow.uploadExisting === true,
+        onProgress: progress => {
+          if (progress.stage === 'complete' && progress.document?.id) savedDocument = progress.document
+          reflectSellerLeadUpload(progress, file, targetListingId, selectedLead.leadId, uploadAttempt)
+        },
+        reviewedSigningVersionId: signingCopy?.versionId || '',
+        reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
+      })
 
+      if (uploadAttempt !== sellerLeadUploadAttemptRef.current || sellerUploadLeadRef.current !== selectedLead.leadId) return
       const uploadedAt = normalizeText(uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt) || new Date().toISOString()
       const leadSource = selectedLead || routeLeadSnapshotLead || {}
       const rawPayload = parseLeadRawEnquiryPayload(leadSource?.rawEnquiryPayload || leadSource?.raw_enquiry_payload)
@@ -26770,10 +26810,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: targetListingId,
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      {
-        const refreshedListing = await getPrivateListing(targetListingId, { includeRequirementsAndDocuments: true }).catch(() => null)
-        if (refreshedListing) setSelectedLeadHydratedListing({ ...refreshedListing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
-      }
       // The document is safely stored at this point. Do not leave the upload
       // action spinning while non-critical CRM/activity mirrors wait on a
       // slow network response; the local workspace now reflects the upload.
@@ -26795,9 +26831,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }),
       ])
     } catch (uploadError) {
+      if (uploadAttempt !== sellerLeadUploadAttemptRef.current || sellerUploadLeadRef.current !== selectedLead.leadId) return
+      if (savedDocument?.id) {
+        setMessage(`${file.name} uploaded. Linked views may need a refresh; do not upload this file again.`)
+        return
+      }
+      setSellerLeadUploadProgress({ ...createDocumentUploadProgress('failed', uploadError?.message, { fileName: file.name }), leadId: selectedLead.leadId })
       setError(uploadError?.message || `Unable to upload ${documentLabel}.`)
     } finally {
-      setSellerLeadDocumentUploadingKey('')
+      if (uploadAttempt === sellerLeadUploadAttemptRef.current) setSellerLeadDocumentUploadingKey('')
     }
   }
 
@@ -27319,6 +27361,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function openSellerOnboardingReview(documentKey = '', route = 'manual_upload') {
     sellerSigningPackBaselineRef.current = structuredClone(selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing)
+    setSellerOnboardingReviewListing(sellerSigningPackBaselineRef.current)
+    setSellerOnboardingReviewNeedsRefresh(false)
+    setSellerOnboardingReviewNotice('')
     setSellerSigningPackDownloadKey(SELLER_DOCUMENT_SELECTION_KEYS[documentKey] && route === 'manual_upload' ? documentKey : '')
     if (!selectedLeadLinkedListingId) {
       setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
@@ -27343,16 +27388,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function getSellerLeadOnboardingReviewChecklist() {
     return buildSellerOnboardingReviewChecklist({
-      formData: getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing),
-      listing: selectedLeadLinkedListing || {},
+      formData: getSellerLeadReviewFormData(selectedLead, sellerOnboardingReviewListing || selectedLeadLinkedListing),
+      listing: sellerOnboardingReviewListing || selectedLeadLinkedListing || {},
       lead: selectedLead || {},
     })
   }
 
   async function saveSellerLeadOnboardingReview(status) {
     const listingId = normalizeText(selectedLeadLinkedListingId)
-    if (!listingId || sellerOnboardingReviewSaving) return false
-    const formData = getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing)
+    if (!listingId || sellerOnboardingReviewSaving || sellerOnboardingReviewNeedsRefresh) return false
+    const formData = getSellerLeadReviewFormData(selectedLead, sellerOnboardingReviewListing || selectedLeadLinkedListing)
     if (status === SELLER_ONBOARDING_REVIEW_STATUS.approved) {
       if (readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
         setSellerOnboardingReviewError('Wait for the corrected onboarding to be resubmitted before approving it.')
@@ -27413,6 +27458,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingSnapshot = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
         if (listingSnapshot?.id !== listingId) throw new Error('The linked seller record could not be loaded. Try refreshing the lead again.')
         setSelectedLeadHydratedListing(listingSnapshot)
+        setSellerOnboardingReviewListing(listingSnapshot)
+        sellerSigningPackBaselineRef.current = listingSnapshot
         throw new Error('Latest saved seller version loaded. Review the onboarding information before approving again.')
       }
       if (listingSnapshot?.id !== listingId) throw new Error('The linked seller record could not be confirmed. Reload before approving onboarding.')
@@ -27429,6 +27476,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       // Approval can trigger listing reconciliation. Use the committed listing
       // timestamp for the signing-pack save, rather than the pre-review snapshot.
       setSelectedLeadHydratedListing(canonicalSaveResult.listing)
+      setSellerOnboardingReviewListing(canonicalSaveResult.listing)
       sellerSigningPackBaselineRef.current = canonicalSaveResult.listing
       if (canonicalSaveResult.warnings.length) {
         throw new Error(canonicalSaveResult.warnings.map((warning) => warning.message).join(' '))
@@ -27459,8 +27507,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       scheduleRecordsReload(organisationId, 500)
       return true
     } catch (reviewError) {
+      if (['SELLER_UPDATE_CONFLICT', 'PT409', '40001'].includes(reviewError?.code)) {
+        setSellerOnboardingReviewNeedsRefresh(true)
+        setSellerOnboardingReviewNotice('')
+      }
       setSellerOnboardingReviewError(reviewError?.message || 'Unable to save the seller onboarding review.')
       return false
+    } finally {
+      setSellerOnboardingReviewSaving(false)
+    }
+  }
+
+  async function refreshSellerOnboardingReviewRecord() {
+    if (sellerOnboardingReviewSaving) return
+    const listingId = normalizeText(selectedLeadLinkedListingId)
+    if (!listingId) return
+    setSellerOnboardingReviewSaving(true)
+    setSellerOnboardingReviewError('')
+    setSellerOnboardingReviewNotice('')
+    try {
+      const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+      if (listing?.id !== listingId) throw new Error('The latest seller record could not be loaded. Try refreshing again.')
+      setSelectedLeadHydratedListing(current => retainLatestSellerListing(current, listing))
+      setSellerOnboardingReviewListing(listing)
+      sellerSigningPackBaselineRef.current = listing
+      setSellerOnboardingReviewNeedsRefresh(false)
+      setSellerOnboardingReviewNotice('Latest saved seller details loaded. Your signing choices and correction note are retained. Review the facts before approving again.')
+    } catch (refreshError) {
+      setSellerOnboardingReviewNeedsRefresh(true)
+      setSellerOnboardingReviewError(refreshError?.message || 'Unable to load the latest seller information.')
     } finally {
       setSellerOnboardingReviewSaving(false)
     }
@@ -40470,6 +40545,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <Suspense fallback={<div className="rounded-[20px] border border-[#dce7f2] bg-white p-6"><div className="h-4 w-48 animate-pulse rounded-full bg-slate-200" /><div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" /></div>}>
                     <DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead'} contextId={selectedLeadRecordId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} />
                     <LeadDocumentWorkspace
+                      createMandateAction={selectedLeadIsSeller && selectedLeadLinkedListingId ? () => navigate(`/agent/listings/${encodeURIComponent(selectedLeadLinkedListingId)}?tab=documents&sellerDocumentAction=manual_upload&sellerDocumentKey=signed_mandate`) : null}
+                      uploadProgress={selectedLeadIsSeller && sellerLeadUploadProgress?.leadId === selectedLeadRecordId ? sellerLeadUploadProgress : null}
                       removalContext={{ client: isSupabaseConfigured ? supabase : null, contextType: selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead', contextId: selectedLeadRecordId, party: selectedLeadIsSeller ? 'seller' : 'buyer' }}
                       partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
                       partyName={selectedLeadDisplayName}
@@ -40603,6 +40680,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             })}
                           </div>
 
+                          <DocumentUploadProgress progress={sellerLeadUploadProgress?.leadId === selectedLeadRecordId ? sellerLeadUploadProgress : null} />
                           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
                             <div className="space-y-4" data-testid="seller-documents-list">
                               {selectedSellerDocumentCategories.map((category) => {
@@ -41159,14 +41237,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <Button type="button" variant="secondary" onClick={() => setSellerOnboardingReviewModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={sellerOnboardingReviewSaving || (sellerOnboardingReviewModalOpen && (!selectedLeadOnboardingReviewChecklist?.ready || readSellerOnboardingReview(selectedLeadReviewFormData?.sellerOnboardingReview || selectedLeadReviewFormData?.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested))} onClick={() => void continueSellerOnboardingReview()}>
+            <Button type="button" disabled={sellerOnboardingReviewSaving || sellerOnboardingReviewNeedsRefresh || (sellerOnboardingReviewModalOpen && (!selectedLeadOnboardingReviewChecklist?.ready || readSellerOnboardingReview(selectedLeadReviewFormData?.sellerOnboardingReview || selectedLeadReviewFormData?.seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested))} onClick={() => void continueSellerOnboardingReview()}>
               {sellerOnboardingReviewSaving ? 'Saving review…' : 'Approve and continue'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-5">
-          {sellerOnboardingReviewError ? <p role="alert" className="rounded-[14px] border border-[#f3c6c1] bg-[#fff6f5] p-3 text-sm text-[#a33c32]">{sellerOnboardingReviewError}</p> : null}
+          {sellerOnboardingReviewError ? <div role="alert" className="rounded-[14px] border border-[#f3c6c1] bg-[#fff6f5] p-3 text-sm text-[#a33c32]">
+            {sellerOnboardingReviewError}
+            {sellerOnboardingReviewNeedsRefresh ? <Button type="button" variant="secondary" className="mt-3" disabled={sellerOnboardingReviewSaving} onClick={() => void refreshSellerOnboardingReviewRecord()}>Load latest seller details and keep signing choices</Button> : null}
+          </div> : null}
+          {sellerOnboardingReviewNotice ? <p role="status" className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-3 text-sm text-[#47637d]">{sellerOnboardingReviewNotice}</p> : null}
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
             Commission terms are confirmed in the signing pack before anything is sent or prepared. Opening that screen does not create, publish, or activate a market listing.
             {(getLeadSellerOnboardingFormData(selectedLead).sellerReviewedDocumentVersions || getLeadSellerOnboardingFormData(selectedLead).seller_reviewed_document_versions)?.documents?.length ? ' Preparing another pack creates a new reviewed version and keeps the previous copies in the audit history.' : ''}
@@ -41180,7 +41262,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               {review.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? <p className="mt-1 text-[#76551a]">Correction requested: {review.reason}. Wait for resubmission before approving.</p> : <>
                 <p className="mt-1 text-[#607387]">Need a correction? The seller can update the existing onboarding link.</p>
                 <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="For example, confirm the beneficial owner’s ID and residential address." className="mt-3 w-full rounded-xl border border-[#dce6f2] bg-white px-3 py-2" />
-                <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={sellerOnboardingReviewSaving || sellerOnboardingCorrectionReason.trim().length < 5} onClick={() => void saveSellerLeadOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button>
+                <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={sellerOnboardingReviewSaving || sellerOnboardingReviewNeedsRefresh || sellerOnboardingCorrectionReason.trim().length < 5} onClick={() => void saveSellerLeadOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button>
               </>}
             </section>
           })() : null}

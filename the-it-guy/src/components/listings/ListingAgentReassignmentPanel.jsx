@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Loader2, Search } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listOrganisationUsers, listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
 import { reassignListingAgent } from '../../services/listingAgentReassignmentService'
 
@@ -65,12 +65,20 @@ export default function ListingAgentReassignmentPanel({
   className = '',
 } = {}) {
   const [assignmentOverride, setAssignmentOverride] = useState(null)
+  const [additionalOverride, setAdditionalOverride] = useState(null)
+  const [additionalOpen, setAdditionalOpen] = useState(false)
+  const [additionalDraft, setAdditionalDraft] = useState([])
+  const [expectedAdditionalIds, setExpectedAdditionalIds] = useState([])
+  const savedAdditionalIds = additionalOverride ?? listing.additionalAgentIds ?? listing.additional_agent_ids ?? []
   const currentAgentId = text(assignmentOverride?.userId || listing.assignedAgentId || listing.assigned_agent_id || listing.agentId)
   const organisationId = text(listing.organisationId || listing.organisation_id)
   const property24Live = isLiveProperty24Listing(listing)
   const currentAgentEmail = text(assignmentOverride?.email || listing.assignedAgentEmail || listing.assigned_agent_email || agent?.email).toLowerCase()
   const currentAgentName = text(assignmentOverride?.name || listing.assignedAgentName || listing.assigned_agent_name || listing.assignedAgent || agentName(agent) || 'Unassigned')
   const panelRef = useRef(null)
+  const workspaceKey = `${organisationId}:${listingId}`
+  const activeWorkspace = useRef(workspaceKey)
+  activeWorkspace.current = workspaceKey
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [agents, setAgents] = useState([])
@@ -81,7 +89,20 @@ export default function ListingAgentReassignmentPanel({
 
   useEffect(() => {
     setAssignmentOverride(null)
-  }, [listingId])
+    setAdditionalOverride(null)
+    setAdditionalOpen(false)
+    setOpen(false)
+    setAgents([])
+    setLoadingAgents(false)
+    setSaving(false)
+    setError('')
+    setSuccess('')
+  }, [listingId, organisationId])
+
+  const additionalIdsKey = (listing.additionalAgentIds ?? listing.additional_agent_ids ?? []).join(',')
+  useEffect(() => {
+    setAdditionalOverride(null)
+  }, [additionalIdsKey])
 
   useEffect(() => {
     if (!open || saving) return undefined
@@ -110,6 +131,58 @@ export default function ListingAgentReassignmentPanel({
   const filteredAgents = availableAgents.filter((row) =>
     `${agentName(row)} ${text(row.email)}`.toLowerCase().includes(query.toLowerCase()))
 
+  const loadAgents = useCallback(async () => {
+    const requestWorkspace = workspaceKey
+    setLoadingAgents(true)
+    try {
+      const rows = organisationId
+        ? await listOrganisationUsersForWorkspace({ organisationId })
+        : await listOrganisationUsers()
+      if (activeWorkspace.current === requestWorkspace) setAgents(Array.isArray(rows) ? rows : [])
+    } catch (loadError) {
+      if (activeWorkspace.current === requestWorkspace) setError(loadError?.message || 'Unable to load the agency agent directory.')
+    } finally {
+      if (activeWorkspace.current === requestWorkspace) setLoadingAgents(false)
+    }
+  }, [organisationId, workspaceKey])
+
+  const hasAdditionalAgents = savedAdditionalIds.length > 0
+  useEffect(() => {
+    if (hasAdditionalAgents && !agents.length) void loadAgents()
+  }, [hasAdditionalAgents, agents.length, loadAgents])
+
+  async function editAdditionalAgents() {
+    if (saving || !currentAgentId) return
+    setOpen(false)
+    setAdditionalOpen(true)
+    setAdditionalDraft([...savedAdditionalIds])
+    setExpectedAdditionalIds([...savedAdditionalIds])
+    setQuery('')
+    setError('')
+    setSuccess('')
+    if (!agents.length && !loadingAgents) await loadAgents()
+  }
+
+  async function saveAdditionalAgents() {
+    const requestWorkspace = workspaceKey
+    setSaving(true)
+    setError('')
+    try {
+      const result = await reassignListingAgent(listingId, currentAgentId, {
+        listingType, additionalAgentIds: additionalDraft, expectedAdditionalAgentIds: expectedAdditionalIds,
+      })
+      if (activeWorkspace.current !== requestWorkspace) return
+      setAdditionalOverride(result.listing?.additional_agent_ids ?? additionalDraft)
+      setAdditionalOpen(false)
+      setSuccess('Additional agents saved. Publish or update P24 and PP to send the contacts.')
+      await onReassigned?.(result)
+    } catch (saveError) {
+      if (activeWorkspace.current === requestWorkspace) setError(saveError?.message || 'Unable to save additional agents.')
+    } finally {
+      if (activeWorkspace.current === requestWorkspace) setSaving(false)
+    }
+  }
+
   async function openPicker() {
     if (saving) return
     if (open) {
@@ -119,18 +192,9 @@ export default function ListingAgentReassignmentPanel({
     setOpen(true)
     setQuery('')
     setError('')
+    setAdditionalOpen(false)
     if (agents.length) return
-    try {
-      setLoadingAgents(true)
-      const rows = organisationId
-        ? await listOrganisationUsersForWorkspace({ organisationId })
-        : await listOrganisationUsers()
-      setAgents(Array.isArray(rows) ? rows : [])
-    } catch (loadError) {
-      setError(loadError?.message || 'Unable to load the agency agent directory.')
-    } finally {
-      setLoadingAgents(false)
-    }
+    await loadAgents()
   }
 
   async function assignAgent(nextAgent) {
@@ -150,6 +214,7 @@ export default function ListingAgentReassignmentPanel({
         email: text(nextAgent.email),
         avatarUrl: avatarUrl(nextAgent),
       })
+      setAdditionalOverride(result.listing?.additional_agent_ids ?? savedAdditionalIds.filter((id) => id !== nextId))
       await onReassigned?.(result)
       setSuccess(`Listing assigned to ${agentName(nextAgent)}.`)
       setOpen(false)
@@ -172,6 +237,43 @@ export default function ListingAgentReassignmentPanel({
         </span>
         {saving ? <Loader2 size={17} className="shrink-0 animate-spin text-[#607891]" /> : <ChevronDown size={17} className={`shrink-0 text-[#607891] transition-transform ${open ? 'rotate-180' : ''}`} />}
       </button>
+
+      <div className="mt-3 border-t border-[#dde4ee] pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-[#607891]">Additional agents ({savedAdditionalIds.length})</p>
+          <button type="button" disabled={saving || !currentAgentId} onClick={() => void editAdditionalAgents()}
+            className="rounded px-2 py-1 text-xs font-semibold text-[#1f4f78] focus-visible:outline focus-visible:outline-2 disabled:opacity-60">Edit additional agents</button>
+        </div>
+        {savedAdditionalIds.length ? <p className="mt-1 text-xs text-[#607891]">{savedAdditionalIds.map((id, index) => agentName(agents.find((row) => agentId(row) === id)) || `Additional agent ${index + 1}`).join(', ')}</p> : null}
+        {additionalOpen ? (
+          <fieldset disabled={saving || loadingAgents} className="mt-3 space-y-2">
+            <legend className="text-xs text-[#607891]">Choose extra contacts for P24 and PP. The primary agent remains responsible for the listing.</legend>
+            <label className="block text-xs text-[#607891]" htmlFor={`additional-agent-search-${listingId}`}>Search additional agents</label>
+            <input id={`additional-agent-search-${listingId}`} value={query} onChange={(event) => setQuery(event.target.value)}
+              className="h-10 w-full rounded border border-[#dbe6f2] px-3 text-sm" />
+            {loadingAgents ? <p role="status" className="text-xs text-[#607891]">Loading agents…</p> : (
+              <div className="max-h-64 overflow-y-auto">
+                {filteredAgents.filter((row) => agentId(row) !== currentAgentId).map((row) => {
+                  const id = agentId(row)
+                  return <label key={id} className="flex items-center gap-2 rounded px-2 py-2 text-sm text-[#18324b]">
+                    <input type="checkbox" checked={additionalDraft.includes(id)} onChange={(event) => setAdditionalDraft((current) => event.target.checked ? [...current, id] : current.filter((value) => value !== id))} />
+                    <span>{agentName(row)}<span className="block text-xs text-[#607891]">{text(row.email)}</span></span>
+                  </label>
+                })}
+                {!filteredAgents.some((row) => agentId(row) !== currentAgentId) ? <p className="text-xs text-[#607891]">No additional active agents found.</p> : null}
+                {additionalDraft.filter((id) => !availableAgents.some((row) => agentId(row) === id)).map((id, index) => <label key={id} className="flex items-center gap-2 text-xs text-[#607891]">
+                  <input type="checkbox" checked onChange={() => setAdditionalDraft((current) => current.filter((value) => value !== id))} />
+                  Unavailable agent {index + 1} — remove before saving
+                </label>)}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void saveAdditionalAgents()} className="rounded bg-[#1f4f78] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60">{saving ? 'Saving…' : 'Save additional agents'}</button>
+              <button type="button" onClick={() => setAdditionalOpen(false)} className="rounded border border-[#dbe6f2] px-3 py-2 text-xs text-[#18324b]">Cancel</button>
+            </div>
+          </fieldset>
+        ) : null}
+      </div>
 
       {success ? <p className="mt-2 text-xs font-semibold text-[#286b43]" role="status">{success}</p> : null}
       {error && !open ? <p className="mt-2 text-xs font-semibold text-[#9f3131]" role="alert">{error}</p> : null}
@@ -206,7 +308,7 @@ export default function ListingAgentReassignmentPanel({
           )}
           {error ? <p className="px-3 py-2 text-xs font-semibold text-[#9f3131]" role="alert">{error}</p> : null}
           {property24Live ? <p className="px-3 py-2 text-xs text-[#607891]">A live Property24 listing also needs a mapped Property24 agent. If the mapping is missing, the assignment will stay unchanged.</p> : null}
-          <p className="px-3 pb-1 pt-2 text-xs text-[#607891]">One primary agent per listing. Selecting an agent saves the assignment.</p>
+          <p className="px-3 pb-1 pt-2 text-xs text-[#607891]">Selecting an agent changes the primary agent. Use Additional agents to add portal contacts.</p>
         </div>
       ) : null}
     </section>

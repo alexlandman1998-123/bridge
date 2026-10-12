@@ -710,12 +710,14 @@ const reviewAction = leadPageSource.slice(
   leadPageSource.indexOf('  async function saveSellerLeadOnboardingReview('),
   leadPageSource.indexOf('\n  function getSellerLeadSigningRecipients('),
 )
-async function runOnboardingReview({ error = null } = {}) {
+async function runOnboardingReview({ error = null, needsRefresh = false, missingRevision = false } = {}) {
   const events = { errors: [], saves: [], leads: [] }
   const before = { ...listing, sellerOnboarding: { status: 'completed', formData: listing.sellerOnboarding.formData } }
+  if (missingRevision) { delete before.updatedAt; delete before.updated_at }
   const committedTimestamp = '2026-10-09T07:10:00.123456Z'
   const scope = {
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: before,
+    sellerOnboardingReviewListing: before, sellerOnboardingReviewNeedsRefresh: needsRefresh,
     sellerSigningPackBaselineRef: { current: before },
     selectedLead: { leadId: 'fixture-lead' }, sellerOnboardingReviewSaving: false,
     currentAgent: { id: 'fixture-agent' }, organisationId: listing.organisationId,
@@ -737,9 +739,14 @@ async function runOnboardingReview({ error = null } = {}) {
     patchSelectedLeadRecord: patch => { events.leads.push(patch) }, updateAgencyCrmLeadRecord: async () => {},
     setSellerOnboardingReviewSaving: value => { events.saving = value },
     setSellerOnboardingReviewError: value => { if (value) events.errors.push(value) },
+    setSellerOnboardingReviewNeedsRefresh: value => { events.needsRefresh = value },
+    setSellerOnboardingReviewNotice: value => { events.notice = value },
+    setSellerOnboardingReviewListing: value => { events.reviewListing = value },
+    getPrivateListing: async () => ({ ...before, updatedAt: committedTimestamp }),
     setMessage: () => {}, scheduleRecordsReload: () => {},
   }
   events.ok = await Function(...Object.keys(scope), `${reviewAction}; return saveSellerLeadOnboardingReview('approved')`)(...Object.values(scope))
+  events.baseline = scope.sellerSigningPackBaselineRef.current
   return events
 }
 
@@ -764,7 +771,67 @@ await test('a failed review does not claim approval or replace the listing snaps
   assert.equal(events.hydrated, undefined)
   assert.deepEqual(events.leads, [])
   assert.equal(events.saving, false)
+  assert.equal(events.needsRefresh, true)
 })
+
+await test('a conflicted onboarding review cannot resubmit the stale version', async () => {
+  const events = await runOnboardingReview({ needsRefresh: true })
+  assert.equal(events.ok, false)
+  assert.deepEqual(events.saves, [])
+  assert.deepEqual(events.leads, [])
+})
+
+await test('loading a missing review revision advances both the displayed facts and the next save baseline', async () => {
+  const events = await runOnboardingReview({ missingRevision: true })
+  assert.equal(events.ok, false)
+  assert.deepEqual(events.saves, [])
+  assert.equal(events.baseline, events.reviewListing)
+  assert.equal(events.baseline.updatedAt, '2026-10-09T07:10:00.123456Z')
+})
+
+const reviewRefreshAction = leadPageSource.slice(
+  leadPageSource.indexOf('  async function refreshSellerOnboardingReviewRecord('),
+  leadPageSource.indexOf('\n  function getSellerLeadSigningRecipients('),
+)
+for (const failure of [null, 'unavailable', 'wrong_listing']) {
+  await test(`onboarding review refresh preserves choices and never writes or approves (${failure || 'success'})`, async () => {
+    const latest = { ...listing, id: failure === 'wrong_listing' ? 'another-listing' : listing.id, updatedAt: '2026-10-12T12:00:00Z' }
+    const events = { current: listing, reviewListing: listing, needsRefresh: true, reads: 0 }
+    const routes = { signed_fica_declaration: 'upload_existing', signed_mandate: 'manual_upload' }
+    const scope = {
+      sellerOnboardingReviewSaving: false, selectedLeadLinkedListingId: listing.id,
+      normalizeText: value => String(value ?? '').trim(),
+      retainLatestSellerListing: (current, incoming) => incoming,
+      sellerSigningPackBaselineRef: { current: listing },
+      sellerOnboardingDocumentRoutes: routes, sellerOnboardingCorrectionReason: 'Correct the seller address',
+      getPrivateListing: async (id, options) => {
+        events.reads++
+        assert.equal(id, listing.id)
+        assert.equal(options.includeRequirementsAndDocuments, false)
+        if (failure === 'unavailable') throw Error('Refresh unavailable')
+        return latest
+      },
+      setSelectedLeadHydratedListing: callback => { events.current = callback(events.current) },
+      setSellerOnboardingReviewListing: value => { events.reviewListing = value },
+      setSellerOnboardingReviewSaving: value => { events.saving = value },
+      setSellerOnboardingReviewNeedsRefresh: value => { events.needsRefresh = value },
+      setSellerOnboardingReviewError: value => { events.error = value },
+      setSellerOnboardingReviewNotice: value => { events.notice = value },
+      setSellerOnboardingDocumentRoutes: () => { throw Error('Must retain signing choices') },
+      setSellerOnboardingCorrectionReason: () => { throw Error('Must retain correction note') },
+      saveListingSellerCanonicalUpdate: () => { throw Error('Refresh must not save or approve') },
+      sendSellerDocumentForSignature: () => { throw Error('Refresh must not send') },
+    }
+    await Function(...Object.keys(scope), `${reviewRefreshAction}; return refreshSellerOnboardingReviewRecord()`)(...Object.values(scope))
+    assert.equal(events.reads, 1)
+    assert.equal(events.saving, false)
+    assert.equal(events.needsRefresh, Boolean(failure))
+    assert.equal(events.reviewListing, failure ? listing : latest)
+    assert.equal(scope.sellerSigningPackBaselineRef.current, failure ? listing : latest)
+    if (!failure) { assert.equal(events.error, ''); assert.match(events.notice, /Review the facts before approving again/) }
+    else assert.ok(events.error)
+  })
+}
 
 const refreshAction = leadPageSource.slice(
   leadPageSource.indexOf('  async function refreshSellerSigningPackRecord('),
@@ -859,6 +926,20 @@ await test('a lead-stage failure cannot turn successful delivery into a failed s
 // Execute the listing's real document preparation action. It must save terms,
 // answers and frozen copies atomically before any delivery or download.
 const listingActionSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const startMandateAction = listingActionSource.slice(listingActionSource.indexOf('  async function handleStartListingMandateDocument('), listingActionSource.indexOf('\n  async function handleStartAcceptedOfferOtpDocument(', listingActionSource.indexOf('  async function handleStartListingMandateDocument(')))
+await test('Create Mandate opens printable preparation without calling the retired generator or changing saved state', async () => {
+  const calls = []
+  const scope = {
+    listingRecord: listing, DOCUMENT_START_SOURCE_MODES: { saved: 'saved', onboarding: 'onboarding' },
+    setDetailError() {}, setDetailMessage() {}, setMandateStartOpen() {},
+    prepareSellerDocumentAction: (...args) => calls.push(args),
+    handleGenerateMandateFollowUp: () => { throw Error('Must not mutate mandate state just to open preparation') },
+    handleSendSellerOnboardingFollowUp: () => { throw Error('Must not repeat completed onboarding') },
+    navigate: () => { throw Error('Must not open the retired legal route') },
+  }
+  await Function(...Object.keys(scope), `${startMandateAction}; return handleStartListingMandateDocument()`)(...Object.values(scope))
+  assert.deepEqual(calls, [['signed_mandate', 'manual_upload']])
+})
 const { SELLER_DOCUMENT_SELECTION_KEYS } = await import('../src/core/documents/sellerDocumentWorkflow.js')
 const individualAction = listingActionSource.slice(listingActionSource.indexOf('  function prepareSellerDocumentAction('), listingActionSource.indexOf('\n  async function refreshSellerDocumentSigning()', listingActionSource.indexOf('  function prepareSellerDocumentAction(')))
 await test('individual document actions clear an unrelated active pack before preparation', () => {
@@ -881,7 +962,7 @@ await test('individual document actions clear an unrelated active pack before pr
     assert.deepEqual(Object.entries(state.selection).filter(([, value]) => value).map(([selected]) => selected), [key])
   }
 })
-const listingPreparationAction = listingActionSource.slice(listingActionSource.indexOf('  async function saveSellerDocumentSendSelection()'), listingActionSource.indexOf('\n  async function saveMandateSetup()', listingActionSource.indexOf('  async function saveSellerDocumentSendSelection()')))
+const listingPreparationAction = listingActionSource.slice(listingActionSource.indexOf('  async function saveSellerDocumentSendSelection()'), listingActionSource.indexOf('\n  async function handleStartListingMandateDocument(', listingActionSource.indexOf('  async function saveSellerDocumentSendSelection()')))
 const { validateSellerOnboardingFormalSigningSelection } = await import('../src/core/documents/sellerOnboardingFormalSigningPack.js')
 const validLeadPreparation = await runLeadPreparation({ routes: { signed_mandate: 'manual_upload' } })
 const validSnapshot = validLeadPreparation.saves[0].nextFormData.sellerOnboardingManualSigningPack.signingPackSnapshot
@@ -892,6 +973,9 @@ async function runListingPreparation(key, { digital = false, conflict = false, w
   const before = { ...listing, updatedAt: '2026-10-11T10:00:00Z', sellerOnboarding: { ...listing.sellerOnboarding, status: 'completed', formData: form } }
   const scope = {
     SELLER_PORTAL_SIGNING_ENABLED: true, sellerMandateSignatureRoute: digital ? 'digital_pack' : 'manual_upload',
+    sellerDocumentPreparationNeedsRefresh: false,
+    getSellerDocumentCommission: () => ({ basis: 'fixed', amount: '75000', percentage: '', vatHandling: 'inclusive' }),
+    setSellerDocumentPreparationNeedsRefresh: value => { events.needsRefresh = value },
     sellerDocumentSendSelection: { [key]: true }, sellerMandateDocumentSource: key === 'mandate' ? 'arch9_generated' : '',
     sellerDocumentPreparationKey: Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).find(k => SELLER_DOCUMENT_SELECTION_KEYS[k] === key),
     sellerDocumentPreparationBaselineRef: { current: before }, sellerDisclosureDraft: answers,
@@ -945,6 +1029,32 @@ for (const key of ['mandate', 'disclosure', 'fica']) for (const digital of [fals
   assert.equal(result.saves[0].formPatch.propertyDisclosure.signature, key === 'disclosure' ? '' : undefined)
   assert.deepEqual(result.sends, digital ? [scopeKey(key)] : [])
   assert.equal(result.downloads.length, digital ? 0 : 1)
+})
+const refreshPreparationAction = listingActionSource.slice(listingActionSource.indexOf('  async function refreshSellerDocumentPreparation('), listingActionSource.indexOf('\n  async function handleStartListingMandateDocument(', listingActionSource.indexOf('  async function refreshSellerDocumentPreparation(')))
+const { readSellerMandateTerms: readPrintableTerms } = await import('../src/lib/sellerMandateCapture.js')
+for (const failed of [false, true]) await test(`printable refresh retains only local term edits and never saves or sends (${failed ? 'failed read' : 'success'})`, async () => {
+  const initial = readPrintableTerms({ startDate: '2026-10-12', endDate: '2027-01-12', protectionPeriod: '' })
+  const latest = { ...listing, sellerOnboarding: { formData: { startDate: '2026-10-12', endDate: '2027-02-12', protectionPeriod: '10' } } }
+  const events = { needsRefresh: true, baseline: { current: listing } }
+  const scope = {
+    sellerDocumentSendSaving: false, listingRecord: listing,
+    printableMandateTerms: { ...initial, protectionPeriod: '0' }, printableMandateInitialTerms: initial,
+    sellerDocumentPreparationBaselineRef: events.baseline,
+    getPrivateListing: async () => { if (failed) throw Error('Read unavailable'); return latest },
+    readSellerMandateTerms: readPrintableTerms, getListingSellerFormData: row => row.sellerOnboarding.formData,
+    mergeListingRecord: (_, value) => value, patchListing: callback => { events.listing = callback(listing) },
+    setSellerDocumentSendSaving: value => { events.saving = value },
+    setDetailError: value => { events.error = value }, setDetailMessage: value => { events.message = value },
+    setPrintableMandateTerms: value => { events.terms = value }, setPrintableMandateInitialTerms: value => { events.initial = value },
+    setSellerDocumentPreparationNeedsRefresh: value => { events.needsRefresh = value },
+    saveListingSellerCanonicalUpdate: () => { throw Error('Refresh must not save') },
+    sendSellerDocumentForSignature: () => { throw Error('Refresh must not send') },
+  }
+  await Function(...Object.keys(scope), `${refreshPreparationAction}; return refreshSellerDocumentPreparation()`)(...Object.values(scope))
+  assert.equal(events.saving, false)
+  assert.equal(events.needsRefresh, failed)
+  if (failed) { assert.equal(events.baseline.current, listing); assert.match(events.error, /Read unavailable/) }
+  else { assert.equal(events.terms.protectionPeriod, '0'); assert.equal(events.terms.endDate, '2027-02-12'); assert.equal(events.baseline.current, latest) }
 })
 function scopeKey(key) { return Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).find(k => SELLER_DOCUMENT_SELECTION_KEYS[k] === key) }
 for (const failure of ['conflict', 'warning']) await test(`listing document ${failure} preserves evidence and blocks dispatch`, async () => {

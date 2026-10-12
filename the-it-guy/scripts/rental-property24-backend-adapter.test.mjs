@@ -200,3 +200,10 @@ const agriculturalRental = createProperty24RentalListingPlan({
 assert.equal(agriculturalRental.canSubmit, true, JSON.stringify(agriculturalRental.dataBlockers))
 assert.equal(agriculturalRental.payload.propertyInfo.propertyTypeId, 10)
 assert.equal(agriculturalRental.payload.rentalInfo.rentalRate, 'Month')
+
+const multipleContacts = createProperty24RentalListingPlan({ listing: RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+ agentMapping: { property24AgentId: 77959, sourceReference: 'arch9-agent-1', contactAgentIds: [77959, 77970, 77970] },
+ media: [{ mediaType: 'image', bytes: 'base64-rental-image', mimeContentType: 'image/jpeg' }], options: { includeSubmitPayload: true } })
+assert.equal(multipleContacts.canSubmit, true)
+assert.deepEqual(multipleContacts.payload.contactAgentIds, [77959, 77970])
+assert.deepEqual(multipleContacts.summary.contactAgentIds, [77959, 77970])

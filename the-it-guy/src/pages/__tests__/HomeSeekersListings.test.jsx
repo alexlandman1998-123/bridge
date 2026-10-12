@@ -88,9 +88,23 @@ it('rentals use the CRM feed and offer a detail page', async () => {
 it.each([['sale-1', 'FOR SALE', 'All homes'], ['rental-1', 'TO LET', 'All rentals']])('opens the published %s detail with the correct price and return link', async (id, label, back) => {
   render(<MemoryRouter initialEntries={[`/demo/homeseekers/properties/${id}`]}><Routes><Route path="/demo/homeseekers/properties/:propertyId" element={<HomeSeekersProperty />} /></Routes></MemoryRouter>)
   await screen.findByRole('link', { name: back })
-  expect(screen.getAllByText(new RegExp(label)).length).toBe(2)
+  expect(screen.getByText(new RegExp(label))).toBeTruthy()
   expect(screen.getByText('Approved website description')).toBeTruthy()
   if (id === 'rental-1') expect(screen.getByText('Monthly rent')).toBeTruthy()
+})
+
+it('browses every property photo, wraps at either end and selects thumbnails', async () => {
+  feed([{ ...sale, images: [sale.image, 'https://example.test/second.jpg', 'https://example.test/third.jpg'] }])
+  render(<MemoryRouter initialEntries={['/demo/homeseekers/properties/sale-1']}><Routes><Route path="/demo/homeseekers/properties/:propertyId" element={<HomeSeekersProperty />} /></Routes></MemoryRouter>)
+  await screen.findByRole('heading', { name: sale.title, level: 1 })
+  expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Previous property photo' }))
+  expect(screen.getByRole('img', { name: 'Published sale image 3' }).getAttribute('src')).toBe('https://example.test/third.jpg')
+  fireEvent.click(screen.getByRole('button', { name: 'Next property photo' }))
+  expect(screen.getByRole('img', { name: 'Published sale image 1' }).getAttribute('src')).toBe(sale.image)
+  fireEvent.click(screen.getByRole('button', { name: 'View image 2 of 3' }))
+  expect(screen.getByRole('img', { name: 'Published sale image 2' }).getAttribute('src')).toBe('https://example.test/second.jpg')
+  expect(screen.getByRole('button', { name: 'View image 2 of 3' }).getAttribute('aria-pressed')).toBe('true')
 })
 
 it('does not show an unpublished or missing property', async () => {
@@ -108,7 +122,7 @@ it.each([['sold', 'SOLD'], ['under_offer', 'UNDER OFFER']])('shows the approved 
   unmount()
   render(<MemoryRouter initialEntries={['/demo/homeseekers/properties/sale-1']}><Routes><Route path="/demo/homeseekers/properties/:propertyId" element={<HomeSeekersProperty />} /></Routes></MemoryRouter>)
   await screen.findByRole('link', { name: 'All homes' })
-  expect(screen.getAllByText(new RegExp(label)).length).toBe(2)
+  expect(screen.getByText(new RegExp(label))).toBeTruthy()
 })
 
 it('featured homes carry the sale label while rentals stay To let', () => {

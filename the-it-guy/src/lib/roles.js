@@ -178,7 +178,7 @@ export const APP_NAV_BY_ROLE = {
         { key: 'marketing_website', label: 'Website', to: '/marketing?section=website' },
       ],
     },
-    { key: 'auctions', label: 'Auctions', to: '/auctions' },
+    // Auctions is paused; keep it out of navigation until work resumes.
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     ...(SHOW_INTELLIGENCE_BETA
@@ -610,7 +610,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'marketing_website', label: 'Website', to: '/marketing?section=website' },
       ],
     },
-    { key: 'auctions', label: 'Auctions', to: '/auctions' },
+    // Auctions is paused; keep it out of navigation until work resumes.
     {
       key: 'agency',
       label: 'Organisation',

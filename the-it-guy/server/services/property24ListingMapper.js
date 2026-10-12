@@ -224,7 +224,12 @@ function resolveAgentMapping(agentMapping = {}, listing = {}, options = {}) {
     listing.assigned_agent_source_reference,
     listing.assignedAgentSourceReference,
   )
-  return { property24AgentId, sourceReference }
+  const rawIds = agentMapping.contactAgentIds
+  const contactAgentIds = [...new Set([
+    property24AgentId,
+    ...(Array.isArray(rawIds) ? rawIds.map(toProperty24Integer) : []),
+  ].filter(Boolean))]
+  return { property24AgentId: property24AgentId || contactAgentIds[0], contactAgentIds, sourceReference }
 }
 
 function resolveSuburbId(catalogMapping = {}, listing = {}, publication = {}, options = {}) {
@@ -660,7 +665,7 @@ export function createProperty24ListingPlan({
     categoryContract.category,
   ), rentalMapping.property24Description)
   const suburbId = resolveSuburbId(catalogMapping, listing, publication, options)
-  const { property24AgentId, sourceReference } = resolveAgentMapping(agentMapping, listing, options)
+  const { property24AgentId, contactAgentIds, sourceReference } = resolveAgentMapping(agentMapping, listing, options)
   const mediaRows = normalizeMediaRows(media)
   const video = resolveListingPortalVideo(mediaRows)
   const imageRows = mediaRows.filter((item) => item.mediaType === 'image')
@@ -766,7 +771,7 @@ export function createProperty24ListingPlan({
   const basePayload = canPreview
     ? {
         agencyId,
-        contactAgentIds: property24AgentId ? [property24AgentId] : [],
+        contactAgentIds,
         ...(listingNumber ? { listingNumber } : {}),
         listingType,
         status,
@@ -801,7 +806,7 @@ export function createProperty24ListingPlan({
     qualityWarnings,
     summary: {
       agencyId,
-      contactAgentIds: property24AgentId ? [property24AgentId] : [],
+      contactAgentIds,
       agentSourceReference: sourceReference,
       sandboxPayloadTestMode,
       agentMappingRequiredBeforeSubmit: Boolean(sandboxPayloadTestMode && !property24AgentId),

@@ -1,5 +1,6 @@
 import { buildSellerDocumentUploadEvidenceSummary } from '../../services/listings/listingSellerDocumentUploadModel.js'
 import DocumentRequirementRemoveButton from './DocumentRequirementRemoveButton.jsx'
+import DocumentUploadProgress from './DocumentUploadProgress.jsx'
 import React, { useMemo } from 'react'
 import { FileText, FolderOpen, LockKeyhole } from 'lucide-react'
 import { summarizeLeadDocumentCategory } from './leadDocumentProgressModel'
@@ -20,7 +21,9 @@ export default function LeadDocumentWorkspace({
   portalAction,
   portalActionLabel,
   reviewSigningAction,
+  createMandateAction,
   removalContext,
+  uploadProgress,
 }) {
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const normalizedCategories = useMemo(() => categories.map((category) => {
@@ -53,10 +56,12 @@ export default function LeadDocumentWorkspace({
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex min-h-10 items-center rounded-full border border-[#dbe7f2] bg-white px-4 text-sm font-semibold text-[#31506b]">{summary.completed} of {summary.total} complete</span>
             {reviewSigningAction ? <button type="button" onClick={reviewSigningAction} className="inline-flex min-h-10 items-center rounded-[12px] border border-[#b9d9c8] bg-[#eaf7ee] px-4 text-sm font-semibold text-[#176842] hover:bg-[#def1e5]">Review signing routes</button> : null}
+            {partyType === 'seller' && createMandateAction ? <button type="button" onClick={createMandateAction} className="inline-flex min-h-10 items-center rounded-[12px] border border-[#b9d9c8] bg-[#eaf7ee] px-4 text-sm font-semibold text-[#176842]">Create printable mandate</button> : null}
             {portalAction ? <button type="button" onClick={portalAction} className="inline-flex min-h-10 items-center rounded-[12px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#20364c] hover:border-[#b9cde3]">{portalActionLabel || `Send ${partyLabel} Portal Link`}</button> : null}
           </div>
         </div>
         {partyType === 'seller' ? <p className="mt-3 text-sm text-[#60758b]">{uploadEvidence.saved} {uploadEvidence.saved === 1 ? 'file' : 'files'} saved · {uploadEvidence.awaitingReview} awaiting review. Saved files count as complete after review.</p> : null}
+        <DocumentUploadProgress progress={uploadProgress} />
         <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-[#e6edf5]" aria-label={`${summary.progress}% complete`}><div className="h-full rounded-full bg-[#148a58] transition-all" style={{ width: `${summary.progress}%` }} /></div>
       </header>
 

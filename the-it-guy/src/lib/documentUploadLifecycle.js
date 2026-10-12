@@ -19,7 +19,7 @@ const STAGE_MESSAGES = Object.freeze({
   [DOCUMENT_UPLOAD_STAGES.uploading]: 'Uploading the file to secure storage…',
   [DOCUMENT_UPLOAD_STAGES.saving]: 'Saving the document record…',
   [DOCUMENT_UPLOAD_STAGES.linked]: 'Linking the document to its workflow…',
-  [DOCUMENT_UPLOAD_STAGES.complete]: 'Document saved successfully.',
+  [DOCUMENT_UPLOAD_STAGES.complete]: 'Uploaded',
   [DOCUMENT_UPLOAD_STAGES.failed]: 'The document could not be uploaded. Please try again.',
 })
 
@@ -51,9 +51,23 @@ export function createDocumentUploadProgress(stage, message = '', extra = {}) {
 export function createDocumentUploadProgressReporter(onProgress = null) {
   return (stage, message = '', extra = {}) => {
     const event = createDocumentUploadProgress(stage, message, extra)
-    if (typeof onProgress === 'function') onProgress(event)
+    // Presentation must never turn an accepted save into an upload failure.
+    try { if (typeof onProgress === 'function') onProgress(event) } catch { /* Keep the saved result. */ }
     return event
   }
+}
+
+export const DOCUMENT_UPLOAD_TIMEOUTS = Object.freeze({ preparing: 15000, uploading: 120000, saving: 30000, recovery: 10000, followUp: 10000 })
+
+export async function withDocumentUploadDeadline(operation, { timeoutMs = DOCUMENT_UPLOAD_TIMEOUTS.preparing, message = 'This step took too long. Please retry.', code = 'document_upload_timeout' } = {}) {
+  const controller = new AbortController()
+  let timer
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => typeof operation === 'function' ? operation(controller.signal) : operation),
+      new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error(message), { code })) }, timeoutMs) }),
+    ])
+  } finally { clearTimeout(timer) }
 }
 
 export async function runDocumentUploadWithLifecycle({ upload, onProgress = null } = {}) {

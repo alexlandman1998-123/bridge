@@ -1,3 +1,4 @@
+import { additionalListingAgentIds, validateAdditionalListingAgents, contactAgentError } from '../services/listingContactAgents.js'
 import { normalizeProperty24Text } from './client.js'
 import { fetchCanonicalProperty24AgentProfile } from './agentProfileService.js'
 import { fetchOrganisationProperty24Connection } from './organisationConnectionService.js'
@@ -80,6 +81,8 @@ export function buildListingAgentReassignmentPlan({ listing = {}, targetAgent = 
     listingId,
     organisationId,
     previousAgentId: previousAgentId || null,
+    previousAdditionalAgentIds: additionalListingAgentIds(listing),
+    additionalAgentIds: additionalListingAgentIds(listing).filter((id) => id !== targetAgentId),
     targetAgentId,
     targetAgent: {
       userId: targetAgentId,
@@ -124,6 +127,8 @@ export async function prepareProperty24ListingAgentReassignment({
   listingId,
   targetAgentId,
   environment = 'exdev',
+  additionalAgentIds,
+  expectedAdditionalAgentIds,
 } = {}) {
   if (!supabase?.from) throw reassignmentError('supabase_required', 'Supabase client is required.', 500)
   const normalizedListingId = normalizeProperty24Text(listingId)
@@ -168,7 +173,22 @@ export async function prepareProperty24ListingAgentReassignment({
     )
   }
 
-  return buildListingAgentReassignmentPlan({ listing, targetAgent, sync, connection })
+  const plan = buildListingAgentReassignmentPlan({ listing, targetAgent, sync, connection })
+  plan.expectedUpdatedAt = listing.updated_at
+  if (additionalAgentIds !== undefined) {
+    if (plan.previousAgentId !== plan.targetAgentId) {
+      throw contactAgentError('Change the primary agent separately before editing additional agents.')
+    }
+    if (!Array.isArray(expectedAdditionalAgentIds) || JSON.stringify(expectedAdditionalAgentIds) !== JSON.stringify(plan.previousAdditionalAgentIds)) {
+      throw contactAgentError('The listing agents changed elsewhere. Refresh and try again.', 'listing_assignment_changed')
+    }
+    plan.additionalAgentIds = additionalListingAgentIds({ additional_agent_ids: additionalAgentIds, assigned_agent_id: targetAgentId })
+    await validateAdditionalListingAgents({ client: supabase, organisationId: plan.organisationId, agentIds: plan.additionalAgentIds })
+    plan.contactAgentsOnly = true
+    plan.requiresProperty24Sync = false
+    plan.changed = JSON.stringify(plan.additionalAgentIds) !== JSON.stringify(plan.previousAdditionalAgentIds)
+  }
+  return plan
 }
 
 function normalizeLegacyMapping(mapping = {}) {
@@ -278,16 +298,24 @@ export async function writePrivateListingAgentAssignment({
   plan,
   assignedAgentId,
   expectedCurrentAgentId,
+  restoreContacts = false,
 } = {}) {
   const normalizedAssignedAgentId = normalizeProperty24Text(assignedAgentId)
   let query = supabase
     .from('private_listings')
-    .update({ assigned_agent_id: normalizedAssignedAgentId || null })
+    .update({ assigned_agent_id: normalizedAssignedAgentId || null,
+      ...(plan.additionalAgentIds ? { additional_agent_ids: restoreContacts ? plan.previousAdditionalAgentIds : plan.additionalAgentIds } : {}),
+    })
     .eq('id', plan.listingId)
     .eq('organisation_id', plan.organisationId)
   query = applyCurrentAgentFilter(query, normalizeProperty24Text(expectedCurrentAgentId))
+  if (plan.previousAdditionalAgentIds) {
+    const expected = restoreContacts ? plan.additionalAgentIds : plan.previousAdditionalAgentIds
+    query = query.eq('additional_agent_ids', `{${expected.join(',')}}`)
+  }
+  if (plan.expectedUpdatedAt && !restoreContacts) query = query.eq('updated_at', plan.expectedUpdatedAt)
   const result = await query
-    .select('id, organisation_id, assigned_agent_id, listing_category, property24_reference, property24_status, updated_at')
+    .select('id, organisation_id, assigned_agent_id, additional_agent_ids, listing_category, property24_reference, property24_status, updated_at')
     .maybeSingle()
   if (result.error && result.error.code !== 'PGRST116') throw result.error
   if (!result.data?.id) {
@@ -313,17 +341,19 @@ export async function recordListingAgentReassignmentActivity({
     .from('private_listing_activity')
     .insert({
       private_listing_id: plan.listingId,
-      activity_type: failed ? 'listing_agent_reassignment_failed' : 'listing_agent_reassigned',
-      activity_title: failed ? 'Listing agent reassignment failed' : 'Listing agent reassigned',
+      activity_type: failed ? 'listing_agent_reassignment_failed' : plan.contactAgentsOnly ? 'listing_contact_agents_updated' : 'listing_agent_reassigned',
+      activity_title: failed ? 'Listing agent reassignment failed' : plan.contactAgentsOnly ? 'Additional listing agents updated' : 'Listing agent reassigned',
       activity_description: failed
         ? 'The agent change was rolled back because Property24 could not be updated.'
-        : `Listing reassigned to ${plan.targetAgent.fullName || plan.targetAgent.email || 'another agent'}.`,
+        : plan.contactAgentsOnly ? 'Additional agents saved. Publish or update each portal to send the contacts.' : `Listing reassigned to ${plan.targetAgent.fullName || plan.targetAgent.email || 'another agent'}.`,
       performed_by: normalizeProperty24Text(actorUserId) || null,
       visibility: 'internal',
       metadata: {
         source: 'listing_agent_reassignment_v1',
         previousAgentId: plan.previousAgentId,
         targetAgentId: plan.targetAgentId,
+        additionalAgentIds: plan.additionalAgentIds,
+        previousAdditionalAgentIds: plan.previousAdditionalAgentIds,
         listingType: plan.listingType,
         property24SyncRequired: plan.requiresProperty24Sync,
         property24SyncSkipped: plan.property24SyncSkipped,

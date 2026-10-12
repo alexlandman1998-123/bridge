@@ -7,6 +7,9 @@ const page = readFileSync(new URL('../../../pages/AgentListings.jsx', import.met
 const source = page.slice(page.indexOf('  async function retryListingPublication()'), page.indexOf('  async function handleSaveListing('))
 function editor(overrides = {}) {
   const context = {
+    editorRelistChannel: '', getSalesListingRequiredIssues: () => [],
+    getListingFieldIssues: () => context.listingFieldIssues,
+    initialChannelResults: [{ key: 'private_property', retryable: true }],
     publicationStatusBusy: false, isListingSaving: false, publicationPending: false, isEditListingWorkspace: true,
     listingFieldIssues: [], editListingId: 'listing-1', form: { listingStatus: 'active', selectedSyndicationChannels: ['private_property'] },
     setValidationAttemptedStep: vi.fn(), setCreateListingStep: vi.fn(), setError: vi.fn(), setPublicationStatusBusy: vi.fn(), setWorkflowMessage: vi.fn(),

@@ -5,6 +5,8 @@ import { PropertyCard } from '@/components/property-card'
 import { HomeSearch } from '@/components/home-search'
 import { PropertySearch } from '@/components/property-search'
 import { hasEditorialPropertyExperience, usesEditorialTemplate } from '@/lib/site-templates'
+import { KingdomRecentlySold } from './kingdom-recently-sold'
+import { isKingdomSoldSite, type SoldProperty } from '@/lib/kingdom-recently-sold'
 import { RecentlySoldStrip } from '@/components/recently-sold-strip'
 import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
@@ -53,10 +55,11 @@ function LwpJournal({ posts }: { posts: PublicBlogPost[] }) {
   return <section className="lwp-journal" id="journal"><div className="lwp-journal-header"><div><p className="eyebrow">The LWP journal</p><h2>Local insight.<br /><span>Better moves.</span></h2></div><a href="/blog">Explore the journal <span aria-hidden="true">↗</span></a></div><SwipeCue label="Swipe for more stories" /><div className="lwp-journal-track" aria-label="Latest journal stories">{stories.map((story, index) => <a className="lwp-journal-card" href={story.href} key={story.id}>{story.imageUrl ? <img src={story.imageUrl} alt="" /> : <div className={`lwp-journal-image lwp-journal-image-${story.imageClass || index}`} />}<div><p>{story.category} <span>0{index + 1}</span></p><h3>{story.title}</h3><span>{story.summary}</span><b>Read the story <i aria-hidden="true">↗</i></b></div></a>)}</div></section>
 }
 
-export function ContentBlocks({ page, properties, templateKey, site, blogPosts = [] }: { page: PublicPage; properties: PublicProperty[]; templateKey: WebsiteTemplateKey; site: ResolvedSite; blogPosts?: PublicBlogPost[] }) {
+export function ContentBlocks({ page, properties, templateKey, site, blogPosts = [], soldProperties = [] }: { page: PublicPage; properties: PublicProperty[]; templateKey: WebsiteTemplateKey; site: ResolvedSite; blogPosts?: PublicBlogPost[]; soldProperties?: SoldProperty[] }) {
   const editorialTemplate = usesEditorialTemplate(templateKey)
   return <>
     {page.blocks.filter((block) => !block.hidden).map((block, index) => <Fragment key={`${block.type}-${index}`}><Block block={block} page={page} properties={properties} site={site} templateKey={templateKey} />{page.kind === 'home' && editorialTemplate && !hasEditorialPropertyExperience(site) && block.type === 'rich_text' && <LatestBlogPosts posts={blogPosts} site={site} />}</Fragment>)}
+    {page.kind === 'home' && isKingdomSoldSite(site) && <KingdomRecentlySold properties={soldProperties} />}
     {page.kind === 'home' && <section className="newsletter-section"><div><p className="eyebrow">STAY IN TOUCH</p><h2>Stay close to the market.</h2><p>Get the latest properties, local market insights and neighbourhood news.</p></div><LeadForm pageId={page.id} purpose="newsletter_signup" privacyPolicyUrl={site.privacyPolicyUrl} /></section>}
     {page.kind === 'home' && hasEditorialPropertyExperience(site) && <LwpJournal posts={blogPosts} />}
   </>

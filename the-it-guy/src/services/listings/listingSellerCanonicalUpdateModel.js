@@ -57,6 +57,8 @@ export function applyListingSellerOnboardingSaveSnapshot(listing = {}, receipt =
       ...object(listing.sellerOnboarding),
       ...receipt,
       formData: receipt.form_data,
+      storedCanonicalFacts: receipt.canonical_facts_json || listing.sellerOnboarding?.storedCanonicalFacts,
+      canonicalFacts: receipt.canonical_facts_json || listing.sellerOnboarding?.canonicalFacts,
       updatedAt: receipt.updated_at,
       submittedAt: receipt.submitted_at,
       completedAt: receipt.submitted_at,
@@ -168,6 +170,8 @@ export function buildListingSellerCanonicalUpdate({
   }
   const projectedListing = {
     ...listing,
+    sellerCanonicalFacts: listing.sellerOnboarding?.storedCanonicalFacts || listing.seller_onboarding?.canonical_facts_json ||
+      listing.sellerCanonicalFacts || listing.seller_canonical_facts_json,
     sellerOnboarding: {
       ...object(listing.sellerOnboarding),
       formData: nextFormData,
@@ -357,6 +361,8 @@ export function applyListingSellerCanonicalUpdateSnapshot(listing = {}, update =
       status: update.onboardingStatus,
       formData: update.nextFormData,
       form_data: update.nextFormData,
+      storedCanonicalFacts: update.canonicalFacts,
+      canonicalFacts: update.canonicalFacts,
       updatedAt: update.now,
     },
     sellerCanonicalFacts: update.canonicalFacts,

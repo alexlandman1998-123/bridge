@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-12",
+  "timezone": "Africa/Johannesburg",
+  "source_commit": "78452e425",
+  "production_project": "isdowlnollckzvltkasn",
+  "status_check_fix": {
+    "cause": "The frontend selected update_request_key from listing_publication_jobs, but the column-specific SELECT grant omitted this newly added field.",
+    "migration": "20261012124428_listing_publication_status_tracking_read.sql",
+    "scope": "Only authenticated SELECT of update_request_key; RLS remains enabled, worker claim_id remains unreadable, anon receives no access.",
+    "verification": "The exact status query succeeded under the original publishing actor's authenticated role. Migration recorded once.",
+    "dry_run": "Exact grant and scope assertions executed in a transaction and rolled back before application.",
+    "rollback": "revoke select(update_request_key) on public.listing_publication_jobs from authenticated;"
+  },
+  "listing": {
+    "reference": "PRV-202610121213-4HN5",
+    "address": "262 Tegan Cres, Waterkloof Ridge",
+    "id": "7c2f9638-a50d-4d69-955a-b4942b369bf4",
+    "job_state": "accepted",
+    "website_status": "published",
+    "projection_status": "Published",
+    "public_url": "https://homeseeker.co.za/properties/7c2f9638-a50d-4d69-955a-b4942b369bf4",
+    "public_feed_http": 200,
+    "public_feed_found": true,
+    "photos_published": 54,
+    "browser_heading_verified": true
+  },
+  "tests": {
+    "database_permissions_regression": "passed",
+    "initial_publication_service": 32,
+    "total": 33,
+    "recovery_lock": "RECOVERY_LOCKED"
+  },
+  "preserved": "The Rivonia listing was withdrawn at 14:41 SAST and was not republished.",
+  "frontend_deployment_required": false
+}

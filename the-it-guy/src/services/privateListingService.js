@@ -1,6 +1,7 @@
 import { uploadSellerRequirementFile } from './documents/sellerRequirementUploadService.js'
 import { readDocumentRequirementContext } from './documents/documentRequirementReadService.js'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../lib/documentUploadRecovery.js'
+import { createDocumentUploadProgressReporter, withDocumentUploadDeadline } from '../lib/documentUploadLifecycle.js'
 import { readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import { normalizeListingExternalLinkStatus } from '../lib/listingExternalLinkStatus.js'
 import { normalizePortalStatus } from '../lib/listingDataMapper.js'
@@ -2987,6 +2988,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     unit_id: row.unit_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
+    additionalAgentIds: Array.isArray(row.additional_agent_ids) ? row.additional_agent_ids : [],
     assignedAgentName,
     assignedAgent: assignedAgentName,
     agentId: row.assigned_agent_id || null,
@@ -3333,6 +3335,7 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
     organisationId: row.organisation_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
+    additionalAgentIds: Array.isArray(row.additional_agent_ids) ? row.additional_agent_ids : [],
     assignedAgentEmail: normalizeText(row.assigned_agent_email).toLowerCase(),
     sellerLeadId: row.seller_lead_id || null,
     sellerProfileId: row.seller_profile_id || null,
@@ -8580,6 +8583,7 @@ export async function uploadSellerClientPortalDocument({
   category = 'Seller Document',
   reviewedSigningVersionId = '',
   reviewedSigningVersionDigest = '',
+  onProgress = null,
 } = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
@@ -8659,7 +8663,7 @@ export async function uploadSellerClientPortalDocument({
 
   const safeOriginalName = sanitizeDocumentFileName(filePolicy.safeName, 'seller-document')
   const timestamp = Date.now()
-  return runRecoverableDocumentUpload({ client: storageClient, scope: ['seller_portal', normalizedToken, listing.id, normalizedRequirementKey, canonicalRequirementInstanceId, documentRequestId, documentType, category, reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+  return runRecoverableDocumentUpload({ client: storageClient, onProgress, scope: ['seller_portal', normalizedToken, listing.id, normalizedRequirementKey, canonicalRequirementInstanceId, documentRequestId, documentType, category, reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
     toSavedReceipt: result => { const row = normalizeDocumentRows([result.data.document])[0]; return { ...row, id: row.id, name: row.document_name, privateListingId: listing.id, sharedDocument: result.data.shared_document, pendingTransactionPromotion: result.data.pending_transaction_promotion, persistence: buildPrivateListingDocumentPersistenceReceipt({ documentRow: row, storagePath: row.storage_path }) } },
     run: async attempt => {
       const filePath = attempt.path(`seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`)
@@ -8832,9 +8836,12 @@ export async function uploadPrivateListingDocument(listingId, file, {
   existingSignedEvidence = false,
   reviewedSigningVersionId = '',
   reviewedSigningVersionDigest = '',
+  onProgress = null,
 } = {}) {
   const client = requireClient()
-  const user = await getCurrentUser(client).catch(() => null)
+  const report = createDocumentUploadProgressReporter(onProgress)
+  report('preparing', '', { fileName: file?.name })
+  const user = await withDocumentUploadDeadline(() => getCurrentUser(client))
   const normalizedListingId = normalizeUuid(listingId)
   if (!normalizedListingId) throw new Error('Listing id is required.')
   if (!file) throw new Error('A file is required.')
@@ -8844,15 +8851,16 @@ export async function uploadPrivateListingDocument(listingId, file, {
   if (existingSignedEvidence && (reviewedSigningVersionId || reviewedSigningVersionDigest)) throw new Error('An existing signed document cannot claim a generated signing version.')
   const shouldDeferMandateSigning = existingSignedEvidence || deferMandateSigning || Boolean(reviewedSigningVersionId)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'agent_listing', listingId: normalizedListingId })
-  const accessibleListing = await getPrivateListingById(normalizedListingId, {
+  const accessibleListing = await withDocumentUploadDeadline(() => getPrivateListingById(normalizedListingId, {
     includeRequirementsAndDocuments: false,
-  })
+  }))
   if (!accessibleListing) {
     throw new Error('This listing is unavailable or you do not have permission to upload documents to it.')
   }
 
   // Resolve before Storage so a missing or unreadable checklist leaves no file behind.
-  let requirements = await getPrivateListingDocumentRequirements(normalizedListingId)
+  report('matching', '', { fileName: file.name })
+  let requirements = await withDocumentUploadDeadline(() => getPrivateListingDocumentRequirements(normalizedListingId))
   const normalizedRequirementId = normalizeUuid(requirementId)
   const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
   const uploadPreparation = buildPrivateListingDocumentUploadPreparation(accessibleListing, requirements, normalizedRequirementKey)
@@ -8861,9 +8869,9 @@ export async function uploadPrivateListingDocument(listingId, file, {
   // review history and retired rows. Selected or version-bound requests never
   // fall back to another request.
   if (!normalizedRequirementId && !reviewedSigningVersionId && uploadPreparation.missingRows.length === 1) {
-    requirements = await ensurePrivateListingDocumentRequirements(normalizedListingId, uploadPreparation.missingRows, {
+    requirements = await withDocumentUploadDeadline(() => ensurePrivateListingDocumentRequirements(normalizedListingId, uploadPreparation.missingRows, {
       reason: 'agent_seller_document_upload_preflight',
-    })
+    }))
   }
   // Internal buyer-offer evidence uses offer-specific references rather than
   // seller checklist requirements (for example a wet-ink OTP pack).
@@ -8879,7 +8887,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
   })
 
   const safeOriginalName = sanitizeDocumentFileName(documentName || filePolicy.safeName, 'listing-document')
-  return runRecoverableDocumentUpload({ client: client, scope: ['agent_listing', normalizedListingId, requirementId, requirementKey, documentType, documentCategory, documentName, visibility, status, ...(existingSignedEvidence ? ['existing_signed_upload'] : []), reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
+  return runRecoverableDocumentUpload({ client: client, onProgress, scope: ['agent_listing', normalizedListingId, requirementId, requirementKey, documentType, documentCategory, documentName, visibility, status, ...(existingSignedEvidence ? ['existing_signed_upload'] : []), reviewedSigningVersionId, reviewedSigningVersionDigest], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
     toSavedReceipt: result => ({ ...normalizeDocumentRows([result.data])[0], privateListingId: normalizedListingId, requirementId: result.data.requirement_id, requirementKey, persistence: buildPrivateListingDocumentPersistenceReceipt({ documentRow: result.data, storagePath: result.data.storage_path }) }),
     run: async attempt => {
       const filePath = attempt.path(`private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`)

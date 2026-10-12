@@ -1865,9 +1865,9 @@ function ScopedRentalListingDetailPage() {
           listingId={row.id}
           listing={listing}
           listingType="rental"
-          onReassigned={async () => {
+          onReassigned={async (result) => {
             await loadListing()
-            setSuccessMessage('Rental listing agent reassigned successfully.')
+            setSuccessMessage(result.portalUpdateRequired ? 'Additional agents saved. Publish or update each portal to send them.' : 'Rental listing agent reassigned successfully.')
           }}
         />}
           onOpenTab={openRentalListingWorkspaceTab}

@@ -1,3 +1,5 @@
+import { normalizeSellerProfileType } from '../../lib/sellerPartyAuthorityContract.js'
+
 const CLASSIFICATION_COPY = Object.freeze({
   configured: {
     label: 'Seller structure configured',
@@ -21,21 +23,45 @@ const CLASSIFICATION_COPY = Object.freeze({
   },
 })
 
-export function assertListingEditorSellerOwnership(form = {}, listing = {}) {
-  const onboarding = listing.sellerOnboarding || {}
-  const savedForm = onboarding.formData || onboarding.form_data || {}
-  const facts = onboarding.storedCanonicalFacts || onboarding.canonicalFacts || {}
+export function getListingEditorSellerOwnershipFields(listing = {}) {
+  const onboarding = listing.sellerOnboarding || listing.seller_onboarding || {}
+  const savedForm = onboarding.formData || onboarding.form_data || listing.sellerOnboardingFormData || listing.seller_onboarding_form_data || {}
+  const facts = onboarding.storedCanonicalFacts || onboarding.canonicalFacts || listing.sellerCanonicalFacts || listing.seller_canonical_facts_json || {}
   const seller = facts.seller || {}
-  const normalize = (value) => {
-    const key = String(value || '').trim().toLowerCase()
-    if (['individual', 'natural_person', 'person'].includes(key)) return 'individual'
-    if (['multiple_owners', 'multiple_individuals', 'joint'].includes(key)) return 'multiple_owners'
-    return key
+  const savedModel = seller.owner_structure_type || seller.ownerStructureType || seller.profile_type ||
+    savedForm.ownerStructureType || savedForm.owner_structure_type || seller.legal_type ||
+    seller.sellerLegalType || seller.legalType || savedForm.sellerLegalType || savedForm.ownershipType || savedForm.sellerType ||
+    onboarding.sellerType || onboarding.seller_type || ''
+  const raw = savedModel || listing.sellerType || listing.seller_type || ''
+  const ownerEntityType = seller.owner_entity_type || seller.ownerEntityType || savedForm.ownerEntityType || savedForm.owner_entity_type || ''
+  let profile = normalizeSellerProfileType(raw)
+  if (!savedModel && profile === 'individual' && !savedForm.sellerOwnershipConfirmed && !seller.ownership_confirmed) profile = 'unknown'
+  if (String(ownerEntityType).trim().toLowerCase() === 'foreign') {
+    profile = String(raw).toLowerCase().includes('company') ? 'foreign_company'
+      : String(raw).toLowerCase().includes('trust') ? 'foreign_trust' : 'foreign_individual'
   }
-  const requested = normalize(form.sellerType)
-  const saved = normalize(seller.owner_structure_type || seller.profile_type || seller.legal_type || savedForm.ownerStructureType || onboarding.sellerType)
+  return {
+    // The listing selector describes the entity; the Seller profile also carries
+    // marriage or delegated signing authority. Keep both when reopening an edit.
+    sellerType: ['married', 'power_of_attorney'].includes(profile) ? 'individual' : profile,
+    ownerStructureType: profile === 'unknown' ? '' : raw,
+    ownerEntityType,
+  }
+}
+
+export function assertListingEditorSellerOwnership(form = {}, listing = {}) {
+  const onboarding = listing.sellerOnboarding || listing.seller_onboarding || {}
+  const savedForm = onboarding.formData || onboarding.form_data || {}
+  const facts = onboarding.storedCanonicalFacts || onboarding.canonicalFacts || listing.sellerCanonicalFacts || listing.seller_canonical_facts_json || {}
+  const seller = facts.seller || {}
+  const entity = (value) => {
+    const profile = normalizeSellerProfileType(value)
+    return ['married', 'power_of_attorney'].includes(profile) ? 'individual' : profile
+  }
+  const requested = entity(form.sellerType)
+  const saved = getListingEditorSellerOwnershipFields(listing).sellerType
   const owners = savedForm.owners || seller.owners || []
-  if ((saved && requested && saved !== requested) ||
+  if ((saved !== 'unknown' && String(form.sellerType || '').trim() && saved !== requested) ||
       (requested === 'individual' && Array.isArray(owners) && owners.length > 1)) {
     throw new Error('The seller ownership structure differs from the saved Seller record. Review and confirm the legal owners in the Seller section before saving this listing. No listing changes were saved.')
   }

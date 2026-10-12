@@ -19,7 +19,9 @@ export default function HomeSeekersProperty() {
   if (loading) return <main className="hs-property hs-property--missing"><h1>Loading this home…</h1></main>
   if (!home) return <main className="hs-property hs-property--missing"><p>❯ HOME SEEKERS / PROPERTY</p><h1>{error || <>This home has<br />moved on.</>}</h1><a href={homeSeekersPath("/buying")}>Browse current homes <ArrowRight size={18} /></a></main>
 
-  const images = home.images || []
+  const images = home.images?.length ? home.images : home.image ? [home.image] : []
+  const imageIndex = activeImage < images.length ? activeImage : 0
+  const changeImage = (direction) => setActiveImage((imageIndex + direction + images.length) % images.length)
   const rental = home.transactionType === 'rental'
   const collectionUrl = homeSeekersPath(`/${rental ? 'renting' : 'buying'}`)
   const listingLabel = rental ? 'TO LET' : home.listingStatus === 'sold' ? 'SOLD' : home.listingStatus === 'under_offer' ? 'UNDER OFFER' : 'FOR SALE'
@@ -42,15 +44,16 @@ export default function HomeSeekersProperty() {
 
   return <main className="hs-property">
     <header className="hs-property__header"><a href={collectionUrl}><ArrowLeft size={18} /> {rental ? 'All rentals' : 'All homes'}</a><a className="hs-property__brand" href={homeSeekersPath("/")}><img src="/brand/homeseekers/home-seekers-horizontal-black.svg" alt="Home Seekers" /></a></header>
-    <section className="hs-property__hero">
-      {images.length ? <img src={images[activeImage]} alt={`${home.title} image ${activeImage + 1}`} /> : <div className="hs-property__image-placeholder" aria-hidden="true" />}
-      <div className="hs-property__shade" />
-      <div className="hs-property__hero-dossier"><p>❯ {listingLabel} <strong>/ HOME SEEKERS</strong></p><span><MapPin size={14} /> {home.address || home.suburb}</span><h1>{home.title}</h1><strong className="hs-property__hero-price">{price}</strong><div className="hs-property__hero-facts"><span><BedDouble size={15} /> {home.bedrooms || '-'} Beds</span><span><Bath size={15} /> {home.bathrooms || '-'} Baths</span><span><Car size={15} /> {home.parkingBays || '-'} Parking</span></div><a href="#enquire">Arrange a private viewing <ArrowRight size={17} /></a></div>
-      {images.length > 1 && <div className="hs-property__hero-gallery"><span className="hs-property__count">{String(activeImage + 1).padStart(2, '0')} <i>/ {String(images.length).padStart(2, '0')}</i></span><div className="hs-property__filmstrip" aria-label="Property image gallery">{images.map((image, index) => <button className={index === activeImage ? 'is-active' : ''} type="button" key={image} onClick={() => setActiveImage(index)} aria-label={`View image ${index + 1} of ${images.length}`}><img src={image} alt="" /></button>)}</div></div>}
+    <section className="hs-property__photos" aria-label="Property photos">
+      <div className="hs-property__hero">
+        {images.length ? <img src={images[imageIndex]} alt={`${home.title} image ${imageIndex + 1}`} /> : <div className="hs-property__image-placeholder">Photos coming soon</div>}
+        {images.length > 0 && <span className="hs-property__count" aria-live="polite">{imageIndex + 1} / {images.length}</span>}
+        {images.length > 1 && <><button className="hs-property__previous" type="button" onClick={() => changeImage(-1)} aria-label="Previous property photo"><ArrowLeft size={21} /></button><button className="hs-property__next" type="button" onClick={() => changeImage(1)} aria-label="Next property photo"><ArrowRight size={21} /></button></>}
+      </div>
+      {images.length > 1 && <div className="hs-property__filmstrip" aria-label="Property image gallery">{images.map((image, index) => <button className={index === imageIndex ? 'is-active' : ''} type="button" key={`${image}-${index}`} onClick={() => setActiveImage(index)} aria-pressed={index === imageIndex} aria-label={`View image ${index + 1} of ${images.length}`}><img src={image} alt="" loading="lazy" /></button>)}</div>}
     </section>
-    <section className="hs-property__summary"><div><p>❯ {listingLabel} <strong>/ HOME SEEKERS</strong></p><h1>{home.title}</h1></div><aside><span>{rental ? 'Monthly rent' : 'Asking price'}</span><strong>{price}</strong><a className="hs-property__viewing-trigger" href="#enquire">Arrange a private viewing <ArrowRight size={18} /></a></aside></section>
-    <section className="hs-property__facts">{facts.map(([Icon, value, label]) => <div key={label}><Icon size={21} /><strong>{value}</strong><span>{label}</span></div>)}</section>
-    <section className="hs-property__story"><div><p>❯ THE <strong>STORY</strong></p><h2>More than<br />a listing.</h2><p>{home.description || 'Ask our team for the full details of this home.'}</p><a href="#enquire">Request more information <ArrowUpRight size={18} /></a></div>{home.image && <figure><img src={home.image} alt={home.title} /><figcaption>HOME SEEKERS<br />CURATED HOMES</figcaption></figure>}</section>
+    <section className="hs-property__summary"><div className="hs-property__overview"><p className="hs-property__eyebrow">❯ {listingLabel} <strong>/ HOME SEEKERS</strong></p><h1>{home.title}</h1><p className="hs-property__location"><MapPin size={16} /> {home.address || home.suburb}</p><dl className="hs-property__facts">{facts.map(([Icon, value, label]) => <div key={label}><Icon size={21} /><dd>{value}</dd><dt>{label}</dt></div>)}</dl></div><aside><span>{rental ? 'Monthly rent' : 'Asking price'}</span><strong>{price}</strong><a className="hs-property__viewing-trigger" href="#enquire">Arrange a private viewing <ArrowRight size={18} /></a></aside></section>
+    <section className="hs-property__story"><div><p>❯ THE <strong>STORY</strong></p><h2>More than<br />a listing.</h2><p>{home.description || 'Ask our team for the full details of this home.'}</p><a href="#enquire">Request more information <ArrowUpRight size={18} /></a></div></section>
     <section className="hs-property__enquire" id="enquire"><div><p>❯ MAKE YOUR <strong>NEXT MOVE</strong></p><h2>See it<br />properly.</h2><p>Share a few details and the Home Seekers team will help arrange a viewing.</p></div><form onSubmit={submit}><label>Your name<input required name="name" placeholder="Your name" /></label><label>Mobile number<input required name="phone" type="tel" placeholder="Your mobile number" /></label><label>Email address<input required type="email" name="email" placeholder="you@example.com" /></label><label>Message<textarea name="message" placeholder="Tell us when you would like to view" /></label><label className="hs-property__privacy"><input type="checkbox" name="privacy" required /> I agree to be contacted about this property.</label><input name="website" tabIndex="-1" autoComplete="off" aria-hidden="true" className="hs-property__honeypot" /><p role="status">{message}</p><button type="submit" disabled={sending}>{sending ? 'Sending…' : <>Request a private viewing <ArrowUpRight size={18} /></>}</button></form></section>
     <HomeSeekersFooter />
   </main>

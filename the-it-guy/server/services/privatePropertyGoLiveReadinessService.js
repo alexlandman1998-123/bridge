@@ -48,7 +48,7 @@ function buildPreviewOptions({ agencyConfig = {}, agentMapping = {}, overrides =
   return {
     ...overrides,
     branchGuid: normalizePrivatePropertyText(overrides.branchGuid) || normalizePrivatePropertyText(agencyConfig.branchGuid),
-    agentIds: normalizePrivatePropertyText(overrides.agentIds) || normalizePrivatePropertyText(agentMapping.agentIds),
+    agentIds: agentMapping?.hasAdditionalAgents ? normalizePrivatePropertyText(agentMapping.agentIds) : (normalizePrivatePropertyText(overrides.agentIds) || normalizePrivatePropertyText(agentMapping?.agentIds)),
   }
 }
 

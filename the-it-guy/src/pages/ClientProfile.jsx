@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ClientIdentityPanel from '../components/clients/ClientIdentityPanel'
+import ClientEnquiryHistoryPanel from '../components/clients/ClientEnquiryHistoryPanel'
 import ClientActivityPanel from '../components/clients/ClientActivityPanel'
 import ClientAttributionPanel from '../components/clients/ClientAttributionPanel'
 import ClientCampaignPanel from '../components/clients/ClientCampaignPanel'
@@ -558,6 +559,7 @@ function ClientProfile() {
                     ))}
                   </dl>
                 </section>
+                <ClientEnquiryHistoryPanel key={`${client.organisationId}:${client.identityId}`} client={client} />
                 <div className="grid min-w-0 items-stretch gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
                   <ClientIdentityPanel client={client} clients={agentClients} onChanged={async (identityId) => { invalidateAgentClientDirectoryCache(); if (clientId === `client:${identityId}`) await loadData(); else navigate(`/clients/${encodeURIComponent(`client:${identityId}`)}`, { replace: true, state: location.state }) }} />
                   <ClientMarketingTagsPanel key={`${client.organisationId}:${client.id}:${client.email}`} client={client} />

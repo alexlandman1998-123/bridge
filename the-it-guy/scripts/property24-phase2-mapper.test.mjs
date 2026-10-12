@@ -536,3 +536,9 @@ for (const propertyType of ['House', 'Apartment', 'Townhouse']) {
 }
 
 console.log('Property24 Phase 2 mapper contract passed')
+
+const multipleContacts = createProperty24ListingPlan({ listing: baseListing, publication: basePublication, media: imageWithBytes, catalogMapping: baseCatalogMapping,
+ agentMapping: { ...baseAgentMapping, contactAgentIds: [77959, 77970, 77970] }, options: { agencyId: 31382, expiryDate: '2026-12-31' } })
+assert.equal(multipleContacts.canSubmit, true)
+assert.deepEqual(multipleContacts.payload.contactAgentIds, [77959, 77970])
+assert.deepEqual(multipleContacts.summary.contactAgentIds, [77959, 77970])

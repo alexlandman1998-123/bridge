@@ -1,3 +1,5 @@
+import { createPrivatePropertyGoLiveReadinessReport } from '../server/services/privatePropertyGoLiveReadinessService.js'
+import { createPrivatePropertySandboxFixture } from '../server/services/privatePropertyListingPreviewService.js'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
@@ -31,6 +33,11 @@ class FakeQuery {
     return this
   }
 
+  in(column, values) {
+    this.filters.push({ type: 'in', column, values })
+    return this
+  }
+
   is(column, value) {
     this.filters.push({ type: 'is', column, value })
     return this
@@ -59,6 +66,7 @@ class FakeQuery {
 
   applyFilters() {
     let rows = this.rows.filter((row) => this.filters.every((filter) => {
+      if (filter.type === 'in') return filter.values.includes(row[filter.column])
       if (filter.type === 'is') return (row[filter.column] ?? null) === filter.value
       return String(row[filter.column] ?? '') === String(filter.value ?? '')
     }))
@@ -319,3 +327,42 @@ assert.equal(packageJson.scripts['private-property:upsert-agent-mapping'], 'node
 assert.equal(packageJson.scripts['test:private-property-go-live-phase2-agent-mapping'], 'node scripts/private-property-phase8-agent-mapping.test.mjs')
 
 console.log('Private Property go-live phase 2 agent mapping contract passed')
+
+const additionalUser = '00000000-0000-4000-8000-000000000077'
+const multiTables = {
+ private_listings: [{ ...listing, additional_agent_ids: [additionalUser] }],
+ organisation_users: [{ user_id: additionalUser, organisation_id: organisationId, status: 'active', role: 'agent' }],
+ private_property_agency_configs: [agencyConfig],
+ private_property_agent_mappings: [userMapping, { ...userMapping, id: 'extra-mapping', arch9_user_id: additionalUser, private_property_agent_id: 'PP-EXTRA', source_reference: 'EXTRA' }],
+}
+const resolveMulti = (tables) => resolvePrivatePropertyAgentMapping({ client: createFakeClient(tables), listingId, environment: 'sandbox' })
+const multi = await resolveMulti(multiTables)
+assert.equal(multi.ready, true)
+assert.equal(multi.agentMapping.agentIds, `${userMapping.private_property_agent_id},PP-EXTRA`)
+const multiReadiness = createPrivatePropertyGoLiveReadinessReport({ listingId, agentMappingResolution: multi,
+ bundle: createPrivatePropertySandboxFixture('rental-residential'),
+ overrides: { agentIds: 'DO-NOT-REPLACE-SAVED-CONTACTS', suburbId: '12345' },
+ credentialResolution: { missingSecrets: [] },
+})
+assert.deepEqual(multiReadiness.preview.payloadPreview.agentIds, [userMapping.private_property_agent_id, 'PP-EXTRA'])
+for (const change of ['missing', 'inactive', 'wrong_config', 'wrong_environment']) {
+ const tables = structuredClone(multiTables)
+ if (change === 'missing') tables.private_property_agent_mappings.pop()
+ if (change === 'inactive') tables.private_property_agent_mappings[1].status = 'inactive'
+ if (change === 'wrong_config') tables.private_property_agent_mappings[1].agency_config_id = 'another-config'
+ if (change === 'wrong_environment') tables.private_property_agent_mappings[1].environment = 'production'
+ const result = await resolveMulti(tables)
+ assert.equal(result.ready, false)
+ assert.ok(result.blockers.includes('missing_private_property_additional_agent_mapping'))
+}
+const fallback = structuredClone(multiTables)
+fallback.private_property_agent_mappings = [branchDefault, multiTables.private_property_agent_mappings[1]]
+const fallbackResult = await resolveMulti(fallback)
+assert.equal(fallbackResult.ready, false)
+assert.ok(fallbackResult.blockers.includes('missing_private_property_primary_agent_mapping'))
+const foreign = structuredClone(multiTables)
+foreign.organisation_users[0].organisation_id = 'another-agency'
+await assert.rejects(resolveMulti(foreign), { code: 'listing_contact_agent_invalid' })
+multiTables.private_listings[0].additional_agent_ids = []
+assert.equal((await resolveMulti(multiTables)).agentMapping.agentIds, userMapping.private_property_agent_id)
+console.log('Private Property multiple-contact resolution passed')

@@ -143,7 +143,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
       }
       if (table === 'recruitment_end_applicant_session') { applicantSessions.delete(args.p_token_hash); response.end('null'); return }
 
-      response.end(JSON.stringify(table === 'website_record_analytics_event' ? null : { accepted: true, notificationEventId: '77777777-7777-4777-8777-777777777777' }))
+      response.end(JSON.stringify(['website_record_analytics_event', 'home_seekers_record_public_analytics_event'].includes(table) ? null : { accepted: true, notificationEventId: '77777777-7777-4777-8777-777777777777' }))
       return
     }
     readQueries.push({ table, query: url.searchParams })
@@ -336,13 +336,20 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
     })
 
     await t.test('existing analytics and recruitment endpoints remain callable', async () => {
-      const analytics = await send('/api/home-seekers/analytics', { eventType: 'page_view', path: '/demo/homeseekers' })
+      const before = rpcCalls.length
+      const analytics = await send('/api/home-seekers/analytics', { eventType: 'page_view', path: '/demo/homeseekers', trackingVersion: 1 })
       assert.equal(analytics.status, 204)
-      assert.equal(rpcCalls.at(-1).name, 'website_record_analytics_event')
-      for (const [eventType, path, storedPath] of [['page_view', '/buying', '/buying'], ['guarantee_opened', '/join', '/demo/homeseekers/join']]) {
-        assert.equal((await send('/api/home-seekers/analytics', { eventType, path })).status, 204)
-        assert.equal(rpcCalls.at(-1).name, 'website_record_analytics_event')
-        assert.equal(rpcCalls.at(-1).body.p_page_path, storedPath)
+      assert.equal(rpcCalls.length, before)
+      for (const [eventType, path] of [['page_view', '/buying'], ['guarantee_opened', '/join']]) {
+        assert.equal((await send('/api/home-seekers/analytics', { eventType, path, trackingVersion: 1 })).status, 204)
+        assert.equal(rpcCalls.at(-1).name, 'home_seekers_record_public_analytics_event')
+        assert.equal(rpcCalls.at(-1).body.p_page_path, path)
+        assert.equal(rpcCalls.at(-1).body.p_hostname, WEBSITE_HOST)
+      }
+      const counted = rpcCalls.length
+      for (const [host, headers, version] of [[REGISTERED_HOST, {}, 1], [WEBSITE_HOST, { Referer: `https://${WEBSITE_HOST}/?arch9_preview=1` }, 1], [WEBSITE_HOST, { 'User-Agent': 'HeadlessChrome' }, 1], [WEBSITE_HOST, {}, undefined]]) {
+        assert.equal((await send('/api/home-seekers/analytics', { eventType: 'page_view', path: '/', trackingVersion: version }, host, headers)).status, 204)
+        assert.equal(rpcCalls.length, counted)
       }
       const application = await send('/api/home-seekers/applications', {
         name: 'Fixture Agent', email: 'agent@example.test', phone: '0820000000', area: 'Pretoria', sales: 4,

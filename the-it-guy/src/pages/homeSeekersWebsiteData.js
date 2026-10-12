@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { homeSeekersBrowserIsPublic, homeSeekersVisitIsNew } from './homeSeekersPublicTraffic.js'
 
 export function useHomeSeekersWebsiteData() {
   const [state, setState] = useState({ listings: [], loading: true, error: '' })
@@ -46,7 +47,8 @@ export function homeSeekersCard(listing) {
 }
 
 export function trackHomeSeekersEvent(eventType, listingId = null) {
-  const body = { eventType, path: window.location.pathname, ...(listingId ? { listingId } : {}) }
+  if (!homeSeekersBrowserIsPublic(window, navigator)) return
+  const body = { eventType, path: window.location.pathname, trackingVersion: 1, ...(listingId ? { listingId } : {}) }
   const sent = navigator.sendBeacon?.('/api/home-seekers/analytics', new Blob([JSON.stringify(body)], { type: 'application/json' }))
   if (!sent) void fetch('/api/home-seekers/analytics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }).catch(() => {})
 }
@@ -57,7 +59,8 @@ export async function submitHomeSeekersLead(details, { fetcher = fetch, pageUrl 
   try {
     const response = await fetcher('/api/home-seekers/leads', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-      body: JSON.stringify({ ...details, pageUrl, idempotencyKey: details.idempotencyKey || crypto.randomUUID() }),
+      body: JSON.stringify({ ...details, pageUrl, publicTrackingVersion: homeSeekersBrowserIsPublic(window, navigator)
+        ? 1 : null, idempotencyKey: details.idempotencyKey || crypto.randomUUID() }),
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || result.accepted !== true) {
@@ -94,11 +97,14 @@ export function useHomeSeekersLeadSubmission() {
 }
 
 export function useHomeSeekersPageTracking(listingId = null) {
+  const trackedPath = useRef('')
   useEffect(() => {
     try {
-      if (!sessionStorage.getItem('home-seekers-visit-recorded')) {
+      if (!homeSeekersBrowserIsPublic(window, navigator)) return
+      if (trackedPath.current === window.location.pathname) return
+      trackedPath.current = window.location.pathname
+      if (homeSeekersVisitIsNew(sessionStorage)) {
         trackHomeSeekersEvent('site_visit')
-        sessionStorage.setItem('home-seekers-visit-recorded', '1')
       }
       trackHomeSeekersEvent('page_view')
       if (listingId) trackHomeSeekersEvent('listing_view', listingId)

@@ -94,9 +94,9 @@ test('replacement retains the current evidence identity and selected file', asyn
   const file = new File(['content'], 'papers.pdf', { type: 'application/pdf' })
   fireEvent.change(screen.getByLabelText('Replacement file'), { target: { files: [file] } })
   fireEvent.click(screen.getByRole('button', { name: 'Replace file' }))
-  await screen.findByText(/Document change saved/)
+  await screen.findByText(/Uploaded. Linked views/)
   expect(prepareDocumentRequirementUpload.mock.calls[0]).toEqual([file, expect.objectContaining({ replacesUploadId: 'previous', expectedRevision: 7, actorId: 'actor' })])
-  expect(uploadDocumentRequirementFile).toHaveBeenCalledWith(client, command, file)
+  expect(uploadDocumentRequirementFile).toHaveBeenCalledWith(client, command, file, expect.objectContaining({ onProgress: expect.any(Function) }))
 })
 
 test('recovery is account scoped and cannot overwrite an unfinished command', () => {
@@ -105,6 +105,23 @@ test('recovery is account scoped and cannot overwrite an unfinished command', ()
   retainRequirementCommand(localStorage, key, command)
   expect(() => retainRequirementCommand(localStorage, key, { ...command, commandId: 'second' })).toThrow(/unfinished/)
   expect(requirementAddContext({ requirements: [row, { transaction_id: 'another' }] }, 'seller_lead', 'lead')).toBeNull()
+})
+
+test('confirms Uploaded and releases the form while a linked-view refresh is stalled', async () => {
+  const command = { commandId: 'bounded-upload', action: 'upload', contextId: 'transaction', payload: { fileName: 'mandate.pdf' } }
+  prepareDocumentRequirementUpload.mockResolvedValue(command)
+  uploadDocumentRequirementFile.mockResolvedValueOnce({ saved: true, requirement: row, uploadId: 'saved-file' })
+  await open()
+  fireEvent.change(screen.getByLabelText('Existing requirement'), { target: { value: row.id } })
+  const file = new File(['content'], 'mandate.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Upload file'), { target: { files: [file] } })
+  // The upload receipt succeeds, but loading the wider workspace never replies.
+  readDocumentRequirementContext.mockImplementationOnce(() => new Promise(() => {}))
+  fireEvent.click(screen.getByRole('button', { name: 'Upload file' }))
+  await screen.findByText(/Uploaded. Linked views/)
+  expect(screen.queryByRole('progressbar')).toBeNull()
+  expect(screen.getByLabelText('Upload file').disabled).toBe(false)
+  expect(screen.getByText('Uploaded · mandate.pdf')).toBeTruthy()
 })
 
 test('a custom requirement can reuse an authoritative person scope without matching names', async () => {
@@ -239,9 +256,9 @@ test('existing custom request blocks a duplicate and opens its upload without qu
   const file = new File(['letter'], 'sars.pdf', { type: 'application/pdf' })
   fireEvent.change(screen.getByLabelText('Upload file'), { target: { files: [file] } })
   fireEvent.click(screen.getByRole('button', { name: 'Upload file' }))
-  await screen.findByText(/Document change saved/)
+  await screen.findByText(/Uploaded. Linked views/)
   expect(prepareDocumentRequirementUpload).toHaveBeenLastCalledWith(file, expect.objectContaining({ requirementId: row.id, expectedRevision: row.command_revision }))
-  expect(uploadDocumentRequirementFile).toHaveBeenLastCalledWith(client, upload, file)
+  expect(uploadDocumentRequirementFile).toHaveBeenLastCalledWith(client, upload, file, expect.objectContaining({ onProgress: expect.any(Function) }))
   expect(executeDocumentRequirementCommand).not.toHaveBeenCalled()
 })
 

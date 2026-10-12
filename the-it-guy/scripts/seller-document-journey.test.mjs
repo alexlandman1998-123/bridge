@@ -371,6 +371,7 @@ async function digitalJourney(branch, mandateType) {
 async function optionalDocumentUploadReview() {
   const listingId = randomUUID(), requirementId = randomUUID(), otherListingId = randomUUID()
   await sql('insert into private_listings(id,organisation_id,assigned_agent_id,created_by) values($1,$2,$3,$3),($4,$2,$3,$3)', [listingId, organisation, actor, otherListingId])
+  await sql("insert into client_portal_contexts(id,listing_id,context_type,status,client_email,updated_at) values($1,$2,'selling','active','portal-seller@example.test',now()),($3,'legacy-text-listing','selling','active','other-seller@example.test',now())", [randomUUID(), listingId, randomUUID()])
   await sql("insert into private_listing_document_requirements(id,private_listing_id,requirement_key,requirement_name,is_required,status) values($1,$2,'title_deed_copy','Title deed',false,'required')", [requirementId, listingId])
   const insertFile = (owner = listingId, key = 'title_deed_copy') => sql("insert into private_listing_documents(private_listing_id,requirement_id,document_type,document_name,storage_path,status) values($1,$2,$3,'title.pdf','synthetic/title.pdf','uploaded') returning *", [owner, requirementId, key])
   await assert.rejects(insertFile(otherListingId), /same listing/)
@@ -378,6 +379,12 @@ async function optionalDocumentUploadReview() {
   const [file] = await insertFile()
   const [receipt] = await sql("select bridge_review_private_listing_seller_document_p1_8($1,'approve',null,0) as result", [file.id])
   assert.equal(receipt.result.document.status, 'approved')
+  assert.equal((await sql("select recipient_email from notification_events where listing_id=$1 and automation_key='seller_document_review_outcome'", [listingId]))[0].recipient_email, 'portal-seller@example.test')
+  const reminderRequirement = randomUUID()
+  await sql("insert into private_listing_document_requirements(id,private_listing_id,requirement_key,requirement_name,is_required,status) values($1,$2,'proof_of_address','Proof of address',true,'requested')", [reminderRequirement, listingId])
+  const [reminder] = await sql("select bridge_send_seller_document_manual_reminder_p1_8($1,'Please provide your address document') as result", [reminderRequirement])
+  assert.equal(reminder.result.ok, true)
+  assert.equal((await sql('select recipient_email from notification_events where id=$1', [reminder.result.notificationEventId]))[0].recipient_email, 'portal-seller@example.test')
   assert.equal((await sql('select count(*)::int as n from seller_document_review_events where document_id=$1', [file.id]))[0].n, 1)
   assert.equal((await sql('select is_required from private_listing_document_requirements where id=$1', [requirementId]))[0].is_required, false)
   await assert.rejects(sql("select bridge_review_private_listing_seller_document_p1_8($1,'approve',null,0)", [file.id]), /changed by another reviewer/)
@@ -431,6 +438,7 @@ async function fullMandateJourney(runtime, mandateType) {
   const beforeMigration = await historySnapshot()
   await db.exec(migration)
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), beforeMigration)
   // Simulate renewal: the trusted old wording is archived and the next wording
   // is still pending. Existing requests continue, but old copies cannot start
@@ -499,6 +507,7 @@ async function fullMandateJourney(runtime, mandateType) {
       const partialHistory = await historySnapshot()
       await db.exec(migration)
       await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
       assert.deepEqual(await historySnapshot(), partialHistory, 'Forward reconciliation preserves partial signature evidence')
     }
     if (index < recipients.length - 1) {
@@ -510,6 +519,7 @@ async function fullMandateJourney(runtime, mandateType) {
   const signedHistory = await historySnapshot()
   await db.exec(migration)
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), signedHistory, 'Forward reconciliation preserves fully signed mandates awaiting review')
   const preview = await request('preview', { signingDocumentId: id }, true)
   assert.equal(preview.status, 200, JSON.stringify(preview.body))
@@ -521,6 +531,7 @@ async function fullMandateJourney(runtime, mandateType) {
   const completedHistory = await historySnapshot()
   await db.exec(migration)
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), completedHistory, 'Forward reconciliation preserves completed and reviewed mandates')
   assert.deepEqual((await reopened(listingId)).sellerOnboarding.formData.sellerOnboardingManualSigningPack, prepared, 'The signed/reviewed source retains every frozen byte')
   report.push({ branch: 'two_sellers_and_contracting_agencies', mandateType, route: 'digital_pack', fullWording: true, syntheticApprovalOnly: true,
@@ -912,7 +923,11 @@ try {
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20260905090353_document_trust_phase1_seller_atomic_link.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
   await optionalDocumentUploadReview()
+  if (process.argv.includes('--review-only')) {
+    console.log('Seller document review passed with text portal listing IDs: approval, reminder recipient, legacy IDs, exact requirement, retired guards and revision conflict. No remote writes or email delivery.')
+  } else {
   await mandateCapturePersistence()
   globalThis.__sellerJourneyAdmin = admin
   globalThis.__sellerJourneyEmail = options => {
@@ -1008,6 +1023,7 @@ try {
     boundaries: ['synthetic auth/session', 'email transport', 'Storage bytes', 'pre-transaction promotion'],
     localRollbackVerified: true, pendingHostedAcceptance: true, fullMigrationChainVerified: false }, null, 2))
   console.log(`Seller document journey passed: ${report.length} journeys, ${downloads} actual PDF downloads (${downloadedPages} pages), corrections, expired links and retries. No remote writes or email delivery.`)
+  }
 } finally {
   globalThis.Deno = previousDeno; globalThis.fetch = previousFetch
   delete globalThis.__sellerJourneyAdmin; delete globalThis.__sellerJourneyEmail

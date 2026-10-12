@@ -144,13 +144,18 @@ try {
         check(`[UX-02] ${category}/sale decimal measurements survive reopening`, () => assert.deepEqual(amounts, category === 'vacant_land' ? ['500.5'] : ['2.5', '98.5', '500.5']))
       }
       if (category === 'residential') {
-        await page.getByRole('checkbox', { name: 'Private Property', exact: true }).uncheck()
         await page.locator('[name="listingPrice"]').fill('1250000')
         await page.getByRole('combobox', { name: /Property address/ }).fill('10 Diagnostic Road, Sandton')
+        await page.getByRole('button', { name: 'Continue', exact: true }).click()
+        await page.getByRole('heading', { name: /Extra details/ }).waitFor()
       }
       await page.getByRole('button', { name: 'Continue', exact: true }).click()
       await page.getByRole('heading', { name: 'Photos & description', exact: true }).waitFor()
-      if (category === 'residential') await page.locator('[name="listingDescription"]').fill(listingCase(category, 'sale').form.description)
+      if (category === 'residential') {
+        await page.locator('[name="listingDescription"]').fill(listingCase(category, 'sale').form.description)
+        const photo = await (await page.request.get(fixture.origin + '/fixture/photo.png')).body()
+        await page.locator('input[name="listingImages"]').setInputFiles([1, 2, 3].map(i => ({ name: `photo${i}.png`, mimeType: 'image/png', buffer: photo })))
+      }
       await page.getByRole('button', { name: 'Continue', exact: true }).click()
       await page.getByRole('heading', { name: 'Where to advertise', exact: true }).waitFor()
       await page.getByRole('button', { name: 'Continue', exact: true }).click()
@@ -166,7 +171,7 @@ try {
     } catch (error) { console.error(category, error.message); await writeFile(resolve(out, `${category}-sale-error.txt`), await page.locator('body').ariaSnapshot().catch(() => 'Snapshot unavailable')); results.push({ name: `[HARNESS] ${category}/sale browser setup`, status: 'error', message: error.message }) }
     finally { await context.close(); await writeFile(resolve(out, 'results.json'), JSON.stringify(results, null, 2) + '\n') }
   }
-  for (const [category] of categories.filter(([key]) => !process.env.LISTING_DIAGNOSTIC_CATEGORY || key === process.env.LISTING_DIAGNOSTIC_CATEGORY)) {
+  for (const [category] of categories.filter(([key]) => process.env.LISTING_DIAGNOSTIC_MODE !== 'sale' && (!process.env.LISTING_DIAGNOSTIC_CATEGORY || key === process.env.LISTING_DIAGNOSTIC_CATEGORY))) {
     console.log(`Browser: ${category} rental`)
     const { context, page } = await contextPage()
     try {

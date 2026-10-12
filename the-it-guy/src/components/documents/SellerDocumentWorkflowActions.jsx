@@ -15,7 +15,7 @@ export default function SellerDocumentWorkflowActions({ item, copy, request, bus
       {copy || workflow.canPrepare ? <button type="button" className={buttonClass} disabled={busy} onClick={onDownload}>{copy ? 'Download reviewed copy' : 'Generate and download'}</button> : null}
       {workflow.canSend ? <button type="button" className={buttonClass} disabled={busy || !onlineEnabled} onClick={onSend}>{workflow.sendLabel}</button> : null}
       {workflow.canUpload && item?.canUpload !== false && item?.can_upload !== false ? <label className={`${buttonClass} ${busy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-        Upload manually
+        {copy ? 'Upload signed copy' : 'Upload existing signed copy'}
         <input type="file" className="sr-only" aria-label={`Upload manually ${item?.label || copy?.name || 'seller document'}`} accept={accept} disabled={busy} onChange={onUpload} />
       </label> : null}
       {workflow.canReview ? <button type="button" className={buttonClass} disabled={busy} onClick={onReview}>Review signed copy</button> : null}

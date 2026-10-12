@@ -271,4 +271,20 @@ assert.equal(
   'node scripts/seller-document-conditional-logic-phase2.test.mjs',
 )
 
+const ficaPack = buildSellerDocumentSourceOfTruth({
+  listing: { ...baseListing, sellerOnboarding: { status: 'completed', formData: baseFormData }, documentRequirements: [
+    { id: 'fica-required', requirement_key: 'signed_fica_declaration', requirement_name: 'Signed FICA Declaration', requirement_group: 'legal', status: 'required', is_required: true },
+    { id: 'mandate-required', requirement_key: 'signed_mandate', requirement_name: 'Signed Mandate', requirement_group: 'legal', status: 'required', is_required: true },
+  ] },
+  documents: [],
+})
+assert.equal(ficaPack.rows.find(row => row.key === 'signed_fica_declaration').category, 'fica')
+assert.equal(ficaPack.rows.find(row => row.key === 'signed_mandate').category, 'sales')
+const listingDetailSource = readFileSync(resolve(appRoot, 'src/pages/AgentListingDetail.jsx'), 'utf8')
+const groupingStart = listingDetailSource.indexOf('function getListingDocumentGroupingKey(')
+const groupingEnd = listingDetailSource.indexOf('\nfunction groupListingDocumentsForDisplay(', groupingStart)
+const groupingKey = Function('normalizeKey', `${listingDetailSource.slice(groupingStart, groupingEnd)}; return getListingDocumentGroupingKey`)(value => String(value || '').trim().toLowerCase())
+assert.equal(groupingKey({ key: 'signed_fica_declaration', label: 'Signed FICA Declaration', category: 'sales', group: 'legal' }), 'fica')
+assert.equal(groupingKey({ key: 'signed_mandate', label: 'Signed Mandate', category: 'sales' }), 'sales')
+
 console.log('seller document conditional logic Phase 2 contract passed')

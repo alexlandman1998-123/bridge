@@ -11,11 +11,13 @@ import { assertDocumentGeneratorAvailable, RETIRED_DOCUMENT_FUNCTIONS } from '..
 import { buildKingstonsDigitalSigningDecision } from '../src/core/kingstons/digitalSigningDecision.js'
 import { buildKingstonsBuyerOtpDigitalDecision } from '../src/core/transactions/kingstonsBuyerOtpReadiness.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from '../src/services/listings/listingSellerDocumentPersistenceModel.js'
+import { createDocumentUploadProgressReporter, withDocumentUploadDeadline } from '../src/lib/documentUploadLifecycle.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 // This boundary fixture covers generator retirement and requirement linking.
 // Upload retry/recovery is exercised by the dedicated persistence suites.
 const uploadRecoveryFixture = {
+  createDocumentUploadProgressReporter, withDocumentUploadDeadline,
   DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
   runRecoverableDocumentUpload: ({ run }) => run({
     path: value => value,
@@ -262,6 +264,7 @@ test('mandate and FICA uploads prepare a missing saved-model target before Stora
       const stored = ['existing', 'existing_alias', 'retired', 'retired_alias'].includes(mode) ? [signingRequest] : [{ id: staleId, requirement_key: 'seller_onboarding_submission', status: 'requested', is_required: true }]
       const listing = { id: listingId, listingStatus: mode === 'early_intake' ? 'seller_lead' : 'onboarding_completed', sellerType: mode === 'unknown_owner' ? 'unknown' : 'company' }
       const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+        createDocumentUploadProgressReporter, withDocumentUploadDeadline,
       buildPrivateListingDocumentUploadPreparation,
         requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid,
         normalizeCompatibilityKey: normalizeKey, normalizeText: normalizeKey,
@@ -329,6 +332,9 @@ test('listing preparation offers the agency-upload route without requiring or ov
     const signingPack = { seller: { name: form.sellerName }, signers: [{ name: form.sellerName, role: 'Seller', email: form.sellerEmail }], mandate: { mandateType: 'exclusive', mandateCapture: {} } }
     const setters = Object.fromEntries(['setSellerDocumentSendSaving', 'setSellerDocumentSendOpen', 'setMandateReplacementIntent'].map(name => [name, () => {}]))
     const save = vm.runInNewContext(`(${handler})`, {
+      sellerDocumentPreparationNeedsRefresh: false,
+      getSellerDocumentCommission: () => ({ basis: 'percentage', percentage: '', amount: '', vatHandling: '' }),
+      setSellerDocumentPreparationNeedsRefresh() {},
       ...setters, ONLINE_SIGNING_DISABLED: true, sellerMandateSignatureRoute: 'manual_upload', listingRecord: listing,
       sellerMandateDocumentSource: mode === 'unselected' ? '' : mode === 'arch9_generated' ? mode : 'agency_upload',
       sellerDocumentSendSelection: { fica: true, mandate: mode === 'arch9_generated' }, mandateReplacementIntent: false,
