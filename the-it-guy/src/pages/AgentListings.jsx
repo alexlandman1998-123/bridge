@@ -8420,6 +8420,13 @@ function AgentListings({ mobileEditor = false } = {}) {
                         ))}
                       </Field>
                     </FormField>
+                    <FormField label="Retirement accommodation">
+                      <Field name="retirementAccommodation" as="select" value={form.featureFacts?.retirement_accommodation === true ? 'yes' : form.featureFacts?.retirement_accommodation === false ? 'no' : ''} onChange={(event) => updateListingFeatureFact('retirement_accommodation', event.target.value)}>
+                        <option value="">Not captured</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Field>
+                    </FormField>
                   </div>
                 </ListingWizardSection>
 

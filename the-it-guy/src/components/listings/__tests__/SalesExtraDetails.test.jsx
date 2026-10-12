@@ -9,6 +9,21 @@ function Host({ category = 'residential' }) {
  const [form, setForm] = useState({ propertyCategory: category, listingType: 'sale', featureFacts: { alarm: true, intercom: false }, farmSize: '42.5', loadingAccess: false })
  return <><SalesExtraDetails form={form} onChange={(key,value)=>setForm(previous=>({...previous,[key]:value}))} onFeatureChange={(key,value)=>setForm(previous=>({...previous,featureFacts:setListingFeatureFact(previous.featureFacts,key,value)}))} /><output data-testid="saved">{JSON.stringify(form)}</output></>
 }
+it('retains retirement Yes, No and clearing when reopened', () => {
+ render(<Host />)
+ fireEvent.click(screen.getByRole('button', { name: 'Open Other' }))
+ const retirement = () => within(screen.getByRole('group', { name: 'Retirement accommodation' }))
+ fireEvent.click(retirement().getByRole('button', { name: 'Yes' }))
+ expect(JSON.parse(screen.getByTestId('saved').textContent).featureFacts.retirement_accommodation).toBe(true)
+ fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+ fireEvent.click(screen.getByRole('button', { name: 'Open Other' }))
+ expect(retirement().getByRole('button', { name: 'Yes' }).getAttribute('aria-pressed')).toBe('true')
+ fireEvent.click(retirement().getByRole('button', { name: 'No' }))
+ expect(JSON.parse(screen.getByTestId('saved').textContent).featureFacts.retirement_accommodation).toBe(false)
+ fireEvent.click(retirement().getByRole('button', { name: 'Clear' }))
+ expect(JSON.parse(screen.getByTestId('saved').textContent).featureFacts.retirement_accommodation).toBeNull()
+})
+
 it('edits one feature group at a time and retains explicit No and clearing when reopened', () => {
  render(<Host />)
  expect(screen.queryByRole('group', {name:'Alarm'})).toBeNull()

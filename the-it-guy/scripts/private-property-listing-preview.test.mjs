@@ -552,4 +552,19 @@ const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['private-property:preview-listing'], 'node scripts/private-property-preview-listing.mjs')
 assert.equal(packageJson.scripts['test:private-property-preview-listing'], 'node scripts/private-property-listing-preview.test.mjs')
 
+for (const answer of [true, false, 'unknown']) {
+  const retirementPlan = createPrivatePropertyListingPlan({
+    listing: { ...featureJourneyListing, features: ['retirement_village'] },
+    publication: { ...featureJourneyPublication, featureFacts: { retirement_accommodation: answer } },
+    media: [1, 2, 3].map((index) => ({ media_type: 'image', file_url: `https://cdn.example.com/retirement-${index}.jpg` })),
+    agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+    options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '309' },
+  })
+  assert.equal(retirementPlan.canPreview, true)
+  assert.equal(retirementPlan.payload.attributes.find((attribute) => attribute.attributeType === 'HomeType').value, 'House')
+  assert.equal(/retirement accommodation/i.test(retirementPlan.payload.description), answer === true)
+  assert.equal(retirementPlan.qualityWarnings.includes('private_property_retirement_accommodation_description_only'), answer === true)
+  for (const attribute of retirementPlan.payload.attributes) assert.ok(soapAttributeTypes.has(attribute.attributeType))
+}
+
 console.log('Private Property phase 3 listing preview contract passed')

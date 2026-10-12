@@ -14032,6 +14032,14 @@ function AgentListingDetail() {
                   </Field>
                 </label>
                 <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Retirement accommodation</span>
+                  <Field as="select" value={marketingDraft.featureFacts?.retirement_accommodation === true ? 'yes' : marketingDraft.featureFacts?.retirement_accommodation === false ? 'no' : ''} onChange={(event) => updateListingFeatureFact('retirement_accommodation', event.target.value)}>
+                    <option value="">Not captured</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </Field>
+                </label>
+                <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Property Category</span>
                   <Field as="select" value={marketingDraft.propertyCategory} onChange={(event) => updateMarketingDraft('propertyCategory', event.target.value)}>
                     {PROPERTY_CATEGORIES.map((category) => <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>)}

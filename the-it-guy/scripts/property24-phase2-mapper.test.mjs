@@ -6,7 +6,7 @@ import {
   resolveProperty24Status,
 } from '../server/services/property24ListingMapper.js'
 import { LISTING_FEATURE_CATALOG } from '../src/services/listings/listingFeatureCatalog.js'
-import { PROPERTY24_NATIVE_FACT_FIELDS } from '../server/services/listingFeatureDeliveryReview.js'
+import { PROPERTY24_NATIVE_FACT_FIELDS, buildListingFeatureDeliveryReview } from '../server/services/listingFeatureDeliveryReview.js'
 
 const baseListing = {
   id: 'listing-1',
@@ -512,5 +512,27 @@ const migratedUpdateWithoutExplicitExpiry = createProperty24ListingPlan({
 assert.equal(migratedUpdateWithoutExplicitExpiry.canSubmit, true)
 assert.equal(migratedUpdateWithoutExplicitExpiry.payload.expiryDate, '2026-12-31T00:00:00.000Z')
 assert.equal(migratedUpdateWithoutExplicitExpiry.payload.photos, null)
+
+// A lifestyle tag must coexist with the dwelling type. Explicit No/Unknown
+// must remove a previously selected retirement label on an update.
+const retirementDelivery = buildListingFeatureDeliveryReview({ listing: { ...baseListing, featureFacts: { retirement_accommodation: true } }, publication: basePublication, property24Category: 'residential' }).facts.find((fact) => fact.key === 'retirement_accommodation')
+assert.deepEqual(retirementDelivery.property24, { delivery: 'native', field: 'tags.RetirementLiving' })
+assert.deepEqual(retirementDelivery.privateProperty, { delivery: 'description_only', field: null })
+for (const propertyType of ['House', 'Apartment', 'Townhouse']) {
+  for (const answer of [true, false, 'unknown']) {
+    const retirementPlan = createProperty24ListingPlan({
+      listing: { ...baseListing, features: ['retirement_village'] },
+      publication: { ...basePublication, property_type: propertyType, featureFacts: { retirement_accommodation: answer } },
+      media: imageWithBytes, agentMapping: baseAgentMapping, catalogMapping: baseCatalogMapping,
+      existingSync: { listingNumber: 123456 },
+      options: { agencyId: 31382, expiryDate: '2026-12-31' },
+    })
+    assert.equal(retirementPlan.canPreview, true)
+    assert.equal(retirementPlan.payload.propertyInfo.propertyTypeId, resolveProperty24PropertyTypeId(propertyType))
+    assert.equal(retirementPlan.payload.tags?.includes('RetirementLiving') || false, answer === true)
+    assert.ok(!retirementPlan.payload.featureTags?.some((feature) => feature.tags?.includes('RetirementLiving')))
+    if (answer !== true) assert.doesNotMatch(retirementPlan.payload.description, /retirement/i)
+  }
+}
 
 console.log('Property24 Phase 2 mapper contract passed')

@@ -46,3 +46,8 @@ it('lets an agent correct the property, price and advert from the sales review',
  fireEvent.click(screen.getByRole('button', { name: 'Edit photos and description' }))
  expect(onEdit.mock.calls).toEqual([['property'], ['property'], ['marketing']])
 })
+
+it.each([[true, 'Yes'], [false, 'No'], [null, 'Not captured']])('shows the retirement answer in the sales review (%s)', (answer, label) => {
+ render(<ListingReviewDetails form={{ propertyCategory: 'residential', featureFacts: { retirement_accommodation: answer } }} onEdit={vi.fn()} />)
+ expect(screen.getByText('Retirement accommodation', { selector: 'dt' }).nextElementSibling.textContent).toBe(label)
+})

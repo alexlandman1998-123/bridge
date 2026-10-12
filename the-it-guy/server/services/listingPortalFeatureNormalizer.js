@@ -67,6 +67,9 @@ const FEATURE_DEFINITIONS = Object.freeze({
 })
 
 const DESCRIPTION_FEATURE_LABELS = Object.freeze({
+  retirement_accommodation: 'Retirement accommodation',
+  retirement_village: 'Retirement accommodation',
+  retirement_living: 'Retirement accommodation',
   solar: 'Solar power',
   solar_installation: 'Solar power',
   solar_backup: 'Solar power',

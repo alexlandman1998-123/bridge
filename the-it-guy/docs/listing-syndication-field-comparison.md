@@ -11,6 +11,30 @@ Audited 10 October 2026. Owner: primary Arch9 workspace and its existing portal 
 
 These are contract and local implementation checks. They do not prove a particular agency connection is enabled, that hosted migrations match the repository, or that a portal has accepted a live listing.
 
+## Sales retirement accommodation (12 October 2026)
+
+Sales Create/Edit → Property offers Retirement accommodation (Not captured, Yes,
+No). The listing Marketing editor also offers the choice. It is retained using
+the existing `featureFacts.retirement_accommodation` JSON and feature selections;
+the physical House/Apartment/Townhouse type remains unchanged. Explicit No or
+clearing the answer overrides an older retirement selection. The sales review
+shows the answer before saving.
+
+The current public Property24 v55 schema was rechecked: `Tag.RetirementLiving`
+is a lifestyle tag shown when associated with a listing. Sales Yes adds it to
+`Listing.tags`, never `featureTags`. Private Property Rev 4.7 and its current
+public sandbox SOAP WSDL (`AgentImport.asmx?WSDL`) have no retirement attribute,
+category or HomeType. PP receives the readable Retirement accommodation
+description fallback and a local `private_property_retirement_accommodation_description_only`
+warning; this does not claim membership in a PP retirement search category.
+A dedicated PP classification needs a supported contract from their integration
+team. No live listings were published or updated for this change.
+
+Focused checks: `node scripts/property24-phase2-mapper.test.mjs`,
+`npm run test:private-property-preview-listing`,
+`node scripts/listing-feature-catalog.test.mjs`, and the SalesExtraDetails and
+ListingReviewDetails component tests.
+
 ## Required fields by channel
 
 | Field or setting | Property24 | Private Property | Website |

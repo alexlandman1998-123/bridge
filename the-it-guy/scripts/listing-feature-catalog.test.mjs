@@ -37,4 +37,12 @@ assert.equal(setListingFeatureFact({}, 'roof_type', 'Concrete').roof_type, null)
 assert.equal(serializeListingFeatureFacts({ solar: null }).solar, 'unknown')
 assert.equal(normalizeListingFeatureFacts(serializeListingFeatureFacts({ solar: null }), ['solar']).solar, null)
 
+for (const answer of ['yes', 'no', null]) {
+  const retirementFacts = setListingFeatureFact({}, 'retirement_accommodation', answer)
+  const saved = serializeListingFeatureFacts(retirementFacts)
+  const reopened = normalizeListingFeatureFacts(saved, ['retirement_village'])
+  assert.equal(reopened.retirement_accommodation, answer === null ? null : answer === 'yes')
+  assert.equal(mergeListingFeatureSelections(['retirement_village'], reopened).includes('retirement_accommodation'), answer === 'yes')
+}
+
 console.log('Listing feature catalogue contract passed')

@@ -880,7 +880,7 @@ export function createPrivatePropertyListingPlan({
       ...(dataBlockers.includes('poa_requires_positive_asking_price') ? [{ code: 'poa_requires_positive_asking_price', field: 'listingPrice', step: 'property', message: PRIVATE_PROPERTY_POA_PRICE_MESSAGE }] : []),
     ],
     technicalBlockers,
-    qualityWarnings: video.warnings,
+    qualityWarnings: [...video.warnings, ...(listingType === 'Sale' && normalizeListingPortalFeatures({ listing, publication }).featureFacts.retirement_accommodation === true ? ['private_property_retirement_accommodation_description_only'] : [])],
     summary: {
       propertyId,
       branchId,

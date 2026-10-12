@@ -11,6 +11,7 @@ export const LISTING_FEATURE_GROUPS = Object.freeze([
 ])
 
 export const LISTING_FEATURE_CATALOG = Object.freeze([
+  boolean('retirement_accommodation', 'Retirement accommodation', 'Other', ['retirement_village', 'retirement_living'], ['sale']),
   boolean('study', 'Study', 'Rooms & living'),
   count('studies', 'Number of studies', 'Rooms & living'),
   boolean('staff_quarters', 'Staff quarters', 'Rooms & living', ['staff_accommodation']),

@@ -29,6 +29,7 @@ export default function ListingReviewDetails({ form, rental = false, onEdit }) {
   const land = ['land', 'vacant_land'].includes(form.propertyCategory)
   const propertyRows = [
     ['Category', getPropertyCategoryLabel(form.propertyCategory)], ['Property type', getPropertyTypeLabel(form.propertyType)],
+    ...(!rental ? [['Retirement accommodation', form.featureFacts?.retirement_accommodation === true ? 'Yes' : form.featureFacts?.retirement_accommodation === false ? 'No' : 'Not captured']] : []),
     ['Saved address', display(form.propertyAddress)], ['Public address setting', addressLabels[form.exactAddressVisibility] || 'Hide street address'],
     ...(!land ? [['Bedrooms', display(form.bedrooms)], ['Bathrooms', display(form.bathrooms)], ['Floor size', size(form.floorSize)]] : []),
     ['Land size', size(form.erfSize)],

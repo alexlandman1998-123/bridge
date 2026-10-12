@@ -49,7 +49,7 @@ function selectedValue(feature, facts) {
 
 function reviewFact(feature, value, { property24Category, property24TypeId, privatePropertyCategory }) {
   const key = feature.key
-  const property24Field = ['residential', 'commercial'].includes(property24Category)
+  const property24Field = key === 'retirement_accommodation' ? 'tags.RetirementLiving' : ['residential', 'commercial'].includes(property24Category)
     ? PROPERTY24_NATIVE_FACT_FIELDS[key]
       || (property24Category === 'residential' ? (
         (RESIDENTIAL_LISTING_TAGS[key] && (key !== 'new_development' || [4, 6].includes(property24TypeId)) ? `tags.${RESIDENTIAL_LISTING_TAGS[key]}` : '')

@@ -679,6 +679,9 @@ export function createProperty24ListingPlan({
       .map(([, tag]) => tag)
       .concat(RESIDENTIAL_ROOF_TAGS[featureFacts.roof_type] || [])
     : []
+  // v55 defines RetirementLiving as a listing lifestyle tag, independent of
+  // the dwelling type. Keep House/Apartment/etc. as the property type.
+  if (listingType === 'Sale' && featureFacts.retirement_accommodation === true) tags.push('RetirementLiving')
   const featureTags = categoryContract.category === 'residential'
     ? Object.entries(RESIDENTIAL_FEATURE_TAGS)
       .filter(([key]) => featureFacts[key] === true)
