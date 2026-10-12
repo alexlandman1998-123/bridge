@@ -36,6 +36,9 @@ test('durable jobs enforce actor scope, idempotency, claims and interrupted-requ
   const website = jobs.find(j=>j.channel==='agency_website')
   assert.equal((await db.query('select begin_listing_publication_dispatch($1,$2) as ok',[website.id,id(90)])).rows[0].ok,false)
   assert.equal((await db.query('select begin_listing_publication_dispatch($1,$2) as ok',[website.id,website.claim_id])).rows[0].ok,true)
+  await db.exec('set role authenticated')
+  await assert.rejects(db.query('select listing_publication_website_context($1,$2,false)',[website.id,website.claim_id]),/permission denied/)
+  await db.exec('reset role')
   await actor(2)
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id(2)])
   const context=(await db.query('select listing_publication_website_context($1,$2,false) as context',[website.id,website.claim_id])).rows[0].context

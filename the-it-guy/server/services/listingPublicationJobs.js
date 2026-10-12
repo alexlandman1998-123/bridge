@@ -23,7 +23,28 @@ export async function dispatchPublicationJob(job, { client, env = process.env, p
     const { data, error } = await client.functions.invoke(partner ? 'website-partner-listing-publication' : 'website-listing-publication', {
       body: { listingId: job.listing_id, action: 'publish', publicationJobId: job.id, publicationClaimId: job.claim_id },
     })
-    if (error) throw error // Transport failure may follow a successful publish.
+    if (error) {
+      // A failed response can follow a partial publish. Keep the uncertain state,
+      // but retain a safe explanation rather than discarding every server error.
+      let message = 'The website publishing service did not confirm publication.'
+      try {
+        const response = error.context
+        const payload = await (typeof response?.clone === 'function' ? response.clone() : response)?.json()
+        const knownErrors = {
+          'Invalid background publication request.': 'The website rejected the background publishing credential or action.',
+          'Background publication access is unavailable.': 'The website could not verify the saved publishing job or its permissions.',
+        }
+        const knownCodes = {
+          website_media_not_configured: 'Website media publishing is not configured.',
+          unsupported_listing_media_source: 'A listing image is not stored in an approved website media bucket.',
+          listing_not_ready: 'The listing has unmet website publishing requirements.',
+          website_media_sync_failed: 'The website could not prepare or synchronize its listing images.',
+        }
+        message = Object.hasOwn(knownErrors, payload?.error) ? knownErrors[payload.error]
+          : Object.hasOwn(knownCodes, payload?.code) ? knownCodes[payload.code] : message
+      } catch { /* A network failure or non-JSON response has no trusted detail. */ }
+      return { status: 503, body: { message } }
+    }
     return { status: data?.error ? 422 : 200, body: data || {} }
   }
   const listing = await client.from('private_listings').select('listing_category').eq('id', job.listing_id).single()
@@ -52,7 +73,9 @@ export async function dispatchPublicationJob(job, { client, env = process.env, p
 export function publicationJobOutcome(response) {
   const body = response.body || {}
   const status = String(body.status || body.report?.status || '').toUpperCase()
-  if (status === 'UNCERTAIN' || response.status >= 500) return { state: 'uncertain', message: 'Submission could not be confirmed. Check the channel before submitting again.' }
+  if (status === 'UNCERTAIN' || response.status >= 500) return { state: 'uncertain', message: body.message
+    ? `Submission could not be confirmed. ${String(body.message).slice(0, 500)} Check the channel before submitting again.`
+    : 'Submission could not be confirmed. Check the channel before submitting again.' }
   if (response.status >= 400 || ['BLOCKED','FAILED','REJECTED'].includes(status)) return { state: 'failed', message: String(body.message || body.report?.nextStep || body.error || 'Channel needs attention.').slice(0, 800) }
   return { state: 'accepted', message: 'Submitted. Waiting for the channel to confirm it is live.' }
 }

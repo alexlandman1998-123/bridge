@@ -33,3 +33,25 @@ test('never mistakes a blocked response or server failure for accepted publicati
  assert.equal(publicationJobOutcome({status:200,body:{status:'UNCERTAIN'}}).state,'uncertain')
  assert.equal(publicationJobOutcome({status:503,body:{}}).state,'uncertain')
 })
+
+test('website dispatch keeps a safe cause for failed responses without retrying or leaking response data',async()=>{
+ for (const [payload,expected] of [
+  [{error:'Invalid background publication request.',code:'website_media_sync_failed'},/credential or action/],
+  [{error:'Background publication access is unavailable.'},/job or its permissions/],
+  [{error:'secret-test-value',code:'unexpected'},/did not confirm/],
+  [{error:'constructor',code:'toString'},/did not confirm/],
+ ]) {
+  let calls=0
+  const client={
+   auth:{admin:{getUserById:async()=>({data:{user:{id:'actor'}}})}},
+   from(){return {update(){return this},eq(){return this},select(){return this},single:async()=>({data:{listing_id:'listing'}})}},
+   rpc:async()=>({data:{status:{websiteSiteId:'site'}}}),
+   functions:{invoke:async()=>{calls++;return {data:null,error:{context:new Response(JSON.stringify(payload),{status:500})}}}},
+  }
+  const outcome=publicationJobOutcome(await dispatchPublicationJob(jobs[2],{client}))
+  assert.equal(calls,1)
+  assert.equal(outcome.state,'uncertain')
+  assert.match(outcome.message,expected)
+  assert.doesNotMatch(outcome.message,/secret-test-value/)
+ }
+})

@@ -103,17 +103,18 @@ Deno.serve(async (request) => {
     if (!token) failure(401, "Sign in before publishing a listing.");
     const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const body = await request.json().catch(() => ({})) as RecordValue;
-    const background = await websitePublicationJobContext({ admin, token, serviceKey, payload: body, partner: true });
+    const caller = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const background = await websitePublicationJobContext({ caller, payload: body, partner: true });
     const actor = background?.actor || await admin.auth.getUser(token);
     if (actor.error || !actor.data.user?.id) failure(401, "Your session could not be verified.");
     const listingId = value(body.listingId);
     const action = normalizeWebsiteListingAction(body.action);
     if (!uuid.test(listingId) || !action) failure(400, "Choose a saved listing and a valid website action.");
 
-    const userClient = background?.statusClient || createClient(supabaseUrl, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
+    const userClient = background?.statusClient || caller;
     const statusResult = await userClient.rpc("website_get_partner_listing_status", { p_listing_id: listingId });
     if (statusResult.error) failure(403, statusResult.error.message);
     const status = (statusResult.data || {}) as RecordValue;

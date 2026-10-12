@@ -337,7 +337,11 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const payload = await req.json().catch(() => ({})) as JsonRecord;
-    const background = await websitePublicationJobContext({ admin, token, serviceKey, payload });
+    const caller = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const background = await websitePublicationJobContext({ caller, payload });
     const userResult = background?.actor || await admin.auth.getUser(token);
     if (userResult.error || !userResult.data.user?.id) {
       throw new RequestError(
@@ -361,10 +365,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const userClient = background?.statusClient || createClient(supabaseUrl, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
+    const userClient = background?.statusClient || caller;
     const statusResult = await userClient.rpc(
       "website_get_listing_publication_status",
       { p_listing_id: listingId },

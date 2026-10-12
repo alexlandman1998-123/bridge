@@ -7,12 +7,54 @@ import {
 // Import the actual copy implementation without starting an HTTP server.
 const originalServe = Deno.serve;
 let copyMediaAsset: typeof import("./index.ts").copyMediaAsset;
+let publicationHandler: (request: Request) => Promise<Response>;
 try {
-  Deno.serve = (() => ({})) as unknown as typeof Deno.serve;
+  Deno.serve = ((handler: typeof publicationHandler) => {
+    publicationHandler = handler;
+    return {};
+  }) as unknown as typeof Deno.serve;
   ({ copyMediaAsset } = await import("./index.ts"));
 } finally {
   Deno.serve = originalServe;
 }
+
+Deno.test("background HTTP publication uses caller authority even when its token differs from the local service key", async () => {
+  const env = {
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_ANON_KEY: "public-test-key",
+    SUPABASE_SERVICE_ROLE_KEY: "legacy-server-test-key",
+  };
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, Deno.env.get(key)]));
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  try {
+    for (const [key, value] of Object.entries(env)) Deno.env.set(key, value);
+    globalThis.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      assertEquals(url.endsWith("/rest/v1/rpc/listing_publication_website_context"), true);
+      assertEquals(new Headers(init?.headers).get("Authorization"), "Bearer gateway-service-test-token");
+      calls++;
+      return new Response(JSON.stringify({
+        actorId: "actor", listingId,
+        status: { websiteSiteId, blockers: ["Add a listing image."] },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const response = await publicationHandler(new Request("https://example.test/publish", {
+      method: "POST",
+      headers: { Authorization: "Bearer gateway-service-test-token", "Content-Type": "application/json" },
+      body: JSON.stringify({ publicationJobId: "job", publicationClaimId: "claim", listingId, action: "publish" }),
+    }));
+    assertEquals(response.status, 409);
+    assertEquals((await response.json()).code, "listing_not_ready");
+    assertEquals(calls, 2); // Authorize the job, then recheck its status.
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) Deno.env.delete(key);
+      else Deno.env.set(key, value);
+    }
+  }
+});
 
 const organisationId = "11111111-1111-4111-8111-111111111111";
 const websiteSiteId = "22222222-2222-4222-8222-222222222222";
