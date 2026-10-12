@@ -212,8 +212,6 @@
 .hs-join__fit{gap:20px;margin:40px 0 30px}
 .hs-join__fit article{padding:36px}
 .hs-join__fit article:last-child{background:var(--highlight)}
-.hs-join__fit article:last-child ul{padding-left:20px;margin:0;color:var(--copy);font-size:17px}
-.hs-join__fit article:last-child li{margin-bottom:18px;padding-left:6px}
 .hs-join__faq details,.hs-join__fees details{border-top:1px solid var(--line)}
 .hs-join__faq details:last-child{border-bottom:1px solid var(--line)}
 .hs-join summary{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:22px 0;cursor:pointer;list-style:none;line-height:1.4}

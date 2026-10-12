@@ -34,6 +34,7 @@ test('deletion errors distinguish withdrawal from deletion without weakening own
   assert.match(getListingDeletionBlock({ code: '23503' }).message, /still withdraw/)
   assert.equal(getListingDeletionBlock({ code: 'listing_must_be_withdrawn' }).reason, 'live_channels')
   assert.equal(getListingDeletionBlock({ code: 'website_launch_must_be_rolled_back' }).reason, 'website_launch')
+  assert.equal(getListingDeletionBlock({ code: 'listing_portal_request_pending' }).reason, 'pending_portal_request')
   assert.equal(getListingDeletionBlock({ code: '42501', message: 'Permission denied.' }), null)
   assert.equal(getListingDeletionBlock({ message: 'Network unavailable.' }), null)
 })
@@ -46,7 +47,7 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
   const other = '44444444-4444-4444-8444-444444444444'
   try {
     await db.exec(`
-      create role anon; create role authenticated;
+      create role anon; create role authenticated; create role service_role bypassrls;
       create schema auth;
       create function auth.uid() returns uuid language sql as $$
         select nullif(current_setting('fixture.uid', true), '')::uuid $$;
@@ -54,6 +55,7 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
         select $1 = '${org}'::uuid and current_setting('fixture.member', true) = 'true' $$;
       create function public.bridge_is_org_admin(uuid) returns boolean language sql as $$
         select current_setting('fixture.admin', true) = 'true' $$;
+      create function public.bridge_can_access_private_listing(uuid) returns boolean language sql as $$ select true $$;
       create table private_listings(id uuid primary key, organisation_id uuid, assigned_agent_id uuid,
         created_by uuid, seller_lead_id uuid, originating_crm_lead_id uuid, listing_reference text,
         title text, listing_category text, property24_status text, private_property_status text);
@@ -79,14 +81,26 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
     const cleanup = await fs.readFile(new URL('../../supabase/migrations/20261012083836_listing_delete_unpublished_partner_cleanup.sql', import.meta.url), 'utf8')
     await db.exec(cleanup)
     await db.exec(cleanup)
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261004155515_rental_publication_attempt_recovery.sql', import.meta.url), 'utf8'))
+    const archive = await fs.readFile(new URL('../../supabase/migrations/20261012101600_listing_delete_completed_portal_history.sql', import.meta.url), 'utf8')
+    await db.exec(archive)
+    await db.exec(archive)
     const setting = (name, value) => db.query('select set_config($1,$2,false)', [name, value])
     await setting('fixture.uid', agent); await setting('fixture.member', 'true'); await setting('fixture.admin', 'false')
     const remove = async () => (await db.query('select public.delete_private_listing($1) as result', [id])).rows[0].result
     const exists = async () => (await db.query('select count(*)::int as count from private_listings where id=$1', [id])).rows[0].count === 1
     const insert = (category) => db.query(`insert into private_listings(id,organisation_id,assigned_agent_id,created_by,title,listing_reference,listing_category)
       values($1,$2,$3,$3,'Fixture home','FIXTURE',$4)`, [id, org, agent, category])
+    const addAttempt = (state = 'accepted', resolved = true) => db.query(`insert into rental_publication_attempts
+      (private_listing_id,organisation_id,channel,environment,operation,state,identity,payload_digest,receipt,resolved_at)
+      values($1,$2,'property24','production','status_update',$3,'{"listingNumber":117681272}', 'original-digest',
+        '{"accepted":true,"reference":"117681272"}',case when $4 then now() else null end) returning to_jsonb(rental_publication_attempts) as record`, [id,org,state,resolved])
     for (const category of ['sale', 'rental']) {
       await insert(category)
+      const originalAttempts = []
+      for (let i = 0; i < 6; i++) originalAttempts.push((await addAttempt()).rows[0].record)
+      originalAttempts.push((await addAttempt('rejected')).rows[0].record)
+      originalAttempts.push((await addAttempt('reconciled')).rows[0].record)
       for (const [column, statuses] of [
         ['property24_status', ['Active', 'on-portal', 'Published', 'Pending', 'Back On Market', 'awaiting verification']],
         ['private_property_status', ['ToLet', 'To Let', 'To Rent', 'Current', 'Accepted', 'UNCERTAIN']],
@@ -113,10 +127,29 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
       assert.equal((await remove()).code, 'listing_must_be_withdrawn', 'a published partner row cannot be removed even if the status helper is stale')
       assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [id])).rows[0].count, 1)
       await db.query("update website_partner_listing_publications set status='unpublished' where listing_id=$1", [id])
+      assert.equal((await db.query('select count(*)::int as n from rental_publication_attempts where private_listing_id=$1', [id])).rows[0].n, 8)
+      for (const [state, resolved] of [['dispatching', false], ['uncertain', false], ['accepted', false]]) {
+        const pending = (await addAttempt(state, resolved)).rows[0].record
+        assert.equal((await remove()).code, 'listing_portal_request_pending')
+        assert.equal(await exists(), true)
+        assert.equal((await db.query('select count(*)::int as n from rental_publication_attempt_archives where attempt_id=$1', [pending.id])).rows[0].n, 0)
+        assert.equal((await db.query('select status from website_partner_listing_publications where listing_id=$1', [id])).rows[0].status, 'unpublished')
+        await db.query('delete from rental_publication_attempts where id=$1', [pending.id])
+      }
+      await assert.rejects(db.query('delete from private_listings where id=$1', [id]), /foreign key/)
       assert.equal((await remove()).deleted, true)
       assert.equal(await exists(), false)
       assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [id])).rows[0].count, 0, 'an unpublished website projection does not prevent permanent deletion')
       assert.equal((await remove()).mode, 'already_removed')
+      for (const original of originalAttempts) {
+        const saved = (await db.query('select * from rental_publication_attempt_archives where attempt_id=$1', [original.id])).rows[0]
+        assert.deepEqual(saved.attempt_record, original, 'retain every field of the original portal attempt')
+        assert.equal(saved.source_listing_id, id)
+        assert.equal(saved.organisation_id, org)
+        assert.equal(saved.listing_snapshot.title, 'Fixture home')
+        assert.equal(saved.archived_by, agent)
+      }
+      assert.equal((await db.query('select count(*)::int as n from rental_publication_attempts where private_listing_id=$1', [id])).rows[0].n, 0)
     }
     await insert('rental')
     await setting('fixture.uid', '')
@@ -131,8 +164,11 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
     assert.equal((await remove()).code, 'website_launch_must_be_rolled_back')
     await db.query("update website_production_dark_launches set status='rolled_back'", [])
     await db.query('insert into fixture_linked_workflows values($1)', [id])
+    const retainedAttempt = (await addAttempt()).rows[0].record
     await db.query("insert into website_partner_listing_publications values($1,'unpublished')", [id])
     await assert.rejects(remove(), /linked records/)
+    assert.deepEqual((await db.query('select to_jsonb(rental_publication_attempts) as record from rental_publication_attempts where id=$1', [retainedAttempt.id])).rows[0].record, retainedAttempt, 'a real linked workflow rolls back release of completed attempts')
+    assert.equal((await db.query('select count(*)::int as n from rental_publication_attempt_archives where attempt_id=$1', [retainedAttempt.id])).rows[0].n, 0, 'failed deletion cannot leave a partial archive')
     assert.equal(await exists(), true)
     assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [id])).rows[0].count, 1, 'a protected workflow failure rolls back the publication cleanup too')
     assert.equal((await db.query('select listing_id from website_production_dark_launches')).rows[0].listing_id, id)
@@ -148,5 +184,12 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
     for (const [role, allowed] of [['anon', false], ['authenticated', true]]) {
       assert.equal((await db.query("select has_function_privilege($1,'public.delete_private_listing(uuid)','EXECUTE') as allowed", [role])).rows[0].allowed, allowed)
     }
+    for (const role of ['anon', 'authenticated']) {
+      assert.equal((await db.query("select has_table_privilege($1,'public.rental_publication_attempt_archives','SELECT') as allowed", [role])).rows[0].allowed, false)
+      assert.equal((await db.query("select has_table_privilege($1,'public.rental_publication_attempt_archives','INSERT') as allowed", [role])).rows[0].allowed, false)
+    }
+    assert.equal((await db.query("select relrowsecurity as enabled from pg_class where oid='public.rental_publication_attempt_archives'::regclass")).rows[0].enabled, true)
+    assert.equal((await db.query("select has_table_privilege('service_role','public.rental_publication_attempt_archives','UPDATE') as allowed")).rows[0].allowed, false)
+    assert.equal((await db.query("select has_table_privilege('service_role','public.rental_publication_attempt_archives','DELETE') as allowed")).rows[0].allowed, false)
   } finally { await db.close() }
 })

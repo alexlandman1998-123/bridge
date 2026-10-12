@@ -44,3 +44,27 @@ export function buildSellerDocumentUploadQueue(documents = [], progressByKey = {
     complete: required.length === requiredComplete,
   }
 }
+
+// Receipt counts describe saved files, independently of checklist approval.
+// The same upload may appear in several categories or lead projections.
+export function buildSellerDocumentUploadEvidenceSummary(rows = []) {
+  const files = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const storedRecord = row.linkedDocument || row.originalDocument || row.original?.document || row.upload
+    const file = storedRecord || row
+    const path = text(file.storage_path || file.storagePath || file.filePath || row.storage_path || row.storagePath || row.filePath)
+    const id = text(file.id)
+    if (row.isGeneratedDraft || file.isGeneratedDraft || file.is_generated_draft) continue
+    if (!path && (!storedRecord || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id))) continue
+    const status = text(file.status || row.status).toLowerCase().replace(/[ -]+/g, '_')
+    const approved = ['approved', 'completed', 'verified', 'signed'].includes(status)
+    const awaitingReview = ['uploaded', 'under_review', 'awaiting_agent_review'].includes(status)
+    if (!path && !approved && !awaitingReview) continue
+    files.set(path || id, { approved, awaitingReview })
+  }
+  return {
+    saved: files.size,
+    approved: [...files.values()].filter(file => file.approved).length,
+    awaitingReview: [...files.values()].filter(file => file.awaitingReview).length,
+  }
+}

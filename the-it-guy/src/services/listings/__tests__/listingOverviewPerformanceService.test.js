@@ -86,3 +86,9 @@ it('requests the selected period under the current organisation and listing', as
   expect(rpc).toHaveBeenCalledWith('listing_overview_performance',{p_organisation_id:'org',p_listing_id:'listing',p_days:90})
   expect(data.privateProperty.views).toBe(0)
 })
+
+it('retains explicit same-day website counts without including them in completed-day totals', () => {
+  const result = buildListingOverviewPerformance({analytics:{website:{available:true,views:9,todayViews:1,todayDate:'2026-10-12'}}})
+  expect(result.channels.website).toMatchObject({views:9,todayViews:1,todayDate:'2026-10-12'})
+  expect(result.totalViews).toBe(9)
+})

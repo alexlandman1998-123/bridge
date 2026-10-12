@@ -6,6 +6,21 @@ const text = value => String(value ?? '').trim()
 // Use the existing authenticated endpoints; never rotate the portal identity.
 export function createListingRelistPortalActions({ listingId, channel, property24Reference, property24Context, callProperty24, callPrivateProperty, property24Message, privatePropertyReference, onPrivatePropertyStatus }) {
   return {
+    withdraw: async () => channel === 'Private Property'
+      ? callPrivateProperty('status-update', { propertyStatus: 'Inactive' })
+      : callProperty24('status-update', { environment: 'production', listingNumber: property24Reference, status: 'Withdrawn' }),
+    observeState: async () => {
+      if (channel === 'Private Property') {
+        const response = await callPrivateProperty('status', {}, { method: 'GET', query: new URLSearchParams({ cached: 'false', recordSync: 'true' }) })
+        onPrivatePropertyStatus?.(response)
+        const status = (response.monitor || response.report)?.externalStatus
+        return status === 'active' ? true : ['inactive', 'removed'].includes(status) ? false : null
+      }
+      const response = await callProperty24('status', {}, { method: 'GET', query: new URLSearchParams({ environment: 'production', refresh: 'true' }) })
+      if (text(response.status?.listingNumber) !== text(property24Reference)) return null
+      const live = response.status?.lifecycle?.isOnPortal
+      return typeof live === 'boolean' ? live : null
+    },
     prepare: async () => {
       if (channel === 'Private Property') {
         const response = await callPrivateProperty('preview', {}, { fallbackMessage: 'Private Property could not check this relist.' })
@@ -41,13 +56,104 @@ export function createListingRelistPortalActions({ listingId, channel, property2
   }
 }
 
+// All selected adverts must be confirmed offline before any is republished.
+// Durable withdrawal intent prevents duplicate writes after a lost response.
+export async function withdrawListingForRelist({ listingId, channel, snapshot, checkpoint }, deps, { checkOnly = false } = {}) {
+  let current = checkpoint || { listingId, channel, runId: globalThis.crypto.randomUUID(), phase: 'review', snapshot }
+  const result = (status, detail) => ({ channel, status, detail, checkpoint: current })
+  if (current.listingId !== listingId || current.channel !== channel) return result('blocked', 'This relist belongs to another listing or portal.')
+  if (['activation_requested', 'content_requested', 'content_accepted', 'completed'].includes(current.phase)) return result('ready', 'Continuing the existing relist request without repeating withdrawal.')
+  const progress = async phase => {
+    const next = { ...current, phase, snapshot, recordedAt: new Date().toISOString() }
+    await deps.recordCheckpoint(next)
+    current = next
+  }
+  try {
+    const review = await deps.prepare()
+    const identity = channel === 'Private Property' ? { propertyId: review.recovery?.propertyId, branchGuid: review.recovery?.branchGuid } : review.identity || {}
+    if (Object.entries(current.identity || {}).some(([key, value]) => value && text(identity[key]) !== text(value))) return result('blocked', 'The linked advert changed. Review it before relisting.')
+    current = { ...current, identity }
+    if (channel === 'Private Property') {
+      if (!review.recovery?.checked || !text(identity.propertyId)) return result('blocked', 'No existing Private Property advert could be verified.')
+      if (review.blockers?.includes('private_property_locked_address_mismatch')) return result('blocked', privatePropertyRelistAddressMessage(review))
+      if ((review.blockers || []).some(value => value !== 'private_property_reactivation_required')) return result('blocked', review.nextStep || 'Fix the listing requirements before withdrawing for relist.')
+    } else if (!review.canSubmit) return result('blocked', review.message || 'Fix the Property24 listing requirements before withdrawing for relist.')
+    const live = await deps.observeState()
+    if (checkOnly) {
+      if (current.phase === 'withdrawal_confirmed' && live !== false) return result('blocked', 'This advert is no longer confirmed offline. Review it before continuing.')
+      if (live === null && current.phase !== 'withdrawal_requested') return result('blocked', 'The portal could not confirm whether this advert is live. No withdrawal or republish was sent.')
+      return result('ready', 'Listing requirements checked.')
+    }
+    if (live === false) {
+      await progress('withdrawal_confirmed')
+      return result('ready', 'Advert is offline. Waiting for the other selected portals before republishing.')
+    }
+    if (current.phase === 'withdrawal_confirmed') return result('blocked', 'This advert became live again after withdrawal. Review it before continuing.')
+    if (current.phase === 'withdrawal_requested') return result('pending', 'Waiting for confirmed withdrawal. The request has not been repeated.')
+    if (live !== true) return result('blocked', 'The portal could not confirm whether this advert is live. No withdrawal or republish was sent.')
+    await progress('withdrawal_requested')
+    await deps.withdraw()
+    if (await deps.observeState() !== false) return result('pending', 'Withdrawal was requested. Waiting for the portal to confirm removal before republishing.')
+    await progress('withdrawal_confirmed')
+    return result('ready', 'Withdrawal confirmed. Waiting for the other selected portals before republishing.')
+  } catch (error) {
+    if (current.phase === 'withdrawal_requested') {
+      if (error.definiteRejection) {
+        try { await progress('rejected') } catch { /* Retain the durable send intent. */ }
+        return result('failed', error.message)
+      }
+      return result('pending', `${error.message || 'Withdrawal could not be confirmed.'} Check and continue; withdrawal will not be repeated.`)
+    }
+    return result('failed', error.message || 'Relist could not be checked.')
+  }
+}
+
+export async function relistListingChannels({ listingId, channels, snapshot, checkpoints = {}, previousResults = [], onProgress }, dependenciesFor) {
+  if (!listingId || !channels.length || channels.some(channel => !RELIST_CHANNELS.includes(channel))) throw new Error('Choose a saved listing and supported portals.')
+  let results = [...previousResults]
+  const batchIds = [...new Set([...Object.values(checkpoints), ...previousResults.map(row => row.checkpoint)].filter(Boolean).map(row => row.batchId).filter(Boolean))]
+  if (batchIds.length > 1) throw new Error('These portals have different relist requests in progress. Complete them separately before starting another relist.')
+  const batchId = batchIds[0] || globalThis.crypto.randomUUID()
+  const seeds = Object.fromEntries(channels.map(channel => [channel, { listingId, channel, runId: globalThis.crypto.randomUUID(), phase: 'review', snapshot, ...checkpoints[channel], batchId }]))
+  const dependencies = new Map(channels.map(channel => [channel, dependenciesFor(channel)]))
+  const show = row => { results = [...results.filter(value => value.channel !== row.channel), row]; onProgress?.([...results]) }
+  const argsFor = channel => ({ listingId, channel, snapshot, checkpoint: results.find(row => row.channel === channel)?.checkpoint || seeds[channel] })
+  // Preflight every portal first, so an address/readiness blocker cannot take
+  // a healthy advert offline on a different portal.
+  const checks = []
+  for (const channel of channels) checks.push(await withdrawListingForRelist(argsFor(channel), dependencies.get(channel), { checkOnly: true }))
+  if (checks.some(row => row.status !== 'ready')) {
+    checks.forEach(row => show(row.status === 'ready' ? { ...row, status: 'blocked', detail: 'Resolve the other selected portal before starting the relist.' } : row))
+    return results
+  }
+  checks.forEach(row => show({ ...row, status: 'pending', detail: 'Requirements checked. Waiting for withdrawal and confirmation before republishing.' }))
+  for (const channel of channels) {
+    const outcome = await withdrawListingForRelist(argsFor(channel), dependencies.get(channel))
+    show(outcome)
+    if (['failed', 'blocked'].includes(outcome.status)) return results
+  }
+  if (channels.some(channel => results.find(row => row.channel === channel)?.status !== 'ready')) return results
+  for (const channel of channels) show(await relistListingChannel(argsFor(channel), dependencies.get(channel)))
+  return results
+}
+
 // Persist intent before each send. A lost response must not cause another
 // activation/content send when the dialog is reopened or the page is refreshed.
-export function readListingRelistCheckpoint(rows = [], channel) {
+export function readListingRelistCheckpoint(rows = [], channel, { includeCompleted = false } = {}) {
   const row = rows.filter(item => (item.activity_type || item.activityType) === 'listing_relist_progress' && item.metadata?.channel === channel)
     .sort((a, b) => Date.parse(b.created_at || b.createdAt) - Date.parse(a.created_at || a.createdAt))[0]
   const checkpoint = row?.metadata
-  return checkpoint && !['completed', 'rejected'].includes(checkpoint.phase) ? checkpoint : null
+  return checkpoint && (includeCompleted || !['completed', 'rejected'].includes(checkpoint.phase)) ? checkpoint : null
+}
+
+export function readListingRelistCheckpoints(rows = [], channels = RELIST_CHANNELS) {
+  const latest = Object.fromEntries(channels.map(channel => [channel, readListingRelistCheckpoint(rows, channel, { includeCompleted: true })]))
+  const unfinished = Object.values(latest).filter(row => row && !['completed', 'rejected'].includes(row.phase))
+  if (!unfinished.length) return {}
+  // Keep completed portals in an unfinished batch after a page refresh. They
+  // must not be withdrawn again just because another portal is still pending.
+  const batches = new Set(unfinished.map(row => row.batchId).filter(Boolean))
+  return Object.fromEntries(Object.entries(latest).filter(([, row]) => row && row.phase !== 'rejected' && (!row.batchId || batches.has(row.batchId))))
 }
 
 export function privatePropertyRelistAddressMessage(readiness = {}) {

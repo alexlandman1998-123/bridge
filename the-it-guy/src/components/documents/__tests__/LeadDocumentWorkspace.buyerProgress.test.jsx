@@ -67,3 +67,10 @@ test('optional seller documents remain visible without changing either view’s 
   expect(html).toContain('2 outstanding')
   expect(html).toContain('Optional Certificate')
 })
+
+test('a saved seller mandate under review remains visible beside zero completed requirements', () => {
+  const html = renderToStaticMarkup(<LeadDocumentWorkspace partyType="seller" categories={[{key:'sales',label:'Sales',items:[{key:'signed_mandate',required:true,status:'under_review',originalDocument:{id:'00000000-0000-4000-8000-000000000001',storage_path:'listing/mandate.pdf',status:'under_review'}}]}]} getStatusMeta={() => ({state:'review',label:'Awaiting review',pillClass:''})} />)
+  expect(html).toContain('0 of 1 complete')
+  expect(html).toMatch(/1.*file.*saved/)
+  expect(html).toContain('1 awaiting review')
+})

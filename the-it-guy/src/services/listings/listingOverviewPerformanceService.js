@@ -68,6 +68,8 @@ function channel(value = {}, fallbackReason = '') {
     state: text(source.state),
     views: count(source.views),
     previousViews: count(source.previousViews),
+    todayViews: count(source.todayViews),
+    todayDate: text(source.todayDate),
     portalContacts: count(source.portalContacts),
     lastSyncedAt: text(source.lastSyncedAt),
     lastTrackedAt: text(source.lastTrackedAt),

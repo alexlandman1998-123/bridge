@@ -71,7 +71,7 @@ export default async function PropertyPage({ params }: Props) {
   const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'RENTAL PRICE' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>{property.price ? <Link href={`/calculators?price=${property.price}#bond-calculator`}>{property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
 
   return <main className={`property-page listing-detail-page ${templateClassName(site.templateKey)}${lwp ? ' lwp-listing-page' : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
-    {!property.partnerListing ? <ListingAnalyticsTracker listingId={property.id} /> : null}
+    <ListingAnalyticsTracker listingId={property.id} />
     <SiteHeader site={site} enquiryHref="#enquire" currentHref="/properties" />
     <section className="listing-detail-shell"><Link className="listing-back-link" href={`/properties?type=${property.transactionType}`}>← {property.transactionType === 'rental' ? 'All rentals' : 'All homes'}</Link><PropertyGallery property={property} /><div className="listing-mobile-price">{pricePanel}</div><div className="listing-meta-row"><p className="listing-status">{listingStatusLabel(property).toUpperCase()} <span>·</span> {property.partnerListing ? 'I SELL PROPERTY LISTING' : lwp ? 'LWP SELECT HOME' : 'EXCLUSIVE MANDATE'}</p><PropertyActions photoCount={photoCount} /></div></section>
     <section className="listing-detail-grid">

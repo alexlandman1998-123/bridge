@@ -107,7 +107,7 @@ function rentalListingCollection(listing = {}) {
 
 function resolveStatusGroup(row = {}) {
   const property24Status = normalizeKey(row.property24Status)
-  if (PROPERTY24_PUBLISHED_STATUSES.has(property24Status)) return 'published'
+  if (PROPERTY24_PUBLISHED_STATUSES.has(property24Status) || PROPERTY24_PUBLISHED_STATUSES.has(normalizeKey(row.privatePropertyStatus))) return 'published'
   if (MANDATE_READY_STATUSES.has(normalizeKey(row.mandateStatus)) && MARKETING_READY_STATUSES.has(normalizeKey(row.marketingApprovalStatus))) {
     return 'ready'
   }
@@ -261,7 +261,8 @@ export function buildRentalListingIndexRow(listing = {}) {
 }
 
 export function isRentalListingDraft(listing = {}) {
-  return ['draft', 'seller_lead'].includes(normalizeKey(firstText(listing.listingStatus, listing.listing_status, listing.status)))
+  const livePortal = [listing.property24Status, listing.property24_status, listing.privatePropertyStatus, listing.private_property_status].some(value => PROPERTY24_PUBLISHED_STATUSES.has(normalizeKey(value)))
+  return !livePortal && ['draft', 'seller_lead'].includes(normalizeKey(firstText(listing.listingStatus, listing.listing_status, listing.status)))
 }
 
 export function buildRentalListingIndexRows(listings = []) {

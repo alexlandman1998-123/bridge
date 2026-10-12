@@ -308,11 +308,13 @@ await test('timeout confirmation requires the exact mutation and frozen document
   assert.equal(isMatchingSellerCanonicalSaveReceipt(receipt, update), true)
   const reversedKeys = Object.fromEntries(Object.entries(update.canonicalFacts).reverse())
   assert.equal(isMatchingSellerCanonicalSaveReceipt({ ...receipt, listing: { ...receipt.listing, seller_canonical_facts_json: reversedKeys } }, update), true)
+  assert.equal(isMatchingSellerCanonicalSaveReceipt({ ...receipt, listing: { ...receipt.listing,
+    address_line_1: 'Saved first address line', asking_price: 10700000, mandate_type: 'open' } }, update), true,
+    'Document-only recovery must not compare an untouched formatted address, price or mandate summary')
   for (const changed of [
     { ...receipt, listing: { ...receipt.listing, id: 'different-listing' } },
     { ...receipt, onboarding: { ...receipt.onboarding, canonical_facts_json: {} } },
     { ...receipt, onboarding: { ...receipt.onboarding, status: 'rejected' } },
-    { ...receipt, listing: { ...receipt.listing, address_line_1: 'Later listing edit' } },
     { ...receipt, onboarding: { ...receipt.onboarding, form_data: { ...update.nextFormData,
       sellerOnboardingManualSigningPack: { documents: [{ versionId: 'later-copy', generatedHtml: 'Changed' }] } } } },
   ]) assert.equal(isMatchingSellerCanonicalSaveReceipt(changed, update), false)
@@ -953,4 +955,15 @@ for (const failure of ['conflict', 'warning']) await test(`listing document ${fa
   assert.equal(result.errors.length, 1)
   if (failure === 'conflict') assert.equal(result.listing, undefined)
   else assert.ok(result.listing.sellerOnboarding.formData.sellerOnboardingManualSigningPack)
+})
+
+await test('timeout confirmation verifies property fields when the save explicitly changes them', () => {
+  for (const [key,value,column,wrong] of [['addressLine1','Changed address','address_line_1','Other address'],['askingPrice',10700000,'asking_price',10000000],['mandateType','sole','mandate_type','open']]) {
+    const update = buildListingSellerCanonicalUpdate({listing,formPatch:{[key]:value},mutationId:'33333333-3333-4333-8333-333333333334'})
+    const receipt = {listing:{id:listing.id,seller_canonical_facts_json:update.canonicalFacts,seller_onboarding_status:update.onboardingStatus,seller_type:update.sellerType,[column]:wrong},
+      onboarding:{id:'onboarding-1',private_listing_id:listing.id,status:update.onboardingStatus,canonical_facts_json:update.canonicalFacts,form_data:update.nextFormData}}
+    assert.equal(isMatchingSellerCanonicalSaveReceipt(receipt,update),false,key)
+    receipt.listing[column]=value
+    assert.equal(isMatchingSellerCanonicalSaveReceipt(receipt,update),true,key)
+  }
 })

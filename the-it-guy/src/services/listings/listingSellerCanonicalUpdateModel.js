@@ -113,13 +113,19 @@ export function isMatchingSellerCanonicalSaveReceipt(receipt, update) {
       marker(listing.seller_canonical_facts_json) !== update.mutationId ||
       marker(onboarding.canonical_facts_json) !== update.mutationId) return false
   const patch = buildListingSellerCanonicalSavePayload(update).listingPatch
+  // Seller-only saves do not project untouched property fields. A formatted
+  // onboarding address may differ from the listing's saved first address line.
+  // Confirm only the listing fields this mutation actually changed.
+  const changed = new Set(update.changedFields || [])
+  const checksAddress = changed.has('propertyAddress') || changed.has('addressLine1')
+  const checksPrice = changed.has('askingPrice') || changed.has('price')
   const address = text(patch.addressLine1 ?? patch.propertyAddress)
   const price = text(patch.askingPrice)
   if (listing.seller_onboarding_status !== update.onboardingStatus ||
       (text(update.sellerType) && listing.seller_type !== update.sellerType) ||
-      (address && listing.address_line_1 !== address) ||
-      (text(patch.mandateType) && listing.mandate_type !== text(patch.mandateType)) ||
-      (/^-?[0-9]+([.][0-9]+)?$/.test(price) && Number(listing.asking_price) !== Number(price))) return false
+      (checksAddress && address && listing.address_line_1 !== address) ||
+      (changed.has('mandateType') && text(patch.mandateType) && listing.mandate_type !== text(patch.mandateType)) ||
+      (checksPrice && /^-?[0-9]+([.][0-9]+)?$/.test(price) && Number(listing.asking_price) !== Number(price))) return false
   // Compare the JSON sent over the wire; nested undefined values are omitted
   // by serialization, and PostgreSQL does not preserve object key order.
   const expected = JSON.parse(JSON.stringify({ facts: object(update.canonicalFacts), formData: object(update.nextFormData) }))

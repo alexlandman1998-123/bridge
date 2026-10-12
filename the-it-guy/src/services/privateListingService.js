@@ -2177,9 +2177,13 @@ function getPrivateListingDocumentMatchAliases(key = '') {
 // Upload links must identify one active requirement. Display matching may be
 // permissive for legacy files; persistence must never use substring matching.
 export function resolvePrivateListingDocumentRequirement(requirements = [], {
-  requirementId = '', requirementKey = '', documentType = '', required = true,
+  requirementId = '', requirementKey = '', documentType = '', required = true, currentOptionalRequirementKeys = [],
 } = {}) {
-  const active = requirements.filter((row) => row?.id && row.is_required !== false && row.isRequired !== false && normalizeCompatibilityKey(row.status) !== 'not_applicable')
+  const optionalKeys = new Set(currentOptionalRequirementKeys.map(normalizeCompatibilityKey))
+  const active = requirements.filter((row) => row?.id &&
+    !['not_applicable', 'cancelled'].includes(normalizeCompatibilityKey(row.status)) &&
+    row.retired !== true && row.generated_from?.archived !== true &&
+    ((row.is_required !== false && row.isRequired !== false) || optionalKeys.has(normalizeCompatibilityKey(row.requirement_key || row.key))))
   const requestedId = normalizeUuid(requirementId)
   const requestedKey = normalizeCompatibilityKey(requirementKey || documentType)
   const aliases = getPrivateListingDocumentMatchAliases(requestedKey)
@@ -2197,6 +2201,19 @@ export function resolvePrivateListingDocumentRequirement(requirements = [], {
   if (candidates.length === 1) return candidates[0]
   if (required) throw new Error('No active seller requirement matches this file. Confirm the seller details and refresh the checklist before uploading.')
   return null
+}
+
+// Optional is not retired. Only the saved seller/property model can establish
+// that an optional request still applies; the upload button cannot opt it in.
+export function buildPrivateListingDocumentUploadPreparation(listing, requirements, requirementKey) {
+  const generated = syncSellerDocumentRequirementsFromEngine(listing, requirements).generatedRequirements || []
+  const key = normalizeCompatibilityKey(requirementKey)
+  const aliases = getPrivateListingDocumentMatchAliases(key)
+  const hasTarget = requirements.some((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key)))
+  return {
+    currentOptionalRequirementKeys: generated.filter((row) => row.is_required === false).map((row) => row.requirement_key),
+    missingRows: hasTarget ? [] : generated.filter((row) => normalizeCompatibilityKey(row.requirement_key) === key),
+  }
 }
 
 function privateListingDocumentKeysOverlap(left = '', right = '') {
@@ -8838,23 +8855,15 @@ export async function uploadPrivateListingDocument(listingId, file, {
   let requirements = await getPrivateListingDocumentRequirements(normalizedListingId)
   const normalizedRequirementId = normalizeUuid(requirementId)
   const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
-  // A completed intake can still have only its old onboarding checklist when
-  // the background projection failed. Prepare the exact saved-model target for
-  // the mandate/FICA Upload buttons before Storage; never invent a target for a
-  // retired/selected request or a version-bound signing copy.
-  if (['signed_mandate', 'signed_fica_declaration'].includes(normalizedRequirementKey) && !normalizedRequirementId && !reviewedSigningVersionId) {
-    const aliases = getPrivateListingDocumentMatchAliases(normalizedRequirementKey)
-    const hasSigningRequest = requirements.some((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key)))
-    if (!hasSigningRequest) {
-      const signingRows = (syncSellerDocumentRequirementsFromEngine(accessibleListing, requirements).upsertRows || [])
-        .filter((row) => normalizeCompatibilityKey(row.requirement_key || row.key) === normalizedRequirementKey)
-      if (signingRows.length !== 1) {
-        throw new Error('The seller signing checklist is not ready. Save the completed seller onboarding and ownership details before uploading this file.')
-      }
-      requirements = await ensurePrivateListingDocumentRequirements(normalizedListingId, signingRows, {
-        reason: 'agent_seller_signing_upload_preflight',
-      })
-    }
+  const uploadPreparation = buildPrivateListingDocumentUploadPreparation(accessibleListing, requirements, normalizedRequirementKey)
+  // A delayed projection must not make a valid saved-model Upload button fail.
+  // Prepare only its exact missing target, preserving all existing request IDs,
+  // review history and retired rows. Selected or version-bound requests never
+  // fall back to another request.
+  if (!normalizedRequirementId && !reviewedSigningVersionId && uploadPreparation.missingRows.length === 1) {
+    requirements = await ensurePrivateListingDocumentRequirements(normalizedListingId, uploadPreparation.missingRows, {
+      reason: 'agent_seller_document_upload_preflight',
+    })
   }
   // Internal buyer-offer evidence uses offer-specific references rather than
   // seller checklist requirements (for example a wet-ink OTP pack).
@@ -8866,6 +8875,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
   const matchedRequirement = isInternalMandateEvidence ? null : resolvePrivateListingDocumentRequirement(requirements, {
     requirementId, requirementKey, documentType: documentType || documentCategory,
     required: !isInternalOfferEvidence && (Boolean(requirementId || requirementKey || reviewedSigningVersionId) || documentType !== 'listing_document' || ['seller_visible', 'client_visible'].includes(visibility)),
+    currentOptionalRequirementKeys: uploadPreparation.currentOptionalRequirementKeys,
   })
 
   const safeOriginalName = sanitizeDocumentFileName(documentName || filePolicy.safeName, 'listing-document')

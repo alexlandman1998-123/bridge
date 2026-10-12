@@ -51,6 +51,7 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
           {initialLoading ? '…' : hasValue(views) ? numberFormat.format(views.value) : '—'}
         </p>
         {!initialLoading && !hasValue(views) ? <p className="mt-1 text-xs text-[#607387]">Views unavailable</p> : null}
+        {definition.key === 'website' && !initialLoading ? <p className="mt-2 text-xs text-[#607387]">Report includes completed days. {source?.todayViews !== null && source?.todayViews !== undefined ? `Views recorded today: ${numberFormat.format(source.todayViews)} (${source.todayDate}); shown separately from the report.` : 'Today’s visits appear in the report after the day ends.'}</p> : null}
         {definition.key !== 'website' && hasValue(views) ? (
           <p className="mt-1 text-xs text-[#607387]">
             {views.coveredDays} of {views.expectedDays} {source?.listingCount ? 'listing-days' : 'days'} covered{views.complete ? '' : ' · Partial count'}

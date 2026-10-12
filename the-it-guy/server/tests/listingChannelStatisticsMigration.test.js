@@ -5,7 +5,7 @@ const { org, otherOrg, listing, otherListing, user, branch, config, site } = sta
 let db
 beforeAll(async () => { db = await createListingStatisticsDatabase() }, 20_000)
 beforeEach(async () => {
-  await db.exec('reset role; truncate private_property_listing_statistics_daily,private_property_statistics_sync_runs,private_property_statistics_access,property24_listing_statistics_daily,property24_statistics_sync_runs,website_analytics_daily,website_lead_submissions;')
+  await db.exec('reset role; truncate private_property_listing_statistics_daily,private_property_statistics_sync_runs,private_property_statistics_access,property24_listing_statistics_daily,property24_statistics_sync_runs,website_analytics_daily,website_lead_submissions,website_partner_lead_submissions,website_partner_listing_publications,website_partner_listing_grants,website_domains;')
   await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user])
 })
 afterAll(async () => db?.close())
@@ -84,4 +84,45 @@ it('restricts the reader to authenticated members and keeps access fingerprints 
   await db.exec('reset role')
   await db.query("select set_config('request.jwt.claim.sub','',false)")
   await expect(overview()).rejects.toThrow(/access/)
+})
+
+const partnerSite = '60000000-0000-4000-8000-000000000002'
+const grantId = '70000000-0000-4000-8000-000000000001'
+async function seedPartner() {
+  await db.exec(`insert into website_sites values('${partnerSite}','${otherOrg}','published') on conflict(id) do nothing;
+    insert into website_partner_listing_grants values('${grantId}','${partnerSite}','${org}',true);
+    insert into website_partner_listing_publications values('${grantId}','${partnerSite}','${listing}','published');
+    insert into website_domains(website_site_id,hostname,status,is_primary) values('${partnerSite}','partner.example.test','active',true);`)
+}
+it('records granted partner views and displays today separately from completed days', async () => {
+  await seedPartner()
+  await db.exec(`set role service_role; select website_record_analytics_event('partner.example.test','listing_view','/properties/one','${listing}'); reset role;`)
+  expect((await overview()).website).toMatchObject({connected:true,published:true,views:null,todayViews:1})
+  await db.exec("update website_analytics_daily set event_date=current_date-1")
+  expect((await overview()).website).toMatchObject({views:1,todayViews:null})
+  await db.exec(`insert into website_analytics_daily(website_site_id,listing_id,event_type,event_date,event_count) values('${partnerSite}','${otherListing}','listing_view',current_date-1,999)`)
+  expect((await overview()).website.views).toBe(1)
+})
+it('counts partner enquiry receipts but excludes foreign owners, failed receipts and ungranted sites', async () => {
+  await seedPartner()
+  await db.exec(`insert into website_partner_lead_submissions(grant_id,website_site_id,source_organisation_id,listing_id,status,created_at)
+    select '${grantId}','${partnerSite}','${org}','${listing}',status,((now() at time zone 'Africa/Johannesburg')::date-1)::timestamp at time zone 'Africa/Johannesburg' from unnest(array['received','routed','duplicate','failed']) status;
+    insert into website_analytics_daily(website_site_id,listing_id,event_type,event_date,event_count) values('${partnerSite}','${listing}','listing_view',current_date-1,7);
+    insert into website_partner_lead_submissions(grant_id,website_site_id,source_organisation_id,listing_id,status,created_at) values('${grantId}','${partnerSite}','${otherOrg}','${listing}','routed',now()-interval '1 day');`)
+  await db.exec(`insert into website_lead_submissions(website_site_id,organisation_id,listing_id,submission_type,status,created_at) values('${partnerSite}','${org}','${listing}','property_enquiry','routed',now()-interval '1 day');`)
+  expect((await overview()).website).toMatchObject({views:7,metrics:{enquiries:{value:3}}})
+  await db.exec('truncate website_partner_listing_publications')
+  expect((await overview()).website).toMatchObject({views:null,metrics:{enquiries:{value:0}}})
+})
+it('rejects ungranted, unpublished, disabled and foreign-listing tracking without losing recorded history', async () => {
+  await seedPartner()
+  await expect(db.exec(`select website_record_analytics_event('partner.example.test','listing_view','/properties/wrong','${otherListing}')`)).rejects.toThrow(/Published website listing not found/)
+  await db.exec(`select website_record_analytics_event('partner.example.test','listing_view','/properties/one','${listing}'); update website_analytics_daily set event_date=current_date-1; update website_partner_listing_grants set enabled=false;`)
+  await expect(db.exec(`select website_record_analytics_event('partner.example.test','listing_view','/properties/one','${listing}')`)).rejects.toThrow(/Published website listing not found/)
+  await db.exec(`update website_listing_publications set status='unpublished'; update website_partner_listing_publications set status='unpublished'`)
+  expect((await overview()).website).toMatchObject({published:false,views:1})
+  await db.exec(`update website_listing_publications set status='published'; update website_partner_listing_grants set enabled=true;`)
+  await expect(db.exec(`select website_record_analytics_event('partner.example.test','listing_view','/properties/one','${listing}')`)).rejects.toThrow(/Published website listing not found/)
+  const privileges = (await db.query("select has_function_privilege('anon','website_record_analytics_event(text,text,text,uuid)','execute') as anon,has_function_privilege('authenticated','website_record_analytics_event(text,text,text,uuid)','execute') as agent")).rows[0]
+  expect(privileges).toEqual({anon:false,agent:false})
 })

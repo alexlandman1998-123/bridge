@@ -146,3 +146,17 @@ export function buildListingChannelPublicationDisplay({
     live: Boolean(live),
   }
 }
+
+// Arch9 in the listing overview is the signed-in internal portal, not the
+// separately managed public catalogue. It has no external publication URL.
+export function buildInternalListingPublicationDisplay(listing = {}) {
+  listing = listing || {}
+  const status = text(listing.listingStatus || listing.listing_status || listing.status).toLowerCase().replace(/[\s-]+/g, '_')
+  const visibility = text(listing.listingVisibility || listing.listing_visibility).toLowerCase()
+  const live = Boolean(listing.id && visibility === 'active_market' && ['active', 'published', 'under_offer'].includes(status))
+  return {
+    key: 'arch9_internal', label: 'Arch9', internal: true, href: '', live,
+    status: live ? 'live' : 'not_published',
+    statusLabel: live ? 'Published internally' : ({ sold: 'Sold', withdrawn: 'Withdrawn', archived: 'Archived' })[status] || 'Internal draft',
+  }
+}

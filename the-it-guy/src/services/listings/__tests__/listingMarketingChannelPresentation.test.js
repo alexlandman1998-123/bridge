@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 import {
   buildListingChannelPublicationDisplay,
+  buildInternalListingPublicationDisplay,
   buildWebsiteListingPublicUrl,
   getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
@@ -163,5 +164,20 @@ test('lifecycle-only channels omit content failures and unpublished edits withou
     assert.equal(result.statusLabel, statusLabel)
     assert.equal(result.live, false)
     assert.equal(result.href, '')
+  }
+})
+
+test('Arch9 overview reflects internal publication without enabling a public page', () => {
+  assert.equal(buildInternalListingPublicationDisplay(null).live, false)
+  const listing = { id: 'listing', listingStatus: 'active', listingVisibility: 'active_market', bridgeListingStatus: 'not_published', bridgeListingPublicUrl: '' }
+  const display = buildInternalListingPublicationDisplay(listing)
+  assert.equal(display.statusLabel, 'Published internally')
+  assert.equal(display.live, true)
+  assert.equal(display.href, '')
+  assert.equal(display.internal, true)
+  assert.equal(listing.bridgeListingStatus, 'not_published')
+  assert.equal(buildInternalListingPublicationDisplay({ ...listing, listingVisibility: 'internal' }).live, false)
+  for (const status of ['sold', 'withdrawn', 'archived']) {
+    assert.equal(buildInternalListingPublicationDisplay({ ...listing, listingStatus: status }).live, false)
   }
 })

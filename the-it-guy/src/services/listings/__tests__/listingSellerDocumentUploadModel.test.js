@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSellerDocumentUploadQueue } from '../listingSellerDocumentUploadModel.js'
+import { buildSellerDocumentUploadQueue, buildSellerDocumentUploadEvidenceSummary } from '../listingSellerDocumentUploadModel.js'
 
 describe('seller document upload queue', () => {
   it('shows incomplete required documents first and tracks completion', () => {
@@ -23,4 +23,17 @@ describe('seller document upload queue', () => {
     expect(complete.complete).toBe(true)
     expect(complete.outstanding).toEqual([])
   })
+})
+
+it('reports a saved mandate awaiting review independently of approval', () => {
+  const file = {id:'00000000-0000-4000-8000-000000000001',storage_path:'listing/mandate.pdf',status:'under_review'}
+  expect(buildSellerDocumentUploadEvidenceSummary([{status:'under_review',linkedDocument:file}])).toEqual({saved:1,approved:0,awaitingReview:1})
+  expect(buildSellerDocumentUploadEvidenceSummary([{status:'approved',linkedDocument:{...file,status:'approved'}}])).toEqual({saved:1,approved:1,awaitingReview:0})
+})
+it('counts the same persisted file once across lead and listing projections', () => {
+  const file = {id:'00000000-0000-4000-8000-000000000001',storage_path:'listing/mandate.pdf',status:'uploaded'}
+  expect(buildSellerDocumentUploadEvidenceSummary([{originalDocument:file},{upload:{id:file.id,filePath:file.storage_path},status:'uploaded'}])).toEqual({saved:1,approved:0,awaitingReview:1})
+})
+it('does not count an unsigned generated draft or an empty requirement as a saved file', () => {
+  expect(buildSellerDocumentUploadEvidenceSummary([{id:'00000000-0000-4000-8000-000000000002',status:'under_review'},{id:'required',status:'required'},{upload:{id:'00000000-0000-4000-8000-000000000001',isGeneratedDraft:true},status:'uploaded'}])).toEqual({saved:0,approved:0,awaitingReview:0})
 })

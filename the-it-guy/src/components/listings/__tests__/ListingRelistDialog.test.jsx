@@ -69,3 +69,16 @@ it('lets an agent edit details after a portal blocks the address', async () => {
   expect(onEdit).toHaveBeenCalledOnce()
   expect(onEdit).toHaveBeenCalledWith('Private Property')
 })
+
+it('includes an offline portal in the continuation when another withdrawal is pending', async () => {
+  const onRelist = vi.fn().mockResolvedValueOnce([
+    { channel: 'Property24', status: 'ready', detail: 'Withdrawal confirmed.' },
+    { channel: 'Private Property', status: 'pending', detail: 'Waiting for removal.' },
+  ]).mockResolvedValueOnce([])
+  render(<ListingRelistDialog {...props} onRelist={onRelist} />)
+  fireEvent.click(screen.getByLabelText('This is the same property as the original advert.'))
+  fireEvent.click(screen.getByRole('button', { name: 'Relist selected channels' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Check and continue' }))
+  await waitFor(() => expect(onRelist).toHaveBeenCalledTimes(2))
+  expect(onRelist.mock.calls[1][0].channels).toEqual(props.channels)
+})

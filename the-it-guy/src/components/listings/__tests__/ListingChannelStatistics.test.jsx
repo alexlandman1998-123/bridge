@@ -192,3 +192,15 @@ it('falls back to the portal name if a logo cannot load', async () => {
   fireEvent.error(screen.getByRole('img', { name: 'Property24' }))
   expect(card('Property24').getByRole('heading', { name: 'Property24' }).className).not.toBe('sr-only')
 })
+
+it('shows today’s website visits separately without adding them to the completed-day report', async () => {
+  const data = fixture()
+  data.website.todayViews = 1
+  data.website.todayDate = '2026-10-08'
+  mocks.get.mockResolvedValue(data)
+  render(<ListingChannelStatistics {...props} />)
+  await screen.findByText('Views complete')
+  expect(card('Website').getByText('9')).toBeTruthy()
+  expect(card('Website').getByText(/Views recorded today: 1/)).toBeTruthy()
+  expect(card('Website').getByText(/shown separately from the report/)).toBeTruthy()
+})

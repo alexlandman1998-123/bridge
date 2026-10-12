@@ -1,3 +1,5 @@
+import { buildSellerDocumentUploadEvidenceSummary } from '../../services/listings/listingSellerDocumentUploadModel.js'
+import DocumentRequirementRemoveButton from './DocumentRequirementRemoveButton.jsx'
 import React, { useMemo } from 'react'
 import { FileText, FolderOpen, LockKeyhole } from 'lucide-react'
 import { summarizeLeadDocumentCategory } from './leadDocumentProgressModel'
@@ -18,6 +20,7 @@ export default function LeadDocumentWorkspace({
   portalAction,
   portalActionLabel,
   reviewSigningAction,
+  removalContext,
 }) {
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const normalizedCategories = useMemo(() => categories.map((category) => {
@@ -29,6 +32,10 @@ export default function LeadDocumentWorkspace({
     const completed = normalizedCategories.reduce((sum, category) => sum + category.completed, 0)
     return { total, completed, outstanding: Math.max(total - completed, 0), progress: total ? Math.round((completed / total) * 100) : 0 }
   }, [normalizedCategories])
+  const uploadEvidence = useMemo(
+    () => buildSellerDocumentUploadEvidenceSummary(normalizedCategories.flatMap(category => category.items)),
+    [normalizedCategories],
+  )
   const populatedCategories = useMemo(
     () => normalizedCategories.filter((category) => (category.items || []).length > 0),
     [normalizedCategories],
@@ -49,6 +56,7 @@ export default function LeadDocumentWorkspace({
             {portalAction ? <button type="button" onClick={portalAction} className="inline-flex min-h-10 items-center rounded-[12px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#20364c] hover:border-[#b9cde3]">{portalActionLabel || `Send ${partyLabel} Portal Link`}</button> : null}
           </div>
         </div>
+        {partyType === 'seller' ? <p className="mt-3 text-sm text-[#60758b]">{uploadEvidence.saved} {uploadEvidence.saved === 1 ? 'file' : 'files'} saved · {uploadEvidence.awaitingReview} awaiting review. Saved files count as complete after review.</p> : null}
         <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-[#e6edf5]" aria-label={`${summary.progress}% complete`}><div className="h-full rounded-full bg-[#148a58] transition-all" style={{ width: `${summary.progress}%` }} /></div>
       </header>
 
@@ -109,11 +117,11 @@ export default function LeadDocumentWorkspace({
                         return (
                           <div id={`lead-document-${category.key}-${id}`} tabIndex={-1} key={`${category.key}-${id}`} className="grid gap-3 px-4 py-4 outline-none transition focus:bg-[#f4faf7] sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-4">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-[#20364c]" title={row.label || row.title}>{row.label || row.title}</p>
+                              <div className="flex items-start gap-2"><p className="min-w-0 break-words text-sm font-semibold text-[#20364c]" title={row.label || row.title}>{row.label || row.title}</p></div>
                               <p className="mt-0.5 text-xs text-[#7b8fa5]">{row.required === false ? 'Optional' : 'Required'}{row.uploadedAt ? ` · ${new Date(row.uploadedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</p>
                             </div>
                             <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${status.pillClass}`}>{status.label}</span>
-                            <div className="flex flex-wrap items-center gap-2 lg:justify-end">{renderActions?.(row, category, status)}</div>
+                            <div className="flex flex-wrap items-center justify-end gap-2">{renderActions?.(row, category, status)}{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</div>
                           </div>
                         )
                       })}

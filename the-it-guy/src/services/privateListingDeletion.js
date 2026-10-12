@@ -3,6 +3,9 @@ const text = value => String(value || '').trim()
 export function getListingDeletionBlock(error = {}) {
   const code = text(error.code)
   const message = text(error.message)
+  if (code === 'listing_portal_request_pending') {
+    return { reason: 'pending_portal_request', message: 'A portal request still has an unconfirmed outcome. Check its status before permanently deleting this listing. Its history has been preserved.' }
+  }
   if (code === '23503' || code === 'listing_linked_records' || /linked records.*cannot be permanently deleted|linked workflows.*resolved/i.test(message)) {
     return { reason: 'linked_records', message: 'Permanent deletion is blocked by linked records. You can still withdraw the adverts and archive the listing while keeping its history.' }
   }

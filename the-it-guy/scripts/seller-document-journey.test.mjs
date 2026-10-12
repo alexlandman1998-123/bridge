@@ -368,6 +368,27 @@ async function digitalJourney(branch, mandateType) {
   console.log(`${branch}/${mandateType}: saved → reopened → generated → corrected → downloaded → all signers → reviewed → reopened`)
 }
 
+async function optionalDocumentUploadReview() {
+  const listingId = randomUUID(), requirementId = randomUUID(), otherListingId = randomUUID()
+  await sql('insert into private_listings(id,organisation_id,assigned_agent_id,created_by) values($1,$2,$3,$3),($4,$2,$3,$3)', [listingId, organisation, actor, otherListingId])
+  await sql("insert into private_listing_document_requirements(id,private_listing_id,requirement_key,requirement_name,is_required,status) values($1,$2,'title_deed_copy','Title deed',false,'required')", [requirementId, listingId])
+  const insertFile = (owner = listingId, key = 'title_deed_copy') => sql("insert into private_listing_documents(private_listing_id,requirement_id,document_type,document_name,storage_path,status) values($1,$2,$3,'title.pdf','synthetic/title.pdf','uploaded') returning *", [owner, requirementId, key])
+  await assert.rejects(insertFile(otherListingId), /same listing/)
+  await assert.rejects(insertFile(listingId, 'id_document'), /does not match/)
+  const [file] = await insertFile()
+  const [receipt] = await sql("select bridge_review_private_listing_seller_document_p1_8($1,'approve',null,0) as result", [file.id])
+  assert.equal(receipt.result.document.status, 'approved')
+  assert.equal((await sql('select count(*)::int as n from seller_document_review_events where document_id=$1', [file.id]))[0].n, 1)
+  assert.equal((await sql('select is_required from private_listing_document_requirements where id=$1', [requirementId]))[0].is_required, false)
+  await assert.rejects(sql("select bridge_review_private_listing_seller_document_p1_8($1,'approve',null,0)", [file.id]), /changed by another reviewer/)
+  for (const retired of [{status:'not_applicable'}, {status:'cancelled'}, {generated_from:{archived:true}}]) {
+    await sql('update private_listing_document_requirements set status=$1,generated_from=$2 where id=$3', [retired.status || 'required', encode(retired.generated_from || {}), requirementId])
+    await assert.rejects(insertFile(), /no longer applicable/)
+    await assert.rejects(sql("select bridge_review_private_listing_seller_document_p1_8($1,'start_review',null,1)", [file.id]), /no longer reviewable/)
+  }
+  report.push({route:'optional_document', result:'passed', checks:'upload, review, exact identity, retired guards, review conflict, audit'})
+}
+
 async function installEdge(runtime) {
   const edge = await build({ absWorkingDir: appRoot, entryPoints: ['../supabase/functions/seller-portal-document-signing/index.ts'], bundle: true, platform: 'node', format: 'esm', write: false,
     plugins: [runtime.plugin, { name: 'local-journey-infrastructure', setup(builder) {
@@ -409,6 +430,7 @@ async function fullMandateJourney(runtime, mandateType) {
   const migration = await fs.readFile(new URL('../../supabase/migrations/20261004121736_seller_document_review_runtime_reconciliation.sql', import.meta.url), 'utf8')
   const beforeMigration = await historySnapshot()
   await db.exec(migration)
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), beforeMigration)
   // Simulate renewal: the trusted old wording is archived and the next wording
   // is still pending. Existing requests continue, but old copies cannot start
@@ -476,6 +498,7 @@ async function fullMandateJourney(runtime, mandateType) {
     if (index === 0) {
       const partialHistory = await historySnapshot()
       await db.exec(migration)
+      await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
       assert.deepEqual(await historySnapshot(), partialHistory, 'Forward reconciliation preserves partial signature evidence')
     }
     if (index < recipients.length - 1) {
@@ -486,6 +509,7 @@ async function fullMandateJourney(runtime, mandateType) {
   }
   const signedHistory = await historySnapshot()
   await db.exec(migration)
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), signedHistory, 'Forward reconciliation preserves fully signed mandates awaiting review')
   const preview = await request('preview', { signingDocumentId: id }, true)
   assert.equal(preview.status, 200, JSON.stringify(preview.body))
@@ -496,6 +520,7 @@ async function fullMandateJourney(runtime, mandateType) {
   assert.equal((await request('review', { signingDocumentId: id }, true)).status, 200)
   const completedHistory = await historySnapshot()
   await db.exec(migration)
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), completedHistory, 'Forward reconciliation preserves completed and reviewed mandates')
   assert.deepEqual((await reopened(listingId)).sellerOnboarding.formData.sellerOnboardingManualSigningPack, prepared, 'The signed/reviewed source retains every frozen byte')
   report.push({ branch: 'two_sellers_and_contracting_agencies', mandateType, route: 'digital_pack', fullWording: true, syntheticApprovalOnly: true,
@@ -886,6 +911,8 @@ try {
   await db.exec(uploadBase.slice(start, uploadBase.indexOf('$$;', start) + 3))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20260905090353_document_trust_phase1_seller_atomic_link.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
+  await optionalDocumentUploadReview()
   await mandateCapturePersistence()
   globalThis.__sellerJourneyAdmin = admin
   globalThis.__sellerJourneyEmail = options => {

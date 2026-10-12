@@ -1,14 +1,16 @@
 import React from 'react'
 import { buildSellerDocumentWorkflow } from '../../core/documents/sellerDocumentWorkflow.js'
 
-export default function SellerDocumentWorkflowActions({ item, copy, request, busy = false, onlineEnabled = true, onDownload, onSend, onUpload, onReview, onRefresh, accept = '.pdf,.png,.jpg,.jpeg,.doc,.docx' }) {
+export default function SellerDocumentWorkflowActions({ item, copy, request, busy = false, onlineEnabled = true, onDownload, onSend, onUpload, onReview, onRefresh, accept = '.pdf,.png,.jpg,.jpeg,.doc,.docx', compact = false }) {
   const workflow = buildSellerDocumentWorkflow({ item, copy, request })
   const buttonClass = 'min-h-9 rounded-lg border border-[#cfdceb] bg-white px-3 py-2 text-left text-xs font-semibold text-[#315b7a] disabled:cursor-not-allowed disabled:opacity-50'
   return <div className="w-full min-w-0 space-y-2" aria-label={`${item?.label || copy?.name || 'Seller document'} workflow`}>
+    {!compact ? <>
     <p role="status" className="text-xs font-semibold text-[#243d56]">{workflow.label}</p>
     {workflow.detail ? <p className="text-xs leading-5 text-[#607387]">{workflow.detail}</p> : null}
     <p className="text-xs leading-5 text-[#607387]">{workflow.nextAction}</p>
     {workflow.versionId ? <p className="text-xs text-[#607387]">Document version: {workflow.versionId}</p> : null}
+    </> : null}
     <div className="flex flex-wrap gap-2">
       {copy || workflow.canPrepare ? <button type="button" className={buttonClass} disabled={busy} onClick={onDownload}>{copy ? 'Download reviewed copy' : 'Generate and download'}</button> : null}
       {workflow.canSend ? <button type="button" className={buttonClass} disabled={busy || !onlineEnabled} onClick={onSend}>{workflow.sendLabel}</button> : null}

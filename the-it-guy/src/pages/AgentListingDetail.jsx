@@ -1,5 +1,6 @@
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
+import ListingDocumentActions from '../components/documents/ListingDocumentActions.jsx'
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
 import { buildSellerDisclosurePreparationPatch } from '../lib/sellerAgentAssistedDisclosure.js'
@@ -19,7 +20,7 @@ import ListingChannelManageDialog from '../components/listings/ListingChannelMan
 import ListingRelistDialog from '../components/listings/ListingRelistDialog'
 import ListingDeletionBlockedNotice from '../components/listings/ListingDeletionBlockedNotice'
 import { getListingDeletionBlock } from '../services/privateListingDeletion'
-import { createListingRelistPortalActions, readListingRelistCheckpoint, relistListingChannel } from '../services/listings/listingRelistService'
+import { createListingRelistPortalActions, readListingRelistCheckpoints, relistListingChannels } from '../services/listings/listingRelistService'
 import { saveListingChannelManagement } from '../services/listings/listingChannelManagement'
 import ListingChannelTableHeader from '../components/listings/ListingChannelTableHeader'
 import ListingChannelStatistics from '../components/listings/ListingChannelStatistics'
@@ -106,6 +107,7 @@ import {
 } from '../services/listings/listingPublicationState'
 import {
   buildListingChannelPublicationDisplay,
+  buildInternalListingPublicationDisplay,
   getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
   normalizeListingChannelPublicUrl,
@@ -330,6 +332,7 @@ import { buildListingSellerSetupState } from '../services/listings/listingSeller
 import { buildListingSellerInformationModel } from '../services/listings/listingSellerInformationModel'
 import {
   buildSellerDocumentUploadQueue,
+  buildSellerDocumentUploadEvidenceSummary,
   getSellerDocumentUploadKey,
 } from '../services/listings/listingSellerDocumentUploadModel'
 import {
@@ -1732,11 +1735,12 @@ function getListingDocumentGroupingKey(document = {}) {
 }
 
 function groupListingDocumentsForDisplay(documents = []) {
-  const grouped = LISTING_DOCUMENT_GROUP_CONFIG.map((config) => ({ ...config, documents: [] }))
+  const grouped = LISTING_DOCUMENT_GROUP_CONFIG.filter((config) => config.key !== 'requests').map((config) => ({ ...config, documents: [] }))
   const groupByKey = new Map(grouped.map((group) => [group.key, group]))
   documents.forEach((document) => {
     const key = getListingDocumentGroupingKey(document)
-    const group = groupByKey.get(key) || groupByKey.get('requests')
+    // Keep additional documents visible in Sale without a separate Requests tab.
+    const group = groupByKey.get(key) || groupByKey.get('sales')
     group.documents.push(document)
   })
   return grouped
@@ -3146,7 +3150,7 @@ function FollowUpActionCard({ action, loading = false, onAction, onUpload }) {
           />
         
         </label>
-<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
+</>
       ) : (
         <button
           type="button"
@@ -3770,6 +3774,8 @@ function AgentListingDetail() {
   const [sellerSectionReturnToDocuments, setSellerSectionReturnToDocuments] = useState(false)
   const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
   const [sellerDocumentUploadModalOpen, setSellerDocumentUploadModalOpen] = useState(false)
+  const [newListingDocumentOpen, setNewListingDocumentOpen] = useState(false)
+  const [listingDocumentToRemove, setListingDocumentToRemove] = useState(null)
   const [sellerDocumentUploadProgress, setSellerDocumentUploadProgress] = useState({})
   const [buyerOtpUploadKey, setBuyerOtpUploadKey] = useState('')
   const [sellerPackHandoffAction, setSellerPackHandoffAction] = useState('')
@@ -5468,11 +5474,6 @@ function AgentListingDetail() {
       const snapshot = { ...buildListingPublicationSnapshot({ ...draft, listingStatus: 'active' }), property24ExpiryDate: draft.property24ExpiryDate }
       const history = await getPrivateListingActivity(listingRecord.id, { requireAvailable: true })
       const rows = Array.isArray(history) ? history : history?.activities || []
-      let results = [...previousResults]
-      const show = row => {
-        results = [...results.filter(value => value.channel !== row.channel), row]
-        onProgress?.([...results])
-      }
       const restoreSavedListing = async () => {
         if (restored) return
         const restore = await saveMarketingDraft({ ...draft, listingStatus: 'active', publicationStatus: 'Draft' }, { successMessage: '', listingVisibility: 'private' })
@@ -5480,30 +5481,26 @@ function AgentListingDetail() {
         draft = restore.draft
         restored = true
       }
-      for (const channel of channels) {
-        const previous = previousResults.find(row => row.channel === channel)
-        if (previous?.status === 'completed' || previous?.status === 'uncertain') continue
-        show({ channel, status: 'running', detail: 'Checking the saved listing and existing advert…' })
-        const checkpoint = previous?.checkpoint || readListingRelistCheckpoint(rows, channel)
+      const results = await relistListingChannels({
+        listingId: listingRecord.id, channels, snapshot, previousResults, onProgress,
+        checkpoints: readListingRelistCheckpoints(rows, channels),
+      }, channel => {
         const recordCheckpoint = async metadata => {
           const row = await createPrivateListingActivity({ privateListingId: listingRecord.id, activityType: 'listing_relist_progress', activityTitle: `${channel} relist progress`, visibility: 'internal', metadata })
           if (!row?.id) throw new Error('Relist history could not be saved. Check the advert before trying again.')
         }
         const recordPublication = (stage, reference = '', error = '') => recordListingPublicationStage(channel, stage, draft, { action: 'relist', reference, ...(error ? { error } : {}) })
         const property24Context = () => ({ ...getProperty24ActionContext(), environment: 'production', listingNumber: property24Reference, expiryDate, status: 'Active', photosChanged: true })
-        const outcome = await relistListingChannel({ listingId: listingRecord.id, channel, snapshot, checkpoint }, {
-          beforeSend: restoreSavedListing,
-          recordCheckpoint,
-          recordPublication,
+        return {
+          beforeSend: restoreSavedListing, recordCheckpoint, recordPublication,
           ...createListingRelistPortalActions({
             listingId: listingRecord.id, channel, property24Reference, property24Context,
             callProperty24: callProperty24ListingAction, callPrivateProperty: callPrivatePropertyListingAction,
             property24Message: getProperty24ApiMessage, privatePropertyReference: getPrivatePropertyReferenceFromResponse,
             onPrivatePropertyStatus: setPrivatePropertyStatusCheck,
           }),
-        })
-        show(outcome)
-      }
+        }
+      })
       await loadListingData({ showLoading: false })
       window.dispatchEvent(new Event('itg:listings-updated'))
       return results
@@ -9965,6 +9962,10 @@ function AgentListingDetail() {
     })),
     [sellerDocumentExperience.items, sellerDocumentSlaById],
   )
+  const sellerDocumentUploadEvidence = useMemo(
+    () => buildSellerDocumentUploadEvidenceSummary(sellerDocumentExperienceItems),
+    [sellerDocumentExperienceItems],
+  )
   const sellerDocumentUploadQueue = useMemo(
     () => buildSellerDocumentUploadQueue(sellerDocumentExperienceItems, sellerDocumentUploadProgress),
     [sellerDocumentExperienceItems, sellerDocumentUploadProgress],
@@ -10937,12 +10938,7 @@ function AgentListingDetail() {
       submitted: Boolean(privatePropertyPortalReference || privatePropertyExternalStatus) && ['submitted', 'draft', 'pending'].includes(privatePropertyExternalStatus || privatePropertyStatusKey),
       issueCount: Math.max(privatePropertyReadinessIssues.length, privatePropertyHasPreviewBlockers ? 1 : 0),
     }),
-    buildListingChannelPublicationDisplay({
-      key: 'arch9_catalogue', label: 'Arch9', live: arch9IsPublished, lifecycleOnly: true,
-      publicUrl: arch9PublicListingUrl,
-      publicationState: listingPublicationStates.arch9_catalogue,
-      withdrawn: listingWithdrawnForChannels,
-    }),
+    buildInternalListingPublicationDisplay(listingRecord),
   ]
 
   const overviewPricePosition = useMemo(() => buildListingOverviewPricePosition({
@@ -11658,7 +11654,7 @@ function AgentListingDetail() {
       if (SELLER_DOCUMENT_SELECTION_KEYS[doc.key]) await assertSellerDocumentUploadAvailable(listingRecord.id, doc.key)
       const signingCopy = !doc.uploadExisting && getSellerPhysicalSigningCopy(doc) ? await requireSellerPhysicalSigningCopy(doc) : null
       const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
-        requirementId: doc.requirementId || doc.requirement_id || doc.id || '',
+        requirementId: doc.requirementId || doc.requirement_id || '',
         requirementKey: doc.key || doc.requirementKey || doc.requirement_key || '',
         documentType: doc.key || doc.documentType || doc.document_type || 'seller_document',
         documentCategory: getListingDocumentGroupingKey(doc),
@@ -12977,7 +12973,7 @@ function AgentListingDetail() {
         {renderPrivatePropertyManagePanel()}
         {relistChannel !== null ? <ListingRelistDialog
           channels={[...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
-          initialChannel={relistChannel}
+          initialChannel=""
           expiryDate={getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate) ? addDaysToDateInput('', 90) : formatDateInputValue(marketingDraft.property24ExpiryDate)}
           minExpiryDate={addDaysToDateInput('', 1)}
           onRelist={relistSavedListing}
@@ -15551,7 +15547,7 @@ function AgentListingDetail() {
                               />
                             
                             </label>
-<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
+</>
                           ) : null}
                         </div>
                         {wetInkUploadKind === 'printable_pack' && !wetInkCommercialTermsReady ? (
@@ -16018,8 +16014,8 @@ function AgentListingDetail() {
                           <span className="grid h-full w-full place-items-center rounded-full bg-white text-sm font-semibold text-[#142132]">{100 - listingSellerDocumentProgress.percent}% left</span>
                         </div>
                         <div>
-                          <p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.complete} of {listingSellerDocumentProgress.total} complete</p>
-                          <p className="mt-1 text-xs text-[#607387]">{listingSellerDocumentProgress.outstanding} still outstanding</p>
+                          <p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.complete} of {listingSellerDocumentProgress.total} approved</p>
+                          <p className="mt-1 text-xs text-[#607387]">{sellerDocumentUploadEvidence.saved} saved · {sellerDocumentUploadEvidence.awaitingReview} awaiting review</p>
                         </div>
                       </div>
                     )}
@@ -16062,7 +16058,7 @@ function AgentListingDetail() {
                       {overviewPublishedChannels.map((channel) => (
                         <div key={channel.key} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
                           <span className="font-semibold text-[#243d56]">{channel.label}</span>
-                          <span className="flex items-center gap-2"><StatusPill status={channel.status} label={channel.statusLabel} />{channel.href ? <a href={channel.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#1f4f78]" aria-label={`View ${channel.label} listing`}>View listing <ExternalLink size={12} /></a> : channel.live ? <span className="text-[#9f5f15]">Link needed</span> : null}</span>
+                          <span className="flex items-center gap-2"><StatusPill status={channel.status} label={channel.statusLabel} />{channel.href ? <a href={channel.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#1f4f78]" aria-label={`View ${channel.label} listing`}>View listing <ExternalLink size={12} /></a> : channel.live && !channel.internal ? <span className="text-[#9f5f15]">Link needed</span> : null}</span>
                         </div>
                       ))}
                     </div>
@@ -16499,92 +16495,43 @@ function AgentListingDetail() {
                   onReview={() => openSellerProfileBuilder('Review the historical seller record and confirm the legal owner before requirements change.')}
                 />
                 <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-start gap-4">
-                      <div className="grid h-16 w-16 shrink-0 place-items-center rounded-[22px] bg-[#073f30] text-xl font-semibold text-white shadow-[0_14px_28px_rgba(7,63,48,0.18)]">
+                      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] bg-[#073f30] text-lg font-semibold text-white">
                         {sellerProfile.initials}
                       </div>
                       <div className="min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => navigateFromListing('/listings')}
-                          className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#5f7894] hover:text-[#1f4f78]"
-                        >
-                          <ArrowLeft size={13} />
-                          Back to Listings
-                        </button>
+                        <button type="button" onClick={() => navigateFromListing('/listings')} className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#5f7894] hover:text-[#1f4f78]"><ArrowLeft size={13} />Back to Listings</button>
                         <h2 className="break-words text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{presentSellerWorkspaceValue(sellerProfile.name, 'Seller not provided')}</h2>
                         <p className="mt-1 text-sm font-semibold text-[#607387]">{presentSellerWorkspaceValue(sellerProfile.type)}</p>
                         <p className="mt-2 break-words text-sm leading-5 text-[#425970]">{presentSellerWorkspaceValue(sellerProfile.propertyAddress)}</p>
                       </div>
                     </div>
-                    <div className="grid min-w-0 gap-5 sm:grid-cols-3 xl:min-w-[620px]">
-                      {[
-                        { label: 'Mandate type', value: sellerProfile.mandateType },
-                        { label: 'Asking price', value: sellerProfile.askingPrice },
-                        { label: 'Seller onboarding', value: `${sellerProfile.completionPercent}% complete` },
-                      ].map((item) => (
-                        <div key={item.label} className="min-w-0 border-t border-[#e5edf6] pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8294aa]">{item.label}</p>
-                          <p className="mt-1 break-words text-base font-semibold leading-6 text-[#142132]">{presentSellerWorkspaceValue(item.value)}</p>
-                        </div>
-                      ))}
+                    <div className="shrink-0">
+                      <ListingDocumentActions label="Seller profile">
+                        <Button type="button" size="sm" variant="secondary" onClick={continueSellerOnboardingFromWorkspace}><UserRound size={15} />Continue Seller Onboarding</Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={openSellerPortalActivationModal} disabled={sellerOwnershipUnidentified || sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}><Link2 size={15} />{sellerPortalActivationSending ? 'Sending...' : 'Send Portal Link'}</Button>
+                        <div className="my-2 h-px bg-[#eef3f8]" />
+                        <Button type="button" size="sm" variant="secondary" onClick={openSellerInformationEditor}><Pencil size={15} />Change ownership details</Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={handleEditSellerProfile}><Pencil size={15} />Edit contact</Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={handleDownloadSellerProfilePdf}><Download size={15} />Download PDF</Button>
+                        <div className="my-2 h-px bg-[#eef3f8]" />
+                        <Button type="button" size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}><ShieldCheck size={15} />{resettingSellerPortalPassword ? 'Resetting...' : 'Reset portal password'}</Button>
+                      </ListingDocumentActions>
                     </div>
                   </div>
-                  <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="h-2.5 overflow-hidden rounded-full bg-[#e5edf6]">
-                        <div className="h-full rounded-full bg-[#168452]" style={{ width: `${sellerProfile.completionPercent}%` }} />
+                  <div className="mt-5 grid gap-4 border-t border-[#e5edf6] pt-4 sm:grid-cols-3">
+                    {[
+                      { label: 'Mandate type', value: sellerProfile.mandateType },
+                      { label: 'Asking price', value: sellerProfile.askingPrice },
+                      { label: 'Seller onboarding', value: `${sellerProfile.completionPercent}% complete` },
+                    ].map(item => (
+                      <div key={item.label} className="min-w-0">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8294aa]">{item.label}</p>
+                        <p className="mt-1 break-words text-base font-semibold leading-6 text-[#142132]">{presentSellerWorkspaceValue(item.value)}</p>
+                        {item.label === 'Seller onboarding' ? <div role="progressbar" aria-label="Seller onboarding completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, Number(sellerProfile.completionPercent) || 0))} className="mt-2 h-1.5 max-w-64 overflow-hidden rounded-full bg-[#e5edf6]"><div className="h-full rounded-full bg-[#168452] transition-all" style={{ width: `${Math.min(100, Math.max(0, Number(sellerProfile.completionPercent) || 0))}%` }} /></div> : null}
                       </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <Button type="button" size="sm" variant="secondary" onClick={openSellerInformationEditor}>
-                        <Pencil size={15} />
-                        Change ownership details
-                      </Button>
-                      <Button size="sm" onClick={continueSellerOnboardingFromWorkspace}>
-                        <UserRound size={15} />
-                        Continue Seller Onboarding
-                      </Button>
-                      <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerOwnershipUnidentified || sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
-                        <Link2 size={15} />
-                        {sellerPortalActivationSending ? 'Sending...' : 'Send Portal Link'}
-                      </Button>
-                      <details className="group relative">
-                        <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
-                          <MoreVertical size={15} />
-                          Actions
-                        </summary>
-                        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
-                          <button
-                            type="button"
-                            onClick={handleEditSellerProfile}
-                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
-                          >
-                            <Pencil size={15} />
-                            Edit contact
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDownloadSellerProfilePdf}
-                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
-                          >
-                            <Download size={15} />
-                            Download PDF
-                          </button>
-                          <div className="my-1 h-px bg-[#eef3f8]" />
-                          <button
-                            type="button"
-                            onClick={() => void handleResetSellerPortalPasswordAndResend()}
-                            disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}
-                            className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <ShieldCheck size={15} />
-                            {resettingSellerPortalPassword ? 'Resetting...' : 'Reset portal password'}
-                          </button>
-                        </div>
-                      </details>
-                    </div>
+                    ))}
                   </div>
                 </article>
 
@@ -16602,7 +16549,6 @@ function AgentListingDetail() {
                   </article>
                 ) : null}
 
-                <ListingSellerCollaborationPanel listing={listingRecord} onChanged={() => loadListingData({ showLoading: false })} />
 
                 {sellerContactEditorOpen ? (
                   <form className="rounded-[24px] border border-[#bcd5ea] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]" onSubmit={handleSaveSellerContact}>
@@ -16896,13 +16842,16 @@ function AgentListingDetail() {
             onOpenLead={leadId => navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)}
           /> : null}
 
+          {sellerWorkspaceTab === 'seller' && !sellerOwnershipUnidentified ? <ListingSellerCollaborationPanel listing={listingRecord} onChanged={() => loadListingData({ showLoading: false })} /> : null}
+
           {sellerWorkspaceTab === 'marketing' && listingSupportingDataLoading ? <p role="status" className="p-5 text-sm text-[#607387]">Loading marketing details…</p> : null}
           {sellerWorkspaceTab === 'marketing' && listingSupportingDataReady ? renderMarketingConsole() : null}
 
           {sellerWorkspaceTab === 'documents' && listingSupportingDataLoading ? <p role="status" className="p-5 text-sm text-[#607387]">Loading seller documents…</p> : null}
           {sellerWorkspaceTab === 'documents' && listingSupportingDataReady ? (
             <section className="space-y-5">
-          <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" />
+          <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open={newListingDocumentOpen} onClose={() => setNewListingDocumentOpen(false)} />
+          {listingDocumentToRemove ? <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open initialRequirementId={listingDocumentToRemove.canonicalRequirementInstanceId || listingDocumentToRemove.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.id || listingDocumentToRemove.requirementId || listingDocumentToRemove.requirement_id || listingDocumentToRemove.id || listingDocumentToRemove.key} documentLabel={listingDocumentToRemove.label} onClose={() => setListingDocumentToRemove(null)} /> : null}
               {sellerDocumentSource?.requirementState?.provisional ? (
                 <div className="flex items-start gap-3 rounded-[18px] border border-[#f0d7a8] bg-[#fffaf0] px-4 py-3 text-[#815919]" role="status">
                   <CircleAlert size={18} className="mt-0.5 shrink-0" />
@@ -16928,7 +16877,6 @@ function AgentListingDetail() {
                     </span>
                     <div>
                       <h2 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">Seller Documents</h2>
-                      <p className="mt-1 text-sm leading-6 text-[#607387]">Collect, review and request documents required for this listing.</p>
                     </div>
                   </div>
                 </div>
@@ -16938,7 +16886,7 @@ function AgentListingDetail() {
                     {listingSellerDocumentProgress.percent === null ? <span className="grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-xs font-bold text-[#607387]">—</span> : (
                       <span className="relative grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-[0.68rem] font-bold text-[#1f7d44]" role="progressbar" aria-label="Seller document completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={listingSellerDocumentProgress.percent}>{listingSellerDocumentProgress.percent}%</span>
                     )}
-                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Setup needed' : `${listingSellerDocumentSummary.complete} / ${listingSellerDocumentSummary.total}`}</p><p className="text-xs text-[#607387]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Checklist provisional' : 'complete'}</p></div>
+                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Setup needed' : `${listingSellerDocumentSummary.complete} / ${listingSellerDocumentSummary.total}`}</p><p className="text-xs text-[#607387]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Checklist provisional' : 'approved'}</p></div>
                   </div>
                   <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
                     <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#fff8ea] text-[#a56b14]"><Send size={18} /></span>
@@ -16949,6 +16897,8 @@ function AgentListingDetail() {
                     <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.readyForReview}</p><p className="text-xs text-[#607387]">ready for review</p></div>
                   </div>
                 </div>
+
+                <p className="border-t border-[#edf2f7] px-5 py-3 text-sm text-[#607387]">{sellerDocumentUploadEvidence.saved} {sellerDocumentUploadEvidence.saved === 1 ? 'file' : 'files'} saved · {sellerDocumentUploadEvidence.awaitingReview} awaiting review. Saved files count as approved after review.</p>
 
                 <nav className="flex gap-7 overflow-x-auto border-t border-[#edf2f7] px-5" aria-label="Listing document categories" role="tablist">
                   {listingDocumentGroups.map((group, groupIndex) => {
@@ -16981,7 +16931,7 @@ function AgentListingDetail() {
                         }}
                         className={`relative inline-flex min-h-[52px] shrink-0 items-center gap-2 text-sm font-semibold transition ${isActive ? 'text-[#173f63]' : 'text-[#607387] hover:text-[#243d56]'}`}
                       >
-                        {group.key === 'sales' ? 'Sale' : group.key === 'requests' ? 'Requests' : group.label.replace(' Documents', '')}
+                        {group.key === 'sales' ? 'Sale' : group.label.replace(' Documents', '')}
                         <span className="rounded-full bg-[#f1f5f8] px-2 py-0.5 text-[0.7rem] text-[#607387]">{completeCount}/{group.documents.length}</span>
                         {isActive ? <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#2f6f9f]" /> : null}
                       </button>
@@ -17043,7 +16993,6 @@ function AgentListingDetail() {
               {activeListingDocumentGroup ? (() => {
                 const group = activeListingDocumentGroup
                 const GroupIcon = group.icon
-                const completeCount = group.documents.filter(isListingDocumentComplete).length
                 const requestableCount = group.documents.filter((document) => resolveListingSellerDocumentActions(document).canRequest).length
                 return (
                   <article
@@ -17065,9 +17014,10 @@ function AgentListingDetail() {
                         </div>
                       </div>
                       <div className="mr-5 mt-4 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
-                          {completeCount} of {group.documents.length} complete
-                        </span>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setNewListingDocumentOpen(true)}>
+                          <Upload size={14} />
+                          Upload/Request New Document
+                        </Button>
                         {requestableCount ? (
                           <Button type="button" size="sm" variant="secondary" onClick={() => void handleSellerDocumentGroupRequest(group)} disabled={Boolean(sellerDocumentWorkflowAction)}>
                             {sellerDocumentWorkflowAction === `${group.key}:request-group` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
@@ -17079,8 +17029,8 @@ function AgentListingDetail() {
 
                     {group.documents.length ? (
                       <div className="border-t border-[#e8eef4]">
-                        <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(150px,0.8fr)_minmax(145px,0.65fr)_minmax(260px,1fr)] gap-4 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] lg:grid">
-                          <span>Document</span><span>Source</span><span>Status</span><span className="text-right">Actions</span>
+                        <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_154px] gap-4 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] lg:grid">
+                          <span>Document</span><span>Source</span><span>Status</span><span>Activity</span><span className="text-right">Actions</span>
                         </div>
                         {group.documents.map((doc) => {
                           const baseStatus = resolveListingSellerDocumentStatus(doc)
@@ -17092,13 +17042,16 @@ function AgentListingDetail() {
                           const portalDocumentKey = physicalCopy?.key || physicalCopy?.requirementKey || doc.key
                           const portalRequest = physicalCopy ? getSellerDocumentSigningRequest(sellerPortalSigningRequests, portalDocumentKey, physicalCopy.versionId) : null
                           const workflow = buildSellerDocumentWorkflow({ item: doc, copy: physicalCopy, request: portalRequest })
-                          const status = SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? { ...baseStatus, label: workflow.label } : baseStatus
+                          const status = SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? { ...baseStatus, label: workflow.state === 'not_prepared' ? 'Not prepared' : workflow.label } : baseStatus
                           return (
-                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 lg:min-h-[72px] lg:grid-cols-[minmax(0,1.45fr)_minmax(150px,0.8fr)_minmax(145px,0.65fr)_minmax(260px,1fr)] lg:items-center lg:gap-4">
+                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 lg:min-h-[72px] lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_154px] lg:items-center lg:gap-4">
                             <div className="flex min-w-0 items-start gap-3">
                               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#2f628d]"><FileText size={16} /></span>
                               <div className="min-w-0">
-                                <p className="break-words text-sm font-semibold leading-5 text-[#243d56]">{doc.label}</p>
+                                <div className="flex items-start gap-2">
+                                  <p className="min-w-0 break-words text-sm font-semibold leading-5 text-[#243d56]">{doc.label}</p>
+
+                                </div>
                                 <p className="mt-0.5 text-xs leading-5 text-[#74879d]">{doc.required ? 'Required seller document' : 'Optional seller document'}</p>
                                 {doc.reviewSla ? (() => {
                                   const sla = getSellerDocumentSlaPresentation(doc.reviewSla)
@@ -17117,12 +17070,13 @@ function AgentListingDetail() {
                             </div>
                             <div>
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.classes}`}>{status.label}</span>
-                              <p className="mt-1.5 text-[0.7rem] font-semibold text-[#425970]">Next: {activity.nextActorLabel}</p>
-                              <p className="mt-0.5 text-[0.7rem] leading-4 text-[#74879d]">
-                                {activity.lastEventLabel}{activity.lastEventAt ? ` · ${formatDate(activity.lastEventAt)}` : ''}
-                              </p>
                             </div>
-                            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                            <div className="text-xs leading-5 text-[#607387]">
+                              <span className="font-semibold text-[#425970] lg:hidden">Activity: </span>
+                              {activity.lastEventLabel}{activity.lastEventAt ? <span className="block text-[#74879d]">{formatDate(activity.lastEventAt)}</span> : null}
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <ListingDocumentActions label={doc.label}>
                               {actions.canRequest ? (
                                 <Button type="button" size="sm" onClick={() => void handleSellerDocumentRequest(doc)} disabled={Boolean(sellerDocumentWorkflowAction)}>
                                   {sellerDocumentWorkflowAction === `${doc.key || doc.id}:request` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
@@ -17149,7 +17103,7 @@ function AgentListingDetail() {
                                   />
                                 
                                 </label>
-<span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
+</>
                               ) : null}
                               {!physicalCopy && (actions.canOpen || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html))) ? (
                                 <button
@@ -17163,6 +17117,7 @@ function AgentListingDetail() {
                                 </button>
                               ) : null}
                               {SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? <SellerDocumentWorkflowActions
+                                compact
                                 item={doc} copy={physicalCopy} request={portalRequest}
                                 busy={Boolean(sellerPortalSigningBusy || sellerDocumentUploadKey || openingSellerDocumentKey)} onlineEnabled={SELLER_PORTAL_SIGNING_ENABLED}
                                 onDownload={() => physicalCopy ? void handleOpenSellerDocument(doc) : prepareSellerDocumentAction(portalDocumentKey, 'manual_upload')}
@@ -17171,6 +17126,7 @@ function AgentListingDetail() {
                                 onReview={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)}
                                 onRefresh={() => void refreshSellerDocumentSigning()}
                               /> : null}
+                              </ListingDocumentActions>
                               <SellerDocumentReviewActions
                                 item={doc}
                                 busyAction={sellerDocumentWorkflowAction}
@@ -17180,6 +17136,7 @@ function AgentListingDetail() {
                                 requireSignedEvidenceCheck={Boolean(SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey])}
                                 compact
                               />
+                              <button type="button" aria-label={`Mark ${doc.label} as not relevant`} title="Not relevant to this listing" disabled={Boolean(sellerDocumentWorkflowAction || sellerDocumentUploadKey)} onClick={() => setListingDocumentToRemove(doc)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white text-[#71849a] transition hover:border-[#efcbc8] hover:bg-red-50 hover:text-[#963d35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#963d35] disabled:opacity-50"><X size={15} /></button>
                             </div>
                           </div>
                           )
@@ -17332,7 +17289,8 @@ function AgentListingDetail() {
 
       {activeTab === 'documents' && listingSupportingDataReady ? (
         <section className="space-y-5">
-          <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" />
+          <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open={newListingDocumentOpen} onClose={() => setNewListingDocumentOpen(false)} />
+          {listingDocumentToRemove ? <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open initialRequirementId={listingDocumentToRemove.canonicalRequirementInstanceId || listingDocumentToRemove.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.id || listingDocumentToRemove.requirementId || listingDocumentToRemove.requirement_id || listingDocumentToRemove.id || listingDocumentToRemove.key} documentLabel={listingDocumentToRemove.label} onClose={() => setListingDocumentToRemove(null)} /> : null}
           {sellerDocumentSource?.requirementState?.provisional ? (
             <section data-testid="listing-seller-document-provisional-state" className="flex items-start justify-between gap-4 rounded-[20px] border border-[#f0d7a8] bg-[#fffaf0] p-4 text-[#815919]" role="status">
               <div className="flex items-start gap-3">

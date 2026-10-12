@@ -121,7 +121,7 @@ export function resolveListingSellerDocumentActions(document = {}) {
     canRequest: !document.sharedRequirement && status === 'not_requested' && Boolean(requirementId),
     canRemind: !document.sharedRequirement && ['awaiting_seller', 'action_required'].includes(status) && Boolean(requirementId) && !hasFile,
     canReview: !document.sharedRequirement && status === 'ready_for_review' && Boolean(documentId),
-    canUpload: document?.canUpload !== false,
+    canUpload: document?.canUpload !== false && document?.can_upload !== false && document?.applicable !== false && !['not_applicable', 'cancelled'].includes(String(document?.status || '').toLowerCase()),
     canOpen,
     uploadLabel: hasFile ? 'Replace' : 'Upload',
   }

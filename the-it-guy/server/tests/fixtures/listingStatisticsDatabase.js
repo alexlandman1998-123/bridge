@@ -44,6 +44,21 @@ export async function createListingStatisticsDatabase() {
   // Defaults simplify old aggregate-only fixtures; retrieval writes every field.
   await db.exec("alter table property24_listing_statistics_daily alter agency_id set default 100, alter listing_number set default 100, alter source_api_version set default 'v55'")
   await db.exec(await readFile(new NodeURL('../../../../supabase/migrations/20261008113615_listing_overview_channel_statistics.sql', import.meta.url), 'utf8'))
+  await db.exec(`
+    create table website_partner_listing_grants(id uuid primary key,website_site_id uuid,source_organisation_id uuid,enabled boolean);
+    create table website_partner_listing_publications(grant_id uuid,website_site_id uuid,listing_id uuid,status text);
+    create table website_partner_lead_submissions(id uuid primary key default gen_random_uuid(),grant_id uuid,website_site_id uuid,source_organisation_id uuid,listing_id uuid,status text,created_at timestamptz default now());
+    create table website_domains(website_site_id uuid,hostname text,status text,is_primary boolean,created_at timestamptz default now());
+    alter table website_analytics_daily add column page_path text not null default '/fixture',add column dimension_key text not null default '';
+    create unique index analytics_event_identity on website_analytics_daily(website_site_id,event_date,event_type,page_path,dimension_key);
+    grant select on website_domains,website_sites,website_listing_publications,website_partner_listing_grants,website_partner_listing_publications,private_listings to service_role;
+    grant select,insert,update on website_analytics_daily to service_role;
+  `)
+  const analyticsSource = await readFile(new NodeURL('../../../../supabase/migrations/20261003132222_home_seekers_recruitment_intake.sql', import.meta.url), 'utf8')
+  const writerStart = analyticsSource.indexOf('create or replace function public.website_record_analytics_event(')
+  await db.exec(analyticsSource.slice(writerStart,analyticsSource.indexOf('$$;',writerStart)+3))
+  await db.exec('revoke all on function website_record_analytics_event(text,text,text,uuid) from public,anon,authenticated; grant execute on function website_record_analytics_event(text,text,text,uuid) to service_role;')
+  await db.exec(await readFile(new NodeURL('../../../../supabase/migrations/20261012110258_listing_website_partner_statistics.sql', import.meta.url), 'utf8'))
   await db.query("select set_config('request.jwt.claim.sub',$1,false)", [user])
   return db
 }

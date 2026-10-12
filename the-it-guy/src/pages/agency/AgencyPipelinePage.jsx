@@ -15,6 +15,7 @@ import { sastDateKey, sastDayStart, sastWeekStart, sastMonthStart, sastParts, sa
 import { proposeCalendarAppointmentReplacement } from '../../services/appointmentRescheduleService.js'
 import { resolveAppointmentSchedule } from '../../core/appointments/appointmentTime.js'
 import usePipelineAppointments from '../../hooks/usePipelineAppointments'
+import useSellerOnboardingCompletionPolling from '../../hooks/useSellerOnboardingCompletionPolling'
 import { prepareSellerMandateReviewPreview } from '../../lib/sellerMandateReviewPreview.js'
 import SellerMandateDetailsEditor from '../../components/documents/SellerMandateDetailsEditor.jsx'
 import { getSellerMandatePreparationIssues, readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
@@ -15912,49 +15913,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setFinanceReadinessForm(financeFormFromSummary(selectedLeadFinanceReadinessSummary))
   }, [selectedLead, selectedLead?.leadId, selectedLeadIsSeller, selectedLeadFinanceReadinessSummary])
 
-  useEffect(() => {
-    if (!selectedLead || !selectedLeadIsSeller || !organisationId) return
-    if (
-      isSellerOnboardingSending ||
-      sellerLeadDocumentUploadingKey ||
-      sellerLeadMandateUploading ||
-      sellerPackUploadingKey ||
-      formalValuationUploading
-    ) return
-    if (selectedLeadOnboardingCompleted) return
-    const onboardingToken = normalizeText(
-      selectedLead?.sellerOnboardingToken ||
-        selectedLead?.seller_onboarding_token ||
-        selectedLead?.sellerOnboarding?.token ||
-        selectedLead?.seller_onboarding?.token,
-    )
-    // Some seller leads receive their listing relationship through the loaded
-    // private-listing record rather than the CRM lead projection. Use either
-    // source so a submitted onboarding is always reconciled back to the lead.
-    const linkedListingId = normalizeText(
-      selectedLead?.listingId ||
-        selectedLead?.listing_id ||
-        selectedLead?.privateListingId ||
-        selectedLead?.private_listing_id ||
-        selectedLeadLinkedListing?.id ||
-        selectedLeadLinkedListing?.listingId ||
-        selectedLeadLinkedListing?.listing_id,
-    )
-    if ((!onboardingToken && !linkedListingId) || !isSupabaseConfigured) return
+  const onboardingToken = normalizeText(
+    selectedLead?.sellerOnboardingToken ||
+      selectedLead?.seller_onboarding_token ||
+      selectedLead?.sellerOnboarding?.token ||
+      selectedLead?.seller_onboarding?.token,
+  )
+  // Some seller leads receive their listing relationship through the loaded
+  // private-listing record rather than the CRM lead projection. Use either
+  // source so a submitted onboarding is always reconciled back to the lead.
+  const linkedListingId = normalizeText(
+    selectedLead?.listingId ||
+      selectedLead?.listing_id ||
+      selectedLead?.privateListingId ||
+      selectedLead?.private_listing_id ||
+      selectedLeadLinkedListing?.id ||
+      selectedLeadLinkedListing?.listingId ||
+      selectedLeadLinkedListing?.listing_id,
+  )
+  const sellerOnboardingPollingEnabled = Boolean(
+    selectedLead && selectedLeadIsSeller && organisationId && isSupabaseConfigured &&
+    (onboardingToken || linkedListingId) && !selectedLeadOnboardingCompleted &&
+    !isSellerOnboardingSending && !sellerLeadDocumentUploadingKey &&
+    !sellerLeadMandateUploading && !sellerPackUploadingKey && !formalValuationUploading
+  )
 
-    let cancelled = false
-    let pollTimer = null
-    let reconciliationInFlight = false
-    const clearPollTimer = () => {
-      if (pollTimer && typeof window !== 'undefined') {
-        window.clearTimeout(pollTimer)
-      }
-      pollTimer = null
-    }
-
-    async function reconcileSellerOnboardingCompletion() {
-      if (reconciliationInFlight || cancelled) return
-      reconciliationInFlight = true
+  useSellerOnboardingCompletionPolling({
+    enabled: sellerOnboardingPollingEnabled,
+    pollingKey: JSON.stringify([organisationId, selectedLead?.leadId, linkedListingId, onboardingToken]),
+    intervalMs: SELLER_ONBOARDING_COMPLETION_POLL_MS,
+    onPoll: async ({ signal, isCurrent }) => {
       try {
         let onboardingContext = null
         if (supabase && linkedListingId) {
@@ -15963,6 +15951,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
             .eq('private_listing_id', linkedListingId)
             .maybeSingle()
+            .abortSignal(signal)
           if (!onboardingQuery.error) {
             onboardingContext = {
               onboarding: onboardingQuery.data,
@@ -15984,6 +15973,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             throw onboardingQuery.error
           }
         }
+        if (!isCurrent()) return false
         if (!onboardingContext && onboardingToken) {
           onboardingContext = await getSellerOnboardingByToken(onboardingToken, {
             includeRequirementsAndDocuments: false,
@@ -16004,16 +15994,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             hasFormData: false,
           },
         )
-        if (cancelled) return
-        if (!explicitSubmissionEvidence || !['completed', 'submitted'].includes(hydratedStatus)) {
-          if (typeof window !== 'undefined' && !cancelled) {
-            clearPollTimer()
-            pollTimer = window.setTimeout(() => {
-              void reconcileSellerOnboardingCompletion()
-            }, SELLER_ONBOARDING_COMPLETION_POLL_MS)
-          }
-          return
-        }
+        if (!isCurrent()) return false
+        if (!explicitSubmissionEvidence || !['completed', 'submitted'].includes(hydratedStatus)) return true
 
         const completedAt =
           hydratedOnboarding?.completedAt ||
@@ -16067,57 +16049,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           })
         }
 
-        if (typeof window !== 'undefined') {
-          void reloadRecords(organisationId)
-        }
+        void reloadRecords(organisationId)
+        return false
       } catch (syncError) {
-        if (!cancelled) {
-          console.warn('[PIPELINE] seller onboarding completion reconciliation failed', syncError)
-          if (typeof window !== 'undefined') {
-            clearPollTimer()
-            pollTimer = window.setTimeout(() => {
-              void reconcileSellerOnboardingCompletion()
-            }, SELLER_ONBOARDING_COMPLETION_POLL_MS)
-          }
-        }
-      } finally {
-        reconciliationInFlight = false
+        if (isCurrent()) console.warn('[PIPELINE] seller onboarding completion reconciliation failed', syncError)
+        return true
       }
-    }
-
-    const reconcileWhenVisible = () => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        void reconcileSellerOnboardingCompletion()
-      }
-    }
-
-    void reconcileSellerOnboardingCompletion()
-    if (typeof window !== 'undefined') {
-      window.addEventListener('focus', reconcileWhenVisible)
-      document.addEventListener('visibilitychange', reconcileWhenVisible)
-    }
-    return () => {
-      cancelled = true
-      clearPollTimer()
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('focus', reconcileWhenVisible)
-        document.removeEventListener('visibilitychange', reconcileWhenVisible)
-      }
-    }
-  }, [
-    currentAgent,
-    formalValuationUploading,
-    isSellerOnboardingSending,
-    organisationId,
-    selectedLead,
-    selectedLeadIsSeller,
-    selectedLeadLinkedListing,
-    selectedLeadOnboardingCompleted,
-    sellerLeadDocumentUploadingKey,
-    sellerLeadMandateUploading,
-    sellerPackUploadingKey,
-    reloadRecords,
-  ])
+    },
+  })
 
   const selectedLeadMandateResolvedState = useMemo(() => {
     const packetState = normalizeKey(mandatePacketStatus?.state)
@@ -26544,7 +26483,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const requirementKey = normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentRow?.key) ||
         SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
       const uploadedDocument = await uploadPrivateListingDocument(targetListingId, file, {
-        requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id || documentRow?.id),
+        requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id),
         requirementKey,
         documentType: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
         documentCategory: normalizeText(documentRow?.category || documentRow?.documentCategory || documentRow?.document_category) || 'legal',
@@ -26598,6 +26537,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       }).catch(() => null)
 
+      const refreshedListing = await getPrivateListing(targetListingId, { includeRequirementsAndDocuments: true }).catch(() => null)
+      if (refreshedListing) setSelectedLeadHydratedListing({ ...refreshedListing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
       setMessage('Mandate uploaded. Review the signed evidence in Documents before marking it complete.')
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the signed mandate right now.')
@@ -26746,7 +26687,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const uploadedDocument = await withPipelineTimeout(
         uploadPrivateListingDocument(targetListingId, file, {
-          requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id || documentRow?.id),
+          requirementId: normalizeText(documentRow?.requirementId || documentRow?.requirement_id),
           requirementKey: normalizeText(documentRow?.requirementKey || documentRow?.requirement_key || documentKey),
           documentType: normalizeText(documentRow?.documentType || documentRow?.document_type || documentKey) || 'seller_document',
           documentCategory: normalizeText(
@@ -26775,6 +26716,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...documentRow,
         id: normalizeText(uploadedDocument?.id || documentRow?.id || uploadKey),
         key: documentKey || documentRow?.key || uploadKey,
+        requirementId: normalizeText(uploadedDocument?.requirement_id || uploadedDocument?.requirementId),
+        requirement_id: normalizeText(uploadedDocument?.requirement_id || uploadedDocument?.requirementId),
         requirementKey: normalizeText(uploadedDocument?.requirementKey || documentRow?.requirementKey || documentRow?.requirement_key || documentKey),
         requirement_key: normalizeText(uploadedDocument?.requirementKey || documentRow?.requirement_key || documentRow?.requirementKey || documentKey),
         documentType: normalizeText(uploadedDocument?.document_type || uploadedDocument?.documentType || documentRow?.documentType || documentRow?.document_type || documentKey),
@@ -26827,7 +26770,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: targetListingId,
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      if (getSellerPhysicalSigningCopy(documentRow)) {
+      {
         const refreshedListing = await getPrivateListing(targetListingId, { includeRequirementsAndDocuments: true }).catch(() => null)
         if (refreshedListing) setSelectedLeadHydratedListing({ ...refreshedListing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
       }
@@ -40527,6 +40470,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <Suspense fallback={<div className="rounded-[20px] border border-[#dce7f2] bg-white p-6"><div className="h-4 w-48 animate-pulse rounded-full bg-slate-200" /><div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" /></div>}>
                     <DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead'} contextId={selectedLeadRecordId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} />
                     <LeadDocumentWorkspace
+                      removalContext={{ client: isSupabaseConfigured ? supabase : null, contextType: selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead', contextId: selectedLeadRecordId, party: selectedLeadIsSeller ? 'seller' : 'buyer' }}
                       partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
                       partyName={selectedLeadDisplayName}
                       categories={selectedLeadIsSeller ? selectedSellerDocumentCategories : selectedBuyerDocumentCategories}

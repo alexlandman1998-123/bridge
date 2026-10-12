@@ -145,3 +145,12 @@ assert.deepEqual(filterRentalListingIndexRows(collectionRows, { status: 'current
 assert.deepEqual(filterRentalListingIndexRows(collectionRows, { status: 'previous' }).map(row => row.id), ['archive', 'withdrawn', 'let'])
 assert.equal(summarizeRentalListingIndexRows(collectionRows).current, 2)
 assert.equal(summarizeRentalListingIndexRows(collectionRows).previous, 3)
+
+// Portal publication is independent of a landlord's unfinished mandate.
+for (const portalState of [{property24_status:'published'}, {private_property_status:'published'}]) {
+  const row = buildRentalListingIndexRow({id:'live-intake',listing_status:'seller_lead',mandate_status:'pending',...portalState})
+  assert.equal(row.isCaptureDraft, false)
+  assert.equal(row.statusGroup, 'published')
+  assert.equal(row.mandateStatus, 'pending')
+}
+assert.equal(buildRentalListingIndexRow({id:'unpublished-intake',listing_status:'seller_lead'}).isCaptureDraft, true)

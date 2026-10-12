@@ -70,6 +70,12 @@ test('stale callers fail before attempting any database work', async () => {
   }
 })
 
+const buildPrivateListingDocumentUploadPreparation = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'buildPrivateListingDocumentUploadPreparation')})`, {
+  syncSellerDocumentRequirementsFromEngine,
+  normalizeCompatibilityKey: value => String(value || '').trim().toLowerCase(),
+  getPrivateListingDocumentMatchAliases: key => getSellerBasePackAliases(key).length ? getSellerBasePackAliases(key) : [key],
+})
+
 test('retired function invocation never reaches a network client', async () => {
   const policy = await import('../src/core/documents/documentGeneratorRetirement.js')
   const invoke = vm.runInNewContext(`(${functionSource('../src/lib/supabaseClient.js', 'invokeEdgeFunction')})`, policy)
@@ -99,6 +105,7 @@ test('signed mandate and OTP uploads persist files and requirement links with no
     let promotedDocumentId
     const requirement = { id: 'requirement-1', requirement_key: documentType }
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      buildPrivateListingDocumentUploadPreparation,
       ...uploadRecoveryFixture,
       requireClient: () => ({ rpc: async (name, parameters) => {
         assert.equal(name, 'bridge_promote_private_listing_document_row')
@@ -160,6 +167,7 @@ test('seller upload preflight refuses unreadable or missing requirements before 
   for (const unreadable of [false, true]) {
     let storageCalls = 0
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      buildPrivateListingDocumentUploadPreparation,
       ...uploadRecoveryFixture,
       requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }),
       normalizeUuid: value => String(value || ''), normalizeCompatibilityKey: value => String(value || ''),
@@ -199,6 +207,7 @@ test('listing intake mandate evidence persists without a checklist and never com
     let checklistWrites = 0
     let mandateWrites = 0
     const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      buildPrivateListingDocumentUploadPreparation,
       ...uploadRecoveryFixture,
       requireClient: () => ({ rpc: async () => ({ data: { promotion_status: 'no_transaction', pending_transaction_promotion: true } }) }),
       getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid: value => String(value || ''),
@@ -253,6 +262,7 @@ test('mandate and FICA uploads prepare a missing saved-model target before Stora
       const stored = ['existing', 'existing_alias', 'retired', 'retired_alias'].includes(mode) ? [signingRequest] : [{ id: staleId, requirement_key: 'seller_onboarding_submission', status: 'requested', is_required: true }]
       const listing = { id: listingId, listingStatus: mode === 'early_intake' ? 'seller_lead' : 'onboarding_completed', sellerType: mode === 'unknown_owner' ? 'unknown' : 'company' }
       const upload = vm.runInNewContext(`(${functionSource('../src/services/privateListingService.js', 'uploadPrivateListingDocument')})`, {
+      buildPrivateListingDocumentUploadPreparation,
         requireClient: () => ({}), getCurrentUser: async () => ({ id: 'agent' }), normalizeUuid,
         normalizeCompatibilityKey: normalizeKey, normalizeText: normalizeKey,
         validateDocumentUploadFile: file => ({ safeName: file.name }),
@@ -264,7 +274,7 @@ test('mandate and FICA uploads prepare a missing saved-model target before Stora
           assert.equal(id, listingId)
           assert.equal(rows.length, 1)
           assert.equal(rows[0].requirement_key, requirementKey)
-          assert.equal(options.reason, 'agent_seller_signing_upload_preflight')
+          assert.equal(options.reason, 'agent_seller_document_upload_preflight')
           calls.push('prepare_exact_target')
           if (mode === 'ensure_failed') throw Error('Checklist save denied')
           return mode === 'ensure_unavailable' ? stored : [...stored, signingRequest]

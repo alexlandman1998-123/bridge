@@ -9,7 +9,7 @@ vi.mock('../../lib/supabaseClient', () => ({
   BRANDING_BUCKET_CANDIDATES: ['branding'], PROFILE_AVATAR_BUCKET_CANDIDATES: ['avatars'],
   LEGAL_TEMPLATES_BUCKET_CANDIDATES: ['legal-templates'],
 }))
-import { getSellerOnboardingByToken, persistSellerProfileOnboardingFormData, submitSellerOnboarding, updateSellerOnboardingProgress, savePrivateListingSellerCanonicalUpdate, syncPrivateListingRequirements, ensurePrivateListingDocumentRequirements, resolvePrivateListingDocumentRequirement } from '../privateListingService'
+import { getSellerOnboardingByToken, persistSellerProfileOnboardingFormData, submitSellerOnboarding, updateSellerOnboardingProgress, savePrivateListingSellerCanonicalUpdate, syncPrivateListingRequirements, ensurePrivateListingDocumentRequirements, buildPrivateListingDocumentUploadPreparation, resolvePrivateListingDocumentRequirement } from '../privateListingService'
 import { repairSellerDocumentRequirementLinks, isUnlinkedSellerReviewDocument } from '../sellerDocumentReviewWorkflowService.js'
 import { applyListingSellerOnboardingSaveSnapshot, getSellerOnboardingSaveRevision, buildListingSellerCanonicalUpdate } from '../listings/listingSellerCanonicalUpdateModel.js'
 import { syncSellerDocumentRequirements } from '../../lib/sellerDocumentRequirementEngine.js'
@@ -578,6 +578,17 @@ describe('canonical seller save confirmation', () => {
     expect(client.rpc).toHaveBeenCalledTimes(1)
   })
 
+  it('recovers a committed FICA preparation whose untouched formatted address differs from the listing address', async () => {
+    const value = update()
+    const receipt = receiptFor(value)
+    receipt.listing.address_line_1 = '687 Niemandt St, Andeon Agricultural Holdings'
+    receipt.listing.asking_price = 10700000
+    receipt.listing.mandate_type = 'open'
+    client.rpc.mockReturnValue(rpcResult(null, { message: 'AbortError: This operation was aborted' }))
+    recoveryReads(receipt)
+    await expect(savePrivateListingSellerCanonicalUpdate(value, { includeRequirementsAndDocuments:false })).resolves.toMatchObject({receipt:{mutationId:value.mutationId,recoveredAfterTimeout:true}})
+    expect(client.rpc).toHaveBeenCalledTimes(1)
+  })
   it('bounds recovery even when both save and confirmation reads stall', async () => {
     vi.useFakeTimers()
     const stalled = Object.assign(new Promise(() => {}), { abortSignal() { return this } })
@@ -645,6 +656,24 @@ describe('exact upload requirement resolution', () => {
   })
   it('rejects an explicit id paired with another document type', () => {
     expect(() => resolvePrivateListingDocumentRequirement([requirement('id_document')], { requirementId: listingId, requirementKey: 'company_address_proof' })).toThrow(/does not match/)
+  })
+  it('allows an optional file only when the current saved model still includes its exact key', () => {
+    const rows = [requirement('title_deed_copy', listingId, { is_required: false })]
+    expect(resolvePrivateListingDocumentRequirement(rows, { requirementId: listingId, requirementKey: 'title_deed_copy', currentOptionalRequirementKeys: ['title_deed_copy'] }).id).toBe(listingId)
+    expect(() => resolvePrivateListingDocumentRequirement(rows, { requirementId: listingId, requirementKey: 'title_deed_copy', currentOptionalRequirementKeys: ['rates_account'] })).toThrow(/unavailable/)
+  })
+  it.each([{ status: 'not_applicable' }, { status: 'cancelled' }, { generated_from: { archived: true } }])('never resurrects a retired optional request: %j', extra => {
+    expect(() => resolvePrivateListingDocumentRequirement([requirement('title_deed_copy', listingId, { is_required: false, ...extra })], { requirementId: listingId, requirementKey: 'title_deed_copy', currentOptionalRequirementKeys: ['title_deed_copy'] })).toThrow(/unavailable/)
+  })
+  it('prepares a missing exact saved-model target without recreating retired or alias targets', () => {
+    const listing = { id: listingId, listingStatus: 'mandate_signed', sellerOnboarding: { status: 'completed', formData: { sellerType: 'individual', maritalStatus: 'single', propertyStructureType: 'sectional_title' } } }
+    const plan = buildPrivateListingDocumentUploadPreparation(listing, [], 'title_deed_copy')
+    expect(plan.currentOptionalRequirementKeys).toContain('title_deed_copy')
+    expect(plan.missingRows).toHaveLength(1)
+    expect(plan.missingRows[0].is_required).toBe(false)
+    expect(buildPrivateListingDocumentUploadPreparation(listing, [requirement('title_deed_copy', listingId, { status: 'not_applicable' })], 'title_deed_copy').missingRows).toEqual([])
+    expect(buildPrivateListingDocumentUploadPreparation(listing, [requirement('seller_id')], 'id_document').missingRows).toEqual([])
+    expect(buildPrivateListingDocumentUploadPreparation(listing, [], 'spouse_id_document').missingRows).toEqual([])
   })
   it('permits generic internal files without inventing a requirement', () => {
     expect(resolvePrivateListingDocumentRequirement([], { documentType: 'listing_document', required: false })).toBeNull()

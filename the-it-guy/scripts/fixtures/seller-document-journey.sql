@@ -36,7 +36,7 @@ create table private_listing_document_requirements(
   last_request_reason text, request_metadata jsonb default '{}', canonical_requirement_instance_id uuid,
   satisfied_by_document_id uuid, satisfaction_verified_at timestamptz, satisfaction_method text,
   assurance_state text default 'unverified', assurance_metadata jsonb default '{}', updated_at timestamptz default now(),
-  document_visibility text default 'seller_visible'
+  document_visibility text default 'seller_visible', generated_from jsonb default '{}'::jsonb
 );
 create table private_listing_documents(
   id uuid primary key default gen_random_uuid(), private_listing_id uuid, requirement_id uuid, document_type text,
