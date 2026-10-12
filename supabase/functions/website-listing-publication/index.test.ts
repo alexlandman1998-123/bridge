@@ -27,26 +27,30 @@ Deno.test("background HTTP publication uses caller authority even when its token
   const previous = Object.fromEntries(Object.keys(env).map((key) => [key, Deno.env.get(key)]));
   const originalFetch = globalThis.fetch;
   let calls = 0;
+  let requestToken = "gateway-service-test-token";
   try {
     for (const [key, value] of Object.entries(env)) Deno.env.set(key, value);
     globalThis.fetch = async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);
       assertEquals(url.endsWith("/rest/v1/rpc/listing_publication_website_context"), true);
-      assertEquals(new Headers(init?.headers).get("Authorization"), "Bearer gateway-service-test-token");
+      assertEquals(new Headers(init?.headers).get("Authorization"), `Bearer ${requestToken}`);
+      assertEquals(new Headers(init?.headers).get("apikey"), requestToken.startsWith("sb_secret_") ? requestToken : env.SUPABASE_ANON_KEY);
       calls++;
       return new Response(JSON.stringify({
         actorId: "actor", listingId,
         status: { websiteSiteId, blockers: ["Add a listing image."] },
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     };
+    for (requestToken of ["gateway-service-test-token", "sb_secret_server-test-key"]) {
     const response = await publicationHandler(new Request("https://example.test/publish", {
       method: "POST",
-      headers: { Authorization: "Bearer gateway-service-test-token", "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${requestToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({ publicationJobId: "job", publicationClaimId: "claim", listingId, action: "publish" }),
     }));
     assertEquals(response.status, 409);
     assertEquals((await response.json()).code, "listing_not_ready");
-    assertEquals(calls, 2); // Authorize the job, then recheck its status.
+    }
+    assertEquals(calls, 4); // Each credential authorizes the job, then rechecks its status.
   } finally {
     globalThis.fetch = originalFetch;
     for (const [key, value] of Object.entries(previous)) {

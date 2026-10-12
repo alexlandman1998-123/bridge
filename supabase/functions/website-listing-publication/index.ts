@@ -337,7 +337,9 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const payload = await req.json().catch(() => ({})) as JsonRecord;
-    const caller = createClient(supabaseUrl, anonKey, {
+    // Secret API keys must also be the apikey, not a bearer paired with anon.
+    // The service-only RPC still validates the credential and saved job.
+    const caller = createClient(supabaseUrl, token.startsWith("sb_secret_") ? token : anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
