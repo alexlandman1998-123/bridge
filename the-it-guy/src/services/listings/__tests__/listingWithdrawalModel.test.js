@@ -5,6 +5,7 @@ import {
   applyListingWithdrawalResults,
   buildListingWithdrawalPlan,
   listingWithdrawalIsComplete,
+  listingWithdrawalConfirmed,
 } from '../listingWithdrawalModel.js'
 
 test('withdrawal plan includes every public channel and exposes missing portal references', () => {
@@ -12,6 +13,18 @@ test('withdrawal plan includes every public channel and exposes missing portal r
   assert.deepEqual(plan.map((item) => item.key), ['property24', 'private_property', 'agency_website', 'kingdom_website', 'arch9_catalogue'])
   assert.match(plan[0].blockedReason, /no listing reference/i)
   assert.equal(plan.every((item) => item.status === 'pending'), true)
+})
+
+test('only fresh removal evidence confirms withdrawal, not mere acceptance or cached state', () => {
+  assert.equal(listingWithdrawalConfirmed('property24', { status: { portalCheck: { isOnPortal: false } } }), true)
+  for (const response of [{ status: 'SUBMITTED' }, { status: { lifecycle: { isOnPortal: false } } }, { status: { portalCheck: { isOnPortal: true } } }, {}]) {
+    assert.equal(listingWithdrawalConfirmed('property24', response), false)
+  }
+  assert.equal(listingWithdrawalConfirmed('private_property', { update: { confirmed: true, externalStatus: 'inactive' } }), true)
+  assert.equal(listingWithdrawalConfirmed('private_property', { update: { confirmed: false, externalStatus: 'inactive' } }), false)
+  assert.equal(listingWithdrawalConfirmed('private_property', { update: { confirmed: true, externalStatus: 'active' } }), false)
+  assert.equal(listingWithdrawalConfirmed('kingdom_website', { status: 'unpublished' }), true)
+  assert.equal(listingWithdrawalConfirmed('agency_website', { status: 'published' }), false)
 })
 
 test('partial withdrawal persists successful channel outcomes without marking the listing withdrawn', () => {

@@ -1,3 +1,4 @@
+import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
@@ -15,6 +16,10 @@ import '../components/listings/property24-manage.css'
 import ListingChannelLastUpdate from '../components/listings/ListingChannelLastUpdate'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
 import ListingChannelManageDialog from '../components/listings/ListingChannelManageDialog'
+import ListingRelistDialog from '../components/listings/ListingRelistDialog'
+import ListingDeletionBlockedNotice from '../components/listings/ListingDeletionBlockedNotice'
+import { getListingDeletionBlock } from '../services/privateListingDeletion'
+import { createListingRelistPortalActions, readListingRelistCheckpoint, relistListingChannel } from '../services/listings/listingRelistService'
 import { saveListingChannelManagement } from '../services/listings/listingChannelManagement'
 import ListingChannelTableHeader from '../components/listings/ListingChannelTableHeader'
 import ListingChannelStatistics from '../components/listings/ListingChannelStatistics'
@@ -111,6 +116,7 @@ import {
   applyListingWithdrawalResults,
   buildListingWithdrawalPlan,
   listingWithdrawalIsComplete,
+  listingWithdrawalConfirmed,
 } from '../services/listings/listingWithdrawalModel'
 import {
   buildListingOverviewPerformance,
@@ -3660,6 +3666,7 @@ function AgentListingDetail() {
   const [deletingListing, setDeletingListing] = useState(false)
   const [deleteListingDialogOpen, setDeleteListingDialogOpen] = useState(false)
   const [deleteListingDialogError, setDeleteListingDialogError] = useState('')
+  const [deleteListingBlock, setDeleteListingBlock] = useState(null)
   const [withdrawListingDialogOpen, setWithdrawListingDialogOpen] = useState(false)
   const [listingWithdrawalResults, setListingWithdrawalResults] = useState([])
   const [listingWithdrawalComplete, setListingWithdrawalComplete] = useState(false)
@@ -3827,6 +3834,7 @@ function AgentListingDetail() {
   const [managedWebsiteChannel, setManagedWebsiteChannel] = useState('')
   const [channelManageBusy, setChannelManageBusy] = useState(false)
   const channelMutationRef = useRef(false)
+  const [relistChannel, setRelistChannel] = useState(null)
   const [channelRemoval, setChannelRemoval] = useState(null)
   const [channelRemovalError, setChannelRemovalError] = useState('')
   const [websiteRefreshKey, setWebsiteRefreshKey] = useState(0)
@@ -4071,6 +4079,16 @@ function AgentListingDetail() {
       search: params.toString() ? `?${params.toString()}` : '',
     }, { replace: true })
   }, [listingRecord?.id, location.pathname, location.search, navigate])
+
+  useEffect(() => {
+    const channel = relistChannelFromSearch(location.search)
+    if (!channel || !listingRecord?.id || !listingSupportingDataReady) return
+    setSellerWorkspaceTab('marketing')
+    setRelistChannel(channel)
+    const params = new URLSearchParams(location.search)
+    params.delete('relist')
+    navigate({ pathname: location.pathname, search: `?${params}` }, { replace: true, state: location.state })
+  }, [listingRecord?.id, listingSupportingDataReady, location.pathname, location.search, location.state, navigate])
 
   const listingOrganisationId = useMemo(
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
@@ -5430,6 +5448,71 @@ function AgentListingDetail() {
     }
   }
 
+  async function relistSavedListing({ channels, expiryDate, previousResults = [], onProgress }) {
+    if (channelMutationRef.current) throw new Error('Another channel update is running. Please wait.')
+    if (!channels.length || channels.some(channel => !['Property24', 'Private Property'].includes(channel))) throw new Error('Choose an existing portal advert to relist.')
+    if (['sold', 'under_offer', 'transaction_created', 'deleted'].includes(normalizeKey(marketingDraft.listingStatus))) throw new Error('Review the sale outcome before relisting this property.')
+    if (channels.includes('Property24')) {
+      const expiryError = getProperty24ExpiryDateError(expiryDate)
+      if (expiryError) throw new Error(expiryError)
+    }
+    if (!ensureMarketingMediaReady(marketingDraft, 'relisting')) throw new Error('Save the listing photos before relisting.')
+    channelMutationRef.current = true
+    setChannelManageBusy(true)
+    try {
+      await requireSettledListingPublication(listingRecord.id, channels.map(channel => channel === 'Property24' ? 'property24' : 'private_property'))
+      const saved = await saveMarketingDraft({ ...marketingDraft, ...(channels.includes('Property24') ? { property24ExpiryDate: expiryDate } : {}) }, { successMessage: '' })
+      if (!saved?.ok || saved.localOnly || !saved.draft) throw saved?.error || new Error('Your changes could not be saved. No relist has started.')
+      let draft = saved.draft
+      let restored = !['withdrawn', 'expired', 'archived'].includes(normalizeKey(draft.listingStatus))
+      const snapshot = { ...buildListingPublicationSnapshot({ ...draft, listingStatus: 'active' }), property24ExpiryDate: draft.property24ExpiryDate }
+      const history = await getPrivateListingActivity(listingRecord.id, { requireAvailable: true })
+      const rows = Array.isArray(history) ? history : history?.activities || []
+      let results = [...previousResults]
+      const show = row => {
+        results = [...results.filter(value => value.channel !== row.channel), row]
+        onProgress?.([...results])
+      }
+      const restoreSavedListing = async () => {
+        if (restored) return
+        const restore = await saveMarketingDraft({ ...draft, listingStatus: 'active', publicationStatus: 'Draft' }, { successMessage: '', listingVisibility: 'private' })
+        if (!restore?.ok || restore.localOnly || !restore.draft) throw restore?.error || new Error('Arch9 could not restore the saved listing. No portal send was started.')
+        draft = restore.draft
+        restored = true
+      }
+      for (const channel of channels) {
+        const previous = previousResults.find(row => row.channel === channel)
+        if (previous?.status === 'completed' || previous?.status === 'uncertain') continue
+        show({ channel, status: 'running', detail: 'Checking the saved listing and existing advert…' })
+        const checkpoint = previous?.checkpoint || readListingRelistCheckpoint(rows, channel)
+        const recordCheckpoint = async metadata => {
+          const row = await createPrivateListingActivity({ privateListingId: listingRecord.id, activityType: 'listing_relist_progress', activityTitle: `${channel} relist progress`, visibility: 'internal', metadata })
+          if (!row?.id) throw new Error('Relist history could not be saved. Check the advert before trying again.')
+        }
+        const recordPublication = (stage, reference = '', error = '') => recordListingPublicationStage(channel, stage, draft, { action: 'relist', reference, ...(error ? { error } : {}) })
+        const property24Context = () => ({ ...getProperty24ActionContext(), environment: 'production', listingNumber: property24Reference, expiryDate, status: 'Active', photosChanged: true })
+        const outcome = await relistListingChannel({ listingId: listingRecord.id, channel, snapshot, checkpoint }, {
+          beforeSend: restoreSavedListing,
+          recordCheckpoint,
+          recordPublication,
+          ...createListingRelistPortalActions({
+            listingId: listingRecord.id, channel, property24Reference, property24Context,
+            callProperty24: callProperty24ListingAction, callPrivateProperty: callPrivatePropertyListingAction,
+            property24Message: getProperty24ApiMessage, privatePropertyReference: getPrivatePropertyReferenceFromResponse,
+            onPrivatePropertyStatus: setPrivatePropertyStatusCheck,
+          }),
+        })
+        show(outcome)
+      }
+      await loadListingData({ showLoading: false })
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      return results
+    } finally {
+      channelMutationRef.current = false
+      setChannelManageBusy(false)
+    }
+  }
+
   async function saveSimpleChannelManagement(channel, values) {
     if (channelMutationRef.current) throw new Error('An update is already running. Please wait.')
     if (!listingRecord?.id || !isSupabaseConfigured) throw new Error('Sign in and save this listing first.')
@@ -5809,7 +5892,7 @@ function AgentListingDetail() {
     return buildListingWithdrawalPlan({
       property24Live: property24Published,
       property24Reference,
-      privatePropertyLive: ['published', 'live', 'active'].includes(privatePropertyStatusKey),
+      privatePropertyLive: privatePropertyPortalLive,
       agencyWebsiteLive: agencyWebsitePublication?.status === 'published' &&
         agencyWebsitePublication?.websiteStatus === 'published' &&
         agencyWebsitePublication?.projectionStatus === 'Published',
@@ -5821,6 +5904,16 @@ function AgentListingDetail() {
   function closeWithdrawListingDialog() {
     if (publicationSaving) return
     setWithdrawListingDialogOpen(false)
+  }
+
+  function openListingWithdrawal() {
+    setDeleteListingDialogOpen(false)
+    setDeleteListingDialogError('')
+    setDeleteListingBlock(null)
+    setDetailError('')
+    setListingWithdrawalResults([])
+    setListingWithdrawalComplete(false)
+    setWithdrawListingDialogOpen(true)
   }
 
   async function persistListingWithdrawalState(nextDraft, complete) {
@@ -5957,16 +6050,21 @@ function AgentListingDetail() {
       try {
         if (channel.key === 'property24') {
           await callProperty24ListingAction('withdraw', { listingNumber: property24Reference }, { fallbackMessage: 'Property24 withdrawal failed.' })
+          const observed = await callProperty24ListingAction('status', {}, { method: 'GET', query: new URLSearchParams({ environment: 'production', refresh: 'true' }) })
+          if (!listingWithdrawalConfirmed(channel.key, observed)) throw new Error('Property24 has not confirmed removal yet. Check its status before archiving this listing.')
           updateResult(channel.key, { status: 'succeeded', detail: 'Removed from Property24' })
         } else if (channel.key === 'private_property') {
-          await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property withdrawal failed.' })
+          const response = await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property withdrawal failed.' })
+          if (!listingWithdrawalConfirmed(channel.key, response)) throw new Error('Private Property has not confirmed removal yet. Check its status before archiving this listing.')
           updateResult(channel.key, { status: 'succeeded', detail: 'Set inactive on Private Property' })
         } else if (channel.key === 'agency_website') {
           const publication = await setWebsiteListingPublication(listingRecord.id, 'unpublish')
+          if (!listingWithdrawalConfirmed(channel.key, publication)) throw new Error('The agency website has not confirmed withdrawal.')
           setAgencyWebsitePublication(publication)
           updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the agency website' })
         } else if (channel.key === 'kingdom_website') {
           const publication = await publishKingdomWebsiteListing(listingRecord.id, 'unpublish')
+          if (!listingWithdrawalConfirmed(channel.key, publication)) throw new Error('The Kingdom website has not confirmed withdrawal.')
           setKingdomWebsitePublication(publication)
           updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the Kingdom website' })
         }
@@ -6084,7 +6182,9 @@ function AgentListingDetail() {
     const response = await fetch(`${PROPERTY24_LISTING_API_BASE_PATH}/${encodeURIComponent(listingRecord.id)}/${action}${query}`, requestOptions)
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
-      throw new Error(getProperty24ApiMessage(payload, options.fallbackMessage || 'Property24 request failed.'))
+      const error = new Error(getProperty24ApiMessage(payload, options.fallbackMessage || 'Property24 request failed.'))
+      error.definiteRejection = [400, 401, 403, 404, 422].includes(response.status) && payload.status !== 'UNCERTAIN' && payload.report?.status !== 'UNCERTAIN'
+      throw error
     }
     return payload
   }
@@ -6260,7 +6360,9 @@ function AgentListingDetail() {
     const response = await fetch(`${PRIVATE_PROPERTY_LISTING_API_BASE_PATH}/${encodeURIComponent(privatePropertyListingId)}/${action}${query}`, requestOptions)
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
-      throw new Error(getPrivatePropertyApiMessage(payload, options.fallbackMessage || 'Private Property request failed.'))
+      const error = new Error(getPrivatePropertyApiMessage(payload, options.fallbackMessage || 'Private Property request failed.'))
+      error.definiteRejection = [400, 401, 403, 404, 422].includes(response.status) && payload.status !== 'UNCERTAIN' && payload.report?.status !== 'UNCERTAIN'
+      throw error
     }
     return payload
   }, [privatePropertyListingId])
@@ -7526,14 +7628,14 @@ function AgentListingDetail() {
     navigate(path)
   }
 
-  function openPropertyDetailsFromMarketing() {
+  function openPropertyDetailsFromMarketing(channel = '') {
     const targetListingId = encodeURIComponent(String(listingRecord?.id || listingId || '').trim())
     if (!targetListingId) {
       setDetailError('Unable to open the listing editor because this listing is missing an id.')
       return
     }
     if (!confirmMarketingNavigation()) return
-    navigate(`/listings/${targetListingId}/edit?step=property&scope=listing-publication`)
+    navigate(listingRelistEditorPath(decodeURIComponent(targetListingId), typeof channel === 'string' ? channel : ''))
   }
 
   function openDetailTab(tab) {
@@ -12599,6 +12701,7 @@ function AgentListingDetail() {
 
   function requestDeleteListing() {
     setDeleteListingDialogError('')
+    setDeleteListingBlock(null)
     setDeleteListingDialogOpen(true)
   }
 
@@ -12614,6 +12717,7 @@ function AgentListingDetail() {
     setDeletingListing(true)
     setDetailError('')
     setDetailMessage('')
+    setDeleteListingBlock(null)
 
     try {
       if (isSupabaseConfigured && isUuidLike(listingId)) {
@@ -12632,6 +12736,7 @@ function AgentListingDetail() {
       const message = error?.message || 'Unable to delete this listing.'
       setDetailError(message)
       setDeleteListingDialogError(message)
+      setDeleteListingBlock(error.deletionBlock || getListingDeletionBlock(error))
     } finally {
       setDeletingListing(false)
     }
@@ -12675,6 +12780,8 @@ function AgentListingDetail() {
 
   function simpleChannelMenu(channelName, canWithdraw, canExpire = false) {
     const disabled = channelManageBusy || quickListingBusy || Boolean(property24Action) || Boolean(privatePropertyAction)
+    const relistAvailable = !['sold', 'under_offer', 'transaction_created', 'deleted'].includes(normalizeKey(marketingDraft.listingStatus)) &&
+      (channelName === 'Property24' ? Boolean(property24Reference) : channelName === 'Private Property' && privatePropertyHasChannel)
     const itemClass = 'flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold transition disabled:opacity-50'
     return <>
       <button type="button" disabled={disabled} onClick={() => {
@@ -12682,6 +12789,8 @@ function AgentListingDetail() {
         else if (channelName === 'Private Property') setPrivatePropertyManageOpen(true)
         else setManagedWebsiteChannel(channelName)
       }} className={`${itemClass} text-[#243d56] hover:bg-[#f7fbff]`}><Pencil size={15} />Manage listing</button>
+      {relistAvailable ? <button type="button" disabled={disabled} onClick={() => setRelistChannel(channelName)} className={`${itemClass} text-[#243d56] hover:bg-[#f7fbff]`}><RefreshCw size={15} />Relist</button> : null}
+      {relistAvailable ? <button type="button" disabled={disabled} onClick={() => openPropertyDetailsFromMarketing(channelName)} className={`${itemClass} text-[#243d56] hover:bg-[#f7fbff]`}><Pencil size={15} />Update and relist</button> : null}
       {canWithdraw ? <button type="button" disabled={disabled} onClick={() => { setChannelRemovalError(''); setChannelRemoval({ channel: channelName, action: 'withdraw' }) }} className={`${itemClass} text-[#a43d35] hover:bg-[#fff5f5]`}><X size={15} />Withdraw listing</button> : null}
       {canExpire ? <button type="button" disabled={disabled} onClick={() => { setChannelRemovalError(''); setChannelRemoval({ channel: channelName, action: 'expire' }) }} className={`${itemClass} text-[#a43d35] hover:bg-[#fff5f5]`}><CalendarDays size={15} />Expire listing</button> : null}
     </>
@@ -12694,6 +12803,8 @@ function AgentListingDetail() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="text-sm font-semibold text-[#142132]">Quick listing actions</h2><p className="mt-1 text-xs leading-5 text-[#607387]">Save in Arch9 and update all active channels.</p></div>
         <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={openListingWithdrawal} disabled={quickListingBusy || channelManageBusy || publicationSaving}>Withdraw listing</Button>
+          {property24Reference || privatePropertyHasChannel ? <Button type="button" size="sm" variant="secondary" onClick={() => setRelistChannel('')} disabled={quickListingBusy || channelManageBusy || ['sold', 'under_offer', 'transaction_created', 'deleted'].includes(currentStatus)}>Relist listing</Button> : null}
           <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('under_offer')} disabled={quickListingBusy || !isSale || currentStatus !== 'active'}>Under offer</Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('sold')} disabled={quickListingBusy || !isSale || !['active', 'under_offer'].includes(currentStatus)}>Sold</Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('price_reduction')} disabled={quickListingBusy || !isSale || ['sold', 'withdrawn'].includes(currentStatus)}>Reduce price</Button>
@@ -12864,6 +12975,15 @@ function AgentListingDetail() {
 
         {renderProperty24ManagePanel()}
         {renderPrivatePropertyManagePanel()}
+        {relistChannel !== null ? <ListingRelistDialog
+          channels={[...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
+          initialChannel={relistChannel}
+          expiryDate={getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate) ? addDaysToDateInput('', 90) : formatDateInputValue(marketingDraft.property24ExpiryDate)}
+          minExpiryDate={addDaysToDateInput('', 1)}
+          onRelist={relistSavedListing}
+          onClose={() => setRelistChannel(null)}
+          onEdit={(channel) => { setRelistChannel(null); openPropertyDetailsFromMarketing(channel) }}
+        /> : null}
         {managedWebsiteChannel ? renderSimpleChannelManagePanel(managedWebsiteChannel, () => setManagedWebsiteChannel('')) : null}
         <Modal open={Boolean(channelRemoval)} title={channelRemoval?.action === 'expire' ? 'Expire listing' : 'Withdraw listing'} subtitle={channelRemoval?.channel} className="!max-w-lg" onClose={channelManageBusy ? undefined : () => setChannelRemoval(null)}
           footer={<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" disabled={channelManageBusy} onClick={() => setChannelRemoval(null)}>Cancel</Button><Button type="button" disabled={channelManageBusy} onClick={() => void removeSelectedChannel()}>{channelManageBusy ? <Loader2 size={15} className="animate-spin" /> : null}{channelRemoval?.action === 'expire' ? 'Expire listing' : 'Withdraw listing'}</Button></div>}>
@@ -17535,7 +17655,7 @@ function AgentListingDetail() {
             <Button
               type="button"
               onClick={() => void confirmDeleteListing()}
-              disabled={deletingListing}
+              disabled={deletingListing || Boolean(deleteListingBlock)}
               className="bg-[#a13b35] hover:bg-[#852e29]"
             >
               {deletingListing ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -17547,7 +17667,8 @@ function AgentListingDetail() {
         <div className="rounded-[16px] border border-[#f1c6c2] bg-[#fff5f5] p-4 text-sm leading-6 text-[#6f302c]">
           This removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked records, documents, and activity. This cannot be undone.
         </div>
-        {deleteListingDialogError ? (
+        <ListingDeletionBlockedNotice block={deleteListingBlock} disabled={deletingListing} onManageWithdrawal={openListingWithdrawal} />
+        {deleteListingDialogError && !deleteListingBlock ? (
           <p role="alert" className="mt-4 rounded-[14px] border border-[#f1c6c2] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#a13b35]">
             {deleteListingDialogError}
           </p>

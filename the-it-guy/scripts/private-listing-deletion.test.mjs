@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
-import { resolveListingDeletion, verifyListingDeletion } from '../src/services/privateListingDeletion.js'
+import { getListingDeletionBlock, resolveListingDeletion, verifyListingDeletion } from '../src/services/privateListingDeletion.js'
 function client(rows, error = null) {
   return { from() {
     const filters = []
@@ -29,6 +29,15 @@ test('a success response cannot hide a listing that still exists',async()=>{
   await verifyListingDeletion(client([]),listing)
 })
 
+test('deletion errors distinguish withdrawal from deletion without weakening ownership errors', () => {
+  assert.equal(getListingDeletionBlock({ code: '23503' }).reason, 'linked_records')
+  assert.match(getListingDeletionBlock({ code: '23503' }).message, /still withdraw/)
+  assert.equal(getListingDeletionBlock({ code: 'listing_must_be_withdrawn' }).reason, 'live_channels')
+  assert.equal(getListingDeletionBlock({ code: 'website_launch_must_be_rolled_back' }).reason, 'website_launch')
+  assert.equal(getListingDeletionBlock({ code: '42501', message: 'Permission denied.' }), null)
+  assert.equal(getListingDeletionBlock({ message: 'Network unavailable.' }), null)
+})
+
 test('shared SQL deletion requires withdrawal for sales and rentals, retaining access and workflow guards', async () => {
   const db = new PGlite()
   const id = '11111111-1111-4111-8111-111111111111'
@@ -50,6 +59,8 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
         title text, listing_category text, property24_status text, private_property_status text);
       create table property24_listing_syncs(private_listing_id uuid references private_listings on delete cascade,
         environment text, is_on_portal boolean);
+      create table private_property_listing_syncs(private_listing_id uuid references private_listings on delete cascade,
+        environment text, is_on_portal boolean);
       create table fixture_publications(listing_id uuid references private_listings on delete cascade,
         agency_status text, kingdom_status text);
       create function public.website_get_listing_publication_status(uuid) returns jsonb language sql as $$
@@ -59,10 +70,15 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
       create table website_production_dark_launches(id uuid primary key default gen_random_uuid(),
         listing_id uuid references private_listings on delete set null, status text);
       create table fixture_linked_workflows(listing_id uuid references private_listings);
+      create table website_partner_listing_publications(listing_id uuid references private_listings,
+        status text not null check (status in ('published','unpublished')));
     `)
     const migration = await fs.readFile(new URL('../../supabase/migrations/20261005075454_listing_deletion_withdrawal_guard.sql', import.meta.url), 'utf8')
     await db.exec(migration)
     await db.exec(migration)
+    const cleanup = await fs.readFile(new URL('../../supabase/migrations/20261012083836_listing_delete_unpublished_partner_cleanup.sql', import.meta.url), 'utf8')
+    await db.exec(cleanup)
+    await db.exec(cleanup)
     const setting = (name, value) => db.query('select set_config($1,$2,false)', [name, value])
     await setting('fixture.uid', agent); await setting('fixture.member', 'true'); await setting('fixture.admin', 'false')
     const remove = async () => (await db.query('select public.delete_private_listing($1) as result', [id])).rows[0].result
@@ -85,13 +101,21 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
       await db.query("insert into property24_listing_syncs values($1,'production',true)", [id])
       assert.equal((await remove()).deleted, false)
       await db.query('update property24_listing_syncs set is_on_portal=false where private_listing_id=$1', [id])
+      await db.query("insert into private_property_listing_syncs values($1,'production',true)", [id])
+      assert.equal((await remove()).code, 'listing_must_be_withdrawn', 'a live PP sync still protects the record even when the listing field says withdrawn')
+      await db.query('update private_property_listing_syncs set is_on_portal=false where private_listing_id=$1', [id])
       await db.query("insert into fixture_publications values($1,'published','not_published')", [id])
       assert.equal((await remove()).deleted, false)
       await db.query("update fixture_publications set agency_status='unpublished',kingdom_status='published'", [])
       assert.equal((await remove()).deleted, false)
       await db.query("update fixture_publications set kingdom_status='unpublished'", [])
+      await db.query("insert into website_partner_listing_publications values($1,'published')", [id])
+      assert.equal((await remove()).code, 'listing_must_be_withdrawn', 'a published partner row cannot be removed even if the status helper is stale')
+      assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [id])).rows[0].count, 1)
+      await db.query("update website_partner_listing_publications set status='unpublished' where listing_id=$1", [id])
       assert.equal((await remove()).deleted, true)
       assert.equal(await exists(), false)
+      assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [id])).rows[0].count, 0, 'an unpublished website projection does not prevent permanent deletion')
       assert.equal((await remove()).mode, 'already_removed')
     }
     await insert('rental')
@@ -107,15 +131,20 @@ test('shared SQL deletion requires withdrawal for sales and rentals, retaining a
     assert.equal((await remove()).code, 'website_launch_must_be_rolled_back')
     await db.query("update website_production_dark_launches set status='rolled_back'", [])
     await db.query('insert into fixture_linked_workflows values($1)', [id])
+    await db.query("insert into website_partner_listing_publications values($1,'unpublished')", [id])
     await assert.rejects(remove(), /linked records/)
     assert.equal(await exists(), true)
+    assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [id])).rows[0].count, 1, 'a protected workflow failure rolls back the publication cleanup too')
     assert.equal((await db.query('select listing_id from website_production_dark_launches')).rows[0].listing_id, id)
     await db.query('delete from fixture_linked_workflows', [])
     assert.equal((await remove()).deleted, true)
     assert.equal((await db.query('select listing_id from website_production_dark_launches')).rows[0].listing_id, null)
     await insert('rental')
     await setting('fixture.admin', 'true')
+    await db.query("insert into private_listings(id,organisation_id,assigned_agent_id) values($1,$2,$3)", [other,org,agent])
+    await db.query("insert into website_partner_listing_publications values($1,'unpublished')", [other])
     assert.equal((await remove()).deleted, true)
+    assert.equal((await db.query('select count(*)::int as count from website_partner_listing_publications where listing_id=$1', [other])).rows[0].count, 1, 'other listings and their website records are untouched')
     for (const [role, allowed] of [['anon', false], ['authenticated', true]]) {
       assert.equal((await db.query("select has_function_privilege($1,'public.delete_private_listing(uuid)','EXECUTE') as allowed", [role])).rows[0].allowed, allowed)
     }

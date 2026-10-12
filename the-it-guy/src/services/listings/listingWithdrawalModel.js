@@ -50,3 +50,10 @@ export function applyListingWithdrawalResults(draft = {}, results = [], { comple
 export function listingWithdrawalIsComplete(results = []) {
   return results.every((result) => result.status === 'succeeded' || result.status === 'not_live')
 }
+
+export function listingWithdrawalConfirmed(channel, response = {}) {
+  if (channel === 'property24') return response.status?.portalCheck?.isOnPortal === false
+  if (channel === 'private_property') return response.update?.confirmed === true && ['inactive', 'removed'].includes(response.update?.externalStatus)
+  if (['agency_website', 'kingdom_website'].includes(channel)) return response.status === 'unpublished'
+  return false
+}

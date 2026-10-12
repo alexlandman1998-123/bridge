@@ -1,5 +1,20 @@
 const text = value => String(value || '').trim()
 
+export function getListingDeletionBlock(error = {}) {
+  const code = text(error.code)
+  const message = text(error.message)
+  if (code === '23503' || code === 'listing_linked_records' || /linked records.*cannot be permanently deleted|linked workflows.*resolved/i.test(message)) {
+    return { reason: 'linked_records', message: 'Permanent deletion is blocked by linked records. You can still withdraw the adverts and archive the listing while keeping its history.' }
+  }
+  if (code === 'listing_must_be_withdrawn' || /Withdraw this listing from every live channel/i.test(message)) {
+    return { reason: 'live_channels', message: 'Take this listing off every live channel and confirm removal before permanently deleting it.' }
+  }
+  if (code === 'website_launch_must_be_rolled_back') {
+    return { reason: 'website_launch', message: 'A linked website launch prevents permanent deletion. Ask an administrator to resolve the launch. You can still manage withdrawal of the adverts.' }
+  }
+  return null
+}
+
 // A local draft can retain a different UUID after it is saved remotely. Resolve
 // the exact organisation/reference before treating a missing UUID as deleted.
 export async function resolveListingDeletion(client, listingId, { organisationId, listingReference } = {}) {

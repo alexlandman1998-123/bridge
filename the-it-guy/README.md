@@ -4632,3 +4632,13 @@ The database checks execute the migrations in isolated PostgreSQL (PGlite),
 including replay, cancellation, portal session isolation, immutable uploads,
 handover, recipient changes and retry cutoff. The local Supabase advisors require
 a running local stack and were unavailable during this implementation.
+
+
+Sales listing channel management offers Relist and Update and relist for existing
+Property24 and Private Property adverts. Update and relist saves the property
+editor first and returns to the selected portal's explicit relist confirmation.
+Saved details are resent against the existing identity; Private Property address
+checks remain enforced. Accepted or uncertain requests are not blindly repeated.
+Linked records block permanent deletion separately from withdrawing adverts.
+The listing-delete cleanup migration removes unpublished partner publications
+only inside a successful authorised permanent delete.

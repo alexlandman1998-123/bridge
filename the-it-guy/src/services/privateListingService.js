@@ -12,7 +12,7 @@ import {
   createSellerOnboardingCompletionRecord,
   normalizeSellerOnboardingCompletionMode,
 } from '../core/documents/sellerOnboardingCompletionMode'
-import { resolveListingDeletion } from './privateListingDeletion'
+import { getListingDeletionBlock, resolveListingDeletion } from './privateListingDeletion'
 import { readSellerPortalRpc, settleOptionalSellerRead } from './sellerPortalRead'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
@@ -5855,11 +5855,16 @@ export async function deletePrivateListing(listingId, { organisationId = null, l
     if (isPermissionDeniedError(result.error)) {
       throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')
     }
+    const block = getListingDeletionBlock(result.error)
+    if (block) throw Object.assign(new Error(block.message), { code: result.error.code, deletionBlock: block })
     throw result.error
   }
 
   if (!result.data?.deleted) {
-    throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')
+    const error = Object.assign(new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.'), { code: result.data?.code })
+    const block = getListingDeletionBlock(error)
+    if (block) { error.message = block.message; error.deletionBlock = block }
+    throw error
   }
 
   const verification = await client

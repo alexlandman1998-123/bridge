@@ -18,6 +18,8 @@ import { listRentalListingsForAgent } from '../../services/rentals/rentalListing
 import { deleteRentalListing, inspectRentalListingDeletion } from '../../services/rentals/rentalListingDeletionService'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
+import ListingDeletionBlockedNotice from '../../components/listings/ListingDeletionBlockedNotice'
+import { getListingDeletionBlock } from '../../services/privateListingDeletion'
 import {
   buildRentalListingIndexRows,
   filterRentalListingIndexRows,
@@ -45,6 +47,7 @@ export default function RentalListingsPage() {
   const [pendingDeletion, setPendingDeletion] = useState(null)
   const [deletionState, setDeletionState] = useState(null)
   const [deletionError, setDeletionError] = useState('')
+  const [deletionBlock, setDeletionBlock] = useState(null)
   const [checkingDeletion, setCheckingDeletion] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -106,6 +109,7 @@ export default function RentalListingsPage() {
     setDeletionState(null)
     setDeletionError('')
     if (!pendingDeletion) return undefined
+    setDeletionBlock(null)
     setCheckingDeletion(true)
     void inspectRentalListingDeletion(pendingDeletion.id, buildRentalListingQueryOptions(rentalScope))
       .then(state => { if (!cancelled) setDeletionState(state) })
@@ -132,6 +136,7 @@ export default function RentalListingsPage() {
       window.dispatchEvent(new Event('itg:listings-updated'))
     } catch (error) {
       setDeletionError(error.message || 'Unable to delete this rental listing.')
+      setDeletionBlock(error.deletionBlock || getListingDeletionBlock(error))
       if (error.deletionState) setDeletionState(error.deletionState)
     } finally {
       setDeleting(false)
@@ -259,7 +264,7 @@ export default function RentalListingsPage() {
             ) : null}
             <Button
               type="button"
-              disabled={deleting || checkingDeletion || !deletionState?.canDelete}
+              disabled={deleting || checkingDeletion || !deletionState?.canDelete || Boolean(deletionBlock)}
               onClick={confirmDeletion}
               className="!bg-[#a13b35] !border-[#a13b35]"
             >
@@ -272,7 +277,8 @@ export default function RentalListingsPage() {
         {checkingDeletion ? <p role="status" className="mt-3">Checking publishing status…</p> : null}
         {deletionState?.liveChannels.length ? <p role="alert" className="mt-3">Withdraw this listing from {deletionState.liveChannels.join(', ')} before deleting it.</p> : null}
         {deletionState?.unconfirmedChannels.length ? <p role="alert" className="mt-3">Confirm removal from {deletionState.unconfirmedChannels.join(', ')} before deleting it.</p> : null}
-        {deletionError ? <p role="alert" className="mt-3 text-[#a13b35]">{deletionError}</p> : null}
+        <ListingDeletionBlockedNotice block={deletionBlock} disabled={deleting} onManageWithdrawal={() => openWithdrawal(pendingDeletion)} />
+        {deletionError && !deletionBlock ? <p role="alert" className="mt-3 text-[#a13b35]">{deletionError}</p> : null}
       </Modal>
     </section>
   )

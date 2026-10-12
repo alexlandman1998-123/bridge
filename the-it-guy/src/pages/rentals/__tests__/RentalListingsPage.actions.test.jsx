@@ -99,6 +99,20 @@ it('dismisses the menu with Escape and an outside click', async () => {
   expect(screen.queryByRole('menu')).toBeNull()
 })
 
+it('keeps a linked-record delete block from trapping the agent outside withdrawal controls', async () => {
+  mocks.delete.mockRejectedValue(Object.assign(new Error('This listing still has linked records and cannot be permanently deleted.'), { code: '23503' }))
+  const dialog = await openDelete()
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Delete listing' }).disabled).toBe(false))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete listing' }))
+  const manage = await within(dialog).findByRole('button', { name: 'Open withdrawal controls' })
+  expect(within(dialog).getByRole('button', { name: 'Delete listing' }).disabled).toBe(true)
+  expect(screen.getByRole('button', { name: 'Open actions for Rental home' })).toBeTruthy()
+  fireEvent.click(manage)
+  expect(screen.getByTestId('location').textContent).toBe('/agent/rentals/listings/rental-1/marketing')
+  expect(mocks.delete).toHaveBeenCalledOnce()
+  expect(screen.queryByText(/was permanently deleted/)).toBeNull()
+})
+
 
 it('takes an unpublished draft straight to the guided editor from Continue draft', async () => {
   mocks.listings.mockResolvedValue([{ ...rental, listingStatus: 'seller_lead' }])
