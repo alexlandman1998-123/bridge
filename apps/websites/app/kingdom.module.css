@@ -271,10 +271,8 @@
 .shell.shell :global(.kingdom-sold-price) { display: grid; gap: 6px; margin: 16px 0 0; }
 .shell.shell :global(.kingdom-sold-price > span), .shell.shell :global(.kingdom-sold-agency) { font-size: 12px; color: #65715f; }
 .shell.shell :global(.kingdom-sold-agency) { margin-top: 16px; }
-.shell.shell :global(.kingdom-sold-filters) { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; }
 .shell.shell :global(.kingdom-sold-section .results-list-heading > div) { display: block; }
 .shell.shell :global(.kingdom-sold-section h2) { font-size: clamp(28px, 3vw, 40px); }
 .shell.shell :global(.kingdom-sold-empty) { padding: 28px 0; color: #65715f; line-height: 1.7; }
 .shell.shell :global(.kingdom-sold-empty a) { text-decoration: underline; text-underline-offset: 4px; }
 @media (max-width: 1100px) { .shell.shell :global(.site-header > nav) { gap: 16px; } }
-@media (max-width: 760px) { .shell.shell :global(.kingdom-sold-filters) { grid-template-columns: 1fr; } }

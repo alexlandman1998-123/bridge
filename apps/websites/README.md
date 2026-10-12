@@ -96,10 +96,13 @@ features, agency attribution and **Last asking price**, not a claimed sale price
 There is no recorded sold date in the current schema: display order follows the
 latest CRM update, without displaying it as a sale date. Photos reuse copied
 public website images, including retained snapshots after an advert is removed.
-Never-advertised sold records appear with a photo placeholder; private files are
-not signed or exposed. Sold cards do not link to a withdrawn property's page.
+When no website copy exists, cards use the CRM cover image with a fresh seven-day
+viewing link. Only image records inside the sold listing's own `gallery/`
+namespace can be signed; documents, other listing paths and foreign URLs are
+excluded. No stored file or publication record is changed. A placeholder is used
+only when no eligible photo can be read. Sold cards do not link to a withdrawn property's page.
 
 Verification: `node --test lib/kingdom-recently-sold.test.mjs` and root
 `npm run check:website`. The connected local browser fixture covers the page,
-filters, homepage and mobile menu with synthetic records, without remote writes.
+homepage, simplified sold page and mobile menu with synthetic records, without remote writes.
 A separate approved Kingdom website deployment is required to make this live.

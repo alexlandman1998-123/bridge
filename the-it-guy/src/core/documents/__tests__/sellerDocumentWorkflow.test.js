@@ -41,6 +41,28 @@ test('existing uploaded evidence waits for review and does not invite another si
   assert.equal(buildSellerDocumentWorkflow({ item: { lifecycleStatus: 'complete' } }).state, 'complete')
 })
 
+test('an automatic disclosure draft never becomes uploaded evidence or hides document preparation', () => {
+  const draft = { key: 'signed_disclosure_form', status: 'awaiting_agent_review', isGeneratedDraft: true, artifactStage: 'review_draft', generatedHtml: '<article>Unsigned disclosure</article>' }
+  const flow = buildSellerDocumentWorkflow({ item: { key: draft.key, status: 'uploaded', uploaded: true, hasUploadedDocument: true, linkedDocument: draft } })
+  assert.equal(flow.state, 'not_prepared')
+  assert.equal(flow.canPrepare, true)
+  assert.equal(flow.canSend, true)
+  assert.equal(flow.canUpload, true)
+  assert.doesNotMatch(flow.label, /Uploaded/)
+})
+
+test('unsigned physical and digital copies stay prepared while real returned files still require review', () => {
+  for (const signingRoute of ['manual_upload', 'digital_pack']) {
+    const copy = { versionId: 'v1', signingRoute }
+    const flow = buildSellerDocumentWorkflow({ copy, item: { status: 'awaiting_signed_hard_copy', hasUploadedDocument: true, linkedDocument: { source: 'seller_onboarding.manual_signing_pack', status: 'awaiting_signed_hard_copy', isGeneratedDraft: true, generatedHtml: '<article>Copy</article>' } } })
+    assert.equal(flow.state, 'prepared')
+    assert.equal(flow.canSend, true)
+    assert.equal(flow.canUpload, true)
+  }
+  const returned = buildSellerDocumentWorkflow({ item: { status: 'uploaded', isGeneratedDraft: true, linkedDocument: { status: 'uploaded', storage_path: 'returned.pdf' } } })
+  assert.equal(returned.state, 'review')
+})
+
 test('current active request wins over a newer failed attempt; old versions stay separate', () => {
   const requests = [
     { id: 'failed', document_key: 'signed_mandate', version_id: 'current', status: 'revoked', created_at: '2026-10-09' },

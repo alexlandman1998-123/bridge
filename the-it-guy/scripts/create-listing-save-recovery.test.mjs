@@ -5,7 +5,7 @@ import { File } from 'node:buffer'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
-import { settleListingImageUploads } from '../src/lib/listingMediaUploads.js'
+import { settleListingImageUploads, reuseListingImageUpload } from '../src/lib/listingMediaUploads.js'
 
 const source = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const normalizeText = (value) => String(value ?? '').trim()
@@ -24,7 +24,7 @@ function between(start, end) {
 }
 
 function bind(context, code, expression) {
-  Object.assign(context, { publicationStatusBusy: false, publicationPending: false, publicationUncertain: false, draftRecoveryBlocked: false, editDraftConflict: null, buildSpecialistSalesFacts, recoveryProtection: { markSaved() {} }, setCloudSave() {}, setDraftRecoveryBlocked() {}, setQuickAddSuccess() {}, buildInitialListingLeadForm: () => ({ listingImages: [] }), getCurrentDeletedListingIds: () => new Set(), profile: {}, workspace: {}, ...context })
+  Object.assign(context, { photoDraftCreationRef: { current: null }, photoUploadScopeRef: { current: 0 }, publicationStatusBusy: false, publicationPending: false, publicationUncertain: false, draftRecoveryBlocked: false, editDraftConflict: null, buildSpecialistSalesFacts, recoveryProtection: { markSaved() {} }, setCloudSave() {}, setDraftRecoveryBlocked() {}, setQuickAddSuccess() {}, buildInitialListingLeadForm: () => ({ listingImages: [] }), getCurrentDeletedListingIds: () => new Set(), profile: {}, workspace: {}, ...context })
   return new Function('context', `with (context) { ${code}; return ${expression}; }`)(context)
 }
 
@@ -184,7 +184,7 @@ test('large photo previews use object URLs and partial uploads retain successful
   const bindings = {
     crypto: { randomUUID: () => 'photo' }, URL: { createObjectURL: (file) => `blob:${file.name}` },
     readQuickListingImageAsDataUrl: () => { reads += 1; throw new Error('Base64 should not be needed') },
-    File, settleListingImageUploads, isUnstorableCreateListingImageUrl,
+    File, settleListingImageUploads, reuseListingImageUpload, isUnstorableCreateListingImageUrl,
   }
   const buildImages = bind(bindings, between('async function buildQuickListingImageDrafts(', 'async function uploadQuickListingImages('), 'buildQuickListingImageDrafts')
   const images = await buildImages([new File(['one'], 'one.jpg'), new File(['two'], 'two.jpg')])
@@ -240,7 +240,8 @@ test('uploaded and removed photo previews release their object URLs', () => {
 })
 
 const saveStart = source.indexOf('const sellerUpdatePayload = {', source.indexOf('async function performSaveListing()'))
-const saveBody = source.slice(saveStart, source.indexOf('} else {\n        uploadedDocuments', saveStart))
+const saveWait = between('  async function performSaveListing() {', '    const sellerName =').split('\n').slice(1).join('\n')
+const saveBody = saveWait + source.slice(saveStart, source.indexOf('} else {\n        uploadedDocuments', saveStart))
 
 function saveContext() {
   const { context, data } = storageContext()
@@ -527,4 +528,102 @@ test('final edit save sends updates while an intermediate step only saves', asyn
   assert.deepEqual(calls, [{ sendUpdates: true, relistChannel: '' }])
   const nextSource = between('async function goToNextCreateListingStep(', 'function goToPreviousCreateListingStep(')
   assert.doesNotMatch(nextSource, /sendUpdates: true/)
+})
+
+test('selected photos start uploading immediately, retain success and ignore removed or departed photos', async () => {
+  let finish
+  const image = { id: 'early', name: 'early.jpg', file: new File(['photo'], 'early.jpg'), url: 'blob:early' }
+  const context = {
+    form: { listingImages: [image] }, isListingEditorWorkspace: true, isSupabaseConfigured: true, MOCK_DATA_ENABLED: false,
+    photoUploadScopeRef: { current: 0 }, ensurePhotoListingDraft: async () => 'listing-1',
+    photoSaveCountRef: { current: 0 }, setPhotoSaveProgress() {}, listingImagePreviewUrlsRef: { current: new Set() },
+    setForm: update => { context.form = update(context.form) },
+    uploadQuickListingImages: async (_id, images, retain) => {
+      await new Promise(resolve => { finish = resolve })
+      retain({ id: images[0].id, url: 'https://example.test/photo.jpg' }, images[0])
+    },
+  }
+  context.retainUploadedListingImage = bind(context, between('function retainUploadedListingImage(', 'async function ensurePhotoListingDraft('), 'retainUploadedListingImage')
+  const start = bind(context, between('async function startSelectedPhotoUploads(', 'async function handleCreateListingImageUpload('), 'startSelectedPhotoUploads')
+  const early = start([image])
+  assert.equal(context.form.listingImages[0].uploadStatus, 'uploading')
+  await Promise.resolve()
+  finish(); await early
+  assert.equal(context.form.listingImages[0].uploadStatus, 'uploaded')
+  assert.equal(context.form.listingImages[0].file, undefined)
+  context.form.listingImages = [image]
+  const removed = start([image]); await Promise.resolve()
+  context.form.listingImages = []
+  finish(); await removed
+  assert.deepEqual(context.form.listingImages, [])
+  context.form.listingImages = [image]
+  const departed = start([image]); await Promise.resolve()
+  context.photoUploadScopeRef.current += 1
+  finish(); await departed
+  assert.equal(context.form.listingImages[0].url, 'blob:early')
+  context.uploadQuickListingImages = async () => { throw Error('offline') }
+  await start([image])
+  assert.equal(context.form.listingImages[0].uploadStatus, 'failed')
+  assert.equal(context.form.listingImages[0].file, image.file)
+})
+
+test('final save waits for photo draft creation then updates that same listing', async () => {
+  const { context, save, createdCount, calls } = saveContext()
+  let finish
+  context.photoDraftCreationRef.current = new Promise(resolve => { finish = resolve })
+  const saving = save()
+  await Promise.resolve()
+  assert.equal(createdCount(), 0)
+  context.pendingCreatedListingIdRef.current = 'listing-1'
+  finish('listing-1'); await saving
+  assert.equal(createdCount(), 0)
+  assert.ok(calls.some(([action]) => action === 'update'))
+  assert.ok(calls.some(([action]) => action === 'navigate'))
+})
+
+test('two photo selections share a private draft receipt without publishing or navigation', async () => {
+  let finish, creates = 0
+  const context = {
+    isEditListingWorkspace: false, pendingCreatedListingIdRef: { current: '' }, photoDraftCreationRef: { current: null },
+    photoUploadScopeRef: { current: 0 }, photoUploadFormRef: { current: { listingImages: [] } },
+    form: { propertyAddress: '18 Test Avenue', sellerType: 'unknown' }, profile: { id: 'agent' },
+    selectedWorkspaceOrganisationId: 'org', organisationId: 'org', currentBranchId: '', linkedDevelopmentId: '', linkedUnitId: '',
+    normalizeText, normalizePropertyCategory: () => 'residential', normalizePropertyStructureType: () => 'freehold',
+    isDeveloperWorkspace: false, assertMvpPilotCreationAllowed() {}, reserveListingCreationId: () => 'creation-1',
+    saveCurrentCreateListingDraft() {}, createPrivateListing: async (payload, options) => {
+      creates += 1
+      assert.equal(payload.listingVisibility, 'internal')
+      assert.equal(payload.isActive, false)
+      assert.equal(options.creationId, 'creation-1')
+      await new Promise(resolve => { finish = resolve })
+      return { listing: { id: 'listing-1' } }
+    },
+  }
+  const ensure = bind(context, between('async function ensurePhotoListingDraft(', 'async function startSelectedPhotoUploads('), 'ensurePhotoListingDraft')
+  const first = ensure(), second = ensure()
+  assert.equal(creates, 1)
+  finish()
+  assert.deepEqual(await Promise.all([first, second]), ['listing-1', 'listing-1'])
+  assert.equal(context.pendingCreatedListingIdRef.current, 'listing-1')
+  assert.equal(await ensure(), 'listing-1')
+  assert.equal(creates, 1)
+})
+
+test('a website-row retry saves changes and queues only that failed website', async () => {
+  const calls = []
+  const context = {
+    form: { listingStatus: 'active', selectedSyndicationChannels: ['property24', 'private_property', 'agency_website'] },
+    editorRelistChannel: '', isListingSaving: false, isEditListingWorkspace: true, editListingId: 'listing-1',
+    initialChannelResults: [{ key: 'property24', retryable: true }, { key: 'private_property', retryable: true }, { key: 'agency_website', status: 'submitted' }],
+    getSalesListingRequiredIssues: () => [], getListingFieldIssues: () => [],
+    setPublicationStatusBusy() {}, setError() {}, setWorkflowMessage() {},
+    performUpdateExistingListing: async options => { calls.push(['save', options]); return true },
+    retryFailedListingChannels: async options => { calls.push(['retry', options]); return [{ key: options.channels[0] }] },
+  }
+  const retry = bind(context, between('async function retryListingPublication(', 'async function handleSaveListing('), 'retryListingPublication')
+  await retry(['private_property'])
+  assert.equal(calls[0][0], 'save')
+  assert.equal(calls[0][1].sendUpdates, false)
+  assert.equal(calls[0][1].navigateAfterSave, false)
+  assert.deepEqual(calls[1][1].channels, ['private_property'])
 })

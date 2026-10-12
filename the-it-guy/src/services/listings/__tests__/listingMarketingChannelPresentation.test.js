@@ -6,6 +6,8 @@ import {
   buildListingChannelPublicationDisplay,
   buildInternalListingPublicationDisplay,
   buildWebsiteListingPublicUrl,
+  buildKingdomWebsiteListingPublicUrl,
+  validateListingPortalPublicUrl,
   getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
   getListingLiveChannels,
@@ -180,4 +182,17 @@ test('Arch9 overview reflects internal publication without enabling a public pag
   for (const status of ['sold', 'withdrawn', 'archived']) {
     assert.equal(buildInternalListingPublicationDisplay({ ...listing, listingStatus: status }).live, false)
   }
+})
+
+
+test('portal URL validation accepts only HTTPS advert pages for the selected portal', () => {
+  assert.equal(validateListingPortalPublicUrl('property24', ' https://www.property24.com/for-sale/example/123 '), 'https://www.property24.com/for-sale/example/123')
+  assert.equal(validateListingPortalPublicUrl('private_property', 'https://www.privateproperty.co.za/for-sale/example/T123'), 'https://www.privateproperty.co.za/for-sale/example/T123')
+  for (const value of ['https://www.privateproperty.co.za/listing/T123', 'https://property24.com.evil.test/listing/123', 'http://www.property24.com/listing/123', 'javascript:alert(1)', 'https://user:secret@www.property24.com/listing/123', 'https://www.property24.com/', 'https://www.property24.com:444/listing/123']) assert.throws(() => validateListingPortalPublicUrl('property24', value), /HTTPS Property24 advert URL/)
+  assert.throws(() => validateListingPortalPublicUrl('agency_website', 'https://website.test/listing/123'))
+})
+test('Kingdom public links match the channel row reference and slug conventions', () => {
+  assert.equal(buildKingdomWebsiteListingPublicUrl({ hostname: 'kingdom.test' }, 'listing-1', 'Oak Avenue', 'A9-TEST-100001'), 'https://kingdom.test/properties/A9-TEST-100001')
+  assert.equal(buildKingdomWebsiteListingPublicUrl({ hostname: 'kingdom.test' }, 'listing-1', 'Oak Avenue', 'PRV-123'), 'https://kingdom.test/properties/oak-avenue-listing-1')
+  assert.equal(buildKingdomWebsiteListingPublicUrl({}, 'listing-1'), '')
 })

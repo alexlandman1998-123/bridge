@@ -36,3 +36,37 @@ it('falls back to a globe if the destination logo fails to load', () => {
   expect(screen.queryByRole('img')).toBeNull()
   expect(screen.getByRole('button', { name: 'Kingdom Website' })).toBeTruthy()
 })
+
+it('shows a channel error and independent status/retry actions in its advertising row', () => {
+  const toggle = vi.fn(), retry = vi.fn(), check = vi.fn()
+  render(<ListingSyndicationChannelCard layout="row" channel={{ key: 'private_property', label: 'Private Property' }} selected onToggle={toggle}
+    publication={{ status: 'needs_attention', retryable: true, message: 'Address is incomplete.' }} onRetry={retry} onCheckStatus={check} />)
+  expect(screen.getByRole('article', { name: 'Private Property advertising' }).className).toContain('listing-syndication-row')
+  expect(screen.getByText('Address is incomplete.')).toBeTruthy()
+  expect(screen.queryByText('Listing saved')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Check status' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Retry this website' }))
+  expect(check).toHaveBeenCalledOnce()
+  expect(retry).toHaveBeenCalledOnce()
+  expect(toggle).not.toHaveBeenCalled()
+})
+
+it('keeps an uncertain channel checkable without offering retry or claiming it is live', () => {
+  render(<ListingSyndicationChannelCard layout="row" channel={{ key: 'property24', label: 'Property24' }} selected
+    publication={{ status: 'uncertain', message: 'Request timed out' }} onCheckStatus={vi.fn()} onRetry={vi.fn()} />)
+  expect(screen.getByText('Not confirmed')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Check status' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Retry this website' })).toBeNull()
+  expect(screen.getByText(/website may have accepted this request/)).toBeTruthy()
+})
+
+it('shows accepted receipts as previous results after edits and blocks retry while another channel is sending', () => {
+  const { rerender } = render(<ListingSyndicationChannelCard layout="row" channel={{ key: 'property24', label: 'Property24' }} selected previousResult
+    publication={{ status: 'submitted' }} />)
+  expect(screen.getByText('Previous advertising request')).toBeTruthy()
+  expect(screen.getByText('Request accepted')).toBeTruthy()
+  expect(screen.getByText(/Check the public advert before treating it as live/)).toBeTruthy()
+  rerender(<ListingSyndicationChannelCard layout="row" channel={{ key: 'property24', label: 'Property24' }} selected unsavedChanges retryBlocked
+    publication={{ status: 'needs_attention', retryable: true }} onRetry={vi.fn()} />)
+  expect(screen.getByRole('button', { name: 'Save and retry this website' }).disabled).toBe(true)
+})

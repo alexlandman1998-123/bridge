@@ -1,6 +1,29 @@
 # bridge.
 
 
+## Portal Manage popups
+
+Listing → Marketing opens a separate Manage popup for each channel. It shows
+that channel's saved status, advert reference, submission/check times, pending
+changes, errors, warnings and recent activity. Update and retry target that
+advert; Sold and Under offer explicitly update the whole listing and its active
+channels. Relist retains the selected portal and existing advert identity.
+Property24 offers expiry and extension; Private Property offers withdrawal and
+reactivation, without an unsupported Expired action.
+
+Property24 and Private Property popups also let agents add or edit a live advert
+URL. Only HTTPS advert pages on the selected portal's domain are accepted.
+Saving a URL updates the saved link without sending a portal update or marking
+the advert live. Website public links continue to follow their publication URLs.
+
+Focused checks: the ListingChannelManageDialog component and integration suites,
+ListingRelistDialog and listingChannelManagement/Relist service suites,
+`node scripts/listing-quick-actions-phase4.test.mjs`,
+`node scripts/property24-expire-listing.test.mjs`,
+`node scripts/listing-channel-update-state.test.mjs`, and
+`node scripts/listing-channel-manage-browser.test.mjs`. The browser check uses
+local portal doubles and blocks external requests; it does not publish adverts.
+
 ## Multiple listing agents (prepared)
 
 Sale and rental listing Overview now offers **Edit additional agents** below the
@@ -73,6 +96,17 @@ publication service/editor Vitest suites.
 
 ## Seller onboarding review conflicts
 
+Manual seller capture now carries the selected ownership route and its
+confirmation into saved canonical facts and clears old pending flags. Existing
+profiles with a recorded manual-capture source and selected ownership route are
+recognised at document review. Unconfirmed legacy defaults still require an
+ownership choice. Levies and water billing remain optional follow-ups across
+manual and link onboarding and do not block approval or document preparation.
+Identity, legal owner, authority, FICA answers and mandate terms retain their
+existing checks. Focused checks: `sellerOnboardingReview.test.js`,
+`sellerSubjectModel.test.js`, `sellerLeadManualCaptureModel.test.js`, and
+`npm run test:seller-onboarding-flow-contract`.
+
 Seller document approval and manual reminders use the portal context's text
 listing ID for email-recipient lookup. Release the forward migration
 `20261012150343_seller_document_review_portal_listing_text_id.sql` before testing
@@ -93,6 +127,15 @@ signing links.
 Focused check: `npm run test:listing-seller-canonical-update`.
 
 ## Document upload feedback
+
+Automatically created disclosure drafts and unsigned signing copies do not count
+as uploaded files or enter the uploaded-file review queue. An untouched disclosure
+offers generate/download, generate/send for signature and upload of an existing
+signed copy. Draft download restrictions apply to that draft, not to uploading
+evidence against its signed-document requirement. Actual uploads and active
+signature requests retain their review and version checks. Focused checks:
+`sellerDocumentWorkflow.test.js`, the untouched-disclosure projection regression,
+and `SellerDocumentWorkflowActions.test.jsx`.
 
 Seller uploads on listings, leads and contacts show progress through preparation,
 transfer and saving, then **Uploaded** when the file and its record are confirmed.
@@ -5062,3 +5105,20 @@ focused ESLint and primary app build. Logs are
 `tmp/fica-timeout-build-20261012.log`. The read-only evidence is
 `tmp/fica-preparation-audit-20261012.json`. No production release or migration
 was performed for this correction.
+
+## Photos selected during listing capture
+
+New-listing capture uploads photos as soon as they are selected. It first creates
+one private draft receipt, stays in the wizard, and reuses that draft on final
+save. Each photo shows upload status and offers retry after failure. Final save
+joins in-flight uploads and reuses completed ones before saving and verifying the
+marketing record. Selecting photos never queues advertising; photos still need
+Save draft or Save and publish to be attached to the durable marketing record.
+Focused checks: `node --test src/lib/__tests__/listingMediaUploads.test.js
+scripts/create-listing-save-recovery.test.mjs`.
+
+The sale listing editor's Where to advertise step uses full-width website rows.
+Publishing receipts, connection issues, missing fields and per-website retry
+controls appear inside their respective row. The separate saved-result card and
+advert preview are hidden on this step. Retries save edits first and request only
+the failed website; accepted and uncertain requests are not replayed.

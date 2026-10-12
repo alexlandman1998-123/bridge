@@ -60,7 +60,7 @@ function SellerDocumentReviewActions({
   if (!canReview && !canRemind) return null
 
   return (
-    <div data-document-review-actions className={compact ? '' : 'mt-4 border-t border-[#e2eaf3] pt-4'}>
+    <div data-document-review-actions className={compact ? `min-w-0 [&_button]:whitespace-nowrap ${confirmingSignedCopy || rejecting ? 'w-full' : 'shrink-0 max-w-full'}` : 'mt-4 border-t border-[#e2eaf3] pt-4'}>
       {confirmingSignedCopy ? (
         <div className="rounded-[14px] border border-[#cfe3d7] bg-[#f4fbf6] p-3">
           <p className="text-xs font-semibold text-[#195a3a]">Check the signed document</p>

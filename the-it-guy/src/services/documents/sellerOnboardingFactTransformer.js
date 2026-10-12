@@ -517,6 +517,9 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       legacy_type: flow.seller_legacy_type,
       legal_type: sellerLegalType,
       ownership_type: normalizeKey(form.ownershipType),
+      seller_ownership_route: normalizeKey(form.sellerOwnershipRoute || form.seller_ownership_route),
+      ownership_route_confirmed: normalizeBoolean(form.ownershipRouteConfirmed ?? form.ownership_route_confirmed, false),
+      ownership_declaration_pending: normalizeBoolean(form.ownershipDeclarationPending ?? form.ownership_declaration_pending, false),
       owner_entity_type: ownerEntityType,
       owner_structure_type: ownerStructureType,
       foreign_owner: foreignOwner,
@@ -973,8 +976,8 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false, requi
   push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
   push(missingIf(!hasValue(facts.property?.property_title_type || facts.property?.property_structure_type), 'property_title_type_missing', 'Property title type is required.'))
   push(missingIf(!Number.isFinite(facts.property?.rates_taxes), 'rates_taxes_missing', 'Rates and taxes are required.'))
-  push(missingIf(!hasValue(facts.property?.levies) && !facts.property?.levies_not_applicable, 'levies_missing', 'Levies are required, or must be marked not applicable.'))
-  push(missingIf(!hasValue(facts.property?.utilities?.water_billing_type || facts.property?.water_billing_type), 'water_billing_type_missing', 'Water billing type is required.'))
+  push(missingIf(!hasValue(facts.property?.levies ?? facts.property?.scheme?.levies) && !facts.property?.levies_not_applicable, 'levies_missing', 'Confirm any applicable levies or mark them not applicable when completing the property costs.', 'recommended'))
+  push(missingIf(!hasValue(facts.property?.utilities?.water_billing_type || facts.property?.water_billing_type), 'water_billing_type_missing', 'Confirm the water billing type when completing the property utilities.', 'recommended'))
   push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Choose the mandate type when preparing the mandate document.', 'recommended'))
   push(missingIf(
     !facts.property_disclosure?.digitally_complete && !facts.property_disclosure?.uploadedDocumentReviewed && !facts.property_disclosure?.uploaded_document_reviewed,

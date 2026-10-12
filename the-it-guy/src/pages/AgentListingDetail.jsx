@@ -2,7 +2,7 @@ import { listingRelistEditorPath, relistChannelFromSearch } from '../services/li
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import ListingDocumentActions from '../components/documents/ListingDocumentActions.jsx'
 import DocumentUploadProgress from '../components/documents/DocumentUploadProgress.jsx'
-import { withDocumentUploadDeadline } from '../lib/documentUploadLifecycle.js'
+import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
 import { buildSellerDisclosurePreparationPatch } from '../lib/sellerAgentAssistedDisclosure.js'
@@ -20,6 +20,7 @@ import '../components/listings/property24-manage.css'
 import ListingChannelLastUpdate from '../components/listings/ListingChannelLastUpdate'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
 import ListingChannelManageDialog from '../components/listings/ListingChannelManageDialog'
+import ListingChannelActions from '../components/listings/ListingChannelActions'
 import ListingRelistDialog from '../components/listings/ListingRelistDialog'
 import ListingDeletionBlockedNotice from '../components/listings/ListingDeletionBlockedNotice'
 import { getListingDeletionBlock } from '../services/privateListingDeletion'
@@ -96,7 +97,7 @@ import {
   ListingViewingRequestModal,
 } from '../components/listings/ListingBuyerActionModals'
 import LeadCreateDialog from '../components/leads/LeadCreateDialog'
-import { deriveListingChannelUpdateStates, summarizeListingPortalError } from '../services/listings/listingChannelUpdateState'
+import { deriveListingChannelUpdateStates, getListingChannelManageActivity, summarizeListingPortalError } from '../services/listings/listingChannelUpdateState'
 import { isQuickListingPortalUpdateAccepted } from '../services/listings/listingQuickActionDelivery'
 import {
   getPendingListingMediaUploads,
@@ -111,6 +112,9 @@ import {
 import {
   buildListingChannelPublicationDisplay,
   buildInternalListingPublicationDisplay,
+  buildWebsiteListingPublicUrl,
+  buildKingdomWebsiteListingPublicUrl,
+  validateListingPortalPublicUrl,
   getPrivatePropertyReadinessMessages,
   getListingChannelViewUrl,
   normalizeListingChannelPublicUrl,
@@ -391,6 +395,7 @@ import { reviewSellerDocument, sendSellerDocumentManualReminder, repairSellerDoc
 import { issueSelectedSellerDocumentRequests } from '../services/sellerDocumentRequestOrchestrationService'
 import {
   getSellerBasePackAliases,
+  isSellerDocumentPreparationArtifact,
   SELLER_BASE_PACK_KEYS,
 } from '../lib/sellerBasePackContract'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
@@ -1480,12 +1485,13 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
   const promotionStatus = normalizeText(row.promotionStatus || row.promotion_status || originalDocument.promotionStatus || originalDocument.promotion_status)
   const promotionError = normalizeText(row.promotionError || row.promotion_error || originalDocument.promotionError || originalDocument.promotion_error)
   const promotionAttemptedAt = normalizeText(row.promotionAttemptedAt || row.promotion_attempted_at || originalDocument.promotionAttemptedAt || originalDocument.promotion_attempted_at)
-  const canUpload = row?.canUpload !== false && row?.can_upload !== false && upload?.canUpload !== false && upload?.can_upload !== false
+  const preparationOnly = isSellerDocumentPreparationArtifact(Object.keys(originalDocument).length ? originalDocument : row)
+  const canUpload = row?.documentContract?.stage === 'review_draft' || (row?.canUpload !== false && row?.can_upload !== false && upload?.canUpload !== false && upload?.can_upload !== false)
   const canDownload = row?.canDownload !== false && row?.can_download !== false && upload?.canDownload !== false && upload?.can_download !== false
   const downloadReason = normalizeText(row?.downloadReason || row?.download_reason || upload?.downloadReason || upload?.download_reason)
   const isGeneratedDraft = row?.isGeneratedDraft === true || row?.is_generated_draft === true || upload?.isGeneratedDraft === true || upload?.is_generated_draft === true
   const hasPersistedUpload = Boolean(row.hasUpload || url || filePath || uploadedOn)
-  const hasUpload = isGeneratedDraft ? hasPersistedUpload : Boolean(hasPersistedUpload || generatedHtml)
+  const hasUpload = !preparationOnly && Boolean(hasPersistedUpload || generatedHtml)
   const key = normalizeText(row.key || row.id || row.title || row.label)
   const rowStatus = normalizeKey(row.status)
   const resolvedStatus = hasUpload && (!rowStatus || ['required', 'requested'].includes(rowStatus))
@@ -3850,6 +3856,7 @@ function AgentListingDetail() {
   const [relistChannel, setRelistChannel] = useState(null)
   const [channelRemoval, setChannelRemoval] = useState(null)
   const [channelRemovalError, setChannelRemovalError] = useState('')
+  const [channelManageCheckedAt, setChannelManageCheckedAt] = useState({})
   const [websiteRefreshKey, setWebsiteRefreshKey] = useState(0)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
@@ -4093,16 +4100,6 @@ function AgentListingDetail() {
       search: params.toString() ? `?${params.toString()}` : '',
     }, { replace: true })
   }, [listingRecord?.id, listingSupportingDataReady, location.pathname, location.search, navigate])
-
-  useEffect(() => {
-    const channel = relistChannelFromSearch(location.search)
-    if (!channel || !listingRecord?.id || !listingSupportingDataReady) return
-    setSellerWorkspaceTab('marketing')
-    setRelistChannel(channel)
-    const params = new URLSearchParams(location.search)
-    params.delete('relist')
-    navigate({ pathname: location.pathname, search: `?${params}` }, { replace: true, state: location.state })
-  }, [listingRecord?.id, listingSupportingDataReady, location.pathname, location.search, location.state, navigate])
 
   useEffect(() => {
     const channel = relistChannelFromSearch(location.search)
@@ -5373,7 +5370,7 @@ function AgentListingDetail() {
     }
   }
 
-  async function retryListingChannelUpdate(channel, action) {
+  async function retryListingChannelUpdate(channel, action, { fromManage = false } = {}) {
     if (!listingRecord?.id) {
       setDetailError('Reload this listing before retrying the portal update.')
       return
@@ -5401,6 +5398,7 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailError(`${error?.message || 'Monitoring is unavailable.'} No portal update was sent.`)
       setQuickListingBusy(false)
+      if (fromManage) throw error
       return
     }
     let result
@@ -5431,18 +5429,24 @@ function AgentListingDetail() {
     setDetailMessage(result.status === 'sent' ? `${channel} accepted the retry. Verify its public page before marking it current.` : '')
     if (result.status === 'failed') setDetailError(result.detail)
     setQuickListingBusy(false)
+    if (fromManage && result.status === 'failed') throw new Error(result.detail)
+    return result
   }
 
-  async function confirmListingChannelCurrent(channel, action, publicUrl) {
-    if (!listingRecord?.id || channelUpdateStates[channel]?.status !== 'awaiting_verification' || !action) return
+  async function confirmListingChannelCurrent(channel, action, publicUrl, { skipConfirmation = false, throwOnError = false } = {}) {
+    if (!listingRecord?.id || channelUpdateStates[channel]?.status !== 'awaiting_verification' || !action) {
+      if (throwOnError) throw new Error('Refresh this channel before verifying its latest update.')
+      return
+    }
     const expectedHost = channel === 'Property24' ? 'property24.com' : 'privateproperty.co.za'
     let parsed
     try { parsed = new URL(String(publicUrl || '')) } catch { parsed = null }
     if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.hostname !== expectedHost && !parsed.hostname.endsWith(`.${expectedHost}`))) {
       setDetailError(`Add the confirmed ${channel} public listing URL before marking this channel current.`)
+      if (throwOnError) throw new Error(`Add the confirmed ${channel} public listing URL before marking this channel current.`)
       return
     }
-    if (!window.confirm(`Have you opened the ${channel} public page and confirmed this ${action.replace(/_/g, ' ')} update is visible?`)) return
+    if (!skipConfirmation && !window.confirm(`Have you opened the ${channel} public page and confirmed this ${action.replace(/_/g, ' ')} update is visible?`)) return
     try {
       const publicationKey = getListingPublicationChannelKey(channel)
       const acceptedSnapshot = deriveListingPublicationStates(
@@ -5469,6 +5473,7 @@ function AgentListingDetail() {
       setDetailMessage(`${channel} marked current after public-page verification.`)
     } catch (error) {
       setDetailError(error?.message || 'Verification could not be saved. This channel is still awaiting verification.')
+      if (throwOnError) throw error
     }
   }
 
@@ -5615,8 +5620,8 @@ function AgentListingDetail() {
     try {
       const { channel, action } = channelRemoval
       let response
-      if (channel === 'Property24') response = action === 'expire' ? await expireProperty24Listing({ skipConfirmation: true }) : await withdrawProperty24Listing({ skipConfirmation: true })
-      else if (channel === 'Private Property' && action === 'withdraw') response = await expirePrivatePropertyListing({ skipConfirmation: true })
+      if (channel === 'Property24') response = action === 'expire' ? await expireProperty24Listing({ skipConfirmation: true, throwOnError: true }) : await withdrawProperty24Listing({ skipConfirmation: true, throwOnError: true })
+      else if (channel === 'Private Property' && action === 'withdraw') response = await expirePrivatePropertyListing({ skipConfirmation: true, throwOnError: true })
       else if (channel === 'Agency Website' && action === 'withdraw') {
         response = await setWebsiteListingPublication(listingRecord.id, 'unpublish')
         if (response?.status !== 'unpublished') throw new Error('The website has not confirmed withdrawal.')
@@ -6241,11 +6246,12 @@ function AgentListingDetail() {
     return saveMarketingDraft(nextDraft, { successMessage: 'Property24 expiry date saved.' })
   }
 
-  async function previewProperty24Listing() {
+  async function previewProperty24Listing({ fromManage = false } = {}) {
     const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
     if (expiryError) {
       setDetailMessage('')
       setDetailError(expiryError)
+      if (fromManage) throw new Error(expiryError)
       return null
     }
     setProperty24Action('preview')
@@ -6270,20 +6276,22 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 preview failed.')
+      if (fromManage) throw error
       return null
     } finally {
       setProperty24Action('')
     }
   }
 
-  async function publishProperty24Listing() {
+  async function publishProperty24Listing({ fromManage = false } = {}) {
     try { await requireSettledListingPublication(listingId, ['property24']) }
-    catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); return null }
-    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Property24')) return null
+    catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); if (fromManage) throw error; return null }
+    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Property24')) { if (fromManage) throw new Error('Save the listing photos before updating Property24.'); return null }
     const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
     if (expiryError) {
       setDetailMessage('')
       setDetailError(expiryError)
+      if (fromManage) throw new Error(expiryError)
       return null
     }
     setProperty24Action('publish')
@@ -6302,6 +6310,7 @@ function AgentListingDetail() {
       publicationTracked = true
       const payload = await callProperty24ListingAction('publish', getProperty24ActionContext(), { fallbackMessage: 'Property24 publish failed.' })
       setProperty24Preview(payload)
+      if (!isQuickListingPortalUpdateAccepted('Property24', 'price_reduction', payload)) throw new Error('Property24 has not confirmed acceptance. Check status before sending again.')
       const listingNumber = getProperty24ListingNumberFromResponse(payload)
       const confirmedStatus = payload?.report?.databaseWrite?.property24Status || 'draft'
       const nextDraft = {
@@ -6320,7 +6329,8 @@ function AgentListingDetail() {
         reference: listingNumber || property24Reference,
         publicUrl: nextDraft.property24ListingUrl,
       })
-      await loadListingData()
+      setQuickListingResults(previous => previous.filter(row => row.channel !== 'Property24'))
+      await loadListingData({ showLoading: !fromManage })
       openSellerWorkspaceSection('marketing')
       setDetailError('')
       setDetailMessage(confirmedStatus === 'published'
@@ -6338,6 +6348,7 @@ function AgentListingDetail() {
       }
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 publish failed.')
+      if (fromManage) throw error
       return null
     } finally {
       setProperty24Action('')
@@ -6450,7 +6461,7 @@ function AgentListingDetail() {
     void action()
   }
 
-  async function previewPrivatePropertyListing() {
+  async function previewPrivatePropertyListing({ fromManage = false } = {}) {
     setPrivatePropertyAction('preview')
     setPrivatePropertyPreview(null)
     setDetailError('')
@@ -6478,6 +6489,7 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Private Property preview failed.')
+      if (fromManage) throw error
       return null
     } finally {
       setPrivatePropertyAction('')
@@ -6489,13 +6501,13 @@ function AgentListingDetail() {
     return previewPrivatePropertyListing()
   }
 
-  async function publishPrivatePropertyListing() {
+  async function publishPrivatePropertyListing({ fromManage = false } = {}) {
     try { await requireSettledListingPublication(listingId, ['private_property']) }
-    catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); return null }
-    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Private Property')) return null
-    if (!await requireSyndicationReviewBeforePublish('privateProperty')) return null
+    catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); if (fromManage) throw error; return null }
+    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Private Property')) { if (fromManage) throw new Error('Save the listing photos before updating Private Property.'); return null }
+    if (!await requireSyndicationReviewBeforePublish('privateProperty')) return fromManage ? { deferred: true } : null
     const confirmation = `PRIVATE_PROPERTY_PUBLISH:${listingRecord?.id || ''}:production`
-    if (!window.confirm('Submit this exact Arch9 listing to Private Property production? Private Property will begin processing the listing after submission.')) return null
+    if (!fromManage && !window.confirm('Submit this exact Arch9 listing to Private Property production? Private Property will begin processing the listing after submission.')) return null
     setPrivatePropertyAction('publish')
     setDetailError('')
     setDetailMessage('Submitting to Private Property...')
@@ -6512,6 +6524,7 @@ function AgentListingDetail() {
       publicationTracked = true
       const payload = await callPrivatePropertyListingAction('publish', { confirm: confirmation }, { fallbackMessage: 'Private Property publish failed.' })
       setPrivatePropertyPreview(payload)
+      if (!isQuickListingPortalUpdateAccepted('Private Property', 'price_reduction', payload)) throw new Error('Private Property has not confirmed acceptance. Check status before sending again.')
       const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
       const nextStatus = payload?.report?.syncResult?.arch9Status || payload?.report?.externalStatus || 'submitted'
       const nextDraft = {
@@ -6529,7 +6542,8 @@ function AgentListingDetail() {
         reference: privatePropertyReference || marketingDraft.privatePropertyReference,
         publicUrl: nextDraft.privatePropertyListingUrl,
       })
-      await loadListingData()
+      setQuickListingResults(previous => previous.filter(row => row.channel !== 'Private Property'))
+      await loadListingData({ showLoading: !fromManage })
       openSellerWorkspaceSection('marketing')
       setDetailError('')
       setDetailMessage(privatePropertyReference
@@ -6547,13 +6561,14 @@ function AgentListingDetail() {
       }
       setDetailMessage('')
       setDetailError(error?.message || 'Private Property publish failed.')
+      if (fromManage) throw error
       return null
     } finally {
       setPrivatePropertyAction('')
     }
   }
 
-  async function refreshPrivatePropertyListingStatus() {
+  async function refreshPrivatePropertyListingStatus({ fromManage = false } = {}) {
     if (!privatePropertyHasChannel) {
       setDetailError('This listing has not been submitted to Private Property yet. Run readiness, then use Publish to submit it first.')
       return null
@@ -6562,13 +6577,14 @@ function AgentListingDetail() {
     setDetailError('')
     setDetailMessage('Checking Private Property live status...')
     try {
-      const query = new URLSearchParams({ recordSync: 'true' })
+      const query = new URLSearchParams({ cached: 'false', recordSync: 'true' })
       const payload = await callPrivatePropertyListingAction('status', {}, {
         method: 'GET',
         query,
         fallbackMessage: 'Private Property status check failed.',
       })
       setPrivatePropertyStatusCheck(payload)
+      if (payload?.monitor?.apiError) throw new Error(getPrivatePropertyApiMessage(payload, 'Private Property status check failed.'))
       const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
       const nextStatus = payload?.monitor?.syncResult?.arch9Status || payload?.monitor?.externalStatus || ''
       setMarketingDraft((previous) => ({
@@ -6587,6 +6603,7 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Private Property status check failed.')
+      if (fromManage) throw error
       return null
     } finally {
       setPrivatePropertyAction('')
@@ -6627,7 +6644,7 @@ function AgentListingDetail() {
     }
   }
 
-  async function expirePrivatePropertyListing({ skipConfirmation = false } = {}) {
+  async function expirePrivatePropertyListing({ skipConfirmation = false, throwOnError = false } = {}) {
     if (!skipConfirmation && !window.confirm('Withdraw this listing from Private Property? It will no longer be advertised there. The Arch9 listing and other channels will be kept.')) return null
     setPrivatePropertyAction('expire')
     setDetailError('')
@@ -6635,19 +6652,20 @@ function AgentListingDetail() {
     try {
       const payload = await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property withdrawal failed.' })
       setMarketingDraft((previous) => ({ ...previous, privatePropertyStatus: 'inactive' }))
-      await loadListingData()
+      await loadListingData({ showLoading: !throwOnError })
       setDetailMessage('Withdrawn from Private Property.')
       return payload
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Private Property withdrawal failed.')
+      if (throwOnError) throw error
       return null
     } finally {
       setPrivatePropertyAction('')
     }
   }
 
-  async function refreshProperty24ListingStatus() {
+  async function refreshProperty24ListingStatus({ fromManage = false } = {}) {
     setProperty24Action('status')
     setDetailError('')
     setDetailMessage('Checking Property24 live status...')
@@ -6674,28 +6692,28 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 status check failed.')
+      if (fromManage) throw error
       return null
     } finally {
       setProperty24Action('')
     }
   }
 
-  async function saveConfirmedPortalLink(portal) {
+  async function saveConfirmedPortalLink(portal, linkValue, { fromManage = false } = {}) {
     const isProperty24 = portal === 'property24'
     const field = isProperty24 ? 'property24ListingUrl' : 'privatePropertyListingUrl'
-    const value = String(marketingDraft[field] || '').trim()
-    let parsed
-    try { parsed = new URL(value) } catch { parsed = null }
-    const expectedHost = isProperty24 ? 'property24.com' : 'privateproperty.co.za'
-    if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.hostname !== expectedHost && !parsed.hostname.endsWith(`.${expectedHost}`))) {
-      setDetailError(`Enter the exact HTTPS ${isProperty24 ? 'Property24' : 'Private Property'} listing URL before saving.`)
+    try {
+      const value = validateListingPortalPublicUrl(portal, linkValue ?? marketingDraft[field])
+      const result = await saveMarketingDraft({ ...marketingDraft, [field]: value }, { successMessage: '' })
+      if (!result?.ok || result.localOnly) throw result?.error || new Error('The portal link could not be saved. Try again.')
+      await loadListingData({ showLoading: false })
+      setDetailMessage(`${isProperty24 ? 'Property24' : 'Private Property'} link saved. Open the public advert to verify it.`)
+      return { ...result, message: 'Live portal link saved. Saving a link does not publish or confirm the advert.' }
+    } catch (error) {
+      setDetailError(error?.message || 'The portal link could not be saved.')
+      if (fromManage) throw error
       return null
     }
-    const result = await saveMarketingDraft({ ...marketingDraft, [field]: parsed.toString() }, { successMessage: '' })
-    if (result?.ok === false) return null
-    await loadListingData({ showLoading: false })
-    setDetailMessage(`${isProperty24 ? 'Property24' : 'Private Property'} link saved. Open the public page from Listing Channels and verify the latest update.`)
-    return result
   }
 
   async function updateProperty24ListingStatus() {
@@ -6748,7 +6766,7 @@ function AgentListingDetail() {
     }
   }
 
-  async function expireProperty24Listing({ skipConfirmation = false } = {}) {
+  async function expireProperty24Listing({ skipConfirmation = false, throwOnError = false } = {}) {
     if (!property24Reference) return null
     const confirmed = skipConfirmation || window.confirm('Expire this listing on Property24? It will no longer be advertised on the portal. You can reactivate or republish it later if needed.')
     if (!confirmed) return null
@@ -6779,20 +6797,21 @@ function AgentListingDetail() {
             : null,
         },
       })
-      await loadListingData()
+      await loadListingData({ showLoading: !throwOnError })
       setDetailError('')
       setDetailMessage(`Expired on Property24. Listing number ${listingNumber}.`)
       return payload
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 expiry failed.')
+      if (throwOnError) throw error
       return null
     } finally {
       setProperty24Action('')
     }
   }
 
-  async function withdrawProperty24Listing({ skipConfirmation = false } = {}) {
+  async function withdrawProperty24Listing({ skipConfirmation = false, throwOnError = false } = {}) {
     if (!property24Reference) return null
     const confirmed = skipConfirmation || window.confirm('Withdraw this listing from Property24? It will no longer be advertised there. The Arch9 listing and other channels will be kept.')
     if (!confirmed) return null
@@ -6830,13 +6849,14 @@ function AgentListingDetail() {
             : null,
         },
       })
-      await loadListingData()
+      await loadListingData({ showLoading: !throwOnError })
       setDetailError('')
       setDetailMessage(`Withdrawn from Property24. Listing number ${listingNumber}.`)
       return payload
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 withdraw failed.')
+      if (throwOnError) throw error
       return null
     } finally {
       setProperty24Action('')
@@ -8342,8 +8362,8 @@ function AgentListingDetail() {
     }
     const reviewedForm = getListingSellerFormData(listingRecord)
     const recordedReview = readSellerOnboardingReview(reviewedForm.sellerOnboardingReview || reviewedForm.seller_onboarding_review)
-    if (recordedReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
-      setDetailError('Approve the submitted seller onboarding before preparing documents.')
+    if (recordedReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
+      setDetailError('The seller onboarding is awaiting correction. Review the resubmitted information before preparing documents.')
       return
     }
     if (!mandateReplacementIntent) {
@@ -8384,15 +8404,18 @@ function AgentListingDetail() {
       if (onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
         throw new Error('The seller onboarding is awaiting correction. Review the resubmitted onboarding before preparing another signing pack.')
       }
-      if (onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
-        throw new Error('The seller onboarding approval changed. Review the latest details before preparing documents.')
-      }
       const currentRequests = await listSellerPortalSigningRequests(listingRecord.id)
       const generatedKeys = sellerDocumentPreparationKey ? [sellerDocumentPreparationKey] : Object.keys(SELLER_DOCUMENT_SELECTION_KEYS).filter(key => selected.includes(SELLER_DOCUMENT_SELECTION_KEYS[key]))
       if (generatedKeys.some(key => sellerDocumentHasActiveSigning(currentRequests.documents || [], key))) throw new Error('A signing request already exists for this document. Track or retry its reviewed version in Documents.')
       if (generatedKeys.some(key => sellerDocumentHasUploadedEvidence(currentRequests.uploads || [], key, { replacement: mandateReplacementIntent }))) throw new Error('This document already has signed evidence. Review it in Documents or use the replacement workflow.')
       const documentRoutes = Object.fromEntries(generatedKeys.map(key => [key, sellerMandateSignatureRoute]))
-      const packReview = onboardingReview
+      const packReview = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
+        ? onboardingReview
+        : recordSellerOnboardingReview({
+            existing: onboardingReview,
+            status: SELLER_ONBOARDING_REVIEW_STATUS.approved,
+            actor: String(listingActor?.id || profile?.id || ''),
+          })
       const formalPackApproval = createSellerOnboardingFormalPackApproval({
         existing: existingForm.sellerOnboardingFormalPackApproval || existingForm.seller_onboarding_formal_pack_approval,
         reviewApproved: packReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved,
@@ -11544,7 +11567,7 @@ function AgentListingDetail() {
     setSellerDocumentUploadKey(uploadKey)
     setSellerDocumentUploadProgress((current) => ({
       ...current,
-      [uploadKey]: { status: 'uploading', fileName: file.name || 'Document', error: '' },
+      [uploadKey]: { ...createDocumentUploadProgress('preparing', '', { fileName: file.name || 'Document' }), status: 'uploading', error: '' },
     }))
     setDetailError('')
     setDetailMessage('')
@@ -12667,20 +12690,112 @@ function AgentListingDetail() {
 
   function renderSimpleChannelManagePanel(channelName, onClose) {
     const currentStatus = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || 'active')
-    const failedUpdates = Object.entries(channelUpdateStates).filter(([name, state]) => state?.status === 'needs_attention' && state.retriable !== false && (['sold', 'under_offer'].includes(state.action) && state.action === currentStatus || name === channelName && name === 'Property24' && state.action === 'expiry'))
-      .map(([channel, state]) => ({ channel, action: state.action, status: 'failed', detail: state.detail }))
+    const key = getListingPublicationChannelKey(channelName)
+    const isP24 = channelName === 'Property24'
+    const isPP = channelName === 'Private Property'
+    const website = channelName === 'Kingdom Website' ? kingdomWebsitePublication : agencyWebsitePublication
+    const publication = listingPublicationStates[key]
+    const updateState = channelUpdateStates[channelName]
+    const reference = isP24 ? property24Reference : isPP ? marketingDraft.privatePropertyReference || privatePropertyLink?.reference : listingRecord?.arch9Reference || listingRecord?.listingReference
+    const publicUrl = isP24 ? getListingChannelViewUrl(key, marketingDraft.property24ListingUrl || publication?.publicUrl)
+      : isPP ? getListingChannelViewUrl(key, marketingDraft.privatePropertyListingUrl || privatePropertyLink?.url || publication?.publicUrl)
+      : channelName === 'Kingdom Website' ? buildKingdomWebsiteListingPublicUrl(website, listingRecord?.id, marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title, listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode)
+      : buildWebsiteListingPublicUrl(website, listingRecord?.id, marketingDraft.headline || listingRecord?.listingTitle)
+    const channelStatus = isP24 ? property24StatusKey : isPP ? privatePropertyExternalStatus || privatePropertyStatusKey : website?.status
+    const hasAdvert = isP24 ? property24HasReference : isPP ? privatePropertyHasChannel : website?.status === 'published'
+    const inactive = ['expired', 'removed', 'withdrawn', 'inactive', 'archived', 'paused', 'failed'].includes(channelStatus)
+    const saleClosed = ['sold', 'under_offer', 'transaction_created', 'deleted'].includes(currentStatus)
+    const statusRetry = ['sold', 'under_offer'].includes(updateState?.action) && updateState.action === currentStatus
+    const expiryRetry = isP24 && updateState?.action === 'expiry' && property24Published && property24HasReference
+    const contentRetry = ['publish', 'update', 'price_reduction'].includes(updateState?.action) && hasAdvert && !inactive && !['sold', 'withdrawn', 'expired', 'archived', 'transaction_created', 'deleted'].includes(currentStatus)
+    const retryAvailable = updateState?.status === 'needs_attention' && updateState.retriable !== false && (statusRetry || expiryRetry || contentRetry)
+    const failedUpdates = retryAvailable && (statusRetry || expiryRetry)
+      ? [{ channel: channelName, action: updateState.action, status: 'failed', detail: updateState.detail }] : []
+    const refresh = async () => {
+      if (isP24 || isPP) {
+        const response = isP24 ? await refreshProperty24ListingStatus({ fromManage: true }) : await refreshPrivatePropertyListingStatus({ fromManage: true })
+        if (!response) throw new Error(`${channelName} status could not be checked.`)
+        setChannelManageCheckedAt(previous => ({ ...previous, [`${listingRecord.id}:${channelName}`]: new Date().toISOString() }))
+        return response
+      }
+      const next = channelName === 'Kingdom Website' ? await getKingdomWebsitePublicationStatus(listingRecord.id) : await getWebsiteListingPublicationStatus(listingRecord.id, { includePartner: false })
+      if (channelName === 'Kingdom Website') setKingdomWebsitePublication(next)
+      else setAgencyWebsitePublication(next)
+      setWebsiteRefreshKey(value => value + 1)
+      setChannelManageCheckedAt(previous => ({ ...previous, [`${listingRecord.id}:${channelName}`]: new Date().toISOString() }))
+      return { ok: true, message: `${channelName} status checked: ${formatStatusLabel(next?.status || 'unknown')}.` }
+    }
+    const update = async () => {
+      if (isP24 || isPP) {
+        const response = isP24 ? await publishProperty24Listing({ fromManage: true }) : await publishPrivatePropertyListing({ fromManage: true })
+        if (response?.deferred) return response
+        if (!response || !isQuickListingPortalUpdateAccepted(channelName, 'price_reduction', response)) throw new Error(`${channelName} has not confirmed acceptance. Check status before sending again.`)
+        return { ok: true, message: `${channelName} accepted the update. Open the public advert to check the saved details.` }
+      }
+      const prepared = await prepareAgencyWebsiteListing()
+      if (!prepared?.ok || prepared.localOnly) throw prepared?.error || new Error('Save this listing before updating the website.')
+      const draft = prepared.publicationDraft || marketingDraft
+      await recordListingPublicationStage(channelName, 'submitted', draft, { action: 'update' })
+      let accepted = false
+      try {
+        const next = channelName === 'Kingdom Website' ? await publishKingdomWebsiteListing(listingRecord.id, 'update') : await setWebsiteListingPublication(listingRecord.id, 'update')
+        if (next?.status !== 'published') throw new Error(`${channelName} has not confirmed the update.`)
+        accepted = true
+        if (channelName === 'Kingdom Website') setKingdomWebsitePublication(next)
+        else setAgencyWebsitePublication(next)
+        await recordListingPublicationStage(channelName, 'accepted', draft, { action: 'update', publicUrl })
+        await loadListingData({ showLoading: false })
+        setWebsiteRefreshKey(value => value + 1)
+        return { ok: true, message: `${channelName} listing updated.` }
+      } catch (error) {
+        if (!accepted) await recordListingPublicationStage(channelName, 'failed', draft, { action: 'update', error: error.message }).catch(() => null)
+        else throw new Error(`${channelName} accepted the update, but its history could not be saved. Check the advert before retrying.`)
+        await loadListingData({ showLoading: false })
+        throw error
+      }
+    }
+    const retry = async () => {
+      if (['publish', 'update'].includes(updateState?.action)) return update()
+      if (['sold', 'under_offer', 'expiry'].includes(updateState?.action)) return saveSimpleChannelManagement(channelName, { listingStatus: currentStatus, expiryDate: marketingDraft.property24ExpiryDate, retryResults: [{ channel: channelName, action: updateState.action, status: 'failed' }] })
+      if (updateState?.action === 'price_reduction') {
+        await retryListingChannelUpdate(channelName, 'price_reduction', { fromManage: true })
+        return { ok: true, message: 'Price update accepted. Check the public advert.' }
+      }
+      throw new Error('Check latest status and review the advert before retrying this action.')
+    }
+    const issues = [
+      ...(isP24 ? property24ReadinessIssues : isPP ? privatePropertyReadinessIssues : website?.blockers || []),
+      ...(updateState?.status === 'needs_attention' ? [updateState.detail] : []),
+      ...(isPP ? [privatePropertyStatusCheck?.monitor?.status === 'ATTENTION_REQUIRED' ? privatePropertyStatusCheck?.monitor?.statusProbe?.privatePropertyStatusVerbose : '', privatePropertyStatusCheck?.monitor?.apiError?.message] : []),
+    ].filter(Boolean)
     return <ListingChannelManageDialog
       key={channelName}
       channelName={channelName}
       listingStatus={currentStatus}
+      listing={{ address: marketingDraft.formattedAddress || listingRecord?.addressLine1 || listingRecord?.title, title: marketingDraft.headline, imageUrl: coverImage?.url, priceLabel: formatCurrency(marketingDraft.price), reference: listingRecord?.arch9Reference || listingRecord?.listingCode, statusLabel: formatStatusLabel(currentStatus) }}
+      portal={{ reference, publicUrl, statusLabel: formatStatusLabel(channelStatus || 'not_published'), checkedAt: channelManageCheckedAt[`${listingRecord?.id}:${channelName}`] || (isP24 ? property24StatusCheck?.status?.sync?.last_checked_at || property24StatusCheck?.status?.sync?.lastCheckedAt : isPP ? getPrivatePropertyStatusCheckedAt(privatePropertyStatusCheck) : website?.lastCheckedAt), publicationState: publication, issues, warnings: isPP ? privatePropertyReadinessWarnings : [], activity: getListingChannelManageActivity(listingChannelActivity, channelName), activityUnavailable: channelActivityUnavailable }}
       initialResults={failedUpdates}
       expiryDate={formatDateInputValue(marketingDraft.property24ExpiryDate)}
       minExpiryDate={addDaysToDateInput('', 1)}
-      canUpdateExpiry={property24Published && property24HasReference}
+      canUpdateExpiry={isP24 && property24Published && property24HasReference}
+      canUpdate={hasAdvert && !inactive && !['sold', 'withdrawn', 'expired', 'archived', 'transaction_created', 'deleted'].includes(currentStatus)}
+      canRelist={hasAdvert && !saleClosed}
+      canWithdraw={hasAdvert && !inactive}
+      canExpire={isP24 && hasAdvert && !inactive}
+      externalBusy={channelManageBusy || quickListingBusy || Boolean(property24Action) || Boolean(privatePropertyAction)}
       isSale={normalizeKey(marketingDraft.listingType || listingRecord?.listingType) !== 'rental'}
       onClose={onClose}
-      onSave={(values) => saveSimpleChannelManagement(channelName, values)}
+      onSave={values => saveSimpleChannelManagement(channelName, values)}
       onFix={openPropertyDetailsFromMarketing}
+      onRefresh={hasAdvert || (!isP24 && !isPP) ? refresh : undefined}
+      onPreview={isP24 ? () => previewProperty24Listing({ fromManage: true }) : isPP ? () => previewPrivatePropertyListing({ fromManage: true }) : undefined}
+      onUpdate={update}
+      onSavePublicUrl={isP24 || isPP ? value => saveConfirmedPortalLink(key, value, { fromManage: true }) : undefined}
+      onRetry={retryAvailable ? retry : undefined}
+      onRelist={isP24 || isPP ? () => { onClose(); setRelistChannel(channelName) } : undefined}
+      onWithdraw={() => { onClose(); setChannelRemovalError(''); setChannelRemoval({ channel: channelName, action: 'withdraw' }) }}
+      onExpire={isP24 ? () => { onClose(); setChannelRemovalError(''); setChannelRemoval({ channel: channelName, action: 'expire' }) } : undefined}
+      onVerify={['Property24', 'Private Property'].includes(channelName) && updateState?.status === 'awaiting_verification' ? () => confirmListingChannelCurrent(channelName, updateState.action, publicUrl, { skipConfirmation: true, throwOnError: true }) : undefined}
     />
   }
 
@@ -12692,22 +12807,13 @@ function AgentListingDetail() {
     return privatePropertyManageOpen ? renderSimpleChannelManagePanel('Private Property', () => setPrivatePropertyManageOpen(false)) : null
   }
 
-  function simpleChannelMenu(channelName, canWithdraw, canExpire = false) {
+  function simpleChannelMenu(channelName) {
     const disabled = channelManageBusy || quickListingBusy || Boolean(property24Action) || Boolean(privatePropertyAction)
-    const relistAvailable = !['sold', 'under_offer', 'transaction_created', 'deleted'].includes(normalizeKey(marketingDraft.listingStatus)) &&
-      (channelName === 'Property24' ? Boolean(property24Reference) : channelName === 'Private Property' && privatePropertyHasChannel)
-    const itemClass = 'flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold transition disabled:opacity-50'
-    return <>
-      <button type="button" disabled={disabled} onClick={() => {
-        if (channelName === 'Property24') setProperty24ManageOpen(true)
-        else if (channelName === 'Private Property') setPrivatePropertyManageOpen(true)
-        else setManagedWebsiteChannel(channelName)
-      }} className={`${itemClass} text-[#243d56] hover:bg-[#f7fbff]`}><Pencil size={15} />Manage listing</button>
-      {relistAvailable ? <button type="button" disabled={disabled} onClick={() => setRelistChannel(channelName)} className={`${itemClass} text-[#243d56] hover:bg-[#f7fbff]`}><RefreshCw size={15} />Relist</button> : null}
-      {relistAvailable ? <button type="button" disabled={disabled} onClick={() => openPropertyDetailsFromMarketing(channelName)} className={`${itemClass} text-[#243d56] hover:bg-[#f7fbff]`}><Pencil size={15} />Update and relist</button> : null}
-      {canWithdraw ? <button type="button" disabled={disabled} onClick={() => { setChannelRemovalError(''); setChannelRemoval({ channel: channelName, action: 'withdraw' }) }} className={`${itemClass} text-[#a43d35] hover:bg-[#fff5f5]`}><X size={15} />Withdraw listing</button> : null}
-      {canExpire ? <button type="button" disabled={disabled} onClick={() => { setChannelRemovalError(''); setChannelRemoval({ channel: channelName, action: 'expire' }) }} className={`${itemClass} text-[#a43d35] hover:bg-[#fff5f5]`}><CalendarDays size={15} />Expire listing</button> : null}
-    </>
+    return <Button type="button" variant="secondary" size="sm" aria-label={`Manage ${channelName}`} disabled={disabled} onClick={() => {
+      if (channelName === 'Property24') setProperty24ManageOpen(true)
+      else if (channelName === 'Private Property') setPrivatePropertyManageOpen(true)
+      else setManagedWebsiteChannel(channelName)
+    }}><SlidersHorizontal size={15} />Manage</Button>
   }
 
   function renderListingQuickActions() {
@@ -12748,7 +12854,7 @@ function AgentListingDetail() {
         live: overviewPublishedChannels[0].live,
         lastSynced: property24LastSyncedAt || '',
         publicationState: listingPublicationStates.property24,
-        menuActions: [simpleChannelMenu('Property24', property24HasReference && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey), property24HasReference && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey))],
+        primaryAction: simpleChannelMenu('Property24'),
       },
       {
         key: 'private_property',
@@ -12762,7 +12868,7 @@ function AgentListingDetail() {
         live: overviewPublishedChannels[1].live,
         lastSynced: privatePropertyLastSyncedAt || '',
         publicationState: listingPublicationStates.private_property,
-        menuActions: [simpleChannelMenu('Private Property', Boolean(privatePropertyReference) && !['inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey))],
+        primaryAction: simpleChannelMenu('Private Property'),
       },
     ]
     const agencyWebsiteConnected = Boolean(agencyWebsitePublication?.websiteSiteId && agencyWebsitePublication?.hostname)
@@ -12853,7 +12959,7 @@ function AgentListingDetail() {
 
           <WebsiteListingPublicationPanel
             variant="channel"
-            manageActions={simpleChannelMenu('Agency Website', agencyWebsitePublication?.status === 'published')}
+            manageActions={simpleChannelMenu('Agency Website')}
             refreshKey={websiteRefreshKey}
             listingId={listingRecord?.id}
             listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
@@ -12867,7 +12973,7 @@ function AgentListingDetail() {
             savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
           />
           <KingdomWebsitePublicationChannel
-            manageActions={simpleChannelMenu('Kingdom Website', kingdomWebsitePublication?.status === 'published')}
+            manageActions={simpleChannelMenu('Kingdom Website')}
             refreshKey={websiteRefreshKey}
             listingId={listingRecord?.id}
             listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
@@ -12876,6 +12982,14 @@ function AgentListingDetail() {
             onPrepare={() => saveMarketingDraft(marketingDraft, { successMessage: '' })}
             onStatusChange={setKingdomWebsitePublication}
             savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
+          />
+          <ListingChannelActions
+            status={normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.listing_status || 'active')}
+            isSale={normalizeKey(marketingDraft.listingType || listingRecord?.listingType || listingRecord?.listing_type || 'sale') !== 'rental'}
+            busy={quickListingBusy || channelManageBusy || publicationSaving || Boolean(property24Action) || Boolean(privatePropertyAction)}
+            onWithdraw={openListingWithdrawal}
+            onUnderOffer={() => openQuickListingAction('under_offer')}
+            onSold={() => openQuickListingAction('sold')}
           />
         </article>
 
@@ -12890,8 +13004,8 @@ function AgentListingDetail() {
         {renderProperty24ManagePanel()}
         {renderPrivatePropertyManagePanel()}
         {relistChannel !== null ? <ListingRelistDialog
-          channels={[...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
-          initialChannel=""
+          channels={relistChannel ? [relistChannel] : [...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
+          initialChannel={relistChannel}
           expiryDate={getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate) ? addDaysToDateInput('', 90) : formatDateInputValue(marketingDraft.property24ExpiryDate)}
           minExpiryDate={addDaysToDateInput('', 1)}
           onRelist={relistSavedListing}
@@ -13144,7 +13258,7 @@ function AgentListingDetail() {
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving || sellerDocumentPreparationNeedsRefresh || (sellerDocumentSendSelection.mandate && !sellerMandateDocumentSource) || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status !== SELLER_ONBOARDING_REVIEW_STATUS.approved || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving || sellerDocumentPreparationNeedsRefresh || (sellerDocumentSendSelection.mandate && !sellerMandateDocumentSource) || (sellerDocumentSendOpen && sellerDocumentSendSelection.mandate && !getListingMandateReadiness().ready) || (sellerDocumentSendOpen && !mandateReplacementIntent && (readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested || !sellerOnboardingReviewChecklist?.ready))} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               {sellerDocumentSendSaving ? 'Preparing...' : preparingPrintableMandate ? 'Prepare and download mandate' : sellerMandateDocumentSource === 'agency_upload' ? 'Prepare FICA and continue to Documents' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send for online signature'}
             </Button>
@@ -13162,24 +13276,7 @@ function AgentListingDetail() {
               ? 'This creates a traceable replacement pack. The previous signed mandate remains preserved and the new mandate only becomes current after every required signer completes it.'
               : 'This action records your approval of the submitted onboarding and freezes the selected documents using the terms below.'}
           </div>
-          {sellerDocumentSendOpen ? (() => {
-            const formData = getListingSellerFormData(listingRecord)
-            const onboardingReview = readSellerOnboardingReview(formData.sellerOnboardingReview || formData.seller_onboarding_review)
-            const checklist = sellerOnboardingReviewChecklist
-            const approved = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
-            return <>
-              {!mandateReplacementIntent ? <SellerOnboardingAgentReviewPanel formData={formData} checklist={checklist} /> : null}
-              <section className={`rounded-[16px] border p-4 text-sm ${approved ? 'border-[#c9e8d5] bg-[#f0faf3]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
-                <p className="font-semibold text-[#243d56]">Agent review decision</p>
-                <p className="mt-1 leading-5 text-[#607387]">{approved ? 'Submitted fields approved. Supporting FICA evidence remains a separate review.' : onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? `Correction requested: ${onboardingReview.reason}` : 'Check the submitted information above, then approve it or request a correction.'}</p>
-                {!approved && onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? <div className="mt-3 space-y-3">
-                  <Button type="button" size="sm" disabled={sellerOnboardingReviewSaving || !checklist?.ready} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.approved)}>Approve submitted fields</Button>
-                  <label className="grid gap-1.5 font-semibold text-[#243d56]">Need a correction instead? <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="Explain what the seller needs to correct." className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal" /></label>
-                  <Button type="button" size="sm" variant="secondary" disabled={sellerOnboardingReviewSaving || sellerOnboardingCorrectionReason.trim().length < 5} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button>
-                </div> : null}
-              </section>
-            </>
-          })() : null}
+          {sellerDocumentSendOpen && !mandateReplacementIntent ? <SellerOnboardingAgentReviewPanel formData={getListingSellerFormData(listingRecord)} checklist={sellerOnboardingReviewChecklist} /> : null}
           {!sellerDocumentPreparationKey ? <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Which mandate would you like to use?</legend>
             {[
@@ -16849,10 +16946,11 @@ function AgentListingDetail() {
 
                     {group.documents.length ? (
                       <div className="border-t border-[#e8eef4]">
-                        <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_154px] gap-4 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] lg:grid">
-                          <span>Document</span><span>Source</span><span>Status</span><span>Activity</span><span className="text-right">Actions</span>
+                        <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_440px] gap-4 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] xl:grid">
+                          <span>Document</span><span>Status</span><span>Activity</span><span className="text-right">Actions</span>
                         </div>
                         {group.documents.map((doc) => {
+                          const uploadProgress = sellerDocumentUploadProgress[getSellerDocumentUploadKey(doc)]
                           const baseStatus = resolveListingSellerDocumentStatus(doc)
                           const actions = resolveListingSellerDocumentActions(doc)
                           const activity = resolveListingSellerDocumentActivity(doc)
@@ -16864,7 +16962,7 @@ function AgentListingDetail() {
                           const workflow = buildSellerDocumentWorkflow({ item: doc, copy: physicalCopy, request: portalRequest })
                           const status = SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? { ...baseStatus, label: workflow.state === 'not_prepared' ? 'Not prepared' : workflow.label } : baseStatus
                           return (
-                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 lg:min-h-[72px] lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_154px] lg:items-center lg:gap-4">
+                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 xl:min-h-[72px] xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_440px] xl:items-center xl:gap-4">
                             <div className="flex min-w-0 items-start gap-3">
                               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#2f628d]"><FileText size={16} /></span>
                               <div className="min-w-0">
@@ -16879,8 +16977,12 @@ function AgentListingDetail() {
                                 })() : null}
                               </div>
                             </div>
+                            <div>
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.classes}`}>{status.label}</span>
+                            </div>
                             <div className="text-xs leading-5 text-[#607387]">
-                              <p><span className="font-semibold text-[#425970] lg:hidden">Source: </span>{doc.sourceLabel || (doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist')}</p>
+                              <span className="font-semibold text-[#425970] xl:hidden">Activity: </span>
+                              {activity.lastEventLabel}{activity.lastEventAt ? <span className="block text-[#74879d]">{formatDate(activity.lastEventAt)}</span> : null}
                               {deliveryPresentation ? (
                                 <div className="mt-1.5">
                                   <p className={`font-semibold ${deliveryPresentation.classes}`}>{deliveryPresentation.label}{delivery.recipientEmail ? ` · ${delivery.recipientEmail}` : ''}</p>
@@ -16888,14 +16990,7 @@ function AgentListingDetail() {
                                 </div>
                               ) : null}
                             </div>
-                            <div>
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.classes}`}>{status.label}</span>
-                            </div>
-                            <div className="text-xs leading-5 text-[#607387]">
-                              <span className="font-semibold text-[#425970] lg:hidden">Activity: </span>
-                              {activity.lastEventLabel}{activity.lastEventAt ? <span className="block text-[#74879d]">{formatDate(activity.lastEventAt)}</span> : null}
-                            </div>
-                            <div className="flex items-center justify-end gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                               <ListingDocumentActions label={doc.label}>
                               {actions.canRequest ? (
                                 <Button type="button" size="sm" onClick={() => void handleSellerDocumentRequest(doc)} disabled={Boolean(sellerDocumentWorkflowAction)}>
@@ -16958,6 +17053,7 @@ function AgentListingDetail() {
                               />
                               <button type="button" aria-label={`Mark ${doc.label} as not relevant`} title="Not relevant to this listing" disabled={Boolean(sellerDocumentWorkflowAction || sellerDocumentUploadKey)} onClick={() => setListingDocumentToRemove(doc)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white text-[#71849a] transition hover:border-[#efcbc8] hover:bg-red-50 hover:text-[#963d35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#963d35] disabled:opacity-50"><X size={15} /></button>
                             </div>
+                            {uploadProgress ? <div className="min-w-0 xl:col-span-4"><DocumentUploadProgress progress={uploadProgress} /></div> : null}
                           </div>
                           )
                         })}
@@ -17408,7 +17504,7 @@ function AgentListingDetail() {
         open={Boolean(quickListingAction)}
         onClose={quickListingBusy ? undefined : () => setQuickListingAction('')}
         title={quickListingAction === 'price_reduction' ? 'Reduce asking price' : quickListingAction === 'sold' ? 'Mark listing sold' : 'Mark listing under offer'}
-        subtitle="Arch9 saves first. Only confirmed live portal listings receive an update; each result is shown separately."
+        subtitle="Arch9 saves first, then updates every active Property24, Private Property and website channel. Each result is shown separately."
         className="max-w-lg"
         footer={<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setQuickListingAction('')} disabled={quickListingBusy}>Close</Button>{quickListingResults.some((result) => result.status === 'failed' && result.channel !== 'Activity') ? <Button type="button" variant="secondary" onClick={() => void retryFailedQuickListingChannels()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Retry failed updates</Button> : null}{!quickListingResults.length ? <Button type="button" onClick={() => void applyQuickListingAction()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{quickListingAction === 'price_reduction' ? 'Save reduced price' : quickListingAction === 'sold' ? 'Confirm sold' : 'Confirm under offer'}</Button> : null}</div>}
       >

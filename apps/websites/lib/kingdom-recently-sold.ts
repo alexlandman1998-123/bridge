@@ -12,6 +12,37 @@ export function isKingdomSoldSite(site: Pick<ResolvedSite, 'id' | 'organisationI
   return site.id === KINGDOM_SOLD_SITE_ID && site.organisationId === KINGDOM_SOLD_ORGANISATION_ID
 }
 
+/** Only image records in this sold listing's gallery may receive viewing links. */
+async function getCrmSoldCoverPhoto(supabase: ReturnType<typeof getServerSupabase>, listingId: string): Promise<PublicProperty['media']> {
+  const result = await supabase.from('listing_media')
+    .select('media_type, file_url, storage_bucket, storage_path, is_cover, sort_order')
+    .eq('listing_id', listingId).eq('media_type', 'image')
+    .order('is_cover', { ascending: false }).order('sort_order').limit(20)
+  if (result.error) throw result.error
+  for (const photo of result.data || []) {
+    try {
+      let bucket = String(photo.storage_bucket || '')
+      let path = String(photo.storage_path || '')
+      if (!bucket || !path) {
+        const url = new URL(String(photo.file_url))
+        if (url.origin !== new URL(process.env.SUPABASE_URL || '').origin) continue
+        const match = url.pathname.match(/^\/storage\/v1\/object\/(?:sign|public)\/([^/]+)\/(.+)$/)
+        if (!match) continue
+        bucket = decodeURIComponent(match[1])
+        path = decodeURIComponent(match[2])
+      }
+      if (!['documents', 'listing-media', 'property-media'].includes(bucket)
+        || !path.startsWith(`private-listings/${listingId}/gallery/`)
+        || path.split('/').some(part => part === '..' || part === '.')
+        || !/\.(?:jpe?g|png|webp|avif|gif|heic)$/i.test(path)) continue
+      const signed = await supabase.storage.from(bucket).createSignedUrl(path, 7 * 24 * 60 * 60)
+      if (signed.error || !signed.data?.signedUrl) continue
+      return [{ type: 'image', url: signed.data.signedUrl, order: 0 }]
+    } catch { /* Try the next valid gallery photo; never expose a private document. */ }
+  }
+  return []
+}
+
 /** Read public property facts only. CRM status is authoritative, not an old advert. */
 export async function getKingdomRecentlySold(site: ResolvedSite, client = getServerSupabase): Promise<SoldProperty[]> {
   if (!isKingdomSoldSite(site)) return []
@@ -68,6 +99,13 @@ export async function getKingdomRecentlySold(site: ResolvedSite, client = getSer
         partnerListing: !own, sourceAgency: own ? 'Kingdom Real Estate' : 'I Sell Properties',
         lastUpdated: String(row.updated_at), features: [], amenities: [], media,
       })
+    }
+    // Cover fallback stays bounded; avoid signing an entire gallery for one card.
+    const missingPhotos = sold.filter(property => ids.includes(property.id) && !property.media.length)
+    for (let index = 0; index < missingPhotos.length; index += 6) {
+      await Promise.all(missingPhotos.slice(index, index + 6).map(async property => {
+        property.media = await getCrmSoldCoverPhoto(supabase, property.id)
+      }))
     }
     if (listings.data.length < batchSize) break
   }

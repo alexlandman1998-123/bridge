@@ -1,3 +1,5 @@
+import { isSellerDocumentPreparationArtifact } from './sellerBasePackContract.js'
+
 const SATISFIED_STATUSES = new Set(['approved', 'completed', 'verified', 'signed'])
 const RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'reviewed', 'received', 'submitted', 'awaiting_agent_review', 'ready_to_send', 'sent_for_signature', 'awaiting_remaining_signatures'])
 const ACTION_STATUSES = new Set(['required', 'requested', 'missing', 'rejected', 'expired', 'awaiting_signed_hard_copy', 'correction_requested'])
@@ -100,7 +102,7 @@ function statusBucket(status = '') {
 
 function lifecycleStatus(status = '') {
   if (status === 'required') return 'not_requested'
-  if (status === 'requested' || ['sent_for_signature', 'awaiting_remaining_signatures', 'awaiting_signed_hard_copy'].includes(status)) return 'awaiting_seller'
+  if (status === 'requested' || ['sent_for_signature', 'awaiting_signature', 'awaiting_required_signatures', 'awaiting_remaining_signatures', 'awaiting_signed_hard_copy'].includes(status)) return 'awaiting_seller'
   if (['uploaded', 'awaiting_agent_review', 'ready_to_send'].includes(status)) return 'ready_for_review'
   if (status === 'under_review') return 'under_review'
   if (['rejected', 'expired', 'correction_requested'].includes(status)) return 'action_required'
@@ -126,6 +128,8 @@ function statusLabel(status = '') {
     sent_for_signature: 'Awaiting seller',
     awaiting_remaining_signatures: 'Awaiting seller',
     awaiting_signed_hard_copy: 'Awaiting seller',
+    awaiting_signature: 'Awaiting seller',
+    awaiting_required_signatures: 'Awaiting seller',
     correction_requested: 'Action required',
   }
   return labels[status] || 'Upload required'
@@ -174,16 +178,18 @@ function agentMessage({ bucket, overdue, rejectionReason, handoff }) {
 
 function buildItem(requirement = {}, documents = [], now = new Date(), audience = 'seller') {
   const document = linkedDocumentFor(requirement, documents)
+  const preparationOnly = document ? isSellerDocumentPreparationArtifact(document) : isSellerDocumentPreparationArtifact(requirement)
   const requirementStatus = normalizeSellerDocumentExperienceStatus(
     requirement.status || requirement.requiredDocumentStatus || requirement.required_document_status,
   )
   const documentStatus = document
     ? normalizeSellerDocumentExperienceStatus(document.status || document.document_status || 'uploaded')
     : ''
-  const status = ['rejected', 'approved', 'completed', 'verified', 'signed'].includes(requirementStatus)
+  const sourceStatus = ['rejected', 'approved', 'completed', 'verified', 'signed'].includes(requirementStatus)
     ? requirementStatus
     : documentStatus || requirementStatus
-  const bucket = statusBucket(status)
+  const status = preparationOnly && !['awaiting_signature', 'awaiting_required_signatures', 'awaiting_signed_hard_copy'].includes(sourceStatus) ? 'required' : sourceStatus
+  const bucket = preparationOnly ? 'outstanding' : statusBucket(status)
   const lifecycle = lifecycleStatus(status)
   const dueDate = firstDate(requirement.dueDate, requirement.due_date, requirement.requestDueAt, requirement.request_due_at)
   const overdue = Boolean(dueDate && dueDate.getTime() < now.getTime() && ['outstanding', 'rejected'].includes(bucket))
@@ -216,7 +222,8 @@ function buildItem(requirement = {}, documents = [], now = new Date(), audience 
     stageLabel: stage.label,
     stageRank: stage.rank,
     linkedDocument: document,
-    hasUploadedDocument: Boolean(document || requirement.hasUpload || requirement.hasUploadedDocument || requirement.uploaded),
+    hasUploadedDocument: !preparationOnly && Boolean(document || requirement.hasUpload || requirement.hasUploadedDocument || requirement.uploaded),
+    uploaded: !preparationOnly && Boolean(requirement.uploaded),
     actionRequired: required && applicable && ['outstanding', 'rejected'].includes(bucket),
     reviewRequired: required && applicable && bucket === 'received',
     satisfied: required && applicable && lifecycle === 'complete',

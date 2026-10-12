@@ -53,8 +53,8 @@ export default function SellerOnboardingAgentReviewPanel({ formData = {}, checkl
       <div className="mt-3 space-y-3">{personGroups.map(([title, rows]) => <div key={title}><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">{title}</p><ul className="mt-1 space-y-1">{people(rows).map((person, index) => <li key={person.id || `${title}-${index}`} className="rounded-lg bg-[#f8fbff] px-3 py-2 text-[#435b73]">{personName(person)} · {first(person.idNumber, person.id_number)} · {first(person.nationality)} · {first(person.residentialAddress, person.residential_address)}</li>)}</ul></div>)}</div>
     </section> : null}
     {checklist.followUps.length ? <section className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-      <h4 className="font-semibold text-[#243d56]">FICA and disclosure follow-up</h4>
-      <p className="mt-1 text-[#607387]">These items need evidence or later compliance review. Approval of the submitted fields does not mark FICA complete.</p>
+      <h4 className="font-semibold text-[#243d56]">Items to complete after approval</h4>
+      <p className="mt-1 text-[#607387]">Property costs, utilities and supporting evidence can be completed separately. These follow-ups do not block document preparation. Approval of the submitted fields does not mark FICA complete.</p>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-[#47637d]">{checklist.followUps.map((item) => <li key={item}>{item}</li>)}</ul>
     </section> : null}
   </div>

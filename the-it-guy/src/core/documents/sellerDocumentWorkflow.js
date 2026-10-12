@@ -1,3 +1,5 @@
+import { isSellerDocumentPreparationArtifact } from '../../lib/sellerBasePackContract.js'
+
 export const SELLER_DOCUMENT_ACTIONS = Object.freeze([
   ['upload_existing', 'Upload manually', 'Upload an existing signed copy using the workspace permissions; the agent reviews it.'],
   ['manual_upload', 'Generate and download', 'The agent prepares a reviewed copy. Arrange signatures, then upload it for review.'],
@@ -30,9 +32,10 @@ export function buildSellerDocumentWorkflow({ item = {}, copy = null, request = 
   const uploadedVersion = uploaded.reviewed_signing_version_id || uploaded.reviewedSigningVersionId || uploaded.version_id || uploaded.versionId || ''
   const currentVersion = copy?.versionId || request?.version_id || ''
   const uploadMatches = !currentVersion || !uploadedVersion || uploadedVersion === currentVersion
+  const preparationOnly = isSellerDocumentPreparationArtifact(uploaded) || (!Object.keys(uploaded).length && isSellerDocumentPreparationArtifact(item))
   // A prior accepted upload cannot complete a request for a different version.
-  const reviewed = request?.status === 'reviewed' || (!request && uploadMatches && ['complete', 'approved', 'verified', 'completed'].includes(status))
-  const hasUpload = uploadMatches && (!request || uploadedVersion === request.version_id) && Boolean(['uploaded', 'under_review'].includes(status) || item.uploaded || item.hasUploadedDocument || item.storagePath || item.storage_path || item.url || uploaded.storage_path || uploaded.storagePath || (uploaded.id && ['uploaded', 'under_review', 'approved', 'signed'].includes(uploaded.status)))
+  const reviewed = request?.status === 'reviewed' || (!preparationOnly && !request && uploadMatches && ['complete', 'approved', 'verified', 'completed'].includes(status))
+  const hasUpload = !preparationOnly && uploadMatches && (!request || uploadedVersion === request.version_id) && Boolean(['uploaded', 'under_review'].includes(status) || item.uploaded || item.hasUploadedDocument || item.storagePath || item.storage_path || item.url || uploaded.storage_path || uploaded.storagePath || (uploaded.id && ['uploaded', 'under_review', 'approved', 'signed'].includes(uploaded.status)))
   const active = ['prepared', 'sent', 'partially_signed', 'signed', 'reviewed'].includes(request?.status)
   let state = 'not_prepared', label = 'Choose a document action', detail = ''
   if (reviewed) { state = 'complete'; label = 'Reviewed and complete' }
@@ -65,6 +68,6 @@ export function buildSellerDocumentWorkflow({ item = {}, copy = null, request = 
 }
 
 export function sellerDocumentHasUploadedEvidence(uploads = [], key, { replacement = false } = {}) {
-  return uploads.some(document => document.document_type === key &&
+  return uploads.some(document => !isSellerDocumentPreparationArtifact(document) && document.document_type === key &&
     (['uploaded', 'under_review'].includes(document.status) || !replacement && document.status === 'approved'))
 }

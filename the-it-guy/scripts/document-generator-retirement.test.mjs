@@ -1,3 +1,4 @@
+import { recordSellerOnboardingReview } from '../src/core/documents/sellerOnboardingReview.js'
 import { assertBondApplicationSigningAvailable } from '../src/modules/bond/application/submission/bondApplicationSigningAvailability.js'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -321,10 +322,10 @@ test('listing preparation offers the agency-upload route without requiring or ov
   const node = find(ast)
   assert.ok(node)
   const handler = source.slice(node.start, node.end)
-  for (const mode of ['agency_upload', 'arch9_generated', 'unselected', 'unreviewed', 'save_failed']) {
+  for (const mode of ['agency_upload', 'arch9_generated', 'unselected', 'unreviewed', 'correction_requested', 'save_failed']) {
     const calls = [], errors = [], messages = []
     let saved
-    const form = { sellerOnboardingReview: { status: mode === 'unreviewed' ? 'pending' : 'approved' },
+    const form = { sellerOnboardingReview: { status: mode === 'unreviewed' ? 'pending' : mode === 'correction_requested' ? 'correction_requested' : 'approved' },
       mandateType: 'exclusive', commissionPercentage: '7', protectionPeriod: '', mandateCapture: {},
       sellerName: 'Synthetic Seller', sellerEmail: 'seller@example.test', sellerMandateDocumentSource: 'agency_upload' }
     const before = structuredClone(form)
@@ -354,7 +355,7 @@ test('listing preparation offers the agency-upload route without requiring or ov
       getSellerSigningDocumentOptions: () => ({ documents: [{ key: 'fica', ready: true }, { key: 'mandate', ready: false }] }),
       validateSellerOnboardingFormalSigningSelection,
       getListingMandateReadiness: () => ({ ready: false, missing: ['Agency schedules are incomplete'] }),
-      getListingSellerFormData: () => form, readSellerOnboardingReview: value => value,
+      getListingSellerFormData: () => form, readSellerOnboardingReview: value => value, recordSellerOnboardingReview,
       getSellerOnboardingReviewChecklist: () => ({ ready: true }),
       SELLER_ONBOARDING_REVIEW_STATUS: { approved: 'approved', correctionRequested: 'correction_requested' },
       commissionDraft: { basis: 'percentage', percentage: '', amount: '', vatHandling: '' }, marketingDraft: {},
@@ -381,10 +382,12 @@ test('listing preparation offers the agency-upload route without requiring or ov
     })
     await save()
     assert.deepEqual(form, before)
-    if (['agency_upload', 'unselected'].includes(mode)) {
-      assert.deepEqual(calls, mode === 'agency_upload' ? ['saved', 'documents', 'documents', 'opened'] : ['saved', 'documents', 'opened'])
+    if (['agency_upload', 'unselected', 'unreviewed'].includes(mode)) {
+      assert.deepEqual(calls, ['agency_upload', 'unreviewed'].includes(mode) ? ['saved', 'documents', 'documents', 'opened'] : ['saved', 'documents', 'opened'])
       assert.deepEqual(errors, [])
-      assert.match(messages[0], mode === 'agency_upload' ? /Upload your agency.*signed mandate/ : /Selected signing copies are ready/)
+      assert.match(messages[0], ['agency_upload', 'unreviewed'].includes(mode) ? /Upload your agency.*signed mandate/ : /Selected signing copies are ready/)
+      assert.equal(saved.sellerOnboardingReview.status, 'approved')
+      assert.equal(saved.seller_onboarding_review.status, 'approved')
       assert.equal(saved.sellerMandateDocumentSource, 'agency_upload')
       assert.deepEqual(Array.from(saved.sellerOnboardingFormalPackApproval.selectedDocuments), ['fica'])
       assert.equal(saved.sellerOnboardingFormalPackApproval.commission.confirmed, false)

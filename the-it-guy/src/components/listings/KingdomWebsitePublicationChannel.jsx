@@ -5,16 +5,8 @@ import Button from '../ui/Button'
 import ListingChannelManageMenu from './ListingChannelManageMenu'
 import ListingChannelLastUpdate from './ListingChannelLastUpdate'
 import { getKingdomWebsitePublicationStatus, setKingdomWebsitePublication } from '../../services/kingdomWebsitePublicationService'
-import { normalizeListingChannelPublicUrl } from '../../services/listings/listingMarketingChannelPresentation'
+import { buildKingdomWebsiteListingPublicUrl } from '../../services/listings/listingMarketingChannelPresentation'
 import ListingWebsiteConnectionState from './ListingWebsiteConnectionState'
-
-function publicSlug(title, reference, listingId) {
-  const code = String(reference || '').trim().toUpperCase()
-  if (/^A9-[A-Z0-9]{2,12}-[0-9]{6,}$/.test(code)) return code
-  const slug = String(title || 'property').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'property'
-  return `${slug}-${listingId}`
-}
 
 export default function KingdomWebsitePublicationChannel({ listingId, listingTitle, listingReference, onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, savedAt = '', showConnectionState = false, manageActions = null, refreshKey = 0 }) {
   const [publication, setPublication] = useState(null)
@@ -47,7 +39,7 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
   const live = published && publication.websiteStatus === 'published'
   const blockers = Array.isArray(publication.blockers) ? publication.blockers : []
   const link = live && publication.hostname
-    ? normalizeListingChannelPublicUrl(`https://${publication.hostname}/properties/${publicSlug(listingTitle, listingReference, listingId)}`)
+    ? buildKingdomWebsiteListingPublicUrl(publication, listingId, listingTitle, listingReference)
     : ''
   const stale = !manageActions && (publication.stale || publicationState?.changeCount > 0)
   const statusLabel = live ? stale ? 'Changes not published' : 'Live' : !manageActions && blockers.length ? 'Needs attention' : 'Not published'
@@ -73,7 +65,7 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
       if (next?.status !== (nextAction === 'unpublish' ? 'unpublished' : 'published')) throw new Error('Kingdom publication status could not be confirmed. Refresh status before retrying.')
       accepted = true
       setPublication(next)
-      await onPublicationAction?.({ stage: nextAction === 'unpublish' ? 'withdrawn' : 'accepted', action: nextAction, draft: prepared?.publicationDraft, publication: { ...next, publicUrl: next.hostname ? normalizeListingChannelPublicUrl(`https://${next.hostname}/properties/${publicSlug(listingTitle, listingReference, listingId)}`) : '' } })
+      await onPublicationAction?.({ stage: nextAction === 'unpublish' ? 'withdrawn' : 'accepted', action: nextAction, draft: prepared?.publicationDraft, publication: { ...next, publicUrl: next.hostname ? buildKingdomWebsiteListingPublicUrl(next, listingId, listingTitle, listingReference) : '' } })
       setNotice(nextAction === 'unpublish' ? 'Listing removed from the Kingdom website.'
         : nextAction === 'update' ? 'Kingdom website listing updated.' : 'Listing published to the Kingdom website.')
     } catch (actionError) {
@@ -96,11 +88,11 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
       <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243d56]">{listingReference || 'Not assigned'}</p>{link ? <a href={link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:underline">View listing <ExternalLink size={12} /></a> : <p className="mt-1 text-xs text-[#8a98a8]">Listing link unavailable</p>}</div>
       <div className="min-w-0"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusColor}`}><span className={`h-2 w-2 rounded-full ${live && !stale ? 'bg-[#1f9d64]' : !manageActions && (blockers.length || stale) ? 'bg-[#d99321]' : 'border border-[#aebdca] bg-white'}`} />{statusLabel}</p>{!manageActions && blockers.length ? <p className="mt-1 text-xs text-[#8a641d]">{blockers[0]}</p> : null}</div>
       <ListingChannelLastUpdate publicationState={publicationState} publication={publication} lifecycleOnly={Boolean(manageActions)} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
-      <div className="flex justify-start lg:justify-end"><ListingChannelManageMenu channelName="Kingdom Website">{manageActions || <>
+      <div className="flex justify-start lg:justify-end">{manageActions || <ListingChannelManageMenu channelName="Kingdom Website"><>
         <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading || Boolean(action)}><RefreshCw size={15} />Refresh status</Button>
         <Button type="button" variant="secondary" onClick={() => onEdit ? onEdit() : void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || (!onEdit && infrastructureBlocked)}>{action ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{onEdit ? 'Edit listing' : published ? 'Update website' : 'Publish to Kingdom'}</Button>
         {published ? <Button type="button" variant="secondary" className="text-[#a43d35]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>Remove from website</Button> : null}
-      </>}</ListingChannelManageMenu></div>
+      </></ListingChannelManageMenu>}</div>
       {!manageActions && error ? <p className="text-sm text-[#b42318] lg:col-span-5" role="alert">{error}</p> : null}
       {notice ? <p className="text-sm text-[#257044] lg:col-span-5" role="status">{notice}</p> : null}
     </div>

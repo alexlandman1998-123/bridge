@@ -70,7 +70,7 @@ import {
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
-import { settleListingImageUploads } from '../lib/listingMediaUploads.js'
+import { settleListingImageUploads, reuseListingImageUpload } from '../lib/listingMediaUploads.js'
 import { assertMvpPilotCreationAllowed, resolveMvpPilotCreationFreeze } from '../lib/mvpPilotCreationFreeze'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy'
@@ -1057,7 +1057,7 @@ async function uploadQuickListingImages(listingId = '', images = [], onUploaded)
       return image
     }
     try {
-      const asset = await uploadPrivateListingMediaAsset(file, { listingId, type: 'gallery' })
+      const asset = await reuseListingImageUpload(listingId, file, () => uploadPrivateListingMediaAsset(file, { listingId, type: 'gallery' }))
       return {
         id: image.id || asset.path || `listing-image-${index + 1}`,
         name: asset.fileName || image.name || `Image ${index + 1}`,
@@ -3708,6 +3708,8 @@ function AgentListings({ mobileEditor = false } = {}) {
   const listingSaveInFlightRef = useRef(false)
   const pendingCreatedListingIdRef = useRef('')
   const listingCreationIdRef = useRef('')
+  const photoDraftCreationRef = useRef(null)
+  const photoUploadScopeRef = useRef(0)
   const completedCreateListingRef = useRef(false)
   const listingImagePreviewUrlsRef = useRef(new Set())
   const [createListingDraftHydratedKey, setCreateListingDraftHydratedKey] = useState('')
@@ -3797,6 +3799,13 @@ function AgentListings({ mobileEditor = false } = {}) {
   const listingEditorDraftStorageKey = isEditListingWorkspace && editListingId
     ? `${createListingDraftStorageKey}:edit:${editListingId}`
     : `${createListingDraftStorageKey}:capture:${captureSessionId}`
+
+  const photoUploadFormRef = useRef(form)
+  photoUploadFormRef.current = form
+  useEffect(() => () => {
+    photoUploadScopeRef.current += 1
+    photoDraftCreationRef.current = null
+  }, [listingEditorDraftStorageKey])
 
   const createListingDraftScopeKey = `${listingEditorDraftStorageKey}:${selectedWorkspaceOrganisationId || organisationId || 'local'}`
   useEffect(() => {
@@ -4179,7 +4188,13 @@ function AgentListings({ mobileEditor = false } = {}) {
       catch (error) { if (!cancelled) { setDraftRecoveryBlocked(true); setError(error.message || 'Unable to read your recovery copy. Reload before editing.') }; return }
       if (cancelled) { recoveredDraft?.release(); return }
       applied = true
-      for (const photo of recoveredDraft?.form?.listingImages || []) if (photo.file && photo.url) listingImagePreviewUrlsRef.current.add(photo.url)
+      for (const photo of recoveredDraft?.form?.listingImages || []) {
+        if (photo.file && photo.url) listingImagePreviewUrlsRef.current.add(photo.url)
+        if (photo.file && photo.uploadStatus === 'uploading') {
+          photo.uploadStatus = 'failed'
+          photo.uploadError = 'This upload was interrupted when the page closed. Retry this photo.'
+        }
+      }
       sellerEditBaselineRef.current = structuredClone(editListingRecord)
       savedEditorFormRef.current = JSON.stringify(savedForm)
       setCloudSave({ status: 'saved', savedAt: editListingRecord.updatedAt || editListingRecord.updated_at })
@@ -4215,6 +4230,8 @@ function AgentListings({ mobileEditor = false } = {}) {
     if (isEditListingWorkspace) return
     if (isSupabaseConfigured && !MOCK_DATA_ENABLED && !selectedWorkspaceOrganisationId && !organisationId) return
     pendingCreatedListingIdRef.current = ''
+    photoDraftCreationRef.current = null
+    photoUploadScopeRef.current += 1
     listingCreationIdRef.current = ''
     completedCreateListingRef.current = false
     setMissingDraftPhotoCount(0)
@@ -4257,7 +4274,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         setMissingDraftPhotoCount(recoveredDraft ? recoveredDraft.missingPhotos : Number(recovery.missingPhotoCount) || 0)
         const restoredDraft = recoveredDraft ? recoveredDraft.form : serializeCreateListingDraftForm(parsed)
         setForm((previous) => {
-          const draftImages = Array.isArray(restoredDraft.listingImages) ? restoredDraft.listingImages : []
+          const draftImages = Array.isArray(restoredDraft.listingImages) ? restoredDraft.listingImages.map(image => image.file && image.uploadStatus === 'uploading' ? { ...image, uploadStatus: 'failed', uploadError: 'This upload was interrupted when the page closed. Retry this photo.' } : image) : []
           const listingImages = Array.isArray(restoredDraft.listingImages) ? draftImages : previous.listingImages
           const draftCoverImageId = normalizeText(restoredDraft.coverImageId)
           const coverImageId = draftImages.length && draftImages.some((image) => normalizeText(image.id) === draftCoverImageId)
@@ -4704,6 +4721,66 @@ function AgentListings({ mobileEditor = false } = {}) {
     }))
   }
 
+  async function ensurePhotoListingDraft() {
+    if (isEditListingWorkspace) return editListingId
+    if (pendingCreatedListingIdRef.current) return pendingCreatedListingIdRef.current
+    if (photoDraftCreationRef.current) return photoDraftCreationRef.current
+    const scope = photoUploadScopeRef.current
+    const listingOrganisationId = selectedWorkspaceOrganisationId || organisationId
+    if (!listingOrganisationId) throw new Error('Select a workspace before uploading photos.')
+    assertMvpPilotCreationAllowed({ operation: 'create a listing draft' })
+    const creationId = reserveListingCreationId()
+    const preparation = (async () => {
+      const created = await createPrivateListing({
+        organisationId: listingOrganisationId,
+        assignedAgentId: form.assignedAgentId || profile?.id || null,
+        branchId: form.branchId || currentBranchId || null,
+        developmentId: form.developmentId || linkedDevelopmentId || null,
+        unitId: form.unitId || linkedUnitId || null,
+        title: normalizeText(form.listingTitle) || normalizeText(form.propertyAddress) || 'Untitled listing draft',
+        addressLine1: normalizeText(form.propertyAddress),
+        propertyType: form.propertyType,
+        propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
+        propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
+        listingSource: form.developmentId || linkedDevelopmentId ? 'development' : 'private_listing',
+        listingCategory: isDeveloperWorkspace ? 'development_unit' : form.listingType === 'rental' ? 'rental' : 'private_sale',
+        listingStatus: 'seller_lead', listingVisibility: 'internal', isActive: false,
+        sellerType: isDeveloperWorkspace ? 'developer' : form.sellerType,
+        source: 'listing_draft', origin: 'listing_draft',
+      }, { creationId, includeRequirementsAndDocuments: false, syncRequirements: false })
+      if (!created?.listing?.id) throw new Error('Unable to prepare the listing for photo uploads.')
+      if (scope !== photoUploadScopeRef.current) throw new Error('The photo upload belongs to a previous listing form.')
+      pendingCreatedListingIdRef.current = created.listing.id
+      saveCurrentCreateListingDraft(photoUploadFormRef.current)
+      return created.listing.id
+    })()
+    photoDraftCreationRef.current = preparation
+    try { return await preparation } finally {
+      if (photoDraftCreationRef.current === preparation) photoDraftCreationRef.current = null
+    }
+  }
+
+  async function startSelectedPhotoUploads(images) {
+    if (!isListingEditorWorkspace || !isSupabaseConfigured || MOCK_DATA_ENABLED || draftRecoveryBlocked || editDraftConflict) return
+    const scope = photoUploadScopeRef.current
+    const setStatus = (image, uploadStatus, uploadError = '') => {
+      if (scope !== photoUploadScopeRef.current) return
+      setForm(previous => ({ ...previous, listingImages: previous.listingImages.map(current =>
+        current.id === image.id && current.file ? { ...current, uploadStatus, uploadError } : current) }))
+    }
+    images.forEach(image => setStatus(image, 'uploading'))
+    try {
+      const listingId = await ensurePhotoListingDraft()
+      await Promise.allSettled(images.map(async image => {
+        try {
+          await uploadQuickListingImages(listingId, [image], (uploaded, original) => {
+            if (scope === photoUploadScopeRef.current) retainUploadedListingImage({ ...uploaded, uploadStatus: 'uploaded' }, original)
+          })
+        } catch (error) { setStatus(image, 'failed', error.message) }
+      }))
+    } catch (error) { images.forEach(image => setStatus(image, 'failed', error.message)) }
+  }
+
   async function handleCreateListingImageUpload(event) {
     const input = event.target
     const files = Array.from(input.files || [])
@@ -4719,6 +4796,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         coverImageId: previous.coverImageId || nextImages[0]?.id || '',
       }))
       setMissingDraftPhotoCount(0)
+      void startSelectedPhotoUploads(nextImages)
     } catch (imageError) {
       setError(imageError?.message || 'Unable to load selected images.')
     } finally {
@@ -4844,6 +4922,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     setCloudSave({ status: 'saving' })
     setError('')
     try {
+      await photoDraftCreationRef.current
       const draftPayload = {
         organisationId: listingOrganisationId,
         developmentId: form.developmentId || linkedDevelopmentId || null,
@@ -6010,6 +6089,7 @@ function AgentListings({ mobileEditor = false } = {}) {
   }
 
   async function performSaveListing() {
+    await photoDraftCreationRef.current
     const sellerName = form.sellerName.trim()
     const sellerSurname = form.sellerSurname.trim()
     const sellerEmail = form.sellerEmail.trim()
@@ -7250,9 +7330,9 @@ function AgentListings({ mobileEditor = false } = {}) {
     finally { setPublicationStatusBusy(false) }
   }
 
-  async function retryListingPublication() {
+  async function retryListingPublication(channels = form.selectedSyndicationChannels || []) {
     if (editorRelistChannel || publicationStatusBusy || isListingSaving || publicationPending || !isEditListingWorkspace) return
-    const failedChannels = initialChannelResults.filter(row => row.retryable && form.selectedSyndicationChannels?.includes(row.key)).map(row => row.key)
+    const failedChannels = initialChannelResults.filter(row => row.retryable && channels.includes(row.key) && form.selectedSyndicationChannels?.includes(row.key)).map(row => row.key)
     const retryIssues = [...getSalesListingRequiredIssues(form, { editing: true }), ...getListingFieldIssues(form, { channels: failedChannels })]
     if (retryIssues.length) {
       setValidationAttemptedStep(retryIssues[0].step); setCreateListingStep(retryIssues[0].step); setError(retryIssues[0].message); return
@@ -7262,7 +7342,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     try {
       const saved = await performUpdateExistingListing({ sendUpdates: false, navigateAfterSave: false })
       if (!saved) return
-      const retried = await retryFailedListingChannels({ listingId: editListingId, listingStatus: form.listingStatus, channels: form.selectedSyndicationChannels, requestKey: crypto.randomUUID() })
+      const retried = await retryFailedListingChannels({ listingId: editListingId, listingStatus: form.listingStatus, channels: failedChannels, requestKey: crypto.randomUUID() })
       setWorkflowMessage(retried.length ? 'Listing saved. Retrying the failed channels.' : 'Listing saved. No failed requests to retry for your selected channels.')
     } catch (publicationError) { setError(`Your listing is saved. ${publicationError.message}`) }
     finally { setPublicationStatusBusy(false) }
@@ -8250,22 +8330,22 @@ function AgentListings({ mobileEditor = false } = {}) {
           onStepClick={openCreateListingStep}
         />
 
-        {error && !listingCompletionIssues.some(issue => issue.message === error) ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+        {error && createListingStep !== 'syndication' && !listingCompletionIssues.some(issue => issue.message === error) ? <p role="alert" className="rounded-[8px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
         {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
         <ListingSaveStatus hideSavedNotice={isEditListingWorkspace} hideDeviceNotice={streamlinedSales || isEditListingWorkspace} cloud={isListingSaving ? { status: 'saving', message: photoSaveProgress || (form.listingImages.some(image => image.file) ? `Preparing ${form.listingImages.length} photos…` : 'Saving to Listings…') } : cloudSave} recovery={recoveryProtection.status} dirty={isEditListingWorkspace ? JSON.stringify(form) !== savedEditorFormRef.current : JSON.stringify(form) !== initialEditorFormRef.current} saveLabel={isEditListingWorkspace ? 'Save changes' : 'Save draft'} />
-        {workflowMessage ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
-        <ListingPublicationProgress results={initialChannelResults} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
+        {workflowMessage && !(createListingStep === 'syndication' && initialChannelResults.length && /^Listing saved[.]/.test(workflowMessage)) ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
+        {createListingStep !== 'syndication' ? <ListingPublicationProgress results={initialChannelResults} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
           unsavedChanges={isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current} changesNotSent={savedChangesNotSent} retrySavesChanges
           busy={publicationStatusBusy || isListingSaving}
           onRetry={isEditListingWorkspace && !editorRelistChannel ? () => void retryListingPublication() : undefined}
           onCheckStatus={() => void checkListingPublication()}
-          onViewListing={isEditListingWorkspace ? () => navigate(mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(editListingId)}?tab=marketing`) : undefined} />
+          onViewListing={isEditListingWorkspace ? () => navigate(mobileEditor ? '/mobile/listings' : `/agent/listings/${encodeURIComponent(editListingId)}?tab=marketing`) : undefined} /> : null}
 
         {!streamlinedSales && !isEditListingWorkspace ? <ListingFieldIssues completion channels={form.selectedSyndicationChannels} draftNote={isEditListingWorkspace ? "Save changes needs the listing details below. Website requirements apply when publishing." : undefined} issues={listingCompletionIssues} step={createListingStep} form={form} attempted={validationAttemptedStep === createListingStep} onGoToStep={step => { setCreateListingStep(step); setError('') }} /> : null}
 
         {!isEditListingWorkspace && !streamlinedSales ? <p className="px-5 py-2 text-sm text-[#607387]">Save the property first. You can add seller and mandate details from the saved listing.</p> : null}
         <ListingWizard
-          showPreview={createListingStep !== 'review'}
+          showPreview={!['review', 'syndication'].includes(createListingStep)}
           streamlined={streamlinedSales || (isEditListingWorkspace && ['features', 'review'].includes(createListingStep))}
           anchored={streamlinedSales || isEditListingWorkspace}
           form={form}
@@ -8565,7 +8645,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                     <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-[8px] border border-[#1f7d44] bg-[#1f7d44] px-3 text-sm font-semibold text-white transition hover:bg-[#176437]">
                       <ImagePlus size={16} />
                       Upload images
-                      <input name="listingImages" aria-label="Add photos" type="file" accept="image/*" multiple className="sr-only" onChange={handleCreateListingImageUpload} />
+                      <input name="listingImages" aria-label="Add photos" disabled={isListingSaving || draftRecoveryBlocked || Boolean(editDraftConflict)} type="file" accept="image/*" multiple className="sr-only" onChange={handleCreateListingImageUpload} />
                     </label>
                   </div>
                   {form.listingImages.length ? (
@@ -8580,15 +8660,17 @@ function AgentListings({ mobileEditor = false } = {}) {
                             </div>
                             <div className="grid gap-2 p-3">
                               <p className="truncate text-sm font-semibold text-[#22374d]">{image.name}</p>
+                              <p role="status" className="text-xs text-[#607387]">{image.uploadStatus === 'uploading' ? 'Uploading…' : image.uploadStatus === 'failed' ? 'Upload failed. Retry or save to try again.' : !image.file ? 'Uploaded' : 'Selected'}</p>
+                              {image.uploadStatus === 'failed' ? <Button type="button" size="sm" variant="secondary" title={image.uploadError} disabled={isListingSaving} onClick={() => void startSelectedPhotoUploads([image])}>Retry upload</Button> : null}
                               <div className="flex flex-wrap gap-1.5">
-                                <Button type="button" size="sm" variant={isCover ? 'primary' : 'secondary'} disabled={isCover} onClick={() => updateForm('coverImageId', image.id)}>Cover</Button>
-                                <Button type="button" size="sm" variant="secondary" disabled={index === 0} onClick={() => moveCreateListingImage(image.id, 'left')}>
+                                <Button type="button" size="sm" variant={isCover ? 'primary' : 'secondary'} disabled={isListingSaving || isCover} onClick={() => updateForm('coverImageId', image.id)}>Cover</Button>
+                                <Button type="button" size="sm" variant="secondary" disabled={isListingSaving || index === 0} onClick={() => moveCreateListingImage(image.id, 'left')}>
                                   <ArrowLeft size={13} />
                                 </Button>
-                                <Button type="button" size="sm" variant="secondary" disabled={index === form.listingImages.length - 1} onClick={() => moveCreateListingImage(image.id, 'right')}>
+                                <Button type="button" size="sm" variant="secondary" disabled={isListingSaving || index === form.listingImages.length - 1} onClick={() => moveCreateListingImage(image.id, 'right')}>
                                   <ArrowRight size={13} />
                                 </Button>
-                                <Button type="button" size="sm" variant="secondary" aria-label={`Remove ${image.name || 'photo'}`} onClick={() => removeCreateListingImage(image.id)}>
+                                <Button type="button" size="sm" variant="secondary" aria-label={`Remove ${image.name || 'photo'}`} disabled={isListingSaving} onClick={() => removeCreateListingImage(image.id)}>
                                   <Trash2 size={13} />
                                 </Button>
                               </div>
@@ -8623,16 +8705,19 @@ function AgentListings({ mobileEditor = false } = {}) {
             {createListingStep === 'syndication' ? (
               <div className="space-y-6">
                 <ListingWizardHeader title="Where to advertise" />
+                {error ? <p role="alert" className="rounded-lg border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-[#18324b]">Advertising websites</h3>
                   <span className="rounded-full bg-[#eef4fa] px-3 py-1 text-xs font-semibold text-[#526f88]">{selectedCreateListingPortalStatuses.filter((portal) => !portal.internalOnly).length} websites selected</span>
                 </div>
-                <div className="listing-syndication-grid">
+                {isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current ? <p className="text-sm text-[#607387]">Your changes have not been saved or sent. Channel results below describe the previous request.</p> : savedChangesNotSent ? <p className="text-sm text-[#607387]">Changes saved. Review and publish to update the selected websites.</p> : null}
+                <div className="listing-syndication-rows">
                   {createListingPortalStatuses.map((portal) => {
                     const channelAvailable = portal.internalOnly || portal.availability?.available === true
-                    const needsAttention = portal.internalOnly ? '' : portal.availabilityLoading ? 'Checking channel connection…' : !channelAvailable ? 'Not connected for this organisation' : validationAttemptedStep === createListingStep && portal.enabled && portal.missing.length ? `${portal.missing.length} required field${portal.missing.length === 1 ? '' : 's'} missing` : ''
-                    return <ListingSyndicationChannelCard key={portal.key} channel={portal} selected={Boolean(portal.enabled)} disabled={!channelAvailable || portal.availabilityLoading} needsAttention={needsAttention} agencyLogo={agencyLogo} onToggle={toggleCreateListingSyndicationChannel}>
-                      {channelAvailable && validationAttemptedStep === createListingStep && portal.enabled && portal.missing.length ? <Button type="button" size="sm" variant="secondary" onClick={() => setCreateListingStep(getListingFieldIssues(form, { channels: [portal.key] })[0]?.step || 'property')}>Fix {portal.missing.length} field{portal.missing.length === 1 ? '' : 's'}</Button> : null}
+                    const needsAttention = portal.internalOnly ? '' : portal.availabilityLoading ? 'Checking channel connection…' : !channelAvailable ? 'Not connected for this organisation' : portal.enabled && portal.missing.length ? portal.missing.join(' ') : ''
+                    const publication = initialChannelResults.find(result => result.key === portal.key)
+                    return <ListingSyndicationChannelCard layout="row" publication={publication} previousResult={savedChangesNotSent || (isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current)} unsavedChanges={isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current} busy={publicationStatusBusy || isListingSaving} retryBlocked={publicationPending} onCheckStatus={() => void checkListingPublication()} onRetry={isEditListingWorkspace && !editorRelistChannel && portal.enabled ? () => void retryListingPublication([portal.key]) : undefined} key={portal.key} channel={portal} selected={Boolean(portal.enabled)} disabled={!channelAvailable || portal.availabilityLoading} needsAttention={needsAttention} agencyLogo={agencyLogo} onToggle={toggleCreateListingSyndicationChannel}>
+                      {channelAvailable && portal.enabled && portal.missing.length ? <Button type="button" size="sm" variant="secondary" onClick={() => setCreateListingStep(getListingFieldIssues(form, { channels: [portal.key] })[0]?.step || 'property')}>Fix {portal.missing.length} field{portal.missing.length === 1 ? '' : 's'}</Button> : null}
                     </ListingSyndicationChannelCard>
                   })}
                 </div>

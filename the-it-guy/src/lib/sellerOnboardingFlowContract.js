@@ -113,10 +113,11 @@ const CORE_PROPERTY_RULES = Object.freeze({
     'property.address.city',
     'property.province',
     'property.rates_taxes',
-    'property.levies_or_not_applicable',
-    'property.utilities.water_billing_type',
   ]),
   optionalFields: Object.freeze([
+    'property.levies',
+    'property.levies_not_applicable',
+    'property.utilities.water_billing_type',
     'property.address.search_query',
     'property.address.line_2',
     'property.address.postal_code',

@@ -134,6 +134,8 @@ export function buildSellerLeadManualCapturePayload({ form = {}, listing = {}, l
     bondHolder: text(captureValue('mortgageBank', 'bondHolder')),
     ratesTaxes: text(source.ratesAndTaxes ?? source.ratesTaxes),
     levies: text(source.levies),
+    leviesNotApplicable: isAffirmative(captureValue('leviesNotApplicable', 'levies_not_applicable')),
+    waterBillingType: text(captureValue('waterBillingType', 'water_billing_type')),
     askingPrice: text(source.askingPrice),
     mandateType: text(source.mandateType),
     otherAgencyName: text(source.otherAgencyName),

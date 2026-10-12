@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { deriveListingChannelUpdateStates } from '../src/services/listings/listingChannelUpdateState.js'
+import { deriveListingChannelUpdateStates, getListingChannelManageActivity } from '../src/services/listings/listingChannelUpdateState.js'
 
 const event = (type, at, metadata) => ({ activity_type: type, created_at: at, metadata })
 const failed = event('listing_price_changed', '2026-09-24T08:00:00Z', {
@@ -100,3 +100,12 @@ console.log('Listing channel update state contract passed')
 const websiteFailure = event('listing_sold', '2026-10-10T10:00:00Z', { action: 'sold', channelResults: [{ channel: 'Agency Website', action: 'sold', status: 'failed', detail: 'Website unavailable' }, { channel: 'Property24', action: 'expiry', status: 'failed' }] })
 assert.equal(deriveListingChannelUpdateStates([websiteFailure])['Agency Website'].action, 'sold')
 assert.equal(deriveListingChannelUpdateStates([websiteFailure]).Property24.action, 'expiry', 'A combined expiry/status retry retains the lifecycle action')
+
+const scopedHistory = getListingChannelManageActivity([
+  { id: 'other', activity_type: 'listing_channel_publication_failed', created_at: '2026-10-12T10:02:00Z', metadata: { channel: 'Property24', error: 'P24 only' } },
+  { id: 'own', activity_type: 'listing_channel_publication_failed', activity_title: 'PP update failed', created_at: '2026-10-12T10:01:00Z', metadata: { channel: 'Private Property', error: 'PP only' } },
+  { id: 'batch', activity_type: 'listing_sold', created_at: '2026-10-12T10:03:00Z', metadata: { action: 'sold', channelResults: [{ channel: 'Property24', status: 'sent', detail: 'P24 accepted' }, { channel: 'Private Property', status: 'failed', detail: 'PP rejected' }] } },
+], 'Private Property')
+assert.deepEqual(scopedHistory.map(row => row.id), ['batch', 'own'])
+assert.equal(scopedHistory[0].detail, 'PP rejected')
+assert.equal(scopedHistory[1].detail, 'PP only')

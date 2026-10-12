@@ -4,6 +4,16 @@ import { PROPERTY_DISCLOSURE_QUESTIONS, isPropertyDisclosureDigitallyComplete } 
 
 const completeDisclosure = { responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no', note: '' }])) }
 
+test('compact manual capture preserves utility answers and deliberate clearing', () => {
+  const saved = buildSellerLeadManualCapturePayload({ form: { ownershipType: 'individual', levies: '0', leviesNotApplicable: true, waterBillingType: 'municipal' } })
+  assert.equal(saved.formPatch.leviesNotApplicable, true)
+  assert.equal(saved.formPatch.waterBillingType, 'municipal')
+  assert.equal(saved.canonicalSellerFacts.property.levies, 0)
+  const cleared = buildSellerLeadManualCapturePayload({ form: { ownershipType: 'individual', leviesNotApplicable: false, waterBillingType: '' }, legacyFormData: saved.formPatch })
+  assert.equal(cleared.formPatch.leviesNotApplicable, false)
+  assert.equal(cleared.formPatch.waterBillingType, '')
+})
+
 import { LISTING_SELLER_PROFILE_CAPTURE_SOURCE, createListingSellerProfileBuilderDraft, buildListingSellerProfileCapturePayload } from '../listingSellerProfileBuilderModel.js'
 import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent.js'
 import {

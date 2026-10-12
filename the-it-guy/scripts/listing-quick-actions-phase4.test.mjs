@@ -46,7 +46,7 @@ console.log('Listing quick actions phase 4 contract passed')
 function simpleController() {
   const calls = []
   const context = {
-    channelMutationRef: { current: false }, listingId: 'listing-1', listingRecord: { id: 'listing-1' }, isSupabaseConfigured: true,
+    channelMutationRef: { current: false }, listingId: 'listing-1', requireSettledListingPublication: async () => {}, listingRecord: { id: 'listing-1' }, isSupabaseConfigured: true,
     marketingDraft: { listingStatus: 'active', listingType: 'sale', property24ExpiryDate: '2026-11-30' }, marketingDraftDirtyRef: { current: false },
     property24Published: true, property24Reference: 'p24-1', privatePropertyExternalStatus: 'active', privatePropertyStatusKey: 'published',
     agencyWebsitePublication: { status: 'published' }, kingdomWebsitePublication: { status: 'published' },

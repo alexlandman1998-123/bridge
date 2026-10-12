@@ -9,6 +9,13 @@ import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../../lib/propertyDisclosure.j
 afterEach(cleanup)
 
 describe('seller document actions', () => {
+  it('offers generate, signature send and signed upload for an untouched disclosure draft', () => {
+    render(<SellerDocumentWorkflowActions item={{ key: 'signed_disclosure_form', label: 'Disclosure', canUpload: true, uploaded: true, linkedDocument: { artifactStage: 'review_draft', isGeneratedDraft: true, generatedHtml: '<article>Draft</article>' } }} />)
+    expect(screen.getByRole('status').textContent).not.toMatch(/Uploaded/)
+    expect(screen.getByRole('button', { name: 'Generate and download' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Generate and send for signature' })).toBeTruthy()
+    expect(screen.getByLabelText('Upload manually Disclosure')).toBeTruthy()
+  })
   it('offers all three actions before preparation and passes the selected file', () => {
     const onDownload = vi.fn(), onSend = vi.fn(), onUpload = vi.fn()
     render(<SellerDocumentWorkflowActions item={{ label: 'Mandate' }} onDownload={onDownload} onSend={onSend} onUpload={onUpload} />)

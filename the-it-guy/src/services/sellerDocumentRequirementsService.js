@@ -13,6 +13,7 @@ import {
   getSellerBasePackAliases,
   normalizeSellerBasePackKey,
   projectSellerDocumentArtifact,
+  isSellerDocumentPreparationArtifact,
   sellerBasePackKeysOverlap,
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   SELLER_BASE_PACK_KEYS,
@@ -2878,7 +2879,8 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   )
   const generatedHtml = normalizeText(document?.generatedHtml || document?.generated_html)
   const generatedFileName = normalizeText(document?.generatedFileName || document?.generated_file_name)
-  const canUpload = document?.canUpload !== false && document?.can_upload !== false
+  const preparationOnly = document ? isSellerDocumentPreparationArtifact(document) : false
+  const canUpload = documentContract.stage === 'review_draft' || (document?.canUpload !== false && document?.can_upload !== false)
   const canDownload = documentContract.representation.downloadable
   const downloadReason = normalizeText(document?.downloadReason || document?.download_reason)
   const isGeneratedDraft = document?.isGeneratedDraft === true || document?.is_generated_draft === true
@@ -2909,7 +2911,7 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     applicable,
     complete,
     blocking: required && applicable && ['outstanding', 'rejected'].includes(statusBucket),
-    hasUpload: documentArtifactPresent,
+    hasUpload: documentArtifactPresent && !preparationOnly,
     canUpload,
     can_upload: canUpload,
     canDownload,

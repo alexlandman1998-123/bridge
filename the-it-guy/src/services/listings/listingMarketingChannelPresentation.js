@@ -160,3 +160,24 @@ export function buildInternalListingPublicationDisplay(listing = {}) {
     statusLabel: live ? 'Published internally' : ({ sold: 'Sold', withdrawn: 'Withdrawn', archived: 'Archived' })[status] || 'Internal draft',
   }
 }
+
+export function buildKingdomWebsiteListingPublicUrl(publication = {}, listingId = '', listingTitle = '', reference = '') {
+  if (!publication?.hostname || !text(listingId)) return ''
+  const code = text(reference).toUpperCase()
+  const title = text(listingTitle || 'property').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'property'
+  const slug = /^A9-[A-Z0-9]{2,12}-[0-9]{6,}$/.test(code) ? code : `${title}-${listingId}`
+  return normalizeListingChannelPublicUrl(`https://${publication.hostname}/properties/${slug}`)
+}
+
+export function validateListingPortalPublicUrl(channel, value) {
+  const host = { property24: 'property24.com', private_property: 'privateproperty.co.za' }[channel]
+  if (!host) throw new Error('Choose Property24 or Private Property before saving a portal link.')
+  let parsed
+  try { parsed = new URL(text(value)) } catch { parsed = null }
+  const name = channel === 'property24' ? 'Property24' : 'Private Property'
+  if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || parsed.pathname === '/' || (parsed.hostname !== host && !parsed.hostname.endsWith(`.${host}`))) {
+    throw new Error(`Enter the exact HTTPS ${name} advert URL, including its listing page.`)
+  }
+  return parsed.toString()
+}

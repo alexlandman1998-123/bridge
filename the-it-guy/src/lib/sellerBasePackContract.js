@@ -344,6 +344,13 @@ export function projectSellerDocumentArtifact(artifact = {}, { requirementOnly =
   })
 }
 
+/** Drafts and unsigned signing copies are representations, not uploaded evidence. */
+export function isSellerDocumentPreparationArtifact(artifact = {}) {
+  const contract = artifact.documentContract || artifact.document_contract || projectSellerDocumentArtifact(artifact)
+  return [SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, SELLER_DOCUMENT_ARTIFACT_STAGES.SIGNING_COPY].includes(contract.stage) ||
+    ((artifact.isGeneratedDraft === true || artifact.is_generated_draft === true) && !contract.satisfiesRequirement)
+}
+
 function artifactSelectionScore(artifact = {}, contract = projectSellerDocumentArtifact(artifact)) {
   const stageScore = {
     [SELLER_DOCUMENT_ARTIFACT_STAGES.FINAL_SIGNED]: 400,

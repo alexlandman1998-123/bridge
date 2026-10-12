@@ -410,7 +410,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     ratesTaxes: normalizeText(savedField(form, ['ratesTaxes'], listing?.ratesTaxes)),
     levies: normalizeText(savedField(form, ['levies'], listing?.levies)),
     leviesNotApplicable: Boolean(savedField(form, ['leviesNotApplicable', 'levies_not_applicable']) ?? false),
-    waterBillingType: normalizeText(savedField(form, ['waterBillingType', 'water_billing_type'], 'municipal')),
+    waterBillingType: normalizeText(savedField(form, ['waterBillingType', 'water_billing_type'], canonicalProperty.utilities?.water_billing_type, canonicalProperty.water_billing_type)),
     mandateType: Object.hasOwn(form, 'mandateType') ? mandateTerms.mandateType : mandateTerms.mandateType || normalizeText(listing?.mandate?.type) || 'sole',
     otherAgencyName: normalizeText(savedField(form, ['otherAgencyName', 'coAgencyName'])),
     askingPrice: mandateTerms.askingPrice,
@@ -517,6 +517,12 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     sellerLegalType: ownerModel.sellerLegalType,
     seller_legal_type: ownerModel.sellerLegalType,
     ownershipType: branch,
+    sellerOwnershipRoute: branch,
+    seller_ownership_route: branch,
+    ownershipRouteConfirmed: Boolean(branch),
+    ownership_route_confirmed: Boolean(branch),
+    ownershipDeclarationPending: !branch,
+    ownership_declaration_pending: !branch,
     ownerEntityType: ownerModel.ownerEntityType,
     owner_entity_type: ownerModel.ownerEntityType,
     ownerStructureType: ownerModel.ownerStructureType,
@@ -724,6 +730,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   if (branch !== 'other') base.other_entity = {}
   const aliases = buildSellerEntityProfileAliases(base)
   const patch = { ...compactObject(base), ...aliases, ...capturedMandateTerms }
+  patch.waterBillingType = base.waterBillingType
+  patch.water_billing_type = base.waterBillingType
   for (const fields of Object.values(BRANCH_DETAIL_FIELDS)) {
     for (const field of fields) patch[field] = base[field]
   }

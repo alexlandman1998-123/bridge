@@ -66,3 +66,19 @@ export async function settleListingImageUploads(images, upload, onUploaded = () 
   }
   return uploadedImages
 }
+
+// Keep in-flight and completed uploads for the same file/listing. Final save
+// can join an early upload even if it captured the form before upload finished.
+const earlyImageUploads = new WeakMap()
+export function reuseListingImageUpload(listingId, file, upload) {
+  let listings = earlyImageUploads.get(file)
+  if (!listings) { listings = new Map(); earlyImageUploads.set(file, listings) }
+  if (!listings.has(listingId)) {
+    const pending = Promise.resolve().then(upload).catch(error => {
+      listings.delete(listingId)
+      throw error
+    })
+    listings.set(listingId, pending)
+  }
+  return listings.get(listingId)
+}

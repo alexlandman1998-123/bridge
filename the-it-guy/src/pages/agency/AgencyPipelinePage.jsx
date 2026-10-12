@@ -22975,8 +22975,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         // original listing route set. Preserve its deliberate confirmation.
         sellerOwnershipRoute: resolveSellerLeadOwnershipRoute(sellerProfileEditForm),
         seller_ownership_route: resolveSellerLeadOwnershipRoute(sellerProfileEditForm),
-        ownershipRouteConfirmed: Boolean(sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
-        ownership_route_confirmed: Boolean(sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
+        ownershipRouteConfirmed: Boolean(manualCapture.formPatch.ownershipRouteConfirmed || sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
+        ownership_route_confirmed: Boolean(manualCapture.formPatch.ownership_route_confirmed || sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
       }
       let sellerCanonicalFacts = isPlainObject(manualCapture?.canonicalSellerFacts)
         ? manualCapture.canonicalSellerFacts

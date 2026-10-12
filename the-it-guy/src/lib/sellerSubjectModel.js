@@ -138,12 +138,11 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
     form.seller_type,
   )
   const inferredKind = subjectKind({ entityType, structureType: explicitRoute || structureType, ownershipType })
-  const ownershipDeclarationPending = [
-    sellerFacts.ownership_declaration_pending,
-    sellerFacts.ownershipDeclarationPending,
-    form.ownershipDeclarationPending,
-    form.ownership_declaration_pending,
-  ].some(isAffirmative)
+  // Earlier manual profile saves recorded the deliberately selected branch
+  // and capture source, but omitted confirmation and retained pending flags.
+  const manuallyCapturedRoute = firstText(form.sellerProfileCaptureSource, form.seller_profile_capture_source) === 'listing_seller_profile_capture'
+    && Boolean(firstText(form.ownershipType, form.ownership_type))
+    && inferredKind !== 'unknown'
   const ownershipRouteConfirmed = [
     sellerFacts.ownership_route_confirmed,
     sellerFacts.ownershipRouteConfirmed,
@@ -151,6 +150,12 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
     form.ownership_route_confirmed,
     form.ownershipRouteLocked,
     form.ownership_route_locked,
+  ].some(isAffirmative) || manuallyCapturedRoute
+  const ownershipDeclarationPending = !ownershipRouteConfirmed && [
+    sellerFacts.ownership_declaration_pending,
+    sellerFacts.ownershipDeclarationPending,
+    form.ownershipDeclarationPending,
+    form.ownership_declaration_pending,
   ].some(isAffirmative)
   const onboardingStatus = firstText(onboarding.status, onboarding.onboardingStatus, form.onboardingStatus, form.onboarding_status).toLowerCase()
   const onboardingSubmitted = ['submitted', 'completed', 'signed'].includes(onboardingStatus)

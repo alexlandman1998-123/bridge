@@ -68,3 +68,20 @@ test('partial batch waits for successful uploads and retains them for retry in o
   assert.deepEqual(completed.map((image) => image.id), ['a', 'b', 'c'])
   assert.deepEqual(calls, ['a', 'b', 'c', 'b'])
 })
+
+test('final save joins the selected photo upload and reuses its completed asset; failure can retry', async () => {
+  const { reuseListingImageUpload } = await import('../listingMediaUploads.js')
+  const file = new File(['photo'], 'photo.jpg')
+  let finish, calls = 0
+  const operation = () => { calls += 1; return new Promise(resolve => { finish = resolve }) }
+  const early = reuseListingImageUpload('listing-a', file, operation)
+  const finalSave = reuseListingImageUpload('listing-a', file, operation)
+  assert.equal(early, finalSave)
+  await Promise.resolve()
+  assert.equal(calls, 1)
+  finish({ path: 'photo.jpg' })
+  assert.deepEqual(await finalSave, { path: 'photo.jpg' })
+  assert.equal(reuseListingImageUpload('listing-a', file, operation), early)
+  await assert.rejects(reuseListingImageUpload('listing-b', file, async () => { throw Error('offline') }), /offline/)
+  assert.equal(await reuseListingImageUpload('listing-b', file, async () => 'retried'), 'retried')
+})

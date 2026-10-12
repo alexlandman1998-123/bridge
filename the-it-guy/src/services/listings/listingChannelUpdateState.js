@@ -95,3 +95,31 @@ export function deriveListingChannelUpdateStates(activityRows = [], sessionResul
   }
   return states
 }
+
+// A portal popup includes only its own deliveries, plus saved pricing changes.
+export function getListingChannelManageActivity(activityRows = [], channel) {
+  return (Array.isArray(activityRows) ? activityRows : []).flatMap(row => {
+    const metadata = eventMetadata(row)
+    const result = (Array.isArray(metadata.channelResults) ? metadata.channelResults : []).find(item => item.channel === channel)
+    const direct = metadata.channel === channel
+    const pricingEdit = eventType(row) === 'listing_price_changed' && metadata.action === 'pricing_edit'
+    if (!direct && !result && !pricingEdit) return []
+    const action = text(result?.action || metadata.action).replace(/_/g, ' ')
+    return [{
+      id: row.id,
+      title: result ? `${channel} ${action || 'update'} · ${result.status === 'failed' ? 'Needs attention' : result.status === 'sent' ? 'Accepted' : result.status || 'Recorded'}` : text(row.activity_title || row.activityTitle) || `${channel} activity`,
+      detail: text(result?.detail || (direct ? metadata.error || metadata.detail : '') || row.activity_description || row.activityDescription),
+      at: row.created_at || row.createdAt || '',
+      by: text(row.performedByName || row.performed_by_name),
+    }]
+  }).sort((left, right) => (Date.parse(right.at) || 0) - (Date.parse(left.at) || 0)).slice(0, 15)
+}
+
+const labels = { publishing: 'Sending…', submitted: 'Request accepted', needs_attention: 'Needs attention', uncertain: 'Not confirmed' }
+
+export function listingPublicationReceipt(row) {
+  return {
+    label: row.jobState === 'queued' ? 'Queued' : row.status === 'publishing' && !row.jobId ? 'Confirming request…' : labels[row.status] || 'Not confirmed',
+    message: row.status === 'submitted' ? 'The request was accepted. Check the public advert before treating it as live.' : row.status === 'publishing' && !row.jobId ? 'Waiting to confirm that your advertising request is saved. Keep this page open.' : row.jobState === 'queued' ? 'The request is saved and waiting to send. You can leave this page.' : row.status === 'publishing' ? 'The request is being sent. Wait for the result before sending again.' : summarizeListingPortalError(row.message) || 'Check status for the latest result.',
+  }
+}

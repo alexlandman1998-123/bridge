@@ -1,7 +1,5 @@
 import Button from '../ui/Button'
-import { summarizeListingPortalError } from '../../services/listings/listingChannelUpdateState'
-
-const labels = { publishing: 'Sending…', submitted: 'Request accepted', needs_attention: 'Needs attention', uncertain: 'Not confirmed' }
+import { listingPublicationReceipt } from '../../services/listings/listingChannelUpdateState'
 
 export default function ListingPublicationProgress({ results = [], busy = false, saved = false, title = '', listingStatus = '', channels = null, changesNotSent = false, unsavedChanges = false, retrySavesChanges = false, onRetry, onCheckStatus, onViewListing, onReview, onDismissChanges, onFollowUp, onDocuments, followUpLabel = 'Seller details' }) {
   if (!saved && !results.length) return null
@@ -19,8 +17,8 @@ export default function ListingPublicationProgress({ results = [], busy = false,
       {!results.length && !draft && !changesNotSent ? <p>{channels?.some(key => ['property24', 'private_property', 'agency_website'].includes(key)) ? 'No advertising request is confirmed here. Review the saved listing before sending.' : channels ? 'Saved in Arch9. No websites selected.' : 'Saved in Arch9. Review advertising to choose websites and send when ready.'}</p> : null}
       {results.length ? <p className="font-semibold text-[#243d56]">{changesNotSent || unsavedChanges ? 'Previous advertising request' : 'Advertising results'}</p> : null}
       {results.map(row => <div key={row.key}>
-        <p><strong>{row.label}</strong> · {row.jobState === 'queued' ? 'Queued' : row.status === 'publishing' && !row.jobId ? 'Confirming request…' : labels[row.status] || 'Not confirmed'}</p>
-        <p className="mt-1">{row.status === 'submitted' ? 'The request was accepted. Check the public advert before treating it as live.' : row.status === 'publishing' && !row.jobId ? 'Waiting to confirm that your advertising request is saved. Keep this page open.' : row.jobState === 'queued' ? 'The request is saved and waiting to send. You can leave this page.' : row.status === 'publishing' ? 'The request is being sent. Wait for the result before sending again.' : summarizeListingPortalError(row.message) || 'Check status for the latest result.'}</p>
+        <p><strong>{row.label}</strong> · {listingPublicationReceipt(row).label}</p>
+        <p className="mt-1">{listingPublicationReceipt(row).message}</p>
       </div>)}
       {pending && results.every(row => row.status !== 'publishing' || row.jobId) ? <p>Publishing continues after you leave this page.</p> : null}
       {failed ? <p>Your listing and successful channels are kept. Fix the details, then retry the failed channels. Successful channels will not be resent.</p> : null}

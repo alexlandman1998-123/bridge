@@ -10,6 +10,17 @@ import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPost
 import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../lib/propertyDisclosure.js'
 import { createSellerReviewedDocumentVersions } from '../../core/documents/sellerReviewedDocumentVersions.js'
 import { getSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy.js'
+import { readFileSync } from 'node:fs'
+import { isSellerDocumentPreparationArtifact } from '../../lib/sellerBasePackContract.js'
+import { buildSellerDocumentExperienceModel } from '../../lib/sellerDocumentExperienceModel.js'
+import { buildSellerDocumentWorkflow } from '../../core/documents/sellerDocumentWorkflow.js'
+
+const listingSource = readFileSync(new URL('../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const mapperStart = listingSource.indexOf('function mapSellerDocumentSourceRowForListing(')
+const mapperEnd = listingSource.indexOf('\nfunction documentMatchesSellerPackTransactionKey(', mapperStart)
+const mapListingRow = new Function('normalizeText', 'normalizeKey', 'formatStatusLabel', 'getSellerDocumentSourceLabel', 'isSellerDocumentPreparationArtifact', `${listingSource.slice(mapperStart, mapperEnd)}; return mapSellerDocumentSourceRowForListing`)(
+  value => String(value || '').trim(), value => String(value || '').toLowerCase(), value => value, () => '', isSellerDocumentPreparationArtifact,
+)
 
 const requiredDocuments = [
   { id: 'r-disclosure', key: 'signed_disclosure_form', label: 'Signed Mandatory Disclosure / Defects Form', status: 'required', is_required: true, group: 'legal' },
@@ -32,6 +43,46 @@ test('new onboarding disclosure remains a review draft, even when a PDF can be d
     .find((row) => row.artifactKey === 'signed_disclosure_form')
   assert.equal(approved.canDownload, true)
   assert.equal(approved.documentContract.satisfiesRequirement, false)
+})
+
+test('untouched disclosure passes through the actual listing mapper without an upload or review claim', () => {
+  const listing = { id: 'listing-untouched', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const formData = { sellerPostOnboardingDrafts: buildSellerPostOnboardingDrafts({ listing, formData: { sellerFirstName: 'Alex' } }) }
+  const row = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find(row => row.key === 'signed_disclosure_form')
+  assert.equal(row.hasUpload, false)
+  assert.equal(row.canUpload, true)
+  const mapped = mapListingRow(row)
+  assert.equal(mapped.uploaded, false)
+  assert.equal(mapped.canUpload, true)
+  const experience = buildSellerDocumentExperienceModel({ requirements: [mapped], audience: 'agent' })
+  const item = experience.items[0]
+  assert.equal(item.hasUploadedDocument, false)
+  assert.equal(item.reviewRequired, false)
+  assert.equal(item.complete, false)
+  assert.equal(experience.summary.received, 0)
+  const workflow = buildSellerDocumentWorkflow({ item })
+  assert.equal(workflow.state, 'not_prepared')
+  assert.equal(workflow.canPrepare, true)
+  assert.equal(workflow.canSend, true)
+  assert.equal(workflow.canUpload, true)
+})
+
+test('a named seller’s completed onboarding disclosure remains signed evidence in the listing', () => {
+  const listing = { id: 'listing-signed-evidence', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const formData = {
+    sellerFirstName: 'Alex', sellerSurname: 'Seller', sellerName: 'Alex Seller',
+    ownershipType: 'individual', ownershipRouteConfirmed: true, idNumber: '8001015009087',
+    propertyDisclosure: {
+      responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no' }])),
+      declarationAccepted: true, signature: 'Alex Seller', signedAt: '2026-09-27', arch9TermsAccepted: true,
+    },
+    sellerComplianceSigning: { complete: true },
+  }
+  formData.sellerPostOnboardingDrafts = buildSellerPostOnboardingDrafts({ listing, formData })
+  const row = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find(row => row.key === 'signed_disclosure_form')
+  const item = buildSellerDocumentExperienceModel({ requirements: [mapListingRow(row)] }).items[0]
+  assert.equal(item.complete, true)
+  assert.equal(buildSellerDocumentWorkflow({ item }).state, 'complete')
 })
 
 test('a signed onboarding disclosure remains complete when every required seller has signed', () => {

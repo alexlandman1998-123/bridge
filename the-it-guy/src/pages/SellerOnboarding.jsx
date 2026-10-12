@@ -4171,12 +4171,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       if (!form.ratesTaxes) {
         return 'Rates and taxes are required for the property.'
       }
-      if (!form.leviesNotApplicable && !form.levies) {
-        return 'Please enter the levy amount, or tick that levies are not applicable.'
-      }
-      if (!form.waterBillingType) {
-        return 'Please select the water billing type.'
-      }
       if (form.existingBond && !form.bondBank) {
         return 'Bond bank is required when there is an existing bond.'
       }
@@ -4324,8 +4318,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       }
       if (activeMobilePaneIndex === propertyPaneIndexes.valuation) {
         if (!form.ratesTaxes) return 'Rates and taxes are required for the property.'
-        if (!form.leviesNotApplicable && !form.levies) return 'Please enter the levy amount, or tick that levies are not applicable.'
-        if (!form.waterBillingType) return 'Please select the water billing type.'
       }
       if (activeMobilePaneIndex === propertyPaneIndexes.occupancy) {
         if (form.existingBond && !form.bondBank) return 'Bond bank is required when there is an existing bond.'
@@ -6331,7 +6323,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                 <FormSection
                   icon={ClipboardCheck}
                   title="Costs & utilities"
-                  description="Rates, levies, and water billing help the transaction team prepare the file."
+                  description="Rates help the transaction team prepare the file. Levies and water billing can be completed later and do not block document preparation."
                   mobilePaneIndex={propertyPaneIndexes.valuation}
                 >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -6340,7 +6332,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Levies
+                      Levies (optional)
                       <input
                         className={DETAIL_INPUT_CLASS}
                         type="number"
@@ -6355,7 +6347,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       No levies / not applicable
                     </label>
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Water billing type
+                      Water billing type (optional)
                       <select className={DETAIL_INPUT_CLASS} value={form.waterBillingType} onChange={(event) => handleFormUpdate('waterBillingType', event.target.value)}>
                         {WATER_BILLING_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>

@@ -4,6 +4,22 @@ import test from 'node:test'
 import { buildSellerDocumentSourceOfTruth } from '../sellerDocumentRequirementsService.js'
 import { buildSellerReadinessSummary } from '../sellerReadinessService.js'
 
+test('confirmed manual and link onboarding remove the provisional checklist warning', () => {
+  const owner = { ownerEntityType: 'natural_person', ownerStructureType: 'individual', ownershipType: 'individual', sellerFirstName: 'Jane', sellerSurname: 'Smith', email: 'jane@example.com' }
+  for (const confirmation of [
+    { sellerProfileCaptureSource: 'listing_seller_profile_capture', ownershipRouteConfirmed: false, ownershipDeclarationPending: true },
+    { ownershipRouteConfirmed: true, ownershipDeclarationPending: true },
+  ]) {
+    const source = buildSellerDocumentSourceOfTruth({ listing: { id: 'listing-confirmed', sellerOnboarding: { formData: { ...owner, ...confirmation } } } })
+    assert.equal(source.requirementState.provisional, false)
+    assert.equal(source.requirementState.status, 'confirmed')
+    assert.equal(source.requirementState.message, '')
+    assert.equal(source.sellerSubject.legalOwnerName, 'Jane Smith')
+  }
+  const unknown = buildSellerDocumentSourceOfTruth({ listing: { id: 'listing-unknown', sellerOnboarding: { formData: { sellerFirstName: 'Jane', email: 'jane@example.com' } } } })
+  assert.equal(unknown.requirementState.provisional, true)
+})
+
 test('seller readiness lets an agent send onboarding before the legal route is known', () => {
   const readiness = buildSellerReadinessSummary({
     lead: {
