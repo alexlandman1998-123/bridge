@@ -3,8 +3,6 @@ import AppErrorBoundary from './components/AppErrorBoundary'
 import { getLocalPreviewTransaction } from './core/clients/localClientPreview'
 import WorkspaceLoadingScreen from './components/auth/WorkspaceLoadingScreen'
 import AccessState from './components/access/AccessState'
-import MobileLoginRedirectGate from './components/mobile-shell/MobileLoginRedirectGate'
-import MobileRouteGuard from './components/mobile-shell/MobileRouteGuard'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
@@ -266,6 +264,8 @@ function ReleaseFreshnessGuard() {
 const AddDevelopmentModal = lazy(() => import('./components/AddDevelopmentModal'))
 const AgentNewDealWizard = lazy(() => import('./components/AgentNewDealWizard'))
 const HeaderBar = lazy(() => import('./components/HeaderBar'))
+const MobileLoginRedirectGate = lazy(() => import('./components/mobile-shell/MobileLoginRedirectGate'))
+const MobileRouteGuard = lazy(() => import('./components/mobile-shell/MobileRouteGuard'))
 const MobileExecutiveLayout = lazy(() => import('./components/mobile/MobileExecutiveLayout'))
 const NewTransactionWizard = lazy(() => import('./components/NewTransactionWizard'))
 const Sidebar = lazy(() => import('./components/Sidebar'))
