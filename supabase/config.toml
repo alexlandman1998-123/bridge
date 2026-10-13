@@ -81,7 +81,7 @@ entrypoint = "./functions/send-email/index.ts"
 
 [functions.marketing-event-worker]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 entrypoint = "./functions/marketing-event-worker/index.ts"
 
 [functions.listing-viewing-notification-worker]

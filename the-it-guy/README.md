@@ -2364,6 +2364,32 @@ Focused checks: `npx vitest run src/components/marketing/__tests__/ShowDayCreate
 src/components/marketing/__tests__/ShowDayWorkspace.test.jsx`,
 `npm run test:show-day-phase5`, and `npm run test:listing-show-day-capture`.
 
+The `marketing-event-worker` processes queued RSVP CRM handoffs and due
+confirmation/morning-reminder messages. Its service authentication accepts only
+exact configured `SUPABASE_SECRET_KEYS` or `SUPABASE_SERVICE_ROLE_KEY` values;
+decoded JWT claims never authorize it. `verify_jwt = false` lets modern secret
+keys reach that explicit check. The scheduler correction
+`20261013181842_marketing_event_worker_service_key_headers.sql` uses `apikey`
+alone for opaque keys and keeps Bearer headers for legacy service JWTs. It
+preserves the minute schedule and existing queue records. The internal database
+and JWT-protected `send-email` calls retain the injected legacy service key.
+Changing the incoming scheduler credential does not rotate shared secrets.
+
+An authenticated POST with `{"mode":"health"}` reads queued handoff and due
+message counts without creating CRM records, claiming messages or sending email.
+Use Vault credentials server-side for production probes; never expose them in
+browser code or logs. Invalid modes are rejected. A successful health probe does
+not prove provider delivery; verify that when an eligible registration exists.
+
+Focused worker check, from the repository root:
+`deno test --allow-env --config supabase/functions/marketing-event-worker/deno.json supabase/functions/marketing-event-worker/index.test.ts`.
+Scheduler checks, from this package:
+`node scripts/marketing-event-worker-scheduler.test.mjs`.
+These fixtures cover exact-key authentication, forged/conflicting credentials,
+read-only health, bounded batches, due selection, protected internal email calls,
+provider success/failure, service-only scheduler access and unchanged queues.
+They send no live communications.
+
 ## Revo inbox workspace
 
 Revo's inbox selector uses existing connected email/WhatsApp address records.

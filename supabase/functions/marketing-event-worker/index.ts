@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.49.9";
 
 type Row = Record<string, unknown>;
 // The project does not keep generated database types for Edge Functions. The
@@ -9,21 +9,47 @@ type AdminClient = any;
 
 const json = (status: number, body: Row) => new Response(JSON.stringify(body), {
   status,
-  headers: { "Content-Type": "application/json" },
+  headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const asRow = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
 
-function isServiceRoleRequest(request: Request) {
-  const token = text(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
-  const payload = token.split(".")[1];
-  if (!payload) return false;
+async function sameCredential(left: string, right: string) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([left, right].map(async value =>
+    new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value)))));
+  let difference = 0;
+  for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
+  return difference === 0;
+}
+
+function serviceCredentials() {
+  const legacy = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  let secrets: string[] = [];
   try {
-    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")))?.role === "service_role";
-  } catch {
-    return false;
-  }
+    const configured = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}");
+    if (configured && typeof configured === "object" && !Array.isArray(configured)) {
+      secrets = Object.values(configured).map(text).filter(value => value.startsWith("sb_secret_"));
+    }
+  } catch { /* Invalid secret configuration cannot authorize an unknown key. */ }
+  return { legacy, secrets };
+}
+
+async function isServiceRoleRequest(request: Request, credentials: ReturnType<typeof serviceCredentials>) {
+  const apiKey = text(request.headers.get("apikey"));
+  const authorization = text(request.headers.get("authorization"));
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] || "";
+  if (authorization && !bearer) return false;
+  if ((!apiKey && !bearer) || apiKey.length > 8192 || bearer.length > 8192) return false;
+  if (apiKey && bearer && !await sameCredential(apiKey, bearer)) return false;
+  // Opaque keys belong in apikey. Matching duplicated headers remain compatible
+  // with the previous scheduler during the forward migration.
+  if (!apiKey && bearer.startsWith("sb_secret_")) return false;
+  const incoming = apiKey || bearer;
+  const matches = await Promise.all([credentials.legacy, ...credentials.secrets]
+    .filter(Boolean).map(value => sameCredential(incoming, value)));
+  return matches.some(Boolean);
 }
 
 function splitName(fullName: string) {
@@ -142,18 +168,41 @@ async function dispatchMessages(client: AdminClient, serviceRoleKey: string, pro
 }
 
 Deno.serve(async (request) => {
-  if (!isServiceRoleRequest(request)) return json(403, { error: "Service-role authorization is required." });
+  if (request.method !== "POST") return json(405, { error: "POST is required." });
+  const credentials = serviceCredentials();
+  if (!await isServiceRoleRequest(request, credentials)) return json(403, { error: "Service-role authorization is required." });
   const projectUrl = Deno.env.get("SUPABASE_URL") || "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  // send-email retains platform JWT verification; use the injected legacy
+  // service credential for its internal call, never the caller's opaque key.
+  const serviceRoleKey = credentials.legacy;
   if (!projectUrl || !serviceRoleKey) return json(500, { error: "Missing Supabase worker configuration." });
-  const client = createClient(projectUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const body = await request.json().catch(() => ({}));
-  const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 100);
+  let body: Row;
   try {
+    const raw = await request.text();
+    const parsed = raw.trim() ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json(400, { error: "A JSON object is required." });
+    body = parsed;
+  } catch { return json(400, { error: "A JSON object is required." }); }
+  const mode = body.mode ?? "dispatch";
+  if (mode !== "health" && mode !== "dispatch") return json(400, { error: "Unsupported worker mode." });
+  const requested = Number(body.limit);
+  const limit = Number.isFinite(requested) ? Math.max(1, Math.min(Math.trunc(requested) || 50, 100)) : 50;
+  try {
+    const client = createClient(projectUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    if (mode === "health") {
+      const [handoffs, messages] = await Promise.all([
+        client.from("marketing_event_rsvp_handoffs").select("id", { count: "exact", head: true }).eq("status", "queued"),
+        client.from("marketing_event_rsvp_messages").select("id", { count: "exact", head: true }).eq("status", "queued").lte("scheduled_for", new Date().toISOString()),
+      ]);
+      if (handoffs.error || messages.error || handoffs.count === null || messages.count === null) {
+        return json(503, { error: "Marketing queues could not be checked." });
+      }
+      return json(200, { ok: true, mode: "health", configurationReady: true, queue: { handoffs: handoffs.count, dueMessages: messages.count } });
+    }
     const handoffs = await processHandoffs(client, limit);
     const messages = await dispatchMessages(client, serviceRoleKey, projectUrl, limit);
     return json(200, { ok: true, handoffs, messages });
-  } catch (error) {
-    return json(500, { ok: false, error: errorMessage(error) });
+  } catch {
+    return json(503, { ok: false, error: "Marketing worker could not complete." });
   }
 });
