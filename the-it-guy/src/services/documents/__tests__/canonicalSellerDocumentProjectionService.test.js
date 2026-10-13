@@ -2,6 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { projectCanonicalSellerDocumentRows } from '../canonicalSellerDocumentProjectionService.js'
 
+test('database aliases retain the three seller signing routes and canonical identities', () => {
+  for (const [canonical, route] of [['seller_fica_declaration', 'signed_fica_declaration'], ['property_condition_disclosure', 'signed_disclosure_form'], ['signed_mandate', 'signed_mandate']]) {
+    const rows = projectCanonicalSellerDocumentRows([{ key: canonical, status: 'required' }, { key: route, status: 'uploaded', storage_path: `seller/${route}.pdf` }])
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].key, route)
+    assert.equal(rows[0].canonicalDocumentKey, canonical)
+    assert.equal(rows[0].taxonomyCategory, 'legal')
+    assert.equal(rows[0].storage_path, `seller/${route}.pdf`)
+    assert.deepEqual(projectCanonicalSellerDocumentRows(rows), rows)
+  }
+})
+
 test('canonical seller projection collapses aliases and keeps upload evidence', () => {
   const rows = projectCanonicalSellerDocumentRows([
     { key: 'levy_statement', category: 'property', status: 'required' },

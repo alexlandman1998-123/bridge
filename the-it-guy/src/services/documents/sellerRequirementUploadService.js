@@ -2,7 +2,7 @@ import { prepareDocumentRequirementUpload, uploadDocumentRequirementFile } from 
 import { clearRequirementCommand, readRequirementCommand, retainRequirementCommand } from './documentRequirementCommandRecovery.js'
 import { isDefiniteUploadSaveRejection } from '../../lib/documentUploadRecovery.js'
 
-export async function uploadSellerRequirementFile({ client, token, accessToken, listingId, requirement, file, storage = globalThis.localStorage }) {
+export async function uploadSellerRequirementFile({ client, token, accessToken, listingId, requirement, file, storage = globalThis.localStorage, onProgress = null }) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
   const tokenHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   const key = `arch9:seller-requirement:v1:${client.supabaseUrl}:${listingId}:${tokenHash}:${requirement.id}`
@@ -22,7 +22,7 @@ export async function uploadSellerRequirementFile({ client, token, accessToken, 
     },
   }
   try {
-    const result = await uploadDocumentRequirementFile(adapter, command, file)
+    const result = await uploadDocumentRequirementFile(adapter, command, file, { onProgress })
     clearRequirementCommand(storage, key, command)
     return { result, command }
   } catch (error) {

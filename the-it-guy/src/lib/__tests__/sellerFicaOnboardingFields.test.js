@@ -7,6 +7,37 @@ import { buildCanonicalSellerOnboardingPayload } from '../../services/documents/
 const person = { name: 'Ana', surname: 'Nkosi', idNumber: '8001015009087', nationality: 'South African', residentialAddress: '1 Main Road' }
 const risk = { occupation: 'Business owner', sourceOfFunds: 'Business income', politicallyExposedPerson: 'no' }
 
+test('saved database field names reach FICA validation and generation without recapture', () => {
+  const owner = { first_name: 'Ana', last_name: 'Nkosi', id_number: person.idNumber, nationality: person.nationality, residential_address: person.residentialAddress, ownership_share: '30' }
+  const saved = { occupation: 'Business owner', source_of_funds: 'Business income', politically_exposed_person: false, owner_structure_type: 'company', company_name: 'Ana Holdings', company_registered_address: '1 Main Road', company_directors: [owner], company_beneficial_owners: [owner], authorised_signatory_name: 'Ana Nkosi', authorised_signatory_capacity: 'Director' }
+  assert.deepEqual(getSellerFicaOnboardingMissing(saved), [])
+  const facts = buildCanonicalSellerOnboardingPayload(saved).canonicalSellerFacts
+  assert.equal(facts.seller.company.beneficial_owners[0].id_number, person.idNumber)
+  assert.equal(facts.seller.company.beneficial_owners[0].ownership_share, 30)
+  assert.equal(facts.seller.source_of_funds, 'Business income')
+  assert.equal(facts.seller.politically_exposed_person, 'no')
+  assert.equal(facts.seller.name, 'Ana Holdings')
+  assert.equal(facts.seller.company.directors[0].id_number, person.idNumber)
+  assert.equal(facts.seller.company.authorised_signatory.capacity, 'Director')
+  assert.equal(Object.hasOwn(saved, 'companyName'), false, 'the saved input remains untouched')
+  const cleared = buildCanonicalSellerOnboardingPayload({ ...saved, companyName: '', companyDirectors: [] }).canonicalSellerFacts
+  assert.equal(cleared.seller.company.name, '')
+  assert.deepEqual(cleared.seller.company.directors, [])
+  assert.ok(getSellerFicaOnboardingMissing({ ...saved, company_beneficial_owners: [] }).includes('Beneficial owners / controllers'))
+  const trust = { ...saved, owner_structure_type: 'trust', trust_name: 'Ana Trust', trust_trustees: [owner], authorised_trustee_capacity: 'Trustee', trust_founders: [owner], trust_beneficiary_class: 'Descendants' }
+  assert.deepEqual(getSellerFicaOnboardingMissing(trust), [])
+  const trustFacts = buildCanonicalSellerOnboardingPayload(trust).canonicalSellerFacts
+  assert.equal(trustFacts.seller.trust.founders[0].id_number, person.idNumber)
+  assert.equal(trustFacts.seller.trust.beneficiary_class, 'Descendants')
+  assert.equal(trustFacts.seller.name, 'Ana Trust')
+  assert.equal(trustFacts.seller.trust.trustees[0].id_number, person.idNumber)
+  assert.equal(trustFacts.seller.trust.authorised_trustee.capacity, 'Trustee')
+  assert.deepEqual(getSellerFicaOnboardingMissing({ ...trust, politically_exposed_person: true }), ['Political exposure details'])
+  const foreignFacts = buildCanonicalSellerOnboardingPayload({ sa_resident: false, tax_resident: false }).canonicalSellerFacts
+  assert.equal(foreignFacts.seller.sa_resident, 'no')
+  assert.equal(foreignFacts.seller.tax_resident, 'no')
+})
+
 test('FICA questions are conditional and require a reason when politically exposed', () => {
   assert.deepEqual(getSellerFicaOnboardingMissing({ ...risk, ownerStructureType: 'individual' }), [])
   assert.deepEqual(getSellerFicaOnboardingMissing({ ...risk, ownerStructureType: 'individual', politicallyExposedPerson: 'yes' }), ['Political exposure details'])

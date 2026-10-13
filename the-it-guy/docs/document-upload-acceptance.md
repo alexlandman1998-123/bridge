@@ -130,3 +130,23 @@ their token-bound/publication-bound opening journeys exercised. Mobile draft
 metadata and development media beyond supported document types remain separate
 follow-ups from the earlier audit. The acceptance gate deliberately stays blocked
 until the owning journeys supply genuine hosted observations.
+
+## Listing, lead and transaction diagnostic — 12 October 2026
+
+The shared client upload control now shows preparing, storage and saving progress
+through the buyer/seller portal services, including command-backed seller requests.
+Seller and buyer lead uploads show progress beside the matching requirement;
+transaction and developer lead uploads use the same progress display. Failure
+stops the indicator and preserves a retry route; an unconfirmed response does not
+claim receipt. Review remains separate from storage success.
+
+Seller fact generation accepts saved database field names while retaining explicit
+editor values and clears. FICA validation and generation share residency, political
+exposure and company/trust participant fields. Signed FICA and disclosure aliases
+resolve to the existing canonical requirements across handoff; beneficial ownership
+and CC resolutions keep separate evidence identities. Run the existing seller
+journey, onboarding review handoff, cross-module key-map and upload recovery checks.
+The current local diagnostic evidence is in the root
+`output/document-module-diagnostic-20261012/` directory. Its browser and SQL journeys
+use synthetic local fixtures. The production catalog check is read-only; this run
+does not certify hosted uploads, hosted role isolation or email delivery.

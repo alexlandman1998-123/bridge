@@ -69,6 +69,84 @@ function documentDefinition({
 }
 
 export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
+  // Current onboarding and attorney keys retain their own evidence identity.
+  documentDefinition({
+    canonicalKey: 'seller_fica_declaration', label: 'Signed Seller FICA Declaration', ownerRole: 'seller',
+    responsibleRoles: ['seller', 'agent'],
+    packKey: 'seller_authority', kind: 'upload_document', aliases: ['signed_fica_declaration'],
+    modules: ['seller_portal', 'listing_documents', 'seller_leads', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_fica_declaration', label: 'Signed Buyer FICA Declaration', ownerRole: 'buyer',
+    responsibleRoles: ['buyer', 'agent'],
+    packKey: 'buyer_identity_fica', kind: 'upload_document', aliases: ['signed_buyer_fica_declaration'],
+    modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_company_beneficial_ownership', label: 'Buyer Company Beneficial Ownership', ownerRole: 'buyer',
+    packKey: 'buyer_identity_fica', kind: 'upload_document', aliases: ['buyer_beneficial_ownership'],
+    modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'seller_company_beneficial_ownership', label: 'Seller Company Beneficial Ownership', ownerRole: 'seller',
+    packKey: 'seller_identity_fica', kind: 'upload_document', aliases: ['seller_beneficial_ownership'],
+    modules: ['seller_portal', 'seller_leads', 'listing_documents', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_trust_beneficial_ownership', label: 'Buyer Trust Beneficial Ownership', ownerRole: 'buyer',
+    packKey: 'buyer_identity_fica', kind: 'upload_document', aliases: [],
+    modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'seller_trust_beneficial_ownership', label: 'Seller Trust Beneficial Ownership', ownerRole: 'seller',
+    packKey: 'seller_identity_fica', kind: 'upload_document', aliases: [],
+    modules: ['seller_portal', 'seller_leads', 'listing_documents', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_cc_resolution', label: 'Buyer CC Member Resolution', ownerRole: 'buyer',
+    packKey: 'buyer_identity_fica', kind: 'upload_document', aliases: ['buyer_cc_member_resolution_signature'],
+    modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'seller_cc_resolution', label: 'Seller CC Member Resolution', ownerRole: 'seller',
+    packKey: 'seller_authority', kind: 'upload_document', aliases: ['seller_cc_member_resolution_signature'],
+    modules: ['seller_portal', 'seller_leads', 'listing_documents', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_foreign_tax_entry', label: 'Foreign Buyer Tax Entry', ownerRole: 'transfer_attorney',
+    packKey: 'attorney_transfer_readiness', kind: 'internal_task', aliases: [],
+    modules: ['attorney_transfer', 'transaction_documents'],
+  }),
+  documentDefinition({
+    canonicalKey: 'buyer_foreign_marital_capacity', label: 'Buyer Foreign Marital Capacity Review', ownerRole: 'transfer_attorney',
+    packKey: 'attorney_transfer_readiness', kind: 'internal_task', aliases: [],
+    modules: ['attorney_transfer', 'transaction_documents'],
+  }),
+  documentDefinition({
+    canonicalKey: 'seller_foreign_marital_capacity', label: 'Seller Foreign Marital Capacity Review', ownerRole: 'transfer_attorney',
+    packKey: 'attorney_transfer_readiness', kind: 'internal_task', aliases: [],
+    modules: ['attorney_transfer', 'transaction_documents'],
+  }),
+  documentDefinition({
+    canonicalKey: 'agency_handover_pack', label: 'Agency Handover Pack', ownerRole: 'agent',
+    packKey: 'attorney_transfer_readiness', kind: 'upload_document', aliases: [],
+    modules: ['buyer_agency', 'seller_leads', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'introducing_agent_details', label: 'Introducing Agent Details', ownerRole: 'agent',
+    packKey: 'attorney_transfer_readiness', kind: 'structured_fact', aliases: [],
+    modules: ['buyer_agency', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'agency_commission_instruction', label: 'Agency Commission / Referral Instruction', ownerRole: 'agent',
+    packKey: 'attorney_transfer_readiness', kind: 'upload_document', aliases: [],
+    modules: ['buyer_agency', 'transaction_documents', 'attorney_transfer'],
+  }),
+  documentDefinition({
+    canonicalKey: 'information_sheet', label: 'Buyer Information Sheet', ownerRole: 'agent',
+    packKey: 'buyer_identity_fica', kind: 'generated_document', aliases: [],
+    modules: ['buyer_agency', 'buyer_onboarding', 'transaction_documents'],
+  }),
   documentDefinition({
     canonicalKey: 'signed_mandate',
     label: 'Signed Mandate',
@@ -113,7 +191,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'seller_identity_fica',
-    aliases: ['seller_id', 'seller_fica', 'seller_director_ids', 'seller_trustee_ids'],
+    aliases: ['seller_id', 'seller_fica', 'seller_director_ids', 'seller_trustee_ids', 'seller_passport'],
     modules: ['seller_portal', 'listing_documents', 'seller_leads', 'attorney_transfer'],
   }),
   documentDefinition({
@@ -140,7 +218,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'seller_identity_fica',
-    aliases: ['company_registration', 'company_registration_document', 'seller_company_registration_documents', 'seller_beneficial_ownership'],
+    aliases: ['company_registration', 'company_registration_document', 'seller_company_registration_documents'],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
   documentDefinition({
@@ -433,8 +511,8 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller', 'agent'],
     packKey: 'property_compliance',
-    aliases: ['defects_declaration'],
-    modules: ['seller_portal', 'listing_documents', 'buyer_agency', 'attorney_transfer'],
+    aliases: ['defects_declaration', 'signed_disclosure_form'],
+    modules: ['seller_portal', 'listing_documents', 'seller_leads', 'transaction_documents', 'buyer_agency', 'attorney_transfer'],
   }),
 
   documentDefinition({
@@ -588,6 +666,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
       'purchaser_id',
       'purchaser_1_id',
       'passport_copy',
+      'buyer_passport',
       'director_id',
       'trustee_id',
       'co_purchaser_id_document',
@@ -625,7 +704,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'buyer',
     responsibleRoles: ['buyer'],
     packKey: 'buyer_identity_fica',
-    aliases: ['marriage_certificate'],
+    aliases: ['marriage_certificate', 'buyer_marital_status_details'],
     modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer'],
   }),
   documentDefinition({
@@ -648,7 +727,6 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
       'company_resolution',
       'buyer_company_registration_documents',
       'buyer_company_resolution',
-      'buyer_beneficial_ownership',
       'buyer_director_resolution_signature',
     ],
     modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer', 'bond_originator'],
@@ -665,7 +743,6 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
       'trust_resolution',
       'buyer_letters_of_authority',
       'buyer_trustee_resolution',
-      'buyer_trust_beneficial_ownership',
       'buyer_trustee_resolution_signature',
     ],
     modules: ['buyer_onboarding', 'buyer_agency', 'transaction_documents', 'attorney_transfer', 'bond_originator'],

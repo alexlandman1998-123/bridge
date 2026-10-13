@@ -41,7 +41,7 @@ import {
   getMandateReadiness as getSellerMandateReadiness,
   getMissingSellerDocuments as getMissingSellerDocumentsFromEngine,
   syncSellerDocumentRequirements as syncSellerDocumentRequirementsFromEngine,
-} from '../lib/privateListingRequirementEngine'
+} from '../lib/sellerDocumentRequirementEngine'
 import {
   getSellerBasePackAliases,
   normalizeSellerBasePackKey,
@@ -8619,7 +8619,7 @@ export async function uploadSellerClientPortalDocument({
   if (matchedRequirement?.canonical_shared_requirement) {
     if (canonicalRequirementInstanceId && canonicalRequirementInstanceId !== matchedRequirement.canonical_requirement_instance_id) throw new Error('This upload does not match the selected request.')
     const { result, command } = await uploadSellerRequirementFile({ client: storageClient, token: normalizedToken, accessToken: resolvedAccessToken,
-      listingId: listing.id, requirement: matchedRequirement, file })
+      listingId: listing.id, requirement: matchedRequirement, file, onProgress })
     const row = normalizeDocumentRows([{ id: result.uploadId, private_listing_id: listing.id,
       requirement_id: matchedRequirement.id, canonical_requirement_instance_id: matchedRequirement.canonical_requirement_instance_id,
       document_type: matchedRequirement.requirement_key, document_name: command.payload.fileName,

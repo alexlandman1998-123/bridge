@@ -45,3 +45,41 @@ test('legacy seller producers resolve to the same canonical requirement key', ()
   assert.equal(hoaAlias.canonicalDocumentKey, 'hoa_details')
   assert.equal(hoaAlias.documentRequirementKind, 'structured_fact')
 })
+
+test('signed declarations keep their party and do not satisfy identity evidence', () => {
+  const seller = resolveCrossModuleDocumentReference('seller_fica_declaration')
+  const buyer = resolveCrossModuleDocumentReference('signed_buyer_fica_declaration')
+  assert.equal(seller.canonicalDocumentKey, 'seller_fica_declaration')
+  assert.equal(seller.documentOwnerRole, 'seller')
+  assert.ok(seller.documentResponsibleRoles.includes('agent'))
+  assert.equal(buyer.canonicalDocumentKey, 'buyer_fica_declaration')
+  assert.equal(buyer.documentOwnerRole, 'buyer')
+  assert.ok(buyer.documentResponsibleRoles.includes('agent'))
+  assert.notEqual(seller.canonicalDocumentKey, resolveCrossModuleDocumentReference('seller_fica').canonicalDocumentKey)
+  assert.notEqual(buyer.canonicalDocumentKey, resolveCrossModuleDocumentReference('buyer_fica').canonicalDocumentKey)
+})
+
+test('the signed disclosure key reaches the existing canonical disclosure requirement', () => {
+  const reference = resolveCrossModuleDocumentReference('signed_disclosure_form')
+  assert.equal(reference.canonicalDocumentKey, 'property_condition_disclosure')
+  assert.equal(reference.documentOwnerRole, 'seller')
+  assert.equal(reference.documentRequirementKind, 'upload_document')
+})
+
+test('beneficial ownership and CC resolutions retain their own evidence identities across handoff', () => {
+  for (const party of ['buyer', 'seller']) {
+    assert.notEqual(resolveCrossModuleDocumentReference(`${party}_beneficial_ownership`).canonicalDocumentKey, resolveCrossModuleDocumentReference(`${party}_company_registration`).canonicalDocumentKey)
+    assert.notEqual(resolveCrossModuleDocumentReference(`${party}_trust_beneficial_ownership`).canonicalDocumentKey, resolveCrossModuleDocumentReference(`${party}_trust_deed`).canonicalDocumentKey)
+    const resolution = resolveCrossModuleDocumentReference(`${party}_cc_member_resolution_signature`)
+    assert.equal(resolution.canonicalDocumentKey, `${party}_cc_resolution`)
+    assert.equal(resolution.documentOwnerRole, party)
+  }
+})
+
+test('foreign capacity and tax entry remain internal attorney tasks', () => {
+  for (const key of ['buyer_foreign_tax_entry', 'buyer_foreign_marital_capacity', 'seller_foreign_marital_capacity']) {
+    const reference = resolveCrossModuleDocumentReference(key)
+    assert.equal(reference.documentRequirementKind, 'internal_task')
+    assert.equal(reference.documentOwnerRole, 'transfer_attorney')
+  }
+})

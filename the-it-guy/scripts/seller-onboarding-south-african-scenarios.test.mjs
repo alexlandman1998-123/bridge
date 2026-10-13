@@ -67,6 +67,7 @@ function buildBaseForm(overrides = {}) {
     nationality: 'South African',
     incomeTaxNumber: 'CONTROLLED-TAX-REFERENCE',
     taxResident: 'yes',
+    saResident: 'yes',
     popiConsentAccepted: true,
     popiConsentAcceptedAt: '2026-09-24T08:00:00.000Z',
     residentialAddress: '54 Menlyn Avenue, Waterkloof Glen, Pretoria',

@@ -49,6 +49,7 @@ const mandateData = mapSellerOnboardingToMandateData({
     propertyDisclosure: {
       decision: 'none',
       declarationAccepted: true,
+      arch9TermsAccepted: true,
       signature: 'Alex Director',
       signedAt: '2026-08-01T08:00:00.000Z',
       comments: 'No known defects disclosed.',

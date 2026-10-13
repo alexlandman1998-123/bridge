@@ -206,7 +206,7 @@ import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
   getSellerRequirementProfile,
-} from '../lib/privateListingRequirementEngine'
+} from '../lib/sellerDocumentRequirementEngine'
 import {
   addAppointmentOutcomeAsync,
   listAppointmentsAsync,

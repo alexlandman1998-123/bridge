@@ -30,3 +30,11 @@ test('changed file is rejected before another upload when no receipt exists',asy
  await assert.rejects(uploadSellerRequirementFile({...args,file:new File(['different'],'papers.pdf',{type:'application/pdf'})}),/same file/)
  assert.equal(uploads,1);assert.equal(f.values.size,1)
 })
+
+test('shared seller requests report storage and save progress to their caller', async () => {
+ const f=fixture();f.recover();const progress=[]
+ await uploadSellerRequirementFile({...f,token:'token',accessToken:'session',file:new File(['pdf'],'papers.pdf',{type:'application/pdf'}),onProgress:update=>progress.push(update)})
+ assert.ok(progress.some(update=>update.stage==='uploading'))
+ assert.ok(progress.some(update=>update.stage==='saving'))
+ assert.equal(progress.at(-1).stage,'complete')
+})

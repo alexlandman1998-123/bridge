@@ -1,7 +1,7 @@
 import {
   buildSellerRequirementProfile,
   getRequiredSellerDocuments,
-} from '../lib/privateListingRequirementEngine.js'
+} from '../lib/sellerDocumentRequirementEngine.js'
 import { buildSellerDocumentRequestPlan, issueSellerDocumentRequests } from './sellerDocumentRequestOrchestrationService.js'
 import {
   SELLER_POST_MANDATE_DOCUMENT_REASON,

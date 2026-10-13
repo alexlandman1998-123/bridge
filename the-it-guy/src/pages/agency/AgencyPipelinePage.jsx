@@ -11743,6 +11743,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
   const [agentBuyerDocumentUploading, setAgentBuyerDocumentUploading] = useState(false)
+  const [buyerLeadUploadProgress, setBuyerLeadUploadProgress] = useState(null)
   const [agentBuyerDocumentType, setAgentBuyerDocumentType] = useState(BUYER_AGENT_DOCUMENT_TYPES[0]?.key || '')
   const [agentBuyerFicaSignerName, setAgentBuyerFicaSignerName] = useState('')
   const [agentBuyerFicaSignerCapacity, setAgentBuyerFicaSignerCapacity] = useState('')
@@ -26448,7 +26449,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function reflectSellerLeadUpload(progress, file, targetListingId, leadId, uploadAttempt) {
     if (sellerUploadLeadRef.current !== leadId || sellerLeadUploadAttemptRef.current !== uploadAttempt) return
-    setSellerLeadUploadProgress({ ...progress, leadId, fileName: file.name })
+    setSellerLeadUploadProgress(current => ({ ...current, ...progress, leadId, fileName: file.name }))
     if (progress.stage !== 'complete' || !progress.document?.id) return
     const document = progress.document
     setSelectedLeadHydratedListing(current => current?.id && current.id !== targetListingId ? current : {
@@ -26476,7 +26477,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setSellerLeadMandateUploading(true)
     setError('')
-    setSellerLeadUploadProgress({ ...createDocumentUploadProgress('preparing', '', { fileName: file.name }), leadId: selectedLead.leadId })
+    setSellerLeadUploadProgress({ ...createDocumentUploadProgress('preparing', '', { fileName: file.name }), leadId: selectedLead.leadId, requirementKey: 'signed_mandate' })
     let savedDocument = null
     const uploadAttempt = ++sellerLeadUploadAttemptRef.current
     try {
@@ -26695,7 +26696,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const documentLabel = getSellerLeadDocumentCanonicalLabel(documentRow)
     setSellerLeadDocumentUploadingKey(uploadKey)
     setError('')
-    setSellerLeadUploadProgress({ ...createDocumentUploadProgress('preparing', '', { fileName: file.name }), leadId: selectedLead.leadId })
+    setSellerLeadUploadProgress({ ...createDocumentUploadProgress('preparing', '', { fileName: file.name }), leadId: selectedLead.leadId, requirementKey: documentKey })
     let savedDocument = null
     const uploadAttempt = ++sellerLeadUploadAttemptRef.current
     try {
@@ -31602,7 +31603,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function uploadAgentBuyerLeadDocument(event = null) {
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
-    if (!organisationId || !selectedLead || selectedLeadIsSeller || !file) return
+    if (!organisationId || !selectedLead || selectedLeadIsSeller || !file || agentBuyerDocumentUploading) return
     const workspaceId = organisationId
     const leadId = selectedLeadRecordId || selectedLead.leadId
     const documentType = BUYER_AGENT_DOCUMENT_TYPES.find((item) => item.key === agentBuyerDocumentType) || BUYER_AGENT_DOCUMENT_TYPES[0]
@@ -31612,11 +31613,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       financeType: selectedLeadFinanceFormData?.finance_type || selectedLead?.financeType,
       purchaserType: selectedLeadFinanceFormData?.purchaser_entity_type || selectedLeadFinanceFormData?.purchaser_type || selectedLead?.purchaserType,
     })
+    const reportUpload = progress => {
+      if (sellerUploadLeadRef.current !== leadId) return
+      setBuyerLeadUploadProgress({ ...progress, leadId, requirementKey: documentType.key, fileName: file.name })
+    }
     let stagedUpload = null
     let canonicalDocument = null
     try {
       setAgentBuyerDocumentUploading(true)
       setError('')
+      reportUpload(createDocumentUploadProgress('preparing'))
       const manualFicaPack = documentType.key === 'buyer_fica_declaration'
         ? buildManualFicaPackDocument({
             party: 'buyer',
@@ -31641,8 +31647,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           uploadedByParty: 'buyer',
           source: 'agent_buyer_document_upload',
           inferCanonicalRequirement: false,
+          onProgress: reportUpload,
         })
       } else {
+        reportUpload(createDocumentUploadProgress('uploading'))
         stagedUpload = await uploadToStorageCandidateBuckets({
           file,
           objectPath: `organisations/${organisationId}/${BUYER_AGENT_DOCUMENT_STORAGE_FOLDER}/${leadId}/${sanitizeSellerPackStorageSegment(documentType.key, 'buyer_document')}/${Date.now()}-${filePolicy.safeName}`,
@@ -31693,6 +31701,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         rawEnquiryPayload: nextRawPayload,
         agentUploadedBuyerDocuments,
       }
+      if (stagedUpload) reportUpload(createDocumentUploadProgress('saving'))
       let stagedLeadSaveConfirmed = false
       let stagedLeadReadFailed = false
       try {
@@ -31715,6 +31724,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           stagedLeadSaveConfirmed = true
         }
         patchSelectedLeadRecord(leadPatch, leadId)
+        reportUpload(createDocumentUploadProgress('complete'))
       } catch (leadError) {
         if (stagedUpload) {
           if (!stagedLeadSaveConfirmed && !stagedLeadReadFailed) {
@@ -31749,6 +31759,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('documents')
       setBuyerDocumentRefreshTick((previous) => previous + 1)
     } catch (uploadError) {
+      reportUpload(createDocumentUploadProgress(canonicalDocument?.id ? 'complete' : 'failed', uploadError?.message))
       setError(uploadError?.message || 'Unable to upload the buyer document.')
     } finally {
       setAgentBuyerDocumentUploading(false)
@@ -40546,7 +40557,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead'} contextId={selectedLeadRecordId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} />
                     <LeadDocumentWorkspace
                       createMandateAction={selectedLeadIsSeller && selectedLeadLinkedListingId ? () => navigate(`/agent/listings/${encodeURIComponent(selectedLeadLinkedListingId)}?tab=documents&sellerDocumentAction=manual_upload&sellerDocumentKey=signed_mandate`) : null}
-                      uploadProgress={selectedLeadIsSeller && sellerLeadUploadProgress?.leadId === selectedLeadRecordId ? sellerLeadUploadProgress : null}
+                      uploadProgress={selectedLeadIsSeller ? (sellerLeadUploadProgress?.leadId === selectedLeadRecordId ? sellerLeadUploadProgress : null) : (buyerLeadUploadProgress?.leadId === selectedLeadRecordId ? buyerLeadUploadProgress : null)}
                       removalContext={{ client: isSupabaseConfigured ? supabase : null, contextType: selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead', contextId: selectedLeadRecordId, party: selectedLeadIsSeller ? 'seller' : 'buyer' }}
                       partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
                       partyName={selectedLeadDisplayName}
@@ -41019,6 +41030,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               {selectedBuyerDocumentReadModel.uploads.length} file{selectedBuyerDocumentReadModel.uploads.length === 1 ? '' : 's'} recorded
                             </span>
                           </div>
+                          <DocumentUploadProgress progress={buyerLeadUploadProgress?.leadId === selectedLeadRecordId ? buyerLeadUploadProgress : null} />
                           <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                             <Field
                               as="select"

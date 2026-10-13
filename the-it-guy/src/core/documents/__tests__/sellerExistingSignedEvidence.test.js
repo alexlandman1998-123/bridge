@@ -9,7 +9,7 @@ test('existing signed uploads use recorded review without weakening exact-versio
   const sql = async (query, params = []) => (await db.query(query, params)).rows
   try {
     await db.exec(await readFile(new URL('../../../../scripts/fixtures/seller-document-journey.sql', import.meta.url), 'utf8'))
-    for (const file of ['20260927102934_seller_portal_document_signing_foundation.sql', '20261004121736_seller_document_review_runtime_reconciliation.sql', '20260927122535_seller_physical_signing_version_review.sql', '20261009150000_seller_existing_signed_evidence.sql', '20261010094542_seller_existing_evidence_agent_access.sql']) {
+    for (const file of ['20260927102934_seller_portal_document_signing_foundation.sql', '20261004121736_seller_document_review_runtime_reconciliation.sql', '20260927122535_seller_physical_signing_version_review.sql', '20261009150000_seller_existing_signed_evidence.sql', '20261010094542_seller_existing_evidence_agent_access.sql', '20261012150343_seller_document_review_portal_listing_text_id.sql']) {
       await db.exec(await readFile(new URL(`../../../../../supabase/migrations/${file}`, import.meta.url), 'utf8'))
     }
     await sql('insert into auth.users values($1)', [actor]); await sql('insert into organisations values($1)', [organisation])
@@ -52,7 +52,7 @@ test('an authenticated assigned agent can upload existing evidence without readi
   const sql = async (query, params = []) => (await db.query(query, params)).rows
   try {
     await db.exec(await readFile(new URL('../../../../scripts/fixtures/seller-document-journey.sql', import.meta.url), 'utf8'))
-    for (const file of ['20260927102934_seller_portal_document_signing_foundation.sql', '20261004121736_seller_document_review_runtime_reconciliation.sql', '20260927122535_seller_physical_signing_version_review.sql', '20261009150000_seller_existing_signed_evidence.sql', '20261010094542_seller_existing_evidence_agent_access.sql']) {
+    for (const file of ['20260927102934_seller_portal_document_signing_foundation.sql', '20261004121736_seller_document_review_runtime_reconciliation.sql', '20260927122535_seller_physical_signing_version_review.sql', '20261009150000_seller_existing_signed_evidence.sql', '20261010094542_seller_existing_evidence_agent_access.sql', '20261012150343_seller_document_review_portal_listing_text_id.sql']) {
       await db.exec(await readFile(new URL(`../../../../../supabase/migrations/${file}`, import.meta.url), 'utf8'))
     }
     await sql('insert into auth.users values($1)', [actor])

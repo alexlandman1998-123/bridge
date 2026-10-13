@@ -1,5 +1,6 @@
 import { requirementLinkId } from './documentRequirementReadService.js'
 import {
+  normalizeSellerBasePackKey,
   projectSellerDocumentArtifact,
   SELLER_DOCUMENT_ARTIFACT_STAGES,
   SELLER_DOCUMENT_REPRESENTATION_KINDS,
@@ -171,20 +172,27 @@ export function projectCanonicalSellerDocumentRows(rows = []) {
     if (!canonicalKey) continue
     const definition = getCrossModuleDocumentDefinition(canonicalKey)
     if (definition?.kind === 'structured_fact') continue
+    // The listing/signing controls use the base-pack keys. The cross-module
+    // key identifies the database requirement without replacing that UI route.
+    const basePackKey = normalizeSellerBasePackKey(contractKey || canonicalKey)
+    const presentationKey = basePackKey || canonicalKey
+    const category = basePackKey ? 'legal' : presentationCategory(definition, row.category || row.group || row.requirement_group)
 
     const identity = projectionIdentity(row, canonicalKey)
     const projected = {
       ...row,
-      key: canonicalKey,
-      requirementKey: canonicalKey,
-      requirement_key: canonicalKey,
+      key: presentationKey,
+      requirementKey: presentationKey,
+      requirement_key: presentationKey,
+      canonicalDocumentKey: canonicalKey,
+      canonical_document_key: canonicalKey,
       documentContract,
       canonicalRequirementIdentity: identity,
       canonical_requirement_identity: identity,
       requirementKind: definition?.kind || 'upload_document',
       requirement_kind: definition?.kind || 'upload_document',
-      taxonomyCategory: presentationCategory(definition, row.category || row.group || row.requirement_group),
-      taxonomy_category: presentationCategory(definition, row.category || row.group || row.requirement_group),
+      taxonomyCategory: category,
+      taxonomy_category: category,
       requestPresentation: resolveCanonicalDocumentRequestPresentation({ ...row, key: canonicalKey }),
       ...(isCompletedSigningArtifactWithoutFile(row, documentContract)
         ? {

@@ -9249,6 +9249,7 @@ function ClientPortal() {
             documentRequestId: options.documentRequestId || null,
             category: options.category || 'Seller Document',
             documentType: options.documentType || documentKey,
+            onProgress: options.onProgress,
             ...(await getSellerPortalSignedUploadReference(sellerOnboardingFormData, requiredDocumentKey)),
           })
         : await uploadClientPortalDocument({
@@ -9259,6 +9260,7 @@ function ClientPortal() {
             documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
             documentRequestId: options.documentRequestId || null,
             file,
+            onProgress: options.onProgress,
           })
       applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
       if (isReservationProofUpload) {
@@ -9294,13 +9296,14 @@ function ClientPortal() {
     }
   }
 
-  function handleDocumentCentreUpload(uploadSpec, file) {
+  function handleDocumentCentreUpload(uploadSpec, file, { onProgress } = {}) {
     if (!file || !uploadSpec || typeof uploadSpec !== 'object') return undefined
 
     if (uploadSpec.type === 'additional_request') {
       const requestId = String(uploadSpec.requestId || '').trim()
       if (!requestId) return undefined
       return handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
+        onProgress,
         documentRequestId: requestId,
         requiredDocumentKey: null,
         category: 'Additional Requests',
@@ -9317,6 +9320,7 @@ function ClientPortal() {
       const requirementKey = String(uploadSpec.requirementKey || uploadSpec.documentDefinitionKey || '').trim()
       if (!requirementInstanceId || !requirementKey) return undefined
       return handleUploadRequiredDocument(requirementKey, file, {
+        onProgress,
         requirementInstanceId,
         uploadingKey: requirementInstanceId,
         category: uploadSpec.category || 'Canonical Document Requirement',
@@ -9326,7 +9330,7 @@ function ClientPortal() {
 
     const requirementKey = String(uploadSpec.requirementKey || '').trim()
     if (!requirementKey) return undefined
-    return handleUploadRequiredDocument(requirementKey, file)
+    return handleUploadRequiredDocument(requirementKey, file, { onProgress })
   }
 
   async function handleBuyerMobileDocumentUpload(uploadSpec, file) {

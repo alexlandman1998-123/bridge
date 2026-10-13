@@ -137,8 +137,9 @@ assert.equal(filteredRequirementKeys.includes('alteration_approvals'), false, 's
 assert.equal(filteredRequirementKeys.includes('id_document'), true, 'current identity requirements should remain visible')
 
 const clientPortal = await readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
-assert.match(clientPortal, /buildSellerDocumentExperienceModel/)
-assert.match(clientPortal, /sellerDocumentExperience\.summary\.ready/)
+assert.match(clientPortal, /ClientDocumentCentre/)
+const centre = await readFile(new URL('../src/components/client-portal/documents/ClientDocumentCentre.jsx', import.meta.url), 'utf8')
+assert.match(centre, /buildSellerDocumentExperienceModel/)
 assert.doesNotMatch(clientPortal, /completedStatuses = new Set\(\['approved',[^\n]*'uploaded'/)
 
 const agentListing = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')

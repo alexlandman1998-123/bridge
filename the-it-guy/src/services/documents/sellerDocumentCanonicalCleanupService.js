@@ -1,6 +1,6 @@
 import {
   buildSellerRequirementProfile,
-} from '../../lib/privateListingRequirementEngine.js'
+} from '../../lib/sellerDocumentRequirementEngine.js'
 import {
   getSellerRequiredDocuments,
 } from '../sellerDocumentRequirementsService.js'

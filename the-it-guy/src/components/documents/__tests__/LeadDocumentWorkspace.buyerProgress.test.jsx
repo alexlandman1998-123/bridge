@@ -11,6 +11,15 @@ const categories = [{
 }]
 const getStatusMeta = (row) => ({ state: row.state, label: row.state, pillClass: '', iconClass: '' })
 
+test('an upload progress bar belongs to the selected document row for buyers and sellers', () => {
+  for (const partyType of ['buyer', 'seller']) {
+    const html = renderToStaticMarkup(<LeadDocumentWorkspace partyType={partyType} categories={categories} getStatusMeta={getStatusMeta} uploadProgress={{ stage: 'saving', message: 'Saving securely', fileName: 'ID.pdf', requirementKey: 'id' }} />)
+    expect((html.match(/role="progressbar"/g) || []).length).toBe(1)
+    expect(html.indexOf('Saving securely')).toBeGreaterThan(html.indexOf('id="lead-document-buyer-id"'))
+    expect(html).toContain('Uploading ID.pdf')
+  }
+})
+
 test('printable mandate entry is available only in seller Documents', () => {
   const props = { categories, getStatusMeta, createMandateAction: () => {} }
   expect(renderToStaticMarkup(<LeadDocumentWorkspace {...props} partyType="seller" />)).toContain('Create printable mandate')

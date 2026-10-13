@@ -61,7 +61,7 @@ export default function LeadDocumentWorkspace({
           </div>
         </div>
         {partyType === 'seller' ? <p className="mt-3 text-sm text-[#60758b]">{uploadEvidence.saved} {uploadEvidence.saved === 1 ? 'file' : 'files'} saved · {uploadEvidence.awaitingReview} awaiting review. Saved files count as complete after review.</p> : null}
-        <DocumentUploadProgress progress={uploadProgress} />
+        <DocumentUploadProgress progress={uploadProgress?.requirementKey ? null : uploadProgress} />
         <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-[#e6edf5]" aria-label={`${summary.progress}% complete`}><div className="h-full rounded-full bg-[#148a58] transition-all" style={{ width: `${summary.progress}%` }} /></div>
       </header>
 
@@ -126,7 +126,8 @@ export default function LeadDocumentWorkspace({
                               <p className="mt-0.5 text-xs text-[#7b8fa5]">{row.required === false ? 'Optional' : 'Required'}{row.uploadedAt ? ` · ${new Date(row.uploadedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</p>
                             </div>
                             <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${status.pillClass}`}>{status.label}</span>
-                            <div className="flex flex-wrap items-center justify-end gap-2">{renderActions?.(row, category, status)}{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</div>
+                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{renderActions?.(row, category, status)}{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</div>
+                            {uploadProgress?.requirementKey && uploadProgress.requirementKey === (row.requirementKey || row.requirement_key || row.key) ? <div className="lg:col-span-3"><DocumentUploadProgress progress={uploadProgress} /></div> : null}
                           </div>
                         )
                       })}

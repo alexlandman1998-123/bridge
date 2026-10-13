@@ -1,4 +1,5 @@
 import { buildSpecialistSalesFacts } from '../listings/specialistSalesListingSchema.js'
+import { sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields.js'
 import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent.js'
 import { resolveSellerBondStatus, sellerBondDeclaration } from '../../lib/sellerBondStatus.js'
 import { getPropertyCategoryLabel, normalizePropertyCategory, normalizePropertyStructureType } from '../../lib/propertyTaxonomy.js'
@@ -212,8 +213,8 @@ function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } 
     ...(Object.hasOwn(entry, 'sourcePersonId') ? { sourcePersonId: normalizeText(entry.sourcePersonId) } : {}),
     date_of_birth: normalizeText(entry.dateOfBirth ?? entry.date_of_birth),
     tax_number: normalizeText(entry.incomeTaxNumber ?? entry.tax_number),
-    sa_resident: normalizeText(entry.saResident ?? entry.sa_resident),
-    tax_resident: normalizeText(entry.taxResident ?? entry.tax_resident),
+    sa_resident: sellerYesNoValue(entry.saResident ?? entry.sa_resident),
+    tax_resident: sellerYesNoValue(entry.taxResident ?? entry.tax_resident) || normalizeText(entry.taxResident ?? entry.tax_resident),
     marital_status: normalizeText(entry.maritalStatus ?? entry.marital_status),
     marital_regime: normalizeText(entry.maritalRegime ?? entry.marital_regime),
     ...(entry.spouse && typeof entry.spouse === 'object' ? { spouse: normalizePersonRecord({ ...entry.spouse, spouse: undefined }, 0, { defaultRoleTitle: 'Spouse' }) } : {}),
@@ -381,6 +382,14 @@ function resolveLegalOwnerName(form, branch) {
 }
 
 export function transformSellerOnboardingToFacts(form = {}, listing = {}, options = {}) {
+  // Saved profile fields may use database names. Keep explicit editor values,
+  // including clears, authoritative and never mutate the caller's saved form.
+  form = { ...form }
+  for (const [field, value] of Object.entries(form)) {
+    const editorField = field.replace(/_([a-z])/g, (_match, letter) => letter.toUpperCase())
+    if (!Object.hasOwn(form, editorField)) form[editorField] = value
+  }
+  if (!Object.hasOwn(form, 'trustees') && Object.hasOwn(form, 'trustTrustees')) form.trustees = form.trustTrustees
   const listingSource = listing && typeof listing === 'object' ? listing : {}
   const flow = resolveSellerOnboardingFlow(form, listingSource)
   const sellerLegalType = normalizeSellerLegalType(form)
@@ -448,7 +457,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
     },
     { defaultRoleTitle: 'Trustee' },
   )
-  const trustBeneficiaries = normalizePeopleCollection(form.trustBeneficiaries || form.beneficiaries || [], null, { defaultRoleTitle: 'Beneficiary' })
+  const trustBeneficiaries = normalizePeopleCollection(form.trustBeneficiaries ?? form.trust_beneficiaries ?? form.beneficiaries ?? [], null, { defaultRoleTitle: 'Beneficiary' })
   const companySignatoryPerson = companyDirectors.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedSignatoryName || form.companyDirectorName || companyDirectors[0]?.full_name))
   const authorisedTrusteePerson = trustTrustees.find((person) => normalizeKey(person.full_name) === normalizeKey(form.authorisedTrusteeName || form.trusteeName || trustTrustees[0]?.full_name))
   const executors = normalizePeopleCollection(
@@ -549,13 +558,13 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       nationality: normalizeText(form.nationality),
       occupation: normalizeText(form.occupation),
       source_of_funds: normalizeText(form.sourceOfFunds ?? form.source_of_funds),
-      politically_exposed_person: normalizeText(form.politicallyExposedPerson ?? form.politically_exposed_person),
+      politically_exposed_person: sellerYesNoValue(form.politicallyExposedPerson ?? form.politically_exposed_person),
       politically_exposed_details: normalizeText(form.politicallyExposedDetails ?? form.politically_exposed_details),
       residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
       tax_number: normalizeText(form.sellerTaxNumber ?? form.incomeTaxNumber ?? form.income_tax_number ?? form.taxNumber ?? form.tax_number),
-      sa_resident: normalizeText(form.saResident ?? form.sa_resident),
-      tax_resident: normalizeText(form.taxResident ?? form.tax_resident),
+      sa_resident: sellerYesNoValue(form.saResident ?? form.sa_resident),
+      tax_resident: sellerYesNoValue(form.taxResident ?? form.tax_resident) || normalizeText(form.taxResident ?? form.tax_resident),
       popi_consent: popiConsentAccepted ? 'Accepted' : '',
       popi_consent_accepted: popiConsentAccepted,
       popi_consent_accepted_at: popiConsentAccepted
@@ -600,7 +609,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
           0,
           { defaultRoleTitle: 'Authorised Signatory' },
         ),
-        beneficial_owners: normalizePeopleCollection(form.companyBeneficialOwners || [], null, { defaultRoleTitle: 'Beneficial Owner' }),
+        beneficial_owners: normalizePeopleCollection(form.companyBeneficialOwners ?? form.company_beneficial_owners ?? [], null, { defaultRoleTitle: 'Beneficial Owner' }),
       },
       trust: {
         name: normalizeText(form.trustName),
@@ -628,8 +637,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
           { defaultRoleTitle: 'Authorised Trustee' },
         ),
         beneficiaries: trustBeneficiaries,
-        founders: normalizePeopleCollection(form.trustFounders || [], null, { defaultRoleTitle: 'Founder' }),
-        beneficiary_class: normalizeText(form.trustBeneficiaryClass),
+        founders: normalizePeopleCollection(form.trustFounders ?? form.trust_founders ?? [], null, { defaultRoleTitle: 'Founder' }),
+        beneficiary_class: normalizeText(form.trustBeneficiaryClass ?? form.trust_beneficiary_class),
       },
       other_entity: {
         name: normalizeText(form.otherEntityName || form.other_entity?.name),

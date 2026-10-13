@@ -1,3 +1,4 @@
+import DocumentUploadProgress from '../components/documents/DocumentUploadProgress.jsx'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import DocumentRequirementRemoveButton from '../components/documents/DocumentRequirementRemoveButton.jsx'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
@@ -23247,6 +23248,7 @@ function AttorneyTransactionDetail() {
       setDocumentUploadProgress({
         stage: 'preparing',
         message: 'Checking the document and preparing a secure upload…',
+        fileName: uploadDraft.file.name,
       })
       const savedDocument = await uploadDocument({
         transactionId: transaction.id,
@@ -23269,7 +23271,7 @@ function AttorneyTransactionDetail() {
         attorneyLaneKey: attorneyLane?.laneKey || null,
         attorneyRole: attorneyLane?.attorneyRole || null,
         attorneyPreviousVersionId: isAttorneyUpload ? uploadDraft.attorneyPreviousVersionId || null : null,
-        onProgress: setDocumentUploadProgress,
+        onProgress: update => setDocumentUploadProgress({ ...update, fileName: uploadDraft.file.name }),
       })
       if (liveMatterScopeRef.current !== currentMatterAccessKey) return
       setData(previous => previous?.transaction?.id === transaction.id ? { ...previous,
@@ -24185,12 +24187,8 @@ function AttorneyTransactionDetail() {
                 {uploadDraft.stageTwoPartyId ? <div className={`rounded-lg border px-3 py-2 text-sm ${uploadDraft.stageTwoPartyNeedsLink ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
                   {uploadDraft.stageTwoPartyNeedsLink ? `${uploadDraft.stageTwoPartyName || 'This party'} needs a linked transaction participant before person-specific evidence can be uploaded.` : `Evidence for ${uploadDraft.stageTwoPartyName || uploadDraft.stageTwoPartyId}`}
                 </div> : null}
-                {documentUploadProgress ? (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800" role="status" aria-live="polite">
-                    <span className="mr-2 inline-block size-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700 align-[-1px]" />
-                    {documentUploadProgress.message}
-                  </div>
-                ) : null}
+                <DocumentUploadProgress progress={documentUploadProgress} />
+                {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   {uploadDraft.fileName ? <span className="text-xs font-medium text-emerald-800">Selected: {uploadDraft.fileName}</span> : null}

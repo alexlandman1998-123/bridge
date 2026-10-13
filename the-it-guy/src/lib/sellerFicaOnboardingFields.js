@@ -8,7 +8,7 @@ export function sellerYesNoValue(value) {
 }
 
 export function sellerFicaBranch(form = {}) {
-  const branch = text(form.branch || form.ownerStructureType || form.ownershipType).toLowerCase()
+  const branch = text(form.branch || form.ownerStructureType || form.owner_structure_type || form.ownershipType || form.ownership_type).toLowerCase()
   if (branch.includes('company') || branch === 'close_corporation') return 'company'
   if (branch.includes('trust')) return 'trust'
   return branch
@@ -18,13 +18,13 @@ export function getSellerFicaOnboardingMissing(form = {}) {
   const branch = sellerFicaBranch(form)
   const missing = []
   if (!text(form.occupation)) missing.push('Occupation or business activity')
-  if (!text(form.sourceOfFunds)) missing.push('Source of funds / wealth')
-  if (!['yes', 'no'].includes(text(form.politicallyExposedPerson).toLowerCase())) missing.push('Political exposure declaration')
-  if (text(form.politicallyExposedPerson).toLowerCase() === 'yes' && !text(form.politicallyExposedDetails)) {
+  const exposure = sellerYesNoValue(form.politicallyExposedPerson ?? form.politically_exposed_person)
+  if (!text(form.sourceOfFunds ?? form.source_of_funds)) missing.push('Source of funds / wealth')
+  if (!exposure) missing.push('Political exposure declaration')
+  if (exposure === 'yes' && !text(form.politicallyExposedDetails ?? form.politically_exposed_details)) {
     missing.push('Political exposure details')
   }
-  const requiredPeople = (key, label) => {
-    const people = Array.isArray(form[key]) ? form[key] : []
+  const requiredPeople = (people, label) => {
     if (!people.length) {
       missing.push(label)
       return
@@ -34,15 +34,19 @@ export function getSellerFicaOnboardingMissing(form = {}) {
     }
   }
   if (branch === 'company') {
-    requiredPeople('companyBeneficialOwners', 'Beneficial owners / controllers')
-    if ((Array.isArray(form.companyBeneficialOwners) ? form.companyBeneficialOwners : []).some((person) => !text(person.ownershipShare) && !text(person.controlBasis))) {
+    const people = form.companyBeneficialOwners ?? form.company_beneficial_owners
+    const owners = Array.isArray(people) ? people : []
+    requiredPeople(owners, 'Beneficial owners / controllers')
+    if (owners.some((person) => !text(person.ownershipShare ?? person.ownership_share) && !text(person.controlBasis ?? person.control_basis))) {
       missing.push('Beneficial ownership share or control basis')
     }
   }
   if (branch === 'trust') {
-    requiredPeople('trustFounders', 'Trust founders')
-    if (!text(form.trustBeneficiaryClass)) requiredPeople('trustBeneficiaries', 'Named beneficiaries or beneficiary class')
-    else if (Array.isArray(form.trustBeneficiaries) && form.trustBeneficiaries.length) requiredPeople('trustBeneficiaries', 'Named beneficiaries')
+    const founders = form.trustFounders ?? form.trust_founders
+    const beneficiaries = form.trustBeneficiaries ?? form.trust_beneficiaries
+    requiredPeople(Array.isArray(founders) ? founders : [], 'Trust founders')
+    if (!text(form.trustBeneficiaryClass ?? form.trust_beneficiary_class)) requiredPeople(Array.isArray(beneficiaries) ? beneficiaries : [], 'Named beneficiaries or beneficiary class')
+    else if (Array.isArray(beneficiaries) && beneficiaries.length) requiredPeople(beneficiaries, 'Named beneficiaries')
   }
   return missing
 }

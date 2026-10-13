@@ -49234,6 +49234,7 @@ export async function uploadClientPortalDocument({
   financeLane = null,
   relatedEntityType = null,
   relatedEntityId = null,
+  onProgress = null,
 }) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
@@ -49342,7 +49343,7 @@ export async function uploadClientPortalDocument({
     buyerEmail = normalizeNullableText(buyerQuery.data?.email)
   }
 
-  return runRecoverableDocumentUpload({ client: client, scope: ['buyer_portal', token, link.transaction_id, category, requiredDocumentKey, canonicalRequirementInstanceId, documentRequestId, documentType, bucketKey, financeLane, relatedEntityType, relatedEntityId], file,
+  return runRecoverableDocumentUpload({ client: client, onProgress, scope: ['buyer_portal', token, link.transaction_id, category, requiredDocumentKey, canonicalRequirementInstanceId, documentRequestId, documentType, bucketKey, financeLane, relatedEntityType, relatedEntityId], file,
     run: async attempt => {
       const timestamp = Date.now()
       const generatedFileName = isReservationDepositProofUpload

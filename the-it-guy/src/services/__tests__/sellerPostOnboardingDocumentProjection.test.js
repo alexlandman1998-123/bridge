@@ -94,7 +94,7 @@ test('a signed onboarding disclosure remains complete when every required seller
     signedAt: '2026-09-27',
     arch9TermsAccepted: true,
   }
-  const formData = { propertyDisclosure, sellerComplianceSigning: { complete: true } }
+  const formData = { sellerName: 'Alex Seller', ownershipType: 'individual', propertyDisclosure, sellerComplianceSigning: { complete: true } }
   formData.sellerPostOnboardingDrafts = buildSellerPostOnboardingDrafts({ formData, listing, generatedAt: '2026-09-27T12:00:00Z' })
   const signed = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find((row) => row.key === 'signed_disclosure_form')
   assert.equal(signed.status, 'completed')
@@ -254,7 +254,7 @@ test('keeps review drafts out of the three authoritative signed-document rows', 
   assert.equal(result.rows.some((row) => ['fica_review_draft', 'mandate_preparation_summary'].includes(row.key)), false)
 })
 
-test('rebuilds legacy unsigned physical copies from saved onboarding facts and brand snapshot', () => {
+test('retains legacy physical copies until the agent explicitly prepares a reviewed version', () => {
   const formData = {
     sellerName: 'Sam Seller', idNumber: '8001015009087', mandateType: 'open', askingPrice: '1000000',
     mandateStartDate: '2026-09-27', mandateEndDate: '2026-12-27',
@@ -268,9 +268,9 @@ test('rebuilds legacy unsigned physical copies from saved onboarding facts and b
   const listing = { id: 'listing-1', sellerOnboarding: { status: 'completed' }, propertyAddress: '1 Test Road' }
   const rows = buildSellerOnboardingManualSigningDocuments(formData, listing)
   assert.equal(rows.length, 2)
-  assert.match(rows[0].generatedHtml, /CLIENT DUE DILIGENCE RECORD/)
-  assert.match(rows[1].generatedHtml, /Open Mandate to Sell/)
-  assert.match(rows[1].generatedHtml, /Original Agency/)
+  assert.equal(rows[0].generatedHtml, '<html>old physical fica</html>')
+  assert.equal(rows[1].generatedHtml, '<html>old physical mandate</html>')
+  assert.equal(rows[1].versionId, '', 'a legacy copy cannot invent a reviewed signing version')
   assert.equal(rows[1].status, 'awaiting_signed_hard_copy')
   assert.equal(formData.sellerOnboardingManualSigningPack.documents[1].generatedHtml, '<html>old physical mandate</html>')
 })

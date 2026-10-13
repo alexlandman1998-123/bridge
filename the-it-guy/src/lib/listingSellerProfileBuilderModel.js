@@ -20,7 +20,7 @@ import { resolveListingSellerAuthorityContract } from './sellerPartyAuthorityCon
 import {
   getSellerRequirementProfile,
   syncSellerDocumentRequirements,
-} from './privateListingRequirementEngine.js'
+} from './sellerDocumentRequirementEngine.js'
 
 export const LISTING_SELLER_PROFILE_BUILDER_VERSION = 'listing_seller_profile_builder_phase2_v1'
 export const LISTING_SELLER_PROFILE_CAPTURE_SOURCE = 'listing_seller_profile_capture'

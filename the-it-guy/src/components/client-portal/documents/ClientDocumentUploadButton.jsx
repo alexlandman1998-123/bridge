@@ -1,6 +1,8 @@
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
 import { CheckCircle2, FileSignature, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import DocumentUploadProgress from '../../documents/DocumentUploadProgress.jsx'
+import { createDocumentUploadProgress } from '../../../lib/documentUploadLifecycle.js'
 
 function formatFileSize(bytes = 0) {
   const size = Number(bytes) || 0
@@ -22,6 +24,7 @@ function ClientDocumentUploadButton({
   const [selectedFile, setSelectedFile] = useState(null)
   const [feedback, setFeedback] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [progress, setProgress] = useState(null)
   const unavailable = disabled || busy || submitting
 
   const handleChange = async (event) => {
@@ -32,19 +35,26 @@ function ClientDocumentUploadButton({
     setSelectedFile({ name: file.name, size: file.size })
     setFeedback({ tone: 'loading', message: 'Uploading securely — please keep this page open.' })
     setSubmitting(true)
+    setProgress(createDocumentUploadProgress('preparing', '', { fileName: file.name }))
 
     try {
-      const result = await onUpload(uploadSpec, file)
+      const result = await onUpload(uploadSpec, file, {
+        onProgress: update => setProgress({ ...update, fileName: file.name }),
+      })
       if (result?.ok === false) {
+        setProgress(null)
         setFeedback({ tone: 'error', message: result.error || 'Upload could not be completed. Please choose the file again and retry.' })
         return
       }
       if (result?.ok === true) {
+        setProgress(null)
         setFeedback({ tone: 'success', message: 'Received and awaiting review by your transaction team.' })
         return
       }
-      setFeedback({ tone: 'loading', message: 'Upload submitted. Waiting for confirmation from your secure document record.' })
+      setProgress(null)
+      setFeedback({ tone: 'error', message: 'The saved document could not be confirmed. Reopen Documents to check before retrying.' })
     } catch (error) {
+      setProgress(null)
       setFeedback({ tone: 'error', message: error?.message || 'Upload could not be completed. Please choose the file again and retry.' })
     } finally {
       setSubmitting(false)
@@ -67,10 +77,11 @@ function ClientDocumentUploadButton({
         />
       </label>
       <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
+      <DocumentUploadProgress progress={progress} />
       {selectedFile ? (
         <div className="mt-2 max-w-sm" role="status" aria-live="polite">
           <p className="truncate text-xs font-semibold text-[#41576e]">{selectedFile.name}{selectedFile.size ? ` · ${formatFileSize(selectedFile.size)}` : ''}</p>
-          {busy || submitting || feedback?.tone === 'loading' ? (
+          {!progress && (busy || submitting || feedback?.tone === 'loading') ? (
             <p className="mt-1 flex items-center gap-1.5 text-xs leading-5 text-[#526f89]"><LoaderCircle className="animate-spin" size={13} aria-hidden="true" />{feedback?.message || 'Uploading securely — please keep this page open.'}</p>
           ) : null}
           {feedback?.tone === 'success' ? <p className="mt-1 flex items-center gap-1.5 text-xs leading-5 text-[#247148]"><CheckCircle2 size={13} aria-hidden="true" />{feedback.message}</p> : null}

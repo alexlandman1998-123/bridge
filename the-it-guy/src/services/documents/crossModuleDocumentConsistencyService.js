@@ -260,8 +260,8 @@ const DEFAULT_PARITY_ROWS = Object.freeze([
     touchpointKey: 'attorney_transfer',
     documentKey: 'buyer_trust_beneficial_ownership',
     visibleSection: 'buyer_documents',
-    parityGroup: 'buyer_entity.trust_deed',
-    expectedCanonicalDocumentKey: 'buyer_trust_deed',
+    parityGroup: 'buyer_entity.trust_beneficial_ownership',
+    expectedCanonicalDocumentKey: 'buyer_trust_beneficial_ownership',
   }),
 
   Object.freeze({

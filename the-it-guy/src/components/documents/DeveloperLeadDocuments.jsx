@@ -1,3 +1,5 @@
+import DocumentUploadProgress from './DocumentUploadProgress.jsx'
+import { createDocumentUploadProgress } from '../../lib/documentUploadLifecycle.js'
 import { DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
 import { FileText, FolderClock, LockKeyhole, RefreshCw, Upload, ArrowUpRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -15,7 +17,7 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
   const [file, setFile] = useState(null)
   const [target, setTarget] = useState('')
   const [busy, setBusy] = useState(false)
-  const [progress, setProgress] = useState('')
+  const [progress, setProgress] = useState(null)
   const active = useRef(false)
   const request = useRef(0)
   const upload = useRef(null)
@@ -62,11 +64,11 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
     const token = {}
     upload.current = token
     request.current += 1
-    setBusy(true); setError(''); setReceipt(''); setProgress('Preparing upload…')
+    setBusy(true); setError(''); setReceipt(''); setProgress(createDocumentUploadProgress('preparing', '', { fileName: file.name }))
     try {
       const document = await uploadDeveloperLeadDocument({ developerOrgId, developerLeadId, transactionId: result.transactionId,
         requirementId: target === 'other' ? '' : target, file,
-        onProgress: (update) => { if (active.current && upload.current === token) setProgress(update.message || 'Uploading…') },
+        onProgress: (update) => { if (active.current && upload.current === token) setProgress({ ...update, fileName: file.name }) },
       })
       if (!active.current || upload.current !== token) return
       setResult((previous) => ({ ...previous, documents: [document, ...previous.documents.filter((row) => row.id !== document.id)] }))
@@ -77,7 +79,7 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
     } catch (failure) {
       if (active.current && upload.current === token) setError(failure.message || 'The document could not be saved. Please retry.')
     } finally {
-      if (upload.current === token) { upload.current = null; if (active.current) { setBusy(false); setProgress('') } }
+      if (upload.current === token) { upload.current = null; if (active.current) { setBusy(false); setProgress(null) } }
     }
   }
 
@@ -98,7 +100,7 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
         
         <small>PDF, Word, JPG or PNG · up to 35 MB</small>
         <button className="developer-lead-document-submit" type="submit" disabled={!file || !target || busy}>{busy ? 'Uploading…' : 'Upload document'}</button>
-        {busy && <p role="status">{progress} Keep this page open.</p>}
+        {busy && <DocumentUploadProgress progress={progress} />}
       </form>
       {receipt && <p className="developer-lead-document-receipt" role="status">{receipt}</p>}
       <h3>Saved files</h3>

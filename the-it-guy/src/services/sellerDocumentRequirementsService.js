@@ -1,5 +1,5 @@
 import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
-import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
+import { generateSellerDocumentRequirements } from '../lib/sellerDocumentRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import { buildSellerCompliancePortalModel } from '../core/documents/sellerCompliancePortalModel.js'
