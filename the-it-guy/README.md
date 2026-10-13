@@ -1,5 +1,38 @@
 # bridge.
 
+## Seller onboarding differences from a draft listing
+
+Submitted onboarding now preserves the agent's saved draft property values before
+the seller answers update it. Lead Property and Listing show a review notice.
+The existing onboarding review compares address, property type, asking price,
+rooms, parking, sizes, rates and levies. Agents accept each seller answer or
+request clarification through the existing onboarding link. The original draft,
+reviewer and accepted values remain in the audit history. Revised answers require
+a fresh decision; an empty answer cannot erase an existing disagreement.
+Unresolved differences block onboarding approval and publication to the public
+catalogue, agency/partner websites, Property24 and Private Property, including
+queued publication. Existing submissions are not backfilled with guessed drafts.
+
+Focused check: `npm run test:seller-onboarding-draft-review` and
+`npm run test:seller-onboarding-review-handoff`. Release
+`20261013140956_seller_onboarding_draft_discrepancy_review.sql` before the primary
+app/API change. This change has not been applied remotely or deployed.
+
+## Seller lead property profile
+
+Seller Lead → Property shows section and unit numbers for sectional-title or
+share-block properties. Full-title, freehold and agricultural properties omit
+these rows even when old sectional data remains saved. Empty estate/scheme rows
+are hidden unless applicable; captured full-title estate names remain visible.
+The property editor follows the same title-type rule. Occupancy rows follow the
+saved status: tenant/lease details appear only for tenant or partially occupied
+properties, using onboarding's tenant name, lease checkbox and expiry date.
+Owner-occupied homes omit these rows. Empty optional viewing/access/vacancy rows
+are hidden, and occupancy labels use plain words. Saved answers remain unchanged.
+Focused checks:
+`node scripts/seller-lead-property-workspace-marketing-media.test.mjs --property-profile-only`
+and `node scripts/seller-lead-listing-prefill-alignment.test.mjs`.
+
 ## Seller signing pack preparation
 
 Seller onboarding's final review keeps document uploads in agent-assisted manual
@@ -158,6 +191,22 @@ revision and audit guards and does not approve existing files or send mail.
 The signed FICA declaration appears under FICA even when its legacy checklist
 group is legal. Focused checks: `node scripts/seller-document-journey.test.mjs
 --review-only` and `node scripts/seller-document-conditional-logic-phase2.test.mjs`.
+
+Seller document rejection emails cover uploaded files and copies signed through
+the seller portal. Both use the existing email queue, include the saved rejection
+reason and use the current seller portal entry link. Signed history is retained;
+the email explains that the agent must prepare a corrected copy for signature.
+Inactive links are omitted, and missing seller emails never fall back to another
+listing's recipient. Existing notification preferences remain in effect.
+
+Release `20261013145642_seller_document_rejection_email.sql` with the updated
+`send-email` function. The migration changes future decisions only and does not
+send historical rejection emails. This update has not been deployed.
+Focused checks: `npm run test:client-seller-offer-portal-notifications-phase5`
+(real local SQL → email dispatcher, with a synthetic sender) and
+`deno test --config ../supabase/functions/send-email/deno.json
+--allow-env=CLIENT_APP_URL,PUBLIC_APP_URL,APP_BASE_URL,SITE_URL
+../supabase/functions/send-email/handlers/clientSellerPortalNotification.test.ts`.
 
 Review submitted seller onboarding keeps the displayed listing version with its
 save revision. If another save changes that version, approval and correction
@@ -5241,3 +5290,60 @@ src/components/leads/__tests__/SellerLeadCreateDialog.test.jsx --maxWorkers=1`,
 boundary tests, seller alignment journey, guarded canonical update, portal
 alignment and document transaction continuity. No new tables or migrations are
 needed; no live data change, invitation or publication was performed.
+
+
+## Listing advertising expiry (prepared, 13 October 2026)
+
+Listing setup → Where to advertise captures **Listing expiry** separately from
+mandate dates. Drafts retain the date without scheduling an advert action.
+Property24 and Private Property send the date in their native expiry fields;
+a successful first publication creates a channel-specific removal schedule.
+Website publication creates the same schedule for that website.
+
+Marketing → Manage listing → **Listing expiry** replaces immediate expiry with
+a date editor, then an explicit choice to apply it to this channel or all active
+channels. Dates remain independent after a channel-only edit. Setup date changes
+apply only when publishing the selected channels again. Unchanged setup never
+resets a date deliberately changed through Manage. Inactive channels are never
+published by an expiry save; concurrent or uncertain requests require review.
+
+The existing minute-by-minute listing publication cron dispatches native date
+updates and, after the selected day in Africa/Johannesburg, sends Property24
+Expired, Private Property Inactive, or website unpublish. Saved, accepted and
+uncertain results are distinct. A lost provider response is not automatically
+replayed. Removal acceptance still requires checking the public advert.
+Expired website adverts cannot be resurrected by an ordinary content update.
+
+Release the new `20261013121907_listing_channel_expiry_schedule.sql` migration,
+both website publication Edge Functions (with the shared job helper), and the
+primary app/API together; apply the database migration first. The native preview
+services intentionally block publication when expiry settings cannot be read.
+No remote migration, deployment or live listing change was performed here.
+
+Focused verification: `node --test server/tests/listingChannelExpiry.test.js`,
+ListingChannelManageDialog component/integration and listingChannelExpiry service
+Vitest suites, `node scripts/listing-channel-manage-browser.test.mjs`, and
+`deno test --allow-read --allow-env ../supabase/functions/_shared/listingPublicationJob.test.ts`.
+The browser fixture uses local portal doubles and blocks external requests.
+`npm run check:app` at the repository root is the normal broad app check.
+
+Local verification passed: the focused dialog/service suites, five real-SQL/worker
+checks, shared Edge Function delegation tests and twenty loopback browser checks.
+The broad app lint and baseline tests passed. Its build was stopped before completion after more than thirteen minutes.
+The log records 4,924 modules transformed, but no successful build completion;
+a full build remains unverified before release. No release has been performed.
+
+
+## Sales listing final publication action (prepared)
+
+The final sales setup action activates eligible saved/restored drafts and queues
+the selected advertising channels after the property save is verified. New sale
+records explicitly persist their active flag; resumed drafts also receive active
+market visibility. Step navigation and the separate Save draft action keep the
+record inactive and send no adverts. Missing advertising requirements return to
+their setup step, and closed listings retain their separate relist workflow.
+No production listing was activated or published by this local change.
+
+Focused checks: `node scripts/create-listing-save-recovery.test.mjs` and the
+listingInitialPublicationService, listingPublicationEditor and
+listingFieldRequirements Vitest suites.

@@ -617,6 +617,8 @@ export async function applyProperty24ListingPublish({
   if (!supabase) throw new Error('Supabase client is required.')
   if (!property24) throw new Error('Property24 client is required.')
   if (!preview?.payload) throw new Error('Property24 submit payload is required.')
+  const sellerReview = await supabase.rpc('assert_seller_onboarding_draft_reviewed', { p_listing_id: config.listingId })
+  if (sellerReview.error) throw sellerReview.error
   const nextReport = report || createProperty24PublishReport({ config, preview, apply: true })
 
   const rental = preview.summary?.listingType === 'Rental' || nextReport.phase === 'property24-rental-publish-listing'

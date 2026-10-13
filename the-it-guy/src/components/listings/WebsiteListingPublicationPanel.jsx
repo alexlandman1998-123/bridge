@@ -10,28 +10,8 @@ import {
   buildWebsiteListingPublicUrl,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
+  getWebsiteListingReadiness,
 } from '../../services/listings/listingMarketingChannelPresentation'
-
-const INFRASTRUCTURE_BLOCKERS = [
-  'Create the organisation website',
-  'Publish the organisation website',
-  'Activate a website domain',
-]
-
-const AUTOMATIC_PREPARATION_BLOCKERS = new Set([
-  'Save the listing publication details before publishing it to the website.',
-  'Publish the listing projection before enabling the agency-website channel.',
-  'Prepare durable website copies for every listing image.',
-])
-
-function describeWebsiteBlocker(blocker) {
-  const message = String(blocker)
-  if (message.startsWith('Create the organisation website')) return 'Set up your agency website in Website settings.'
-  if (message.startsWith('Publish the organisation website')) return 'Make your agency website live in Website settings.'
-  if (message.startsWith('Activate a website domain')) return 'Connect an active website address in Website settings.'
-  if (message === 'Add at least one public HTTPS listing image.') return 'Add at least one photo to this listing.'
-  return message
-}
 
 export default function WebsiteListingPublicationPanel({ listingId, listingTitle, listingReference = '', preparationBlockers = [], onPrepare, onEdit, onStatusChange, onPublicationAction, publicationState = null, onReviewChanges, savedAt = '', variant = 'panel', showConnectionState = false, hideDisconnected = false, manageActions = null, refreshKey = 0 }) {
   const [publication, setPublication] = useState(null)
@@ -69,8 +49,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     () => [...new Set([...(Array.isArray(preparationBlockers) ? preparationBlockers : []), ...(Array.isArray(publication?.blockers) ? publication.blockers : [])])],
     [preparationBlockers, publication?.blockers],
   )
-  const infrastructureBlocked = readinessBlockers.some((blocker) => INFRASTRUCTURE_BLOCKERS.some((prefix) => String(blocker).startsWith(prefix)))
-  const itemsToFix = [...new Set(readinessBlockers.filter((blocker) => !AUTOMATIC_PREPARATION_BLOCKERS.has(blocker)).map(describeWebsiteBlocker))]
+  const { infrastructureBlocked, issues: itemsToFix } = getWebsiteListingReadiness(readinessBlockers)
   const hasConnectedWebsite = Boolean(publication?.websiteSiteId && publication?.hostname)
   const websiteLabel = publication?.websiteLabel || 'Agency Website'
 

@@ -32,8 +32,6 @@ const keys = [
   'offer_viewed_by_seller',
   'offer_not_reviewed_reminder',
   'offer_review_overdue_escalation',
-  'seller_mandate_viewed_unsigned_reminder',
-  'seller_mandate_signing_overdue_escalation',
   'buyer_onboarding_opened',
   'buyer_onboarding_started_not_submitted_reminder',
   'buyer_onboarding_overdue_escalation',
@@ -68,7 +66,7 @@ for (const expectedSql of [
 for (const expectedHandler of [
   'renderBridgeEmailLayout',
   'resolveEmailBranding',
-  'formatEmailSender',
+  'resolveAudienceEmailSender',
   'bridge_queue_client_seller_portal_due_notifications_phase5',
   'bridge_claim_client_seller_portal_notifications_phase5',
   'client_seller_portal_dispatch',
@@ -77,3 +75,11 @@ for (const expectedHandler of [
 }
 
 console.log('client, seller, offer and portal notifications phase 5 checks passed')
+
+// These reminders were removed with the retired mandate generator. The
+// current document notifications must not re-enable their old email routes.
+for (const key of ['seller_mandate_viewed_unsigned_reminder', 'seller_mandate_signing_overdue_escalation']) {
+  assert.equal(getNotificationAutomationDefinition(key), null)
+  assert.ok(!sendEmailIndex.includes(`"${key}"`))
+}
+await import('./seller-document-rejection-email.test.mjs')

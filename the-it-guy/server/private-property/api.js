@@ -198,6 +198,7 @@ function buildPrivatePropertyApiConfig({ env = getRuntimeEnv(), requestUrl, payl
       rentalPriceType: normalizePrivatePropertyText(firstValue(payload.rentalPriceType, query.get('rentalPriceType'))),
       availableFrom: normalizePrivatePropertyText(firstValue(payload.availableFrom, query.get('availableFrom'))),
       listingDate: normalizePrivatePropertyText(firstValue(payload.listingDate, query.get('listingDate'))),
+      expiryDate: normalizePrivatePropertyText(firstValue(payload.expiryDate, query.get('expiryDate'))),
       soleMandateExclusiveDays: normalizePrivatePropertyText(firstValue(payload.soleMandateExclusiveDays, payload.exclusiveDays, query.get('exclusiveDays'))),
       farmName: normalizePrivatePropertyText(firstValue(payload.farmName, query.get('farmName'))),
       showdayEvents: normalizePrivatePropertyText(firstValue(payload.showdayEvents, query.get('showdayEvents'))),

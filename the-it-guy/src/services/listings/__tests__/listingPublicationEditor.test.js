@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 // Exercise the editor's real retry controller without mounting the unrelated
 // listing grid, seller intake and development workspaces in the same page.
 const page = readFileSync(new URL('../../../pages/AgentListings.jsx', import.meta.url), 'utf8')
-const source = page.slice(page.indexOf('  async function retryListingPublication()'), page.indexOf('  async function handleSaveListing('))
+const source = page.slice(page.indexOf('  async function retryListingPublication('), page.indexOf('  async function handleSaveListing('))
 function editor(overrides = {}) {
   const context = {
     editorRelistChannel: '', getSalesListingRequiredIssues: () => [],

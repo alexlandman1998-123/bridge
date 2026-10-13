@@ -39,7 +39,7 @@ assert.ok(component.includes('organisationId'), 'Website overview must remain or
 for (const marker of ['.website-overview', '.wlo-header', '.wlo-stats', '.wlo-main-card', '.wlo-quick']) assert.ok(styles.includes(marker), `Website overview styles should include ${marker}.`)
 assert.ok(!styles.includes('margin-top: -22px'), 'Website overview must use the shared page-shell top spacing.')
 assert.ok(styles.includes('Match the shared Marketing workspace rhythm'), 'Website overview should use the shared Marketing visual language.')
-assert.ok(styles.includes('grid-template-columns: repeat(6, minmax(0, 1fr))'), 'Website navigation should use equally sized banner actions.')
+assert.ok(styles.includes('grid-template-columns: repeat(var(--website-section-count, 6), minmax(0, 1fr))'), 'Website navigation should use equally sized banner actions.')
 assert.ok(styles.includes('.wlo-header { background: #fff; border: 1px solid var(--wa-border)'), 'Website identity and actions should share their own container.')
 assert.ok(styles.includes('.wlo-section-card'), 'Website sections should use a dedicated workspace card.')
 assert.ok(styles.includes('.website-editor'), 'Website editing should retain the shared workspace visual language.')

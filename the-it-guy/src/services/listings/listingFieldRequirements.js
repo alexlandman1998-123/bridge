@@ -1,3 +1,4 @@
+import { listingExpiryError } from './listingExpiryModel.js'
 import { salesPropertyTypeIssue } from './listingCaptureModel.js'
 import { getPrivatePropertyHeadlineIssues, PRIVATE_PROPERTY_POA_PRICE_MESSAGE } from './privatePropertyContentRules.js'
 // Sources: Property24 Listing Service v55 OpenAPI (2026-10-10), Private
@@ -16,6 +17,10 @@ export function getListingFieldIssues(form = {}, { rental = false, channels = fo
     const existing = issues.find(row => row.field === field && row.message === message)
     if (existing) existing.channels.push(channel)
     else issues.push({ field, step, message, channels: [channel] })
+  }
+  if (!rental && Object.hasOwn(form, 'listingExpiryDate')) {
+    const expiryIssue = listingExpiryError(form.listingExpiryDate)
+    if (expiryIssue) for (const channel of ['property24', 'private_property', 'agency_website']) add(channel, 'listingExpiryDate', 'syndication', expiryIssue)
   }
   const category = text(form.propertyCategory || 'residential')
   const priceField = rental ? 'monthlyRent' : 'listingPrice'

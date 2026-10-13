@@ -3234,6 +3234,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       ? {
           id: onboarding.id,
           saveRevision: { onboardingId: onboarding.id, updatedAt: onboarding.updated_at || null },
+          draftComparison: onboarding.draft_comparison_json || null,
           token: onboarding.token || '',
           sellerPortalToken: onboarding.seller_portal_token || '',
           clientPortalLink: onboarding.seller_portal_token

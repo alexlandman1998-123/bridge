@@ -156,6 +156,7 @@ const PrincipalDashboard = lazy(() => import('./PrincipalDashboard'))
 const ConveyancerDashboardPage = lazy(() => import('../components/ConveyancerDashboardPage'))
 const BridgeCommandCenterDashboard = lazy(() => import('../components/dashboard/BridgeCommandCenterDashboard'))
 const ActivePipelineCarousel = lazy(() => import('../components/pipeline/ActivePipelineCarousel'))
+const AgentHomeListings = lazy(() => import('../components/dashboard/AgentHomeListings'))
 const ResidentialCommandCenterGrid = lazy(() => import('../components/residential/ResidentialDashboard').then((module) => ({ default: module.ResidentialCommandCenterGrid })))
 
 function DashboardWidgetFallback({ lines = 4, className = '' }) {
@@ -814,13 +815,14 @@ async function fetchAgentDashboardPrivateListings({ profile = {}, organisationId
       organisationId,
       assignedAgentIds: assignmentIds,
       includeCommissionTerms: true,
+      requireAvailable: true,
     })
     privateListingResultCount = Array.isArray(listingRows) ? listingRows.length : 0
     return listingRows
   } catch (listingError) {
     privateListingOutcome = 'failed'
     console.warn('[dashboard] Unable to load agent private listings for KPI cards.', listingError)
-    return []
+    throw listingError
   } finally {
     void persistDashboardPerformanceTrace(privateListingTrace, {
       userId: profile?.id || profile?.userId || '',
@@ -1857,6 +1859,7 @@ function Dashboard() {
   const [residentialMode] = useState('sales')
   const [residentialDateRange, setResidentialDateRange] = useState('last_30_days')
   const [agentPrivateListingRows, setAgentPrivateListingRows] = useState([])
+  const [agentPrivateListingLoad, setAgentPrivateListingLoad] = useState({ organisationId: '', loading: false, error: '' })
   const [agentCommissionTracker, setAgentCommissionTracker] = useState(null)
   const [agentDigitalCardState, setAgentDigitalCardState] = useState({
     loading: false,
@@ -2108,6 +2111,7 @@ function Dashboard() {
       setSecondaryError('')
       agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
+      setAgentPrivateListingLoad({ organisationId: currentOrganisationId, loading: false, error: '' })
       setLoading(false)
       return
     }
@@ -2127,6 +2131,7 @@ function Dashboard() {
       setSecondaryError('')
       agentPrivateListingLoadRef.current += 1
       setAgentPrivateListingRows([])
+      setAgentPrivateListingLoad({ organisationId: '', loading: false, error: '' })
       setOverview({
         metrics: {
           totalDevelopments: 0,
@@ -2244,6 +2249,7 @@ function Dashboard() {
         if (shouldLoadAgentPrivateListings) {
           const privateListingLoadId = agentPrivateListingLoadRef.current + 1
           agentPrivateListingLoadRef.current = privateListingLoadId
+          setAgentPrivateListingLoad({ organisationId: currentOrganisationId, loading: true, error: '' })
           void fetchAgentDashboardPrivateListings({
             profile: {
               id: profile?.id,
@@ -2257,6 +2263,12 @@ function Dashboard() {
           }).then((listingRows) => {
             if (agentPrivateListingLoadRef.current === privateListingLoadId) {
               setAgentPrivateListingRows(listingRows)
+              setAgentPrivateListingLoad({ organisationId: currentOrganisationId, loading: false, error: '' })
+            }
+          }).catch(() => {
+            if (agentPrivateListingLoadRef.current === privateListingLoadId) {
+              setAgentPrivateListingRows([])
+              setAgentPrivateListingLoad({ organisationId: currentOrganisationId, loading: false, error: 'Your listings could not be loaded.' })
             }
           })
         }
@@ -2289,6 +2301,7 @@ function Dashboard() {
       if (role === 'agent') {
         agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
+        setAgentPrivateListingLoad({ organisationId: currentOrganisationId, loading: false, error: 'Your listings could not be loaded.' })
       }
       setError(loadError.message)
     } finally {
@@ -4363,6 +4376,7 @@ function Dashboard() {
       })),
     }
   }, [AGENT_FOLLOW_UPS_DUE, AGENT_SUMMARY.activeTransactions, AGENT_SUMMARY.awaitingBuyerAction, AGENT_SUMMARY.missingDocuments, AGENT_SUMMARY.requiresAttention, activeTransactionCards, agentAttentionRows.length, agentDashboardPipelineRows, agentPerformanceMetrics, agentPipelineStages, agentRecentActivityRows, agentSharedData?.dashboard, isAgentRole, isPrincipalAgentView])
+  const agentHomeActiveListings = useMemo(() => agentPrivateListingRows.filter(isActivePrivateListingStock), [agentPrivateListingRows])
   const agentResidentialModel = useMemo(() => {
     if (!isAgentRole || isPrincipalAgentView || !agentPremiumModel) return null
     const sellerStages = Array.isArray(agentPerformanceMetrics.conversionFunnel?.seller) ? agentPerformanceMetrics.conversionFunnel.seller : []
@@ -5227,6 +5241,17 @@ function renderActiveTransactionsBlock({
                       <ResidentialCommandCenterGrid
                         model={agentResidentialModel}
                         digitalCardPanel={digitalCardPanel}
+                        afterActiveTransactions={(
+                          <AgentHomeListings
+                            listings={agentHomeActiveListings}
+                            organisationId={organisationIdForAppointments}
+                            loading={loading || agentPrivateListingLoad.organisationId !== organisationIdForAppointments || agentPrivateListingLoad.loading}
+                            error={agentPrivateListingLoad.organisationId === organisationIdForAppointments ? agentPrivateListingLoad.error : ''}
+                            onRetry={loadDashboard}
+                            onViewAll={() => navigate('/listings')}
+                            onOpenListing={(listing) => navigate(`/agent/listings/${listing.id}`)}
+                          />
+                        )}
                         scope="agent"
                         mode={residentialMode}
                         kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp, Users]}

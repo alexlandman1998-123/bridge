@@ -15,6 +15,7 @@
     "test:external-websites": "node --test server/tests/externalWebsites.test.js server/tests/externalWebsiteExamples.test.js server/tests/revoWebsiteProxy.test.js && vitest run src/pages/settings/__tests__/SettingsExternalWebsitesPage.test.jsx src/modules/revo/website/__tests__/RevoPropertyExperience.test.jsx",
     "test:seller-onboarding-submission-notification": "node scripts/seller-onboarding-submission-notification.test.mjs",
     "test:seller-onboarding-review-handoff": "node --test src/core/documents/__tests__/sellerOnboardingReview.test.js src/services/__tests__/sellerSubjectWorkflowIntegration.test.js src/services/__tests__/sellerPostOnboardingDocumentProjection.test.js",
+    "test:seller-onboarding-draft-review": "node --test src/services/__tests__/sellerOnboardingDraftReview.test.js && vitest run src/components/onboarding/__tests__/SellerOnboardingDraftDifferences.test.jsx src/services/listings/__tests__/sellerOnboardingDraftReviewService.test.js server/tests/sellerOnboardingDraftPublication.test.js --maxWorkers=1",
     "test:seller-mandate-terms-phase2": "node scripts/seller-mandate-terms-phase2.test.mjs",
     "test:seller-mandate-terms-phase1": "node scripts/seller-mandate-terms-phase1.test.mjs",
     "test:seller-mandate-terms-phase0": "node scripts/seller-mandate-terms-phase0.test.mjs",

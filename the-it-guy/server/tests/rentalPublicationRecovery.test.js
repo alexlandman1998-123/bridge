@@ -57,7 +57,10 @@ beforeEach(async()=>{
  create function bridge_can_access_private_listing(l uuid) returns boolean language sql as $$select exists(select 1 from private_listings where id=l and organisation_id=nullif(current_setting('test.org',true),'')::uuid)$$;
  grant select on private_listings to authenticated,service_role;`)
  await db.exec(await readFile(new URL('../../../supabase/migrations/20261004155515_rental_publication_attempt_recovery.sql',import.meta.url),'utf8'))
- client={from:table=>query(table)}
+ client={from:table=>query(table),rpc:async(name)=>{
+   expect(name).toBe('assert_seller_onboarding_draft_reviewed')
+   return {data:null,error:null}
+ }}
 })
 afterEach(async()=>{await db.close()})
 const config={listingId,agencyId:'42',agentId:'17',environment:'production'}

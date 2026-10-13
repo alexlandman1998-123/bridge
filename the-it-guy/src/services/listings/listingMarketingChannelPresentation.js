@@ -2,6 +2,30 @@ function text(value) {
   return String(value ?? '').trim()
 }
 
+const WEBSITE_PREPARATION_STEPS = new Set([
+  'Save the listing publication details before publishing it to the website.',
+  'Publish the listing projection before enabling the agency-website channel.',
+  'Prepare durable website copies for every listing image.',
+])
+
+export function getWebsiteListingReadiness(blockers = []) {
+  const messages = [...new Set(blockers.map(text).filter(Boolean))]
+  const automaticPreparation = messages.some(message => WEBSITE_PREPARATION_STEPS.has(message))
+  const infrastructureBlocked = messages.some(message => /^(Create the organisation website|Publish the organisation website|Activate a website domain)/.test(message))
+  const issues = messages.filter(message => !WEBSITE_PREPARATION_STEPS.has(message)).map(message => {
+    if (message.startsWith('Create the organisation website')) return 'Set up your agency website in Website settings.'
+    if (message.startsWith('Publish the organisation website')) return 'Make your agency website live in Website settings.'
+    if (message.startsWith('Activate a website domain')) return 'Connect an active website address in Website settings.'
+    if (message === 'Add at least one public HTTPS listing image.') return 'Add at least one photo to this listing.'
+    return message
+  })
+  return {
+    issues,
+    infrastructureBlocked,
+    preparationMessage: automaticPreparation ? 'When you publish or update this website listing, Arch9 saves its public details and prepares website copies of the photos automatically.' : '',
+  }
+}
+
 export function getListingLiveChannels(listing = {}, websitePublication = null) {
   const source = listing?.listingRecord || listing || {}
   const isLive = (value) => ['active', 'live', 'published', 'on_portal'].includes(text(value).toLowerCase())

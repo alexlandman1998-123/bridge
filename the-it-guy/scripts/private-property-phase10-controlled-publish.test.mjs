@@ -93,6 +93,10 @@ function createFakeClient(tables = {}) {
   const operations = []
   return {
     operations,
+    async rpc(name) {
+      assert.ok(['assert_seller_onboarding_draft_reviewed', 'get_private_property_agency_credentials'].includes(name))
+      return { data: null, error: null }
+    },
     from(table) {
       return new FakeQuery(tables[table] || [], table, operations)
     },

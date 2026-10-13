@@ -39,7 +39,7 @@ export function buildSellerDocumentWorkflow({ item = {}, copy = null, request = 
   const active = ['prepared', 'sent', 'partially_signed', 'signed', 'reviewed'].includes(request?.status)
   let state = 'not_prepared', label = 'Choose a document action', detail = ''
   if (reviewed) { state = 'complete'; label = 'Reviewed and complete' }
-  else if (request?.status === 'signed') { state = 'review'; label = 'Signed — awaiting agent review' }
+  else if (request?.status === 'signed') { state = 'review'; label = 'Signed, awaiting agent review' }
   else if (request?.status === 'partially_signed') { state = 'signing'; label = 'Awaiting remaining signatures' }
   else if (request?.status === 'sent') { state = 'signing'; label = 'Awaiting online signatures' }
   else if (request?.status === 'prepared') { state = 'sending'; label = 'Preparing signature request' }

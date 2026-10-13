@@ -36,3 +36,15 @@ Deno.test('delegation authorizes through the incoming credential RPC and recheck
  assertEquals(revoked?.error?.message,'Background publication access is unavailable.');
  assertEquals(calls,2);
 });
+
+Deno.test('expiry delegation permits only removal of the claimed channel and listing', async () => {
+ const calls: unknown[] = [];
+ const caller = { rpc: async (name: string,args: unknown) => { calls.push([name,args]); return {data:{actorId:'actor',listingId:'listing',status:{status:'published'}},error:null}; } };
+ const payload={expiryJobId:'expiry-job',expiryClaimId:'expiry-claim',listingId:'listing',action:'unpublish'};
+ const context=await websitePublicationJobContext({caller,payload,partner:true});
+ assertEquals(context?.actor.data.user.id,'actor');
+ assertEquals(calls[0],['listing_expiry_website_context',{p_job:'expiry-job',p_claim:'expiry-claim',p_partner:true}]);
+ await assertRejects(()=>websitePublicationJobContext({caller,payload:{...payload,action:'publish'}}));
+ await assertRejects(()=>websitePublicationJobContext({caller,payload:{...payload,publicationJobId:'other'}}));
+ await assertRejects(()=>websitePublicationJobContext({caller,payload:{...payload,listingId:'different'}}));
+});

@@ -25,6 +25,10 @@ function between(start, end) {
 
 function bind(context, code, expression) {
   Object.assign(context, { photoDraftCreationRef: { current: null }, photoUploadScopeRef: { current: 0 }, publicationStatusBusy: false, publicationPending: false, publicationUncertain: false, draftRecoveryBlocked: false, editDraftConflict: null, buildSpecialistSalesFacts, recoveryProtection: { markSaved() {} }, setCloudSave() {}, setDraftRecoveryBlocked() {}, setQuickAddSuccess() {}, buildInitialListingLeadForm: () => ({ listingImages: [] }), getCurrentDeletedListingIds: () => new Set(), profile: {}, workspace: {}, ...context })
+  context.buildFinalSalesListingForm ||= new Function('normalizeKey', `${between('function buildFinalSalesListingForm(', 'function resolveQuickListingVisibility(')}; return buildFinalSalesListingForm;`)(normalizeKey)
+  context.isDeveloperWorkspace ??= false
+  context.editorRelistChannel ??= ''
+  context.listingForm ??= context.form
   return new Function('context', `with (context) { ${code}; return ${expression}; }`)(context)
 }
 
@@ -239,8 +243,8 @@ test('uploaded and removed photo previews release their object URLs', () => {
   assert.equal(context.form.listingImages.length, 1)
 })
 
-const saveStart = source.indexOf('const sellerUpdatePayload = {', source.indexOf('async function performSaveListing()'))
-const saveWait = between('  async function performSaveListing() {', '    const sellerName =').split('\n').slice(1).join('\n')
+const saveStart = source.indexOf('const sellerUpdatePayload = {', source.indexOf('async function performSaveListing('))
+const saveWait = between('  async function performSaveListing(', '    const sellerName =').split('\n').slice(1).join('\n')
 const saveBody = saveWait + source.slice(saveStart, source.indexOf('} else {\n        uploadedDocuments', saveStart))
 
 function saveContext() {
@@ -452,7 +456,7 @@ test('two immediate submit events cannot create two listings', async () => {
   assert.ok(calls.findIndex(([action]) => action === 'navigate') > calls.findIndex(([action]) => action === 'verify'))
  })
 
-const developerStart = source.indexOf('const developerPayload = {', source.indexOf('async function performSaveListing()'))
+const developerStart = source.indexOf('const developerPayload = {', source.indexOf('async function performSaveListing('))
 const developerEnd = source.indexOf('await createPrivateListingActivity({', developerStart)
 const developerSaveBody = source.slice(developerStart, developerEnd)
 
@@ -626,4 +630,108 @@ test('a website-row retry saves changes and queues only that failed website', as
   assert.equal(calls[0][1].sendUpdates, false)
   assert.equal(calls[0][1].navigateAfterSave, false)
   assert.deepEqual(calls[1][1].channels, ['private_property'])
+})
+
+
+test('final sales publication activates resumed drafts without reopening closed or relisting records', () => {
+  const resolve = bind({ normalizeKey }, between('function buildFinalSalesListingForm(', 'function resolveQuickListingVisibility('), 'buildFinalSalesListingForm')
+  for (const listingStatus of ['draft', 'seller_lead', 'listing_review', 'mandate_signed']) {
+    const form = { listingType: 'sale', listingStatus, selectedSyndicationChannels: ['private_property'] }
+    assert.equal(resolve(form, { isEditListingWorkspace: true }).listingStatus, 'active')
+    assert.equal(resolve(form, { isCreateListingWorkspace: true }).listingStatus, 'active')
+    assert.equal(form.listingStatus, listingStatus, 'preparing a publish action must not alter the saved draft')
+    for (const scope of [{ isEditListingWorkspace: true, editorRelistChannel: 'Property24' }, { isEditListingWorkspace: true, isDeveloperWorkspace: true }, {}]) assert.equal(resolve(form, scope), form)
+    const rental = { ...form, listingType: 'rental' }
+    assert.equal(resolve(rental, { isEditListingWorkspace: true }), rental)
+  }
+  for (const listingStatus of ['active', 'under_offer', 'sold', 'expired', 'withdrawn', 'archived', 'transaction_created']) {
+    const form = { listingStatus }
+    assert.equal(resolve(form, { isEditListingWorkspace: true }), form)
+  }
+})
+
+test('the real final submit passes an active snapshot to both resumed and restored draft saves', async () => {
+  for (const editing of [true, false]) {
+    const calls = []
+    const original = { listingStatus: 'seller_lead', listingType: 'sale', listingExpiryDate: '2099-12-31', selectedSyndicationChannels: ['private_property'] }
+    const context = { form: original, isEditListingWorkspace: editing, isCreateListingWorkspace: !editing,
+      listingFieldIssues: [], floorplanUploading: false, isListingSaving: false,
+      createListingDraftHydratedKey: 'draft', createListingDraftScopeKey: 'draft', listingSaveInFlightRef: { current: false }, completedCreateListingRef: { current: false },
+      setError() {}, setWorkflowMessage() {}, setIsListingSaving() {}, assertMvpPilotCreationAllowed() {}, console: quietConsole,
+      performUpdateExistingListing: async options => calls.push(options), performSaveListing: async options => calls.push(options),
+    }
+    const submit = bind(context, between('async function handleSaveListing(', 'function requestListingDeletion('), 'handleSaveListing')
+    await submit({ preventDefault() {} })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].listingForm.listingStatus, 'active')
+    assert.equal(calls[0].listingForm.listingExpiryDate, '2099-12-31')
+    assert.deepEqual(calls[0].listingForm.selectedSyndicationChannels, ['private_property'])
+    if (editing) { assert.equal(calls[0].sendUpdates, true); assert.equal(calls[0].publishDraft, true) }
+    assert.equal(original.listingStatus, 'seller_lead')
+  }
+})
+
+test('a resumed draft with unmet channel requirements stays in setup and never silently saves instead of publishing', async () => {
+  let saves = 0
+  const steps = []
+  const context = { form: { listingStatus: 'seller_lead' }, isEditListingWorkspace: true, isCreateListingWorkspace: false,
+    listingFieldIssues: [{ step: 'syndication', field: 'listingExpiryDate' }], setValidationAttemptedStep() {}, setCreateListingStep: step => steps.push(step), setError() {},
+    performUpdateExistingListing: async () => { saves++ },
+  }
+  const submit = bind(context, between('async function handleSaveListing(', 'function requestListingDeletion('), 'handleSaveListing')
+  await submit({ preventDefault() {} })
+  assert.deepEqual(steps, ['syndication']); assert.equal(saves, 0)
+})
+
+test('explicit Save draft updates the same saved listing without activating it or sending adverts', async () => {
+  const calls = []
+  const context = { isEditListingWorkspace: true, isListingSaving: false, listingSaveInFlightRef: { current: false },
+    form: { listingStatus: 'seller_lead' }, setIsListingSaving() {}, setError() {},
+    performUpdateExistingListing: async options => calls.push(options),
+  }
+  const saveDraft = bind(context, between('async function saveListingSetupDraft(', 'async function handleSaveListing('), 'saveListingSetupDraft')
+  await saveDraft()
+  assert.deepEqual(calls, [{ sendUpdates: false, navigateAfterSave: false, successMessage: 'Draft saved. No adverts were sent.' }])
+  assert.equal(context.form.listingStatus, 'seller_lead')
+})
+
+
+test('resumed draft activation writes active market visibility and an active record, while draft saves preserve privacy', () => {
+  const patchSource = between('    const listingPatch = {', '    const onboardingPatch = {')
+  const context = { form: { listingStatus: 'active', visibility: 'agent', listingType: 'sale' }, publishDraft: true,
+    listing: { listingStatus: 'seller_lead', listingVisibility: 'internal' }, listingTitle: 'Home', linkedDevelopmentId: '', propertyType: 'House', askingPrice: 2500000,
+    propertyAddress: '18 Test Avenue', addressLine2: '', formattedAddress: '18 Test Avenue', streetAddress: '18 Test Avenue', country: 'South Africa', postalCode: '', latitude: null, longitude: null, googlePlaceId: '',
+    effectiveListingDescription: 'Home for sale', nextNotes: '', mobileEditor: false, isDeveloperWorkspace: false, directListingPersistence: { seller: {} }, mandateStatus: 'not_started', sellerCanonicalFacts: {}, sellerCanonicalFactReadiness: {},
+    normalizeText, normalizePropertyCategory: value => value || 'residential', normalizePropertyStructureType: value => value || 'full_title', stripQuickListingMetadataText: value => value || '',
+    resolveQuickListingVisibility: bind({ normalizeKey }, between('function resolveQuickListingVisibility(', 'function extractBranchOptions('), 'resolveQuickListingVisibility'),
+  }
+  const patch = bind(context, patchSource, 'listingPatch')
+  assert.equal(patch.listingStatus, 'active'); assert.equal(patch.listingVisibility, 'active_market'); assert.equal(patch.isActive, true)
+  context.publishDraft = false; context.form.listingStatus = 'seller_lead'
+  const draft = bind(context, patchSource, 'listingPatch')
+  assert.equal(draft.listingStatus, 'seller_lead'); assert.equal(draft.listingVisibility, 'agent'); assert.equal(draft.isActive, undefined)
+})
+
+
+test('new sale final save persists active market state before requesting selected adverts', async () => {
+  const { context, calls, save } = saveContext()
+  context.resolvedListingStatus = 'active'
+  context.resolveQuickListingVisibility = bind({ normalizeKey }, between('function resolveQuickListingVisibility(', 'function extractBranchOptions('), 'resolveQuickListingVisibility')
+  await save()
+  const created = calls.find(([kind]) => kind === 'create')[1]
+  assert.equal(created.listingStatus, 'active'); assert.equal(created.isActive, true); assert.equal(created.listingVisibility, 'active_market')
+  const publish = calls.find(([kind]) => kind === 'publish')[1]
+  assert.equal(publish.listingStatus, 'active'); assert.deepEqual(publish.channels, ['private_property'])
+  assert.ok(calls.findIndex(([kind]) => kind === 'verify') < calls.findIndex(([kind]) => kind === 'publish'))
+})
+
+
+test('creation persists the explicit publish snapshot even when the editor still holds a draft', async () => {
+  const original = { listingStatus: 'seller_lead' }
+  const prefix = between('  async function performSaveListing(', '    const sellerName =')
+  const create = bind({ form: original }, `${prefix} return form; }`, 'performSaveListing')
+  assert.equal(await create(), original)
+  const published = { ...original, listingStatus: 'active' }
+  assert.equal(await create({ listingForm: published }), published)
+  assert.equal(original.listingStatus, 'seller_lead')
 })

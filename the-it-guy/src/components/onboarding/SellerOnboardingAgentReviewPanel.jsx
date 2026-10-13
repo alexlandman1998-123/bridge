@@ -1,3 +1,5 @@
+import SellerOnboardingDraftDifferences from './SellerOnboardingDraftDifferences.jsx'
+
 const text = (value) => String(value ?? '').trim()
 const first = (...values) => values.map(text).find(Boolean) || 'Not captured'
 const people = (value) => Array.isArray(value) ? value : []
@@ -7,7 +9,7 @@ function ReviewRow({ label, value }) {
   return <div className="grid grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)] gap-3 border-b border-[#edf2f7] py-2 last:border-0"><dt className="text-[#607387]">{label}</dt><dd className="min-w-0 break-words font-medium text-[#243d56]">{value}</dd></div>
 }
 
-export default function SellerOnboardingAgentReviewPanel({ formData = {}, checklist }) {
+export default function SellerOnboardingAgentReviewPanel({ formData = {}, checklist, listing, onDifferenceSaved, onRequestCorrection, onReload, disabled }) {
   if (!checklist) return null
   const owner = checklist.subject?.legalOwner || {}
   const property = checklist.facts?.property || {}
@@ -20,8 +22,9 @@ export default function SellerOnboardingAgentReviewPanel({ formData = {}, checkl
     ['Named beneficiaries', formData.trustBeneficiaries],
   ].filter(([, rows]) => people(rows).length)
   return <div className="space-y-4 text-sm">
+    <SellerOnboardingDraftDifferences listing={listing} comparison={checklist.draftComparison} onSaved={onDifferenceSaved} onRequestCorrection={onRequestCorrection} onReload={onReload} disabled={disabled} />
     <div className={`rounded-[14px] border p-4 ${checklist.ready ? 'border-[#c9e8d5] bg-[#f0faf3]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
-      <p className="font-semibold text-[#243d56]">{checklist.ready ? 'Submitted fields ready for agent approval' : 'Complete the missing fields before approval'}</p>
+      <p className="font-semibold text-[#243d56]">{checklist.ready ? 'Submitted fields ready for agent approval' : checklist.draftComparison?.pending?.length ? 'Review the property differences before approval' : 'Complete the missing fields before approval'}</p>
       {checklist.missing.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-[#76551a]">{checklist.missing.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-1 text-[#41634e]">Check the facts below, then record your decision.</p>}
     </div>
     <section className="rounded-[14px] border border-[#dce6f2] bg-white p-4">

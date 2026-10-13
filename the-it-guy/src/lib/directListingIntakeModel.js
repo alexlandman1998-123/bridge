@@ -488,6 +488,7 @@ export function buildDirectListingOnboardingFormData(form = {}, context = {}) {
     mandateType: normalizeMandateType(form.mandateType),
     mandateStartDate: normalizeText(form.mandateStartDate),
     mandateEndDate: normalizeText(form.mandateEndDate),
+    listingExpiryDate: normalizeText(form.listingExpiryDate),
     commissionType: normalizeText(form.commissionType),
     commissionValue: normalizeText(form.commissionValue),
     commissionPercentage: normalizeText(form.commissionType) === 'percentage' ? normalizeText(form.commissionValue) : undefined,

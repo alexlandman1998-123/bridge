@@ -56,6 +56,7 @@ export function applyListingSellerOnboardingSaveSnapshot(listing = {}, receipt =
     sellerOnboarding: {
       ...object(listing.sellerOnboarding),
       ...receipt,
+      draftComparison: receipt.draft_comparison_json ?? listing.sellerOnboarding?.draftComparison,
       formData: receipt.form_data,
       storedCanonicalFacts: receipt.canonical_facts_json || listing.sellerOnboarding?.storedCanonicalFacts,
       canonicalFacts: receipt.canonical_facts_json || listing.sellerOnboarding?.canonicalFacts,

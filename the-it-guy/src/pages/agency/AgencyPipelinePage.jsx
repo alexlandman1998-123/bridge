@@ -23,7 +23,8 @@ import { prepareSellerMandateReviewPreview } from '../../lib/sellerMandateReview
 import SellerMandateDetailsEditor from '../../components/documents/SellerMandateDetailsEditor.jsx'
 import { getSellerMandatePreparationIssues, readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
 import { saveListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateService.js'
-import { buildListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateModel.js'
+import { applyListingSellerOnboardingSaveSnapshot, buildListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateModel.js'
+import { sellerOnboardingDraftPublicationBlocker } from '../../core/documents/sellerOnboardingDraftComparison.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Lightbulb, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -6496,6 +6497,35 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
   }
   const leadPropertyInterestAsType = workspaceTextLooksLikeAddress(lead?.propertyInterest) ? '' : lead?.propertyInterest
   const propertyType = firstWorkspaceText(onboarding?.propertyType, onboarding?.property_type, lead?.propertyType, lead?.property_type, propertyDetails?.propertyType, listingSource?.propertyType, listing?.propertyType, leadPropertyInterestAsType)
+  const propertyTitleType = firstWorkspaceText(
+    onboarding?.propertyStructureType, onboarding?.property_structure_type,
+    onboarding?.ownershipScheme, onboarding?.ownership_scheme,
+    onboarding?.propertyTitleType, onboarding?.property_title_type,
+    propertyDetails?.propertyStructureType, propertyDetails?.property_structure_type,
+    propertyDetails?.propertyTitleType, listingSource?.propertyStructureType, listingSource?.property_structure_type,
+  )
+  const titleType = normalizeKey(propertyTitleType).replace(/[\s-]+/g, '_')
+  const sectionalTitle = firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle)
+  const showSectionalDetails = titleType
+    ? ['sectional_title', 'share_block'].includes(titleType)
+    : ['yes', 'true', '1'].includes(normalizeKey(sectionalTitle))
+  const complexName = firstWorkspaceText(
+    onboarding?.estateComplexName, onboarding?.complexName, onboarding?.estateName,
+    showSectionalDetails ? onboarding?.schemeName : '', propertyDetails?.complexName,
+    showSectionalDetails ? propertyDetails?.schemeName : '', listingSource?.estateName,
+  )
+  const estateValue = firstWorkspaceValue(
+    onboarding?.estateOrHoa, onboarding?.estate_or_hoa, onboarding?.inEstate, onboarding?.in_estate,
+    propertyDetails?.estateOrHoa, propertyDetails?.estate_or_hoa, listingSource?.estateOrHoa, listingSource?.estate_or_hoa,
+  )
+  const estateAnswer = typeof estateValue === 'boolean' ? String(estateValue) : normalizeKey(estateValue)
+  const showComplexDetails = showSectionalDetails || titleType === 'estate' || ['yes', 'true', '1'].includes(estateAnswer) ||
+    (!['no', 'false', '0'].includes(estateAnswer) && Boolean(complexName))
+  const occupancyStatus = firstWorkspaceText(onboarding?.occupancyStatus, onboarding?.occupancy_status, onboarding?.occupationStatus)
+  const occupancyType = normalizeKey(occupancyStatus).replace(/[\s-]+/g, '_')
+  const showTenantDetails = ['tenant_occupied', 'partially_occupied', 'tenant', 'tenanted'].includes(occupancyType)
+  const leaseExists = firstWorkspaceValue(onboarding?.leaseExists, onboarding?.lease_exists)
+  const hasLease = ['yes', 'true', '1'].includes(normalizeKey(leaseExists))
   const features = uniqueWorkspaceList([
     propertyDetails?.features,
     propertyDetails?.propertyFeatures,
@@ -6526,12 +6556,14 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
       sourceLabel: Object.keys(onboarding).length ? 'Captured property information' : 'Lead information',
       rows: [
         { label: 'Property type', value: propertyType },
-        { label: 'Property title type', value: titleCaseWorkspaceValue(firstWorkspaceText(onboarding?.propertyStructureType, onboarding?.property_structure_type, onboarding?.ownershipScheme, onboarding?.propertyTitleType, onboarding?.property_title_type, propertyDetails?.propertyStructureType, propertyDetails?.propertyTitleType)) },
-        { label: 'Complex / Estate / Scheme', value: firstWorkspaceText(onboarding?.estateComplexName, onboarding?.complexName, onboarding?.estateName, onboarding?.schemeName, propertyDetails?.complexName, propertyDetails?.schemeName, listingSource?.estateName) },
+        { label: 'Property title type', value: titleCaseWorkspaceValue(propertyTitleType) },
+        ...(showComplexDetails ? [{ label: 'Complex / Estate / Scheme', value: complexName }] : []),
         { label: 'Erf / Stand number', value: firstWorkspaceText(onboarding?.erfNumber, onboarding?.standNumber, lead?.erfNumber, propertyDetails?.erfNumber) },
-        { label: 'Sectional title', value: firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle) },
-        { label: 'Section number', value: firstWorkspaceText(onboarding?.sectionNumber, propertyDetails?.sectionNumber) },
-        { label: 'Unit number', value: firstWorkspaceText(onboarding?.unitNumber, onboarding?.unit_number, propertyDetails?.unitNumber) },
+        ...(showSectionalDetails ? [
+          ...(!titleType ? [{ label: 'Sectional title', value: sectionalTitle }] : []),
+          { label: 'Section number', value: firstWorkspaceText(onboarding?.sectionNumber, propertyDetails?.sectionNumber) },
+          { label: 'Unit number', value: firstWorkspaceText(onboarding?.unitNumber, onboarding?.unit_number, propertyDetails?.unitNumber) },
+        ] : []),
         { label: 'Suburb', value: suburb },
         { label: 'City', value: city },
         { label: 'Province', value: province },
@@ -6568,16 +6600,18 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
     },
     occupancy: {
       rows: [
-        { label: 'Occupancy status', value: firstWorkspaceText(onboarding?.occupancyStatus, onboarding?.occupancy_status, onboarding?.occupationStatus), Icon: UserRound },
-        { label: 'Current occupants', value: firstWorkspaceText(onboarding?.currentOccupants, onboarding?.occupants), Icon: Home },
-        { label: 'Vacant from', value: firstWorkspaceText(onboarding?.vacantFrom, onboarding?.vacant_from), Icon: CalendarDays },
-        { label: 'Tenancy', value: firstWorkspaceText(onboarding?.tenancyStatus, onboarding?.tenancy_status, onboarding?.leaseStatus), Icon: FileText },
-        { label: 'Lease end date', value: firstWorkspaceText(onboarding?.leaseEndDate, onboarding?.lease_end_date), Icon: Clock3 },
+        { label: 'Occupancy status', value: titleCaseWorkspaceValue(occupancyStatus), Icon: UserRound },
+        ...(showTenantDetails ? [
+          { label: 'Tenant name', value: firstWorkspaceText(onboarding?.tenantName, onboarding?.tenant_name), Icon: Home, optional: true },
+          { label: 'Lease exists', value: leaseExists, Icon: FileText, optional: true },
+          ...(hasLease ? [{ label: 'Lease expiry date', value: firstWorkspaceText(onboarding?.leaseExpiryDate, onboarding?.lease_expiry_date, onboarding?.leaseEndDate, onboarding?.lease_end_date), Icon: Clock3 }] : []),
+        ] : []),
+        ...(occupancyType === 'vacant' ? [{ label: 'Vacant from', value: firstWorkspaceText(onboarding?.vacantFrom, onboarding?.vacant_from), Icon: CalendarDays, optional: true }] : []),
         { label: 'Rates & taxes', value: getWorkspacePropertyCharacteristic(onboarding, ['ratesAndTaxes', 'ratesTaxes', 'monthlyRates']), Icon: Tag, format: 'currency' },
         { label: 'Levies', value: getWorkspacePropertyCharacteristic(onboarding, ['levies', 'monthlyLevies']), Icon: Columns3, format: 'currency' },
-        { label: 'Viewing availability', value: firstWorkspaceText(onboarding?.viewingAvailabilityWindows, onboarding?.viewing_availability_windows, onboarding?.canonicalSellerFacts?.occupancy?.viewing_availability_windows), Icon: CalendarDays },
-        { label: 'Access arrangement', value: firstWorkspaceText(onboarding?.viewingAccessInstructions, onboarding?.viewing_access_instructions, onboarding?.accessArrangement, onboarding?.accessInstructions, onboarding?.viewingInstructions), Icon: Lock },
-      ],
+        { label: 'Viewing availability', value: firstWorkspaceText(onboarding?.viewingAvailabilityWindows, onboarding?.viewing_availability_windows, onboarding?.canonicalSellerFacts?.occupancy?.viewing_availability_windows), Icon: CalendarDays, optional: true },
+        { label: 'Access arrangement', value: firstWorkspaceText(onboarding?.viewingAccessInstructions, onboarding?.viewing_access_instructions, onboarding?.accessArrangement, onboarding?.accessInstructions, onboarding?.viewingInstructions), Icon: Lock, optional: true },
+      ].filter((row) => !row.optional || typeof row.value === 'boolean' || normalizeText(row.value)),
     },
     marketing: {
       listingDescription: firstWorkspaceText(listingSource?.description, listingSource?.propertyDescription, listingSource?.property_description, marketing?.description),
@@ -27383,7 +27417,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
-  async function saveSellerLeadOnboardingReview(status) {
+  async function saveSellerLeadOnboardingReview(status, correctionReason = sellerOnboardingCorrectionReason) {
     const listingId = normalizeText(selectedLeadLinkedListingId)
     if (!listingId || sellerOnboardingReviewSaving || sellerOnboardingReviewNeedsRefresh) return false
     const formData = getSellerLeadReviewFormData(selectedLead, sellerOnboardingReviewListing || selectedLeadLinkedListing)
@@ -27406,7 +27440,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const review = recordSellerOnboardingReview({
         existing: formData.sellerOnboardingReview || formData.seller_onboarding_review,
         status,
-        reason: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? sellerOnboardingCorrectionReason : '',
+        reason: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? correctionReason : '',
         actor,
       })
       const correction = status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested
@@ -27414,7 +27448,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ? createSellerOnboardingCorrectionControl({
             existing: formData.sellerOnboardingCorrectionControl || formData.seller_onboarding_correction_control,
             formData,
-            reason: sellerOnboardingCorrectionReason,
+            reason: correctionReason,
             actor,
           })
         : formData.sellerOnboardingCorrectionControl || formData.seller_onboarding_correction_control || null
@@ -40386,6 +40420,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                       {selectedLeadPropertyWorkspace.listing.hasListing ? (
                         <div className="mt-5 space-y-4">
+                          {sellerOnboardingDraftPublicationBlocker(selectedLeadLinkedListing) ? <div role="status" className="rounded-xl border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm text-[#76551a]">
+                            <p>{sellerOnboardingDraftPublicationBlocker(selectedLeadLinkedListing)}</p>
+                            <Button type="button" size="sm" variant="secondary" className="mt-2" onClick={() => openSellerOnboardingReview()}>Review seller answers</Button>
+                          </div> : null}
                           {selectedLeadPropertyWorkspace.listing.id ? (
                             <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => navigate(`/agent/listings/${encodeURIComponent(selectedLeadPropertyWorkspace.listing.id)}`)}>
                               Open {selectedLeadPropertyWorkspace.listing.isPrivateDraft ? 'Draft Listing' : 'Listing'}
@@ -41273,7 +41311,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             Commission terms are confirmed in the signing pack before anything is sent or prepared. Opening that screen does not create, publish, or activate a market listing.
             {(getLeadSellerOnboardingFormData(selectedLead).sellerReviewedDocumentVersions || getLeadSellerOnboardingFormData(selectedLead).seller_reviewed_document_versions)?.documents?.length ? ' Preparing another pack creates a new reviewed version and keeps the previous copies in the audit history.' : ''}
           </div>
-          {sellerOnboardingReviewModalOpen ? <SellerOnboardingAgentReviewPanel formData={selectedLeadReviewFormData} checklist={selectedLeadOnboardingReviewChecklist} /> : null}
+          {sellerOnboardingReviewModalOpen ? <SellerOnboardingAgentReviewPanel formData={selectedLeadReviewFormData} checklist={selectedLeadOnboardingReviewChecklist}
+            listing={sellerOnboardingReviewListing || selectedLeadLinkedListing}
+            disabled={sellerOnboardingReviewSaving || sellerOnboardingReviewNeedsRefresh || readSellerOnboardingReview(selectedLeadReviewFormData?.sellerOnboardingReview).status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested}
+            onDifferenceSaved={receipt => {
+              const baseline = sellerOnboardingReviewListing || selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing
+              const saved = applyListingSellerOnboardingSaveSnapshot(baseline, receipt)
+              setSellerOnboardingReviewListing(saved)
+              setSelectedLeadHydratedListing(saved)
+              sellerSigningPackBaselineRef.current = saved
+              patchSelectedLeadRecord({ sellerOnboarding: saved.sellerOnboarding }, selectedLead.leadId)
+            }}
+            onReload={refreshSellerOnboardingReviewRecord}
+            onRequestCorrection={reason => saveSellerLeadOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested, reason)} /> : null}
           {sellerOnboardingReviewModalOpen ? (() => {
             const form = selectedLeadReviewFormData || {}
             const review = readSellerOnboardingReview(form.sellerOnboardingReview || form.seller_onboarding_review)
@@ -41874,6 +41924,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   setSellerProfileEditForm((previous) => ({ ...previous, estateComplexName: value, schemeName: value }))
                 }} />
                 <Field placeholder="Erf / Stand number" value={sellerProfileEditForm.erfNumber} onChange={(event) => updateSellerProfileEditField('erfNumber', event.target.value)} />
+                {(['sectional_title', 'share_block'].includes(normalizeKey(sellerProfileEditForm.ownershipScheme).replace(/[\s-]+/g, '_')) ||
+                  (!normalizeText(sellerProfileEditForm.ownershipScheme) && normalizeKey(sellerProfileEditForm.sectionalTitle) === 'yes')) ? <>
                 <Field as="select" aria-label="Sectional title" value={sellerProfileEditForm.sectionalTitle} onChange={(event) => updateSellerProfileEditField('sectionalTitle', event.target.value)}>
                   <option value="">Sectional title — not captured</option>
                   <option value="Yes">Sectional title — Yes</option>
@@ -41881,6 +41933,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </Field>
                 <Field placeholder="Section number" value={sellerProfileEditForm.sectionNumber} onChange={(event) => updateSellerProfileEditField('sectionNumber', event.target.value)} />
                 <Field placeholder="Unit number" value={sellerProfileEditForm.unitNumber} onChange={(event) => updateSellerProfileEditField('unitNumber', event.target.value)} />
+                </> : null}
                 <Field placeholder="Suburb" value={sellerProfileEditForm.propertySuburb} onChange={(event) => updateSellerProfileEditField('propertySuburb', event.target.value)} />
                 <Field placeholder="City" value={sellerProfileEditForm.propertyCity} onChange={(event) => updateSellerProfileEditField('propertyCity', event.target.value)} />
                 <Field placeholder="Province" value={sellerProfileEditForm.propertyProvince} onChange={(event) => updateSellerProfileEditField('propertyProvince', event.target.value)} />

@@ -50,7 +50,8 @@ assert.match(listingDetail, /publishPrivatePropertyListing/)
 assert.match(listingDetail, /refreshPrivatePropertyListingStatus/)
 assert.match(listingDetail, /expirePrivatePropertyListing/)
 assert.match(listingDetail, /Submitting to Private Property/)
-assert.match(listingDetail, /Add (?:manual|live) link/)
+assert.match(listingDetail, /onSavePublicUrl=.*saveConfirmedPortalLink/)
+assert.match(read('src/components/listings/ListingChannelManageDialog.jsx'), /Add live portal link/)
 assert.doesNotMatch(
   listingDetail,
   /name: 'Private Property'[\s\S]{0,900}onClick=\{\(\) => openExternalLinkPanel\(privatePropertyLink, 'Private Property'\)\}[\s\S]{0,120}<Send size=\{15\} \/>[\s\S]{0,80}Publish/,

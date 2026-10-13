@@ -8,8 +8,9 @@ import ListingChannelManageDialog from '../ListingChannelManageDialog'
 import { saveListingChannelManagement } from '../../../services/listings/listingChannelManagement'
 import { isQuickListingPortalUpdateAccepted } from '../../../services/listings/listingQuickActionDelivery'
 import { deriveListingChannelUpdateStates, getListingChannelManageActivity } from '../../../services/listings/listingChannelUpdateState'
-import { buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, validateListingPortalPublicUrl } from '../../../services/listings/listingMarketingChannelPresentation'
+import { buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages } from '../../../services/listings/listingMarketingChannelPresentation'
 import { getListingPublicationChannelKey } from '../../../services/listings/listingPublicationState'
+import { sellerOnboardingDraftPublicationBlocker } from '../../../core/documents/sellerOnboardingDraftComparison'
 
 const source = readFileSync(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 function controllerSource(name) {
@@ -24,10 +25,12 @@ function fixture(overrides = {}) {
   const calls = []
   const ctx = {
     React, URL, URLSearchParams, ListingChannelManageDialog, Button: 'button', SlidersHorizontal: 'span', getListingPublicationChannelKey, getListingChannelViewUrl,
-    buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, validateListingPortalPublicUrl,
-    saveListingChannelManagement, isQuickListingPortalUpdateAccepted, getListingChannelManageActivity,
+    buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages,
+    saveListingChannelManagement, isQuickListingPortalUpdateAccepted, getListingChannelManageActivity, sellerOnboardingDraftPublicationBlocker,
     listingId: 'listing-1', listingRecord: { id: 'listing-1', arch9Reference: 'A9-TEST-100001', listingStatus: 'active' },
     marketingDraft: { listingStatus: 'active', listingType: 'sale', price: '2450000', formattedAddress: '24 Oak Avenue', headline: 'Oak Avenue', property24ExpiryDate: '2026-11-30', property24Reference: '116284', property24ListingUrl: 'https://www.property24.com/for-sale/example/116284', privatePropertyReference: 'T498201', privatePropertyListingUrl: 'https://www.privateproperty.co.za/for-sale/example/T498201' },
+    channelExpiries: [], channelExpiryAvailable: true, LISTING_EXPIRY_CHANNELS: { Property24: 'property24', 'Private Property': 'private_property', 'Agency Website': 'agency_website', 'Kingdom Website': 'kingdom_website' },
+    saveListingChannelExpiry: vi.fn(async (_, values) => ({ ok: true, settings: [], results: [], values })),
     listingChannelActivity: [], channelActivityUnavailable: false, listingPublicationStates: {}, channelUpdateStates: {},
     property24HasReference: true, property24Published: true, property24Reference: '116284', property24StatusKey: 'published', property24StatusCheckedAt: '2026-10-12T19:40:00Z', property24ReadinessIssues: [],
     privatePropertyHasChannel: true, privatePropertyExternalStatus: 'active', privatePropertyStatusKey: 'published', privatePropertyReadinessIssues: [], privatePropertyReadinessWarnings: [], privatePropertyLink: null, privatePropertyStatusCheck: null, property24StatusCheck: null, channelManageCheckedAt: {},
@@ -42,6 +45,8 @@ function fixture(overrides = {}) {
     getProperty24ListingNumberFromResponse: response => response.report?.databaseWrite?.listingNumber || '116284',
     getPrivatePropertyReferenceFromResponse: () => 'T498201', getPrivatePropertyApiMessage: response => response.monitor?.apiError?.message || 'Portal error',
     getProperty24ReadinessCounts: () => ({ dataBlockers: 0, technicalBlockers: 0 }), getPrivatePropertyReadinessCounts: () => ({ dataBlockers: 0, technicalBlockers: 0, readinessBlockers: 0 }),
+    getProperty24ReadinessIssues: response => [...(response.preview?.dataBlockers || []), ...(response.preview?.technicalBlockers || [])],
+    getProperty24ApiMessage: response => response.message || 'Portal error',
     saveMarketingDraft: vi.fn(async draft => { calls.push(['save', draft]); return { ok: true, draft } }),
     loadListingData: vi.fn(async () => {}), openSellerWorkspaceSection: vi.fn(), profile: { id: 'agent-1' },
     recordListingPublicationStage: vi.fn(async (...args) => { calls.push(['stage', ...args]); return { id: 'event-1' } }),
@@ -55,16 +60,25 @@ function fixture(overrides = {}) {
     openPropertyDetailsFromMarketing: vi.fn(), setRelistChannel: vi.fn(), setChannelRemoval: vi.fn(), setChannelRemovalError: vi.fn(),
     window: { dispatchEvent() {} }, Event: class {},
   }
-  for (const name of ['setProperty24ManageOpen', 'setPrivatePropertyManageOpen', 'setManagedWebsiteChannel', 'setChannelManageCheckedAt', 'setProperty24Action', 'setPrivatePropertyAction', 'setDetailError', 'setDetailMessage', 'setProperty24Preview', 'setPrivatePropertyPreview', 'setProperty24StatusCheck', 'setPrivatePropertyStatusCheck', 'setMarketingDraft', 'setChannelManageBusy', 'setQuickListingBusy', 'setQuickListingResults', 'setQuickListingResultAction', 'setWebsiteRefreshKey', 'setAgencyWebsitePublication', 'setKingdomWebsitePublication']) ctx[name] = vi.fn()
+  for (const name of ['setProperty24ManageOpen', 'setPrivatePropertyManageOpen', 'setManagedWebsiteChannel', 'setChannelManageCheckedAt', 'setChannelExpiries', 'setProperty24Action', 'setPrivatePropertyAction', 'setDetailError', 'setDetailMessage', 'setProperty24Preview', 'setPrivatePropertyPreview', 'setProperty24StatusCheck', 'setPrivatePropertyStatusCheck', 'setMarketingDraft', 'setChannelManageBusy', 'setQuickListingBusy', 'setQuickListingResults', 'setQuickListingResultAction', 'setWebsiteRefreshKey', 'setAgencyWebsitePublication', 'setKingdomWebsitePublication']) ctx[name] = vi.fn()
   Object.assign(ctx, overrides)
   vm.createContext(ctx)
-  for (const name of ['publishProperty24Listing', 'publishPrivatePropertyListing', 'refreshProperty24ListingStatus', 'refreshPrivatePropertyListingStatus', 'sendQuickListingPortalUpdate', 'saveSimpleChannelManagement', 'removeSelectedChannel', 'saveConfirmedPortalLink', 'simpleChannelMenu', 'renderSimpleChannelManagePanel']) {
+  for (const name of ['previewProperty24Listing', 'previewPrivatePropertyListing', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'refreshProperty24ListingStatus', 'refreshPrivatePropertyListingStatus', 'sendQuickListingPortalUpdate', 'saveSimpleChannelManagement', 'saveManagedListingExpiry', 'removeSelectedChannel', 'saveConfirmedPortalLink', 'simpleChannelMenu', 'renderSimpleChannelManagePanel']) {
     const code = transformSync(controllerSource(name), { loader: 'jsx', jsx: 'transform', jsxFactory: 'React.createElement' }).code
     vm.runInContext(code, ctx)
   }
   const close = vi.fn()
   return { ctx, calls, close, popup: channel => ctx.renderSimpleChannelManagePanel(channel, close).props }
 }
+
+it.each(['Property24', 'Private Property'])('Manage blocks %s updates while seller draft differences await review', async channel => {
+  const { ctx, popup } = fixture({ listingRecord: { id: 'listing-1', sellerOnboarding: {
+    status: 'completed', draftComparison: { differences: [{ key: 'askingPrice', status: 'pending' }] },
+  } } })
+  await expect(popup(channel).onUpdate()).rejects.toThrow('Review 1 difference')
+  expect(ctx.callProperty24ListingAction).not.toHaveBeenCalled()
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
+})
 
 it.each(['Property24', 'Private Property'])('Manage updates only the existing %s advert', async channel => {
   const { ctx, calls, popup } = fixture()
@@ -113,15 +127,13 @@ it.each(['Property24', 'Private Property', 'Agency Website', 'Kingdom Website'])
   if (channel === 'Private Property') { expect(ctx.expirePrivatePropertyListing).toHaveBeenCalledWith({ skipConfirmation: true, throwOnError: true }); expect(ctx.withdrawProperty24Listing).not.toHaveBeenCalled() }
   expect(ctx.createPrivateListingActivity).toHaveBeenCalled()
 })
-it('Expire calls the existing Property24 expiry handler only', async () => {
+it.each([false, true])('expiry saves the selected scope (all=%s) through the real controller', async all => {
   const { ctx, popup } = fixture()
-  popup('Property24').onExpire()
-  expect(ctx.setChannelRemoval).toHaveBeenCalledWith({ channel: 'Property24', action: 'expire' })
-  ctx.channelRemoval = { channel: 'Property24', action: 'expire' }
-  await ctx.removeSelectedChannel()
-  expect(ctx.expireProperty24Listing).toHaveBeenCalledWith({ skipConfirmation: true, throwOnError: true })
-  expect(ctx.withdrawProperty24Listing).not.toHaveBeenCalled()
-  expect(popup('Private Property').onExpire).toBeUndefined()
+  const outcome = await popup('Property24').onSaveExpiry({ expiryDate: '2099-12-31', applyToAllChannels: all })
+  expect(outcome.ok).toBe(true)
+  expect(ctx.saveListingChannelExpiry).toHaveBeenCalledWith('listing-1', { expiryDate: '2099-12-31', channels: all ? ['Property24', 'Private Property', 'Agency Website', 'Kingdom Website'] : ['Property24'], previous: [] })
+  expect(ctx.expireProperty24Listing).not.toHaveBeenCalled()
+  expect(ctx.saveMarketingDraft).not.toHaveBeenCalled()
 })
 it('refresh bypasses Private Property cached responses and exposes provider errors', async () => {
   const { ctx, popup } = fixture({ callPrivatePropertyListingAction: vi.fn(async () => ({ monitor: { apiError: { message: 'PP status unavailable.' } } })) })
@@ -186,4 +198,60 @@ it('a stale Under offer failure cannot overwrite a later Sold status', () => {
   ctx.marketingDraft.listingStatus = 'sold'
   expect(popup('Private Property').onRetry).toBeUndefined()
   expect(popup('Private Property').initialResults).toEqual([])
+})
+
+it.each(['Property24', 'Private Property'])('%s readiness reports the actual result without publishing an advert', async channel => {
+  const response = { ready: true, preview: { canSubmit: true, dataBlockers: [], technicalBlockers: [] } }
+  const api = vi.fn(async () => response)
+  const { ctx, popup } = fixture({ [channel === 'Property24' ? 'callProperty24ListingAction' : 'callPrivatePropertyListingAction']: api })
+  expect(await popup(channel).onPreview()).toEqual({ ok: true, message: `${channel} requirements passed. No advert was sent.` })
+  expect(api.mock.calls.map(row => row[0])).toEqual(['preview'])
+  expect(ctx.recordListingPublicationStage).not.toHaveBeenCalled()
+})
+it.each(['Property24', 'Private Property'])('%s readiness cannot report blockers or an incomplete response as success', async channel => {
+  const api = vi.fn().mockResolvedValueOnce({ ready: false, preview: { canSubmit: false, dataBlockers: ['Add a listing photo.'] } }).mockResolvedValueOnce({})
+  const { popup } = fixture({ [channel === 'Property24' ? 'callProperty24ListingAction' : 'callPrivatePropertyListingAction']: api })
+  expect(await popup(channel).onPreview()).toMatchObject({ ok: false, error: expect.stringContaining('Add a listing photo.') })
+  expect(await popup(channel).onPreview()).toMatchObject({ ok: false, error: expect.stringContaining('Readiness could not be confirmed') })
+})
+it('Agency Website hides internal preparation blockers and offers the complete publication path', async () => {
+  const publication = { websiteSiteId: 'agency-site', hostname: 'agency.test', websiteStatus: 'published', projectionStatus: 'Draft', status: 'not_published', blockers: ['Publish the listing projection before enabling the agency-website channel.', 'Prepare durable website copies for every listing image.'] }
+  const next = { ...publication, projectionStatus: 'Published', status: 'published', blockers: [] }
+  const { ctx, popup } = fixture({ agencyWebsitePublication: publication, setWebsiteListingPublication: vi.fn(async () => next) })
+  const props = popup('Agency Website')
+  expect(props.portal.issues).toEqual([])
+  expect(props.portal.publicUrl).toBe('')
+  expect(props.canPublish).toBe(true)
+  expect(props.preparationMessage).toContain('automatically')
+  expect(props.onUpdate).toBeUndefined()
+  expect(await props.onPublish()).toMatchObject({ ok: true, message: 'Agency Website listing published.' })
+  expect(ctx.prepareAgencyWebsiteListing).toHaveBeenCalledOnce()
+  expect(ctx.setWebsiteListingPublication).toHaveBeenCalledWith('listing-1', 'publish', { includePartner: false })
+  expect(ctx.recordListingPublicationStage).toHaveBeenLastCalledWith('Agency Website', 'accepted', ctx.marketingDraft, { action: 'publish', publicUrl: 'https://agency.test/properties/oak-avenue-listing-1' })
+  expect(ctx.publishKingdomWebsiteListing).not.toHaveBeenCalled()
+})
+it('a website with a published channel but a hidden projection keeps a repair action and withholds its public link', async () => {
+  const { popup } = fixture({ agencyWebsitePublication: { status: 'published', hostname: 'agency.test', websiteStatus: 'published', projectionStatus: 'Draft', blockers: ['Publish the listing projection before enabling the agency-website channel.'] } })
+  expect(popup('Agency Website').portal).toMatchObject({ statusLabel: 'Not visible on website', publicUrl: '', issues: [] })
+  expect(popup('Agency Website').canUpdate).toBe(true)
+})
+it('real website setup and missing-photo issues stay visible', () => {
+  const { popup } = fixture({ agencyWebsitePublication: { status: 'not_published', websiteStatus: 'draft', blockers: ['Publish the organisation website before publishing listing stock.', 'Add at least one public HTTPS listing image.'] } })
+  expect(popup('Agency Website').canPublish).toBe(false)
+  expect(popup('Agency Website').portal.issues).toEqual(['Make your agency website live in Website settings.', 'Add at least one photo to this listing.'])
+})
+it('Kingdom publication prepares its own saved snapshot without requiring an Agency Website projection', async () => {
+  const { ctx, popup } = fixture({ kingdomWebsitePublication: { status: 'not_published', hostname: 'kingdom.test', websiteStatus: 'published' } })
+  await popup('Kingdom Website').onPublish()
+  expect(ctx.saveMarketingDraft).toHaveBeenCalledOnce()
+  expect(ctx.prepareAgencyWebsiteListing).not.toHaveBeenCalled()
+  expect(ctx.publishKingdomWebsiteListing).toHaveBeenCalledWith('listing-1', 'publish')
+  expect(ctx.setWebsiteListingPublication).not.toHaveBeenCalled()
+})
+it.each(['Property24', 'Private Property'])('a %s confirmation-save failure is not recorded as a rejected portal submission', async channel => {
+  const saveMarketingDraft = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, error: new Error('Save conflict.') })
+  const { ctx, popup } = fixture({ saveMarketingDraft })
+  await expect(popup(channel).onUpdate()).rejects.toThrow('accepted the request, but Arch9 could not save its confirmation')
+  expect(ctx.recordListingPublicationStage.mock.calls.some(row => row[1] === 'failed')).toBe(false)
+  expect(ctx.recordListingPublicationStage.mock.calls.some(row => row[1] === 'submitted')).toBe(true)
 })

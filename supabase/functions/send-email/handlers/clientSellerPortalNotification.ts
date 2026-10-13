@@ -191,14 +191,23 @@ function defaultCtaLabel(eventKind: string) {
   return "Open Portal";
 }
 
-function actionLinkFor(
+export function buildClientSellerPortalActionLink(
   req: Request,
   payload: Record<string, unknown>,
   eventKind: string,
 ) {
   const direct = firstText(payload.actionLink, payload.action_link);
-  if (direct) return direct;
   const appBaseUrl = resolveAppBaseUrl(req);
+  if (eventKind === "client_portal_document_rejected") {
+    const token = firstText(
+      payload.sellerPortalToken,
+      payload.seller_portal_token,
+    );
+    return token && appBaseUrl
+      ? `${appBaseUrl}/client/${encodeURIComponent(token)}/selling`
+      : direct;
+  }
+  if (direct) return direct;
   if (!appBaseUrl) return "";
   const offerId = firstText(payload.offerId, payload.offer_id);
   const transactionId = firstText(
@@ -391,7 +400,7 @@ function contentFromPayload(
       documentTitle,
       reason,
     });
-  const actionLink = actionLinkFor(req, {
+  const actionLink = buildClientSellerPortalActionLink(req, {
     ...(payload as Record<string, unknown>),
     ...metadata,
   }, eventKind);

@@ -802,6 +802,7 @@ export function createPrivatePropertyListingPlan({
 
   const dataBlockers = []
   const technicalBlockers = []
+  if (publication.advertisingExpiryDate && expiryDate < new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())) dataBlockers.push('listing_advertising_expiry_date_has_passed')
 
   if (!branchId) dataBlockers.push('missing_private_property_branch_guid')
   if (!propertyId) dataBlockers.push('missing_property_id')

@@ -2,6 +2,7 @@ import { getSellerFicaOnboardingMissing } from '../../lib/sellerFicaOnboardingFi
 import { buildSellerFicaScope } from '../../lib/sellerFicaScopeModel.js'
 import { buildSellerSubject } from '../../lib/sellerSubjectModel.js'
 import { buildCanonicalSellerOnboardingPayload, validateSellerOnboardingFacts } from '../../services/documents/sellerOnboardingFactTransformer.js'
+import { readSellerOnboardingDraftComparison } from './sellerOnboardingDraftComparison.js'
 
 export const SELLER_ONBOARDING_REVIEW_CONTRACT = 'arch9-seller-onboarding-review-v1'
 
@@ -21,10 +22,12 @@ export function buildSellerOnboardingReviewChecklist({ formData = {}, listing = 
   const factValidation = validateSellerOnboardingFacts(facts, { draft: false })
   const subject = buildSellerSubject({ formData: form, listing, lead, canonicalFacts: facts })
   const scope = buildSellerFicaScope({ sellerSubject: subject, onboarding: form, canonicalFacts: facts })
+  const draftComparison = readSellerOnboardingDraftComparison(listing)
   const missing = [...new Set([
     ...factValidation.required.map((issue) => issue.message),
     ...getSellerFicaOnboardingMissing(form),
     ...subject.requiredSetupFields,
+    ...draftComparison.pending.map(item => `Review the ${item.label.toLowerCase()} difference from the listing draft`),
   ])]
   return {
     ready: missing.length === 0,
@@ -33,6 +36,7 @@ export function buildSellerOnboardingReviewChecklist({ formData = {}, listing = 
     subject,
     scope,
     facts,
+    draftComparison,
   }
 }
 

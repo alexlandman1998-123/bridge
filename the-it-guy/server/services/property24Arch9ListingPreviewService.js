@@ -1,3 +1,4 @@
+import { readListingAdvertisingExpiry } from './listingAdvertisingExpiry.js'
 import { refreshListingPhotoUrls } from '../../src/services/listings/listingPhotoStorage.js'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
@@ -176,9 +177,11 @@ export async function fetchArch9ListingForProperty24Preview({ client, listingId 
     fetchOptionalSingle(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedListingId),
   ])
 
+  const advertisingExpiry = await readListingAdvertisingExpiry(client, normalizedListingId, 'property24', onboarding?.form_data?.listingExpiryDate || '')
+
   return {
     listing: hydrateListingFromOnboarding(listing, onboarding || {}),
-    publication: publication || {},
+    publication: { ...(publication || {}), ...(advertisingExpiry ? { property24ExpiryDate: advertisingExpiry, advertisingExpiryDate: advertisingExpiry } : {}) },
     media: listing.listing_category === 'rental' ? await refreshListingPhotoUrls(client, media, { strict: true }) : media,
     existingSync: existingSync || {},
   }
@@ -551,7 +554,7 @@ export function createProperty24Arch9ListingPreview({
     existingSync,
     agentMapping,
     catalogMapping,
-    options,
+    options: { ...options, ...(publication.advertisingExpiryDate ? { expiryDate: publication.advertisingExpiryDate } : {}) },
   })
 
   return {

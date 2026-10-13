@@ -46,3 +46,11 @@ it('can inspect only the owned website without duplicating an authorised partner
   await expect(setWebsiteListingPublication('listing', 'invalid')).rejects.toThrow(/valid website publication action/)
   expect(mocks.invoke).not.toHaveBeenCalled()
 })
+
+it('an explicit Agency Website action never redirects to the partner website if the agency connection disappears', async () => {
+  mocks.invoke.mockResolvedValue({ error: new Error('The agency website is not connected.') })
+  await expect(setWebsiteListingPublication('listing', 'publish', { includePartner: false })).rejects.toThrow('The agency website is not connected.')
+  expect(mocks.getPartner).not.toHaveBeenCalled()
+  expect(mocks.setPartner).not.toHaveBeenCalled()
+  expect(mocks.invoke).toHaveBeenCalledWith('website-listing-publication', { body: { listingId: 'listing', action: 'publish' } })
+})

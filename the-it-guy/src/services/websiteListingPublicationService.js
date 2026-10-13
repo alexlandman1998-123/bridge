@@ -30,11 +30,11 @@ export async function getWebsiteListingPublicationStatus(listingId, { includePar
   return describePublication(publication)
 }
 
-export async function setWebsiteListingPublication(listingId, action) {
+export async function setWebsiteListingPublication(listingId, action, { includePartner = true } = {}) {
   const client = requirePublicationClient(listingId)
   const safeAction = String(action || '').trim().toLowerCase()
   if (!['publish', 'update', 'unpublish'].includes(safeAction)) throw new Error('Choose a valid website publication action.')
-  const destination = await getWebsiteListingPublicationStatus(listingId)
+  const destination = await getWebsiteListingPublicationStatus(listingId, { includePartner })
   if (destination.websiteChannel === 'kingdom_website') {
     return describePublication(await setKingdomWebsitePublication(listingId, safeAction), true)
   }

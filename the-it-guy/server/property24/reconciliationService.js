@@ -518,12 +518,19 @@ export function normalizeProperty24LeadForImport(lead = {}, listingMap = new Map
   const phone = normalizeProperty24Text(extractLeadValue(lead, 'contactNumber', 'ContactNumber', 'mobile', 'Mobile', 'phoneNumber', 'PhoneNumber', 'telephone', 'Telephone'))
   const message = normalizeProperty24Text(extractLeadValue(lead, 'message', 'Message', 'comments', 'Comments', 'body', 'Body'))
   const receivedAt = toIsoDate(extractLeadValue(lead, 'receivedAt', 'ReceivedAt', 'createdAt', 'CreatedAt', 'date', 'Date'))
-  const externalReference = normalizeProperty24Text(extractLeadValue(lead, 'id', 'Id', 'leadId', 'LeadId', 'reference', 'Reference'))
-    || createLeadDedupeKey({ listingNumber, email, phone, message, receivedAt })
+  const providerReference = normalizeProperty24Text(extractLeadValue(lead, 'id', 'Id', 'leadId', 'LeadId', 'reference', 'Reference'))
+  const dedupeKey = createLeadDedupeKey({ listingNumber, email, phone, message, receivedAt })
+  const externalReference = providerReference || dedupeKey
+  // Imports before contactNumber support hashed the same enquiry without
+  // that phone field. Keep its old identity available during rolling replay.
+  // The importer also compares the saved raw enquiry before reusing it.
+  const legacyPhone = normalizeProperty24Text(extractLeadValue(lead, 'mobile', 'Mobile', 'phoneNumber', 'PhoneNumber', 'telephone', 'Telephone'))
+  const legacyReference = createLeadDedupeKey({ listingNumber, email, phone: legacyPhone, message, receivedAt })
   return {
     source: 'Property24',
     externalReference,
-    dedupeKey: createLeadDedupeKey({ listingNumber, email, phone, message, receivedAt }),
+    dedupeKey,
+    legacyExternalReferences: !providerReference && legacyReference !== dedupeKey ? [legacyReference] : [],
     listingNumber,
     listingId: local?.listingId || null,
     organisationId: local?.listing?.organisationId || null,

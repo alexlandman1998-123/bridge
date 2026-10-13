@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises'
 import { matchRoutes } from 'react-router-dom'
 
 const source = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const draftService = await readFile(new URL('../src/services/sellerLeadDraftListingService.js', import.meta.url), 'utf8')
+
+const focusedPropertyOnly = process.argv.includes('--property-title-only') || process.argv.includes('--property-profile-only')
+const propertyEditor = source.slice(source.indexOf("sellerLeadEditMode === 'property' ? ("), source.indexOf("sellerLeadEditMode === 'characteristics' ? ("))
+
+if (!focusedPropertyOnly) {
 
 const propertyWorkspaceStart = source.indexOf("leadWorkspaceTab === 'property'")
 assert.notEqual(propertyWorkspaceStart, -1, 'Seller lead property workspace block is missing.')
@@ -27,7 +33,7 @@ assert.ok(propertyWorkspace.includes('Property Characteristics'), 'Seller lead P
 assert.ok(propertyWorkspace.includes('Occupancy & Ownership'), 'Seller lead Property workspace should still render occupancy and ownership.')
 assert.ok(propertyWorkspace.includes('Listing not created'), 'Pre-mandate property record should be shown as an uncreated listing.')
 assert.ok(!propertyWorkspace.includes('listing.status}'), 'The raw private listing status must not appear in the indicator.')
-assert.ok(propertyWorkspace.includes('selectedSellerJourney.onboardingSubmitted ? ('), 'Create Draft Listing must require submitted onboarding.')
+assert.ok(propertyWorkspace.includes('hasSellerLeadDraftAddress({ lead: selectedLead, listing: selectedLeadLinkedListing }) ? ('), 'Create Draft Listing must require a saved property address.')
 assert.ok(propertyWorkspace.includes('handleCreateSellerPropertyDraftListing()'), 'Listing readiness must use the private draft creation action.')
 assert.ok(propertyWorkspace.includes('Open {selectedLeadPropertyWorkspace.listing.isPrivateDraft'), 'A created draft must be openable from Listing & Readiness.')
 // Execute the rendered navigation callback, then resolve it against the app's
@@ -55,7 +61,6 @@ for (const listingId of ['11111111-2222-4333-8444-555555555555', 'draft / one'])
 }
 assert.ok(!propertyWorkspace.includes("handleSellerJourneyAction('create_listing')"), 'Listing readiness must not use the mandate-gated journey action.')
 
-const propertyEditor = source.slice(source.indexOf("sellerLeadEditMode === 'property' ? ("), source.indexOf("sellerLeadEditMode === 'characteristics' ? ("))
 for (const field of ['propertyAddress', 'propertyType', 'erfNumber', 'sectionalTitle', 'sectionNumber', 'unitNumber', 'propertySuburb', 'propertyCity', 'propertyProvince', 'propertyPostalCode']) {
   assert.ok(propertyEditor.includes(`updateSellerProfileEditField('${field}'`), `Property Profile editor is missing ${field}.`)
 }
@@ -71,8 +76,8 @@ for (const removedLabel of ["{ label: 'Scheme name'", "{ label: 'GPS coordinates
 assert.ok(propertyWorkspace.includes('xl:self-stretch'), 'Property Characteristics and Occupancy cards should stretch to equal height on desktop.')
 assert.ok(propertyEditor.includes('ownershipScheme: value'), 'Property title type must update the stored structure type.')
 assert.ok(source.includes("'listing_review', 'mandate_ready'"), 'An explicit private review draft must count as a listing while an intake shell does not.')
-assert.ok(source.includes('createPrivateDraft: true,') && source.includes('suppressSellerPortalInvite: true,'), 'Private draft creation must suppress the seller portal invite.')
-assert.ok(source.includes("listingStatus: 'listing_review'"), 'An existing seller intake shell must be promoted to a private review draft.')
+assert.ok(draftService.includes("listingStatus: 'seller_lead', listingVisibility: 'internal', isActive: false"), 'Draft creation must start from an inactive internal seller record.')
+assert.ok(draftService.includes("listingStatus: 'listing_review'"), 'An existing seller intake shell must be promoted to a private review draft.')
 for (const field of ['estateComplexName', 'erfNumber', 'schemeName', 'sectionNumber', 'unitNumber', 'propertyPostalCode', 'latitude', 'longitude']) {
   assert.ok(source.includes(`${field}: normalizeText(form.`), `Manual property capture does not persist ${field}.`)
 }
@@ -81,6 +86,8 @@ console.log('Seller lead property workspace presentation and capture contract ve
 
 // Execute the production readers and save handler against isolated persisted
 // fixtures: stale CRM data must not win after saving, clearing, or reopening.
+}
+
 const { getListingSellerFormData, createListingSellerProfileBuilderDraft } = await import('../src/lib/listingSellerProfileBuilderModel.js')
 const { projectSellerProfilePeople } = await import('../src/lib/sellerProfileCaptureModel.js')
 const { resolveSellerLeadOwnershipRoute } = await import('../src/lib/sellerLeadOwnershipSetupModel.js')
@@ -94,7 +101,7 @@ const normalizeStart = source.indexOf('function normalizeText(')
 const normalizeEnd = source.indexOf('\nfunction asRecord(', normalizeStart)
 const normalizeText = Function(`${source.slice(normalizeStart, normalizeEnd)}; return normalizeText`)()
 const capturedText = value => String(value ?? '').trim()
-const normalizeKey = value => normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+const normalizeKey = value => normalizeText(value).toLowerCase()
 const isPlainObject = value => Boolean(value && typeof value === 'object' && !Array.isArray(value))
 function functionsBetween(first, last) {
   const start = source.indexOf(`function ${first}(`)
@@ -117,6 +124,70 @@ const readers = Function(...Object.keys(dependencies), [
   functionsBetween('getLeadSellerOnboardingFormData', 'hasLeadSellerOnboardingFormData'),
   'return { view: buildSellerPropertyWorkspaceViewModel, edit: buildKingstonsSellerProfileEditForm, form: buildKingstonsSellerProfileFormData, patch: buildSellerPropertyCharacteristicsPatch, onboarding: getWorkspaceSellerOnboarding, latest: retainLatestSellerListing }',
 ].join('\n'))(...Object.values(dependencies))
+
+const propertyRows = (formData, propertyDetails = {}) => readers.view({
+  listing: { id: 'title-visibility', sellerOnboarding: { status: 'in_progress', formData }, propertyDetails },
+}).profile.rows
+for (const propertyStructureType of ['full_title', 'Full Title', 'freehold', 'agricultural_holding']) {
+  const rows = propertyRows({ propertyStructureType, propertyType: 'house', sectionalTitle: true,
+    sectionNumber: 'Old section', unitNumber: 'Old unit', schemeName: 'Old scheme', estateOrHoa: false })
+  for (const label of ['Sectional title', 'Section number', 'Unit number', 'Complex / Estate / Scheme']) {
+    assert.ok(!rows.some(row => row.label === label), `${propertyStructureType} must hide irrelevant ${label}, including stale saved values.`)
+  }
+  assert.ok(rows.some(row => row.label === 'Erf / Stand number'))
+}
+const ordinaryFullTitle = propertyRows({ propertyStructureType: 'full_title', sectionalTitle: false })
+assert.ok(!ordinaryFullTitle.some(row => row.label === 'Complex / Estate / Scheme'), 'An ordinary full-title property must not show an empty scheme block.')
+const estateRows = propertyRows({ propertyStructureType: 'full_title', estateOrHoa: true, estateName: 'Garston Estate' })
+assert.equal(estateRows.find(row => row.label === 'Complex / Estate / Scheme')?.value, 'Garston Estate')
+assert.ok(!estateRows.some(row => row.label === 'Section number'))
+for (const propertyStructureType of ['sectional_title', 'Sectional Title', 'share_block']) {
+  const rows = propertyRows({ propertyStructureType, sectionalTitle: false, sectionNumber: '12', unitNumber: '7', schemeName: 'Example Scheme' })
+  assert.equal(rows.find(row => row.label === 'Complex / Estate / Scheme')?.value, 'Example Scheme')
+  assert.equal(rows.find(row => row.label === 'Section number')?.value, '12')
+  assert.equal(rows.find(row => row.label === 'Unit number')?.value, '7')
+}
+const legacySectionalRows = propertyRows({ sectionalTitle: true, sectionNumber: 'Legacy section' })
+assert.equal(legacySectionalRows.find(row => row.label === 'Section number')?.value, 'Legacy section')
+const legacyFullTitleRows = propertyRows({}, { propertyStructureType: 'Full Title', sectionalTitle: true, sectionNumber: 'Stale section' })
+assert.ok(!legacyFullTitleRows.some(row => row.label === 'Section number'))
+assert.ok(propertyEditor.includes("['sectional_title', 'share_block'].includes(normalizeKey(sellerProfileEditForm.ownershipScheme).replace(/[\\s-]+/g, '_'))"), 'The property editor must hide sectional fields for other title types.')
+
+const occupancyRows = formData => readers.view({ listing: {
+  id: 'occupancy-visibility', sellerOnboarding: { status: 'in_progress', formData },
+} }).occupancy.rows
+for (const occupancyStatus of ['owner_occupied', 'Owner Occupied', 'vacant', 'unknown']) {
+  const form = { occupancyStatus, tenantName: 'Old tenant', leaseExists: true, leaseExpiryDate: '2027-01-01',
+    currentOccupants: 'Old occupants', tenancyStatus: 'Old tenancy', ratesTaxes: 100, levies: 100 }
+  const before = structuredClone(form)
+  const rows = occupancyRows(form)
+  for (const label of ['Current occupants', 'Tenancy', 'Tenant name', 'Lease exists', 'Lease expiry date', 'Lease end date', 'Vacant from', 'Viewing availability', 'Access arrangement']) {
+    assert.ok(!rows.some(row => row.label === label), `${occupancyStatus} must hide irrelevant or empty ${label}.`)
+  }
+  assert.equal(rows.find(row => row.label === 'Rates & taxes')?.value, '100')
+  assert.equal(rows.find(row => row.label === 'Levies')?.value, '100')
+  assert.deepEqual(form, before, 'Hiding rows must never erase saved evidence or previous tenant answers.')
+}
+assert.equal(occupancyRows({ occupancyStatus: 'owner_occupied' })[0].value, 'Owner Occupied')
+for (const occupancyStatus of ['tenant_occupied', 'partially_occupied']) {
+  const rows = occupancyRows({ occupancyStatus, tenantName: 'Sam Tenant', leaseExists: true, leaseExpiryDate: '2027-01-01' })
+  assert.equal(rows.find(row => row.label === 'Tenant name')?.value, 'Sam Tenant')
+  assert.equal(rows.find(row => row.label === 'Lease exists')?.value, true)
+  assert.equal(rows.find(row => row.label === 'Lease expiry date')?.value, '2027-01-01', 'Use the field actually collected in onboarding.')
+  const noLease = occupancyRows({ occupancyStatus, leaseExists: false, leaseExpiryDate: 'Old lease date' })
+  assert.equal(noLease.find(row => row.label === 'Lease exists')?.value, false)
+  assert.ok(!noLease.some(row => row.label === 'Lease expiry date'))
+  assert.ok(!noLease.some(row => row.label === 'Tenant name'), 'An empty optional tenant name should not add a placeholder.')
+}
+const viewingRows = occupancyRows({ occupancyStatus: 'owner_occupied', viewingAvailabilityWindows: 'Weekends', viewingAccessInstructions: 'Call first.' })
+assert.equal(viewingRows.find(row => row.label === 'Viewing availability')?.value, 'Weekends')
+assert.equal(viewingRows.find(row => row.label === 'Access arrangement')?.value, 'Call first.')
+assert.equal(occupancyRows({ occupancyStatus: 'vacant', vacantFrom: '2026-10-01' }).find(row => row.label === 'Vacant from')?.value, '2026-10-01')
+console.log('Seller occupancy visibility passed: owner, vacant, tenant and partially occupied; actual lease fields and optional viewing details.')
+
+console.log('Seller property title visibility passed: full-title fields, sectional/share-block fields, estate names and legacy title flags.')
+
+if (!focusedPropertyOnly) {
 const savedForm = {
   ownerEntityType: 'natural_person', ownerStructureType: 'individual', sellerLegalType: 'individual',
   ownershipRouteConfirmed: true, sellerFirstName: 'Fixture', sellerSurname: 'Owner', email: 'fixture@example.test',
@@ -194,7 +265,7 @@ async function runSave({ failCommit = false, failCrm = false, busy = false, unch
     form.email = String(baselineForm.email || '').toUpperCase()
     if (mode === 'characteristics') form.incomeTaxNumber = 'Hidden field must not be submitted'
   }
-  const baselineRef = { current: { leadId: baselineLeadId, form: structuredClone(baselineForm) } }
+  const baselineRef = { current: { leadId: baselineLeadId, form: structuredClone(baselineForm), listing: structuredClone(listing) } }
   const scope = {
     ...dependencies, organisationId: 'fixture-org', selectedLead: staleLead,
     selectedLeadContact: { contactId: 'fixture-contact' }, selectedLeadLinkedListing: listing,
@@ -253,7 +324,7 @@ async function runSave({ failCommit = false, failCrm = false, busy = false, unch
   return { state, form }
 }
 const { state, form } = await runSave()
-assert.equal(state.closed, true)
+assert.equal(state.closed, true, state.error)
 assert.equal(state.busy, false)
 assert.equal(state.contactCalls, 0)
 assert.equal(state.activityCalls, 1)
@@ -271,8 +342,9 @@ assert.equal(failed.error, 'Property save failed')
 assert.equal(failed.busy, false)
 assert.equal(failed.crmCalls, 0)
 const crmFailed = (await runSave({ failCrm: true })).state
-assert.equal(crmFailed.closed, false)
-assert.match(crmFailed.error, /saved on the listing/)
+assert.equal(crmFailed.closed, true)
+assert.equal(crmFailed.error, '')
+assert.match(crmFailed.message, /Seller details saved.*you do not need to save the seller details again/)
 assertReadersUseSaved(staleLead, crmFailed.listing, form)
 assert.equal((await runSave({ busy: true })).state.input, undefined, 'Ignore a second submit while a save is already pending.')
 for (const mode of ['characteristics', 'profile', 'property', 'notes']) {
@@ -311,3 +383,5 @@ assert.equal(taxChanged.update.nextFormData.sellerOnboardingConsents.privacyProc
 assert.deepEqual(taxChanged.update.nextFormData.propertyDisclosure, savedForm.propertyDisclosure)
 assert.ok(source.includes('{error ? <p role="alert"'), 'Save errors must remain visible inside the open edit form.')
 console.log('Seller profile and characteristics: unchanged/reverted saves create no writes or activity; real edits, clears, zeroes, reopen, stale hydration and failures verified.')
+
+}

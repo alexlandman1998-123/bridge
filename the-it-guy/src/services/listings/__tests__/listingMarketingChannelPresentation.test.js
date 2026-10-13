@@ -9,11 +9,26 @@ import {
   buildKingdomWebsiteListingPublicUrl,
   validateListingPortalPublicUrl,
   getPrivatePropertyReadinessMessages,
+  getWebsiteListingReadiness,
   getListingChannelViewUrl,
   getListingLiveChannels,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
 } from '../listingMarketingChannelPresentation.js'
+
+test('website preparation steps are explained while actual publication blockers stay actionable', () => {
+  const steps = [
+    'Publish the listing projection before enabling the agency-website channel.',
+    'Prepare durable website copies for every listing image.',
+  ]
+  const automatic = getWebsiteListingReadiness(steps)
+  assert.deepEqual(automatic.issues, [])
+  assert.equal(automatic.infrastructureBlocked, false)
+  assert.match(automatic.preparationMessage, /automatically/)
+  const blocked = getWebsiteListingReadiness([...steps, 'Publish the organisation website before publishing listing stock.', 'Add at least one public HTTPS listing image.', 'Add a public listing title.'])
+  assert.equal(blocked.infrastructureBlocked, true)
+  assert.deepEqual(blocked.issues, ['Make your agency website live in Website settings.', 'Add at least one photo to this listing.', 'Add a public listing title.'])
+})
 
 test('listing cards show the agency website independently of the Arch9 catalogue', () => {
   const listing = { property24Status: 'active', property24Reference: '123', privatePropertyStatus: 'active', bridgeListingStatus: 'not_published' }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import ListingChannelManageDialog from '../ListingChannelManageDialog'
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const props = {
@@ -8,6 +8,7 @@ const props = {
   canUpdate: true, canRelist: true, canWithdraw: true, canExpire: true,
   listing: { address: '24 Oak Avenue', priceLabel: 'R 2,450,000', statusLabel: 'For sale' },
   portal: { reference: '116284', statusLabel: 'Live', publicUrl: 'https://www.property24.com/for-sale/example/116284', checkedAt: '2026-10-12T19:40:00Z', publicationState: { stage: 'accepted', submittedAt: '2026-10-12T19:39:00Z', publishedSnapshot: {}, changes: [{ key: 'price', label: 'Price', previousValue: '2500000', currentValue: '2450000' }] } },
+  onSaveExpiry: vi.fn(async () => ({ ok: true })), activeExpiryChannels: ['Property24', 'Private Property', 'Agency Website'],
   onClose: vi.fn(), onSave: vi.fn(async () => ({ ok: true })), onFix: vi.fn(), onRefresh: vi.fn(async () => ({ ok: true })), onPreview: vi.fn(async () => ({ ok: true })), onUpdate: vi.fn(async () => ({ ok: true })), onRelist: vi.fn(), onWithdraw: vi.fn(), onExpire: vi.fn(),
 }
 const click = name => fireEvent.click(screen.getByRole('button', { name, exact: true }))
@@ -45,6 +46,44 @@ it('checks status and requirements without sending an advert update', async () =
   expect(props.onPreview).toHaveBeenCalledOnce()
   expect(props.onUpdate).not.toHaveBeenCalled()
   expect(props.onSave).not.toHaveBeenCalled()
+})
+it.each([['Check requirements', 'onPreview', 'Checking Property24 requirements…'], ['Check latest status', 'onRefresh', 'Checking Property24 status…']])('shows progress and the result inside the popup for %s', async (button, callback, message) => {
+  let finish
+  const handler = vi.fn(() => new Promise(resolve => { finish = resolve }))
+  render(<ListingChannelManageDialog {...props} {...{ [callback]: handler }} />)
+  click(button)
+  const dialog = within(screen.getByRole('dialog'))
+  expect(dialog.getByRole('status').textContent).toContain(message)
+  expect(dialog.getByRole('status').querySelector('.animate-spin')).toBeTruthy()
+  expect(dialog.getByRole('button', { name: button }).disabled).toBe(true)
+  await act(async () => finish({ ok: true, message: 'Checked the saved listing. No advert sent.' }))
+  expect(dialog.getByRole('status').textContent).toBe('Checked the saved listing. No advert sent.')
+  expect(dialog.queryByText(message)).toBeNull()
+  expect(props.onClose).not.toHaveBeenCalled()
+})
+it('keeps a failed readiness result visible in the popup and permits another check', async () => {
+  const onPreview = vi.fn().mockResolvedValueOnce({ ok: false, error: 'Add a public title and listing photo.' }).mockResolvedValueOnce({ ok: true, message: 'Requirements passed.' })
+  render(<ListingChannelManageDialog {...props} onPreview={onPreview} />)
+  click('Check requirements')
+  expect((await screen.findByRole('alert')).textContent).toContain('Add a public title and listing photo.')
+  click('Check requirements')
+  await screen.findByText('Requirements passed.')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(props.onUpdate).not.toHaveBeenCalled()
+})
+it('publishes a website only after confirmation and explains automatic preparation', async () => {
+  let finish
+  const onPublish = vi.fn(() => new Promise(resolve => { finish = resolve }))
+  render(<ListingChannelManageDialog {...props} channelName="Agency Website" onUpdate={undefined} canPublish onPublish={onPublish} preparationMessage="Arch9 prepares the website details and photos automatically." />)
+  expect(screen.getByText('Arch9 prepares the website details and photos automatically.')).toBeTruthy()
+  click('Publish to website')
+  expect(onPublish).not.toHaveBeenCalled()
+  click('Publish listing')
+  expect(screen.getByRole('status').textContent).toContain('Preparing listing details and photos')
+  await act(async () => finish({ ok: true, message: 'Agency Website listing published.' }))
+  await screen.findByText('Agency Website listing published.')
+  expect(onPublish).toHaveBeenCalledOnce()
+  expect(props.onClose).not.toHaveBeenCalled()
 })
 it('requires confirmation before updating and retains the popup for results', async () => {
   render(<ListingChannelManageDialog {...props} />)
@@ -95,26 +134,34 @@ it.each(['sold', 'under_offer'])('confirms %s as a whole-listing status change',
   await waitFor(() => expect(onSave).toHaveBeenCalledWith({ listingStatus: status, expiryDate: props.expiryDate, retryResults: [] }))
   expect(await screen.findByText('Property24 · Accepted · check advert')).toBeTruthy()
 })
-it('extends expiry on Property24 without changing listing status', async () => {
+it.each([['Only Property24', false], ['Apply to all active channels', true]])('edits expiry then confirms %s without immediately expiring an advert', async (choice, all) => {
   render(<ListingChannelManageDialog {...props} />)
-  click('Extend expiry')
-  fireEvent.change(screen.getByLabelText('Listing expiry date'), { target: { value: '2026-12-31' } })
-  click('Save changes')
-  await waitFor(() => expect(props.onSave).toHaveBeenCalledWith({ listingStatus: 'active', expiryDate: '2026-12-31', retryResults: [] }))
-})
-it('blocks invalid expiry dates before any send', () => {
-  render(<ListingChannelManageDialog {...props} />)
-  click('Extend expiry')
-  fireEvent.change(screen.getByLabelText('Listing expiry date'), { target: { value: '2026-10-01' } })
-  expect(screen.getByRole('button', { name: 'Save changes' }).disabled).toBe(true)
+  click('Listing expiry')
+  fireEvent.change(screen.getByLabelText('Listing expiry date'), { target: { value: '2099-12-31' } })
+  click('Next')
+  expect(props.onSaveExpiry).not.toHaveBeenCalled()
+  expect(props.onExpire).not.toHaveBeenCalled()
+  expect(screen.getByText('Apply this expiry to all other active channels?')).toBeTruthy()
+  click(choice)
+  await waitFor(() => expect(props.onSaveExpiry).toHaveBeenCalledWith({ expiryDate: '2099-12-31', applyToAllChannels: all }))
   expect(props.onSave).not.toHaveBeenCalled()
 })
-it('never exposes expiry actions on Private Property', () => {
-  render(<ListingChannelManageDialog {...props} channelName="Private Property" canUpdateExpiry={false} canExpire={false} onExpire={undefined} />)
-  expect(screen.queryByRole('button', { name: 'Extend expiry' })).toBeNull()
+it('blocks invalid expiry dates before any save and retains edits when going back', () => {
+  render(<ListingChannelManageDialog {...props} />)
+  click('Listing expiry')
+  fireEvent.change(screen.getByLabelText('Listing expiry date'), { target: { value: '2020-10-01' } })
+  expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true)
+  expect(props.onSaveExpiry).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('Listing expiry date'), { target: { value: '2099-12-31' } })
+  click('Next'); click('Back')
+  expect(screen.getByLabelText('Listing expiry date').value).toBe('2099-12-31')
+})
+it.each(['Private Property', 'Agency Website', 'Kingdom Website'])('offers scheduled expiry for %s', channelName => {
+  render(<ListingChannelManageDialog {...props} channelName={channelName} />)
+  expect(screen.getByRole('button', { name: 'Listing expiry' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Expire advert' })).toBeNull()
 })
-it.each([['Relist / reactivate', 'onRelist'], ['Withdraw advert', 'onWithdraw'], ['Expire advert', 'onExpire'], ['Edit listing details', 'onFix']])('%s opens the corresponding existing workflow', (label, handler) => {
+it.each([['Relist / reactivate', 'onRelist'], ['Withdraw advert', 'onWithdraw'], ['Edit listing details', 'onFix']])('%s opens the corresponding existing workflow', (label, handler) => {
   render(<ListingChannelManageDialog {...props} />)
   click(label)
   expect(props[handler]).toHaveBeenCalledOnce()
@@ -122,7 +169,7 @@ it.each([['Relist / reactivate', 'onRelist'], ['Withdraw advert', 'onWithdraw'],
 })
 it('disables inappropriate actions for an inactive advert and completed sale', () => {
   render(<ListingChannelManageDialog {...props} listingStatus="sold" canUpdate={false} canRelist={false} canWithdraw={false} canExpire={false} />)
-  for (const label of ['Update advert', 'Relist / reactivate', 'Withdraw advert', 'Expire advert', 'Change listing status']) expect(screen.getByRole('button', { name: label }).disabled).toBe(true)
+  for (const label of ['Update advert', 'Relist / reactivate', 'Withdraw advert', 'Change listing status']) expect(screen.getByRole('button', { name: label }).disabled).toBe(true)
 })
 it('shows durable portal failures, warnings and readable technical details', () => {
   const detail = 'System.SoapException: the supplier rejected this request.'

@@ -1,3 +1,4 @@
+import { readListingAdvertisingExpiry } from './listingAdvertisingExpiry.js'
 import { refreshListingPhotoUrls } from '../../src/services/listings/listingPhotoStorage.js'
 import { createPrivatePropertyListingPlan } from './privatePropertyListingMapper.js'
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
@@ -114,9 +115,11 @@ export async function fetchArch9ListingForPrivatePropertyPreview({ client, listi
     fetchOptionalSingle(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedListingId),
   ])
 
+  const advertisingExpiry = await readListingAdvertisingExpiry(client, normalizedListingId, 'private_property', onboarding?.form_data?.listingExpiryDate || '')
+
   return {
     listing: hydratePrivatePropertyListingFromOnboarding(listing, onboarding || {}),
-    publication: publication || {},
+    publication: { ...(publication || {}), ...(advertisingExpiry ? { expiryDate: advertisingExpiry, advertisingExpiryDate: advertisingExpiry } : {}) },
     media: listing.listing_category === 'rental' ? await refreshListingPhotoUrls(client, media, { strict: true }) : media,
     existingSync: existingSync || {},
   }
@@ -154,6 +157,7 @@ export function createPrivatePropertyArch9ListingPreview({
   agentMapping = {},
   options = {},
 } = {}) {
+  options = { ...options, ...(publication.advertisingExpiryDate ? { expiryDate: publication.advertisingExpiryDate } : {}) }
   const plan = isPrivatePropertyRentalListing(listing, options)
     ? createPrivatePropertyRentalListingPlan({
       listing,

@@ -89,7 +89,7 @@ assert.match(service, /payload\?\.error/, 'shows the actionable Edge Function er
 for (const label of ['Publish', 'Update website', 'Remove from website', 'Refresh status', 'View listing']) {
   assert.match(panel, new RegExp(label, 'i'), `renders the ${label} control`)
 }
-assert.match(panel, /SlidersHorizontal/, 'groups secondary website actions in the channel menu')
+assert.match(panel, /manageActions \|\| <ListingChannelManageMenu/, 'supports the shared website Manage control')
 assert.match(panel, /Agency Website/, 'renders the website as a first-class listing channel')
 assert.match(panel, /mediaCleanupPending/i, 'surfaces incomplete public media cleanup')
 assert.match(listingDetail, /<WebsiteListingPublicationPanel/, 'mounts the channel controls in listing detail')
@@ -98,9 +98,9 @@ assert.match(panel, /Live on website/, 'labels a published website listing as li
 assert.match(panel, /Agency Website/, 'identifies the first-party website channel')
 assert.match(listingDetail, /prepareAgencyWebsiteListing/, 'saves current CRM details before a channel publish/update')
 assert.match(panel, /const hasConnectedWebsite = Boolean\(publication\?\.websiteSiteId && publication\?\.hostname\)/, 'only treats an active website with a domain as a listing channel')
-assert.match(panel, /if \(!hasConnectedWebsite\) return null/, 'hides the website channel until a connected website exists')
-assert.match(panel, /SlidersHorizontal size=\{15\}[^]*?Manage/, 'groups website-channel actions under Manage')
-assert.match(listingDetail, /function DistributionChannel\([^]*?const manageActions = \[primaryAction, secondaryAction, \.\.\.menuActions\]/, 'groups portal-channel actions under one Manage control')
+assert.match(panel, /if \(!hasConnectedWebsite\) return showConnectionState && !hideDisconnected[^]*?: null/, 'hides disconnected channels or shows their requested setup state')
+assert.match(listingDetail, /manageActions=\{simpleChannelMenu\('Agency Website'\)\}/, 'opens the shared website Manage popup')
+assert.match(listingDetail, /function DistributionChannel\([^]*?const manageActions = \[secondaryAction, \.\.\.menuActions\]/, 'keeps the direct portal Manage action separate from secondary menu actions')
 assert.doesNotMatch(listingDetail, /\.\.\.\(agencyWebsiteLink \? \[\{/, 'does not render a separate manual website row ahead of the connected website channel')
 
 assert.match(publicRepository, /from\('website_listing_publications'\)/, 'public rendering requires an explicit website-channel row')

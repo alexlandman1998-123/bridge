@@ -115,11 +115,11 @@ export default function LeadDocumentWorkspace({
 
         <section className="mt-5 overflow-hidden rounded-[20px] border border-[#e3edf7] bg-[#f7fafc] shadow-[0_8px_22px_rgba(31,54,78,0.04)]" data-testid={`${partyType}-documents-list`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8eff6] px-5 py-4">
-            <div>
+            {partyType !== 'seller' ? <div>
               <h5 className="text-base font-semibold text-[#102033]">Documents</h5>
-              <p className="mt-1 text-xs text-[#7890a8]">{partyType === 'seller' ? 'Shared with the linked listing. Uploaded files count as complete after review.' : 'Documents requested for this buyer, organised by purpose.'}</p>
-            </div>
-            <span className="rounded-full bg-[#eef3f7] px-3 py-1.5 text-xs font-semibold text-[#607891]">{summary.outstanding} outstanding</span>
+              <p className="mt-1 text-xs text-[#7890a8]">Documents requested for this buyer, organised by purpose.</p>
+            </div> : null}
+            <span className="ml-auto rounded-full bg-[#eef3f7] px-3 py-1.5 text-xs font-semibold text-[#607891]">{summary.outstanding} outstanding</span>
           </div>
           {displayedCategories.length ? (
             <div className="space-y-4 p-4 sm:p-5">

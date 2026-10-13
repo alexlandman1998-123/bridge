@@ -147,6 +147,10 @@ export async function runPrivatePropertyControlledPublishRehearsal({
   const normalizedListingId = normalizePrivatePropertyText(listingId)
   if (!normalizedListingId) throw new Error('--listing-id is required.')
   const normalizedEnvironment = normalizeEnvironment(environment)
+  if (apply) {
+    const sellerReview = await client.rpc('assert_seller_onboarding_draft_reviewed', { p_listing_id: normalizedListingId })
+    if (sellerReview.error) throw sellerReview.error
+  }
 
   let readiness = await buildPrivatePropertyGoLiveReadinessReport({
     client,

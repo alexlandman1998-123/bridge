@@ -1299,6 +1299,7 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     mandateType: normalizeText(listing.mandateType || listing.mandate_type || onboardingFormData.mandateType) || base.mandateType,
     mandateStartDate: normalizeText(listing.mandateStartDate || onboardingFormData.mandateStartDate),
     mandateEndDate: normalizeText(listing.mandateEndDate || onboardingFormData.mandateEndDate),
+    listingExpiryDate: normalizeText(onboardingFormData.listingExpiryDate || listingPropertyDetails.property24ExpiryDate || onboardingFormData.property24ExpiryDate),
     propertyAddress,
     formattedAddress,
     streetAddress: normalizeText(listing.streetAddress || propertyAddress),
@@ -3117,6 +3118,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     mandateStatusCaptured: false,
     mandateStartDate: '',
     mandateEndDate: '',
+    listingExpiryDate: '',
     commissionType: 'percentage',
     commissionValue: '',
     manualMandateStatus: 'not_started',
@@ -3358,6 +3360,12 @@ function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
     return normalized === 'mandate_signed' ? 'mandate_signed' : normalized
   }
   return 'listing_review'
+}
+
+function buildFinalSalesListingForm(form, { isCreateListingWorkspace, isEditListingWorkspace, isDeveloperWorkspace, editorRelistChannel = '' } = {}) {
+  if (!(isCreateListingWorkspace || isEditListingWorkspace) || isDeveloperWorkspace || editorRelistChannel || normalizeKey(form.listingType) === 'rental' || normalizeKey(form.visibility) === 'archived') return form
+  if (!['draft', 'seller_lead', 'onboarding_sent', 'onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_signed'].includes(normalizeKey(form.listingStatus))) return form
+  return { ...form, listingStatus: 'active' }
 }
 
 function resolveQuickListingVisibility(value, listingStatus = '') {
@@ -5088,7 +5096,10 @@ function AgentListings({ mobileEditor = false } = {}) {
     successMessage = 'Listing changes saved.',
     sendUpdates = false,
     relistChannel = editorRelistChannel,
+    listingForm = form,
+    publishDraft = false,
   } = {}) {
+    const form = listingForm
     if (draftRecoveryBlocked || editDraftConflict) { setError('Review the recovered draft before saving.'); return false }
     const listing = editListingRecord
     const listingId = getRemotePrivateListingId(listing) || editListingId
@@ -5195,6 +5206,7 @@ function AgentListings({ mobileEditor = false } = {}) {
       assignedAgentId: form.assignedAgentId || null,
       listingStatus: form.listingStatus || listing.listingStatus || listing.status || 'draft',
       listingVisibility: form.visibility || listing.listingVisibility || 'internal',
+      ...(publishDraft ? { listingVisibility: resolveQuickListingVisibility(form.visibility, form.listingStatus), isActive: true } : {}),
       title: listingTitle,
       propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
       listingSource: form.developmentId || linkedDevelopmentId ? 'development' : form.listingSource || 'private_listing',
@@ -5268,6 +5280,7 @@ function AgentListings({ mobileEditor = false } = {}) {
       mandateType: form.mandateType,
       mandateStartDate: form.mandateStartDate || '',
       mandateEndDate: form.mandateEndDate || '',
+      listingExpiryDate: form.listingExpiryDate || '',
     }
     const distributionLinks = Array.isArray(listing.externalLinks) ? [...listing.externalLinks] : []
     const property24Url = normalizeText(form.externalListingLink || listing.property24ListingUrl)
@@ -5481,8 +5494,9 @@ function AgentListings({ mobileEditor = false } = {}) {
     }
     recoveryProtection.markSaved()
     void clearListingRecoveryDraft(listingEditorDraftStorageKey).catch(() => {})
-    savedEditorFormRef.current = JSON.stringify(form)
+    savedEditorFormRef.current = JSON.stringify(publishDraft ? { ...form, visibility: listingPatch.listingVisibility } : form)
     setCloudSave({ status: 'saved', savedAt: new Date().toISOString() })
+    if (publishDraft) setForm(previous => ({ ...previous, listingStatus: listingPatch.listingStatus, visibility: listingPatch.listingVisibility }))
     setSavedChangesNotSent(!relistChannel && ['active', 'under_offer'].includes(listingPatch.listingStatus) && form.selectedSyndicationChannels?.some(key => ['property24', 'private_property', 'agency_website'].includes(key)))
     setError('')
     if (sendUpdates && !relistChannel && listingPublicationBlockMessage(listingPatch.listingStatus) && form.selectedSyndicationChannels?.some(key => ['property24', 'private_property', 'agency_website'].includes(key))) {
@@ -6089,7 +6103,8 @@ function AgentListings({ mobileEditor = false } = {}) {
     }
   }
 
-  async function performSaveListing() {
+  async function performSaveListing({ listingForm = form } = {}) {
+    const form = listingForm
     await photoDraftCreationRef.current
     const sellerName = form.sellerName.trim()
     const sellerSurname = form.sellerSurname.trim()
@@ -6563,6 +6578,7 @@ function AgentListings({ mobileEditor = false } = {}) {
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
           listingStatus: resolvedListingStatus,
+          isActive: ['active', 'under_offer'].includes(resolvedListingStatus),
           sellerOnboardingStatus: 'not_started',
           mandateStatus: initialMandateStatus,
           listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingStatus),
@@ -7349,10 +7365,28 @@ function AgentListings({ mobileEditor = false } = {}) {
     finally { setPublicationStatusBusy(false) }
   }
 
+  async function saveListingSetupDraft() {
+    if (!isEditListingWorkspace) return saveCreateListingDraft()
+    if (draftRecoveryBlocked || editDraftConflict || isListingSaving || listingSaveInFlightRef.current || publicationStatusBusy || publicationPending || publicationUncertain) return
+    listingSaveInFlightRef.current = true
+    setIsListingSaving(true)
+    setError('')
+    try {
+      await performUpdateExistingListing({ sendUpdates: false, navigateAfterSave: false, successMessage: 'Draft saved. No adverts were sent.' })
+    } catch (saveError) {
+      setCloudSave({ status: 'error' })
+      setError(saveError.message || 'The draft could not be saved.')
+    } finally {
+      listingSaveInFlightRef.current = false
+      setIsListingSaving(false)
+    }
+  }
+
   async function handleSaveListing(event) {
     event.preventDefault()
     if (draftRecoveryBlocked || editDraftConflict) return
-    if ((isCreateListingWorkspace || isEditListingWorkspace) && ['active', 'under_offer'].includes(form.listingStatus) && listingFieldIssues.length) {
+    const submissionForm = buildFinalSalesListingForm(form, { isCreateListingWorkspace, isEditListingWorkspace, isDeveloperWorkspace, editorRelistChannel })
+    if ((isCreateListingWorkspace || isEditListingWorkspace) && ['active', 'under_offer'].includes(submissionForm.listingStatus) && listingFieldIssues.length) {
       setValidationAttemptedStep(listingFieldIssues[0].step); setCreateListingStep(listingFieldIssues[0].step); setError(''); return
     }
     if (isCreateListingWorkspace && createListingDraftHydratedKey !== createListingDraftScopeKey) return
@@ -7367,9 +7401,9 @@ function AgentListings({ mobileEditor = false } = {}) {
       }
       setIsListingSaving(true)
       if (isEditListingWorkspace) {
-        await performUpdateExistingListing({ sendUpdates: !editorRelistChannel, relistChannel: editorRelistChannel, ...(editorRelistChannel ? { successMessage: 'Property details saved. Confirm relisting on the selected portal.' } : {}) })
+        await performUpdateExistingListing({ sendUpdates: !editorRelistChannel, relistChannel: editorRelistChannel, ...(submissionForm !== form ? { listingForm: submissionForm, publishDraft: true } : {}), ...(editorRelistChannel ? { successMessage: 'Property details saved. Confirm relisting on the selected portal.' } : {}) })
       } else {
-        await performSaveListing()
+        await performSaveListing(submissionForm !== form ? { listingForm: submissionForm } : undefined)
       }
     } catch (saveError) {
       setCloudSave({ status: 'error' })
@@ -8275,6 +8309,9 @@ function AgentListings({ mobileEditor = false } = {}) {
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === listingEditorSteps.length - 1
     const streamlinedSales = isCreateListingWorkspace && !isDeveloperWorkspace && !mobileEditor
+    const finalSubmissionStatus = buildFinalSalesListingForm(form, { isCreateListingWorkspace, isEditListingWorkspace, isDeveloperWorkspace, editorRelistChannel }).listingStatus
+    const hasExternalChannels = form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel))
+    const canPublishSavedDraft = isEditListingWorkspace && finalSubmissionStatus !== form.listingStatus
     const editorTitle = editorRelistChannel ? 'Update and relist' : isListingPublicationEditor ? 'Edit Listing Publication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
     const editorHeading = isEditListingWorkspace ? 'Edit Listing' : 'New listing'
     const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
@@ -8362,10 +8399,10 @@ function AgentListings({ mobileEditor = false } = {}) {
               leftLabel={createListingStepIndex === 0 ? 'Cancel' : 'Back'}
               leftIcon={createListingStepIndex === 0 ? null : <ArrowLeft size={16} />}
               onCancel={createListingStepIndex === 0 ? cancelEditor : goToPreviousCreateListingStep}
-              onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraft}
+              onSaveDraft={!isEditListingWorkspace || canPublishSavedDraft ? saveListingSetupDraft : undefined}
               onContinue={goToNextCreateListingStep}
-              finalLabel={editorRelistChannel ? 'Save and continue to relist' : isEditListingWorkspace ? ['active', 'under_offer'].includes(form.listingStatus) && form.selectedSyndicationChannels?.some(channel => ['property24', 'private_property', 'agency_website'].includes(channel)) ? 'Save and publish changes' : 'Save changes' : form.listingStatus === 'draft' ? 'Save draft' : form.selectedSyndicationChannels?.length ? 'Save and publish' : 'Save listing'}
-              showSaveDraft={!isEditListingWorkspace && !(isFinalCreateListingStep && form.listingStatus === 'draft')}
+              finalLabel={editorRelistChannel ? 'Save and continue to relist' : isEditListingWorkspace ? ['active', 'under_offer'].includes(finalSubmissionStatus) && hasExternalChannels ? canPublishSavedDraft ? 'Save and publish' : 'Save and publish changes' : 'Save changes' : ['active', 'under_offer'].includes(finalSubmissionStatus) && hasExternalChannels ? 'Save and publish' : 'Save listing'}
+              showSaveDraft={!isEditListingWorkspace || canPublishSavedDraft}
             />
           )}
         >
@@ -8708,6 +8745,7 @@ function AgentListings({ mobileEditor = false } = {}) {
             {createListingStep === 'syndication' ? (
               <div className="space-y-6">
                 <ListingWizardHeader title="Where to advertise" />
+                <label className="grid max-w-md gap-2"><span className="text-sm font-semibold text-[#2d445e]">Listing expiry</span><Field type="date" value={form.listingExpiryDate || ''} min={new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + 86400000))} disabled={isListingSaving} onChange={event => updateForm('listingExpiryDate', event.target.value)} /><span className="text-xs leading-5 text-[#607387]">{isEditListingWorkspace ? 'Save and publish changes applies this date to the selected channels. For a change to one advert, use Listing expiry in Marketing.' : 'Choose the last advertising day for the selected channels. This is separate from the mandate end date.'}</span></label>
                 {error ? <p role="alert" className="rounded-lg border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-[#18324b]">Advertising websites</h3>
@@ -8800,7 +8838,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                   </> : null}
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <p className="text-sm font-bold text-[#142132]">Publishing readiness</p>
-                    <p className="mt-1 text-xs text-[#607387]">{editorRelistChannel ? 'Save and continue to relist opens the selected portal’s relist confirmation.' : listingPublicationBlockMessage(form.listingStatus) || (isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'The final button saves the listing and sends it to any websites you selected.')} Each channel confirms when it is live.</p>
+                    <p className="mt-1 text-xs text-[#607387]">{editorRelistChannel ? 'Save and continue to relist opens the selected portal’s relist confirmation.' : listingPublicationBlockMessage(finalSubmissionStatus) || (canPublishSavedDraft ? 'Save and publish activates this saved draft and submits it to the selected channels.' : isEditListingWorkspace ? 'Save and publish changes sends your changes to the selected channels.' : 'The final button saves the listing and sends it to any websites you selected.')} Each channel confirms when it is live.</p>
                     <div className="mt-3 grid gap-2">
                       {selectedCreateListingPortalStatuses.map((portal) => (
                         <div key={portal.key} className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-[#dce6f2] bg-white p-3">

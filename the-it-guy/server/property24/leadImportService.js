@@ -156,7 +156,24 @@ async function findExistingIngestionLog(supabase, lead = {}) {
       .eq('external_reference', lead.externalReference),
   )
   if (result.error && result.error.code !== 'PGRST116') throw result.error
-  return result.data || null
+  if (result.data) return result.data
+  const legacyReferences = Array.isArray(lead.legacyExternalReferences) ? lead.legacyExternalReferences : []
+  if (!legacyReferences.length || lead.externalReference !== lead.dedupeKey) return null
+  const legacy = await supabase
+    .from('lead_ingestion_logs')
+    .select('log_id, lead_id, contact_id, status, payload')
+    .eq('organisation_id', lead.organisationId)
+    .eq('source', lead.source || 'Property24')
+    .in('external_reference', legacyReferences)
+    .limit(100)
+  if (legacy.error) throw legacy.error
+  const matches = (legacy.data || []).filter((row) =>
+    normalizeProperty24LeadForImport(row.payload?.lead || {}).dedupeKey === lead.dedupeKey,
+  )
+  if (new Set(matches.map((row) => row.lead_id)).size > 1) {
+    throw new Error('This Property24 enquiry matches conflicting historical imports; review it before recovery.')
+  }
+  return matches[0] || null
 }
 
 async function findExistingContact(supabase, { organisationId = '', email = '', phone = '' } = {}) {
@@ -513,6 +530,9 @@ export async function importProperty24PreparedLeads({
     try {
       const existingLog = await findExistingIngestionLog(supabase, lead)
       if (existingLog) {
+        if (existingLog.status !== 'processed' || !existingLog.lead_id) {
+          throw new Error('A previous Property24 import is incomplete; its enquiry must be recovered before the checkpoint can advance.')
+        }
         results.push({
           externalReference: lead.externalReference || null,
           listingNumber: lead.listingNumber || null,

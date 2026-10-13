@@ -131,7 +131,7 @@ test('seller document type tabs retain progress and reveal the matching saved fi
 
 test('signed review rows are green with inline decisions and still outstanding', () => {
   const review=vi.fn(),accept=vi.fn(),reject=vi.fn(),download=vi.fn()
-  render(<LeadDocumentWorkspace partyType="seller" categories={[{key:'fica',label:'FICA',items:[{key:'signed_fica_declaration',label:'Signed FICA Declaration',required:true}]}]} getStatusMeta={()=>({state:'review',label:'Signed — awaiting agent review',signedAwaitingReview:true,pillClass:'bg-green-50'})}
+  render(<LeadDocumentWorkspace partyType="seller" categories={[{key:'fica',label:'FICA',items:[{key:'signed_fica_declaration',label:'Signed FICA Declaration',required:true}]}]} getStatusMeta={()=>({state:'review',label:'Signed, awaiting agent review',signedAwaitingReview:true,pillClass:'bg-green-50'})}
     renderRowActions={()=><><button onClick={review}>Review</button><button onClick={reject}>Reject</button><button onClick={accept}>Accept</button></>}
     renderActions={()=><><button onClick={download}>Download</button><label>Upload / Replace<input type="file" aria-label="Replace FICA" /></label></>} />)
   expect(screen.getByText(/0 of 1 complete/)).toBeTruthy()

@@ -5,6 +5,7 @@ import { getRentalLeadOutcome } from '../src/services/rentals/rentalLeadOutcomeM
 import {
   createProperty24ApiResponse,
   importProperty24PreparedLeads,
+  normalizeProperty24LeadForImport,
   pullAndImportProperty24Leads,
 } from '../server/property24/index.js'
 
@@ -205,6 +206,61 @@ const duplicate = await importProperty24PreparedLeads({
 })
 assert.equal(duplicate.summary.alreadyImportedCount, 1)
 assert.equal(supabase.rowsByTable.leads.length, 1)
+
+// Samlin's older imports predate support for Property24's contactNumber field.
+// Replaying their unchanged enquiries must reuse the saved lead, while a
+// different caller, tenant or supplier reference remains a separate enquiry.
+const historicRaw = {
+  listingNumber: readyLead.listingNumber, name: readyLead.contactName,
+  emailAddress: readyLead.email, contactNumber: readyLead.phone,
+  message: readyLead.message, date: readyLead.receivedAt,
+}
+const historicLog = {
+  log_id: 'historical-log', lead_id: 'historical-lead', contact_id: 'historical-contact',
+  organisation_id: readyLead.organisationId, source: 'Property24', status: 'processed',
+  external_reference: 'a6d6ec86be9bb52f4cf7c7ccee596770e990015ffd35f42e81dd49a6a3397de3',
+  payload: { lead: historicRaw },
+}
+function replayLead(raw) {
+  return {
+    ...normalizeProperty24LeadForImport(raw), organisationId: readyLead.organisationId,
+    listingId: readyLead.listingId, readyForCrmIngestion: true,
+  }
+}
+const historicalClient = createFakeSupabase({ lead_ingestion_logs: [historicLog] })
+const historicalReplay = await importProperty24PreparedLeads({
+  supabase: historicalClient, leads: [replayLead(historicRaw)],
+  listingDetailsById: new Map([[listing.id, listing]]), sendNotifications: false,
+})
+assert.equal(historicalReplay.summary.alreadyImportedCount, 1)
+assert.equal(historicalReplay.results[0].leadId, 'historical-lead')
+assert.ok(!historicalClient.operations.some((operation) => ['insert', 'upsert'].includes(operation.op)),
+  'Historical replay must create no contacts, leads, tasks, activity, mirrors or notification work.')
+for (const externalReference of [historicLog.external_reference, replayLead(historicRaw).externalReference]) {
+  const incompleteClient = createFakeSupabase({
+    lead_ingestion_logs: [{ ...historicLog, external_reference: externalReference, lead_id: null, status: 'failed' }],
+  })
+  const incomplete = await importProperty24PreparedLeads({
+    supabase: incompleteClient, leads: [replayLead(historicRaw)],
+    listingDetailsById: new Map([[listing.id, listing]]), sendNotifications: false,
+  })
+  assert.equal(incomplete.summary.failedCount, 1, 'An incomplete import must remain unresolved for checkpoint recovery.')
+  assert.equal(incomplete.summary.alreadyImportedCount, 0)
+  assert.ok(!incompleteClient.operations.some((operation) => ['insert', 'upsert'].includes(operation.op)))
+}
+for (const [label, raw, storedLog] of [
+  ['different caller', { ...historicRaw, contactNumber: '068 000 0001' }, historicLog],
+  ['distinct supplier reference', { ...historicRaw, id: 'another-provider-enquiry' }, historicLog],
+  ['another organisation', historicRaw, { ...historicLog, organisation_id: 'another-org' }],
+]) {
+  const replayClient = createFakeSupabase({ lead_ingestion_logs: [storedLog] })
+  const replay = await importProperty24PreparedLeads({
+    supabase: replayClient, leads: [replayLead(raw)],
+    listingDetailsById: new Map([[listing.id, listing]]), sendNotifications: false,
+  })
+  assert.equal(replay.summary.importedCount, 1, `${label} must not be hidden by historical duplicate protection.`)
+  assert.equal(replay.summary.alreadyImportedCount, 0)
+}
 
 const outsideAgencySupabase = createFakeSupabase({
   developments: [{
