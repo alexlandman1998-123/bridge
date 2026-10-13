@@ -8,7 +8,7 @@ import {
 } from '../sellerDocumentRequirementsService.js'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts.js'
 import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../lib/propertyDisclosure.js'
-import { createSellerReviewedDocumentVersions } from '../../core/documents/sellerReviewedDocumentVersions.js'
+import { createSellerReviewedDocumentVersions, verifySellerReviewedDocumentVersion } from '../../core/documents/sellerReviewedDocumentVersions.js'
 import { getSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy.js'
 import { readFileSync } from 'node:fs'
 import { isSellerDocumentPreparationArtifact } from '../../lib/sellerBasePackContract.js'
@@ -176,6 +176,28 @@ test('manual capture exposes a frozen reviewed copy before supporting onboarding
     ...formData,
     sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: [{ key: 'signed_mandate', generatedHtml: '<article>Unreviewed draft</article>' }] },
   }, listing).length, 0)
+})
+
+test('projected frozen copies retain their verification inputs after reopening and upload', async () => {
+  const listing = { id: 'listing-frozen-copy', sellerOnboarding: { status: 'in_progress' }, documentRequirements: requiredDocuments }
+  for (const key of ['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form']) {
+    const reviewed = await createSellerReviewedDocumentVersions({
+      manualSigningPack: { documents: [{ key, generatedHtml: '<article>Frozen copy</article>', sourceFactsFingerprint: 'fnv1a-32:12345678' }] },
+      formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } },
+      signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller' }], mandate: { propertyAddress: '1 Test Road' } },
+      actor: 'agent-1',
+    })
+    const formData = {
+      sellerOnboardingReview: { status: 'approved' },
+      sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: reviewed.documents },
+    }
+    for (const documents of [[], [{ id: 'returned-copy', document_type: key, status: 'uploaded', storage_path: 'test/returned.pdf' }]]) {
+      const row = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents }, formData }).rows.find((item) => item.key === key)
+      const copy = getSellerPhysicalSigningCopy(row)
+      assert.equal(copy.sourceFactsFingerprint, 'fnv1a-32:12345678')
+      assert.equal(await verifySellerReviewedDocumentVersion(copy), true, key)
+    }
+  }
 })
 
 test('a returned signed mandate stays outstanding until its persisted copy is approved', async () => {
