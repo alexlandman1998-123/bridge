@@ -155,6 +155,29 @@ test('mixed signing routes keep digital FICA out of the upload flow', () => {
   assert.equal(getSellerPhysicalSigningCopy(fica)?.versionId, 'fica-v1')
 })
 
+test('manual capture exposes a frozen reviewed copy before supporting onboarding is complete', async () => {
+  const listing = { id: 'listing-partial', sellerOnboarding: { status: 'in_progress' }, documentRequirements: requiredDocuments }
+  const reviewed = await createSellerReviewedDocumentVersions({
+    manualSigningPack: { documents: [{ key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>' }] },
+    formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } },
+    signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller' }], mandate: { propertyAddress: '1 Test Road' } },
+    actor: 'agent-1',
+  })
+  const formData = {
+    sellerOnboardingReview: { status: 'approved' },
+    sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: reviewed.documents },
+  }
+  const row = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find((item) => item.key === 'signed_mandate')
+  assert.equal(row.status, 'awaiting_signed_hard_copy')
+  assert.equal(row.complete, false)
+  assert.equal(getSellerPhysicalSigningCopy(row)?.versionId, reviewed.documents[0].versionId)
+  assert.equal(buildSellerOnboardingManualSigningDocuments({ ...formData, sellerOnboardingReview: { status: 'pending' } }, listing).length, 0)
+  assert.equal(buildSellerOnboardingManualSigningDocuments({
+    ...formData,
+    sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: [{ key: 'signed_mandate', generatedHtml: '<article>Unreviewed draft</article>' }] },
+  }, listing).length, 0)
+})
+
 test('a returned signed mandate stays outstanding until its persisted copy is approved', async () => {
   const listing = { id: 'listing-physical', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
   const reviewed = await createSellerReviewedDocumentVersions({

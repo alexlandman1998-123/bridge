@@ -7,6 +7,30 @@ import {
   syncSellerDocumentRequirements,
 } from '../sellerDocumentRequirementEngine.js'
 
+test('manual seller capture prepares upload requirements without completing or activating the listing', () => {
+  const listing = {
+    id: 'listing-manual-partial',
+    listingStatus: 'seller_lead',
+    sellerOnboardingStatus: 'in_progress',
+    sellerOnboarding: { status: 'in_progress', formData: {
+      ownershipType: 'individual', ownershipRouteConfirmed: true,
+      firstName: 'Alex', surname: 'Seller', sellerProfileCapturedAt: '2026-10-13T05:00:00Z',
+    } },
+  }
+  const result = syncSellerDocumentRequirements(listing, [])
+  assert.equal(result.requirementProfile.onboardingCompleted, false)
+  assert.equal(result.requirementProfile.lifecycleStatus, 'seller_lead')
+  for (const key of ['rates_account', 'signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form']) {
+    assert.equal(result.generatedRequirements.some((row) => row.requirement_key === key), true, key)
+  }
+  assert.equal(result.generatedRequirements.some((row) => row.requirement_key === 'seller_contact_confirmation'), false)
+  const contactOnly = syncSellerDocumentRequirements({
+    ...listing,
+    sellerOnboarding: { status: 'in_progress', formData: { ownershipType: 'individual' } },
+  }, [])
+  assert.equal(contactOnly.generatedRequirements.some((row) => row.requirement_key === 'rates_account'), false)
+})
+
 test('replaces company requirements with trust requirements when the submitted seller structure changes', () => {
   const companyListing = {
     id: 'listing-1',

@@ -13,7 +13,7 @@ export default function SellerDisclosurePreparation({ disclosure = {}, onChange,
       disabled={disabled}
       onAnswerChange={(key, answer) => patch({ responses: { ...normalized.responses, [key]: { ...normalized.responses[key], answer } } })}
       onNoteChange={(key, note) => patch({ responses: { ...normalized.responses, [key]: { ...normalized.responses[key], note } } })}
-      onDisclosureChange={(key, value) => patch({ [key]: value })}
+      onDisclosureChange={(values) => patch(values)}
     />
   </section>
 }

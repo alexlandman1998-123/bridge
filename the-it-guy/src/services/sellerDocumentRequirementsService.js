@@ -2550,11 +2550,18 @@ function currentManualSigningDocuments(formData = {}, listing = {}, pack = {}) {
 }
 
 export function buildSellerOnboardingManualSigningDocuments(formData = {}, listing = {}) {
-  if (!isSellerOnboardingCompleted(listing, formData)) return []
   const pack = readSellerOnboardingManualSigningPack(formData)
   if (!['awaiting_signed_hard_copy', 'awaiting_signature'].includes(normalizeKey(pack?.status))) return []
+  const onboardingCompleted = isSellerOnboardingCompleted(listing, formData)
+  if (!onboardingCompleted && !isSellerOnboardingReviewApproved(listing, formData)) return []
+  // Manual capture can prepare one reviewed form while supporting paperwork
+  // remains incomplete. Only frozen, approved copies may cross that boundary.
+  const documents = currentManualSigningDocuments(formData, listing, pack).filter((document) => onboardingCompleted || (
+    normalizeText(document?.versionId) && normalizeText(document?.versionDigest) &&
+    normalizeText(document?.contentDigest) && normalizeText(document?.approvedAt)
+  ))
   const disclosureSigningState = getOnboardingDisclosureSigningState(formData, listing)
-  return currentManualSigningDocuments(formData, listing, pack).map((document) => {
+  return documents.map((document) => {
     const requirementKey = normalizeSellerBasePackKey(document?.key || document?.requirementKey)
     const generatedHtml = normalizeText(document?.generatedHtml || document?.generated_html)
     // Older physical packs included a disclosure copy even after onboarding

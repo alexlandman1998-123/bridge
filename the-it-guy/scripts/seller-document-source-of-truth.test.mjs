@@ -142,7 +142,7 @@ assert.equal(propertyDisclosure.upload.generatedFileName, 'signed-disclosure.htm
 
 const ficaDeclaration = source.rows.find((row) => row.key === 'signed_fica_declaration')
 assert.equal(ficaDeclaration.complete, true)
-assert.equal(ficaDeclaration.category, 'sales')
+assert.equal(ficaDeclaration.category, 'fica')
 assert.equal(ficaDeclaration.status, 'completed')
 assert.equal(ficaDeclaration.statusBucket, 'approved')
 assert.equal(ficaDeclaration.hasUpload, true)
@@ -176,9 +176,9 @@ assert.deepEqual(source.summary, {
   approved: 3,
   rejected: 0,
   byCategory: {
-    sales: 3,
+    sales: 2,
     property: 3,
-    fica: 2,
+    fica: 3,
   },
 })
 

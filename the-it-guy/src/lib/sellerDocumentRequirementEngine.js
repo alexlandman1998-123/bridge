@@ -893,6 +893,9 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     mandateDuration,
     commissionTermsAvailable: Boolean(commissionTerms),
     onboardingCompleted: Boolean(onboardingCompleted),
+    sellerProfileCaptured: !sellerOwnershipUnidentified && Boolean(
+      onboarding?.sellerProfileCapturedAt || onboarding?.seller_profile_captured_at,
+    ),
     sellerName,
     authorisedSignatory,
     sellerContactEmail: normalizeText(onboarding?.email || listing?.seller?.email),
@@ -1033,7 +1036,7 @@ function getSellerRequirementCandidates(requirementProfile = {}) {
     return []
   }
 
-  if (lifecycleStatus === 'seller_lead') {
+  if (lifecycleStatus === 'seller_lead' && !profile.sellerProfileCaptured) {
     return [
       buildRequirement({
         key: 'seller_contact_confirmation',
@@ -1046,7 +1049,7 @@ function getSellerRequirementCandidates(requirementProfile = {}) {
     ]
   }
 
-  if (lifecycleStatus === 'onboarding_sent') {
+  if (lifecycleStatus === 'onboarding_sent' && !profile.sellerProfileCaptured) {
     return [
       buildRequirement({
         key: 'seller_onboarding_submission',
