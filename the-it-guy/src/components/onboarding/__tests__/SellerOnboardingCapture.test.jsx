@@ -60,3 +60,26 @@ test('an existing full-name capture personalises the welcome and shows the assig
   await screen.findByText('Hi Beverley,')
   expect(screen.getByText('Kevin Croft', { exact: true })).toBeTruthy()
 })
+
+test('a natural-person entity does not confirm single ownership until the seller chooses its structure', async () => {
+  const base = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue({
+    ...base, sellerCanonicalFacts: {}, sellerOnboarding: { ...base.sellerOnboarding,
+      canonicalFacts: {}, formData: { sellerFirstName: 'Draft', sellerSurname: 'Seller', ownershipDeclarationPending: true } },
+  })
+  const saved = vi.fn()
+  capture({ completionModeOverride: 'agent_assisted', onDraftSaved: saved })
+  await screen.findByRole('heading', { name: 'Who owns this property?' })
+  fireEvent.click(screen.getByRole('button', { name: /^Natural Person/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft', exact: true }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+  expect(saved.mock.calls[0][0].sellerOnboarding.formData).toMatchObject({
+    ownerEntityType: 'natural_person', ownerStructureType: '', ownershipType: '', ownershipRouteConfirmed: false,
+  })
+  fireEvent.click(screen.getByRole('button', { name: /^Single owner/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft', exact: true }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
+  expect(saved.mock.calls[1][0].sellerOnboarding.formData).toMatchObject({
+    ownerEntityType: 'natural_person', ownerStructureType: 'individual', ownershipType: 'individual', ownershipRouteConfirmed: true,
+  })
+})

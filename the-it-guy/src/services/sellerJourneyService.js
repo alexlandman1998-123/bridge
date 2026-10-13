@@ -10,6 +10,7 @@ import {
 } from './sellerDocumentRequirementsService.js'
 import { buildSellerSigningStatusModel } from './sellerSigningStatusService.js'
 import { hasDirectListingPortalIntake } from '../lib/directListingSellerPortalBridge.js'
+import { buildSellerSubject } from '../lib/sellerSubjectModel.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -17,6 +18,44 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+export function buildSellerLeadOnboardingPresentation({ listing = {}, lead = {}, formData = {}, canonicalFacts = {}, journey = {} } = {}) {
+  const subject = buildSellerSubject({ listing, lead, formData, canonicalFacts,
+    onboarding: { ...(listing.sellerOnboarding || listing.seller_onboarding || {}), ...(journey.onboardingSubmitted ? { status: 'submitted' } : {}) } })
+  const agentCaptured = normalizeText(formData.sellerProfileCaptureSource || formData.seller_profile_capture_source) === 'listing_seller_profile_capture'
+    || Boolean(formData.sellerProfileCapturedAt || formData.seller_profile_captured_at)
+    || [formData.ownershipRouteLocked, formData.ownership_route_locked].some(value => value === true || value === 'true')
+    || (hasDirectListingPortalIntake(listing) && [formData.ownershipRouteConfirmed, canonicalFacts.seller?.ownership_route_confirmed].some(value => value === true || value === 'true'))
+  const ownershipConfirmed = subject.kind !== 'unknown' && Boolean(journey.onboardingSubmitted || agentCaptured)
+  const labels = { individual: 'Individual', married: 'Married', multiple_owners: 'Multiple Owners', company: 'Company', trust: 'Trust',
+    deceased_estate: 'Deceased Estate', power_of_attorney: 'Power of Attorney', foreign_individual: 'Foreign Individual',
+    foreign_company: 'Foreign Company', foreign_trust: 'Foreign Trust', other: 'Other Entity' }
+  return {
+    ownerType: ownershipConfirmed ? subject.kind === 'company' && ['close_corporation', 'cc'].some(type => [subject.ownership.entityType, subject.ownership.structureType].includes(type))
+      ? 'Close Corporation' : labels[subject.kind] || 'Not confirmed' : 'Not confirmed',
+    checklistProvisional: !ownershipConfirmed,
+    onboardingLabel: journey.onboardingSubmitted ? 'Submitted' : journey.onboardingInProgress ? 'In progress' : journey.onboardingSent ? 'Sent' : 'Not sent',
+  }
+}
+
+export function mergeSellerJourneyOnboardingSnapshot(listing = {}, onboarding = {}) {
+  const source = listing.sourceListing || listing
+  if (!source.id || normalizeText(onboarding.private_listing_id) !== normalizeText(source.id)) return listing
+  const existing = source.sellerOnboarding || source.seller_onboarding || {}
+  const currentUpdatedAt = existing.updatedAt || existing.updated_at
+  if (Date.parse(currentUpdatedAt) > Date.parse(onboarding.updated_at)) return listing
+  if (currentUpdatedAt === onboarding.updated_at && normalizeKey(existing.status) === normalizeKey(onboarding.status)) return listing
+  const formData = onboarding.form_data || {}
+  const patch = {
+    sellerOnboardingStatus: onboarding.status,
+    sellerOnboarding: { ...existing, id: onboarding.id, token: onboarding.token || existing.token,
+      status: onboarding.status, submittedAt: onboarding.submitted_at || null, updatedAt: onboarding.updated_at,
+      saveRevision: { onboardingId: onboarding.id, updatedAt: onboarding.updated_at }, formData },
+    seller_onboarding: { ...(source.seller_onboarding || {}), ...onboarding },
+    ...(formData.canonicalSellerFacts ? { sellerCanonicalFacts: formData.canonicalSellerFacts } : {}),
+  }
+  return { ...listing, ...patch, ...(listing.sourceListing ? { sourceListing: { ...source, ...patch } } : {}) }
 }
 
 function toNumber(value) {
@@ -1152,6 +1191,8 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
     signingStatus,
     onboardingSent: onboardingSignals.sent,
     onboardingSubmitted: onboardingSubmittedForProgress,
+    onboardingStatus: onboardingSignals.status,
+    onboardingInProgress: !onboardingSubmittedForProgress && onboardingSignals.status === 'in_progress',
     listing,
     listingCreated,
     listingShellExists,

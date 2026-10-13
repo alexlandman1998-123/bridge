@@ -159,7 +159,7 @@ import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, instructPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
-import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
+import { buildSellerJourney, getSellerJourneyMetrics, buildSellerLeadOnboardingPresentation, mergeSellerJourneyOnboardingSnapshot } from '../../services/sellerJourneyService'
 import { selectAuthoritativeListingOptionSource } from '../../services/listingOptionAuthorityService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import {
@@ -16004,7 +16004,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
         )
         if (!isCurrent()) return false
-        if (!explicitSubmissionEvidence || !['completed', 'submitted'].includes(hydratedStatus)) return true
+        if (!explicitSubmissionEvidence || !['completed', 'submitted'].includes(hydratedStatus)) {
+          if (persistedOnboarding) setSelectedLeadHydratedListing(current => isCurrent()
+            ? mergeSellerJourneyOnboardingSnapshot(current || selectedLeadLinkedListing || {}, persistedOnboarding)
+            : current)
+          return true
+        }
 
         const completedAt =
           hydratedOnboarding?.completedAt ||
@@ -17690,7 +17695,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
     const fallbackAction = selectedSellerReadiness.nextAction || {}
-    const complianceBlocker = selectedSellerComplianceAgentStatus.nextBlocker || null
+    const storedComplianceBlocker = selectedSellerComplianceAgentStatus.nextBlocker || null
+    const complianceBlocker = storedComplianceBlocker?.key === 'seller_onboarding' && selectedSellerJourney.onboardingInProgress
+      ? { ...storedComplianceBlocker, label: 'Seller onboarding in progress', action: 'Draft answers have been saved. The seller still needs to complete and submit the onboarding for review.' }
+      : storedComplianceBlocker
     const onboardingSubmittedOrLater = Boolean(
       selectedSellerJourney.onboardingSubmitted ||
         normalizeKey(selectedSellerJourney.stage?.key) === 'seller_onboarding_submitted' ||
@@ -17797,6 +17805,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerDocumentCategories,
     selectedSellerJourney.mandateStatus,
     selectedSellerJourney.onboardingSubmitted,
+    selectedSellerJourney.onboardingInProgress,
     selectedSellerJourney.stage?.key,
     selectedSellerReadiness.blockers,
     selectedSellerReadiness.nextAction,
@@ -17924,6 +17933,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }, [selectedLead, selectedLeadLinkedListing, selectedSellerDocumentSummary, selectedSellerJourney, selectedSellerReadiness.listingReadiness])
 
+  const selectedSellerOnboardingPresentation = useMemo(() => {
+    const listing = selectedLeadLinkedListing?.sourceListing || selectedLeadLinkedListing || {}
+    return buildSellerLeadOnboardingPresentation({ listing, lead: selectedLead || {},
+      formData: getWorkspaceSellerOnboarding(selectedLead || {}, listing),
+      canonicalFacts: getWorkspaceSellerCanonicalFacts(selectedLead || {}, listing), journey: selectedSellerJourney })
+  }, [selectedLead, selectedLeadLinkedListing, selectedSellerJourney])
+
   const selectedSellerSummarySections = useMemo(() => {
     const lead = selectedLead || {}
     const listing = selectedLeadLinkedListing?.sourceListing && isPlainObject(selectedLeadLinkedListing.sourceListing)
@@ -17942,54 +17958,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const amount = firstWorkspaceValue(...values)
       return amount ? formatMaybeCurrency(amount) : 'Not captured'
     }
-    const ownerSignal = firstWorkspaceText(
-      onboarding?.ownerEntityType,
-      onboarding?.owner_entity_type,
-      onboarding?.ownerStructureType,
-      onboarding?.owner_structure_type,
-      onboarding?.ownershipType,
-      onboarding?.ownership_type,
-      onboarding?.sellerLegalType,
-      onboarding?.seller_legal_type,
-      onboarding?.sellerType,
-      directSeller?.ownerEntityType,
-      directSeller?.owner_entity_type,
-      directSeller?.ownerStructureType,
-      directSeller?.owner_structure_type,
-      directSeller?.ownershipType,
-      directSeller?.ownership_type,
-      directSeller?.sellerLegalType,
-      directSeller?.seller_legal_type,
-      lead?.ownerEntityType,
-      lead?.owner_entity_type,
-      lead?.ownershipType,
-      lead?.ownership_type,
-      listing?.sellerType,
-      listing?.seller_type,
-      listing?.ownershipStructure,
-      listing?.ownership_structure,
-    )
-    const ownerTypeLabels = {
-      individual: 'Individual',
-      natural_person: 'Individual',
-      multiple: 'Multiple Owners',
-      multiple_individuals: 'Multiple Owners',
-      multiple_owners: 'Multiple Owners',
-      company: 'Company',
-      close_corporation: 'Close Corporation',
-      cc: 'Close Corporation',
-      trust: 'Trust',
-      deceased_estate: 'Deceased Estate',
-      power_of_attorney: 'Power of Attorney',
-      foreign_individual: 'Foreign Individual',
-      foreign_company: 'Foreign Company',
-      foreign_trust: 'Foreign Trust',
-      other_entity: 'Other Entity',
-      other: 'Other Entity',
-    }
-    const ownerType = ownerSignal
-      ? ownerTypeLabels[normalizeKey(ownerSignal)] || titleCaseWorkspaceValue(ownerSignal)
-      : 'Not captured'
+    const ownerType = selectedSellerOnboardingPresentation.ownerType
     const documentRows = selectedSellerDocumentCategories.flatMap((category) => category.items || [])
     const documentStatus = (canonicalKey) => {
       const row = documentRows.find((documentRow) => normalizeSellerBasePackKey(getSellerLeadDocumentCanonicalKey(documentRow)) === canonicalKey)
@@ -18000,11 +17969,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (statusMeta.state === 'danger') return statusMeta.label || 'Needs attention'
       return 'Missing'
     }
-    const onboardingStatus = selectedSellerJourney.onboardingSubmitted
-      ? 'Submitted'
-      : selectedSellerJourney.onboardingSent
-        ? 'Sent'
-        : 'Not sent'
+    const onboardingStatus = selectedSellerOnboardingPresentation.onboardingLabel
     const mandateStatus = getSellerComplianceSummaryStatus(selectedSellerComplianceAgentStatus, 'mandate')
     const listingDraftStatus = getSellerComplianceSummaryStatus(selectedSellerComplianceAgentStatus, 'listing_draft')
 
@@ -18091,8 +18056,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadPropertyLabel,
     selectedSellerComplianceAgentStatus,
     selectedSellerDocumentCategories,
-    selectedSellerJourney.onboardingSent,
-    selectedSellerJourney.onboardingSubmitted,
+    selectedSellerOnboardingPresentation,
     selectedSellerJourney.listingCreated,
   ])
 
@@ -35660,6 +35624,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </Button>
                         </div>
                         <div className="min-h-0 flex-1 px-4 py-4">
+                          {selectedSellerOnboardingPresentation.checklistProvisional ? (
+                            <p className="mb-3 text-sm leading-5 text-[#60748b]">
+                              {selectedSellerDocumentCategories.length ? 'Planned document checklist. Requirements will be confirmed after onboarding is submitted or the agent captures the ownership details.' : 'No documents have been requested yet. Requirements will be confirmed after onboarding is submitted or the agent captures the ownership details.'}
+                            </p>
+                          ) : null}
                           <div className="grid h-full min-h-0 auto-rows-fr gap-2.5">
                             {selectedSellerDocumentCategories.map((category) => {
                               const chartColor = category.progress >= 100 ? '#0f8f59' : '#315b7a'

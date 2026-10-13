@@ -1192,7 +1192,7 @@ function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null)
     return regime.includes('in_community') || regime.includes('cop') || regime === 'community_of_property' ? 'married_cop' : 'married_anc'
   }
 
-  return explicit || 'individual'
+  return explicit || ''
 }
 
 function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts = {}) {
@@ -1203,7 +1203,7 @@ function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts
   if (structure.startsWith('foreign_') || existing.foreignOwner || canonicalFacts?.seller?.foreign_owner) return 'foreign'
 
   const normalized = String(ownershipType || '').trim().toLowerCase()
-  if (!normalized && (existing.ownershipDeclarationPending || existing.ownership_declaration_pending)) return ''
+  if (!normalized) return ''
   if (normalized === 'company') return 'company'
   if (normalized === 'trust') return 'trust'
   if (normalized === 'other') return 'other'
@@ -1212,7 +1212,7 @@ function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts
 
 function normalizeOwnerStructureType(value = '', ownerEntityType = 'natural_person') {
   const normalized = String(value || '').trim().toLowerCase()
-  if (!ownerEntityType) return ''
+  if (!ownerEntityType || !normalized) return ''
   const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   if (options.some((item) => item.value === normalized)) return normalized
   if (['married_anc', 'other'].includes(normalized)) return normalized
@@ -1243,6 +1243,7 @@ function deriveOwnerStructureType(ownershipType = '', ownerEntityType = 'natural
 function deriveOwnershipTypeFromOwnerModel(ownerEntityType = 'natural_person', ownerStructureType = 'individual') {
   const normalizedEntity = String(ownerEntityType || '').trim().toLowerCase()
   const normalizedStructure = String(ownerStructureType || '').trim().toLowerCase()
+  if (!normalizedEntity || !normalizedStructure) return ''
   if (normalizedEntity === 'company' || normalizedStructure === 'company' || normalizedStructure === 'foreign_company') return 'company'
   if (normalizedEntity === 'trust' || normalizedStructure === 'trust' || normalizedStructure === 'foreign_trust') return 'trust'
   if (normalizedStructure === 'foreign_individual') return 'individual'
@@ -1264,6 +1265,7 @@ function getOwnerStructureLabel(value = '', ownerEntityType = 'natural_person') 
 }
 
 function getOwnershipSummaryLabel(form = {}) {
+  if (!form.ownerEntityType || !form.ownerStructureType) return 'Ownership not selected'
   const entityLabel = getOwnerEntityLabel(form.ownerEntityType)
   const structureLabel = getOwnerStructureLabel(form.ownerStructureType || form.ownershipType, form.ownerEntityType)
   return entityLabel === structureLabel ? entityLabel : `${entityLabel} - ${structureLabel}`
@@ -3479,7 +3481,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     if (form?.ownershipRouteLocked || form?.ownership_route_locked) return
     setForm((previous) => {
       const next = { ...(previous || {}) }
-      const ownerStructureType = normalizeOwnerStructureType('', value)
+      const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[value] || []
+      const ownerStructureType = options.length === 1 ? options[0].value : ''
+      if (!ownerStructureType) return {
+        ...next, ownerEntityType: value, ownerStructureType: '', ownershipType: '', sellerLegalType: '', foreignOwner: value === 'foreign',
+        ownershipDeclarationPending: true, ownership_declaration_pending: true,
+        ownershipRouteConfirmed: false, ownership_route_confirmed: false,
+      }
       const ownershipType = deriveOwnershipTypeFromOwnerModel(value, ownerStructureType)
       return applyOwnershipSelection(next, ownershipType, { ownerEntityType: value, ownerStructureType })
     })
