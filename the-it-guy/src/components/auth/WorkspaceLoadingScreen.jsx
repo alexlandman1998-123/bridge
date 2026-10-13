@@ -8,7 +8,7 @@ export default function WorkspaceLoadingScreen({ slow = false, children }) {
         <div className="workspace-loading-track" aria-hidden="true"><span /></div>
         <div role="status" aria-live="polite">
           <h2>{slow ? 'Taking a little longer…' : 'Opening your workspace'}</h2>
-          <p>{slow ? 'Your workspace is still loading. You can try again or restart sign-in.' : 'Getting everything ready for your next move.'}</p>
+          {slow && <p>Your workspace is still loading. You can try again or restart sign-in.</p>}
         </div>
         {children}
       </div>

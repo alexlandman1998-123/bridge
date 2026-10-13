@@ -27,6 +27,25 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('seller token mutation boundary', () => {
+  it('a new capture saves with the empty revision without three onboarding lookups', async () => {
+    client.rpc.mockReturnValue(rpcResult({ id: onboardingId, private_listing_id: listingId, token: 'new-token', form_data: { sellerFirstName: 'Sam' } }))
+    const saved = await persistSellerProfileOnboardingFormData({ listingId, token: 'new-token', newOnboarding: true,
+      listingSnapshot: { id: listingId }, formData: { sellerFirstName: 'Sam' }, allowProtectedSectionOverride: true })
+    expect(saved.id).toBe(onboardingId)
+    expect(client.from).not.toHaveBeenCalled()
+    expect(client.rpc).toHaveBeenCalledWith('save_private_listing_seller_onboarding_profile', expect.objectContaining({
+      p_listing_id: listingId, p_revision: { onboardingId: null, updatedAt: null }, p_form_data: expect.objectContaining({ sellerFirstName: 'Sam' }),
+    }))
+  })
+
+  it('the new-capture shortcut still rejects an onboarding row created concurrently', async () => {
+    client.rpc.mockReturnValue(rpcResult(null, { code: 'PT409', message: 'An onboarding row was created by another save' }))
+    await expect(persistSellerProfileOnboardingFormData({ listingId, token: 'new-token', newOnboarding: true,
+      listingSnapshot: { id: listingId }, formData: { sellerFirstName: 'Unsaved' },
+    })).rejects.toMatchObject({ code: 'SELLER_UPDATE_CONFLICT' })
+    expect(client.from).not.toHaveBeenCalled()
+  })
+
   it.each(['bridge_update_private_listing_seller_onboarding_progress', 'bridge_complete_private_listing_seller_onboarding'])('passes the displayed seller revision to %s and retains inputs on conflict', async (rpcName) => {
     const displayed = { id: listingId, sellerOnboarding: { id: onboardingId, updatedAt: '2026-10-10T09:00:00Z' } }
     const formData = { sellerFirstName: 'Unsaved', phone: '0820000000' }

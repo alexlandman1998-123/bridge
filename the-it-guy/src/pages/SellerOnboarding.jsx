@@ -26,7 +26,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, createElement, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   OnboardingSectionHeader,
@@ -316,6 +316,12 @@ const SELLING_TIMELINE_OPTIONS = [
 
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] lg:max-w-[1184px]'
 const PAGE_STACK_CLASS = 'space-y-3 sm:space-y-6 lg:space-y-8'
+const SELLER_CAPTURE_TABS = [
+  { key: 'lead', label: 'Lead details', step: 0 },
+  { key: 'owner', label: 'Owner details', step: 0 },
+  { key: 'property', label: 'Property details', step: 1 },
+  { key: 'documents', label: 'Documents', step: 2 },
+]
 const SECTION_CARD_CLASS =
   'rounded-[28px] border border-[#dfe8f1] bg-white px-4 py-4 shadow-[0_18px_42px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[28px] sm:bg-white/90 sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
 const INNER_PANEL_CLASS =
@@ -858,11 +864,11 @@ function DraftSaveStatus({ status = 'idle', savedAt = '', fallback = '' }) {
   )
 }
 
-function MobileQuestionFlow({ activeIndex = 0, children }) {
+function MobileQuestionFlow({ activeIndex = 0, enabled = true, children }) {
   const value = useMemo(() => ({ activeIndex }), [activeIndex])
 
   return (
-    <MobileQuestionFlowContext.Provider value={value}>
+    <MobileQuestionFlowContext.Provider value={enabled ? value : null}>
       {children}
     </MobileQuestionFlowContext.Provider>
   )
@@ -2079,7 +2085,8 @@ function SellerStepProgress({ currentStep, progress }) {
   )
 }
 
-function StepShell({ eyebrow, title, description, children }) {
+function StepShell({ eyebrow, title, description, children, compact = false }) {
+  if (compact) return <section className="min-w-0">{children}</section>
   return (
     <section className={INNER_PANEL_CLASS}>
       <header className="mb-5 hidden sm:mb-6 sm:block">
@@ -2840,7 +2847,7 @@ function SignatureRequestDialog({ request = null, copied = false, onClose, onCop
   )
 }
 
-export function SellerOnboarding({ tokenOverride = '', embedded = false, completionModeOverride = '', onSubmitted = null, onDraftSaved = null, onSaveStateChange = null, onDirtyStateChange = null, captureDraft = null, onCapturePersist = null, onCaptureFinished = null, captureReview = null }) {
+export function SellerOnboarding({ tokenOverride = '', embedded = false, completionModeOverride = '', onSubmitted = null, onDraftSaved = null, onSaveStateChange = null, onDirtyStateChange = null, captureDraft = null, onCapturePersist = null, onCaptureFinished = null, captureReview = null, captureLayout = 'steps', captureLeadMetadata = null }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
   const isDemoOnboarding = isSellerOnboardingDemoToken(token)
@@ -2848,6 +2855,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
+  const tabbedCapture = Boolean(captureDraft && captureLayout === 'tabs')
+  const [captureTab, setCaptureTab] = useState('lead')
+  const captureTabId = useId()
+  const capturePanelRef = useRef(null)
   const [mobilePaneIndex, setMobilePaneIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -3888,6 +3899,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     // Compare editable input only. Capture audit timestamps must not make an
     // unchanged form dirty again after a successful autosave.
     const signature = buildSellerDraftSignature(formForDraft, nextStep)
+    if (tabbedCapture && lastDraftSignatureRef.current === signature) return true
     const capturedFormForDraft = isAgentAssistedCompletion ? {
       ...formForDraft,
       ...buildSellerAgentAssistedDisclosurePatch({ disclosure: formForDraft.propertyDisclosure, existingFormData: assistedDisclosureSource, draft: true }),
@@ -4684,7 +4696,27 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     : []
 
   const shouldShowWelcome = !embedded && !isCompleted && !hasRequestedComplianceSigner && !isAgentAssistedCompletion && showWelcome
-  const onboardingActions = (!embedded || isAgentAssistedCompletion) && !isCompleted && !hasRequestedComplianceSigner ? (
+  function selectCaptureTab(tab) {
+    setCaptureTab(tab.key)
+    setCurrentStep(tab.step)
+    setMobilePaneIndex(0)
+    if (capturePanelRef.current) capturePanelRef.current.scrollTop = 0
+  }
+
+  async function saveCaptureDraft() {
+    const validationError = validateCaptureValues()
+    if (validationError) { setError(validationError); return false }
+    return saveDraft()
+  }
+
+  const onboardingActions = tabbedCapture ? (
+    <div className="flex items-center justify-between gap-3 border-t border-[#e4ebf2] pt-4">
+      <DraftSaveStatus status={saving || submitting ? 'saving' : draftSyncStatus} savedAt={lastDraftSavedAt} fallback="Not saved yet" />
+      <Button type="button" disabled={saving || submitting} onClick={() => finishLeadCapture()} className="min-h-[44px] shrink-0">
+        {saving || submitting ? 'Saving…' : 'Save lead'}
+      </Button>
+    </div>
+  ) : (!embedded || isAgentAssistedCompletion) && !isCompleted && !hasRequestedComplianceSigner ? (
     <div className="rounded-[24px] border border-white/70 bg-white/95 p-3 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
       <div className="grid gap-2 md:hidden">
         <div className="flex min-w-0 items-center justify-between gap-2">
@@ -4761,11 +4793,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
   ) : null
 
   const formContent = (
-    <div className={PAGE_STACK_CLASS}>
+    <div className={tabbedCapture ? 'space-y-4' : PAGE_STACK_CLASS}>
       {!isCompleted && !hasRequestedComplianceSigner ? (
         <>
           {!(embedded && isAgentAssistedCompletion) ? <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} /> : null}
-          {isAgentAssistedCompletion ? (
+          {isAgentAssistedCompletion && !tabbedCapture ? (
             <div className="mt-4 flex items-start gap-3 rounded-[16px] border border-[#c9dceb] bg-[#f4f9ff] px-4 py-3 text-sm leading-6 text-[#315879]">
               <UserRound size={18} className="mt-0.5 shrink-0" />
               <p><strong>Agent-assisted onboarding.</strong> Capture the information with the seller. Submission will be recorded as completed by the authenticated agency user; it does not replace FICA review or mandate signing.</p>
@@ -4777,8 +4809,28 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       {isCompleted ? (
         <SellerCompletedState listing={listing} form={form} brand={agencyBrand} onDownloadDisclosure={handleDownloadDisclosurePdf} />
       ) : (
-        <section className={SECTION_CARD_CLASS}>
-        {!hasRequestedComplianceSigner ? <SellerStepProgress currentStep={currentStep} progress={progress} /> : null}
+        <section className={tabbedCapture ? 'min-w-0' : SECTION_CARD_CLASS}>
+        {tabbedCapture ? (
+          <div role="tablist" aria-label="Seller lead details" className="grid grid-cols-2 gap-1 rounded-[14px] bg-[#f2f5f8] p-1 sm:grid-cols-4">
+            {SELLER_CAPTURE_TABS.map((tab, index) => (
+              <button key={tab.key} type="button" role="tab" id={`${captureTabId}-${tab.key}`} aria-controls={`${captureTabId}-panel`}
+                aria-selected={captureTab === tab.key} tabIndex={captureTab === tab.key ? 0 : -1} disabled={saving || submitting}
+                className={`min-h-[42px] rounded-[11px] px-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-[#315879] ${captureTab === tab.key ? 'bg-white text-[#142132] shadow-sm' : 'text-[#60748b] hover:text-[#142132]'}`}
+                onClick={() => selectCaptureTab(tab)}
+                onKeyDown={event => {
+                  const nextIndex = event.key === 'ArrowRight' ? (index + 1) % SELLER_CAPTURE_TABS.length
+                    : event.key === 'ArrowLeft' ? (index + SELLER_CAPTURE_TABS.length - 1) % SELLER_CAPTURE_TABS.length
+                      : event.key === 'Home' ? 0 : event.key === 'End' ? SELLER_CAPTURE_TABS.length - 1 : -1
+                  if (nextIndex < 0) return
+                  event.preventDefault()
+                  selectCaptureTab(SELLER_CAPTURE_TABS[nextIndex])
+                  event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[nextIndex]?.focus()
+                }}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : !hasRequestedComplianceSigner ? <SellerStepProgress currentStep={currentStep} progress={progress} /> : null}
 
         {error ? (
           <p
@@ -4826,10 +4878,34 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
           </div>
         ) : null}
 
-        <MobileQuestionFlow activeIndex={activeMobilePaneIndex}>
-        <div className="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
-          {currentStep === 0 ? (
+        <div ref={capturePanelRef} role={tabbedCapture ? 'tabpanel' : undefined} id={tabbedCapture ? `${captureTabId}-panel` : undefined}
+          aria-labelledby={tabbedCapture ? `${captureTabId}-${captureTab}` : undefined}
+          className={tabbedCapture ? 'mt-4 max-h-[55vh] overflow-y-auto overscroll-contain px-1 pb-1' : undefined}>
+        <MobileQuestionFlow activeIndex={activeMobilePaneIndex} enabled={!tabbedCapture}>
+        <div className={tabbedCapture ? 'space-y-4' : 'mt-4 space-y-4 sm:mt-6 sm:space-y-6'}>
+          {tabbedCapture && captureTab === 'lead' ? (
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">First name
+                <input className={DETAIL_INPUT_CLASS} autoComplete="given-name" value={form.sellerFirstName} onChange={event => handleFormUpdate('sellerFirstName', event.target.value)} />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Surname
+                <input className={DETAIL_INPUT_CLASS} autoComplete="family-name" value={form.sellerSurname} onChange={event => handleFormUpdate('sellerSurname', event.target.value)} />
+              </label>
+              <label className="col-span-2 grid gap-2 text-sm font-medium text-[#2a4057] sm:col-span-1">Phone
+                <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" autoComplete="tel" value={form.phone} onChange={event => handleFormUpdate('phone', event.target.value)} />
+              </label>
+              <label className="col-span-2 grid gap-2 text-sm font-medium text-[#2a4057] sm:col-span-1">Email
+                <input className={DETAIL_INPUT_CLASS} type="email" inputMode="email" autoComplete="email" value={form.email} onChange={event => handleFormUpdate('email', event.target.value)} />
+              </label>
+              <label className="col-span-2 grid gap-2 text-sm font-medium text-[#2a4057] sm:col-span-1">Address
+                <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.query || propertyAddressDetails.formatted || ''} onChange={event => handlePropertyAddressQueryChange(event.target.value)} />
+              </label>
+              {captureLeadMetadata}
+            </div>
+          ) : null}
+          {currentStep === 0 && (!tabbedCapture || captureTab === 'owner') ? (
             <StepShell
+              compact={tabbedCapture}
               eyebrow="About you"
               title="Tell us about yourself"
               description="Add what you know. Every question is optional. You can come back later."
@@ -4838,7 +4914,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
               <FormSection
                 icon={Landmark}
                 title="Who owns this property?"
-                description="Choose who owns the property, if you know. Otherwise, skip this question."
+                description={tabbedCapture ? '' : 'Choose who owns the property, if you know. Otherwise, skip this question.'}
                 illustration="ownership"
                 mobilePaneIndex={sellerPaneIndexes.ownership}
               >
@@ -4847,7 +4923,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     Your agent selected the legal ownership structure for this onboarding. If it needs correcting, please ask your agent to update the seller setup and send a replacement link.
                   </div>
                 ) : null}
-                <div className="grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className={`grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 ${tabbedCapture ? '' : 'lg:grid-cols-4'}`}>
                   {OWNER_ENTITY_TYPES.map((item) => {
                     const active = ownerEntityType === item.value
                     return (
@@ -4882,7 +4958,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       )
                     })}
                   </div>
-                </div> : <p className="mt-3 text-sm text-[#60748b]">Not sure who owns it? Leave this blank and continue.</p>}
+                </div> : !tabbedCapture ? <p className="mt-3 text-sm text-[#60748b]">Not sure who owns it? Leave this blank and continue.</p> : null}
 
                 {isForeignOwner ? (
                   <div className="mt-4 grid grid-cols-1 gap-3 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] p-4 md:grid-cols-2">
@@ -4908,15 +4984,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                   </div>
                 ) : null}
 
-                <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
+                {!tabbedCapture ? <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
                   {isMarriedOwnership
                     ? 'Marital regime is derived from the structure choice. We only ask for the spouse details that are actually needed.'
                     : 'The next questions follow the owner type and structure you selected.'}
-                </p>
+                </p> : null}
               </FormSection>
 
-              <FormSection icon={UserRound} title={sellerIdentityCopy.title} description={sellerIdentityCopy.description} mobilePaneIndex={sellerPaneIndexes.identity}>
+              <FormSection icon={UserRound} title={sellerIdentityCopy.title} description={tabbedCapture ? '' : sellerIdentityCopy.description} mobilePaneIndex={sellerPaneIndexes.identity}>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {tabbedCapture ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 md:col-span-2">
+                    <div className="min-w-0"><p className="font-semibold text-[#22364a]">{[form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Lead contact'}</p>
+                      {[form.phone, form.email].filter(Boolean).length ? <p className="mt-1 break-words text-sm text-[#60748b]">{[form.phone, form.email].filter(Boolean).join(' · ')}</p> : null}
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => selectCaptureTab(SELLER_CAPTURE_TABS[0])}>Edit contact</Button>
+                  </div> : <>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     {ownershipFieldLabels.firstName}
                     <input className={DETAIL_INPUT_CLASS} autoComplete="given-name" value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
@@ -4933,6 +5015,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     Phone
                     <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" autoComplete="tel" value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
                   </label>
+                  </>}
                   {isNaturalPersonSeller ? (
                     <>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -5360,8 +5443,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <h3 className="text-sm font-semibold text-[#22364a]">Owner cards</h3>
-                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture every owner in this shared form. You can add the other owners later. Signing steps will check the owners and their authority.</p>
+                          <h3 className="text-sm font-semibold text-[#22364a]">{tabbedCapture ? 'Owners' : 'Owner cards'}</h3>
+                          {!tabbedCapture ? <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture every owner in this shared form. You can add the other owners later. Signing steps will check the owners and their authority.</p> : null}
                         </div>
                         <Button type="button" variant="secondary" size="sm" onClick={addMultipleOwner}>
                           <Plus size={14} />
@@ -5374,7 +5457,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                             <div className="mb-3 flex items-center justify-between gap-3">
                               <div>
                                 <p className="text-sm font-semibold text-[#22364a]">Owner {index + 1}</p>
-                                <p className="text-xs text-[#6b7d93]">Repeatable owner record</p>
+                                {!tabbedCapture ? <p className="text-xs text-[#6b7d93]">Repeatable owner record</p> : null}
                               </div>
                               {multipleOwners.length > 2 ? (
                                 <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => removeMultipleOwner(owner.id)}>
@@ -5386,9 +5469,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                               {index === 0 ? (
                                 <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#cfe6da] bg-[#f3fbf6] px-3 py-2 text-sm font-semibold text-[#245c3d] md:col-span-2">
                                   <input type="checkbox" checked={Boolean(form.primaryContactIsOwnerOne)} onChange={(event) => handlePrimaryContactOwnerOneChange(event.target.checked)} />
-                                  The primary contact details above are for Owner 1
+                                  {tabbedCapture ? 'Use lead contact details for Owner 1' : 'The primary contact details above are for Owner 1'}
                                 </label>
                               ) : null}
+                              {!(tabbedCapture && index === 0 && form.primaryContactIsOwnerOne) ? <>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 First name
                                 <input className={DETAIL_INPUT_CLASS} value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
@@ -5397,6 +5481,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                                 Surname
                                 <input className={DETAIL_INPUT_CLASS} value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
                               </label>
+                              </> : null}
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 ID / Passport Number
                                 <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
@@ -5411,6 +5496,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                                 Ownership Share % (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.ownershipShare} onChange={(event) => updateMultipleOwner(owner.id, 'ownershipShare', event.target.value)} />
                               </label>
+                              {!(tabbedCapture && index === 0 && form.primaryContactIsOwnerOne) ? <>
                               <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                                 Email (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.email} onChange={(event) => updateMultipleOwner(owner.id, 'email', event.target.value)} />
@@ -5419,10 +5505,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                                 Phone (optional)
                                 <input className={DETAIL_INPUT_CLASS} value={owner.phone} onChange={(event) => updateMultipleOwner(owner.id, 'phone', event.target.value)} />
                               </label>
-                              <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                              </> : null}
+                              {!tabbedCapture ? <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                                 <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
                                 Consent to sell
-                              </label>
+                              </label> : null}
                             </div>
                           </article>
                         ))}
@@ -5438,8 +5525,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                 ) : null}
               </FormSection>
 
-              <FormSection icon={ShieldCheck} title="FICA details" description="Capture the details needed to prepare the declaration." mobilePaneIndex={sellerPaneIndexes.identity}>
+              <FormSection icon={ShieldCheck} title="FICA details" description={tabbedCapture ? '' : 'Capture the details needed to prepare the declaration.'} mobilePaneIndex={sellerPaneIndexes.identity}>
                 <SellerFicaQuestions
+                  compact={tabbedCapture}
                   form={form}
                   onChange={handleFormUpdate}
                   onAddPerson={addCollectionItem}
@@ -5454,7 +5542,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                 />
               </FormSection>
 
-              <FormSection
+              {!tabbedCapture ? <FormSection
                 icon={ShieldCheck}
                 title="Permissions and declaration"
                 description="These permissions cover the basic onboarding information. Your agent will request FICA supporting documents separately in the portal after you submit."
@@ -5477,19 +5565,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     )
                   })}
                 </div>
-              </FormSection>
+              </FormSection> : null}
 
               <FormSection
                 icon={FileCheck2}
                 title="Mandate preferences"
-                description="Confirm the mandate choices your agent will use to prepare the mandate."
+                description={tabbedCapture ? '' : 'Confirm the mandate choices your agent will use to prepare the mandate.'}
                 illustration="selling_context"
                 mobilePaneIndex={sellerPaneIndexes.mandatePreferences}
               >
                 <div className="grid gap-5">
                   <div>
                     <p className="text-sm font-medium text-[#2a4057]">Choose the mandate type</p>
-                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className={`mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 ${tabbedCapture ? '' : 'lg:grid-cols-4'}`}>
                       {MANDATE_TYPE_OPTIONS.map((option) => (
                         <ChoiceCard
                           key={option.value}
@@ -5512,7 +5600,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       <input className={DATE_INPUT_CLASS} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
                     </label>
                   </div>
-                  {recommendedTransferAttorneyName ? (
+                  {recommendedTransferAttorneyName && !tabbedCapture ? (
                     <section className="rounded-[16px] border border-[#cfe1f1] bg-[#f7fbff] p-4" aria-labelledby="conveyancing-attorney-choice-title">
                       <div className="flex items-start gap-3">
                         <Landmark className="mt-0.5 shrink-0 text-[#2f6f9f]" size={20} aria-hidden="true" />
@@ -5607,7 +5695,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y text-sm placeholder:text-sm`}
                       value={form.additionalConditions || ''}
                       onChange={(event) => handleFormUpdate('additionalConditions', event.target.value)}
-                      placeholder="Access rules, timing, exclusions, or anything your agent should include in the mandate."
+                      placeholder={tabbedCapture ? 'Access rules, timing, exclusions or other known conditions.' : 'Access rules, timing, exclusions, or anything your agent should include in the mandate.'}
                     />
                   </label>
                 </div>
@@ -5616,7 +5704,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
               <FormSection
                 icon={ClipboardCheck}
                 title="Selling context"
-                description="Help us understand your plans so we can guide you better."
+                description={tabbedCapture ? '' : 'Help us understand your plans so we can guide you better.'}
                 mobilePaneIndex={sellerPaneIndexes.sellingContext}
               >
                 <div className="grid gap-5">
@@ -5655,11 +5743,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     </div>
                   </div>
                 </div>
-                <div className="mt-4">
+                {!tabbedCapture ? <div className="mt-4">
                   <OnboardingSummaryCard title="What happens next" icon="calendar" tone="neutral">
                     Your agent will use this to prepare the correct next step and supporting documents.
                   </OnboardingSummaryCard>
-                </div>
+                </div> : null}
               </FormSection>
               </div>
             </StepShell>
@@ -5667,6 +5755,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
 
           {currentStep === 1 ? (
             <StepShell
+              compact={tabbedCapture}
               eyebrow="Property details"
               title="Tell us about the property"
               description="We start with category, then branch into the right property, address, and document questions."
@@ -6309,7 +6398,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
             />
           ) : null}
 
-          {currentStep === FINAL_STEP_INDEX && !hasRequestedComplianceSigner ? (
+          {tabbedCapture && captureTab === 'documents' ? captureReview?.({ listing, form, saveDraft: saveCaptureDraft,
+            hasUnsavedChanges: buildSellerDraftSignature(normalizeSellerFormForProgression(form, listing), currentStep) !== lastDraftSignatureRef.current,
+          }) : null}
+          {currentStep === FINAL_STEP_INDEX && !hasRequestedComplianceSigner && !tabbedCapture ? (
             <StepShell
               eyebrow="Review & Send"
               title="Check your seller file"
@@ -6410,12 +6502,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
           ) : null}
         </div>
         </MobileQuestionFlow>
+        </div>
 
       </section>
       )}
 
       {onboardingActions}
-      {captureDraft && currentStep < FINAL_STEP_INDEX ? <Button type="button" variant="secondary" disabled={saving || submitting} onClick={() => finishLeadCapture()}>Save and finish later</Button> : null}
+      {captureDraft && !tabbedCapture && currentStep < FINAL_STEP_INDEX ? <Button type="button" variant="secondary" disabled={saving || submitting} onClick={() => finishLeadCapture()}>Save and finish later</Button> : null}
 
       <SignatureRequestDialog
         request={signatureRequest}
@@ -6427,10 +6520,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
         }}
       />
 
-      <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
+      {!tabbedCapture ? <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
         <span>Secure seller onboarding powered by arch9</span>
         <span>Need help? Contact {resolveAgentName(listing)}.</span>
-      </footer>
+      </footer> : null}
     </div>
   )
 

@@ -1,5 +1,31 @@
 # bridge.
 
+## Seller lead capture
+
+Add Seller Lead opens with first name, surname, phone, email, property address,
+the standard source dropdown and the lead team. Select one primary agent and
+optional supporting agents through the existing lead assignment model. Owner
+details reuses that contact; linking Owner 1 avoids retyping the same contact.
+Ownership and mandate choices use two columns. Seller permissions and declarations
+are completed by the seller in onboarding, rather than recorded in this modal.
+Owner details, Property details and Documents are optional tabs. Switching
+tabs keeps entered answers without saving; Save lead is available from every tab.
+Property details starts directly with the fields. Documents shows one preparation
+action, then compact upload rows and saved-file statuses. Optional seller progress
+is under Lead Details. Save lead skips document preparation and unchanged drafts;
+new intakes use the guarded save without redundant onboarding lookups. Confirmed
+contact, lead summary and agent writes run together, retaining successful writes
+when retrying. The existing seller record, partial-save rules, document uploads
+and review gates are reused. Documents can save the details first without closing
+the modal. Saved
+answers feed the lead's Seller Profile and Property tabs, the linked listing,
+seller onboarding and seller portal through the same onboarding record.
+Focused checks: `SellerLeadCreateDialog.test.jsx`, `SellerOnboardingCapture.test.jsx`
+and `sellerLeadCaptureService.test.js`; save guards and CRM notification reads are
+covered by `privateListingService.sellerAccess.test.js` and
+`agencyCrmNewLeadNotification.test.js`.
+
+
 ## Seller onboarding differences from a draft listing
 
 Submitted onboarding now preserves the agent's saved draft property values before

@@ -1,17 +1,18 @@
 import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord, updateAgencyCrmContactRecord, createAgencyCrmLeadActivity } from '../lib/agencyCrmRepository'
 import { createPrivateListing, persistSellerProfileOnboardingFormData, updateSellerOnboardingProgress } from './privateListingService'
 import { generateSellerOnboardingToken } from '../lib/agentListingStorage'
+import { addLeadCollaborator } from './leadCollaboratorService'
 
 const text = value => String(value ?? '').trim()
 
 // A resumable receipt is held by the dialog, not another database record. The
 // same IDs survive failed requests, so retrying never creates another journey.
 export function createSellerLeadCaptureReceipt() {
-  return { leadId: crypto.randomUUID(), contactId: crypto.randomUUID(), token: generateSellerOnboardingToken(), lead: null, listing: null }
+  return { leadId: crypto.randomUUID(), contactId: crypto.randomUUID(), token: generateSellerOnboardingToken(), lead: null, listing: null, collaboratorAgentIds: [] }
 }
 
-export async function persistSellerLeadCapture({ organisationId, actor, assignedAgent, source, priority, candidate, receipt }, dependencies = {}) {
-  const api = { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord, updateAgencyCrmContactRecord, createPrivateListing, persistSellerProfileOnboardingFormData, updateSellerOnboardingProgress, ...dependencies }
+export async function persistSellerLeadCapture({ organisationId, actor, assignedAgent, additionalAgents = [], source, priority, candidate, receipt }, dependencies = {}) {
+  const api = { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord, updateAgencyCrmContactRecord, createPrivateListing, persistSellerProfileOnboardingFormData, updateSellerOnboardingProgress, addLeadCollaborator, ...dependencies }
   const formData = candidate.sellerOnboarding.formData
   if (!receipt.lead) {
     receipt.lead = await api.createAgencyCrmLeadRecord(organisationId, {
@@ -37,6 +38,7 @@ export async function persistSellerLeadCapture({ organisationId, actor, assigned
       propertyStructureType: text(formData.propertyStructureType), askingPrice: formData.askingPrice,
     }, { includeRequirementsAndDocuments: false, syncRequirements: false })
     receipt.listing = result.listing
+    receipt.newOnboarding = !result.existing && !result.listing?.sellerOnboarding?.id
   }
   if (!receipt.listing?.id) throw new Error('The seller record could not be prepared. Your answers are still in this form.')
 
@@ -53,6 +55,7 @@ export async function persistSellerLeadCapture({ organisationId, actor, assigned
       listingId: receipt.listing.id, listingSnapshot: receipt.listing,
       token: receipt.token, formData, status: 'in_progress',
       allowProtectedSectionOverride: true,
+      newOnboarding: receipt.newOnboarding,
     })
     saved = { ...receipt.listing, updatedAt: onboarding.listing_updated_at || receipt.listing.updatedAt,
       sellerOnboarding: { ...onboarding, formData: onboarding.form_data || onboarding.formData } }
@@ -66,20 +69,45 @@ export async function persistSellerLeadCapture({ organisationId, actor, assigned
     sellerPropertyAddress: text(confirmed.propertyAddress), formattedAddress: text(confirmed.propertyAddress),
     suburb: text(confirmed.suburb), city: text(confirmed.city), province: text(confirmed.province), postalCode: text(confirmed.postalCode),
   }
-  try {
-    // The contact was created for this intake, so its same-person link is
-    // explicit. Project confirmed contact fields, never legal entity names.
-    if (JSON.stringify(contact) !== JSON.stringify(receipt.contact)) {
-      await api.updateAgencyCrmContactRecord(organisationId, receipt.contactId, contact)
-      receipt.contact = contact
+  // All these writes depend on the confirmed profile, but not on each other.
+  // Keep every success in the receipt so retrying only completes missing work.
+  const writes = []
+  if (JSON.stringify(contact) !== JSON.stringify(receipt.contact)) {
+    writes.push({ kind: 'contact', run: () => api.updateAgencyCrmContactRecord(organisationId, receipt.contactId, contact) })
+  }
+  if (JSON.stringify(patch) !== JSON.stringify(receipt.leadPatch)) {
+    writes.push({ kind: 'lead', run: () => api.updateAgencyCrmLeadRecord(organisationId, receipt.leadId, patch) })
+  }
+  const collaboratorIds = [...new Set(additionalAgents.map(agent => text(agent?.userId || agent?.id)).filter(id => id && id !== text(assignedAgent?.userId || assignedAgent?.id)))]
+  receipt.collaboratorAgentIds ||= []
+  for (const userId of collaboratorIds) {
+    if (!receipt.collaboratorAgentIds.includes(userId)) {
+      writes.push({ kind: 'agent', userId, run: () => api.addLeadCollaborator({ organisationId, leadId: receipt.leadId, userId }) })
     }
-    await api.updateAgencyCrmLeadRecord(organisationId, receipt.leadId, patch)
-  } catch (cause) {
+  }
+  const results = await Promise.allSettled(writes.map(write => Promise.resolve().then(write.run)))
+  let projectionFailure
+  let teamFailure
+  results.forEach((result, index) => {
+    const write = writes[index]
+    if (result.status === 'rejected') {
+      if (write.kind === 'agent') teamFailure ||= result.reason
+      else projectionFailure ||= result.reason
+    } else if (write.kind === 'contact') receipt.contact = contact
+    else if (write.kind === 'lead') receipt.leadPatch = patch
+    else receipt.collaboratorAgentIds.push(write.userId)
+  })
+  if (projectionFailure) {
     throw Object.assign(new Error('Your seller details are saved, but the lead summary could not be updated. Try saving again to finish linking the lead.'), {
-      code: 'SELLER_CAPTURE_PROJECTION_FAILED', committed: true, listing: saved, cause,
+      code: 'SELLER_CAPTURE_PROJECTION_FAILED', committed: true, listing: saved, cause: projectionFailure,
     })
   }
-  receipt.lead = { ...receipt.lead, ...patch, sellerOnboarding: saved.sellerOnboarding }
+  if (teamFailure) {
+    throw Object.assign(new Error('Your seller details are saved, but an additional agent could not be assigned. Try saving again to finish the lead team.'), {
+      code: 'SELLER_CAPTURE_TEAM_FAILED', committed: true, listing: saved, cause: teamFailure,
+    })
+  }
+  receipt.lead = { ...receipt.lead, ...patch, sellerOnboarding: saved.sellerOnboarding, collaboratorAgentIds: [...receipt.collaboratorAgentIds] }
   return saved
 }
 

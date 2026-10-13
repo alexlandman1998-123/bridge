@@ -2,7 +2,10 @@ import { useCallback, useRef, useState } from 'react'
 import { SellerOnboarding } from '../../pages/SellerOnboarding'
 import Modal from '../ui/Modal'
 import Field from '../ui/Field'
+import Button from '../ui/Button'
 import SellerCaptureDocuments from '../onboarding/SellerCaptureDocuments'
+import LeadAgentTeamSelect from './LeadAgentTeamSelect'
+import { LEAD_CAPTURE_SOURCE_OPTIONS } from './leadCaptureSources'
 import { createSellerLeadCaptureReceipt, persistSellerLeadCapture, recordSellerCaptureProgress, SELLER_CAPTURE_PROGRESS } from '../../services/sellerLeadCaptureService'
 import { syncPrivateListingRequirements, uploadPrivateListingDocument } from '../../services/privateListingService'
 
@@ -12,20 +15,51 @@ const EMPTY_CAPTURE = Object.freeze({ sellerOnboarding: { status: 'not_started',
   propertyCategory: '', propertyType: '', propertyStructureType: '',
 } } })
 
-export default function SellerLeadCreateDialog({ organisationId, actor, assignedAgent, source, priority, metadataControls, onClose, onCreated }) {
+export default function SellerLeadCreateDialog({ organisationId, actor, assignedAgent, agents = [], lockPrimaryAgent = false, source, onSourceChange, sourceOptions, priority, metadataControls, onClose, onCreated }) {
   const [receipt] = useState(createSellerLeadCaptureReceipt)
+  const [primaryAgent, setPrimaryAgent] = useState(assignedAgent)
+  const [additionalAgents, setAdditionalAgents] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const busy = saving || uploading
+  const [preparingDocuments, setPreparingDocuments] = useState(false)
+  const [documentListing, setDocumentListing] = useState(null)
+  const [progressOpen, setProgressOpen] = useState(false)
+  const busy = saving || uploading || preparingDocuments
   const [error, setError] = useState('')
   const [progress, setProgress] = useState('')
   const progressSaved = useRef('')
-  const persist = useCallback(candidate => persistSellerLeadCapture({ organisationId, actor, assignedAgent, source, priority, candidate, receipt: receipt }), [organisationId, actor, assignedAgent, source, priority])
-  return <Modal open title="Create Seller Lead" subtitle="Add what you know. All seller and property questions are optional. Saved answers appear in the seller’s link." className="max-w-6xl" onClose={busy ? undefined : onClose}>
+  const sources = sourceOptions?.length ? sourceOptions : LEAD_CAPTURE_SOURCE_OPTIONS
+  const persist = useCallback(candidate => persistSellerLeadCapture({ organisationId, actor, assignedAgent: primaryAgent, additionalAgents, source, priority, candidate, receipt: receipt }), [organisationId, actor, primaryAgent, additionalAgents, source, priority, receipt])
+  return <Modal open title="Create Seller Lead" className="max-w-4xl" onClose={busy ? undefined : onClose}>
     <fieldset disabled={busy} className="space-y-4">
-      <fieldset disabled={Boolean(receipt.lead)}>{metadataControls}</fieldset>
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
-      <SellerOnboarding embedded captureDraft={EMPTY_CAPTURE} completionModeOverride="agent_assisted"
+      <SellerOnboarding embedded captureDraft={EMPTY_CAPTURE} completionModeOverride="agent_assisted" captureLayout="tabs"
+        captureLeadMetadata={<>
+        <fieldset disabled={Boolean(receipt.lead)} className="col-span-2 min-w-0 sm:col-span-1">
+          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">Source
+            <Field as="select" value={source || ''}
+              onChange={event => onSourceChange?.(event.target.value)} disabled={!onSourceChange}
+              className="min-h-[52px] rounded-[16px] text-base">
+              {!source ? <option value="">Choose source</option> : !sources.includes(source) ? <option value={source}>{source}</option> : null}
+              {sources.map(option => <option key={option}>{option}</option>)}
+            </Field>
+          </label>
+        </fieldset>
+        <fieldset disabled={Boolean(receipt.lead)} className="col-span-2 min-w-0">
+          <LeadAgentTeamSelect agents={agents} primaryAgent={primaryAgent} additionalAgents={additionalAgents} lockPrimary={lockPrimaryAgent}
+            onPrimaryChange={setPrimaryAgent} onAdditionalChange={setAdditionalAgents} />
+          {metadataControls}
+        </fieldset>
+        <details open={progressOpen} onToggle={event => setProgressOpen(event.currentTarget.open)} className="col-span-2 rounded-[14px] border border-[#d7e2ed] px-3 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-[#2a4057]">Seller progress (optional)</summary>
+          {progressOpen ? <label className="mt-3 grid gap-2 text-sm font-medium">Where are you with this seller?
+            <Field as="select" value={progress} onChange={event => setProgress(event.target.value)}>
+              <option value="">Choose if you know</option>
+              {SELLER_CAPTURE_PROGRESS.map(value => <option key={value}>{value}</option>)}
+            </Field>
+          </label> : null}
+        </details>
+        </>}
         onSaveStateChange={setSaving} onCapturePersist={persist}
         onCaptureFinished={async () => {
           try {
@@ -36,16 +70,21 @@ export default function SellerLeadCreateDialog({ organisationId, actor, assigned
             onCreated(receipt, progress)
           } catch (reason) { setError(reason.message || 'Your details are saved, but progress could not be recorded. Try again.') }
         }}
-        captureReview={({ listing, saveDraft }) => <>
-          <label className="grid gap-2 text-sm font-semibold">Where are you with this seller?
-            <Field as="select" value={progress} onChange={event => setProgress(event.target.value)}>
-              <option value="">Choose if you know</option>
-              {SELLER_CAPTURE_PROGRESS.map(value => <option key={value}>{value}</option>)}
-            </Field>
-          </label>
-          <p className="text-sm text-[#60748b]">This records your progress. Documents still need review before the next stage can be confirmed.</p>
-          {progress === 'We already have a signed mandate' ? <p className="text-sm">Add the signed mandate below. Saving it does not mark it reviewed or activate a listing.</p> : null}
-          <SellerCaptureDocuments listing={listing} token={listing.sellerOnboarding?.token}
+        captureReview={({ listing, saveDraft, hasUnsavedChanges }) => <>
+          {!documentListing || hasUnsavedChanges ? <div className="flex flex-col items-start gap-4 rounded-[18px] border border-[#dce6f2] bg-[#fafbfc] p-5">
+            <p className="text-sm text-[#60748b]">Add any documents you have. You can also save the lead and add them later.</p>
+            <Button type="button" variant="secondary" disabled={busy} onClick={async () => {
+              setPreparingDocuments(true)
+              setError('')
+              try {
+                if (!await saveDraft()) return
+                const saved = receipt.listing
+                const prepared = await syncPrivateListingRequirements(saved, { emitActivity: false, formData: saved.sellerOnboarding.formData })
+                setDocumentListing(prepared?.listing || saved)
+              } catch (reason) { setError(reason.message || 'Documents could not be prepared. Try again.') }
+              finally { setPreparingDocuments(false) }
+            }}>{preparingDocuments ? 'Preparing documents…' : 'Save details to add documents'}</Button>
+          </div> : <SellerCaptureDocuments compact listing={listing} initialListing={documentListing} token={listing.sellerOnboarding?.token}
             onUpload={async (file, row) => {
               setUploading(true)
               try {
@@ -60,12 +99,8 @@ export default function SellerLeadCreateDialog({ organisationId, actor, assigned
                   existingSignedEvidence: ['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form'].includes(row.requirementKey || row.requirement_key),
                 })
               } finally { setUploading(false) }
-            }} />
-        </>}
-        onDraftSaved={async listing => {
-          try { await syncPrivateListingRequirements(listing, { emitActivity: false, formData: listing.sellerOnboarding.formData }) }
-          catch { /* Saving succeeds independently; upload preflight retries the checklist. */ }
-        }} />
+            }} />}
+        </>} />
     </fieldset>
   </Modal>
 }

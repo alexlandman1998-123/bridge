@@ -1585,7 +1585,8 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
     return updatedLead
   }
 
-  const previousLeadQuery = await fetchLeadRowById(normalizedOrganisationId, dbLeadId)
+  const assignmentTouched = ['assignedAgentId', 'assignedUserId', 'assignedAgentEmail', 'assignedQueueId', 'ownershipStatus'].some((key) => hasOwn(patch, key))
+  const previousLeadQuery = assignmentTouched ? await fetchLeadRowById(normalizedOrganisationId, dbLeadId) : null
   const previousLead = previousLeadQuery?.data || null
 
   try {

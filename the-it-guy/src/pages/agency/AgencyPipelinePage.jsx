@@ -41994,20 +41994,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             organisationId={organisationId}
             actor={{ id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email }}
             assignedAgent={resolveAgentById(selectedAgentId || currentAgent.id)}
-            source={leadForm.leadSource} priority={leadForm.priority}
+            agents={eligibleLeadAssignmentOptions} lockPrimaryAgent={!isPrincipal}
+            source={leadForm.leadSource} onSourceChange={value => updateLeadFormField('leadSource', value)} sourceOptions={leadSourceOptions} priority={leadForm.priority}
             onClose={() => { setShowLeadForm(false); clearLeadForm(); void reloadRecords(organisationId, { applyLocalSnapshot: false }) }}
             metadataControls={<div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1.5 text-sm font-semibold">How did this lead find you?
-                <Field as="select" value={leadForm.leadSource} onChange={event => updateLeadFormField('leadSource', event.target.value)}>
-                  {leadSourceOptions.map(option => <option key={option}>{option}</option>)}
-                </Field>
-              </label>
               <label className="grid gap-1.5 text-sm font-semibold">Priority
                 <Field as="select" value={leadForm.priority} onChange={event => updateLeadFormField('priority', event.target.value)}>
                   {LEAD_PRIORITIES.map(option => <option key={option}>{option}</option>)}
                 </Field>
               </label>
-              {isPrincipal ? <AgentPicker agents={agentOptions} value={selectedAgentId} onChange={setSelectedAgentId} className="sm:col-span-2" /> : null}
             </div>}
             onCreated={(receipt, reportedProgress) => {
               setRecords(previous => ({ ...previous, leads: [receipt.lead, ...previous.leads.filter(lead => lead.leadId !== receipt.leadId)] }))

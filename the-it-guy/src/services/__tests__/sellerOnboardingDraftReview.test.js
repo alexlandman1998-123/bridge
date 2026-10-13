@@ -4,6 +4,16 @@ import { createSellerOnboardingDraftReviewFixture } from '../../../scripts/lib/s
 import { readSellerOnboardingDraftComparison, sellerOnboardingDraftPublicationBlocker } from '../../core/documents/sellerOnboardingDraftComparison.js'
 import { applyListingSellerOnboardingSaveSnapshot } from '../listings/listingSellerCanonicalUpdateModel.js'
 
+test('listing comparison handles the initial loading state before a listing is available', () => {
+  for (const listing of [null, undefined, {}, { sourceListing: null }]) {
+    const comparison = readSellerOnboardingDraftComparison(listing)
+    assert.deepEqual(comparison.differences, [])
+    assert.deepEqual(comparison.pending, [])
+    assert.equal(comparison.awaitingResubmission, false)
+    assert.equal(sellerOnboardingDraftPublicationBlocker(listing), '')
+  }
+})
+
 test('seller draft differences survive projection, review, correction and publication', async t => {
   const {db,ids,read,submit,accept} = await createSellerOnboardingDraftReviewFixture()
   try {

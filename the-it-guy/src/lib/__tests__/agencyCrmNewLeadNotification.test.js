@@ -6,7 +6,7 @@ vi.mock('../agencyPipelineService', () => ({
   getAgencyPipelineSnapshot: vi.fn(), deleteLeadActivity: vi.fn(), deleteAgencyLead: vi.fn(), deleteLeadTask: vi.fn(), updateAgencyContact: vi.fn(), updateLeadActivity: vi.fn(), updateAgencyLead: vi.fn(), updateLeadTask: vi.fn(),
 }))
 vi.mock('../agencyCrmUpdateBus', () => ({ emitAgencyCrmUpdated: vi.fn() }))
-import { createAgencyCrmLeadRecord } from '../agencyCrmRepository'
+import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../agencyCrmRepository'
 
 const organisationId = '11111111-1111-4111-8111-111111111111'
 const agentId = '33333333-3333-4333-8333-333333333333'
@@ -62,4 +62,19 @@ it('resolves an assignee missing an email instead of using the creating manager 
   await createAgencyCrmLeadRecord(organisationId, payload({ id: agentId }), { actor })
   await vi.waitFor(() => expect(fixture.send).toHaveBeenCalledTimes(1))
   expect(fixture.send.mock.calls[0][1].body.to).toBe('looked-up-agent@example.com')
+})
+
+it('updates seller summaries without reading the lead for an unchanged assignment', async () => {
+  const leadId = '55555555-5555-4555-8555-555555555555'
+  const result = Promise.resolve({ data: [{ lead_id: leadId }], error: null })
+  const query = {
+    update: vi.fn(() => query), eq: vi.fn(() => query), select: vi.fn(() => query),
+    then: (resolve, reject) => result.then(resolve, reject),
+  }
+  fixture.from.mockReturnValue(query)
+  await updateAgencyCrmLeadRecord(organisationId, leadId, { sellerPropertyAddress: '1 Example Road' })
+  expect(fixture.from).toHaveBeenCalledTimes(1)
+  expect(fixture.from).toHaveBeenCalledWith('leads')
+  expect(query.update).toHaveBeenCalledWith(expect.objectContaining({ seller_property_address: '1 Example Road' }))
+  expect(fixture.send).not.toHaveBeenCalled()
 })

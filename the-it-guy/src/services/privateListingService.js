@@ -4082,6 +4082,7 @@ export async function persistSellerProfileOnboardingFormData({
   explicitClearFields = [],
   replaceToken = false,
   reopenForCorrection = false,
+  newOnboarding = false,
   listingSnapshot = {},
   client: providedClient = null,
 } = {}) {
@@ -4091,7 +4092,11 @@ export async function persistSellerProfileOnboardingFormData({
   if (!normalizedListingId && !normalizedToken) return null
   if (!isPlainObject(formData)) return null
 
-  const existing = await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, normalizedListingId)
+  const revision = getSellerOnboardingSaveRevision(listingSnapshot)
+  // A newly created intake has no onboarding row to merge. The same RPC still
+  // checks this empty revision under its lock and rejects any concurrent row.
+  const isNewIntake = newOnboarding && normalizedListingId === listingSnapshot.id && !revision.onboardingId && revision.updatedAt === null
+  const existing = isNewIntake ? null : await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, normalizedListingId)
   if (normalizedListingId && existing?.private_listing_id && existing.private_listing_id !== normalizedListingId) {
     throw new Error('This seller link belongs to a different listing. Reopen the correct seller workspace before saving.')
   }
@@ -4130,7 +4135,7 @@ export async function persistSellerProfileOnboardingFormData({
     p_listing_id: scopedListingId,
     p_token: payload.token,
     p_form_data: nextFormData,
-    p_revision: getSellerOnboardingSaveRevision(listingSnapshot),
+    p_revision: revision,
     p_status: nextStatus,
     p_seller_type: payload.seller_type,
     p_ownership_structure: payload.ownership_structure,
