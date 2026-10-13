@@ -910,7 +910,9 @@ async function connectedJourney(runtime, branch, mandateType, { physical = false
   assert.deepEqual(await sql('select * from private_listing_documents where id in ($1,$2) order by id', [ficaId, disclosureId]), preservedDocuments)
   let mandate = mandatePack.documents.find(row => row.key === 'signed_mandate')
   assert.ok(mandate.mandateContract)
-  assert.equal(mandate.requiredSigners.length, copy.signers.length + (mandateType === 'dual' ? 2 : 1))
+  assert.equal(mandate.requiredSigners.length, copy.signers.length)
+  assert.equal(signingPack.mandateExecutionMode, 'seller_only_v2')
+  assert.doesNotMatch(mandate.generatedHtml, /Agency [AB] acceptance|Agency acceptance/)
   assert.ok(mandate.generatedHtml.includes(copy.form.titleDeedNumber), 'The saved title-deed reference must pull through')
   assert.ok(mandate.generatedHtml.includes(copy.form.erfNumber), 'The saved erf reference must pull through')
   for (const value of [signingPack.seller.legalOwnerName, signingPack.seller.legalOwnerIdentity, signingPack.property.address]) if (value) assert.ok(mandate.generatedHtml.includes(value), `${branch}: legal owner, identity and property must pull into the mandate`)
@@ -925,7 +927,7 @@ async function connectedJourney(runtime, branch, mandateType, { physical = false
       signedDate: '2026-10-04', signedPlace: 'Original Copy Town', accepted: true, versionDigest: mandate.versionDigest })).status, 200)
     const originalEvidence = await sql(`select * from ${evidenceTable} where signing_document_id=$1`, [firstIssue.body.signingDocumentId])
     const originalCopy = structuredClone(mandate)
-    signingPack.mandate.specialConditions = 'Synthetic replacement: all sellers and both agencies accept this revised condition.'
+    signingPack.mandate.specialConditions = 'Synthetic replacement: all required sellers accept this revised condition.'
     const beforeReplacement = await reopened(listingId)
     const replacementPack = api.createSellerOnboardingSigningCopyPack({ existing: mandatePack, signingPack, formalPackApproval: mandateApproval,
       postOnboardingDrafts: updatedDrafts, disclosureSigned: true, actor, generatedAt: signingPack.frozenAt })
