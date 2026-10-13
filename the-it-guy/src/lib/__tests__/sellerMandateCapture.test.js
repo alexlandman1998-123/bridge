@@ -45,10 +45,10 @@ test('unknown saved capture versions retain all fields and cannot be downgraded 
   assert.throws(() => buildSellerMandateTermsFormPatch(terms), /Unsupported mandate capture/)
 })
 
-test('zero protection is explicit; blank, negative and fractional days block preparation', () => {
+test('protection days are optional; only supplied invalid values block preparation', () => {
   const terms = createMandateTermsFixture()
-  for (const protectionPeriod of ['', '-1', '0.5', '9007199254740992']) assert.ok(getSellerMandateTermsMissing({ ...terms, protectionPeriod }).some(value => /Protection days/.test(value)))
-  for (const protectionPeriod of [0, '0', '60']) assert.ok(!getSellerMandateTermsMissing({ ...terms, protectionPeriod }).some(value => /Protection days/.test(value)))
+  for (const protectionPeriod of ['-1', '0.5', '9007199254740992']) assert.ok(getSellerMandateTermsMissing({ ...terms, protectionPeriod }).some(value => /Protection days/.test(value)))
+  for (const protectionPeriod of ['', ' ', undefined, null, 0, '0', '60']) assert.ok(!getSellerMandateTermsMissing({ ...terms, protectionPeriod }).some(value => /Protection days/.test(value)))
 })
 
 test('listing preparation validates the confirmed draft and saves consistent dates and zero protection without changing frozen copies', () => {
@@ -64,12 +64,12 @@ test('listing preparation validates the confirmed draft and saves consistent dat
   }
   const listing = { id: 'synthetic-listing', sellerOnboarding: { formData } }
   const before = structuredClone(listing)
-  assert.deepEqual(buildListingMandateReadiness(listing).missing, ['Valid mandate end date on or after start', 'Protection days (enter 0 for none)'])
-  const mandateTerms = { ...readSellerMandateTerms(formData), endDate: formData.expiryDate, protectionPeriod: '0' }
+  assert.deepEqual(buildListingMandateReadiness(listing).missing, ['Valid mandate end date on or after start'])
+  const mandateTerms = { ...readSellerMandateTerms(formData), endDate: formData.expiryDate }
   const options = { mandateTerms }
   assert.equal(buildListingMandateReadiness(listing, {}, options).ready, true)
   assert.equal(buildListingSellerDocumentReadiness(listing, {}, options).byKey.mandate.ready, true)
-  for (const protectionPeriod of ['', '-1', '0.5']) {
+  for (const protectionPeriod of ['-1', '0.5']) {
     assert.equal(buildListingMandateReadiness(listing, {}, { mandateTerms: { ...mandateTerms, protectionPeriod } }).ready, false)
   }
   assert.equal(buildListingMandateReadiness(listing, {}, { mandateTerms: { ...mandateTerms, endDate: '2026-09-14' } }).ready, false)
@@ -86,6 +86,26 @@ test('listing preparation validates the confirmed draft and saves consistent dat
   assert.deepEqual(savedForm.sellerOnboardingSigningPackSnapshot, before.sellerOnboarding.formData.sellerOnboardingSigningPackSnapshot)
   const cleared = buildSellerMandateTermsFormPatch({ ...mandateTerms, endDate: '' })
   assert.equal(buildListingMandateReadiness(applyListingSellerCanonicalUpdateSnapshot(reopened, buildListingSellerCanonicalUpdate({ listing: reopened, formPatch: cleared }))).ready, false)
+})
+
+test('all new mandate variants prepare with no protection period while preserving saved positive terms', () => {
+  for (const mandateType of ['sole', 'open', 'dual']) {
+    const terms = { ...createMandateTermsFixture(), mandateType, protectionPeriod: '' }
+    assert.deepEqual(getSellerMandateTermsMissing(terms), [])
+    const snapshot = buildSellerOnboardingSigningPackSnapshot({ mandate: terms })
+    assert.equal(snapshot.mandate.protectionPeriod, '0')
+    assert.equal(snapshot.mandate.protectionPeriodDays, '0')
+    const patch = buildSellerLeadSigningPackTermsPatch(terms)
+    for (const key of ['protectionPeriod', 'protectionPeriodDays', 'mandateProtectionPeriod', 'mandate_protection_period']) assert.equal(patch[key], '0')
+    assert.equal(terms.protectionPeriod, '')
+  }
+  assert.equal(buildSellerOnboardingSigningPackSnapshot({
+    formData: { protectionPeriod: '60' }, mandate: { protectionPeriodDays: '30' },
+  }).mandate.protectionPeriod, '30')
+  assert.equal(buildSellerOnboardingSigningPackSnapshot({
+    formData: { protectionPeriod: '60' }, mandate: { protectionPeriod: '' },
+  }).mandate.protectionPeriod, '0')
+  assert.equal(buildSellerOnboardingSigningPackSnapshot({ formData: { protectionPeriod: '60' } }).mandate.protectionPeriod, '60')
 })
 
 test('Open indefinite duration clears every end-date alias and cannot resurrect listing expiry', () => {

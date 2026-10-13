@@ -89,6 +89,7 @@ export function readSellerMandateTerms(value = {}, fallback = {}) {
 
 export function buildSellerMandateTermsFormPatch(value = {}) {
   const terms = readSellerMandateTerms(value)
+  const protectionPeriod = terms.protectionPeriod || '0'
   const capture = validateSellerMandateCapture(value.mandateCapture)
   return {
     mandateType: terms.mandateType, askingPrice: terms.askingPrice,
@@ -97,7 +98,7 @@ export function buildSellerMandateTermsFormPatch(value = {}) {
     mandateStartDate: terms.startDate, mandate_start_date: terms.startDate, startDate: terms.startDate,
     mandateEndDate: terms.endDate, mandate_end_date: terms.endDate, endDate: terms.endDate, expiryDate: terms.endDate,
     mandateExpiryDate: terms.endDate, mandate_expiry_date: terms.endDate,
-    protectionPeriod: terms.protectionPeriod, protectionPeriodDays: terms.protectionPeriod, mandateProtectionPeriod: terms.protectionPeriod, mandate_protection_period: terms.protectionPeriod,
+    protectionPeriod, protectionPeriodDays: protectionPeriod, mandateProtectionPeriod: protectionPeriod, mandate_protection_period: protectionPeriod,
     commissionBasis: terms.commissionBasis, commission_basis: terms.commissionBasis,
     commissionPercentage: terms.commissionBasis === 'fixed' ? '' : terms.commissionPercentage,
     commission_percent: terms.commissionBasis === 'fixed' ? '' : terms.commissionPercentage,
@@ -197,7 +198,7 @@ export function getSellerMandateTermsMissing(value = {}, { requireCapture = true
   const fixed = terms.mandateType !== 'open' || terms.mandateDuration === 'fixed'
   if (!['fixed', 'until_cancelled'].includes(terms.mandateDuration) || (terms.mandateType !== 'open' && terms.mandateDuration !== 'fixed')) missing.push('Mandate duration')
   if (fixed && (!isMandateCalendarDate(terms.endDate) || terms.endDate < terms.startDate)) missing.push('Valid mandate end date on or after start')
-  if (!/^\d+$/.test(terms.protectionPeriod) || !Number.isSafeInteger(Number(terms.protectionPeriod))) missing.push('Protection days (enter 0 for none)')
+  if (terms.protectionPeriod && (!/^\d+$/.test(terms.protectionPeriod) || !Number.isSafeInteger(Number(terms.protectionPeriod)))) missing.push('Protection days must be a whole number of 0 or more')
   if (!['percentage', 'fixed'].includes(terms.commissionBasis) || !positive(terms.commissionBasis === 'fixed' ? terms.commissionAmount : terms.commissionPercentage) || (terms.commissionBasis === 'percentage' && Number(terms.commissionPercentage) > 100)) missing.push('Valid commission amount or percentage')
   if (!MANDATE_VAT_OPTIONS.some(([key]) => key && key === terms.vatHandling)) missing.push('Commission VAT treatment')
   if (terms.mandateType === 'dual' && !terms.otherAgencyName) missing.push('A second agency name')

@@ -186,6 +186,13 @@ export function buildSellerOnboardingSigningPackSnapshot({
     propertyAddress(form, currentListing),
   )
   const safeMandate = { ...record(mandate) }
+  // New copies treat an omitted protection period as none. Stored frozen
+  // inputs continue to be read and verified without rewriting their values.
+  const protectionSource = ['protectionPeriod', 'protectionPeriodDays', 'mandateProtectionPeriod', 'mandate_protection_period']
+    .some(key => safeMandate[key] !== undefined && safeMandate[key] !== null) ? safeMandate : form
+  const protectionPeriod = readSellerMandateTerms(protectionSource).protectionPeriod || '0'
+  safeMandate.protectionPeriod = protectionPeriod
+  safeMandate.protectionPeriodDays = protectionPeriod
   const capture = normalizeSellerMandateCapture(safeMandate.mandateCapture ?? form.mandateCapture)
   if (capture) safeMandate.mandateCapture = capture
   if (form.mandateAcceptanceReview) safeMandate.mandateAcceptanceReview = structuredClone(form.mandateAcceptanceReview)
