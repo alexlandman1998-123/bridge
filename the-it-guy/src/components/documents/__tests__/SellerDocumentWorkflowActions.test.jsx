@@ -56,3 +56,18 @@ describe('separate disclosure preparation', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
   })
 })
+
+it('lead file actions omit version references and protect active signed copies', () => {
+  const download=vi.fn()
+  render(<SellerDocumentWorkflowActions filesOnly item={{label:'FICA'}} copy={{versionId:'long-document-version-id'}} request={{status:'signed',version_id:'long-document-version-id'}} onDownload={download} />)
+  fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}))
+  expect(download).toHaveBeenCalledOnce()
+  expect(screen.getByLabelText('Upload manually FICA').disabled).toBe(true)
+  expect(screen.queryByText(/Document version/)).toBeNull()
+  expect(screen.queryByText('long-document-version-id')).toBeNull()
+  expect(screen.queryByRole('button',{name:/Review|Refresh|send/i})).toBeNull()
+})
+it('rejected online copies can be replaced without erasing old signatures', () => {
+  render(<SellerDocumentWorkflowActions filesOnly item={{label:'FICA'}} copy={{}} request={{status:'revoked',revoke_reason:'agent_review_rejected: Missing authority'}} />)
+  expect(screen.getByLabelText('Upload manually FICA').disabled).toBe(false)
+})

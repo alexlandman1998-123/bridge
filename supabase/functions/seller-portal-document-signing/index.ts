@@ -562,6 +562,22 @@ async function review(req: Request, admin: AdminClient, url: string, anonKey: st
   return respond(200, { success: true, documentId: saved.data?.documentId, versionId: saved.data?.documentVersionId });
 }
 
+async function reject(req: Request, admin: AdminClient, url: string, anonKey: string, payload: Row) {
+  const document = await admin.from("private_listing_seller_portal_signing_documents")
+    .select("id, private_listing_id").eq("id", text(payload.signingDocumentId)).maybeSingle();
+  if (document.error || !document.data) return respond(404, { error: "Signing document not found." });
+  const context = await staffListing(req, admin, url, anonKey, text(document.data.private_listing_id));
+  if (!context) return respond(403, { error: "Agent access to this listing is required." });
+  const reason = text(payload.reason);
+  if (reason.length < 5 || reason.length > 1000) return respond(400, { error: "Enter a rejection reason between 5 and 1000 characters." });
+  const result = await admin.rpc("bridge_reject_seller_portal_signed_document", {
+    p_signing_document_id: document.data.id, p_expected_version_digest: text(payload.versionDigest),
+    p_reason: reason, p_reviewer_id: context.staff.userId,
+  });
+  if (result.error) return respond(409, { error: "This signing request changed. Refresh before rejecting it." });
+  return respond(200, result.data);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return respond(405, { error: "Method not allowed." });
@@ -577,6 +593,7 @@ Deno.serve(async (req: Request) => {
       case "view": return await view(admin, payload);
       case "correct": return await correct(admin, payload);
       case "sign": return await sign(req, admin, payload);
+      case "reject": return await reject(req, admin, url, anonKey, payload);
       case "list": return await list(req, admin, url, anonKey, payload);
       case "preview": return await preview(req, admin, url, anonKey, payload);
       case "review": return await review(req, admin, url, anonKey, payload);

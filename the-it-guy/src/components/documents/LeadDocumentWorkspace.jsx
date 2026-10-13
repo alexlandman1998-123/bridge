@@ -19,6 +19,7 @@ export default function LeadDocumentWorkspace({
   categories = [],
   getStatusMeta,
   renderActions,
+  renderRowActions,
   portalAction,
   portalActionLabel,
   portalActionDisabled = false,
@@ -145,14 +146,14 @@ export default function LeadDocumentWorkspace({
                         const status = getStatusMeta(row)
                         const id = rowIdentity(row, category.key)
                         return (
-                          <div id={`lead-document-${category.key}-${id}`} tabIndex={-1} key={`${category.key}-${id}`} className={`grid gap-3 px-4 py-4 outline-none transition focus:bg-[#f4faf7] sm:px-5 ${partyType === 'seller' ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(100px,.7fr)_minmax(120px,1fr)_auto] xl:items-center xl:gap-4' : 'lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-4'}`}>
+                          <div id={`lead-document-${category.key}-${id}`} tabIndex={-1} key={`${category.key}-${id}`} className={`grid gap-3 px-4 py-4 outline-none transition focus:bg-[#f4faf7] sm:px-5 ${partyType === 'seller' && status.signedAwaitingReview ? 'bg-[#effaf3]' : ''} ${partyType === 'seller' ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(100px,.7fr)_minmax(120px,1fr)_auto] xl:items-center xl:gap-4' : 'lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-4'}`}>
                             <div className="min-w-0">
                               <div className="flex items-start gap-2"><p className="min-w-0 break-words text-sm font-semibold text-[#20364c]" title={row.label || row.title}>{row.label || row.title}</p></div>
                               <p className="mt-1 text-xs text-[#7b8fa5]"><span className={`mr-2 inline-flex rounded-full border px-2 py-0.5 ${category.iconClass || 'border-[#dbe7f2] bg-[#f4f8fb] text-[#315b7a]'}`}>{category.label}</span>{row.required === false ? 'Optional' : 'Required'}</p>
                             </div>
                             <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${status.pillClass}`}>{status.label}</span>
                             {partyType === 'seller' ? <p className="text-xs leading-5 text-[#607387]">{row.uploadedAt ? `Uploaded ${new Date(row.uploadedAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}` : row.fileName || (row.canDownload || row.originalDocument?.storage_path ? 'File saved' : 'Awaiting document')}</p> : null}
-                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{partyType === 'seller' ? <ListingDocumentActions label={row.label || row.title || 'Document'}>{renderActions?.(row, category, status)}{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</ListingDocumentActions> : <>{renderActions?.(row, category, status)}{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</>}</div>
+                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{partyType === 'seller' ? <>{renderRowActions?.(row, category, status)}<ListingDocumentActions label={row.label || row.title || 'Document'}>{renderActions?.(row, category, status)}</ListingDocumentActions>{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</> : <>{renderActions?.(row, category, status)}{removalContext ? <DocumentRequirementRemoveButton row={row} {...removalContext} /> : null}</>}</div>
                             {uploadProgress?.requirementKey && uploadProgress.requirementKey === (row.requirementKey || row.requirement_key || row.key) ? <div className="xl:col-span-4"><DocumentUploadProgress progress={uploadProgress} /></div> : null}
                           </div>
                         )

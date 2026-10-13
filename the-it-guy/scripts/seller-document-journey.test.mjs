@@ -55,6 +55,7 @@ const emails = [], report = [], browserErrors = []
 let downloads = 0, downloadedPages = 0, browserSignatures = 0, browserPhysicalReviews = 0
 let existingSignedUploads = 0, agentAssistedCaptures = 0
 const rpcArguments = {
+  bridge_reject_seller_portal_signed_document: ['p_signing_document_id', 'p_expected_version_digest', 'p_reason', 'p_reviewer_id'],
   bridge_update_seller_portal_disclosure_answers: ['p_token_hash', 'p_expected_version_digest', 'p_disclosure', 'p_reviewed_html'],
   bridge_update_seller_portal_document_corrections: ['p_token_hash', 'p_expected_version_digest', 'p_updates'],
   bridge_submit_seller_portal_document_signature: ['p_token_hash', 'p_signed_name', 'p_signature_type', 'p_signature_value', 'p_signed_date', 'p_signed_place', 'p_acceptance_ip', 'p_acceptance_user_agent', 'p_expected_version_digest'],
@@ -552,7 +553,8 @@ async function signInBrowser(recipient, name, { fullMandate = false, correctFica
   const submit = portalPage.getByRole('button', { name: 'Sign this document', exact: true })
   assert.equal(await submit.isDisabled(), true)
   const frame = portalPage.frames().find(value => value !== portalPage.mainFrame())
-  assert.ok(frame)
+  const disclosurePage = await portalPage.getByRole('button', { name: 'View signing copy', exact: true }).count() > 0
+  if (!disclosurePage) assert.ok(frame)
   if (fullMandate) {
     await frame.locator('[data-review-paginated="true"]').waitFor()
     assert.equal(await portalPage.getByRole('button', { name: 'Save and review changes' }).count(), 0)
@@ -567,16 +569,14 @@ async function signInBrowser(recipient, name, { fullMandate = false, correctFica
   }
   if (completeDisclosure) {
     await portalPage.getByRole('heading', { name: 'Complete your property disclosure' }).waitFor()
-    const answers = portalPage.getByRole('combobox', { name: /^Question \d+: Answer$/ })
+    const answers = portalPage.getByRole('group', { name: /^Question \d+: Answer$/ })
     assert.equal(await answers.count(), 20)
-    for (let index = 0; index < 20; index++) await answers.nth(index).selectOption(index === 11 ? 'yes' : 'no')
+    for (let index = 0; index < 20; index++) await answers.nth(index).getByRole('button', { name: index === 11 ? 'Yes' : 'No', exact: true }).click()
     await portalPage.getByLabel('Other disclosures or comments', { exact: true }).fill('Seller completed this disclosure on the private link. Known roof leak.')
-    assert.equal(await submit.isDisabled(), true, 'Answers must be saved before signature')
-    await portalPage.getByRole('button', { name: 'Save answers and review', exact: true }).click()
-    await portalPage.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === 'Save answers and review' && button.disabled))
+    assert.equal(await submit.isDisabled(), true, 'The declaration and drawn signature are still required')
   }
   assert.equal(await portalPage.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'The actual mobile signing page must fit the viewport')
-  assert.equal(await frame.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'The actual mobile document review must fit the viewport')
+  if (frame) assert.equal(await frame.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'The actual mobile document review must fit the viewport')
   const accepted = portalPage.getByRole('checkbox', { name: /I have reviewed this complete document/ })
   if (recipient.signer_role.startsWith('Agency')) assert.equal(await portalPage.getByRole('checkbox', { name: /I accept the mandate on behalf of the contracting agency/ }).count(), 1)
   await accepted.check()
@@ -603,6 +603,58 @@ async function signInBrowser(recipient, name, { fullMandate = false, correctFica
   assert.equal(evidence.signed_place, 'Browser Acceptance Town')
   assert.equal((await request('view', { token: recipient.token })).status, 404)
   browserSignatures++
+}
+
+async function signedDocumentRejectionJourney() {
+  const fixture = await prepare('multiple_owners', 'sole')
+  const key = 'signed_fica_declaration'
+  const issued = await request('issue', { listingId: fixture.listingId, documentKey: key }, true)
+  assert.equal(issued.status, 200, JSON.stringify(issued.body))
+  const id = issued.body.signingDocumentId
+  const recipients = await issuedRecipients(id)
+  const fields = { signingDocumentId: id, versionDigest: fixture.frozen.documents.find(row => row.key === key).versionDigest, reason: 'The authority evidence needs correction.' }
+  assert.equal((await request('reject', fields)).status, 403, 'Public callers cannot reject private signed documents')
+  assert.equal((await request('reject', fields, true)).status, 409, 'Unsigned requests cannot be rejected as signed copies')
+  for (const recipient of recipients) {
+    const view = await request('view', { token: recipient.token })
+    const signed = await request('sign', { token: recipient.token, signedName: view.body.signerName,
+      signatureType: 'drawn', signatureValue: signature, signedDate: '2026-10-04', signedPlace: 'Rejection Test Town',
+      accepted: true, versionDigest: view.body.versionDigest })
+    assert.equal(signed.status, 200, JSON.stringify(signed.body))
+  }
+  const before = (await sql(`select * from ${signingTable} where id=$1`, [id]))[0]
+  fields.versionDigest = before.version_digest
+  const evidence = await sql(`select * from ${evidenceTable} where signing_document_id=$1 order by id`, [id])
+  const recipientRows = await sql(`select * from ${recipientTable} where signing_document_id=$1 order by id`, [id])
+  const unchanged = async () => {
+    assert.deepEqual(await sql(`select * from ${evidenceTable} where signing_document_id=$1 order by id`, [id]), evidence)
+    assert.deepEqual(await sql(`select * from ${recipientTable} where signing_document_id=$1 order by id`, [id]), recipientRows)
+  }
+  assert.equal((await request('reject', { ...fields, reason: 'bad' }, true)).status, 400)
+  assert.equal((await request('reject', { ...fields, versionDigest: 'sha256:stale' }, true)).status, 409)
+  const rpc = 'public.bridge_reject_seller_portal_signed_document(uuid,text,text,uuid)'
+  const grants = (await sql(`select has_function_privilege('anon',$1,'EXECUTE') as anon,
+    has_function_privilege('authenticated',$1,'EXECUTE') as authenticated,
+    has_function_privilege('service_role',$1,'EXECUTE') as server`, [rpc]))[0]
+  assert.deepEqual(grants, { anon: false, authenticated: false, server: true })
+  // A transaction rollback restores both state and activity; there is no partial rejection.
+  await db.exec('begin')
+  await sql('select public.bridge_reject_seller_portal_signed_document($1,$2,$3,$4)', [id, fields.versionDigest, fields.reason, actor])
+  await unchanged()
+  await db.exec('rollback')
+  assert.deepEqual((await sql(`select * from ${signingTable} where id=$1`, [id]))[0], before)
+  assert.equal((await request('reject', fields, true)).status, 200)
+  await unchanged()
+  const after = (await sql(`select * from ${signingTable} where id=$1`, [id]))[0]
+  assert.equal(after.status, 'revoked')
+  assert.equal(after.revoke_reason, 'agent_review_rejected: ' + fields.reason)
+  for (const key of ['version_id','version_digest','source_version_digest','content_digest','reviewed_html','required_signers','seller_corrections']) assert.deepEqual(after[key], before[key], key)
+  assert.equal((await sql("select count(*)::int as count from private_listing_activity where metadata->>'signingDocumentId'=$1", [id]))[0].count, 1)
+  assert.equal((await request('review', { signingDocumentId: id }, true)).status, 409, 'Rejected evidence cannot be accepted by a stale action')
+  assert.equal((await request('reject', fields, true)).status, 409, 'Repeated rejection cannot rewrite history')
+  assert.equal((await sql('select count(*)::int as count from private_listing_documents where private_listing_id=$1', [fixture.listingId]))[0].count, 0, 'Rejection cannot create an accepted file')
+  report.push({ route: 'signed_document_rejection', result: 'passed', versionBound: true, signedHistoryPreserved: true, rollbackVerified: true })
+  console.log('Signed-copy rejection passed: staff access, version/reason checks, immutable signatures, activity record and transactional rollback')
 }
 
 async function sellerCompletedDisclosureJourney() {
@@ -970,6 +1022,7 @@ try {
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261013101510_seller_portal_disclosure_completion.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261013114906_seller_portal_signed_document_rejection.sql', import.meta.url), 'utf8'))
   await optionalDocumentUploadReview()
   if (process.argv.includes('--review-only')) {
     console.log('Seller document review passed with text portal listing IDs: approval, reminder recipient, legacy IDs, exact requirement, retired guards and revision conflict. No remote writes or email delivery.')
@@ -1047,7 +1100,9 @@ try {
   })
   if (process.argv.includes('--disclosure-only')) {
     await sellerCompletedDisclosureJourney()
+    await signedDocumentRejectionJourney()
   } else {
+  await signedDocumentRejectionJourney()
   if (!process.argv.includes('--full-mandates-only') && !process.argv.includes('--connected-only')) {
     for (const [branch, mandateType] of [['individual', 'sole'], ['multiple_owners', 'dual'], ['company', 'exclusive'], ['trust', 'open']]) await digitalJourney(branch, mandateType)
     for (const [branch, mandateType] of [['individual', 'exclusive'], ['multiple_owners', 'open'], ['company', 'dual'], ['trust', 'sole']]) await physicalJourney(branch, mandateType)

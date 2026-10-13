@@ -1,9 +1,16 @@
 import React from 'react'
 import { buildSellerDocumentWorkflow } from '../../core/documents/sellerDocumentWorkflow.js'
 
-export default function SellerDocumentWorkflowActions({ item, copy, request, busy = false, onlineEnabled = true, onDownload, onSend, onUpload, onReview, onRefresh, accept = '.pdf,.png,.jpg,.jpeg,.doc,.docx', compact = false }) {
+export default function SellerDocumentWorkflowActions({ item, copy, request, busy = false, onlineEnabled = true, onDownload, onSend, onUpload, onReview, onRefresh, accept = '.pdf,.png,.jpg,.jpeg,.doc,.docx', compact = false, filesOnly = false }) {
   const workflow = buildSellerDocumentWorkflow({ item, copy, request })
   const buttonClass = 'min-h-9 rounded-lg border border-[#cfdceb] bg-white px-3 py-2 text-left text-xs font-semibold text-[#315b7a] disabled:cursor-not-allowed disabled:opacity-50'
+  if (filesOnly) return <div className="flex w-full min-w-0 flex-wrap gap-2">
+    <button type="button" className={buttonClass} disabled={busy || !copy || item?.canDownload === false || item?.can_download === false} onClick={onDownload}>Download</button>
+    <label title={!workflow.canUpload ? 'Review or reject the active signed copy before uploading a replacement.' : undefined} className={`${buttonClass} ${busy || !workflow.canUpload || item?.canUpload === false || item?.can_upload === false ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+      {copy || item?.uploaded || item?.hasUploadedDocument ? 'Upload / Replace' : 'Upload'}
+      <input type="file" className="sr-only" aria-label={`Upload manually ${item?.label || copy?.name || 'seller document'}`} accept={accept} disabled={busy || !workflow.canUpload || item?.canUpload === false || item?.can_upload === false} onChange={onUpload} />
+    </label>
+  </div>
   return <div className="w-full min-w-0 space-y-2" aria-label={`${item?.label || copy?.name || 'Seller document'} workflow`}>
     {!compact ? <>
     <p role="status" className="text-xs font-semibold text-[#243d56]">{workflow.label}</p>

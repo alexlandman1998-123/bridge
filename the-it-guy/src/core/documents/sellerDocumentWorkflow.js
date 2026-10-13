@@ -47,7 +47,10 @@ export function buildSellerDocumentWorkflow({ item = {}, copy = null, request = 
   else if (request?.status === 'expired') { state = 'retry'; label = 'Signing links expired'; detail = 'Send fresh links for this reviewed version. Previous evidence stays in the history.' }
   else if (request?.status === 'revoked') {
     state = 'retry'; label = 'Signature request failed or cancelled'
-    detail = request.revoke_reason === 'email_not_configured' ? 'Email delivery is not configured. Retry after it is restored.' : 'Earlier links are inactive. Retry sending this reviewed version.'
+    if (String(request.revoke_reason || '').startsWith('agent_review_rejected: ')) {
+      label = 'Rejected — replacement required'
+      detail = String(request.revoke_reason).slice('agent_review_rejected: '.length)
+    } else detail = request.revoke_reason === 'email_not_configured' ? 'Email delivery is not configured. Retry after it is restored.' : 'Earlier links are inactive. Retry sending this reviewed version.'
   }
   else if (copy) { state = 'prepared'; label = 'Prepared — awaiting signature'; detail = copy.signingRoute === 'digital_pack' ? 'The reviewed copy is ready. Signature links have not been sent.' : 'Download the reviewed copy, arrange signatures, and upload it for review.' }
   const signedCount = Number(request?.signed_count || 0), signerCount = Number(request?.signer_count || 0)

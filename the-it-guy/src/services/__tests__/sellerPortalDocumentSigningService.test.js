@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('../../lib/supabaseClient', () => ({ supabase: { functions: { invoke } } }))
-import { assertSellerDocumentUploadAvailable, sendSellerDocumentForSignature } from '../sellerPortalDocumentSigningService.js'
+import { assertSellerDocumentUploadAvailable, rejectSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../sellerPortalDocumentSigningService.js'
 
 describe('seller per-document signing service', () => {
   beforeEach(() => invoke.mockReset())
@@ -22,4 +22,10 @@ describe('seller per-document signing service', () => {
     invoke.mockResolvedValue({ error: { message: 'Signing status unavailable' } })
     await expect(assertSellerDocumentUploadAvailable('listing', 'signed_mandate')).rejects.toThrow(/unavailable/)
   })
+})
+
+it('rejects the exact version with the agent reason',async()=>{
+ invoke.mockResolvedValue({data:{success:true,status:'rejected'}})
+ await rejectSellerPortalSignedDocument('request','sha256:current','Missing authority')
+ expect(invoke).toHaveBeenCalledWith('seller-portal-document-signing',{body:{action:'reject',signingDocumentId:'request',versionDigest:'sha256:current',reason:'Missing authority'}})
 })

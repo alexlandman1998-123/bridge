@@ -25,6 +25,8 @@ export const signSellerDocumentInPortal = (token, { signedName, signatureType, s
   invoke('sign', { token, signedName, signatureType, signatureValue, signedDate, signedPlace, versionDigest, accepted: true })
 export const previewSellerPortalSignedDocument = (signingDocumentId) => invoke('preview', { signingDocumentId })
 export const reviewSellerPortalSignedDocument = (signingDocumentId) => invoke('review', { signingDocumentId })
+export const rejectSellerPortalSignedDocument = (signingDocumentId, versionDigest, reason) =>
+  invoke('reject', { signingDocumentId, versionDigest, reason })
 
 // Refresh before switching a document to uploaded evidence. Do not discard an
 // active online request or its signatures based on a stale screen snapshot.

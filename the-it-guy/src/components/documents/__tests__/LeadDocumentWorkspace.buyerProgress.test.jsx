@@ -128,3 +128,17 @@ test('seller document type tabs retain progress and reveal the matching saved fi
   fireEvent.click(screen.getByRole('tab', { name: /Property Documents/ }))
   expect(screen.getByText('No documents in this category yet.')).toBeTruthy()
 })
+
+test('signed review rows are green with inline decisions and still outstanding', () => {
+  const review=vi.fn(),accept=vi.fn(),reject=vi.fn(),download=vi.fn()
+  render(<LeadDocumentWorkspace partyType="seller" categories={[{key:'fica',label:'FICA',items:[{key:'signed_fica_declaration',label:'Signed FICA Declaration',required:true}]}]} getStatusMeta={()=>({state:'review',label:'Signed — awaiting agent review',signedAwaitingReview:true,pillClass:'bg-green-50'})}
+    renderRowActions={()=><><button onClick={review}>Review</button><button onClick={reject}>Reject</button><button onClick={accept}>Accept</button></>}
+    renderActions={()=><><button onClick={download}>Download</button><label>Upload / Replace<input type="file" aria-label="Replace FICA" /></label></>} />)
+  expect(screen.getByText(/0 of 1 complete/)).toBeTruthy()
+  expect(screen.getByText('Signed FICA Declaration').closest('[id^="lead-document-"]').className).toContain('bg-[#effaf3]')
+  fireEvent.click(screen.getByRole('button',{name:'Review',exact:true}));fireEvent.click(screen.getByRole('button',{name:'Reject',exact:true}));fireEvent.click(screen.getByRole('button',{name:'Accept',exact:true}))
+  expect(review).toHaveBeenCalledOnce();expect(reject).toHaveBeenCalledOnce();expect(accept).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('button',{name:'Download',exact:true})).toBeNull()
+  fireEvent.click(screen.getByRole('button',{name:'Actions for Signed FICA Declaration'}));fireEvent.click(screen.getByRole('button',{name:'Download',exact:true}))
+  expect(download).toHaveBeenCalledOnce()
+})

@@ -14,11 +14,13 @@ export const SELLER_RELEASE_MIGRATIONS = [
   'supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql',
   'supabase/migrations/20261009150000_seller_existing_signed_evidence.sql',
   'supabase/migrations/20261013101510_seller_portal_disclosure_completion.sql',
+  'supabase/migrations/20261013114906_seller_portal_signed_document_rejection.sql',
 ]
 const rollback = 'docs/seller-document-review-runtime-rollback.sql'
 // These app entry points own preparation, correction, upload, review and PDF
 // export. The complete Edge import graph is added separately, never guessed.
 const appFiles = [
+  'src/components/documents/LeadDocumentWorkspace.jsx',
   'src/pages/AgentListingDetail.jsx', 'src/pages/agency/AgencyPipelinePage.jsx',
   'src/pages/ClientPortal.jsx', 'src/pages/SellerDocumentSigning.jsx',
   'src/pages/SellerOnboarding.jsx',

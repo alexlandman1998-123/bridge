@@ -9,6 +9,9 @@ function SellerDocumentReviewActions({
   compact = false,
   requireSignedCopyCheck = false,
   requireSignedEvidenceCheck = false,
+  signingRequest = null,
+  reviewLabel = 'Start review',
+  acceptLabel = 'Approve',
 }) {
   const [rejecting, setRejecting] = useState(false)
   const [confirmingSignedCopy, setConfirmingSignedCopy] = useState(false)
@@ -21,7 +24,9 @@ function SellerDocumentReviewActions({
   const lifecycleStatus = String(item?.lifecycleStatus || item?.lifecycle_status || '').trim().toLowerCase()
   const isMandate = [item?.key, item?.requirementKey, item?.requirement_key, document?.document_type, document?.documentType].includes('signed_mandate')
   const hasExactRequirement = Boolean(document?.requirement_id || document?.requirementId)
-  const canReview = Boolean(documentId && hasExactRequirement && ['uploaded', 'under_review'].includes(status) && typeof onReview === 'function')
+  const onlineSigned = signingRequest?.status === 'signed'
+  const canReview = Boolean((onlineSigned || documentId && hasExactRequirement && ['uploaded', 'under_review'].includes(status)) && typeof onReview === 'function')
+  const requestFields = signingRequest ? { signingRequest } : {}
   const canRemind = Boolean(
     item?.actionRequired &&
     requirementId &&
@@ -33,7 +38,7 @@ function SellerDocumentReviewActions({
 
   const submitRejection = async () => {
     if (rejectionReason.trim().length < 5) return
-    const completed = await onReview?.({ item, document, action: 'reject', reason: rejectionReason.trim() })
+    const completed = await onReview?.({ item, document, ...requestFields, action: 'reject', reason: rejectionReason.trim() })
     if (completed !== false) {
       setRejecting(false)
       setRejectionReason('')
@@ -47,14 +52,14 @@ function SellerDocumentReviewActions({
         ? 'Reviewed the uploaded signed mandate against the current signing copy and checked every required seller signature and each contracting agency acceptance.'
         : 'Reviewed the uploaded signed file against the current signing copy and checked every required signature.'
       : requireSignedEvidenceCheck ? 'Reviewed the existing signed document and checked every required seller signature and any required agency acceptance.' : ''
-    const completed = await onReview?.({ item, document, action: 'approve', reason })
+    const completed = await onReview?.({ item, document, ...requestFields, action: 'approve', reason })
     if (completed !== false) {
       setConfirmingSignedCopy(false)
       setSignedCopyChecked(false)
     }
   }
 
-  if (documentId && !hasExactRequirement && ['uploaded', 'under_review'].includes(status)) {
+  if (!onlineSigned && documentId && !hasExactRequirement && ['uploaded', 'under_review'].includes(status)) {
     return <p role="status" className="mt-3 text-xs text-[#8a5b16]">This file needs an exact checklist link before review. Confirm the seller details and refresh the checklist; then upload it against the correct requirement.</p>
   }
   if (!canReview && !canRemind) return null
@@ -66,7 +71,7 @@ function SellerDocumentReviewActions({
           <p className="text-xs font-semibold text-[#195a3a]">Check the signed document</p>
           <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-[#315b45]">
             <input type="checkbox" checked={signedCopyChecked} onChange={(event) => setSignedCopyChecked(event.target.checked)} disabled={isBusy} className="mt-1" />
-            <span>{!requireSignedCopyCheck
+            <span>{onlineSigned ? 'I reviewed this signed document and checked every required seller signature and any required agency acceptance.' : !requireSignedCopyCheck
               ? 'I checked this existing signed document, every required seller signature, and any required agency acceptance.'
               : isMandate
               ? 'I compared the uploaded mandate with the reviewed signing copy and checked every required seller signature and each contracting agency acceptance.'
@@ -76,7 +81,7 @@ function SellerDocumentReviewActions({
             <button type="button" onClick={() => { setConfirmingSignedCopy(false); setSignedCopyChecked(false) }} disabled={isBusy} className="min-h-9 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#52657b] disabled:opacity-60">Cancel</button>
             <button type="button" onClick={() => void submitApproval()} disabled={isBusy || !signedCopyChecked} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#1f7a46] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
               {busyAction === actionKey('approve') ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-              Approve signed copy
+              {acceptLabel === 'Accept' ? 'Accept signed copy' : 'Approve signed copy'}
             </button>
           </div>
         </div>
@@ -90,6 +95,7 @@ function SellerDocumentReviewActions({
             value={rejectionReason}
             onChange={(event) => setRejectionReason(event.target.value)}
             rows={3}
+            maxLength={1000}
             disabled={isBusy}
             placeholder="For example: The statement is older than three months or the account number is cropped."
             className="mt-2 w-full resize-y rounded-[10px] border border-[#e2b8b4] bg-white px-3 py-2 text-sm text-[#243d56] outline-none focus:border-[#bd665e] focus:ring-2 focus:ring-[#f7dedb] disabled:opacity-60"
@@ -128,15 +134,15 @@ function SellerDocumentReviewActions({
               Send reminder
             </button>
           ) : null}
-          {canReview && status === 'uploaded' ? (
+          {canReview && (onlineSigned || status === 'uploaded' || reviewLabel === 'Review') ? (
             <button
               type="button"
-              onClick={() => void onReview?.({ item, document, action: 'start_review', reason: '' })}
+              onClick={() => void onReview?.({ item, document, ...requestFields, action: 'start_review', reason: '' })}
               disabled={isBusy}
               className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#d6e3f0] bg-[#f7fbff] px-3 text-xs font-semibold text-[#315b7d] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busyAction === actionKey('start_review') ? <Loader2 size={14} className="animate-spin" /> : <Clock3 size={14} />}
-              Start review
+              {reviewLabel}
             </button>
           ) : null}
           {canReview ? (
@@ -157,7 +163,7 @@ function SellerDocumentReviewActions({
                 className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#1f7a46] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busyAction === actionKey('approve') ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Approve
+                {acceptLabel}
               </button>
             </>
           ) : null}
