@@ -201,7 +201,8 @@ listing's recipient. Existing notification preferences remain in effect.
 
 Release `20261013145642_seller_document_rejection_email.sql` with the updated
 `send-email` function. The migration changes future decisions only and does not
-send historical rejection emails. This update has not been deployed.
+send historical rejection emails. Released to production on 13 October 2026
+with `send-email` version 173.
 Focused checks: `npm run test:client-seller-offer-portal-notifications-phase5`
 (real local SQL → email dispatcher, with a synthetic sender) and
 `deno test --config ../supabase/functions/send-email/deno.json
@@ -5292,7 +5293,7 @@ alignment and document transaction continuity. No new tables or migrations are
 needed; no live data change, invitation or publication was performed.
 
 
-## Listing advertising expiry (prepared, 13 October 2026)
+## Listing advertising expiry (released, 13 October 2026)
 
 Listing setup → Where to advertise captures **Listing expiry** separately from
 mandate dates. Drafts retain the date without scheduling an advert action.
@@ -5318,7 +5319,8 @@ Release the new `20261013121907_listing_channel_expiry_schedule.sql` migration,
 both website publication Edge Functions (with the shared job helper), and the
 primary app/API together; apply the database migration first. The native preview
 services intentionally block publication when expiry settings cannot be read.
-No remote migration, deployment or live listing change was performed here.
+Released to production on 13 October 2026 with the primary app/API and both
+website publication Edge Functions. No historical expiry schedules were created.
 
 Focused verification: `node --test server/tests/listingChannelExpiry.test.js`,
 ListingChannelManageDialog component/integration and listingChannelExpiry service

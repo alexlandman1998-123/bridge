@@ -1,0 +1,99 @@
+{
+  "releasedAt": "2026-10-13T16:42:06.682201+00:00",
+  "approval": "push all outsyanding edits to produciton",
+  "sourceCommit": "834015ed62033e0de212caeb424e1cf718726c61",
+  "branch": "codex/outstanding-production-release-20261013",
+  "sourceReconciliation": {
+    "filesVerified": 433,
+    "newFilesOrEditsCaptured": 74,
+    "generatedAndTemporaryArtifactsExcluded": true,
+    "safeVercelUploadExclusionsRetained": true
+  },
+  "database": {
+    "project": "isdowlnollckzvltkasn",
+    "guard": "passed; zero duplicate local timestamps",
+    "recovery": "RECOVERY_LOCKED; current physical backup check passed",
+    "migrations": [
+      "20261013121907_listing_channel_expiry_schedule.sql",
+      "20261013140956_seller_onboarding_draft_discrepancy_review.sql",
+      "20261013145642_seller_document_rejection_email.sql"
+    ],
+    "postReleaseDryRun": "up to date; zero pending migrations; no seeds or custom roles",
+    "permissions": "RLS enabled; anonymous access denied on new RPCs; worker/rejection endpoints restricted to service role",
+    "historicalData": "No historical draft comparisons backfilled; zero advertising schedules created by the release",
+    "securityAdvisors": "6 pre-existing notices; zero new notices"
+  },
+  "edgeFunctions": {
+    "website-listing-publication": {
+      "version": 25,
+      "filesVerified": 4
+    },
+    "website-partner-listing-publication": {
+      "version": 10,
+      "filesVerified": 4
+    },
+    "send-email": {
+      "version": 173,
+      "filesVerified": 95
+    },
+    "seller-portal-document-signing": {
+      "version": 21,
+      "filesVerified": 46,
+      "sourceUnchanged": true
+    }
+  },
+  "deployments": {
+    "bridge": {
+      "id": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+      "deploymentId": "dpl_HTMY53AvP7WkVQe77g2LVKUkYeBV",
+      "url": "bridge-h65yxj0m8-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "sourceCommit": "834015ed62033e0de212caeb424e1cf718726c61"
+    },
+    "arch9-websites-production": {
+      "id": "prj_f6mDRM087y82S97FfEJ6s2vnAhRh",
+      "deploymentId": "dpl_BiRRu5QhwWxSoMC95Rm5MVhfdyBm",
+      "url": "arch9-websites-production-fbi5f7v4o-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "sourceCommit": "834015ed62033e0de212caeb424e1cf718726c61"
+    },
+    "home-seekers-website": {
+      "id": "prj_uxIQ3zvHt7AM0iKSBXLa9ezBh5MA",
+      "deploymentId": "dpl_HgPJQBGj2WKnQmSojwyUwRYaC8Zu",
+      "url": "home-seekers-website-73w1kyx7t-alexs-projects-f5496a21.vercel.app",
+      "readyState": "READY",
+      "sourceCommit": "834015ed62033e0de212caeb424e1cf718726c61"
+    }
+  },
+  "checks": {
+    "check:app": "passed: lint (0 errors, 615 existing warnings), baseline tests and production build",
+    "check:website": "passed: typecheck, 55 tests and build",
+    "sellerDraftReview": "passed: SQL and 8 UI/service/publication tests",
+    "sellerReviewHandoff": "32 passed",
+    "listingExpiryWorker": "5 passed",
+    "listingControls": "40 component + 39 integration tests passed; 22 local browser checks passed",
+    "agentHome": "11 component/service tests passed",
+    "sellerDraftListing": "12 passed",
+    "sellerPropertyProfile": "presentation, occupancy, title, guarded save and failure checks passed",
+    "rejectionEmails": "7 real-SQL fixture tests and 4 Deno handler tests passed",
+    "sharedWebsiteJob": "3 Deno tests passed",
+    "portalIntegrations": "Property24 lead import, reconciliation and expiry; Private Property browser API and controlled publish; website channel checks passed",
+    "homeSeekersStandalone": "build passed; hosted main JavaScript and CSS match the packaged source",
+    "hostedPrimaryBuild": "passed login probe, startup asset budget, operational audit and agent schema contract"
+  },
+  "liveVerification": {
+    "app": "Public manifest and HTML match source commit; key feature chunks fetched successfully",
+    "homeSeekers": "Public HTML/assets match promoted candidate; site API returns JSON",
+    "kingdom": "Public health returns ok; website source identical to already-live a46d6326b deployment",
+    "runtime": "No error/fatal logs found for the new main deployment in the sampled 10 minute window"
+  },
+  "kingdomHosting": {
+    "publicProject": "arch9-websites-staging",
+    "publicDeployment": "dpl_DS2WLWfAzGL9rGT1pzzhnm212x6c",
+    "target": "production",
+    "sourceAlreadyCurrent": true,
+    "productionNamedProjectUpdated": true,
+    "domainRoutingChanged": false
+  },
+  "verificationLimits": "Live checks were read-only. No customer review, signature, email or advertising action was manually invoked."
+}
