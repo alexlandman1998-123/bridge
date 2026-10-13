@@ -1608,6 +1608,7 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN,
 ]
 const PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS = [
+  `${PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING}, seller_signing_evidence_source`,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_WITH_SIGNED_ARTIFACT,
@@ -1989,6 +1990,8 @@ function normalizeDocumentRows(rows = []) {
       generatedFileName: normalizeText(row?.generated_file_name || row?.generatedFileName || ''),
       reviewed_signing_version_id: normalizeText(row?.reviewed_signing_version_id || row?.reviewedSigningVersionId || ''),
       reviewedSigningVersionId: normalizeText(row?.reviewed_signing_version_id || row?.reviewedSigningVersionId || ''),
+      seller_signing_evidence_source: normalizeText(row?.seller_signing_evidence_source || row?.sellerSigningEvidenceSource || ''),
+      sellerSigningEvidenceSource: normalizeText(row?.seller_signing_evidence_source || row?.sellerSigningEvidenceSource || ''),
       reviewed_signing_version_digest: normalizeText(row?.reviewed_signing_version_digest || row?.reviewedSigningVersionDigest || ''),
       reviewedSigningVersionDigest: normalizeText(row?.reviewed_signing_version_digest || row?.reviewedSigningVersionDigest || ''),
       signing_session_id: normalizeText(row?.signing_session_id || row?.signingSessionId || ''),
@@ -2923,9 +2926,13 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const privatePropertyExternalLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('private')) || null
   const quickAddMandateDates = extractQuickAddMandateDates(row.internal_listing_notes || row.description)
   const primaryMandateDocument = documentRows.find((documentRow) => isMandateDocumentRow(documentRow)) || null
+  const acceptedMandateDocument = documentRows.find(document => isMandateDocumentRow(document) && (
+    !(document.reviewed_signing_version_id || document.reviewedSigningVersionId || document.seller_signing_evidence_source === 'existing_signed_upload') ||
+    ['approved', 'completed'].includes(normalizeText(document.status).toLowerCase())
+  )) || null
   const mandateSignedDate = pickFirstText(
     onboardingFormData.mandateSignedDate,
-    primaryMandateDocument?.uploaded_at,
+    acceptedMandateDocument?.uploaded_at,
   )
   const mandateStartDate = pickFirstText(
     onboardingFormData.mandateStartDate,
@@ -5819,7 +5826,13 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   }
   if (payload.internalListingNotes !== undefined) patch.internal_listing_notes = normalizeNullableText(payload.internalListingNotes)
 
-  let updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
+  const persistPatch = async safePatch => {
+    let query = client.from('private_listings').update(safePatch).eq('id', normalizedId)
+    if (options.expectedUpdatedAt) query = query.eq('updated_at', options.expectedUpdatedAt)
+    if (options.expectedListingSource) query = query.eq('listing_source', options.expectedListingSource)
+    return query.select('*').single()
+  }
+  let updateQuery = await persistPatch(patch)
   if (isRentalPrivateListingPayload(payload) && isMissingColumnError(updateQuery.error)) {
     throw new Error(`Rental changes were not saved because the database rejected a listing field. No rental fields were discarded. (${buildSupabaseErrorSummary(updateQuery.error)})`)
   }
@@ -5834,13 +5847,11 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
         .find((column) => isMissingColumnError(updateQuery.error, column))
       if (!missingColumn) break
       delete compatiblePatch[missingColumn]
-      updateQuery = await client
-        .from('private_listings')
-        .update(compatiblePatch)
-        .eq('id', normalizedId)
-        .select('*')
-        .single()
+      updateQuery = await persistPatch(compatiblePatch)
     }
+  }
+  if (updateQuery.error?.code === 'PGRST116' && (options.expectedUpdatedAt || options.expectedListingSource)) {
+    throw Object.assign(new Error('This listing changed while the draft was being prepared. Reload the property and try again.'), { code: 'SELLER_DRAFT_CONFLICT' })
   }
   if (updateQuery.error) throw updateQuery.error
   const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
@@ -6285,7 +6296,7 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
   if (!publicationPayload.features.length && payload.allowBlankFeatures !== true && Array.isArray(existingPublicationData.features) && existingPublicationData.features.length) {
     publicationPayload.features = existingPublicationData.features
   }
-  if (!publicationPayload.amenities.length && Array.isArray(existingPublicationData.amenities) && existingPublicationData.amenities.length) {
+  if (!publicationPayload.amenities.length && payload.allowBlankAmenities !== true && Array.isArray(existingPublicationData.amenities) && existingPublicationData.amenities.length) {
     publicationPayload.amenities = existingPublicationData.amenities
   }
 
@@ -8820,6 +8831,7 @@ export async function uploadSellerClientPortalDocument({
 }
 
 export const __privateListingServiceTestUtils = Object.freeze({
+  mapPrivateListingRow,
   buildPrivateListingPayload,
   missingRentalCaptureColumns,
   notifyAgentWhenSellerDocumentsComplete,
@@ -9018,9 +9030,9 @@ export async function uploadPrivateListingDocument(listingId, file, {
       await createPrivateListingActivity({
         privateListingId: normalizedListingId,
         activityType: 'listing_document_uploaded',
-        activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
+        activityTitle: mandateUpload ? shouldDeferMandateSigning ? 'Mandate uploaded for review' : 'Signed mandate uploaded' : 'Listing document uploaded',
         activityDescription: mandateUpload
-          ? `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
+          ? shouldDeferMandateSigning ? `${insertPayload.document_name} uploaded and awaiting review.` : `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
           : `${insertPayload.document_name} uploaded.`,
         performedBy: user?.id || null,
         visibility: 'internal',
@@ -9032,7 +9044,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
           requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || null,
           storagePath: filePath,
           source: mandateUpload ? 'physical_signed_mandate_upload' : 'quick_add',
-          mandateStatus: mandateUpload ? 'signed_uploaded' : null,
+          mandateStatus: mandateUpload ? shouldDeferMandateSigning ? 'awaiting_review' : 'signed_uploaded' : null,
         },
       }).catch(() => null)
 

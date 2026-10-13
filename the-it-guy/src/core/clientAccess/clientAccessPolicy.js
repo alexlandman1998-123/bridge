@@ -254,6 +254,8 @@ function hasMatchingEvidence(context = {}, aliases = [], readyStatuses = new Set
       signals.some((signal) => signal === alias || signal.includes(alias)),
     )
     if (!matchesAlias) return false
+    const evidenceSource = row.sellerSigningEvidenceSource || row.seller_signing_evidence_source || row.document?.seller_signing_evidence_source
+    if (evidenceSource === 'existing_signed_upload') return readyStatuses.has(status) && hasUploadedFileEvidence(row)
     return hasUploadedFileEvidence(row) || readyStatuses.has(status)
   })
 }

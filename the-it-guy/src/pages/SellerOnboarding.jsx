@@ -1,3 +1,4 @@
+import SellerCaptureDocuments from '../components/onboarding/SellerCaptureDocuments.jsx'
 import { createListingSellerProfileBuilderDraft } from '../lib/listingSellerProfileBuilderModel.js'
 import { sellerContactName, sellerOnboardingDisplayName } from '../core/clientPortal/sellerContactDetails.js'
 import { buildSellerAgentAssistedDisclosurePatch, isSellerDisclosureCaptureLocked } from '../lib/sellerAgentAssistedDisclosure.js'
@@ -174,7 +175,7 @@ const WATER_BILLING_OPTIONS = [
 
 const OWNERSHIP_TYPES = [
   { value: 'individual', label: 'Natural Person', description: 'I own the property in my own name.' },
-  { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
+  { value: 'married_cop', label: 'Married in community of property', description: 'Married in community of property.' },
   { value: 'company', label: 'Company', description: 'A company owns the property.' },
   { value: 'trust', label: 'Trust', description: 'A trust owns the property.' },
   { value: 'deceased_estate', label: 'Deceased estate', description: 'The property forms part of a deceased estate.' },
@@ -188,10 +189,10 @@ const LEGACY_OWNERSHIP_TYPE_LABELS = {
 }
 
 const OWNER_ENTITY_TYPES = [
-  { value: 'natural_person', label: 'Natural Person', description: 'An individual, spouse, estate, POA, or multiple natural-person owners.' },
-  { value: 'company', label: 'Company', description: 'A company owns the property and needs authority details.' },
-  { value: 'trust', label: 'Trust', description: 'A trust owns the property and needs trustee authority.' },
-  { value: 'foreign', label: 'Foreign', description: 'A foreign person, company, or trust owns the property.' },
+  { value: 'natural_person', label: 'Person or people', description: 'The property is owned in a person’s name, or by several people.' },
+  { value: 'company', label: 'Company', description: 'The property is registered in a company’s name.' },
+  { value: 'trust', label: 'Trust', description: 'The property is registered in a trust’s name.' },
+  { value: 'foreign', label: 'Owner from another country', description: 'A person, company or trust from another country owns the property.' },
 ]
 
 const OWNER_ENTITY_ICONS = {
@@ -205,13 +206,13 @@ const OWNER_ENTITY_ICONS = {
 const OWNER_STRUCTURE_TYPES_BY_ENTITY = {
   natural_person: [
     { value: 'individual', label: 'Single owner', description: 'One natural person owns the property.' },
-    { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
+    { value: 'married_cop', label: 'Married in community of property', description: 'Married in community of property.' },
     { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more natural persons own the property.' },
     { value: 'deceased_estate', label: 'Deceased estate', description: 'The property forms part of a deceased estate.' },
     { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
   ],
   company: [
-    { value: 'company', label: 'Company resolution', description: 'Capture company, director, and signing authority details.' },
+    { value: 'company', label: 'Company details', description: 'Add the company and the people authorised to sign.' },
   ],
   trust: [
     { value: 'trust', label: 'Trust resolution', description: 'Capture trust, trustee, and authority details.' },
@@ -1196,6 +1197,7 @@ function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null)
 }
 
 function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts = {}) {
+  if ((existing.ownerEntityType ?? existing.owner_entity_type) === '') return ''
   const explicit = String(existing.ownerEntityType || existing.owner_entity_type || canonicalFacts?.seller?.owner_entity_type || '').trim().toLowerCase()
   if (OWNER_ENTITY_TYPES.some((item) => item.value === explicit)) return explicit
 
@@ -1224,6 +1226,7 @@ function normalizeOwnerStructureType(value = '', ownerEntityType = 'natural_pers
 }
 
 function deriveOwnerStructureType(ownershipType = '', ownerEntityType = 'natural_person', existing = {}, canonicalFacts = {}) {
+  if ((existing.ownerStructureType ?? existing.owner_structure_type) === '') return ''
   const explicit = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').trim().toLowerCase()
   if (explicit) return normalizeOwnerStructureType(explicit, ownerEntityType)
 
@@ -1256,7 +1259,7 @@ function isForeignOwnerModel(ownerEntityType = '', ownerStructureType = '') {
 }
 
 function getOwnerEntityLabel(value = '') {
-  return OWNER_ENTITY_TYPES.find((item) => item.value === value)?.label || 'Natural Person'
+  return OWNER_ENTITY_TYPES.find((item) => item.value === value)?.label || 'Not provided'
 }
 
 function getOwnerStructureLabel(value = '', ownerEntityType = 'natural_person') {
@@ -1342,7 +1345,7 @@ function getFlowContract(existing = {}, listing = {}, canonicalFacts = {}) {
   return resolveSellerOnboardingFlow(existing, listing, canonicalFacts)
 }
 
-function normalizeFormData(listing) {
+export function normalizeFormData(listing) {
   const seller = listing?.seller || {}
   const existing = {
     ...(listing?.sellerOnboarding?.formData || {}),
@@ -1458,26 +1461,25 @@ function normalizeFormData(listing) {
   }
   const ownershipFieldLabels = getOwnershipFieldLabels(flow?.seller_branch || existing.ownershipType || '')
   const resolvedPropertyCategory = normalizePropertyCategory(
-    existing.propertyCategory || canonicalFacts?.property?.property_category || listing?.propertyCategory || listing?.property_category,
-    { fallback: 'residential' },
+    existing.propertyCategory ?? canonicalFacts?.property?.property_category ?? listing?.propertyCategory ?? listing?.property_category,
+    { fallback: '' },
   )
-  const propertyTypeOptions = getPropertyTypeOptionsByCategory(resolvedPropertyCategory)
-  const candidatePropertyType = existing.propertyType || listing?.propertyType || canonicalFacts?.property?.property_type || ''
-  const resolvedPropertyType = candidatePropertyType || propertyTypeOptions[0]?.value || 'house'
+  const candidatePropertyType = existing.propertyType ?? listing?.propertyType ?? canonicalFacts?.property?.property_type ?? ''
+  const resolvedPropertyType = candidatePropertyType || ''
   const propertyStructureOptions = getPropertyStructureOptionsByCategory(resolvedPropertyCategory)
   const rawPropertyStructureType = normalizePropertyStructureType(
-    existing.propertyTitleType ||
-      existing.property_title_type ||
-      existing.propertyStructureType ||
-      canonicalFacts?.property?.property_title_type ||
-      canonicalFacts?.property?.title_type ||
-      canonicalFacts?.property?.title_type_raw ||
-      canonicalFacts?.property?.property_structure_type ||
-      listing?.propertyTitleType ||
-      listing?.property_title_type ||
-      listing?.propertyStructureType ||
-      listing?.property_structure_type ||
-      existing.propertyType ||
+    existing.propertyTitleType ??
+      existing.property_title_type ??
+      existing.propertyStructureType ??
+      canonicalFacts?.property?.property_title_type ??
+      canonicalFacts?.property?.title_type ??
+      canonicalFacts?.property?.title_type_raw ??
+      canonicalFacts?.property?.property_structure_type ??
+      listing?.propertyTitleType ??
+      listing?.property_title_type ??
+      listing?.propertyStructureType ??
+      listing?.property_structure_type ??
+      existing.propertyType ??
       '',
     { fallback: '' },
   )
@@ -1485,7 +1487,7 @@ function normalizeFormData(listing) {
   const candidatePropertyStructureType = hadLegacyEstateStructure ? 'full_title' : rawPropertyStructureType
   const resolvedPropertyStructureType = propertyStructureOptions.some((item) => item.value === candidatePropertyStructureType)
     ? candidatePropertyStructureType
-    : propertyStructureOptions[0]?.value || 'other'
+    : ''
   const isSectionalStructure = ['sectional_title', 'share_block'].includes(resolvedPropertyStructureType)
   const isShareBlockStructure = resolvedPropertyStructureType === 'share_block'
   const legacyFeatureKeys = Array.isArray(existing.features)
@@ -1568,8 +1570,8 @@ function normalizeFormData(listing) {
   const resolvedUnitNumber = sharedProfile.unitNumber
 
   return {
-    sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
-    sellerSurname: existing.sellerSurname || canonicalFacts?.seller?.surname || split.surname,
+    sellerFirstName: existing.sellerFirstName ?? canonicalFacts?.seller?.first_name ?? split.firstName,
+    sellerSurname: existing.sellerSurname ?? canonicalFacts?.seller?.surname ?? split.surname,
     idNumber: resolveIdNumber(),
     dateOfBirth: existing.dateOfBirth ?? existing.date_of_birth ?? existing.birthDate ?? canonicalFacts?.seller?.date_of_birth ?? '',
     occupation: existing.occupation ?? canonicalFacts?.seller?.occupation ?? '',
@@ -1577,8 +1579,8 @@ function normalizeFormData(listing) {
     politicallyExposedPerson: normalizeYesNoValue(existing.politicallyExposedPerson ?? existing.politically_exposed_person ?? canonicalFacts?.seller?.politically_exposed_person),
     politicallyExposedDetails: existing.politicallyExposedDetails ?? existing.politically_exposed_details ?? canonicalFacts?.seller?.politically_exposed_details ?? '',
     nationality: existing.nationality ?? canonicalFacts?.seller?.nationality ?? '',
-    email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
-    phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
+    email: existing.email ?? canonicalFacts?.seller?.email ?? seller.email ?? '',
+    phone: existing.phone ?? canonicalFacts?.seller?.phone ?? seller.phone ?? '',
     alternativeNumber: existing.alternativeNumber || existing.alternative_number || existing.alternatePhone || existing.alternate_phone || canonicalFacts?.seller?.alternative_number || canonicalFacts?.seller?.alternate_phone || '',
     residentialAddress: resolvedResidentialAddress,
     residentialAddressDetails: existing.residentialAddressDetails || existing.sellerResidentialAddressDetails || {},
@@ -1684,14 +1686,14 @@ function normalizeFormData(listing) {
     })),
     ownershipFieldLabels,
 
-    askingPrice: existing.askingPrice || String(listing?.askingPrice || ''),
+    askingPrice: existing.askingPrice ?? String(listing?.askingPrice ?? ''),
     mandateType: existing.mandateType || canonicalFacts?.transaction?.mandate_type || listing?.mandateType || '',
     mandateStartDate: existing.mandateStartDate || existing.mandate_start_date || canonicalFacts?.transaction?.mandate_start_date || listing?.mandateStartDate || listing?.mandate_start_date || '',
     mandateEndDate: existing.mandateEndDate || existing.mandate_end_date || existing.mandateExpiryDate || existing.mandate_expiry_date || canonicalFacts?.transaction?.mandate_end_date || canonicalFacts?.transaction?.mandate_expiry_date || listing?.mandateEndDate || listing?.mandate_end_date || listing?.mandateExpiryDate || listing?.mandate_expiry_date || '',
     preferredTransferAttorneyRecommendation: readSellerOnboardingAttorneyRecommendation(existing),
     specialMandateConditions: existing.specialMandateConditions || existing.special_mandate_conditions || canonicalFacts?.transaction?.special_mandate_conditions || {},
     additionalConditions: existing.additionalConditions || existing.additional_conditions || existing.additionalMandateConditions || existing.additional_mandate_conditions || canonicalFacts?.transaction?.additional_conditions || '',
-    sellingTimeline: existing.sellingTimeline || '1_3_months',
+    sellingTimeline: existing.sellingTimeline || '',
     sellingReason: existing.sellingReason || '',
 
     propertyCategory: resolvedPropertyCategory,
@@ -1743,19 +1745,19 @@ function normalizeFormData(listing) {
     approvedBuildingPlansAvailable: Boolean(existing.approvedBuildingPlansAvailable || canonicalFacts?.property?.approved_building_plans_available),
     floorPlanAvailable: Boolean(existing.floorPlanAvailable || canonicalFacts?.property?.floor_plan_available),
 
-    erfSize: existing.erfSize || canonicalFacts?.property?.erf_size || '',
-    floorSize: existing.floorSize || canonicalFacts?.property?.floor_size || '',
-    bedrooms: existing.bedrooms || canonicalFacts?.property?.bedrooms || '',
-    bathrooms: existing.bathrooms || canonicalFacts?.property?.bathrooms || '',
-    livingArea: existing.livingArea || canonicalFacts?.property?.living_area || '',
-    kitchens: existing.kitchens || canonicalFacts?.property?.kitchens || '',
-    garages: existing.garages || canonicalFacts?.property?.garages || '',
-    parkingCovered: existing.parkingCovered || canonicalFacts?.property?.parking_covered || '',
-    parkingOpen: existing.parkingOpen || canonicalFacts?.property?.parking_open || '',
+    erfSize: existing.erfSize ?? canonicalFacts?.property?.erf_size ?? '',
+    floorSize: existing.floorSize ?? canonicalFacts?.property?.floor_size ?? '',
+    bedrooms: existing.bedrooms ?? canonicalFacts?.property?.bedrooms ?? '',
+    bathrooms: existing.bathrooms ?? canonicalFacts?.property?.bathrooms ?? '',
+    livingArea: existing.livingArea ?? canonicalFacts?.property?.living_area ?? '',
+    kitchens: existing.kitchens ?? canonicalFacts?.property?.kitchens ?? '',
+    garages: existing.garages ?? canonicalFacts?.property?.garages ?? '',
+    parkingCovered: existing.parkingCovered ?? canonicalFacts?.property?.parking_covered ?? '',
+    parkingOpen: existing.parkingOpen ?? canonicalFacts?.property?.parking_open ?? '',
     pool: Boolean(existing.pool || canonicalFacts?.property?.pool),
-    levies: existing.levies || canonicalFacts?.property?.levies || '',
+    levies: existing.levies ?? canonicalFacts?.property?.levies ?? '',
     leviesNotApplicable: Boolean(existing.leviesNotApplicable || existing.levies_not_applicable || canonicalFacts?.property?.levies_not_applicable),
-    ratesTaxes: existing.ratesTaxes || canonicalFacts?.property?.rates_taxes || '',
+    ratesTaxes: existing.ratesTaxes ?? canonicalFacts?.property?.rates_taxes ?? '',
     waterBillingType: existing.waterBillingType || existing.water_billing_type || canonicalFacts?.property?.utilities?.water_billing_type || canonicalFacts?.property?.water_billing_type || '',
     monthlyWaterSpend: existing.monthlyWaterSpend || canonicalFacts?.property?.utilities?.monthly_water_spend || '',
     monthlyElectricitySpend: existing.monthlyElectricitySpend || canonicalFacts?.property?.utilities?.monthly_electricity_spend || '',
@@ -2009,7 +2011,7 @@ function SellerStepProgress({ currentStep, progress }) {
           <p className="text-sm font-semibold text-[#142132]">Step {currentStep + 1} of {STEPS.length}</p>
           <p className="mt-1 text-sm text-[#6b7d93]">{STEP_META[currentStep]?.helper}</p>
         </div>
-        <span className="rounded-full bg-[var(--seller-brand-action-soft)] px-3 py-1 text-xs font-semibold text-[var(--seller-brand-action)]">{progress}% complete</span>
+        <span className="rounded-full bg-[var(--seller-brand-action-soft)] px-3 py-1 text-xs font-semibold text-[var(--seller-brand-action)]">Step {currentStep + 1} of {STEPS.length}</span>
       </div>
       <div className="mt-4 hidden h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:block">
         <span
@@ -2324,12 +2326,12 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
         </span>
         <div className="min-w-0">
           <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[#14532d]' : 'text-[#7a4b10]'}`}>
-            {ready ? agentAssisted ? 'Ready to submit seller onboarding' : 'Ready to send to your agent' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
+            {ready ? agentAssisted ? 'Ready to save seller details' : 'Ready to send to your agent' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
           </p>
           <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
             {ready
-              ? agentAssisted ? 'Everything required for onboarding has been captured. Submit it when the summary looks correct.' : 'Everything required for onboarding has been captured. Send it to your agent when the summary looks correct.'
-              : 'Open the highlighted sections below and finish the missing details before submitting.'}
+              ? agentAssisted ? 'Check the summary and save the information you have.' : 'Everything required for onboarding has been captured. Send it to your agent when the summary looks correct.'
+              : 'You can save what you have now and add these details later. Signing and listing steps will check what they need.'}
           </p>
         </div>
       </div>
@@ -2390,16 +2392,16 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
           type="button"
           variant="ghost"
           onClick={onSubmit}
-          disabled={!ready || submitting}
+          disabled={submitting}
           className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
         >
-          {submitting ? 'Submitting...' : ready ? agentAssisted ? 'Save and submit onboarding' : 'Send onboarding to agent' : 'Complete required items to continue'}
+          {submitting ? 'Submitting...' : ready ? agentAssisted ? 'Save seller details' : 'Send onboarding to agent' : 'Save available details'}
           <CheckCircle2 size={16} />
         </Button>
         <p className={`mt-2 text-center text-xs leading-5 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
           {ready
             ? 'This sends your information for review. It does not sign a mandate.'
-            : 'This button stays here while you complete the highlighted items.'}
+            : 'Missing details stay unanswered. Saving does not sign documents or publish a listing.'}
         </p>
       </div>
     </section>
@@ -2813,11 +2815,11 @@ function SignatureRequestDialog({ request = null, copied = false, onClose, onCop
   )
 }
 
-export function SellerOnboarding({ tokenOverride = '', embedded = false, completionModeOverride = '', onSubmitted = null, onDraftSaved = null, onSaveStateChange = null, onDirtyStateChange = null }) {
+export function SellerOnboarding({ tokenOverride = '', embedded = false, completionModeOverride = '', onSubmitted = null, onDraftSaved = null, onSaveStateChange = null, onDirtyStateChange = null, captureDraft = null, onCapturePersist = null, onCaptureFinished = null, captureReview = null }) {
   const params = useParams()
   const token = String(tokenOverride || params?.token || '').trim()
   const isDemoOnboarding = isSellerOnboardingDemoToken(token)
-  const useDbFirstSellerOnboarding = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED && !isDemoOnboarding)
+  const useDbFirstSellerOnboarding = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED && !isDemoOnboarding && !captureDraft)
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -2838,6 +2840,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     typeof navigator !== 'undefined' ? navigator.onLine === false : false
   ))
   const draftAutosaveTimerRef = useRef(null)
+  const draftMessageTimerRef = useRef(null)
   const lastDraftSignatureRef = useRef('')
   const saveDraftRef = useRef(null)
   const sellerSaveSnapshotRef = useRef(null)
@@ -2855,7 +2858,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
   // never write an older acknowledgement set over a newer one.
   const signerAcknowledgementFormRef = useRef(null)
   const signerAcknowledgementPersistenceRef = useRef(Promise.resolve())
-  const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
+  const requestedComplianceSignerId = useMemo(() => captureDraft ? '' : getSellerComplianceSignerIdFromUrl(), [captureDraft, token])
   const onboardingCompletionMode = useMemo(() => completionModeOverride
     ? normalizeSellerOnboardingCompletionMode(completionModeOverride)
     : getSellerOnboardingCompletionModeFromUrl(), [completionModeOverride, token])
@@ -2878,6 +2881,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
   useEffect(() => {
     let isMounted = true
     async function load() {
+      if (captureDraft) {
+        setListing(captureDraft)
+        setForm(normalizeFormData(captureDraft))
+        setShowWelcome(false)
+        setLoading(false)
+        return
+      }
       if (!token) {
         setError('Invalid seller onboarding link.')
         setLoading(false)
@@ -3030,13 +3040,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     return () => {
       isMounted = false
     }
-  }, [embedded, isDemoOnboarding, requestedComplianceSignerId, token, useDbFirstSellerOnboarding])
+  }, [captureDraft, embedded, isDemoOnboarding, requestedComplianceSignerId, token, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     return () => {
       if (draftAutosaveTimerRef.current) {
         window.clearTimeout(draftAutosaveTimerRef.current)
       }
+      if (draftMessageTimerRef.current) window.clearTimeout(draftMessageTimerRef.current)
     }
   }, [])
 
@@ -3210,6 +3221,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
   }
 
   async function persistListingUpdate(updater, options = {}) {
+    if (captureDraft) {
+      return queueSellerSave(async () => {
+        const current = sellerSaveSnapshotRef.current || listing || captureDraft
+        let updated
+        try { updated = await onCapturePersist(updater({ ...current })) }
+        catch (reason) {
+          if (reason.committed && reason.listing) {
+            sellerSaveSnapshotRef.current = reason.listing
+            setListing(reason.listing)
+          }
+          throw reason
+        }
+        if (!updated) throw new Error('Your details could not be saved. Keep this form open and try again.')
+        sellerSaveSnapshotRef.current = updated
+        setListing(updated)
+        return updated
+      })
+    }
     if (isDemoOnboarding) {
       const current = listing || getDemoSellerOnboardingListing(token)
       const candidate = updater({ ...current })
@@ -3481,13 +3510,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     if (form?.ownershipRouteLocked || form?.ownership_route_locked) return
     setForm((previous) => {
       const next = { ...(previous || {}) }
+      if (value === 'natural_person' || value === 'foreign') {
+        return { ...next, ownerEntityType: value, ownerStructureType: '', ownershipType: '', sellerLegalType: '',
+          ownershipDeclarationPending: true, ownership_declaration_pending: true,
+          ownershipRouteConfirmed: false, ownership_route_confirmed: false, foreignOwner: value === 'foreign' }
+      }
       const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[value] || []
       const ownerStructureType = options.length === 1 ? options[0].value : ''
-      if (!ownerStructureType) return {
-        ...next, ownerEntityType: value, ownerStructureType: '', ownershipType: '', sellerLegalType: '', foreignOwner: value === 'foreign',
-        ownershipDeclarationPending: true, ownership_declaration_pending: true,
-        ownershipRouteConfirmed: false, ownership_route_confirmed: false,
-      }
       const ownershipType = deriveOwnershipTypeFromOwnerModel(value, ownerStructureType)
       return applyOwnershipSelection(next, ownershipType, { ownerEntityType: value, ownerStructureType })
     })
@@ -3897,7 +3926,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
 
       if (!silent) {
         setSuccess('Draft saved.')
-        setTimeout(() => setSuccess(''), 1200)
+        if (draftMessageTimerRef.current) window.clearTimeout(draftMessageTimerRef.current)
+        draftMessageTimerRef.current = window.setTimeout(() => setSuccess(''), 1200)
       }
       return true
     } catch (draftError) {
@@ -3921,6 +3951,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
     if (
+      captureDraft ||
       loading ||
       !form ||
       !listing ||
@@ -3960,7 +3991,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
         draftAutosaveTimerRef.current = null
       }
     }
-  }, [currentStep, draftSyncStatus, embedded, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
+  }, [captureDraft, currentStep, draftSyncStatus, embedded, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -3987,7 +4018,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
-    if (!form || !listing || hasRequestedComplianceSigner || isCompleted || submitting || saving) return undefined
+    if (captureDraft || !form || !listing || hasRequestedComplianceSigner || isCompleted || submitting || saving) return undefined
 
     const flushPendingDraft = () => {
       if (document.visibilityState && document.visibilityState !== 'hidden') return
@@ -4013,349 +4044,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       document.removeEventListener('visibilitychange', flushPendingDraft)
       window.removeEventListener('pagehide', flushPendingDraft)
     }
-  }, [currentStep, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, saving, submitting, useDbFirstSellerOnboarding])
+  }, [captureDraft, currentStep, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, saving, submitting, useDbFirstSellerOnboarding])
+
+  function validateCaptureValues() {
+    if (!form) return 'Form state unavailable.'
+    const emailFields = ['email', 'spouseEmail', 'authorisedSignatoryEmail', 'authorisedTrusteeEmail', 'executorEmail', 'powerOfAttorneyEmail']
+    const people = [...(form.multipleOwners || []), ...(form.companyDirectors || []), ...(form.trustees || [])]
+    const emails = [...emailFields.map(key => form[key]), ...people.map(person => person.email)].filter(value => String(value || '').trim())
+    return emails.some(value => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())) ? 'Please check the email addresses you have entered, or leave them blank.' : ''
+  }
 
   function validateCurrentStep() {
-    if (!form) return 'Form state unavailable.'
-
-    if (currentStep === 0) {
-      if (!form.sellerFirstName || !form.sellerSurname || !form.email || !form.phone) {
-        return 'Please complete name, surname, email, and phone.'
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email))) {
-        return 'Please provide a valid email address.'
-      }
-      if (!String(form.sellerTaxNumber || '').trim()) {
-        return 'Please provide the seller tax number.'
-      }
-      if (!String(form.saResident || '').trim()) {
-        return 'Please confirm whether the seller is an SA resident.'
-      }
-
-      const ownershipType = String(form.ownershipType || '')
-      if (!ownershipType) return 'Please select ownership structure.'
-      if (!form.ownerEntityType) return 'Please select the owner type.'
-      if (!form.ownerStructureType) return 'Please define the owner structure.'
-      const ownershipBranch = getOwnershipBranch(ownershipType)
-      const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
-      const isNaturalPersonSeller =
-        form.ownerStructureType === 'foreign_individual' ||
-        ownershipBranch === 'individual' ||
-        ownershipBranch === 'married'
-      const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
-      const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
-      const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
-
-      if (isNaturalPersonSeller) {
-        if (!String(form.dateOfBirth || '').trim()) {
-          return 'Please provide the seller date of birth.'
-        }
-        if (!String(form.nationality || '').trim()) {
-          return 'Please provide the seller nationality.'
-        }
-      }
-
-      if (isForeignOwner && !form.foreignOwnerCountry) {
-        return 'Please provide the foreign country or jurisdiction.'
-      }
-
-      if (ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') {
-        if (!form.idNumber && !(isForeignOwner && form.foreignPassportNumber)) {
-          return 'Please provide ID number / passport details.'
-        }
-        if (!resolveSellerResidentialAddress(form)) {
-          return 'Please provide your residential address.'
-        }
-      }
-
-      if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
-        return 'Spouse name and spouse ID number are required for married ownership.'
-      }
-      if (mandateRequiresSellerSpouseEmail && !form.spouseEmail) {
-        return 'Spouse email is required for mandate generation when spouse consent is required.'
-      }
-
-      if (ownershipBranch === 'company') {
-        if (!form.companyName || !form.companyRegistrationNumber || !form.companyRegisteredAddress) {
-          return 'Company name, registration number, and registered address are required.'
-        }
-        if (!companyDirectors.length || companyDirectors.some((director) => !director.name || !director.surname)) {
-          return 'Please add at least one company director with a name and surname.'
-        }
-        if (!form.authorisedSignatoryName) {
-          return 'Primary authorised signatory details are required for a company seller.'
-        }
-        if (!form.authorisedSignatoryCapacity || !form.companyResolutionDate || !form.companyAuthorityBasis) {
-          return 'Authorised signatory capacity, resolution date, and authority basis are required for company mandate generation.'
-        }
-      }
-
-      if (ownershipBranch === 'trust') {
-        if (!form.trustName || !form.trustRegistrationNumber || !form.trustRegisteredAddress) {
-          return 'Trust name, registration number, and registered address are required.'
-        }
-        if (!trustTrustees.length || trustTrustees.some((trustee) => !trustee.name || !trustee.surname)) {
-          return 'Please add at least one trustee with a name and surname.'
-        }
-        if (!form.authorisedTrusteeName) {
-          return 'Primary trustee details are required for a trust seller.'
-        }
-        if (!form.authorisedTrusteeCapacity || !form.trustAuthorityBasis) {
-          return 'Authorised trustee capacity and authority basis are required for trust mandate generation.'
-        }
-      }
-
-      if (ownershipBranch === 'deceased_estate') {
-        if (!form.executorName) {
-          return 'Executor details are required for a deceased estate seller.'
-        }
-        if (!form.deceasedEstateName) return 'Please provide the legal estate name.'
-        if (!form.estateReference) {
-          return 'Estate reference is required for a deceased estate seller.'
-        }
-        if (!form.executorAuthorityDetails) {
-          return 'Authority details are required for a deceased estate seller.'
-        }
-      }
-
-      if (ownershipBranch === 'power_of_attorney') {
-        if (!form.powerOfAttorneyName) {
-          return 'Representative details are required for a power of attorney seller.'
-        }
-        if (!form.powerOfAttorneyPrincipalName || !form.powerOfAttorneyPrincipalIdNumber) {
-          return 'Principal name and ID number are required for a power of attorney seller.'
-        }
-        if (!form.powerOfAttorneyAuthorityDetails) {
-          return 'Authority details are required for a power of attorney seller.'
-        }
-      }
-
-      if (ownershipBranch === 'multiple_owners') {
-        if (multipleOwners.length < 2) {
-          return 'Please add at least two owners.'
-        }
-        const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
-        if (incompleteOwner) {
-          return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
-        }
-      }
-
-      const ficaMissing = getSellerFicaOnboardingMissing(form)
-      if (ficaMissing.length) return `Please complete the FICA details: ${ficaMissing.join(', ')}.`
-
-      if (!areSellerOnboardingConsentsComplete(form)) {
-        return 'Please accept the onboarding permissions and information declaration before continuing.'
-      }
-
-
-    }
-
-    if (currentStep === 1) {
-      const address = resolveProgressionPropertyAddress(listing || {}, form || {})
-      const missingAddressItems = getPropertyAddressMissingItems(address)
-
-      if (!form.propertyCategory || !form.propertyType || !form.propertyStructureType) {
-        return 'Property category, property type, and title type are required.'
-      }
-      if (missingAddressItems.length) {
-        return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
-      }
-      const sectionalIdentifier = form.sectionNumber || form.unitNumber
-      if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier)) {
-        return 'Scheme name and unit / section number are required for sectional title properties.'
-      }
-      if (showEstateDetails && (!form.estateName || (!form.hoaManagementCompany && !form.hoaContactName))) {
-        return 'Estate / HOA name and managing agent details are required for estate properties.'
-      }
-      if ((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !form.commercialUseDescription) {
-        return 'Please describe the commercial or mixed-use operating context.'
-      }
-      if ((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !form.floorSize) {
-        return 'Floor size is required for commercial and mixed-use properties.'
-      }
-      if ((propertyBranch === 'agricultural' || propertyBranch === 'vacant_land') && !form.erfSize) {
-        return 'Land size is required for vacant land and agricultural properties.'
-      }
-      if (!form.ratesTaxes) {
-        return 'Rates and taxes are required for the property.'
-      }
-      if (form.existingBond && !form.bondBank) {
-        return 'Bond bank is required when there is an existing bond.'
-      }
-      if (form.occupancyStatus === 'tenant_occupied' && form.leaseExists && !form.leaseExpiryDate) {
-        return 'Lease expiry date is required when a lease exists.'
-      }
-    }
-
-    if (currentStep === 2 && hasRequestedComplianceSigner) {
-      const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked })
-      if (missingDisclosureItems.length) {
-        return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
-      }
-    }
-
-    return ''
+    if (!hasRequestedComplianceSigner) return validateCaptureValues()
+    const missing = getPropertyDisclosureMissingItems(activePropertyDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked })
+    return missing.length ? `Please complete the declaration before signing: ${missing.join(', ')}.` : ''
   }
 
   function validateCurrentMobilePane() {
-    if (!form) return 'Form state unavailable.'
-
-    if (currentStep === 0) {
-      const ownershipType = String(form.ownershipType || '')
-      const ownershipBranch = getOwnershipBranch(ownershipType)
-      const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
-      const isNaturalPersonSeller =
-        form.ownerStructureType === 'foreign_individual' ||
-        ownershipBranch === 'individual' ||
-        ownershipBranch === 'married'
-      const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
-      const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
-      const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
-
-      if (activeMobilePaneIndex === sellerPaneIndexes.ownership) {
-        if (!ownershipType) return 'Please select ownership structure.'
-        if (!form.ownerEntityType) return 'Please select the owner type.'
-        if (!form.ownerStructureType) return 'Please define the owner structure.'
-        if (isForeignOwner && !form.foreignOwnerCountry) return 'Please provide the foreign country or jurisdiction.'
-      }
-
-      if (activeMobilePaneIndex === sellerPaneIndexes.identity) {
-        if (!form.sellerFirstName || !form.sellerSurname || !form.email || !form.phone) {
-          return 'Please complete name, surname, email, and phone before continuing.'
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email))) {
-          return 'Please provide a valid email address.'
-        }
-        if (!String(form.sellerTaxNumber || '').trim()) {
-          return 'Please provide the seller tax number before continuing.'
-        }
-        if (!String(form.saResident || '').trim()) {
-          return 'Please confirm whether the seller is an SA resident before continuing.'
-        }
-        if (isNaturalPersonSeller) {
-          if (!String(form.dateOfBirth || '').trim()) {
-            return 'Please provide the seller date of birth before continuing.'
-          }
-          if (!String(form.nationality || '').trim()) {
-            return 'Please provide the seller nationality before continuing.'
-          }
-        }
-        if ((ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') && !form.idNumber && !(isForeignOwner && form.foreignPassportNumber)) {
-          return 'Please provide ID number / passport details.'
-        }
-        if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !resolveSellerResidentialAddress(form)) {
-          return 'Please provide your residential address before continuing.'
-        }
-        if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
-          return 'Spouse name and spouse ID number are required for married ownership.'
-        }
-        if (mandateRequiresSellerSpouseEmail && !form.spouseEmail) {
-          return 'Spouse email is required for mandate generation when spouse consent is required.'
-        }
-        if (ownershipBranch === 'company') {
-          if (!form.companyName || !form.companyRegistrationNumber || !form.companyRegisteredAddress) {
-            return 'Company name, registration number, and registered address are required.'
-          }
-          if (!companyDirectors.length || companyDirectors.some((director) => !director.name || !director.surname)) {
-            return 'Please add at least one company director with a name and surname.'
-          }
-          if (!form.authorisedSignatoryName) return 'Primary authorised signatory details are required for a company seller.'
-          if (!form.authorisedSignatoryCapacity || !form.companyResolutionDate || !form.companyAuthorityBasis) {
-            return 'Authorised signatory capacity, resolution date, and authority basis are required for company mandate generation.'
-          }
-        }
-        if (ownershipBranch === 'trust') {
-          if (!form.trustName || !form.trustRegistrationNumber || !form.trustRegisteredAddress) {
-            return 'Trust name, registration number, and registered address are required.'
-          }
-          if (!trustTrustees.length || trustTrustees.some((trustee) => !trustee.name || !trustee.surname)) {
-            return 'Please add at least one trustee with a name and surname.'
-          }
-          if (!form.authorisedTrusteeName) return 'Primary trustee details are required for a trust seller.'
-          if (!form.authorisedTrusteeCapacity || !form.trustAuthorityBasis) {
-            return 'Authorised trustee capacity and authority basis are required for trust mandate generation.'
-          }
-        }
-        if (ownershipBranch === 'deceased_estate' && (!form.deceasedEstateName || !form.executorName || !form.estateReference || !form.executorAuthorityDetails)) {
-          return 'Legal estate name, executor, estate reference, and authority details are required for a deceased estate seller.'
-        }
-        if (ownershipBranch === 'power_of_attorney' && (!form.powerOfAttorneyName || !form.powerOfAttorneyPrincipalName || !form.powerOfAttorneyPrincipalIdNumber || !form.powerOfAttorneyAuthorityDetails)) {
-          return 'Representative, principal, and authority details are required for a power of attorney seller.'
-        }
-        if (ownershipBranch === 'multiple_owners') {
-          if (multipleOwners.length < 2) return 'Please add at least two owners.'
-          const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
-          if (incompleteOwner) {
-            return 'Each owner needs a name, surname, ID/passport number, and consent to sell.'
-          }
-        }
-        const ficaMissing = getSellerFicaOnboardingMissing(form)
-        if (ficaMissing.length) return `Please complete the FICA details: ${ficaMissing.join(', ')}.`
-      }
-
-
-    }
-
-    if (currentStep === 1) {
-      if (activeMobilePaneIndex === propertyPaneIndexes.category && !form.propertyCategory) {
-        return 'Please select a property category.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.type && (!form.propertyType || !form.propertyStructureType)) {
-        return 'Please select the property type and title type.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.address) {
-        const address = resolveProgressionPropertyAddress(listing || {}, form || {})
-        const missingAddressItems = getPropertyAddressMissingItems(address)
-        if (missingAddressItems.length) {
-          return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
-        }
-      }
-      const sectionalIdentifier = form.sectionNumber || form.unitNumber
-      if (activeMobilePaneIndex === propertyPaneIndexes.sectional && (!form.schemeName || !sectionalIdentifier)) {
-        return 'Scheme name and unit / section number are required for sectional title properties.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.estate && (!form.estateName || (!form.hoaManagementCompany && !form.hoaContactName))) {
-        return 'Estate / HOA name and managing agent details are required for estate properties.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.commercial) {
-        if (!form.commercialUseDescription) return 'Please describe the commercial or mixed-use operating context.'
-        if (!form.floorSize) return 'Floor size is required for commercial and mixed-use properties.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.land && !form.erfSize) {
-        return 'Land size is required for vacant land and agricultural properties.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.valuation) {
-        if (!form.ratesTaxes) return 'Rates and taxes are required for the property.'
-      }
-      if (activeMobilePaneIndex === propertyPaneIndexes.occupancy) {
-        if (form.existingBond && !form.bondBank) return 'Bond bank is required when there is an existing bond.'
-        if (form.occupancyStatus === 'tenant_occupied' && form.leaseExists && !form.leaseExpiryDate) {
-          return 'Lease expiry date is required when a lease exists.'
-        }
-      }
-    }
-
-    if (currentStep === 2 && hasRequestedComplianceSigner) {
-      const disclosureQuestionGroups = getDisclosureQuestionGroups()
-      if (activeMobilePaneIndex > 0 && activeMobilePaneIndex <= disclosureQuestionGroups.length) {
-        const normalized = normalizePropertyDisclosure(form.propertyDisclosure || {}, {
-          kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
-        })
-        const unanswered = disclosureQuestionGroups[activeMobilePaneIndex - 1]
-          .filter((question) => !normalized.responses?.[question.key]?.answer)
-        if (unanswered.length) {
-          return `Please answer all questions in this section before continuing (${unanswered.length} remaining).`
-        }
-      }
-      if (activeMobilePaneIndex === disclosureQuestionGroups.length + 2) {
-        const missingDisclosureItems = getPropertyDisclosureMissingItems(activePropertyDisclosure || {}, { requireSignature: !isAgentAssistedCompletion, preserveSigned: assistedDisclosureLocked })
-        if (missingDisclosureItems.length) {
-          return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
-        }
-      }
-    }
-
-    return ''
+    return validateCurrentStep()
   }
 
   async function handleNext() {
@@ -4367,10 +4073,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       return
     }
     const nextStep = Math.min(currentStep + 1, STEPS.length - 1)
+    if (!await saveDraft(nextStep)) return
     setMobilePaneIndex(0)
     setCurrentStep(nextStep)
     scrollSellerOnboardingToTop()
-    void saveDraft(nextStep)
   }
 
   async function handleBack() {
@@ -4379,7 +4085,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     setMobilePaneIndex(0)
     setCurrentStep(nextStep)
     scrollSellerOnboardingToTop()
-    void saveDraft(nextStep)
   }
 
   function handleMobilePaneBack() {
@@ -4498,8 +4203,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     }
   }
 
+  async function finishLeadCapture(step = currentStep) {
+    if (saving || submitting) return
+    const validationError = validateCaptureValues()
+    if (validationError) { setError(validationError); return }
+    setSubmitting(true)
+    try {
+      if (await saveDraft(step)) await onCaptureFinished?.(sellerSaveSnapshotRef.current)
+    } finally { setSubmitting(false) }
+  }
+
   async function handleSubmit() {
-    if (!form || submitting) return
+    if (!form || submitting || saving) return
+    const captureError = validateCaptureValues()
+    if (captureError) { setError(captureError); return }
+    if (captureDraft) { await finishLeadCapture(FINAL_STEP_INDEX); return }
     setError('')
     setTermsAcceptanceError('')
     setSuccess('')
@@ -4543,8 +4261,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
     ]
     if (finalRequiredMissing.length) {
-      setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
-      scrollSellerOnboardingToTop({ focusAlert: true })
+      if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Your details have been saved. Some information is still missing. You can return to this link to add it later.')
       return
     }
 
@@ -4656,7 +4373,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       if (canonicalPayload.canonicalSellerFacts) {
         const factValidation = validateSellerOnboardingFacts(canonicalPayload.canonicalSellerFacts, { draft: false })
         if (!factValidation.ok) {
-          throw new Error(factValidation.required[0]?.message || 'Please complete the required seller onboarding facts before submitting.')
+          if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Your details have been saved. You can return to add the remaining information later.')
+          return
         }
       }
       const submitFormData = { ...finalForm, ...canonicalPayload }
@@ -4952,7 +4670,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
           />
           <div className="flex shrink-0 items-center gap-1.5">
             {currentStep > 0 || activeMobilePaneIndex > 0 ? (
-              <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={submitting} className="min-h-[34px] rounded-full px-2.5">
+              <Button type="button" variant="secondary" onClick={handleMobilePaneBack} disabled={saving || submitting} className="min-h-[34px] rounded-full px-2.5">
                 <ChevronLeft size={14} />
                 Back
               </Button>
@@ -4968,14 +4686,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
           </div>
         </div>
         {currentStep < FINAL_STEP_INDEX ? (
-          <Button type="button" variant="ghost" onClick={handleMobilePaneNext} disabled={submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
+          <Button type="button" variant="ghost" onClick={handleMobilePaneNext} disabled={saving || submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
             {saving ? 'Saving...' : hasNextMobilePane ? 'Continue' : 'Save & Continue'}
             <ChevronRight size={14} />
           </Button>
         ) : null}
         {currentStep === FINAL_STEP_INDEX ? (
-          <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-            {submitting ? 'Submitting...' : isAgentAssistedCompletion ? 'Save and submit onboarding' : 'Send onboarding to agent'}
+          <Button type="button" variant="ghost" onClick={handleSubmit} disabled={saving || submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
+            {submitting ? 'Saving...' : captureDraft ? 'Save and finish' : isAgentAssistedCompletion ? 'Save seller details' : 'Send details to agent'}
             <CheckCircle2 size={14} />
           </Button>
         ) : null}
@@ -4990,7 +4708,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {currentStep > 0 ? (
-            <Button type="button" variant="secondary" onClick={handleBack} disabled={submitting} className="min-h-[46px]">
+            <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px]">
               <ChevronLeft size={14} />
               Back
             </Button>
@@ -5001,14 +4719,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
             </Button>
           ) : null}
           {currentStep < FINAL_STEP_INDEX ? (
-            <Button type="button" variant="ghost" onClick={handleNext} disabled={submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
+            <Button type="button" variant="ghost" onClick={handleNext} disabled={saving || submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
               Save & Continue
               <ChevronRight size={14} />
             </Button>
           ) : null}
           {currentStep === FINAL_STEP_INDEX ? (
-            <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-              {submitting ? 'Submitting...' : isAgentAssistedCompletion ? 'Save and submit onboarding' : 'Send onboarding to agent'}
+            <Button type="button" variant="ghost" onClick={handleSubmit} disabled={saving || submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
+              {submitting ? 'Saving...' : captureDraft ? 'Save and finish' : isAgentAssistedCompletion ? 'Save seller details' : 'Send details to agent'}
               <CheckCircle2 size={14} />
             </Button>
           ) : null}
@@ -5089,13 +4807,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
             <StepShell
               eyebrow="About you"
               title="Tell us about yourself"
-              description="Confirm the seller identity, ownership structure, and sale context."
+              description="Add what you know. Every question is optional. You can come back later."
             >
               <div className="space-y-6 sm:space-y-4">
               <FormSection
                 icon={Landmark}
                 title="Who owns this property?"
-                description="Choose the owner type first, then define the ownership structure."
+                description="Choose who owns the property, if you know. Otherwise, skip this question."
                 illustration="ownership"
                 mobilePaneIndex={sellerPaneIndexes.ownership}
               >
@@ -5121,8 +4839,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                   })}
                 </div>
 
-                <div className="mt-4 border-t border-[#e4ecf5] pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60748b]">Define the structure</p>
+                {ownerEntityType ? <div className="mt-4 border-t border-[#e4ecf5] pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60748b]">Which option describes the owner?</p>
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {ownerStructureOptions.map((item) => {
                       const active = ownerStructureType === item.value
@@ -5139,7 +4857,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       )
                     })}
                   </div>
-                </div>
+                </div> : <p className="mt-3 text-sm text-[#60748b]">Not sure who owns it? Leave this blank and continue.</p>}
 
                 {isForeignOwner ? (
                   <div className="mt-4 grid grid-cols-1 gap-3 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] p-4 md:grid-cols-2">
@@ -5150,8 +4868,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     {ownerStructureType === 'foreign_individual' ? (
                       <>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                          Passport / foreign ID number *
-                          <input required className={DETAIL_INPUT_CLASS} value={form.idNumber || form.foreignPassportNumber} onChange={(event) => {
+                          Passport / foreign ID number
+                          <input className={DETAIL_INPUT_CLASS} value={form.idNumber || form.foreignPassportNumber} onChange={(event) => {
                             handleFormUpdate('idNumber', event.target.value)
                             handleFormUpdate('foreignPassportNumber', event.target.value)
                           }} />
@@ -5193,11 +4911,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                   {isNaturalPersonSeller ? (
                     <>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Date of Birth *
+                        Date of Birth
                         <input className={DETAIL_INPUT_CLASS} type="date" value={form.dateOfBirth || ''} onChange={(event) => handleFormUpdate('dateOfBirth', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Nationality *
+                        Nationality
                         <input className={DETAIL_INPUT_CLASS} autoComplete="country-name" value={form.nationality || ''} onChange={(event) => handleFormUpdate('nationality', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -5209,8 +4927,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
 
                   {isNaturalPersonSeller && ownerStructureType !== 'foreign_individual' ? (
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      {ownershipFieldLabels.idNumber}{isNaturalPersonSeller ? ' *' : ''}
-                      <input required={isNaturalPersonSeller} className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
+                      {ownershipFieldLabels.idNumber}
+                      <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
                     </label>
                   ) : null}
 
@@ -5227,11 +4945,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                   ) : null}
 
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Tax Number *
+                    Tax Number
                     <input className={DETAIL_INPUT_CLASS} inputMode="numeric" value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    SA Resident *
+                    SA Resident
                     <select className={DETAIL_INPUT_CLASS} value={form.saResident || ''} onChange={(event) => handleFormUpdate('saResident', event.target.value)}>
                       <option value="">Select one</option>
                       <option value="yes">Yes</option>
@@ -5618,7 +5336,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <h3 className="text-sm font-semibold text-[#22364a]">Owner cards</h3>
-                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture every owner in this shared form. At least two owners are required; signatures are requested only after the form is complete.</p>
+                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture every owner in this shared form. You can add the other owners later. Signing steps will check the owners and their authority.</p>
                         </div>
                         <Button type="button" variant="secondary" size="sm" onClick={addMultipleOwner}>
                           <Plus size={14} />
@@ -6574,14 +6292,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
             >
               <div className="grid grid-cols-1 gap-4">
                 <div className="rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#35546c]"><p className="font-semibold text-[#172334]">What happens next</p><p className="mt-1">This submits seller and property information for agent review. Mandate, disclosure and FICA are handled separately in Documents afterwards.</p></div>
-                <ReviewReadinessPanel
+                {captureDraft ? captureReview?.({ listing, form, saveDraft }) : !isDemoOnboarding ? <SellerCaptureDocuments listing={listing} token={token} /> : null}
+                {!captureDraft ? <ReviewReadinessPanel
                   issueGroups={submitIssueGroups}
                   sellerName={getSellerDisplayName(listing, form)}
                   propertyAddress={getPropertyDisplayAddress(listing, form)}
                   onSubmit={handleSubmit}
                   submitting={submitting}
                   agentAssisted={isAgentAssistedCompletion}
-                />
+                /> : null}
                 <ReviewCard
                   title="Seller Summary"
                   missing={sellerMissing}
@@ -6678,6 +6397,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       )}
 
       {onboardingActions}
+      {captureDraft && currentStep < FINAL_STEP_INDEX ? <Button type="button" variant="secondary" disabled={saving || submitting} onClick={() => finishLeadCapture()}>Save and finish later</Button> : null}
 
       <SignatureRequestDialog
         request={signatureRequest}

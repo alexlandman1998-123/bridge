@@ -1,4 +1,6 @@
 .page.page { background: #faf9f6; color: #253024; font-family: Arial, Helvetica, sans-serif; }
+.page.propertyCalculator { max-width: 1240px; margin: 0 auto; padding: 64px 40px 48px; scroll-margin-top: 100px; }
+@media (max-width: 680px) { .page.propertyCalculator { padding: 40px 22px; } }
 .page .intro { max-width: 1320px; margin: auto; padding: 76px 40px 58px; }
 .page .intro h1 { max-width: 860px; margin: 20px 0 24px; font: 400 clamp(42px, 5.1vw, 72px)/1.07 Georgia, serif; letter-spacing: -.045em; text-wrap: balance; }
 .page .intro > p:not(.eyebrow) { max-width: 560px; color: #626e5d; font-size: 17px; line-height: 1.7; }

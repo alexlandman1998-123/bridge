@@ -16,5 +16,5 @@ export function isUnpublishedDraftListing(listing = {}) {
   const status = key(listing.listingStatus || listing.listing_status || listing.status)
   const visibility = key(listing.listingVisibility || listing.listing_visibility)
   const isActive = listing.isActive === true || listing.is_active === true
-  return status === 'mandate_signed' && visibility === 'internal' && !isActive
+  return ['draft', 'listing_review', 'mandate_signed'].includes(status) && visibility === 'internal' && !isActive
 }

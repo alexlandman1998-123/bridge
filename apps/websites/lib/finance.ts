@@ -16,3 +16,15 @@ export function savingsMonths(target: number, saved: number, monthly: number): n
   if (saved >= target) return 0
   return monthly === 0 ? null : Math.ceil((target - saved) / monthly)
 }
+
+/** Compare this property's repayment with the visitor's actual monthly budget. */
+export function propertyAffordability(values: { price: number; deposit: number; rate: number; years: number; income: number; expenses: number; debt: number; reserve: number }) {
+  if (!Object.values(values).every(value => Number.isFinite(value) && value >= 0 && value <= 1_000_000_000)
+    || values.price <= 0 || values.deposit > values.price || values.rate > 30
+    || !Number.isInteger(values.years) || values.years < 1 || values.years > 30) return null
+  const principal = values.price - values.deposit
+  const payment = repayment(principal, values.rate, values.years)
+  // Keep a negative budget: a cash purchase does not erase overspent living costs.
+  const budget = values.income - values.expenses - values.debt - values.reserve
+  return { principal, payment, budget, remaining: budget - payment }
+}

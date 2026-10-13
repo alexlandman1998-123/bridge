@@ -31,6 +31,27 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+it('counts only new leads assigned to the current agent and distinguishes failed reads', async () => {
+  api.crm.mockResolvedValue({ tasks: [], tasksAvailable: true, leadsAvailable: true, leads: [
+    { leadId: 'mine', assignedAgentId: 'me', stage: 'New Lead' },
+    { leadId: 'email', assignedAgentEmail: 'ME@example.test', status: 'New' },
+    { leadId: 'other', assignedAgentId: 'other', assignedAgentEmail: 'me@example.test', stage: 'New Lead' },
+    { leadId: 'contacted', assignedAgentId: 'me', stage: 'Contacted' },
+    { leadId: 'closed', assignedAgentId: 'me', stage: 'New Lead', status: 'Closed' },
+    { leadId: 'unassigned', stage: 'New Lead' },
+  ] })
+  const snapshot = await getMobileDashboardSnapshotAsync({ workspace, organisation })
+  expect(snapshot.newLeadsAvailable).toBe(true)
+  expect(snapshot.newLeads.map(lead => lead.leadId)).toEqual(['mine', 'email'])
+  api.crm.mockResolvedValue({ tasks: [], tasksAvailable: true, leads: [], leadsAvailable: false })
+  const failed = await getMobileDashboardSnapshotAsync({ workspace, organisation, force: true })
+  expect(failed.newLeadsAvailable).toBe(false)
+  api.crm.mockResolvedValue({ tasks: [], tasksAvailable: true, leads: [], leadsAvailable: true })
+  const empty = await getMobileDashboardSnapshotAsync({ workspace, organisation, force: true })
+  expect(empty.newLeadsAvailable).toBe(true)
+  expect(empty.newLeads).toEqual([])
+})
+
 it('loads real work for the current organisation and personal appointment scope without demo reconciliation', async () => {
   api.crm.mockResolvedValue({ tasks: [{ taskId: 'mine', assignedAgentId: 'me', title: 'Call client', dueDate: '2020-01-01' }, { taskId: 'other', assignedAgentId: 'other', dueDate: '2020-01-01' }] })
   const snapshot = await getMobileDashboardSnapshotAsync({ workspace, organisation })

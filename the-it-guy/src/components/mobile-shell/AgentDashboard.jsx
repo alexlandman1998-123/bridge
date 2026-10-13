@@ -7,6 +7,7 @@ import MobileTransactionCard from './MobileTransactionCard.jsx'
 import { maskDeveloperLeadForDeveloper } from '../../core/developerLeads/developerLeadContract.js'
 import { WORKFLOW_MAIN_STAGE_LABELS } from '../../core/workflows/workflowConstants.js'
 import LeadSourceLogo from './LeadSourceLogo.jsx'
+import AgentCommissionCard from './AgentCommissionCard.jsx'
 import { getLeadSourcePresentation } from './leadSourcePresentation.js'
 import './agent-dashboard.css'
 
@@ -97,13 +98,30 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh, brandStyle
         <div className="agent-today-title"><h1>Today</h1><span>{today.dateLabel}</span></div>
       </header>}
 
+      {snapshot.category === 'agent' && <>
+        <div className="agent-today-counts agent-home-summary" aria-label="Today summary">
+          <button type="button" onClick={() => setSelection({ category: 'appointments', todayOnly: true })}><strong>{today.counts.appointments ?? '—'}</strong><span>Appointments today</span></button>
+          <button type="button" onClick={() => onOpen('/mobile/leads?stage=new&scope=assigned')}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New leads</span></button>
+        </div>
+        <AgentCommissionCard commission={snapshot.commission} onRefresh={onRefresh} />
+        <section className="agent-home-appointments" aria-label="Appointments today">
+          <div className="agent-home-section-heading"><h2>Appointments today</h2></div>
+          {!today.available.appointments ? <p>We couldn’t load today’s appointments. <button type="button" onClick={onRefresh}>Retry appointments</button></p>
+            : today.items.appointments.filter(item => item.today).length ? today.items.appointments.filter(item => item.today).map(item => <button className="agent-home-appointment" type="button" key={item.id} onClick={() => openItem(item)}>
+              <time dateTime={new Date(item.time).toISOString()}>{new Date(item.time).toLocaleTimeString('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+              <span><strong>{item.appointmentLabel || item.title}</strong><small>{item.body || item.status}</small></span><ChevronRight size={17} aria-hidden="true" />
+            </button>) : <p>No appointments scheduled for today.</p>}
+        </section>
+      </>}
+
       {developer ? <div className="agent-today-counts developer-dashboard-counts" aria-label="Developer summary">
         <button type="button" onClick={() => onOpen('/mobile/developer/leads')}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New Leads</span></button>
         <button type="button" onClick={() => onOpen('/mobile/transactions')}><strong>{summary(snapshot, 'active')}</strong><span>Active Deals</span></button>
-      </div> : <div className="agent-today-counts" aria-label="Today summary">
+      </div> : snapshot.category === 'agent' ? null : <div className="agent-today-counts" aria-label="Today summary">
         {[["appointments", "Appointments today"], ["followUps", "Follow-ups due"], ["deals", "Deals to move"]].map(([key, label]) => <button type="button" key={key} onClick={() => setSelection({ category: key })}><strong>{today.counts[key] ?? '—'}</strong><span>{label}</span></button>)}
       </div>}
       {incomplete && <p className="agent-today-unavailable">Some updates couldn’t load. <button type="button" onClick={onRefresh}>Try again</button></p>}
+      {snapshot.category === 'agent' && !newLeadsAvailable && <p className="agent-today-unavailable">New leads couldn’t load. <button type="button" onClick={onRefresh}>Retry new leads</button></p>}
 
       <nav className="agent-book-tabs" aria-label="Dashboard pages" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return

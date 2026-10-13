@@ -1,4 +1,8 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import Field from '../../components/ui/Field'
+import AgentAssignmentSelect from '../../components/AgentAssignmentSelect'
+import Modal from '../../components/ui/Modal'
+import Button from '../../components/ui/Button'
+import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import LeadCreateDialog from '../../components/leads/LeadCreateDialog'
 import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
@@ -29,6 +33,8 @@ import {
   getAgencyLeadColumns,
   getAgencyLeadStageOptions,
 } from './agencyLeadListModel'
+
+const SellerLeadCreateDialog = lazy(() => import('../../components/leads/SellerLeadCreateDialog.jsx'))
 
 const EMPTY_RECORDS = Object.freeze({ leads: [], contacts: [], activities: [], tasks: [] })
 let settingsActionsPromise = null
@@ -140,6 +146,9 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [createDialog, setCreateDialog] = useState({ open: false, category: 'buyer' })
+  const [sellerCaptureSource, setSellerCaptureSource] = useState('Manual Entry')
+  const [sellerCaptureAgentId, setSellerCaptureAgentId] = useState('')
+  const [sellerCaptureResult, setSellerCaptureResult] = useState(null)
   const [listingOptions, setListingOptions] = useState([])
   const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
   const [listingOptionsError, setListingOptionsError] = useState('')
@@ -553,7 +562,33 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
           navigate(`/pipeline/leads/${encodeURIComponent(leadId)}?tab=${encodeURIComponent(tab || 'activity')}`)
         }}
       />
-      {createDialog.open ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={selectedAgent || currentAgent} showAgentAssignment={!scopedAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} developmentOptions={developmentOptions} developmentOptionsLoading={developmentOptionsLoading} developmentOptionsError={developmentOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      {createDialog.open && createDialog.category !== 'seller' ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={selectedAgent || currentAgent} showAgentAssignment={!scopedAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} developmentOptions={developmentOptions} developmentOptionsLoading={developmentOptionsLoading} developmentOptionsError={developmentOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
+      {createDialog.open && createDialog.category === 'seller' ? <Suspense fallback={<p role="status">Opening seller form…</p>}>
+        <SellerLeadCreateDialog organisationId={organisationId} actor={currentAgent}
+          assignedAgent={selectedAgent || agentOptions.find(agent => agent.id === sellerCaptureAgentId) || currentAgent}
+          source={sellerCaptureSource} priority="Medium"
+          metadataControls={<div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-semibold">How did this lead find you?
+              <Field value={sellerCaptureSource} onChange={event => setSellerCaptureSource(event.target.value)} />
+            </label>
+            {!scopedAgent ? <AgentAssignmentSelect compact value={sellerCaptureAgentId || currentAgent.id} agents={agentOptions} onChange={agent => setSellerCaptureAgentId(agent?.id || '')} /> : null}
+          </div>}
+          onClose={() => { setCreateDialog(previous => ({ ...previous, open: false })); invalidateAgencyLeadListCache(organisationId); void loadLeads({ forceRefresh: true }) }}
+          onCreated={(receipt, reportedProgress) => {
+            setCreateDialog(previous => ({ ...previous, open: false }))
+            setSellerCaptureResult({ leadId: receipt.leadId, reportedProgress })
+            invalidateAgencyLeadListCache(organisationId)
+            void loadLeads({ forceRefresh: true, requestedPage: 1 })
+          }} />
+      </Suspense> : null}
+      <Modal open={Boolean(sellerCaptureResult)} title="Seller lead saved" subtitle="The seller’s link uses these same answers and documents." onClose={() => setSellerCaptureResult(null)}>
+        <p className="text-sm">Choose your next step. Sending the link needs an email address. Documents still need review before the next stage is confirmed.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button type="button" onClick={() => { navigate(`/pipeline/leads/${encodeURIComponent(sellerCaptureResult.leadId)}?captureNext=send_link`); setSellerCaptureResult(null) }}>Send seller’s link</Button>
+          {sellerCaptureResult?.reportedProgress === 'We already have a signed mandate' ? <Button type="button" variant="secondary" onClick={() => { navigate(`/pipeline/leads/${encodeURIComponent(sellerCaptureResult.leadId)}?tab=documents`); setSellerCaptureResult(null) }}>Open documents for upload and review</Button> : null}
+          <Button type="button" variant="secondary" onClick={() => { navigate(`/pipeline/leads/${encodeURIComponent(sellerCaptureResult.leadId)}`); setSellerCaptureResult(null) }}>Open seller lead</Button>
+        </div>
+      </Modal>
       <ConfirmDialog
         open={archiveDialog.open}
         title={`Archive ${category === 'seller' ? 'seller' : 'buyer'} lead?`}

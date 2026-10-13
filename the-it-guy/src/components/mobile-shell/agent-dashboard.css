@@ -5,12 +5,37 @@
 .agent-today-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 8px 0 22px; }
 .agent-today-title h1 { margin: 0; }
 .agent-today-title > span { color: #627068; font-size: 11px; text-align: right; }
+.agent-commission { margin-bottom: 24px; min-width: 0; border-radius: 20px; overflow: hidden; color: #fff; background: #087f83; }
+.agent-commission-track { display: flex; direction: rtl; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
+.agent-commission-track::-webkit-scrollbar { display: none; }
+.agent-commission-slide { direction: ltr; flex: 0 0 100%; min-width: 0; padding: 22px 22px 8px; scroll-snap-align: start; }
+.agent-commission-slide h2 { margin: 0; font-size: 13px; font-weight: 500; }
+.agent-commission-slide strong { display: block; margin: 12px 0; font-size: clamp(28px, 8vw, 38px); font-weight: 550; line-height: 1.2; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.agent-commission-slide p { margin: 0; color: #fff; font-size: 11px; line-height: 1.5; }
+.agent-commission-retry { min-height: 44px; padding: 0; border: 0; background: none; color: #fff; text-decoration: underline; font-size: 12px; }
+.agent-commission-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px 8px 22px; font-size: 10px; color: #fff; }
+.agent-commission-controls > div { display: flex; }
+.agent-commission-controls button { display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border: 0; background: none; }
+.agent-commission-controls button span { width: 6px; height: 6px; border-radius: 50%; background: #ffffff60; }
+.agent-commission-controls button[aria-pressed="true"] span { width: 18px; border-radius: 5px; background: #fff; }
+.agent-commission button:focus-visible { outline: 2px solid #fff; outline-offset: -4px; border-radius: 8px; }
+.agent-home-appointments { margin-bottom: 24px; }
+.agent-home-appointments h2 { margin: 0 0 10px; font-size: 16px; font-weight: 550; }
+.agent-home-appointments > p { margin: 0; padding: 16px; border: 1px solid #dce4de; border-radius: 14px; font-size: 12px; color: #627068; }
+.agent-home-appointments > p button { min-height: 44px; border: 0; background: none; color: #166b50; }
+.agent-home-appointment { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 0; min-height: 64px; border: 0; border-bottom: 1px solid #e5ebe6; background: none; text-align: left; }
+.agent-home-appointment time { flex-shrink: 0; color: #087f83; font-size: 13px; font-weight: 600; }
+.agent-home-appointment > span { flex: 1; min-width: 0; }
+.agent-home-appointment strong, .agent-home-appointment small { display: block; overflow-wrap: anywhere; }
+.agent-home-appointment strong { color: #152621; font-size: 12px; font-weight: 550; }
+.agent-home-appointment small { margin-top: 5px; font-size: 11px; color: #627068; }
 .agent-today-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
 .agent-today-counts button { display: flex; min-width: 0; min-height: 94px; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 13px 12px; border: 1px solid #dce4de; border-radius: 14px; background: #fff; text-align: left; color: #152621; box-shadow: 0 2px 6px #15262104; }
 .agent-today-counts button:active { background: #f3f8f4; }
 .agent-today-counts strong { display: block; font-size: 25px; line-height: 1.2; font-weight: 500; letter-spacing: -.04em; }
 .agent-today-counts span { display: block; min-height: 29px; margin-top: 8px; color: #627068; font-size: 10px; line-height: 1.45; }
-.developer-dashboard-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.developer-dashboard-counts, .agent-home-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.agent-home-summary span { min-height: 0; font-size: 12px; }
 .developer-dashboard-counts span { min-height: 0; font-size: 12px; }
 .agent-today-unavailable { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -12px 0 10px; color: #627068; font-size: 11px; }
 .agent-today-unavailable button { flex-shrink: 0; min-height: 44px; border: 0; padding: 0; background: none; color: #166b50; font-size: 11px; }

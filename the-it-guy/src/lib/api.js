@@ -52130,13 +52130,13 @@ export async function uploadDocument({
         category,
         relatedEntityId,
         fileFingerprint: attempt.fileFingerprint,
-        attorneyScope: {
+        attorneyScope: attorneySave ? {
           actor: activeProfile.userId, lane: attorneyLaneMetadata.laneKey,
           visibility: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
           clientRecipientRole, isClientVisible, stageKey, uploadedByParty, bucketKey, source,
           financeLane, relatedEntityType, notes,
           versionKind, previousVersionId: attorneyPreviousVersionId,
-        },
+        } : null,
       })
       const existingDocument = await findDocumentByUploadIdempotencyKey(client, {
         transactionId: activeTransactionId,

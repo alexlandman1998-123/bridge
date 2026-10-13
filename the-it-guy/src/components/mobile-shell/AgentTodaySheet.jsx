@@ -8,6 +8,7 @@ export default function AgentTodaySheet({ selection, today, onClose, onOpen, onR
   const dialogRef = useRef(null)
   const [item, setItem] = useState(selection.item || null)
   const category = selection.category || selection.item?.kind
+  const entries = (today.items[category] || []).filter(entry => !selection.todayOnly || entry.today)
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -43,8 +44,8 @@ export default function AgentTodaySheet({ selection, today, onClose, onOpen, onR
         {item.to && <button className="agent-page-link" type="button" onClick={() => { onClose(); onOpen(item.to) }}>Open related deal<ArrowRight size={17} aria-hidden="true" /></button>}
       </div> : <div className="agent-today-sheet-list">
         {!today.available[category] ? <><p>We couldn’t load {LABELS[category].toLowerCase()}.</p><button type="button" className="agent-page-link" onClick={() => { onClose(); onRefresh() }}>Try again<ArrowRight size={17} aria-hidden="true" /></button></>
-          : today.items[category].length ? today.items[category].map((entry) => <button className="agent-today-sheet-row" type="button" key={entry.id} onClick={() => openItem(entry)}><span><strong>{entry.title}</strong>{entry.body && <span>{entry.body}</span>}<small>{entry.meta}</small></span><ChevronRight size={18} aria-hidden="true" /></button>)
-            : <p>{EMPTY[category]}</p>}
+          : entries.length ? entries.map((entry) => <button className="agent-today-sheet-row" type="button" key={entry.id} onClick={() => openItem(entry)}><span><strong>{entry.title}</strong>{entry.body && <span>{entry.body}</span>}<small>{entry.meta}</small></span><ChevronRight size={18} aria-hidden="true" /></button>)
+            : <p>{selection.todayOnly ? 'No appointments scheduled for today.' : EMPTY[category]}</p>}
       </div>}
     </dialog>
   )

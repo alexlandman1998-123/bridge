@@ -65,9 +65,9 @@ const faqs = [
   ['Do I need an office?', 'No. There is no desk requirement, office hours, floor duty or compulsory Monday meeting.'],
   ['What happens to my current listings?', 'Mandates stay with your current agency until they expire. We’ll help you plan the move so nothing falls over.'],
   ['Am I an employee?', 'No. You’re an independent practitioner running your own business and keeping your own book.'],
-  ['Can I bring my team?', 'Yes. The leader pays R9,000 a month or R100,000 upfront for their own seat only. Additional seats 2 to 5 cost R7,000 each a month, which is R84,000 per seat over twelve months (R7,000 × 12). From seat 6, the cost is R6,000 each a month, which is R72,000 per seat over twelve months (R6,000 × 12). The R100,000 upfront rate does not apply to additional team seats. One account, one invoice. All fees exclude VAT; registered-sale fees still apply.'],
+  ['Can I bring my team?', 'Yes. The leader pays R9,000 a month or R100,000 upfront for their own seat only. Additional team members must pay monthly and cannot be paid upfront. Seats 2 to 5 cost R7,000 each per month. From seat 6 onwards, the cost is R6,000 each per month. One account, one invoice. All fees exclude VAT; registered-sale fees still apply.'],
   ['What production level is this for?', 'Five registered sales in the last twelve months, or R6 million of property sold. Compare the fees against your own production: a fixed fee can cost more than a split at lower sales levels.'],
-  ['Are there any other joining costs?', 'There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs R350 for the runner handling the transfer, plus R640 payable directly to the PPRA.'],
+  ['Are there any other joining costs?', 'There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs R700 for the runner handling the transfer, plus R640 payable directly to the PPRA.'],
 ]
 
 function Eyebrow({ children }) {
@@ -217,7 +217,7 @@ export default function HomeSeekersJoin() {
           </ul>
         </div>
         <div className="hs-join__fee-summary-footer">
-          <p><strong>FFC transfer:</strong> R350 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p>
+          <p><strong>FFC transfer:</strong> R700 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p>
           <ApplyLink onOpen={openSignup} />
         </div>
       </div>
@@ -253,7 +253,7 @@ export default function HomeSeekersJoin() {
 
     <section className="hs-join__section hs-join__light" aria-labelledby="team-title">
       <Eyebrow>Bring <strong>your team</strong></Eyebrow><h2 id="team-title">Your own seat at full price.<br /><em>Every seat after costs less.</em></h2>
-      <p className="hs-join__intro">The team leader chooses R9,000 monthly or R100,000 upfront for their own seat. Additional seats use the monthly rates below. One account, one invoice.</p>
+      <p className="hs-join__intro">The team leader chooses R9,000 monthly or R100,000 upfront for their own seat. Additional team members must pay monthly and cannot be paid upfront. One account, one invoice.</p>
       <table className="hs-join__pricing-table"><caption>Team subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Per month</th><th scope="col">Annual cost</th></tr></thead><tbody>
         <tr><th scope="row">Team leader</th><td>R9,000</td><td>R100,000 upfront<span className="hs-join__seat-math">Leader’s own seat only</span></td></tr>
         <tr><th scope="row">Seats 2 to 5</th><td>R7,000 each</td><td>{money(7000 * 12)} each<span className="hs-join__seat-math">R7,000 × 12 months</span></td></tr>
@@ -308,9 +308,9 @@ export default function HomeSeekersJoin() {
         <section><h4>Who it suits</h4><p>{paymentDetails[selectedOption.id].suits}</p></section>
         <section><h4>How payment works</h4><ol>{paymentDetails[selectedOption.id].steps.map((step) => <li key={step}>{step}</li>)}</ol></section>
         {paymentDetails[selectedOption.id].example && <aside className="hs-option-modal__example"><h4>A subscription example</h4><p>{paymentDetails[selectedOption.id].example}</p><small>This illustrates the subscription deduction only. The registered-sale fee and VAT are separate.</small></aside>}
-        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>You can bring your team on this option. {selectedOption.id === 'monthly' ? 'The team leader pays R9,000 on invoice on the 1st of every month. Additional seats are paid monthly at the rates below.' : 'R100,000 upfront covers the leader’s own seat for the year. Additional seats are paid monthly at the rates below.'} One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
+        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>You can bring your team on this option. {selectedOption.id === 'monthly' ? 'The team leader pays R9,000 on invoice on the 1st of every month. Additional seats are paid monthly at the rates below and cannot be paid upfront.' : 'R100,000 upfront covers the leader’s own seat for the year. Additional seats are paid monthly at the rates below and cannot be paid upfront.'} One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
         <section><h4>Same support on every option</h4><p>Listing platforms, CRM, deal administration, training, compliance support and your choice of LOOM or CMA Info.</p></section>
-        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: R350 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p></div>
+        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: R700 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p></div>
         <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setSelectedOption(null)}>Back to options</button><button type="button" className="hs-option-modal__join" onClick={() => { setSelectedOption(null); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
       </>}
     </Modal>

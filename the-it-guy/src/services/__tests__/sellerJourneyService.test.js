@@ -1,40 +1,10 @@
+import { buildSellerLeadOnboardingPresentation, mergeSellerJourneyOnboardingSnapshot } from '../sellerJourneyService.js'
+import { hasSignedMandateEvidence } from '../../core/clientAccess/clientAccessPolicy.js'
 import assert from 'node:assert/strict'
 
-import { buildSellerJourney, buildSellerLeadOnboardingPresentation, mergeSellerJourneyOnboardingSnapshot, __sellerJourneyServiceTestUtils } from '../sellerJourneyService.js'
+import { buildSellerJourney, __sellerJourneyServiceTestUtils } from '../sellerJourneyService.js'
 
 const { getMandateStatus } = __sellerJourneyServiceTestUtils
-
-const draftLead = { leadId: 'draft-lead', leadCategory: 'seller', stage: 'Seller Onboarding Sent', sellerOnboardingStatus: 'sent', listingId: 'draft-listing' }
-const draftListing = { id: 'draft-listing', sellerLeadId: 'draft-lead', listingStatus: 'onboarding_sent',
-  sellerOnboarding: { id: 'draft-onboarding', status: 'sent', updatedAt: '2026-10-13T06:00:00Z', formData: {} },
-  documents: [{ id: 'saved-document', status: 'approved' }], askingPrice: 2000000 }
-const savedDraft = { id: 'draft-onboarding', private_listing_id: 'draft-listing', status: 'in_progress', submitted_at: null,
-  updated_at: '2026-10-13T07:00:00Z', form_data: { currentStep: 1, ownershipType: 'individual', ownerEntityType: 'natural_person',
-    ownerStructureType: 'individual', ownershipRouteConfirmed: true } }
-const refreshedDraft = mergeSellerJourneyOnboardingSnapshot(draftListing, savedDraft)
-const draftJourney = buildSellerJourney({ lead: draftLead, listing: refreshedDraft })
-assert.equal(draftJourney.onboardingInProgress, true)
-assert.equal(draftJourney.onboardingSubmitted, false)
-assert.equal(refreshedDraft.listingStatus, 'onboarding_sent')
-assert.equal(refreshedDraft.askingPrice, 2000000)
-assert.deepEqual(refreshedDraft.documents, draftListing.documents)
-assert.equal(mergeSellerJourneyOnboardingSnapshot(refreshedDraft, savedDraft), refreshedDraft, 'unchanged polling snapshots must not keep rerendering')
-assert.equal(mergeSellerJourneyOnboardingSnapshot(refreshedDraft, { ...savedDraft, private_listing_id: 'another-listing' }), refreshedDraft)
-assert.equal(mergeSellerJourneyOnboardingSnapshot(refreshedDraft, { ...savedDraft, updated_at: '2026-10-13T05:00:00Z' }), refreshedDraft)
-const draftPresentation = buildSellerLeadOnboardingPresentation({ listing: refreshedDraft, formData: savedDraft.form_data, journey: draftJourney })
-assert.deepEqual(draftPresentation, { ownerType: 'Not confirmed', checklistProvisional: true, onboardingLabel: 'In progress' })
-const submittedListing = mergeSellerJourneyOnboardingSnapshot(refreshedDraft, { ...savedDraft, status: 'submitted',
-  submitted_at: '2026-10-13T08:00:00Z', updated_at: '2026-10-13T08:00:00Z' })
-const submittedJourney = buildSellerJourney({ lead: draftLead, listing: submittedListing })
-assert.equal(submittedJourney.onboardingSubmitted, true)
-assert.equal(buildSellerLeadOnboardingPresentation({ listing: submittedListing, formData: savedDraft.form_data, journey: submittedJourney }).ownerType, 'Individual')
-for (const [route, expected] of [['multiple_owners', 'Multiple Owners'], ['married_cop', 'Married']]) {
-  const presentation = buildSellerLeadOnboardingPresentation({ listing: draftListing, journey: draftJourney,
-    formData: { ownerEntityType: 'natural_person', ownerStructureType: route, ownershipRouteConfirmed: true,
-      sellerProfileCaptureSource: 'listing_seller_profile_capture', ownershipType: route } })
-  assert.equal(presentation.ownerType, expected, 'natural-person entity must not hide the selected ownership structure')
-  assert.equal(presentation.checklistProvisional, false, 'confirmed agent capture still supports early document preparation')
-}
 
 const signedAgentAndSeller = [
   { signer_role: 'agent', status: 'signed' },
@@ -221,3 +191,57 @@ assert.equal(digitallyDispatchedPackJourney.mandateStatus, 'sent')
 assert.equal(digitallyDispatchedPackJourney.stage.key, 'mandate_sent')
 
 console.log('sellerJourneyService tests passed')
+
+
+// Agent-reported progress and a received existing mandate must not activate
+// either the listing or seller portal before the persisted file is reviewed.
+const pendingExistingMandate = {
+  document_type: 'signed_mandate', status: 'uploaded', storage_path: 'seller-mandates/existing.pdf',
+  seller_signing_evidence_source: 'existing_signed_upload',
+}
+const existingIntake = {
+  lead: { leadId: 'new-seller', leadCategory: 'seller', stage: 'New Lead' },
+  listing: { id: 'intake-1', listingStatus: 'seller_lead', sellerLeadId: 'new-seller', sellerOnboarding: { status: 'in_progress' } },
+  documents: [pendingExistingMandate],
+}
+assert.notEqual(buildSellerJourney(existingIntake).mandateStatus, 'signed')
+assert.equal(buildSellerJourney(existingIntake).actions.find(action => action.id === 'activate_listing').enabled, false)
+assert.equal(hasSignedMandateEvidence({ documents: [pendingExistingMandate] }), false)
+const approvedExistingMandate = { ...pendingExistingMandate, status: 'approved' }
+assert.equal(buildSellerJourney({ ...existingIntake, documents: [approvedExistingMandate] }).mandateStatus, 'signed')
+assert.equal(hasSignedMandateEvidence({ documents: [approvedExistingMandate] }), true)
+
+{
+const draftLead = { leadId: 'draft-lead', leadCategory: 'seller', stage: 'Seller Onboarding Sent', sellerOnboardingStatus: 'sent', listingId: 'draft-listing' }
+const draftListing = { id: 'draft-listing', sellerLeadId: 'draft-lead', listingStatus: 'onboarding_sent',
+  sellerOnboarding: { id: 'draft-onboarding', status: 'sent', updatedAt: '2026-10-13T06:00:00Z', formData: {} },
+  documents: [{ id: 'saved-document', status: 'approved' }], askingPrice: 2000000 }
+const savedDraft = { id: 'draft-onboarding', private_listing_id: 'draft-listing', status: 'in_progress', submitted_at: null,
+  updated_at: '2026-10-13T07:00:00Z', form_data: { currentStep: 1, ownershipType: 'individual', ownerEntityType: 'natural_person',
+    ownerStructureType: 'individual', ownershipRouteConfirmed: true } }
+const refreshedDraft = mergeSellerJourneyOnboardingSnapshot(draftListing, savedDraft)
+const draftJourney = buildSellerJourney({ lead: draftLead, listing: refreshedDraft })
+assert.equal(draftJourney.onboardingInProgress, true)
+assert.equal(draftJourney.onboardingSubmitted, false)
+assert.equal(refreshedDraft.listingStatus, 'onboarding_sent')
+assert.equal(refreshedDraft.askingPrice, 2000000)
+assert.deepEqual(refreshedDraft.documents, draftListing.documents)
+assert.equal(mergeSellerJourneyOnboardingSnapshot(refreshedDraft, savedDraft), refreshedDraft, 'unchanged polling snapshots must not keep rerendering')
+assert.equal(mergeSellerJourneyOnboardingSnapshot(refreshedDraft, { ...savedDraft, private_listing_id: 'another-listing' }), refreshedDraft)
+assert.equal(mergeSellerJourneyOnboardingSnapshot(refreshedDraft, { ...savedDraft, updated_at: '2026-10-13T05:00:00Z' }), refreshedDraft)
+const draftPresentation = buildSellerLeadOnboardingPresentation({ listing: refreshedDraft, formData: savedDraft.form_data, journey: draftJourney })
+assert.deepEqual(draftPresentation, { ownerType: 'Not confirmed', checklistProvisional: true, onboardingLabel: 'In progress' })
+const submittedListing = mergeSellerJourneyOnboardingSnapshot(refreshedDraft, { ...savedDraft, status: 'submitted',
+  submitted_at: '2026-10-13T08:00:00Z', updated_at: '2026-10-13T08:00:00Z' })
+const submittedJourney = buildSellerJourney({ lead: draftLead, listing: submittedListing })
+assert.equal(submittedJourney.onboardingSubmitted, true)
+assert.equal(buildSellerLeadOnboardingPresentation({ listing: submittedListing, formData: savedDraft.form_data, journey: submittedJourney }).ownerType, 'Individual')
+for (const [route, expected] of [['multiple_owners', 'Multiple Owners'], ['married_cop', 'Married']]) {
+  const presentation = buildSellerLeadOnboardingPresentation({ listing: draftListing, journey: draftJourney,
+    formData: { ownerEntityType: 'natural_person', ownerStructureType: route, ownershipRouteConfirmed: true,
+      sellerProfileCaptureSource: 'listing_seller_profile_capture', ownershipType: route } })
+  assert.equal(presentation.ownerType, expected, 'natural-person entity must not hide the selected ownership structure')
+  assert.equal(presentation.checklistProvisional, false, 'confirmed agent capture still supports early document preparation')
+}
+
+}

@@ -3,10 +3,23 @@ import assert from 'node:assert/strict'
 
 import {
   applyListingWithdrawalResults,
+  getArchivedListingStatus,
   buildListingWithdrawalPlan,
   listingWithdrawalIsComplete,
   listingWithdrawalConfirmed,
 } from '../listingWithdrawalModel.js'
+
+test('archiving preserves Sold while other outcomes become Withdrawn', () => {
+  assert.equal(getArchivedListingStatus({ listingStatus: 'sold' }), 'sold')
+  assert.equal(getArchivedListingStatus({ listing_status: 'Sold' }), 'sold')
+  for (const listingStatus of ['active', 'under_offer', 'withdrawn']) {
+    assert.equal(getArchivedListingStatus({ listingStatus }), 'withdrawn')
+  }
+  const archived = applyListingWithdrawalResults({ listingStatus: 'sold', publicationStatus: 'Published' }, [], { complete: true })
+  assert.equal(archived.listingStatus, 'sold')
+  assert.equal(archived.publicationStatus, 'Draft')
+  assert.equal(archived.bridgeListingStatus, 'paused')
+})
 
 test('withdrawal plan includes every public channel and exposes missing portal references', () => {
   const plan = buildListingWithdrawalPlan({ property24Live: true, privatePropertyLive: true, agencyWebsiteLive: true, kingdomWebsiteLive: true, arch9Live: true })

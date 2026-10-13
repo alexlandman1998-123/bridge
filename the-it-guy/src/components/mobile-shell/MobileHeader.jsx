@@ -45,12 +45,12 @@ export default function MobileHeader() {
       <div className="mx-auto flex max-w-[520px] items-center gap-3">
         <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center text-inherit" aria-label={`${workspaceName} mobile home`}>
           {showLogo ? (
-            <span className="flex h-12 min-w-0 max-w-[205px] items-center">
+            <span className="flex h-12 w-full min-w-0 max-w-[205px] items-center">
               <img
                 key={logoUrl}
                 src={logoUrl}
                 alt={`${workspaceName} logo`}
-                className="block max-h-10 w-auto max-w-full object-contain object-left"
+                className="block h-10 w-full object-contain object-left"
                 onLoad={() => setLogoLoadFailure({ url: logoUrl, failed: false })}
                 onError={() => setLogoLoadFailure({ url: logoUrl, failed: true })}
               />

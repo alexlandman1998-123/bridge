@@ -3,6 +3,21 @@ import { appointmentStartIso, isClosedAppointment, sameSastDay, sastDayStart, ad
 const text = (value) => String(value || '').trim()
 const closedTask = (task) => ['completed', 'cancelled', 'canceled'].includes(text(task.status).toLowerCase())
 
+export function isLeadAssignedToActor(row = {}, actor = {}) {
+  const assignedId = text(row.assignedAgentId || row.assigned_agent_id || row.assignedUserId || row.assigned_user_id).toLowerCase()
+  const actorId = text(actor.id || actor.userId || actor.user_id).toLowerCase()
+  if (assignedId) return Boolean(actorId && assignedId === actorId)
+  const assignedEmail = text(row.assignedAgentEmail || row.assigned_agent_email).toLowerCase()
+  const actorEmail = text(actor.email || actor.userEmail).toLowerCase()
+  return Boolean(assignedEmail && actorEmail && assignedEmail === actorEmail)
+}
+
+export function isNewAgentLead(row = {}) {
+  const stage = text(row.stage || row.status).toLowerCase().replace(/[_-]+/g, ' ')
+  const status = text(row.status).toLowerCase()
+  return ['new', 'new lead'].includes(stage) && !['closed', 'converted', 'lost', 'archived', 'deleted', 'cancelled', 'canceled'].includes(status)
+}
+
 function dueInstant(value) {
   if (!value) return null
   // A date-only follow-up remains due throughout its SAST calendar day.
@@ -49,6 +64,7 @@ export function buildMobileToday({ tasks = [], leads = [], contacts = [], appoin
     const transactionId = text(row.transactionId || (row.relatedEntityType === 'transaction' && row.relatedEntityId))
     return {
       id: `appointment:${row.id || row.appointmentId}`, kind: 'appointments',
+      appointmentLabel: type,
       title: `${needsReview ? 'Review' : 'Prepare for'} ${type.toLowerCase()}`,
       body: [text(row.clientName), text(row.propertyAddress || row.locationAddress || row.location)].filter(Boolean).join(' · '),
       meta: dateLabel(time, now), status: text(row.statusLabel || row.status),

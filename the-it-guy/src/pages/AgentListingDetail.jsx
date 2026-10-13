@@ -123,6 +123,7 @@ import {
 import { buildListingShowDaySnapshot } from '../services/listings/listingShowDayModel'
 import {
   applyListingWithdrawalResults,
+  getArchivedListingStatus,
   buildListingWithdrawalPlan,
   listingWithdrawalIsComplete,
   listingWithdrawalConfirmed,
@@ -5937,6 +5938,11 @@ function AgentListingDetail() {
   }
 
   async function persistListingWithdrawalState(nextDraft, complete) {
+    if (complete) {
+      const currentListing = await getPrivateListing(listingRecord.id, { includeRequirementsAndDocuments: false })
+      if (!currentListing) throw new Error('Reload this listing before archiving it.')
+      nextDraft.listingStatus = getArchivedListingStatus(currentListing)
+    }
     const savedListing = await updatePrivateListing(listingRecord.id, {
       listingStatus: nextDraft.listingStatus,
       ...(complete ? { listingVisibility: 'archived', isActive: false } : {}),

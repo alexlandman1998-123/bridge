@@ -10,13 +10,14 @@ import { fetchDevelopmentIdsForOrganisation } from '../lib/api/dashboardOverview
 import { fetchSharedMatterJourney } from './sharedMatterJourneyReader.js'
 import { deriveResidentialDashboardMetrics } from './residentialDashboardService'
 import { getAgentPrivateListings } from './privateListingService'
-import { buildMobileToday } from './mobileTodayModel.js'
+import { buildMobileToday, isLeadAssignedToActor, isNewAgentLead } from './mobileTodayModel.js'
 import { getAppointmentDashboardData } from './appointmentDashboardService.js'
 import { AGENCY_CRM_UPDATED_EVENT } from '../lib/agencyCrmUpdateBus.js'
 import { sastDayStart } from '../core/appointments/attorneyCalendarModel.js'
 import { fetchTransactionDocumentsWorkspace, getTransactionRollup } from '../lib/transactionWorkspaceApi.js'
 import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJourneyAdapter.js'
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
+import { readMobileAgentCommission } from './mobileAgentCommission.js'
 
 const DEFAULT_EMPTY = Object.freeze([])
 const MOBILE_DASHBOARD_CACHE_TTL_MS = 30_000
@@ -555,6 +556,7 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
   const transactionRows = category === 'developer' ? rawRows.filter((row) => row.transaction?.id) : rawRows
   const transactionScope = category === 'developer' ? {} : { organisationId }
   const scopedRows = getScopedDashboardTransactions(transactionRows, { ...transactionScope, activeOnly: false })
+  const commission = category === 'agent' ? await readMobileAgentCommission({ client: supabase, rows: scopedRows, profile, organisationId }) : null
   const activeRows = getScopedDashboardTransactions(scopedRows, transactionScope)
   const activeWork = buildResidentialActiveWork(activeRows, { includeUnitIdentity: category === 'developer' })
   const units = category === 'developer' ? rawRows.map((row) => ({
@@ -579,6 +581,8 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
     }
   }) : []
   const crm = crmResult.status === 'fulfilled' ? crmResult.value : {}
+  const agentNewLeadsAvailable = crmResult.status === 'fulfilled' && crm.leadsAvailable !== false && Array.isArray(crm.leads)
+  const agentNewLeads = agentNewLeadsAvailable ? crm.leads.filter(lead => isLeadAssignedToActor(lead, profile) && isNewAgentLead(lead)) : []
   const today = buildMobileToday({
     ...crm, profile, category, includeAllFollowUps: includeAll, deals: activeWork,
     appointments: appointmentResult.status === 'fulfilled' ? appointmentResult.value.appointments : [],
@@ -636,6 +640,8 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
     displayName: getDisplayName(workspace),
     greeting: getGreeting(),
     generatedAt: new Date().toISOString(),
+    ...(category === 'agent' ? { commission } : {}),
+    ...(category === 'agent' ? { newLeads: agentNewLeads, newLeadsAvailable: agentNewLeadsAvailable } : {}),
     summaryCards: category === 'developer' ? [
       { key: 'active', label: 'Active Transactions', value: activeRows.length, tone: 'green' },
       { key: 'developments', label: 'Developments', value: developments.length, tone: 'blue' },

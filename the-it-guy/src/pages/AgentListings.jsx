@@ -1,4 +1,5 @@
 import { relistChannelFromSearch, listingRelistReturnPath } from '../services/listings/listingRelistNavigation'
+import { getArchivedListingStatus } from '../services/listings/listingWithdrawalModel'
 import ListingLandSizeInput from '../components/listings/ListingLandSizeInput'
 import ListingAgentChoices from '../components/listings/ListingAgentChoices'
 import ListingReviewDetails from '../components/listings/ListingReviewDetails'
@@ -7445,8 +7446,10 @@ function AgentListings({ mobileEditor = false } = {}) {
         if (!response.ok) throw new Error(payload?.message || 'Private Property expiry failed. The listing was not archived.')
       }
 
+      const currentListing = await getPrivateListing(remoteListingId, { includeRequirementsAndDocuments: false })
+      if (!currentListing) throw new Error('Reload this listing before archiving it.')
       await updatePrivateListing(remoteListingId, {
-        listingStatus: 'withdrawn',
+        listingStatus: getArchivedListingStatus(currentListing),
         listingVisibility: 'archived',
         isActive: false,
         bridgeListingStatus: 'paused',
@@ -9312,6 +9315,7 @@ function AgentListings({ mobileEditor = false } = {}) {
                 </ul>
               ) : <p className="mt-2">No live channels were detected. The listing will be archived in Arch9.</p>}
               <p className="mt-3">This keeps the record for history, removes it from the active listings workspace, and pauses the Arch9 public catalogue listing.</p>
+              <p className="mt-2">Listings marked Sold keep their Sold status and remain on Kingdom’s Recently sold page.</p>
             </div>
             {error ? <div className="mt-4 rounded-[14px] border border-[#efd0ce] bg-[#fff7f6] px-4 py-3 text-sm font-semibold text-[#a13b35]">{error}</div> : null}
             <div className="mt-6 flex flex-wrap justify-end gap-2">

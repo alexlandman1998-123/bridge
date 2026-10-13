@@ -1,3 +1,4 @@
+import { createSellerLeadDraftListing, hasSellerLeadDraftAddress } from '../../services/sellerLeadDraftListingService'
 import DocumentRequirementManager from '../../components/documents/DocumentRequirementManager.jsx'
 import DocumentUploadProgress from '../../components/documents/DocumentUploadProgress.jsx'
 import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
@@ -361,6 +362,7 @@ const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
 const LEGACY_LEAD_LIST_RENDER_ENABLED = false
 // Keep verification panels hidden until the live FICA integration is ready.
 const FICA_VERIFICATION_UI_ENABLED = false
+const SellerLeadCreateDialog = lazy(() => import('../../components/leads/SellerLeadCreateDialog.jsx'))
 const SellerAgentOnboarding = lazy(() => import('../SellerOnboarding.jsx').then(module => ({ default: module.SellerOnboarding })))
 const LeadListPage = lazy(() => import('./LeadListPage'))
 const LeadActivityWorkspace = lazy(loadLeadActivityWorkspace)
@@ -11892,6 +11894,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [leadTablePage, setLeadTablePage] = useState(1)
   const [showLeadForm, setShowLeadForm] = useState(false)
   const [leadForm, setLeadForm] = useState(NEW_LEAD_DEFAULTS)
+  const [sellerCaptureResult, setSellerCaptureResult] = useState(null)
   const [isLeadCreating, setIsLeadCreating] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [selectedLeadId, setSelectedLeadId] = useState('')
@@ -24505,6 +24508,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('captureNext') !== 'send_link' || !selectedLead?.leadId || !selectedLeadIsSeller || !selectedLeadLinkedListing) return
+    const nextParams = new URLSearchParams(location.search)
+    nextParams.delete('captureNext')
+    navigate(`${location.pathname}${nextParams.size ? `?${nextParams}` : ''}`, { replace: true })
+    requestSellerOnboardingAttorneySelection()
+    // This consumes a user-selected action once after the journey has loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search, selectedLead?.leadId, selectedLeadIsSeller, selectedLeadLinkedListing])
+
   function requestSellerOnboardingAttorneySelection() {
     if (!selectedLead) return
     if (isSellerOnboardingSending || sellerPreferredAttorneysLoading) return
@@ -24513,7 +24526,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!selectedLeadIsSeller) return
-    const sellerEmail = normalizeText(selectedLeadContact?.email)
+    const capturedEmail = getWorkspaceSellerOnboarding(selectedLead, selectedLeadLinkedListing).email
+    const sellerEmail = normalizeText(capturedEmail ?? selectedLeadContact?.email)
     if (!isValidEmail(sellerEmail)) {
       setError('Seller email is required to send onboarding.')
       return
@@ -24576,13 +24590,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )
     const subjectContactNameParts = normalizeText(sellerSubject.primaryContact?.name).split(/\s+/).filter(Boolean)
     const sellerNameParts = resolvedSellerDisplayName.split(/\s+/).filter(Boolean)
-    const sellerFirstName = normalizeText(selectedLeadContact?.firstName) || subjectContactNameParts[0] || sellerNameParts[0] || ''
-    const sellerSurname = normalizeText(selectedLeadContact?.lastName) || subjectContactNameParts.slice(1).join(' ') || sellerNameParts.slice(1).join(' ')
+    const sellerFirstName = normalizeText(leadOnboardingFormData.sellerFirstName ?? selectedLeadContact?.firstName ?? subjectContactNameParts[0] ?? sellerNameParts[0])
+    const sellerSurname = normalizeText(leadOnboardingFormData.sellerSurname ?? selectedLeadContact?.lastName ?? subjectContactNameParts.slice(1).join(' '))
     const sellerName = !isGenericLeadPersonName(resolvedSellerDisplayName)
       ? resolvedSellerDisplayName
       : [sellerFirstName, sellerSurname].filter(Boolean).join(' ').trim() || 'Seller'
-    const sellerEmail = normalizeText(selectedLeadContact?.email || sellerSubject.primaryContact?.email)
-    const sellerPhone = normalizeText(selectedLeadContact?.phone || sellerSubject.primaryContact?.phone)
+    const sellerEmail = normalizeText(leadOnboardingFormData.email ?? selectedLeadContact?.email ?? sellerSubject.primaryContact?.email)
+    const sellerPhone = normalizeText(leadOnboardingFormData.phone ?? selectedLeadContact?.phone ?? sellerSubject.primaryContact?.phone)
     if (!isValidEmail(sellerEmail)) {
       setError('Seller email is required to send onboarding.')
       return
@@ -25931,8 +25945,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return null
     }
     if (!selectedLeadIsSeller) return null
-    if (actionOptions.createPrivateDraft && selectedSellerJourney.onboardingSubmitted !== true) {
-      setError('Submit seller onboarding before creating a private draft listing.')
+    if (actionOptions.createPrivateDraft && !hasSellerLeadDraftAddress({ lead: selectedLead, listing: selectedLeadLinkedListing })) {
+      setError('Add the property address before creating a draft listing.')
       return null
     }
     const suppliedSellerPackHandoff = actionOptions.kingstonsHandoffPayload || null
@@ -26397,12 +26411,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerDraftListingCreating(true)
     setError('')
     try {
-      await handleCreateListingFromSellerLead({
-        createPrivateDraft: true,
-        allowPreMandateIntake: true,
-        suppressSellerPortalInvite: true,
-        successMessage: 'Private draft listing is ready for review. The seller has not been invited and the listing is not published.',
-      })
+      const result = await createSellerLeadDraftListing({ organisationId, lead: selectedLead, contact: selectedLeadContact,
+        listing: selectedLeadLinkedListing, currentAgent })
+      const saved = result.listing
+      patchSelectedLeadRecord({ listingId: saved.id }, selectedLead.leadId)
+      setSelectedLeadHydratedListing(saved)
+      setMessage('Draft listing is ready. Seller details and property information use the same saved onboarding record. It has not been published.')
+      scheduleRecordsReload(organisationId, 500)
     } catch (draftError) {
       setError(draftError?.message || 'The private draft listing could not be created. Please try again.')
     } finally {
@@ -32858,11 +32873,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ? splitPropertyLines(opportunity.title, opportunity.subtitle || opportunity.specs)
         : splitPropertyLines(normalizeText(lead?.propertyInterest || lead?.areaInterest), '')
     const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || lead?.updatedAt || lead?.createdAt
+    const sellerContact = isSeller
+      ? buildKingstonsSellerProfileEditForm({ lead, contact: leadContact || {}, listing: linkedListing || {} })
+      : null
 
     return {
       id: leadId,
-      name: resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead'),
-      phone: normalizeText(leadContact?.phone || lead?.phone),
+      name: sellerContact
+        ? [sellerContact.firstName, sellerContact.lastName].filter(Boolean).join(' ') || 'Unnamed seller'
+        : resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead'),
+      phone: sellerContact ? sellerContact.phone : normalizeText(leadContact?.phone || lead?.phone),
       email: normalizeText(leadContact?.email || lead?.email),
       source: normalizeText(lead?.leadSource || lead?.source) || 'Unknown source',
       propertyTitle: propertyLines.title || 'No property address yet',
@@ -40415,11 +40435,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="mt-5 rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
                           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Listing not created</p>
                           <p className="mt-2 text-sm leading-6 text-[#60758b]">
-                            {selectedSellerJourney.onboardingSubmitted
-                              ? 'Create a private draft using the submitted seller onboarding details. The seller will not be invited and the listing will not be published.'
-                              : 'Submit seller onboarding to prepare a private draft listing.'}
+                            {hasSellerLeadDraftAddress({ lead: selectedLead, listing: selectedLeadLinkedListing })
+                              ? 'Create a draft with the seller and property details already saved. You can add the missing information later.'
+                              : 'Add the property address to create a draft listing.'}
                           </p>
-                          {selectedSellerJourney.onboardingSubmitted ? (
+                          {hasSellerLeadDraftAddress({ lead: selectedLead, listing: selectedLeadLinkedListing }) ? (
                             <Button type="button" size="sm" className="mt-4 rounded-[12px]" disabled={sellerDraftListingCreating || sellerLeadMandateUploading} onClick={() => void handleCreateSellerPropertyDraftListing()}>
                               {sellerDraftListingCreating ? 'Creating Draft...' : 'Create Draft Listing'}
                             </Button>
@@ -41905,8 +41925,57 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </form>
       </Modal>
 
+      {showLeadForm && !isCalendarMode && normalizeLeadCategory(leadForm.leadCategory, 'other') === 'seller' ? (
+        <Suspense fallback={<LoadingSkeleton />}>
+          <SellerLeadCreateDialog
+            organisationId={organisationId}
+            actor={{ id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email }}
+            assignedAgent={resolveAgentById(selectedAgentId || currentAgent.id)}
+            source={leadForm.leadSource} priority={leadForm.priority}
+            onClose={() => { setShowLeadForm(false); clearLeadForm(); void reloadRecords(organisationId, { applyLocalSnapshot: false }) }}
+            metadataControls={<div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-semibold">How did this lead find you?
+                <Field as="select" value={leadForm.leadSource} onChange={event => updateLeadFormField('leadSource', event.target.value)}>
+                  {leadSourceOptions.map(option => <option key={option}>{option}</option>)}
+                </Field>
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold">Priority
+                <Field as="select" value={leadForm.priority} onChange={event => updateLeadFormField('priority', event.target.value)}>
+                  {LEAD_PRIORITIES.map(option => <option key={option}>{option}</option>)}
+                </Field>
+              </label>
+              {isPrincipal ? <AgentPicker agents={agentOptions} value={selectedAgentId} onChange={setSelectedAgentId} className="sm:col-span-2" /> : null}
+            </div>}
+            onCreated={(receipt, reportedProgress) => {
+              setRecords(previous => ({ ...previous, leads: [receipt.lead, ...previous.leads.filter(lead => lead.leadId !== receipt.leadId)] }))
+              setSelectedLeadId(receipt.leadId)
+              setSelectedLeadHydratedListing(receipt.listing)
+              setLeadTypeView('seller')
+              setLeadWorkspaceTab('overview')
+              setSellerCaptureResult({ leadId: receipt.leadId, reportedProgress })
+              setShowLeadForm(false)
+              clearLeadForm()
+              setMessage('Seller lead saved. The seller’s link uses these same details and documents.')
+              void reloadRecords(organisationId, { applyLocalSnapshot: false })
+            }}
+          />
+        </Suspense>
+      ) : null}
+      <Modal open={Boolean(sellerCaptureResult)} title="Seller lead saved" subtitle="Your answers and files are saved in the existing seller record. You can add more later." onClose={() => setSellerCaptureResult(null)}>
+        <p className="text-sm text-[#60748b]">Choose your next step. Sending a link needs an email address. Signed documents still need review before the journey advances.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button type="button" onClick={() => { setSellerCaptureResult(null); requestSellerOnboardingAttorneySelection() }}>Send seller’s link</Button>
+          {sellerCaptureResult?.reportedProgress === 'We already have a signed mandate' ? <Button type="button" variant="secondary" onClick={() => {
+            navigate(`/pipeline/leads/${encodeURIComponent(sellerCaptureResult.leadId)}?tab=documents`)
+            setLeadWorkspaceTab('documents')
+            setSellerCaptureResult(null)
+          }}>Open documents for upload and review</Button> : null}
+          <Button type="button" variant="secondary" onClick={() => { navigate(`/pipeline/leads/${encodeURIComponent(sellerCaptureResult.leadId)}`); setSellerCaptureResult(null) }}>Open seller lead</Button>
+        </div>
+      </Modal>
+
       <Modal
-        open={showLeadForm && !isCalendarMode}
+        open={showLeadForm && !isCalendarMode && normalizeLeadCategory(leadForm.leadCategory, 'other') !== 'seller'}
         onClose={() => {
           setShowLeadForm(false)
           clearLeadForm()

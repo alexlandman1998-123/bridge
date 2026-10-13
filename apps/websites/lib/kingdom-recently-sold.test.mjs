@@ -51,6 +51,17 @@ test('CRM Sold includes both agencies after active adverts have been unpublished
   assert.ok(result.every(row => row.listingStatus === 'sold' && row.media.length === 1))
 })
 
+test('archived Sold records remain visible for both agencies; archived Withdrawn records do not', async () => {
+  const db = database({ rows: [
+    listing('own', site.organisationId, { listing_visibility: 'archived', is_active: false, listing_status: 'sold' }),
+    listing('partner', isell, { listing_visibility: 'archived', is_active: false, listing_status: 'sold' }),
+    listing('withdrawn', site.organisationId, { listing_visibility: 'archived', is_active: false, listing_status: 'withdrawn' }),
+  ] })
+  const result = await getKingdomRecentlySold(site, () => db)
+  assert.deepEqual(new Set(result.map(row => row.id)), new Set(['own', 'partner']))
+  assert.ok(result.every(row => row.listingStatus === 'sold' && row.media.length === 1))
+})
+
 test('active, under offer, rentals, demo rows and unrelated agencies are excluded', async () => {
   const db = database({ rows: [listing('sold', site.organisationId), listing('active', isell, { listing_status: 'active' }), listing('offer', isell, { listing_status: 'under_offer' }), listing('rental', isell, { listing_category: 'rental' }), listing('demo', isell, { is_demo_data: true }), listing('other', 'other')] })
   assert.deepEqual((await getKingdomRecentlySold(site, () => db)).map(row => row.id), ['sold'])

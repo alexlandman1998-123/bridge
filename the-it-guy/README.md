@@ -2986,7 +2986,14 @@ it has not been applied to the hosted database.
 Sales and rental delete dialogs offer **Open withdrawal controls** when permanent
 deletion is blocked. Sales Quick listing actions also expose **Withdraw listing**.
 Withdrawal preserves linked history and archives working stock only after active
-channels confirm removal; it does not call the deletion RPC. Focused checks:
+channels confirm removal; it does not call the deletion RPC.
+
+Sold listings retain their Sold outcome when archived from either the listings
+menu or withdrawal controls. Kingdom's Recently sold collection continues to
+show them after operational archival and advert removal. Archive confirmation
+checks the saved outcome so a stale listing card cannot replace Sold with Withdrawn.
+
+Focused checks:
 `node --test scripts/private-listing-deletion.test.mjs`,
 `node src/services/listings/__tests__/listingWithdrawalModel.test.js`,
 `node scripts/agent-listings-delete-ui.test.mjs`, and the Vitest
@@ -5122,3 +5129,66 @@ Publishing receipts, connection issues, missing fields and per-website retry
 controls appear inside their respective row. The separate saved-result card and
 advert preview are hidden on this step. Retries save edits first and request only
 the failed website; accepted and uncertain requests are not replayed.
+
+
+## Seller lead capture and optional onboarding
+
+Create Seller Lead in the lead list and lead workspace now opens the actual
+seller onboarding form in stages. Seller identity, ownership, people, property,
+finance and mandate fields use the same controls, normalizer, form-data keys and
+canonical save paths as the seller link. No table or parallel seller/property
+profile has been added. The existing internal `seller_lead_intake` listing holds
+the capture; it is not a published or activated market listing.
+
+All capture questions can be skipped. Save and finish later is available from
+the earlier steps. Blank ownership/property choices stay unknown, explicit
+clears beat older fallback values, and zero property amounts survive reopening.
+Entered email addresses are checked. Partial seller-link submissions save an
+`in_progress` draft and remain editable; existing information-completion,
+review, signing, publication and transaction checks remain in force.
+
+The final step records reported progress as an existing lead activity, then
+lets the agent open the lead, request the seller link, or open documents for
+review. Reported progress never asserts a signed mandate. Optional agent uploads
+use the existing exact checklist request, Storage upload and seller-visible file
+record; mandate uploads defer signing status. The seller link shows those same
+seller-visible file receipts. Internal file names remain excluded. Retry uses
+the same lead/contact IDs and intake link; revision conflicts stay visible.
+
+Focused checks: `npx vitest run
+src/components/leads/__tests__/SellerLeadCreateDialog.test.jsx
+src/components/onboarding/__tests__/SellerOnboardingCapture.test.jsx
+src/services/__tests__/sellerLeadCaptureService.test.js --maxWorkers=1`, plus the
+existing seller profile alignment journey, portal alignment, guarded canonical
+update, lead route/lifecycle boundaries and document transaction continuity
+checks. `npm run check:app` is the broad app check. These checks use local or
+synthetic data; implementation does not apply migrations, deploy, publish or
+send a live seller invitation.
+
+
+## Address-only seller draft listings
+
+Seller Lead → Property offers Create Draft Listing once the saved property
+address is available. Incomplete onboarding is allowed. The action promotes the
+existing linked intake into an internal, inactive `listing_review` draft with
+`private_listing` source, so it appears in Listings as a draft. It retains the
+same onboarding record, token, people, documents, review history and mandate
+status. It does not invite the seller, publish, sign or create a transaction.
+
+The handoff reads fresh linked capture before the lead's cached snapshot. Its
+full saved seller/profile JSON is retained, rather than rebuilt with capture
+aliases or synthetic compliance declarations. Bedrooms, bathrooms, garages,
+parking, sizes, rates, levies and features are projected into the existing
+listing publication-data fields. Zero values and explicit blanks survive.
+Existing operational listings are opened without reapplying onboarding over
+later marketing edits. A changed capture revision blocks draft promotion;
+failed draft preparation can retry against the same linked property record.
+
+Focused checks: `npx vitest run
+src/services/__tests__/sellerLeadDraftListingService.test.js
+src/components/onboarding/__tests__/SellerOnboardingCapture.test.jsx
+src/components/leads/__tests__/SellerLeadCreateDialog.test.jsx --maxWorkers=1`,
+`npm run test:seller-lead-listing-prefill-alignment`, the seller lead/listing
+boundary tests, seller alignment journey, guarded canonical update, portal
+alignment and document transaction continuity. No new tables or migrations are
+needed; no live data change, invitation or publication was performed.

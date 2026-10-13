@@ -63,6 +63,23 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+it('opens the new-leads view with only the agent’s assigned new leads and can return to all leads', async () => {
+  mocks.leads.mockResolvedValue({ rows: [
+    { ...lead, stage: 'New Lead', assignedAgentId: 'agent-one' },
+    { id: 'other', name: 'Other agent buyer', stage: 'New Lead', assignedAgentId: 'agent-two' },
+    { id: 'active', name: 'Contacted buyer', stage: 'Contacted', assignedAgentId: 'agent-one' },
+  ] })
+  render(<MemoryRouter initialEntries={['/mobile/leads?stage=new&scope=assigned']}><MobileModulePage moduleKey="leads" /></MemoryRouter>)
+  await act(async () => {})
+  expect(screen.getByRole('heading', { name: 'New leads' })).toBeTruthy()
+  expect(screen.getByText('Sarah Williams')).toBeTruthy()
+  expect(screen.queryByText('Other agent buyer')).toBeNull()
+  expect(screen.queryByText('Contacted buyer')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'View all leads' }))
+  expect(screen.getByRole('heading', { name: 'Leads' })).toBeTruthy()
+  expect(screen.getByText('Contacted buyer')).toBeTruthy()
+})
+
 it('loads saved leads after Transactions without crashing before the lead request starts, then opens the buyer journey', async () => {
   const request = deferred()
   mocks.leads.mockReturnValue(request.promise)

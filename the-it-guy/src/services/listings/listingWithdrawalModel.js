@@ -6,6 +6,12 @@ const CHANNELS = [
   { key: 'arch9_catalogue', label: 'Arch9 public catalogue' },
 ]
 
+// Archiving changes operational visibility, not the completed sale outcome.
+export function getArchivedListingStatus(listing = {}) {
+  const status = String(listing.listingStatus || listing.listing_status || '').trim().toLowerCase()
+  return status === 'sold' ? 'sold' : 'withdrawn'
+}
+
 export function buildListingWithdrawalPlan(state = {}) {
   const active = {
     property24: Boolean(state.property24Live),
@@ -43,7 +49,7 @@ export function applyListingWithdrawalResults(draft = {}, results = [], { comple
     ...(succeeded.has('property24') ? { property24Status: 'removed' } : {}),
     ...(succeeded.has('private_property') ? { privatePropertyStatus: 'inactive' } : {}),
     ...(succeeded.has('arch9_catalogue') ? { publicationStatus: 'Draft', bridgeListingStatus: 'paused' } : {}),
-    ...(complete ? { listingStatus: 'withdrawn', publicationStatus: 'Draft', bridgeListingStatus: 'paused' } : {}),
+    ...(complete ? { listingStatus: getArchivedListingStatus(draft), publicationStatus: 'Draft', bridgeListingStatus: 'paused' } : {}),
   }
 }
 

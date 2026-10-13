@@ -16,6 +16,56 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+it('shows two agent header counters before commission and opens only today’s appointments or assigned new leads', () => {
+  const today = buildMobileToday({ now, profile, appointments: [
+    { id: 'one', dateTime: '2026-10-06T10:30:00Z', typeLabel: 'Viewing today', statusKey: 'confirmed' },
+    { id: 'later', dateTime: '2026-10-07T10:30:00Z', typeLabel: 'Tomorrow viewing', statusKey: 'confirmed' },
+  ] })
+  const onOpen = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, newLeads: [{ leadId: 'one' }, { leadId: 'two' }], newLeadsAvailable: true }} onOpen={onOpen} />)
+  const summary = screen.getByLabelText('Today summary')
+  expect(within(summary).getAllByRole('button')).toHaveLength(2)
+  expect(summary.compareDocumentPosition(screen.getByRole('region', { name: 'Your commission' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(within(summary).queryByText('Follow-ups due')).toBeNull()
+  expect(within(summary).queryByText('Deals to move')).toBeNull()
+  fireEvent.click(within(summary).getByRole('button', { name: '2 New leads' }))
+  expect(onOpen).toHaveBeenCalledWith('/mobile/leads?stage=new&scope=assigned')
+  fireEvent.click(within(summary).getByRole('button', { name: '1 Appointments today' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByRole('button', { name: /Viewing today/i })).toBeTruthy()
+  expect(within(dialog).queryByText(/Tomorrow/)).toBeNull()
+})
+
+it('places personal commission before today-only appointments and opens their saved details', () => {
+  const today = buildMobileToday({ now, profile, appointments: [
+    { id: 'today', dateTime: '2026-10-06T10:30:00Z', typeLabel: 'Property Viewing', statusKey: 'confirmed', clientName: 'Sarah', propertyAddress: '18 Oak Avenue' },
+    { id: 'tomorrow', dateTime: '2026-10-07T10:30:00Z', typeLabel: 'Tomorrow Viewing', statusKey: 'confirmed' },
+  ] })
+  render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, commission: { signedThisMonth: 25000, pipeline: 75000 } }} onOpen={vi.fn()} />)
+  const commission = screen.getByRole('region', { name: 'Your commission' })
+  const appointments = screen.getByRole('region', { name: 'Appointments today' })
+  expect(commission.compareDocumentPosition(appointments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(within(appointments).getByText('12:30')).toBeTruthy()
+  expect(within(appointments).queryByText(/Tomorrow/)).toBeNull()
+  fireEvent.click(within(appointments).getByRole('button', { name: /Sarah/ }))
+  expect(within(screen.getByRole('dialog')).getByText('18 Oak Avenue', { exact: true })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Close details' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Show total pipeline commission' }))
+  expect(screen.getByRole('button', { name: 'Show total pipeline commission' }).getAttribute('aria-pressed')).toBe('true')
+  expect(HTMLElement.prototype.scrollTo).toHaveBeenCalled()
+})
+
+it('distinguishes empty and unavailable appointments below the commission card', () => {
+  const onRefresh = vi.fn()
+  const { rerender } = render(<AgentDashboard snapshot={{ ...base, category: 'agent', today: buildMobileToday({ now }) }} onOpen={vi.fn()} onRefresh={onRefresh} />)
+  const appointments = screen.getByRole('region', { name: 'Appointments today' })
+  expect(within(appointments).getByText('No appointments scheduled for today.')).toBeTruthy()
+  rerender(<AgentDashboard snapshot={{ ...base, category: 'agent', today: buildMobileToday({ now, availability: { appointments: false } }) }} onOpen={vi.fn()} onRefresh={onRefresh} />)
+  expect(within(appointments).queryByText('No appointments scheduled for today.')).toBeNull()
+  fireEvent.click(within(appointments).getByRole('button', { name: 'Retry appointments' }))
+  expect(onRefresh).toHaveBeenCalledOnce()
+})
+
 it('opens the actual next follow-up and its saved details without navigating to placeholder tasks', () => {
   const today = buildMobileToday({ now, profile, tasks: [{ taskId: 'call', title: 'Call Sarah about the viewing', dueDate: '2026-10-05', assignedAgentId: 'me', description: 'Confirm the viewing time with Sarah.' }] })
   const onOpen = vi.fn()

@@ -63,10 +63,22 @@ function parseMaybeJson(value) {
 function numberValue(...values) {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue
-    const parsed = Number(String(value).replace(/[^0-9.,-]/g, '').replace(/,/g, ''))
-    if (Number.isFinite(parsed) && parsed > 0) return parsed
+    const numericText = String(value).replace(/[^0-9.,-]/g, '').replace(/,/g, '')
+    if (!numericText) continue
+    const parsed = Number(numericText)
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed
   }
   return null
+}
+
+function captureValue(form, keys, ...fallbacks) {
+  const ownKey = keys.find(key => Object.hasOwn(form, key))
+  return ownKey ? form[ownKey] : firstValue(...fallbacks)
+}
+
+function captureNumber(form, keys, ...fallbacks) {
+  const ownKey = keys.find(key => Object.hasOwn(form, key))
+  return ownKey ? numberValue(form[ownKey]) : numberValue(...fallbacks)
 }
 
 function asArray(value) {
@@ -115,7 +127,7 @@ function getNestedObject(...values) {
   return values.find(isPlainObject) || {}
 }
 
-function mergeRelevantOnboardingFormData({ lead = {}, listing = {} } = {}) {
+export function readSellerLeadListingCapture({ lead = {}, listing = {} } = {}) {
   const rawPayload = parseMaybeJson(lead.rawEnquiryPayload || lead.raw_enquiry_payload)
   const rawOnboarding = getNestedObject(
     rawPayload.sellerOnboarding?.formData,
@@ -140,12 +152,13 @@ function mergeRelevantOnboardingFormData({ lead = {}, listing = {} } = {}) {
     rawPayload.seller_onboarding_replacement_required,
   ) === true
 
-  return compactObject({
-    ...getSellerOnboardingFormData(listing),
+  const current = getSellerOnboardingFormData(listing?.sourceListing || listing)
+  if (Object.keys(current).length) return { ...current }
+  return {
     ...rawOnboarding,
     ...(!onboardingReplacementRequired ? rawProfile : {}),
     ...getSellerOnboardingFormData(lead),
-  })
+  }
 }
 
 function addressFromParts(line1 = '', suburb = '', city = '', province = '', postalCode = '') {
@@ -165,7 +178,7 @@ function buildSellerNameParts(contact = {}, lead = {}, formData = {}) {
     contact.firstName && contact.lastName ? `${contact.firstName} ${contact.lastName}` : '',
   )
   const parts = fullName.split(/\s+/).filter(Boolean)
-  const sellerName = firstText(formData.sellerName, formData.firstName, formData.first_name, lead.sellerName, contact.firstName, parts.slice(0, -1).join(' '), parts[0])
+  const sellerName = firstText(formData.sellerFirstName, formData.sellerName, formData.firstName, formData.first_name, lead.sellerName, contact.firstName, parts.slice(0, -1).join(' '), parts[0])
   const sellerSurname = firstText(formData.sellerSurname, formData.surname, formData.lastName, formData.last_name, lead.sellerSurname, contact.lastName, parts.at(-1))
   return { fullName, sellerName, sellerSurname }
 }
@@ -216,7 +229,10 @@ export function buildSellerLeadListingPrefill({
   valuationAddress = '',
   capturedAt = '',
 } = {}) {
-  const formData = mergeRelevantOnboardingFormData({ lead, listing })
+  listing = listing || {}
+  lead = lead || {}
+  contact = contact || {}
+  const formData = readSellerLeadListingCapture({ lead, listing })
   const property = getNestedObject(formData.property, formData.propertyFacts, formData.property_facts)
   const addressDetails = getNestedObject(
     formData.propertyAddressDetails,
@@ -227,7 +243,8 @@ export function buildSellerLeadListingPrefill({
     property.address_details,
   )
   const { fullName, sellerName, sellerSurname } = buildSellerNameParts(contact, lead, formData)
-  const streetAddress = firstText(
+  const modernAddress = ['propertyAddress', 'propertyAddressLine1', 'propertyAddressDetails'].some(key => Object.hasOwn(formData, key))
+  const streetAddress = modernAddress ? firstText(formData.propertyAddressLine1, addressDetails.line1, normalizeText(formData.propertyAddress).split(',')[0]) : firstText(
     formData.streetAddress,
     formData.street_address,
     formData.addressLine1,
@@ -253,7 +270,7 @@ export function buildSellerLeadListingPrefill({
   const postalCode = capturedPostalCode && propertyPostalCode && capturedPostalCode === firstText(formData.residentialPostalCode, formData.residential_postal_code) && capturedPostalCode !== propertyPostalCode
     ? propertyPostalCode
     : firstText(capturedPostalCode, propertyPostalCode, lead.postalCode, lead.postal_code, listing.postalCode, listing.postal_code)
-  const formattedAddress = firstText(
+  const formattedAddress = modernAddress ? firstText(formData.propertyAddress, addressFromParts(streetAddress, suburb, city, province, postalCode)) : firstText(
     formData.formattedAddress,
     formData.formatted_address,
     formData.propertyAddress,
@@ -290,21 +307,8 @@ export function buildSellerLeadListingPrefill({
     listing.estimatedValue,
     listing.estimated_value,
   )
-  const selectedPropertyType = firstText(formData.propertyType, formData.property_type, property.propertyType, property.property_type, propertyType, lead.propertyType, lead.propertyInterest, listing.propertyType, 'House')
-  const propertyStructureType = firstText(
-    formData.propertyStructureType,
-    formData.property_structure_type,
-    formData.propertyTitleType,
-    formData.property_title_type,
-    formData.titleType,
-    formData.title_type,
-    formData.ownershipScheme,
-    formData.ownership_scheme,
-    property.propertyStructureType,
-    property.property_structure_type,
-    listing.propertyStructureType,
-    listing.property_structure_type,
-  ) || 'full_title'
+  const selectedPropertyType = normalizeText(captureValue(formData, ['propertyType', 'property_type'], property.propertyType, property.property_type, propertyType, lead.propertyType, lead.propertyInterest, listing.propertyType))
+  const propertyStructureType = normalizeText(captureValue(formData, ['propertyStructureType', 'property_structure_type', 'propertyTitleType', 'property_title_type', 'titleType', 'title_type', 'ownershipScheme', 'ownership_scheme'], property.propertyStructureType, property.property_structure_type, listing.propertyStructureType, listing.property_structure_type))
   const isSectionalStructure = ['sectional_title', 'share_block'].includes(normalizeKey(propertyStructureType))
   const schemeName = firstText(formData.schemeName, formData.scheme_name, property.schemeName, property.scheme_name, isSectionalStructure ? formData.estateComplexName : '')
   const sharedPropertyName = firstText(
@@ -343,8 +347,8 @@ export function buildSellerLeadListingPrefill({
     sellerSurname,
     sellerDisplayName: fullName,
     fullName,
-    sellerEmail: firstText(formData.sellerEmail, formData.email, lead.sellerEmail, contact.email),
-    sellerPhone: firstText(formData.sellerPhone, formData.phone, formData.mobile, lead.sellerPhone, contact.phone, contact.mobile),
+    sellerEmail: normalizeText(captureValue(formData, ['email', 'sellerEmail'], lead.sellerEmail, contact.email)),
+    sellerPhone: normalizeText(captureValue(formData, ['phone', 'sellerPhone', 'mobile'], lead.sellerPhone, contact.phone, contact.mobile)),
     idNumber: firstText(formData.idNumber, formData.id_number, lead.idNumber, lead.id_number, contact.idNumber, contact.id_number),
     propertyAddress: formattedAddress,
     formattedAddress,
@@ -378,14 +382,14 @@ export function buildSellerLeadListingPrefill({
     priceOnApplication: booleanValue(formData.priceOnApplication, formData.price_on_application, formData.isPOA, formData.is_poa, property.priceOnApplication, property.price_on_application),
     showReducedBanner: booleanValue(formData.showReducedBanner, formData.show_reduced_banner, property.showReducedBanner, property.show_reduced_banner),
     noTransferDuty: booleanValue(formData.noTransferDuty, formData.no_transfer_duty, property.noTransferDuty, property.no_transfer_duty),
-    bedrooms: numberValue(formData.bedrooms, property.bedrooms, lead.bedrooms, listing.bedrooms),
-    bathrooms: numberValue(formData.bathrooms, property.bathrooms, lead.bathrooms, listing.bathrooms),
-    garages: numberValue(formData.garages, property.garages, lead.garages, listing.garages),
-    parkingCount: numberValue(formData.parkingCount, formData.parking_count, formData.parkingBays, formData.parking_bays, formData.parking, formData.parkingSpaces, parkingFromBreakdown, property.parkingCount, property.parking_count, lead.parkingCount, listing.parkingBays),
-    floorSize: numberValue(formData.floorSize, formData.floor_size, property.floorSize, property.floor_size, lead.floorSize, listing.floorSize),
-    erfSize: numberValue(formData.erfSize, formData.erf_size, property.erfSize, property.erf_size, lead.erfSize, listing.erfSize),
-    ratesTaxes: numberValue(formData.ratesTaxes, formData.rates_taxes, formData.ratesAndTaxes, formData.monthlyRates, property.ratesTaxes, property.rates_taxes),
-    levies: numberValue(formData.levies, formData.schemeLevies, formData.monthlyLevies, property.levies),
+    bedrooms: captureNumber(formData, ['bedrooms'], property.bedrooms, lead.bedrooms, listing.bedrooms),
+    bathrooms: captureNumber(formData, ['bathrooms'], property.bathrooms, lead.bathrooms, listing.bathrooms),
+    garages: captureNumber(formData, ['garages'], property.garages, lead.garages, listing.garages),
+    parkingCount: captureNumber(formData, ['parkingCount', 'parking_count', 'parkingBays', 'parking_bays', 'parking', 'parkingSpaces'], parkingFromBreakdown, property.parkingCount, property.parking_count, lead.parkingCount, listing.parkingBays),
+    floorSize: captureNumber(formData, ['floorSize', 'floor_size'], property.floorSize, property.floor_size, lead.floorSize, listing.floorSize),
+    erfSize: captureNumber(formData, ['erfSize', 'erf_size'], property.erfSize, property.erf_size, lead.erfSize, listing.erfSize),
+    ratesTaxes: captureNumber(formData, ['ratesTaxes', 'rates_taxes', 'ratesAndTaxes', 'monthlyRates'], property.ratesTaxes, property.rates_taxes),
+    levies: captureNumber(formData, ['levies', 'schemeLevies', 'monthlyLevies'], property.levies),
     askingPrice,
     estimatedValue,
     listingPrice: askingPrice,
@@ -407,17 +411,7 @@ export function buildSellerLeadListingPrefill({
     capturedBy: firstText(currentAgent.id, currentAgent.email),
     capturedAt: capturedAt || new Date().toISOString(),
   })
-  const sellerOnboardingFormData = compactObject({
-    ...formData,
-    ...directListingIntake.sellerOnboardingFormData,
-    sellerLeadListingPrefill: {
-      source: 'seller_lead_listing_prefill',
-      leadId: firstText(lead.leadId, lead.id),
-      listingId: firstText(listing.id),
-      capturedAt: capturedAt || new Date().toISOString(),
-      sellerOnboardingFieldCount: Object.keys(formData).length,
-    },
-  })
+  const sellerOnboardingFormData = Object.keys(formData).length ? { ...formData } : directListingIntake.sellerOnboardingFormData
   const features = buildPublicationFeatures(form)
   const publicationData = compactObject({
     title: form.listingTitle || form.formattedAddress || 'Listing draft',
@@ -440,6 +434,8 @@ export function buildSellerLeadListingPrefill({
     amenities: form.amenities,
     status: 'Draft',
   })
+  publicationData.features = features
+  publicationData.amenities = form.amenities || []
   const listingPayload = compactObject({
     listingVisibility: 'internal',
     listingSource: 'private_listing',
@@ -469,7 +465,7 @@ export function buildSellerLeadListingPrefill({
     property24Status: 'not_published',
     privatePropertyStatus: 'not_published',
     bridgeListingStatus: 'not_published',
-    sellerCanonicalFacts: directListingIntake.sellerCanonicalFacts,
+    sellerCanonicalFacts: formData.canonicalSellerFacts || listing.sellerCanonicalFacts || directListingIntake.sellerCanonicalFacts,
     sellerCanonicalFactReadiness: {
       source: 'seller_lead_listing_prefill',
       generatedAt: capturedAt || new Date().toISOString(),

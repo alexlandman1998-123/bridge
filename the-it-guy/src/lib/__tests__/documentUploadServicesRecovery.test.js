@@ -111,6 +111,32 @@ function expectSaved(result, f) {
   assert.equal(result.persistence.recordVerified, true)
 }
 
+test('ordinary agent transaction upload saves without an attorney lane and recovers a lost reply', async () => {
+  const f = fixture()
+  let receivedScope
+  Object.assign(f.values, {
+    assertActiveTransactionForDocumentUpload: async () => f.id,
+    resolveActiveProfileContext: async () => ({ userId: 'actor', role: 'agent' }),
+    resolveAttorneyDocumentLaneMetadata: () => null,
+    resolveCanonicalRequirementTargetForUpload: async () => null,
+    getCanonicalUploadKeyCandidates: () => [],
+    createDocumentUploadIdempotencyKey: async input => {
+      receivedScope = input.attorneyScope
+      return 'ordinary-agent-upload'
+    },
+    findDocumentByUploadIdempotencyKey: async () => f.state.row,
+  })
+  const upload = extract('../api.js', 'uploadDocument', f.values)
+  const input = { transactionId: f.id, file: f.file, category: 'General' }
+  const saved = await upload(input)
+  assert.equal(receivedScope, null)
+  assert.equal(saved.id, f.state.row.id)
+  assert.equal((await upload(input)).id, saved.id)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+  assert.equal(f.state.deletes, 0)
+})
+
 for (const [label, path, name, parameters] of [
   ['buyer', '../api.js', 'uploadClientPortalDocument', f => ({ token: f.id, file: f.file })],
   ['seller', '../../services/privateListingService.js', 'uploadSellerClientPortalDocument', f => ({ token: f.id, accessToken: 'session', requirementKey: 'id_copy', file: f.file })],

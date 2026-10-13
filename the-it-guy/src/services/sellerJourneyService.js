@@ -415,7 +415,8 @@ function hasSignedMandateDocumentEvidence(documents = []) {
     const status = normalizeSellerDocumentRequirementStatus(document?.status || document?.documentStatus || document?.document_status)
     if (RETIRED_DOCUMENT_STATUSES.has(status)) return false
     const reviewedVersionId = firstPresent(document?.reviewedSigningVersionId, document?.reviewed_signing_version_id)
-    if (reviewedVersionId) return ['approved', 'completed'].includes(status) && hasUploadedDocumentFile(document)
+    const existingEvidence = (document.sellerSigningEvidenceSource || document.seller_signing_evidence_source) === 'existing_signed_upload'
+    if (reviewedVersionId || existingEvidence) return ['approved', 'completed'].includes(status) && hasUploadedDocumentFile(document)
     return Boolean(
       document?.complete ||
         document?.completed ||

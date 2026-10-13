@@ -53,6 +53,15 @@ and partner website publication, retaining membership, grant and media checks.
 
 ## Listing sale status
 
+Kingdom sale property detail pages include a “Can I afford this property?”
+calculator below similar homes. It starts with the public asking price (or an
+empty price for POA), compares the bond repayment against the visitor's income,
+expenses, debt and savings buffer, and links to preapproval. The price-panel
+link jumps to the inline calculator. Rental pages and other templates retain
+their existing experience. Inputs stay in browser memory; estimates are not
+bank approval. Verification: finance unit tests, `npm run check:website`, and
+desktop/mobile browser checks against local demo listings.
+
 Owned and partner snapshots include the sale status after applying
 `20261010214831_website_listing_sale_status.sql` and updating the listing channel.
 Cards and detail pages display Sold or Under offer from that accepted snapshot.

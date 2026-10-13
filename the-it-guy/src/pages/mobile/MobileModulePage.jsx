@@ -11,6 +11,7 @@ import { getCachedMobileDashboardSnapshot, getMobileDashboardSnapshot, getMobile
 import { getOfflineDrafts } from '../../services/mobileProductivityService'
 import { resolveMobileRoleCategory } from '../../config/mobileShell.js'
 import { listAgentLeadWorkspaceRows } from '../../services/agentLeadWorkspaceService'
+import { isLeadAssignedToActor, isNewAgentLead } from '../../services/mobileTodayModel.js'
 
 const MODULE_COPY = {
   transactions: {
@@ -319,8 +320,10 @@ export default function MobileModulePage({ moduleKey }) {
     drafts.filter((draft) => mobileDraftMatchesModule(draft, moduleKey))
   ), [drafts, moduleKey])
   const leadRows = useMemo(() => {
-    return Array.isArray(state.leads) ? state.leads : []
-  }, [state.leads])
+    const rows = Array.isArray(state.leads) ? state.leads : []
+    return rows.filter(row => (searchParams.get('stage') !== 'new' || isNewAgentLead(row)) &&
+      (searchParams.get('scope') !== 'assigned' || isLeadAssignedToActor(row, resolveMobileLeadActor(workspace))))
+  }, [state.leads, searchParams, workspace])
 
   function openTransaction(item) {
     navigate(item.to || '/mobile/transaction/unknown', { state: { mobileWorkspaceItem: item } })
@@ -390,7 +393,11 @@ export default function MobileModulePage({ moduleKey }) {
     return (
       <div className="space-y-6">
         <section className="pt-2">
-          <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">Leads</h1>
+          <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">{searchParams.get('stage') === 'new' ? 'New leads' : 'Leads'}</h1>
+          {searchParams.get('stage') === 'new' && <button type="button" className="min-h-11 text-sm text-[#166b50]" onClick={() => {
+            const next = new URLSearchParams(searchParams)
+            next.delete('stage'); next.delete('scope'); setSearchParams(next)
+          }}>View all leads</button>}
         </section>
 
         <section className="space-y-3">
@@ -400,8 +407,8 @@ export default function MobileModulePage({ moduleKey }) {
           ) : (
             pendingDrafts.length ? null : (
               <MobileEmptyState
-                title={copy.emptyTitle}
-                body={copy.emptyBody}
+                title={searchParams.get('stage') === 'new' ? 'No new leads.' : copy.emptyTitle}
+                body={searchParams.get('stage') === 'new' ? 'New leads assigned to you will appear here.' : copy.emptyBody}
               />
             )
           )}

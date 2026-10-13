@@ -10,6 +10,7 @@ import { ListingDescription } from '@/components/listing-description'
 import { PropertyActions } from '@/components/property-actions'
 import { PropertyGallery } from '@/components/property-gallery'
 import { PropertyCard } from '@/components/property-card'
+import { PropertyAffordability } from '@/components/property-affordability'
 import { ListingAnalyticsTracker } from '@/components/site-analytics'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { presentListingFeatures } from '@/lib/listing-features'
@@ -68,7 +69,8 @@ export default async function PropertyPage({ params }: Props) {
   const consultant = property.consultant
   const whatsappHref = listingWhatsappHref(property, site)
   const lwp = hasEditorialPropertyExperience(site)
-  const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'RENTAL PRICE' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>{property.price ? <Link href={`/calculators?price=${property.price}#bond-calculator`}>{property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
+  const showAffordability = site.templateKey === 'kingdom-v1' && property.transactionType === 'sale'
+  const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'RENTAL PRICE' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>{property.price ? <Link href={showAffordability ? "#property-affordability" : `/calculators?price=${property.price}#bond-calculator`}>{showAffordability ? 'Can I afford this property?' : property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
 
   return <main className={`property-page listing-detail-page ${templateClassName(site.templateKey)}${lwp ? ' lwp-listing-page' : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
     <ListingAnalyticsTracker listingId={property.id} />
@@ -80,6 +82,7 @@ export default async function PropertyPage({ params }: Props) {
       <div className="listing-conversion-stack"><div className="listing-desktop-price">{pricePanel}</div><aside className="listing-agent-card" id="enquire"><div className="listing-agent-intro">{consultant?.avatarUrl ? <Image className="listing-agent-photo" src={consultant.avatarUrl} alt={`${consultant.name} property consultant`} width={64} height={64} /> : <span>{(consultant?.name || site.name).split(/\s+/).map((word) => word[0]).join('').slice(0, 2)}</span>}<div><p>{lwp ? 'THE PERSON BEHIND THE LISTING' : 'MEET YOUR PROPERTY CONSULTANT'}</p><h2>{consultant?.name || `${site.name} team`}</h2></div></div><p className="listing-agent-copy">{lwp ? `Speak to ${consultant?.name || 'the LWP team'} about the home, the viewing and the details that matter before your next step.` : `Arrange a viewing or ask a question. Your enquiry goes directly to ${consultant?.name || 'the local team'}.`}</p><LeadForm propertyId={property.id} />{whatsappHref ? <a className="listing-whatsapp" href={whatsappHref} target="_blank" rel="noreferrer">WhatsApp agent</a> : null}</aside></div>
     </section>
     {similar.length > 0 ? <section className="section listing-similar-section"><div className="section-heading"><div><p className="eyebrow">YOU MAY ALSO LIKE</p><h2>Similar properties</h2></div></div><div className="property-grid">{similar.map((item) => <PropertyCard key={item.id} property={item} />)}</div></section> : null}
+    {showAffordability ? <PropertyAffordability key={property.id} price={property.price} /> : null}
     <div className="listing-mobile-actions"><a href="#enquire">Enquire</a>{whatsappHref ? <a href={whatsappHref} target="_blank" rel="noreferrer">WhatsApp</a> : null}</div><SiteFooter site={site} />
   </main>
 }

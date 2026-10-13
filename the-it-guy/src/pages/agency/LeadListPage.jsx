@@ -87,7 +87,7 @@ function followUpPresentation(value) {
   return { label: `${overdue ? 'Overdue · ' : ''}${day}${time}`, tone: overdue ? 'overdue' : due.toDateString() === now.toDateString() ? 'due' : 'neutral' }
 }
 
-function KanbanLeadCard({ row, dragging, onLeadIntent, onOpenLead, onDragStart, onDragEnd }) {
+function KanbanLeadCard({ row, showSellerPhone, dragging, onLeadIntent, onOpenLead, onDragStart, onDragEnd }) {
   const followUp = followUpPresentation(row.nextStepDueDate)
   const followUpTone = followUp.tone === 'overdue' ? 'border-red-100 bg-red-50 text-red-700' : followUp.tone === 'due' ? 'border-amber-100 bg-amber-50 text-amber-800' : 'border-zinc-100 bg-zinc-50 text-zinc-600'
   const assigned = row.assignedAgent && row.assignedAgent !== 'Unassigned'
@@ -100,6 +100,7 @@ function KanbanLeadCard({ row, dragging, onLeadIntent, onOpenLead, onDragStart, 
       <KanbanCover key={row.propertyImageUrl || 'initials'} row={row} />
       <div className="px-3.5 pb-3.5 pt-3">
         <h5 className="line-clamp-2 text-[0.96rem] font-semibold leading-5 tracking-[-0.02em] text-zinc-900">{row.name}</h5>
+        {showSellerPhone ? <p className="mt-1 text-[0.76rem] leading-5 text-zinc-600">{row.phone || 'No phone number yet'}</p> : null}
         <p className="mt-1.5 line-clamp-2 text-[0.76rem] leading-5 text-zinc-600">{row.propertyTitle}</p>
         {propertyMeta ? <p className="mt-0.5 line-clamp-1 text-[0.68rem] text-zinc-400">{propertyMeta}</p> : null}
         <div className={`mt-3 flex items-start gap-2 rounded-lg border px-2.5 py-2 ${followUpTone}`}>
@@ -299,7 +300,7 @@ export default function LeadListPage({
                 <section key={column.id} aria-label={column.label} className="flex w-[310px] shrink-0 snap-start flex-col rounded-[14px] border border-zinc-200 bg-[#f6f6f5]" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain') || draggingId; if (id) onMoveLead(id, column.id) }}>
                   <div className="flex min-h-[52px] items-center justify-between gap-3 border-b border-zinc-200 px-3.5 py-3"><h4 className="text-[0.8rem] font-semibold leading-5 text-zinc-700">{column.label}</h4><span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white px-1.5 text-[0.68rem] font-medium tabular-nums text-zinc-500">{column.cards.length}</span></div>
                   <div className="flex-1 space-y-3 p-2.5">
-                    {column.cards.map((row) => <KanbanLeadCard key={row.id} row={row} dragging={draggingId === row.id} onLeadIntent={onLeadIntent} onOpenLead={onOpenLead} onDragStart={(event) => { setDraggingId(row.id); event.dataTransfer.setData('text/plain', row.id) }} onDragEnd={() => setDraggingId('')} />)}
+                    {column.cards.map((row) => <KanbanLeadCard key={row.id} row={row} showSellerPhone={category === 'seller'} dragging={draggingId === row.id} onLeadIntent={onLeadIntent} onOpenLead={onOpenLead} onDragStart={(event) => { setDraggingId(row.id); event.dataTransfer.setData('text/plain', row.id) }} onDragEnd={() => setDraggingId('')} />)}
                   </div>
                 </section>
               ))}
