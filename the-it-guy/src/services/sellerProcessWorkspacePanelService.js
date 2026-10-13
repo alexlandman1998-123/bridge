@@ -125,7 +125,7 @@ function buildActionCards(payload = {}) {
     ...(needsFirstContact ? [
       {
         key: 'contact_seller',
-        label: 'Log First Contact',
+        label: 'Mark as contacted',
         surface: 'activityTimeline',
         pending: true,
         disabled: false,

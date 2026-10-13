@@ -55,6 +55,7 @@ const emails = [], report = [], browserErrors = []
 let downloads = 0, downloadedPages = 0, browserSignatures = 0, browserPhysicalReviews = 0
 let existingSignedUploads = 0, agentAssistedCaptures = 0
 const rpcArguments = {
+  bridge_update_seller_portal_disclosure_answers: ['p_token_hash', 'p_expected_version_digest', 'p_disclosure', 'p_reviewed_html'],
   bridge_update_seller_portal_document_corrections: ['p_token_hash', 'p_expected_version_digest', 'p_updates'],
   bridge_submit_seller_portal_document_signature: ['p_token_hash', 'p_signed_name', 'p_signature_type', 'p_signature_value', 'p_signed_date', 'p_signed_place', 'p_acceptance_ip', 'p_acceptance_user_agent', 'p_expected_version_digest'],
   bridge_review_seller_portal_signed_document: ['p_signing_document_id', 'p_signed_html', 'p_signed_html_digest', 'p_reviewer_id'],
@@ -177,9 +178,10 @@ async function mandateCapturePersistence() {
   }
 }
 
-async function prepare(branch, mandateType, route = 'digital_pack', { agentAssisted = false } = {}) {
+async function prepare(branch, mandateType, route = 'digital_pack', { agentAssisted = false, blankDisclosure = false } = {}) {
   const listingId = randomUUID(), copy = createSellerCorrectionFixture(branch)
   const form = copy.form
+  if (blankDisclosure) form.propertyDisclosure = { responses: {}, comments: '' }
   // The unsigned disclosure must follow the selected document-signing route.
   form.propertyDisclosure.signature = ''; form.propertyDisclosure.signedAt = ''
   if (agentAssisted) {
@@ -544,7 +546,7 @@ async function workspace(listingId) {
   return { listing, source: buildSellerDocumentSourceOfTruth({ listing, formData: listing.sellerOnboarding.formData }) }
 }
 
-async function signInBrowser(recipient, name, { fullMandate = false, correctFica = false } = {}) {
+async function signInBrowser(recipient, name, { fullMandate = false, correctFica = false, completeDisclosure = false } = {}) {
   await portalPage.goto(`${baseUrl}/seller/sign/${encodeURIComponent(recipient.token)}`)
   await portalPage.getByRole('heading', { name: /Review and sign/ }).waitFor()
   const submit = portalPage.getByRole('button', { name: 'Sign this document', exact: true })
@@ -562,6 +564,16 @@ async function signInBrowser(recipient, name, { fullMandate = false, correctFica
     assert.equal(await submit.isDisabled(), true, 'Unsaved corrections prevent signature submission')
     await portalPage.getByRole('button', { name: 'Save and review changes', exact: true }).click()
     await portalPage.waitForFunction(() => document.querySelector('button') && [...document.querySelectorAll('button')].some(button => button.textContent === 'Save and review changes' && button.disabled))
+  }
+  if (completeDisclosure) {
+    await portalPage.getByRole('heading', { name: 'Complete your property disclosure' }).waitFor()
+    const answers = portalPage.getByRole('combobox', { name: /^Question \d+: Answer$/ })
+    assert.equal(await answers.count(), 20)
+    for (let index = 0; index < 20; index++) await answers.nth(index).selectOption(index === 11 ? 'yes' : 'no')
+    await portalPage.getByLabel('Other disclosures or comments', { exact: true }).fill('Seller completed this disclosure on the private link. Known roof leak.')
+    assert.equal(await submit.isDisabled(), true, 'Answers must be saved before signature')
+    await portalPage.getByRole('button', { name: 'Save answers and review', exact: true }).click()
+    await portalPage.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === 'Save answers and review' && button.disabled))
   }
   assert.equal(await portalPage.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'The actual mobile signing page must fit the viewport')
   assert.equal(await frame.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, 'The actual mobile document review must fit the viewport')
@@ -591,6 +603,39 @@ async function signInBrowser(recipient, name, { fullMandate = false, correctFica
   assert.equal(evidence.signed_place, 'Browser Acceptance Town')
   assert.equal((await request('view', { token: recipient.token })).status, 404)
   browserSignatures++
+}
+
+async function sellerCompletedDisclosureJourney() {
+  const fixture = await prepare('multiple_owners', 'sole', 'digital_pack', { blankDisclosure: true })
+  const submittedFacts = structuredClone(fixture.form.propertyDisclosure)
+  const beforePack = structuredClone(fixture.form.sellerOnboardingManualSigningPack)
+  // Existing FICA signatures must not lock answers on the unsigned disclosure.
+  await completeConnectedDigital(fixture, fixture.frozen.documents.find(row => row.key === 'signed_fica_declaration'))
+  const disclosure = fixture.frozen.documents.find(row => row.key === 'signed_disclosure_form')
+  const sent = await request('issue', { listingId: fixture.listingId, documentKey: disclosure.key }, true)
+  assert.equal(sent.status, 200, JSON.stringify(sent.body))
+  const recipients = await issuedRecipients(sent.body.signingDocumentId)
+  const initial = await request('view', { token: recipients[0].token })
+  assert.equal(initial.body.canEdit, true)
+  assert.equal(initial.body.disclosureAnswersComplete, false)
+  const incomplete = await request('sign', { token: recipients[0].token })
+  assert.equal(incomplete.status, 400)
+  await signInBrowser(recipients[0], 'seller-completed-disclosure-owner-1', { completeDisclosure: true })
+  const shared = await request('view', { token: recipients[1].token })
+  assert.equal(shared.body.canEdit, false)
+  assert.equal(shared.body.disclosureAnswersComplete, true)
+  assert.match(shared.body.reviewedHtml, /Known roof leak/)
+  await signInBrowser(recipients[1], 'seller-completed-disclosure-owner-2')
+  const reviewed = await request('review', { signingDocumentId: sent.body.signingDocumentId }, true)
+  assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body))
+  const saved = await reopened(fixture.listingId)
+  assert.deepEqual(saved.sellerOnboarding.formData.propertyDisclosure, submittedFacts)
+  assert.deepEqual(saved.sellerOnboarding.formData.sellerOnboardingManualSigningPack, beforePack)
+  const evidence = await sql(`select * from ${evidenceTable} where signing_document_id=$1`, [sent.body.signingDocumentId])
+  assert.equal(evidence.length, 2)
+  assert.equal(evidence[0].document_version_digest, evidence[1].document_version_digest)
+  report.push({ route: 'seller_completed_disclosure', result: 'passed', mobileBrowser: true, requiredSigners: 2, originalFactsPreserved: true })
+  console.log('Mobile seller link: blank questionnaire → all answers saved → both owners sign the same version → agent review; original facts and FICA retained')
 }
 
 async function completeConnectedDigital(fixture, document, { browserSign = false, correctFica = false } = {}) {
@@ -924,6 +969,7 @@ try {
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261004181626_seller_portal_signed_upload_version_binding.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012114500_seller_optional_document_upload_review.sql', import.meta.url), 'utf8'))
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261013101510_seller_portal_disclosure_completion.sql', import.meta.url), 'utf8'))
   await optionalDocumentUploadReview()
   if (process.argv.includes('--review-only')) {
     console.log('Seller document review passed with text portal listing IDs: approval, reminder recipient, legacy IDs, exact requirement, retired guards and revision conflict. No remote writes or email delivery.')
@@ -999,6 +1045,9 @@ try {
     ctx.beginPath(); ctx.moveTo(12, 60); ctx.bezierCurveTo(75, 5, 60, 85, 132, 40); ctx.bezierCurveTo(140, 10, 180, 75, 260, 30); ctx.stroke()
     return canvas.toDataURL('image/png')
   })
+  if (process.argv.includes('--disclosure-only')) {
+    await sellerCompletedDisclosureJourney()
+  } else {
   if (!process.argv.includes('--full-mandates-only') && !process.argv.includes('--connected-only')) {
     for (const [branch, mandateType] of [['individual', 'sole'], ['multiple_owners', 'dual'], ['company', 'exclusive'], ['trust', 'open']]) await digitalJourney(branch, mandateType)
     for (const [branch, mandateType] of [['individual', 'exclusive'], ['multiple_owners', 'open'], ['company', 'dual'], ['trust', 'sole']]) await physicalJourney(branch, mandateType)
@@ -1012,6 +1061,7 @@ try {
       ['multiple_owners', 'dual', { browserSign: true }], ['trust', 'sole', { physical: true }]]) {
       if (!branchFilter || branch === branchFilter) await connectedJourney(mandateRuntime, branch, type, options)
     }
+  }
   }
   assert.deepEqual(browserErrors, [])
   await rehearseSellerDocumentRollback()

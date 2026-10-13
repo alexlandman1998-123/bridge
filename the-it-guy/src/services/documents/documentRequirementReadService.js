@@ -86,6 +86,19 @@ export function mergeDocumentEvidence(legacyRows = [], snapshot) {
 
 // Same-tab command events + focus refresh + bounded polling cover changes made
 // elsewhere without subscribing the browser to private requirement tables.
+const DOCUMENT_CHANGE_STORAGE_KEY = 'arch9:document-requirements-changed'
+
+export function notifyDocumentRequirementContextChanged(detail, { target = globalThis.window } = {}) {
+  if (!target) return
+  try {
+    const EventConstructor = target.CustomEvent || globalThis.CustomEvent
+    if (EventConstructor) target.dispatchEvent(new EventConstructor(DOCUMENT_CHANGE_STORAGE_KEY, { detail }))
+    // A timestamp is enough to refresh another open tab; never persist files,
+    // document names or private contact details in the cross-tab signal.
+    target.localStorage?.setItem(DOCUMENT_CHANGE_STORAGE_KEY, `${Date.now()}:${Math.random()}`)
+  } catch { /* Refresh signalling must never turn a confirmed save into failure. */ }
+}
+
 export function watchDocumentRequirementContext(refresh, { intervalMs = 15000, target = globalThis.window } = {}) {
   if (!target) return () => {}
   let pending = false
@@ -99,10 +112,15 @@ export function watchDocumentRequirementContext(refresh, { intervalMs = 15000, t
   }
   target.addEventListener('focus', reload)
   target.addEventListener('arch9:document-requirements-changed', reload)
+  const storageChanged = event => { if (event.key === DOCUMENT_CHANGE_STORAGE_KEY) reload() }
+  target.addEventListener('storage', storageChanged)
+  target.document?.addEventListener?.('visibilitychange', reload)
   const timer = target.setInterval(reload, intervalMs)
   return () => {
     target.removeEventListener('focus', reload)
     target.removeEventListener('arch9:document-requirements-changed', reload)
+    target.removeEventListener('storage', storageChanged)
+    target.document?.removeEventListener?.('visibilitychange', reload)
     target.clearInterval(timer)
   }
 }

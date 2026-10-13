@@ -74,7 +74,8 @@ test('sign-off pack identifies exact wording, PDF proofs, seller workflow source
   assert.equal(candidate.proofs.length, 15)
   assert.equal(candidate.proofs.reduce((sum, proof) => sum + proof.pages, 0), 100)
   assert.ok(candidate.proofs.every(proof => proof.synthetic === true && /^[a-f0-9]{64}$/.test(proof.sha256)))
-  assert.equal(candidate.migrations.length, 3)
+  assert.equal(candidate.migrations.length, 4)
+  assert.ok(candidate.migrations.some(file => file.name.endsWith('/20261013101510_seller_portal_disclosure_completion.sql')))
   assert.ok(candidate.migrations.some(file => file.name.endsWith('/20261009150000_seller_existing_signed_evidence.sql')))
   for (const name of ['ClientPortal.jsx', 'privateListingService.js', 'SellerDocumentSigning.jsx',
     'SellerOnboarding.jsx', 'PropertyDisclosureQuestionnaire.jsx', 'SellerDocumentWorkflowActions.jsx',

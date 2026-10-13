@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createHash, randomUUID } from 'node:crypto'
 import { build } from 'esbuild'
+import { PROPERTY_DISCLOSURE_QUESTIONS } from '../src/lib/propertyDisclosure.js'
 import { PGlite } from '@electric-sql/pglite'
 import { createSellerCorrectionFixture, sellerCorrectionValues } from './fixtures/seller-document-corrections.mjs'
 import { createMandateCaptureFixture } from './fixtures/seller-mandate-capture.mjs'
@@ -17,7 +18,7 @@ const db = new PGlite()
 const hash = value => createHash('sha256').update(value).digest('hex')
 const digest = value => `sha256:${hash(value)}`
 const keys = ['signed_mandate', 'signed_fica_declaration', 'signed_disclosure_form']
-const tables = new Set(['private_listing_seller_portal_signing_recipients', 'private_listing_seller_portal_signing_documents', 'private_listing_seller_onboarding'])
+const tables = new Set(['private_listing_seller_portal_signing_recipients', 'private_listing_seller_portal_signing_documents', 'private_listing_seller_onboarding', 'private_listing_seller_portal_signature_evidence'])
 const identifier = value => {
   assert.match(value, /^[a-z_]+$/)
   return value
@@ -44,10 +45,13 @@ const admin = {
     return query
   },
   async rpc(name, parameters) {
-    assert.equal(name, 'bridge_update_seller_portal_document_corrections')
+    assert.ok(['bridge_update_seller_portal_document_corrections', 'bridge_update_seller_portal_disclosure_answers', 'bridge_submit_seller_portal_document_signature'].includes(name))
+    if (name === 'bridge_submit_seller_portal_document_signature') return { data: { allRequiredSignersComplete: true }, error: null }
     rpcCalls++
     try {
-      const result = await db.query(`select public.${name}($1, $2, $3::jsonb) as result`, [parameters.p_token_hash, parameters.p_expected_version_digest, JSON.stringify(parameters.p_updates)])
+      const result = name === 'bridge_update_seller_portal_disclosure_answers'
+        ? await db.query(`select public.${name}($1, $2, $3::jsonb, $4) as result`, [parameters.p_token_hash, parameters.p_expected_version_digest, JSON.stringify(parameters.p_disclosure), parameters.p_reviewed_html])
+        : await db.query(`select public.${name}($1, $2, $3::jsonb) as result`, [parameters.p_token_hash, parameters.p_expected_version_digest, JSON.stringify(parameters.p_updates)])
       return { data: result.rows[0].result, error: null }
     } catch (error) { return { data: null, error } }
   },
@@ -60,9 +64,10 @@ globalThis.Deno = {
   serve: callback => { handler = callback },
 }
 
-async function seed(branch, selectedKey = 'signed_fica_declaration') {
+async function seed(branch, selectedKey = 'signed_fica_declaration', { blankDisclosure = false, fullMandate = false } = {}) {
   await db.exec('truncate private_listing_seller_portal_signature_evidence, private_listing_seller_portal_signing_recipients, private_listing_seller_portal_signing_documents, private_listing_seller_onboarding')
   const listingId = randomUUID(), copy = createSellerCorrectionFixture(branch)
+  if (blankDisclosure) copy.form.propertyDisclosure = { responses: {} }
   const approval = { ...copy.approval, signingRoute: 'digital_pack', selectedDocuments: ['mandate', 'fica', 'signed_disclosure_form'] }
   const documents = keys.map(key => ({ key, generatedHtml: renderSellerSigningDocumentCorrections(copy, key, validateSellerSigningDocumentCorrections(buildSellerSigningCorrectionEditData(copy, key), key), listingId),
     ...(key !== 'signed_disclosure_form' ? { sourceFactsFingerprint: `synthetic-captured-facts-${key}` } : {}),
@@ -72,6 +77,7 @@ async function seed(branch, selectedKey = 'signed_fica_declaration') {
   copy.form.sellerOnboardingFormalPackApproval = approval
   copy.form.sellerOnboardingReview = { status: 'approved' }
   copy.form.sellerOnboardingManualSigningPack = { ...copy.pack, documents: reviewed.documents }
+  if (fullMandate) copy.form.sellerOnboardingManualSigningPack.documents.find(row => row.key === 'signed_mandate').mandateContract = { frozen: true }
   copy.form.sellerReviewedDocumentVersions = buildSellerReviewedDocumentVersionIndex(reviewed)
   await db.query('insert into private_listing_seller_onboarding values ($1, $2, $3::jsonb)', [listingId, 'completed', JSON.stringify(copy.form)])
   const rows = []
@@ -108,6 +114,7 @@ function replacements(rows) {
 try {
   await db.exec(`
     create schema extensions;
+    create role anon; create role authenticated; create role service_role;
     create function extensions.digest(bytea, text) returns bytea language sql as $$ select sha256($1) $$;
     create table private_listing_seller_portal_signing_documents (
       id uuid primary key, private_listing_id uuid, document_key text, version_id text,
@@ -126,6 +133,7 @@ try {
   assert.ok(start >= 0)
   const end = migration.indexOf('$$;', start)
   await db.exec(migration.slice(start, end + 3))
+  await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261013101510_seller_portal_disclosure_completion.sql', import.meta.url), 'utf8'))
   const bundled = await build({
     absWorkingDir: appRoot, entryPoints: ['../supabase/functions/seller-portal-document-signing/index.ts'], bundle: true, platform: 'node', format: 'esm', write: false,
     plugins: [{ name: 'synthetic-edge-infrastructure', setup(builder) {
@@ -177,8 +185,35 @@ try {
     assert.equal(result.status, 200, JSON.stringify(result.body))
     assert.match(result.body.reviewedHtml, key === 'signed_mandate' ? /Second Correction Agency/ : /Corrected defects comment/)
     assert.match(result.body.reviewedHtml, /Second Owner/)
-    console.log(`${key}: correction request updates shared details and document-specific terms`)
+    console.log(`${key}: correction request saves the selected document terms`)
   }
+  const disclosureFixture = await seed('multiple_owners', 'signed_disclosure_form', { blankDisclosure: true, fullMandate: true })
+  const otherId = disclosureFixture.rows.find(row => row.key === 'signed_fica_declaration').id
+  await db.query('insert into private_listing_seller_portal_signature_evidence values ($1,$2)', [randomUUID(), otherId])
+  const beforeAnswers = await snapshot()
+  const signRequest = async versionDigest => {
+    const response = await handler(new Request('https://synthetic.example.test/seller-portal-document-signing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sign', token: disclosureFixture.token, versionDigest, accepted: true, signedName: disclosureFixture.selected.requiredSigners[0].name, signatureType: 'drawn', signatureValue: 'data:image/png;base64,' + 'a'.repeat(150), signedDate: '2026-10-13', signedPlace: 'Cape Town' }) }))
+    return { status: response.status, body: await response.json() }
+  }
+  const missing = await signRequest(disclosureFixture.selected.versionDigest)
+  assert.equal(missing.status, 400); assert.match(missing.body.error, /Answer every disclosure/)
+  const answered = await request(disclosureFixture, sellerCorrectionValues(disclosureFixture.copy, 'signed_disclosure_form', { disclosure: { responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no', note: '' }])) } }))
+  assert.equal(answered.status, 200, JSON.stringify(answered.body))
+  assert.equal(answered.body.disclosureAnswersComplete, true)
+  const afterAnswers = await snapshot()
+  for (const row of afterAnswers.filter(row => row.id !== disclosureFixture.selected.id)) assert.deepEqual(row, beforeAnswers.find(previous => previous.id === row.id), 'FICA, mandate and history stay unchanged')
+  const savedDisclosure = afterAnswers.find(row => row.id === disclosureFixture.selected.id)
+  assert.equal(savedDisclosure.seller_corrections.common, undefined, 'Submitted contact corrections cannot change signer identities')
+  assert.equal(savedDisclosure.content_digest, digest(savedDisclosure.reviewed_html))
+  assert.equal(savedDisclosure.version_digest, answered.body.versionDigest)
+  assert.deepEqual((await db.query('select form_data from private_listing_seller_onboarding')).rows[0].form_data, disclosureFixture.copy.form)
+  assert.equal((await signRequest(disclosureFixture.selected.versionDigest)).status, 409, 'Old document acceptance cannot sign corrected answers')
+  assert.equal((await signRequest(answered.body.versionDigest)).status, 200)
+  assert.equal((await request(disclosureFixture, sellerCorrectionValues(disclosureFixture.copy, 'signed_disclosure_form'))).status, 409, 'Stale answer saves are rejected')
+  await db.query('insert into private_listing_seller_portal_signature_evidence values ($1,$2)', [randomUUID(), disclosureFixture.selected.id])
+  assert.equal((await request(disclosureFixture, sellerCorrectionValues(disclosureFixture.copy, 'signed_disclosure_form'), answered.body.versionDigest)).status, 409, 'Disclosure answers lock after its first signature')
+  assert.deepEqual(await snapshot(), afterAnswers)
+  console.log('Blank disclosure → seller answers → saved copy → signature; frozen mandate, other signatures, stale versions and original facts protected')
   const legacy = await seed('individual', 'signed_mandate')
   const legacyBefore = await snapshot(), callsBeforeSchedules = rpcCalls
   const injected = await request(legacy, sellerCorrectionValues(legacy.copy, 'signed_mandate', { mandate: { mandateCapture: createMandateCaptureFixture() } }))

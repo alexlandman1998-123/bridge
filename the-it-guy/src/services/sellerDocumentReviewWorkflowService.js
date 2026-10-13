@@ -1,3 +1,4 @@
+import { notifyDocumentRequirementContextChanged } from './documents/documentRequirementReadService.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 
 const REVIEW_ACTIONS = new Set(['start_review', 'approve', 'reject'])
@@ -63,6 +64,7 @@ export async function reviewSellerDocument({ document = {}, action = '', reason 
     p_expected_revision: command.expectedRevision,
   })
   if (result.error) throw workflowError(result.error, 'Unable to update the seller document review.')
+  notifyDocumentRequirementContextChanged()
   return result.data
 }
 

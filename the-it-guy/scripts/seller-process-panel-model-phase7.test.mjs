@@ -122,7 +122,7 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.visible, true)
   assert.equal(model.currentStageLabel, 'First Contact')
   assert.equal(model.actionCards[0].key, 'contact_seller')
-  assert.equal(model.actionCards[0].label, 'Log First Contact')
+  assert.equal(model.actionCards[0].label, 'Mark as contacted')
 }
 
 {

@@ -1,4 +1,7 @@
-import { expect, test } from 'vitest'
+// @vitest-environment jsdom
+import { afterEach, expect, test, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+afterEach(cleanup)
 import { renderToStaticMarkup } from 'react-dom/server'
 import LeadDocumentWorkspace from '../LeadDocumentWorkspace.jsx'
 import { summarizeLeadDocumentCategory } from '../leadDocumentProgressModel.js'
@@ -22,7 +25,10 @@ test('an upload progress bar belongs to the selected document row for buyers and
 
 test('printable mandate entry is available only in seller Documents', () => {
   const props = { categories, getStatusMeta, createMandateAction: () => {} }
-  expect(renderToStaticMarkup(<LeadDocumentWorkspace {...props} partyType="seller" />)).toContain('Create printable mandate')
+  render(<LeadDocumentWorkspace {...props} partyType="seller" />)
+  expect(screen.queryByRole('button', { name: 'Create printable mandate' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for Seller documents' }))
+  expect(screen.getByRole('button', { name: 'Create printable mandate' })).toBeTruthy()
   expect(renderToStaticMarkup(<LeadDocumentWorkspace {...props} partyType="buyer" />)).not.toContain('Create printable mandate')
 })
 
@@ -38,8 +44,11 @@ test('seller uploads under review remain outstanding', () => {
 })
 
 test('a submitted seller can reopen signing route review from Documents', () => {
-  const html = renderToStaticMarkup(<LeadDocumentWorkspace partyType="seller" categories={categories} getStatusMeta={getStatusMeta} reviewSigningAction={() => {}} />)
-  expect(html).toContain('Review signing routes')
+  const review = vi.fn()
+  render(<LeadDocumentWorkspace partyType="seller" categories={categories} getStatusMeta={getStatusMeta} reviewSigningAction={review} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for Seller documents' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Review signing routes' }))
+  expect(review).toHaveBeenCalledOnce()
 })
 
 
@@ -88,4 +97,34 @@ test('a saved seller mandate under review remains visible beside zero completed 
   expect(html).toContain('0 of 1 complete')
   expect(html).toMatch(/1.*file.*saved/)
   expect(html).toContain('1 awaiting review')
+})
+
+test('seller toolbar groups secondary actions and opens the shared request/upload dialog', () => {
+  const manage = vi.fn(), portal = vi.fn()
+  render(<LeadDocumentWorkspace partyType="seller" categories={categories} getStatusMeta={getStatusMeta} manageDocumentsAction={manage} portalAction={portal} portalActionDisabled />)
+  expect(screen.queryByRole('button', { name: 'Manage document requirements' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Upload / Request document' }))
+  expect(manage).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for Seller documents' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Manage document requirements' }))
+  expect(manage).toHaveBeenCalledTimes(2)
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for Seller documents' }))
+  expect(screen.getByRole('button', { name: 'Send Seller Portal Link' }).disabled).toBe(true)
+  expect(portal).not.toHaveBeenCalled()
+})
+
+test('seller document type tabs retain progress and reveal the matching saved file', () => {
+  render(<LeadDocumentWorkspace partyType="seller" getStatusMeta={getStatusMeta} categories={[
+    { key: 'property', label: 'Property Documents', items: [] },
+    { key: 'seller', label: 'FICA', items: [{ key: 'identity', label: 'Seller ID', state: 'review' }] },
+    { key: 'legal', label: 'Sale', items: [{ key: 'signed_mandate', label: 'Signed mandate', state: 'complete', fileName: 'mandate.pdf' }] },
+  ]} />)
+  expect(screen.getByText(/1 of 2 complete/)).toBeTruthy()
+  expect(screen.getByText('Seller ID')).toBeTruthy()
+  fireEvent.click(screen.getByRole('tab', { name: /Sale/ }))
+  expect(screen.queryByText('Seller ID')).toBeNull()
+  expect(screen.getByText('Signed mandate')).toBeTruthy()
+  expect(screen.getByText('mandate.pdf')).toBeTruthy()
+  fireEvent.click(screen.getByRole('tab', { name: /Property Documents/ }))
+  expect(screen.getByText('No documents in this category yet.')).toBeTruthy()
 })

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { getSellerDocumentDisplayGroupKey } from '../src/lib/sellerDocumentExperienceModel.js'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -148,6 +149,11 @@ function assertRowsAreProperty(rows = [], keys = []) {
       formData: {
         ...baseFormData,
         features: ['electric_fencing', 'gas_geyser', 'solar_panels'],
+        // Legacy feature evidence is used only when no current answer exists.
+        electricFence: undefined,
+        gasInstallation: undefined,
+        gasGeyser: undefined,
+        solarInstallation: undefined,
       },
     },
   })
@@ -156,6 +162,16 @@ function assertRowsAreProperty(rows = [], keys = []) {
   assert.equal(keys.includes('gas_compliance_certificate'), true)
   assert.equal(keys.includes('solar_compliance_documents'), true)
   assert.equal(keys.includes('borehole_certificate'), false)
+}
+
+{
+  const keys = keysOf(getSellerRequiredDocuments({
+    ...baseListing,
+    sellerOnboarding: { ...baseListing.sellerOnboarding, formData: {
+      ...baseFormData, features: ['electric_fencing', 'gas_geyser', 'solar_panels'],
+    } },
+  }))
+  assertNoKeys(keys, ['electric_fence_certificate', 'gas_compliance_certificate', 'solar_compliance_documents'], 'explicit current No answers')
 }
 
 {
@@ -283,8 +299,17 @@ assert.equal(ficaPack.rows.find(row => row.key === 'signed_mandate').category, '
 const listingDetailSource = readFileSync(resolve(appRoot, 'src/pages/AgentListingDetail.jsx'), 'utf8')
 const groupingStart = listingDetailSource.indexOf('function getListingDocumentGroupingKey(')
 const groupingEnd = listingDetailSource.indexOf('\nfunction groupListingDocumentsForDisplay(', groupingStart)
-const groupingKey = Function('normalizeKey', `${listingDetailSource.slice(groupingStart, groupingEnd)}; return getListingDocumentGroupingKey`)(value => String(value || '').trim().toLowerCase())
+assert.match(listingDetailSource.slice(groupingStart, groupingEnd), /getSellerDocumentDisplayGroupKey/)
+const groupingKey = getSellerDocumentDisplayGroupKey
 assert.equal(groupingKey({ key: 'signed_fica_declaration', label: 'Signed FICA Declaration', category: 'sales', group: 'legal' }), 'fica')
 assert.equal(groupingKey({ key: 'signed_mandate', label: 'Signed Mandate', category: 'sales' }), 'sales')
 
 console.log('seller document conditional logic Phase 2 contract passed')
+
+for (const [document, group] of [
+  [{ key: 'signed_fica_declaration', category: 'sales' }, 'fica'],
+  [{ key: 'signed_disclosure_form', label: 'Property condition disclosure' }, 'sales'],
+  [{ label: 'Title deed', category: 'property' }, 'property'],
+  [{ label: 'Trust deed', group: 'trust' }, 'fica'],
+  [{ label: 'Additional seller request' }, 'requests'],
+]) assert.equal(getSellerDocumentDisplayGroupKey(document), group)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { createServer } from 'vite'
-import { mergeDocumentRequirementRows, readDocumentRequirementContext, watchDocumentRequirementContext } from '../documentRequirementReadService.js'
+import { mergeDocumentRequirementRows, readDocumentRequirementContext, watchDocumentRequirementContext, notifyDocumentRequirementContextChanged } from '../documentRequirementReadService.js'
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
 after(() => server.close())
@@ -103,4 +103,26 @@ test('buyer custom requirements expose the stable canonical upload target', () =
   assert.equal(model.requirements[0].canUpload, true)
   assert.equal(model.requirements[0].uploadSpec.requirementInstanceId, requirement.id)
   assert.equal(model.requirements[0].uploadSpec.requirementKey, `custom_${requirement.id}`)
+})
+
+test('saved documents refresh other open tabs without copying private document data', () => {
+  const listeners = new Map(), storage = new Map(), events = []; let calls = 0
+  const target = {
+    document: { visibilityState: 'visible' },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail } },
+    dispatchEvent: event => { events.push(event); listeners.get(event.type)?.(event) },
+    localStorage: { setItem: (key, value) => storage.set(key, value) },
+    addEventListener: (key, fn) => listeners.set(key, fn), removeEventListener: key => listeners.delete(key),
+    setInterval: () => 1, clearInterval() {},
+  }
+  const stop = watchDocumentRequirementContext(() => calls++, { target })
+  notifyDocumentRequirementContextChanged([{ contextType: 'seller_lead', contextId: 'lead' }], { target })
+  assert.equal(calls, 1)
+  assert.equal(events[0].type, 'arch9:document-requirements-changed')
+  assert.equal(storage.size, 1)
+  assert.doesNotMatch([...storage.values()][0], /lead|seller|pdf/)
+  listeners.get('storage')({ key: 'unrelated' }); assert.equal(calls, 1)
+  listeners.get('storage')({ key: 'arch9:document-requirements-changed' }); assert.equal(calls, 2)
+  stop(); assert.equal(listeners.size, 0)
+  assert.doesNotThrow(() => notifyDocumentRequirementContextChanged(null, { target: { dispatchEvent() { throw Error('unavailable') }, CustomEvent: target.CustomEvent } }))
 })

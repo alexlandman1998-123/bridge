@@ -1,3 +1,4 @@
+import { getSellerDocumentDisplayGroupKey } from '../lib/sellerDocumentExperienceModel.js'
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import ListingDocumentActions from '../components/documents/ListingDocumentActions.jsx'
@@ -5,7 +6,7 @@ import DocumentUploadProgress from '../components/documents/DocumentUploadProgre
 import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, watchDocumentRequirementContext } from '../services/documents/documentRequirementReadService.js'
 import SellerDisclosurePreparation from '../components/documents/SellerDisclosurePreparation.jsx'
-import { buildSellerDisclosurePreparationPatch } from '../lib/sellerAgentAssistedDisclosure.js'
+import { buildSellerDisclosurePreparationPatch, isSellerDisclosureCaptureLocked } from '../lib/sellerAgentAssistedDisclosure.js'
 import { watchInitialListingPublication, requireSettledListingPublication } from '../services/listings/listingInitialPublicationService'
 import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
 import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
@@ -1705,45 +1706,7 @@ const LISTING_DOCUMENT_GROUP_CONFIG = [
 ]
 
 function getListingDocumentGroupingKey(document = {}) {
-  const category = normalizeKey(document?.category)
-  const group = normalizeKey(document?.group)
-  const source = [
-    document?.key,
-    document?.label,
-    document?.description,
-    document?.category,
-    document?.group,
-    document?.sourceLabel,
-    document?.fileName,
-  ].map((value) => String(value || '').toLowerCase()).join(' ')
-
-  if (category === 'fica' || /signed[_ ]fica|fica[_ ]declaration/.test(source)) return 'fica'
-
-  if (
-    category === 'sales' ||
-    group === 'mandate' ||
-    /mandate|otp|offer to purchase|sale agreement|sale instruction|seller instruction|commission|property condition disclosure|condition disclosure|disclosure|defects/.test(source)
-  ) {
-    return 'sales'
-  }
-
-  if (
-    category === 'fica' ||
-    ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group) ||
-    /fica|identity|id document|passport|proof of residential address|proof of address|marriage|anc|spouse|company registration|cipc|director|authority|resolution|trust deed|trustee|letter of authority/.test(source)
-  ) {
-    return 'fica'
-  }
-
-  if (
-    category === 'property' ||
-    ['property', 'compliance', 'property_compliance', 'financial', 'occupancy'].includes(group) ||
-    /title deed|rates|levy|levies|body corporate|hoa|homeowners|gas|solar|electrical|electric|beetle|plumbing|compliance|certificate|coc|building plan|approved plan|occupancy|occupation|erf|sectional title/.test(source)
-  ) {
-    return 'property'
-  }
-
-  return 'requests'
+  return getSellerDocumentDisplayGroupKey(document)
 }
 
 function groupListingDocumentsForDisplay(documents = []) {
@@ -4043,9 +4006,14 @@ function AgentListingDetail() {
     const refresh = async () => {
       const request = ++generation
       try {
-        const snapshot = await readDocumentRequirementContext(supabase, { contextType: 'private_listing', contextId: listingId })
+        const [snapshot, listing] = await Promise.all([
+          readDocumentRequirementContext(supabase, { contextType: 'private_listing', contextId: listingId }),
+          getPrivateListing(listingId, { includeRequirementsAndDocuments: true, includeDistributionData: false }),
+        ])
         if (!cancelled && request === generation) setPrivateListings(rows => rows.map(row => getPrivateListingRecordId(row) === listingId
-          ? { ...row, canonicalDocumentSnapshot: snapshot, canonicalDocumentError: '' } : row))
+          ? { ...row, documents: listing?.documents || row.documents, documentRequirements: listing?.documentRequirements || row.documentRequirements,
+            sellerOnboarding: listing?.sellerOnboarding || row.sellerOnboarding,
+            canonicalDocumentSnapshot: snapshot, canonicalDocumentError: '' } : row))
       } catch (error) {
         if (!cancelled && request === generation) {
           setDetailError(error?.message || 'Shared documents could not be refreshed.')
@@ -8402,7 +8370,10 @@ function AgentListingDetail() {
       setSellerDocumentSendSaving(true)
       const preparationBaseline = sellerDocumentPreparationBaselineRef.current || listingRecord
       const savedForm = getListingSellerFormData(preparationBaseline)
-      const disclosurePatch = selected.includes('disclosure') ? buildSellerDisclosurePreparationPatch({
+      if (selected.includes('disclosure') && isSellerDisclosureCaptureLocked(savedForm)) {
+        throw new Error('The existing disclosure has signed evidence. Use the document replacement workflow; its answers are preserved.')
+      }
+      const disclosurePatch = selected.includes('disclosure') && sellerMandateSignatureRoute === 'manual_upload' ? buildSellerDisclosurePreparationPatch({
         disclosure: sellerDisclosureDraft, existingFormData: savedForm, capturedBy: String(listingActor?.id || profile?.id || ''),
       }) : {}
       const existingForm = { ...savedForm, ...disclosurePatch }
@@ -13328,7 +13299,7 @@ function AgentListingDetail() {
               <Field type="number" min="0" step="1" value={sellerDocumentProtectionPeriodDays} onChange={(event) => setSellerDocumentProtectionPeriodDays(event.target.value)} placeholder="Enter 0 for none" />
             </label> : null}
           </> : null}
-          {sellerDocumentSendSelection.disclosure ? <SellerDisclosurePreparation disclosure={sellerDisclosureDraft} onChange={setSellerDisclosureDraft} disabled={sellerDocumentSendSaving} /> : null}
+          {sellerDocumentSendSelection.disclosure && sellerMandateSignatureRoute === 'manual_upload' ? <SellerDisclosurePreparation disclosure={sellerDisclosureDraft} onChange={setSellerDisclosureDraft} disabled={sellerDocumentSendSaving} /> : null}
           {!preparingPrintableMandate ? <fieldset disabled={sellerDocumentSendSaving} className="space-y-3 rounded-xl border border-[#dce6f2] p-4">
             <legend className="px-1 text-sm font-semibold">Choose a document action</legend>
             {SELLER_DOCUMENT_ACTIONS.map(([value, label, description]) => <label key={value} className="flex items-start gap-3 text-sm">
@@ -13577,6 +13548,20 @@ function AgentListingDetail() {
                 </div>
               </div>
             </div>
+          </section>
+
+          <section aria-label="Seller contact" className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#142132]"><UserRound size={16} aria-hidden="true" />Seller</h3>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="min-w-0">
+                <dt className="text-xs text-[#607387]">Seller name</dt>
+                <dd className="mt-1 break-words text-sm font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-[#607387]">Phone number</dt>
+                <dd className="mt-1 break-words text-sm font-semibold text-[#243d56]">{resolveSellerPhoneFromListing(listingRecord) || 'Not captured'}</dd>
+              </div>
+            </dl>
           </section>
 
           <section data-testid="sales-listing-shared-workspace-tabs" className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">

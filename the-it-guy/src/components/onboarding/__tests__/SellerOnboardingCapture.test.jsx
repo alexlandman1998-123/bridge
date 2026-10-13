@@ -27,7 +27,7 @@ test('embedded agent capture has one working draft action and saves incomplete a
   expect(saved.mock.calls[0][0].sellerOnboarding.formData.sellerFirstName).toBe('Partial capture')
   expect(saved.mock.calls[0][0].sellerOnboarding.status).toBe('in_progress')
   expect(saved.mock.calls[0][0].sellerOnboarding.formData.propertyDisclosure.declarationAccepted).toBe(false)
-  expect(busy).toHaveBeenLastCalledWith(false)
+  await waitFor(() => expect(busy).toHaveBeenLastCalledWith(false))
 })
 
 test('both capture modes expose the same seller identity, FICA and mandate fields', async () => {
@@ -149,6 +149,45 @@ test('seller can save incomplete information from the final step without complet
   await screen.findByText('Your details have been saved. Some information is still missing. You can return to this link to add it later.')
   expect(submitted).not.toHaveBeenCalled()
   expect(saved.mock.calls.at(-1)[0].sellerOnboarding.status).toBe('in_progress')
+})
+
+test('seller final review explains portal uploads and property tracking without the removed clutter', async () => {
+  const saved = vi.fn()
+  capture({ embedded: false, completionModeOverride: 'self_service', onDraftSaved: saved })
+  fireEvent.click(await screen.findByRole('button', { name: 'Start seller onboarding', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  expect(screen.getByRole('region', { name: 'Next: your seller portal' })).toBeTruthy()
+  expect(screen.getByText(/you’ll receive a private seller portal link/)).toBeTruthy()
+  expect(screen.getByText('Upload all your supporting documents')).toBeTruthy()
+  expect(screen.getByText('Track your property and follow its progress')).toBeTruthy()
+  for (const text of ['Documents you already have', 'Selling Context', 'Documents come next']) expect(screen.queryByText(text)).toBeNull()
+  expect(screen.queryByText(/Submit when everything looks correct/)).toBeNull()
+  expect(screen.queryByText('What happens next')).toBeNull()
+})
+
+test('only agent manual capture mounts the supplied document-upload review', async () => {
+  for (const completionModeOverride of ['self_service', 'agent_assisted']) {
+    const persist = vi.fn(async row => row)
+    const documentReview = vi.fn(() => <section>Documents you already have</section>)
+    capture({ embedded: false, completionModeOverride, captureDraft: blankCapture, onCapturePersist: persist, captureReview: documentReview })
+    await screen.findByLabelText('First name', { exact: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+    await waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+    await screen.findByRole('heading', { name: 'Check your seller file' })
+    if (completionModeOverride === 'agent_assisted') {
+      expect(screen.getByText('Documents you already have')).toBeTruthy()
+      expect(documentReview).toHaveBeenCalled()
+      expect(screen.queryByRole('region', { name: 'Next: your seller portal' })).toBeNull()
+    } else {
+      expect(screen.queryByText('Documents you already have')).toBeNull()
+      expect(documentReview).not.toHaveBeenCalled()
+    }
+    cleanup()
+  }
 })
 
 test('explicit blanks and zero property amounts survive seller-link rehydration', () => {

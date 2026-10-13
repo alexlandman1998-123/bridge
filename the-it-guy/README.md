@@ -1,5 +1,36 @@
 # bridge.
 
+## Seller signing pack preparation
+
+Seller onboarding's final review keeps document uploads in agent-assisted manual
+capture. Sellers see one **Next: your seller portal** card explaining that their
+private portal link is where they upload supporting documents and track the
+property. The final selling-context summary and repeated document/submission
+explanations are removed. Portal upload behavior is unchanged. Focused checks:
+`SellerOnboardingCapture.test.jsx` and `SellerLeadCreateDialog.test.jsx`.
+
+Seller Lead → Prepare seller signing pack shows mandate terms when selected,
+required signer names/emails and the preparation action. It omits the explanatory
+cards, repeated signing routes and disclosure questionnaire. Saved disclosure
+answers are reused; unanswered questions can be sent to the seller's private
+signing link. The seller completes and saves the questions, reviews the updated
+copy, then signs. Every required owner signs that same version.
+
+Disclosure answers update only the unsigned disclosure copy and lock after its
+first signature. A prepared mandate or a signature on FICA does not block filling
+in the disclosure. Submitted onboarding facts, signer identities and other copies
+remain unchanged. Listing Documents also sends online disclosure preparation to
+the seller; its separate physical-copy answer editor remains available.
+
+Release `20261013101510_seller_portal_disclosure_completion.sql`, the
+`seller-portal-document-signing` function and the primary app together. This change
+has not been applied to a remote database or deployed.
+
+Focused checks: `node scripts/listing-seller-canonical-update.test.mjs`,
+`node scripts/seller-document-corrections.test.mjs`,
+`node scripts/seller-document-journey.test.mjs --disclosure-only` and
+`vitest run src/pages/__tests__/SellerDocumentSigning.test.jsx --maxWorkers=1`.
+
 
 ## Portal Manage popups
 
@@ -4833,12 +4864,18 @@ selected explicitly; older approved files cannot replace a newer pending review.
 The existing buyer and transaction seller/professional portal projections now
 include custom requirements without changing their token/session authorisation.
 
-Open lead/listing document views refresh on focus, shared command completion and
-15-second polling while visible. Refresh failures are surfaced and do not turn
-into a successful empty response. Private requirement tables remain inaccessible
-to browser subscriptions. New shared rows expose downloads; mutation controls are
-stage 4. Seller pre-transaction portal integration and request/email delivery
-remain part of the subsequent portal/request work.
+Seller Lead Documents uses the same Property Documents, FICA and Sale groups
+as listing Documents. Its Actions menu holds signing, printable mandate, portal
+link and requirement-management actions; Upload / Request document opens the
+shared requirement dialog inside Documents. Existing file IDs, requirements and
+review state remain the saved source of truth.
+
+Open lead/listing document views refresh the full saved document records alongside
+the shared checklist after uploads, review and requirement commands, on focus,
+and every 15 seconds while visible. A timestamp-only storage signal refreshes
+other open browser tabs without storing document or contact details. Hidden tabs
+refresh when visible again. Refresh failures are surfaced. Private requirement
+tables remain inaccessible to browser subscriptions.
 
 Focused stage 3 checks, from `the-it-guy/`:
 

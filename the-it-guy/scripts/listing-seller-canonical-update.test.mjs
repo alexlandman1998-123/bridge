@@ -1,4 +1,4 @@
-import { buildSellerDisclosurePreparationPatch } from '../src/lib/sellerAgentAssistedDisclosure.js'
+import { buildSellerDisclosurePreparationPatch, isSellerDisclosureCaptureLocked } from '../src/lib/sellerAgentAssistedDisclosure.js'
 import { PROPERTY_DISCLOSURE_QUESTIONS } from '../src/lib/propertyDisclosure.js'
 import { sellerGeneratedDocumentSelection, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../src/core/documents/sellerDocumentWorkflow.js'
 import { readSellerOnboardingReview, recordSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS } from '../src/core/documents/sellerOnboardingReview.js'
@@ -468,13 +468,14 @@ const leadPreparationAction = leadPageSource.slice(
   leadPageSource.indexOf('  function handleSellerJourneyAction(', leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {')),
 )
 
-async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false, routes = null, sendFailureAt = 0, uploads = [], downloadKey = '' } = {}) {
+async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false, routes = null, sendFailureAt = 0, uploads = [], downloadKey = '', disclosure = null } = {}) {
   const events = { leadPatches: [], downloads: [], tabs: [], saves: [], sends: [], errors: [], listingWrites: [] }
   const originalForm = { ...listing.sellerOnboarding.formData, otherAgencyName: 'Old Agency', coAgencyName: 'Old Agency',
     askingPrice: '1000000', mandateType: 'sole', mandateSignatureRoute: 'manual_upload', propertyDisclosure: { comments: 'Retain this explanation.', responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no', note: '' }])) } }
+  if (disclosure) originalForm.propertyDisclosure = disclosure
   const currentListing = priorListing || { ...listing, sellerOnboarding: { status: 'completed', formData: originalForm } }
   const scope = {
-    sellerSigningPackBaselineRef: { current: currentListing }, sellerDisclosureDraft: originalForm.propertyDisclosure, buildSellerDisclosurePreparationPatch,
+    sellerSigningPackBaselineRef: { current: currentListing }, sellerDisclosureDraft: originalForm.propertyDisclosure, buildSellerDisclosurePreparationPatch, isSellerDisclosureCaptureLocked,
     getSellerMandatePreparationIssues, sellerGeneratedDocumentSelection, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence,
     selectedLeadLinkedListingId: listing.id, selectedLeadLinkedListing: currentListing,
     selectedLead: { leadId: 'lead-1', sellerOnboarding: { formData: { ...originalForm, sellerSurname: 'Stale CRM' } } },
@@ -563,6 +564,24 @@ for (const mandateType of ['sole', 'open', 'dual']) {
     })
   }
 }
+
+await test('lead preparation sends unanswered disclosure for seller completion and preserves submitted facts', async () => {
+  const disclosure = { responses: {}, comments: 'Seller will complete on their private link.' }
+  const events = await runLeadPreparation({ digital: true, disclosure })
+  assert.deepEqual(events.errors, [])
+  assert.ok(events.sends.includes('signed_disclosure_form'))
+  assert.deepEqual(events.committed.sellerOnboarding.formData.propertyDisclosure, disclosure)
+  assert.equal(events.committed.sellerOnboarding.formData.sellerDisclosureCapture, undefined)
+  const popup = leadPageSource.slice(leadPageSource.indexOf('title="Prepare seller signing pack"'), leadPageSource.indexOf('title="Record physical mandate handover"'))
+  assert.ok(!/Signing routes|submitted onboarding facts remain frozen|SellerDisclosurePreparation/.test(popup))
+})
+
+await test('lead preparation preserves existing partial disclosure signature evidence', async () => {
+  const events = await runLeadPreparation({ digital: true, disclosure: { signature: 'existing-owner-signature', responses: {} } })
+  assert.match(events.errors[0], /existing disclosure has signed evidence/)
+  assert.deepEqual(events.saves, [])
+  assert.deepEqual(events.sends, [])
+})
 
 await test('mixed existing uploads generate and send only FICA without rewriting mandate terms', async () => {
   const events = await runLeadPreparation({ routes: { signed_fica_declaration: 'digital_pack', signed_mandate: 'upload_existing', signed_disclosure_form: 'upload_existing' } })
@@ -990,7 +1009,7 @@ async function runListingPreparation(key, { digital = false, conflict = false, w
     getListingMandateReadiness: () => ({ ready: true }), getListingSellerFormData: row => row.sellerOnboarding.formData,
     getSellerOnboardingReviewChecklist: () => ({ ready: true }), readSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS,
     validateSellerOnboardingFormalSigningSelection, getSellerMandatePreparationIssues, requireSellerMandateWording,
-    buildSellerDisclosurePreparationPatch, buildSellerMandateTermsFormPatch: buildSellerLeadSigningPackTermsPatch,
+    buildSellerDisclosurePreparationPatch, isSellerDisclosureCaptureLocked, buildSellerMandateTermsFormPatch: buildSellerLeadSigningPackTermsPatch,
     buildSellerSigningPackSnapshot: (selected, formOverride = form) => buildSellerOnboardingSigningPackSnapshot({
       formData: formOverride, listing: before, recipients: validSnapshot.signers, selectedDocuments: selected,
       mandate: validSnapshot.mandate, branding: validSnapshot.branding,
@@ -1026,7 +1045,7 @@ for (const key of ['mandate', 'disclosure', 'fica']) for (const digital of [fals
   assert.equal(result.saves.length, 1)
   assert.equal(result.saves[0].listing.updatedAt, '2026-10-11T10:00:00Z')
   assert.deepEqual(result.saves[0].formPatch.sellerOnboardingManualSigningPack.documents.map(copy => SELLER_DOCUMENT_SELECTION_KEYS[copy.key]), [key])
-  assert.equal(result.saves[0].formPatch.propertyDisclosure.signature, key === 'disclosure' ? '' : undefined)
+  assert.equal(result.saves[0].formPatch.propertyDisclosure.signature, key === 'disclosure' && !digital ? '' : undefined)
   assert.deepEqual(result.sends, digital ? [scopeKey(key)] : [])
   assert.equal(result.downloads.length, digital ? 0 : 1)
 })

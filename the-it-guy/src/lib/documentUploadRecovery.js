@@ -1,3 +1,4 @@
+import { notifyDocumentRequirementContextChanged } from '../services/documents/documentRequirementReadService.js'
 import { reportDocumentUploadTelemetry } from './documentUploadObservability.js'
 import { createDocumentUploadProgressReporter, DOCUMENT_UPLOAD_TIMEOUTS, withDocumentUploadDeadline } from './documentUploadLifecycle.js'
 
@@ -96,6 +97,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
       confirmed = result
       const document = toSavedReceipt(result)
       report('complete', 'Uploaded', { document, documentId: rowOf(result)?.id, fileName: file.name, postUploadProcessing: 'pending' })
+      notifyDocumentRequirementContextChanged()
       if (!followUpTimer) followUpTimer = setTimeout(() => rejectFollowUp(Object.assign(new Error('Document saved; linked views are still updating.'), { code: 'document_upload_follow_up_timeout' })), limits.followUp)
     }
     let monitoringStage = 'preparing'
@@ -215,6 +217,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
       monitoringStage = 'persistence'
       telemetry(result?.persistenceWarnings?.length ? 'attention' : recovering ? 'recovered' : 'succeeded')
       report('complete', 'Uploaded', { document: result, documentId: result?.id || rowOf(confirmed)?.id, fileName: file.name, warnings: result?.persistenceWarnings || result?.persistence?.warnings || [] })
+      notifyDocumentRequirementContextChanged()
       return result
     } catch (error) {
       if (!confirmed) {

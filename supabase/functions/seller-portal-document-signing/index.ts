@@ -16,6 +16,8 @@ import { buildSellerMandateFrozenDocumentMarkup } from "../../../the-it-guy/src/
 import { applySellerDocumentSignatureEvidence } from "../../../the-it-guy/src/core/documents/sellerDocumentSignatureEvidence.js";
 import { applyMandateSignatureEvidence } from "../../../the-it-guy/src/core/documents/sellerMandateSignatureEvidence.js";
 
+import { getSellerDisclosureQuestionMissing } from "../../../the-it-guy/src/lib/sellerAgentAssistedDisclosure.js";
+
 type Row = Record<string, unknown>;
 const createAdmin = (url: string, key: string) => createClient(url, key, { auth: { persistSession: false } });
 type AdminClient = ReturnType<typeof createAdmin>;
@@ -255,7 +257,9 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
       greeting: `Hello ${text(recipient.signer.name)},`,
       contentHtml: renderBridgeIntroParagraphs([
         `${branding.organisationName} has prepared your ${label} for review and signature. Open your private link to read the details and sign on your phone or computer.`,
-        "You can correct the details before signing. This link expires in seven days.",
+        documentKey === "signed_disclosure_form"
+          ? "Complete the disclosure questions, save your answers, then review and sign. This link expires in seven days."
+          : "You can correct the details before signing. This link expires in seven days.",
       ]) + renderBridgeCta(`Review and sign ${label}`, link, { primaryColor: "#171717" }),
       branding: { ...branding, primaryColor: "#171717", secondaryColor: "#777777" },
     });
@@ -264,7 +268,7 @@ async function issue(req: Request, admin: AdminClient, url: string, anonKey: str
       replyTo: text(branding.replyTo || branding.supportEmail) || undefined,
       subject: `Please review and sign your ${label}`,
       html,
-      text: `Hello ${text(recipient.signer.name)},\n\n${branding.organisationName} has prepared your ${label}. Review, correct details if needed, and sign it: ${link}\n\nThis link expires in seven days.`,
+      text: `Hello ${text(recipient.signer.name)},\n\n${branding.organisationName} has prepared your ${label}. ${documentKey === "signed_disclosure_form" ? "Complete the disclosure questions, save your answers, then review and sign" : "Review, correct details if needed, and sign it"}: ${link}\n\nThis link expires in seven days.`,
       idempotencyKey: `seller-portal-signature:${signingDocumentId}:${text(recipient.row.signer_email)}`,
     });
     if (!result.ok) { deliveryFailed = true; break; }
@@ -326,15 +330,17 @@ async function view(admin: AdminClient, payload: Row) {
   const listingDocuments = await admin.from("private_listing_seller_portal_signing_documents")
     .select("id").eq("private_listing_id", signing.document.private_listing_id);
   if (listingDocuments.error) return respond(500, { error: "Unable to check document signatures." });
+  const isDisclosure = text(signing.document.document_key) === "signed_disclosure_form";
   const signed = await admin.from("private_listing_seller_portal_signature_evidence")
-    .select("id").in("signing_document_id", (listingDocuments.data || []).map((row: Row) => row.id)).limit(1);
+    .select("id").in("signing_document_id", isDisclosure ? [signing.document.id] : (listingDocuments.data || []).map((row: Row) => row.id)).limit(1);
   if (signed.error) return respond(500, { error: "Unable to check document signatures." });
   const firstSigner = object(Array.isArray(signing.document.required_signers) ? signing.document.required_signers[0] : {});
   const correctedName = text(object(object(signing.document.seller_corrections).common).sellerName);
   const signerName = text(firstSigner.email).toLowerCase() === text(signing.recipient.signer_email).toLowerCase() && correctedName
     ? correctedName : signing.recipient.signer_name;
-  const sharedDetailsFrozen = Boolean(current.document.mandateContract) ||
-    (Array.isArray(current.pack.documents) && current.pack.documents.some((row: Row) => text(row.key) === "signed_mandate" && Boolean(row.mandateContract)));
+  const sharedDetailsFrozen = !isDisclosure && (Boolean(current.document.mandateContract) ||
+    (Array.isArray(current.pack.documents) && current.pack.documents.some((row: Row) => text(row.key) === "signed_mandate" && Boolean(row.mandateContract))));
+  const currentEditData = editData(current, text(signing.document.document_key), object(signing.document.seller_corrections));
   return respond(200, {
     documentKey: signing.document.document_key,
     versionId: signing.document.version_id,
@@ -342,7 +348,8 @@ async function view(admin: AdminClient, payload: Row) {
     reviewedHtml: signing.document.reviewed_html,
     signerName,
     signerRole: signing.recipient.signer_role,
-    editData: sharedDetailsFrozen ? null : editData(current, text(signing.document.document_key), object(signing.document.seller_corrections)),
+    editData: sharedDetailsFrozen ? null : currentEditData,
+    ...(isDisclosure ? { disclosureAnswersComplete: !getSellerDisclosureQuestionMissing(object(currentEditData.disclosure)).length } : {}),
     canEdit: !sharedDetailsFrozen && !signed.data?.length && text(signing.document.status) === "sent",
     requiresReplacementForChanges: sharedDetailsFrozen,
   });
@@ -355,6 +362,31 @@ async function correct(admin: AdminClient, payload: Row) {
   if (text(signing.document.status) !== "sent") return respond(409, { error: "Details are locked after the first signature." });
   const current = await reviewedCopy(admin, text(signing.document.private_listing_id), text(signing.document.document_key));
   if (!current) return respond(409, { error: "The approved document has changed. Ask your agent for a new link." });
+  if (text(signing.document.document_key) === "signed_disclosure_form") {
+    // Disclosure answers belong to this copy. Never propagate these edits to
+    // the frozen mandate, FICA, recipient identities or submitted seller facts.
+    const existing = editData(current, "signed_disclosure_form", object(signing.document.seller_corrections));
+    let corrections: Row;
+    try {
+      corrections = validatedCorrections({ ...existing, disclosure: object(payload.corrections).disclosure }, "signed_disclosure_form");
+    } catch (error) { return respond(400, { error: error instanceof Error ? error.message : "Invalid disclosure answers." }); }
+    const reviewedHtml = renderCorrectedHtml(current, "signed_disclosure_form", corrections, text(signing.document.private_listing_id));
+    const contentDigest = `sha256:${await sha256(reviewedHtml)}`;
+    const versionDigest = `sha256:${await sha256(`${current.versionDigest}:${contentDigest}`)}`;
+    const saved = await admin.rpc("bridge_update_seller_portal_disclosure_answers", {
+      p_token_hash: signing.tokenHash,
+      p_expected_version_digest: text(payload.versionDigest),
+      p_disclosure: corrections.disclosure,
+      p_reviewed_html: reviewedHtml,
+    });
+    if (saved.error) return respond(409, { error: "Answers changed or became locked. Reload the link before signing." });
+    const firstSigner = object(Array.isArray(signing.document.required_signers) ? signing.document.required_signers[0] : {});
+    const signerName = text(firstSigner.email).toLowerCase() === text(signing.recipient.signer_email).toLowerCase()
+      ? text(object(existing.common).sellerName) || signing.recipient.signer_name : signing.recipient.signer_name;
+    return respond(200, { success: true, reviewedHtml, versionDigest,
+      editData: { ...existing, disclosure: corrections.disclosure }, signerName,
+      disclosureAnswersComplete: !getSellerDisclosureQuestionMissing(object(corrections.disclosure)).length });
+  }
   if (current.document.mandateContract) return respond(409, { error: "These details are frozen into the full mandate. Ask your agent for a replacement copy and fresh approvals before changing them." });
   let corrections: Row;
   try {
@@ -401,6 +433,14 @@ async function sign(req: Request, admin: AdminClient, payload: Row) {
   if (!enabled()) return respond(503, { error: "Seller portal signing is not enabled." });
   const signing = await signerDocument(admin, text(payload.token));
   if (!signing) return respond(404, { error: "This signing link is unavailable or has expired." });
+  if (text(signing.document.document_key) === "signed_disclosure_form") {
+    const current = await reviewedCopy(admin, text(signing.document.private_listing_id), "signed_disclosure_form");
+    if (!current) return respond(409, { error: "The approved document has changed. Ask your agent for a new link." });
+    const answers = editData(current, "signed_disclosure_form", object(signing.document.seller_corrections));
+    if (getSellerDisclosureQuestionMissing(object(answers.disclosure)).length) {
+      return respond(400, { error: "Answer every disclosure question and save your answers before signing." });
+    }
+  }
   const signedName = text(payload.signedName), signatureType = text(payload.signatureType);
   const signatureValue = text(payload.signatureValue);
   const signedDate = text(payload.signedDate), signedPlace = text(payload.signedPlace);

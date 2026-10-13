@@ -1,4 +1,5 @@
 import { validateDocumentUploadFile, withDocumentUploadMimeType } from '../../lib/documentUploadPolicy.js'
+import { notifyDocumentRequirementContextChanged } from './documentRequirementReadService.js'
 import { isDefiniteUploadSaveRejection } from '../../lib/documentUploadRecovery.js'
 import { createDocumentUploadProgressReporter, DOCUMENT_UPLOAD_TIMEOUTS, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
 
@@ -31,9 +32,7 @@ export async function executeDocumentRequirementCommand(client, command) {
   if (result?.saved !== true || result.commandId !== commandId || !result.requirement?.id) throw unconfirmed()
   if (requirementId && result.requirement.id !== requirementId) throw unconfirmed()
   if (action === 'upload' && !uuid.test(result.uploadId || '')) throw unconfirmed()
-  if (globalThis.window && typeof CustomEvent !== 'undefined') {
-    globalThis.window.dispatchEvent(new CustomEvent('arch9:document-requirements-changed', { detail: result.refreshContexts }))
-  }
+  notifyDocumentRequirementContextChanged(result.refreshContexts)
   return result
 }
 

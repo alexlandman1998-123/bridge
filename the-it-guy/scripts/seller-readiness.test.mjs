@@ -29,7 +29,7 @@ const baseLead = {
   const readiness = getSellerReadiness({ lead: baseLead })
   assert.equal(readiness.readinessStatus, 'ready')
   assert.equal(readiness.nextAction.id, 'contact_seller')
-  assert.equal(readiness.nextAction.label, 'Contact Seller')
+  assert.equal(readiness.nextAction.label, 'Mark as contacted')
   assert.equal(readiness.actions.find((item) => item.id === 'contact_seller').primary, true)
   assert.equal(readiness.actions.some((item) => item.id === 'schedule_valuation'), false)
 }
@@ -68,7 +68,7 @@ const baseLead = {
 {
   const phaseMapLead = { ...baseLead, stage: 'Contacted', status: 'Active' }
   const cases = [
-    ['new_lead', { key: 'new_lead', label: 'New Lead', status: 'New' }, 'contact_seller', 'Contact Seller'],
+    ['new_lead', { key: 'new_lead', label: 'New Lead', status: 'New' }, 'contact_seller', 'Mark as contacted'],
     ['contacted', { key: 'contacted', label: 'Contacted', status: 'Active' }, 'send_seller_onboarding', 'Send Seller Onboarding'],
     ['seller_onboarding_sent', { key: 'seller_onboarding_sent', label: 'Onboarding Sent', status: 'Sent' }, 'copy_seller_onboarding_link', 'Copy Seller Onboarding Link'],
     ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'review_seller_onboarding', 'Review Seller Onboarding'],
@@ -304,8 +304,8 @@ const baseLead = {
 
 {
   const summary = buildSellerReadinessSummary({ lead: baseLead })
-  assert.equal(summary.kpis.find((item) => item.key === 'readiness').value, 'Ready To Contact Seller')
-  assert.equal(summary.kpis.find((item) => item.key === 'next_action').value, 'Contact Seller')
+  assert.equal(summary.kpis.find((item) => item.key === 'readiness').value, 'Ready To Mark as contacted')
+  assert.equal(summary.kpis.find((item) => item.key === 'next_action').value, 'Mark as contacted')
 }
 
 console.log('seller readiness tests passed')

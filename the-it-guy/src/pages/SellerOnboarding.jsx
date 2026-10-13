@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  Upload,
   UserRound,
   X,
 } from 'lucide-react'
@@ -6315,8 +6316,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
             >
               <div className="grid grid-cols-1 gap-4">
-                <div className="rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#35546c]"><p className="font-semibold text-[#172334]">What happens next</p><p className="mt-1">This submits seller and property information for agent review. Mandate, disclosure and FICA are handled separately in Documents afterwards.</p></div>
-                {captureDraft ? captureReview?.({ listing, form, saveDraft }) : !isDemoOnboarding ? <SellerCaptureDocuments listing={listing} token={token} /> : null}
+                {isAgentAssistedCompletion ? (
+                  captureDraft ? captureReview?.({ listing, form, saveDraft })
+                    : !isDemoOnboarding ? <SellerCaptureDocuments listing={listing} token={token} /> : null
+                ) : null}
                 {!captureDraft ? <ReviewReadinessPanel
                   issueGroups={submitIssueGroups}
                   sellerName={getSellerDisplayName(listing, form)}
@@ -6389,29 +6392,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                     { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
                   ]}
                 />
-                <ReviewCard
-                  title="Selling Context"
-                  onEdit={() => setCurrentStep(0)}
-                  collapsible
-                  items={[
-                    { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
-                    { label: 'Timeline', value: formatValue(form.sellingTimeline) },
-                    { label: 'Reason', value: formatValue(form.sellingReason) },
-                  ]}
-                />
               </div>
-              <section className="rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4 text-sm leading-6 text-[#35546c]">
-                <p className="font-semibold">Documents come next</p>
-                <p>Submit your seller and property information first. Your agent reviews these details, then chooses Upload manually, Generate and download, or Generate and send for signature separately for mandate, disclosure and FICA.</p>
-              </section>
-              <div className="rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
-                <div className="flex items-start gap-3">
-                  <Sparkles size={18} className="mt-0.5 text-[#35546c]" />
-                  <p className="text-sm leading-6 text-[#35546c]">
-                    Submit when everything looks correct. Your agent will review the details, then prepare the mandate, disclosure and FICA documents separately.
-                  </p>
-                </div>
-              </div>
+              {!isAgentAssistedCompletion ? (
+                <section aria-labelledby="seller-portal-next-title" className="rounded-[20px] border border-[#dbe6f2] bg-[#f7fbff] p-5 text-sm leading-6 text-[#35546c]">
+                  <div className="flex items-center gap-3">
+                    <Mail size={20} aria-hidden="true" className="shrink-0 text-[var(--seller-brand-action)]" />
+                    <h3 id="seller-portal-next-title" className="font-semibold text-[#172334]">Next: your seller portal</h3>
+                  </div>
+                  <p className="mt-2">After you submit, you’ll receive a private seller portal link where you can:</p>
+                  <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <li className="flex items-center gap-2"><Upload size={18} aria-hidden="true" className="shrink-0 text-[var(--seller-brand-action)]" /><span>Upload all your supporting documents</span></li>
+                    <li className="flex items-center gap-2"><Home size={18} aria-hidden="true" className="shrink-0 text-[var(--seller-brand-action)]" /><span>Track your property and follow its progress</span></li>
+                  </ul>
+                </section>
+              ) : null}
             </StepShell>
           ) : null}
         </div>

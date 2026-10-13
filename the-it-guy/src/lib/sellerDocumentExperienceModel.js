@@ -318,3 +318,47 @@ export function buildSellerDocumentExperienceModel({
 }
 
 export { SATISFIED_STATUSES, RECEIVED_STATUSES, ACTION_STATUSES, STAGE_CONFIG }
+
+
+// Shared document groups for the listing and its linked seller lead.
+export function getSellerDocumentDisplayGroupKey(document = {}) {
+  const category = normalizeSellerDocumentExperienceKey(document?.category)
+  const group = normalizeSellerDocumentExperienceKey(document?.group)
+  const source = [
+    document?.key,
+    document?.label,
+    document?.description,
+    document?.category,
+    document?.group,
+    document?.sourceLabel,
+    document?.fileName,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+
+  if (category === 'fica' || /signed[_ ]fica|fica[_ ]declaration/.test(source)) return 'fica'
+
+  if (
+    category === 'sales' ||
+    group === 'mandate' ||
+    /mandate|otp|offer to purchase|sale agreement|sale instruction|seller instruction|commission|property condition disclosure|condition disclosure|disclosure|defects/.test(source)
+  ) {
+    return 'sales'
+  }
+
+  if (
+    category === 'fica' ||
+    ['seller_identity', 'fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group) ||
+    /fica|identity|id document|passport|proof of residential address|proof of address|marriage|anc|spouse|company registration|cipc|director|authority|resolution|trust deed|trustee|letter of authority/.test(source)
+  ) {
+    return 'fica'
+  }
+
+  if (
+    category === 'property' ||
+    ['property', 'compliance', 'property_compliance', 'financial', 'occupancy'].includes(group) ||
+    /title deed|rates|levy|levies|body corporate|hoa|homeowners|gas|solar|electrical|electric|beetle|plumbing|compliance|certificate|coc|building plan|approved plan|occupancy|occupation|erf|sectional title/.test(source)
+  ) {
+    return 'property'
+  }
+
+  return 'requests'
+}

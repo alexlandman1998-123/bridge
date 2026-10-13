@@ -1,3 +1,4 @@
+import { getSellerDisclosureQuestionMissing } from '../lib/sellerAgentAssistedDisclosure.js'
 import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
 import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -32,17 +33,17 @@ function EditableDetails({ document, data, onChange, onSave, saving, dirty }) {
     : choices[key] ? <select value={value || ''} onChange={(event) => update(group, key, event.target.value)} className={inputClass}><option value="">Select</option>{choices[key].map(([option, label]) => <option key={option} value={option}>{label}</option>)}</select>
     : <input type={key === 'startDate' || key === 'endDate' ? 'date' : 'text'} value={value || ''} onChange={(event) => update(group, key, event.target.value)} className={inputClass} />}</label>
   return <section className="space-y-5 rounded-xl border border-[#ddd] bg-white p-5 sm:p-7">
-    <div><h2 className="text-xl font-semibold">Check and correct your details</h2><p className="mt-1 text-sm leading-6 text-[#555]">Your changes go into the document everyone signs. Shared details lock after the first signature.</p></div>
-    <div className="grid gap-4 sm:grid-cols-2">{Object.entries(data.common || {}).map(([key, value]) => renderField('common', key, value))}</div>
+    <div><h2 className="text-xl font-semibold">{section === 'disclosure' ? 'Complete your property disclosure' : 'Check and correct your details'}</h2><p className="mt-1 text-sm leading-6 text-[#555]">{section === 'disclosure' ? 'Answer each question, save your answers, then review and sign below.' : 'Your changes go into the document everyone signs. Shared details lock after the first signature.'}</p></div>
+    {section !== 'disclosure' ? <div className="grid gap-4 sm:grid-cols-2">{Object.entries(data.common || {}).map(([key, value]) => renderField('common', key, value))}</div> : null}
     {section === 'mandate' ? <SellerMandateDetailsEditor value={data.mandate} allowExtendedCapture={false} captureReadOnly onChange={mandate => onChange({ ...data, mandate })} /> : section !== 'disclosure' ? <div className="grid gap-4 border-t border-[#ddd] pt-5 sm:grid-cols-2">{Object.entries(data[section] || {}).filter(([key]) => key !== 'otherAgencyName' || data.mandate?.mandateType === 'dual').map(([key, value]) => renderField(section, key, value))}</div> : <>
       <div className="space-y-4 border-t border-[#ddd] pt-5"><h3 className="font-semibold">Property disclosure questions</h3>{(data.questions || []).map((question) => {
         const response = data.disclosure?.responses?.[question.key] || { answer: '', note: '' }
         const changeResponse = (key, value) => onChange({ ...data, disclosure: { ...data.disclosure, responses: { ...data.disclosure.responses, [question.key]: { ...response, [key]: value } } } })
-        return <div key={question.key} className="rounded-lg border border-[#ddd] p-4"><p className="font-medium">{question.number}. {question.label}</p><label className="mt-3 block text-sm font-semibold">Answer<select value={response.answer || ''} onChange={(event) => changeResponse('answer', event.target.value)} className={inputClass}><option value="">Select an answer</option><option value="yes">Yes</option><option value="no">No</option><option value="unsure">Unsure</option></select></label><label className="mt-3 block text-sm font-semibold">Details<textarea rows="2" value={response.note || ''} onChange={(event) => changeResponse('note', event.target.value)} className={inputClass} /></label></div>
+        return <div key={question.key} className="rounded-lg border border-[#ddd] p-4"><p className="font-medium">{question.number}. {question.label}</p><label className="mt-3 block text-sm font-semibold">Answer<select aria-label={`Question ${question.number}: Answer`} value={response.answer || ''} onChange={(event) => changeResponse('answer', event.target.value)} className={inputClass}><option value="">Select an answer</option><option value="yes">Yes</option><option value="no">No</option><option value="unsure">Unsure</option></select></label><label className="mt-3 block text-sm font-semibold">Details<textarea rows="2" value={response.note || ''} onChange={(event) => changeResponse('note', event.target.value)} className={inputClass} /></label></div>
       })}</div>
       <div className="grid gap-4 sm:grid-cols-2">{Object.entries(data.disclosure || {}).filter(([key]) => key !== 'responses').map(([key, value]) => renderField('disclosure', key, value))}</div>
     </>}
-    <button type="button" disabled={!dirty || saving} onClick={onSave} className="w-full rounded-lg bg-[#171717] px-5 py-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">{saving ? 'Saving changes…' : 'Save and review changes'}</button>
+    <button type="button" disabled={!dirty || saving} onClick={onSave} className="w-full rounded-lg bg-[#171717] px-5 py-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">{saving ? 'Saving changes…' : section === 'disclosure' ? 'Save answers and review' : 'Save and review changes'}</button>
   </section>
 }
 
@@ -199,14 +200,16 @@ export default function SellerDocumentSigning() {
     setSaving(true); setError('')
     try {
       const result = await correctSellerDocumentInPortal(token, document.versionDigest, editData)
-      setDocument({ ...document, reviewedHtml: result.reviewedHtml, versionDigest: result.versionDigest, signerName: result.signerName || document.signerName })
+      setDocument({ ...document, reviewedHtml: result.reviewedHtml, versionDigest: result.versionDigest, signerName: result.signerName || document.signerName, disclosureAnswersComplete: result.disclosureAnswersComplete })
       setName(result.signerName || document.signerName)
       setEditData(result.editData)
       setDirty(false)
     } catch (reason) { setError(reason?.message || 'Your changes could not be saved.') }
     finally { setSaving(false) }
   }
-  const canSign = reviewReady && !dirty && accepted && signature && signedDate && signedPlace.trim() && name.trim().toLowerCase() === String(document?.signerName || '').trim().toLowerCase()
+  const disclosureMissing = document?.documentKey === 'signed_disclosure_form' && !document.disclosureAnswersComplete
+    ? getSellerDisclosureQuestionMissing(editData?.disclosure || {}) : []
+  const canSign = !disclosureMissing.length && reviewReady && !dirty && accepted && signature && signedDate && signedPlace.trim() && name.trim().toLowerCase() === String(document?.signerName || '').trim().toLowerCase()
   const submit = async (event) => {
     event.preventDefault()
     if (!document || !canSign || saving) return
@@ -230,7 +233,7 @@ export default function SellerDocumentSigning() {
     {complete ? <p role="status" className="rounded-xl border border-[#ccc] bg-white p-5">Your signature was saved. Your agent will review the document after every required signer, including each contracting agency on a mandate, has signed.</p> : null}
     {document ? <>{document.canEdit && editData ? <EditableDetails document={document} data={editData} onChange={changeDetails} onSave={saveDetails} saving={saving} dirty={dirty} /> : <p className="rounded-xl border border-[#ddd] bg-white p-5 text-sm text-[#555]">{document.requiresReplacementForChanges ? 'These details are frozen into the mandate. Ask your agent for a replacement copy if anything needs to change.' : 'Shared document details are locked because a signer has signed.'}</p>}<section className="overflow-hidden rounded-xl border border-[#ddd] bg-white"><div className="border-b border-[#ddd] px-5 py-3 text-sm font-semibold">Current document for review</div><iframe ref={previewRef} title={titles[document.documentKey] || 'Reviewed seller document'} srcDoc={reviewHtml} sandbox="allow-same-origin" referrerPolicy="no-referrer" onLoad={resizePreview} className="min-h-[400px] w-full border-0" /></section>
       <form onSubmit={submit} className="space-y-5 rounded-xl border border-[#ddd] bg-white p-5 sm:p-7">
-        <p className="break-all text-xs text-[#666]">Document version: {document.versionDigest}</p>{dirty ? <p className="text-sm font-semibold">Save your changes before signing.</p> : null}
+        <p className="break-all text-xs text-[#666]">Document version: {document.versionDigest}</p>{disclosureMissing.length ? <p className="text-sm font-semibold">Answer every disclosure question above before signing.</p> : dirty ? <p className="text-sm font-semibold">Save your changes before signing.</p> : null}
         <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1" /><span>I have reviewed this complete document and sign it as the named seller or authorised representative. {String(document.signerRole).includes('Agency') ? 'I accept the mandate on behalf of the contracting agency shown in my acceptance block.' : ''}</span></label>
         <label className="block text-sm font-semibold">Confirm your full name<input type="text" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} className="mt-2 w-full rounded-lg border border-[#aaa] px-4 py-3 font-normal" /></label>
         <SignaturePad value={signature} onChange={setSignature} signerName={document.signerName} />

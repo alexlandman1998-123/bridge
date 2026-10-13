@@ -1041,7 +1041,7 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
   const canContact = Boolean(firstPresent(contact?.phone, lead?.phone, contact?.email, lead?.email, lead?.sellerPhone, lead?.sellerEmail))
   const mandateSigned = mandateStatus === 'signed'
   return [
-    { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
+    { id: 'contact_seller', label: getSellerJourneyStage({ lead, listing, mandatePacketStatus, documents })?.key === 'new_lead' ? 'Mark as contacted' : 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'open_documents', label: 'Open Documents', enabled: onboardingSubmittedForProgress || mandateStatus !== 'not_started' },
     { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSubmittedForProgress && mandateStatus === 'not_started' },

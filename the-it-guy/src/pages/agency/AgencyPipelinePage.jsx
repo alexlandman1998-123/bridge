@@ -1,10 +1,10 @@
+import { getSellerDocumentDisplayGroupKey } from '../../lib/sellerDocumentExperienceModel.js'
 import { createSellerLeadDraftListing, hasSellerLeadDraftAddress } from '../../services/sellerLeadDraftListingService'
 import DocumentRequirementManager from '../../components/documents/DocumentRequirementManager.jsx'
 import DocumentUploadProgress from '../../components/documents/DocumentUploadProgress.jsx'
 import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, mergeDocumentRequirementRows, watchDocumentRequirementContext } from '../../services/documents/documentRequirementReadService.js'
-import SellerDisclosurePreparation from '../../components/documents/SellerDisclosurePreparation.jsx'
-import { buildSellerDisclosurePreparationPatch } from '../../lib/sellerAgentAssistedDisclosure.js'
+import { isSellerDisclosureCaptureLocked } from '../../lib/sellerAgentAssistedDisclosure.js'
 import { buildListingSellerInformationModel } from '../../services/listings/listingSellerInformationModel.js'
 import SellerDocumentWorkflowActions from '../../components/documents/SellerDocumentWorkflowActions'
 import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, sellerGeneratedDocumentSelection, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../../core/documents/sellerDocumentWorkflow'
@@ -4043,31 +4043,31 @@ function buildLeadWorkspaceTabUrl({ pathname = '', search = '', hash = '', tab =
 const SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
   {
     key: 'seller',
-    label: 'Seller Documents',
-    description: 'Identity and seller verification',
+    label: 'FICA',
+    description: 'Seller identity, address, marital, company, trust, and authority checks.',
     Icon: UserRound,
     accent: '#2f73b8',
-    iconClass: 'border-[#dbeafe] bg-[#eff6ff] text-[#2563a6]',
+    iconClass: 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]',
     progressClass: 'bg-[#2f73b8]',
     cardClass: 'hover:border-[#b8d5f4]',
   },
   {
     key: 'property',
     label: 'Property Documents',
-    description: 'Ownership, rates, and disclosures',
+    description: 'Title deed, rates, compliance certificates, and property records.',
     Icon: Home,
     accent: '#147c8f',
-    iconClass: 'border-[#cdeef4] bg-[#eefcff] text-[#147c8f]',
+    iconClass: 'border-[#d7e6f5] bg-[#eef5fb] text-[#1f4f78]',
     progressClass: 'bg-[#147c8f]',
     cardClass: 'hover:border-[#b6dfe8]',
   },
   {
     key: 'legal',
-    label: 'Legal Documents',
-    description: 'Mandates, contracts, and approvals',
+    label: 'Sale',
+    description: 'Mandates, OTPs, seller instructions, and sale-related paperwork.',
     Icon: FileText,
     accent: '#148a58',
-    iconClass: 'border-[#caead9] bg-[#eefaf3] text-[#148a58]',
+    iconClass: 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]',
     progressClass: 'bg-[#148a58]',
     cardClass: 'hover:border-[#b9dfca]',
   },
@@ -4103,43 +4103,10 @@ function isStaleSellerLeadDocumentRequirement(row = {}) {
 }
 
 function getSellerLeadDocumentCategoryKey(documentRow = {}) {
-  const basePackKey = normalizeSellerBasePackKey(
-    documentRow?.key || documentRow?.requirementKey || documentRow?.requirement_key,
-  )
-  if (basePackKey) return 'legal'
-  const taxonomyCategory = normalizeKey(documentRow?.taxonomyCategory || documentRow?.taxonomy_category)
-  if (['seller', 'property', 'marketing', 'legal'].includes(taxonomyCategory)) return taxonomyCategory
-  const source = normalizeKey([
-    documentRow?.category,
-    documentRow?.categoryKey,
-    documentRow?.documentCategory,
-    documentRow?.document_category,
-    documentRow?.group,
-    documentRow?.requirement_group,
-    documentRow?.requirementLane,
-    documentRow?.requirement_lane,
-    documentRow?.documentRequirementSection,
-    documentRow?.document_requirement_section,
-    documentRow?.partyRole,
-    documentRow?.party_role,
-    documentRow?.type,
-    documentRow?.documentType,
-    documentRow?.document_type,
-    documentRow?.key,
-    documentRow?.id,
-    documentRow?.requirementKey,
-    documentRow?.requirement_key,
-    documentRow?.label,
-    documentRow?.title,
-  ].filter(Boolean).join(' '))
-
-  if (/(owner|seller|spouse|director|trustee|member)_\d+_(id_document|proof_of_address|proof_of_residential_address)/.test(source)) return 'seller'
-  if (/(seller_identity_fica|owner_fica|director_fica|trustee_fica|member_fica|spouse_fica)/.test(source)) return 'seller'
-  if (/(authority_documents|resolution_to_sell|company_resolution|close_corporation_resolution|trust_resolution|letters_of_authority|trust_deed|spouse_consent|owner_authority_consent|all_owner_authority_consent|resolution|authority|consent)/.test(source)) return 'legal'
-  if (/(marketing|asset|photo|image|gallery|brochure|floor|plan|media|campaign|listing_photo|property_photo)/.test(source)) return 'marketing'
-  if (/(legal|mandate|otp|offer|agreement|contract|signature|signed|transfer|attorney|conveyancer)/.test(source)) return 'legal'
-  if (/(property|valuation|appraisal|title|deed|rates|levy|hoa|body|corporate|condition|disclosure|certificate|coc|occupancy|municipal|ownership)/.test(source)) return 'property'
-  return 'seller'
+  const source = normalizeKey([documentRow.taxonomyCategory, documentRow.category, documentRow.group, documentRow.key, documentRow.documentType].filter(Boolean).join(' '))
+  if (/(marketing|listing_photo|property_photo|gallery|brochure|floor_plan|media|campaign)/.test(source)) return 'marketing'
+  const group = getSellerDocumentDisplayGroupKey(documentRow)
+  return group === 'property' ? 'property' : group === 'fica' ? 'seller' : 'legal'
 }
 
 function isStaleKingstonsBaselineDocumentRow(documentRow = {}) {
@@ -5576,7 +5543,7 @@ function buildSellerLeadDocumentCategories(documents = []) {
     grouped.get(grouped.has(key) ? key : 'seller').push(documentRow)
   })
 
-  return SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => {
+  return [...SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG].sort((a, b) => ['property', 'seller', 'legal'].indexOf(a.key) - ['property', 'seller', 'legal'].indexOf(b.key)).map((category) => {
     const items = grouped.get(category.key) || []
     return {
       ...category,
@@ -11958,7 +11925,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerSigningPackError, setSellerSigningPackError] = useState('')
   const [sellerSigningPackNeedsRefresh, setSellerSigningPackNeedsRefresh] = useState(false)
   const sellerSigningPackBaselineRef = useRef(null)
-  const [sellerDisclosureDraft, setSellerDisclosureDraft] = useState({})
   const [sellerSigningPackNotice, setSellerSigningPackNotice] = useState('')
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
@@ -12123,6 +12089,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [selectedLeadHydratedListing, setSelectedLeadHydratedListing] = useState(null)
   const [selectedLeadDocumentHydrationStatus, setSelectedLeadDocumentHydrationStatus] = useState('idle')
   const [sharedLeadDocuments, setSharedLeadDocuments] = useState({ leadId: '', snapshot: null, error: '' })
+  const [leadDocumentManagerOpen, setLeadDocumentManagerOpen] = useState(false)
   const [buyerDocumentReadState, setBuyerDocumentReadState] = useState({ transactionId: '', leadId: '', status: 'idle', rows: [], error: '' })
   const [buyerDocumentRefreshTick, setBuyerDocumentRefreshTick] = useState(0)
   const [buyerDocumentReconcileBusy, setBuyerDocumentReconcileBusy] = useState(false)
@@ -15444,10 +15411,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const load = async () => {
       const request = ++generation
       try {
-        const snapshot = await readDocumentRequirementContext(supabase, {
-          contextType: selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead', contextId: selectedLeadRecordId,
-        })
-        if (!cancelled && request === generation) setSharedLeadDocuments({ leadId: selectedLeadRecordId, snapshot, error: '' })
+        const [snapshot, listing] = await Promise.all([
+          readDocumentRequirementContext(supabase, {
+            contextType: selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead', contextId: selectedLeadRecordId,
+          }),
+          selectedLeadIsSeller && selectedLeadLinkedListingId ? getPrivateListing(selectedLeadLinkedListingId, {
+            includeRequirementsAndDocuments: true, includeDistributionData: false,
+          }) : Promise.resolve(null),
+        ])
+        if (!cancelled && request === generation) {
+          setSharedLeadDocuments({ leadId: selectedLeadRecordId, snapshot, error: '' })
+          if (listing) {
+            setSelectedLeadHydratedListing({ ...listing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
+            setSelectedLeadDocumentHydrationStatus('ready')
+          }
+        }
       } catch (error) {
         if (!cancelled && request === generation) setSharedLeadDocuments({ leadId: selectedLeadRecordId, snapshot: null, error: error?.message || 'Shared documents could not be loaded.' })
       }
@@ -15456,7 +15434,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void load()
     const stop = watchDocumentRequirementContext(load)
     return () => { cancelled = true; stop() }
-  }, [buyerDocumentRefreshTick, leadWorkspaceTab, selectedLeadIsSeller, selectedLeadRecordId])
+  }, [buyerDocumentRefreshTick, leadWorkspaceTab, selectedLeadIsSeller, selectedLeadRecordId, selectedLeadLinkedListingId])
   const selectedLeadJourneyEntityType = selectedLeadIsSeller ? JOURNEY_ENTITY_TYPES.sellerLead : JOURNEY_ENTITY_TYPES.buyerLead
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
@@ -17334,8 +17312,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     lead: selectedLead || {},
     listing: selectedLeadLinkedListing || {},
   })
+  useEffect(() => setLeadDocumentManagerOpen(false), [selectedLeadRecordId, leadWorkspaceTab])
   const selectedLeadSellerOnboardingCommandLabel = !selectedSellerCanSendOnboarding
-    ? 'Contact Seller First'
+    ? 'Mark as contacted'
     : selectedLeadNeedsOnboardingReplacement
       ? 'Send Corrected Onboarding'
       : !selectedSellerJourney.onboardingSubmitted
@@ -27568,8 +27547,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSellerSigningPackNeedsRefresh(false)
     setSellerSigningPackNotice('')
     setSellerSigningPackTerms(readSellerMandateTerms(formData, selectedLeadLinkedListing || {}))
-    const savedForm = getSellerLeadReviewFormData(selectedLead, sellerSigningPackBaselineRef.current || selectedLeadLinkedListing)
-    setSellerDisclosureDraft(savedForm.propertyDisclosure || savedForm.property_disclosure || {})
     setSellerSigningPackModalOpen(true)
   }
 
@@ -27675,13 +27652,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       listingSnapshot = await getPrivateListing(listingId)
     }
     if (listingSnapshot?.id !== listingId) throw new Error('The linked listing could not be confirmed. Reload before preparing seller documents.')
+    if (selectedDocuments.includes('disclosure') && isSellerDisclosureCaptureLocked(getSellerLeadReviewFormData(selectedLead, listingSnapshot))) {
+      throw new Error('The existing disclosure has signed evidence. Use the document replacement workflow; its answers are preserved.')
+    }
     const termsPatch = buildSellerLeadSigningPackTermsPatch(sellerSigningPackTerms)
-    const disclosurePatch = selectedDocuments.includes('disclosure') ? buildSellerDisclosurePreparationPatch({
-      disclosure: sellerDisclosureDraft, existingFormData: getSellerLeadReviewFormData(selectedLead, listingSnapshot), capturedBy: normalizeText(currentAgent?.id),
-    }) : {}
     const formData = buildListingSellerCanonicalUpdate({
       listing: listingSnapshot,
-      formPatch: { ...getSellerLeadReviewFormData(selectedLead, listingSnapshot), ...disclosurePatch, ...(selectedDocuments.includes('mandate') ? termsPatch : {}) },
+      formPatch: { ...getSellerLeadReviewFormData(selectedLead, listingSnapshot), ...(selectedDocuments.includes('mandate') ? termsPatch : {}) },
       onboardingStatus: 'completed',
       source: 'seller_lead_signing_pack',
     }).nextFormData
@@ -40321,8 +40298,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'property' && selectedLeadIsSeller ? (
-                  <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)]">
-                    <section className="order-2 self-start rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
+                  <div className="grid min-w-0 items-stretch gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.85fr)]">
+                    <section className="order-2 h-full min-w-0 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
@@ -40346,7 +40323,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </section>
 
-                    <section className="order-1 self-start rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
+                    <section className="order-1 h-full min-w-0 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
@@ -40359,11 +40336,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 ? `${selectedLeadPropertyWorkspace.listing.readiness.percent}% ready`
                                 : 'Listing not created'}
                           </h4>
-                          <p className="mt-2 text-sm leading-6 text-[#60758b]">
-                            {selectedLeadPropertyWorkspace.listing.hasListing
-                              ? selectedLeadPropertyWorkspace.listing.title || 'Linked listing'
-                              : 'This seller lead has a property record, but no listing has been created yet.'}
-                          </p>
+                          {!selectedLeadPropertyWorkspace.listing.hasListing ? <p className="mt-2 text-sm leading-6 text-[#60758b]">This seller lead has a property record, but no listing has been created yet.</p> : null}
                         </div>
                       </div>
                       {selectedLeadPropertyWorkspace.listing.hasListing ? (
@@ -40372,9 +40345,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => navigate(`/agent/listings/${encodeURIComponent(selectedLeadPropertyWorkspace.listing.id)}`)}>
                               Open {selectedLeadPropertyWorkspace.listing.isPrivateDraft ? 'Draft Listing' : 'Listing'}
                             </Button>
-                          ) : null}
-                          {selectedLeadPropertyWorkspace.listing.isPrivateDraft ? (
-                            <p className="text-sm leading-6 text-[#60758b]">This draft is for internal review. The signed mandate, seller portal invitation, and publication remain separate steps.</p>
                           ) : null}
                           <div className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
                             <p className="text-xs font-semibold text-[#607891]">Linked listing</p>
@@ -40543,8 +40513,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     ) : (
                     <Suspense fallback={<div className="rounded-[20px] border border-[#dce7f2] bg-white p-6"><div className="h-4 w-48 animate-pulse rounded-full bg-slate-200" /><div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" /></div>}>
-                    <DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead'} contextId={selectedLeadRecordId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} />
+
                     <LeadDocumentWorkspace
+                      manageDocumentsAction={isSupabaseConfigured ? () => setLeadDocumentManagerOpen(true) : null}
+                      portalActionDisabled={selectedLeadIsSeller && isSellerOnboardingSending}
                       createMandateAction={selectedLeadIsSeller && selectedLeadLinkedListingId ? () => navigate(`/agent/listings/${encodeURIComponent(selectedLeadLinkedListingId)}?tab=documents&sellerDocumentAction=manual_upload&sellerDocumentKey=signed_mandate`) : null}
                       uploadProgress={selectedLeadIsSeller ? (sellerLeadUploadProgress?.leadId === selectedLeadRecordId ? sellerLeadUploadProgress : null) : (buyerLeadUploadProgress?.leadId === selectedLeadRecordId ? buyerLeadUploadProgress : null)}
                       removalContext={{ client: isSupabaseConfigured ? supabase : null, contextType: selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead', contextId: selectedLeadRecordId, party: selectedLeadIsSeller ? 'seller' : 'buyer' }}
@@ -40625,6 +40597,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </>
                       }}
                     />
+                    <DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadIsSeller ? 'seller_lead' : 'buyer_lead'} contextId={selectedLeadRecordId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} presentation="dialog" open={leadDocumentManagerOpen} onClose={() => setLeadDocumentManagerOpen(false)} />
                     </Suspense>
                     )}
                     {!selectedLeadIsSeller ? <input ref={agentBuyerDocumentUploadInputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={agentBuyerDocumentUploading} onChange={(event) => void uploadAgentBuyerLeadDocument(event)} /> : null}
@@ -41306,7 +41279,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         open={sellerSigningPackModalOpen}
         onClose={() => { if (!sellerSigningPackSaving) setSellerSigningPackModalOpen(false) }}
         title="Prepare seller signing pack"
-        subtitle="This stays on the seller lead. It does not create, publish, or activate a market listing."
         className="max-w-3xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -41330,18 +41302,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : null}
             </div>
           ) : null}
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
-            The seller’s submitted onboarding facts remain frozen. This step prepares only the selected documents. Disclosure answers are captured here; mandate terms and FICA evidence keep their separate review requirements.
-          </div>
-          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
-            <legend className="px-1 text-sm font-semibold text-[#243d56]">Signing routes</legend>
-            <div className="grid gap-1 text-sm text-[#243d56]">{Object.entries({ signed_disclosure_form: 'Disclosure', signed_fica_declaration: 'FICA', signed_mandate: 'Mandate' }).filter(([key]) => key in sellerOnboardingDocumentRoutes).map(([key, label]) => <span key={key}>{label}: {sellerOnboardingDocumentRoutes[key] === 'digital_pack' ? 'private signing links will be emailed to every required signer' : sellerOnboardingDocumentRoutes[key] === 'upload_existing' ? 'upload an existing signed document for review' : 'download and upload the signed original'}</span>)}</div>
-          </fieldset>
-          {['manual_upload', 'digital_pack'].includes(sellerOnboardingDocumentRoutes.signed_disclosure_form) ? <SellerDisclosurePreparation disclosure={sellerDisclosureDraft} onChange={setSellerDisclosureDraft} disabled={sellerSigningPackSaving} /> : null}
           {sellerGeneratedDocumentSelection(sellerOnboardingDocumentRoutes).includes('mandate') ? <SellerMandateDetailsEditor value={sellerSigningPackTerms} allowExtendedCapture={false} captureReadOnly ownershipType={getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing).sellerLegalType} onChange={setSellerSigningPackTerms} /> : null}
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
             <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
-            <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· Required signer</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
+            <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'}</span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
           </section>
         </div>
       </Modal>

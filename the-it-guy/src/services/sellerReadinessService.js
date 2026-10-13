@@ -364,12 +364,12 @@ export function getNextSellerAction(args = {}) {
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   const blockers = getSellerBlockers({ ...args, journey })
   const blocking = blockers.find((item) => item.severity === 'blocked') || blockers[0] || null
-  if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })
   const stageKey = normalizeKey(journey?.stage?.key || journey?.stageKey || journey?.stage)
+  if (blocking?.id === 'missing_seller_contact') return action('contact_seller', stageKey === 'new_lead' ? 'Mark as contacted' : 'Contact Seller', true, '', { blocker: blocking })
   const openPortalBlocker = blockers.find((item) => item.id === 'seller_onboarding_not_submitted') || blocking
   const listingBlocker = blockers.find((item) => item.category === 'listing_live') || blocking
 
-  if (stageKey === 'new_lead') return action('contact_seller', 'Contact Seller', true, '', { blocker: blockers.find((item) => item.id === 'missing_seller_contact') || null })
+  if (stageKey === 'new_lead') return action('contact_seller', 'Mark as contacted', true, '', { blocker: blockers.find((item) => item.id === 'missing_seller_contact') || null })
   if (stageKey === 'contacted') return action('send_seller_onboarding', 'Send Seller Onboarding', true, '', { blocker: blockers.find((item) => item.id === 'seller_onboarding_not_sent') || blocking })
   if (stageKey === 'seller_onboarding_sent') return action('copy_seller_onboarding_link', 'Copy Seller Onboarding Link', true, '', { blocker: openPortalBlocker })
   if (stageKey === 'seller_onboarding_submitted') {
@@ -454,7 +454,7 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
   ]
   const stageKey = resolvedJourney.stage?.key || 'new_lead'
   const stageActions = stageKey === 'new_lead'
-    ? [make('contact_seller', 'Contact Seller', hasContact({ lead, contact })), make('open_timeline', 'Open Timeline')]
+    ? [make('contact_seller', 'Mark as contacted', hasContact({ lead, contact })), make('open_timeline', 'Open Timeline')]
     : stageKey === 'contacted'
     ? [make('send_seller_onboarding', 'Send Seller Onboarding', true), ...always]
     : stageKey === 'seller_onboarding_sent'

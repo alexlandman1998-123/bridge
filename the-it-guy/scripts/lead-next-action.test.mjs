@@ -58,7 +58,7 @@ assert.equal(
 
 assert.equal(
   resolveLeadNextStep({ leadCategory: 'seller', stage: 'New Lead', phone: '+27820000000' }, [], [], { now }),
-  'Contact Seller',
+  'Mark as contacted',
 )
 
 assert.equal(
