@@ -73,7 +73,7 @@ const admin = {
     } catch (error) { return { data: null, error } }
   },
   from(table) {
-    assert.ok(allowedTables.has(table), `Unexpected table ${table}`)
+    assert.ok(allowedTables.has(table) || table === 'private_listing_documents', `Unexpected table ${table}`)
     const args = [], filters = []
     let columns = '*', single = false, limit = '', order = '', patch, inserted
     const bind = value => { args.push(value); return `$${args.length}` }
