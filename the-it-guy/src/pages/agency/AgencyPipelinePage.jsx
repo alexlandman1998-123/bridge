@@ -50,6 +50,7 @@ import SellerOnboardingAgentReviewPanel from '../../components/onboarding/Seller
 import { summarizeLeadDocumentCategory } from '../../components/documents/leadDocumentProgressModel'
 import SellerDocumentReviewActions from '../../components/documents/SellerDocumentReviewActions'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useOrganisation } from '../../context/OrganisationContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { markRouteMilestone } from '../../lib/performanceTrace'
 import { buildSellerLeadListingPrefill } from '../../lib/sellerLeadListingPrefill'
@@ -11677,6 +11678,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [location.search])
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
   const { role, profile, currentWorkspace, currentMembership, workspace } = useWorkspace()
+  const { branding: organisationDocumentBranding, organisation: documentOrganisation } = useOrganisation()
   const sellerLeadsRenderCountRef = useRef(0)
   sellerLeadsRenderCountRef.current += 1
   const sellerLeadsPerformanceBaselineRef = useRef(null)
@@ -27707,8 +27709,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       amount: termsPatch.commissionAmount,
       vatHandling: termsPatch.vatHandling,
     }
+    // Workspace rows do not contain the saved organisation-branding assets.
+    // Use the same hydrated agency settings as the sidebar, scoped to this listing.
+    const listingOrganisationId = normalizeText(listingSnapshot.organisationId || listingSnapshot.organisation_id)
+    const matchesDocumentOrganisation = listingOrganisationId && listingOrganisationId === normalizeText(documentOrganisation?.organisationId || documentOrganisation?.organisation_id || documentOrganisation?.id)
+    const savedAgencyBranding = matchesDocumentOrganisation ? {
+      ...organisationDocumentBranding,
+      organisationName: normalizeText(documentOrganisation?.name || organisationDocumentBranding.organisationLabel),
+    } : {}
     const draftSigningBranding = resolveOnboardingBranding(
+      savedAgencyBranding,
       selectedLeadLinkedListing?.branding,
+      formData.portalBranding || formData.portal_branding,
       currentWorkspace?.branding,
       currentWorkspace,
     )
@@ -27729,7 +27741,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       at: now,
     })
     const resolvedSigningBranding = resolveOnboardingBranding(
+      savedAgencyBranding,
       selectedLeadLinkedListing?.branding,
+      formData.portalBranding || formData.portal_branding,
       currentWorkspace?.branding,
       currentWorkspace,
     )

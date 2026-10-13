@@ -5,6 +5,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import AgencyPipelinePage from '../AgencyPipelinePage'
 
+vi.mock('../../../context/OrganisationContext', () => ({
+  useOrganisation: () => ({ branding: {}, organisation: { id: 'initialization-org', name: 'Test Agency' } }),
+}))
+
 vi.mock('../../../context/WorkspaceContext', () => ({
   useWorkspace: () => ({
     role: 'agent',

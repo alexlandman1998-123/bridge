@@ -30,6 +30,24 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+test.each(['individual', 'company', 'trust', 'deceased_estate'])('FICA editor separates %s questions and explains the identity dropdown', async ficaProfileType => {
+  api.view.mockResolvedValue({ documentKey: 'signed_fica_declaration', signerName: 'Taylor Seller', signerRole: 'Seller',
+    versionDigest: 'source-version', reviewedHtml: html, canEdit: true,
+    editData: { common: { sellerName: 'Taylor Seller', propertyAddress: '1 Main Road' }, ficaProfileType,
+      fica: { idType: 'passport', occupation: '', employer: '', jobTitle: '', industryOfBusiness: '', countriesOfTrade: '', dualUseGoods: '', armsWeapons: '', heirInEstate: '', sourceOfIncome: '', politicallyInfluentialPerson: '' } } })
+  render(<SellerDocumentSigning />)
+  const dropdown = await screen.findByRole('combobox', { name: 'Identity document type' })
+  expect(dropdown.value).toBe('passport')
+  expect(within(dropdown).getByRole('option', { name: 'South African identity document' })).toBeTruthy()
+  expect(screen.queryByLabelText('Industry of business') !== null).toBe(ficaProfileType === 'company')
+  expect(screen.queryByLabelText('Employer') !== null).toBe(ficaProfileType === 'individual')
+  expect(screen.queryByLabelText('Heir in an estate') !== null).toBe(ficaProfileType === 'deceased_estate')
+  fireEvent.change(dropdown, { target: { value: 'sa_id' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save and review changes' }))
+  await waitFor(() => expect(api.correct).toHaveBeenCalled())
+  expect(api.correct.mock.calls[0][2].fica.idType).toBe('sa_id')
+})
+
 async function enterSignature({ loadPreview = false } = {}) {
   if (loadPreview) {
     // jsdom does not render srcDoc; supply the reviewed document before load.

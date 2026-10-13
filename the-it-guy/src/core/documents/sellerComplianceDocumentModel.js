@@ -1,4 +1,5 @@
 import { transformSellerOnboardingToFacts } from '../../services/documents/sellerOnboardingFactTransformer.js'
+import { getSellerFicaDeclarationGroups, normalizeSellerFicaIdType } from '../../lib/sellerFicaOnboardingFields.js'
 
 export const SELLER_COMPLIANCE_DOCUMENT_MODEL_CONTRACT = 'arch9-seller-compliance-document-model-v1'
 
@@ -210,11 +211,31 @@ function buildTaxSection(facts = {}) {
 function buildFicaQuestionsSection(facts = {}) {
   const seller = facts.seller || {}
   const rows = []
-  addRow(rows, 'Main occupation / business activity', seller.occupation)
+  const business = ['company', 'close_corporation', 'foreign_company', 'other'].includes(seller.owner_structure_type || seller.legal_type)
+  addRow(rows, business ? 'Business activity' : 'Main occupation', seller.occupation)
   addRow(rows, 'Source of funds / wealth', seller.source_of_funds)
   addRow(rows, 'Politically exposed person', humanize(seller.politically_exposed_person))
   if (key(seller.politically_exposed_person) === 'yes') addRow(rows, 'Political exposure details', seller.politically_exposed_details)
   return rows.length ? { title: 'FICA declarations', rows } : null
+}
+
+function buildCapturedFicaSections(facts, form) {
+  const labels = { idType: 'Identity document type', employer: 'Employer', jobTitle: 'Job title',
+    industryOfBusiness: 'Industry of business', countriesOfTrade: 'Countries of trade', dualUseGoods: 'Dual use goods',
+    armsWeapons: 'Arms or weapons', actingOnBehalfOfAnother: 'Acting for another person', heirInEstate: 'Heir in an estate',
+    sourceOfWealth: 'Source of wealth', bankName: 'Bank name', accountName: 'Account name', accountNumber: 'Account number', accountType: 'Account type' }
+  const details = form.fica || form.ficaDetails || form.fica_details || {}
+  return getSellerFicaDeclarationGroups(facts.seller?.owner_structure_type || facts.seller?.legal_type).map(group => {
+    const rows = []
+    for (const field of group.fields) {
+      if (!labels[field]) continue // Identity, tax and risk facts already have canonical sections.
+      let value = form[field] ?? details[field]
+      if (field === 'idType') value = { sa_id: 'South African identity document', passport: 'Passport', refugee_id: 'Refugee identity document' }[normalizeSellerFicaIdType(value)] || value
+      if (typeof value === 'boolean') value = boolLabel(value)
+      addRow(rows, labels[field], value)
+    }
+    return { title: group.title, rows }
+  }).filter(section => section.rows.length)
 }
 
 function buildSigningSummary(signing = {}) {
@@ -262,6 +283,7 @@ export function buildSellerComplianceDocumentModel({
     buildPropertySection(facts, safeListing),
     buildTaxSection(facts),
     buildFicaQuestionsSection(facts),
+    ...buildCapturedFicaSections(facts, safeFormData),
   ].filter((section) => section?.rows?.length)
   const signingSummary = buildSigningSummary(signing)
 

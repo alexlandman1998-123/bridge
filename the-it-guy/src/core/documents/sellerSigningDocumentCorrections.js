@@ -4,6 +4,8 @@ import { buildSellerFicaDueDiligenceMarkup } from './sellerFicaDueDiligenceMarku
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup, normalizePropertyDisclosure, PROPERTY_DISCLOSURE_QUESTIONS } from '../../lib/propertyDisclosure.js'
+import { getSellerFicaDeclarationGroups, normalizeSellerFicaIdType } from '../../lib/sellerFicaOnboardingFields.js'
+import { normalizeSellerProfileType } from '../../lib/sellerPartyAuthorityContract.js'
 
 const text = value => String(value ?? '').trim()
 const record = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -25,7 +27,7 @@ const ficaAliases = {
   politicallyInfluentialPerson: ['politicallyExposedPerson', 'politically_exposed_person', 'politicallyInfluentialPerson'],
 }
 const extraFicaLabels = {
-  idType: 'ID type', employer: 'Employer', jobTitle: 'Job title', industryOfBusiness: 'Industry of business',
+  idType: 'Identity document type', employer: 'Employer', jobTitle: 'Job title', industryOfBusiness: 'Industry of business',
   countriesOfTrade: 'Countries of trade', dualUseGoods: 'Dual use goods', armsWeapons: 'Arms or weapons',
   actingOnBehalfOfAnother: 'Acting for another person', heirInEstate: 'Heir in an estate', sourceOfWealth: 'Source of wealth',
   bankName: 'Bank name', accountName: 'Account name', accountNumber: 'Account number', accountType: 'Account type',
@@ -67,6 +69,8 @@ function primaryPerson(copy) {
 export function buildSellerSigningCorrectionEditData(copy, key, saved = {}) {
   const pack = record(copy.pack?.signingPackSnapshot), seller = record(pack.seller), person = primaryPerson(copy)
   const form = record(copy.form), fica = record(form.fica || form.ficaDetails || form.fica_details)
+  const ficaProfileType = normalizeSellerProfileType(first(seller.ownershipType, seller.legalType, form.ownerStructureType, form.owner_structure_type, form.sellerLegalType))
+  const applicableFields = new Set(getSellerFicaDeclarationGroups(ficaProfileType).flatMap(group => group.fields))
   const frozenRows = people(frozenFicaModel(copy).sections).flatMap(section => people(section.rows))
   const common = {
     sellerName: name(person), idNumber: identity(person), residentialAddress: first(person.residentialAddress, person.residential_address, seller.residentialAddress),
@@ -75,12 +79,13 @@ export function buildSellerSigningCorrectionEditData(copy, key, saved = {}) {
   const ficaValues = {}
   const booleanFields = new Set(['saResident', 'dualUseGoods', 'armsWeapons', 'actingOnBehalfOfAnother', 'heirInEstate', 'politicallyInfluentialPerson'])
   for (const field of fields.fica) {
+    if (!applicableFields.has(field)) continue
     const aliases = ficaAliases[field] || [field]
     const captured = aliases.map(alias => form[alias]).find(value => value !== undefined && value !== null)
     const value = text(captured ?? fica[field] ?? seller[field] ?? frozenRows.find(row => row.label === ficaLabels[field])?.value ?? '')
     ficaValues[field] = booleanFields.has(field)
       ? (['true', 'yes', '1', ...(field === 'saResident' ? ['sa_resident'] : [])].includes(value.toLowerCase()) ? 'yes' : ['false', 'no', '0', ...(field === 'saResident' ? ['non_resident'] : [])].includes(value.toLowerCase()) ? 'no' : value)
-      : value
+      : field === 'idType' ? normalizeSellerFicaIdType(value) : value
   }
   const mandate = record(pack.mandate), commission = record(copy.approval?.commission)
   const mandateValues = Object.fromEntries(fields.mandate.map(field => [field, text(mandate[field] ?? {
@@ -97,7 +102,7 @@ export function buildSellerSigningCorrectionEditData(copy, key, saved = {}) {
   const disclosure = normalizeDisclosure(form)
   return {
     common: { ...common, ...record(saved.common) },
-    ...(key === 'signed_fica_declaration' ? { fica: { ...ficaValues, ...record(saved.fica) } } : {}),
+    ...(key === 'signed_fica_declaration' ? { ficaProfileType, fica: Object.fromEntries(Object.entries({ ...ficaValues, ...record(saved.fica) }).filter(([field]) => applicableFields.has(field))) } : {}),
     ...(key === 'signed_mandate' ? { mandate: mergedMandate } : {}),
     ...(key === 'signed_disclosure_form' ? { disclosure: { comments: disclosure.comments, remoteControlsQuantity: disclosure.remoteControlsQuantity, responses: disclosure.responses, ...record(saved.disclosure) }, questions: PROPERTY_DISCLOSURE_QUESTIONS.map(({ key: questionKey, text: label, number }) => ({ key: questionKey, label, number })) } : {}),
   }
@@ -202,10 +207,12 @@ export function projectSellerSigningDocumentCorrections(copy, corrections) {
     }
   }
   const fica = record(corrections.fica)
+  const applicableFica = new Set(getSellerFicaDeclarationGroups(branch).flatMap(group => group.fields))
   for (const [field, value] of Object.entries(fica)) {
+    if (!applicableFica.has(field)) continue
     for (const alias of ficaAliases[field] || [field]) form[alias] = value
   }
-  form.fica = { ...record(form.fica || form.ficaDetails || form.fica_details), ...fica }
+  form.fica = { ...record(form.fica || form.ficaDetails || form.fica_details), ...Object.fromEntries(Object.entries(fica).filter(([field]) => applicableFica.has(field))) }
   return { pack, form }
 }
 
@@ -233,19 +240,21 @@ export function renderSellerSigningDocumentCorrections(copy, key, corrections, l
   const compliance = buildSellerComplianceDocumentModel({ formData: form, signing, generatedAt })
   if (key === 'signed_fica_declaration') {
     const frozen = frozenFicaModel(copy)
+    const applicableFields = new Set(getSellerFicaDeclarationGroups(first(seller.ownershipType, seller.legalType, form.ownerStructureType, form.owner_structure_type)).flatMap(group => group.fields))
     // The editor accepts a complete address, not structured address components.
     // Use it verbatim instead of recombining stale suburb/city aliases.
     const sections = compliance.ficaSections.map(section => ({ ...section,
       rows: section.rows.map(row => row.label === 'Property address' ? { ...row, value: pack.property.address } : row),
     }))
-    const extraRows = Object.entries(extraFicaLabels).flatMap(([field, label]) => text(corrections.fica?.[field]) ? [{ label, value: text(corrections.fica[field]) }] : [])
-    if (text(corrections.fica?.maritalStatus) && !sections.some(section => section.rows.some(row => row.label === 'Marital status'))) {
+    const extraRows = Object.entries(extraFicaLabels).flatMap(([field, label]) => applicableFields.has(field) && text(corrections.fica?.[field]) ? [{ label, value: field === 'idType' ? { sa_id: 'South African identity document', passport: 'Passport', refugee_id: 'Refugee identity document' }[corrections.fica[field]] || text(corrections.fica[field]) : text(corrections.fica[field]) }] : [])
+    if (applicableFields.has('maritalStatus') && text(corrections.fica?.maritalStatus) && !sections.some(section => section.rows.some(row => row.label === 'Marital status'))) {
       extraRows.push({ label: 'Primary signer marital status', value: text(corrections.fica.maritalStatus) })
     }
-    if (extraRows.length) sections.push({ title: 'Additional FICA details', rows: extraRows })
+    const unrepresented = extraRows.filter(row => !sections.some(section => section.rows.some(existing => existing.label === row.label)))
+    if (unrepresented.length) sections.push({ title: 'Additional FICA details', rows: unrepresented })
     // Keep captured facts that older forms stored only in their reviewed model.
     // Changed/cleared rows are replaced, never resurrected from that model.
-    const replacedLabels = new Set(['Seller name', 'Primary contact', 'ID / passport number', 'Signatory ID / passport', 'Trustee ID / passport', 'Residential address', 'Email', 'Mobile', 'Owners', 'Directors', 'Trustees', 'Beneficial owners / controllers', 'Beneficiaries', 'Property address', ...Object.values(ficaLabels)])
+    const replacedLabels = new Set(['Main occupation', 'Business activity', 'ID type', 'Seller name', 'Primary contact', 'ID / passport number', 'Signatory ID / passport', 'Trustee ID / passport', 'Residential address', 'Email', 'Mobile', 'Owners', 'Directors', 'Trustees', 'Beneficial owners / controllers', 'Beneficiaries', 'Property address', ...Object.values(ficaLabels)])
     for (const section of people(frozen.sections)) {
       let current = sections.find(value => value.title === section.title)
       const retained = people(section.rows).filter(row => !replacedLabels.has(row.label) && !current?.rows.some(value => value.label === row.label))

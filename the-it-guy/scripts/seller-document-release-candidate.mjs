@@ -57,6 +57,7 @@ const qaFiles = ['scripts/seller-document-journey.test.mjs', 'scripts/fixtures/s
   'scripts/seller-onboarding-profile-alignment-phase6.test.mjs', 'scripts/seller-reviewed-document-versions.test.mjs',
   'src/lib/__tests__/sellerAgentAssistedDisclosure.test.js', 'src/lib/__tests__/sellerLeadManualCaptureModel.test.js',
   'src/lib/__tests__/sellerFicaOnboardingFields.test.js', 'src/core/documents/__tests__/sellerOnboardingConsent.test.js',
+  'src/core/documents/__tests__/sellerFicaDeclarationPresentation.test.js',
   'src/core/documents/__tests__/sellerDocumentWorkflow.test.js', 'src/core/documents/__tests__/sellerExistingSignedEvidence.test.js',
   'src/core/documents/__tests__/sellerCompliancePortalModel.test.js', 'src/core/documents/__tests__/sellerComplianceAgentStatusModel.test.js',
   'src/services/__tests__/clientPortalActivityFeedService.sellerCompliance.test.js', 'src/core/documents/__tests__/ficaDeclarationDocumentModel.test.js',

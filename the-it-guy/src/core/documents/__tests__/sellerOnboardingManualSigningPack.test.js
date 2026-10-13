@@ -17,7 +17,7 @@ test('creates printable FICA and mandate copies that remain awaiting wet-ink upl
   assert.match(pack.documents[1].generatedHtml, /Alex Seller/)
   assert.match(pack.documents[1].generatedHtml, /Exclusive mandate to sell/i)
   assert.match(pack.documents[1].generatedHtml, /Home Seekers/)
-  assert.match(pack.documents[0].generatedHtml, /CLIENT DUE DILIGENCE RECORD/)
+  assert.match(pack.documents[0].generatedHtml, /Client due diligence record/)
   assert.match(pack.documents[0].generatedHtml, /Not yet verified by the agency/)
   assert.match(pack.documents[0].generatedHtml, /src="https:\/\/example\.test\/on-light\.png"/)
   assert.match(pack.documents[1].generatedHtml, /src="https:\/\/example\.test\/on-light\.png"/)

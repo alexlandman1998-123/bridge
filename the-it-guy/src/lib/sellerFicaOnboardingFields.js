@@ -1,4 +1,29 @@
+import { normalizeSellerProfileType } from './sellerPartyAuthorityContract.js'
+
 const text = (value) => String(value ?? '').trim()
+
+// The legal owner determines the questions; a company's signatory is still a person.
+export function getSellerFicaDeclarationGroups(profileType) {
+  const type = normalizeSellerProfileType(profileType)
+  const personal = ['individual', 'married', 'multiple_owners', 'foreign_individual', 'power_of_attorney'].includes(type)
+  const business = ['company', 'close_corporation', 'foreign_company', 'other'].includes(type)
+  return [
+    { title: 'Identity and tax', fields: ['idType', 'saResident', 'incomeTaxNumber', ...(personal ? ['maritalStatus'] : [])] },
+    ...(personal ? [{ title: 'Employment and occupation', fields: ['occupation', 'employer', 'jobTitle'] }] : []),
+    ...(business ? [{ title: 'Business activity', fields: ['occupation', 'industryOfBusiness', 'countriesOfTrade', 'dualUseGoods', 'armsWeapons'] }] : []),
+    ...(!personal && !business ? [{ title: 'Representative occupation', fields: ['occupation'] }] : []),
+    { title: 'Funds and declarations', fields: ['sourceOfWealth', 'sourceOfIncome', 'politicallyInfluentialPerson', 'actingOnBehalfOfAnother', ...(type === 'deceased_estate' ? ['heirInEstate'] : [])] },
+    { title: 'Banking details', fields: ['bankName', 'accountName', 'accountNumber', 'accountType'] },
+  ]
+}
+
+export function normalizeSellerFicaIdType(value) {
+  const valueKey = text(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['id', 'sa_id', 'sa_identity', 'south_african_id', 'south_african_identity_document'].includes(valueKey)) return 'sa_id'
+  if (['passport', 'foreign_passport'].includes(valueKey)) return 'passport'
+  if (['refugee_id', 'refugee_identity_document'].includes(valueKey)) return 'refugee_id'
+  return text(value)
+}
 
 export function sellerYesNoValue(value) {
   const normalized = text(value).toLowerCase()

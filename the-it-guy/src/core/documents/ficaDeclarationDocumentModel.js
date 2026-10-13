@@ -98,15 +98,17 @@ function normalizeSigners(signing = {}, partyType = 'buyer') {
   const values = Array.isArray(source.signers) ? source.signers : Array.isArray(source.signingState?.signers) ? source.signingState.signers : []
   return values.map((signer, index) => {
     const item = record(signer)
+    const signature = firstText(record(item.signature).value, record(item.signature).dataUrl, record(item.signature).data_url, typeof item.signature === 'string' ? item.signature : '', item.signatureValue, item.signature_value)
     return {
       id: firstText(item.id, `signer-${index + 1}`),
       name: firstText(item.name, item.full_name, item.fullName, `${index === 0 ? 'Primary' : 'Additional'} signer`),
       roleLabel: firstText(item.roleLabel, item.role_label, label(item.role), partyLabel(partyType)),
       email: text(item.email),
       mobile: firstText(item.mobile, item.phone),
-      status: firstText(item.statusLabel, item.status_label, label(item.status), 'Pending'),
-      signedAt: firstText(item.signedAt, item.signed_at),
-      signature: firstText(record(item.signature).value, record(item.signature).dataUrl, item.signature, item.signatureValue, item.signature_value),
+      status: firstText(item.statusLabel, item.status_label, label(item.status), signature ? 'Signed' : 'Awaiting signature'),
+      signedAt: firstText(item.signedDate, item.signed_date, item.signedAt, item.signed_at),
+      signedPlace: firstText(item.signedPlace, item.signed_place),
+      signature,
       authorityRequired: Boolean(item.authorityRequired || item.authority_required),
       authorityLabel: firstText(item.authorityLabel, item.authority_label, record(item.authorityRequirement).label),
     }
