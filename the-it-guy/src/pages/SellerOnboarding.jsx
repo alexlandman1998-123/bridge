@@ -1,4 +1,5 @@
 import { createListingSellerProfileBuilderDraft } from '../lib/listingSellerProfileBuilderModel.js'
+import { sellerContactName, sellerOnboardingDisplayName } from '../core/clientPortal/sellerContactDetails.js'
 import { buildSellerAgentAssistedDisclosurePatch, isSellerDisclosureCaptureLocked } from '../lib/sellerAgentAssistedDisclosure.js'
 import PropertyDisclosureQuestionnaire from '../components/onboarding/PropertyDisclosureQuestionnaire.jsx'
 import {
@@ -673,13 +674,8 @@ function resolveSellerWelcomeTheme(brand = {}) {
 }
 
 function resolveAgentName(listing = {}) {
-  return String(
-    listing?.assignedAgentName ||
-    listing?.assignedAgent ||
-    listing?.agentName ||
-    listing?.sellerOnboarding?.agentName ||
-    'Your agent',
-  ).trim()
+  return sellerContactName(listing?.assignedAgentName, listing?.assignedAgent, listing?.agentName,
+    listing?.branding?.agentName, listing?.sellerOnboarding?.agentName) || 'Your agent'
 }
 
 function resolveSellerWelcomeImageUrl(listing = {}) {
@@ -725,8 +721,7 @@ function resolveSellerWelcomeImageUrl(listing = {}) {
 }
 
 function getSellerDisplayName(listing = {}, form = {}) {
-  return [form?.sellerFirstName, form?.sellerSurname].filter(Boolean).join(' ').trim() ||
-    String(listing?.seller?.name || listing?.sellerName || 'Seller').trim()
+  return sellerOnboardingDisplayName(listing, form) || 'Seller'
 }
 
 function getSellerComplianceSignerIdFromUrl() {
@@ -1965,6 +1960,11 @@ function SellerWelcomeScreen({ brand, listing, form, currentStep = 0, onContinue
       agencyName={brand?.name || ''}
       personName={welcomeName}
       propertyAddress={propertyAddress}
+      contextRows={[
+        { icon: Home, label: 'Property', value: propertyAddress },
+        { icon: UserRound, label: 'Agent', value: resolveAgentName(listing) },
+        { icon: ClipboardCheck, label: 'Process', value: 'Seller intake and property details' },
+      ]}
       backgroundImage={resolveSellerWelcomeImageUrl(listing)}
       primaryColour={brand?.primaryColour}
       secondaryColour={brand?.secondaryColour}

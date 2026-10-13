@@ -129,8 +129,10 @@ describe('seller token mutation boundary', () => {
   })
 
   it.each([false, true])('reopening hydrates saved fields without table access (RPC pending deployment: %s)', async (rpcMissing) => {
-    const form = { sellerName: 'Owner', currentStep: 3, companyRegistrationNumber: 'REG-TEST' }
-    fetch.mockImplementation(async (url) => ({ ok: url.startsWith('/api/public/seller-onboarding-core?'), status: url.startsWith('/api/public/seller-onboarding-core?') ? 200 : 404, json: async () => ({ listing: { id: listingId }, onboarding: { id: onboardingId, private_listing_id: listingId, form_data: form } }) }))
+    const form = { sellerName: 'Owner', sellerFirstName: 'Beverley', sellerSurname: 'Paynter', currentStep: 3, companyRegistrationNumber: 'REG-TEST' }
+    fetch.mockImplementation(async (url) => ({ ok: true, status: 200, json: async () => url.startsWith('/api/public/seller-onboarding-branding?')
+      ? { branding: { organisationName: 'Kingdom', agentName: 'Kevin Croft' } }
+      : { listing: { id: listingId }, onboarding: { id: onboardingId, private_listing_id: listingId, form_data: form } } }))
     client.rpc.mockImplementation((name) => name === 'bridge_get_private_listing_seller_onboarding_form' && rpcMissing
       ? rpcResult(null, { code: 'PGRST202', message: 'bridge_get_private_listing_seller_onboarding_form missing' })
       : rpcResult(
@@ -150,6 +152,7 @@ describe('seller token mutation boundary', () => {
     const result = await getSellerOnboardingByToken('valid-token', { corePayload: true })
     expect(result.onboarding.form_data.companyRegistrationNumber).toBe('REG-TEST')
     expect(result.listing.sellerOnboarding.formData.currentStep).toBe(3)
+    expect(result.listing.assignedAgentName).toBe('Kevin Croft')
     expect(client.rpc).toHaveBeenCalledWith('bridge_get_private_listing_seller_onboarding_form', { p_token: 'valid-token' })
     expect(client.from.mock.calls.some(([table]) => table === 'private_listing_seller_onboarding')).toBe(false)
   })

@@ -3,8 +3,9 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { SellerOnboarding } from '../../../pages/SellerOnboarding.jsx'
+import * as demoLinks from '../../../lib/onboardingDemoLinks.js'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 function capture(props = {}) {
   return render(<MemoryRouter><SellerOnboarding tokenOverride="demo-seller-onboarding" embedded {...props} /></MemoryRouter>)
@@ -46,4 +47,16 @@ test('incomplete answers can be saved but cannot advance to submission', async (
   await screen.findByRole('alert')
   expect(screen.getByRole('heading', { name: 'Personal details' })).toBeTruthy()
   expect(saved).not.toHaveBeenCalled()
+})
+
+test('an existing full-name capture personalises the welcome and shows the assigned agent', async () => {
+  const base = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue({
+    ...base, seller: { name: '' }, sellerCanonicalFacts: {}, assignedAgentName: '', assignedAgent: '',
+    branding: { ...base.branding, agentName: 'Kevin Croft' },
+    sellerOnboarding: { ...base.sellerOnboarding, canonicalFacts: {}, formData: { fullName: 'Beverley Paynter' } },
+  })
+  render(<MemoryRouter><SellerOnboarding tokenOverride="demo-seller-onboarding" /></MemoryRouter>)
+  await screen.findByText('Hi Beverley,')
+  expect(screen.getByText('Kevin Croft', { exact: true })).toBeTruthy()
 })

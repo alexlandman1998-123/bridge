@@ -42,6 +42,20 @@ it('reads directory listing metrics in one scoped query without seller or publis
   })
 })
 
+it.each([
+  { form_data: { sellerFirstName: 'Beverley', sellerSurname: 'Paynter', sellerName: '' } },
+  { form_data: {}, canonical_facts_json: { seller: { first_name: 'Beverley', surname: 'Paynter' } } },
+])('keeps seller names captured in onboarding and nested canonical facts: %j', async onboarding => {
+  fixture.relatedRows.private_listing_seller_onboarding = [{
+    ...onboarding, id: 'onboarding', private_listing_id: fixture.rows[0].id, status: 'in_progress',
+  }]
+  const listings = await getOrganisationPrivateListings(organisationId, {
+    includeRequirementsAndDocuments: false, includeExternalLinks: false, includePublicationDetails: false,
+  })
+  expect(listings[0].sellerName).toBe('Beverley Paynter')
+  expect(listings[0].seller.name).toBe('Beverley Paynter')
+})
+
 it('retains related reads for existing detail callers', async () => {
   await getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false })
   const tables = fixture.requests.map((request) => request.table)

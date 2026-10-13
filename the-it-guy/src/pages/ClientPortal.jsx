@@ -7,7 +7,7 @@ import BondApplicationTaskWorkspace from '../modules/bond/application/workspace/
 import ClientDocumentUploadButton from '../components/client-portal/documents/ClientDocumentUploadButton'
 import { recordClientPortalVisit } from '../services/clientActivityService'
 import SellerChecklistSummary from '../components/client-portal/documents/SellerChecklistSummary.jsx'
-import { sellerContactEmail } from '../core/clientPortal/sellerContactDetails.js'
+import { sellerContactEmail, sellerContactName, sellerOnboardingDisplayName } from '../core/clientPortal/sellerContactDetails.js'
 import SellerTeamWorkspace from '../components/client-portal/team/SellerTeamWorkspace.jsx'
 import SellerProgressPage from '../components/client-portal/seller/SellerProgressPage.jsx'
 import SellerListingMarketingPage from '../components/client-portal/seller/SellerListingMarketingPage.jsx'
@@ -11756,7 +11756,9 @@ function ClientPortal() {
       tone: snagOpenCount ? 'action' : 'complete',
     },
   ].filter((card) => sectionEnabled[card.to] !== false)
-  const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
+  const sellerDisplayName = sellerContactName(sellerOnboardingDisplayName(portal?.listing, portal?.onboardingFormData?.formData),
+    portal?.buyer?.name,
+    activeSellingContext?.clientName, activeSellingContext?.client_name) || 'Seller'
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
     portal?.onboardingFormData?.formData?.propertyAddress,
@@ -11850,9 +11852,10 @@ function ClientPortal() {
     portal?.branding?.logo_dark_url,
     sellerAgencyLogoUrl,
   )
-  const sellerAgentName = isSellerPortalToken ? String(sellerOverviewContext?.agent?.name || '').trim() : pickFirstText(
-    sellerOverviewContext?.agent?.name,
+  const sellerAgentName = sellerContactName(
     portal?.listing?.assignedAgentName,
+    portal?.listing?.branding?.agentName,
+    sellerOverviewContext?.agent?.name,
     portal?.transaction?.assigned_agent,
     activeSellingContext?.assignedAgentName,
     activeSellingContext?.assigned_agent_name,

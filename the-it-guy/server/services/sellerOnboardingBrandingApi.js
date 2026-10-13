@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
+import { sellerContactName } from '../../src/core/clientPortal/sellerContactDetails.js'
 
 let cachedRuntimeEnv = null
 
@@ -128,8 +129,8 @@ async function fetchSellerBrandingListing(client, listingId = '') {
     // Production private listings use the canonical lifecycle columns. Keep
     // this first so every branding request does not deliberately trigger two
     // PostgREST 400s before reaching the compatible shape.
-    'id, organisation_id, listing_status, listing_visibility, seller_lead_id',
-    'id, organisation_id, status, listing_visibility, seller_lead_id, deleted_at',
+    'id, organisation_id, listing_status, listing_visibility, seller_lead_id, assigned_agent_id',
+    'id, organisation_id, status, listing_visibility, seller_lead_id, deleted_at, assigned_agent_id',
   ]
 
   let lastError = null
@@ -283,6 +284,14 @@ async function resolveSellerBranding(client, organisationId = '') {
   }
 }
 
+async function resolveAssignedAgentName(client, listing = {}) {
+  if (!listing.assigned_agent_id) return ''
+  const { data, error } = await client.from('profiles').select('full_name, first_name, last_name')
+    .eq('id', listing.assigned_agent_id).maybeSingle()
+  if (error) return ''
+  return sellerContactName(data?.full_name, [data?.first_name, data?.last_name].filter(Boolean).join(' '))
+}
+
 export async function createSellerOnboardingBrandingResponse({ method = 'GET', url = '', headers = {}, env = null } = {}) {
   const normalizedMethod = normalizeMethod(method)
 
@@ -334,7 +343,10 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
       })
     }
 
-    const branding = await resolveSellerBranding(client, listing.organisation_id)
+    const [branding, agentName] = await Promise.all([
+      resolveSellerBranding(client, listing.organisation_id),
+      resolveAssignedAgentName(client, listing),
+    ])
     if (!branding) {
       return buildJsonResponse(404, {
         error: 'seller_onboarding_branding_not_found',
@@ -342,7 +354,7 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
       })
     }
 
-    return buildJsonResponse(200, isHeadRequest ? null : { branding })
+    return buildJsonResponse(200, isHeadRequest ? null : { branding: { ...branding, agentName } })
   } catch (error) {
     const status = Number(error?.status || error?.statusCode || 500)
     return buildJsonResponse(status, {

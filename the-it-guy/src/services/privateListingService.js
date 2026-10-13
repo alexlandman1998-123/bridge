@@ -2949,6 +2949,12 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     canonicalSellerFacts.sellerName,
     canonicalSellerFacts.name,
     [canonicalSellerFacts.firstName, canonicalSellerFacts.lastName].filter(Boolean).join(' '),
+    canonicalSellerFacts.seller?.full_name,
+    [canonicalSellerFacts.seller?.first_name, canonicalSellerFacts.seller?.surname].filter(Boolean).join(' '),
+    onboardingFormData.fullName,
+    onboardingFormData.sellerName,
+    [onboardingFormData.sellerFirstName || onboardingFormData.firstName, onboardingFormData.sellerSurname || onboardingFormData.lastName].filter(Boolean).join(' '),
+    onboardingFormData.primaryContactName,
   )
   const canonicalSellerEmail = pickFirstText(canonicalSellerFacts.email, canonicalSellerFacts.sellerEmail).toLowerCase()
   const canonicalSellerPhone = pickFirstText(canonicalSellerFacts.phone, canonicalSellerFacts.sellerPhone, canonicalSellerFacts.mobile)
@@ -3637,6 +3643,8 @@ function attachBrandingToListing(listing = null, branding = null) {
   }
   return {
     ...listing,
+    assignedAgentName: pickFirstText(branding.agentName, listing.assignedAgentName),
+    assignedAgent: pickFirstText(branding.agentName, listing.assignedAgent),
     agencyOrganisation: pickFirstText(mergedBranding.organisationName, listing.agencyOrganisation),
     organisationName: pickFirstText(mergedBranding.organisationName, listing.organisationName),
     agencyName: pickFirstText(mergedBranding.agencyName, listing.agencyName),
