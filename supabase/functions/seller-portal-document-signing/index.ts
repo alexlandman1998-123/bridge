@@ -482,7 +482,7 @@ async function list(req: Request, admin: AdminClient, url: string, anonKey: stri
   if (!context) return respond(403, { error: "Agent access to this listing is required." });
   await expireStaleRequests(admin, text(context.listing.id));
   const documents = await admin.from("private_listing_seller_portal_signing_documents")
-    .select("id, document_key, version_id, status, created_at, sent_at, signed_at, reviewed_at, signed_document_id, revoked_at, revoke_reason")
+    .select("id, document_key, version_id, version_digest, status, created_at, sent_at, signed_at, reviewed_at, signed_document_id, revoked_at, revoke_reason")
     .eq("private_listing_id", context.listing.id).order("created_at", { ascending: false });
   if (documents.error) return respond(500, { error: "Unable to load signing requests." });
   const [recipients, uploads] = await Promise.all([

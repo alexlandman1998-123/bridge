@@ -623,7 +623,10 @@ async function signedDocumentRejectionJourney() {
     assert.equal(signed.status, 200, JSON.stringify(signed.body))
   }
   const before = (await sql(`select * from ${signingTable} where id=$1`, [id]))[0]
-  fields.versionDigest = before.version_digest
+  const listed = await request('list', { listingId: fixture.listingId }, true)
+  assert.equal(listed.status, 200, JSON.stringify(listed.body))
+  fields.versionDigest = listed.body.documents.find(row => row.id === id)?.version_digest
+  assert.equal(fields.versionDigest, before.version_digest, 'The staff row must receive the exact digest used by rejection')
   const evidence = await sql(`select * from ${evidenceTable} where signing_document_id=$1 order by id`, [id])
   const recipientRows = await sql(`select * from ${recipientTable} where signing_document_id=$1 order by id`, [id])
   const unchanged = async () => {
