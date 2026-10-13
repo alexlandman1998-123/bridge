@@ -26,9 +26,11 @@ export default function ListingDocumentActions({ label, children }) {
       })
     }
     const dismiss = event => {
+      if (panel.current?.querySelector('[data-document-review-dialog-open="true"]')) return
       if (!panel.current?.contains(event.target) && !trigger.current?.contains(event.target)) setOpen(false)
     }
     const keyboard = event => {
+      if (panel.current?.querySelector('[data-document-review-dialog-open="true"]')) return
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
@@ -58,6 +60,7 @@ export default function ListingDocumentActions({ label, children }) {
       const button = event.target.closest('button')
       if (button && !button.closest('[data-document-review-actions]')) setOpen(false)
     }} onChange={event => { if (event.target.type === 'file') setOpen(false) }} onBlur={event => {
+      if (panel.current?.querySelector('[data-document-review-dialog-open="true"]')) return
       if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget) && !trigger.current?.contains(event.relatedTarget)) setOpen(false)
     }} className="fixed z-[70] w-80 max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl border border-[#dbe6f2] bg-white p-2 shadow-[0_12px_36px_rgba(15,23,42,0.16)] [&_button]:border-0 [&_button]:bg-transparent [&_button]:shadow-none [&_button]:text-[#315b7a] [&_button:hover]:bg-[#f4f8fb] [&_label:has(input[type=file])]:border-0 [&_label:has(input[type=file]):hover]:bg-[#f4f8fb] [&_button]:w-full [&_button]:justify-start [&_button]:text-left [&_label:has(input[type=file])]:flex [&_label:has(input[type=file])]:w-full [&_label:has(input[type=file])]:items-center [&_div.flex]:flex-col">
       <p className="mb-2 border-b border-[#edf2f7] px-2 pb-2 pt-1 text-xs font-semibold text-[#607387]">{label}</p>

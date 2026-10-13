@@ -16,10 +16,10 @@ function DialogOverlay({ className, ...props }) {
   )
 }
 
-function DialogContent({ className, children, showClose = true, ...props }) {
+function DialogContent({ className, children, showClose = true, overlayClassName, ...props }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         className={cn(
           'fixed left-1/2 top-1/2 z-50 w-[calc(100%-1.5rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-marketing-border bg-marketing-panelElevated p-6 shadow-marketing-float backdrop-blur-2xl md:p-7',
