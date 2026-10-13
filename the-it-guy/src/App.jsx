@@ -3,8 +3,6 @@ import AppErrorBoundary from './components/AppErrorBoundary'
 import { getLocalPreviewTransaction } from './core/clients/localClientPreview'
 import WorkspaceLoadingScreen from './components/auth/WorkspaceLoadingScreen'
 import AccessState from './components/access/AccessState'
-import PermissionGate from './components/PermissionGate'
-import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
 import { OrganisationProvider, useOrganisation } from './context/OrganisationContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
@@ -117,6 +115,8 @@ const ACTIVITY_TIMER_RESET_THROTTLE_MS = 1000
 const RELEASE_REFRESH_STORAGE_PREFIX = 'arch9:release-refresh'
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
+const PermissionGate = lazy(() => import('./components/PermissionGate'))
+const TokenRouteGate = lazy(() => import('./components/routing/TokenRouteGate'))
 
 const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
 const ARCH9_JOIN_URL = import.meta.env.VITE_ARCH9_JOIN_URL || 'https://admin.arch9.co.za/join'
