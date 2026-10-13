@@ -9777,7 +9777,9 @@ function AgentListingDetail() {
       mandateSigned: complianceStatus.signedMandate,
     })
     return {
-      currentLabel: complianceStatus.status === 'listing_live'
+      currentLabel: onboardingJourney.correctionRequested
+        ? onboardingJourney.currentLabel
+        : complianceStatus.status === 'listing_live'
         ? 'Listing live'
         : listingCreated
           ? 'Mandate signed · Listing created'

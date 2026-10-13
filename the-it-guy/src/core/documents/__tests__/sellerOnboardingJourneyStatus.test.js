@@ -23,6 +23,33 @@ test('one document signature never completes the other seller documents', () => 
   assert.deepEqual(status.documents.map((document) => document.status), ['awaiting_review', 'awaiting_agent_review', 'signed'])
 })
 
+test('a historical signed lifecycle cannot replace current mandate evidence', () => {
+  const formData = { sellerOnboardingSigningLifecycle: { stage: 'mandate_signed' } }
+  const unsigned = buildSellerOnboardingJourneyStatus({ formData, onboardingSubmitted: true, mandateSigned: false })
+  assert.equal(unsigned.steps.find(step => step.key === 'mandate').complete, false)
+  assert.notEqual(unsigned.currentLabel, 'Mandate signed')
+  assert.notEqual(unsigned.documents.find(document => document.key === 'mandate').status, 'signed')
+  const signed = buildSellerOnboardingJourneyStatus({ formData, onboardingSubmitted: true, mandateSigned: true })
+  assert.equal(signed.currentLabel, 'Mandate signed')
+})
+
+test('a current correction overrides historical signing progress without changing its history', () => {
+  const formData = {
+    sellerOnboardingSigningLifecycle: { stage: 'mandate_signed', history: [{ stage: 'mandate_signed' }] },
+    sellerOnboardingReview: { status: 'correction_requested', reason: 'Confirm the current seller facts' },
+  }
+  const before = JSON.stringify(formData)
+  for (const mandateSigned of [false, true]) {
+    const status = buildSellerOnboardingJourneyStatus({ formData, onboardingSubmitted: true, mandateSigned })
+    assert.equal(status.currentLabel, 'Correction requested')
+    assert.equal(status.steps.find(step => step.key === 'review').complete, false)
+    assert.equal(status.steps.find(step => step.key === 'pack').complete, false)
+    assert.equal(status.documents.find(document => document.key === 'mandate').status, 'correction_requested')
+    assert.equal(status.documents.find(document => document.key === 'fica').status, 'correction_requested')
+  }
+  assert.equal(JSON.stringify(formData), before)
+})
+
 test('recognises a signed onboarding disclosure without marking FICA or mandate signed', () => {
   const status = buildSellerOnboardingJourneyStatus({
     onboardingSubmitted: true,

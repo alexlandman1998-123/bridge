@@ -42,6 +42,15 @@ test('a signed mandate does not silently complete FICA or disclosure', () => {
   )
 })
 
+test('current mandate evidence overrides a historical signed stage across document summaries', () => {
+  const formData = { sellerOnboardingSigningLifecycle: { stage: 'mandate_signed' } }
+  assert.equal(states({ onboardingSubmitted: true, mandateSigned: false, formData })[2], 'sent_for_signature')
+  assert.equal(states({ onboardingSubmitted: true, mandateSigned: true, formData })[2], 'signed')
+  formData.sellerOnboardingReview = { status: 'correction_requested' }
+  assert.deepEqual(states({ onboardingSubmitted: true, mandateSigned: true, ficaSigned: true, formData }),
+    ['awaiting_agent_review', 'correction_requested', 'correction_requested'])
+})
+
 test('completed onboarding disclosure evidence may complete only the disclosure', () => {
   const disclosure = {
     responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map((question) => [question.key, { answer: 'no' }])),

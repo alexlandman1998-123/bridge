@@ -1,3 +1,4 @@
+import { readSellerBooleanAnswer } from '../lib/sellerBooleanAnswers.js'
 import SellerCaptureDocuments from '../components/onboarding/SellerCaptureDocuments.jsx'
 import { createListingSellerProfileBuilderDraft, LISTING_SELLER_PROFILE_CAPTURE_SOURCE } from '../lib/listingSellerProfileBuilderModel.js'
 import { sellerContactName, sellerOnboardingDisplayName } from '../core/clientPortal/sellerContactDetails.js'
@@ -1171,7 +1172,7 @@ function hasConfirmedOwnershipRoute(existing = {}, canonicalFacts = {}) {
 }
 
 function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null, ownershipRouteConfirmed = false) {
-  if ((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipRouteConfirmed) return ''
+  if (readSellerBooleanAnswer(existing.ownershipDeclarationPending, existing.ownership_declaration_pending) && !ownershipRouteConfirmed) return ''
   const explicit = String(existing.ownershipType || existing.sellerLegalType || existing.legalType || existing.sellerType || '').toLowerCase()
   const explicitOwnerEntityType = String(existing.ownerEntityType || existing.owner_entity_type || canonicalFacts?.seller?.owner_entity_type || '').toLowerCase()
   const explicitOwnerStructureType = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').toLowerCase()
@@ -1246,7 +1247,7 @@ function deriveOwnerStructureType(ownershipType = '', ownerEntityType = 'natural
   if (explicit) return normalizeOwnerStructureType(explicit, ownerEntityType)
 
   const normalized = String(ownershipType || '').trim().toLowerCase()
-  if (!normalized && (existing.ownershipDeclarationPending || existing.ownership_declaration_pending)) return ''
+  if (!normalized && readSellerBooleanAnswer(existing.ownershipDeclarationPending, existing.ownership_declaration_pending)) return ''
   if (ownerEntityType === 'company') return 'company'
   if (ownerEntityType === 'trust') return 'trust'
   if (ownerEntityType === 'foreign') {
@@ -1513,11 +1514,16 @@ export function normalizeFormData(listing) {
     featureKeys.add('borehole')
     featureKeys.add('water_tank')
   }
-  if (existing.solarInstallation || canonicalFacts?.compliance?.solar_installation) featureKeys.add('solar')
-  if (existing.gasGeyser || existing.gas_geyser || existing.gasInstallation || canonicalFacts?.compliance?.gas_geyser || canonicalFacts?.compliance?.gas_installation) featureKeys.add('gas_geyser')
-  if (existing.inverterBattery || existing.inverter_battery || canonicalFacts?.compliance?.inverter_battery) featureKeys.add('inverter_battery')
-  if (existing.boreholeInstallation || existing.borehole || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole) featureKeys.add('borehole')
-  if (existing.waterTank || existing.water_tank || canonicalFacts?.compliance?.water_tank) featureKeys.add('water_tank')
+  const capturedFeature = (key) => Array.isArray(existing.features) ? legacyFeatureKeys.includes(key) || (legacyFeatureKeys.includes('water') && ['borehole', 'water_tank'].includes(key)) : undefined
+  const featureAnswers = {
+    solar: readSellerBooleanAnswer(existing.solarInstallation, existing.solar_installation, capturedFeature('solar'), canonicalFacts?.compliance?.solar_installation),
+    gas_geyser: readSellerBooleanAnswer(existing.gasInstallation, existing.gas_installation, existing.gasGeyser, existing.gas_geyser, capturedFeature('gas_geyser'), canonicalFacts?.compliance?.gas_installation, canonicalFacts?.compliance?.gas_geyser),
+    inverter_battery: readSellerBooleanAnswer(existing.inverterBattery, existing.inverter_battery, capturedFeature('inverter_battery'), canonicalFacts?.compliance?.inverter_battery),
+    borehole: readSellerBooleanAnswer(existing.boreholeInstallation, existing.borehole, capturedFeature('borehole'), canonicalFacts?.compliance?.borehole_installation, canonicalFacts?.compliance?.borehole),
+    water_tank: readSellerBooleanAnswer(existing.waterTank, existing.water_tank, capturedFeature('water_tank'), canonicalFacts?.compliance?.water_tank),
+    pool: readSellerBooleanAnswer(existing.pool, existing.swimmingPool, capturedFeature('pool'), canonicalFacts?.property?.pool, canonicalFacts?.compliance?.swimming_pool),
+  }
+  Object.entries(featureAnswers).forEach(([key, selected]) => selected ? featureKeys.add(key) : featureKeys.delete(key))
   const normalizedFeatures = Array.from(featureKeys)
   const listingAddressLine1 = getListingPropertyAddressLine1(listing)
   const propertyAddressSummary = getListingPropertyAddressSummary(listing)
@@ -1607,13 +1613,13 @@ export function normalizeFormData(listing) {
     ownerStructureType,
     ownershipRouteConfirmed: Boolean(ownershipType && confirmedOwnershipRoute),
     ownership_route_confirmed: Boolean(ownershipType && confirmedOwnershipRoute),
-    ownershipDeclarationPending: Boolean((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipType),
-    ownership_declaration_pending: Boolean((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipType),
+    ownershipDeclarationPending: readSellerBooleanAnswer(existing.ownershipDeclarationPending, existing.ownership_declaration_pending) && !ownershipType,
+    ownership_declaration_pending: readSellerBooleanAnswer(existing.ownershipDeclarationPending, existing.ownership_declaration_pending) && !ownershipType,
     // An agent-selected legal ownership route is part of the prepared
     // onboarding instruction. The seller can complete its facts, but may not
     // silently turn (for example) a company instruction into an individual.
-    ownershipRouteLocked: Boolean(existing.ownershipRouteLocked || existing.ownership_route_locked),
-    ownership_route_locked: Boolean(existing.ownershipRouteLocked || existing.ownership_route_locked),
+    ownershipRouteLocked: readSellerBooleanAnswer(existing.ownershipRouteLocked, existing.ownership_route_locked),
+    ownership_route_locked: readSellerBooleanAnswer(existing.ownershipRouteLocked, existing.ownership_route_locked),
     ownershipRouteLockedAt: existing.ownershipRouteLockedAt || existing.ownership_route_locked_at || '',
     ownership_route_locked_at: existing.ownershipRouteLockedAt || existing.ownership_route_locked_at || '',
     foreignOwner,
@@ -1622,7 +1628,7 @@ export function normalizeFormData(listing) {
     foreignRegistrationNumber: existing.foreignRegistrationNumber || existing.foreign_registration_number || existing.foreign?.registrationNumber || existing.foreign?.registration_number || canonicalFacts?.seller?.foreign?.registration_number || '',
     foreignResidencyStatus: existing.foreignResidencyStatus || existing.foreign_residency_status || existing.residencyStatus || existing.foreign?.residencyStatus || existing.foreign?.residency_status || canonicalFacts?.seller?.foreign?.residency_status || '',
     multipleOwnerCaptureMode,
-    primaryContactIsOwnerOne: Boolean(existing.primaryContactIsOwnerOne || existing.primary_contact_is_owner_one),
+    primaryContactIsOwnerOne: readSellerBooleanAnswer(existing.primaryContactIsOwnerOne, existing.primary_contact_is_owner_one),
     saResident: normalizeYesNoValue(sharedProfile.saResident),
     popiConsent: readSellerPopiConsent({ ...(canonicalFacts?.seller || {}), ...existing }).accepted,
     sellerOnboardingConsents: readSellerOnboardingConsents(existing),
@@ -1719,9 +1725,9 @@ export function normalizeFormData(listing) {
     canonicalPropertyType: existing.canonicalPropertyType || canonicalPropertyType || canonicalFacts?.property?.property_type || existing.propertyClassification || '',
     sectionalTitle: isSectionalStructure,
     shareBlock: isShareBlockStructure,
-    estateOrHoa: Boolean(existing.estateOrHoa || canonicalFacts?.property?.estate_or_hoa || propertyBranch === 'estate_hoa' || hadLegacyEstateStructure),
-    bodyCorporate: Boolean(existing.bodyCorporate || canonicalFacts?.property?.body_corporate || isSectionalStructure),
-    commercialProperty: Boolean(existing.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch)),
+    estateOrHoa: readSellerBooleanAnswer(existing.estateOrHoa, existing.estate_or_hoa, canonicalFacts?.property?.estate_or_hoa, propertyBranch === 'estate_hoa' || hadLegacyEstateStructure),
+    bodyCorporate: isSectionalStructure || readSellerBooleanAnswer(existing.bodyCorporate, canonicalFacts?.property?.body_corporate),
+    commercialProperty: resolvedPropertyCategory ? ['commercial', 'industrial', 'retail', 'mixed_use'].includes(resolvedPropertyCategory) : readSellerBooleanAnswer(existing.commercialProperty, canonicalFacts?.property?.commercial_property, ['commercial', 'mixed_use'].includes(propertyBranch)),
     propertyType: resolvedPropertyType,
     propertyAddressDetails,
     propertyAddressSearch: propertyAddressDetails.query || propertyAddressSearch,
@@ -1741,7 +1747,7 @@ export function normalizeFormData(listing) {
     schemeManagingAgentEmail: existing.schemeManagingAgentEmail || canonicalFacts?.property?.scheme?.managing_agent?.email || '',
     schemeManagingAgentPhone: existing.schemeManagingAgentPhone || canonicalFacts?.property?.scheme?.managing_agent?.phone || '',
     schemeLevies: existing.schemeLevies || canonicalFacts?.property?.scheme?.levies || '',
-    schemeRulesAvailable: Boolean(existing.schemeRulesAvailable || canonicalFacts?.property?.scheme?.rules),
+    schemeRulesAvailable: readSellerBooleanAnswer(existing.schemeRulesAvailable, existing.scheme_rules_available, Boolean(canonicalFacts?.property?.scheme?.rules)),
     unitNumber: resolvedUnitNumber,
     sectionNumber: resolvedSectionNumber,
     schemeName: existing.schemeName || canonicalFacts?.property?.scheme_name || canonicalFacts?.property?.scheme?.name || '',
@@ -1749,19 +1755,19 @@ export function normalizeFormData(listing) {
     hoaContactEmail: existing.hoaContactEmail || canonicalFacts?.property?.estate?.hoa_contact?.email || '',
     hoaContactPhone: existing.hoaContactPhone || canonicalFacts?.property?.estate?.hoa_contact?.phone || '',
     hoaManagementCompany: existing.hoaManagementCompany || canonicalFacts?.property?.estate?.management_company || '',
-    hoaRulesAvailable: Boolean(existing.hoaRulesAvailable || canonicalFacts?.property?.estate?.rules),
+    hoaRulesAvailable: readSellerBooleanAnswer(existing.hoaRulesAvailable, existing.hoa_rules_available, Boolean(canonicalFacts?.property?.estate?.rules)),
     commercialUseDescription: existing.commercialUseDescription || canonicalFacts?.property?.use?.description || '',
     mixedUseSplit: existing.mixedUseSplit || canonicalFacts?.property?.use?.mixed_use_split || '',
-    tenantScheduleAvailable: Boolean(existing.tenantScheduleAvailable || canonicalFacts?.property?.tenant_schedule),
+    tenantScheduleAvailable: readSellerBooleanAnswer(existing.tenantScheduleAvailable, existing.tenant_schedule_available, Boolean(canonicalFacts?.property?.tenant_schedule)),
     landZoning: existing.landZoning || canonicalFacts?.property?.land?.zoning || canonicalFacts?.property?.land_zoning || '',
     landServicesAvailable: existing.landServicesAvailable || canonicalFacts?.property?.land?.services_available || canonicalFacts?.property?.land_services_available || '',
     landWaterSource: existing.landWaterSource || canonicalFacts?.property?.land?.water_source || canonicalFacts?.property?.land_water_source || '',
     erfNumber: existing.erfNumber || canonicalFacts?.property?.erf_number || '',
-    titleDeedAvailable: Boolean(existing.titleDeedAvailable || canonicalFacts?.property?.title_deed_available),
-    sgDiagramAvailable: Boolean(existing.sgDiagramAvailable || canonicalFacts?.property?.sg_diagram_available),
-    erfDiagramAvailable: Boolean(existing.erfDiagramAvailable || canonicalFacts?.property?.erf_diagram_available),
-    approvedBuildingPlansAvailable: Boolean(existing.approvedBuildingPlansAvailable || canonicalFacts?.property?.approved_building_plans_available),
-    floorPlanAvailable: Boolean(existing.floorPlanAvailable || canonicalFacts?.property?.floor_plan_available),
+    titleDeedAvailable: readSellerBooleanAnswer(existing.titleDeedAvailable, existing.title_deed_available, canonicalFacts?.property?.title_deed_available),
+    sgDiagramAvailable: readSellerBooleanAnswer(existing.sgDiagramAvailable, existing.sg_diagram_available, canonicalFacts?.property?.sg_diagram_available),
+    erfDiagramAvailable: readSellerBooleanAnswer(existing.erfDiagramAvailable, existing.erf_diagram_available, canonicalFacts?.property?.erf_diagram_available),
+    approvedBuildingPlansAvailable: readSellerBooleanAnswer(existing.approvedBuildingPlansAvailable, existing.approved_building_plans_available, canonicalFacts?.property?.approved_building_plans_available),
+    floorPlanAvailable: readSellerBooleanAnswer(existing.floorPlanAvailable, existing.floor_plan_available, canonicalFacts?.property?.floor_plan_available),
 
     erfSize: existing.erfSize ?? canonicalFacts?.property?.erf_size ?? '',
     floorSize: existing.floorSize ?? canonicalFacts?.property?.floor_size ?? '',
@@ -1772,14 +1778,14 @@ export function normalizeFormData(listing) {
     garages: existing.garages ?? canonicalFacts?.property?.garages ?? '',
     parkingCovered: existing.parkingCovered ?? canonicalFacts?.property?.parking_covered ?? '',
     parkingOpen: existing.parkingOpen ?? canonicalFacts?.property?.parking_open ?? '',
-    pool: Boolean(existing.pool || canonicalFacts?.property?.pool),
+    pool: normalizedFeatures.includes('pool'),
     levies: existing.levies ?? canonicalFacts?.property?.levies ?? '',
-    leviesNotApplicable: Boolean(existing.leviesNotApplicable || existing.levies_not_applicable || canonicalFacts?.property?.levies_not_applicable),
+    leviesNotApplicable: readSellerBooleanAnswer(existing.leviesNotApplicable, existing.levies_not_applicable, canonicalFacts?.property?.levies_not_applicable),
     ratesTaxes: existing.ratesTaxes ?? canonicalFacts?.property?.rates_taxes ?? '',
     waterBillingType: existing.waterBillingType || existing.water_billing_type || canonicalFacts?.property?.utilities?.water_billing_type || canonicalFacts?.property?.water_billing_type || '',
     monthlyWaterSpend: existing.monthlyWaterSpend || canonicalFacts?.property?.utilities?.monthly_water_spend || '',
     monthlyElectricitySpend: existing.monthlyElectricitySpend || canonicalFacts?.property?.utilities?.monthly_electricity_spend || '',
-    recentAlterations: Boolean(existing.recentAlterations || canonicalFacts?.property?.alterations?.recent),
+    recentAlterations: readSellerBooleanAnswer(existing.recentAlterations, existing.recent_alterations, canonicalFacts?.property?.alterations?.recent),
     alterationDetails: existing.alterationDetails || canonicalFacts?.property?.alterations?.details || '',
 
     flowVersion: flow.version || canonicalFacts?.flow?.version || '',
@@ -1822,47 +1828,47 @@ export function normalizeFormData(listing) {
     propertyNotes: existing.propertyNotes || '',
 
     occupancyStatus: existing.occupancyStatus || 'unknown',
-    leaseExists: Boolean(existing.leaseExists),
+    leaseExists: readSellerBooleanAnswer(existing.leaseExists),
     leaseExpiryDate: existing.leaseExpiryDate || '',
     monthlyRental: existing.monthlyRental || '',
     rentalDeposit: existing.rentalDeposit || '',
     tenantName: existing.tenantName || '',
     tenantContactDetails: existing.tenantContactDetails || '',
     noticePeriodDetails: existing.noticePeriodDetails || '',
-    rentalScheduleAvailable: Boolean(existing.rentalScheduleAvailable),
+    rentalScheduleAvailable: readSellerBooleanAnswer(existing.rentalScheduleAvailable),
     viewingAvailabilityWindows: existing.viewingAvailabilityWindows || existing.viewing_availability_windows || canonicalFacts?.occupancy?.viewing_availability_windows || '',
     viewingAccessInstructions: existing.viewingAccessInstructions || existing.viewing_access_instructions || canonicalFacts?.occupancy?.viewing_access_instructions || '',
     viewingNoticePeriod: existing.viewingNoticePeriod || existing.viewing_notice_period || canonicalFacts?.occupancy?.viewing_notice_period || '',
-    viewingNoticeRequired: Boolean(existing.viewingNoticeRequired || existing.viewing_notice_required || canonicalFacts?.occupancy?.viewing_notice_required),
+    viewingNoticeRequired: readSellerBooleanAnswer(existing.viewingNoticeRequired, existing.viewing_notice_required, canonicalFacts?.occupancy?.viewing_notice_required),
 
     bondStatus: resolveSellerBondStatus(existing.bondStatus, existing.propertyBondStatus, existing.existingBond, existing.sellerHasExistingBond, existing.bondedProperty),
     existingBond: sellerBondDeclaration(resolveSellerBondStatus(existing.bondStatus, existing.propertyBondStatus, existing.existingBond, existing.sellerHasExistingBond, existing.bondedProperty)),
     bondBank: existing.bondBank || existing.currentBondBank || '',
     bondAccountReference: existing.bondAccountReference || existing.currentBondAccountNumber || '',
-    multipleBonds: Boolean(existing.multipleBonds),
-    accessBond: Boolean(existing.accessBond),
+    multipleBonds: readSellerBooleanAnswer(existing.multipleBonds),
+    accessBond: readSellerBooleanAnswer(existing.accessBond),
     estimatedSettlementAmount: existing.estimatedSettlementAmount || '',
-    cancellationRequired: existing.cancellationRequired !== undefined ? Boolean(existing.cancellationRequired) : Boolean(existing.existingBond),
-    cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
+    cancellationRequired: readSellerBooleanAnswer(existing.cancellationRequired, sellerBondDeclaration(resolveSellerBondStatus(existing.bondStatus, existing.propertyBondStatus, existing.existingBond))),
+    cancellationAttorneyKnown: readSellerBooleanAnswer(existing.cancellationAttorneyKnown),
     cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
-    gasInstallation: Boolean(existing.gasInstallation || existing.gasGeyser || existing.gas_geyser || canonicalFacts?.compliance?.gas_installation || canonicalFacts?.compliance?.gas_geyser),
+    gasInstallation: normalizedFeatures.includes('gas_geyser'),
     gasGeyser: normalizedFeatures.includes('gas_geyser'),
-    electricFence: Boolean(existing.electricFence || canonicalFacts?.compliance?.electric_fence),
+    electricFence: readSellerBooleanAnswer(existing.electricFence, existing.electric_fence, canonicalFacts?.compliance?.electric_fence),
     solarInstallation: normalizedFeatures.includes('solar'),
     inverterBattery: normalizedFeatures.includes('inverter_battery'),
-    swimmingPool: Boolean(existing.swimmingPool || existing.pool || canonicalFacts?.compliance?.swimming_pool),
+    swimmingPool: normalizedFeatures.includes('pool'),
     boreholeInstallation: normalizedFeatures.includes('borehole'),
     borehole: normalizedFeatures.includes('borehole'),
     waterTank: normalizedFeatures.includes('water_tank'),
-    generatorInstallation: Boolean(existing.generatorInstallation || canonicalFacts?.compliance?.generator_installation),
-    beetleCertificateRegion: Boolean(existing.beetleCertificateRegion || canonicalFacts?.compliance?.beetle_certificate_region),
-    plumbingCertificateRequired: Boolean(existing.plumbingCertificateRequired || canonicalFacts?.compliance?.plumbing_certificate_required),
-    occupationCertificateAvailable: Boolean(existing.occupationCertificateAvailable || canonicalFacts?.compliance?.occupation_certificate_available),
-    electricalCocAvailable: Boolean(existing.electricalCocAvailable || canonicalFacts?.compliance?.electrical_coc_available),
-    gasCocAvailable: Boolean(existing.gasCocAvailable || canonicalFacts?.compliance?.gas_coc_available),
-    electricFenceCertificateAvailable: Boolean(existing.electricFenceCertificateAvailable || canonicalFacts?.compliance?.electric_fence_certificate_available),
-    plumbingCertificateAvailable: Boolean(existing.plumbingCertificateAvailable || canonicalFacts?.compliance?.plumbing_certificate_available),
-    solarComplianceAvailable: Boolean(existing.solarComplianceAvailable || canonicalFacts?.compliance?.solar_compliance_available),
+    generatorInstallation: readSellerBooleanAnswer(existing.generatorInstallation, existing.generator_installation, canonicalFacts?.compliance?.generator_installation),
+    beetleCertificateRegion: readSellerBooleanAnswer(existing.beetleCertificateRegion, existing.beetle_certificate_region, canonicalFacts?.compliance?.beetle_certificate_region),
+    plumbingCertificateRequired: readSellerBooleanAnswer(existing.plumbingCertificateRequired, existing.plumbing_certificate_required, canonicalFacts?.compliance?.plumbing_certificate_required),
+    occupationCertificateAvailable: readSellerBooleanAnswer(existing.occupationCertificateAvailable, existing.occupation_certificate_available, canonicalFacts?.compliance?.occupation_certificate_available),
+    electricalCocAvailable: readSellerBooleanAnswer(existing.electricalCocAvailable, existing.electrical_coc_available, canonicalFacts?.compliance?.electrical_coc_available),
+    gasCocAvailable: readSellerBooleanAnswer(existing.gasCocAvailable, existing.gas_coc_available, canonicalFacts?.compliance?.gas_coc_available),
+    electricFenceCertificateAvailable: readSellerBooleanAnswer(existing.electricFenceCertificateAvailable, existing.electric_fence_certificate_available, canonicalFacts?.compliance?.electric_fence_certificate_available),
+    plumbingCertificateAvailable: readSellerBooleanAnswer(existing.plumbingCertificateAvailable, existing.plumbing_certificate_available, canonicalFacts?.compliance?.plumbing_certificate_available),
+    solarComplianceAvailable: readSellerBooleanAnswer(existing.solarComplianceAvailable, existing.solar_compliance_available, canonicalFacts?.compliance?.solar_compliance_available),
     // Use the same presence-aware identity reader as the agent profile views.
     ...Object.fromEntries(['sellerFirstName', 'sellerSurname', 'primaryContactName', 'email', 'phone', 'idNumber', 'dateOfBirth', 'nationality', 'residentialAddress', 'spouseName', 'spouseIdNumber', 'spouseEmail', 'spousePhone', 'companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'companyDirectors', 'companyBeneficialOwners', 'authorisedSignatoryName', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality', 'authorisedSignatoryAddress', 'authorisedSignatoryEmail', 'authorisedSignatoryPhone', 'authorisedSignatoryCapacity', 'trustName', 'trustRegistrationNumber', 'trustRegisteredAddress', 'trustees', 'trustFounders', 'trustBeneficiaries', 'authorisedTrusteeName', 'authorisedTrusteeIdNumber', 'authorisedTrusteeNationality', 'authorisedTrusteeAddress', 'authorisedTrusteeEmail', 'authorisedTrusteePhone', 'authorisedTrusteeCapacity', 'sectionNumber', 'unitNumber'].map((field) => [field, sharedProfile[field]])),
     sellerTaxNumber: sharedProfile.incomeTaxNumber,

@@ -245,3 +245,75 @@ test('review recognises an agent-selected structure despite a stale pending flag
     ownershipType: 'individual', ownershipRouteConfirmed: true, ownershipDeclarationPending: false,
   })
 })
+
+test('explicit negative property, availability and compliance answers survive reopening and canonical save', () => {
+  const falseAnswers = {
+    estateOrHoa: false, leviesNotApplicable: false, titleDeedAvailable: false,
+    electricalCocAvailable: false, electricFence: false, recentAlterations: false,
+    gasInstallation: false, solarInstallation: false, boreholeInstallation: false,
+    inverterBattery: false, waterTank: false, plumbingCertificateRequired: false,
+    viewingNoticeRequired: false, pool: false,
+  }
+  const reopened = normalizeFormData({ sellerOnboarding: {
+    formData: { ...falseAnswers, propertyCategory: 'residential', propertyStructureType: 'freehold',
+      gasGeyser: true, estateName: 'Previously captured estate', features: ['gas_geyser', 'solar', 'borehole', 'inverter_battery', 'water_tank', 'pool'] },
+    canonicalFacts: {
+      property: { estate_or_hoa: true, levies_not_applicable: true, title_deed_available: true, alterations: { recent: true } },
+      compliance: { electrical_coc_available: true, electric_fence: true, gas_installation: true,
+        solar_installation: true, borehole_installation: true, inverter_battery: true, water_tank: true, plumbing_certificate_required: true },
+      occupancy: { viewing_notice_required: true },
+    },
+  } })
+  expect(reopened).toMatchObject(falseAnswers)
+  expect(reopened.features).toEqual([])
+  const payload = buildSellerProfileCanonicalPayload(reopened, {}, { draft: true })
+  const next = normalizeFormData({ sellerOnboarding: { formData: { ...reopened, ...payload }, canonicalFacts: payload.canonicalSellerFacts } })
+  expect(next).toMatchObject(falseAnswers)
+  expect(payload.canonicalSellerFacts.property.estate_or_hoa).toBe(false)
+  expect(payload.canonicalSellerFacts.compliance.gas_installation).toBe(false)
+  expect(payload.canonicalSellerFacts.flow.document_triggers).not.toContain('gas_compliance_certificate')
+  expect(payload.canonicalSellerFacts.flow.property_branch).toBe('residential')
+})
+
+test('legacy answers still populate an absent current answer, but an explicitly cleared feature list wins', () => {
+  const canonicalFacts = { property: { estate_or_hoa: true, title_deed_available: true }, compliance: { solar_installation: true } }
+  const legacy = normalizeFormData({ sellerOnboarding: { formData: {}, canonicalFacts } })
+  expect(legacy).toMatchObject({ estateOrHoa: true, titleDeedAvailable: true, solarInstallation: true })
+  const cleared = normalizeFormData({ sellerOnboarding: { formData: { estate_or_hoa: false, features: [] }, canonicalFacts } })
+  expect(cleared.estateOrHoa).toBe(false)
+  expect(cleared.solarInstallation).toBe(false)
+  expect(cleared.features).toEqual([])
+})
+
+test.each([
+  { ownershipRouteLocked: false, ownership_route_locked: true },
+  { ownershipRouteLocked: 'false' },
+  { ownership_route_locked: 'false' },
+])('ownership remains editable when the current lock answer is No: %j', flags => {
+  const reopened = normalizeFormData({ sellerOnboarding: { formData: flags } })
+  expect(reopened.ownershipRouteLocked).toBe(false)
+  expect(reopened.ownership_route_locked).toBe(false)
+})
+
+test('an agent lock still prevents changing ownership while an explicit unlock allows it', async () => {
+  for (const locked of [true, false]) {
+    const saved = vi.fn()
+    const base = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+    vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue({
+      ...base, sellerCanonicalFacts: {}, sellerOnboarding: { ...base.sellerOnboarding, canonicalFacts: {}, formData: {
+        ownershipType: 'individual', ownerEntityType: 'natural_person', ownerStructureType: 'individual',
+        ownershipRouteLocked: locked, ownership_route_locked: true,
+      } },
+    })
+    capture({ completionModeOverride: 'agent_assisted', onDraftSaved: saved })
+    const company = await screen.findByRole('button', { name: /^Company The property/ })
+    expect(company.disabled).toBe(locked)
+    fireEvent.click(company)
+    fireEvent.click(screen.getByRole('button', { name: 'Save Draft', exact: true }))
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+    expect(saved.mock.calls[0][0].sellerOnboarding.formData.ownershipType).toBe(locked ? 'individual' : 'company')
+    cleanup()
+    vi.restoreAllMocks()
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+  }
+})

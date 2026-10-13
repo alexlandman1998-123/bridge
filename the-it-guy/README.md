@@ -96,6 +96,18 @@ publication service/editor Vitest suites.
 
 ## Seller onboarding review conflicts
 
+Seller onboarding preserves explicit No answers for estate/HOA, levies,
+document availability and property compliance when reopening or saving a file.
+Older aliases populate only absent answers. Ownership locks use the same rule
+and parse stored text values, so `"false"` does not lock the form. Current
+correction requests take priority in the agent's progress summary; a historical
+`mandate_signed` stage cannot replace current mandate signature evidence.
+Existing review and signing history remains intact. Focused checks:
+`SellerOnboardingCapture.test.jsx`, `sellerOnboardingJourneyStatus.test.js`,
+`sellerPostOnboardingDocumentState.test.js`, `sellerDocumentRequirementEngine.test.js`,
+`npm run test:seller-onboarding-flow-contract` and
+`npm run test:seller-onboarding-review-handoff`.
+
 Manual seller capture now carries the selected ownership route and its
 confirmation into saved canonical facts and clears old pending flags. Existing
 profiles with a recorded manual-capture source and selected ownership route are

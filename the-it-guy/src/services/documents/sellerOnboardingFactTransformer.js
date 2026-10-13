@@ -1,3 +1,4 @@
+import { readSellerBooleanAnswer } from '../../lib/sellerBooleanAnswers.js'
 import { buildSpecialistSalesFacts } from '../listings/specialistSalesListingSchema.js'
 import { sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields.js'
 import { readSellerPopiConsent } from '../../core/documents/sellerOnboardingConsent.js'
@@ -401,32 +402,19 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const features = normalizeFeatureKeys(form.features)
   const featureSet = new Set(features)
   const vatEligibleSeller = flow.seller_branch === 'company' || flow.seller_branch === 'trust'
-  const estateOrHoa = normalizeBoolean(form.estateOrHoa, false) || rawPropertyStructureType === 'estate' || Boolean(normalizeText(form.estateName || form.estateComplexName))
+  const estateOrHoa = readSellerBooleanAnswer(form.estateOrHoa, form.estate_or_hoa, rawPropertyStructureType === 'estate' || Boolean(normalizeText(form.estateName || form.estateComplexName)))
   const sectionalTitle = normalizeBoolean(form.sectionalTitle, false) || propertyType === 'sectional_title'
   const shareBlock = normalizeBoolean(form.shareBlock, false) || propertyType === 'share_block'
   const commercialProperty = normalizeBoolean(form.commercialProperty, false) || ['commercial', 'industrial', 'mixed_use'].includes(propertyType)
   const bodyCorporate = normalizeBoolean(form.bodyCorporate, false) || sectionalTitle || shareBlock
   const existingBond = sellerBondDeclaration(resolveSellerBondStatus(form.bondStatus, form.propertyBondStatus, form.existingBond, form.sellerHasExistingBond, form.bondedProperty, form.bondExists))
-  const gasInstallation =
-    normalizeBoolean(form.gasInstallation ?? form.gas_installation, false) ||
-    normalizeBoolean(form.gasGeyser ?? form.gas_geyser, false) ||
-    hasFeature(featureSet, GAS_FEATURE_KEYS)
-  const electricFence =
-    normalizeBoolean(form.electricFence ?? form.electric_fence, false) ||
-    hasFeature(featureSet, ELECTRIC_FENCE_FEATURE_KEYS)
-  const solarInstallation =
-    normalizeBoolean(form.solarInstallation ?? form.solar_installation, false) ||
-    hasFeature(featureSet, SOLAR_FEATURE_KEYS)
-  const swimmingPool = normalizeBoolean(form.swimmingPool ?? form.pool, false)
-  const boreholeInstallation =
-    normalizeBoolean(form.boreholeInstallation ?? form.borehole, false) ||
-    hasFeature(featureSet, BOREHOLE_FEATURE_KEYS)
-  const inverterBattery =
-    normalizeBoolean(form.inverterBattery ?? form.inverter_battery, false) ||
-    hasFeature(featureSet, INVERTER_BATTERY_FEATURE_KEYS)
-  const waterTank =
-    normalizeBoolean(form.waterTank ?? form.water_tank, false) ||
-    hasFeature(featureSet, WATER_TANK_FEATURE_KEYS)
+  const gasInstallation = readSellerBooleanAnswer(form.gasInstallation, form.gas_installation, form.gasGeyser, form.gas_geyser, hasFeature(featureSet, GAS_FEATURE_KEYS))
+  const electricFence = readSellerBooleanAnswer(form.electricFence, form.electric_fence, hasFeature(featureSet, ELECTRIC_FENCE_FEATURE_KEYS))
+  const solarInstallation = readSellerBooleanAnswer(form.solarInstallation, form.solar_installation, hasFeature(featureSet, SOLAR_FEATURE_KEYS))
+  const swimmingPool = readSellerBooleanAnswer(form.swimmingPool, form.pool)
+  const boreholeInstallation = readSellerBooleanAnswer(form.boreholeInstallation, form.borehole, hasFeature(featureSet, BOREHOLE_FEATURE_KEYS))
+  const inverterBattery = readSellerBooleanAnswer(form.inverterBattery, form.inverter_battery, hasFeature(featureSet, INVERTER_BATTERY_FEATURE_KEYS))
+  const waterTank = readSellerBooleanAnswer(form.waterTank, form.water_tank, hasFeature(featureSet, WATER_TANK_FEATURE_KEYS))
   const disclosureResponses = form.propertyDisclosure?.responses || form.property_disclosure?.responses || {}
   const disclosureAnswer = (key) => normalizeKey(disclosureResponses?.[key]?.answer || disclosureResponses?.[key])
   const declaredAlterationIssue =

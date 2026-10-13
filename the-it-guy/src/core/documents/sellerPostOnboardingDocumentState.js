@@ -47,7 +47,7 @@ export function buildSellerPostOnboardingDocumentState({
   const reviewed = ['agent_review_approved', 'pack_prepared', 'pack_sent', 'partially_signed', 'manual_awaiting_upload', 'mandate_signed'].includes(stage)
   const packSent = ['pack_sent', 'partially_signed', 'mandate_signed'].includes(stage)
   const partiallySigned = stage === 'partially_signed' || (requiredSignerCount > 1 && completedSignerCount > 0 && completedSignerCount < requiredSignerCount)
-  const signedMandate = mandateSigned || stage === 'mandate_signed'
+  const signedMandate = mandateSigned === true
   const correctionRequested = stage === 'correction_requested' || text(formData?.sellerOnboardingReview?.status || formData?.seller_onboarding_review?.status) === 'correction_requested'
 
   const postReviewState = (signed = false) => {

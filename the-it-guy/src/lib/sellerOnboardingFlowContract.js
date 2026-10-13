@@ -1,3 +1,4 @@
+import { readSellerBooleanAnswer } from './sellerBooleanAnswers.js'
 import { normalizePropertyCategory, normalizePropertyStructureType } from './propertyTaxonomy.js'
 
 export const SELLER_ONBOARDING_FLOW_VERSION = 'seller_onboarding_flow_v2'
@@ -1009,9 +1010,9 @@ export function resolveSellerPropertyModel(form = {}, listing = {}, facts = {}) 
       source?.property?.estateName ||
       source?.property?.estate_complex_name,
   )
-  const explicitEstateAnswer = hasOwnValue(form, 'estateOrHoa')
+  const explicitEstateAnswer = hasOwnValue(form, 'estateOrHoa') || hasOwnValue(form, 'estate_or_hoa')
   const estateOrHoa = explicitEstateAnswer
-    ? normalizeBoolean(form?.estateOrHoa)
+    ? readSellerBooleanAnswer(form?.estateOrHoa, form?.estate_or_hoa)
     : Boolean(
         legacyEstateStructure ||
           normalizeBoolean(source?.property?.estate_or_hoa) ||
@@ -1072,6 +1073,7 @@ function collectDynamicTriggers(form = {}, source = {}) {
   const occupancy = form?.occupancy || source?.occupancy || {}
   const finance = form?.finance || source?.finance || {}
   const featureSet = new Set(normalizeFeatureKeys(form?.features || property?.features || source?.property?.features || []))
+  const capturedFeature = (aliases) => Array.isArray(form?.features) ? hasFeature(featureSet, aliases) : undefined
   const hasBond = normalizeBoolean(
     form?.existingBond ??
       form?.sellerHasExistingBond ??
@@ -1117,9 +1119,9 @@ function collectDynamicTriggers(form = {}, source = {}) {
   }
   if (
     normalizeBoolean(
-      form?.beetleCertificateRegion ||
-        compliance?.beetle_certificate_region ||
-        source?.compliance?.beetle_certificate_region ||
+      form?.beetleCertificateRegion ??
+        compliance?.beetle_certificate_region ??
+        source?.compliance?.beetle_certificate_region ??
         false,
     )
   ) {
@@ -1143,66 +1145,22 @@ function collectDynamicTriggers(form = {}, source = {}) {
     triggers.push('going_concern_supporting_documents')
   }
 
-  if (
-    normalizeBoolean(form?.gasInstallation) ||
-    normalizeBoolean(form?.gas_installation) ||
-    normalizeBoolean(form?.gasGeyser) ||
-    normalizeBoolean(form?.gas_geyser) ||
-    normalizeBoolean(compliance?.gas_installation) ||
-    normalizeBoolean(compliance?.gas_geyser) ||
-    normalizeBoolean(source?.compliance?.gas_installation) ||
-    hasFeature(featureSet, GAS_FEATURE_KEYS)
-  ) {
+  if (readSellerBooleanAnswer(form?.gasInstallation, form?.gas_installation, form?.gasGeyser, form?.gas_geyser, capturedFeature(GAS_FEATURE_KEYS), compliance?.gas_installation, compliance?.gas_geyser, hasFeature(featureSet, GAS_FEATURE_KEYS))) {
     triggers.push('gas_compliance_certificate')
   }
-  if (
-    normalizeBoolean(form?.solarInstallation) ||
-    normalizeBoolean(form?.solar_installation) ||
-    normalizeBoolean(compliance?.solar_installation) ||
-    normalizeBoolean(source?.compliance?.solar_installation) ||
-    hasFeature(featureSet, SOLAR_FEATURE_KEYS)
-  ) {
+  if (readSellerBooleanAnswer(form?.solarInstallation, form?.solar_installation, capturedFeature(SOLAR_FEATURE_KEYS), compliance?.solar_installation, hasFeature(featureSet, SOLAR_FEATURE_KEYS))) {
     triggers.push('solar_compliance_documents')
   }
-  if (
-    normalizeBoolean(form?.electricFence) ||
-    normalizeBoolean(form?.electric_fence) ||
-    normalizeBoolean(compliance?.electric_fence) ||
-    normalizeBoolean(source?.compliance?.electric_fence) ||
-    hasFeature(featureSet, ELECTRIC_FENCE_FEATURE_KEYS)
-  ) {
+  if (readSellerBooleanAnswer(form?.electricFence, form?.electric_fence, capturedFeature(ELECTRIC_FENCE_FEATURE_KEYS), compliance?.electric_fence, hasFeature(featureSet, ELECTRIC_FENCE_FEATURE_KEYS))) {
     triggers.push('electric_fence_certificate')
   }
-  if (
-    normalizeBoolean(
-      form?.plumbingCertificateRequired ||
-        compliance?.plumbing_certificate_required ||
-        source?.compliance?.plumbing_certificate_required ||
-        false,
-    )
-  ) {
+  if (readSellerBooleanAnswer(form?.plumbingCertificateRequired, form?.plumbing_certificate_required, compliance?.plumbing_certificate_required)) {
     triggers.push('plumbing_certificate')
   }
-  if (
-    normalizeBoolean(form?.boreholeInstallation) ||
-    normalizeBoolean(form?.borehole) ||
-    normalizeBoolean(compliance?.borehole_installation) ||
-    normalizeBoolean(compliance?.borehole) ||
-    normalizeBoolean(property?.borehole) ||
-    normalizeBoolean(source?.property?.borehole) ||
-    normalizeBoolean(source?.compliance?.borehole_installation) ||
-    hasFeature(featureSet, BOREHOLE_FEATURE_KEYS)
-  ) {
+  if (readSellerBooleanAnswer(form?.boreholeInstallation, form?.borehole, capturedFeature(BOREHOLE_FEATURE_KEYS), compliance?.borehole_installation, compliance?.borehole, property?.borehole, hasFeature(featureSet, BOREHOLE_FEATURE_KEYS))) {
     triggers.push('borehole_certificate')
   }
-  if (
-    normalizeBoolean(
-      form?.recentAlterations ||
-        property?.alterations?.recent ||
-        source?.property?.alterations?.recent ||
-        false,
-    )
-  ) {
+  if (readSellerBooleanAnswer(form?.recentAlterations, form?.recent_alterations, property?.alterations?.recent)) {
     triggers.push('alteration_approvals', 'approved_building_plans', 'occupation_certificate')
   }
 

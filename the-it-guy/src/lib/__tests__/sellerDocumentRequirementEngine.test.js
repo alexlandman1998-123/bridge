@@ -5,7 +5,29 @@ import {
   getRequiredSellerDocuments,
   getRequiredSellerStructuredFacts,
   syncSellerDocumentRequirements,
+  buildSellerRequirementProfile,
 } from '../sellerDocumentRequirementEngine.js'
+
+test('current negative answers remove historical HOA and installation follow-ups from the checklist', () => {
+  const formData = {
+    ownershipType: 'individual', ownershipRouteConfirmed: true,
+    propertyCategory: 'residential', propertyStructureType: 'freehold',
+    estateOrHoa: false, estateName: 'Previously captured estate',
+    gasInstallation: false, electricFence: false, solarInstallation: false,
+    boreholeInstallation: false, recentAlterations: false, plumbingCertificateRequired: false,
+  }
+  const profile = buildSellerRequirementProfile({ sellerOnboarding: { formData, canonicalFacts: {
+    property: { estate_or_hoa: true, alterations: { recent: true } },
+    compliance: { gas_installation: true, electric_fence: true, solar_installation: true, borehole_installation: true, plumbing_certificate_required: true },
+  } } })
+  assert.equal(profile.estateOrHoa, false)
+  assert.equal(profile.propertyBranch, 'residential')
+  const keys = getRequiredSellerDocuments(profile).map(row => row.requirement_key)
+  for (const key of ['gas_compliance_certificate', 'electric_fence_certificate', 'solar_compliance_documents', 'borehole_certificate', 'alteration_approvals', 'plumbing_certificate']) {
+    assert.equal(profile.documentTriggers.includes(key), false, key)
+    assert.equal(keys.includes(key), false, key)
+  }
+})
 
 test('manual seller capture prepares upload requirements without completing or activating the listing', () => {
   const listing = {

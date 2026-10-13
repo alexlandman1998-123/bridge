@@ -1,3 +1,4 @@
+import { readSellerBooleanAnswer } from './sellerBooleanAnswers.js'
 import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusLabel,
@@ -740,13 +741,9 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     )
   const sectionalTitle = Boolean(onboarding?.sectionalTitle || canonicalFacts?.property?.sectional_title || propertyBranch === 'sectional_title')
   const shareBlock = Boolean(onboarding?.shareBlock || canonicalFacts?.property?.share_block)
-  const estateOrHoa = Boolean(
-    onboarding?.estateOrHoa ||
-      canonicalFacts?.property?.estate_or_hoa ||
-      propertyBranch === 'estate_hoa' ||
-      (sellerBranch !== 'deceased_estate' &&
-        normalizeText(onboarding?.estateName || onboarding?.estateComplexName || canonicalFacts?.property?.estate_name)),
-  )
+  const estateOrHoa = readSellerBooleanAnswer(onboarding?.estateOrHoa, onboarding?.estate_or_hoa, flow.property_model?.estate_or_hoa,
+    canonicalFacts?.property?.estate_or_hoa,
+    propertyBranch === 'estate_hoa' || (sellerBranch !== 'deceased_estate' && Boolean(normalizeText(onboarding?.estateName || onboarding?.estateComplexName || canonicalFacts?.property?.estate_name))))
   const bodyCorporate = Boolean(onboarding?.bodyCorporate || canonicalFacts?.property?.body_corporate || sectionalTitle || shareBlock)
   const commercialProperty = Boolean(onboarding?.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch))
   const bondStatus = normalizeBondStatus(
