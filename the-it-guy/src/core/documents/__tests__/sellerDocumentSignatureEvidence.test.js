@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFile } from 'node:fs/promises'
 import { JSDOM } from 'jsdom'
 import { createSellerCorrectionFixture } from '../../../../scripts/fixtures/seller-document-corrections.mjs'
 import { buildSellerPostOnboardingDrafts } from '../sellerPostOnboardingDrafts.js'
@@ -75,17 +76,35 @@ test('large signer rosters split branded evidence into bounded pages without los
 })
 
 test('historical mandates retain their wording and original header/footer style on the recorded evidence page', async () => {
-  const { signingPack, approval, evidence } = await fixture()
-  const selected = { ...approval, selectedDocuments: ['mandate'] }
-  const prepared = createSellerOnboardingSigningCopyPack({ signingPack, formalPackApproval: selected, disclosureSigned: true })
-  const frozen = await createSellerReviewedDocumentVersions({ manualSigningPack: prepared, formalPackApproval: selected, signingPack, actor: 'synthetic-reviewer' })
-  const source = frozen.documents[0], original = source.generatedHtml
+  const { signingPack, evidence } = await fixture()
+  // Actual v2 renderer output captured before the layout revision. Existing
+  // requests use these stored bytes, rather than today's preparation renderer.
+  const original = await readFile(new URL('../../../../scripts/fixtures/seller-mandate-historical-v2.html', import.meta.url), 'utf8')
+  const source = { generatedHtml: original, requiredSigners: signingPack.signers, versionDigest: 'sha256:historical-mandate-fixture' }
   const dom = new JSDOM(applySellerDocumentSignatureEvidence(original, evidence(source), source.versionDigest))
   const page = dom.window.document.querySelector('.seller-portal-signature-page')
   assert.ok(page.closest('.document'))
   assert.equal(page.querySelectorAll('.header img').length, 1)
   assert.equal(page.querySelectorAll('.footer').length, 1)
   assert.equal(dom.window.document.querySelectorAll('.clause').length, 7)
+  assert.equal(source.generatedHtml, original)
+  dom.window.close()
+})
+
+test('new mandates fill each signature, date and place within the measured layout and preserve frozen source', async () => {
+  const { signingPack, approval, evidence } = await fixture()
+  const selected = { ...approval, selectedDocuments: ['mandate'] }
+  const prepared = createSellerOnboardingSigningCopyPack({ signingPack, formalPackApproval: selected, disclosureSigned: true })
+  const frozen = await createSellerReviewedDocumentVersions({ manualSigningPack: prepared, formalPackApproval: selected, signingPack, actor: 'synthetic-reviewer' })
+  const source = frozen.documents[0], original = source.generatedHtml
+  const final = applySellerDocumentSignatureEvidence(original, evidence(source), source.versionDigest)
+  const dom = new JSDOM(final)
+  assert.equal(dom.window.document.querySelectorAll('[data-recorded-seller-signature]').length, source.requiredSigners.length)
+  assert.equal(dom.window.document.querySelectorAll('.mandate-evidence').length, source.requiredSigners.length)
+  assert.match(final, /4 October 2026/)
+  assert.match(final, /Recorded Town/)
+  assert.doesNotMatch(dom.window.document.querySelector('[data-review-source]').textContent, /Awaiting signature|Agency acceptance/)
+  assert.equal(dom.window.document.querySelectorAll('.seller-portal-signature-page').length, 0)
   assert.equal(source.generatedHtml, original)
   dom.window.close()
 })

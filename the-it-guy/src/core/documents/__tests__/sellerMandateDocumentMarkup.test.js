@@ -14,6 +14,21 @@ const base = {
   generatedAt: '2026-09-27T12:00:00Z',
 }
 
+test('current mandate uses readable roles, separate supplied FFC numbers and measured sans-serif pages', () => {
+  const html = buildSellerMandateDocumentMarkup({ ...base, signingPack: {
+    ...base.signingPack, practitioner: { name: 'Kingdom Demo', ppraNumber: '1221121' },
+    branding: { ...base.signingPack.branding, businessFfcNumber: '1212215' },
+    signers: [{ name: 'Sam Seller', role: 'seller_1', email: 'sam@example.test' }],
+  } })
+  assert.match(html, /1221121/)
+  assert.match(html, /1212215/)
+  assert.match(html, /Seller 1/)
+  assert.match(html, /Arial,Helvetica,sans-serif/)
+  assert.doesNotMatch(html, /seller_1|Agency acceptance|Times New Roman|Georgia/)
+  assert.match(html, /Date and place/)
+  assert.match(html, /grid-template-rows:23mm minmax\(0,1fr\) 9mm/)
+})
+
 test('exclusive copy carries agency branding, property, commission and explicit exclusivity', () => {
   const html = buildSellerMandateDocumentMarkup(base)
   assert.match(html, /Harbour &amp; Home/)
@@ -89,8 +104,10 @@ test('every owner gets a signature and agency details repeat on continuation pag
     seller: { legalOwnerName: signers[0].name, parties: signers.map((p, i) => ({ ...p, role: 'Seller', idNumber: `ID-${i + 1}` })) } }
   const html = buildSellerMandateDocumentMarkup({ ...base, signingPack })
   for (const signer of signers) assert.match(html, new RegExp(signer.name))
-  assert.equal((html.match(/class="signature"/g) || []).length, 6)
-  assert.equal((html.match(/class="header"/g) || []).length, (html.match(/class="page"/g) || []).length)
+  assert.equal((html.match(/class="signer-card"/g) || []).length, 6)
+  assert.match(html, /template data-review-header/)
+  assert.match(html, /template data-review-footer/)
+  assert.match(html, /data-mandate-legacy-layout="seller-mandate-v3"/)
   assert.match(html, /Pat Practitioner/)
   assert.match(html, /P-FFC-123/)
   assert.match(html, /B-FFC-123/)

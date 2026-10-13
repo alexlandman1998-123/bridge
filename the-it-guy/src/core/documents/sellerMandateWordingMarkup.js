@@ -1,4 +1,6 @@
-import { resolveDocumentBrandPalette } from '../../lib/onboardingBranding.js'
+import { paginateSellerMandateReview } from '../../lib/sellerMandateReviewPagination.js'
+import { getMandateSignerRoleLabel } from '../../lib/mandateSignatureRules.js'
+import { resolveOnboardingBranding, resolveDocumentBrandPalette } from '../../lib/onboardingBranding.js'
 
 export const SELLER_MANDATE_DOCUMENT_CONTRACT = 'arch9-seller-mandate-document-v1'
 
@@ -81,7 +83,7 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
   const pack = record(signingPack)
   const mandate = record(pack.mandate)
   const seller = record(pack.seller)
-  const branding = record(pack.branding)
+  const branding = { ...record(pack.branding), ...resolveOnboardingBranding(pack.branding) }
   const palette = resolveDocumentBrandPalette(branding)
   const commission = record(approval.commission)
   const type = requireSellerMandateWording(mandate.mandateType)
@@ -89,7 +91,7 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
   if (!Number.isInteger(protectionDays) || protectionDays < 0) throw new Error('The introduced-buyer protection period must be a whole number of calendar days.')
   const agencyName = first(branding.organisationName, branding.organizationName, branding.agencyName)
   if (!agencyName) throw new Error('Add the agency name before preparing its mandate.')
-  const signers = (Array.isArray(pack.signers) ? pack.signers : []).map((signer) => ({ name: text(signer?.name), role: first(signer?.role, 'Seller') }))
+  const signers = (Array.isArray(pack.signers) ? pack.signers : []).map((signer) => ({ name: text(signer?.name), role: getMandateSignerRoleLabel(first(signer?.role, 'Seller')), email: text(signer?.email) }))
   if (!signers.length || signers.some((signer) => !signer.name)) throw new Error('Add a required seller signer before preparing the mandate.')
   const primaryOwnerName = ownerName(seller)
   const coOwners = (Array.isArray(seller.parties) ? seller.parties : [])
@@ -107,8 +109,8 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
     generatedAt: text(generatedAt),
     reference: first(pack.documentReference, pack.reference, pack.listingReference, pack.property?.reference),
     practitionerName: first(pack.practitioner?.name, branding.practitionerName),
-    practitionerFfc: first(pack.practitioner?.ffcNumber, branding.practitionerFfcNumber),
-    businessFfc: first(branding.businessFfcNumber, branding.ffcNumber),
+    practitionerFfc: first(pack.practitioner?.ffcNumber, pack.practitioner?.ffc_number, pack.practitioner?.ppraNumber, branding.practitionerFfcNumber),
+    businessFfc: first(branding.businessFfcNumber, branding.business_ffc_number, branding.ffcNumber, branding.ffc_number, branding.agencyInformation?.eaabPpraNumber),
     sellerName: primaryOwnerName,
     coOwners,
     sellerIdentity: ownerIdentity(seller),
@@ -138,12 +140,22 @@ export function buildSellerMandateDocumentModel({ signingPack = {}, approval = {
   }
 }
 
-function fact(label, value, { blank = '________________________' } = {}) {
-  return `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || blank)}</dd></div>`
+function dateLabel(value) {
+  const raw = text(value).slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? new Date(`${raw}T12:00:00Z`).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : text(value)
+}
+
+function rand(value) {
+  const amount = Number(text(value).replace(/[R,\s]/g, ''))
+  return text(value) && Number.isFinite(amount) ? `R ${amount.toLocaleString('en-ZA', { maximumFractionDigits: 2 })}` : text(value)
+}
+
+function fact(label, value, { blank = 'Not captured' } = {}) {
+  return `<div class="fact review-field"><span class="review-label">${escapeHtml(label)}</span><span data-review-text>${escapeHtml(value || blank)}</span></div>`
 }
 
 function section(title, body) {
-  return `<section class="clause"><h2>${escapeHtml(title)}</h2><p>${escapeHtml(body)}</p></section>`
+  return `<section class="clause"><h2>${escapeHtml(title)}</h2><p data-review-text>${escapeHtml(body)}</p></section>`
 }
 
 export function buildSellerMandateWordingMarkup(input = {}) {
@@ -165,29 +177,26 @@ export function buildSellerMandateWordingMarkup(input = {}) {
     fact('Seller / legal owner', model.sellerName), fact('ID / registration', model.sellerIdentity),
     ...(model.coOwners || []).flatMap((person, index) => [fact(`Additional seller ${index + 1}`, person.name), fact('Additional seller ID', person.idNumber), ...(person.address ? [fact('Additional seller address', person.address)] : [])]),
     fact('Seller address', model.sellerAddress), fact('Seller email', model.sellerEmail), fact('Seller phone', model.sellerPhone),
-    ...(model.maritalStatus ? [fact('Marital status', model.maritalStatus)] : []),
+    ...(model.maritalStatus ? [fact('Marital status', getMandateSignerRoleLabel(model.maritalStatus))] : []),
     ...(model.spouseName ? [fact('Spouse', [model.spouseName, model.spouseIdNumber].filter(Boolean).join(' · '))] : []),
     fact('Property', model.propertyAddress), fact('Title deed / erf reference', model.propertyReference),
-    fact('Mandate starts', model.startDate), fact('Mandate ends', model.endDate, { blank: model.type === 'open' ? 'Until cancelled in writing' : '________________________' }),
-    fact('Asking price', model.askingPrice), fact('Commission', model.commission),
+    fact('Mandate starts', dateLabel(model.startDate)), fact('Mandate ends', dateLabel(model.endDate), { blank: model.type === 'open' ? 'Until cancelled in writing' : '________________________' }),
+    fact('Asking price', rand(model.askingPrice)), fact('Commission', model.commission),
     fact('Buyer protection period', model.protectionPeriodDays ? `${model.protectionPeriodDays} calendar days` : 'None'),
     ...(model.otherAgency ? [fact('Second agency', model.otherAgency)] : []),
   ]
-  const chunks = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size))
-  const bodies = chunks(facts, 14).map((rows, index) => `<h1>${escapeHtml(model.heading)}</h1><p class="eyebrow">${index ? 'Seller and mandate details continued' : 'Seller and mandate details'}</p><dl class="facts">${rows.join('')}</dl>`)
-  bodies.push(...chunks(clauses, 4).map((parts) => `<h1>${escapeHtml(model.heading)}</h1><div class="terms">${parts.join('')}</div>`))
-  if (model.specialConditions) {
-    const lines = model.specialConditions.split('\n').flatMap((line) => line.match(/.{1,90}(?:\s|$)|\S{1,90}/g) || [''])
-    bodies.push(...chunks(lines, 30).map((lines) => `<h1>Special conditions</h1><section class="conditions">${escapeHtml(lines.join('\n'))}</section>`))
-  }
-  const signerGroups = chunks(model.signers, 4)
-  signerGroups.forEach((signers, index) => {
-    const cards = signers.map((signer) => `<div class="signature"><strong>${escapeHtml(signer.name)}</strong><span>${escapeHtml(signer.role)}</span><div class="line">Signature</div><div class="line">Date and place</div></div>`).join('')
-    const acceptance = index === signerGroups.length - 1 ? `<section class="acceptance"><h2>Agency acceptance</h2><p>${escapeHtml(model.agencyName)}</p><p>Practitioner: ${escapeHtml(model.practitionerName || '________________')} · FFC: ${escapeHtml(model.practitionerFfc || '________________')}</p><p>Business FFC: ${escapeHtml(model.businessFfc || '________________')}</p><div class="line">Authorised signature</div><div class="line">Date and place</div></section>` : ''
-    bodies.push(`<h1>Signatures</h1><p>All required owners or authorised representatives must sign.</p><section class="signatures">${cards}</section>${acceptance}`)
-  })
-  const pages = bodies.map((body, index) => `<section class="page"><header class="header"><div class="brand">${logo}</div><div class="meta">${escapeHtml(model.agencyName)}<br />${escapeHtml(model.reference)}<br />Prepared ${escapeHtml(model.generatedAt)}</div></header><main>${body}</main><footer class="footer"><span>${escapeHtml(model.agencyName)} · ${escapeHtml(model.heading)}</span><span>Page ${index + 1} of ${bodies.length}</span></footer></section>`).join('')
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(model.heading)} - reviewed signing copy</title><style>
-  @page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;background:#fff;color:#1d2935;font:10pt/1.45 Georgia,'Times New Roman',serif}.document{--primary:${palette.primaryColour};--accent:${palette.accentColour};--primary-ink:${palette.primaryInk};--accent-ink:${palette.accentInk};width:210mm;margin:auto}.page{width:210mm;min-height:296mm;padding:12mm 16mm 22mm;position:relative;break-after:page}.page:last-child{break-after:auto}.header{display:flex;justify-content:space-between;align-items:center;gap:8mm;padding-bottom:5mm;border-bottom:2px solid var(--accent)}.brand{font-size:17pt;font-weight:700;color:var(--primary-ink)}.brand img{max-width:55mm;max-height:16mm;object-fit:contain}.meta{color:#607387;font-size:8pt;text-align:right}.eyebrow{color:var(--accent-ink);font-size:8pt;text-transform:uppercase;letter-spacing:.08em}h1{margin:6mm 0 4mm;color:var(--primary-ink);font-size:20pt;line-height:1.15}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:4mm 0}.fact{min-height:15mm;padding:3mm;border:1px solid #dbe7df;border-radius:2mm;break-inside:avoid}.fact dt{color:#5b6d7f;font-size:7.5pt;text-transform:uppercase;letter-spacing:.04em}.fact dd{margin:1.5mm 0 0;font-size:9pt;font-weight:700;overflow-wrap:anywhere}.clause{margin:0 0 6mm;break-inside:avoid}.clause h2,.acceptance h2{margin:0 0 2mm;padding-bottom:1mm;border-bottom:1px solid #dbe7df;color:var(--primary-ink);font-size:11pt}.clause p{margin:0}.conditions{white-space:pre-wrap;overflow-wrap:anywhere}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:8mm}.signature{min-height:40mm;break-inside:avoid;overflow-wrap:anywhere}.signature strong,.signature span{display:block}.signature span{color:#64748b;font-size:8.5pt}.line{margin-top:10mm;padding-top:1mm;border-top:1px solid #324253;color:#5b6d7f;font-size:8pt}.acceptance{margin-top:10mm;break-inside:avoid}.acceptance p{margin:2mm 0}.footer{position:absolute;bottom:7mm;left:16mm;right:16mm;display:flex;justify-content:space-between;gap:5mm;border-top:1px solid #cbd9d0;padding-top:3mm;color:#607387;font-size:7pt}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.document{margin:0}}
-  </style></head><body><div class="document">${pages}</div></body></html>`
+  const formattedDate = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value).slice(0, 10))
+    ? new Date(`${text(value).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : text(value)
+  const cards = model.signers.map(signer => `<article class="signer-card"><div><strong>${escapeHtml(signer.name)}</strong><span>${escapeHtml(signer.email)}</span><span>${escapeHtml(signer.role)}</span></div><div><span class="status">Awaiting signature</span></div><div class="signature"><div class="signature-lines"><div>Signature</div><div>Date and place</div></div></div></article>`).join('')
+  const content = `<h1>${escapeHtml(model.heading)}</h1><p class="eyebrow">Parties and commercial terms</p>${facts.join('')}
+    <h2>Agency and practitioner details</h2>${fact('Contracting agency', model.agencyName)}${fact('Responsible practitioner', model.practitionerName)}${fact('Practitioner FFC / PPRA number', model.practitionerFfc)}${fact('Business FFC / PPRA number', model.businessFfc)}
+    <h2>Terms of appointment</h2>${clauses.join('')}${model.specialConditions ? `<h2>Special conditions</h2><p class="conditions" data-review-text>${escapeHtml(model.specialConditions)}</p>` : ''}
+    <h2>Seller signatures</h2><p>All required owners or authorised representatives must sign.</p>${cards}<!--mandate-signature-evidence-->`
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(model.heading)} - reviewed signing copy</title><style>
+@page{size:A4;margin:0}body{margin:0;background:#fff}.mandate-review-document,.mandate-review-document *{box-sizing:border-box}.mandate-review-document{--primary:${palette.primaryColour};--accent:${palette.accentColour};--primary-ink:${palette.primaryInk};width:210mm;margin:0 auto;color:#243044;font:9.5pt/1.45 Arial,Helvetica,sans-serif}
+.mandate-review-page{width:210mm;height:296mm;padding:12mm 17mm 9mm;background:#fff;display:grid;grid-template-rows:23mm minmax(0,1fr) 9mm;gap:4mm;break-after:page}.mandate-review-page:last-child{break-after:auto}.header{display:flex;justify-content:space-between;align-items:center;gap:10mm;padding-bottom:4mm;border-bottom:2px solid var(--accent)}.brand{font-size:16pt;font-weight:700;color:var(--primary-ink)}.brand img{display:block;max-width:60mm;max-height:17mm;object-fit:contain}.meta{max-width:65mm;color:#687487;font-size:8pt;line-height:1.4;text-align:right;overflow-wrap:anywhere}.review-body{min-height:0;display:flow-root;overflow:visible}
+h1{margin:1mm 0 3mm;color:var(--primary-ink);font-size:21pt;line-height:1.2;letter-spacing:-.02em}h2{margin:5mm 0 2mm;padding-bottom:2mm;border-bottom:2px solid var(--primary);color:var(--primary-ink);font-size:10.5pt;line-height:1.3}.eyebrow{margin:0 0 3mm;color:#526074;font-size:8pt;text-transform:uppercase;letter-spacing:.1em}.fact{display:grid;grid-template-columns:31% minmax(0,1fr);gap:4mm;padding:1.6mm 0;border-bottom:1px solid #edf0f3;overflow-wrap:anywhere;white-space:pre-wrap}.review-label{color:#687487;font-size:9pt}.clause{margin:0 0 3mm;break-inside:avoid}.clause h2{margin:3mm 0 1.5mm;border-bottom:0;padding:0;font-size:10pt}.clause p,p[data-review-text]{margin:0 0 2mm;white-space:pre-wrap;overflow-wrap:anywhere}.conditions{white-space:pre-wrap;overflow-wrap:anywhere}
+.signer-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.8fr) 48mm;gap:5mm;padding:5mm 0;border-bottom:1px solid #dce3e8;break-inside:avoid}.signer-card>div{display:grid;align-content:start;gap:1.5mm;min-width:0;overflow-wrap:anywhere}.signer-card strong{font-size:10pt}.signer-card span{color:#687487;font-size:8.2pt}.status{background:#eef5f1;padding:1mm 2mm;width:fit-content}.signature{min-height:25mm}.signature img{max-width:48mm;max-height:18mm;object-fit:contain}.signature-lines{padding-top:8mm}.signature-lines div{border-top:1px solid #687487;padding-top:1mm;margin-top:5mm;font-size:8pt;color:#687487}.signature-lines div:first-child{margin-top:0}.mandate-evidence{font-size:8pt;color:#687487;margin-top:4mm;overflow-wrap:anywhere}
+.footer{display:flex;justify-content:space-between;align-items:flex-end;gap:6mm;border-top:1px solid #dce3e8;padding-top:2mm;color:#687487;font-size:8pt;line-height:1.3}.footer [data-review-page-number]{white-space:nowrap}[data-review-source]{width:176mm;position:absolute;left:-10000px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.mandate-review-document{margin:0}}
+</style></head><body><div class="mandate-review-document document" data-mandate-legacy-layout="seller-mandate-v3"><template data-review-header><header class="header"><div class="brand">${logo}</div><div class="meta">${escapeHtml(model.agencyName)}<br>${escapeHtml(model.reference)}<br>Prepared ${escapeHtml(formattedDate(model.generatedAt))}</div></header></template><template data-review-footer><footer class="footer"><span>${escapeHtml(model.agencyName)} | ${escapeHtml(model.heading)}</span><span data-review-page-number></span></footer></template><div data-review-source>${content}</div></div><script>(${paginateSellerMandateReview.toString()})(document.querySelector('[data-mandate-legacy-layout="seller-mandate-v3"]'));</script></body></html>`
 }

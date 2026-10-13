@@ -1,3 +1,4 @@
+import { getMandateSignerRoleLabel } from '../../lib/mandateSignatureRules.js'
 const text = value => String(value ?? '').trim()
 const escape = value => text(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 const regexp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -15,6 +16,7 @@ export function applyMandateSignatureEvidence(html, evidence, versionDigest) {
   let result = html
   const emails = new Set()
   for (const row of evidence) {
+    const role = html.includes('data-mandate-signing-copy="full-v2"') ? getMandateSignerRoleLabel(row.signer_role) : row.signer_role
     const email = text(row.signer_email).toLowerCase()
     if (!email || emails.has(email) || row.document_version_digest !== versionDigest || row.signature_type !== 'drawn' ||
         !/^data:image\/(png|jpeg);base64,[a-z0-9+/=]+$/i.test(text(row.signature_value))) throw new Error('The mandate signature evidence is incomplete or does not match this version.')
@@ -23,7 +25,7 @@ export function applyMandateSignatureEvidence(html, evidence, versionDigest) {
     let matched = 0
     result = result.replace(pattern, (_, prefix) => {
       matched++
-      return `${prefix}<div class="mandate-recorded-signature"><img alt="Signature of ${escape(row.signed_name)}" src="${escape(row.signature_value)}" style="display:block;max-width:65mm;max-height:18mm;margin:3mm 0"><p>Signed by ${escape(row.signed_name)} as ${escape(row.signer_role)}<br>At ${escape(row.signed_place)} on ${escape(dateLabel(row.signed_date))}<br>Recorded ${escape(recordedLabel(row.accepted_at))}</p><p style="font-size:8pt">Document version: ${escape(versionDigest)}<br>Evidence: ${escape(row.evidence_digest)}</p></div></section>`
+      return `${prefix}<div class="mandate-recorded-signature"><img alt="Signature of ${escape(row.signed_name)}" src="${escape(row.signature_value)}" style="display:block;max-width:65mm;max-height:18mm;margin:3mm 0"><p>Signed by ${escape(row.signed_name)} as ${escape(role)}<br>At ${escape(row.signed_place)} on ${escape(dateLabel(row.signed_date))}<br>Recorded ${escape(recordedLabel(row.accepted_at))}</p><p style="font-size:8pt">Document version: ${escape(versionDigest)}<br>Evidence: ${escape(row.evidence_digest)}</p></div></section>`
     })
     if (matched !== 1) throw new Error('Every mandate signature must match exactly one frozen signature block.')
   }

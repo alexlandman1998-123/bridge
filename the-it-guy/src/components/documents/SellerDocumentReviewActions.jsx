@@ -49,9 +49,9 @@ function SellerDocumentReviewActions({
     if ((requireSignedCopyCheck || requireSignedEvidenceCheck) && !signedCopyChecked) return
     const reason = requireSignedCopyCheck
       ? isMandate
-        ? 'Reviewed the uploaded signed mandate against the current signing copy and checked every required seller signature and each contracting agency acceptance.'
+        ? 'Reviewed the uploaded signed mandate against the current signing copy and checked every required signature.'
         : 'Reviewed the uploaded signed file against the current signing copy and checked every required signature.'
-      : requireSignedEvidenceCheck ? 'Reviewed the existing signed document and checked every required seller signature and any required agency acceptance.' : ''
+      : requireSignedEvidenceCheck ? 'Reviewed the existing signed document and checked every required signature.' : ''
     const completed = await onReview?.({ item, document, ...requestFields, action: 'approve', reason })
     if (completed !== false) {
       setConfirmingSignedCopy(false)
@@ -71,10 +71,10 @@ function SellerDocumentReviewActions({
           <p className="text-xs font-semibold text-[#195a3a]">Check the signed document</p>
           <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-[#315b45]">
             <input type="checkbox" checked={signedCopyChecked} onChange={(event) => setSignedCopyChecked(event.target.checked)} disabled={isBusy} className="mt-1" />
-            <span>{onlineSigned ? 'I reviewed this signed document and checked every required seller signature and any required agency acceptance.' : !requireSignedCopyCheck
-              ? 'I checked this existing signed document, every required seller signature, and any required agency acceptance.'
+            <span>{onlineSigned ? 'I reviewed this signed document and checked every required signature.' : !requireSignedCopyCheck
+              ? 'I checked this existing signed document and every required signature.'
               : isMandate
-              ? 'I compared the uploaded mandate with the reviewed signing copy and checked every required seller signature and each contracting agency acceptance.'
+              ? 'I compared the uploaded mandate with the reviewed signing copy and checked every required signature.'
               : 'I compared the uploaded file with the reviewed signing copy and checked that every required seller has signed.'}</span>
           </label>
           <div className="mt-3 flex flex-wrap justify-end gap-2">

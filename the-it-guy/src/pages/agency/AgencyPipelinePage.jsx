@@ -11678,7 +11678,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [location.search])
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
   const { role, profile, currentWorkspace, currentMembership, workspace } = useWorkspace()
-  const { branding: organisationDocumentBranding, organisation: documentOrganisation } = useOrganisation()
+  const { branding: organisationDocumentBranding, organisation: documentOrganisation, onboarding: agencyDocumentOnboarding } = useOrganisation()
   const sellerLeadsRenderCountRef = useRef(0)
   sellerLeadsRenderCountRef.current += 1
   const sellerLeadsPerformanceBaselineRef = useRef(null)
@@ -27752,11 +27752,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ...(currentWorkspace?.branding || {}),
       ...(currentWorkspace?.organisation || currentWorkspace?.organization || currentWorkspace?.agency || currentWorkspace || {}),
     }
+    const signingUserResult = await supabase.auth.getUser()
+    if (signingUserResult.error) throw new Error('Unable to confirm the practitioner certificate details. Reload and try again.')
+    const practitionerMetadata = signingUserResult.data?.user?.id === currentAgent.id ? signingUserResult.data.user.user_metadata || {} : {}
     const signingBranding = {
       ...resolvedSigningBranding,
       legalName: normalizeText(agencyDetails.legalName || agencyDetails.legal_name || agencyDetails.registeredName || agencyDetails.registered_name),
       registrationNumber: normalizeText(agencyDetails.registrationNumber || agencyDetails.registration_number || agencyDetails.companyRegistrationNumber || agencyDetails.company_registration_number),
-      businessFfcNumber: normalizeText(agencyDetails.businessFfcNumber || agencyDetails.business_ffc_number || agencyDetails.ffcNumber || agencyDetails.ffc_number),
+      businessFfcNumber: normalizeText(agencyDetails.businessFfcNumber || agencyDetails.business_ffc_number || agencyDetails.ffcNumber || agencyDetails.ffc_number || (matchesDocumentOrganisation ? agencyDocumentOnboarding?.agencyInformation?.eaabPpraNumber : '')),
       ficOrganisationId: normalizeText(agencyDetails.ficOrganisationId || agencyDetails.fic_organisation_id),
       physicalAddress: normalizeText(agencyDetails.physicalAddress || agencyDetails.physical_address || agencyDetails.registeredAddress || agencyDetails.registered_address),
       email: normalizeText(agencyDetails.email || agencyDetails.contactEmail || agencyDetails.contact_email),
@@ -27773,7 +27776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         name: normalizeText(currentAgent?.fullName || currentAgent?.name),
         email: normalizeText(currentAgent?.email),
         phone: normalizeText(currentAgent?.phone || currentAgent?.mobile || currentAgent?.contactNumber),
-        ffcNumber: normalizeText(currentAgent?.ffcNumber || currentAgent?.ffc_number || currentAgent?.fidelityFundCertificateNumber),
+        ffcNumber: normalizeText(profile?.ffcNumber || profile?.ffc_number || profile?.fidelityFundCertificateNumber || profile?.ppraNumber || practitionerMetadata.ffcNumber || practitionerMetadata.ffc_number || practitionerMetadata.ppraNumber || (normalizeText(agencyDocumentOnboarding?.principalInformation?.emailAddress).toLowerCase() === currentAgent.email && matchesDocumentOrganisation ? agencyDocumentOnboarding?.principalInformation?.ppraNumber : '')),
       },
       mandate: {
         propertyAddress,

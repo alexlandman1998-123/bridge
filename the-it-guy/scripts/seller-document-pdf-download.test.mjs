@@ -49,7 +49,7 @@ const approval = { commission: { basis: 'percentage', percentage: 5, vatHandling
 const fixtures = []
 function add(id, html, viewport = { width: 1440, height: 1000 }, checks = {}) {
   const expectedPages = (html.match(/class="(?:property-disclosure-page|page)"/g) || []).length
-  assert.ok(expectedPages > 0, `${id}: fixture has no printable pages`)
+  assert.ok(expectedPages > 0 || html.includes('data-mandate-legacy-layout'), `${id}: fixture has no printable pages`)
   fixtures.push({ id, html, expectedPages, viewport, ...checks })
 }
 for (const mandateType of ['sole', 'exclusive', 'open', 'dual']) {
@@ -245,10 +245,16 @@ try {
         preview.srcdoc = html
         document.body.appendChild(preview)
         await loaded
-        return Array.from(preview.contentDocument.querySelectorAll('.signer-card .signature')).map(element => element.scrollWidth - element.clientWidth)
+        return {
+          overflows: Array.from(preview.contentDocument.querySelectorAll('.signer-card .signature')).map(element => element.scrollWidth - element.clientWidth),
+          pages: preview.contentDocument.querySelectorAll('.mandate-review-page,.page,.property-disclosure-page').length,
+          footerCollisions: Array.from(preview.contentDocument.querySelectorAll('.mandate-review-page')).filter(page => page.querySelector('.review-body').lastElementChild?.getBoundingClientRect().bottom > page.querySelector('footer').getBoundingClientRect().top).length,
+        }
       } finally { preview.remove() }
     }, fixture.html)
-    assert.ok(signatureOverflows.every(overflow => overflow <= 1), `${fixture.id}: FICA signature content must stay inside its box`)
+    if (!fixture.expectedPages) fixture.expectedPages = signatureOverflows.pages
+    assert.ok(signatureOverflows.overflows.every(overflow => overflow <= 1), `${fixture.id}: FICA signature content must stay inside its box`)
+    assert.equal(signatureOverflows.footerCollisions, 0, `${fixture.id}: mandate content and signatures must clear the footer`)
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 60000 }),
       page.evaluate(async ({ html, id }) => {

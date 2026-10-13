@@ -3,7 +3,7 @@ import { buildSellerMandateLayoutMarkup } from './sellerMandateReviewDocumentMar
 import { assertMandateWordingApproved, getFrozenMandateWordingRelease, mandateRequiredSigners } from './sellerMandateSigningApproval.js'
 export { SELLER_MANDATE_DOCUMENT_CONTRACT, requireSellerMandateWording, buildSellerMandateDocumentModel } from './sellerMandateWordingMarkup.js'
 
-export const SELLER_MANDATE_DOCUMENT_TEMPLATE_VERSION = 'seller_mandate_shared_layout_v2'
+export const SELLER_MANDATE_DOCUMENT_TEMPLATE_VERSION = 'seller_mandate_shared_layout_v3'
 export const sellerMandateDocumentTemplateVersion = pack => pack?.mandate?.mandateCapture !== undefined
   ? assertMandateWordingApproved(pack.mandate).version : SELLER_MANDATE_DOCUMENT_TEMPLATE_VERSION
 

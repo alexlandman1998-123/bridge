@@ -63,7 +63,7 @@ function newToken() {
 }
 
 function signedHtml(reviewedHtml: string, evidence: Row[], versionDigest: string) {
-  if (reviewedHtml.includes('data-mandate-signing-copy="full-v1"')) return applyMandateSignatureEvidence(reviewedHtml, evidence, versionDigest);
+  if (/data-mandate-signing-copy="full-v[12]"/.test(reviewedHtml)) return applyMandateSignatureEvidence(reviewedHtml, evidence, versionDigest);
   return applySellerDocumentSignatureEvidence(reviewedHtml, evidence, versionDigest);
 }
 

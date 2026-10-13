@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { buildSellerMandateReviewDocumentMarkup, parseSellerMandateReviewWording } from '../sellerMandateReviewDocumentMarkup.js'
+import { buildSellerMandateLayoutMarkup, buildSellerMandateReviewDocumentMarkup, parseSellerMandateReviewWording } from '../sellerMandateReviewDocumentMarkup.js'
+import { mandateRequiredSigners, mandateSigningInputs, mandateDigest } from '../sellerMandateSigningApproval.js'
 import { createMandateReviewFixture } from '../../../../scripts/fixtures/seller-mandate-review.mjs'
 import { getSellerMandatePreparationIssues } from '../../../lib/sellerMandateCapture.js'
 import { buildSellerMandateTermsFormPatch } from '../../../lib/sellerMandateCapture.js'
@@ -16,6 +17,31 @@ const hashes = {
 }
 const draft = type => readFileSync(new URL(`../../../../docs/mandate-wording-review/${type}-mandate-draft.md`, import.meta.url), 'utf8')
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+const historicalLayoutHashes = {
+  sole: '80880fd939a63b89532666a63ad7c52efe225b21f0b101bc375db46d40b25af8',
+  open: '618a28db5eeec90901e613658efb9a4cd21a968780eb923afb35fa9ecb105ae0',
+  dual: '6052a7f481a81071b02a0b1c55ada36dc7b2e533fabcbe0533cd56c4ce22fa34',
+}
+for (const type of ['sole', 'open', 'dual']) test(`${type}: historical frozen HTML stays exact; new policy binds seller-only signatures`, async () => {
+  const signingPack = createMandateReviewFixture(type), draftMarkdown = draft(type === 'sole' ? 'exclusive' : type)
+  const options = { signingPack, draftMarkdown, signingCopy: true, generatedAt: '2026-10-04T10:00:00Z', wordingVersion: 'historical-fixture-v1' }
+  const historical = buildSellerMandateLayoutMarkup(options)
+  assert.equal(createHash('sha256').update(historical).digest('hex'), historicalLayoutHashes[type])
+  assert.equal(mandateRequiredSigners(signingPack).length, type === 'dual' ? 4 : 3)
+  assert.equal(Object.hasOwn(mandateSigningInputs(signingPack), 'mandateExecutionMode'), false)
+  const sellerOnly = { ...signingPack, mandateExecutionMode: 'seller_only_v2', signers: signingPack.signers.map((signer, index) => ({ ...signer, role: `seller_${index + 1}` })) }
+  const current = buildSellerMandateLayoutMarkup({ ...options, signingPack: sellerOnly })
+  assert.equal(mandateRequiredSigners(sellerOnly).length, 2)
+  assert.doesNotMatch(current, /Agency [AB] acceptance|Agency acceptance|seller_[12]/)
+  assert.match(current, /data-mandate-signing-copy="full-v2"/)
+  assert.match(current, /Seller 1/)
+  assert.match(current, /Alpha-PRACTITIONER-FFC/)
+  assert.match(current, /Alpha-BUSINESS-FFC/)
+  for (const section of parseSellerMandateReviewWording(draftMarkdown).sections.filter(section => /^[1-7] /.test(section.title))) {
+    for (const block of section.blocks.filter(block => block.kind === 'paragraph')) assert.ok(current.includes(escape(block.text)))
+  }
+  assert.notEqual(await mandateDigest(mandateSigningInputs(signingPack)), await mandateDigest(mandateSigningInputs({ ...signingPack, mandateExecutionMode: 'seller_only_v2' })))
+})
 for (const type of ['exclusive', 'open', 'dual']) {
   test(`${type}: preserves every Phase 1 legal paragraph, exact source and review status`, () => {
     const markdown = draft(type)
@@ -74,7 +100,7 @@ test('saved schedules connect the complete draft to normal post-onboarding revie
   assert.equal(draft.name, 'Full mandate review draft')
   assert.match(draft.generatedHtml, /data-review-layout="seller-mandate-review"/)
   assert.match(draft.generatedHtml, /DRAFT FOR REVIEW - NOT FOR SIGNATURE/)
-  assert.match(draft.generatedHtml, /Agency B acceptance/)
+  assert.doesNotMatch(draft.generatedHtml, /Agency [AB] acceptance/)
   assert.match(draft.generatedHtml, /7 Information notices and records/)
   assert.match(draft.generatedHtml, /Agency A: 30%/)
   assert.match(draft.metadata.wordingDigest, /^sha256:[a-f0-9]{64}$/)

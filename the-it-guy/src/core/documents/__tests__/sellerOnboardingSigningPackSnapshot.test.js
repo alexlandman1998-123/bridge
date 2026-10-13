@@ -3,6 +3,13 @@ import test from 'node:test'
 import { buildSellerMandateDocumentModel } from '../sellerMandateWordingMarkup.js'
 import { buildSellerOnboardingSigningPackSnapshot, SELLER_ONBOARDING_SIGNING_PACK_SNAPSHOT_CONTRACT } from '../sellerOnboardingSigningPackSnapshot.js'
 
+test('new mandate preparation selects seller-only execution; other documents preserve the issued mandate policy', () => {
+  assert.equal(buildSellerOnboardingSigningPackSnapshot({ selectedDocuments: ['mandate'] }).mandateExecutionMode, 'seller_only_v2')
+  assert.equal(Object.hasOwn(buildSellerOnboardingSigningPackSnapshot({ selectedDocuments: ['fica'] }), 'mandateExecutionMode'), false)
+  const formData = { sellerOnboardingManualSigningPack: { signingPackSnapshot: { mandateExecutionMode: 'seller_only_v2' } } }
+  assert.equal(buildSellerOnboardingSigningPackSnapshot({ formData, selectedDocuments: ['fica'] }).mandateExecutionMode, 'seller_only_v2')
+})
+
 test('builds one complete frozen contract for a natural-person seller', () => {
   const pack = buildSellerOnboardingSigningPackSnapshot({
     formData: {

@@ -206,6 +206,9 @@ export function buildSellerOnboardingSigningPackSnapshot({
 
   return {
     contract: SELLER_ONBOARDING_SIGNING_PACK_SNAPSHOT_CONTRACT,
+    ...((Array.isArray(selectedDocuments) ? selectedDocuments : []).includes('mandate') ? { mandateExecutionMode: 'seller_only_v2' }
+      : (form.sellerOnboardingManualSigningPack || form.seller_onboarding_manual_signing_pack)?.signingPackSnapshot?.mandateExecutionMode
+        ? { mandateExecutionMode: (form.sellerOnboardingManualSigningPack || form.seller_onboarding_manual_signing_pack).signingPackSnapshot.mandateExecutionMode } : {}),
     ...(form.mandateAcceptanceReview ? { mandateAcceptanceReview: structuredClone(form.mandateAcceptanceReview) } : {}),
     version: 'seller_signing_pack_v1',
     frozenAt: generatedAt,

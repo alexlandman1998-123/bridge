@@ -1,3 +1,4 @@
+import { getMandateSignerRoleLabel } from '../../lib/mandateSignatureRules.js'
 const text = value => String(value ?? '').trim()
 const escape = value => text(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 const date = value => {
@@ -28,7 +29,7 @@ export function applySellerDocumentSignatureEvidence(reviewedHtml, evidence, ver
     const row = evidence.find(value => identity.toLowerCase().includes(`<span>${escape(value.signer_email).toLowerCase()}</span>`))
     if (!row) throw new Error('A frozen signature panel has no matching recorded signer.')
     const disclosure = card.includes('signer-card-main')
-    return `<article class="signer-card" data-recorded-seller-signature="${escape(row.signer_email)}" style="overflow-wrap:anywhere"><div${disclosure ? ' class="signer-card-main"' : ''}><span>${escape(row.signer_role)}</span><strong>${escape(row.signed_name)}</strong><span>${escape(row.signer_email)}</span></div><div${disclosure ? ' class="signer-card-meta"' : ''}><span class="${disclosure ? 'signer-status' : 'status'}">Signature recorded</span><span>${escape(date(row.signed_date))}</span><span>${escape(row.signed_place)}</span></div><div class="${disclosure ? 'signer-card-signature' : 'signature'}">${signature(row)}</div></article>`
+    return `<article class="signer-card" data-recorded-seller-signature="${escape(row.signer_email)}" style="overflow-wrap:anywhere"><div${disclosure ? ' class="signer-card-main"' : ''}><span>${escape(getMandateSignerRoleLabel(row.signer_role))}</span><strong>${escape(row.signed_name)}</strong><span>${escape(row.signer_email)}</span></div><div${disclosure ? ' class="signer-card-meta"' : ''}><span class="${disclosure ? 'signer-status' : 'status'}">Signature recorded</span><span>${escape(date(row.signed_date))}</span><span>${escape(row.signed_place)}</span></div><div class="${disclosure ? 'signer-card-signature' : 'signature'}">${signature(row)}</div></article>`
   })
   result = result.replace(/(<div class="compliance-summary">\s*<span>Status<\/span>\s*)<strong>[\s\S]*?<\/strong>/g,
     `$1<strong>All ${evidence.length} required signatures recorded</strong>`)
@@ -39,6 +40,12 @@ export function applySellerDocumentSignatureEvidence(reviewedHtml, evidence, ver
   result = result.replace(/<div class="signature-box">[\s\S]*?<\/div>/g,
     '<div class="signature-box">Every required signature is recorded in the signature evidence below.</div>')
 
+  if (result.includes('data-mandate-legacy-layout="seller-mandate-v3"')) {
+    const marker = '<!--mandate-signature-evidence-->'
+    if (result.split(marker).length !== 2) throw new Error('The mandate signature record layout is incomplete.')
+    const audit = '<h2>Electronic signatures</h2>' + evidence.map(row => `<p class="mandate-evidence" data-review-text>${escape(row.signed_name)} | ${escape(getMandateSignerRoleLabel(row.signer_role))}<br>Signed at ${escape(row.signed_place)} on ${escape(date(row.signed_date))}<br>Recorded ${escape(row.accepted_at)}<br>Document version: ${escape(versionDigest)}<br>Evidence: ${escape(row.evidence_digest)}</p>`).join('')
+    return result.replace(marker, audit)
+  }
   const disclosure = result.includes('class="property-disclosure-page"')
   const pageClass = disclosure ? 'property-disclosure-page' : 'page'
   const header = result.match(/<header class="(?:doc-header|header)"[\s\S]*?<\/header>/)?.[0] || ''
@@ -47,7 +54,7 @@ export function applySellerDocumentSignatureEvidence(reviewedHtml, evidence, ver
   const groups = []
   for (let index = 0; index < evidence.length; index += 2) groups.push(evidence.slice(index, index + 2))
   const total = count + groups.length
-  const sections = groups.map((group, index) => `<section class="${pageClass} seller-portal-signature-page" style="position:relative;min-height:296mm;box-sizing:border-box;overflow-wrap:anywhere">${header}<main style="padding:8mm 18mm 20mm"><h2 style="color:var(--doc-primary-ink,var(--primary-ink,#152338));font-size:16pt">Electronic signatures</h2><p style="font-size:8pt">Recorded signature evidence. All required signatures for this document are recorded. Supporting-evidence verification is recorded separately.<br>Reviewed document version: ${escape(versionDigest)}</p>${group.map(row => `<article data-signature-evidence="${escape(row.signer_email)}" style="border:1px solid #d5ddd8;border-radius:2mm;padding:4mm;margin-top:5mm;break-inside:avoid;font-size:9pt;line-height:1.5"><strong>${escape(row.signed_name)}</strong> · ${escape(row.signer_role)}<br>${signature(row)}<p>Signed at ${escape(row.signed_place)} on ${escape(date(row.signed_date))}<br>Recorded ${escape(row.accepted_at)}<br>Evidence: ${escape(row.evidence_digest)}</p></article>`).join('')}</main>${footer.replace(/Page \d+ of \d+/, `Page ${count + index + 1} of ${total}`)}</section>`).join('')
+  const sections = groups.map((group, index) => `<section class="${pageClass} seller-portal-signature-page" style="position:relative;min-height:296mm;box-sizing:border-box;overflow-wrap:anywhere">${header}<main style="padding:8mm 18mm 20mm"><h2 style="color:var(--doc-primary-ink,var(--primary-ink,#152338));font-size:16pt">Electronic signatures</h2><p style="font-size:8pt">Recorded signature evidence. All required signatures for this document are recorded. Supporting-evidence verification is recorded separately.<br>Reviewed document version: ${escape(versionDigest)}</p>${group.map(row => `<article data-signature-evidence="${escape(row.signer_email)}" style="border:1px solid #d5ddd8;border-radius:2mm;padding:4mm;margin-top:5mm;break-inside:avoid;font-size:9pt;line-height:1.5"><strong>${escape(row.signed_name)}</strong> · ${escape(getMandateSignerRoleLabel(row.signer_role))}<br>${signature(row)}<p>Signed at ${escape(row.signed_place)} on ${escape(date(row.signed_date))}<br>Recorded ${escape(row.accepted_at)}<br>Evidence: ${escape(row.evidence_digest)}</p></article>`).join('')}</main>${footer.replace(/Page \d+ of \d+/, `Page ${count + index + 1} of ${total}`)}</section>`).join('')
   // Keep evidence inside the existing branded root so CSS palette variables
   // and page dimensions apply. Historical fragments retain a plain fallback.
   if (/<\/(?:div|main)>\s*<\/body>/i.test(result)) result = result.replace(/<\/(div|main)>(\s*<\/body>)/i, `${sections}</$1>$2`)

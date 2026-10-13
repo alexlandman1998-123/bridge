@@ -48,6 +48,7 @@ export function mandateSigningInputs(pack = {}) {
   const seller = project(pack.seller, ['legalOwnerName', 'legalOwnerIdentity', 'legalType', 'ownershipType', 'name', 'idNumber', 'residentialAddress', 'email', 'phone', 'companyName', 'companyRegistrationNumber', 'companyRegisteredAddress', 'trustName', 'trustRegistrationNumber', 'trustRegisteredAddress'])
   seller.parties = (Array.isArray(pack.seller?.parties) ? pack.seller.parties : []).map(person => project(person, ['name', 'role', 'idNumber', 'residentialAddress']))
   return structuredClone({ documentReference: pack.documentReference || '', disclosureReference: pack.disclosureReference || '',
+    ...(pack.mandateExecutionMode ? { mandateExecutionMode: pack.mandateExecutionMode } : {}),
     renderedAt: pack.renderedAt || pack.frozenAt || '', seller,
     property: project(pack.property, ['address', 'titleDeedNumber', 'erfNumber', 'sectionNumber', 'unitNumber', 'schemeName']), signers: pack.signers || [],
     branding: pack.branding || {}, mandate: pack.mandate || {}, acceptanceReview: pack.acceptanceReview || pack.mandateAcceptanceReview || pack.mandate?.mandateAcceptanceReview || {} })
@@ -88,7 +89,9 @@ export function mandateRequiredSigners(pack = {}) {
     role: `${key === 'agencyA' ? 'Agency A' : 'Agency B'} acceptance`,
     email: text(terms.mandateCapture[key].representativeEmail).toLowerCase(),
   }))
-  const signers = [...sellers, ...agencies]
+  // Historical contracts retain their counter-signers. New copies bind the
+  // seller-only execution policy into the signed input digest.
+  const signers = pack.mandateExecutionMode === 'seller_only_v2' ? sellers : [...sellers, ...agencies]
   if (signers.some(signer => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signer.email)) ||
       new Set(signers.map(signer => signer.email)).size !== signers.length) {
     throw new Error('Each seller and contracting agency needs its own distinct valid signer email.')

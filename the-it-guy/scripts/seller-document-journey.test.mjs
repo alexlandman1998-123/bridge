@@ -6,6 +6,7 @@ import { createSyntheticMandateSigningRuntime } from './fixtures/seller-mandate-
 import { buildSellerMandateTermsFormPatch, normalizeSellerMandateCapture, getSellerMandatePreparationIssues } from '../src/lib/sellerMandateCapture.js'
 import { buildListingSellerProfileFormPatch, createListingSellerProfileBuilderDraft } from '../src/lib/listingSellerProfileBuilderModel.js'
 import assert from 'node:assert/strict'
+import { getMandateSignerRoleLabel } from '../src/lib/mandateSignatureRules.js'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -416,9 +417,10 @@ async function installEdge(runtime) {
   await import(`data:text/javascript;base64,${Buffer.from(edge.outputFiles[0].text).toString('base64')}#${randomUUID()}`)
   assert.equal(typeof handler, 'function')
 }
-async function fullMandateJourney(runtime, mandateType) {
+async function fullMandateJourney(runtime, mandateType, sellerOnly = false) {
   await installEdge(runtime)
   const listingId = randomUUID(), signingPack = structuredClone(runtime.packs[mandateType]), api = runtime.api
+  if (sellerOnly) signingPack.mandateExecutionMode = 'seller_only_v2'
   const approval = { status: 'approved', signingRoute: 'digital_pack', selectedDocuments: ['mandate'], commission: { confirmed: true } }
   const prepared = api.createSellerOnboardingSigningCopyPack({ signingPack, formalPackApproval: approval, disclosureSigned: true, actor, generatedAt: signingPack.frozenAt })
   const frozen = await api.createSellerReviewedDocumentVersions({ manualSigningPack: prepared, formalPackApproval: approval, signingPack, actor, approvedAt: signingPack.frozenAt })
@@ -431,7 +433,8 @@ async function fullMandateJourney(runtime, mandateType) {
   const sent = await request('issue', { listingId, documentKey: 'signed_mandate' }, true)
   assert.equal(sent.status, 200, JSON.stringify(sent.body))
   const id = sent.body.signingDocumentId, recipients = await issuedRecipients(id)
-  assert.equal(recipients.length, mandateType === 'dual' ? 4 : 3)
+  assert.equal(recipients.length, sellerOnly ? 2 : mandateType === 'dual' ? 4 : 3)
+  if (sellerOnly) assert.ok(recipients.every(row => !row.signer_role.startsWith('Agency')), 'Seller-only copies must not issue agency links')
   // Reconcile the forward review migration around already-sent frozen copies.
   // It must not change their source, recipient links, hashes or evidence.
   const historySnapshot = async () => Promise.all([signingTable, recipientTable, evidenceTable, 'private_listing_seller_onboarding',
@@ -501,7 +504,7 @@ async function fullMandateJourney(runtime, mandateType) {
     assert.equal(viewed.status, 200, JSON.stringify(viewed.body))
     assert.equal(viewed.body.documentKey, 'signed_mandate', 'An agency token accesses only its mandate, never FICA')
     assert.equal(viewed.body.versionDigest, frozen.documents[0].versionDigest)
-    assert.match(viewed.body.reviewedHtml, /data-mandate-signing-copy="full-v1"/)
+    assert.match(viewed.body.reviewedHtml, sellerOnly ? /data-mandate-signing-copy="full-v2"/ : /data-mandate-signing-copy="full-v1"/)
     const signed = await request('sign', { token: recipient.token, signedName: viewed.body.signerName, signatureType: 'drawn', signatureValue: signature,
       signedDate: '2026-10-04', signedPlace: 'Synthetic Signing Place', accepted: true, versionDigest: viewed.body.versionDigest })
     assert.equal(signed.status, 200, JSON.stringify(signed.body))
@@ -528,8 +531,8 @@ async function fullMandateJourney(runtime, mandateType) {
   assert.equal(preview.status, 200, JSON.stringify(preview.body))
   assert.doesNotMatch(preview.body.signedHtml, /class="review-signature-lines"/)
   assert.equal((preview.body.signedHtml.match(/class="mandate-recorded-signature"/g) || []).length, recipients.length)
-  for (const recipient of recipients) assert.ok(preview.body.signedHtml.includes(`Signed by ${recipient.signer_name} as ${recipient.signer_role}`))
-  await download(preview.body.signedHtml, `full-${mandateType}-accepted-mandate`, { signed: true, logoColour: [36, 84, 76] })
+  for (const recipient of recipients) assert.ok(preview.body.signedHtml.includes(`Signed by ${recipient.signer_name} as ${sellerOnly ? getMandateSignerRoleLabel(recipient.signer_role) : recipient.signer_role}`))
+  await download(preview.body.signedHtml, `full-${mandateType}${sellerOnly ? '-seller-only' : ''}-accepted-mandate`, { signed: true, logoColour: [36, 84, 76] })
   assert.equal((await request('review', { signingDocumentId: id }, true)).status, 200)
   const completedHistory = await historySnapshot()
   await db.exec(migration)
@@ -537,7 +540,7 @@ async function fullMandateJourney(runtime, mandateType) {
   await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261012150343_seller_document_review_portal_listing_text_id.sql', import.meta.url), 'utf8'))
   assert.deepEqual(await historySnapshot(), completedHistory, 'Forward reconciliation preserves completed and reviewed mandates')
   assert.deepEqual((await reopened(listingId)).sellerOnboarding.formData.sellerOnboardingManualSigningPack, prepared, 'The signed/reviewed source retains every frozen byte')
-  report.push({ branch: 'two_sellers_and_contracting_agencies', mandateType, route: 'digital_pack', fullWording: true, syntheticApprovalOnly: true,
+  report.push({ branch: sellerOnly ? 'two_sellers_without_agency_signature' : 'two_sellers_and_contracting_agencies', mandateType, route: 'digital_pack', fullWording: true, syntheticApprovalOnly: true,
     historicalRenewal: true, forwardMigrationPreservesHistory: true, recipients: recipients.length })
 }
 async function workspace(listingId) {
@@ -809,14 +812,14 @@ async function reviewPhysicalInBrowser(documentId, documentKey) {
   await portalPage.getByRole('button', { name: 'Approve', exact: true }).click()
   const approve = portalPage.getByRole('button', { name: 'Approve signed copy', exact: true })
   assert.equal(await approve.isDisabled(), true)
-  const attestation = portalPage.getByRole('checkbox', { name: documentKey === 'signed_mandate' ? /each contracting agency acceptance/ : /every required seller/ })
+  const attestation = portalPage.getByRole('checkbox', { name: documentKey === 'signed_mandate' ? /every required signature/ : /every required seller/ })
   await attestation.check()
   await approve.click()
   await portalPage.getByRole('status').waitFor()
   assert.equal(await portalPage.getByRole('status').textContent(), 'Signed copy approved')
   const events = await sql('select reason from seller_document_review_events where document_id=$1', [documentId])
   assert.equal(events.length, 1)
-  if (documentKey === 'signed_mandate') assert.match(events[0].reason, /every required seller signature and each contracting agency acceptance/)
+  if (documentKey === 'signed_mandate') assert.match(events[0].reason, /every required signature/)
   browserPhysicalReviews++
 }
 
@@ -1112,7 +1115,7 @@ try {
     await expiryAndDeliveryRetries()
     await existingSignedJourney()
   }
-  if (!process.argv.includes('--connected-only')) for (const mandateType of ['sole', 'open', 'dual']) await fullMandateJourney(mandateRuntime, mandateType)
+  if (!process.argv.includes('--connected-only')) for (const mandateType of ['sole', 'open', 'dual']) { await fullMandateJourney(mandateRuntime, mandateType); await fullMandateJourney(mandateRuntime, mandateType, true) }
   if (!process.argv.includes('--full-mandates-only')) {
     const branchFilter = process.argv.find(value => value.startsWith('--branch='))?.slice('--branch='.length)
     for (const [branch, type, options] of [['individual', 'sole', { browserSign: true }], ['company', 'open', {}],

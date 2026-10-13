@@ -136,7 +136,7 @@ export async function downloadHtmlDocumentPdf(markup = '', fileName = 'document.
     // Review layouts measure the available A4 space before image embedding and
     // capture. Existing approved/frozen documents retain their stored pages.
     await document.fonts?.ready
-    pdfStage.querySelectorAll('[data-review-layout="seller-mandate-review"]').forEach(paginateSellerMandateReview)
+    pdfStage.querySelectorAll('[data-review-layout="seller-mandate-review"], [data-mandate-legacy-layout="seller-mandate-v3"]').forEach(paginateSellerMandateReview)
 
     // Embed validated bytes in the export stage so html2canvas cannot silently
     // omit a loaded-but-uncapturable cross-origin logo. Deduplicate within this
@@ -180,6 +180,25 @@ export async function downloadHtmlDocumentPdf(markup = '', fileName = 'document.
           pdf.addPage()
           pdf.addImage(canvas.toDataURL('image/jpeg', options.image.quality), 'JPEG', 0, 0, 210, canvas.height * 210 / canvas.width)
         }
+        canvas.width = canvas.height = 0
+      }
+      await pdf.save(options.filename, { returnPromise: true })
+    } else if (pdfStage.querySelector('.document > .page, .property-disclosure-document > .property-disclosure-page')) {
+      // Capture existing document pages separately too. Fractional A4 pixels
+      // and CSS page-break padding can otherwise push a footer onto an extra
+      // page. Preserve each complete page and its aspect ratio within A4.
+      const { jsPDF } = await import('jspdf')
+      const pdf = new jsPDF(options.jsPDF)
+      const pages = pdfStage.querySelectorAll('.document > .page, .property-disclosure-document > .property-disclosure-page')
+      for (const [index, page] of Array.from(pages).entries()) {
+        const pageStage = page.parentElement.cloneNode(false)
+        pageStage.append(page.cloneNode(true))
+        const worker = html2pdf().set({ ...options, pagebreak: { mode: [] } }).from(pageStage).toCanvas()
+        const canvas = await worker.get('canvas')
+        const scale = Math.min(210 / canvas.width, 297 / canvas.height)
+        const width = canvas.width * scale, height = canvas.height * scale
+        if (index) pdf.addPage()
+        pdf.addImage(canvas.toDataURL('image/jpeg', options.image.quality), 'JPEG', (210 - width) / 2, 0, width, height)
         canvas.width = canvas.height = 0
       }
       await pdf.save(options.filename, { returnPromise: true })

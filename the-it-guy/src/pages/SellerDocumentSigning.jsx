@@ -1,3 +1,4 @@
+import { getMandateSignerRoleLabel } from '../lib/mandateSignatureRules.js'
 import { getSellerFicaDeclarationGroups } from '../lib/sellerFicaOnboardingFields.js'
 import { getSellerDisclosureQuestionMissing } from '../lib/sellerAgentAssistedDisclosure.js'
 import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
@@ -54,7 +55,8 @@ function EditableDetails({ document, data, onChange, onSave, saving, dirty, read
 function signingCopyHeader(html) {
   if (!html || typeof DOMParser === 'undefined') return {}
   const copy = new DOMParser().parseFromString(html, 'text/html')
-  const logo = copy.querySelector('.agency-brand img, .brand-logo img, img.brand-logo, .review-header img, .doc-header img')
+  const logoSelector = '.agency-brand img, .brand-logo img, img.brand-logo, .review-header img, .doc-header img, .header .brand img'
+  const logo = copy.querySelector(logoSelector) || [...copy.querySelectorAll('template')].map(template => template.content.querySelector(logoSelector)).find(Boolean)
   const source = logo?.getAttribute('src') || ''
   const safeSource = /^(https?:\/\/|\/(?!\/)|data:image\/(?:png|jpeg|webp|svg\+xml);base64,)/i.test(source) ? source : ''
   return { logoUrl: safeSource, logoAlt: logo?.getAttribute('alt') || 'Agency logo', declaration: copy.querySelector('.declaration-opening')?.textContent?.trim() || '' }
@@ -68,20 +70,21 @@ function localDate() {
 // Screen-only rules: the approved HTML and generated document stay unchanged.
 function mobileReviewHtml(html = '') {
   const addition = `<meta name="viewport" content="width=device-width, initial-scale=1" /><style>
+  @media screen {body{font-family:Arial,Helvetica,sans-serif!important}}
   @media screen and (max-width:700px) {
     html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
     .document,.property-disclosure-document{width:100%!important;max-width:100%!important}
     .page,.property-disclosure-page{width:100%!important;max-width:100%!important;height:auto!important;min-height:0!important;overflow:visible!important;margin:0!important;padding:20px 16px 30px!important;break-after:auto!important;page-break-after:auto!important;border-bottom:1px solid #ddd!important}
-    .doc-header{min-height:0!important;padding:8px 0 16px!important;flex-wrap:wrap!important}
+    .doc-header,.header{min-height:0!important;padding:8px 0 16px!important;flex-wrap:wrap!important}
     .brand-copy{max-width:100%!important}.brand-logo{position:static!important;max-width:100%!important}
     .doc-header h1{font-size:18px!important;line-height:1.3!important;overflow-wrap:anywhere!important}
     .doc-body,.page-body{padding:12px 0!important}
     .seller-grid,.two-col,.property-grid,.terms-grid,.signature-grid,.compliance-section-grid{grid-template-columns:1fr!important}
     .field,.data-row,.question,.compliance-row{grid-template-columns:1fr!important}
     .data-row span,.question>span{border-right:0!important;border-bottom:1px solid #ddd!important}
-    .doc-footer{position:static!important;margin-top:24px!important;flex-wrap:wrap!important}
+    .doc-footer,.footer{position:static!important;margin-top:24px!important;flex-wrap:wrap!important}
     .property-disclosure-page .doc-header,.property-disclosure-page .doc-title,.property-disclosure-page .doc-body{padding-left:0!important;padding-right:0!important}
-    .company-details{max-width:100%!important;justify-items:start!important;text-align:left!important}
+    .company-details,.meta{max-width:100%!important;justify-items:start!important;text-align:left!important}
     .annexure-table{width:100%!important;table-layout:fixed!important}
     .annexure-table th,.annexure-table td{overflow-wrap:anywhere!important;padding:5px 3px!important;font-size:10px!important}
     .annexure-table .question-cell{width:58%!important}.annexure-table .answer-cell{width:14%!important}
@@ -269,10 +272,10 @@ export default function SellerDocumentSigning() {
   }
 
   return <main className="min-h-screen bg-[#f5f5f5] px-3 py-6 text-[#171717] sm:px-5 sm:py-10"><div className="mx-auto max-w-3xl space-y-5">
-    <header className="rounded-xl border border-[#ddd] bg-white p-5 sm:p-7">{header.logoUrl ? <img src={header.logoUrl} alt={header.logoAlt} className="mb-5 h-auto max-h-20 max-w-[240px] object-contain object-left" /> : null}<p className="text-xs font-bold uppercase tracking-[0.16em] text-[#555]">Seller documents</p><h1 className="mt-2 text-2xl font-semibold">{complete ? 'Signature received' : document ? `Review and sign ${titles[document.documentKey] || 'your document'}` : 'Seller document signing'}</h1>{document ? <p className="mt-3 text-sm leading-6 text-[#555]">This private request is for {document.signerName} ({document.signerRole}). Read the information below before signing.</p> : null}</header>
+    <header className="rounded-xl border border-[#ddd] bg-white p-5 sm:p-7">{header.logoUrl ? <img src={header.logoUrl} alt={header.logoAlt} className="mb-5 h-auto max-h-20 max-w-[240px] object-contain object-left" /> : null}<p className="text-xs font-bold uppercase tracking-[0.16em] text-[#555]">Seller documents</p><h1 className="mt-2 text-2xl font-semibold">{complete ? 'Signature received' : document ? `Review and sign ${titles[document.documentKey] || 'your document'}` : 'Seller document signing'}</h1>{document ? <p className="mt-3 text-sm leading-6 text-[#555]">This private request is for {document.signerName} ({getMandateSignerRoleLabel(document.signerRole)}). Read the information below before signing.</p> : null}</header>
     {loading ? <p role="status" className="rounded-xl bg-white p-5">Loading your reviewed document…</p> : null}
     {error ? <p role="alert" className="rounded-xl border border-[#999] bg-[#eee] p-5 text-[#171717]">{error}</p> : null}
-    {complete ? <p role="status" className="rounded-xl border border-[#ccc] bg-white p-5">Your signature was saved. Your agent will review the document after every required signer, including each contracting agency on a mandate, has signed.</p> : null}
+    {complete ? <p role="status" className="rounded-xl border border-[#ccc] bg-white p-5">Your signature was saved. Your agent will review the document after every required signer has signed.</p> : null}
     {document ? <>{editData && (document.canEdit || isDisclosure) ? <EditableDetails document={document} data={editData} onChange={changeDetails} onSave={saveDetails} saving={saving} dirty={dirty} readOnly={!document.canEdit} /> : <p className="rounded-xl border border-[#ddd] bg-white p-5 text-sm text-[#555]">{document.requiresReplacementForChanges ? 'These details are frozen into the mandate. Ask your agent for a replacement copy if anything needs to change.' : 'Shared document details are locked because a signer has signed.'}</p>}
       {isDisclosure ? <button type="button" aria-expanded={showDocument} aria-controls="seller-signing-copy" disabled={saving} onClick={() => setShowDocument(!showDocument)} className="rounded-lg border border-[#aaa] bg-white px-4 py-3 text-sm font-semibold">{showDocument ? 'Hide signing copy' : 'View signing copy'}</button> : null}
       {!isDisclosure || showDocument ? <section id="seller-signing-copy" className="overflow-hidden rounded-xl border border-[#ddd] bg-white"><iframe ref={previewRef} title={titles[document.documentKey] || 'Reviewed seller document'} srcDoc={reviewHtml} sandbox="allow-same-origin" referrerPolicy="no-referrer" onLoad={resizePreview} className="min-h-[400px] w-full border-0" /></section> : null}

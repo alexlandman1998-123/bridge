@@ -30,6 +30,17 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+test.each(['header', 'review-header'])('mandate header reads the agency logo from %s templates and shows a readable signer role', async headerClass => {
+  const reviewedHtml = `<html><head></head><body><template data-review-header><header class="${headerClass}"><div class="brand"><img src="https://example.test/mandate-logo.png" alt="Kingdom Real Estate logo"></div></header></template><p>Mandate terms</p></body></html>`
+  api.view.mockResolvedValue({ documentKey: 'signed_mandate', signerName: 'Taylor Seller', signerRole: 'seller_1', versionDigest: 'source-version', reviewedHtml, canEdit: false })
+  render(<SellerDocumentSigning />)
+  const logo = await screen.findByRole('img', { name: 'Kingdom Real Estate logo' })
+  expect(logo.getAttribute('src')).toBe('https://example.test/mandate-logo.png')
+  expect(screen.getByText(/Taylor Seller.*Seller 1/)).toBeTruthy()
+  expect(screen.queryByText(/seller_1/)).toBeNull()
+  expect(screen.getByTitle('Seller Mandate').getAttribute('srcDoc')).toMatch(/\.doc-footer,\.footer\{position:static/)
+})
+
 test.each(['individual', 'company', 'trust', 'deceased_estate'])('FICA editor separates %s questions and explains the identity dropdown', async ficaProfileType => {
   api.view.mockResolvedValue({ documentKey: 'signed_fica_declaration', signerName: 'Taylor Seller', signerRole: 'Seller',
     versionDigest: 'source-version', reviewedHtml: html, canEdit: true,
