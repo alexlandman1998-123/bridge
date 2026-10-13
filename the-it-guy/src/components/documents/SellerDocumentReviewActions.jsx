@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { CheckCircle2, Clock3, Loader2, Send, XCircle } from 'lucide-react'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { Dialog, DialogDescription, DialogTitle } from '../ui/dialog.jsx'
 
 function SellerDocumentReviewActions({
   item = {},
@@ -77,7 +78,9 @@ function SellerDocumentReviewActions({
   return (
     <div data-document-review-actions data-document-review-dialog-open={dialogOpen ? 'true' : undefined} className={compact ? 'min-w-0 shrink-0 max-w-full [&_button]:whitespace-nowrap' : 'mt-4 border-t border-[#e2eaf3] pt-4'}>
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open) closeDialog() }}>
-        <DialogContent showClose={false} overlayClassName="z-[80] bg-[#102033]/30 backdrop-blur-[2px]" className="z-[90] max-h-[calc(100dvh-2rem)] max-w-[480px] overflow-y-auto rounded-2xl border-[#dbe6f2] bg-white p-5 text-[#20364c] shadow-xl sm:p-6 md:p-6" data-document-review-actions onCloseAutoFocus={event => { event.preventDefault(); reviewTrigger.current?.focus() }}>
+        <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-[80] bg-[#102033]/30 backdrop-blur-[2px]" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[90] max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-[480px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-[#dbe6f2] bg-white p-5 text-[#20364c] shadow-xl sm:p-6" data-document-review-actions onCloseAutoFocus={event => { event.preventDefault(); reviewTrigger.current?.focus() }}>
           <div className="flex items-start gap-3">
             <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${rejecting ? 'bg-[#fff0ed] text-[#a43d35]' : 'bg-[#eaf6ee] text-[#1f7a46]'}`}>
               {rejecting ? <XCircle size={20} aria-hidden="true" /> : <CheckCircle2 size={20} aria-hidden="true" />}
@@ -139,7 +142,8 @@ function SellerDocumentReviewActions({
               </button>
             </div>
           </div>}
-        </DialogContent>
+        </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
       </Dialog>
       <div className="flex flex-wrap justify-end gap-2">
         {canRemind ? (
