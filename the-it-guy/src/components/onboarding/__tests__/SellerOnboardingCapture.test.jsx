@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom'
 import { SellerOnboarding, normalizeFormData } from '../../../pages/SellerOnboarding.jsx'
 import * as demoLinks from '../../../lib/onboardingDemoLinks.js'
+import { buildSellerProfileCanonicalPayload } from '../../../lib/sellerProfileCaptureModel.js'
 
 beforeEach(() => { vi.spyOn(window, 'scrollTo').mockImplementation(() => {}) })
 
@@ -180,5 +181,67 @@ test('a natural-person entity does not confirm single ownership until the seller
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
   expect(saved.mock.calls[1][0].sellerOnboarding.formData).toMatchObject({
     ownerEntityType: 'natural_person', ownerStructureType: 'individual', ownershipType: 'individual', ownershipRouteConfirmed: true,
+  })
+  const reopened = normalizeFormData(saved.mock.calls[1][0])
+  expect(reopened.ownershipRouteConfirmed).toBe(true)
+  expect(buildSellerProfileCanonicalPayload(reopened, {}, { draft: true }).canonicalSellerFacts.seller.ownership_route_confirmed).toBe(true)
+})
+
+test.each([
+  { ownershipRouteConfirmed: true },
+  { ownership_route_confirmed: true },
+  { ownershipRouteLocked: true },
+  { sellerProfileCaptureSource: 'listing_seller_profile_capture' },
+])('confirmed ownership survives stale pending flags on reopening: %j', confirmation => {
+  const reopened = normalizeFormData({ sellerOnboarding: { formData: {
+    ownershipType: 'individual', ownerEntityType: 'natural_person', ownerStructureType: 'individual',
+    ownershipDeclarationPending: true, ownership_declaration_pending: true, ...confirmation,
+  } } })
+  expect(reopened).toMatchObject({
+    ownershipType: 'individual', ownershipRouteConfirmed: true, ownership_route_confirmed: true,
+    ownershipDeclarationPending: false, ownership_declaration_pending: false,
+  })
+})
+
+test('canonical ownership confirmation survives a stale pending form', () => {
+  const reopened = normalizeFormData({
+    sellerCanonicalFacts: { seller: { owner_entity_type: 'company', owner_structure_type: 'company', ownership_route_confirmed: true } },
+    sellerOnboarding: { formData: { ownershipDeclarationPending: true } },
+  })
+  expect(reopened).toMatchObject({ ownershipType: 'company', ownershipRouteConfirmed: true, ownershipDeclarationPending: false })
+})
+
+test('unconfirmed pending defaults and a deliberately cleared structure remain incomplete', () => {
+  expect(normalizeFormData({ sellerOnboarding: { formData: {
+    ownershipType: 'individual', ownershipDeclarationPending: true,
+  } } }).ownershipType).toBe('')
+  const reopened = normalizeFormData({
+    sellerCanonicalFacts: { seller: { owner_entity_type: 'natural_person', owner_structure_type: 'individual', ownership_route_confirmed: true } },
+    sellerOnboarding: { formData: {
+      ownerEntityType: 'natural_person', ownerStructureType: '', ownershipType: '',
+      ownershipRouteConfirmed: false, ownershipDeclarationPending: true,
+    } },
+  })
+  expect(reopened).toMatchObject({ ownerStructureType: '', ownershipType: '', ownershipRouteConfirmed: false, ownershipDeclarationPending: true })
+})
+
+test('review recognises an agent-selected structure despite a stale pending flag', async () => {
+  const base = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue({
+    ...base, sellerCanonicalFacts: {}, sellerOnboarding: { ...base.sellerOnboarding, canonicalFacts: {}, formData: {
+      ownershipType: 'individual', ownerEntityType: 'natural_person', ownerStructureType: 'individual',
+      ownershipRouteLocked: true, ownershipDeclarationPending: true,
+    } },
+  })
+  const saved = vi.fn()
+  capture({ completionModeOverride: 'agent_assisted', onDraftSaved: saved })
+  await screen.findByRole('heading', { name: 'Who owns this property?' })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  expect(screen.queryByText(/Legal ownership structure/)).toBeNull()
+  expect(saved.mock.calls.at(-1)[0].sellerOnboarding.formData).toMatchObject({
+    ownershipType: 'individual', ownershipRouteConfirmed: true, ownershipDeclarationPending: false,
   })
 })

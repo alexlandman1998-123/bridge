@@ -1,5 +1,5 @@
 import SellerCaptureDocuments from '../components/onboarding/SellerCaptureDocuments.jsx'
-import { createListingSellerProfileBuilderDraft } from '../lib/listingSellerProfileBuilderModel.js'
+import { createListingSellerProfileBuilderDraft, LISTING_SELLER_PROFILE_CAPTURE_SOURCE } from '../lib/listingSellerProfileBuilderModel.js'
 import { sellerContactName, sellerOnboardingDisplayName } from '../core/clientPortal/sellerContactDetails.js'
 import { buildSellerAgentAssistedDisclosurePatch, isSellerDisclosureCaptureLocked } from '../lib/sellerAgentAssistedDisclosure.js'
 import PropertyDisclosureQuestionnaire from '../components/onboarding/PropertyDisclosureQuestionnaire.jsx'
@@ -1155,8 +1155,23 @@ function getCanonicalSellerFacts(listing = {}) {
         : {}
 }
 
-function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null) {
-  if (existing.ownershipDeclarationPending || existing.ownership_declaration_pending) return ''
+function hasConfirmedOwnershipRoute(existing = {}, canonicalFacts = {}) {
+  // An explicit clearing is an unfinished new choice, even when the previous
+  // canonical profile still records a confirmed route.
+  if ((existing.ownerEntityType ?? existing.owner_entity_type) === '' ||
+      (existing.ownerStructureType ?? existing.owner_structure_type) === '') return false
+  const sellerFacts = canonicalFacts?.seller || {}
+  const confirmed = existing.ownershipRouteConfirmed ?? existing.ownership_route_confirmed ?? sellerFacts.ownership_route_confirmed ?? sellerFacts.ownershipRouteConfirmed
+  const locked = existing.ownershipRouteLocked ?? existing.ownership_route_locked
+  // Older manual profile saves recorded the selected route and source, but
+  // left pending flags behind. Match the document-review compatibility rule.
+  const manuallyCaptured = (existing.sellerProfileCaptureSource || existing.seller_profile_capture_source) === LISTING_SELLER_PROFILE_CAPTURE_SOURCE &&
+    Boolean(String(existing.ownershipType || existing.ownership_type || '').trim())
+  return normalizeYesNoValue(confirmed) === 'yes' || normalizeYesNoValue(locked) === 'yes' || manuallyCaptured
+}
+
+function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null, ownershipRouteConfirmed = false) {
+  if ((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipRouteConfirmed) return ''
   const explicit = String(existing.ownershipType || existing.sellerLegalType || existing.legalType || existing.sellerType || '').toLowerCase()
   const explicitOwnerEntityType = String(existing.ownerEntityType || existing.owner_entity_type || canonicalFacts?.seller?.owner_entity_type || '').toLowerCase()
   const explicitOwnerStructureType = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').toLowerCase()
@@ -1557,7 +1572,8 @@ export function normalizeFormData(listing) {
     estateName: existing.estateName || canonicalFacts?.property?.estate_name || existing.estateComplexName,
     estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name,
   })
-  const ownershipType = normalizeOwnershipType(existing, canonicalFacts, flow)
+  const confirmedOwnershipRoute = hasConfirmedOwnershipRoute(existing, canonicalFacts)
+  const ownershipType = normalizeOwnershipType(existing, canonicalFacts, flow, confirmedOwnershipRoute)
   const ownerEntityType = deriveOwnerEntityType(ownershipType, existing, canonicalFacts)
   const ownerStructureType = deriveOwnerStructureType(ownershipType, ownerEntityType, existing, canonicalFacts)
   const foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
@@ -1589,6 +1605,8 @@ export function normalizeFormData(listing) {
     sellerLegalType: ownershipType,
     ownerEntityType,
     ownerStructureType,
+    ownershipRouteConfirmed: Boolean(ownershipType && confirmedOwnershipRoute),
+    ownership_route_confirmed: Boolean(ownershipType && confirmedOwnershipRoute),
     ownershipDeclarationPending: Boolean((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipType),
     ownership_declaration_pending: Boolean((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipType),
     // An agent-selected legal ownership route is part of the prepared
