@@ -125,5 +125,41 @@ try {
  assert.equal((await query('select handoff_private.run_dispatch() as result')).rows[0].result.scheduled,true)
  assert.equal((await query('select body from net.requests')).rows[0].body.limit,10)
  assert.equal((await query('select schedule from cron.jobs')).rows[0].schedule,'* * * * *')
- console.log('Durable handoff dispatch: atomic source save, gates, independent preparation, retry, deduplication, leases, frozen payloads, receipts and access checks passed')
+ // Header correction changes no queue history, prerequisite or schedule.
+ const queueBefore=(await query('select * from transaction_handoff_dispatch_jobs order by id')).rows
+ const scheduleBefore=(await query('select * from cron.jobs order by id')).rows
+ const correction=readFileSync(new URL('../../supabase/migrations/20261013180117_transaction_handoff_worker_service_key_headers.sql',import.meta.url),'utf8')
+ await db.exec(correction)
+ await query("update vault.decrypted_secrets set decrypted_secret='sb_secret_scheduler_test' where name='arch9_service_role_key'")
+ await query('set role service_role')
+ assert.equal((await query('select handoff_private.run_dispatch() as result')).rows[0].result.scheduled,true)
+ await query('reset role')
+ const modern=(await query('select * from net.requests order by id desc limit 1')).rows[0]
+ assert.deepEqual(modern.headers,{'Content-Type':'application/json',apikey:'sb_secret_scheduler_test'})
+ assert.equal(modern.url,'https://local.example.test/functions/v1/transaction-handoff-dispatch-worker')
+ assert.deepEqual(modern.body,{limit:10})
+ assert.equal(modern.timeout_milliseconds,15000)
+ await query("update vault.decrypted_secrets set decrypted_secret='eyJ.test.signature' where name='arch9_service_role_key'")
+ await query('select handoff_private.run_dispatch()')
+ const legacy=(await query('select headers from net.requests order by id desc limit 1')).rows[0].headers
+ assert.deepEqual(legacy,{'Content-Type':'application/json',apikey:'eyJ.test.signature',Authorization:'Bearer eyJ.test.signature'})
+ const requestsBefore=(await query('select count(*)::int as n from net.requests')).rows[0].n
+ for(const role of ['anon','authenticated']) {
+   await query(`set role ${role}`)
+   await assert.rejects(query('select handoff_private.run_dispatch()'),/permission denied/)
+   await query('reset role')
+ }
+ // Even an accidental execute grant cannot bypass the internal role guard.
+ await query('grant usage on schema handoff_private to authenticated')
+ await query('grant execute on function handoff_private.run_dispatch() to authenticated')
+ await query('set role authenticated')
+ await assert.rejects(query('select handoff_private.run_dispatch()'),/Worker authorization required/)
+ await query('reset role')
+ await query("delete from vault.decrypted_secrets where name='arch9_service_role_key'")
+ assert.equal((await query('select handoff_private.run_dispatch() as result')).rows[0].result.reason,'vault_configuration_missing')
+ assert.equal((await query('select count(*)::int as n from net.requests')).rows[0].n,requestsBefore)
+ await db.exec(correction)
+ assert.deepEqual((await query('select * from transaction_handoff_dispatch_jobs order by id')).rows,queueBefore)
+ assert.deepEqual((await query('select * from cron.jobs order by id')).rows,scheduleBefore)
+ console.log('Durable handoff dispatch: gates, preparation, retries, leases, deduplication, receipts, service-key headers and unchanged queue/schedule checks passed')
 }finally{await db.close()}

@@ -2799,11 +2799,27 @@ Release prerequisites: the Phase 1 register migration, then
 app before enabling the database schedule. The guards retain the previous path
 while the dispatch RPC is absent. Verify the target's `ARCH9_APP_URL`,
 `ARCH9_RESEND_FROM_EMAIL` (or `RESEND_FROM_EMAIL`), `RESEND_API_KEY`, and Vault's
-`arch9_project_url`/`arch9_service_role_key` configuration. The schedule invokes
-service-only claims every minute. Verify a new authorised instruction, its native
+`arch9_project_url`/`arch9_service_role_key` configuration. The forward correction
+`20261013180117_transaction_handoff_worker_service_key_headers.sql` sends opaque
+`sb_secret_` credentials in `apikey` only, retaining Bearer headers for legacy
+JWT credentials. The worker verifies exact configured `SUPABASE_SECRET_KEYS`
+or `SUPABASE_SERVICE_ROLE_KEY` credentials before accessing the queue; decoded
+JWT claims alone never authorize it. Its existing `verify_jwt = false` setting
+allows that explicit service authentication. No shared key rotation is needed.
+
+An authenticated POST with `{"mode":"health"}` checks required configuration
+and reads pending/blocked counts without claiming jobs, preparing matters or
+contacting the email provider. Use Vault credentials server-side for the probe;
+never copy them into logs or client code. Unknown modes are rejected. The header
+correction preserves the existing minute schedule, service-only access, queued
+history and buyer/signed-offer prerequisites, and does not release historical
+holds. The schedule invokes service-only claims every minute.
+Verify a new authorised instruction, its native
 intake/matter, inbox/journey records, provider receipt and pending organisation
-acceptance after release. No migrations, worker deployments or live email tests
-have been performed for this local implementation.
+acceptance after release when eligible work exists; a health check alone does not
+verify provider delivery. The focused scheduler fixture covers opaque/legacy
+headers, missing Vault configuration, access denial and unchanged queue/schedule
+state. Its controlled provider fixtures send no live communications.
 
 ### External partner signup and matter connection
 
