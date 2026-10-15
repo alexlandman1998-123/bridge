@@ -4,6 +4,7 @@ export const RENTAL_LEAD_WORKFLOW_EVIDENCE_VERSION = 'arch9_rental_lead_workflow
 
 const text = (value) => String(value ?? '').trim()
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+const recordBackedStages = new Set(['qualified','viewing_scheduled','viewing_completed','application_submitted','screening_pending','fica_pending','fica_complete','placement_ready','mandate_signed','listing_ready','listing_created'])
 
 const requirements = Object.freeze({
   landlord: Object.freeze({
@@ -24,7 +25,7 @@ export function getRentalLeadStageEvidenceRequirement(lead = {}, toStage = '') {
   const role = resolveRentalLeadRole(lead.role || lead.rentalLeadRole)
   const stage = normaliseRentalLeadStage(toStage, role)
   const requirement = requirements[role][stage] || { title: '', fields: [] }
-  return { role, stage, ...requirement }
+  return { role, stage, recordBacked: recordBackedStages.has(stage), ...requirement }
 }
 
 function normaliseDate(value, label, errors) {
@@ -46,7 +47,9 @@ export function buildRentalLeadWorkflowEvidence(lead = {}, toStage = '', values 
     note: text(source.note),
   }
 
-  if (requirement.fields.includes('scheduledFor')) evidence.scheduledFor = normaliseDate(source.scheduledFor, 'Scheduled time', errors)
+  const contactCompleted = requirement.role === 'landlord' && lead.stage === 'contacted' && requirement.stage === 'appraisal_scheduled' && source.actionKey === 'mark_contacted'
+  if (contactCompleted) evidence.actionKey = 'mark_contacted'
+  if (requirement.fields.includes('scheduledFor') && (!contactCompleted || text(source.scheduledFor))) evidence.scheduledFor = normaliseDate(source.scheduledFor, 'Scheduled time', errors)
   if (requirement.fields.includes('note') && !evidence.note) errors.push('A milestone note is required.')
   if (requirement.fields.includes('qualificationOutcome')) {
     evidence.qualificationOutcome = text(source.qualificationOutcome).toLowerCase()

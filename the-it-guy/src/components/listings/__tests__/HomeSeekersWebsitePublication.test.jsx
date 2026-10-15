@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import WebsiteListingPublicationPanel from '../WebsiteListingPublicationPanel'
+import RentalWebsiteChannelManagement from '../../../pages/rentals/RentalWebsiteChannelManagement'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn() }))
 vi.mock('../../../services/websiteListingPublicationService', () => ({
@@ -16,6 +17,17 @@ const connected = {
 }
 const props = { listingId: 'listing-1', listingTitle: 'CRM home', variant: 'channel' }
 const publicUrl = 'https://home-seekers-website-alpha.vercel.app/demo/homeseekers/properties/listing-1'
+
+it('returns a website rejection to the shared rental Manage dialog without showing a successful update', async () => {
+  mocks.set.mockRejectedValue(new Error('Website publication unavailable.'))
+  render(<WebsiteListingPublicationPanel {...props} manageActions={controller => <RentalWebsiteChannelManagement {...controller} channelName="Agency Website" listing={{ address: '12 Example Avenue', listingStatus: 'active' }} onEdit={() => {}} />} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Manage listing', hidden: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Update advert' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Send update' }))
+  await screen.findByText('Website publication unavailable.')
+  expect(screen.queryByText('Update accepted. Check the public advert to confirm it.')).toBeNull()
+  expect(mocks.set).toHaveBeenCalledWith('listing-1', 'update')
+})
 beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(connected) })
 afterEach(cleanup)
 

@@ -27,9 +27,9 @@ const labels = Object.freeze({
 
 const nextAction = Object.freeze({
   landlord: {
-    new: 'Contact landlord', contacted: 'Schedule appraisal', appraisal_scheduled: 'Complete appraisal',
+    new: 'Review landlord lead', contacted: 'Contact landlord', appraisal_scheduled: 'Complete appraisal',
     appraisal_completed: 'Prepare mandate', mandate_pending: 'Secure signed mandate',
-    mandate_signed: 'Prepare listing', listing_ready: 'Create rental listing', listing_created: 'Open rental listing',
+    mandate_signed: 'Upload signed mandate', listing_ready: 'Create draft listing', listing_created: 'View rental listing',
   },
   tenant: {
     new: 'Contact tenant', contacted: 'Complete qualification', qualified: 'Schedule viewing',
@@ -56,6 +56,7 @@ function normaliseKey(value) { return text(value).replace(/[\s-]+/g, '_') }
 // sensible next step when read, but every newly written transition uses v2.
 function migrateLegacyStage(stage, role) {
   const key = normaliseKey(stage)
+  if (!key || key === 'new_lead') return 'new'
   if (key === 'viewing') return role === 'landlord' ? 'appraisal_scheduled' : 'viewing_scheduled'
   if (key === 'application') return role === 'landlord' ? 'mandate_pending' : 'application_pending'
   return key
@@ -67,6 +68,10 @@ export function normaliseRentalLeadStage(value = '', role = 'tenant') {
   return getRentalLeadPipelineStages(resolvedRole).includes(stage) ? stage : 'new'
 }
 
+export function isKnownRentalLeadStage(value = '', role = 'tenant') {
+  return getRentalLeadPipelineStages(role).includes(migrateLegacyStage(value, resolveRentalLeadRole(role)))
+}
+
 export function getRentalLeadStageLabel(stage = '', role = 'tenant') {
   return labels[normaliseRentalLeadStage(stage, role)]
 }
@@ -74,7 +79,9 @@ export function getRentalLeadStageLabel(stage = '', role = 'tenant') {
 export function getNextRentalLeadStage(lead = {}) {
   const role = resolveRentalLeadRole(lead.role || lead.rentalLeadRole)
   const stages = getRentalLeadPipelineStages(role)
-  const stage = normaliseRentalLeadStage(lead.stage || lead.rentalStage || lead.raw?.stage, role)
+  const savedStage = lead.savedStage || lead.stage || lead.rentalStage || lead.raw?.stage
+  if (!isKnownRentalLeadStage(savedStage, role)) return ''
+  const stage = normaliseRentalLeadStage(savedStage, role)
   return stages[stages.indexOf(stage) + 1] || ''
 }
 
@@ -86,15 +93,16 @@ export function getRentalLeadNextAction(stage = '', role = 'tenant') {
 export function canTransitionRentalLead(from = '', to = '', role = 'tenant') {
   const resolvedRole = resolveRentalLeadRole(role)
   const stages = getRentalLeadPipelineStages(resolvedRole)
-  const current = normaliseRentalLeadStage(from, resolvedRole)
-  return stages[stages.indexOf(current) + 1] === normaliseRentalLeadStage(to, resolvedRole)
+  const current = migrateLegacyStage(from, resolvedRole)
+  const target = migrateLegacyStage(to, resolvedRole)
+  return stages.includes(current) && stages.includes(target) && stages[stages.indexOf(current) + 1] === target
 }
 
 export function transitionRentalLead(lead = {}, to = '') {
   const role = resolveRentalLeadRole(lead.role || lead.rentalLeadRole)
   const fromStage = normaliseRentalLeadStage(lead.stage || lead.rentalStage, role)
   const nextStage = normaliseRentalLeadStage(to, role)
-  if (!canTransitionRentalLead(fromStage, nextStage, role)) throw new Error(`Rental ${role} lead cannot move from ${getRentalLeadStageLabel(fromStage, role)} to ${to || 'unknown'}.`)
+  if (!canTransitionRentalLead(lead.savedStage || lead.stage || lead.rentalStage, to, role)) throw new Error(`Rental ${role} lead cannot move from ${getRentalLeadStageLabel(fromStage, role)} to ${to || 'unknown'}. Refresh and review the saved journey.`)
   return { ...lead, role, stage: nextStage, nextAction: getRentalLeadNextAction(nextStage, role) }
 }
 

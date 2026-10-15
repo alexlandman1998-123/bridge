@@ -1,3 +1,4 @@
+import { resolvedLandlordType } from './rentalLandlordProfileRules.js'
 import { landlordWorkspace } from './rentalLandlordWorkspaceModel.js'
 import { rentalLandlordRequirementTitle, rentalLandlordRequirementReason } from './rentalLandlordOnboardingModel.js'
 import { rentalDocumentGuidance } from './rentalApplicationDocumentGuidance.js'
@@ -33,7 +34,7 @@ export function buildRentalListingLandlordMatrix(listing, lead, onboarding) {
     title: data.profile?.name || lead.name || 'Landlord',
     onboarding,
     propertyLinked: scopes.size > 0,
-    manualReviewReason: !['individual', 'multiple_owners', 'company', 'close_corporation', 'trust'].includes(data.profile?.type)
+    manualReviewReason: !resolvedLandlordType(data.profile)
       ? 'Resolve this landlord’s legal type and authority with the rentals team before treating the checklist as complete.'
       : rentalListingLandlordProperties(listing, data).some((property) => property.category && property.category !== 'residential')
         ? 'This property needs a use-specific review. The residential document matrix does not establish commercial or exceptional-use readiness.' : '',

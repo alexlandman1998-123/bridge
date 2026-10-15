@@ -1,5 +1,3 @@
-import Field from '../../components/ui/Field'
-import AgentAssignmentSelect from '../../components/AgentAssignmentSelect'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
 import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
@@ -147,7 +145,6 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const [message, setMessage] = useState('')
   const [createDialog, setCreateDialog] = useState({ open: false, category: 'buyer' })
   const [sellerCaptureSource, setSellerCaptureSource] = useState('Manual Entry')
-  const [sellerCaptureAgentId, setSellerCaptureAgentId] = useState('')
   const [sellerCaptureResult, setSellerCaptureResult] = useState(null)
   const [listingOptions, setListingOptions] = useState([])
   const [listingOptionsLoading, setListingOptionsLoading] = useState(false)
@@ -565,14 +562,8 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
       {createDialog.open && createDialog.category !== 'seller' ? <LeadCreateDialog open category={createDialog.category} agents={agentOptions} currentAgent={selectedAgent || currentAgent} showAgentAssignment={!scopedAgent} listingOptions={listingOptions} listingOptionsLoading={listingOptionsLoading} listingOptionsError={listingOptionsError} developmentOptions={developmentOptions} developmentOptionsLoading={developmentOptionsLoading} developmentOptionsError={developmentOptionsError} saving={creating} error={error} onClose={() => setCreateDialog((previous) => ({ ...previous, open: false }))} onSave={(form) => void handleCreateLead(form)} /> : null}
       {createDialog.open && createDialog.category === 'seller' ? <Suspense fallback={<p role="status">Opening seller form…</p>}>
         <SellerLeadCreateDialog organisationId={organisationId} actor={currentAgent}
-          assignedAgent={selectedAgent || agentOptions.find(agent => agent.id === sellerCaptureAgentId) || currentAgent}
-          source={sellerCaptureSource} priority="Medium"
-          metadataControls={<div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold">How did this lead find you?
-              <Field value={sellerCaptureSource} onChange={event => setSellerCaptureSource(event.target.value)} />
-            </label>
-            {!scopedAgent ? <AgentAssignmentSelect compact value={sellerCaptureAgentId || currentAgent.id} agents={agentOptions} onChange={agent => setSellerCaptureAgentId(agent?.id || '')} /> : null}
-          </div>}
+          assignedAgent={selectedAgent || currentAgent} agents={agentOptions} lockPrimaryAgent={Boolean(scopedAgent)}
+          source={sellerCaptureSource} onSourceChange={setSellerCaptureSource} priority="Medium"
           onClose={() => { setCreateDialog(previous => ({ ...previous, open: false })); invalidateAgencyLeadListCache(organisationId); void loadLeads({ forceRefresh: true }) }}
           onCreated={(receipt, reportedProgress) => {
             setCreateDialog(previous => ({ ...previous, open: false }))

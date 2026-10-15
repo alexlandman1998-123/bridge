@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import AddressInput from '../components/location/AddressInput'
+import { isAddressFieldKey } from '../components/location/addressInputModel'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
@@ -131,7 +133,7 @@ export default function BuyerProfilePage() {
       <form className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]" onSubmit={saveProfile}>
         <div className="rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-semibold text-[#142132]">Reusable details</h2><p className="mt-1 text-sm text-[#60758d]">Changes update the shared buyer record for every linked transaction. This profile is set up as {purchaserType.replace('_', ' ')}.</p></div><ShieldCheck className="text-[#21865a]" size={22} /></div>
-          <div className="grid gap-4 md:grid-cols-2"><Field label="Full name"><input value={buyer?.name || ''} onChange={(event) => setBuyer((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email"><input type="email" value={buyer?.email || ''} onChange={(event) => setBuyer((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Phone"><input value={buyer?.phone || ''} onChange={(event) => setBuyer((current) => ({ ...current, phone: event.target.value }))} /></Field>{profileFields.map(([key, label]) => <Field key={key} label={label}><input value={profileData?.[key] || ''} onChange={(event) => setProfileData((current) => ({ ...current, [key]: event.target.value }))} /></Field>)}</div>
+          <div className="grid gap-4 md:grid-cols-2"><Field label="Full name"><input value={buyer?.name || ''} onChange={(event) => setBuyer((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email"><input type="email" value={buyer?.email || ''} onChange={(event) => setBuyer((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Phone"><input value={buyer?.phone || ''} onChange={(event) => setBuyer((current) => ({ ...current, phone: event.target.value }))} /></Field>{profileFields.map(([key, label]) => isAddressFieldKey(key) ? <label key={key} className="grid gap-2"><span>{label}</span><AddressInput value={profileData?.[key] || ''} onChange={event => setProfileData(current => ({ ...current, [key]: event.target.value }))} /></label> : <Field key={key} label={label}><input value={profileData?.[key] || ''} onChange={(event) => setProfileData((current) => ({ ...current, [key]: event.target.value }))} /></Field>)}</div>
           <div className="mt-6 flex justify-end"><Button type="submit" disabled={saving}><Save size={16} />{saving ? 'Saving…' : 'Save reusable profile'}</Button></div>
         </div>
 

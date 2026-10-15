@@ -60,6 +60,7 @@ beforeEach(() => {
     },
   }
   saved = {
+    capabilities: { profileConsistency: true },
     payload: lead.raw_enquiry_payload,
     version: 2,
     status: 'draft',
@@ -154,6 +155,14 @@ it('requires an RLS-visible lead before creating the privileged client', async (
   expect(mocks.createClient).toHaveBeenCalledTimes(1)
   expect(db.rpc).not.toHaveBeenCalled()
 })
+it('refuses profile writes before the atomic consistency migration is available', async () => {
+  saved.capabilities = { profileConsistency: false }
+  const response = await agent({version:2,patch:{profile:{name:'Must not save'}}},'PATCH')
+  expect(response.status).toBe(503)
+  expect(response.body.code).toBe('LANDLORD_PROFILE_CONSISTENCY_UNAVAILABLE')
+  expect(db.rpc.mock.calls.some(([name])=>name==='rental_landlord_onboarding_command')).toBe(false)
+  expect(lead.raw_enquiry_payload.rentalCrm.landlordProfile.name).toBe('Owner')
+})
 it('hashes public tokens, rejects expired or revoked access and ignores a supplied alternate lead', async () => {
   const result = await landlord({ leadId: 'other' }, 'GET')
   expect(result.body.onboarding.id).toBe('lead')
@@ -203,6 +212,18 @@ it('projects landlord responses and preserves private property links during a pu
     branch_id: 'branch',
     assigned_agent_id: 'actor',
   })
+})
+it('keeps an absent legacy unit link equivalent to an empty unit selection during ordinary edits', async () => {
+  const property = { ...lead.raw_enquiry_payload.rentalCrm.landlordPortfolio[0], canonicalUnitId: '', title: 'Updated home' }
+  const result = await agent({ version: 2, action: 'save', patch: { portfolio: [property] } })
+  expect(result.status).toBe(200)
+  expect(lead.raw_enquiry_payload.rentalCrm.landlordPortfolio[0]).toMatchObject({ mandateId: 'private-mandate', canonicalPropertyId: 'managed', canonicalUnitId: '', title: 'Updated home' })
+})
+it('rejects changing a signed property unit or inventing handoff links through a discovery save', async () => {
+  const property = lead.raw_enquiry_payload.rentalCrm.landlordPortfolio[0]
+  expect((await agent({ version: 2, action: 'save', patch: { portfolio: [{ ...property, canonicalUnitId: 'other-unit' }] } })).status).toBe(400)
+  expect((await agent({ version: 2, action: 'save', patch: { portfolio: [{ ...property, listingId: 'invented-listing' }] } })).status).toBe(400)
+  expect(db.rpc.mock.calls.some(([name, args]) => name === 'rental_landlord_onboarding_command' && args.p_command === 'save')).toBe(false)
 })
 it('rejects stale saves and public changes to the property list or review state', async () => {
   expect((await landlord({ version: 1, patch: {} }, 'PATCH')).status).toBe(409)
@@ -295,7 +316,7 @@ it('removes an uncommitted failed upload but retains a file when its row was com
   const rpc = db.rpc.getMockImplementation()
   db.rpc.mockImplementation((name, args) =>
     name === 'rental_landlord_onboarding_command'
-      ? { error: { message: 'Landlord onboarding changed' } }
+      ? { error: { code: '40001', message: 'Landlord onboarding changed' } }
       : rpc(name, args),
   )
   expect(
@@ -320,6 +341,28 @@ it('removes an uncommitted failed upload but retains a file when its row was com
     ).status,
   ).toBe(409)
   expect(storage.remove).not.toHaveBeenCalled()
+})
+it('never deletes bytes after an uncertain command even when an immediate row read is empty', async () => {
+  const ready = await agent(preparation)
+  const rpc = db.rpc.getMockImplementation()
+  db.rpc.mockImplementation((name, args) => name === 'rental_landlord_onboarding_command' ? { error: { message: 'Connection reset' } } : rpc(name, args))
+  expect((await agent({ action: 'complete_upload', version: 2, ticket: ready.body.ticket })).status).toBe(400)
+  expect(storage.remove).not.toHaveBeenCalled()
+})
+
+it('checks the signed file and only reissues its original path after a definite missing object', async () => {
+  const ready = await agent(preparation)
+  const recovery = { action: 'recover_upload', version: 2, ticket: ready.body.ticket }
+  expect((await agent(recovery)).body).toEqual({ uploaded: true })
+  expect((await landlord(recovery)).status).toBe(400)
+  storage.info.mockResolvedValue({ error: { statusCode: 403, message: 'Access denied' } })
+  expect((await agent(recovery)).status).toBe(400)
+  expect(storage.createSignedUploadUrl).toHaveBeenCalledOnce()
+  storage.info.mockResolvedValue({ error: { statusCode: 404, message: 'Object not found' } })
+  expect((await agent(recovery)).body.uploaded).toBe(false)
+  expect(storage.createSignedUploadUrl.mock.calls[1]).toEqual(storage.createSignedUploadUrl.mock.calls[0])
+  saved.version++
+  expect((await agent(recovery)).status).toBe(409)
 })
 it('retains the acknowledged version when readback fails after a committed save', async () => {
   readbackError = true

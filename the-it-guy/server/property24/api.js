@@ -27,6 +27,7 @@ import {
 import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
 import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
 import { resolveProperty24ListingLocation } from './listingLocationResolutionService.js'
+import { resolveProperty24Phase2PropertyType } from './propertyTypeCatalogue.js'
 import {
   applyControlledProperty24ListingPublish,
   applyControlledProperty24StatusUpdate,
@@ -541,18 +542,6 @@ function normalizeProperty24CatalogKey(value = '') {
     .trim()
 }
 
-// Arch9 keeps the shorter internal labels used in the capture flow, while
-// Property24's catalogue uses a few combined portal labels. These aliases are
-// intentionally narrow and still require exactly one live catalogue result.
-const PROPERTY24_PROPERTY_TYPE_ALIASES = {
-  apartment: ['apartment flat'],
-  'vacant land': ['vacant land plot'],
-  'vacant stand': ['vacant land plot'],
-  land: ['vacant land plot'],
-  plot: ['vacant land plot'],
-  stand: ['vacant land plot'],
-}
-
 function property24CatalogItems(response = {}) {
   const data = response?.data
   if (Array.isArray(data)) return data
@@ -975,7 +964,14 @@ export async function createProperty24ApiResponse({
       }
 
       const types = property24CatalogItems(await property24.fetchPropertyTypes(property24CatalogId(countryMatches[0])))
-      const acceptedTypeKeys = new Set([localKey, ...(PROPERTY24_PROPERTY_TYPE_ALIASES[localKey] || [])])
+      // Share the listing mapper's verified aliases (for example,
+      // office_building -> Commercial Property), while still requiring a
+      // unique match and its ID from the live country catalogue.
+      const canonicalType = resolveProperty24Phase2PropertyType(localLabel)
+      const acceptedTypeKeys = new Set([
+        localKey,
+        ...(canonicalType ? [normalizeProperty24CatalogKey(canonicalType.description)] : []),
+      ])
       const typeMatches = types.filter((type) => acceptedTypeKeys.has(normalizeProperty24CatalogKey(property24CatalogName(type))))
       if (typeMatches.length !== 1 || !property24CatalogId(typeMatches[0])) {
         const availableTypes = types

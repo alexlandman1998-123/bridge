@@ -187,3 +187,17 @@ it('reports a task refresh failure separately from the saved appointment', async
   expect(screen.getByRole('status').textContent).toBe('Appointment saved.')
   expect(screen.queryByRole('button', { name: 'Schedule & send invite' })).toBeNull()
 })
+
+it('offers address suggestions for in-person task appointments and keeps phone and video details as text', async () => {
+  const onCreate = vi.fn(async () => ({ appointmentId: 'phone-task', message: 'Saved.', delivery: { status: 'sent' } }))
+  render(<LegalTaskAppointmentForm task={{ label: 'Buyer signing' }} onCreate={onCreate} />)
+  expect(screen.getByRole('combobox', { name: 'Address' })).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Appointment location'), { target: { value: 'video_call' } })
+  expect(screen.getByLabelText('Meeting link').getAttribute('role')).not.toBe('combobox')
+  fireEvent.change(screen.getByLabelText('Appointment location'), { target: { value: 'phone_call' } })
+  const phone = screen.getByLabelText('Phone number')
+  expect(phone.getAttribute('role')).not.toBe('combobox')
+  fireEvent.change(phone, { target: { value: '+27 82 555 0101' } })
+  fireEvent.submit(screen.getByRole('button', { name: 'Schedule & send invite' }).closest('form'))
+  await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ locationMode: 'phone_call', location: '+27 82 555 0101' })))
+})

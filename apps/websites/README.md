@@ -122,3 +122,13 @@ Verification: `node --test lib/kingdom-recently-sold.test.mjs` and root
 `npm run check:website`. The connected local browser fixture covers the page,
 homepage, simplified sold page and mobile menu with synthetic records, without remote writes.
 A separate approved Kingdom website deployment is required to make this live.
+### Address search
+
+Valuation, landlord enquiry and preapproval address fields offer Google Places
+suggestions and keep manual entry available. Selecting a residential address in
+preapproval fills its street, suburb, city, province, postcode and country.
+Set the browser key `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` for the website deployment;
+its Google configuration must allow the website domains and the Maps JavaScript
+and Places APIs. This key is separate from server-side Supabase credentials.
+Google is loaded when an address field receives focus. Enquiry form reset clears
+the selected address after confirmed submission.

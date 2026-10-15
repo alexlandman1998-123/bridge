@@ -2,7 +2,7 @@ import RentalLeadActionsMenu from './RentalLeadActionsMenu';
 import { recordRentalLeadOutcome } from '../../services/rentals/rentalLeadOutcomeService';
 import { RENTAL_LEAD_LOST_REASONS } from '../../services/rentals/rentalLeadOutcomeModel';
 import RentalLeadDialog, { INITIAL_RENTAL_LEAD_FORM as INITIAL_FORM, LeadRoleButton } from './RentalLeadDialog';
-import { createElement, useCallback, useEffect, useMemo, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Columns3,
@@ -31,7 +31,6 @@ import {
   listRentalLeads,
 } from "../../services/rentals/rentalLeadService";
 import {
-  getRentalLeadPipelineStages,
   getNextRentalLeadStage,
   getRentalLeadStageLabel,
 } from "../../services/rentals/rentalLeadPipelineModel";
@@ -45,7 +44,14 @@ import {
 
 import { LeadSourceBrand, PropertyThumbnail, StagePill } from "../agency/LeadListPage";
 
-import { filterRentalLeadList, rentalLeadListSummary } from "../../services/rentals/rentalLeadListModel";
+import { buildRentalLeadKanbanColumns, filterRentalLeadList, rentalLeadListSummary, rentalLeadNeedsReview } from "../../services/rentals/rentalLeadListModel";
+
+function readLeadView(storageKey) {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(storageKey) || '{}');
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch { return {}; }
+}
 
 
 function formatCurrency(value) {
@@ -104,10 +110,13 @@ function RentalLeadAction({
   onAdvance,
   advancing,
   onTerminalAction,
+  onReview,
+  disabled = false,
   compact = false,
 }) {
   const nextStage = getNextRentalLeadStage(lead);
-  const label = nextStage
+  const needsReview = rentalLeadNeedsReview(lead);
+  const label = needsReview ? 'Review lead' : nextStage
     ? nextStage === 'viewing_scheduled' ? 'Schedule viewing'
       : nextStage === 'mandate_signed' ? 'Record signed mandate'
         : nextStage === 'listing_created' ? lead.relationships?.listingId ? 'Finish listing handoff' : 'Create listing'
@@ -119,10 +128,10 @@ function RentalLeadAction({
     <button
       type="button"
       data-rental-control="lead-stage-action"
-      disabled={advancing}
+      disabled={advancing || disabled}
       onClick={(event) => {
         event.stopPropagation();
-        nextStage ? onAdvance(lead, nextStage) : onTerminalAction(lead)
+        needsReview ? onReview(lead) : nextStage ? onAdvance(lead, nextStage) : onTerminalAction(lead)
       }}
       className={`inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#c6d8ea] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff] disabled:opacity-60 ${compact ? "h-9" : "min-h-10"}`}
     >
@@ -277,26 +286,32 @@ function RentalLeadImportDialog({ preview, importing, onClose, onImport }) {
 }
 
 export default function RentalLeadsPage() {
+  const workspace = useWorkspace();
+  const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace]);
+  const scopeKey = JSON.stringify(scope);
+  // A different organisation or permission scope must start a separate load
+  // and must never retain the preceding workspace's cards or open dialogs.
+  return <RentalLeadListWorkspace key={scopeKey} scopeKey={scopeKey} scope={scope} workspace={workspace} />;
+}
+
+function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedListingId = searchParams.get('listingId') || '';
   const requestedCreateRole = searchParams.get('create') || '';
   const [linkedListing, setLinkedListing] = useState(null);
-  const workspace = useWorkspace();
-  const scope = useMemo(
-    () => resolveRentalWorkspaceScope(workspace),
-    [workspace],
-  );
+  const viewStorageKey = `arch9:rentals:lead-view:v1:${encodeURIComponent(scopeKey)}`;
+  const [savedView] = useState(() => readLeadView(viewStorageKey));
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [role, setRole] = useState("tenant");
-  const [query, setQuery] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [sort, setSort] = useState("newest");
-  const [viewMode, setViewMode] = useState("table");
+  const [role, setRole] = useState(['tenant', 'landlord', 'closed'].includes(savedView.role) ? savedView.role : 'tenant');
+  const [query, setQuery] = useState(typeof savedView.query === 'string' ? savedView.query : '');
+  const [ownerFilter, setOwnerFilter] = useState(typeof savedView.ownerFilter === 'string' ? savedView.ownerFilter : 'all');
+  const [sourceFilter, setSourceFilter] = useState(typeof savedView.sourceFilter === 'string' ? savedView.sourceFilter : 'all');
+  const [stageFilter, setStageFilter] = useState(typeof savedView.stageFilter === 'string' ? savedView.stageFilter : 'all');
+  const [sort, setSort] = useState(['newest', 'oldest', 'stage'].includes(savedView.sort) ? savedView.sort : 'newest');
+  const [viewMode, setViewMode] = useState(savedView.viewMode === 'kanban' ? 'kanban' : 'table');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...INITIAL_FORM });
   const [saving, setSaving] = useState(false);
@@ -307,6 +322,14 @@ export default function RentalLeadsPage() {
   const [outcomeError, setOutcomeError] = useState('');
   const [importPreview, setImportPreview] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [draggingId, setDraggingId] = useState('');
+  const loadSequence = useRef(0);
+  const advancePending = useRef(false);
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(viewStorageKey, JSON.stringify({ role, query, ownerFilter, sourceFilter, stageFilter, sort, viewMode }));
+    } catch { /* Browsing and editing remain available if storage is blocked. */ }
+  }, [viewStorageKey, role, query, ownerFilter, sourceFilter, stageFilter, sort, viewMode]);
   const actor = useMemo(
     () => ({
       id: scope.assignedAgentId,
@@ -323,6 +346,7 @@ export default function RentalLeadsPage() {
     ],
   );
   const loadLeads = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     if (!scope.organisationId) {
       setLeads([]);
       setLoading(false);
@@ -331,20 +355,20 @@ export default function RentalLeadsPage() {
     try {
       setLoading(true);
       setError("");
-      setLeads(
-        await listRentalLeads(scope.organisationId, {
+      const rows = await listRentalLeads(scope.organisationId, {
           assignedAgentId: scope.assignedAgentId,
           branchId: scope.branchId,
           scopeLevel: scope.scopeLevel,
           includeClosed: true,
           includeAllOrganisationLeads: scope.scopeLevel === "organisation",
-        }),
-      );
+        });
+      if (sequence === loadSequence.current) setLeads(rows);
     } catch (loadError) {
+      if (sequence !== loadSequence.current) return;
       setError(loadError?.message || "Unable to load rental leads.");
       setLeads([]);
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [
     scope.assignedAgentId,
@@ -354,7 +378,16 @@ export default function RentalLeadsPage() {
   ]);
   useEffect(() => {
     void loadLeads();
+    return () => { loadSequence.current += 1; };
   }, [loadLeads]);
+  useEffect(() => {
+    if (requestedListingId || !['landlord', 'tenant'].includes(requestedCreateRole) || !scope.assignedAgentId || !scope.organisationId) return;
+    setLinkedListing(null);
+    setRole(requestedCreateRole);
+    setForm({ ...INITIAL_FORM, role: requestedCreateRole });
+    setError('');
+    setDialogOpen(true);
+  }, [requestedCreateRole, requestedListingId, scope.assignedAgentId, scope.organisationId]);
   useEffect(() => {
     let cancelled = false;
     if (requestedCreateRole !== 'tenant' || !requestedListingId || !scope.assignedAgentId || !scope.organisationId) return undefined;
@@ -379,8 +412,13 @@ export default function RentalLeadsPage() {
   const summary = useMemo(() => rentalLeadListSummary(leads), [leads]);
   const sources = useMemo(() => [...new Set(leads.map((lead) => lead.source || 'Manual'))].sort(), [leads]);
   const agents = useMemo(() => [...new Map(leads.filter((lead) => lead.assignedAgentId).map((lead) => [lead.assignedAgentId, lead.assignedAgentName || 'Assigned agent'])).entries()], [leads]);
-  const stages = role === 'closed' ? [...new Set(leads.filter((lead) => lead.outcome?.status && lead.outcome.status !== 'open').map((lead) => lead.stage))] : getRentalLeadPipelineStages(role);
+  const stageOptions = useMemo(() => buildRentalLeadKanbanColumns(leads, role), [leads, role]);
   const roleLeads = useMemo(() => filterRentalLeadList(leads, { role, query, owner: ownerFilter, source: sourceFilter, stage: stageFilter, sort, assignedAgentId: scope.assignedAgentId }), [leads, query, role, ownerFilter, sourceFilter, stageFilter, sort, scope.assignedAgentId]);
+  const columns = useMemo(() => buildRentalLeadKanbanColumns(roleLeads, role), [roleLeads, role]);
+  const draggingLead = roleLeads.find((lead) => lead.id === draggingId);
+  const busy = loading || saving || importing || outcomeSaving || Boolean(advancingId);
+  const hasFilters = Boolean(query.trim()) || [ownerFilter, sourceFilter, stageFilter].some((value) => value !== 'all');
+  function resetFilters() { setSourceFilter('all'); setStageFilter('all'); setOwnerFilter('all'); setSort('newest'); setQuery(''); }
   function changeRole(next) { setRole(next); setStageFilter('all'); }
   const roleTitle = role === 'landlord' ? 'Landlord Leads' : role === 'tenant' ? 'Tenant Leads' : 'Closed Leads';
   const filterClass = 'min-h-[38px] min-w-0 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]';
@@ -431,11 +469,18 @@ export default function RentalLeadsPage() {
     return evidence;
   }
   async function handleAdvance(lead, toStage) {
+    if (advancePending.current || busy) return;
+    if (role === 'closed' || rentalLeadNeedsReview(lead) || getNextRentalLeadStage(lead) !== toStage) {
+      setError('Move an active lead to its next stage only. Open the lead to review its saved journey.');
+      return;
+    }
     if (toStage === 'viewing_scheduled') { navigate('/agent/rentals/pipeline/viewings'); return }
     if (toStage === 'mandate_signed') { navigate('/agent/rentals/pipeline/mandates'); return }
     if (toStage === 'listing_created' && !lead.relationships?.listingId) { navigate(`/agent/rentals/listings/new?leadId=${encodeURIComponent(lead.id)}`); return }
     const evidence = ['viewing_completed', 'application_submitted'].includes(toStage) ? {} : collectWorkflowEvidence(lead, toStage);
     if (evidence === null) return;
+    const sequence = loadSequence.current;
+    advancePending.current = true;
     try {
       setAdvancingId(lead.id);
       setError("");
@@ -446,13 +491,15 @@ export default function RentalLeadsPage() {
         toStage,
         evidence,
       });
+      if (sequence !== loadSequence.current) return;
       setLeads((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
     } catch (advanceError) {
-      setError(advanceError?.message || "Unable to update rental lead.");
+      if (sequence === loadSequence.current) setError(advanceError?.message || "Unable to update rental lead.");
     } finally {
-      setAdvancingId("");
+      advancePending.current = false;
+      if (sequence === loadSequence.current) setAdvancingId("");
     }
   }
   function downloadImportTemplate() {
@@ -556,6 +603,18 @@ export default function RentalLeadsPage() {
   const openLeadWorkspace = (lead) => {
     navigate(`/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`);
   };
+  function dropLead(event, stage) {
+    event.preventDefault();
+    setDraggingId('');
+    if (busy || role === 'closed') return;
+    let dragged;
+    try { dragged = JSON.parse(event.dataTransfer.getData('text/plain')); }
+    catch { return; }
+    if (dragged.scopeKey !== scopeKey) return;
+    const lead = roleLeads.find((item) => item.id === dragged.id);
+    if (!lead || lead.stage === stage) return;
+    void handleAdvance(lead, stage);
+  }
   return (
     <section className="page-content">
       <div className="ui-section-stack">
@@ -568,14 +627,14 @@ export default function RentalLeadsPage() {
         <section className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)]" aria-label="Rental lead filters">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:flex xl:justify-end">
             <select aria-label="Source filter" className={filterClass} value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}><option value="all">All Sources</option>{sources.map((source) => <option key={source}>{source}</option>)}</select>
-            <select aria-label="Stage filter" className={filterClass} value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="all">All Stages</option>{stages.map((stage) => <option key={stage} value={stage}>{getRentalLeadStageLabel(stage, role === 'closed' ? leads.find((lead) => lead.stage === stage)?.role : role)}</option>)}</select>
+            <select aria-label="Stage filter" className={filterClass} value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="all">All Stages</option>{stageOptions.map((column) => <option key={column.stage} value={column.stage}>{column.label}</option>)}</select>
             <select aria-label="Agent filter" className={filterClass} value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="all">All Agents</option><option value="mine">Assigned to me</option><option value="unassigned">Unassigned</option>{agents.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
             <select aria-label="Sort leads" className={filterClass} value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Sort: Newest</option><option value="oldest">Sort: Oldest</option><option value="stage">Sort: Stage</option></select>
-            <button type="button" data-rental-control="reset-filters" className={`${filterClass} inline-flex items-center justify-center gap-2`} onClick={() => { setSourceFilter('all'); setStageFilter('all'); setOwnerFilter('all'); setSort('newest'); setQuery(''); }}><Filter size={15} />Reset</button>
+            <button type="button" data-rental-control="reset-filters" className={`${filterClass} inline-flex items-center justify-center gap-2`} onClick={resetFilters}><Filter size={15} />Reset</button>
           </div>
         </section>
         {error ? (
-          <p className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">
+          <p role="alert" className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">
             {error}
           </p>
         ) : null}
@@ -585,7 +644,7 @@ export default function RentalLeadsPage() {
               <div><div className="flex items-center gap-2"><h1 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{roleTitle}</h1><span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{roleLeads.length}</span></div><p className="mt-1.5 text-sm font-medium text-[#60758b]">Track and manage your landlord and tenant leads.</p></div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex rounded-[14px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5" role="group" aria-label="Preferred lead view">{[['table', Table2, 'Table'], ['kanban', Columns3, 'Kanban']].map(([mode, Icon, label]) => <button key={mode} type="button" aria-pressed={viewMode === mode} data-rental-control="lead-view" className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === mode ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => setViewMode(mode)}>{createElement(Icon, { size: 13 })}{label}</button>)}</div>
-                <button type="button" data-rental-control="lead-refresh" disabled={loading} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads()}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />Refresh</button>
+                <button type="button" data-rental-control="lead-refresh" disabled={busy} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads()}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />Refresh</button>
                 {role !== 'closed' ? <button type="button" className="ui-pill-button ui-pill-button-active" onClick={() => { setForm((current) => ({ ...current, role })); setDialogOpen(true); }}><Plus size={16} />Add {role === 'landlord' ? 'Landlord' : 'Tenant'} Lead</button> : null}
               </div>
             </div>
@@ -612,7 +671,50 @@ export default function RentalLeadsPage() {
               </label>
 </div></div>
           </header>
-          {viewMode === 'kanban' ? <div className="overflow-x-auto p-4"><div className="flex min-w-max items-start gap-4">{stages.map((stage) => { const cards = roleLeads.filter((lead) => lead.stage === stage); return <section key={stage} className="w-64 rounded-[16px] border border-[#e0e8f1] bg-[#f8fbff] p-3"><h2 className="flex items-center justify-between text-sm font-semibold text-[#20364d]"><span>{getRentalLeadStageLabel(stage, role === 'closed' ? cards[0]?.role : role)}</span><span>{cards.length}</span></h2><div className="mt-3 space-y-3">{cards.map((lead) => <button key={lead.id} type="button" data-rental-control="lead-kanban-card" onClick={() => openLeadWorkspace(lead)} className="block w-full rounded-[14px] border border-[#dfe8f3] bg-white p-3 text-left shadow-sm"><span className="block truncate text-sm font-semibold text-[#142132]">{lead.name}</span><span className="mt-2 block line-clamp-2 text-xs text-[#60758b]">{lead.focus}</span><span className="mt-3 block truncate text-xs text-[#60758b]">{lead.assignedAgentName || 'Unassigned'}</span></button>)}</div></section>; })}</div>{loading ? <p className="mt-3 text-sm text-[#60758b]">Loading rental leads…</p> : null}</div> : <>
+          {viewMode === 'kanban' ? <div aria-label="Rental lead board" aria-busy={loading} className="overflow-x-auto p-4">
+            {loading ? <p role="status" className="mb-3 text-sm text-[#60758b]">Loading rental leads…</p> : null}
+            {role !== 'closed' && roleLeads.length ? <p className="mb-3 text-xs text-[#60758b]">Drag a card to its next stage, or use its action button.</p> : null}
+            {!loading && !error && !roleLeads.length ? <div className="py-8 text-center">
+              <p className="font-semibold text-[#20364d]">{hasFilters ? 'No rental leads match your filters' : `No ${role} leads yet`}</p>
+              <p className="mt-1 text-sm text-[#60758b]">{role === 'closed' ? 'Closed leads will appear here when an outcome is recorded.' : 'Create a lead or adjust your search to populate this rental pipeline.'}</p>
+              {hasFilters ? <button type="button" className="ui-pill-button mt-3" onClick={resetFilters}>Clear filters</button> : null}
+            </div> : null}
+            <div className="flex min-w-max items-start gap-4">{columns.map((column) => <section
+              key={column.stage}
+              aria-label={column.label}
+              onDragOver={role !== 'closed' && column.stage !== 'review_needed' ? (event) => event.preventDefault() : undefined}
+              onDrop={role !== 'closed' && column.stage !== 'review_needed' ? (event) => dropLead(event, column.stage) : undefined}
+              className={`min-h-[180px] w-72 shrink-0 rounded-[16px] border p-3 ${draggingLead && getNextRentalLeadStage(draggingLead) === column.stage ? 'border-[#8cb2ce] bg-[#edf5ff]' : 'border-[#e0e8f1] bg-[#f8fbff]'}`}
+            >
+              <h2 className="flex items-center justify-between text-sm font-semibold text-[#20364d]"><span>{column.label}</span><span>{column.cards.length}</span></h2>
+              <div className="mt-3 space-y-3">{column.cards.map((lead) => <article
+                key={lead.id}
+                data-rental-control="lead-kanban-card"
+                draggable={!busy && role !== 'closed' && !rentalLeadNeedsReview(lead) && Boolean(getNextRentalLeadStage(lead))}
+                onDragStart={(event) => {
+                  if (busy || role === 'closed' || rentalLeadNeedsReview(lead) || !getNextRentalLeadStage(lead)) { event.preventDefault(); return; }
+                  event.dataTransfer.setData('text/plain', JSON.stringify({ id: lead.id, scopeKey }));
+                  event.dataTransfer.effectAllowed = 'move';
+                  setDraggingId(lead.id);
+                }}
+                onDragEnd={() => setDraggingId('')}
+                onClick={(event) => { if (!event.target.closest('button, a')) openLeadWorkspace(lead); }}
+                className={`rounded-[14px] border border-[#dfe8f3] bg-white p-3 shadow-sm ${draggingId === lead.id ? 'opacity-60' : ''}`}
+              >
+                <button type="button" aria-label={`Open lead ${lead.name}`} onClick={() => openLeadWorkspace(lead)} className="block w-full rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f4f78]">
+                  <span className="block truncate text-sm font-semibold text-[#142132]">{lead.name}</span>
+                  <span className="mt-2 block line-clamp-2 text-xs text-[#60758b]">{lead.focus}</span>
+                  <span className="mt-3 block truncate text-xs text-[#60758b]">{lead.assignedAgentName || 'Unassigned'}</span>
+                </button>
+                {rentalLeadNeedsReview(lead) ? <p className="mt-3 text-xs text-[#8a641d]">Open this lead to review its saved stage before advancing.</p> : null}
+                {role === 'closed' ? <p className="mt-3 text-xs text-[#60758b]">Outcome: {lead.outcome?.status || 'closed'}</p> : null}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#edf2f7] pt-3">
+                  {role !== 'closed' ? <RentalLeadAction lead={lead} onAdvance={handleAdvance} advancing={advancingId === lead.id} disabled={busy} onTerminalAction={terminalAction} onReview={openLeadWorkspace} compact /> : null}
+                  <RentalLeadActionsMenu lead={lead} onOpen={openLeadWorkspace} onLost={startMarkLost} disabled={busy} />
+                </div>
+              </article>)}</div>
+            </section>)}</div>
+          </div> : <>
           <div className="hidden overflow-x-auto lg:block">
             <table className="w-full min-w-[900px] table-fixed text-left" aria-label={roleTitle}>
               <thead className="h-11 bg-[#fbfdff] text-[0.7rem] font-semibold uppercase tracking-[0.04em] text-[#7890a8]">
@@ -698,6 +800,8 @@ export default function RentalLeadsPage() {
                       onAdvance={handleAdvance}
                       advancing={advancingId === lead.id}
                       onTerminalAction={terminalAction}
+                      onReview={openLeadWorkspace}
+                      disabled={busy}
                       compact
                     /> : null}
                   </div>

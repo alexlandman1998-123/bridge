@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, Building2, Loader2, Plus, Search, Wrench } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
 import Modal from '../../components/ui/Modal'
@@ -40,6 +40,8 @@ function JobCard({ job, tenancy, busy, onAcknowledge }) {
   </article>
 }
 export default function RentalMaintenancePage() {
+  const [searchParams] = useSearchParams()
+  const requestedTenancy = searchParams.get('tenancyId') || ''
   const workspace = useWorkspace()
   const { organisationId, branchId } = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace])
   const scopeKey = `${organisationId}:${branchId || ''}`
@@ -92,7 +94,7 @@ export default function RentalMaintenancePage() {
   const rows = jobs.filter((job) => {
     const tenancy = tenancyFor(job)
     const stageMatches = tab === 'all' || tab === 'new' && job.status === 'submitted' || tab === 'in_progress' && ['acknowledged', 'triaged', 'assigned', 'in_progress', 'scheduled', 'awaiting_approval'].includes(job.status) || job.status === tab
-    return stageMatches && [job.request_id, job.category, job.description, job.status, job.assignee_name, tenancy?.propertyName, tenancy?.tenantName, tenancy?.landlordName, tenancy?.location].join(' ').toLowerCase().includes(query.trim().toLowerCase())
+    return (!requestedTenancy || job.tenancy_id === requestedTenancy) && stageMatches && [job.request_id, job.category, job.description, job.status, job.assignee_name, tenancy?.propertyName, tenancy?.tenantName, tenancy?.landlordName, tenancy?.location].join(' ').toLowerCase().includes(query.trim().toLowerCase())
   })
   const change = (key, value) => { setForm((current) => ({ ...current, [key]: value })); setFormError('') }
   async function submit(event) {
@@ -118,7 +120,7 @@ export default function RentalMaintenancePage() {
     finally { setBusy('') }
   }
   return <main className="mx-auto w-full max-w-[1600px] py-2"><MobileDashboardShell>
-    <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><h1 className="text-2xl font-semibold text-[#142132]">Maintenance</h1><div className="flex flex-col gap-2 sm:flex-row sm:items-center"><label className="flex h-11 min-w-0 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3 sm:w-80"><Search size={16} className="shrink-0 text-[#7b8ca2]" aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search maintenance" placeholder="Search maintenance jobs..." className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none" /></label><Button type="button" disabled={!organisationId || loading || Boolean(error)} onClick={() => { setFormError(''); setDialogOpen(true) }}><Plus size={16} />Log issue</Button></div></div></section>
+    <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><h1 className="text-2xl font-semibold text-[#142132]">Maintenance</h1><div className="flex flex-col gap-2 sm:flex-row sm:items-center"><label className="flex h-11 min-w-0 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3 sm:w-80"><Search size={16} className="shrink-0 text-[#7b8ca2]" aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search maintenance" placeholder="Search maintenance jobs..." className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none" /></label><Button type="button" disabled={!organisationId || loading || Boolean(error)} onClick={() => { setFormError(''); setForm(current => ({ ...current, tenancyId: eligible.some(item => item.id === requestedTenancy) ? requestedTenancy : current.tenancyId })); setDialogOpen(true) }}><Plus size={16} />Log issue</Button></div></div></section>
     <nav className="flex overflow-x-auto rounded-[14px] border border-[#dbe4ee] bg-white p-1" aria-label="Maintenance job stages">{tabs.map(([key, title]) => <button key={key} type="button" data-rental-control="maintenance-tab" aria-pressed={tab === key} onClick={() => setTab(key)} className={`shrink-0 rounded-[10px] px-4 py-2.5 text-sm font-semibold ${tab === key ? 'bg-[#edf5f1] text-[#187052]' : 'text-[#60758b]'}`}>{title}</button>)}</nav>
     {notice ? <p role="status" className="rounded-xl border border-[#cfe8dc] bg-[#f2fbf5] p-3 text-sm text-[#286b43]">{notice}</p> : null}
     {error || actionError ? <p role="alert" className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error || actionError}</p> : null}

@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   AlertTriangle,
   ArrowRight,
@@ -284,6 +285,7 @@ function TrustItem({ children }) {
 }
 
 function TextAreaInput({ label, value, onChange, placeholder = '', rows = 3 }) {
+  if (/address/i.test(label)) return <label className="grid gap-2"><span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span><AddressInput value={value} onChange={onChange} placeholder={placeholder} /></label>
   return (
     <label className="grid gap-2">
       <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>

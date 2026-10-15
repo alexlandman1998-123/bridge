@@ -1,3 +1,4 @@
+import AddressInput from '../../../components/location/AddressInput'
 import { Building2, DollarSign, FileText, UsersRound, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
@@ -344,7 +345,7 @@ function CommercialLeasingDealCreateModal({ open, lookups = {}, rawLookups = {},
                 </div>
                 {showAddressField ? (
                   <Field label="Property Address" className="md:col-span-2">
-                    <Input value={values.formatted_address} onChange={(event) => updateValue('formatted_address', event.target.value)} placeholder="Start typing the property address..." />
+                    <AddressInput value={values.formatted_address} onChange={(event) => updateValue('formatted_address', event.target.value)} placeholder="Start typing the property address..." />
                   </Field>
                 ) : null}
               </div>

@@ -1,7 +1,9 @@
 import { saveRentalLandlordDiscovery, linkRentalLandlordOnboardingProperty } from './rentalLandlordOnboardingService.js'
 import { rentalLandlordDiscovery } from './rentalLandlordOnboardingModel.js'
-import { updateAgencyCrmLeadRecord } from '../../lib/agencyCrmRepository'
+import { updateAgencyCrmLeadRecord, createAgencyCrmLeadActivity } from '../../lib/agencyCrmRepository'
+import { getRentalLeadMetadata } from './rentalLeadClassificationModel'
 import { getRentalProperty } from './rentalPropertyRepository'
+import { listRentalUnits } from './rentalUnitRepository.js'
 import {
   createRentalPropertyMandate,
   listRentalPropertyMandates,
@@ -37,11 +39,26 @@ async function save(lead, patch, context) {
 }
 export async function saveRentalLandlordProfile(leadId, values, context) {
   const lead = await current(leadId, context)
-  return save(
-    lead,
-    { landlordProfile: normalizeLandlordProfile(values) },
-    context,
-  )
+  const profile = normalizeLandlordProfile(values)
+  // Never send the portfolio as a side effect of editing landlord details.
+  return saveRentalLandlordDiscovery(lead, { profile }, context.expectedDiscovery || rentalLandlordDiscovery(lead.raw?.rawEnquiryPayload || lead.raw?.raw_enquiry_payload || {}))
+}
+export async function recordRentalLandlordMandateSent(leadId, propertyId, context) {
+  const lead = await current(leadId, context)
+  if (lead.stage !== 'mandate_pending') throw new Error('Refresh this lead before recording its mandate as sent.')
+  if (!landlordWorkspace(lead).portfolio.some(property => property.id === propertyId)) throw new Error('Choose a property in this landlord portfolio.')
+  const actorId = text(context.actor?.id || context.actor?.userId)
+  if (!actorId || !lead.updatedAt) throw new Error('Refresh this lead in your signed-in workspace before recording the mandate.')
+  const sent = getRentalLeadMetadata(lead.raw).landlordMandateDispatches || {}
+  if (sent[propertyId]?.sentAt) return lead
+  const receipt = { sentAt: new Date().toISOString(), sentBy: actorId, channel: 'agent_recorded' }
+  await updateAgencyCrmLeadRecord(context.organisationId, lead.id, {
+    rawEnquiryPayload: patchRentalCrmLeadMetadata(lead.raw, { landlordMandateDispatches: { ...sent, [propertyId]: receipt } }),
+  }, { expectedUpdatedAt: lead.updatedAt })
+  void createAgencyCrmLeadActivity(context.organisationId, lead.id, {
+    agent: context.actor, activityType: 'Rental Mandate Marked Sent', activityNote: 'Agent confirmed that the rental mandate was sent.', outcome: 'Sent',
+  }, { actor: context.actor }).catch(() => null)
+  return receipt
 }
 export async function saveRentalLandlordProperty(leadId, values, context) {
   const lead = await current(leadId, context)
@@ -54,7 +71,7 @@ export async function saveRentalLandlordProperty(leadId, values, context) {
     )
   if (
     (previous?.mandateId || previous?.listingId) &&
-    text(previous.canonicalPropertyId) !== text(property.canonicalPropertyId)
+    (text(previous.canonicalPropertyId) !== text(property.canonicalPropertyId) || text(previous.canonicalUnitId) !== text(property.canonicalUnitId))
   )
     throw new Error(
       'The managed property cannot be changed after its mandate or listing has been linked.',
@@ -69,6 +86,13 @@ export async function saveRentalLandlordProperty(leadId, values, context) {
         managed.branchId !== context.scope.branchId)
     )
       throw new Error('Choose a managed property available in this workspace.')
+  }
+  if (property.canonicalUnitId) {
+    if (!property.canonicalPropertyId) throw new Error('Choose a managed property before selecting its unit.')
+    const units = await listRentalUnits({ propertyId: property.canonicalPropertyId })
+    const unit = units.find(item => item.id === property.canonicalUnitId)
+    if (!unit || unit.organisationId !== context.organisationId || (context.scope?.scopeLevel !== 'organisation' && context.scope?.branchId && unit.branchId !== context.scope.branchId))
+      throw new Error('Choose a unit in this managed property and workspace.')
   }
   const updated = previous
     ? portfolio.map((item) =>

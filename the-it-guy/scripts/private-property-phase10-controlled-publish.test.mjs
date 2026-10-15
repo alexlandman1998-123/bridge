@@ -350,6 +350,19 @@ const blockedLocation = await runPrivatePropertyControlledPublishRehearsal({
 assert.equal(blockedLocation.status, 'BLOCKED')
 assert.deepEqual(invalidProduction.operations, [])
 
+const conflictingPublicTables = structuredClone(productionTables)
+conflictingPublicTables.private_listings[0].private_property_listing_url = 'https://www.privateproperty.co.za/commercial-sales/kwazulu-natal/durban/kloof/wyebank/T1234567'
+const conflictingPublicClient = createFakeClient(conflictingPublicTables)
+const conflictingPublicPortal = createRecoveryPortal({ propertyId: 'ORIGINAL-PROD-ID', address: { streetName: 'Controlled Road', streetNumber: '12', suburbId: 12345 }, status: 'For Sale' })
+const publicLocationBlocked = await runPrivatePropertyControlledPublishRehearsal({
+  client: conflictingPublicClient, listingId, environment: 'production', secrets, apply: true, recordSync: true,
+  confirmation: buildPrivatePropertyPublishConfirmation({ listingId, environment: 'production' }), privateProperty: conflictingPublicPortal,
+})
+assert.equal(publicLocationBlocked.status, 'BLOCKED')
+assert.ok(publicLocationBlocked.blockers.includes('private_property_public_location_mismatch'))
+assert.equal(conflictingPublicPortal.calls.some(([call]) => call === 'update' || call === 'status-update'), false)
+assert.deepEqual(conflictingPublicClient.operations, [], 'a public location conflict must not publish or record an accepted send')
+
 const missingAddressBaselineTables = structuredClone(productionTables)
 missingAddressBaselineTables.private_property_listing_syncs[1].activated_at = '2026-08-26T08:00:00Z'
 const missingAddressBaselinePortal = createRecoveryPortal({ propertyId: 'ORIGINAL-PROD-ID', address: { streetName: 'Controlled Road', streetNumber: '12', suburbId: 12345 }, status: 'For Sale' })

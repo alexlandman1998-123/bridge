@@ -2,6 +2,7 @@ import { createOrUpdateLeadFromEnquiry, normalizeLeadSource, recordLeadIngestion
 import { getOrganisationPrivateListings } from './privateListingService'
 import { pickImportValue } from '../lib/csvImport'
 import { inferLeadCategoryFromSource, normalizeLeadCategory } from '../lib/leadCategory'
+import { isExplicitRentalLeadImportRow } from './rentals/rentalLeadImportModel.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -261,6 +262,7 @@ export function mapWhatsAppPayload(payload = {}) {
 }
 
 export function mapManualImportRow(row = {}) {
+  if (isExplicitRentalLeadImportRow(row)) throw new Error('Import tenant and landlord rows through Rentals → Leads → Import.')
   const pickRow = (keys) => pickImportValue(row, keys)
   return buildCanonicalLeadPayload({
     source: pickRow(['Source', 'source']) || 'Manual Import',

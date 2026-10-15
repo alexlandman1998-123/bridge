@@ -7,6 +7,8 @@ import { getRentalListingForAgent } from '../rentalListingDraftService'
 import { listRentalPropertyMandates } from '../rentalLandlordMandateRepository'
 import { updateAgencyCrmLeadRecord } from '../../../lib/agencyCrmRepository'
 import { createRentalCrmLeadMetadata } from '../rentalCrmLeadModel'
+import { ensureRentalListingVacancy } from '../rentalListingInventoryRepository.js'
+vi.mock('../rentalListingInventoryRepository.js', () => ({ ensureRentalListingVacancy: vi.fn() }))
 vi.mock('../rentalLeadService', () => ({
   getRentalLeadWorkspace: vi.fn(),
   advanceRentalLead: vi.fn(),
@@ -34,6 +36,7 @@ beforeEach(() => {
     id: 'lead',
     role: 'landlord',
     stage: 'listing_created',
+    updatedAt: 'revision-1',
     relationships: { listingId: 'first-listing' },
     raw: {
       rawEnquiryPayload: createRentalCrmLeadMetadata({
@@ -55,7 +58,10 @@ beforeEach(() => {
   getRentalListingForAgent.mockResolvedValue({
     id: 'second-listing',
     organisationId: 'org',
+    rentalPropertyId: 'managed',
+    rentalUnitId: 'unit',
   })
+  ensureRentalListingVacancy.mockResolvedValue({ listingId: 'second-listing', applicable: true, propertyId: 'managed', unitId: 'unit', vacancyId: 'vacancy' })
   listRentalPropertyMandates.mockResolvedValue([
     {
       id: 'mandate',
@@ -74,6 +80,8 @@ beforeEach(() => {
   ])
   updateAgencyCrmLeadRecord.mockImplementation(async (_org, _id, patch) => {
     lead.raw = { ...lead.raw, ...patch }
+    lead.relationships = patch.rawEnquiryPayload.relationships
+    lead.updatedAt = 'revision-3'
   })
 })
 it('links a second property without replacing the primary listing or advancing the completed lead', async () => {
@@ -86,7 +94,7 @@ it('links a second property without replacing the primary listing or advancing t
   ).toEqual(['first-listing', 'second-listing'])
   expect(advanceRentalLead).not.toHaveBeenCalled()
   await linkRentalLandlordLeadToListing(lead, 'second-listing', context)
-  expect(updateAgencyCrmLeadRecord).toHaveBeenCalledTimes(1)
+  expect(updateAgencyCrmLeadRecord).not.toHaveBeenCalled()
 })
 it('requires a mandate on the exact property and blocks replacement of another listing', async () => {
   listRentalPropertyMandates.mockResolvedValue([])
@@ -99,4 +107,22 @@ it('requires a mandate on the exact property and blocks replacement of another l
     linkRentalLandlordLeadToListing(lead, 'second-listing', context),
   ).rejects.toThrow('already has')
   expect(updateAgencyCrmLeadRecord).not.toHaveBeenCalled()
+})
+it('uses the refreshed lead revision after the portfolio handoff and preserves a retryable listing when advancement fails', async () => {
+  lead.stage = 'listing_ready'
+  lead.relationships = { propertyId: 'managed', mandateId: 'mandate' }
+  const originalLink = linkRentalLandlordOnboardingProperty.getMockImplementation()
+  linkRentalLandlordOnboardingProperty.mockImplementation(async (...args) => { await originalLink(...args); lead.updatedAt = 'revision-2' })
+  advanceRentalLead.mockRejectedValueOnce(new Error('Lead changed elsewhere.')).mockResolvedValueOnce({ ...lead, stage: 'listing_created' })
+  await expect(linkRentalLandlordLeadToListing(lead, 'second-listing', context)).rejects.toThrow('was linked')
+  expect(updateAgencyCrmLeadRecord).toHaveBeenCalledWith('org', 'lead', expect.objectContaining({ rawEnquiryPayload: expect.objectContaining({ relationships: expect.objectContaining({ propertyId: 'managed', unitId: 'unit', vacancyId: 'vacancy', listingId: 'second-listing' }) }) }), { expectedUpdatedAt: 'revision-2' })
+  expect(advanceRentalLead.mock.calls[0][0].updatedAt).toBe('revision-3')
+  await linkRentalLandlordLeadToListing(lead, 'second-listing', context)
+  expect(updateAgencyCrmLeadRecord).toHaveBeenCalledTimes(1)
+})
+it('rejects a listing from another property before creating or connecting its vacancy', async () => {
+  getRentalListingForAgent.mockResolvedValue({ id: 'second-listing', organisationId: 'org', rentalPropertyId: 'foreign-property' })
+  await expect(linkRentalLandlordLeadToListing(lead, 'second-listing', context)).rejects.toThrow('another managed property')
+  expect(ensureRentalListingVacancy).not.toHaveBeenCalled()
+  expect(linkRentalLandlordOnboardingProperty).not.toHaveBeenCalled()
 })

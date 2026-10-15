@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -2170,7 +2171,7 @@ function ThirdPartyDirectoryModal({
             </label>
             <label className="grid gap-1.5 sm:col-span-2">
               <span className="text-sm font-semibold text-[#35546c]">Address</span>
-              <input
+              <AddressInput
                 value={form.physicalAddress}
                 onChange={(event) => onChange('physicalAddress', event.target.value)}
                 disabled={saving}

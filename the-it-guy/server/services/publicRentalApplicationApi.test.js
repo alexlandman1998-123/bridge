@@ -1,6 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createClient }))
+import { isRentalContextConfirmed } from '../../src/services/rentals/rentalApplicationCostModel.js'
+import { initialiseRentalApplicationWizard } from '../../src/services/rentals/rentalApplicationWizardModel.js'
 import { handlePublicRentalApplication } from './publicRentalApplicationApi.js'
 let data, writes, savedRequirements, brandingSettings, brandingQueries
 beforeEach(() => {
@@ -9,14 +11,14 @@ beforeEach(() => {
   brandingSettings = { agencyOnboarding: { branding: { organisationName: 'Tenant Agency', logoDarkUrl: 'https://example.test/dark.svg', logoLightUrl: 'https://example.test/light.svg', primaryColour: '#113355', secondaryColour: '#224466', accentColour: '#ffcc00' } }, privateIntegrationSecret: 'never-public' }
   savedRequirements = ['identity','proof_of_income'].map((purpose) => ({ id: `primary-${purpose}`, scope_key: 'application', subject_id: 'primary', purpose, required: true, active: true, mode: 'active', generation: 1, state: 'received' }))
   data = { identity: { firstName: 'Alex', lastName: 'Tenant', email: 'alex@example.test' }, employment: { employmentType: 'employed' }, income: { monthlyIncome: 25000 }, rentalHistory: { currentAddress: '12 Road', reasonForMoving: 'Work' }, property: { monthlyRent: 12000 }, onboarding: { sentAt: 'original' }, internalNotes: 'Private note' }
-  mocks.createClient.mockReturnValue({ from(table) {
+  mocks.createClient.mockReturnValue({ rpc: vi.fn(async (command,args) => { writes.push({command,args}); return {data:{id:'app',organisation_id:'org',status:'submitted',version:3,application_data:data,submitted_snapshot_json:data,submitted_at:'2026-10-14T16:00:00Z'}} }), from(table) {
     let patch
     const query = {
       select: () => query, eq: (field, value) => { if (['organisations', 'organisation_settings'].includes(table)) brandingQueries.push({ table, field, value }); return query },
       update: (value) => { patch = value; writes.push({ table, value }); return query },
       upsert: (value) => { writes.push({ table, value }); return Promise.resolve({ data: [], error: null }) },
       order: async () => ({ data: [{ document_type: 'identity', status: 'uploaded' }, { document_type: 'proof_of_income', status: 'uploaded' }], error: null }),
-      maybeSingle: async () => table === 'organisation_settings' ? { data: { settings_json: brandingSettings } } : table === 'organisations' ? { data: { name: 'Tenant Agency', logo_url: 'https://example.test/legacy.svg' } } : table === 'rental_application_access_tokens' ? { data: { id: 'access', application_id: 'app', expires_at: '2099-01-01' } } : { data: { id: 'app', organisation_id: 'org', status: patch?.status || 'draft', version: patch?.version || 2, application_data: patch?.application_data || data } },
+      maybeSingle: async () => table === 'organisation_settings' ? { data: { settings_json: brandingSettings } } : table === 'organisations' ? { data: { name: 'Tenant Agency', logo_url: 'https://example.test/legacy.svg' } } : table === 'rental_application_access_tokens' ? { data: { id: 'access', application_id: 'app', expires_at: '2099-01-01' } } : { data: { id: 'app', organisation_id: 'org', status: patch?.status || 'draft', version: patch?.version || 2, application_data: patch?.application_data || data, confirmation_json: patch?.confirmation_json, cost_snapshot_json: {} } },
       then: (resolve) => Promise.resolve({ data: table === 'rental_onboarding_requirement_summaries' ? savedRequirements : [], error: null }).then(resolve),
     }
     return query
@@ -69,7 +71,8 @@ it('rejects invalid scalar data and prevents blank sections from being submitted
 it('accepts a complete application and captures a separate submitted snapshot', async () => {
   const result = await call('PUT', { action: 'submit', version: 2, consents: ['privacy', 'credit_check', 'identity_verification'] })
   expect(result.status).toBe(200)
-  expect(writes.find((entry) => entry.table === 'rental_applications').value.submitted_snapshot_json).toEqual(data)
+  expect(writes.find(entry => entry.command === 'rental_submit_tenant_application').args).toMatchObject({p_application_id:'app',p_expected_version:2,p_consents:['privacy','credit_check','identity_verification']})
+  expect(result.body.application.status).toBe('submitted')
 })
 it('upgrades a reopened legacy draft deliberately while keeping invitation and document assignments protected', async () => {
   const result = await call('PATCH', { version: 2, upgradeSchema: true, patch: { entity: { type: 'company', legalName: 'Tenant company' }, documentLinks: [{ documentId: 'forged' }], onboarding: { sentAt: 'forged' } } })
@@ -92,16 +95,10 @@ it('shares only explicit correction requests and keeps reviewer notes private', 
   expect(result.body.application.data.review).toBeUndefined()
   expect(JSON.stringify(result.body)).not.toContain('Confidential')
 })
-it('records fresh consent evidence under a distinct submission version with the submission time', async () => {
+it('submits consent and answers through one atomic command', async () => {
   await call('PUT', { action: 'submit', version: 2, consents: ['privacy', 'credit_check', 'identity_verification'] })
-  const consents = writes.find((entry) => entry.table === 'rental_application_consents').value
-  const submission = writes.find((entry) => entry.table === 'rental_applications').value
-  expect(consents).toHaveLength(3)
-  for (const consent of consents) {
-    expect(consent.wording_version).toBe(`rental-application-consent-v1:submission-2:${submission.submitted_at}`)
-    expect(consent.source).toBe('applicant'); expect(consent.accepted_at).toBe(submission.submitted_at)
-    expect(consent.evidence_json.submitted_at).toBe(submission.submitted_at)
-  }
+  expect(writes.filter(entry => entry.command)).toEqual([{command:'rental_submit_tenant_application',args:{p_application_id:'app',p_expected_version:2,p_declaration_accepted:false,p_consents:['privacy','credit_check','identity_verification']}}])
+  expect(writes.some(entry => entry.table === 'rental_application_consents' || entry.table === 'rental_applications')).toBe(false)
 })
 it('persists stale evidence assignments after applicant identity changes and exposes them on reopen', async () => {
   data.identity.identityNumber = 'A'
@@ -127,4 +124,13 @@ it('exposes saved requirement IDs and generations without exposing internal disc
   const result = await call('GET')
   expect(result.body.application.requirements[0]).toMatchObject({ id: 'primary-identity', generation: 3, state: 'received' })
   expect(JSON.stringify(result.body.application.requirements)).not.toContain('private')
+})
+
+it('keeps public property confirmation consistent with the form when internal connection fields exist', async () => {
+  data.property = {...data.property,listingId:'listing',vacancyId:'vacancy',unitId:'unit',propertyId:'internal-property',unitLabel:'MAIN',privateDetail:'never-public'}
+  const result=await call('PATCH',{action:'confirm_context',version:2,propertyAccepted:true,costsAccepted:true,privacyAccepted:true})
+  expect(result.status).toBe(200)
+  expect(isRentalContextConfirmed({...result.body.application,data:initialiseRentalApplicationWizard(result.body.application.data)})).toBe(true)
+  expect(JSON.stringify(result.body.application)).not.toContain('never-public')
+  expect(writes.find(entry=>entry.table==='rental_applications').value.confirmation_json.property.privateDetail).toBe('never-public')
 })

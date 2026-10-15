@@ -108,7 +108,7 @@ async function fetchListingDetailsByIds(supabase, listingIds = []) {
   if (!ids.length) return new Map()
   const result = await supabase
     .from('private_listings')
-    .select('id, organisation_id, development_id, assigned_agent_id, assigned_agent_email, title')
+    .select('id, organisation_id, development_id, branch_id, listing_category, assigned_agent_id, assigned_agent_email, title')
     .in('id', ids)
   if (result.error) throw result.error
   return new Map((result.data || []).map((row) => [normalizeText(row.id), row]))
@@ -183,7 +183,7 @@ async function findExistingContact(supabase, { organisationId = '', email = '', 
     const result = await maybeSingle(
       supabase
         .from('contacts')
-        .select('contact_id, first_name, last_name, email, phone')
+        .select('contact_id, first_name, last_name, email, phone, contact_type, assigned_agent_id, notes')
         .eq('organisation_id', organisationId)
         .eq('email', normalizedEmail)
         .order('created_at', { ascending: true })
@@ -196,7 +196,7 @@ async function findExistingContact(supabase, { organisationId = '', email = '', 
     const result = await maybeSingle(
       supabase
         .from('contacts')
-        .select('contact_id, first_name, last_name, email, phone')
+        .select('contact_id, first_name, last_name, email, phone, contact_type, assigned_agent_id, notes')
         .eq('organisation_id', organisationId)
         .eq('phone', normalizedPhone)
         .order('created_at', { ascending: true })
@@ -227,8 +227,11 @@ function buildCrmRows(lead = {}, listing = {}) {
   const assignedAgentEmail = normalizeEmail(listing.assigned_agent_email)
   const title = normalizeText(listing.title)
   const notes = buildLeadNotes(lead)
-  const rentalMetadata = !lead.listingId && normalizeText(lead.listingType).toLowerCase() === 'rental'
-    ? createRentalCrmLeadMetadata({ leadId, organisationId: lead.organisationId, assignedAgentId, source: 'Property24', role: 'tenant' })
+  const rental = normalizeText(listing.listing_category)
+    ? normalizeText(listing.listing_category).toLowerCase() === 'rental'
+    : normalizeText(lead.listingType).toLowerCase() === 'rental'
+  const rentalMetadata = rental
+    ? createRentalCrmLeadMetadata({ leadId, organisationId: lead.organisationId, assignedAgentId, branchId: listing.branch_id, source: 'Property24', role: 'tenant', relationships: { listingId: lead.listingId } })
     : {}
 
   return {
@@ -243,13 +246,14 @@ function buildCrmRows(lead = {}, listing = {}) {
       last_name: lastName || null,
       phone: normalizeText(lead.phone) || null,
       email: normalizeEmail(lead.email) || null,
-      contact_type: 'Lead',
+      contact_type: rental ? 'Tenant' : 'Lead',
       notes: notes || null,
       updated_at: nowIso,
     },
     leadRow: {
       lead_id: leadId,
       organisation_id: normalizeText(lead.organisationId),
+      branch_id: normalizeText(listing.branch_id) || null,
       assigned_agent_id: assignedAgentId || null,
       assigned_user_id: assignedAgentId || null,
       assigned_agent_email: assignedAgentEmail || null,
@@ -297,6 +301,9 @@ async function persistContact(supabase, rows = {}, lead = {}) {
         last_name: normalizeText(existingContact.last_name) || rows.contactRow.last_name,
         email: normalizeEmail(existingContact.email) || rows.contactRow.email,
         phone: normalizeText(existingContact.phone) || rows.contactRow.phone,
+        contact_type: normalizeText(existingContact.contact_type) || rows.contactRow.contact_type,
+        assigned_agent_id: normalizeText(existingContact.assigned_agent_id) || rows.contactRow.assigned_agent_id,
+        notes: normalizeText(existingContact.notes) || rows.contactRow.notes,
       }
     : rows.contactRow
 

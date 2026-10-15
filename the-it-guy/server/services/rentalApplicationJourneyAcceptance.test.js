@@ -7,7 +7,7 @@ import { rentalApplicationFieldScenario } from '../tests/fixtures/rentalApplicat
 import { handlePublicRentalApplication } from './publicRentalApplicationApi.js'
 import { createPersistedRentalApplicantAccess, getRentalApplicationReview, recordRentalApplicationReview, decideRentalApplication, convertRentalApplicationToTenancy } from '../../src/services/rentals/rentalApplicationRepository.js'
 import { saveRentalLeaseDraft, prepareRentalLeaseSigning, recordRentalLeaseSignature } from '../../src/services/rentals/rentalLeaseSigningRepository.js'
-import { rentalLeaseScheduleSigners, renderRentalLeaseSchedule } from '../../src/services/rentals/rentalLeaseSchedule.js'
+import { rentalLeaseScheduleSigners } from '../../src/services/rentals/rentalLeaseSchedule.js'
 const root = new URL('../../../supabase/migrations/', import.meta.url)
 let db, client, agent
 const files = new Map()
@@ -24,6 +24,10 @@ beforeAll(async()=>{
  // Restore production parent RLS/version guards, not the relaxed fixture defaults.
  await db.exec(readFileSync(new URL('20260905141014_rental_applications_and_applicant_access.sql',root),'utf8'))
  for(const file of ['20261007194611_rental_application_cost_confirmation.sql','20261007204950_rental_application_document_packs.sql','20260830084850_rental_lease_versions.sql','20260830085317_rental_lease_manual_signing.sql','20260913123000_rental_lease_version_seed_for_conversions.sql','20261007211002_rental_application_lease_handoff.sql','20261007212433_rental_empty_document_pack_readiness.sql']) await db.exec(readFileSync(new URL(file,root),'utf8'))
+ // Load the real atomic submission command; tenant inventory/lead connections
+ // are exercised by their dedicated fixture with the complete parent schema.
+ const connections=readFileSync(new URL('20261014203952_rental_tenant_application_connections.sql',root),'utf8')
+ await db.exec(connections.slice(connections.indexOf('create function public.rental_submit_tenant_application')))
  await db.query("insert into rental_application_fee_settings(organisation_id,amount,payment_instructions) values($1,350,'Use the application reference')",[org])
  client=rentalOnboardingClient(db,storage,actor);agent=rentalOnboardingClient(db,storage,actor,true)
 },20000)
@@ -50,7 +54,7 @@ it.each(['individual','joint_individuals','company','close_corporation','trust']
  current=assertResult(await request(invitation.token,'PATCH',{version:previousVersion,patch:{identity:{phone:'0215550100'}}}),200)
  expect((await request(invitation.token,'PATCH',{version:previousVersion,patch:{identity:{phone:'FORGED STALE'}}})).status).toBe(409)
  current=assertResult(await request(invitation.token,'PUT',{action:'submit',version:current.version,declarationAccepted:true,consents:['privacy','credit_check','identity_verification']}),200)
- expect(current.feeDueAt).toEqual(due)
+ expect(new Date(current.feeDueAt).toISOString()).toEqual(new Date(due).toISOString())
  const participant=await createPersistedRentalApplicantAccess(id,{subjectId:'additional-person',createdBy:actor,client:agent})
  const own=assertResult(await request(participant.token),200)
  expect(own.data.identity).toBeUndefined();expect(own.costs).toBeUndefined()
@@ -61,7 +65,7 @@ it.each(['individual','joint_individuals','company','close_corporation','trust']
   current=assertResult(response,201)
  }
  let review=await getRentalApplicationReview(id,{client:agent})
- expect(review.feeDueAt).toEqual(due);expect(review.costs.amount).toBe(350)
+ expect(new Date(review.feeDueAt).toISOString()).toEqual(new Date(due).toISOString());expect(review.costs.amount).toBe(350)
  const command=async(name,payload)=>{await recordRentalApplicationReview({applicationId:id,expectedVersion:review.version,command:name,payload},{client:agent});review=await getRentalApplicationReview(id,{client:agent})}
  for(const document of review.documents) await command('review_document',{documentId:document.id,status:'accepted',note:'Current original checked'})
  for(const checkType of ['identity','fica','affordability','employment','reference']) {
@@ -76,8 +80,7 @@ it.each(['individual','joint_individuals','company','close_corporation','trust']
  expect((await convertRentalApplicationToTenancy({applicationId:id,expectedVersion:review.version},{client:agent})).tenancy_id).toBe(converted.tenancy_id)
  const saved=await saveRentalLeaseDraft({leaseId:converted.lease_id,expectedVersion:1,terms:{lease_start_date:'2026-11-01',lease_end_date:'2027-10-31',occupation_date:'2026-11-01',monthly_rent:11000,deposit_amount:22000,tenant_notice_address:'Tenant notice',landlord_name:'Approved Owner',landlord_notice_address:'Owner notice',primary_authority_basis:'Reviewed resolution',agreement_template_reference:'Fixture reviewed template',agreement_document_link:'https://local.test/fixture-reviewed-agreement.pdf'}},{client:agent})
  const projection=(await agent.rpc('rental_get_lease_application_projection',{p_lease_id:converted.lease_id})).data
- const html=renderRentalLeaseSchedule(projection,saved.version_number)
- expect(html).toContain('12 Accepted Road');expect(html).not.toContain('income-monthlyIncome');expect(projection.parties).toHaveLength(2)
+ expect(projection.property.address).toBe('12 Accepted Road');expect(JSON.stringify(projection)).not.toContain('income-monthlyIncome');expect(projection.parties).toHaveLength(2)
  await prepareRentalLeaseSigning({leaseId:converted.lease_id,expectedVersion:saved.version_number,signers:rentalLeaseScheduleSigners(projection,saved.version_number)},{client:agent})
  const signers=(await db.query('select id from rental_lease_signers where lease_version_id=$1',[saved.id])).rows
  for(const signer of signers) await recordRentalLeaseSignature({signerId:signer.id,documentLink:'https://local.test/signed-evidence.pdf'},{client:agent})

@@ -1,72 +1,65 @@
-import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, FileSignature, Loader2 } from 'lucide-react'
-import { getRentalLeaseSigningWorkspace, prepareRentalLeaseSigning, recordRentalLeaseSignature, saveRentalLeaseDraft } from '../../../../services/rentals/rentalLeaseSigningRepository.js'
-import { downloadRentalLeaseSchedule, rentalLeasePartyLabel, rentalLeaseScheduleSigners } from '../../../../services/rentals/rentalLeaseSchedule.js'
-
-const text = (value) => String(value ?? '').trim()
-const title = (value) => text(value).replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-const fields = [
-  ['lease_start_date', 'Lease start', 'date'], ['lease_end_date', 'Lease end', 'date'], ['occupation_date', 'Occupation date', 'date'],
-  ['monthly_rent', 'Monthly rent', 'number'], ['deposit_amount', 'Deposit', 'number'],
-  ['tenant_notice_address', 'Tenant notice address'], ['landlord_name', 'Landlord name'], ['landlord_email', 'Landlord email', 'email'],
-  ['landlord_notice_address', 'Landlord notice address'], ['agreement_template_reference', 'Agreement template / version reference'],
-  ['agreement_document_link', 'Reviewed agreement document link', 'url'],
-]
-function initialTerms(workspace) {
-  const version = workspace.version || {}, saved = version.terms_json || {}, schedule = workspace.projection || {}
-  return { ...saved, lease_start_date: version.effective_start_date || '', lease_end_date: version.effective_end_date || '',
-    occupation_date: version.occupation_date || '', monthly_rent: version.monthly_rent ?? '', deposit_amount: version.deposit_amount ?? '',
-    tenant_notice_address: saved.tenant_notice_address || schedule.tenantNoticeAddress || '' }
-}
-
-export default function RentalLeaseSigningPanel({ tenancyId, onChanged }) {
-  const [workspace, setWorkspace] = useState(null)
-  const [terms, setTerms] = useState({})
-  const [dirty, setDirty] = useState(false)
-  const [reviewed, setReviewed] = useState(false)
-  const [evidence, setEvidence] = useState({})
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const load = useCallback(async () => {
-    if (!tenancyId) return
-    const next = await getRentalLeaseSigningWorkspace(tenancyId)
-    setWorkspace(next); setTerms(initialTerms(next)); setDirty(!next.version?.terms_json?.application_schedule); setReviewed(false)
-  }, [tenancyId])
-  useEffect(() => { void load().catch((cause) => setError(cause?.message || 'Unable to load lease signing.')) }, [load])
-  const update = (key, value) => { setTerms((current) => ({ ...current, [key]: value })); setDirty(true); setReviewed(false) }
-  const action = async (work, success) => {
-    try { setSaving(true); setError(''); setMessage(''); await work(); await load(); await onChanged?.(); setMessage(success) }
-    catch (cause) { setError(cause?.message || 'Unable to update the lease.') }
-    finally { setSaving(false) }
-  }
-  const saveDraft = () => action(() => saveRentalLeaseDraft({ leaseId: workspace.lease.id, expectedVersion: workspace.version.version_number,
-    terms: { ...terms, monthly_rent: Number(terms.monthly_rent), deposit_amount: Number(terms.deposit_amount) } }), 'Lease terms saved as a new draft version. Review its schedule and agreement before preparing signatures.')
-  const prepare = () => action(() => prepareRentalLeaseSigning({ leaseId: workspace.lease.id, expectedVersion: workspace.version.version_number,
-    signers: rentalLeaseScheduleSigners(workspace.projection, workspace.version.version_number) }), 'Lease signing is prepared. Record signed evidence for every listed person.')
-  const record = (signer) => action(() => recordRentalLeaseSignature({ signerId: signer.id, ...evidence[signer.id] }), `${rentalLeasePartyLabel(signer.signer_role)} signature recorded.`)
-  if (!workspace && !error) return <section className="grid min-h-28 place-items-center rounded-xl border bg-white text-sm text-slate-600"><span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Loading lease…</span></section>
-  const lease = workspace?.lease || {}, schedule = workspace?.projection || {}, canPrepare = lease.status === 'draft'
-  const representative = schedule.parties?.some((party) => party.subjectId === 'primary' && party.role === 'tenant_representative')
-  return <section className="rounded-xl border bg-white p-5 shadow-sm">
-    <div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">Lease terms and signatures</h2><p className="mt-1 text-sm text-slate-600">Review approved applicant details, confirm terms and check the agency agreement. A signed lease is required before move-in activation.</p></div><span className="text-sm font-semibold">{title(lease.status || 'draft')}</span></div>
-    {workspace ? <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">{schedule.tenant?.name} · {title(schedule.tenant?.type)}</p><p>{schedule.property?.title} · {schedule.property?.address}</p><p className="mt-2 text-slate-600">Application identity and party roles come from the approved submission. Corrections to those facts require application review.</p></div> : null}
-    {canPrepare ? <>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">{fields.map(([key, label, type = 'text']) => <label key={key} className="text-sm font-medium">{label}<input type={type} value={terms[key] ?? ''} onChange={(event) => update(key, event.target.value)} min={type === 'number' ? 0 : undefined} className="mt-1 block w-full rounded border p-2 font-normal" /></label>)}
-        {representative ? <label className="text-sm font-medium">Primary representative authority basis<input value={terms.primary_authority_basis || ''} onChange={(event) => update('primary_authority_basis', event.target.value)} className="mt-1 block w-full rounded border p-2 font-normal" placeholder="Reference to reviewed resolution / authority" /></label> : null}
-      </div>
-      <button type="button" disabled={saving || !terms.lease_start_date || !terms.lease_end_date || !terms.occupation_date || !terms.monthly_rent} onClick={() => void saveDraft()} className="mt-4 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60">Save lease draft</button>
-    </> : null}
-    <div className="mt-5 border-t pt-4"><h3 className="text-sm font-semibold">Parties and agreement review</h3>
-      <ul className="mt-3 space-y-2">{schedule.parties?.map((party) => <li key={party.subjectId} className="rounded border p-3 text-sm"><b>{rentalLeasePartyLabel(party.role)} · {party.name}</b><p>{party.email || 'Email not provided'} · {party.identityType}: {party.identityNumber || 'Identity missing'}</p>{canPrepare && party.subjectId !== 'primary' ? <label className="mt-2 block">Notice address for {party.name}<input value={terms.party_notice_addresses?.[party.subjectId] ?? party.noticeAddress ?? ''} onChange={(event) => update('party_notice_addresses', { ...terms.party_notice_addresses, [party.subjectId]: event.target.value })} className="mt-1 block w-full rounded border p-2" /></label> : <p>{party.noticeAddress || 'Notice address missing'}</p>}{party.role === 'tenant_representative' ? <p>Authority: {party.authorityBasis || 'Confirmation required'}</p> : null}</li>)}</ul>
-      <button type="button" disabled={!workspace?.version?.terms_json?.application_schedule || dirty} onClick={() => downloadRentalLeaseSchedule(schedule, workspace.version.version_number)} className="mt-3 rounded-lg border px-3 py-2 text-sm disabled:opacity-60">Download lease schedule</button>
-      {!dirty && /^https?:\/\/\S+$/.test(schedule.agreement?.documentLink || '') ? <a href={schedule.agreement.documentLink} target="_blank" rel="noopener noreferrer" className="ml-3 inline-block text-sm font-semibold text-sky-700 underline">Open reviewed agreement</a> : null}
-      {canPrepare ? <><p className="mt-3 text-sm text-slate-600">Use this schedule to check the agency lease and any guarantor agreement. Signing evidence is recorded manually.</p><label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} disabled={dirty || saving} onChange={(event) => setReviewed(event.target.checked)} />I checked this saved version, all parties, representative authority, notice addresses and the referenced agreement.</label><button type="button" disabled={saving || dirty || !reviewed} onClick={() => void prepare()} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"><FileSignature className="h-4 w-4" />Prepare signing</button></> : null}
-    </div>
-    {!canPrepare ? <div className="mt-5 grid gap-3 sm:grid-cols-2">{workspace?.signers?.map((signer) => {
-      const item = evidence[signer.id] || {}, signed = signer.status === 'signed'
-      return <article key={signer.id} className="rounded-xl border p-3"><p className="text-sm font-semibold">{rentalLeasePartyLabel(signer.signer_role)} · {signer.signer_name}</p><p className="mt-1 text-xs text-slate-600">{title(signer.status)}</p>{signed ? <p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" />Signed</p> : <div className="mt-3 grid gap-2"><label className="text-sm">Signed document link<input value={item.documentLink || ''} onChange={(event) => setEvidence((current) => ({ ...current, [signer.id]: { ...item, documentLink: event.target.value } }))} className="mt-1 w-full rounded border p-2" /></label><label className="text-sm">Evidence note<input value={item.evidenceNote || ''} onChange={(event) => setEvidence((current) => ({ ...current, [signer.id]: { ...item, evidenceNote: event.target.value } }))} className="mt-1 w-full rounded border p-2" /></label><button type="button" disabled={saving || !text(item.documentLink)} onClick={() => void record(signer)} className="w-fit rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-60">Record signature</button></div>}</article>
-    })}</div> : null}
-    {message ? <p className="mt-4 text-sm text-emerald-700">{message}</p> : null}{error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
-  </section>
+import DocumentUploadProgress from '../../../../components/documents/DocumentUploadProgress.jsx'
+import AddressInput from '../../../../components/location/AddressInput'
+import {isAddressFieldKey} from '../../../../components/location/addressInputModel'
+import {useCallback,useEffect,useRef,useState} from 'react'
+import {CheckCircle2,FileSignature,Loader2} from 'lucide-react'
+import {getRentalLeaseSigningWorkspace,prepareRentalLeaseSigning,saveRentalLeaseDraft} from '../../../../services/rentals/rentalLeaseSigningRepository.js'
+import {getRentalLeaseDocumentUrl,uploadRentalLeaseDocument} from '../../../../services/rentals/rentalLeaseDocumentUploadService.js'
+import {rentalLeasePartyLabel,rentalLeaseScheduleSigners} from '../../../../services/rentals/rentalLeaseSchedule.js'
+const text=value=>String(value??'').trim()
+const title=value=>text(value).replaceAll('_',' ').replace(/\b\w/g,letter=>letter.toUpperCase())
+const fields=[['lease_start_date','Lease start','date'],['lease_end_date','Lease end','date'],['occupation_date','Occupation date','date'],['monthly_rent','Monthly rent','number'],['deposit_amount','Deposit','number'],['tenant_notice_address','Tenant notice address'],['landlord_name','Landlord name'],['landlord_email','Landlord email','email'],['landlord_notice_address','Landlord notice address'],['agreement_template_reference','Agreement reference']]
+function initialTerms(workspace){const version=workspace.version||{},saved=version.terms_json||{},projection=workspace.projection||{};return {...saved,lease_start_date:version.effective_start_date||'',lease_end_date:version.effective_end_date||'',occupation_date:version.occupation_date||saved.intended_occupation_date||'',monthly_rent:version.monthly_rent??'',deposit_amount:version.deposit_amount??'',tenant_notice_address:saved.tenant_notice_address||projection.tenantNoticeAddress||''}}
+const ACCEPT='.pdf,.doc,.docx,.jpg,.jpeg,.png'
+export default function RentalLeaseSigningPanel({tenancyId,onChanged}){
+ const[workspace,setWorkspace]=useState(null),[terms,setTerms]=useState({}),[dirty,setDirty]=useState(false),[reviewed,setReviewed]=useState(false),[evidence,setEvidence]=useState({}),[saving,setSaving]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')
+ const guard=useRef(false),current=useRef(tenancyId),generation=useRef(0)
+ const load=useCallback(async()=>{
+  if(current.current!==tenancyId||!tenancyId)return
+  const request=++generation.current,next=await getRentalLeaseSigningWorkspace(tenancyId)
+  if(current.current!==tenancyId||request!==generation.current)return
+  setWorkspace(next);setTerms(initialTerms(next));setDirty(!next.version?.terms_json?.application_schedule);setReviewed(false)
+ },[tenancyId])
+ useEffect(()=>{current.current=tenancyId;setWorkspace(null);setTerms({});setEvidence({});setError('');setMessage('');setReviewed(false);setSaving(false);void load().catch(cause=>{if(current.current===tenancyId)setError(cause.message||'Unable to load lease documents.')});return()=>{if(current.current===tenancyId)current.current=null}},[load,tenancyId])
+ const update=(key,value)=>{setTerms(previous=>({...previous,[key]:value}));setDirty(true);setReviewed(false)}
+ const changeEvidence=(key,patch)=>setEvidence(previous=>({...previous,[key]:{...previous[key],...patch}}))
+ async function action(work,success,{uploadKey=''}={}){
+  if(guard.current)return
+  guard.current=true;setSaving(true);setError('');setMessage('')
+  try{
+   const result=await work()
+   if(current.current!==tenancyId)return
+   if(uploadKey){
+    changeEvidence(uploadKey,{file:null,receipt:null,confirmed:false})
+    setWorkspace(previous=>({...previous,lease:{...previous.lease,status:result.leaseStatus},uploads:[...(previous.uploads||[]).filter(item=>item.id!==result.id),result],signers:(previous.signers||[]).map(item=>item.id===result.signer_id?{...item,status:'signed'}:item)}))
+   }
+   setMessage(success)
+   try{await load();await onChanged?.()}catch(cause){if(current.current===tenancyId)setError(`Saved successfully. Refresh the lease details: ${cause.message}`)}
+  }catch(cause){
+   if(current.current!==tenancyId)return
+   if(uploadKey&&cause.uploadReceipt)changeEvidence(uploadKey,{receipt:cause.uploadReceipt})
+   setError(cause.message||'Unable to save lease documents.')
+  }finally{guard.current=false;if(current.current===tenancyId)setSaving(false)}
+ }
+ const saveDraft=()=>action(()=>saveRentalLeaseDraft({leaseId:workspace.lease.id,expectedVersion:workspace.version.version_number,terms:{...terms,monthly_rent:Number(terms.monthly_rent),deposit_amount:Number(terms.deposit_amount)}}),'Lease terms saved. Upload the agreement for this saved version and review the parties before preparing signatures.')
+ const prepare=()=>action(()=>prepareRentalLeaseSigning({leaseId:workspace.lease.id,expectedVersion:workspace.version.version_number,signers:rentalLeaseScheduleSigners(workspace.projection,workspace.version.version_number)}),'Signing prepared. Upload the signed copy for each listed person.')
+ const upload=(kind,signerId='')=>{
+  const key=signerId||'agreement',item=evidence[key]||{}
+  return action(()=>uploadRentalLeaseDocument({workspace,file:item.file,receipt:item.receipt,kind,signerId,confirmSigned:item.confirmed===true,evidenceNote:item.note||''},{onProgress:progress=>{if(current.current===tenancyId)changeEvidence(key,{progress})}}),kind==='agreement'?'Agreement uploaded to this lease version.':`${rentalLeasePartyLabel(workspace.signers.find(signer=>signer.id===signerId)?.signer_role)} signed agreement recorded.`,{uploadKey:key})
+ }
+ const open=async document=>{try{const url=await getRentalLeaseDocumentUrl(document);if(current.current===tenancyId)window.open(url,'_blank','noopener,noreferrer')}catch(cause){if(current.current===tenancyId)setError(cause.message||'Unable to open the uploaded document.')}}
+ if(!workspace&&!error)return <section className="grid min-h-28 place-items-center rounded-xl border bg-white text-sm text-slate-600"><span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin"/>Loading lease…</span></section>
+ const lease=workspace?.lease||{},projection=workspace?.projection||{},canPrepare=lease.status==='draft',documents=workspace?.uploads||[],agreement=documents.find(item=>item.kind==='agreement'&&item.id===workspace.version?.terms_json?.agreement_upload_id)||[...documents].reverse().find(item=>item.kind==='agreement'),agreementInput=evidence.agreement||{},representative=projection.parties?.some(party=>party.subjectId==='primary'&&party.role==='tenant_representative')
+ return <section className="rounded-xl border bg-white p-5 shadow-sm">
+  <div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">Lease terms and signatures</h2><p className="mt-1 text-sm text-slate-600">Confirm the saved terms and upload the agency agreement and signed copies. A fully signed lease is required before move-in activation.</p></div><span className="text-sm font-semibold">{title(lease.status||'draft')}</span></div>
+  {workspace?<div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm"><p className="font-semibold">{projection.tenant?.name} · {title(projection.tenant?.type)}</p><p>{projection.property?.title} · {projection.property?.address}</p><p className="mt-2 text-slate-600">Tenant identity and roles come from the approved application. Corrections require application review.</p></div>:null}
+  {canPrepare?<><div className="mt-5 grid gap-3 sm:grid-cols-2">{fields.map(([key,label,type='text'])=><label key={key} className="text-sm font-medium">{label}{isAddressFieldKey(key)?<AddressInput value={terms[key]??''} onChange={event=>update(key,event.target.value)} disabled={saving} className="mt-1 block w-full rounded border p-2 font-normal"/>:<input type={type} value={terms[key]??''} disabled={saving} onChange={event=>update(key,event.target.value)} min={type==='number'?0:undefined} className="mt-1 block w-full rounded border p-2 font-normal"/>}</label>)}{representative?<label className="text-sm font-medium">Primary representative authority basis<input value={terms.primary_authority_basis||''} disabled={saving} onChange={event=>update('primary_authority_basis',event.target.value)} className="mt-1 block w-full rounded border p-2"/></label>:null}</div><button type="button" disabled={saving||!terms.lease_start_date||!terms.lease_end_date||!terms.occupation_date||!Number(terms.monthly_rent)} onClick={()=>void saveDraft()} className="mt-4 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60">Save lease draft</button></>:null}
+  <div className="mt-5 border-t pt-4"><h3 className="text-sm font-semibold">Parties and agreement review</h3><ul className="mt-3 space-y-2">{projection.parties?.map(party=><li key={party.subjectId} className="rounded border p-3 text-sm"><b>{rentalLeasePartyLabel(party.role)} · {party.name}</b><p>{party.email||'Email not provided'} · {party.identityType}: {party.identityNumber||'Identity missing'}</p>{canPrepare&&party.subjectId!=='primary'?<label className="mt-2 block">Notice address for {party.name}<AddressInput value={terms.party_notice_addresses?.[party.subjectId]??party.noticeAddress??''} disabled={saving} onChange={event=>update('party_notice_addresses',{...terms.party_notice_addresses,[party.subjectId]:event.target.value})} className="mt-1 block w-full rounded border p-2"/></label>:<p>{party.noticeAddress||'Notice address missing'}</p>}{party.role==='tenant_representative'?<p>Authority: {party.authorityBasis||'Confirmation required'}</p>:null}</li>)}</ul>
+   {canPrepare?<div className="mt-4 space-y-3 rounded-lg bg-slate-50 p-3"><label className="block text-sm font-medium">Upload reviewed agreement<input type="file" accept={ACCEPT} disabled={saving||dirty||Boolean(agreementInput.receipt)} onChange={event=>{changeEvidence('agreement',{file:event.target.files?.[0]||null});event.target.value=''}} className="mt-2 block w-full text-sm"/></label>{agreementInput.file ? <p className="text-sm">Selected: {agreementInput.file.name}</p> : null}<p className="text-xs text-slate-600">Save any changed terms first. Upload a PDF, Word document, JPG or PNG up to 20 MB. Uploaded copies remain with their saved lease version.</p><DocumentUploadProgress progress={agreementInput.progress}/>{agreementInput.receipt?<p className="text-sm text-amber-800">The file uploaded. Retry saving its lease connection.</p>:null}<button type="button" disabled={saving||dirty||(!agreementInput.file&&!agreementInput.receipt)} onClick={()=>void upload('agreement')} className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60">{agreementInput.receipt?'Retry agreement link':'Upload agreement'}</button></div>:null}
+   {agreement?<button type="button" onClick={()=>void open(agreement)} className="mt-3 text-sm font-semibold text-sky-700 underline">Open uploaded agreement: {agreement.file_name}</button>:<p className="mt-3 text-sm text-slate-600">{canPrepare?'Upload the agreement before preparing signing.':'Earlier agreement references remain in the saved lease record.'}</p>}
+   {!agreement && /^https?:\/\/\S+$/.test(projection.agreement?.documentLink || '') ? <a href={projection.agreement.documentLink} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm text-sky-700 underline">Open earlier agreement</a> : null}{canPrepare?<><label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} disabled={dirty||saving||!agreement} onChange={event=>setReviewed(event.target.checked)}/>I checked this saved version, all parties, representative authority, notice addresses and the uploaded agreement.</label><button type="button" disabled={saving||dirty||!reviewed||!agreement} onClick={()=>void prepare()} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"><FileSignature className="h-4 w-4"/>Prepare signing</button></>:null}
+  </div>
+  {!canPrepare?<div className="mt-5 grid gap-3 sm:grid-cols-2">{workspace?.signers?.map(signer=>{const item=evidence[signer.id]||{},signed=signer.status==='signed',saved=documents.find(document=>document.signer_id===signer.id&&document.kind==='signed_agreement');return <article key={signer.id} className="rounded-xl border p-3"><p className="text-sm font-semibold">{rentalLeasePartyLabel(signer.signer_role)} · {signer.signer_name}</p><p className="mt-1 text-xs text-slate-600">{title(signer.status)}</p>{signed?<><p className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4"/>Signed</p>{saved?<button type="button" onClick={()=>void open(saved)} className="mt-2 block text-sm font-semibold text-sky-700 underline">Open signed copy: {saved.file_name}</button>:/^https?:\/\/\S+$/.test(signer.signed_document_link || '') ? <a href={signer.signed_document_link} target="_blank" rel="noopener noreferrer" className="mt-2 block text-sm text-sky-700 underline">Open earlier signed evidence</a>:null}</>:['awaiting_tenant','awaiting_landlord'].includes(lease.status)?<div className="mt-3 grid gap-2"><label className="text-sm">Signed agreement for {signer.signer_name}<input type="file" accept={ACCEPT} disabled={saving||Boolean(item.receipt)} onChange={event=>{changeEvidence(signer.id,{file:event.target.files?.[0]||null});event.target.value=''}} className="mt-1 block w-full text-sm"/></label>{item.file ? <p className="text-sm">Selected: {item.file.name}</p> : null}<label className="text-sm">Evidence note for {signer.signer_name}<input value={item.note||''} disabled={saving} onChange={event=>changeEvidence(signer.id,{note:event.target.value})} className="mt-1 w-full rounded border p-2"/></label><label className="flex gap-2 text-sm"><input type="checkbox" checked={item.confirmed===true} disabled={saving} onChange={event=>changeEvidence(signer.id,{confirmed:event.target.checked})}/>I checked that this uploaded copy contains {signer.signer_name}’s signature.</label><DocumentUploadProgress progress={item.progress}/>{item.receipt?<p className="text-sm text-amber-800">The signed file uploaded. Retry saving its lease connection.</p>:null}<button type="button" disabled={saving||!item.confirmed||(!item.file&&!item.receipt)} onClick={()=>void upload('signed_agreement',signer.id)} className="w-fit rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-60">{item.receipt?'Retry signed agreement link':'Upload and record signature'}</button></div>:null}</article>})}</div>:null}
+  {message?<p role="status" className="mt-4 text-sm text-emerald-700">{message}</p>:null}{error?<div className="mt-4"><p role="alert" className="text-sm text-red-700">{error}</p><button type="button" disabled={saving} onClick={()=>void load().catch(cause=>setError(cause.message))} className="mt-2 rounded border px-3 py-1 text-sm">Refresh lease details</button></div>:null}
+ </section>
 }

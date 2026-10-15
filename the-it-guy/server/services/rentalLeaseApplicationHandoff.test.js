@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { rentalOnboardingDatabase, actor, org, property } from '../tests/fixtures/rentalOnboardingDatabase.js'
 import { getRentalLeaseSigningWorkspace, saveRentalLeaseDraft, prepareRentalLeaseSigning, recordRentalLeaseSignature } from '../../src/services/rentals/rentalLeaseSigningRepository.js'
 import { rentalOnboardingClient } from '../tests/fixtures/rentalOnboardingClient.js'
 import { rentalApplicationFieldScenario } from '../tests/fixtures/rentalApplicationFieldScenario.js'
-import { renderRentalLeaseSchedule, rentalLeaseScheduleSigners } from '../../src/services/rentals/rentalLeaseSchedule.js'
+import { rentalLeaseScheduleSigners } from '../../src/services/rentals/rentalLeaseSchedule.js'
 let db
 const root = new URL('../../../supabase/migrations/', import.meta.url)
 beforeAll(async () => {
  db = await rentalOnboardingDatabase()
  for (const file of ['20260830084850_rental_lease_versions.sql','20260830085317_rental_lease_manual_signing.sql','20260913123000_rental_lease_version_seed_for_conversions.sql','20261007211002_rental_application_lease_handoff.sql']) await db.exec(readFileSync(new URL(file,root),'utf8'))
+ const uploadSchema=readFileSync(new URL('20261014210353_rental_tenancy_handoff_uploaded_agreements.sql',root),'utf8')
+ await db.exec(uploadSchema.slice(uploadSchema.indexOf('create table public.rental_lease_document_uploads'),uploadSchema.indexOf('create function rental_private.lease_document_path_access')))
  await db.exec(`create function rental_get_tenancy_workspace_summary(p_tenancy_id uuid) returns jsonb language sql as $$ select jsonb_build_object('tenancy',jsonb_build_object('id',t.id),'lease',jsonb_build_object('id',l.id,'status',l.status)) from rental_tenancies t join rental_leases l on l.tenancy_id=t.id where t.id=p_tenancy_id $$`)
  await db.query("select set_config('test.actor',$1,false)",[actor])
 },20000)
@@ -28,7 +30,7 @@ async function conversion(type) {
  return {...await rpc('rental_convert_application_to_tenancy',[applicationId,1]),answers,applicationId,canonicalParty}
 }
 const draftTerms={lease_start_date:'2026-11-01',lease_end_date:'2027-10-31',occupation_date:'2026-11-01',monthly_rent:11000,deposit_amount:22000,tenant_notice_address:'12 Tenant Notice Road',landlord_name:'Lessor One',landlord_email:'lessor@example.test',landlord_notice_address:'34 Lessor Road',primary_authority_basis:'Reviewed trustee / director resolution',agreement_template_reference:'Agency lease 2026 v2',agreement_document_link:'https://example.test/reviewed-agreement.pdf'}
-it.each(['individual','joint_individuals','company','close_corporation','trust'])('maps approved %s parties into the rendered schedule and requires every signature',async type=>{
+it.each(['individual','joint_individuals','company','close_corporation','trust'])('maps approved %s parties into the saved party review and requires every signature',async type=>{
  const converted=await conversion(type)
  expect((await rpc('rental_convert_application_to_tenancy',[converted.applicationId,1])).tenancy_id).toBe(converted.tenancy_id)
  const parties=(await db.query('select * from rental_tenancy_parties where tenancy_id=$1',[converted.tenancy_id])).rows
@@ -42,10 +44,8 @@ it.each(['individual','joint_individuals','company','close_corporation','trust']
  expect(schedule.parties[1].noticeAddress).toBe('Confirmed additional notice address')
  expect(schedule.parties).toHaveLength(2)
  expect(schedule.parties[1].role).toBe(type==='individual'?'guarantor':type==='joint_individuals'?'tenant':'tenant_representative')
- const html=renderRentalLeaseSchedule({...schedule,income:{monthlyIncome:923417},documents:[{url:'PRIVATE-FICA'}]},saved.version_number)
- if(type==='individual') writeFileSync('/tmp/rental-phase5-schedule.html',html)
- for(const value of ['12 Rental Road','identity-firstName','people-firstName','Agency lease 2026 v2','11000','22000','2027-10-31','34 Lessor Road']) expect(html).toContain(value)
- for(const value of ['923417','982431','PRIVATE-FICA','employer','screening','beneficial_owner']) expect(html).not.toContain(value)
+ expect(schedule.property.address).toBe('12 Rental Road');expect(schedule.landlord.noticeAddress).toBe('34 Lessor Road');expect(schedule.terms).toMatchObject({monthlyRent:11000,depositAmount:22000,leaseEndDate:'2027-10-31'})
+ for(const value of ['923417','982431','PRIVATE-FICA','employer','screening','beneficial_owner']) expect(JSON.stringify(schedule)).not.toContain(value)
  const signers=rentalLeaseScheduleSigners(schedule,saved.version_number)
  await expect(rpc('rental_prepare_lease_signing',[converted.lease_id,saved.version_number,signers.slice(1)])).rejects.toThrow(/All application signers/)
  await rpc('rental_prepare_lease_signing',[converted.lease_id,saved.version_number,signers])
@@ -80,11 +80,6 @@ it('blocks unsaved, stale, missing notice/authority/agreement, forged signers an
  await expect(rpc('rental_save_lease_draft_before_application_handoff',[converted.lease_id,version,draftTerms])).rejects.toThrow(/permission denied/)
  await db.exec('reset role')
 })
-it('escapes captured HTML rather than rendering applicant content as markup',()=>{
- const html=renderRentalLeaseSchedule({tenant:{name:'<script>alert(1)</script>'},parties:[{name:'<img src=x onerror=alert(1)>',role:'tenant'}]},2)
- expect(html).not.toContain('<script>');expect(html).not.toContain('<img');expect(html).toContain('&lt;script&gt;')
-})
-
 it('loads the real agent repository and protected commands through a scoped database client',async()=>{
  const converted=await conversion('joint_individuals'),client=rentalOnboardingClient(db,{},actor,true)
  const initial=await getRentalLeaseSigningWorkspace(converted.tenancy_id,{client})

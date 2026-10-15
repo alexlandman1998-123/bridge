@@ -8,51 +8,8 @@ export const LANDLORD_TABS = [
   'Documents',
   'Activity',
 ]
-export const LANDLORD_TYPES = [
-  ['individual', 'Individual'],
-  ['company', 'Company'],
-  ['trust', 'Trust'],
-  ['close_corporation', 'Close corporation'],
-  ['multiple_owners', 'Multiple owners'],
-  ['foreign_owner', 'Foreign owner'],
-  ['other_entity', 'Other entity'],
-]
-export const PROFILE_FIELDS = [
-  ['name', 'Full name / entity name'],
-  ['email', 'Email', 'email'],
-  ['phone', 'Phone'],
-  ['residentialAddress', 'Residential / registered address'],
-  ['idNumber', 'ID / passport number'],
-  ['nationality', 'Nationality'],
-  ['taxNumber', 'Tax number'],
-  ['maritalStatus', 'Marital status'],
-  ['maritalRegime', 'Marital regime'],
-  ['spouseName', 'Spouse name'],
-  ['spouseIdNumber', 'Spouse ID number'],
-  ['registrationNumber', 'Company / trust registration number'],
-  ['tradingName', 'Trading name'],
-  ['country', 'Country of registration / residence'],
-  ['vatNumber', 'VAT number'],
-  ['authorisedSignatoryName', 'Authorised signatory'],
-  ['authorisedSignatoryCapacity', 'Signing capacity'],
-  ['authorisedSignatoryIdNumber', 'Signatory ID / passport number'],
-  ['authorisedSignatoryNationality', 'Signatory nationality'],
-  ['authorisedSignatoryEmail', 'Signatory email', 'email'],
-  ['authorisedSignatoryPhone', 'Signatory phone'],
-  ['authorityBasis', 'Authority / resolution reference'],
-  ['resolutionDate', 'Resolution date', 'date'],
-  ['notes', 'Notes', 'textarea'],
-]
-export const PERSON_FIELDS = [
-  ['name', 'Full name'],
-  ['email', 'Email', 'email'],
-  ['phone', 'Phone'],
-  ['idNumber', 'ID / passport number'],
-  ['nationality', 'Nationality'],
-  ['residentialAddress', 'Residential address'],
-  ['ownershipShare', 'Ownership share (%)', 'number'],
-  ['capacity', 'Capacity / role'],
-]
+export { LANDLORD_TYPES, PROFILE_FIELDS, PERSON_FIELDS } from './rentalLandlordProfileRules.js'
+import { PROFILE_FIELDS, PERSON_FIELDS, landlordProfileErrors } from './rentalLandlordProfileRules.js'
 export const PROPERTY_GROUPS = [
   [
     'Rental management & evidence',
@@ -77,6 +34,7 @@ export const PROPERTY_GROUPS = [
       ['category', 'Property category', 'category'],
       ['propertyType', 'Property type'],
       ['canonicalPropertyId', 'Managed property ID'],
+      ['canonicalUnitId', 'Managed unit ID'],
     ],
   ],
   [
@@ -163,33 +121,12 @@ export function landlordWorkspace(lead = {}) {
   }
 }
 export function normalizeLandlordProfile(values = {}) {
-  if (!LANDLORD_TYPES.some(([type]) => type === values.type))
-    throw new Error('Choose a supported landlord type.')
-  const result = Object.fromEntries(
-    PROFILE_FIELDS.map(([key]) => [key, text(values[key])]),
-  )
-  if (!result.name) throw new Error('Landlord or entity name is required.')
-  if (!result.email && !result.phone)
-    throw new Error('Add a landlord email or phone number.')
-  if (result.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.email))
-    throw new Error('Enter a valid landlord email.')
-  for (const person of values.people || []) {
-    if (!text(person.name))
-      throw new Error(
-        'Enter a name for each person, or remove the empty person card.',
-      )
-    if (text(person.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email))
-      throw new Error('Enter a valid email for each person.')
-    if (
-      text(person.ownershipShare) &&
-      (!Number.isFinite(Number(person.ownershipShare)) ||
-        Number(person.ownershipShare) < 0 ||
-        Number(person.ownershipShare) > 100)
-    )
-      throw new Error('Ownership shares must be between 0 and 100%.')
-  }
+  const errors = landlordProfileErrors(values)
+  if (errors.length) throw new Error(errors[0])
+  const result = Object.fromEntries(PROFILE_FIELDS.map(([key]) => [key, text(values[key])]))
   return {
     ...result,
+    primarySignatoryId: text(values.primarySignatoryId),
     type: values.type,
     people: (values.people || [])
       .map((person) => ({
@@ -199,8 +136,7 @@ export function normalizeLandlordProfile(values = {}) {
           PERSON_FIELDS.map(([key]) => [key, text(person[key])]),
         ),
         signingAuthority: person.signingAuthority === true,
-      }))
-      .filter((person) => person.name),
+      })),
   }
 }
 export function normalizeLandlordProperty(values = {}) {

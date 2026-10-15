@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { rentalOnboardingDatabase, actor, org } from '../tests/fixtures/rentalOnboardingDatabase.js'
+import { rentalLandlordProfileDatabase, actor, org } from '../tests/fixtures/rentalLandlordProfileDatabase.js'
 import { rentalLandlordRequirementDefinitions, rentalTenantRequirementDefinitions } from '../../src/services/rentals/rentalOnboardingRequirementModel.js'
 import { mapRentalRequirement } from '../../src/services/rentals/rentalSavedRequirementModel.js'
 import { buildRentalListingLandlordMatrix, rentalListingDocumentProgress } from '../../src/services/rentals/rentalListingDocumentMatrixModel.js'
@@ -15,7 +15,7 @@ async function acceptedEvidence(requirement) {
   await db.query('update rental_onboarding_requirements set current_landlord_document_id=$2 where id=$1', [requirement.id, documentId])
 }
 beforeAll(async () => {
-  db = await rentalOnboardingDatabase()
+  db = await rentalLandlordProfileDatabase()
   await db.exec('create table rental_application_access_tokens(id uuid primary key default gen_random_uuid(),application_id uuid,token_hash text,expires_at timestamptz,revoked_at timestamptz,last_accessed_at timestamptz)')
   await db.exec(migration('20261007204950_rental_application_document_packs.sql'))
   await db.exec(migration('20261007212433_rental_empty_document_pack_readiness.sql'))
@@ -28,6 +28,7 @@ beforeAll(async () => {
   original = await matrixRows()
   expect(original.filter((row) => row.current_landlord_document_id).map((row) => row.state)).toEqual(['accepted', 'accepted'])
   await db.exec(migration('20261008120849_rental_landlord_conditional_document_requirements.sql'))
+  await db.exec(migration('20261015100645_rental_landlord_shared_conditional_rules.sql'))
 }, 20000)
 afterAll(async () => { await db?.close() })
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value

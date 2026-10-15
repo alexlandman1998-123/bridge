@@ -1,5 +1,5 @@
-import { createElement } from 'react'
 import { BarChart3, CalendarDays, ChevronRight, Plus, RefreshCw, Users } from 'lucide-react'
+import ListingChannelStatistics from '../../components/listings/ListingChannelStatistics'
 import './rental-listing-overview.css'
 
 const money = (value) => value === null || value === undefined || value === '' ? 'Not captured' : `R ${Number(value).toLocaleString('en-ZA')}`
@@ -21,13 +21,18 @@ export default function RentalListingOverview({ detail, snapshot, agentPanel, on
   const gallery = (detail.listing.listingMedia || detail.listing.galleryImages || []).filter((image) => String(image.media_type || image.mediaType || 'image').toLowerCase() === 'image')
   const imageCount = gallery.length || (row.imageUrl ? 1 : 0)
   const metrics = [
-    { label: 'Leads', value: value(snapshot?.leadCount), meta: loaded ? snapshot.leadCount == null ? 'Lead data unavailable' : `${snapshot.newLeadCount} new this week` : 'Loading linked leads…', icon: Users },
+    { label: 'Total leads', value: value(snapshot?.leadCount), meta: loaded ? snapshot.leadCount == null ? 'Lead data unavailable' : `${snapshot.newLeadCount} new this week` : 'Loading linked leads…', icon: Users },
     { label: 'Viewings', value: value(snapshot?.viewingCount), meta: loaded ? snapshot.viewingCount == null ? 'Viewing data unavailable' : `${snapshot.upcoming.length} upcoming` : 'Loading viewings…', icon: CalendarDays },
     { label: 'Days on market', value: value(snapshot?.daysOnMarket), meta: snapshot?.daysOnMarket == null ? 'Listing date unavailable' : 'Current listing period', icon: BarChart3 },
   ]
   return <section className="rental-overview-stack">
-    <section className={panel}>
-      <div className="rental-overview-metrics">{metrics.map(({ label, value: metric, meta, icon: Icon }) => <article key={label}><div><span>{label}</span><span className="rental-overview-metric-icon">{createElement(Icon, { size: 17, 'aria-hidden': true })}</span></div><strong>{metric}</strong><p>{meta}</p></article>)}</div>
+    <section className="min-w-0 rounded-[22px] border border-[#e1e7ec] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.035)] sm:p-6">
+      <ListingChannelStatistics
+        organisationId={detail.listing.organisationId || detail.listing.organisation_id}
+        listingId={row.id || detail.listing.id}
+        refreshKey={snapshot?.refreshedAt}
+        summaryCards={metrics}
+      />
       <div className="rental-overview-refresh"><span>{!loaded ? 'Loading overview…' : snapshot.issues.length ? `Could not load: ${snapshot.issues.join(', ')}` : 'Overview up to date'}</span><button type="button" data-rental-control="overview-refresh" onClick={onRefresh}><RefreshCw size={15} />Refresh</button></div>
     </section>
     <article className={panel}>
@@ -35,7 +40,37 @@ export default function RentalListingOverview({ detail, snapshot, agentPanel, on
       <dl>{detail.mediaProgress.map((item) => <div key={item.key}><dt>{item.label}</dt><dd>{item.detail}</dd></div>)}</dl>
     </article>
     <div className="rental-overview-activity-grid">
-      <article className={panel}><Header title="Latest Tenant Activity" action="View all leads" onClick={() => onOpenTab('leads')} /><div className="rental-overview-feed">{snapshot?.leads.length ? snapshot.leads.slice(0, 3).map((lead) => <button data-rental-control="overview-lead" type="button" key={lead.id} onClick={() => onNavigate(`/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`)}><strong>{lead.name}</strong><span>{lead.stageLabel}</span></button>) : <p>{!loaded ? 'Loading tenant leads…' : snapshot.issues.includes('Leads') ? 'Tenant leads could not be loaded.' : 'No tenant leads yet.'}</p>}</div><button type="button" className="rental-overview-action" data-rental-control="overview-add-lead" onClick={onAddLead}><Plus size={15} />Add Tenant Lead</button></article>
+      <article className={`${panel} rental-overview-latest-activity`}>
+        <Header title="Latest Tenant Activity" action="View all leads" onClick={() => onOpenTab('leads')} />
+        {snapshot?.leads.length ? (
+          <ul className="rental-overview-lead-list">
+            {snapshot.leads.slice(0, 3).map((lead) => (
+              <li key={lead.id}>
+                <button
+                  className="rental-overview-lead-row"
+                  data-rental-control="overview-lead"
+                  type="button"
+                  aria-label={`Open tenant lead for ${lead.name || 'Tenant'}`}
+                  onClick={() => onNavigate(`/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`)}
+                >
+                  <span className="rental-overview-lead-avatar" aria-hidden="true">{(lead.name || 'Tenant').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()}</span>
+                  <span className="rental-overview-lead-person">
+                    <strong>{lead.name || 'Tenant'}</strong>
+                    {lead.source ? <small>{lead.source}</small> : null}
+                  </span>
+                  <span className="rental-overview-lead-stage">{lead.stageLabel || 'Stage not recorded'}</span>
+                  <ChevronRight size={14} aria-hidden="true" className="rental-overview-lead-chevron" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rental-overview-lead-empty" role={!loaded ? 'status' : snapshot.issues.includes('Leads') || snapshot.issues.includes('Overview') ? 'alert' : undefined}>
+            {!loaded ? 'Loading tenant leads…' : snapshot.issues.includes('Leads') || snapshot.issues.includes('Overview') ? 'Tenant leads could not be loaded.' : 'No tenant leads yet.'}
+          </p>
+        )}
+        <button type="button" className="rental-overview-action" data-rental-control="overview-add-lead" onClick={onAddLead}><Plus size={15} />Add Tenant Lead</button>
+      </article>
       <article className={panel}><Header title="Upcoming Viewings" /><p className="rental-overview-caption">Open a viewing to see tenant and agent details.</p><div className="rental-overview-feed">{snapshot?.upcoming.length ? snapshot.upcoming.slice(0, 3).map((viewing) => <button type="button" data-rental-control="overview-viewing" key={viewing.id} onClick={onScheduleViewing}><strong>{viewing.tenantName || 'Tenant viewing'}</strong><span>{new Date(viewing.startsAt).toLocaleString('en-ZA')}</span></button>) : <p>{!loaded ? 'Loading viewings…' : snapshot.issues.includes('Viewings & activity') ? 'Viewings could not be loaded.' : 'No upcoming viewings.'}</p>}</div><button type="button" className="rental-overview-action" data-rental-control="overview-schedule" onClick={onScheduleViewing}><CalendarDays size={15} />Schedule Viewing</button></article>
     </div>
     <div className="rental-overview-columns">

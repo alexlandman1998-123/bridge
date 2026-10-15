@@ -1,3 +1,4 @@
+import { resolvedLandlordType } from '../../services/rentals/rentalLandlordProfileRules.js'
 import { clientMatchesStoredId, clientSourceKey, normalizeClientPhone, resolveClientRedirect } from './clientIdentity'
 import { loadClientIdentities } from '../../services/clientIdentityService'
 import { loadLatestClientActivity } from '../../services/clientActivityService'
@@ -8,6 +9,8 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../../lib/transactionsListApi'
 import { getOrganisationPrivateListings } from '../../services/privateListingService'
 import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
+import { AGENCY_CRM_UPDATED_EVENT } from '../../lib/agencyCrmUpdateBus'
+import { getRentalLeadMetadata, isRentalLead } from '../../services/rentals/rentalLeadClassificationModel'
 
 const TYPE_PRIORITY = [
   'Seller Lead',
@@ -35,7 +38,11 @@ export function invalidateAgentClientDirectoryCache() {
 const authSubscription = typeof window !== 'undefined'
   ? supabase?.auth?.onAuthStateChange?.(invalidateAgentClientDirectoryCache)?.data?.subscription
   : null
-if (import.meta.hot) import.meta.hot.dispose(() => authSubscription?.unsubscribe())
+if (typeof window !== 'undefined') window.addEventListener(AGENCY_CRM_UPDATED_EVENT, invalidateAgentClientDirectoryCache)
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  authSubscription?.unsubscribe()
+  if (typeof window !== 'undefined') window.removeEventListener(AGENCY_CRM_UPDATED_EVENT, invalidateAgentClientDirectoryCache)
+})
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -133,6 +140,14 @@ function getTransactionPath(row = {}, role = 'agent') {
 }
 
 function inferLeadTypeLabel(lead = {}) {
+  if (isRentalLead(lead)) {
+    const rental = getRentalLeadMetadata(lead)
+    if (rental.role === 'landlord') {
+      const type = resolvedLandlordType(rental.landlordProfile)
+      return ['company', 'close_corporation'].includes(type) ? 'Company Contact' : type === 'trust' ? 'Trust Contact' : 'Landlord'
+    }
+    return 'Tenant'
+  }
   const category = normalizeLower(lead?.leadCategory || lead?.lead_category)
   if (category.includes('seller')) return 'Seller Lead'
   if (category.includes('company')) return 'Company Contact'
@@ -1061,7 +1076,7 @@ export function getAgentClientProfile(clients = [], clientId = '') {
   const legacyId = legacyParts.join(':')
   const matches = (clients || []).filter((item) => normalizeText(item.id) === normalizeText(clientId) || decodeURIComponent(normalizeText(item.id)) === decodedId
     || (item.mergedIdentityIds || []).includes(decodedId.replace(/^client:/, ''))
-    || (['buyer', 'contact'].includes(legacyKind) && (item.sources || []).some((source) => source.identitySource?.kind === legacyKind && source.identitySource?.id === legacyId))
+    || (['buyer', 'contact', 'lead'].includes(legacyKind) && (item.sources || []).some((source) => source.identitySource?.kind === legacyKind && source.identitySource?.id === legacyId))
     || (legacyKind === 'email' && (item.emails || []).includes(legacyId))
     || (item.legacyDirectoryIds || []).includes(decodedId))
   const client = matches.length === 1 ? matches[0] : null

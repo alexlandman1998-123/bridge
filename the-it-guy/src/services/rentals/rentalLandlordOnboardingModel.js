@@ -1,36 +1,7 @@
+import { LANDLORD_PUBLIC_PROFILE_FIELDS, LANDLORD_PUBLIC_PERSON_FIELDS, landlordProfileErrors } from './rentalLandlordProfileRules.js'
 const text = (value) => String(value ?? '').trim()
-export const LANDLORD_PROFILE_FIELDS = [
-  'type',
-  'name',
-  'email',
-  'phone',
-  'residentialAddress',
-  'idNumber',
-  'nationality',
-  'registrationNumber',
-  'tradingName',
-  'country',
-  'authorisedSignatoryName',
-  'authorisedSignatoryCapacity',
-  'authorisedSignatoryIdNumber',
-  'authorisedSignatoryNationality',
-  'authorisedSignatoryEmail',
-  'authorisedSignatoryPhone',
-  'authorityBasis',
-  'resolutionDate',
-]
-export const LANDLORD_PERSON_FIELDS = [
-  'id',
-  'name',
-  'email',
-  'phone',
-  'idNumber',
-  'nationality',
-  'residentialAddress',
-  'ownershipShare',
-  'capacity',
-  'role',
-]
+export const LANDLORD_PROFILE_FIELDS = LANDLORD_PUBLIC_PROFILE_FIELDS
+export const LANDLORD_PERSON_FIELDS = LANDLORD_PUBLIC_PERSON_FIELDS
 export const LANDLORD_PROPERTY_FIELDS = [
   'id',
   'title',
@@ -170,22 +141,7 @@ export function mergeRentalLandlordDiscovery(
   return next
 }
 export function rentalLandlordSubmissionErrors(data) {
-  const errors = []
-  if (
-    ![
-      'individual',
-      'multiple_owners',
-      'company',
-      'close_corporation',
-      'trust',
-    ].includes(data.profile?.type)
-  )
-    errors.push('Resolve the landlord type with your agent.')
-  if (
-    !text(data.profile?.name) ||
-    (!text(data.profile?.email) && !text(data.profile?.phone))
-  )
-    errors.push('Complete the landlord name and contact details.')
+  const errors = landlordProfileErrors(data.profile, { phase: 'submission' })
   if (
     !data.portfolio?.length ||
     data.portfolio.some((row) => !text(row.address))
@@ -193,9 +149,8 @@ export function rentalLandlordSubmissionErrors(data) {
     errors.push('Confirm the address of each property.')
   return errors
 }
-export function rentalLandlordRequirementTitle(row, data) {
-  const purpose =
-    {
+export function rentalLandlordRequirementPurpose(row) {
+  return {
       identity: 'Identity evidence',
       address: 'Address evidence',
       property_disclosure: 'Completed and signed prescribed disclosure',
@@ -213,7 +168,10 @@ export function rentalLandlordRequirementTitle(row, data) {
       scheme_rules: 'Scheme rules and letting permissions',
       existing_tenancy_pack: 'Existing lease, deposit and inspection records',
     }[row.purpose] || row.purpose.replaceAll('_', ' ')
-  const subject = row.scopeKey.startsWith('property:')
+}
+
+export function rentalLandlordRequirementSubject(row, data) {
+  return row.scopeKey.startsWith('property:')
     ? data.portfolio?.find((item) => `property:${item.id}` === row.scopeKey)
         ?.title ||
       data.portfolio?.find((item) => `property:${item.id}` === row.scopeKey)
@@ -225,7 +183,10 @@ export function rentalLandlordRequirementTitle(row, data) {
         ? data.profile?.authorisedSignatoryName || 'Authorised signatory'
         : data.profile?.people?.find((person) => person.id === row.subjectId)
             ?.name || 'Relevant person'
-  return `${subject}: ${purpose}`
+}
+
+export function rentalLandlordRequirementTitle(row, data) {
+  return `${rentalLandlordRequirementSubject(row, data)}: ${rentalLandlordRequirementPurpose(row)}`
 }
 
 export function rentalLandlordRequirementReason(row) {
@@ -236,7 +197,7 @@ export function rentalLandlordRequirementReason(row) {
     trust_founding: 'The landlord is a trust; provide the deed and relevant amendments.',
     trust_authority: 'The landlord is a trust; establish the current trustees’ authority.',
     beneficial_ownership: 'The landlord is an entity or trust; establish its ownership and control.',
-    signing_authority: 'A signatory acts for the entity or trust on this property.',
+    signing_authority: 'A signatory acts for the landlord on this property.',
     co_owner_authority: 'Multiple owners must establish authority for this letting arrangement.',
     property_disclosure: 'This property needs its own completed and signed prescribed disclosure.',
     right_to_let: 'Establish the landlord’s ownership or other right to let this property.',

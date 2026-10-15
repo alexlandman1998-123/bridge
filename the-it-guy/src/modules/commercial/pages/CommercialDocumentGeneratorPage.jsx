@@ -1,3 +1,4 @@
+import AddressInput from '../../../components/location/AddressInput'
 import { Building2, CheckCircle2, ChevronRight, FileText, Plus, Save, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -604,7 +605,7 @@ function CommercialDocumentGeneratorPage() {
                 </select>
                 <input value={createCompanyForm.registrationNumber} onChange={(event) => setCreateCompanyForm((previous) => ({ ...previous, registrationNumber: event.target.value }))} placeholder="Registration number" className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 text-sm outline-none" />
                 <input value={createCompanyForm.vatNumber} onChange={(event) => setCreateCompanyForm((previous) => ({ ...previous, vatNumber: event.target.value }))} placeholder="VAT number" className="min-h-10 rounded-2xl border border-slate-200 bg-white px-3 text-sm outline-none" />
-                <textarea value={createCompanyForm.registeredAddress} onChange={(event) => setCreateCompanyForm((previous) => ({ ...previous, registeredAddress: event.target.value }))} placeholder="Registered address" className="min-h-20 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none" />
+                <AddressInput value={createCompanyForm.registeredAddress} onChange={(event) => setCreateCompanyForm((previous) => ({ ...previous, registeredAddress: event.target.value }))} placeholder="Registered address" className="min-h-20 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none" />
                 <button type="button" onClick={handleCreateCompany} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b]">
                   <Plus size={16} />
                   Create Company

@@ -16,6 +16,7 @@ import { getRentalLeadOutcome, isRentalLeadOperational } from './rentalLeadOutco
 import {
   getRentalLeadNextAction,
   getRentalLeadStageLabel,
+  isKnownRentalLeadStage,
   normaliseRentalLeadStage,
   resolveRentalLeadRole,
   transitionRentalLead,
@@ -61,6 +62,7 @@ function buildRentalLeadPayload(form = {}, role, context = {}, stage = 'new') {
     },
     legacy: {
     propertyAddress: text(form.propertyAddress),
+    propertyAddressData: form.propertyAddressData || null,
     propertyType: text(form.propertyType),
     expectedMonthlyRent: numberOrNull(form.expectedMonthlyRent),
     desiredArea: text(form.desiredArea),
@@ -76,16 +78,20 @@ export function buildRentalLeadView(lead = {}, contact = {}) {
   const metadata = getRentalLeadMetadata(lead)
   const qualification = metadata.qualification || {}
   const role = resolveRentalLeadRole(metadata.role || lead.rentalLeadRole)
-  const stage = normaliseRentalLeadStage(metadata.stage || lead.rentalStage || lead.stage, role)
+  const savedStage = metadata.stage || lead.rentalStage || lead.stage
+  const workflowIssue = isKnownRentalLeadStage(savedStage, role) ? '' : 'Review the saved rental stage before advancing this journey.'
+  const stage = workflowIssue ? savedStage : normaliseRentalLeadStage(savedStage, role)
   const isLandlord = role === 'landlord'
   const propertyAddress = text(metadata.propertyAddress || lead.sellerPropertyAddress || lead.formattedAddress)
   const desiredArea = text(qualification.desiredArea ?? metadata.desiredArea ?? lead.areaInterest)
   return {
-    id: text(lead.leadId || lead.lead_id), raw: lead, role, stage, leadType: metadata.leadType,
-    stageLabel: getRentalLeadStageLabel(stage, role), nextAction: getRentalLeadNextAction(stage, role),
-    name: contactName(contact), email: text(contact.email || lead.sellerEmail), phone: text(contact.phone || lead.sellerPhone),
+    id: text(lead.leadId || lead.lead_id), raw: lead, role, stage, savedStage: metadata.stage, leadType: metadata.leadType,
+    stageLabel: workflowIssue ? 'Review needed' : getRentalLeadStageLabel(stage, role), nextAction: workflowIssue ? 'Review saved journey' : getRentalLeadNextAction(stage, role), workflowIssue,
+    name: isLandlord && Object.hasOwn(metadata.landlordProfile || {}, 'name') ? text(metadata.landlordProfile.name) : contactName(contact),
+    email: isLandlord && Object.hasOwn(metadata.landlordProfile || {}, 'email') ? text(metadata.landlordProfile.email) : text(contact.email || lead.sellerEmail),
+    phone: isLandlord && Object.hasOwn(metadata.landlordProfile || {}, 'phone') ? text(metadata.landlordProfile.phone) : text(contact.phone || lead.sellerPhone),
     source: text(lead.leadSource) || 'Manual', assignedAgentId: text(lead.assignedAgentId || lead.assignedUserId), assignedAgentName: text(lead.assignedAgentName || lead.assignedAgentEmail) || 'Unassigned',
-    propertyAddress, propertyType: text(metadata.propertyType), expectedMonthlyRent: numberOrNull(metadata.expectedMonthlyRent),
+    propertyAddress, propertyAddressData: metadata.propertyAddressData || null, propertyType: text(metadata.propertyType), expectedMonthlyRent: numberOrNull(metadata.expectedMonthlyRent),
     qualification,
     viewingRequest: metadata.viewingRequest || {},
     desiredArea, monthlyBudget: numberOrNull(qualification.monthlyBudget ?? metadata.monthlyBudget ?? lead.budget), bedrooms: numberOrNull(qualification.bedrooms ?? metadata.bedrooms),
@@ -100,6 +106,9 @@ export async function listRentalLeads(organisationId, options = {}) {
   const records = await listAgencyCrmLeadContacts(organisationId, {
     includeLocalFallback: false, includePrimaryRecords: true, includeRelatedRecords: false, ...options,
   })
+  if (records.leadsAvailable === false) {
+    throw new Error('Rental leads could not be loaded. Check your access and refresh to try again.')
+  }
   const contacts = new Map((records.contacts || []).map((contact) => [text(contact.contactId), contact]))
   return (records.leads || [])
     .filter(isRentalLead)
@@ -170,6 +179,7 @@ export async function assignRentalLead(leadId, assignedUserId, context = {}) {
 
 export function validateRentalLeadForm(form = {}) {
   const errors = []
+  if (!['tenant', 'landlord', 'owner', 'lessor'].includes(text(form.role).toLowerCase())) errors.push('Choose Tenant or Landlord for the rental journey.')
   if (!text(form.firstName)) errors.push('First name is required.')
   if (!text(form.phone) && !text(form.email)) errors.push('A phone number or email address is required.')
   if (resolveRentalLeadRole(form.role) === 'landlord' && !text(form.propertyAddress)) errors.push('Property address is required for a landlord lead.')
@@ -207,12 +217,17 @@ export async function advanceRentalLead(lead = {}, context = {}) {
     ? (await getRentalLeadWorkspace(context.organisationId, lead.id, context.scope)).lead
     : lead
   if (currentLead.stage === context.toStage) return currentLead
+  if (!currentLead.updatedAt) throw new Error('Refresh this rental lead before advancing its saved journey.')
+  const actorId = text(context.actor?.id || context.actor?.userId)
+  if (!actorId) throw new Error('A signed-in agent is required to record a rental milestone.')
   const next = transitionRentalLead(currentLead, context.toStage)
   const verified = await verifyRentalLeadHandoff(currentLead, next.stage, context)
   const currentMetadata = getRentalLeadMetadata(currentLead.raw)
   const evidence = buildRentalLeadWorkflowEvidence(currentLead, next.stage, { ...(context.evidence || {}), ...verified.evidence })
+  evidence.recordedBy = actorId
   if (verified.evidence.viewingId) evidence.viewingId = verified.evidence.viewingId
   if (verified.evidence.listingId) evidence.listingId = verified.evidence.listingId
+  evidence.records = verified.evidence
   const metadata = patchRentalCrmLeadMetadata(currentLead.raw, {
     role: next.role,
     stage: next.stage,
@@ -221,7 +236,7 @@ export async function advanceRentalLead(lead = {}, context = {}) {
   })
   const updated = await updateAgencyCrmLeadRecord(context.organisationId, currentLead.id, {
     stage: getRentalLeadStageLabel(next.stage, next.role), status: getRentalLeadStageLabel(next.stage, next.role), rawEnquiryPayload: metadata,
-  })
+  }, { expectedUpdatedAt: currentLead.updatedAt })
   void createAgencyCrmLeadActivity(context.organisationId, currentLead.id, {
     agent: context.actor || {}, activityType: 'Rental Lead Stage Updated', activityNote: [`Moved to ${getRentalLeadStageLabel(next.stage, next.role)}.`, workflowEvidenceSummary(evidence)].filter(Boolean).join(' '), outcome: next.stage,
   }, { actor: context.actor || {} }).catch(() => null)

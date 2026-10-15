@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   ArrowLeft,
   ArrowRight,
@@ -432,7 +433,7 @@ export default function AttorneyPublicIntakePage() {
 
               <label className="grid gap-2">
                 <FieldLabel>Property address <span className="font-normal text-slate-400">(optional)</span></FieldLabel>
-                <input
+                <AddressInput
                   type="text"
                   name="property_address"
                   autoComplete="street-address"

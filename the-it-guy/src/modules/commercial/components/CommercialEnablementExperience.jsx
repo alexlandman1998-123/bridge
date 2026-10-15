@@ -1,4 +1,5 @@
 import { ArrowLeft, Bell, Building2, Check, CheckCircle2, ChevronRight, Home, Loader2, MailPlus, Plus, Sparkles } from 'lucide-react'
+import AddressInput from '../../../components/location/AddressInput'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../../lib/settingsApi'
@@ -1193,7 +1194,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                               </label>
                               <label className="grid gap-2 text-sm text-slate-500">
                                 Location
-                                <input
+                                <AddressInput
                                   value={branch.location}
                                   onChange={(event) => updateDedicatedBranch(branch.id, 'location', event.target.value)}
                                   className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"

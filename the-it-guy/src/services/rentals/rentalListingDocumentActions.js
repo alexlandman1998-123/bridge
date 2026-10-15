@@ -16,6 +16,7 @@ export function rentalListingCanReview(kind, section) {
 }
 
 export async function uploadRentalListingRequirement(kind, section, row, files, dependencies = {}) {
+  const { onProgress = null } = dependencies
   const api = { uploadRentalApplicationEvidence, uploadRentalApplicationFile, requestRentalLandlordOnboarding, ...dependencies }
   if (!rentalListingCanUpload(kind, section, row)) throw new Error('This evidence is locked. Refresh the matrix before making a correction.')
   if (!files.length || (kind === 'landlord' && files.length !== 1)) throw new Error('Choose a file for this requirement.')
@@ -28,13 +29,13 @@ export async function uploadRentalListingRequirement(kind, section, row, files, 
   let savedCount = 0
   try {
     if (kind === 'landlord') {
-      const result = await api.uploadRentalApplicationFile(files[0], slot, section.onboarding.version, (body) => api.requestRentalLandlordOnboarding(section.id, 'POST', body), { monitorSurface: 'rentalLandlord' })
+      const result = await api.uploadRentalApplicationFile(files[0], slot, section.onboarding.version, (body) => api.requestRentalLandlordOnboarding(section.id, 'POST', body), { monitorSurface: 'rentalLandlord', onProgress, scope: ['landlord', section.id] })
       savedCount = 1
       if (!result.onboarding?.requirements) throw new Error('The file was saved, but the checklist could not refresh.')
     } else {
       let current = section.application
       for (const [index, file] of files.entries()) {
-        const result = await api.uploadRentalApplicationEvidence(current, file, { ...slot, appendToPack: index > 0 })
+        const result = await api.uploadRentalApplicationEvidence(current, file, { ...slot, appendToPack: index > 0 }, { onProgress })
         savedCount += 1
         current = result.application
         if (!current?.requirements || !Number.isInteger(current.version)) throw new Error('The file was saved, but the checklist could not refresh.')

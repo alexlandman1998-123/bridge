@@ -1,3 +1,5 @@
+import AddressInput from '../../components/location/AddressInput'
+import { selectedAddressFields } from '../../components/location/addressInputModel'
 import Modal from '../../components/ui/Modal'
 import { Building2, Users, X, Loader2, Plus } from 'lucide-react'
 import { resolveRentalLeadRole } from '../../services/rentals/rentalLeadPipelineModel'
@@ -10,6 +12,7 @@ export const INITIAL_RENTAL_LEAD_FORM = Object.freeze({
   phone: "",
   source: "Manual",
   propertyAddress: "",
+  propertyAddressData: null,
   propertyType: "",
   expectedMonthlyRent: "",
   desiredArea: "",
@@ -103,11 +106,11 @@ export default function RentalLeadDialog({
             <>
               <label className="form-field">
                 <span>Property address</span>
-                <input
+                <AddressInput
                   required
                   value={form.propertyAddress}
                   onChange={(event) =>
-                    onChange("propertyAddress", event.target.value)
+                    { onChange("propertyAddress", event.target.value); onChange("propertyAddressData", event.address ? selectedAddressFields(event.address) : null) }
                   }
                 />
               </label>

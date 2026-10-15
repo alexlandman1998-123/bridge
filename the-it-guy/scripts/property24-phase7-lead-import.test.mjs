@@ -421,6 +421,17 @@ assert.equal(historicalSupabase.rowsByTable.leads[1].raw_enquiry_payload.consent
 assert.equal(getRentalLeadOutcome(historicalSupabase.rowsByTable.leads[1]).status, 'open')
 assert.equal(isRentalCrmLead(historicalSupabase.rowsByTable.leads[0]), false, 'Historical sale enquiries stay in Sales.')
 assert.match(historicalSupabase.rowsByTable.leads[1].notes, /Property24 enquiry type: Rental/)
+const linkedRentalStore=createFakeSupabase({contacts:[{contact_id:'shared-contact',organisation_id:readyLead.organisationId,email:readyLead.email,first_name:'Existing',last_name:'Seller',contact_type:'Seller',assigned_agent_id:'sales-agent',notes:'Saved person notes'}]})
+const linkedRentalLead={...readyLead,externalReference:'linked-rental',listingType:'Rental'}
+await importProperty24PreparedLeads({supabase:linkedRentalStore,leads:[linkedRentalLead],listingDetailsById:new Map([[linkedRentalLead.listingId,{...listing,listing_category:'rental',branch_id:'rental-branch'}]]),sendNotifications:false})
+assert.equal(isRentalCrmLead(linkedRentalStore.rowsByTable.leads[0]),true,'Linked rental imports carry their rental journey before relying on the database trigger.')
+assert.equal(linkedRentalStore.rowsByTable.leads[0].raw_enquiry_payload.relationships.listingId,linkedRentalLead.listingId)
+assert.equal(linkedRentalStore.rowsByTable.leads[0].raw_enquiry_payload.branchId,'rental-branch')
+assert.equal(linkedRentalStore.rowsByTable.leads[0].branch_id,'rental-branch')
+assert.equal(linkedRentalStore.rowsByTable.leads[0].contact_id,'shared-contact')
+assert.equal(linkedRentalStore.rowsByTable.contacts[0].contact_type,'Seller')
+assert.equal(linkedRentalStore.rowsByTable.contacts[0].assigned_agent_id,'sales-agent')
+assert.equal(linkedRentalStore.rowsByTable.contacts[0].notes,'Saved person notes')
 const unavailableHistory = await pullAndImportProperty24Leads({
   supabase: createFakeSupabase(),
   property24: {

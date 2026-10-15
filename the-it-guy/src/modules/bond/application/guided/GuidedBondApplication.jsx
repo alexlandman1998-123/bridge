@@ -1,3 +1,5 @@
+import AddressInput from '../../../../components/location/AddressInput'
+import { isAddressFieldKey } from '../../../../components/location/addressInputModel'
 import { getDocumentUploadPolicy } from '../../../../lib/documentUploadPolicy.js'
 import BondOnlineSigningPanel from './BondOnlineSigningPanel.jsx'
 import { MARITAL_STATUS_OPTIONS, MARITAL_REGIME_OPTIONS } from '../../../../lib/buyerOnboardingFlowContract.js'
@@ -103,7 +105,8 @@ function maskAccount(value) {
   return `${'*'.repeat(Math.max(raw.length - 4, 0))}${raw.slice(-4)}`
 }
 
-function TextInput({ id, label, value, onChange, error, type = 'text', inputMode, multiline = false }) {
+function TextInput({ id, label, value, onChange, onAddressSelect, error, type = 'text', inputMode, multiline = false }) {
+  if (isAddressFieldKey(id) || /residential street|physical address|registered address/i.test(label)) return <label className="grid gap-2"><span className="text-sm font-semibold text-[#203549]">{label}</span><AddressInput id={id} addressFormat={/street/i.test(label) ? 'street' : 'formatted'} value={value ?? ''} onChange={event => onChange(event.target.value)} onAddressSelect={onAddressSelect} error={error} /></label>
   const fieldClassName = `mt-2 min-h-[46px] w-full rounded-[12px] border bg-white px-3 py-2.5 text-sm text-[#142132] outline-none transition focus:ring-2 ${
     error
       ? 'border-[#d78b7b] focus:border-[#b5472d] focus:ring-[#b5472d]/15'
@@ -622,7 +625,7 @@ function AboutYouEditScreen({ state, updateField, issues }) {
         <TextInput id="guided-email" label="Email address" value={contact.email || personal.email || ''} type="email" onChange={(value) => updateField('participants.primaryApplicant.contact.email', value)} error={getFieldError(issues, 'participants.primaryApplicant.contact.email')} />
         <SelectField id="guided-marital" label="Marital status" value={personal.marital_status || ''} options={MARITAL_STATUS_OPTIONS.filter(item => item.value)} onChange={(value) => updateField('participants.primaryApplicant.personal.marital_status', value)} />
         {personal.marital_status === 'married' ? <SelectField id="guided-marital-regime" label="Marriage regime" value={state.participants.primaryApplicant.marital?.regime || ''} options={MARITAL_REGIME_OPTIONS.filter(item => item.value && item.value !== 'not_applicable')} onChange={(value) => updateField('participants.primaryApplicant.marital.regime', value)} error={getFieldError(issues, 'participants.primaryApplicant.marital.regime')} /> : null}
-        <TextInput id="guided-address-street" label="Residential street" value={address.residential_address_street || ''} onChange={(value) => updateField('participants.primaryApplicant.address.residential_address_street', value)} />
+        <TextInput id="guided-address-street" label="Residential street" value={address.residential_address_street || ''} onChange={(value) => updateField('participants.primaryApplicant.address.residential_address_street', value)} onAddressSelect={place => { if (place) { updateField('participants.primaryApplicant.address.residential_address_suburb', place.suburb || ''); updateField('participants.primaryApplicant.address.residential_address_city', place.city || '') } }} />
         <TextInput id="guided-address-city" label="Residential city" value={address.residential_address_city || ''} onChange={(value) => updateField('participants.primaryApplicant.address.residential_address_city', value)} />
       </div>
     </div>

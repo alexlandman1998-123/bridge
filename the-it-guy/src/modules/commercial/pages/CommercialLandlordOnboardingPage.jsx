@@ -1,3 +1,4 @@
+import AddressInput from '../../../components/location/AddressInput'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../../lib/documentUploadPolicy.js'
 import { refreshAfterSavedDocumentUpload } from '../../../lib/documentUploadLifecycle.js'
 import {
@@ -554,8 +555,8 @@ function CommercialLandlordOnboardingPage() {
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">ID Number<input value={form.landlord_details.id_number} onChange={(event) => updateDetails('id_number', event.target.value)} className={INPUT_CLASS} /></label>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Email<input type="email" value={form.landlord_details.main_email_address} onChange={(event) => updateDetails('main_email_address', event.target.value)} className={INPUT_CLASS} /></label>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Mobile Number<input value={form.landlord_details.main_contact_number} onChange={(event) => updateDetails('main_contact_number', event.target.value)} className={INPUT_CLASS} /></label>
-                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Residential Address<textarea value={form.landlord_details.residential_address} onChange={(event) => updateDetails('residential_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
-                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Postal Address<textarea value={form.landlord_details.postal_address} onChange={(event) => updateDetails('postal_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
+                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Residential Address<AddressInput value={form.landlord_details.residential_address} onChange={(event) => updateDetails('residential_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
+                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Postal Address<AddressInput value={form.landlord_details.postal_address} onChange={(event) => updateDetails('postal_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
                     </div>
                   ) : null}
 
@@ -566,8 +567,8 @@ function CommercialLandlordOnboardingPage() {
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Master&apos;s Office Reference<input value={form.landlord_details.masters_office_reference} onChange={(event) => updateDetails('masters_office_reference', event.target.value)} className={INPUT_CLASS} /></label>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Main Contact Number<input value={form.landlord_details.main_contact_number} onChange={(event) => updateDetails('main_contact_number', event.target.value)} className={INPUT_CLASS} /></label>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Main Email Address<input type="email" value={form.landlord_details.main_email_address} onChange={(event) => updateDetails('main_email_address', event.target.value)} className={INPUT_CLASS} /></label>
-                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Registered Address<textarea value={form.landlord_details.registered_address} onChange={(event) => updateDetails('registered_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
-                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Postal Address<textarea value={form.landlord_details.postal_address} onChange={(event) => updateDetails('postal_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
+                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Registered Address<AddressInput value={form.landlord_details.registered_address} onChange={(event) => updateDetails('registered_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
+                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Postal Address<AddressInput value={form.landlord_details.postal_address} onChange={(event) => updateDetails('postal_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
                     </div>
                   ) : null}
 
@@ -584,8 +585,8 @@ function CommercialLandlordOnboardingPage() {
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Website<input value={form.landlord_details.website} onChange={(event) => updateDetails('website', event.target.value)} className={INPUT_CLASS} /></label>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Main Contact Number<input value={form.landlord_details.main_contact_number} onChange={(event) => updateDetails('main_contact_number', event.target.value)} className={INPUT_CLASS} /></label>
                       <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Main Email Address<input type="email" value={form.landlord_details.main_email_address} onChange={(event) => updateDetails('main_email_address', event.target.value)} className={INPUT_CLASS} /></label>
-                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Registered Address<textarea value={form.landlord_details.registered_address} onChange={(event) => updateDetails('registered_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
-                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Postal Address<textarea value={form.landlord_details.postal_address} onChange={(event) => updateDetails('postal_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
+                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Registered Address<AddressInput value={form.landlord_details.registered_address} onChange={(event) => updateDetails('registered_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
+                      <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Postal Address<AddressInput value={form.landlord_details.postal_address} onChange={(event) => updateDetails('postal_address', event.target.value)} rows={3} className={TEXTAREA_CLASS} /></label>
                     </div>
                   ) : null}
                 </div>

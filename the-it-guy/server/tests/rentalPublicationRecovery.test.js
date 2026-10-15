@@ -13,7 +13,7 @@ vi.mock('../services/privatePropertyListingPreviewService.js',() => ({
  fetchArch9ListingForPrivatePropertyPreview:async()=>({ listing:{ listing_category:'rental' },existingSync:mocks.existing ? { property_id:'property',branch_guid:'branch' } : null }),
  createPrivatePropertyArch9ListingPreview:()=>({ canPreview:true,summary:{ propertyId:'property',branchId:'branch',listingType:'Rental' },payloadPreview:{ address:{} },listingXml:'<PropertyId>property</PropertyId>' }),
 }))
-vi.mock('../services/privatePropertyListingRecoveryService.js',() => ({ inspectPrivatePropertyListingRecovery:async()=>({ checked:false,blockers:[] }) }))
+vi.mock('../services/privatePropertyListingRecoveryService.js',async original => ({ ...await original(),inspectPrivatePropertyListingRecovery:async()=>({ checked:false,blockers:[] }) }))
 import { beginRentalPublicationAttempt,getRentalPublicationAttempt,updateRentalPublicationAttempt } from '../services/rentalPublicationAttemptService.js'
 import { applyControlledProperty24StatusUpdate } from '../property24/workflowService.js'
 import { updatePrivatePropertyListingStatus } from '../services/privatePropertyListingStatusUpdateService.js'

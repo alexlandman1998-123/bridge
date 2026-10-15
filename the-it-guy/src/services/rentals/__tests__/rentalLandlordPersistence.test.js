@@ -117,8 +117,9 @@ it('fails without discarding fields or retrying a reduced update when the schema
   expect((await database.query('SELECT seller_canonical_facts_json FROM private_listings')).rows[0].seller_canonical_facts_json.landlordName).toBe(form.landlordName)
 })
 
-it('rejects missing names, invalid email, impossible dates, reversed date ranges and unsupported choices', () => {
-  for (const change of [{ landlordName: ' ' }, { landlordEmail: 'invalid@' }, { mandateStartDate: '2026-02-30' }, { mandateStartDate: '2027-01-01', mandateEndDate: '2026-12-31' }, { landlordType: 'unsupported' }, { mandateStatus: 'unsupported' }, { marketingApprovalStatus: 'unsupported' }]) {
+it('allows an unfinished landlord name in a draft while rejecting invalid captured values', () => {
+  expect(validateRentalListingDraftForm({ ...form, landlordName: ' ' }, { organisationId })).toEqual([])
+  for (const change of [{ landlordEmail: 'invalid@' }, { mandateStartDate: '2026-02-30' }, { mandateStartDate: '2027-01-01', mandateEndDate: '2026-12-31' }, { landlordType: 'unsupported' }, { mandateStatus: 'unsupported' }, { marketingApprovalStatus: 'unsupported' }]) {
     expect(validateRentalListingDraftForm({ ...form, ...change }, { organisationId }).length).toBeGreaterThan(0)
   }
 })

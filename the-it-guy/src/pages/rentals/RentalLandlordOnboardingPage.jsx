@@ -62,15 +62,17 @@ function LandlordOnboardingJourney({ token }) {
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
   async function run(action) {
-    if (guard.current) return
+    if (guard.current) return false
     guard.current = true
     setBusy(true)
     setError('')
     setNotice('')
     try {
       await action()
+      return true
     } catch (cause) {
       setError(cause.message)
+      return false
     } finally {
       guard.current = false
       setBusy(false)
@@ -99,7 +101,7 @@ function LandlordOnboardingJourney({ token }) {
       )
     return next
   }
-  const upload = (file, row) =>
+  const upload = (file, row, onProgress) =>
     run(async () => {
       const current = dirty ? await persist() : onboarding
       const saved = current.requirements?.find(
@@ -119,6 +121,7 @@ function LandlordOnboardingJourney({ token }) {
         },
         current.version,
         (body) => request('POST', body),
+        { onProgress, monitorSurface: 'rentalLandlord', scope: ['landlord', onboarding.leadId || onboarding.id] },
       )
       apply(result, current)
       if (!result.onboarding)
@@ -176,6 +179,8 @@ function LandlordOnboardingJourney({ token }) {
       ) : null}
       <RentalLandlordDiscoveryForm
         data={onboarding.data}
+        submitted={readOnly}
+        saveState={dirty ? 'pending' : 'saved'}
         disabled={busy || readOnly}
         onChange={(data) => {
           setOnboarding((current) => ({ ...current, data }))
@@ -202,8 +207,9 @@ function LandlordOnboardingJourney({ token }) {
       ) : null}
       <RentalLandlordOnboardingDocuments
         onboarding={onboarding}
-        disabled={busy || readOnly}
+        disabled={busy}
         preview={dirty}
+        actionError={error}
         onUpload={readOnly ? undefined : upload}
         onOpen={(doc) =>
           run(async () => {
@@ -218,6 +224,7 @@ function LandlordOnboardingJourney({ token }) {
       />
       {!readOnly ? (
         <section className="rounded border p-4">
+          {rentalLandlordSubmissionErrors(onboarding.data).length ? <p className="mb-4 text-sm text-slate-700">Complete the highlighted profile sections and property details before submitting. You can save your draft and return later.</p> : null}
           <label className="flex gap-2 text-sm">
             <input
               type="checkbox"

@@ -26,8 +26,10 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     setError('')
     try {
       setPublication(await getWebsiteListingPublicationStatus(listingId, { includePartner: false }))
+      return { ok: true, message: 'Latest website status checked.' }
     } catch (loadError) {
       setError(loadError?.message || 'Website publication status could not be loaded.')
+      return { ok: false, error: loadError?.message || 'Website publication status could not be loaded.' }
     } finally {
       setLoading(false)
     }
@@ -54,7 +56,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
   const websiteLabel = publication?.websiteLabel || 'Agency Website'
 
   const run = async (nextAction) => {
-    if (!listingId || action) return
+    if (!listingId || action) return { ok: false, error: 'A website publication request is already in progress.' }
     setAction(nextAction)
     setError('')
     setNotice('')
@@ -88,6 +90,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
         : nextAction === 'update'
           ? 'Website listing updated with the latest details and photos.'
           : 'Listing published to the agency website.')
+      return { ok: true, message: nextAction === 'unpublish' ? 'Listing removed from the agency website.' : nextAction === 'update' ? 'Website listing updated with the latest details and photos.' : 'Listing published to the agency website.' }
     } catch (actionError) {
       if (publicationTracked && !accepted) {
         try {
@@ -105,6 +108,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
         try { await onPublicationAction?.({ stage: 'withdrawal_failed', action: nextAction, publication: { error: actionError.message } }) } catch { /* Preserve the original failure. */ }
       }
       setError(accepted ? 'The website accepted the request, but publication history could not be saved. Refresh status before retrying.' : actionError?.message || 'The agency website publication could not be changed.')
+      return { ok: false, error: accepted ? 'The website accepted the request, but publication history could not be saved. Refresh status before retrying.' : actionError?.message || 'The agency website publication could not be changed.' }
     } finally {
       setAction('')
     }
@@ -185,7 +189,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
             {!manageActions && publicationState?.changeCount ? <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">{publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}</button> : null}
           </div>
           <ListingChannelLastUpdate publicationState={publicationState} publication={publication} lifecycleOnly={Boolean(manageActions)} fallback={savedAt ? `Saved in Arch9 · ${savedAt}` : ''} />
-          <div className="flex justify-start lg:justify-end">{manageActions || <ListingChannelManageMenu channelName={websiteLabel}><>
+          <div className="flex justify-start lg:justify-end">{typeof manageActions === 'function' ? manageActions({ publication, statusLabel, publicUrl: safePublicUrl, busy: Boolean(action) || loading, error, issues: itemsToFix, infrastructureBlocked, onRefresh: load, onPublish: () => run('publish'), onUpdate: () => run('update'), onWithdraw: () => run('unpublish') }) : manageActions || <ListingChannelManageMenu channelName={websiteLabel}><>
             <Button type="button" variant="secondary" onClick={() => void load()} disabled={Boolean(action) || loading}><RefreshCw size={15} />Refresh status</Button>
             <Button type="button" variant="secondary" onClick={() => onEdit ? onEdit() : void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || (!onEdit && infrastructureBlocked)}>{action ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{onEdit ? 'Edit listing' : published ? publishButtonLabel : 'Publish to website'}</Button>
             {published || publication?.mediaCleanupPending > 0 ? <Button type="button" variant="secondary" className="text-[#a43d35]" onClick={() => void run('unpublish')} disabled={Boolean(action)}><X size={15} />Remove from website</Button> : null}
@@ -193,7 +197,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
           {!manageActions && itemsToFix.length ? <p className="text-xs text-[#825514] lg:col-span-5">{itemsToFix.join(' ')}</p> : null}
           {!manageActions && publication?.mediaCleanupPending > 0 ? <p className="text-xs text-[#8a3030] lg:col-span-5">{publication.mediaCleanupPending} website photos could not be removed. Choose Remove from website again to retry.</p> : null}
           {!manageActions && error ? <p className="lg:col-span-5 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
-          {notice ? <p className="lg:col-span-5 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
+          {!manageActions && notice ? <p className="lg:col-span-5 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
         </div>
 
 

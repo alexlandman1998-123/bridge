@@ -13,6 +13,7 @@ import {
   saveRentalLandlordProperty,
   saveRentalLandlordDocument,
   recordRentalLandlordPortfolioMandate,
+  recordRentalLandlordMandateSent,
 } from '../rentalLandlordWorkspaceService'
 import {
   landlordWorkspace,
@@ -27,6 +28,7 @@ vi.mock('../rentalLeadService', () => ({
 }))
 vi.mock('../../../lib/agencyCrmRepository', () => ({
   updateAgencyCrmLeadRecord: vi.fn(),
+  createAgencyCrmLeadActivity: vi.fn().mockResolvedValue({}),
 }))
 vi.mock('../rentalPropertyRepository', () => ({ getRentalProperty: vi.fn() }))
 vi.mock('../rentalLandlordMandateRepository', () => ({
@@ -60,7 +62,7 @@ beforeEach(() => {
     },
   }
   linkRentalLandlordOnboardingProperty.mockImplementation(async (_lead,id,links) => {const m=lead.raw.rawEnquiryPayload;m.landlordPortfolio=m.landlordPortfolio.map((row) => row.id===id ? {...row,...links} : row)})
-  saveRentalLandlordDiscovery.mockImplementation(async (current,patch) => { const raw=lead.raw.rawEnquiryPayload;const m=raw.rentalCrm || raw.rental_crm || raw;m.landlordProfile=patch.profile;m.landlordPortfolio=patch.portfolio;return {onboarding:{version:1}} })
+  saveRentalLandlordDiscovery.mockImplementation(async (current,patch) => { const raw=lead.raw.rawEnquiryPayload;const m=raw.rentalCrm || raw.rental_crm || raw;m.landlordProfile=patch.profile;if(patch.portfolio) m.landlordPortfolio=patch.portfolio;return {onboarding:{version:1,data:{profile:m.landlordProfile,portfolio:m.landlordPortfolio},consistency:{synced:true}}} })
   getRentalLeadWorkspace.mockImplementation(async () => ({ lead }))
   updateAgencyCrmLeadRecord.mockImplementation(async (_org, _id, patch) => {
     lead.raw = { ...lead.raw, ...patch }
@@ -265,15 +267,15 @@ describe('landlord workspace persistence', () => {
     expect(createRentalPropertyMandate).toHaveBeenCalledTimes(1)
     expect(advanceRentalLead).not.toHaveBeenCalled()
   })
-  it('rejects incomplete people, invalid measurements and missing signature confirmation', async () => {
-    expect(() =>
+  it('retains incomplete people as drafts and rejects invalid measurements and missing signature confirmation', async () => {
+    expect(
       normalizeLandlordProfile({
         type: 'trust',
         name: 'Trust',
         phone: '1',
         people: [{ id: 'p', email: 'person@example.com' }],
       }),
-    ).toThrow('name for each person')
+    ).toMatchObject({ people: [{ id: 'p', name: '', email: 'person@example.com' }] })
     expect(() =>
       normalizeLandlordProperty({ id: 'p', address: 'Road', bedrooms: 1.5 }),
     ).toThrow('whole numbers')
@@ -322,4 +324,22 @@ describe('landlord workspace persistence', () => {
       landlordMandateReadiness({ name: 'Owner', phone: '1' }, []).percent,
     ).toBe(25)
   })
+})
+
+it('records a manual mandate send once, preserving the current stage and saved workflow', async () => {
+  lead.updatedAt='2026-10-15T08:00:00Z'
+  lead.raw.rawEnquiryPayload.workflow={events:[{stage:'mandate_pending',note:'Prepared'}]}
+  const receipt=await recordRentalLandlordMandateSent('lead','primary-property',context)
+  expect(receipt).toMatchObject({sentBy:'agent',channel:'agent_recorded'})
+  expect(updateAgencyCrmLeadRecord).toHaveBeenCalledWith('org','lead',expect.objectContaining({rawEnquiryPayload:expect.objectContaining({stage:'mandate_pending',landlordMandateDispatches:expect.objectContaining({'primary-property':receipt}),workflow:{events:[{stage:'mandate_pending',note:'Prepared'}]}})}),{expectedUpdatedAt:lead.updatedAt})
+  await recordRentalLandlordMandateSent('lead','primary-property',context)
+  expect(updateAgencyCrmLeadRecord).toHaveBeenCalledTimes(1)
+  expect(advanceRentalLead).not.toHaveBeenCalled()
+})
+it('does not mark an unrelated property or another stage as mandate sent', async () => {
+  lead.updatedAt='2026-10-15T08:00:00Z'
+  await expect(recordRentalLandlordMandateSent('lead','other-property',context)).rejects.toThrow('portfolio')
+  lead.stage='new'
+  await expect(recordRentalLandlordMandateSent('lead','primary-property',context)).rejects.toThrow('Refresh')
+  expect(updateAgencyCrmLeadRecord).not.toHaveBeenCalled()
 })

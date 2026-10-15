@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import {
   PRIVATE_PROPERTY_POST_SUBMIT_MONITOR_SERVICE_VERSION,
   parsePrivatePropertyPostSubmitEvents,
+  readPrivatePropertyStoredStatus,
   runPrivatePropertyPostSubmitMonitor,
 } from '../server/services/privatePropertyPostSubmitMonitorService.js'
 
@@ -286,6 +287,23 @@ assert.equal(active.statusProbe.privatePropertyRef, 'T2870287')
 assert.ok(activeClient.operations.some((operation) => operation.table === 'private_property_listing_syncs' && operation.type === 'upsert'))
 assert.ok(activeClient.operations.some((operation) => operation.table === 'private_listings' && operation.type === 'update'))
 
+const wrongPublicTables = createTables()
+wrongPublicTables.private_listings = [{ ...listing, private_property_listing_url: 'https://www.privateproperty.co.za/commercial-sales/kwazulu-natal/durban/kloof/wyebank/T2870287' }]
+const wrongPublicClient = createFakeClient(wrongPublicTables)
+const wrongPublic = await runPrivatePropertyPostSubmitMonitor({
+  client: wrongPublicClient, listingId, environment: 'sandbox', secrets,
+  overrides: { suburbId: '12345' }, privateProperty: createPortal({ active: true }), recordSync: true,
+})
+assert.equal(wrongPublic.status, 'ATTENTION_REQUIRED', 'active is insufficient when the public advert is in another province')
+assert.equal(wrongPublic.externalStatus, 'active', 'retain the true live status so the agent can still withdraw the advert')
+assert.ok(wrongPublic.blockers.includes('private_property_public_location_mismatch'))
+assert.match(wrongPublic.nextStep, /Private Property support/)
+const wrongPublicSync = wrongPublicClient.operations.find(operation => operation.table === 'private_property_listing_syncs').payload
+assert.match(wrongPublicSync.last_error, /KwaZulu Natal.*Gauteng/)
+const cachedWrongPublic = await readPrivatePropertyStoredStatus({ client: createFakeClient({ private_property_listing_syncs: [wrongPublicSync] }), listingId, environment: 'sandbox' })
+assert.equal(cachedWrongPublic.status, 'ATTENTION_REQUIRED', 'a cached active status must retain the location error')
+assert.match(cachedWrongPublic.publication.lastError, /KwaZulu Natal.*Gauteng/)
+
 const failed = await runPrivatePropertyPostSubmitMonitor({
   client: createFakeClient(createTables()),
   listingId,
@@ -381,6 +399,16 @@ const mismatchedPortal = createRecoveryPortal({ propertyId, address: { ...recove
 await assert.rejects(updatePrivatePropertyListingStatus({ client: mismatchedClient, listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets, privateProperty: mismatchedPortal }), /different address/)
 assert.equal(mismatchedPortal.calls.some(([call]) => call === 'status-update'), false)
 assert.deepEqual(mismatchedClient.operations, [])
+const wrongPublicRecoveryTables = { ...statusTables, private_listings: wrongPublicTables.private_listings }
+const wrongPublicRecoveryClient = createFakeClient(wrongPublicRecoveryTables)
+const wrongPublicRecoveryPortal = createRecoveryPortal({ propertyId, address: recoveryAddress, reference: 'T2870287' })
+await assert.rejects(updatePrivatePropertyListingStatus({ client: wrongPublicRecoveryClient, listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets, privateProperty: wrongPublicRecoveryPortal }), /Private Property support/)
+assert.equal(wrongPublicRecoveryPortal.calls.some(([call]) => call === 'status-update'), false, 'a matching inactive feed record cannot reactivate an advert in the wrong public province')
+assert.deepEqual(wrongPublicRecoveryClient.operations, [])
+const wrongPublicWithdrawalPortal = createRecoveryPortal({ propertyId, address: recoveryAddress, reference: 'T2870287', status: 'For Sale', afterStatus: 'Inactive' })
+const wrongPublicWithdrawal = await updatePrivatePropertyListingStatus({ client: createFakeClient(wrongPublicRecoveryTables), listingId, environment: 'sandbox', propertyStatus: 'Inactive', secrets, privateProperty: wrongPublicWithdrawalPortal })
+assert.equal(wrongPublicWithdrawal.externalStatus, 'inactive', 'a location conflict must still allow an explicitly requested withdrawal')
+assert.equal(wrongPublicWithdrawalPortal.calls.filter(([call]) => call === 'status-update').length, 1)
 const unapprovedClient = createFakeClient(statusTables)
 await assert.rejects(updatePrivatePropertyListingStatus({ client: unapprovedClient, listingId, environment: 'production', propertyStatus: 'ForSale', secrets, privateProperty: {} }), /Confirm reactivation/)
 assert.deepEqual(unapprovedClient.operations, [])

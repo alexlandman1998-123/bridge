@@ -6,7 +6,7 @@ import RentalApplicationDetailPage from '../RentalApplicationDetailPage.jsx'
 import { getRentalApplicationReview } from '../../../services/rentals/rentalApplicationRepository.js'
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => ({ workspace: { id: 'org' } }) }))
 vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({
-  getRentalApplicationReview: vi.fn(), getRentalApplicationTenancyConversion: vi.fn().mockResolvedValue(null), listRentalApplicationEvents: vi.fn().mockResolvedValue([]), listRentalApplicationScreeningChecks: vi.fn().mockResolvedValue([]),
+  getRentalApplicationReview: vi.fn(), getRentalTenancyHandoffContext: vi.fn().mockResolvedValue({applicationId:'app',leadId:'lead',leadStage:'placement_ready',canCreate:true}), getRentalApplicationTenancyConversion: vi.fn().mockResolvedValue(null), listRentalApplicationEvents: vi.fn().mockResolvedValue([]), listRentalApplicationScreeningChecks: vi.fn().mockResolvedValue([]),
 }))
 afterEach(cleanup)
 it('shows an unprepared tenancy honestly and opens Lease from an approved application’s next step', async () => {

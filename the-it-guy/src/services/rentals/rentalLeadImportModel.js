@@ -1,5 +1,6 @@
 import { csvEscape, pickImportValue } from '../../lib/csvImport.js'
 import { resolveRentalLeadRole } from './rentalLeadPipelineModel.js'
+import { isRentalCrmLead } from './rentalCrmLeadModel.js'
 
 export const RENTAL_LEAD_IMPORT_VERSION = 'arch9_rental_lead_import_v2'
 export const RENTAL_LEAD_INGESTION_SOURCES = Object.freeze(['manual', 'manual_import', 'website', 'property24', 'private_property', 'whatsapp', 'referral', 'api'])
@@ -16,6 +17,13 @@ const normalize = (value) => text(value).toLowerCase()
 const numberOrEmpty = (value) => text(value) === '' ? '' : Number(value)
 const sourceKey = (value) => normalize(value).replace(/[\s-]+/g, '_')
 
+export function isExplicitRentalLeadImportRow(row = {}) {
+  const role = normalize(pickImportValue(row, ['Role', 'role', 'Rental Role', 'rental_role']))
+  const category = normalize(pickImportValue(row, ['Lead Category', 'lead_category', 'leadCategory', 'Category', 'category']))
+  const intent = normalize(pickImportValue(row, ['Lead Intent', 'leadIntent', 'lead_intent', 'Enquiry Intent', 'enquiryIntent']))
+  return isRentalCrmLead(row) || ['tenant', 'landlord'].includes(role) || ['tenant', 'landlord', 'rental'].includes(category) || ['rent', 'let', 'rental'].includes(intent)
+}
+
 export function normaliseRentalLeadIngestionSource(value = '') {
   const key = sourceKey(value)
   const aliases = { property_24: 'property24', privateproperty: 'private_property', manual_import: 'manual_import', csv: 'manual_import', web: 'website' }
@@ -28,8 +36,11 @@ export function getRentalLeadIngestionSourceLabel(value = '') {
 
 function inferRole(row = {}) {
   const explicit = text(pickImportValue(row, ['Role', 'role', 'Rental Role', 'rental_role']))
-  if (explicit) return resolveRentalLeadRole(explicit)
-  return text(pickImportValue(row, ['Property Address', 'property_address', 'Expected Monthly Rent', 'expected_monthly_rent'])) ? 'landlord' : 'tenant'
+  if (explicit) return ['tenant', 'landlord', 'owner', 'lessor'].includes(normalize(explicit)) ? resolveRentalLeadRole(explicit) : ''
+  const landlord = text(pickImportValue(row, ['Property Address', 'property_address', 'Expected Monthly Rent', 'expected_monthly_rent']))
+  const tenant = text(pickImportValue(row, ['Desired Area', 'desired_area', 'Monthly Budget', 'monthly_budget']))
+  if (landlord && tenant) return ''
+  return landlord ? 'landlord' : 'tenant'
 }
 
 function duplicateKeys(values = {}) {
@@ -80,6 +91,7 @@ export function mapRentalLeadImportRow(row = {}, { organisationId = '', defaultS
 
 export function validateRentalLeadImportRow(candidate = {}) {
   const errors = []
+  if (!['tenant', 'landlord'].includes(candidate.role)) errors.push('Choose Tenant or Landlord for the rental journey.')
   if (!text(candidate.organisationId)) errors.push('No active organisation is selected.')
   if (!candidate.ingestionSource) errors.push('Choose a supported rental lead source.')
   if (!text(candidate.firstName)) errors.push('First name is required.')

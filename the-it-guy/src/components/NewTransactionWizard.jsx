@@ -1,3 +1,4 @@
+import AddressInput from './location/AddressInput'
 import {
   ArrowRight,
   Building2,
@@ -2735,7 +2736,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                       </Field>
 
                       <Field label="Property Address" error={errors.propertyAddressLine1} fullWidth>
-                        <input
+                        <AddressInput
                           type="text"
                           value={form.setup.propertyAddressLine1}
                           onChange={(event) => setSetupField('propertyAddressLine1', event.target.value)}

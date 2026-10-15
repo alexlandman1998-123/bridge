@@ -1,0 +1,7 @@
+.field { position: relative; min-width: 0; width: 100%; }
+.field > input { width: 100%; }
+.suggestions { position: absolute; z-index: 60; inset: calc(100% + 6px) 0 auto; max-height: 280px; overflow: auto; border: 1px solid #dbe3de; border-radius: 12px; background: white; color: #20352b; box-shadow: 0 14px 35px #20352b22; }
+.suggestions ul { list-style: none; margin: 0; padding: 4px; }
+.field .suggestions ul li button.option { display: block; width: 100%; max-width: 100%; min-height: 0; height: auto; margin: 0; padding: 12px; border: 0; border-radius: 8px; background: white; color: #20352b; font: inherit; font-weight: 500; line-height: 1.5; letter-spacing: normal; text-transform: none; white-space: normal; overflow-wrap: anywhere; text-align: left; cursor: pointer; }
+.field .suggestions ul li button.option:hover, .field .suggestions [aria-selected="true"] button.option { background: #edf5f0; }
+.suggestions small, .field > small { display: block; padding: 7px 12px; font-size: 12px; }

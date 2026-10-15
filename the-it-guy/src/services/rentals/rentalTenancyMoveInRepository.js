@@ -34,3 +34,31 @@ export async function activateRentalTenancy(tenancyId, { client = supabase } = {
   if (result.error) throw result.error
   return result.data
 }
+
+export async function getRentalIncomingInspection(tenancyId, { client = supabase } = {}) {
+ const result = await requireClient(client).from('rental_incoming_inspections').select('id, status, acknowledged_by_name, handover_notes, completed_at').eq('tenancy_id', text(tenancyId)).maybeSingle()
+ if(result.error)throw result.error
+ if(!result.data)return null
+ const [items,media] = await Promise.all([
+  requireClient(client).from('rental_incoming_inspection_items').select('id, item_key, status, note, evidence_link').eq('inspection_id',result.data.id).order('item_key'),
+  requireClient(client).from('rental_incoming_inspection_media').select('id, media_link, caption').eq('inspection_id',result.data.id).order('created_at'),
+ ])
+ if(items.error)throw items.error
+ if(media.error)throw media.error
+ return {...result.data,items:items.data||[],media:media.data||[]}
+}
+export async function recordRentalIncomingInspectionItem(itemId, evidenceLink, note = '', { client = supabase } = {}) {
+ const result = await requireClient(client).rpc('rental_record_incoming_inspection_item',{p_item_id:itemId,p_status:'completed',p_note:text(note)||null,p_evidence_link:text(evidenceLink)||null})
+ if(result.error)throw result.error
+ return result.data
+}
+export async function linkRentalIncomingInspectionPhoto(inspectionId,evidenceLink,caption = '',{client = supabase} = {}) {
+ const result = await requireClient(client).rpc('rental_link_incoming_inspection_media',{p_inspection_id:inspectionId,p_media_link:text(evidenceLink),p_caption:text(caption)||null})
+ if(result.error)throw result.error
+ return result.data
+}
+export async function completeRentalIncomingInspection(inspectionId,name,notes = '',{client = supabase} = {}) {
+ const result = await requireClient(client).rpc('rental_complete_incoming_inspection',{p_inspection_id:inspectionId,p_acknowledged_by_name:text(name),p_handover_notes:text(notes)||null})
+ if(result.error)throw result.error
+ return result.data
+}

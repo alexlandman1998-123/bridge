@@ -5721,13 +5721,14 @@ export async function listOrganisationUsers() {
 // Use this only when the caller already has a trusted workspace from
 // WorkspaceContext. It deliberately avoids ensureOrganisationContext(), which
 // calls auth.getUser() and repeats the full workspace bootstrap.
-export async function listOrganisationUsersForWorkspace({ organisationId = '' } = {}) {
+export async function listOrganisationUsersForWorkspace({ organisationId = '', includeAvatars = false } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
 
   const normalizedOrganisationId = normalizeText(organisationId)
   if (!normalizedOrganisationId) return []
 
-  const cached = organisationUsersByWorkspaceCache.get(normalizedOrganisationId)
+  const cacheKey = includeAvatars ? `${normalizedOrganisationId}:avatars` : normalizedOrganisationId
+  const cached = organisationUsersByWorkspaceCache.get(cacheKey)
   if (isFreshCacheEntry(cached)) return cached.value
   if (cached?.inflight) return cached.inflight
 
@@ -5757,19 +5758,25 @@ export async function listOrganisationUsersForWorkspace({ organisationId = '' } 
       throw usersQuery.error
     }
 
-    return (usersQuery.data || []).map((row) => normalizeOrganisationUserRow(row))
+    const rows = usersQuery.data || []
+    if (!includeAvatars) return rows.map((row) => normalizeOrganisationUserRow(row))
+    const avatars = await fetchOrganisationUserProfileAvatars(client, rows)
+    return rows.map((row) => {
+      const profile = avatars.byUserId[normalizeText(row.user_id)] || avatars.byEmail[normalizeEmail(row.email)] || null
+      return normalizeOrganisationUserRow({ ...row, profile, avatar_url: normalizeText(row.avatar_url) || profile?.avatar_url || '' })
+    })
   })()
 
-  organisationUsersByWorkspaceCache.set(normalizedOrganisationId, { inflight })
+  organisationUsersByWorkspaceCache.set(cacheKey, { inflight })
   try {
     const users = await inflight
-    organisationUsersByWorkspaceCache.set(normalizedOrganisationId, {
+    organisationUsersByWorkspaceCache.set(cacheKey, {
       value: users,
       expiresAt: Date.now() + ORGANISATION_USERS_CACHE_TTL_MS,
     })
     return users
   } catch (error) {
-    organisationUsersByWorkspaceCache.delete(normalizedOrganisationId)
+    organisationUsersByWorkspaceCache.delete(cacheKey)
     throw error
   }
 }

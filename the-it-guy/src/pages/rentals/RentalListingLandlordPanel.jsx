@@ -1,75 +1,139 @@
-import { useEffect, useRef, useState } from 'react'
-import { Building2, CheckCircle2, ChevronRight, Loader2, LockKeyhole, Plus, Search, UserRound } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { useEffect, useId, useRef, useState } from 'react'
+import { Building2, CheckCircle2, Copy, Loader2, Plus, Search, UserRound } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
+import Modal from '../../components/ui/Modal'
 import { RENTAL_SELECT_OPTIONS } from '../../services/rentals/rentalListingDraftModel'
-import { buildRentalListingEditForm } from '../../services/rentals/rentalListingEditModel'
-import { loadListingLandlordSetup, rentalListingHasLandlord, saveListingLandlord } from '../../services/rentals/rentalListingLandlordService'
+import { loadListingLandlordSetup, rentalListingHasLandlord, saveListingLandlord, startListingLandlordOnboarding } from '../../services/rentals/rentalListingLandlordService'
+import { buildListingLandlordDiscovery, listingLandlordValues } from '../../services/rentals/rentalListingLandlordModel'
+import { normalizeLandlordProfile } from '../../services/rentals/rentalLandlordWorkspaceModel'
+import { requestRentalLandlordOnboarding } from '../../services/rentals/rentalLandlordOnboardingService'
+import RentalListingLandlordProfile from './RentalListingLandlordProfile'
+import RentalListingLandlordOnboardingEditor from './RentalListingLandlordOnboardingEditor'
 
-function initial(listing) {
-  const form = buildRentalListingEditForm(listing)
-  return Object.fromEntries(['landlordName', 'landlordEmail', 'landlordPhone', 'landlordType'].map((key) => [key, form[key]]))
+const EMPTY_SETUP = {contacts:[],linkedLead:null,onboarding:null}
+const cardClass = 'rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]'
+function ContactFields({ values, onChange, disabled }) {
+  return <fieldset disabled={disabled} className="grid gap-4 sm:grid-cols-2">
+    {[['landlordName', 'Landlord or entity name', 'text'], ['landlordEmail', 'Email address', 'email'], ['landlordPhone', 'Phone number', 'tel']].map(([key,label,type]) => <label key={key} className={`grid gap-2 text-sm font-semibold text-[#425970] ${key==='landlordName' ? 'sm:col-span-2' : ''}`}>{label}<Field required={key==='landlordName'} type={type} value={values[key]} onChange={(event)=>onChange(key,event.target.value)}/></label>)}
+    <label className="grid gap-2 text-sm font-semibold text-[#425970] sm:col-span-2">Landlord type<Field as="select" value={values.landlordType} onChange={(event)=>onChange('landlordType',event.target.value)}>{RENTAL_SELECT_OPTIONS.landlordType.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</Field></label>
+  </fieldset>
 }
-const cardClass = 'rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]'
 export default function RentalListingLandlordPanel({ listing, scope, onSaved }) {
-  const [values, setValues] = useState(() => initial(listing))
-  const [setup, setSetup] = useState({ contacts: [], linkedLead: null })
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [saving, setSaving] = useState('')
-  const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState('')
-  const [existingType, setExistingType] = useState(() => initial(listing).landlordType)
-  const [retry, setRetry] = useState(0)
-  const lock = useRef(false)
-  const newContactId = useRef('')
-  const mounted = useRef(true)
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  useEffect(() => { setValues(initial(listing)) }, [listing])
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true); setLoadError('')
-    loadListingLandlordSetup(listing, scope).then((result) => { if (!cancelled) setSetup(result) }).catch((cause) => { if (!cancelled) setLoadError(cause?.message || 'Unable to load landlords.') }).finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [listing, scope, retry])
-  const connected = rentalListingHasLandlord(listing, setup.linkedLead)
-  const selected = setup.contacts.find((item) => item.id === selectedId)
-  const filtered = setup.contacts.filter((item) => `${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(query.toLowerCase().trim()))
-  const update = (key) => (event) => { setValues((current) => ({ ...current, [key]: event.target.value })); setError(''); setNotice('') }
-  async function save(mode, event) {
-    event?.preventDefault()
-    if (lock.current) return
-    lock.current = true; setSaving(mode); setError(''); setNotice('')
-    try {
-      if (mode === 'new' && !newContactId.current) newContactId.current = crypto.randomUUID()
-      const nextValues = mode === 'existing' && selected ? { ...values, landlordName: selected.name, landlordEmail: selected.email, landlordPhone: selected.phone, landlordType: existingType } : values
-      const result = await saveListingLandlord(listing.id, nextValues, { organisationId: scope.organisationId, assignedAgentId: scope.assignedAgentId, mode, contactId: mode === 'new' ? newContactId.current : mode === 'existing' ? selectedId : '', linkedLead: setup.linkedLead })
-      if (!mounted.current) return
-      onSaved(result)
-      setNotice(mode === 'profile' ? 'Landlord details saved.' : 'Landlord connected to this listing.')
-    } catch (cause) { if (mounted.current) setError(cause?.message || 'Unable to save the landlord connection.') }
-    finally { lock.current = false; if (mounted.current) setSaving('') }
+  const contextKey = `${listing.id}:${scope.organisationId}:${scope.branchId || ''}:${scope.assignedAgentId || ''}:${scope.scopeLevel || ''}`
+  const [values,setValues] = useState(()=>listingLandlordValues(listing))
+  const [loadedSetup,setSetup] = useState({...EMPTY_SETUP,key:contextKey})
+  const setup = loadedSetup.key===contextKey ? loadedSetup : EMPTY_SETUP
+  const [loading,setLoading] = useState(true)
+  const [loadError,setLoadError] = useState('')
+  const [error,setError] = useState('')
+  const [notice,setNotice] = useState('')
+  const [busy,setBusy] = useState('')
+  const [query,setQuery] = useState('')
+  const [selectedId,setSelectedId] = useState('')
+  const [existingType,setExistingType] = useState(()=>listingLandlordValues(listing).landlordType)
+  const [retry,setRetry] = useState(0)
+  const [editor,setEditor] = useState(null)
+  const [access,setAccess] = useState(null)
+  const [changes,setChanges] = useState('')
+  const formId = useId()
+  const guard = useRef(false)
+  const contactId = useRef('')
+  const leadId = useRef('')
+  const mounted = useRef(false)
+  const currentKey = useRef(contextKey)
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
+  useEffect(()=>{currentKey.current=contextKey;setEditor(null);setAccess(null);setError('');setNotice('');setSelectedId('');setQuery('');contactId.current='';leadId.current=''},[contextKey])
+  useEffect(()=>{
+    let cancelled=false
+    setLoading(true);setLoadError('')
+    loadListingLandlordSetup(listing,scope).then(result=>{if(!cancelled)setSetup({...result,key:contextKey})}).catch(cause=>{if(!cancelled)setLoadError(cause.message || 'Unable to load landlords.')}).finally(()=>{if(!cancelled)setLoading(false)})
+    return()=>{cancelled=true}
+  },[listing,scope,retry,contextKey])
+  useEffect(()=>{if(!editor)setValues(listingLandlordValues(listing,setup.onboarding))},[listing,setup.onboarding,editor])
+  const connected = rentalListingHasLandlord(listing,setup.linkedLead)
+  const selected = setup.contacts.find(item=>item.id===selectedId)
+  const filtered = setup.contacts.filter(item=>`${item.name} ${item.email} ${item.phone}`.toLowerCase().includes(query.toLowerCase().trim()))
+  const context = {...scope,linkedLead:setup.linkedLead,onboarding:setup.onboarding}
+  const update = (key,value)=>{setValues(current=>({...current,[key]:value}));setError('');setNotice('')}
+  async function run(action,work) {
+    if(guard.current)return
+    guard.current=true;setBusy(action);setError('');setNotice('')
+    const key=contextKey
+    const isCurrent=()=>mounted.current && currentKey.current===key
+    try {await work(isCurrent)} catch(cause){if(isCurrent()){
+      setError(cause.message || 'Unable to save landlord details.')
+      if(cause.onboarding){setSetup(current=>({...current,onboarding:cause.onboarding}));setEditor(current=>current ? {...current,onboarding:cause.onboarding} : current)}
+    }} finally{guard.current=false;if(isCurrent())setBusy('')}
   }
-  const fields = <div className="grid gap-4 sm:grid-cols-2">
-    <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-semibold text-[#425970]">Landlord or entity name</span><Field required value={values.landlordName} onChange={update('landlordName')} /></label>
-    <label className="grid gap-2"><span className="text-sm font-semibold text-[#425970]">Email address</span><Field type="email" value={values.landlordEmail} onChange={update('landlordEmail')} /></label>
-    <label className="grid gap-2"><span className="text-sm font-semibold text-[#425970]">Phone number</span><Field type="tel" value={values.landlordPhone} onChange={update('landlordPhone')} /></label>
-    <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-semibold text-[#425970]">Landlord type</span><Field as="select" value={values.landlordType} onChange={update('landlordType')}>{RENTAL_SELECT_OPTIONS.landlordType.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></label>
-  </div>
-  return <div className="grid gap-5">
-    <header className={cardClass}><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl border border-[#dbe6f2] bg-[#f8fbff] text-[#1f4f78]"><Building2 size={21}/></span><div><h2 className="text-xl font-semibold text-[#18324b]">Landlord</h2><p className="mt-1 text-sm text-[#607387]">{connected ? 'Landlord details for this rental listing.' : 'Create a landlord or connect someone already in Clients.'}</p></div>{connected ? <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[#eef9f2] px-3 py-1 text-xs font-semibold text-[#257044]"><CheckCircle2 size={13}/>Connected</span> : null}</div></header>
-    {loadError ? <div role="alert" className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-4 text-sm text-[#9f3131]">{loadError}<Button variant="secondary" size="sm" className="ml-3" onClick={() => setRetry((current) => current + 1)}>Retry</Button></div> : null}
-    {error ? <p role="alert" className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-4 text-sm text-[#9f3131]">{error}</p> : null}
+  async function save(mode,event) {
+    event?.preventDefault()
+    await run(mode,async isCurrent=>{
+      if(mode==='new' && !contactId.current)contactId.current=crypto.randomUUID()
+      const nextValues=mode==='existing' && selected ? {...values,landlordName:selected.name,landlordEmail:selected.email,landlordPhone:selected.phone,landlordType:existingType} : values
+      const result=await saveListingLandlord(listing.id,nextValues,{...context,mode,contactId:mode==='new' ? contactId.current : mode==='existing' ? selectedId : '',...(editor?.mode==='profile' ? {expectedValues:editor.expectedValues,onboarding:editor.onboarding} : {})})
+      if(!isCurrent())return
+      if(result.landlordOnboarding)setSetup(current=>({...current,onboarding:result.landlordOnboarding}))
+      onSaved?.(result);setEditor(null);setNotice(mode==='profile' ? 'Landlord details saved and verified.' : 'Landlord connected to this listing.')
+    })
+  }
+  function editContact(){setError('');setValues(listingLandlordValues(listing,setup.onboarding));setEditor({mode:'profile',expectedValues:listingLandlordValues(listing),onboarding:setup.onboarding})}
+  function continueOnboarding(){
+    const seeded=buildListingLandlordDiscovery(listing)
+    const saved=setup.onboarding.data
+    let portfolio=saved.portfolio || []
+    if(!portfolio.length)portfolio=seeded.portfolio
+    else if(portfolio.length===1 && !portfolio[0].listingId && setup.linkedLead.relationships?.listingId===listing.id)portfolio=[{...portfolio[0],listingId:listing.id}]
+    setError('');setEditor({mode:'onboarding',expectedValues:listingLandlordValues(listing),onboarding:setup.onboarding,data:{profile:{...seeded.profile,...saved.profile},portfolio}})
+  }
+  const start=()=>void run('start',async isCurrent=>{
+    if(!leadId.current)leadId.current=crypto.randomUUID()
+    const result=await startListingLandlordOnboarding(listing.id,{...scope,leadId:leadId.current})
+    if(!isCurrent())return
+    setSetup({...result.setup,key:contextKey});onSaved?.(result.listing);setNotice('Landlord onboarding is ready. Continue here or create a secure link.')
+  })
+  const saveOnboarding=event=>{
+    event.preventDefault()
+    void run('onboarding',async isCurrent=>{
+      const normalized=normalizeLandlordProfile(editor.data.profile)
+      const profile={...editor.data.profile,name:normalized.name,email:normalized.email,phone:normalized.phone,type:normalized.type}
+      profile.people=(editor.data.profile.people || []).map(person=>{
+        const cleaned=normalized.people.find(item=>item.id===person.id)
+        return {...person,name:cleaned.name,...(Object.hasOwn(person,'email') ? {email:cleaned.email} : {})}
+      })
+      const result=await saveListingLandlord(listing.id,{landlordName:profile.name,landlordEmail:profile.email,landlordPhone:profile.phone,landlordType:profile.type},{...context,mode:'profile',expectedValues:editor.expectedValues,onboarding:editor.onboarding,discovery:{...editor.data,profile}})
+      if(!isCurrent())return
+      if(result.landlordOnboarding)setSetup(current=>({...current,onboarding:result.landlordOnboarding}))
+      onSaved?.(result);setEditor(null);setNotice('Landlord onboarding details saved and verified.')
+    })
+  }
+  const createLink=()=>void run('access',async isCurrent=>{
+    const result=await requestRentalLandlordOnboarding(setup.linkedLead.id,'POST',{action:'create_access'})
+    if(!result.token || !result.accessId || !result.expiresAt)throw new Error('The secure onboarding link could not be verified. Refresh before continuing.')
+    if(isCurrent())setAccess({...result,url:`${window.location.origin}/rental-landlord-onboarding/${result.token}`})
+  })
+  const revoke=id=>void run('revoke',async isCurrent=>{
+    await requestRentalLandlordOnboarding(setup.linkedLead.id,'POST',{action:'revoke_access',accessId:id})
+    const result=await requestRentalLandlordOnboarding(setup.linkedLead.id)
+    if(isCurrent()){setAccess(current=>current?.accessId===id ? null : current);setSetup(current=>({...current,onboarding:result.onboarding}));setNotice('Landlord onboarding link revoked.')}
+  })
+  return <div className="space-y-5">
+    {loadError ? <div role="alert" className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-4 text-sm text-[#9f3131]">{loadError}<Button variant="secondary" size="sm" className="ml-3" onClick={()=>setRetry(value=>value+1)}>Retry</Button></div> : null}
+    {error && !editor ? <p role="alert" className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-4 text-sm text-[#9f3131]">{error}</p> : null}
     {notice ? <p role="status" className="text-sm font-semibold text-[#257044]">{notice}</p> : null}
-    {connected ? <form className={cardClass} onSubmit={(event) => void save('profile', event)}><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold text-[#18324b]">Landlord profile</h3>{setup.linkedLead ? <Link className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]" to={`/agent/rentals/pipeline/leads/${encodeURIComponent(setup.linkedLead.id)}`}>Open landlord lead<ChevronRight size={15}/></Link> : null}</div><fieldset disabled={Boolean(saving)}>{fields}</fieldset><div className="mt-5 flex justify-end"><Button type="submit" disabled={Boolean(saving)}>{saving ? <Loader2 size={16} className="animate-spin"/> : null}Save landlord details</Button></div></form> : <>
+    {connected ? <RentalListingLandlordProfile listing={listing} onboarding={setup.onboarding} linkedLead={setup.linkedLead} loading={loading} busy={busy} onboardingError={loadError || setup.onboardingError} onEdit={editContact} onContinue={continueOnboarding} onStart={start} onCreateLink={createLink} onRequestChanges={()=>{setChanges('');setEditor({mode:'corrections'})}} onRefresh={()=>setRetry(value=>value+1)}/> : <>
+      <header className={cardClass}><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl border border-[#dbe6f2] bg-[#f8fbff] text-[#1f4f78]"><Building2 size={21}/></span><div><h2 className="text-xl font-semibold text-[#18324b]">Landlord</h2><p className="mt-1 text-sm text-[#607387]">Create a landlord or connect someone already in Clients.</p></div></div></header>
       <div className="grid gap-5 lg:grid-cols-2">
-        <form className={cardClass} onSubmit={(event) => void save('new', event)}><h3 className="mb-5 flex items-center gap-2 font-semibold text-[#18324b]"><Plus size={18}/>Create new landlord</h3><fieldset disabled={Boolean(saving) || loading || Boolean(loadError)}>{fields}</fieldset><Button type="submit" className="mt-5" disabled={Boolean(saving) || loading || Boolean(loadError)}>{saving === 'new' ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>}Create and connect landlord</Button></form>
-        <section className={cardClass}><h3 className="mb-5 flex items-center gap-2 font-semibold text-[#18324b]"><UserRound size={18}/>Select existing landlord</h3><label className="relative block"><Search size={16} className="pointer-events-none absolute left-3 top-3.5 text-[#8294aa]"/><Field aria-label="Search landlords" placeholder="Search name, email or phone" className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} disabled={Boolean(saving) || loading}/></label><div className="mt-4 grid max-h-72 gap-2 overflow-y-auto">{loading ? <p className="text-sm text-[#607387]">Loading landlords…</p> : filtered.length ? filtered.slice(0, 50).map((contact) => <button type="button" key={contact.id} aria-pressed={selectedId === contact.id} disabled={Boolean(saving)} onClick={() => {setSelectedId(contact.id);setError('')}} className={`rounded-xl border p-3 text-left ${selectedId === contact.id ? 'border-[#1f4f78] bg-[#f2f7fc]' : 'border-[#e1e9f2] bg-white hover:bg-[#f8fbff]'}`}><span className="block text-sm font-semibold text-[#243d56]">{contact.name}</span><span className="mt-1 block break-all text-xs text-[#607387]">{[contact.email,contact.phone].filter(Boolean).join(' · ')}</span></button>) : <p className="rounded-xl bg-[#f8fbff] p-4 text-sm text-[#607387]">{query ? 'No landlords match your search.' : 'No landlord contacts found in this workspace.'}</p>}</div>{selected ? <label className="mt-4 grid gap-2"><span className="text-sm font-semibold text-[#425970]">Selected landlord type</span><Field as="select" value={existingType} onChange={(event) => setExistingType(event.target.value)} disabled={Boolean(saving)}>{RENTAL_SELECT_OPTIONS.landlordType.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field></label> : null}<Button type="button" className="mt-5" disabled={!selected || Boolean(saving) || loading || Boolean(loadError)} onClick={() => void save('existing')}>{saving === 'existing' ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}Connect selected landlord</Button></section>
-      </div>
-      <section className="flex items-center gap-3 rounded-[20px] border border-dashed border-[#ccd9e7] bg-[#f8fbff] p-5 text-[#607387]"><LockKeyhole size={20}/><div><h3 className="font-semibold">Landlord profile locked</h3><p className="mt-1 text-sm">Create or select a landlord above to unlock this profile.</p></div></section>
+        <form className={cardClass} onSubmit={event=>void save('new',event)}><h3 className="mb-5 flex items-center gap-2 font-semibold text-[#18324b]"><Plus size={18}/>Create new landlord</h3><ContactFields values={values} onChange={update} disabled={Boolean(busy) || loading || Boolean(loadError)}/><Button type="submit" className="mt-5" disabled={Boolean(busy) || loading || Boolean(loadError)}>{busy==='new' ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>}Create and connect landlord</Button></form>
+        <section className={cardClass}><h3 className="mb-5 flex items-center gap-2 font-semibold text-[#18324b]"><UserRound size={18}/>Select existing landlord</h3><label className="relative block"><Search size={16} className="pointer-events-none absolute left-3 top-3.5 text-[#8294aa]"/><Field aria-label="Search landlords" placeholder="Search name, email or phone" className="pl-10" value={query} onChange={event=>setQuery(event.target.value)} disabled={Boolean(busy) || loading}/></label><div className="mt-4 grid max-h-72 gap-2 overflow-y-auto">{loading ? <p className="text-sm text-[#607387]">Loading landlords…</p> : filtered.length ? filtered.slice(0,50).map(contact=><button type="button" key={contact.id} aria-pressed={selectedId===contact.id} disabled={Boolean(busy)} onClick={()=>{setSelectedId(contact.id);setError('')}} className={`rounded-xl border p-3 text-left ${selectedId===contact.id ? 'border-[#1f4f78] bg-[#f2f7fc]' : 'border-[#e1e9f2] bg-white hover:bg-[#f8fbff]'}`}><span className="block text-sm font-semibold text-[#243d56]">{contact.name}</span><span className="mt-1 block break-all text-xs text-[#607387]">{[contact.email,contact.phone].filter(Boolean).join(' · ')}</span></button>) : <p className="rounded-xl bg-[#f8fbff] p-4 text-sm text-[#607387]">{query ? 'No landlords match your search.' : 'No landlord contacts found in this workspace.'}</p>}</div>{selected ? <label className="mt-4 grid gap-2 text-sm font-semibold text-[#425970]">Selected landlord type<Field as="select" value={existingType} onChange={event=>setExistingType(event.target.value)} disabled={Boolean(busy)}>{RENTAL_SELECT_OPTIONS.landlordType.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</Field></label> : null}<Button type="button" className="mt-5" disabled={!selected || Boolean(busy) || loading || Boolean(loadError)} onClick={()=>void save('existing')}>{busy==='existing' ? <Loader2 size={16} className="animate-spin"/> : <CheckCircle2 size={16}/>}Connect selected landlord</Button></section>
+      </div><p className="text-sm font-semibold text-[#607387]">Landlord profile locked</p>
     </>}
+    {access || setup.onboarding?.accessLinks?.some(link=>!link.revokedAt && Date.parse(link.expiresAt)>Date.now()) ? <article className={cardClass}><h3 className="text-base font-semibold text-[#142132]">Landlord onboarding access</h3>{access ? <div className="mt-4 space-y-3"><p className="text-sm text-[#607387]">Secure link expires {new Date(access.expiresAt).toLocaleString('en-ZA')}.</p><Field readOnly aria-label="Secure landlord onboarding link" value={access.url}/><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={Boolean(busy)} onClick={()=>void run('copy',async isCurrent=>{await navigator.clipboard.writeText(access.url);if(isCurrent())setNotice('Secure landlord onboarding link copied.')})}><Copy size={14}/>Copy link</Button><Button size="sm" variant="secondary" disabled={Boolean(busy)} onClick={()=>revoke(access.accessId)}>Revoke this link</Button></div></div> : null}{(setup.onboarding?.accessLinks || []).filter(link=>!link.revokedAt && Date.parse(link.expiresAt)>Date.now() && link.id!==access?.accessId).map(link=><div key={link.id} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] pt-4"><p className="text-sm text-[#607387]">Existing link expires {new Date(link.expiresAt).toLocaleString('en-ZA')}.</p><Button size="sm" variant="secondary" disabled={Boolean(busy)} onClick={()=>revoke(link.id)}>Revoke existing link</Button></div>)}</article> : null}
+    <Modal open={Boolean(editor)} title={editor?.mode==='onboarding' ? 'Landlord onboarding' : editor?.mode==='corrections' ? 'Request landlord corrections' : 'Edit landlord contact'} onClose={()=>{if(!busy){setEditor(null);setError('')}}} className={editor?.mode==='onboarding' ? 'max-w-4xl' : ''} footer={<div className="flex justify-end gap-2"><Button variant="secondary" disabled={Boolean(busy)} onClick={()=>setEditor(null)}>Cancel</Button><Button form={formId} type="submit" disabled={Boolean(busy) || editor?.mode==='corrections' && !changes.trim()}>{busy ? <Loader2 size={16} className="animate-spin"/> : null}{editor?.mode==='onboarding' ? 'Save onboarding details' : editor?.mode==='corrections' ? 'Request corrections' : 'Save landlord details'}</Button></div>}>
+      {error ? <p role="alert" className="mb-4 rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
+      {editor?.mode==='profile' ? <form id={formId} onSubmit={event=>void save('profile',event)}><ContactFields values={values} onChange={update} disabled={Boolean(busy)}/></form> : null}
+      {editor?.mode==='onboarding' ? <form noValidate id={formId} onSubmit={saveOnboarding}><RentalListingLandlordOnboardingEditor data={editor.data} listingId={listing.id} disabled={Boolean(busy)} onChange={data=>setEditor(current=>({...current,data}))}/></form> : null}
+      {editor?.mode==='corrections' ? <form id={formId} onSubmit={event=>{event.preventDefault();void run('corrections',async isCurrent=>{const result=await requestRentalLandlordOnboarding(setup.linkedLead.id,'POST',{action:'request_changes',version:setup.onboarding.version,patch:{message:changes.trim()}});if(!result.onboarding)throw new Error('Corrections saved, but onboarding could not refresh. Refresh before editing.');if(isCurrent()){setSetup(current=>({...current,onboarding:result.onboarding}));setEditor(null);setNotice('Corrections requested. The landlord can use the existing valid onboarding link.')}})}}><label className="grid gap-2 text-sm font-semibold text-[#425970]">What should the landlord correct?<Field as="textarea" value={changes} onChange={event=>setChanges(event.target.value)} disabled={Boolean(busy)}/></label></form> : null}
+    </Modal>
   </div>
 }

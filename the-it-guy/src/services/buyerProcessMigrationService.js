@@ -1,4 +1,5 @@
 import { inferLeadCategoryFromRecord } from '../lib/leadCategory.js'
+import { isRentalCrmLead } from './rentals/rentalCrmLeadModel.js'
 import {
   BUYER_PROCESS_STAGE_KEYS,
   getBuyerProcessStage,
@@ -68,7 +69,7 @@ export function isDeprecatedBuyerOtpAction(value = '') {
 }
 
 export function resolveBuyerProcessStageMigration(lead = {}) {
-  if (inferLeadCategoryFromRecord(lead, 'other') !== 'buyer') {
+  if (isRentalCrmLead(lead) || inferLeadCategoryFromRecord(lead, 'other') !== 'buyer') {
     return {
       migrated: false,
       reason: 'not_buyer',

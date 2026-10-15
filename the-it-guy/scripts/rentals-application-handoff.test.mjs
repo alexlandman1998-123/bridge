@@ -16,9 +16,14 @@ const applicationDetail = await read('src/pages/rentals/RentalApplicationDetailP
 const decisionPanel = await read('src/modules/rentals/shared/applications/RentalApplicationDecisionPanel.jsx')
 const approvalGuard = await readRepository('supabase/migrations/20260913120000_rental_application_approval_readiness.sql')
 
-for (const token of ['leadId: lead.id', 'createPersistedRentalApplicantAccess', 'Create secure application link']) {
+const tenantApplicationService = await read('src/services/rentals/rentalTenantApplicationService.js')
+const tenantApplicationPanel = await read('src/pages/rentals/RentalTenantApplicationPanel.jsx')
+for (const token of ['prepareRentalTenantApplication', 'issueRentalTenantApplicationInvite', 'RentalTenantApplicationPanel']) {
   assert.ok(leadWorkspace.includes(token), `Lead-to-application handoff is missing: ${token}`)
 }
+assert.ok(tenantApplicationService.includes('rental_prepare_tenant_application'), 'Tenant setup must use the atomic lead connection command.')
+assert.ok(tenantApplicationService.includes('rental_issue_tenant_application_access'), 'Tenant invitations must rotate atomically.')
+assert.ok(tenantApplicationPanel.includes('Create secure application link'), 'Tenant setup must offer the applicant link.')
 const inviteAction = leadWorkspace.split('const createApplicationInvite = async (' )[1]?.split('const copyApplicationLink')[0]
 assert.ok(inviteAction, 'The tenant lead must create an applicant link.')
 assert.ok(!inviteAction.includes('advanceRentalLead'), 'Creating an applicant link must leave the lead at Application pending.')

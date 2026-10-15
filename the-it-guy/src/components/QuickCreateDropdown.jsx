@@ -26,6 +26,7 @@ import {
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from '../lib/leadCategory'
+import { BUSINESS_WORKSPACES } from '../lib/businessWorkspaceAccess'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
@@ -141,6 +142,23 @@ const AGENT_QUICK_CREATE_GROUPS = RESIDENTIAL_QUICK_CREATE_GROUPS.map((group) =>
       return item
     }),
 }))
+
+const RENTAL_QUICK_CREATE_GROUPS = [
+  {
+    label: 'Rental leads',
+    items: [
+      { type: 'landlord-lead', label: 'Landlord lead', helper: 'Capture a landlord and their rental property', icon: UserPlus, action: 'route', to: '/agent/rentals/pipeline/leads?create=landlord' },
+      { type: 'tenant-lead', label: 'Tenant lead', helper: 'Capture a tenant enquiry', icon: UsersRound, action: 'route', to: '/agent/rentals/pipeline/leads?create=tenant' },
+    ],
+  },
+  {
+    label: 'Rentals',
+    items: [
+      { type: 'listing', label: 'Rental listing', helper: 'Open the rental listing capture form', icon: Home, action: 'route', to: '/agent/rentals/listings/new' },
+      { type: 'client', label: 'Client', helper: 'Open the client workspace', icon: UsersRound, action: 'route', to: '/clients', state: { openAddClient: true } },
+    ],
+  },
+]
 
 const COMMERCIAL_QUICK_CREATE_GROUPS = [
   {
@@ -995,7 +1013,7 @@ function QuickCreateViewingPicker({ options, loading, error, listingId, onChange
 function QuickCreateDropdown({ className = '', initialOpen = false }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { agencyWorkflowMode, profile, role } = useWorkspace()
+  const { agencyWorkflowMode, businessWorkspaceId, profile, role } = useWorkspace()
   const [open, setOpen] = useState(initialOpen)
   const [pendingCreateKind, setPendingCreateKind] = useState('')
   const [pendingCreateInitialForm, setPendingCreateInitialForm] = useState({})
@@ -1030,9 +1048,11 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
       if (role === 'bond_originator') return BOND_ORIGINATOR_QUICK_CREATE_GROUPS
       if (role === 'attorney') return ATTORNEY_QUICK_CREATE_GROUPS
       if (location.pathname.startsWith('/commercial')) return COMMERCIAL_QUICK_CREATE_GROUPS
+      if (businessWorkspaceId === BUSINESS_WORKSPACES.rentals ||
+          (location.pathname.startsWith('/agent/rentals/') && !location.pathname.startsWith('/agent/rentals/short-term/'))) return RENTAL_QUICK_CREATE_GROUPS
       return ['agent', 'principal', 'headquarters'].includes(role) ? AGENT_QUICK_CREATE_GROUPS : RESIDENTIAL_QUICK_CREATE_GROUPS
     },
-    [location.pathname, role],
+    [businessWorkspaceId, location.pathname, role],
   )
 
   useDismissableMenu({

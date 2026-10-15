@@ -1,13 +1,10 @@
 import {
-  createPrivateListingActivity,
   getPrivateListingActivity,
 } from '../privateListingService'
 import { listRentalListingsForAgent } from './rentalListingDraftService'
 import {
-  buildRentalLeaseWorkflowActivityPayload,
   mapRentalLeaseWorkflowActivity,
   RENTAL_LEASE_CAPTURE_VERSION,
-  validateRentalLeaseWorkflowForm,
 } from './rentalLeaseWorkflowModel'
 
 function normalizeText(value) {
@@ -37,18 +34,8 @@ export async function listRentalLeaseWorkflowsForAgent(agentId, options = {}) {
   })
 }
 
-export async function createRentalLeaseWorkflow(form = {}, listing = {}, application = {}, context = {}) {
-  const validationErrors = validateRentalLeaseWorkflowForm(form)
-  if (validationErrors.length) {
-    const error = new Error(validationErrors.join(' '))
-    error.validationErrors = validationErrors
-    throw error
-  }
-  const payload = buildRentalLeaseWorkflowActivityPayload(form, listing, application, context)
-  const activity = await createPrivateListingActivity(payload)
-  if (!activity?.id) throw new Error('Unable to persist the rental lease workflow activity.')
-  return {
-    activity,
-    lease: mapRentalLeaseWorkflowActivity(activity, listing),
-  }
+// Earlier activity records remain readable for the management history. New
+// preparation must create the canonical application-backed tenancy and lease.
+export async function createRentalLeaseWorkflow() {
+  throw new Error('Prepare the tenancy from the tenant’s approved application at Placement ready.')
 }

@@ -4,6 +4,7 @@ import { readRentalSavedChecklist } from './rentalSavedChecklist.js'
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { rentalApplicationSavedDocumentSlots } from '../../src/services/rentals/rentalApplicationWizardModel.js'
 const bucket = 'rental-application-documents'
+export const rentalStorageObjectMissing = error => Number(error?.statusCode || error?.status) === 404 || /(?:object|resource) (?:not found|does not exist)/i.test(String(error?.message || ''))
 export function validateRentalDocumentUpload({ fileName = '', mimeType = '', binary = Buffer.alloc(0) } = {}) {
   const policy = validateDocumentUploadFile({ name: fileName, type: mimeType, size: binary.length }, { surface: 'rental_application' })
   return { safeFileName: policy.safeName, mimeType: policy.mimeType }
@@ -22,7 +23,7 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
   if (!['draft', 'submitted', 'under_review'].includes(application.status)) throw new Error('This application can no longer be edited.')
   let existingDocument = null
   let completionTicket = null
-  if (body.action === 'complete_upload') {
+  if (['complete_upload', 'recover_upload'].includes(body.action)) {
     if (!signingSecret) throw new Error('Document upload is not configured.')
     completionTicket = readTicket(body.ticket, signingSecret, application, source)
     const found = await applicationClient.from('rental_application_documents').select('id, document_type, status, file_name, uploaded_at, created_at, intake_bundle_id, storage_path, intake_requirement_id, intake_generation').eq('application_id', application.id).eq('storage_path', completionTicket.path).maybeSingle()
@@ -30,7 +31,7 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
     existingDocument = found.data
     if (existingDocument && existingDocument.storage_path !== completionTicket.path) throw new Error('Upload recovery did not match the exact file.')
     if (existingDocument && application.application_data?.documentLinks?.some(link => link.documentId === existingDocument.id && link.requirementId === completionTicket.requirementId && Number(link.generation) === completionTicket.generation)) {
-      return { document: existingDocument, application }
+      return body.action === 'recover_upload' ? { uploaded: true } : { document: existingDocument, application }
     }
   }
   if (Number(body.version) !== Number(application.version)) throw new Error('This application changed. Refresh and try again.')
@@ -44,6 +45,19 @@ export async function uploadRentalApplicationDocument(db, application, body, { s
     return requirement
   }
   const storage = db.storage.from(bucket)
+  if (body.action === 'recover_upload') {
+    const ticket = completionTicket
+    findRequirement(ticket.subjectId, ticket.purpose, ticket.requirementId, ticket.generation)
+    const info = await storage.info(ticket.path)
+    if (!info.error && info.data) {
+      if (Number(info.data.size) !== ticket.fileSize || info.data.contentType !== ticket.mimeType) throw new Error('The uploaded file differs from the selected document.')
+      return { uploaded: true }
+    }
+    if (!rentalStorageObjectMissing(info.error)) throw new Error('The original file transfer could not be checked. Please retry.')
+    const upload = await storage.createSignedUploadUrl(ticket.path, { upsert: false })
+    if (upload.error) throw upload.error
+    return { uploaded: false, uploadUrl: upload.data.signedUrl }
+  }
   let slot, requirement, policy, path, fileSize, bundleId = randomUUID()
   if (body.action === 'complete_upload') {
     if (!signingSecret) throw new Error('Document upload is not configured.')

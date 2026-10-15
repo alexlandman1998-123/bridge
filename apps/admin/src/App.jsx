@@ -1,3 +1,4 @@
+import AddressInput from '../../../the-it-guy/src/components/location/AddressInput'
 import {
   AlertTriangle,
   ArrowRight,
@@ -3139,7 +3140,7 @@ function AgencyOnboardingPage() {
                   </label>
                   <label className="intake-field wide">
                     <span>Physical address</span>
-                    <input onChange={(event) => setValue('physicalAddress', event.target.value)} value={form.physicalAddress} />
+                    <AddressInput onChange={(event) => setValue('physicalAddress', event.target.value)} value={form.physicalAddress} />
                   </label>
                 </div>
               ) : null}
@@ -4057,7 +4058,7 @@ function ProspectDemoGeneratorView() {
               </div>
               <label className="prospect-field">
                 <span>Sample property address</span>
-                <input
+                <AddressInput
                   onChange={(event) => setForm((previous) => ({ ...previous, samplePropertyAddress: event.target.value }))}
                   placeholder="12 Example Road, Sea Point"
                   value={form.samplePropertyAddress}

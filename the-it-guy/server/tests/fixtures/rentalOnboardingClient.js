@@ -24,7 +24,7 @@ export function rentalOnboardingClient(db, storage, actor, scoped = false) {
   return {
     auth: {
       getUser: async (jwt) =>
-        jwt === 'fixture-agent'
+        (jwt === undefined || jwt === 'fixture-agent')
           ? { data: { user: { id: actor } } }
           : { error: new Error('Invalid fixture agent') },
     },
@@ -56,6 +56,15 @@ export function rentalOnboardingClient(db, storage, actor, scoped = false) {
         },
         eq: (key, input) => {
           filters.push([key, input])
+          return q
+        },
+        is: (key, input) => {
+          if (input !== null) throw new Error('Fixture IS filter supports NULL only')
+          filters.push([key, input])
+          return q
+        },
+        in: (key, inputs) => {
+          filters.push([key, inputs, 'in'])
           return q
         },
         order: (key, options = {}) => {
@@ -131,8 +140,8 @@ export function rentalOnboardingClient(db, storage, actor, scoped = false) {
             sql +=
               ' where ' +
               filters
-                .map(([key, input]) =>
-                  input === null
+                .map(([key, input, type]) =>
+                  type === 'in' ? input.length ? `${name(key)} in (${input.map(bind).join(',')})` : 'false' : input === null
                     ? `${name(key)} is null`
                     : `${name(key)}=${bind(input)}`,
                 )

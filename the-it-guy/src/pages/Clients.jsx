@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   BriefcaseBusiness,
   Building2,
@@ -876,7 +877,7 @@ function AddClientModal({
               <span className="text-sm font-medium text-slate-600">Property interest</span>
               <Field value={form.propertyInterest} placeholder="e.g. 3-bedroom home, apartment, investment property" onChange={(event) => setForm((previous) => ({ ...previous, propertyInterest: event.target.value }))} />
             </label>
-            {form.role === 'seller' || form.role === 'landlord' ? <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-medium text-slate-600">Property address</span><Field value={form.sellerPropertyAddress} placeholder="Address of the property to sell or let" onChange={(event) => setForm((previous) => ({ ...previous, sellerPropertyAddress: event.target.value }))} /></label> : null}
+            {form.role === 'seller' || form.role === 'landlord' ? <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-medium text-slate-600">Property address</span><AddressInput value={form.sellerPropertyAddress} placeholder="Address of the property to sell or let" onChange={(event) => setForm((previous) => ({ ...previous, sellerPropertyAddress: event.target.value }))} /></label> : null}
             <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-medium text-slate-600">Notes</span><Field as="textarea" rows={3} value={form.notes} placeholder="Anything the team should know" onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))} /></label>
           </>
         ) : null}

@@ -1,4 +1,5 @@
 import ConnectedCalendarPanel from './ConnectedCalendarPanel'
+import AddressInput from '../location/AddressInput'
 import { useEffect, useRef, useState } from 'react'
 import Modal from '../ui/Modal'
 import AppointmentWorkActions from './AppointmentWorkActions'
@@ -54,6 +55,7 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
     return () => { current = false; clearTimeout(timeout) }
   }, [editing, organisationId, lookupRetry])
   const field = (key,value) => setDraft(previous => ({ ...previous, [key]:value }))
+  const LocationInput = ['phone_call', 'video_call'].includes(draft.locationType) ? 'input' : AddressInput
   const stale = appointment && (draft.expectedRevision !== appointment.calendarRevision || Boolean(appointment.archivedAt))
   function addAttendee() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Enter a valid attendee email.'); return }
@@ -154,7 +156,7 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
         <label><input type="checkbox" checked={draft.allDay === true} onChange={event => field('allDay',event.target.checked)} /> All-day appointment</label>
         {!draft.allDay ? <div className="grid grid-cols-2 gap-2"><label>Start time<input type="time" required value={draft.startTime} onChange={event => setDraft(previous => ({...previous,startTime:event.target.value,endTime:''}))} /></label><label>End time<input type="time" value={draft.endTime || ''} onChange={event => field('endTime',event.target.value)} /></label></div> : null}
         <label>Timezone<input required value={draft.timezone} onChange={event => field('timezone',event.target.value)} /></label>
-        <label>Location<input value={draft.location || ''} onChange={event => field('location',event.target.value)} /></label>
+        <label>Location<LocationInput value={draft.location || ''} onChange={event => field('location',event.target.value)} /></label>
         <label>Meeting URL<input type="url" value={draft.meetingUrl || ''} onChange={event => field('meetingUrl',event.target.value)} /></label>
         <label>Notes<textarea value={draft.notes || ''} onChange={event => field('notes',event.target.value)} /></label>
         {!special ? <section className="grid gap-2" aria-label="Edit attendees">

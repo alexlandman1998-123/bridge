@@ -9,7 +9,9 @@ export function getRentalLeadOutcome(lead = {}) {
   const raw = lead.rawEnquiryPayload || lead.raw_enquiry_payload || lead.raw || lead.metadata || lead
   const metadata = raw.rentalCrm || raw.rental_crm || raw
   const source = metadata.outcome && typeof metadata.outcome === 'object' ? metadata.outcome : {}
-  const status = RENTAL_LEAD_OUTCOME_STATUSES.includes(normalise(source.status)) ? normalise(source.status) : 'open'
+  const legacyStatus = normalise(lead.status || lead.raw?.status)
+  const status = RENTAL_LEAD_OUTCOME_STATUSES.includes(normalise(source.status)) ? normalise(source.status)
+    : ['won', 'lost', 'withdrawn', 'nurture'].includes(legacyStatus) ? legacyStatus : 'open'
   return { status, reason: text(source.reason), note: text(source.note), reactivationDate: text(source.reactivationDate || source.reactivation_date), recordedAt: text(source.recordedAt || source.recorded_at), recordedBy: text(source.recordedBy || source.recorded_by) }
 }
 

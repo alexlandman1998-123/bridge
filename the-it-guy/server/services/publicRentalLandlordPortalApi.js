@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { loadRentalLandlordPortalSnapshot } from './rentalLandlordPortalSnapshot.js'
+import { openRentalPortalDocument } from './rentalPortalDocuments.js'
 
 const text = (value) => String(value ?? '').trim()
 const hash = (value) => createHash('sha256').update(text(value)).digest('hex')
@@ -12,20 +14,17 @@ export async function handlePublicRentalLandlordPortal({ method = 'GET', headers
   try {
     const db = admin(env); const now = new Date().toISOString()
     const access = await db.from('rental_landlord_portal_access').select('id, property_id, expires_at, revoked_at').eq('token_hash', hash(rawToken)).maybeSingle()
-    if (access.error || !access.data || access.data.revoked_at || new Date(access.data.expires_at) <= new Date(now)) return { status: 401, body: { error: 'This landlord portal link is invalid or has expired.' } }
+    if (access.error || !access.data || access.data.revoked_at || !Number.isFinite(Date.parse(access.data.expires_at)) || Date.parse(access.data.expires_at) <= Date.now()) return { status: 401, body: { error: 'This landlord portal link is invalid or has expired.' } }
     const property = await db.from('rental_properties').select('id, organisation_id, name, property_type, status, address_line_1, suburb, city').eq('id', access.data.property_id).maybeSingle()
     if (property.error || !property.data) return { status: 404, body: { error: 'This rental property is unavailable.' } }
-    const [mandates, units, documents] = await Promise.all([
-      db.from('rental_property_mandates').select('id, mandate_status, authority_status, starts_on, ends_on, management_fee_type, management_fee_amount').eq('property_id', access.data.property_id).order('created_at', { ascending: false }).limit(1),
-      db.from('rental_units').select('id, unit_label, status, target_rent, bedrooms, bathrooms').eq('property_id', access.data.property_id).order('unit_label'),
-      db.from('rental_entity_documents').select('id, document_label, document_category, created_at').eq('property_id', access.data.property_id).eq('link_state', 'linked').order('created_at', { ascending: false }).limit(20),
-    ])
-    if (mandates.error || units.error || documents.error) throw mandates.error || units.error || documents.error
+    const snapshot = await loadRentalLandlordPortalSnapshot(db, property.data.id, property.data.organisation_id)
     await db.from('rental_landlord_portal_access').update({ last_accessed_at: now }).eq('id', access.data.id)
+    if (method === 'POST' && body.action === 'open_document') return await openRentalPortalDocument(db, snapshot.fileAccess, body.documentId)
+    const { fileAccess: _fileAccess, ...view } = snapshot
     if (method === 'GET') {
       const decisions = await db.from('rental_landlord_portal_decisions').select('id, decision_type, message, status, submitted_at').eq('property_id', access.data.property_id).order('submitted_at', { ascending: false })
       if (decisions.error) throw decisions.error
-      return { status: 200, body: { property: property.data, mandate: mandates.data?.[0] || null, units: units.data || [], documents: documents.data || [], decisions: decisions.data || [] } }
+      return { status: 200, body: { property: property.data, ...view, decisions: decisions.data || [] } }
     }
     if (method !== 'POST') return { status: 405, body: { error: 'Method not allowed.' } }
     const decisionType = text(body.decisionType).toLowerCase(); const message = text(body.message)

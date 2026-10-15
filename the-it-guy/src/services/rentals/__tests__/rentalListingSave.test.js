@@ -3,6 +3,8 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { activateRentalListing, listRentalListingsForAgent, createRentalListingDraft, updateRentalListingDraft, updateRentalListingGallery, updateRentalProperty24Expiry, uploadRentalGalleryImages, saveRentalListingProgress } from '../rentalListingDraftService'
 import { buildRentalListingEditForm } from '../rentalListingEditModel'
 import { buildRentalListingIndexRow } from '../rentalListingIndexModel'
+import { ensureRentalListingVacancy } from '../rentalListingInventoryRepository.js'
+vi.mock('../rentalListingInventoryRepository.js', () => ({ ensureRentalListingVacancy: vi.fn() }))
 
 const mocks = vi.hoisted(() => ({ publish: vi.fn(async () => []), listings: vi.fn(), create: vi.fn(), update: vi.fn(), get: vi.fn(), upload: vi.fn(), sign: vi.fn(), sync: vi.fn(), expiry: vi.fn(), saved: null }))
 vi.mock('../../privateListingService', () => ({
@@ -26,6 +28,7 @@ const context = { organisationId: '11111111-1111-4111-8111-111111111111', assign
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.saved = null
+  ensureRentalListingVacancy.mockResolvedValue({ listingId: 'listing-1', applicable: true, propertyId: 'property', unitId: 'unit', vacancyId: 'vacancy', updatedAt: '2026-10-04T09:00:01Z' })
   mocks.create.mockResolvedValue({ listing: { id: 'listing-1', updatedAt: '2026-10-01T00:00:00Z' } })
   mocks.update.mockResolvedValue({ id: 'listing-1' })
   mocks.get.mockImplementation(async () => mocks.saved || { organisationId: context.organisationId, assignedAgentId: context.assignedAgentId, id: 'listing-1', updatedAt: '2026-10-01T00:00:00Z', listingCategory: 'rental', sellerCanonicalFacts: { landlordIdentity: { reference: 'existing-owner' } } })
@@ -54,6 +57,19 @@ it('verifies refreshed photo identity even when readback has a different signed 
   expect(result.listing.listingMedia[0].file_url).toBe('https://storage.example/fresh-token')
   const reopened = buildRentalListingEditForm(result.listing)
   expect(reopened.galleryImages[0]).toMatchObject({ bucket: 'documents', path: 'private-listings/listing-1/gallery/photo-1' })
+})
+
+it('keeps the verified media and revision receipt when the vacancy connection fails, then retries the same saved listing', async () => {
+  ensureRentalListingVacancy.mockRejectedValueOnce(new Error('Vacancy connection unavailable.'))
+  let failure
+  try { await createRentalListingDraft(form([photo(1)]), context) } catch (error) { failure = error }
+  expect(failure).toMatchObject({ code: 'RENTAL_INVENTORY_LINK_FAILED', listingId: 'listing-1', committed: true, expectedUpdatedAt: '2026-10-04T09:00:00Z' })
+  expect(failure.galleryImages[0].file).toBeUndefined()
+  const retry = { ...form(), ...buildRentalListingEditForm(failure.savedListing), expectedUpdatedAt: failure.expectedUpdatedAt }
+  const result = await updateRentalListingDraft('listing-1', retry, context)
+  expect(result.listing.rentalVacancyId).toBe('vacancy')
+  expect(mocks.create).toHaveBeenCalledTimes(1)
+  expect(mocks.upload).toHaveBeenCalledTimes(1)
 })
 
 it('saves video and virtual tour links, returns saved media and rehydrates their editor values', async () => {
@@ -178,7 +194,7 @@ it('allows landlord capture later and prevents edits to missing or non-rental li
 it('returns the reloaded snapshot, saves P24 expiry separately, and carries the editor version', async () => {
   const draft = { ...form(), property24ExpiryDate: '2027-04-01', mandateEndDate: '2026-12-31', expectedUpdatedAt: '2026-10-01T00:00:00Z' }
   const result = await updateRentalListingDraft('listing-1', draft, context)
-  expect(result.listing).toBe(mocks.saved)
+  expect(result.listing).toMatchObject({ ...mocks.saved, rentalPropertyId: 'property', rentalUnitId: 'unit', rentalVacancyId: 'vacancy', updatedAt: '2026-10-04T09:00:01Z' })
   const payload = mocks.sync.mock.calls[0][1]
   expect(payload.expectedUpdatedAt).toBe(draft.expectedUpdatedAt)
   expect(payload.listingPatch.sellerCanonicalFacts.rentalInfo).toMatchObject({ property24ExpiryDate: '2027-04-01', mandateEndDate: '2026-12-31' })

@@ -1,7 +1,7 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 
 const text = (value) => String(value ?? '').trim()
-const requireClient = (client = supabase) => { if (!isSupabaseConfigured || !client) throw new Error('Rental lease signing requires Supabase configuration.'); return client }
+const requireClient = (client = supabase) => { if (!client || (!isSupabaseConfigured && client === supabase)) throw new Error('Rental lease signing requires Supabase configuration.'); return client }
 
 export async function getRentalLeaseSigningWorkspace(tenancyId, { client = supabase } = {}) {
   const db = requireClient(client)
@@ -9,13 +9,15 @@ export async function getRentalLeaseSigningWorkspace(tenancyId, { client = supab
   if (summary.error) throw summary.error
   const leaseId = summary.data?.lease?.id
   if (!leaseId) throw new Error('This tenancy has no lease.')
-  const version = await db.from('rental_lease_versions').select('id, version_number, status, is_current, effective_start_date, effective_end_date, occupation_date, monthly_rent, deposit_amount, terms_json').eq('lease_id', leaseId).eq('is_current', true).maybeSingle()
+  const version = await db.from('rental_lease_versions').select('id, organisation_id, lease_id, version_number, status, is_current, effective_start_date, effective_end_date, occupation_date, monthly_rent, deposit_amount, terms_json').eq('lease_id', leaseId).eq('is_current', true).maybeSingle()
   if (version.error) throw version.error
   const signers = version.data ? await db.from('rental_lease_signers').select('id, signer_role, signer_name, signer_email, status, signed_at, signed_document_link, evidence_note, source_subject_id, authority_basis').eq('lease_version_id', version.data.id).order('signer_role') : { data: [], error: null }
   if (signers.error) throw signers.error
+  const uploads = version.data ? await db.from('rental_lease_document_uploads').select('id, lease_version_id, signer_id, kind, storage_bucket, storage_path, file_name, mime_type, file_size_bytes, created_at').eq('lease_version_id', version.data.id).order('created_at') : { data: [], error: null }
+  if (uploads.error) throw uploads.error
   const projection = await db.rpc('rental_get_lease_application_projection', { p_lease_id: leaseId })
   if (projection.error) throw projection.error
-  return { projection: projection.data, ...(summary.data || {}), version: version.data || null, signers: signers.data || [] }
+  return { projection: projection.data, ...(summary.data || {}), version: version.data || null, signers: signers.data || [], uploads: uploads.data || [] }
 }
 
 export async function saveRentalLeaseDraft({ leaseId, expectedVersion, terms } = {}, { client = supabase } = {}) {

@@ -1,8 +1,11 @@
 import { Loader2, MapPin, Search, X } from 'lucide-react'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, InputHTMLAttributes, Ref } from 'react'
+import { createPortal } from 'react-dom'
 import { loadGoogleMaps, hasGoogleMapsApiKey } from '../../lib/googleMaps'
 import { cn } from '../../lib/utils'
 import { Input } from '../ui/input'
+import './address-input.css'
 
 export type AddressAutocompleteValue = {
   formattedAddress: string
@@ -35,6 +38,8 @@ export type AddressAutocompleteProps = {
   disabled?: boolean
   error?: string
   hideUnavailableMessage?: boolean
+  inputProps?: InputHTMLAttributes<HTMLInputElement>
+  inputRef?: Ref<HTMLInputElement>
 }
 
 type Prediction = {
@@ -162,8 +167,11 @@ export default function AddressAutocomplete({
   disabled = false,
   error = '',
   hideUnavailableMessage = false,
+  inputProps = {},
+  inputRef,
 }: AddressAutocompleteProps) {
-  const inputId = useId()
+  const generatedId = useId()
+  const inputId = inputProps.id || generatedId
   const [inputValue, setInputValue] = useState(value?.formattedAddress || '')
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isLoadingMaps, setIsLoadingMaps] = useState(false)
@@ -184,10 +192,50 @@ export default function AddressAutocomplete({
   const lastTypedValueRef = useRef('')
   const suppressNextSearchRef = useRef(Boolean(value?.formattedAddress))
   const hasSelectedAddressRef = useRef(Boolean(value?.googlePlaceId || value?.placeId))
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
+  const [suggestionPosition, setSuggestionPosition] = useState<CSSProperties | null>(null)
 
   const isApiKeyAvailable = hasGoogleMapsApiKey()
   const canSearchGoogle = shouldLoadMaps && !disabled && isApiKeyAvailable && !loadError && !isAutocompleteUnavailable
   const isDisabled = disabled
+
+  useLayoutEffect(() => {
+    if (!isOpen || !canSearchGoogle) return
+    const positionSuggestions = () => {
+      const bounds = anchorRef.current?.getBoundingClientRect()
+      if (!bounds) return
+      const below = window.innerHeight - bounds.bottom - 12
+      const above = bounds.top - 12
+      const openAbove = below < 180 && above > below
+      const width = Math.min(bounds.width, window.innerWidth - 16)
+      const next: CSSProperties = {
+        position: 'fixed', zIndex: 200, marginTop: 0, right: 'auto', width,
+        left: Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8)),
+        top: openAbove ? 'auto' : bounds.bottom + 8,
+        bottom: openAbove ? window.innerHeight - bounds.top + 8 : 'auto',
+        maxHeight: Math.max(80, Math.min(288, openAbove ? above : below)),
+      }
+      setSuggestionPosition(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next)
+    }
+    positionSuggestions()
+    window.addEventListener('resize', positionSuggestions)
+    window.addEventListener('scroll', positionSuggestions, true)
+    return () => {
+      window.removeEventListener('resize', positionSuggestions)
+      window.removeEventListener('scroll', positionSuggestions, true)
+    }
+  }, [isOpen, canSearchGoogle])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const dismissOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!anchorRef.current?.contains(target) && !suggestionsRef.current?.contains(target)) setIsOpen(false)
+    }
+    document.addEventListener('pointerdown', dismissOutside)
+    return () => document.removeEventListener('pointerdown', dismissOutside)
+  }, [isOpen])
 
   useEffect(() => {
     const nextValue = value?.formattedAddress || ''
@@ -205,7 +253,7 @@ export default function AddressAutocomplete({
 
   useEffect(() => {
     if (!shouldLoadMaps || disabled || !isApiKeyAvailable) {
-      if (!isApiKeyAvailable) {
+      if (!isApiKeyAvailable && shouldLoadMaps && !hideUnavailableMessage) {
         console.warn('[Google Maps] Missing VITE_GOOGLE_MAPS_API_KEY. Address autocomplete is disabled.')
       }
       return
@@ -248,7 +296,7 @@ export default function AddressAutocomplete({
     return () => {
       cancelled = true
     }
-  }, [disabled, isApiKeyAvailable, shouldLoadMaps])
+  }, [disabled, isApiKeyAvailable, shouldLoadMaps, hideUnavailableMessage])
 
   useEffect(() => {
     if (suppressNextSearchRef.current) {
@@ -411,6 +459,7 @@ export default function AddressAutocomplete({
   }
 
   function fetchLegacyPlaceDetails(prediction: Prediction, onComplete?: () => void) {
+    const selectionId = requestIdRef.current
     if (!placesServiceRef.current) {
       setIsFetching(false)
       setLoadError('Selected address details could not be loaded because Google Places details are unavailable for this key.')
@@ -420,7 +469,7 @@ export default function AddressAutocomplete({
 
     let completed = false
     const timeout = window.setTimeout(() => {
-      if (completed) return
+      if (completed || requestIdRef.current !== selectionId) return
       completed = true
       setIsFetching(false)
       setLoadError('Selected address details timed out. You can keep the typed address manually.')
@@ -436,6 +485,7 @@ export default function AddressAutocomplete({
         if (completed) return
         completed = true
         window.clearTimeout(timeout)
+        if (requestIdRef.current !== selectionId) return
         setIsFetching(false)
         const placesStatus = googleApi?.maps?.places?.PlacesServiceStatus
         if (status !== placesStatus?.OK || !place) {
@@ -444,6 +494,7 @@ export default function AddressAutocomplete({
           return
         }
         const mapped = mapPlaceToAddress(place)
+        if (!mapped.formattedAddress) { setLoadError('Selected address details could not be loaded. You can keep typing manually.'); onComplete?.(); return }
         requestIdRef.current += 1
         lastTypedValueRef.current = ''
         suppressNextSearchRef.current = true
@@ -463,6 +514,8 @@ export default function AddressAutocomplete({
   function handleSelect(prediction: Prediction) {
     if (!prediction?.place_id) return
     requestIdRef.current += 1
+    const selectionId = requestIdRef.current
+    sessionTokenRef.current = null
     setPredictions([])
     setIsOpen(false)
     setActiveIndex(-1)
@@ -475,6 +528,8 @@ export default function AddressAutocomplete({
         'Selected address details timed out. You can keep the typed address manually.',
       )
         .then((response: any) => {
+          if (requestIdRef.current !== selectionId) return
+          setIsFetching(false)
           const mapped = mapPlaceToAddress(response?.place || place)
           if (!mapped.formattedAddress) {
             setLoadError('Selected address details could not be loaded.')
@@ -492,6 +547,7 @@ export default function AddressAutocomplete({
           onChange(mapped)
         })
         .catch((detailError: any) => {
+          if (requestIdRef.current !== selectionId) return
           console.warn('[Google Maps] Modern place details failed; retrying with legacy Places details.', detailError)
           fetchLegacyPlaceDetails(prediction)
         })
@@ -512,24 +568,28 @@ export default function AddressAutocomplete({
       event.preventDefault()
       handleSelect(predictions[activeIndex])
     } else if (event.key === 'Escape') {
+      if (isOpen && canSearchGoogle) event.stopPropagation()
       setIsOpen(false)
     }
   }
 
   return (
-    <div className="relative grid gap-2">
+    <div className="arch9-address-input relative grid gap-2">
       {label ? (
         <label htmlFor={inputId} className="text-sm font-semibold text-[#2d445e]">
           {label}
           {required ? <span className="ml-1 text-[#b42318]">*</span> : null}
         </label>
       ) : null}
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b6]" />
+      <div ref={anchorRef} className="arch9-address-input__box relative">
+        <Search className="arch9-address-input__search pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b6]" />
         <Input
+          {...inputProps}
+          ref={inputRef}
           id={inputId}
           value={inputValue}
           onChange={(event) => {
+            requestIdRef.current += 1
             const nextValue = event.target.value
             lastTypedValueRef.current = nextValue
             suppressNextSearchRef.current = false
@@ -549,11 +609,19 @@ export default function AddressAutocomplete({
               onChange(null)
             }
           }}
-          onFocus={() => {
+          onFocus={(event) => {
             setShouldLoadMaps(true)
             if (!hasSelectedAddressRef.current && (predictions.length || inputValue.trim().length >= 3)) setIsOpen(true)
+            inputProps.onFocus?.(event)
           }}
-          onKeyDown={handleKeyDown}
+          onKeyDown={(event) => { handleKeyDown(event); inputProps.onKeyDown?.(event) }}
+          onBlur={(event) => {
+            requestIdRef.current += 1
+            setIsOpen(false)
+            setIsFetching(false)
+            setShouldLoadMaps(false)
+            inputProps.onBlur?.(event)
+          }}
           placeholder={placeholder}
           disabled={isDisabled}
           required={required}
@@ -562,14 +630,17 @@ export default function AddressAutocomplete({
           spellCheck={false}
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded={isOpen}
+          aria-expanded={isOpen && canSearchGoogle}
+          aria-controls={`${inputId}-suggestions`}
+          aria-activedescendant={isOpen && activeIndex >= 0 ? `${inputId}-option-${activeIndex}` : undefined}
           aria-invalid={Boolean(error)}
           className={cn(
-            'h-12 rounded-[16px] border-[#dbe6f2] !pl-12 !pr-20 shadow-[0_10px_24px_rgba(15,23,42,0.06)]',
+            'arch9-address-input__control h-12 rounded-[16px] border-[#dbe6f2] !pl-12 !pr-20 shadow-[0_10px_24px_rgba(15,23,42,0.06)]',
             error ? 'border-[#f1c8c8] focus:border-[#d92d20] focus:ring-[#fef3f2]' : '',
+            inputProps.className,
           )}
         />
-        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        <div className="arch9-address-input__actions absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
           {isLoadingMaps || isFetching ? <Loader2 className="h-4 w-4 animate-spin text-[#607387]" /> : null}
           {inputValue && !disabled ? (
             <button
@@ -588,19 +659,21 @@ export default function AddressAutocomplete({
           {helperText}
         </p>
       ) : null}
-      {isOpen && canSearchGoogle ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-auto rounded-[18px] border border-[#dbe6f2] bg-white p-1 shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
+      {isOpen && canSearchGoogle && suggestionPosition ? createPortal(
+        <div ref={suggestionsRef} style={suggestionPosition} className="arch9-address-input__suggestions overflow-auto rounded-[18px] border border-[#dbe6f2] bg-white p-1 shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
           {isFetching ? (
             <div className="flex items-center gap-2 px-3 py-3 text-sm text-[#607387]">
               <Loader2 className="h-4 w-4 animate-spin" />
               Searching South African addresses...
             </div>
           ) : predictions.length ? (
-            <ul role="listbox" className="grid gap-1">
+            <ul id={`${inputId}-suggestions`} role="listbox" className="grid gap-1">
               {predictions.map((prediction, index) => (
                 <li key={prediction.place_id}>
                   <button
                     type="button"
+                    id={`${inputId}-option-${index}`}
+                    tabIndex={-1}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => handleSelect(prediction)}
                     className={cn(
@@ -628,7 +701,7 @@ export default function AddressAutocomplete({
           ) : (
             <div className="px-3 py-4 text-sm text-[#607387]">No South African addresses found.</div>
           )}
-        </div>
+        </div>, document.body,
       ) : null}
     </div>
   )

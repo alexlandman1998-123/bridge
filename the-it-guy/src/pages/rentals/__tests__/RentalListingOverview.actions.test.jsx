@@ -11,7 +11,7 @@ vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ getRenta
 vi.mock('../../../services/rentals/rentalLeadService', () => ({ listRentalLeads: mocks.leads, createRentalLead: mocks.createLead, advanceRentalLead: mocks.advance }))
 vi.mock('../../../services/rentals/rentalLeadOutcomeService', () => ({ recordRentalLeadOutcome: mocks.outcome }))
 vi.mock('../../../services/rentals/rentalViewingService', () => ({ createRentalViewing: mocks.viewing, listRentalViewings: async () => [], recordRentalViewingOutcome: vi.fn() }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); window.sessionStorage.clear(); vi.clearAllMocks() })
 it('opens a scoped tenant lead form and saves its property enquiry association', async () => {
   mocks.leads.mockResolvedValue([])
   mocks.getListing.mockResolvedValue({ id: 'listing-2', title: 'Demo Apartment', suburb: 'Woodstock' })
@@ -25,6 +25,18 @@ it('opens a scoped tenant lead form and saves its property enquiry association',
   fireEvent.click(within(dialog).getByRole('button', { name: 'Create Rental Lead' }))
   await waitFor(() => expect(mocks.createLead).toHaveBeenCalledWith(expect.objectContaining({ listingId: 'listing-2', role: 'tenant', desiredArea: 'Woodstock' }), expect.objectContaining({ organisationId: 'org-1' })))
 })
+it.each(['landlord', 'tenant'])('opens standalone %s capture from the header route without a listing', async role => {
+  mocks.leads.mockResolvedValue([])
+  render(<MemoryRouter initialEntries={[`/agent/rentals/pipeline/leads?create=${role}`]}><RentalLeadsPage /></MemoryRouter>)
+  const dialog = await screen.findByRole('dialog', { name: 'Create rental lead' })
+  expect(within(dialog).getByRole('button', { name: role === 'landlord' ? 'Landlord Leads' : 'Tenant Leads' }).getAttribute('aria-pressed')).toBe('true')
+  expect(within(dialog).queryByText('Seller')).toBeNull()
+  expect(mocks.getListing).not.toHaveBeenCalled()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(mocks.createLead).not.toHaveBeenCalled()
+})
+
 it('preselects the requested visible property and saves the viewing against it', async () => {
   mocks.leads.mockResolvedValue([{ id: 'lead-1', name: 'Amy Tenant', role: 'tenant', stage: 'qualified' }])
   mocks.listListings.mockResolvedValue([{ id: 'first-property', title: 'Another Property' }, { id: 'listing-2', title: 'Requested Apartment' }])

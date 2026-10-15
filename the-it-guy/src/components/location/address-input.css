@@ -1,0 +1,11 @@
+.arch9-address-input { position: relative; display: grid; gap: .5rem; width: 100%; min-width: 0; }
+.arch9-address-input__box { position: relative; }
+.arch9-address-input__search { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); width: 1rem; height: 1rem; pointer-events: none; }
+.arch9-address-input__control { width: 100%; padding-left: 3rem !important; padding-right: 5rem !important; }
+.arch9-address-input__actions { position: absolute; right: .5rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: .25rem; }
+.arch9-address-input__actions button { display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #73869b; }
+.arch9-address-input__suggestions { position: absolute; z-index: 60; top: 100%; left: 0; right: 0; margin-top: .5rem; max-height: 18rem; overflow: auto; padding: .25rem; border: 1px solid #dbe6f2; border-radius: 1rem; background: white; color: #243d56; box-shadow: 0 18px 50px #0f172a24; }
+.arch9-address-input__suggestions ul { list-style: none; margin: 0; padding: 0; }
+.arch9-address-input__suggestions button { display: flex; align-items: flex-start; gap: .75rem; width: 100%; padding: .75rem; border: 0; border-radius: .75rem; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.arch9-address-input__suggestions button:hover { background: #eef5fb; }
+.arch9-address-input__suggestions svg { width: 1rem; height: 1rem; flex-shrink: 0; }

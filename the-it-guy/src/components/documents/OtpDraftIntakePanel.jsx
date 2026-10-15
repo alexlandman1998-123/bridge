@@ -1,3 +1,4 @@
+import AddressInput from '../location/AddressInput'
 import { CheckCircle2, CircleAlert, RotateCcw } from 'lucide-react'
 import {
   normalizeLegalMaritalRegime,
@@ -820,7 +821,7 @@ export default function OtpDraftIntakePanel({
 	              <input type="email" value={draft.coBuyerEmail || ''} onChange={update('coBuyerEmail')} placeholder="Optional" className={controlClass('coBuyerEmail')} aria-invalid={isFieldMissing('coBuyerEmail')} />
 	            </OtpField>
 	            <OtpField label="Domicilium address" fieldKey="buyerDomiciliumAddress" missing={isFieldMissing('buyerDomiciliumAddress')}>
-	              <input value={draft.buyerDomiciliumAddress || ''} onChange={update('buyerDomiciliumAddress')} placeholder="Address for notices" className={controlClass('buyerDomiciliumAddress')} aria-invalid={isFieldMissing('buyerDomiciliumAddress')} />
+	              <AddressInput value={draft.buyerDomiciliumAddress || ''} onChange={update('buyerDomiciliumAddress')} placeholder="Address for notices" className={controlClass('buyerDomiciliumAddress')} aria-invalid={isFieldMissing('buyerDomiciliumAddress')} />
             </OtpField>
             {buyerEntityType === 'individual' ? (
               <>
@@ -947,7 +948,7 @@ export default function OtpDraftIntakePanel({
               </>
             )}
 	            <OtpField label="Registered address" fieldKey="sellerRegisteredAddress" missing={isFieldMissing('sellerRegisteredAddress')}>
-	              <input value={draft.sellerRegisteredAddress || ''} onChange={update('sellerRegisteredAddress')} placeholder="Address for notices" className={controlClass('sellerRegisteredAddress')} aria-invalid={isFieldMissing('sellerRegisteredAddress')} />
+	              <AddressInput value={draft.sellerRegisteredAddress || ''} onChange={update('sellerRegisteredAddress')} placeholder="Address for notices" className={controlClass('sellerRegisteredAddress')} aria-invalid={isFieldMissing('sellerRegisteredAddress')} />
             </OtpField>
           </div>
         </div>
@@ -960,7 +961,7 @@ export default function OtpDraftIntakePanel({
 	          />
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 	            <OtpField label="Property address" fieldKey="propertyAddress" missing={isFieldMissing('propertyAddress')} className="md:col-span-2">
-	              <input value={draft.propertyAddress || ''} onChange={update('propertyAddress')} placeholder="Street address" className={controlClass('propertyAddress')} aria-invalid={isFieldMissing('propertyAddress')} />
+	              <AddressInput value={draft.propertyAddress || ''} onChange={update('propertyAddress')} placeholder="Street address" className={controlClass('propertyAddress')} aria-invalid={isFieldMissing('propertyAddress')} />
 	            </OtpField>
 	            <OtpField label="Suburb" fieldKey="propertySuburb" missing={isFieldMissing('propertySuburb')}>
 	              <input value={draft.propertySuburb || ''} onChange={update('propertySuburb')} placeholder="Suburb" className={controlClass('propertySuburb')} aria-invalid={isFieldMissing('propertySuburb')} />

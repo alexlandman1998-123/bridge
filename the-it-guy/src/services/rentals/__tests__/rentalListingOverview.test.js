@@ -75,14 +75,15 @@ function database(pages) {
   const query = { select: vi.fn(), eq: vi.fn(), in: vi.fn(), order: vi.fn(), range: vi.fn() }
   for (const key of ['select', 'eq', 'in', 'order']) query[key].mockReturnValue(query)
   pages.forEach((data) => query.range.mockResolvedValueOnce({ data, error: null }))
-  return { from: vi.fn().mockReturnValue(query), query }
+  const listingQuery = { select: () => listingQuery, eq: () => listingQuery, maybeSingle: async () => ({data:{id:'listing-1',rental_vacancy_id:'vacancy-1'}}) }
+  return { from: vi.fn(table => table === 'private_listings' ? listingQuery : query), query }
 }
 it('reads every application page with explicit listing and organisation filters', async () => {
   const db = database([Array.from({ length: 100 }, (_, i) => ({ id: `app-${i}` })), [{ id: 'last' }]])
   const rows = await listPersistedRentalApplicationsForListing('org-1', 'listing-1', { client: db })
   expect(rows).toHaveLength(101)
   expect(db.query.eq).toHaveBeenCalledWith('organisation_id', 'org-1')
-  expect(db.query.eq).toHaveBeenCalledWith('application_data->property->>listingId', 'listing-1')
+  expect(db.query.eq).toHaveBeenCalledWith('vacancy_id', 'vacancy-1')
   expect(db.query.range).toHaveBeenNthCalledWith(2, 100, 199)
 })
 it('reads only tenancy conversions from these applications and skips empty queries', async () => {
@@ -107,7 +108,7 @@ it('reads the scoped saved application summary and preserves requirement and fil
   const rows = await listPersistedRentalApplicationsForListing('org-1', 'listing-1', { client: db, includeEvidence: true })
   expect(db.from).toHaveBeenCalledWith('rental_application_review_summaries')
   expect(db.query.eq).toHaveBeenCalledWith('organisation_id', 'org-1')
-  expect(db.query.eq).toHaveBeenCalledWith('application_data->property->>listingId', 'listing-1')
+  expect(db.query.eq).toHaveBeenCalledWith('vacancy_id', 'vacancy-1')
   expect(rows[0].requirements[0]).toMatchObject({ id: 'r-1', documentId: 'doc-1', generation: 2 })
   expect(rows[0].documents[0].name).toBe('identity.pdf')
 })

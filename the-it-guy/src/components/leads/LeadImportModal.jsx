@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { csvEscape, mapCsvRowsToImportRows, parseCsvText, pickImportValue } from '../../lib/csvImport'
 import { leadCategoryLabel, normalizeLeadCategory } from '../../lib/leadCategory'
 import { processManualImportPayload } from '../../services/leadSourceConnectorService'
+import { isExplicitRentalLeadImportRow } from '../../services/rentals/rentalLeadImportModel.js'
 
 const LEAD_IMPORT_TEMPLATE_COLUMNS = [
   'Name',
@@ -98,6 +99,7 @@ export default function LeadImportModal({ open, organisationId, actor, defaultLe
       const text = await file.text()
       const parsedRows = mapCsvRowsToImportRows(parseCsvText(text))
       if (!parsedRows.length) throw new Error('No lead rows found in this CSV.')
+      if (parsedRows.some(isExplicitRentalLeadImportRow)) throw new Error('Import tenant and landlord rows through Rentals → Leads → Import. This sales import keeps their rental journeys separate.')
       setFileName(file.name)
       setRows(parsedRows.map((row) => lockImportRowCategory(row, lockedLeadCategory)))
     } catch (fileError) {

@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   ArrowRight,
   Building2,
@@ -835,7 +836,7 @@ function Onboarding() {
                 </label>
                 <label className="span-2">
                   Physical Address
-                  <input
+                  <AddressInput
                     type="text"
                     value={draft.agencyInformation.physicalAddress}
                     onChange={(event) => updateDraft({ agencyInformation: { ...draft.agencyInformation, physicalAddress: event.target.value } })}
@@ -957,7 +958,7 @@ function Onboarding() {
                         </label>
                         <label>
                           Office Location
-                          <input
+                          <AddressInput
                             type="text"
                             value={branch.officeLocation}
                             onChange={(event) => updateDraft((previous) => ({

@@ -15,16 +15,19 @@ const leaseVersionSeed = await read('../supabase/migrations/20260913123000_renta
 for (const token of ['rental_save_lease_draft', 'rental_prepare_lease_signing', 'rental_record_lease_signature']) {
   assert.ok(repository.includes(token), `Lease signing repository does not use protected command: ${token}`)
 }
-for (const token of ['Lease terms and signatures', 'Save lease draft', 'Prepare signing', 'Record signature', 'Landlord name']) {
+for (const token of ['Lease terms and signatures', 'Save lease draft', 'Prepare signing', 'Upload and record signature', 'Landlord name']) {
   assert.ok(panel.includes(token), `Lease workflow is missing an essential step: ${token}`)
 }
+const uploads = await read('src/services/rentals/rentalLeaseDocumentUploadService.js')
+assert.ok(uploads.includes('rental_register_lease_document'), 'Lease files must be linked through the protected receipt command.')
+assert.ok(panel.includes('Upload reviewed agreement') && !panel.includes('downloadRentalLeaseSchedule'), 'Lease setup must use uploads without generated paperwork.')
 assert.ok(tenancy.includes('RentalLeaseSigningPanel'), 'Tenancy detail does not expose lease signing.')
 for (const token of ['rental_seed_initial_lease_version', 'trg_rental_leases_seed_initial_version', 'where not exists (select 1 from public.rental_lease_versions']) {
   assert.ok(leaseVersionSeed.includes(token), `Converted leases are not guaranteed an initial version: ${token}`)
 }
 for (const source of [maintenance, inspections]) {
   assert.ok(source.includes('useSearchParams'), 'Operations workspace does not accept tenancy context.')
-  assert.ok(source.includes("searchParams.get('tenancyId')"), 'Operations workspace does not prefill the tenancy context.')
+  assert.ok(/(?:searchParams|params)\.get\(['"]tenancyId['"]\)/.test(source), 'Operations workspace does not prefill the tenancy context.')
 }
 
 console.log('Rentals lease signing and tenancy-context workflow checks passed.')

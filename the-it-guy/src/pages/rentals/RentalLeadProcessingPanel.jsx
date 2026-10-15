@@ -1,3 +1,4 @@
+import AddressInput from '../../components/location/AddressInput'
 import { useEffect, useState } from 'react'
 import { listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
 import { listRentalLeadCommunications, logRentalLeadCommunication } from '../../services/rentals/rentalLeadCommunicationService'
@@ -76,7 +77,7 @@ export default function RentalLeadProcessingPanel({ lead, tasks, organisationId,
       <p className="mt-1 text-sm text-[#607891]">Keep the lead brief current before moving through the journey.</p>
       <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); void run('qualification', () => updateRentalLeadQualification(lead.id, qualification, context), 'Qualification saved.') }}>
         {lead.role === 'landlord' ? <>
-          <label className="form-field"><span>Property address</span><input required value={qualification.propertyAddress} onChange={(event) => updateQualification('propertyAddress', event.target.value)} /></label>
+          <label className="form-field"><span>Property address</span><AddressInput required value={qualification.propertyAddress} onChange={(event) => updateQualification('propertyAddress', event.target.value)} /></label>
           <label className="form-field"><span>Property type</span><input value={qualification.propertyType} onChange={(event) => updateQualification('propertyType', event.target.value)} /></label>
           <label className="form-field"><span>Expected monthly rent</span><input type="number" min="0" value={qualification.expectedMonthlyRent} onChange={(event) => updateQualification('expectedMonthlyRent', event.target.value)} /></label>
         </> : <>

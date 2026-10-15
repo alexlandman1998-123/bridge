@@ -1,3 +1,4 @@
+import AddressInput from '../../../components/location/AddressInput'
 import { useState } from 'react'
 import { Building2, MapPin, Plus } from 'lucide-react'
 import Button from '../../../components/ui/Button'
@@ -126,7 +127,7 @@ function CommercialBrokerBranchesPage() {
           </div>
           <label className="grid gap-2 text-sm font-semibold text-slate-700">
             Address
-            <Field value={form.address} onChange={(event) => updateField('address', event.target.value)} placeholder="Optional branch address" />
+            <AddressInput value={form.address} onChange={(event) => updateField('address', event.target.value)} placeholder="Optional branch address" />
           </label>
         </form>
       </Modal>

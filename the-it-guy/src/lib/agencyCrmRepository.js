@@ -15,6 +15,7 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from './supabaseCl
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
 import { migrateBuyerProcessLeadRecord } from '../services/buyerProcessMigrationService'
+import { isRentalCrmLead, getRentalCrmLeadMetadata } from '../services/rentals/rentalCrmLeadModel.js'
 import { emitAgencyCrmUpdated } from './agencyCrmUpdateBus'
 
 const LEGACY_LEAD_SELECT_FIELDS =
@@ -458,10 +459,11 @@ function getAppBaseUrl() {
   ) || 'https://app.arch9.co.za'
 }
 
-function buildLeadActionLink(leadId = '') {
+function buildLeadActionLink(leadId = '', lead = {}) {
   const normalizedLeadId = normalizeText(leadId)
   const baseUrl = getAppBaseUrl().replace(/\/+$/, '')
-  return normalizedLeadId ? `${baseUrl}/agency/leads/${encodeURIComponent(normalizedLeadId)}` : `${baseUrl}/agency/leads`
+  const route = isRentalCrmLead(lead) ? '/agent/rentals/pipeline/leads' : '/agency/leads'
+  return normalizedLeadId ? `${baseUrl}${route}/${encodeURIComponent(normalizedLeadId)}` : `${baseUrl}${route}`
 }
 
 function normalizeRoleKey(value = '') {
@@ -522,11 +524,11 @@ function buildLeadAssignmentEmailBase(organisationId = '', lead = {}, patch = {}
     leadEmail: normalizeText(patch.leadEmail || lead?.email || lead?.sellerEmail || lead?.seller_email).toLowerCase(),
     leadPhone: normalizeText(patch.leadPhone || lead?.phone || lead?.sellerPhone || lead?.seller_phone),
     leadSource: normalizeText(patch.leadSource || lead?.lead_source || lead?.leadSource),
-    leadCategory: normalizeText(patch.leadCategory || lead?.lead_category || lead?.leadCategory),
+    leadCategory: isRentalCrmLead(lead) ? getRentalCrmLeadMetadata(lead).role : normalizeText(patch.leadCategory || lead?.lead_category || lead?.leadCategory),
     leadStatus: normalizeText(patch.status || patch.stage || lead?.status || lead?.stage),
     propertyLabel: normalizeText(patch.propertyLabel || lead?.enquired_property_address || lead?.seller_property_address || lead?.formatted_address || lead?.property_interest || lead?.enquired_property_title),
     budgetLabel: normalizeText(patch.budgetLabel || (lead?.budget ? String(lead.budget) : '')),
-    actionLink: buildLeadActionLink(leadId),
+    actionLink: buildLeadActionLink(leadId, lead),
     source: 'agency_crm_assignment',
   }
 }
@@ -1316,6 +1318,9 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     assignedAgent: resolvedScope.assignedAgent,
   }, workspaceId)
 
+  if ((isRentalCrmLead(payload) || isRentalCrmLead(payload.lead || {})) && !isRentalCrmLead(lead)) {
+    throw new Error('The rental classification could not be retained. Use Rentals lead capture to continue.')
+  }
   try {
     const contactResult = await supabase.from('contacts').upsert({
       contact_id: normalizeText(contact.contactId),
@@ -1341,6 +1346,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     const leadPayloadForRemote = buildRemoteLeadCreatePayload(lead, workspaceId, actor)
     let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' }).select('lead_id, contact_id').single()
     if (leadResult.error && isMissingColumnError(leadResult.error)) {
+      if (isRentalCrmLead(leadPayloadForRemote)) throw new Error('The rental lead could not be saved with this database schema. No rental classification was discarded.')
       const fallbackLeadPayload = { ...leadPayloadForRemote }
       const optionalColumns = [
         'listing_id',
@@ -1427,6 +1433,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
 }
 
 export const __agencyCrmRepositoryTestUtils = {
+  buildLeadAssignmentEmailBase,
   buildLocalLeadAndContactRows,
   buildRemoteLeadCreatePayload,
   buildRemoteLeadUpdatePayload,
@@ -1434,6 +1441,7 @@ export const __agencyCrmRepositoryTestUtils = {
 }
 
 export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = {}, contact = {}, { actor = null } = {}) {
+  if (isRentalCrmLead(lead)) throw new Error('Open this rental lead in Rentals to continue its saved journey.')
   const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.ensureAgencyCrmLeadRecordPersisted')
   const normalizedLeadId = normalizeLeadUuid(lead?.leadId || lead?.lead_id || lead?.id)
   if (!normalizedOrganisationId || !isUuidLike(normalizedOrganisationId)) {
@@ -1555,7 +1563,7 @@ export async function ensureAgencyCrmLeadRecordPersisted(organisationId, lead = 
   }
 }
 
-export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = {}) {
+export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = {}, { expectedUpdatedAt = '' } = {}) {
   const normalizedOrganisationId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.updateAgencyCrmLeadRecord')
   const normalizedLeadId = normalizeText(leadId)
   if (!normalizedLeadId) return null
@@ -1585,18 +1593,23 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
     return updatedLead
   }
 
-  const previousLeadQuery = await fetchLeadRowById(normalizedOrganisationId, dbLeadId)
+  const assignmentTouched = ['assignedAgentId', 'assignedUserId', 'assignedAgentEmail', 'assignedQueueId', 'ownershipStatus'].some((key) => hasOwn(patch, key))
+  const previousLeadQuery = assignmentTouched ? await fetchLeadRowById(normalizedOrganisationId, dbLeadId) : null
   const previousLead = previousLeadQuery?.data || null
 
   try {
-    let updateResult = await supabase
+    let updateQuery = supabase
       .from('leads')
       .update(payloadWithTimestamp)
       .eq('organisation_id', normalizedOrganisationId)
       .eq('lead_id', dbLeadId)
-      .select('lead_id')
+    if (expectedUpdatedAt) updateQuery = updateQuery.eq('updated_at', expectedUpdatedAt)
+    let updateResult = await updateQuery.select('lead_id')
 
     if (updateResult.error && isMissingColumnError(updateResult.error)) {
+      if (expectedUpdatedAt || isRentalCrmLead({ rawEnquiryPayload: patch.rawEnquiryPayload })) {
+        throw new Error('The saved rental journey could not be updated with this database schema. No rental metadata or evidence was discarded.')
+      }
       const compatibleCorePayload = { ...corePayload }
       for (const column of LEAD_ASSIGNMENT_DB_COLUMNS) {
         delete compatibleCorePayload[column]
@@ -1645,7 +1658,7 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
       ? updateResult.data.map((row) => normalizeText(row?.lead_id))
       : []
     if (!updatedLeadIds.includes(dbLeadId)) {
-      throw new Error('Lead update could not be verified. Reload the lead and try again.')
+      throw new Error(expectedUpdatedAt ? 'This rental lead changed while you were saving. Refresh and review its saved journey before trying again.' : 'Lead update could not be verified. Reload the lead and try again.')
     }
   } catch (error) {
     console.error('[agencyCrmRepository] update lead failed without local fallback', error)

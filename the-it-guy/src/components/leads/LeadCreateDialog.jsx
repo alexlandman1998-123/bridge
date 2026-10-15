@@ -5,24 +5,7 @@ import AddressAutocomplete from '../location/AddressAutocomplete'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import Modal from '../ui/Modal'
-
-const LEAD_CREATE_SOURCE_OPTIONS = Object.freeze([
-  'Property24',
-  'Private Property',
-  'Website',
-  'Referral',
-  'Show Day',
-  'Walk-In',
-  'WhatsApp',
-  'Facebook',
-  'Google',
-  'Signboard',
-  'Listing Call',
-  'Cold Call',
-  'Door Knock',
-  'Manual Entry',
-  'Other',
-])
+import { LEAD_CAPTURE_SOURCE_OPTIONS as LEAD_CREATE_SOURCE_OPTIONS } from './leadCaptureSources'
 
 function createLeadCreateDraft(overrides = {}) {
   return {

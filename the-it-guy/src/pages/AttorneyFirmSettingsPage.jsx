@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -224,7 +225,7 @@ function AttorneyFirmSettingsPage() {
 
           <label className="form-field">
             <span>Address Line 1</span>
-            <input value={form.addressLine1} onChange={(event) => updateField('addressLine1', event.target.value)} disabled={!canEditBranding} />
+            <AddressInput addressFormat="street" value={form.addressLine1} onChange={(event) => updateField('addressLine1', event.target.value)} onAddressSelect={address => { if (address) { updateField('city', address.city || ''); updateField('province', address.province || ''); updateField('postalCode', address.postalCode || ''); updateField('country', address.country || 'South Africa') } }} disabled={!canEditBranding} />
           </label>
 
           <div style={{ display: 'grid', gap: '0.85rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>

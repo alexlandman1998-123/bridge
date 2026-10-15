@@ -58,3 +58,14 @@ it('adds a co-agent with their profile identity rather than an external-only ema
  fireEvent.click(screen.getByRole('button',{name:'Request appointment'}));await waitFor(()=>expect(api.create).toHaveBeenCalled())
  expect(api.create.mock.calls[0][1].participants).toEqual([expect.objectContaining({userId:'other',participantRole:'Co-agent',email:'other@example.test',isRequired:true})])
 })
+
+it.each(['phone_call','video_call'])('keeps %s location details as ordinary text when editing', async locationType => {
+ render(<MobileAppointmentWorkspace appointment={{...row,locationType,location:'Original details'}} organisationId="org" actor={actor} />)
+ fireEvent.click(screen.getByRole('button',{name:'Edit appointment'}))
+ const input=screen.getByLabelText('Location')
+ expect(input.getAttribute('role')).not.toBe('combobox')
+ change('Location',locationType==='phone_call'?'+27 82 555 0101':'https://meet.example.test/room')
+ fireEvent.click(screen.getByRole('button',{name:'Save appointment'}))
+ await waitFor(()=>expect(api.update).toHaveBeenCalled())
+ expect(api.update.mock.calls[0][2]).toMatchObject({locationType,location:input.value})
+})

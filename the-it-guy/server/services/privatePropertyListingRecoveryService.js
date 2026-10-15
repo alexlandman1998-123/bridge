@@ -5,6 +5,45 @@ function normalized(value) {
   return normalizePrivatePropertyText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
+const provinceNames = {
+  gauteng: 'Gauteng', kwazulunatal: 'KwaZulu Natal', westerncape: 'Western Cape',
+  easterncape: 'Eastern Cape', northerncape: 'Northern Cape', freestate: 'Free State',
+  limpopo: 'Limpopo', northwest: 'North West', mpumalanga: 'Mpumalanga',
+}
+
+// GetListingsDetails can echo the submitted address while the public advert is
+// indexed in another province. A known public link is independent evidence;
+// never let a matching feed address override an explicit province conflict.
+// This checks the saved URL only, without fetching or trusting arbitrary hosts.
+export function inspectPrivatePropertyPublicLocation({ listingUrl = '', province = '', reference = '' } = {}) {
+  const unchecked = { checked: false, blockers: [], message: '' }
+  try {
+    const url = new URL(listingUrl)
+    if (url.protocol !== 'https:' || url.username || url.password || !['privateproperty.co.za', 'www.privateproperty.co.za'].includes(url.hostname)) return unchecked
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const publicReference = parts.at(-1) || ''
+    if (!/^(T|RR)\d+$/i.test(publicReference)) return unchecked
+    const provinceKey = value => normalized(value).replaceAll(' ', '')
+    const expectedProvince = provinceNames[provinceKey(province)]
+    const publicProvince = provinceNames[provinceKey(parts[1])]
+    if (!expectedProvince || !publicProvince) return unchecked
+    url.search = ''
+    url.hash = ''
+    const result = { checked: true, source: 'saved_public_listing_url', comparedFields: ['province'], listingUrl: url.toString(), expectedProvince, publicProvince, blockers: [], message: '' }
+    if (reference && publicReference.toUpperCase() !== normalizePrivatePropertyText(reference).toUpperCase()) return {
+      ...result, blockers: ['private_property_public_listing_reference_mismatch'],
+      message: 'The saved Private Property link belongs to a different advert. Correct the live portal link before sending changes.',
+    }
+    if (expectedProvince !== publicProvince) return {
+      ...result, blockers: ['private_property_public_location_mismatch'],
+      message: `The Private Property public advert link is in ${publicProvince}, but this listing is in ${expectedProvince}. Ask Private Property support to correct the live location before sending changes or reactivating it.`,
+    }
+    return result
+  } catch {
+    return unchecked
+  }
+}
+
 // Compare PP's retained fields, never our last submitted payload. PP can
 // acknowledge an update while silently retaining a previously activated address.
 export function comparePrivatePropertyStoredAddress(address = {}, stored = {}) {
@@ -16,7 +55,7 @@ export function comparePrivatePropertyStoredAddress(address = {}, stored = {}) {
   return fields.filter((field) => normalized(address[field]) !== normalized(stored[field]))
 }
 
-export async function inspectPrivatePropertyListingRecovery({ portal, existingSync = {}, address = {} } = {}) {
+export async function inspectPrivatePropertyListingRecovery({ portal, existingSync = {}, address = {}, listingUrl = '' } = {}) {
   const propertyId = normalizePrivatePropertyText(existingSync.property_id)
   const branchGuid = normalizePrivatePropertyText(existingSync.branch_guid)
   if (!propertyId) return { checked: false, canReactivate: false, blockers: [], message: '' }
@@ -41,11 +80,13 @@ export async function inspectPrivatePropertyListingRecovery({ portal, existingSy
     if (addressLocked && !(Number(storedAddress.suburbId) > 0 || storedAddress.suburb && storedAddress.town && storedAddress.province)) {
       throw new Error('Private Property returned an incomplete address for this existing record.')
     }
-    const result = { ...base, portalStatus, externalStatus, reference, addressLocked, storedAddress, changedFields }
+    const publicLocation = inspectPrivatePropertyPublicLocation({ listingUrl, province: address.province, reference })
+    const result = { ...base, portalStatus, externalStatus, reference, addressLocked, storedAddress, changedFields, publicLocation }
     if (addressLocked && changedFields.length) return {
       ...result, blockers: ['private_property_locked_address_mismatch'],
       message: 'Private Property retains a different address for this listing. Its address is locked, so sending changes or reactivating it will not correct the location. Review the stored address before taking further action.',
     }
+    if (publicLocation.blockers.length) return { ...result, blockers: publicLocation.blockers, message: publicLocation.message }
     if (externalStatus === 'inactive') return {
       ...result, canReactivate: true, blockers: ['private_property_reactivation_required'],
       message: 'Private Property reports this listing as inactive. The stored address matches. Use Reactivate on Private Property; sending content changes will not reactivate it.',

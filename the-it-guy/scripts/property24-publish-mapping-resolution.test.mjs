@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
   createProperty24ApiResponse,
+  PROPERTY24_PHASE2_PROPERTY_TYPES,
   resolveProperty24ListingLocation,
   resolveProperty24ListingPublishConfiguration,
 } from '../server/property24/index.js'
@@ -642,7 +643,18 @@ async function previewCatalogueType(propertyType, types = portalTypes) {
   return { response, mappings, previewArgs }
 }
 
-for (const [localType, expectedId] of [['vacant_land', 8], ['vacant_stand', 8], ['land', 8], ['plot', 8], ['stand', 8], ['Vacant Land', 8], ['Vacant Land / Plot', 8], ['apartment', 5], ['house', 4]]) {
+const catalogueCases = [
+  ['office_building', 11],
+  ['Office Building', 11],
+  ['retail_store', 11],
+  ['warehouse', 12],
+  ['small_holding', 10],
+  ['Vacant Land', 8],
+  ...PROPERTY24_PHASE2_PROPERTY_TYPES.flatMap((type) => (
+    [type.description, ...type.aliases].map((alias) => [alias, type.id])
+  )),
+]
+for (const [localType, expectedId] of catalogueCases) {
   const { response, mappings, previewArgs } = await previewCatalogueType(localType)
   assert.equal(response.status, 200, response.body.message)
   assert.equal(previewArgs.propertyTypeId, String(expectedId))
@@ -655,13 +667,24 @@ for (const [localType, expectedId] of [['vacant_land', 8], ['vacant_stand', 8], 
   }
 }
 
-for (const types of [portalTypes.filter((type) => type.id !== 8), [...portalTypes, { id: 88, description: 'Vacant Land / Plot' }]]) {
-  const { response, mappings, previewArgs } = await previewCatalogueType('vacant_land', types)
-  assert.equal(response.status, 422)
-  assert.equal(response.body.error, 'property24_property_type_mapping_unresolved')
-  assert.equal(previewArgs, null)
-  assert.equal(mappings.length, 0)
+for (const [localType, expectedId] of [['vacant_land', 8], ['office_building', 11], ['warehouse', 12], ['small_holding', 10]]) {
+  for (const types of [
+    portalTypes.filter((type) => type.id !== expectedId),
+    [...portalTypes, { id: 88, description: portalTypes.find((type) => type.id === expectedId).description }],
+  ]) {
+    const { response, mappings, previewArgs } = await previewCatalogueType(localType, types)
+    assert.equal(response.status, 422)
+    assert.equal(response.body.error, 'property24_property_type_mapping_unresolved')
+    assert.equal(previewArgs, null)
+    assert.equal(mappings.length, 0)
+  }
 }
+
+const unknownType = await previewCatalogueType('unknown_commercial_type')
+assert.equal(unknownType.response.status, 422)
+assert.equal(unknownType.response.body.error, 'property24_property_type_mapping_unresolved')
+assert.equal(unknownType.previewArgs, null)
+assert.equal(unknownType.mappings.length, 0)
 
 const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)

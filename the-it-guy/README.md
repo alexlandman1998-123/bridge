@@ -1,5 +1,36 @@
 # bridge.
 
+## Seller lead capture
+
+Add Seller Lead opens with first name, surname, phone, email, property address,
+the standard source dropdown and the lead team. Select one primary agent and
+optional supporting agents through the existing lead assignment model. Owner
+details reuses that contact; linking Owner 1 avoids retyping the same contact.
+Ownership and mandate choices use two columns. Seller permissions and declarations
+are completed by the seller in onboarding, rather than recorded in this modal.
+Owner details, Property details and Documents are optional tabs. Answers autosave
+after an 800 ms typing pause, including source, priority, additional agents and
+reported seller progress. The status confirms saving or explains an unsaved draft;
+typing and tabs remain available during background saves. Closing flushes remaining
+changes before returning to the lead list; opening and closing an untouched form
+does not create a lead. Offline edits save when the connection returns, and failed
+saves keep the form open for retry. The primary agent follows the existing lock once
+the lead is created. Save lead remains available from every tab to finish capture.
+Property details starts directly with the fields. Documents shows one preparation
+action, then compact upload rows and saved-file statuses. Optional seller progress
+is under Lead Details. Save lead skips document preparation and unchanged drafts;
+new intakes use the guarded save without redundant onboarding lookups. Confirmed
+contact, lead summary and agent writes run together, retaining successful writes
+when retrying. The existing seller record, partial-save rules, document uploads
+and review gates are reused. Documents can save the details first without closing
+the modal. Saved
+answers feed the lead's Seller Profile and Property tabs, the linked listing,
+seller onboarding and seller portal through the same onboarding record.
+Focused checks: `SellerLeadCreateDialog.test.jsx`, `SellerOnboardingCapture.test.jsx`
+and `sellerLeadCaptureService.test.js`; save guards and CRM notification reads are
+covered by `privateListingService.sellerAccess.test.js` and
+`agencyCrmNewLeadNotification.test.js`.
+
 ## Seller onboarding differences from a draft listing
 
 Submitted onboarding now preserves the agent's saved draft property values before
@@ -87,6 +118,49 @@ ListingRelistDialog and listingChannelManagement/Relist service suites,
 `node scripts/listing-channel-update-state.test.mjs`, and
 `node scripts/listing-channel-manage-browser.test.mjs`. The browser check uses
 local portal doubles and blocks external requests; it does not publish adverts.
+
+Portal review and submission save property content only when it has unsaved
+changes. The publishing service records the portal reference and status; the
+browser reloads that receipt instead of saving the seller profile again with
+its previous revision. This prevents Arch9's own review or submission save from
+causing a seller conflict. Genuine conflicts on unsaved changes still block
+submission. Covered by the ListingChannelManageDialog integration suite.
+
+## Address search across capture forms
+
+Full address entry uses the existing Google Places search in seller and owner
+profiles, rental capture and applications, legal forms, offices, developments
+and contact capture. Plain string fields retain their saved keys and validation;
+location forms fill the available street, city, province and postcode fields.
+Manual entry remains available. Google loads on interaction, and a delayed
+selection cannot overwrite newer typing. Uncontrolled fields follow form reset.
+Office/address meeting locations use search; phone and video details keep their
+existing controls. The Operating Console reuses the same control and needs
+`VITE_GOOGLE_MAPS_API_KEY` in its build environment.
+
+Seller lead Address, seller property Search address and Address line 1 also use
+this control. Selecting a result fills street, suburb, city, province, postcode
+and the saved place ID together; manual edits invalidate that place ID, and
+clearing the selected address cannot restore its old formatted value. Branch
+office setup (agency, commercial and bond), mobile physical appointment locations,
+legal task appointments, development event venues and launch venues share the
+same search. Phone/video appointment details retain their ordinary text fields.
+Google configuration and deployment have not been changed by this source update.
+Suggestions render above scrolling forms when needed, remain selectable in modals
+and dismiss with Escape before the containing dialog closes.
+
+Rental tenant and landlord workspaces expose the saved listing link directly.
+Older rental records also retain links stored in the CRM listing columns. Sales
+lead and seller-link pickers keep their rental exclusions; existing owner and
+managed-property selectors preserve saved documents and profiles.
+
+Focused checks: `src/components/location/__tests__/AddressInput.test.jsx`, the
+rental tenant/landlord workspace suites, `rentalCrmLeadModel.test.js`, and
+`node scripts/address-input-browser.test.mjs`. The browser check uses synthetic
+Google responses and local lead ingestion, blocks external requests, and covers
+selected addresses, seller property fields, contact preservation, submission,
+reset and mobile overflow. SellerLeadCreateDialog, MobileAppointmentWorkspace,
+CreateInviteDrawer and DevelopmentMarketingEvents cover the affected capture flows.
 
 ## Multiple listing agents (prepared)
 
@@ -243,6 +317,28 @@ server request was rolled back. Subsequent view refreshes may still be pending.
 
 Focused checks: the document upload recovery/progress tests in `src/lib/__tests__`,
 the document requirement command tests, and the document progress/manager tests.
+
+Rental landlord, tenant and listing uploads use the same progress and saved-file
+confirmation as Sales. Landlord completion receipts use `documentId`; tenant
+receipts use `document.id`. Both are confirmed independently of a later checklist
+refresh. Landlord row uploads open the existing upload dialog so the action menu
+cannot discard progress or retained files when file selection closes it.
+
+Interrupted signed transfers are checked through the currently authorised rental
+API. A confirmed missing object receives a new signed URL for the original path;
+an uncertain or denied lookup cannot start another transfer. An uncertain save
+retains its bytes and exact completion receipt. Unchanged tenant profiles are not
+saved again before uploads or retries. Agreement, signature and move-in evidence
+also use the shared recovery and progress contract. Existing rental file limits,
+requirement generations, review rules and person/property links still apply.
+
+Focused checks: `rentalApplicationFileUpload.test.js`,
+`rentalLeaseDocumentUploadService.test.js`, `rentalDocumentUploadRecovery.test.js`,
+`rentalListingDocumentWorkflow.test.js` and `RentalDocumentUploadControl.test.jsx`,
+plus the shared document upload recovery tests. Storage transfer in local
+acceptance uses an isolated fixture; hosted Storage acceptance remains a release
+check. This repair changes no database schema and generates no documents. Release the
+matching rental API and app together so signed-transfer recovery is available.
 
 ## Client audiences
 
@@ -511,7 +607,42 @@ Focused checks from this package:
 These use local fixtures and make no live writes. Production requires an app release
 and an authorised Samlin user's check of Junoah's images after that release.
 
+## Rental lead Kanban
+
+Rentals → Leads supports dragging an active card to its next stage and offers
+the same action as a keyboard/touch button. Cards also expose Open and Mark as
+lost through the existing lead menu. Stage moves wait for the saved service
+result; skipped/backward moves and duplicate submissions are blocked. Viewing,
+mandate, application and FICA milestones retain the existing workflow and
+evidence checks. Closed and review-needed cards cannot be dragged forward.
+
+Unrecognised saved stages appear in a first **Review needed** column and remain
+filterable without rewriting their stored facts. Empty boards have clear
+messages, and unavailable CRM data raises an error with the existing Refresh
+action. View, role, search and filters are retained for the browser tab, scoped
+to the current organisation, agent and permission scope. Changing that scope
+remounts the board and discards superseded load responses.
+
+Focused checks: `RentalLeadsPage.kanban.test.jsx`,
+`rentalLeadService.list.test.js`, `rentalLeadListModel.test.js`, the existing
+`RentalListingOverview.actions.test.jsx` and `rentalLeadJourneyService.test.js`
+suites, and `server/tests/rentalLeadJourneyGuards.test.js`. No migration is
+required. This source change has not been deployed or used to alter live leads.
+
 ## Lead capture from Kanban and listings
+
+Sales lead lists, archives and summary counts exclude rental landlord and tenant
+records even though the shared CRM retains legacy seller/buyer categories. Rental
+records stay in the rental workspace. In long-term Rentals, the header Create menu
+opens native landlord/tenant capture and rental listings, including from shared
+pages with the Rentals business line selected. The Link seller lead picker applies the same
+separation. `20261014114244_separate_rental_leads_from_seller_linking.sql` adds the
+matching check inside the atomic linking function, including records changed after
+search, and aligns listing-ID comparisons with the existing text column. It preserves
+saved profiles, documents and links and has not been applied
+remotely. Checks: `node src/pages/agency/__tests__/agencyLeadLandingMetrics.test.js`,
+`agencyLeadListReadRepository.agentScope.test.js`, `listingSellerLeadLinkService.test.js`
+and `node --test server/tests/listingSellerLeadLink.test.js`.
 
 Sales Kanban includes a Create Lead control on the board for the current buyer
 or seller category, using the same capture dialog as the table. New sales listing
@@ -2441,10 +2572,388 @@ with legacy lease terms used only when needed. Missing values remain explicit.
 
 Focused checks: the RentalTenanciesPage, rentalTenancyRegisterModel and
 rentalOperatingModeNavigation Vitest tests, application-handoff and tenancy-move-in
-checks, scoped ESLint, and the Vite production build. The separate lease-signing
-check currently fails its existing maintenance/inspection context assertions.
+checks, scoped ESLint, and the Vite production build. The lease-signing check also verifies that maintenance and inspection links
+retain the selected tenancy context.
+
+## Reliable landlord profile saving
+
+The primary rental lead's Landlord profile autosaves after an 800 ms pause.
+Requests are serialised; typing during a request remains editable and queues the
+latest answers. Manual Save flushes the queue. A failed request retains the draft
+and offers Retry; reconnecting resumes an offline draft. Partial invalid answers
+stay in memory and in actor/organisation/branch/lead-scoped sessionStorage for up
+to eight hours. Before-unload protection remains active until saving is confirmed.
+Blocked sessionStorage is reported, with the draft retained in memory.
+
+Workspace refreshes merge unrelated saved changes without replacing local edits.
+Overlapping changes pause saving and show the saved and draft values for an
+explicit choice. A late acknowledgement cannot discard newer typing or another
+mounted editor's recovery draft. Confirmed readback and lost-acknowledgement retry
+checks determine the saved indicator; a failed workspace refresh is distinguished
+from a failed profile save.
+
+`20261015083559_rental_landlord_profile_consistent_saving.sql` is a release
+dependency after landlord onboarding and the permanent Client identity foundation.
+It projects name/contact/type into exact linked Client/contact and rental listing
+records in the same versioned transaction, including listing capture drafts. A
+shared Client's other draft landlord journeys keep their private fields while core
+contact changes are aligned. Existing Client edits retain the owner/principal
+permission and version checks. Email collisions, conflicting legal structures,
+submitted journeys and unavailable linked listings roll back the complete change.
+Aliases, record IDs, consent, signed documents, roles and workflow progress are
+preserved. There is no historical backfill, identity merge, publishing or email.
+The API advertises schema capability; profile writes are refused before this
+database update is available. Linked listing editors read the committed result
+instead of following it with stale contact/listing writes.
+
+Focused checks: `rentalLandlordProfileConsistency`, `rentalLandlordProfileSaving`,
+`useRentalLandlordProfileAutosave`, existing landlord workspace/onboarding/listing
+checks and the primary app baseline. The isolated browser fixture under
+`tmp/landlord-profile-verification-20261015` uses real UI/API/SQL with synthetic
+in-memory records. Prepared locally; the migration is not applied remotely.
+
+## Shared landlord conditional rules
+
+The primary app agent profile, invited landlord form and listing onboarding editor
+use `rentalLandlordProfileRules.js` for the same fields, labels, options, applicability
+and validation. Internal notes stay internal. Public projection and merging now
+include tax/VAT, marital and signing-authority answers while preserving private
+notes and exact person/property references.
+
+A draft needs a landlord name and email or phone to maintain the permanent Client
+connection. Identity, entity registration, authority and partially completed people
+can be saved and recovered without a submission declaration. Captured email, date,
+selection and share values are checked when applicable. Hidden answers are retained
+when changing an option but do not drive validation or evidence applicability.
+
+Submission checks address and identity for an individual; registration, signer and
+relevant ownership/control parties for an entity; each owner's identity/address,
+shares totaling 100% and an authorised signer for multiple owners. Spouse details
+apply to a recorded marriage in community, VAT number to VAT registration, and
+representative details to an entity or selected representative. These are product
+completion rules; agency risk and evidence review remain separate. The invited
+landlord sees the outstanding answers before the declaration button is enabled.
+
+Foreign and other classifications retain their original type and explicitly select
+an underlying individual/company/trust/close-corporation/multiple-owner structure.
+Foreign owners supply the country; other entities describe their arrangement.
+“Needs agent review” is a valid incomplete draft, never a completed submission.
+The resolved structure drives evidence and listing readiness. Group identity packs
+use the captured owners, avoiding an extra invisible primary-contact ID question.
+Ownership/control changes supersede the affected evidence generation on a discovery
+save, preserving original files and review history. When an existing matrix first
+adopts these rules, its affected entity/group checks also require fresh review on
+the next save. The migration itself does not rewrite saved checklists or files.
+
+`20261015100645_rental_landlord_shared_conditional_rules.sql` depends on the
+conditional document matrix and consistent-saving migrations. It adds matching
+server-command draft/submission guards and compares resolved legal structures when
+aligning exact shared Client journeys. Apply the reviewed migration before deploying
+the new capture screens. Prepared and verified locally; no hosted data was changed.
+
+Focused checks: `rentalLandlordProfileRules`, `RentalLandlordSharedFields`,
+`rentalLandlordSharedRules`, the existing landlord portal/workspace/listing/autosave
+regressions, SQL/browser evidence parity and the primary app baseline.
+
+## Compact landlord profile layout
+
+The three primary-app capture routes use `RentalLandlordProfileEditor` for grouped
+contact, identity/family, entity, tax/VAT, people, signing authority and internal-note
+sections. Contact opens first; the other applicable sections show Ready, Details
+needed or Optional badges and can be expanded independently. Completion follows the
+shared submission rules, with saving and evidence review reported separately.
+Invited-landlord property details and listing rental settings are collapsed until
+requested. Submitted sections remain browsable, with editing controls disabled.
+
+People appear as compact summary rows. New people open immediately for entry;
+existing rows expand on demand without changing person references or discarding
+values. Agency-only notes remain outside the invited landlord projection.
+
+The primary signatory can be selected from captured people. Selection records
+`primarySignatoryId`, marks that person authorised, and updates the existing scalar
+signing fields together. Later edits keep the linked signing details aligned;
+removal or revoked authority clears the reference and copied details. Separate
+manual signatories remain supported for older journeys and uncaptured parties.
+The autosave hook applies these linked fields in one change and retains later typing
+while a request is pending. Authority references and evidence still need review.
+
+`20261015103158_rental_landlord_selected_signatories.sql` depends on the shared
+conditional-rules migration. It checks stable references and copied values inside
+the existing scoped versioned command, and fingerprints selected-person changes
+only for affected signatory/authority evidence. No existing data or file history
+is rewritten by the migration. Prepared locally; apply before the matching release.
+
+Focused checks: `RentalLandlordProfileEditor`, `rentalLandlordProfileLayout`,
+`rentalLandlordSelectedSignatories`, the autosave and existing capture regressions,
+local browser UI/API/SQL verification, and `check:app`.
+
+## Landlord profile acceptance
+
+`npm run test:rentals-application-handoff` now includes the current landlord
+profile acceptance matrix, draft recovery and shared-editor field checks alongside
+the existing landlord-to-tenancy journey and portal activation retry checks.
+The full journey installs the consistent-saving, conditional-rule and selected-
+signatory migrations; it cannot silently verify the older profile contract.
+
+The isolated PostgreSQL/API matrix covers all five legal structures, each foreign
+classification and each other-entity classification (15 resolved combinations).
+Two additional unresolved cases retain drafts while denying submission and any
+completed listing-ready evidence claim. For each resolved combination it verifies:
+
+- Partial drafts, saved reopening, invalid-answer rejection and explicit clears.
+- Stable Client/contact IDs, private answers and exact selected-person references.
+- Version and discovery conflicts, explicit fresh-save decisions, staff versus
+  landlord declaration permissions, submission locks and requested corrections.
+- Real upload tickets and byte metadata, completion retries, signed-disclosure
+  review, rejection/replacement, changed identity generations and retained history.
+- Signed-mandate and exact property/unit/vacancy listing handoff, wrong-property
+  rejection, idempotent links, and reopened listing evidence.
+- The actual listing-editor save service, no stale second contact/listing write,
+  permanent Client edits, reverse alignment and rejected stale Client edits.
+
+Autosave exercises pending-request failure, later typing, blank answers, scoped
+recovery and confirmed retry for every resolved combination. All three capture
+surfaces render the same applicable fields. The expanded landlord evidence matrix
+retains its existing policy-preview status: accepted uploads do not silently turn
+it into an active compliance approval. The prescribed disclosure mandate gate is
+verified independently.
+
+This check creates only synthetic in-memory records and fixture file bytes. It
+uses the actual API, SQL migrations, triggers, scoped commands and save service;
+Auth and Storage transports are local adapters. It does not prove hosted login,
+email delivery, actual Storage transfers or deployment. No new database migration
+is required by this test-only change. The existing before-production migrations
+remain unapplied remotely. Current results and release limits are recorded in
+`../docs/rental-lead-pilot-acceptance.md`.
+
+## Landlord next best actions
+
+The landlord Overview offers the action for each saved journey step: review a
+new lead, confirm contact, schedule or complete appraisal, prepare the mandate,
+record it as sent/completed, upload the signed mandate, create a draft listing,
+and view the linked listing. Review moves New to Contacted. Confirming contact
+opens Appraisal scheduled before the appointment is booked; the existing
+appointment form captures its date. Manual send records the agent, property
+and time without sending a message or advancing the stage. Mandate completion
+uses the existing property/signature recording flow. Signed uploads advance to
+Listing ready only after the saved document is returned and the mandate record
+passes verification. Existing files can be reused on retry, including submitted
+onboarding. Multi-property leads require an explicit property choice. Draft
+creation and listing links retain their saved lead/property identities.
+
+Release `20261015074830_rental_landlord_next_action_contact_step.sql` before this
+primary-app change. This append-only migration retains the role, scope, history,
+mandate and listing guards while permitting explicit contact confirmation without
+an invented appointment date. It has not been applied remotely. Focused checks:
+`RentalLandlordNextAction`, `RentalLandlordOnboardingPanel`,
+`RentalLandlordLeadWorkspace`, `rentalLandlordWorkspace`, `rentalLeadJourneyService`
+and the local database `rentalLeadJourneyGuards` Vitest suites.
 
 ## Rental onboarding discovery
+
+The repaired rental flow now has one joined acceptance check covering new landlord
+and tenant leads, saved discovery/uploads and mandate, listing/vacancy, attended
+viewing, current application review, uploaded agreements, move-in activation and
+both portal audiences. `npm run test:rentals-application-handoff` runs it for five
+tenant/entity types, alongside activation retry checks and the existing handoff
+contract. The other established move-in, signing and migration integrity checks
+remain the focused verification entry points.
+
+An accepted portal invitation can now be retried by the same signed-in person
+without another membership or changed acceptance timestamps. Old tokens cannot
+restore revoked or replaced membership access. Release
+`20261014221411_rental_client_portal_activation_retry.sql` after the five repairs
+below. See [repair acceptance and release handoff](../docs/rental-lead-pilot-acceptance.md)
+for migration order, source/evidence scope and remaining hosted acceptance.
+No production release or remote data change was performed by this acceptance.
+
+
+Tenant and landlord private-link portals and signed-in portals now read the same
+saved tenancy progress: current lease version, received signatures, verified
+move-in payments and incoming inspection/handover. Draft or unsigned leases no
+longer appear active. The tenant overview shows the actual outstanding move-in
+step; landlord tabs show saved property records instead of sample portfolio,
+statement, document and messaging screens. Tenant snapshots, identity evidence,
+internal notes, contractor costs and access arrangements stay outside landlord
+responses.
+
+Shared lease files, linked payment proofs and handover uploads open through a
+relationship-checked server request and a five-minute private download link.
+Unreviewed agreement drafts and unlinked uploads stay private to staff. Historical
+HTTPS lease links remain available; unknown bucket references and unsafe URLs
+are excluded. Existing property document records with no shared file are shown
+as records, without inventing a download. Supporting application uploads continue
+through their existing application/person links; no documents are generated.
+
+Signed-in tenants can now use the same real maintenance queue as private-link
+tenants. A saved receipt makes retries idempotent, request creation and the first
+tenant-visible event commit together, and failures keep the form and entered
+answers open. Token expiry, membership revocation, user, audience and organisation
+scope are checked before returning progress or signing a file URL.
+
+Release `20261014214622_rental_portal_journey_parity.sql` after the four rental
+repair migrations below, with the matching primary app/API. It adds membership
+provenance and a server-only maintenance command; it does not grant portal clients
+direct maintenance or tenancy writes. Focused checks: `rentalPortalJourneyParity`,
+`rentalLandlordPortalSnapshot`, `RentalClientPortalParity`, the existing application
+acceptance and uploaded-agreement/move-in suites, plus `npm run check:app`.
+The isolated browser verifies portal reads against real PostgreSQL; hosted Auth,
+Storage downloads and release acceptance remain separate. No migration, live
+upload, invitation, publication or deployment has been performed remotely.
+
+
+Tenancy preparation now uses one application-backed path from the approved
+application or the Placement Handoff screen. A new tenancy requires the tenant’s
+fixed **Placement ready** stage, reserves the selected unit and atomically saves
+the tenancy/lease links on the lead. Retries reuse those records and preserve the
+approved answers. Existing listing-activity lease entries remain history; new
+placement no longer creates an activity ID that cannot open a tenancy.
+
+Lease setup uses uploaded agency agreements and signed copies. Save changed terms
+before uploading the agreement for that exact version, review the saved parties,
+then upload and confirm each person’s signed copy. Private immutable file receipts
+bind evidence to the lease version and signer. A file that uploaded but failed to
+link can be retried without uploading again or deleting a potentially saved file.
+Generated lease schedules and raw agreement/signature URL capture are retired from
+this journey. Existing signed evidence and historical lease references are retained.
+
+Move-in payment evidence uses the same private upload and retry path.
+Activation still requires every signature, verified deposit/first-rent evidence
+and completed incoming inspection/handover. Changed payment amounts invalidate
+previous verification while retaining its evidence for review. Incoming handover
+now exposes its actual saved checklist and uploaded evidence in the tenancy and
+its context-bound Inspections screen. Maintenance links retain the scoped tenancy
+when logging an issue. A reserved unit is
+excluded from new tenant intake. The tenancy workspace shows current-version dates
+and rent, and opens the canonical listing, managed property and approved application.
+
+Release dependency: `20261014210353_rental_tenancy_handoff_uploaded_agreements.sql`
+after the lead, listing/vacancy and tenant application connection migrations, with
+the matching primary app. The new private `rental-lease-files` bucket and its scoped
+read/insert policies are part of that migration. No historical data backfill,
+remote migration, storage upload or deployment has been performed for this repair.
+Focused coverage: `rentalTenancyUploadedAgreements`, lease signing and conversion
+panels, placement and tenancy pages, application journey and handoff compatibility,
+plus the established move-in and app checks.
+
+Tenant application setup now connects the saved tenant lead, monthly rental
+listing, managed property/unit and available vacancy in one transaction. The
+selector displays property names and unit labels. New drafts require the fixed
+journey's **Application pending** stage; retries reopen the same application and
+retain the original enquiry when another property is selected. Existing submitted
+applications are read through their vacancy connection without rewriting signed
+answers or uploads to retrofit a listing reference.
+
+Preparing or revoking a draft invitation saves its access token and onboarding
+metadata together. Replacement links invalidate earlier main invitations while
+retaining per-person document collection links. Preparing/copying a link does not
+send it or advance the lead. Public submission saves consent evidence and the
+submitted snapshot atomically; a lost submission response can be retried safely.
+Public property confirmation uses the same visible fields as the application so
+internal connection metadata cannot trap the tenant on the confirmation step.
+Outstanding evidence remains uploadable after submission, through the existing
+saved checklist and review controls. This phase adds no document generation.
+
+Release dependency: `20261014203952_rental_tenant_application_connections.sql`
+after the lead journey guards and listing/vacancy handoff, with the matching
+primary app/API. No remote data backfill is required. Focused coverage includes
+`rentalTenantApplicationConnections`, `RentalLeadApplicationSetup`,
+`RentalTenantApplicationPanel`, the public API and existing application journey,
+upload, reviewer and listing overview checks. Prepared locally; deployment and
+remote migration remain separate release work.
+
+Landlord listing handoff now carries the managed property, selected unit and saved
+vacancy into the listing and landlord portfolio. Completed monthly listing saves
+connect one draft vacancy through `rental_ensure_listing_vacancy`; retries retain
+the same listing, uploaded photos and confirmed save revision. An existing open
+vacancy is reused without overwriting its application/letting terms. Saving or
+linking does not open applications or publish an advert. Non-monthly rentals keep
+their existing pricing flow. Existing stock has an explicit **Connect rental
+vacancy** action in its overview; loading a listing performs no repair writes.
+
+The property Landlord tab searches existing organisation contacts by name, email
+or phone, then records the chosen owner's share and primary-contact choice.
+Contacts are reused without changing their sales or tenant identity. Portfolio
+entries can select a managed unit and open the managed property, ownership and
+vacancy screens. Submitted landlord declarations remain intact when bookkeeping
+links are recorded. Both landlord portal access paths show the same saved listing
+and vacancy status, with applicant details and supplier payloads excluded.
+
+Release dependency: `20261014200329_rental_listing_vacancy_handoff.sql` after the
+lead journey guards, with the matching primary app/API. The migration makes
+no historical backfill. It retains existing RLS, rejects foreign property/unit/
+contact links and prevents replacement of a saved vacancy. Prepared and checked
+locally; no remote migration, publication or deployment was performed.
+Focused checks: `rentalListingVacancyHandoff`, `rentalLandlordPortalSnapshot`,
+`RentalListingInventoryPanel`, `RentalLandlordListingProgress`,
+`RentalLandlordMandatePanel`, listing save/recovery and landlord portfolio handoff
+tests, plus the existing landlord onboarding and rental foundation checks.
+
+Rental lead journeys keep a fixed tenant or landlord role. Tenant milestones run
+from New, Contacted and Qualified through viewing, application, screening and FICA
+to Placement ready. Landlord milestones run through contact, appraisal and the
+signed mandate to Listing ready and Listing created. Each advance retains its
+actor and evidence in the lead's saved workflow history. Qualification uses the
+saved answers; viewing, mandate, application and review milestones verify their
+linked records. Placement readiness requires an approved application. Unknown
+saved stages require review rather than restarting at New, and an activity-only
+tenancy reference does not complete the Lease milestone.
+The tenant overview exposes confirmation of a submitted application, continuation
+to FICA after screening, and FICA completion after its application review. These
+actions retain the current stage and show the missing-record/review reason when
+the saved evidence does not permit advancement.
+
+Rental classification survives legacy/nested metadata, editing and portal imports.
+Tenant records are excluded from buyer stage conversion. Sales lists and seller
+linking exclude rental leads; old sales workspace links redirect to Rentals.
+Rental assignment notices use the rental route and role. Sales CSV import rejects
+explicit tenant/landlord rows before category locking; rental import requires a
+supported, unambiguous role. Historical Lost/Withdrawn outcomes stay closed unless
+an explicit rental reactivation is saved. No document generation is added here.
+
+Release the primary app with the append-only migration
+`20261014185302_rental_lead_journey_guards.sql`. It guards classification, role,
+scope, one-step transitions, append-only milestone history and record-backed
+evidence at the database boundary. It performs no backfill. Existing contacts,
+documents and lead identities remain intact. This change is prepared locally;
+the migration has not been applied remotely and the app has not been deployed.
+
+Focused checks: `rentalLeadJourneyGuards.test.js`, `rentalLeadJourneyService.test.js`,
+`RentalLeadSalesBoundary.test.jsx`, `leadSourceRentalImportBoundary.test.js`, the
+existing rental CRM/pipeline/handoff/import/outcome model checks, buyer migration,
+seller-link/sales-list checks, and Property24 lead import checks.
+
+The rental listing Landlord tab shows a saved profile summary, contact and ownership
+cards, and native landlord onboarding. Contact edits update the client and listing
+with readback; linked onboarding is saved through its versioned API first. The
+capture draft receives the same landlord fields so a later listing edit cannot
+restore an older contact. A partial save remains an error with a retryable form.
+Submitted onboarding stays locked until the agent requests corrections.
+
+**Start landlord onboarding** explicitly creates a rental Landlord Lead for an
+existing saved contact and listing. Loading the page does not create records.
+Creation uses an insert and scoped readback; retries reuse committed records,
+and the saved landlord lead ID resolves the connection when other leads exist.
+The editor preserves other portfolio properties and untouched identity fields.
+Secure links can be copied and revoked; these controls do not send email.
+Uploads remain in Documents. The listing profile prefers saved onboarding facts
+and distinguishes basic details captured from approved document evidence.
+Focused checks: `RentalListingLandlordPanel`, `rentalListingLandlordService`,
+`rentalListingLandlordModel`, `RentalListingDetailPage.overview`,
+`rentalLandlordOnboardingApi` and `rentalListingConditionalRequirements`.
+
+The landlord lead Documents tab and landlord onboarding reuse the sales document
+workspace presentation: the same header, category tabs, progress, status/activity
+columns, row Actions menus and secure-storage footer. Rental categories are FICA,
+Property Documents and Rental. Upload/Request opens an exact saved-requirement
+selector; evidence reviews retain the required note and explicit signed-disclosure
+confirmation. Suggested supporting documents remain distinct from the
+prescribed-disclosure mandate gate. Existing references and linked listings are
+retained, with new reference entry collapsed by default. Saved requirement IDs,
+generations, uploads, review commands and collection policy are unchanged.
+Focused checks: the shared `LeadDocumentWorkspace` and `ListingDocumentActions`
+suites plus `RentalLandlordOnboardingDocuments`, `RentalLandlordOnboardingPanel`,
+`RentalLandlordOnboardingPage` and `RentalLandlordLeadWorkspace` Vitest suites.
 
 The [rental onboarding discovery and document contract](docs/rental-onboarding-discovery-and-document-contract.md)
 defines the landlord and tenant questions, conditional evidence matrix, document
@@ -3210,6 +3719,18 @@ content send requires checking the advert rather than an automatic retry.
 Accepted content and active status still require checking the public page's
 displayed details. Restoring a withdrawn Arch9 listing makes it private working
 stock; website publication is a separate action. No new migration is required.
+
+Private Property readiness, content updates and reactivation also check the
+province in a saved public advert link. A conflicting province blocks sending
+even when `GetListingsDetails` returns matching feed address fields. Status
+refresh reports Needs attention and records the error while preserving the true
+active status, so withdrawal remains available. This is a province conflict
+check against the saved link, not full public address verification. Missing or
+unrecognised links do not establish the public location. Activated location
+corrections require Private Property support; an ordinary resend is insufficient.
+The 15 October Capital Park incident safeguard is prepared locally, with no
+deployment, live advert change or support message sent. Its regression coverage
+uses the existing readiness, controlled-publish and post-submit-monitor checks.
 
 Focused checks: `npx vitest run src/services/listings/__tests__/listingRelistService.test.js
 src/components/listings/__tests__/ListingRelistDialog.test.jsx --maxWorkers=1`,

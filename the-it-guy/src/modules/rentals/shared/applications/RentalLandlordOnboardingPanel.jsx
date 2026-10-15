@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { requestRentalLandlordOnboarding } from '../../../../services/rentals/rentalLandlordOnboardingService.js'
 import { uploadRentalApplicationFile } from '../../../../services/rentals/rentalApplicationFileUpload.js'
 import RentalLandlordOnboardingDocuments from './RentalLandlordOnboardingDocuments.jsx'
-export default function RentalLandlordOnboardingPanel({ leadId, revision, discoveryDirty = false }) {
+export default function RentalLandlordOnboardingPanel({ leadId, revision, discoveryDirty = false, initialUploadPurpose = '', initialUploadSubject = '', onMandateUploaded }) {
   const key = `${leadId}:${revision}`
   const [loaded, setLoaded] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -26,15 +26,17 @@ export default function RentalLandlordOnboardingPanel({ leadId, revision, discov
     }
   }, [leadId, key])
   async function run(action) {
-    if (guard.current) return
+    if (guard.current) return false
     guard.current = true
     setBusy(true)
     setError('')
     setNotice('')
     try {
       await action()
+      return true
     } catch (cause) {
       setError(cause.message)
+      return false
     } finally {
       guard.current = false
       setBusy(false)
@@ -63,7 +65,7 @@ export default function RentalLandlordOnboardingPanel({ leadId, revision, discov
     }
     return result
   }
-  const upload = (file, row) =>
+  const upload = (file, row, onProgress) =>
     run(async () => {
       const result = await uploadRentalApplicationFile(
         file,
@@ -75,6 +77,7 @@ export default function RentalLandlordOnboardingPanel({ leadId, revision, discov
         },
         onboarding.version,
         (body) => requestRentalLandlordOnboarding(leadId, 'POST', body),
+        { onProgress, monitorSurface: 'rentalLandlord', scope: ['landlord', leadId] },
       )
       if (!result.onboarding) {
         setLoaded({
@@ -91,9 +94,15 @@ export default function RentalLandlordOnboardingPanel({ leadId, revision, discov
       }
       setLoaded({ key, onboarding: result.onboarding })
       setNotice(`${file.name} uploaded.`)
+      if (row.purpose === 'signed_mandate' && onMandateUploaded) {
+        const savedRequirement = result.onboarding.requirements?.find(item => item.id === row.id && item.generation === row.generation)
+        const savedDocument = result.onboarding.documents?.find(item => item.id === savedRequirement?.documentId)
+        if (!savedDocument) throw new Error('The saved mandate upload could not be verified. Refresh Documents before continuing.')
+        if (await onMandateUploaded(row) === false) throw new Error('Mandate uploaded. Retry this step using the saved mandate below.')
+      }
     })
   return (
-    <section className="space-y-4 rounded-xl border p-4 lg:col-span-2">
+    <section className="min-w-0 space-y-4 lg:col-span-2">
       {error ? (
         <p role="alert" className="text-sm text-red-700">
           {error}
@@ -108,42 +117,54 @@ export default function RentalLandlordOnboardingPanel({ leadId, revision, discov
         <p>Loading landlord onboarding…</p>
       ) : (
         <>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={busy}
-              className="rounded border px-3 py-2 text-sm"
-              onClick={() =>
-                void run(async () => {
-                  const result = await requestRentalLandlordOnboarding(
-                    leadId,
-                    'POST',
-                    { action: 'create_access' },
-                  )
-                  setAccess({
-                    ...result,
-                    leadId,
-                    url: `${window.location.origin}/rental-landlord-onboarding/${result.token}`,
-                  })
+          <RentalLandlordOnboardingDocuments
+            key={`${leadId}:${initialUploadPurpose}:${initialUploadSubject}`}
+            onboarding={onboarding}
+            initialUploadPurpose={initialUploadPurpose}
+            initialUploadSubject={initialUploadSubject}
+            onUseSavedMandate={onMandateUploaded ? row => run(async () => {
+              const result = await requestRentalLandlordOnboarding(leadId)
+              setLoaded({ key, onboarding: result.onboarding })
+              const requirement = result.onboarding.requirements?.find(item => item.active && item.id === row.id && item.generation === row.generation && item.purpose === 'signed_mandate' && item.state !== 'rejected' && (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()))
+              if (!result.onboarding.documents?.some(item => item.id === requirement?.documentId)) throw new Error('The saved mandate is unavailable. Refresh Documents before continuing.')
+              if (await onMandateUploaded(requirement) === false) throw new Error('The mandate is saved. Retry after resolving the journey warning.')
+            }) : undefined}
+            disabled={busy}
+            preview={discoveryDirty}
+            actionError={error}
+            portalAction={() => run(async () => {
+              const result = await requestRentalLandlordOnboarding(leadId, 'POST', { action: 'create_access' })
+              setAccess({ ...result, leadId, url: `${window.location.origin}/rental-landlord-onboarding/${result.token}` })
+            })}
+            additionalActions={<button type="button" disabled={busy} className="min-h-10 rounded-lg px-3 text-xs font-semibold disabled:opacity-50" onClick={() => void run(async () => {
+              const result = await requestRentalLandlordOnboarding(leadId)
+              setLoaded({ key, onboarding: result.onboarding })
+            })}>Refresh onboarding</button>}
+            onUpload={upload}
+            onOpen={(doc) =>
+              run(async () => {
+                const result = await requestRentalLandlordOnboarding(
+                  leadId,
+                  'POST',
+                  {
+                    action: 'document_url',
+                    version: onboarding.version,
+                    documentId: doc.id,
+                  },
+                )
+                window.open(result.url, '_blank', 'noopener,noreferrer')
+              })
+            }
+            onReview={(doc, review) =>
+              run(async () => {
+                await mutate('review_document', {
+                  documentId: doc.id,
+                  ...review,
                 })
-              }
-            >
-              Create secure onboarding link
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              className="rounded border px-3 py-2 text-sm"
-              onClick={() =>
-                void run(async () => {
-                  const result = await requestRentalLandlordOnboarding(leadId)
-                  setLoaded({ key, onboarding: result.onboarding })
-                })
-              }
-            >
-              Refresh onboarding
-            </button>
-          </div>
+                setNotice('Evidence review recorded.')
+              })
+            }
+          />
           {access?.leadId === leadId ? (
             <div className="rounded border p-3 text-sm">
               <p>
@@ -238,35 +259,7 @@ export default function RentalLandlordOnboardingPanel({ leadId, revision, discov
               </button>
             </div>
           ) : null}
-          <RentalLandlordOnboardingDocuments
-            onboarding={onboarding}
-            disabled={busy}
-            preview={discoveryDirty}
-            onUpload={upload}
-            onOpen={(doc) =>
-              run(async () => {
-                const result = await requestRentalLandlordOnboarding(
-                  leadId,
-                  'POST',
-                  {
-                    action: 'document_url',
-                    version: onboarding.version,
-                    documentId: doc.id,
-                  },
-                )
-                window.open(result.url, '_blank', 'noopener,noreferrer')
-              })
-            }
-            onReview={(doc, review) =>
-              run(async () => {
-                await mutate('review_document', {
-                  documentId: doc.id,
-                  ...review,
-                })
-                setNotice('Evidence review recorded.')
-              })
-            }
-          />
+
         </>
       )}
     </section>

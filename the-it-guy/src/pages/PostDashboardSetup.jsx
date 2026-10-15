@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   ArrowRight,
   Building2,
@@ -1454,7 +1455,7 @@ export default function PostDashboardSetup() {
               <input className="setup-input" value={bondBusiness.city || ''} onChange={(event) => updateBondSection('businessInformation', 'city', event.target.value)} />
             </SetupField>
             <SetupField label="Physical address" hint={isPersonalBondOriginator ? 'Optional for independent originators.' : ''}>
-              <textarea className="setup-input setup-textarea" value={bondBusiness.physicalAddress || ''} onChange={(event) => updateBondSection('businessInformation', 'physicalAddress', event.target.value)} />
+              <AddressInput className="setup-input setup-textarea" value={bondBusiness.physicalAddress || ''} onChange={(event) => updateBondSection('businessInformation', 'physicalAddress', event.target.value)} />
             </SetupField>
           </div>
         </div>
@@ -1663,7 +1664,7 @@ export default function PostDashboardSetup() {
               <input className="setup-input" value={agency.province || ''} onChange={(event) => updateAgencySection('agencyInformation', 'province', event.target.value)} />
             </SetupField>
             <SetupField label="Physical address">
-              <textarea className="setup-input setup-textarea" value={agency.physicalAddress || ''} onChange={(event) => updateAgencySection('agencyInformation', 'physicalAddress', event.target.value)} />
+              <AddressInput className="setup-input setup-textarea" value={agency.physicalAddress || ''} onChange={(event) => updateAgencySection('agencyInformation', 'physicalAddress', event.target.value)} />
             </SetupField>
             <SetupField label="Country">
               <input className="setup-input" value={agency.country || ''} onChange={(event) => updateAgencySection('agencyInformation', 'country', event.target.value)} />
@@ -1724,7 +1725,7 @@ export default function PostDashboardSetup() {
                     <input className="setup-input" value={branch.branchName || ''} onChange={(event) => updateBranch(branch.id, { branchName: event.target.value })} />
                   </SetupField>
                   <SetupField label="Office location">
-                    <input className="setup-input" value={branch.officeLocation || ''} onChange={(event) => updateBranch(branch.id, { officeLocation: event.target.value })} />
+                    <AddressInput className="setup-input" value={branch.officeLocation || ''} onChange={(event) => updateBranch(branch.id, { officeLocation: event.target.value })} />
                   </SetupField>
                   <SetupField label="Branch manager">
                     <input className="setup-input" value={branch.branchManager || ''} onChange={(event) => updateBranch(branch.id, { branchManager: event.target.value })} />

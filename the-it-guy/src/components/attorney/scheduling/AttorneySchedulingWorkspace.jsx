@@ -1,3 +1,4 @@
+import AddressInput from '../../location/AddressInput'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -1256,6 +1257,7 @@ export function CreateInviteDrawer({
   const selectedMatter = matterOptions.find((matter) => matter.matterId === draft.matterId)
   const isBoardroomInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.boardroom
   const isVideoInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall
+  const LocationInput = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.physicalAddress ? AddressInput : 'input'
   const isPhoneInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.phoneCall
   const matterRequired = draft.appointmentType !== 'internal_meeting'
   const searchableMatterOptions = matterOptions.filter((matter) => {
@@ -1353,7 +1355,7 @@ export function CreateInviteDrawer({
               {isBoardroomInvite ? null : (
                 <label className="drawer-nested-field">
                   <span>{isVideoInvite ? 'Meeting link' : isPhoneInvite ? 'Phone details' : 'Location'}</span>
-                  <input
+                  <LocationInput
                     aria-label={isVideoInvite ? 'Meeting link' : isPhoneInvite ? 'Phone details' : 'Location'}
                     value={draft.location}
                     onChange={(event) => updateDraft('location', event.target.value)}

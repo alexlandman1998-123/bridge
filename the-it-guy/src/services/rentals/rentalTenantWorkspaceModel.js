@@ -15,8 +15,8 @@ export const TENANT_JOURNEY = [
   'Contacted',
   'Qualified',
   'Viewing',
-  'Tenant onboarding sent',
-  'Tenant application submitted',
+  'Application pending',
+  'Application submitted',
   'Lease',
   'Tenancy',
 ]
@@ -115,8 +115,7 @@ export function tenantJourneyStage(lead = {}, conversions = [], applications = [
     )
   )
     return 7
-  if (conversions.some((item) => (item.rental_leases || []).length)) return 6
-  if (lead.relationships?.tenancyId) return 6
+  if (conversions.some((item) => Array.isArray(item.rental_leases) ? item.rental_leases.length : Boolean(item.rental_leases?.id))) return 6
   if (
     [
       'application_submitted',
@@ -137,15 +136,15 @@ export function tenantBudgetMatches(lead = {}, matches = []) {
 }
 export function tenantEnquiryProperty(lead = {}, matches = [], vacancies = []) {
   const id = text(
-    lead.relationships?.listingId ||
+    lead.relationships?.enquiryListingId ||
       lead.raw?.enquiredListingId ||
       lead.raw?.enquired_listing_id ||
-      lead.raw?.listingId,
+      lead.raw?.listingId || lead.relationships?.listingId,
   )
   const listing = matches.find((item) => text(item.listing.id) === id)?.listing
   if (listing) return listing
   const vacancy = vacancies.find(
-    (item) => item.id === lead.relationships?.vacancyId,
+    (item) => item.listingId && id ? item.listingId === id : item.id === lead.relationships?.vacancyId && (!id || id === text(lead.relationships?.listingId)),
   )
   const title = text(
     lead.raw?.enquiredPropertyTitle || lead.raw?.enquired_property_title,
@@ -156,8 +155,8 @@ export function tenantEnquiryProperty(lead = {}, matches = [], vacancies = []) {
   if (id || vacancy || title || address)
     return {
       id,
-      listingTitle: title || 'Enquired rental property',
-      propertyAddress: address,
+      listingTitle: title || vacancy?.title || 'Enquired rental property',
+      propertyAddress: address || vacancy?.address || '',
       monthlyRent:
         vacancy?.askingRent ?? lead.raw?.enquiredPropertyPrice ?? null,
     }

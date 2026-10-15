@@ -17,7 +17,7 @@ for (const token of ['Move-in and activation', 'Verify evidence', 'Start incomin
   assert.ok(panel.includes(token), `Move-in workspace is missing an operational step: ${token}`)
 }
 assert.ok(tenancy.includes('RentalMoveInPanel'), 'Tenancy detail does not expose move-in controls.')
-for (const token of ['Open tenancy workspace', 'signing, move-in readiness, inspection, and activation']) {
+for (const token of ['Open tenancy workspace', 'complete move-in readiness and inspection']) {
   assert.ok(conversion.includes(token), `Approved application does not continue into tenancy setup: ${token}`)
 }
 

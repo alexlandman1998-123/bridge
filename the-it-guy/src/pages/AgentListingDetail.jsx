@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import { getSellerDocumentDisplayGroupKey } from '../lib/sellerDocumentExperienceModel.js'
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
@@ -2522,7 +2523,7 @@ function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', min
               </> : null}
               <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
                 Residential address (current place of residence)
-                <Field value={row.residentialAddress || ''} onChange={(event) => onUpdate(index, 'residentialAddress', event.target.value)} />
+                <AddressInput value={row.residentialAddress || ''} onChange={(event) => onUpdate(index, 'residentialAddress', event.target.value)} />
               </label>
               {!ownerFields ? <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
                 Capacity
@@ -6314,10 +6315,10 @@ function AgentListingDetail() {
     let publicationTracked = false
     let accepted = false
     try {
-      const saveResult = await saveMarketingDraft(marketingDraft, {
-        successMessage: '',
-      })
-      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Property24.')
+      if (marketingDraftDirtyRef.current) {
+        const saveResult = await saveMarketingDraft(marketingDraft, { successMessage: '' })
+        if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Property24.')
+      }
       await recordListingPublicationStage('Property24', 'submitted', marketingDraft, {
         action: property24Reference ? 'update' : 'publish',
         reference: property24Reference,
@@ -6336,10 +6337,8 @@ function AgentListingDetail() {
         property24ListingUrl: payload?.report?.databaseWrite?.property24ListingUrl || marketingDraft.property24ListingUrl,
       }
       setMarketingDraft(nextDraft)
-      const statusSave = await saveMarketingDraft(nextDraft, { successMessage: '' })
-      if (statusSave?.ok === false) {
-        throw statusSave.error || new Error('Property24 accepted the listing, but Arch9 could not save its publication status. Please retry from this listing.')
-      }
+      // The publishing service saves the portal receipt. Rewriting seller
+      // details here would reuse the revision from before the guarded save.
       await recordListingPublicationStage('Property24', 'accepted', nextDraft, {
         action: property24Reference ? 'update' : 'publish',
         reference: listingNumber || property24Reference,
@@ -6429,8 +6428,10 @@ function AgentListingDetail() {
     setSyndicationReviewLoading(true)
     setDetailError('')
     try {
-      const saveResult = await saveMarketingDraft(marketingDraft, { successMessage: '' })
-      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before reviewing channel settings.')
+      if (marketingDraftDirtyRef.current) {
+        const saveResult = await saveMarketingDraft(marketingDraft, { successMessage: '' })
+        if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before reviewing channel settings.')
+      }
       const payload = await callPrivatePropertyListingAction('syndication-review', {}, { method: 'GET', fallbackMessage: 'Channel review could not be loaded.' })
       const review = payload?.review || null
       if (!review) throw new Error('Channel review returned no results. Please try again.')
@@ -6533,10 +6534,10 @@ function AgentListingDetail() {
     let publicationTracked = false
     let accepted = false
     try {
-      const saveResult = await saveMarketingDraft(marketingDraft, {
-        successMessage: '',
-      })
-      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Private Property.')
+      if (marketingDraftDirtyRef.current) {
+        const saveResult = await saveMarketingDraft(marketingDraft, { successMessage: '' })
+        if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Private Property.')
+      }
       await recordListingPublicationStage('Private Property', 'submitted', marketingDraft, {
         action: privatePropertyHasChannel ? 'update' : 'publish',
         reference: marketingDraft.privatePropertyReference,
@@ -6554,10 +6555,8 @@ function AgentListingDetail() {
         privatePropertyStatus: nextStatus,
       }
       setMarketingDraft(nextDraft)
-      const statusSave = await saveMarketingDraft(nextDraft, { successMessage: '' })
-      if (statusSave?.ok === false) {
-        throw statusSave.error || new Error('Private Property accepted the listing, but Arch9 could not save its submission status. Please retry from this listing.')
-      }
+      // The publishing service saves the portal receipt. Rewriting seller
+      // details here would reuse the revision from before review or submission.
       await recordListingPublicationStage('Private Property', 'accepted', nextDraft, {
         action: privatePropertyHasChannel ? 'update' : 'publish',
         reference: privatePropertyReference || marketingDraft.privatePropertyReference,
@@ -11958,7 +11957,11 @@ function AgentListingDetail() {
           ...(invalidatesProperty24Location ? {
             property24SuburbId: '',
             privatePropertySuburbId: '',
+            latitude: null,
+            longitude: null,
+            googlePlaceId: '',
           } : {}),
+          ...(key === 'addressLine1' ? { formattedAddress: value, streetAddress: value } : {}),
         }
         writeStoredMarketingDraft(listingId, nextDraft)
         return nextDraft
@@ -11971,6 +11974,16 @@ function AgentListingDetail() {
         description: value,
         listingPreviewDescription: shouldSyncPreview ? value : previous.listingPreviewDescription,
       }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
+    })
+  }
+
+  function selectMarketingAddress(address) {
+    if (!address) return
+    markMarketingDraftDirty()
+    setMarketingDraft(previous => {
+      const nextDraft = { ...mergeAddressIntoMarketingDraft(previous, address), property24SuburbId: '', privatePropertySuburbId: '' }
       writeStoredMarketingDraft(listingId, nextDraft)
       return nextDraft
     })
@@ -12970,6 +12983,9 @@ function AgentListingDetail() {
                   key={listingRecord?.id}
                   images={[coverImage?.url, ...marketingDraft.galleryImages.map(image => image.url)].filter((url, index, urls) => url && urls.indexOf(url) === index)}
                   propertyTitle={marketingDraft.headline || listingRecord?.listingTitle || 'Property listing'}
+                  loading={listingSupportingDataLoading}
+                  loadError={!listingSupportingDataLoading && (!listingSupportingDataReady || Boolean(listingRecord?.listingMedia?.some(media => media.media_type === 'image' && media.mediaLoadError)))}
+                  onRetry={() => loadListingData({ showLoading: false })}
                   showThumbnails
                 />
               </div>
@@ -14036,7 +14052,7 @@ function AgentListingDetail() {
                 </label>
                 <label className="grid gap-2 xl:col-span-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Address</span>
-                  <Field value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} placeholder="Property address" />
+                  <AddressInput addressFormat="street" value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} onAddressSelect={selectMarketingAddress} placeholder="Property address" />
                 </label>
                 <label className="grid gap-2 xl:col-span-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Street address on portals</span>

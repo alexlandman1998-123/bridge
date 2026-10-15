@@ -1,3 +1,6 @@
+import RentalPortalJourneyProgress from '../../components/rentals/RentalPortalJourneyProgress';
+import RentalPortalDocumentList from '../../components/rentals/RentalPortalDocumentList';
+import RentalLandlordListingProgress from '../../components/rentals/RentalLandlordListingProgress.jsx'
 import {
   Building2,
   CalendarClock,
@@ -115,7 +118,12 @@ function InstructionForm({
   );
 }
 
-export default function RentalLandlordPortalPage({
+export default function RentalLandlordPortalPage(props) {
+  const { token = '' } = useParams();
+  return <RentalLandlordPortalContent key={`${props.accountMembershipId || token}:${Boolean(props.demo)}`} {...props} />;
+}
+
+function RentalLandlordPortalContent({
   accountMembershipId = "",
   demo = false,
 }) {
@@ -150,6 +158,7 @@ export default function RentalLandlordPortalPage({
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      setError("");
       if (demo) {
         const config = await resolveProspectDemoConfig(token);
         setBranding(config);
@@ -311,6 +320,8 @@ export default function RentalLandlordPortalPage({
     </div>
   );
   const overview = (
+    <>
+    {!demo ? <RentalLandlordListingProgress units={units} listings={data?.listings || []} vacancies={data?.vacancies || []} /> : null}
     <LandlordOverview
       data={{
         ...data,
@@ -438,6 +449,7 @@ export default function RentalLandlordPortalPage({
       branding={demo ? branding : {}}
       onNavigate={navigateSection}
     />
+    </>
   );
   const portfolioProperties = demo
     ? [
@@ -773,7 +785,7 @@ export default function RentalLandlordPortalPage({
   const maintenance = <LandlordMaintenancePage onNavigate={navigateSection} />;
   const documentVault = <LandlordDocumentsPage onNavigate={navigateSection} />;
   const accountPage = <LandlordAccountPage section={activeKey} />;
-  const content =
+  const demoContent =
     activeKey === "properties"
       ? workspace
       : activeKey === "rent"
@@ -793,6 +805,20 @@ export default function RentalLandlordPortalPage({
                   : activeKey === "support"
                     ? support
                     : overview;
+  const portalTenancies = (data?.tenancies || []).filter(tenancy => !selectedPropertyId || tenancy.unitId === selectedPropertyId);
+  const liveProgress = <div className="space-y-4"><RentalLandlordListingProgress units={units.filter(unit => !selectedPropertyId || unit.id === selectedPropertyId)} listings={(data?.listings || []).filter(listing => !selectedPropertyId || listing.rental_unit_id === selectedPropertyId)} vacancies={(data?.vacancies || []).filter(vacancy => !selectedPropertyId || vacancy.unit_id === selectedPropertyId)} />{portalTenancies.map(tenancy => <RentalPortalJourneyProgress key={tenancy.id} journey={tenancy.journey} title={`${tenancy.unitLabel || "Unit"} · tenancy progress`} />)}{!portalTenancies.length ? <p className="text-sm text-slate-600">No tenancy has been prepared for this property yet.</p> : null}</div>;
+  const openDocument = async document => {
+    const headers = accountMode ? await accountHeaders() : { Authorization: `Bearer ${token}` };
+    const response = await fetch(accountMode ? '/api/rentals/client-portal' : '/api/public/rental-landlord-portal', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ action: 'open_document', documentId: document.id, ...(accountMode ? { audience: 'landlord', membershipId: accountMembershipId } : {}) }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'This file could not be opened.');
+    return payload.url;
+  };
+  const liveDocuments = <div className="space-y-4">{docs}<RentalPortalDocumentList documents={data?.leaseDocuments || []} onOpenDocument={openDocument} /></div>;
+  const liveMaintenance = <Card icon={Wrench} eyebrow="Maintenance" title="Saved maintenance requests"><div className="mt-4 space-y-3">{(data?.maintenanceRequests || []).map(request => <article key={request.id} className="rounded-xl border border-slate-200 p-4"><p className="font-semibold">{units.find(unit => unit.id === request.unit_id)?.unit_label || 'Property'} · {label(request.category)}</p><p className="text-sm text-slate-600">{label(request.status)} · {label(request.priority)}</p></article>)}</div>{!data?.maintenanceRequests?.length ? <p className="mt-4 text-sm text-slate-600">No maintenance requests have been saved for this property.</p> : null}<button type="button" className="mt-4 underline" onClick={() => navigateSection('approvals')}>Send a maintenance instruction</button></Card>;
+  const liveRent = <div className="space-y-4"><p className="text-sm text-slate-600">Saved lease and move-in payment progress appears below. Your rental team supplies the ongoing rent statement separately.</p>{liveProgress}</div>;
+  const liveSettings = <Card icon={Building2} eyebrow="Portal access" title="Your property relationship"><p className="mt-4 text-sm text-slate-600">This portal is connected to {property.name || 'your rental property'}. Contact your rental team to change access or property details.</p><button type="button" className="mt-4 underline" onClick={() => navigateSection('messages')}>Message your rental team</button></Card>;
+  const content = demo ? demoContent : activeKey === 'properties' ? selectedPropertyId ? liveProgress : <div className="space-y-4">{properties}{liveProgress}</div> : activeKey === 'rent' ? liveRent : activeKey === 'maintenance' ? liveMaintenance : activeKey === 'documents' ? liveDocuments : activeKey === 'settings' ? liveSettings : ['messages', 'support', 'approvals'].includes(activeKey) ? approvals : <div className="space-y-4">{liveProgress}{support}</div>;
   return (
     <RentalClientPortalShell
       role="landlord"

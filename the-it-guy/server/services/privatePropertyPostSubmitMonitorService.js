@@ -15,6 +15,7 @@ import {
   recordPrivatePropertyListingSync,
   resolvePrivatePropertyExternalStatus,
 } from './privatePropertyListingSyncService.js'
+import { inspectPrivatePropertyPublicLocation } from './privatePropertyListingRecoveryService.js'
 
 export const PRIVATE_PROPERTY_POST_SUBMIT_MONITOR_SERVICE_VERSION = 'arch9_private_property_post_submit_monitor_v1'
 
@@ -236,6 +237,17 @@ export async function runPrivatePropertyPostSubmitMonitor({
       { name: 'event_feed', status: matchingEvents.length ? 'PASS' : 'PENDING' },
     ]
     report.blockers = report.status === 'ATTENTION_REQUIRED' ? [externalStatus === 'failed' ? 'private_property_listing_event_failed' : `private_property_listing_${externalStatus}`] : []
+    const publicLocation = inspectPrivatePropertyPublicLocation({
+      listingUrl: activeMatch?.listingUrl || readiness.publicListingUrl,
+      province: readiness.preview?.payloadPreview?.address?.province,
+      reference: privatePropertyRef,
+    })
+    report.publicLocation = publicLocation
+    if (publicLocation.checked) report.checks.push({ name: 'public_listing_province', status: publicLocation.blockers.length ? 'BLOCKED' : 'PASS', details: publicLocation })
+    if (publicLocation.blockers.length) {
+      report.status = 'ATTENTION_REQUIRED'
+      report.blockers = unique([...report.blockers, ...publicLocation.blockers])
+    }
 
     if (recordSync) {
       const syncResult = await recordPrivatePropertyListingSync({
@@ -256,6 +268,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
         eventAt: latestEvent?.eventDate || '',
         continuationKey: report.eventFeed.continuationKey,
         responseSummary: report.statusProbe.responseSummaries,
+        lastError: publicLocation.message,
         eventSummary: latestEvent || {},
         activatedAt: externalStatus === 'active' && ['activated', 'active'].includes(normalizeKey(latestEvent?.listingFeedEventType)) ? latestEvent?.eventDate || '' : '',
       })
@@ -269,11 +282,11 @@ export async function runPrivatePropertyPostSubmitMonitor({
       }
     }
 
-    report.nextStep = report.status === 'ACTIVATED'
+    report.nextStep = publicLocation.message || (report.status === 'ACTIVATED'
       ? 'Private Property shows the listing as active. Keep polling event feed until image events settle, then close go-live evidence.'
       : report.status === 'ATTENTION_REQUIRED'
         ? `Private Property reports this listing as ${externalStatus}. Review the listing and its submitted location before retrying.`
-        : 'Poll again with the returned continuation key until the listing is active or an error event appears.'
+        : 'Poll again with the returned continuation key until the listing is active or an error event appears.')
   } catch (error) {
     report.status = 'BLOCKED'
     report.blockers = ['private_property_post_submit_monitor_failed']
@@ -301,7 +314,7 @@ export async function readPrivatePropertyStoredStatus({ client, listingId, envir
   const externalStatus = data?.external_status || ''
   return {
     cached: true, generatedAt: data?.last_checked_at || '', externalStatus,
-    status: ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING',
+    status: data?.last_error || ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING',
     statusProbe: { privatePropertyRef: data?.private_property_ref || '' },
     publication: { submittedAt: data?.submitted_at || '', lastSyncedAt: data?.last_successful_sync_at || '', lastError: data?.last_error || '' },
     safety: { privatePropertyApiCalled: false, databaseWritten: false },

@@ -2,11 +2,22 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import KingdomWebsitePublicationChannel from '../KingdomWebsitePublicationChannel'
+import RentalWebsiteChannelManagement from '../../../pages/rentals/RentalWebsiteChannelManagement'
 const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn() }))
 vi.mock('../../../services/kingdomWebsitePublicationService', () => ({ getKingdomWebsitePublicationStatus: mocks.get, setKingdomWebsitePublication: mocks.set }))
 const connected = { available: true, websiteStatus: 'published', status: 'published', hostname: 'kingdomrealestate.co.za', blockers: [] }
 beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(connected) })
 afterEach(cleanup)
+it('returns a Kingdom rejection to the shared rental Manage dialog without claiming acceptance', async () => {
+  mocks.set.mockRejectedValue(new Error('Kingdom publication unavailable.'))
+  render(<KingdomWebsitePublicationChannel listingId="listing-1" manageActions={controller => <RentalWebsiteChannelManagement {...controller} channelName="Kingdom Website" listing={{ address: '12 Example Avenue', listingStatus: 'active' }} onEdit={() => {}} />} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Manage listing', hidden: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Update advert' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Send update' }))
+  await screen.findByText('Kingdom publication unavailable.')
+  expect(screen.queryByText('Update accepted. Check the public advert to confirm it.')).toBeNull()
+  expect(mocks.set).toHaveBeenCalledWith('listing-1', 'update')
+})
 it('uses a menu and a read-only refresh without saving or publishing', async () => {
   const onPrepare = vi.fn()
   render(<KingdomWebsitePublicationChannel listingId="listing-1" onPrepare={onPrepare} />)

@@ -62,7 +62,7 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
       {draft ? <form id={formId} onSubmit={submit} className="development-event-form" aria-busy={saving}>
         <label>Event title<Field value={draft.title} onChange={event => update('title', event.target.value)} placeholder={draft.eventType === 'launch' ? 'e.g. Harbour Heights launch evening' : 'e.g. Sunday at Harbour Heights'} required disabled={saving} /></label>
         <label>Date and time<Field type="datetime-local" value={draft.startsAt} onChange={event => update('startsAt', event.target.value)} required disabled={saving} /></label>
-        <label>Location<Field value={draft.location} onChange={event => update('location', event.target.value)} placeholder="Venue or meeting point" disabled={saving} /></label>
+        <label>Location<Field addressSearch value={draft.location} onChange={event => update('location', event.target.value)} placeholder="Venue or meeting point" disabled={saving} /></label>
         <label>Notes <span>(optional)</span><Field as="textarea" value={draft.description} onChange={event => update('description', event.target.value)} placeholder="Arrival details, parking or anything guests should know" rows={3} disabled={saving} /></label>
         {saveError ? <p role="alert" className="development-event-error">{saveError}</p> : null}
         <div className="development-event-form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={() => setDraft(null)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Creating…' : draft.eventType === 'launch' ? 'Create launch' : 'Create show day'}</Button></div>

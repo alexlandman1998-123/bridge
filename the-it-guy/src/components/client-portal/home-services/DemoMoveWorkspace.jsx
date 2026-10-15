@@ -1,3 +1,4 @@
+import AddressInput from '../../location/AddressInput'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowLeft, ArrowLeftRight, ArrowRight, Check, CheckCircle2, House, MapPin, Package, Truck, Users } from 'lucide-react'
 import Modal from '../../ui/Modal'
@@ -55,9 +56,9 @@ export default function DemoMoveWorkspace({ theme, propertyAddress = '', current
 
       {step === 0 ? <form onSubmit={continueRoute} noValidate>
         <div className="home-services-route-inputs">
-          <label className="home-services-address"><span className="home-services-address-label"><MapPin size={17} aria-hidden="true" />From</span><span className="home-services-address-caption">Your current front door</span><input ref={fromInput} name="from" aria-label="From address" aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} value={from} onChange={event => { setFrom(event.target.value); setError('') }} placeholder="Enter your current address" required maxLength={240} autoComplete="off" /></label>
+          <label className="home-services-address"><span className="home-services-address-label"><MapPin size={17} aria-hidden="true" />From</span><span className="home-services-address-caption">Your current front door</span><AddressInput ref={fromInput} name="from" aria-label="From address" aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} value={from} onChange={event => { setFrom(event.target.value); setError('') }} placeholder="Enter your current address" required maxLength={240} autoComplete="off" /></label>
           <button type="button" className="home-services-swap" aria-label="Swap from and to addresses" onClick={() => { setFrom(to); setTo(from); setError('') }}><ArrowLeftRight size={20} aria-hidden="true" /></button>
-          <label className="home-services-address home-services-address-destination"><span className="home-services-address-label"><House size={17} aria-hidden="true" />To</span><span className="home-services-address-caption">Your next chapter</span><input ref={toInput} name="to" aria-label="To address" aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} value={to} onChange={event => { setTo(event.target.value); setError('') }} placeholder="Enter your new address" required maxLength={240} autoComplete="off" /></label>
+          <label className="home-services-address home-services-address-destination"><span className="home-services-address-label"><House size={17} aria-hidden="true" />To</span><span className="home-services-address-caption">Your next chapter</span><AddressInput ref={toInput} name="to" aria-label="To address" aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} value={to} onChange={event => { setTo(event.target.value); setError('') }} placeholder="Enter your new address" required maxLength={240} autoComplete="off" /></label>
         </div>
         {error ? <p id={`${id}-error`} className="home-services-error" role="alert">{error}</p> : null}
         <div className="home-services-next-row"><span><Package size={17} aria-hidden="true" />One less thing on your moving list.</span><button type="submit" className="home-services-button">Next: truck size<ArrowRight size={18} aria-hidden="true" /></button></div>

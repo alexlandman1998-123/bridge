@@ -67,12 +67,13 @@ export default function TenantDocumentsPage({
   data = {},
   onNavigate,
   demo = false,
+  onOpenDocument,
 }) {
   const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState("");
   const [notice, setNotice] = useState("");
-  const docs = data.documents || [];
+  const docs = useMemo(() => data.documents || [], [data.documents]);
   const categories = [
     "all",
     "lease",
@@ -96,21 +97,32 @@ export default function TenantDocumentsPage({
     "--tenant-primary": data.branding?.primaryColour || "#071E1A",
     "--tenant-accent": data.branding?.accentColour || "#64B992",
   };
-  const open = (doc) => {
-    if (doc.link) window.open(doc.link, "_blank", "noopener,noreferrer");
-    else
-      setNotice(
-        doc.reportAvailable
-          ? "This document is not available yet."
-          : "This demo document has no downloadable production file.",
-      );
+  const open = async (doc) => {
+    if (!onOpenDocument) {
+      if (doc.link && /^https:\/\//i.test(doc.link)) window.open(doc.link, "_blank", "noopener,noreferrer");
+      else setNotice(demo ? "This demo document has no downloadable production file." : "This document has not been shared for download yet.");
+      return;
+    }
+    if (!doc.available) { setNotice("This document has not been shared for download yet."); return; }
+    const popup = window.open("", "_blank");
+    if (popup) popup.opener = null;
+    try {
+      setNotice("");
+      const url = await onOpenDocument(doc);
+      if (new URL(url).protocol !== "https:") throw new Error("This document could not be opened.");
+      if (popup) popup.location.href = url;
+      else setNotice("Allow pop-ups for this portal, then open the document again.");
+    } catch (cause) {
+      popup?.close();
+      setNotice(cause?.message || "This document could not be opened.");
+    }
   };
   return (
     <div
       style={themeStyle}
       className="mx-auto max-w-[1440px] space-y-4 pb-3 sm:space-y-5"
     >
-      <div className="flex justify-end pt-1">
+      {demo ? <div className="flex justify-end pt-1">
         <button
           type="button"
           onClick={() =>
@@ -125,7 +137,7 @@ export default function TenantDocumentsPage({
           <FileUp size={17} />
           Upload document
         </button>
-      </div>
+      </div> : <p className="text-sm text-slate-600">Your rental team shares uploaded lease, payment and handover documents here. Use your application upload link for requested supporting documents.</p>}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(270px,.75fr)_minmax(240px,.65fr)]">
         {attention ? (
           <Card className="border-[#f0ddba] bg-[#fffaf0]">

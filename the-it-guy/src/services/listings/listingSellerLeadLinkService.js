@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabaseClient'
 import { emitAgencyCrmUpdated } from '../../lib/agencyCrmUpdateBus'
+import { isRentalCrmLead } from '../rentals/rentalCrmLeadModel.js'
 
 const text = value => String(value || '').trim()
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -31,7 +32,7 @@ export async function searchListingSellerLeads({ listing, search = '' }, { clien
   if (contacts.error) throw contacts.error
   if (!contacts.data?.length) return []
   const leads = await client.from('leads')
-    .select('lead_id, contact_id, lead_category, stage, listing_id, enquired_listing_id, seller_property_address')
+    .select('lead_id, contact_id, lead_category, stage, listing_id, enquired_listing_id, seller_property_address, raw_enquiry_payload')
     .eq('organisation_id', organisationId).eq('lead_category', 'seller')
     .or('lead_domain.is.null,lead_domain.eq.agency')
     .in('contact_id', contacts.data.map(contact => contact.contact_id))
@@ -40,7 +41,8 @@ export async function searchListingSellerLeads({ listing, search = '' }, { clien
     .order('updated_at', { ascending: false }).limit(50)
   if (leads.error) throw leads.error
   if (!leads.data?.length) return []
-  const ids = leads.data.map(lead => lead.lead_id).filter(id => UUID.test(id))
+  const salesLeads = leads.data.filter(lead => !isRentalCrmLead(lead))
+  const ids = salesLeads.map(lead => lead.lead_id).filter(id => UUID.test(id))
   if (!ids.length) return []
   const linkedListings = await client.from('private_listings').select('seller_lead_id, originating_crm_lead_id')
     .eq('organisation_id', organisationId).neq('id', listingId)
@@ -48,7 +50,7 @@ export async function searchListingSellerLeads({ listing, search = '' }, { clien
   if (linkedListings.error) throw linkedListings.error
   const alreadyLinked = new Set((linkedListings.data || []).flatMap(row => [row.seller_lead_id, row.originating_crm_lead_id]))
   const byId = new Map(contacts.data.map(contact => [contact.contact_id, contact]))
-  return leads.data.filter(lead => UUID.test(lead.lead_id) && byId.has(lead.contact_id) && !alreadyLinked.has(lead.lead_id)).map(lead => {
+  return salesLeads.filter(lead => UUID.test(lead.lead_id) && byId.has(lead.contact_id) && !alreadyLinked.has(lead.lead_id)).map(lead => {
     const contact = byId.get(lead.contact_id)
     return {
       leadId: lead.lead_id,

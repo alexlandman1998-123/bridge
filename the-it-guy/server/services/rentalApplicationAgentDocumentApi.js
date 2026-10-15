@@ -24,7 +24,7 @@ export async function handleRentalAgentDocumentUpload({ method, headers = {}, bo
       return { status: 200, body: { url: signed.data.signedUrl } }
     }
     const uploaded = await uploadRentalApplicationDocument(storageClient, result.data, body, { source: 'agent', applicationClient: scoped, signingSecret: env.SUPABASE_SERVICE_ROLE_KEY })
-    if (uploaded.uploadUrl) return { status: 201, body: uploaded }
+    if (uploaded.uploadUrl || typeof uploaded.uploaded === 'boolean') return { status: 201, body: uploaded }
     let requirements = null
     try { requirements = await readRentalSavedChecklist(scoped, result.data) } catch { /* The committed version is still returned for recovery. */ }
     return { status: 201, body: { document: uploaded.document, application: { id: uploaded.application.id, status: uploaded.application.status, version: uploaded.application.version, data: uploaded.application.application_data, requirements } } }

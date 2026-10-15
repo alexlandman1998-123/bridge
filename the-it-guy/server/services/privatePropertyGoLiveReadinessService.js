@@ -171,6 +171,7 @@ export function createPrivatePropertyGoLiveReadinessReport({
     generatedAt: new Date().toISOString(),
     environment: normalizedEnvironment,
     listingId: normalizePrivatePropertyText(listingId),
+    publicListingUrl: normalizePrivatePropertyText(bundle?.listing?.private_property_listing_url),
     safety: {
       privatePropertyApiCalled: false,
       databaseWritten: false,
@@ -266,7 +267,7 @@ export async function buildPrivatePropertyGoLiveReadinessReport({
     })
     resolved.safety.privatePropertyApiCalled = true
     resolved.locationResolution = { ...location, addressFingerprint: resolved.preview.summary.addressFingerprint }
-    const recovery = await inspectPrivatePropertyListingRecovery({ portal, existingSync: bundle.existingSync, address: resolved.preview.payloadPreview.address })
+    const recovery = await inspectPrivatePropertyListingRecovery({ portal, existingSync: bundle.existingSync, address: resolved.preview.payloadPreview.address, listingUrl: bundle.listing.private_property_listing_url })
     return applyPrivatePropertyRecoveryToReadiness(resolved, recovery)
   } catch (error) {
     report.locationResolution = { verified: false, message: error.message }

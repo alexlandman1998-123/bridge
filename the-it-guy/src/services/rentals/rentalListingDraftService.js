@@ -1,4 +1,5 @@
 import { buildRentalPublicationSnapshot } from './rentalListingChannelModel'
+import { ensureRentalListingVacancy } from './rentalListingInventoryRepository.js'
 import { isRentalCreationId } from './rentalListingCreationRecovery.js'
 import { isRentalListingInWorkspace } from './rentalWorkspaceScope.js'
 import {
@@ -18,6 +19,7 @@ import {
   validateRentalListingDraftForm,
 } from './rentalListingDraftModel'
 import {
+  buildRentalListingEditForm,
   buildRentalListingEditPublicationDraft,
   buildRentalListingUpdatePayload,
   validateRentalListingEditForm,
@@ -324,6 +326,22 @@ export async function getRentalListingForAgent(listingId, agentId, options = {})
   }) || null
 }
 
+async function connectSavedRentalInventory(listing, context) {
+  try {
+    const inventory = await ensureRentalListingVacancy(listing.id, context.organisationId)
+    return inventory.applicable === false ? listing : { ...listing, rentalPropertyId: inventory.propertyId, rentalUnitId: inventory.unitId, rentalVacancyId: inventory.vacancyId, updatedAt: inventory.updatedAt || listing.updatedAt }
+  } catch (cause) {
+    const error = new Error(`Rental listing ${listing.id} was saved, but its vacancy could not be connected: ${cause.message}`)
+    error.listingId = listing.id
+    error.committed = true
+    error.code = 'RENTAL_INVENTORY_LINK_FAILED'
+    error.savedListing = listing
+    error.expectedUpdatedAt = listing.updatedAt
+    error.galleryImages = buildRentalListingEditForm(listing).galleryImages
+    throw error
+  }
+}
+
 export async function createRentalListingDraft(form = {}, context = {}) {
   const validationErrors = validateRentalListingDraftForm(form, context)
   if (validationErrors.length) {
@@ -347,13 +365,13 @@ export async function createRentalListingDraft(form = {}, context = {}) {
     // Reconcile a previously accepted request before doing any more writes.
     const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false, requireDistributionData: true })
     if (!isRentalListingInWorkspace(listing, context.assignedAgentId, context)) throw new Error('The saved rental is outside this workspace.')
-    return { listing, existing: true, recovered: true, publicationResult: null, activity: null }
+    return { listing: await connectSavedRentalInventory(listing, context), existing: true, recovered: true, publicationResult: null, activity: null }
   }
   const publicationData = buildRentalPublicationDraft(form)
   const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context, created.listing)
 
   return {
-    listing: publicationResult.listing,
+    listing: await connectSavedRentalInventory(publicationResult.listing, context),
     existing: created.existing === true,
     publicationResult,
     activity: null,
@@ -378,7 +396,7 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
   const publicationResult = await saveRentalListingMedia(listingId, form, publicationData, context, existingListing)
 
   return {
-    listing: publicationResult.listing,
+    listing: await connectSavedRentalInventory(publicationResult.listing, context),
     publicationResult,
     activity: null,
   }

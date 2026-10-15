@@ -1,11 +1,11 @@
 import { ArrowLeft, Building2, Mail, MapPin, Phone, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LeadWorkspaceRouteLoadingShell from '../../components/leads/LeadWorkspaceRouteLoadingShell'
 import { useWorkspace } from '../../context/WorkspaceContextBase'
 import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { readAgencyLeadCoreCache } from './agencyLeadCoreCache'
-import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
+import { resolveAgencyLeadWorkspaceRedirect, resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
 
 const BUYER_TABS = Object.freeze([
   ['overview', 'Overview'],
@@ -99,6 +99,8 @@ export default function AgencyLeadWorkspaceShellPage({ loadingTab = false }) {
   ], [contact?.email, contact?.phone, lead?.email, lead?.phone, property])
 
   if (!core && !error) return <LeadWorkspaceRouteLoadingShell />
+  const rentalRoute = resolveAgencyLeadWorkspaceRedirect(lead)
+  if (rentalRoute) return <Navigate to={rentalRoute} replace />
 
   return (
     <section className="min-w-0 space-y-5">

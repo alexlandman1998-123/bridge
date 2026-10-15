@@ -1,3 +1,5 @@
+import AddressInput from '../../../../components/location/AddressInput'
+import { isAddressFieldKey } from '../../../../components/location/addressInputModel'
 import { createElement, useRef, useState } from 'react'
 import { Building2, Landmark, UserRound, Users, BriefcaseBusiness, Plus, Trash2, CheckCircle2 } from 'lucide-react'
 import Button from '../../../../components/ui/Button'
@@ -25,6 +27,7 @@ const entityCopy = {
 }
 const choices = { employmentType: RENTAL_EMPLOYMENT_TYPES, role: RENTAL_APPLICANT_ROLES, identityType: ['sa_id', 'passport'], preferredContactMethod: ['email', 'phone', 'whatsapp'], housingSituation: ['renting', 'living_with_family', 'owner', 'other'], primaryContactRole: ['authorised_signatory', 'trustee', 'contact_only'] }
 function ValueField({ field, value, onChange, disabled, prefix = '' }) {
+  if (isAddressFieldKey(field.key)) return <label className="form-field"><span>{field.label}</span><AddressInput value={value ?? ''} disabled={disabled} onChange={event => onChange(event.target.value)} /></label>
   const id = `${prefix}${field.key}`
   if (field.type === 'boolean' || field.key === 'pets') return <fieldset className="min-w-0"><legend className="mb-2 text-sm font-medium text-[#29435d]">{field.label}</legend><div className="flex gap-2">{[true, false].map((answer) => {
     const selected = field.key === 'pets' ? value === (answer ? 'yes' : 'no') : value === answer

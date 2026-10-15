@@ -16,7 +16,7 @@ test('seller lead linking is atomic, scoped, idempotent and preserves saved sell
         updated_at timestamptz, seller_facts jsonb, documents jsonb);
       create table contacts(contact_id uuid primary key, organisation_id uuid);
       create table leads(lead_id uuid primary key, organisation_id uuid, assigned_agent_id uuid,
-        contact_id uuid, lead_category text, lead_domain text, listing_id uuid, enquired_listing_id uuid,
+        contact_id uuid, lead_category text, lead_domain text, listing_id text, enquired_listing_id uuid,
         updated_at timestamptz, stage text, seller_onboarding_token text);
       create function bridge_can_access_private_listing(p_id uuid) returns boolean language sql security definer set search_path=public
         as $$select exists(select 1 from private_listings where id=p_id and assigned_agent_id=auth.uid())$$;
@@ -50,6 +50,26 @@ test('seller lead linking is atomic, scoped, idempotent and preserves saved sell
     await db.exec('set role authenticated')
     await assert.rejects(link(6), /accessible seller lead/)
     await assert.rejects(link(7), /accessible seller lead/)
+
+    await db.exec('reset role; alter table leads add column raw_enquiry_payload jsonb;')
+    await db.exec(await readFile(new URL('../../../supabase/migrations/20261014114244_separate_rental_leads_from_seller_linking.sql', import.meta.url), 'utf8'))
+    for (const payload of [
+      { arch9RentalLead: true, role: 'landlord' },
+      { classification: 'rental', role: 'landlord' },
+      { rentalCrm: { leadType: 'rental', role: 'tenant' } },
+      { rental_crm: { lead_type: 'rental', role: 'landlord' } },
+    ]) {
+      // A contact may also have a genuine sales lead. Reclassifying this picked
+      // record after search must not let the atomic link attach its rental lead.
+      await db.query('update leads set raw_enquiry_payload=$1::jsonb where lead_id=$2', [JSON.stringify(payload), id(5)])
+      await db.exec('set role authenticated')
+      await assert.rejects(link(), /Rental landlord and tenant leads cannot be linked/)
+      assert.equal((await db.query('select seller_lead_id from private_listings')).rows[0].seller_lead_id, null)
+      assert.equal((await db.query('select listing_id from leads where lead_id=$1', [id(5)])).rows[0].listing_id, null)
+      await db.exec('reset role')
+    }
+    await db.query('update leads set raw_enquiry_payload=null where lead_id=$1', [id(5)])
+    await db.exec('set role authenticated')
 
     // RLS rejects a lead the actor cannot update before it can be attached.
     await db.exec('reset role; drop policy lead_update on leads; create policy lead_update on leads for update to authenticated using(false) with check(false); set role authenticated')

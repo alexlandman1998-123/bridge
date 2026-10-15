@@ -1,6 +1,32 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { uploadRentalApplicationFile } from '../rentalApplicationFileUpload.js'
 afterEach(() => vi.unstubAllGlobals())
+it('confirms a saved landlord receipt independently of checklist refresh', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+  const request = vi.fn().mockResolvedValueOnce({ uploadUrl: 'https://storage.example.test/landlord', ticket: 'landlord-ticket' }).mockResolvedValue({ saved: true, documentId: 'landlord-file', version: 6, checklistUnavailable: true })
+  const progress = vi.fn()
+  const result = await uploadRentalApplicationFile({ name: 'Landlord.pdf', type: 'application/pdf', size: 100 }, { requirementId: 'landlord-receipt', generation: 1 }, 5, request, { onProgress: progress })
+  expect(result.documentId).toBe('landlord-file')
+  expect(progress.mock.calls.at(-1)[0].stage).toBe('complete')
+  expect(request).toHaveBeenCalledTimes(2)
+})
+
+it('retries interrupted bytes at the original signed path when the server confirms absence', async () => {
+  const file = { name: 'Interrupted.pdf', type: 'application/pdf', size: 100 }
+  const request = vi.fn(async body => {
+    if (body.action === 'prepare_upload') return { uploadUrl: 'https://storage.example.test/original', ticket: 'interrupted-ticket' }
+    if (body.action === 'recover_upload') return { uploaded: false, uploadUrl: 'https://storage.example.test/original' }
+    throw new Error('The file upload is incomplete. Retry the upload.')
+  })
+  const fetch = vi.fn().mockRejectedValueOnce(new TypeError('Connection lost')).mockResolvedValueOnce({ ok: true })
+  vi.stubGlobal('fetch', fetch)
+  const slot = { requirementId: 'interrupted-requirement', generation: 1 }
+  await expect(uploadRentalApplicationFile(file, slot, 1, request)).rejects.toThrow()
+  request.mockImplementation(async body => body.action === 'recover_upload' ? { uploaded: false, uploadUrl: 'https://storage.example.test/original' } : { document: { id: 'recovered' }, application: { version: 2 } })
+  expect((await uploadRentalApplicationFile(file, slot, 1, request)).document.id).toBe('recovered')
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['https://storage.example.test/original', 'https://storage.example.test/original'])
+  expect(request.mock.calls.filter(([body]) => body.action === 'prepare_upload')).toHaveLength(1)
+})
 it('sends large document bytes only to the signed storage URL and verifies the upload through the authenticated API callback', async () => {
   const file = { name: 'Evidence.pdf', type: 'application/pdf', size: 8 * 1024 * 1024 }
   const request = vi.fn().mockResolvedValueOnce({ uploadUrl: 'https://storage.example.test/signed', ticket: 'signed-receipt' }).mockResolvedValueOnce({ document: { id: 'doc' }, application: { version: 5 } })
@@ -20,7 +46,7 @@ it('does not create a document record if the direct storage upload fails', async
 
 it('reconciles a lost Storage response through the original completion ticket instead of uploading another file', async () => {
   const file = { name: 'Lost-PUT.pdf', type: 'application/pdf', size: 100 }
-  const request = vi.fn().mockResolvedValueOnce({ uploadUrl: 'https://storage.example.test/signed', ticket: 'original-ticket' }).mockResolvedValue({ document: { id: 'saved-doc' }, application: { version: 5 } })
+  const request = vi.fn().mockResolvedValueOnce({ uploadUrl: 'https://storage.example.test/signed', ticket: 'original-ticket' }).mockImplementation(async body => body.action === 'recover_upload' ? { uploaded: true } : { document: { id: 'saved-doc' }, application: { version: 5 } })
   const fetch = vi.fn().mockRejectedValue(new TypeError('Storage response lost'))
   vi.stubGlobal('fetch', fetch)
   const slot = { subjectId: 'g', purpose: 'identity', requirementId: 'lost-put-requirement', generation: 1 }

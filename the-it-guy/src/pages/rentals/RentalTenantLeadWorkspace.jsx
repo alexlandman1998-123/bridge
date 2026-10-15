@@ -18,6 +18,8 @@ import {
   Users,
 } from 'lucide-react'
 import Button from '../../components/ui/Button'
+import AddressInput from '../../components/location/AddressInput'
+import { isAddressFieldKey } from '../../components/location/addressInputModel'
 import { MobileDashboardShell } from '../../components/dashboard/PremiumDashboard'
 import { listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
 import {
@@ -25,6 +27,7 @@ import {
   assignRentalLead,
   updateRentalLeadQualification,
 } from '../../services/rentals/rentalLeadService'
+import { findSubmittedLeadApplication } from '../../services/rentals/rentalLeadHandoffModel.js'
 import {
   listRentalLeadCommunications,
   logRentalLeadCommunication,
@@ -319,6 +322,7 @@ export default function RentalTenantLeadWorkspace({
       ? actor.name
       : lead.assignedAgentName) ||
     'Unassigned'
+  const submittedApplication = findSubmittedLeadApplication(lead, applications)
   const next = {
     new: [
       'Contact the tenant',
@@ -348,7 +352,7 @@ export default function RentalTenantLeadWorkspace({
     application_pending: [
       'Collect the application',
       'Create or reopen the tenant’s secure application link.',
-      'Open application',
+      submittedApplication ? 'Confirm application received' : 'Open application',
     ],
     application_submitted: [
       'Start screening',
@@ -357,13 +361,13 @@ export default function RentalTenantLeadWorkspace({
     ],
     screening_pending: [
       'Complete screening',
-      'Review the screening results and supporting evidence.',
-      'Open application',
+      'Complete the current screening reviews in the linked application, then continue to FICA.',
+      'Continue to FICA',
     ],
     fica_pending: [
-      'Collect FICA documents',
-      'Verify the tenant’s required identity and address documents.',
-      'Open documents',
+      'Confirm the FICA review',
+      'Complete the current FICA review in the linked application before confirming this milestone.',
+      'Confirm FICA review',
     ],
     fica_complete: [
       'Confirm placement readiness',
@@ -437,6 +441,12 @@ export default function RentalTenantLeadWorkspace({
         () => advance('screening_pending'),
         'Screening started.',
       )
+    else if (lead.stage === 'application_pending' && submittedApplication)
+      void run('journey', () => advance('application_submitted'), 'Submitted application confirmed.')
+    else if (lead.stage === 'screening_pending')
+      void run('journey', () => advance('fica_pending'), 'Current screening reviews confirmed.')
+    else if (lead.stage === 'fica_pending')
+      void run('journey', () => advance('fica_complete'), 'Current FICA review confirmed.')
     else if (lead.stage === 'fica_complete')
       void run(
         'journey',
@@ -577,7 +587,7 @@ export default function RentalTenantLeadWorkspace({
               ) : (
                 <label className="form-field">
                   <span>{question.question}</span>
-                  {question.options ? (
+                  {isAddressFieldKey(question.key) ? <AddressInput value={qualification[question.key]} onChange={event => changeQualification(question.key, event.target.value)} /> : question.options ? (
                     <select
                       value={qualification[question.key]}
                       onChange={(event) =>
@@ -942,6 +952,7 @@ export default function RentalTenantLeadWorkspace({
                   <Home size={16} />
                   {lead.desiredArea || 'Area pending'}
                 </p>
+                {lead.relationships?.listingId ? <Link className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-white underline underline-offset-4" to={`/agent/rentals/listings/${encodeURIComponent(lead.relationships.listingId)}/overview`}><Home size={16} />Open linked rental listing</Link> : null}
               </div>
               <div className="flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold">
                 {lead.phone ? (

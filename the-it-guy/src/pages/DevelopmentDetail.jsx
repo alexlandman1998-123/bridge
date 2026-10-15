@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Building2, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, CircleDollarSign, Copy, Download, EyeOff, FileText, FolderKanban, Globe2, HandCoins, Home, ImagePlus, Mail, LandPlot, MapPin, MoreVertical, PencilLine, PieChart, Plus, Receipt, Search, ShieldCheck, Trash2, TrendingUp, Upload, UserPlus, Users, WalletCards, Workflow, XCircle } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -7632,7 +7633,7 @@ function DevelopmentDetail() {
                           />
                         </DetailField>
                         <DetailField label="Address" className="md:col-span-2">
-                          <Field
+                          <AddressInput
                             value={detailsForm.address}
                             disabled={!isEditingGeneralDetails}
                             className={generalDetailsFieldClassName}
@@ -7764,10 +7765,10 @@ function DevelopmentDetail() {
                           <Field value={sellerDetailsForm.vatTreatment} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={event => setSellerDetailsField('vatTreatment', event.target.value)} placeholder="e.g. VAT inclusive" />
                         </DetailField>
                         <DetailField label="Registered Address" className="md:col-span-2">
-                          <Field value={sellerDetailsForm.registeredAddress} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={event => setSellerDetailsField('registeredAddress', event.target.value)} />
+                          <AddressInput value={sellerDetailsForm.registeredAddress} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={event => setSellerDetailsField('registeredAddress', event.target.value)} />
                         </DetailField>
                         <DetailField label="Postal Address" className="md:col-span-2">
-                          <Field value={sellerDetailsForm.postalAddress} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={event => setSellerDetailsField('postalAddress', event.target.value)} />
+                          <AddressInput value={sellerDetailsForm.postalAddress} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={event => setSellerDetailsField('postalAddress', event.target.value)} />
                         </DetailField>
                         <DetailField label="Seller Email">
                           <Field type="email" value={sellerDetailsForm.email} disabled={!isEditingSellerDetails} className={sellerDetailsFieldClassName} onChange={event => setSellerDetailsField('email', event.target.value)} />

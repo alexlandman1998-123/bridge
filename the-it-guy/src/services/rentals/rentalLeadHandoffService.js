@@ -1,6 +1,6 @@
-import { listPersistedRentalApplicationsForLead } from './rentalApplicationRepository'
+import { listPersistedRentalApplicationsForLead, listRentalApplicationScreeningChecks } from './rentalApplicationRepository'
 import { listRentalPropertyMandates } from './rentalLandlordMandateRepository'
-import { requireRentalLeadHandoff } from './rentalLeadHandoffModel'
+import { findSubmittedLeadApplication, requireRentalLeadHandoff } from './rentalLeadHandoffModel'
 import { listRentalViewings } from './rentalViewingService'
 import { getRentalListingForAgent } from './rentalListingDraftService'
 import { buildRentalListingQueryOptions } from './rentalWorkspaceScope'
@@ -15,9 +15,11 @@ export async function verifyRentalLeadHandoff(lead, toStage, context = {}) {
     const viewings = await listRentalViewings(agentId, { ...buildRentalListingQueryOptions(scope), requireActivity: true })
     return requireRentalLeadHandoff(lead, toStage, { viewings })
   }
-  if (toStage === 'application_submitted') {
+  if (['application_submitted', 'screening_pending', 'fica_pending', 'fica_complete', 'placement_ready'].includes(toStage)) {
     const applications = await listPersistedRentalApplicationsForLead(context.organisationId, lead.id)
-    return requireRentalLeadHandoff(lead, toStage, { applications })
+    const application = findSubmittedLeadApplication(lead, applications)
+    const checks = application && ['fica_pending', 'fica_complete'].includes(toStage) ? await listRentalApplicationScreeningChecks(application.id) : []
+    return requireRentalLeadHandoff(lead, toStage, { applications, checks, organisationId: context.organisationId })
   }
   if (['mandate_signed', 'listing_ready'].includes(toStage)) {
     const propertyId = text(context.relationships?.propertyId || lead.relationships?.propertyId)
@@ -29,5 +31,5 @@ export async function verifyRentalLeadHandoff(lead, toStage, context = {}) {
     const listing = listingId ? await getRentalListingForAgent(listingId, context.actor?.id || context.actor?.userId, { ...buildRentalListingQueryOptions(context.scope || {}), organisationId: context.organisationId }) : null
     return requireRentalLeadHandoff(lead, toStage, { listing, organisationId: context.organisationId })
   }
-  return { evidence: {}, relationships: {} }
+  return requireRentalLeadHandoff(lead, toStage)
 }

@@ -1,3 +1,4 @@
+import RentalIncomingInspectionPanel from '../../modules/rentals/shared/tenancies/RentalIncomingInspectionPanel.jsx'
 import {
   createElement,
   useCallback,
@@ -132,6 +133,7 @@ export default function RentalInspectionsPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const rail = useRef(null);
+  const requestedTenancy = params.get("tenancyId") || "";
   const selectedType = params.get("type") || "all";
   const query = params.get("q") || "";
   const load = useCallback(async () => {
@@ -172,9 +174,9 @@ export default function RentalInspectionsPage() {
         ]
           .join(" ")
           .toLowerCase();
-        return typeMatch && haystack.includes(query.toLowerCase());
+        return (!requestedTenancy || item.tenancy_id === requestedTenancy) && typeMatch && haystack.includes(query.toLowerCase());
       }),
-    [schedules, selectedType, query],
+    [schedules, selectedType, query, requestedTenancy],
   );
   const metrics = useMemo(() => {
     const now = new Date();
@@ -240,6 +242,7 @@ export default function RentalInspectionsPage() {
   ];
   return (
     <main className="mx-auto w-full max-w-[1600px] py-2">
+      {requestedTenancy ? <RentalIncomingInspectionPanel key={requestedTenancy} tenancyId={requestedTenancy} /> : null}
       <MobileDashboardShell>
         <header className="flex flex-col gap-4 rounded-[20px] border border-[#dfe7f0] bg-white p-5 sm:p-6 xl:flex-row xl:items-center xl:justify-between">
           <div>

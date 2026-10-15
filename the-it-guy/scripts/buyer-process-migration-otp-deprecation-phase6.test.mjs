@@ -34,6 +34,11 @@ const legacyOtpMigration = resolveBuyerProcessStageMigration({
   status: 'OTP Generated',
 })
 
+for (const rawEnquiryPayload of [{ classification: 'rental', role: 'tenant' }, { rentalCrm: { leadType: 'rental', role: 'tenant' } }]) {
+  const tenant = { leadCategory: 'buyer', stage: 'Qualified', status: 'Qualified', rawEnquiryPayload }
+  assert.deepEqual(migrateBuyerProcessLeadRecord(tenant), tenant, 'Rental tenants must retain their rental journey without buyer process fields.')
+}
+
 assert.equal(legacyOtpMigration.migrated, true)
 assert.equal(legacyOtpMigration.stageKey, 'offer')
 assert.equal(legacyOtpMigration.stageLabel, 'Offer')

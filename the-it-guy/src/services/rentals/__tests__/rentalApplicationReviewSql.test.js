@@ -1,3 +1,4 @@
+import { rentalLandlordProfileDatabase } from '../../../../server/tests/fixtures/rentalLandlordProfileDatabase.js'
 import { beforeAll, afterAll, expect, it } from 'vitest'
 import { rentalOnboardingDatabase, actor, org, property, unit, vacancy, app } from '../../../../server/tests/fixtures/rentalOnboardingDatabase.js'
 let db
@@ -169,11 +170,16 @@ it('matches saved SQL tenant and landlord definitions to the shared preview cont
     const sql = (await db.query('select * from rental_private.tenant_definitions($1::jsonb)', [JSON.stringify(scenario)])).rows
     expect(normalize(sql)).toEqual(normalize(rentalTenantRequirementDefinitions(scenario)))
   }
+  // Landlord capture now depends on the consistent-saving and shared-rules migrations.
+  // Keep the tenant workflow fixture unchanged and verify the current landlord chain separately.
+  const landlordDb = await rentalLandlordProfileDatabase({ sharedRules: true })
+  try {
   for (const type of ['individual','multiple_owners','company','close_corporation','trust','foreign_owner','other_entity']) {
     const scenario = { profile: { type, name: 'Owner', authorisedSignatoryName:'Director', authorisedSignatoryIdNumber:'C', authorisedSignatoryNationality:'South African', authorisedSignatoryCapacity:'Director', people: [{ id: 'co', name: 'Co-owner', role: 'owner', idNumber: 'B' }] }, portfolio: [{ id: 'p1', canonicalPropertyId: property, address:'One Road', unitNumber:'4', complexName:'Place', mandateId:'bookkeeping', mandateSignedAt:'2026-10-03' }, { id: 'p2' }] }
-    const sql = (await db.query('select * from rental_private.landlord_definitions($1::jsonb)', [JSON.stringify(scenario)])).rows
+    const sql = (await landlordDb.query('select * from rental_private.landlord_definitions($1::jsonb)', [JSON.stringify(scenario)])).rows
     expect(normalize(sql)).toEqual(normalize(rentalLandlordRequirementDefinitions(scenario)))
   }
+  } finally { await landlordDb.close() }
 })
 it('keeps requirement IDs and one revision on repeat saves, and does not count a rejected replacement', async () => {
   const id = '99999999-9999-4999-8999-999999999999'

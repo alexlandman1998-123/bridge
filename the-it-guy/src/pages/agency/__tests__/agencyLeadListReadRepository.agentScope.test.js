@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from '../agencyLeadAgentScope'
 import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords } from '../agencyLeadListReadRepository'
+import { buildAgencyLeadLandingMetrics } from '../agencyLeadListModel'
 const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false }))
 vi.mock('../../../lib/supabaseClient', async () => {
   const { createClient } = await import('@supabase/supabase-js')
@@ -110,6 +111,24 @@ it('filters the seller category before pagination using the same complete snapsh
   const requests = fixture.urls.length
   expect((await listAgencyLeadLandingMetrics(org, { scopedAgent: a })).leads).toBe(result.metricLeads)
   expect(fixture.urls).toHaveLength(requests)
+})
+
+it('excludes rental landlords, tenants and rental archives before sales paging and badge counts', async () => {
+  fixture.leads = [
+    ...Array.from({ length: 30 }, (_, i) => ({ ...makeLead(i), lead_category: 'seller', raw_enquiry_payload: { arch9RentalLead: true, classification: 'rental', role: 'landlord' } })),
+    { ...makeLead(30), raw_enquiry_payload: { rentalCrm: { classification: 'rental', role: 'tenant' } } },
+    { ...makeLead(31), lead_category: 'seller', stage: 'Archived', raw_enquiry_payload: { rental_crm: { lead_type: 'rental', role: 'landlord' } } },
+    ...Array.from({ length: 26 }, (_, i) => ({ ...makeLead(i + 100), lead_category: 'seller' })),
+  ]
+  const options = { scopedAgent: a, includeRelatedRecords: false, pageSize: 25 }
+  const first = await listAgencyLeadListRecords(org, { ...options, category: 'seller' })
+  expect(first.leads.map(lead => lead.leadId)).toEqual(Array.from({ length: 25 }, (_, i) => `lead-${i + 100}`))
+  expect(first.totalCount).toBe(26)
+  expect(buildAgencyLeadLandingMetrics(first.metricLeads).categoryCounts).toEqual({ buyer: 0, seller: 26, development: 0, archived: 0 })
+  const second = await listAgencyLeadListRecords(org, { ...options, category: 'seller', page: 1 })
+  expect(second.leads.map(lead => lead.leadId)).toEqual(['lead-125'])
+  expect((await listAgencyLeadListRecords(org, { ...options, category: 'buyer' })).totalCount).toBe(0)
+  expect((await listAgencyLeadListRecords(org, { ...options, category: 'archived' })).totalCount).toBe(0)
 })
 
 it('searches contact names outside the first mixed page before counting and paging', async () => {

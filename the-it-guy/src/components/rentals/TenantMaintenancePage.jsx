@@ -81,6 +81,7 @@ function Status({ children, tone = "green" }) {
 }
 
 function ReportIssueFlow({ onClose, onSubmit, saving }) {
+  const [error, setError] = useState("");
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     category: "plumbing",
@@ -99,8 +100,11 @@ function ReportIssueFlow({ onClose, onSubmit, saving }) {
       ? form.title.trim().length >= 3 && form.description.trim().length >= 10
       : true;
   const submit = async () => {
-    await onSubmit(form);
-    onClose();
+    try {
+      setError("");
+      await onSubmit(form);
+      onClose();
+    } catch (cause) { setError(cause?.message || "Your maintenance request could not be saved. Please retry."); }
   };
   return (
     <div
@@ -110,6 +114,7 @@ function ReportIssueFlow({ onClose, onSubmit, saving }) {
       className="fixed inset-0 z-50 grid place-items-end bg-[#071e1a]/45 p-0 sm:place-items-center sm:p-5"
     >
       <section className="w-full max-w-xl rounded-t-[20px] bg-white p-5 shadow-2xl sm:rounded-[20px] sm:p-6">
+        {error ? <p role="alert" className="mb-3 text-sm text-red-700">{error}</p> : null}
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[.14em] text-[#66716a]">
@@ -284,7 +289,7 @@ export default function TenantMaintenancePage({
   saving = false,
 }) {
   const [reporting, setReporting] = useState(false);
-  const requests = data.maintenanceRequests || [];
+  const requests = useMemo(() => data.maintenanceRequests || [], [data.maintenanceRequests]);
   const openRequests = useMemo(() => requests.filter(open), [requests]);
   const featured = openRequests[0] || null;
   const scheduled = openRequests.find((request) => request.assignment) || null;
@@ -294,7 +299,6 @@ export default function TenantMaintenancePage({
   };
   const submit = async (form) => {
     await onSubmit(form);
-    setReporting(false);
   };
   return (
     <div
@@ -520,7 +524,7 @@ export default function TenantMaintenancePage({
         <ReportIssueFlow
           onClose={() => setReporting(false)}
           onSubmit={submit}
-          saving={false}
+          saving={saving}
         />
       ) : null}
     </div>

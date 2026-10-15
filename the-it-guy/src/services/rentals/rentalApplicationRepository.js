@@ -7,6 +7,7 @@ const text = (value) => String(value ?? '').trim()
 const fields = 'id, organisation_id, lead_id, vacancy_id, unit_id, applicant_party_id, status, version, application_data, cost_snapshot_json, confirmation_json, application_fee_due_at, created_at, updated_at, submitted_at'
 const client = (value = supabase) => { if (!value || (!isSupabaseConfigured && value === supabase)) throw new Error('Rental applications require Supabase configuration.'); return value }
 const map = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), leadId: text(row.lead_id), vacancyId: text(row.vacancy_id), unitId: text(row.unit_id), applicantPartyId: text(row.applicant_party_id), status: text(row.status), version: Number(row.version || 1), data: row.application_data || {}, costs: row.cost_snapshot_json || {}, confirmation: row.confirmation_json || {}, feeDueAt: row.application_fee_due_at || null, submittedAt: row.submitted_at || null, updatedAt: row.updated_at || null, ...(Object.hasOwn(row, 'requirements') ? { requirements: (row.requirements || []).map(mapRentalRequirement) } : {}), ...(Object.hasOwn(row, 'documents') ? { documents: row.documents || [] } : {}) })
+export const mapPersistedRentalApplication = map
 
 export async function createPersistedRentalApplication(values = {}, { client: db = supabase } = {}) {
   const payload = { organisation_id: text(values.organisationId), lead_id: text(values.leadId) || null, vacancy_id: text(values.vacancyId), unit_id: text(values.unitId), applicant_party_id: text(values.applicantPartyId) || null, application_data: values.data && typeof values.data === 'object' ? values.data : {}, created_by: text(values.createdBy) || null }
@@ -22,7 +23,7 @@ export async function createPersistedRentalApplicantAccess(applicationId, { expi
 }
 export async function listPersistedRentalApplications(organisationId, { client: db = supabase, includeEvidence = false } = {}) { const result = await client(db).from(includeEvidence ? 'rental_application_review_summaries' : 'rental_applications').select(includeEvidence ? 'id, organisation_id, lead_id, vacancy_id, unit_id, status, version, application_data, submitted_at, updated_at, documents, requirements' : fields).eq('organisation_id', text(organisationId)).order('updated_at', { ascending: false }).limit(100); if (result.error) throw result.error; return (result.data || []).map(map) }
 export async function listPersistedRentalApplicationsForLead(organisationId, leadId, { client: db = supabase } = {}) { const result = await client(db).from('rental_applications').select(fields).eq('organisation_id', text(organisationId)).eq('lead_id', text(leadId)).order('updated_at', { ascending: false }).limit(100); if (result.error) throw result.error; return (result.data || []).map(map) }
-const tenancyFields = 'id, organisation_id, property_id, unit_id, source_application_id, status, intended_occupation_date, tenant_snapshot_json, created_at, updated_at, rental_leases(id, status, terms_json, created_at, rental_lease_versions(id, status, is_current, monthly_rent, effective_start_date, effective_end_date, occupation_date, rental_lease_signers(signer_role, signer_name)))'
+const tenancyFields = 'id, organisation_id, property_id, unit_id, source_application_id, status, intended_occupation_date, tenant_snapshot_json, created_at, updated_at, rental_leases(id, status, terms_json, created_at, rental_lease_versions(id, status, is_current, monthly_rent, deposit_amount, effective_start_date, effective_end_date, occupation_date, rental_lease_signers(signer_role, signer_name)))'
 const mapTenancy = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), propertyId: text(row.property_id), unitId: text(row.unit_id), sourceApplicationId: text(row.source_application_id), status: text(row.status), intendedOccupationDate: row.intended_occupation_date || null, tenant: row.tenant_snapshot_json || {}, lease: Array.isArray(row.rental_leases) ? row.rental_leases[0] || null : row.rental_leases || null, createdAt: row.created_at || null, updatedAt: row.updated_at || null })
 export async function listPersistedRentalTenancies(organisationId, { client: db = supabase, offset } = {}) { let query = client(db).from('rental_tenancies').select(tenancyFields).eq('organisation_id', text(organisationId)).order('updated_at', { ascending: false }).order('id'); query = offset === undefined ? query.limit(100) : query.range(offset, offset + 99); const result = await query; if (result.error) throw result.error; return (result.data || []).map(mapTenancy) }
 export async function getPersistedRentalTenancy(organisationId, tenancyId, { client: db = supabase } = {}) { const result = await client(db).from('rental_tenancies').select(tenancyFields).eq('organisation_id', text(organisationId)).eq('id', text(tenancyId)).maybeSingle(); if (result.error) throw result.error; return result.data ? mapTenancy(result.data) : null }
@@ -74,11 +75,16 @@ export async function getRentalApplicationDocumentUrl(applicationId, documentId)
 // Read the complete application set for one listing; organisation scope is explicit.
 export async function listPersistedRentalApplicationsForListing(organisationId, listingId, { client: db = supabase, includeEvidence = false } = {}) {
   if (!text(organisationId) || !text(listingId)) return []
+  const listing = await client(db).from('private_listings').select('id,rental_vacancy_id').eq('id', text(listingId)).eq('organisation_id', text(organisationId)).eq('listing_category', 'rental').maybeSingle()
+  if (listing.error) throw listing.error
+  if (!listing.data) return []
   const rows = []
   for (let offset = 0; ; offset += 100) {
-    const result = await client(db).from(includeEvidence ? 'rental_application_review_summaries' : 'rental_applications')
-      .select(includeEvidence ? 'id, organisation_id, lead_id, status, version, application_data, submitted_at, updated_at, documents, requirements' : fields)
-      .eq('organisation_id', text(organisationId)).eq('application_data->property->>listingId', text(listingId))
+    let query = client(db).from(includeEvidence ? 'rental_application_review_summaries' : 'rental_applications')
+      .select(includeEvidence ? 'id, organisation_id, lead_id, vacancy_id, unit_id, status, version, application_data, submitted_at, updated_at, documents, requirements' : fields)
+      .eq('organisation_id', text(organisationId))
+    query = listing.data.rental_vacancy_id ? query.eq('vacancy_id', listing.data.rental_vacancy_id) : query.eq('application_data->property->>listingId', text(listingId))
+    const result = await query
       .order('updated_at', { ascending: false }).order('id').range(offset, offset + 99)
     if (result.error) throw result.error
     rows.push(...(result.data || []).map(map))
@@ -102,4 +108,11 @@ export async function listPersistedRentalTenanciesForApplications(organisationId
     }
   }
   return rows
+}
+
+export async function getRentalTenancyHandoffContext(applicationId, { client: db = supabase } = {}) {
+  const result = await client(db).rpc('rental_tenancy_handoff_context', { p_application_id: text(applicationId) })
+  if (result.error) throw result.error
+  if (result.data?.applicationId !== applicationId) throw new Error('This application is unavailable in your rental workspace.')
+  return result.data
 }

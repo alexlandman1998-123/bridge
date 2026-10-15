@@ -26,6 +26,17 @@ function unavailable(error = {}) {
       : error.message || "Rental landlord request failed.",
   );
 }
+export async function searchRentalLandlordContacts(organisationId, search = '', { client = supabase } = {}) {
+  if (!text(organisationId)) return []
+  const term = text(search).replace(/[^\p{L}\p{N}\s@+.'-]/gu, ' ').replace(/\s+/g, ' ').slice(0, 100).trim()
+  if (term.length < 2) return []
+  const words = term.split(' ')
+  const namePair = words.length > 1 ? `,and(first_name.ilike.%${words[0]}%,last_name.ilike.%${words.slice(1).join(' ')}%)` : ''
+  const result = await requireClient(client).from('contacts').select('contact_id,first_name,last_name,email,phone')
+    .eq('organisation_id', text(organisationId)).or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%${namePair}`).order('first_name').limit(20)
+  if (result.error) throw unavailable(result.error)
+  return (result.data || []).map(contact => ({ id: contact.contact_id, name: [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || contact.phone, email: contact.email || '', phone: contact.phone || '' }))
+}
 export async function listRentalPropertyLandlords(
   propertyId = "",
   { client = supabase } = {},
@@ -38,7 +49,16 @@ export async function listRentalPropertyLandlords(
     .order("is_primary_contact", { ascending: false })
     .order("created_at");
   if (result.error) throw unavailable(result.error);
-  return (result.data || []).map(mapRentalPropertyLandlord);
+  const relationships = (result.data || []).map(mapRentalPropertyLandlord)
+  if (!relationships.length) return []
+  const contacts = await requireClient(client).from('contacts').select('contact_id,first_name,last_name,email,phone')
+    .eq('organisation_id', relationships[0].organisationId).in('contact_id', [...new Set(relationships.map(item => item.partyId))])
+  if (contacts.error) throw unavailable(contacts.error)
+  const byId = new Map((contacts.data || []).map(contact => [contact.contact_id, contact]))
+  return relationships.map(item => {
+    const contact = byId.get(item.partyId)
+    return { ...item, name: contact ? [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || contact.phone : '', email: contact?.email || '', phone: contact?.phone || '' }
+  })
 }
 export async function listRentalPropertyOwners(
   organisationId = "",

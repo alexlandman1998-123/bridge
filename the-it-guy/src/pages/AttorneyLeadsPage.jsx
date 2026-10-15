@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   AlertTriangle,
   ArrowRight,
@@ -336,7 +337,7 @@ function ManualLeadDrawer({ open, saving, error, onClose, onSave }) {
           </Field>
         </div>
         <Field label="Property address">
-          <input className={inputClass} value={form.propertyAddress} onChange={(event) => update('propertyAddress', event.target.value)} placeholder="Optional" />
+          <AddressInput className={inputClass} value={form.propertyAddress} onChange={(event) => update('propertyAddress', event.target.value)} placeholder="Optional" />
         </Field>
         {form.serviceType === 'transfer_quote' ? (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -998,7 +999,7 @@ function LeadDetailDrawer({
                       </select>
                     </Field>
                   ) : <div />}
-                  <div className="sm:col-span-2"><Field label="Property address" required><input className={inputClass} value={conversionPropertyAddress} onChange={(event) => setConversionPropertyAddress(event.target.value)} disabled={!conversionReady} /></Field></div>
+                  <div className="sm:col-span-2"><Field label="Property address" required><AddressInput className={inputClass} value={conversionPropertyAddress} onChange={(event) => setConversionPropertyAddress(event.target.value)} disabled={!conversionReady} /></Field></div>
                   <Field label="Matter value"><input className={inputClass} type="number" min="0" max="9999999999.99" step="0.01" value={conversionPropertyValue} onChange={(event) => setConversionPropertyValue(event.target.value)} disabled={!conversionReady} /></Field>
                   <Field label="Conversion note"><input className={inputClass} value={conversionNote} onChange={(event) => setConversionNote(event.target.value)} placeholder="Optional internal context" disabled={!conversionReady} /></Field>
                 </div>

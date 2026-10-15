@@ -70,3 +70,9 @@ it('shows load failures instead of suggesting the job register is empty', async 
   expect((await screen.findByRole('alert')).textContent).toContain('Job register unavailable')
   expect(screen.queryByText(/No maintenance jobs yet/)).toBeNull()
 })
+
+it('prefills only the scoped tenancy supplied by the tenancy workspace link', async () => {
+ render(<MemoryRouter initialEntries={['/agent/rentals/maintenance?tenancyId=tenancy-1']}><RentalMaintenancePage/></MemoryRouter>)
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Log issue'}).disabled).toBe(false));fireEvent.click(screen.getByRole('button',{name:'Log issue'}))
+ expect(screen.getByLabelText('Select tenancy *').value).toBe('tenancy-1')
+})

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { filterRentalLeadList, rentalLeadListSummary } from '../rentalLeadListModel.js'
+import { buildRentalLeadKanbanColumns, filterRentalLeadList, rentalLeadListSummary } from '../rentalLeadListModel.js'
 const rows = [
   { id: '1', role: 'landlord', stage: 'new', name: 'Owner', source: 'Manual', createdAt: '2026-10-01', assignedAgentId: 'agent-1', outcome: { status: 'open' } },
   { id: '2', role: 'tenant', stage: 'contacted', name: 'Tenant', source: 'Property24', createdAt: '2026-10-02', outcome: { status: 'open' } },
@@ -22,4 +22,20 @@ it('sorts a copy and leaves the service rows unchanged', () => {
   expect(filterRentalLeadList(data, { role: 'landlord' }).map((row) => row.id)).toEqual(['6', '1'])
   expect(filterRentalLeadList(data, { role: 'landlord', sort: 'oldest' }).map((row) => row.id)).toEqual(['1', '6'])
   expect(data.map((row) => row.id)).toEqual(['1', '6'])
+})
+it('shows review-needed records first without resetting or dropping their saved stages', () => {
+  const review = { id: 'review', role: 'tenant', stage: 'old_vendor_stage', savedStage: 'old_vendor_stage', workflowIssue: 'Review saved journey', outcome: { status: 'open' } }
+  const columns = buildRentalLeadKanbanColumns([...rows, review], 'tenant')
+  expect(columns[0]).toMatchObject({ stage: 'review_needed', label: 'Review needed', cards: [review] })
+  expect(columns.find(column => column.stage === 'new').cards).toEqual([])
+  expect(columns.flatMap(column => column.cards).map(row => row.id)).toEqual(['review', '2'])
+  expect(filterRentalLeadList([...rows, review], { role: 'tenant', stage: 'review_needed' })).toEqual([review])
+  expect(review.stage).toBe('old_vendor_stage')
+})
+it('keeps landlord-specific stages and unknown closed stages visible on the Closed board', () => {
+  const review = { id: 'review', role: 'landlord', stage: 'old_vendor_stage', outcome: { status: 'lost' } }
+  const columns = buildRentalLeadKanbanColumns([...rows, review], 'closed')
+  expect(columns[0]).toMatchObject({ stage: 'review_needed', cards: [review] })
+  expect(columns.find(column => column.stage === 'listing_created')).toMatchObject({ label: 'Listing created', cards: [rows[4]] })
+  expect(columns.flatMap(column => column.cards)).toHaveLength(4)
 })

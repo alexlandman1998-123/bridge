@@ -1,3 +1,4 @@
+import AddressInput from './location/AddressInput'
 import { CheckCircle2, ExternalLink } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -2819,7 +2820,7 @@ function AgentNewDealWizard({
                         </select>
                       </Field>
                       <Field label="Property Address" error={errors.importPropertyAddress} fullWidth>
-                        <input className={fieldClass()} value={form.importPropertyAddress} onChange={(event) => updateField('importPropertyAddress', event.target.value)} />
+                        <AddressInput className={fieldClass()} value={form.importPropertyAddress} onChange={(event) => updateField('importPropertyAddress', event.target.value)} />
                       </Field>
                       {form.importPropertyStructure === 'sectional_title' || form.importPropertyStructure === 'share_block' ? (
                         <>

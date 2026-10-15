@@ -232,7 +232,7 @@ export default function LeadListPage({
       <article className="flex min-w-0 flex-col overflow-visible rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
         <header className={`border-b border-[rgba(15,23,42,0.06)] px-4 py-3 sm:px-5 sm:py-4 ${isKanban ? 'bg-white' : 'bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]'}`}>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div><div className="flex items-center gap-2"><h3 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{categoryTitle}</h3><span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{summary.filtered || 0}</span></div><p className="mt-1.5 text-sm font-medium text-[#60758b]">Track and manage your buyer, seller and development leads.</p></div>
+            <div className="flex items-center gap-2"><h3 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">{categoryTitle}</h3><span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{summary.filtered || 0}</span></div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex rounded-[14px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5" role="group" aria-label="Preferred lead view">
                 <button type="button" aria-pressed={viewMode === 'table'} className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === 'table' ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => onViewModeChange('table')}><Table2 size={13} /> Table</button>

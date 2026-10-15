@@ -37,8 +37,9 @@
         const retryKey = 'arch9:bootstrap-retry:v1'
         const retryWindowMs = 2 * 60 * 1000
         let appStarted = false
+        let recoveryPending = false
 
-        const isModuleLoadFailure = (value) => /(?:chunkloaderror|dynamically imported module|module script|failed to fetch|load failed for module|\/assets\/.*\.js)/i.test(
+        const isModuleLoadFailure = (value) => /(?:chunkloaderror|dynamically imported module|module script|load failed for module|\/assets\/.*\.js)/i.test(
           String(value?.message || value?.reason?.message || value || ''),
         )
 
@@ -66,6 +67,29 @@
           window.location.replace(url.toString())
         }
 
+        const refreshStartupFiles = async () => {
+          const urls = [...document.querySelectorAll('script[type="module"][src], link[rel="modulepreload"][href]')]
+            .map((node) => node.src || node.href)
+            .filter((value) => {
+              try {
+                const url = new URL(value, window.location.href)
+                return url.origin === window.location.origin && /^\/assets\/.*\.js$/.test(url.pathname)
+              } catch { return false }
+            })
+          let timer
+          try {
+            // Replacing the HTML alone cannot repair an immutable cached 404
+            // for a module. Reload these exact URLs into the HTTP cache first.
+            await Promise.race([
+              Promise.allSettled([...new Set(urls)].slice(0, 20).map(async (url) => {
+                const response = await fetch(url, { cache: 'reload', credentials: 'same-origin' })
+                if (response.ok) await response.arrayBuffer()
+              })),
+              new Promise((resolve) => { timer = window.setTimeout(resolve, 6000) }),
+            ])
+          } finally { window.clearTimeout(timer) }
+        }
+
         const showRecovery = () => {
           const root = document.getElementById('root')
           if (!root) return
@@ -79,17 +103,20 @@
               </section>
             </main>`
           document.getElementById('arch9-bootstrap-retry')?.addEventListener('click', () => {
+            if (recoveryPending) return
+            recoveryPending = true
             try { window.sessionStorage.removeItem(retryKey) } catch {}
-            reloadFreshShell()
+            void refreshStartupFiles().finally(reloadFreshShell)
           })
         }
 
         const recover = () => {
-          if (appStarted) return
+          if (appStarted || recoveryPending) return
           const retryCount = getRetryCount()
           if (retryCount < 1) {
             saveRetryCount(retryCount + 1)
-            window.setTimeout(reloadFreshShell, 50)
+            recoveryPending = true
+            void refreshStartupFiles().finally(reloadFreshShell)
             return
           }
           showRecovery()

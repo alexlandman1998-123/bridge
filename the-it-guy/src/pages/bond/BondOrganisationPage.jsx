@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
+import AddressInput from '../../components/location/AddressInput'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -4541,7 +4542,7 @@ function BranchFormModal({
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-semibold text-[#31475d]">Office Location</span>
-                  <input value={values.officeLocation || ''} onChange={(event) => onChange('officeLocation', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
+                  <AddressInput value={values.officeLocation || ''} onChange={(event) => onChange('officeLocation', event.target.value)} className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e4ef] px-3 text-sm text-[#142132] outline-none focus:border-[#9fb8d1]" />
                 </label>
                 <label className="block">
                   <span className="text-sm font-semibold text-[#31475d]">Branch Code</span>

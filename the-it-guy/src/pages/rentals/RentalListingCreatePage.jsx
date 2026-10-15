@@ -521,21 +521,27 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
   useEffect(() => {
     const leadId = searchParams.get('leadId')
     if (!leadId || !organisationId) { setLinkedLandlordLead(null); return }
+    let active = true
+    setLinkedLandlordLead(null)
+    const recoveryListingId = pendingListingIdRef.current || pendingListingId
     const options = { assignedAgentId, branchId, scopeLevel: rentalScope.scopeLevel, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' }
     void listRentalLeads(organisationId, options).then(async (leads) => {
-      const lead = leads.find((item) => item.id === leadId && item.role === 'landlord' && (item.stage === 'listing_ready' || (portfolioPropertyId && item.stage === 'listing_created'))) || null
+      if (!active) return
+      const lead = leads.find((item) => item.id === leadId && item.role === 'landlord' && (item.stage === 'listing_ready' || (item.stage === 'listing_created' && (portfolioPropertyId || (recoveryListingId && item.relationships?.listingId === recoveryListingId))))) || null
       if (lead && portfolioPropertyId) {
         const property = landlordWorkspace(lead).portfolio.find(item => item.id === portfolioPropertyId)
         if (!property) throw new Error('This landlord portfolio property is not available.')
-        if (property.listingId) throw new Error('This portfolio property already has a rental listing. Open that listing to edit it.')
+        if (property.listingId && property.listingId !== recoveryListingId) throw new Error('This portfolio property already has a rental listing. Open that listing to edit it.')
         const mandates = property.canonicalPropertyId ? await listRentalPropertyMandates(property.canonicalPropertyId) : []
         if (!findLeadMandate(lead, mandates, property.canonicalPropertyId, organisationId)) throw new Error('Record a signed mandate for this portfolio property before creating its rental listing.')
+        if (!active) return
         if (!window.localStorage.getItem(draftStorageKey) && !window.sessionStorage.getItem(draftStorageKey)) setForm(current => ({ ...current, ...Object.fromEntries(Object.entries(landlordListingPrefill(lead, portfolioPropertyId)).filter(([, value]) => value !== undefined)) }))
       }
       setLinkedLandlordLead(lead)
       if (!lead) setError('The requested landlord lead is not available at Listing ready in your current scope.')
-    }).catch((loadError) => setError(loadError?.message || 'Unable to validate linked landlord lead.'))
-  }, [assignedAgentId, branchId, organisationId, rentalScope.scopeLevel, searchParams, portfolioPropertyId, draftStorageKey])
+    }).catch((loadError) => { if (active) setError(loadError?.message || 'Unable to validate linked landlord lead.') })
+    return () => { active = false }
+  }, [assignedAgentId, branchId, organisationId, rentalScope.scopeLevel, searchParams, portfolioPropertyId, draftStorageKey, pendingListingId])
 
   useEffect(() => () => {
     for (const image of galleryImagesRef.current) {
@@ -763,6 +769,8 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
         creationId: creationIdRef.current,
         canonicalPropertyId: linkedLandlordLead && portfolioPropertyId
           ? landlordWorkspace(linkedLandlordLead).portfolio.find(item => item.id === portfolioPropertyId)?.canonicalPropertyId : undefined,
+        canonicalUnitId: linkedLandlordLead && portfolioPropertyId
+          ? landlordWorkspace(linkedLandlordLead).portfolio.find(item => item.id === portfolioPropertyId)?.canonicalUnitId : undefined,
         ...rentalScope, organisationId, branchId, assignedAgentId, performedBy: assignedAgentId,
         onListingCreated: (id, row) => {
           // Persist the receipt even if the user has since switched workspaces.
@@ -837,13 +845,22 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
         state: { [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form) },
       })
     } catch (saveError) {
+      if (saveError.code === 'RENTAL_INVENTORY_LINK_FAILED' && saveError.savedListing?.id === saveError.listingId && saveError.expectedUpdatedAt) {
+        savedFormForRecovery = { ...savedFormForRecovery, expectedUpdatedAt: saveError.expectedUpdatedAt, galleryImages: saveError.galleryImages || savedFormForRecovery.galleryImages }
+        pendingDraftRevisionRef.current = saveError.expectedUpdatedAt
+        detailsSaved = true
+        if (mountedRef.current) {
+          setForm(current => ({ ...current, expectedUpdatedAt: saveError.expectedUpdatedAt, galleryImages: saveError.galleryImages || current.galleryImages }))
+          setCloudSave({ status: 'saved', savedAt: saveError.expectedUpdatedAt })
+        }
+      }
       if (!isEditing && creationIdRef.current) {
         try { persistRecoveryDraft({ ...savedFormForRecovery, galleryImages: saveError.galleryImages || savedFormForRecovery.galleryImages }, saveError.listingId || pendingListingIdRef.current) }
         catch { /* The identity saved before creation remains the recovery anchor. */ }
       }
       if (!mountedRef.current) return
       if (!detailsSaved) setCloudSave({ status: 'error' })
-      else setNotice('Your rental details are saved. Activation did not finish. Continue with the same listing; do not create another rental.')
+      else setNotice(saveError.code === 'RENTAL_INVENTORY_LINK_FAILED' ? 'Your rental details are saved. Retry connecting the vacancy using this same listing.' : 'Your rental details are saved. Activation did not finish. Continue with the same listing; do not create another rental.')
       if (!isEditing && saveError.listingId) { pendingListingIdRef.current = saveError.listingId; setPendingListingId(saveError.listingId) }
       if (Array.isArray(saveError.galleryImages)) {
         setForm((current) => ({ ...current, galleryImages: saveError.galleryImages }))

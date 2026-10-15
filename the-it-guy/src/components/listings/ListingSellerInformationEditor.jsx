@@ -1,3 +1,4 @@
+import AddressInput from '../location/AddressInput'
 import SellerMandateDetailsEditor from '../documents/SellerMandateDetailsEditor.jsx'
 import SellerFicaQuestions from '../onboarding/SellerFicaQuestions.jsx'
 import { sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields.js'
@@ -7,12 +8,13 @@ import { LISTING_SELLER_PROFILE_BRANCHES } from '../../lib/listingSellerProfileB
 import { getPropertyCategoryLabel, getPropertyStructureTypeLabel, getPropertyStructureTypesForListing, getPropertyTypeOptionsForListing, PROPERTY_CATEGORIES } from '../../lib/propertyTaxonomy.js'
 import Button from '../ui/Button.jsx'
 import Field from '../ui/Field.jsx'
+import { isAddressFieldKey } from '../location/addressInputModel'
 
 function Input({ label, field, draft, onChange, type = 'text', as, className = '' }) {
   return (
     <label className={`grid gap-1.5 text-sm font-semibold text-[#2d445e] ${className}`}>
       {label}
-      <Field as={as} type={type} value={draft[field] ?? ''} onChange={(event) => onChange(field, event.target.value)} />
+      <Field addressSearch={isAddressFieldKey(field)} as={as} type={type} value={draft[field] ?? ''} onChange={(event) => onChange(field, event.target.value)} />
     </label>
   )
 }
@@ -30,7 +32,7 @@ function PeopleEditor({ title, rows = [], ownerFields = false, onAdd, onUpdate, 
           <label className="grid gap-1 text-xs font-semibold text-[#607387]">Surname<Field value={person.surname || person.lastName || ''} onChange={(event) => onUpdate(index, 'surname', event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-semibold text-[#607387]">ID / passport<Field value={person.idNumber || ''} onChange={(event) => onUpdate(index, 'idNumber', event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-semibold text-[#607387]">Nationality<Field value={person.nationality || ''} onChange={(event) => onUpdate(index, 'nationality', event.target.value)} /></label>
-          <label className="grid gap-1 text-xs font-semibold text-[#607387] sm:col-span-2">Residential address<Field value={person.residentialAddress || ''} onChange={(event) => onUpdate(index, 'residentialAddress', event.target.value)} /></label>
+          <label className="grid gap-1 text-xs font-semibold text-[#607387] sm:col-span-2">Residential address<AddressInput value={person.residentialAddress || ''} onChange={(event) => onUpdate(index, 'residentialAddress', event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-semibold text-[#607387]">Email<Field type="email" value={person.email || ''} onChange={(event) => onUpdate(index, 'email', event.target.value)} /></label>
           {ownerFields ? <>
             <label className="grid gap-1 text-xs font-semibold text-[#607387]">Phone number<Field type="tel" value={person.phone || ''} onChange={(event) => onUpdate(index, 'phone', event.target.value)} /></label>

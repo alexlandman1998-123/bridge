@@ -129,6 +129,30 @@ test('seller document type tabs retain progress and reveal the matching saved fi
   expect(screen.getByText('No documents in this category yet.')).toBeTruthy()
 })
 
+test('landlords reuse the sales document layout and actions without seller labels or commands', () => {
+  const manage = vi.fn()
+  const refresh = vi.fn()
+  const { rerender } = render(<LeadDocumentWorkspace partyType="seller" categories={categories} getStatusMeta={getStatusMeta} />)
+  const sales = screen.getByTestId('seller-document-workspace')
+  const expected = { card: sales.className, header: sales.querySelector('header').className, tabs: screen.getByTestId('seller-document-trackers').className, list: screen.getByTestId('seller-documents-list').className }
+  rerender(<LeadDocumentWorkspace partyType="landlord" partyName="Landlord Name" categories={categories} getStatusMeta={getStatusMeta} manageDocumentsAction={manage} manageDocumentsActionLabel="Upload / Request document" additionalActions={<button onClick={refresh}>Refresh onboarding</button>} evidenceSummary={{ saved: 1, awaitingReview: 1 }} />)
+  const landlord = screen.getByTestId('landlord-document-workspace')
+  expect(landlord.className).toBe(expected.card)
+  expect(landlord.querySelector('header').className).toBe(expected.header)
+  expect(screen.getByTestId('landlord-document-trackers').className).toBe(expected.tabs)
+  expect(screen.getByTestId('landlord-documents-list').className).toBe(expected.list)
+  expect(screen.getByRole('tablist', { name: 'Landlord document types' })).toBeTruthy()
+  expect(screen.getByText('Activity')).toBeTruthy()
+  expect(screen.getByText(/1 file saved/)).toBeTruthy()
+  expect(screen.queryByText(/Seller Profile/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Create printable mandate' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Upload / Request document' }))
+  expect(manage).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for Landlord documents' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh onboarding' }))
+  expect(refresh).toHaveBeenCalledOnce()
+})
+
 test('signed review rows are green with inline decisions and still outstanding', () => {
   const review=vi.fn(),accept=vi.fn(),reject=vi.fn(),download=vi.fn()
   render(<LeadDocumentWorkspace partyType="seller" categories={[{key:'fica',label:'FICA',items:[{key:'signed_fica_declaration',label:'Signed FICA Declaration',required:true}]}]} getStatusMeta={()=>({state:'review',label:'Signed, awaiting agent review',signedAwaitingReview:true,pillClass:'bg-green-50'})}

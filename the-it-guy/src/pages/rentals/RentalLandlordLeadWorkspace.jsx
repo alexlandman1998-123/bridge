@@ -1,3 +1,5 @@
+import RentalLandlordProfileEditor from '../../modules/rentals/shared/applications/RentalLandlordProfileEditor.jsx'
+import { profileSignature } from '../../services/rentals/rentalLandlordProfileDraft.js'
 import RentalLandlordOnboardingPanel from '../../modules/rentals/shared/applications/RentalLandlordOnboardingPanel.jsx'
 import { rentalLandlordDiscovery, LANDLORD_CONDITIONAL_OPTIONS, rentalLandlordPropertyFieldVisible } from '../../services/rentals/rentalLandlordOnboardingModel.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -30,7 +32,6 @@ import {
   landlordMandateReadiness,
 } from '../../services/rentals/rentalLandlordWorkspaceModel'
 import {
-  saveRentalLandlordProfile,
   saveRentalLandlordProperty,
   saveRentalLandlordDocument,
   recordRentalLandlordPortfolioMandate,
@@ -48,7 +49,11 @@ import {
   RENTAL_LANDLORD_PIPELINE_STAGES,
 } from '../../services/rentals/rentalLeadPipelineModel'
 import { listRentalProperties } from '../../services/rentals/rentalPropertyRepository'
+import { listRentalUnits } from '../../services/rentals/rentalUnitRepository.js'
 import './RentalTenantLeadWorkspace.css'
+import AddressInput from '../../components/location/AddressInput'
+import useRentalLandlordProfileAutosave from '../../hooks/useRentalLandlordProfileAutosave'
+import { isAddressFieldKey, selectedAddressFields } from '../../components/location/addressInputModel'
 const EMPTY = []
 const text = (value) => String(value ?? '').trim()
 const money = (value) =>
@@ -88,6 +93,9 @@ const selects = {
 function Field({ field, values, onChange }) {
   const [key, title, type] = field
   const value = values[key] ?? ''
+  if (isAddressFieldKey(key)) return <label className="form-field"><span>{title}</span><AddressInput value={value} onChange={event => onChange(key, event.target.value)} onAddressSelect={address => {
+    if (key === 'address' && address) for (const [name, answer] of Object.entries(selectedAddressFields(address))) onChange(name, answer)
+  }} /></label>
   if (type === 'boolean')
     return (
       <fieldset>
@@ -111,13 +119,14 @@ function Field({ field, values, onChange }) {
   return (
     <label className="form-field">
       <span>{title}</span>
-      {selects[type] ? (
+      {(Array.isArray(type) || selects[type]) ? (
         <select
           value={value}
           onChange={(event) => onChange(key, event.target.value)}
         >
           <option value="">Select {title.toLowerCase()}</option>
-          {selects[type].map(([choice, label]) => (
+          {value && !(Array.isArray(type) ? type : selects[type]).some(([id]) => id === value) ? <option value={value}>{value} (previous answer)</option> : null}
+          {(Array.isArray(type) ? type : selects[type]).map(([choice, label]) => (
             <option key={choice} value={choice}>
               {label}
             </option>
@@ -159,13 +168,13 @@ export default function RentalLandlordLeadWorkspace({
   onReload,
   journeyContent,
   parentError = '',
+  onMandateUploaded,
 }) {
   const [params, setParams] = useSearchParams()
   const tab = LANDLORD_TABS.includes(params.get('tab'))
     ? params.get('tab')
     : 'Overview'
   const saved = landlordWorkspace(lead)
-  const [profile, setProfile] = useState(saved.profile)
   const [property, setProperty] = useState(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -174,6 +183,7 @@ export default function RentalLandlordLeadWorkspace({
   const [agents, setAgents] = useState([])
   const [agentsLoading, setAgentsLoading] = useState(false)
   const [agentsError, setAgentsError] = useState('')
+  const [failedAgentPhoto, setFailedAgentPhoto] = useState('')
   const [assignee, setAssignee] = useState(lead.assignedAgentId || '')
   const assignmentScopeLevel = scope.scopeLevel || options.scopeLevel
   const canAssign = ['organisation', 'branch'].includes(assignmentScopeLevel)
@@ -184,25 +194,37 @@ export default function RentalLandlordLeadWorkspace({
     let active = true
     setAgents([])
     setAgentsError('')
-    setAgentsLoading(canAssign)
-    if (canAssign) {
-      listOrganisationUsersForWorkspace({ organisationId: scope.organisationId })
+    setAgentsLoading(Boolean(scope.organisationId))
+    if (scope.organisationId) {
+      listOrganisationUsersForWorkspace({ organisationId: scope.organisationId, includeAvatars: true })
         .then((users) => { if (active) setAgents(users || []) })
         .catch((cause) => { if (active) setAgentsError(cause.message || 'Unable to load agents.') })
         .finally(() => { if (active) setAgentsLoading(false) })
     }
     return () => { active = false }
-  }, [canAssign, scope.organisationId])
+  }, [scope.organisationId])
   const eligibleUsers = agents.filter((user) => user.userId
     && ['active', 'accepted'].includes(String(user.status || '').toLowerCase())
     && user.organisationId === scope.organisationId
     && (assignmentScopeLevel !== 'branch' || user.branchId === (scope.branchId || options.branchId)))
     .sort((a, b) => String(a.fullName || a.email).localeCompare(String(b.fullName || b.email)))
-  const owner = agents.find((user) => user.userId === lead.assignedAgentId)
+  const owner = agents.find((user) => user.userId === lead.assignedAgentId && user.organisationId === scope.organisationId)
   const ownerName = owner?.fullName || (lead.assignedAgentId === actor.id && actor.name ? actor.name : lead.assignedAgentName) || 'Unassigned'
+  const ownerPhoto = text(owner?.avatarUrl)
 
   const [managedProperties, setManagedProperties] = useState([])
   const [managedError, setManagedError] = useState('')
+  const [managedUnits, setManagedUnits] = useState([])
+  const [unitError, setUnitError] = useState('')
+  useEffect(() => {
+    let active = true
+    setManagedUnits([])
+    setUnitError('')
+    if (property?.canonicalPropertyId) listRentalUnits({ propertyId: property.canonicalPropertyId })
+      .then(rows => { if (active) setManagedUnits(rows) })
+      .catch(cause => { if (active) setUnitError(cause.message || 'Unable to load managed units.') })
+    return () => { active = false }
+  }, [property?.canonicalPropertyId])
   const [signedConfirmation, setSignedConfirmation] = useState(false)
   const [communications, setCommunications] = useState([])
   const [communicationError, setCommunicationError] = useState('')
@@ -233,9 +255,8 @@ export default function RentalLandlordLeadWorkspace({
     }),
     [actor, options, scope, lead],
   )
-  useEffect(() => {
-    setProfile(landlordWorkspace(lead).profile)
-  }, [lead])
+  const profileSave = useRentalLandlordProfileAutosave({ lead, context, onReload })
+  const { profile, updateProfile } = profileSave
   useEffect(() => {
     let active = true
     listRentalLeadCommunications(scope.organisationId, lead.id, {
@@ -292,6 +313,8 @@ export default function RentalLandlordLeadWorkspace({
     const next = new URLSearchParams(params)
     next.set('tab', value)
     next.delete('property')
+    next.delete('upload')
+    next.delete('uploadProperty')
     setParams(next)
   }
   function openProperty(item) {
@@ -324,49 +347,6 @@ export default function RentalLandlordLeadWorkspace({
       setBusy('')
     }
   }
-  const updateProfile = (key, value) =>
-    setProfile((current) => ({ ...current, [key]: value }))
-  function peopleRole() {
-    return (
-      {
-        company: 'Director',
-        trust: 'Trustee',
-        close_corporation: 'Member',
-        multiple_owners: 'Owner',
-        foreign_owner: 'Representative',
-      }[profile.type] || 'Co-owner'
-    )
-  }
-  function visibleField(key) {
-    if (
-      [
-        'maritalStatus',
-        'maritalRegime',
-        'spouseName',
-        'spouseIdNumber',
-        'idNumber',
-        'nationality',
-      ].includes(key)
-    )
-      return ['individual', 'multiple_owners', 'foreign_owner'].includes(
-        profile.type,
-      )
-    if (
-      [
-        'registrationNumber',
-        'tradingName',
-        'vatNumber',
-        'resolutionDate',
-      ].includes(key)
-    )
-      return [
-        'company',
-        'trust',
-        'close_corporation',
-        'foreign_owner',
-      ].includes(profile.type)
-    return true
-  }
   const history = leadActivities.filter(
     (item) => !communications.length || item.outcome !== 'communication_event',
   )
@@ -380,6 +360,7 @@ export default function RentalLandlordLeadWorkspace({
     rail.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
   }, [stageIndex, tab])
   const primaryListing = saved.portfolio.find((item) => item.listingId)
+  const linkedListingId = primaryListing?.listingId || lead.relationships?.listingId
   const portfolioCards = (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {saved.portfolio.map((item) => (
@@ -613,34 +594,34 @@ export default function RentalLandlordLeadWorkspace({
             )
           })}
         </nav>
-        <section className="min-w-0 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-5 sm:px-8">
+        {tab === 'Overview' ? <section className="min-w-0 overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf3f8] px-5 py-4 sm:px-6">
             <div>
               <p className="tenant-eyebrow">Landlord journey</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{getRentalLeadStageLabel(RENTAL_LANDLORD_PIPELINE_STAGES[stageIndex], 'landlord')}</h2>
+              <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">{getRentalLeadStageLabel(RENTAL_LANDLORD_PIPELINE_STAGES[stageIndex], 'landlord')}</h2>
             </div>
             <span className="rounded-full border border-[#cbdcf5] bg-[#eef5ff] px-3 py-1 text-xs font-semibold text-[#245f86]">Stage {stageIndex + 1} of {RENTAL_LANDLORD_PIPELINE_STAGES.length}</span>
           </div>
-          <div ref={journeyRail} className="overflow-x-auto px-5 py-6 sm:px-8">
+          <div ref={journeyRail} className="overflow-x-auto px-5 py-4 sm:px-6">
             <ol aria-label="Landlord journey stages" className="grid min-w-[1040px] grid-cols-8 gap-0">
               {RENTAL_LANDLORD_PIPELINE_STAGES.map((stageKey, index) => {
                 const current = stageIndex === index
                 const completed = index < stageIndex
                 return <li key={stageKey} aria-current={current ? 'step' : undefined} className="relative px-1.5">
-                  {index < RENTAL_LANDLORD_PIPELINE_STAGES.length - 1 ? <span aria-hidden="true" className={`absolute left-[calc(50%+20px)] right-[calc(-50%+20px)] top-[32px] h-0.5 ${completed ? 'bg-[#9bc7de]' : 'bg-[#dce6f1]'}`} /> : null}
-                  <div className={`relative flex min-h-[140px] flex-col items-center px-2 py-3 text-center ${current ? 'rounded-[18px] border border-[#cfe0ee] bg-[#f4f9fc] shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : ''}`}>
-                    <span className={`z-10 grid h-10 w-10 place-items-center rounded-full border-2 text-sm font-bold ${current ? 'border-[#2f7b9e] bg-white text-[#245f86] shadow-[0_0_0_7px_rgba(47,123,158,0.12)]' : completed ? 'border-[#2f7b9e] bg-[#2f7b9e] text-white' : 'border-[#cad7e5] bg-white text-[#8fa1b4]'}`}>
+                  {index < RENTAL_LANDLORD_PIPELINE_STAGES.length - 1 ? <span aria-hidden="true" className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[30px] h-0.5 ${completed ? 'bg-[#9bc7de]' : 'bg-[#dce6f1]'}`} /> : null}
+                  <div className={`relative flex min-h-[116px] flex-col items-center px-2 py-3 text-center ${current ? 'rounded-[16px] border border-[#cfe0ee] bg-[#f4f9fc] shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : ''}`}>
+                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${current ? 'border-[#2f7b9e] bg-white text-[#245f86] shadow-[0_0_0_7px_rgba(47,123,158,0.12)]' : completed ? 'border-[#2f7b9e] bg-[#2f7b9e] text-white' : 'border-[#cad7e5] bg-white text-[#8fa1b4]'}`}>
                       {completed ? <CheckCircle2 size={18} aria-hidden="true" /> : index + 1}
                     </span>
-                    <span className="mt-4 text-sm font-semibold leading-5 text-[#203a54]">{getRentalLeadStageLabel(stageKey, 'landlord')}</span>
+                    <span className="mt-2 text-sm font-semibold leading-5 text-[#203a54]">{getRentalLeadStageLabel(stageKey, 'landlord')}</span>
                     <span className="mt-1 text-xs font-semibold text-[#6d839b]">{current ? 'Current stage' : completed ? 'Complete' : 'Upcoming'}</span>
-                    {current ? <span className="mt-2 rounded-full bg-[#dfeef7] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#245f86]">Live</span> : null}
+                    {current ? <span className="mt-1 rounded-full bg-[#dfeef7] px-2 py-0.5 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#245f86]">Live</span> : null}
                   </div>
                 </li>
               })}
             </ol>
           </div>
-        </section>
+        </section> : null}
         {parentError || error ? (
           <div
             role="alert"
@@ -657,12 +638,16 @@ export default function RentalLandlordLeadWorkspace({
             {notice}
           </p>
         ) : null}
+        {tab !== 'Landlord profile' && profileSave.dirty ? <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#dce7f2] bg-white p-3 text-sm text-[#29435d]">
+          <span>{profileSave.status === 'saving' || profileSave.status === 'pending' ? 'Landlord profile changes are saving…' : 'Your landlord profile draft is retained and still needs saving.'}</span>
+          <Button type="button" size="sm" variant="secondary" onClick={() => chooseTab('Landlord profile')}>Review profile draft</Button>
+        </div> : null}
         {tab === 'Overview' ? (
           <>
-            <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
-              <section className="tenant-card flex flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold text-[#102033]">Landlord profile</h2><Button type="button" variant="secondary" size="sm" onClick={() => chooseTab('Landlord profile')}>Edit profile</Button></div>
-                <dl className="mt-5 grid flex-1 gap-3 sm:grid-cols-2">
+            <div className="grid items-stretch gap-4 lg:grid-cols-2">
+              <section className="tenant-card">
+                <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold text-[#102033]">Landlord profile</h2><div className="flex flex-wrap items-center gap-2"><Link aria-label="Open landlord profile" className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#245f86] hover:bg-[#f4f9fc]" to={`/clients/${encodeURIComponent(`lead:${lead.id}`)}`}><Users size={14} aria-hidden="true" />Open profile</Link><Button type="button" variant="secondary" size="sm" onClick={() => chooseTab('Landlord profile')}>Edit profile</Button></div></div>
+                <dl className="mt-4 grid content-start gap-3 sm:grid-cols-2">
                   {[
                     [
                       'Landlord type',
@@ -676,87 +661,92 @@ export default function RentalLandlordLeadWorkspace({
                     ['Address', saved.profile.residentialAddress],
                     ['Signing authority', saved.profile.authorityBasis],
                   ].map(([title, value]) => (
-                    <div key={title} className="min-w-0 rounded-xl border border-[#e6eef5] bg-[#f8fbfd] p-4">
+                    <div key={title} className="min-w-0 rounded-xl border border-[#e6eef5] bg-[#f8fbfd] p-3">
                       <dt className="tenant-eyebrow">{title}</dt>
-                      <dd className="mt-2 break-words text-sm font-semibold text-[#20364c]">
+                      <dd className="mt-1 break-words text-sm font-semibold text-[#20364c]">
                         {value || 'Not captured'}
                       </dd>
                     </div>
                   ))}
                 </dl>
               </section>
-              <div className="grid content-start gap-5">
-                <section className="tenant-next tenant-card flex flex-col">
-                  <p className="tenant-eyebrow">What’s next</p>
-                  <h2 className="mt-2 text-lg font-semibold text-white">
-                    {lead.nextAction}
-                  </h2>
-                  <div className="mt-5">{journeyContent}</div>
-                </section>
-                <section className="tenant-card">
-                  <p className="tenant-eyebrow">Lead assigned to</p>
-                  <div className="mt-4 flex items-center gap-3 rounded-xl bg-[#f7fafc] p-3">
-                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-sm font-bold text-[#167149]" aria-hidden="true">
+              <section className="tenant-next tenant-card flex flex-col">
+                <p className="tenant-eyebrow">What’s next</p>
+                <h2 className="mt-2 text-lg font-semibold text-white">
+                  {lead.nextAction}
+                </h2>
+                <div className="landlord-next-action mt-5 flex flex-1 flex-col">{journeyContent}</div>
+              </section>
+            </div>
+            <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+              <Card title="Property portfolio">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <p className="text-sm text-[#60758b]">
+                    {saved.portfolio.length} propert
+                    {saved.portfolio.length === 1 ? 'y' : 'ies'}
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      chooseTab('Portfolio')
+                      setProperty({ id: uid(), category: 'residential' })
+                    }}
+                  >
+                    <Plus size={16} />
+                    Add property
+                  </Button>
+                </div>
+                {saved.portfolio.length ? (
+                  portfolioCards
+                ) : (
+                  <p className="text-sm text-[#60758b]">
+                    Add the landlord’s first property.
+                  </p>
+                )}
+              </Card>
+              <section className="tenant-card flex flex-col">
+                <p className="tenant-eyebrow">Lead assigned to</p>
+                <div className="mt-4 flex min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl bg-[#f7fafc] p-5 text-center">
+                  {ownerPhoto && ownerPhoto !== failedAgentPhoto ? (
+                    <img src={ownerPhoto} alt={`${ownerName} profile photo`} className="h-28 w-28 shrink-0 rounded-full object-cover sm:h-36 sm:w-36" onError={() => setFailedAgentPhoto(ownerPhoto)} />
+                  ) : (
+                    <span className="grid h-28 w-28 shrink-0 place-items-center rounded-full bg-[#eaf6ef] text-3xl font-bold text-[#167149] sm:h-36 sm:w-36" aria-hidden="true">
                       {ownerName.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase()}
                     </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#18324b]">{ownerName}</p>
-                      <p className="mt-1 truncate text-xs text-[#60758b]" title={owner?.email || lead.assignedAgentEmail || ''}>{owner?.email || lead.assignedAgentEmail || 'Primary agent'}</p>
-                    </div>
+                  )}
+                  <div className="min-w-0 w-full">
+                    <p className="break-words text-lg font-semibold text-[#18324b]">{ownerName}</p>
+                    <p className="mt-1 break-all text-sm text-[#60758b]">{owner?.email || lead.assignedAgentEmail || 'Primary agent'}</p>
+                    {owner?.jobTitle ? <p className="mt-2 break-words text-xs font-medium text-[#7890a7]">{owner.jobTitle}</p> : null}
                   </div>
-                  {agentsError ? <p role="alert" className="mt-3 text-sm text-[#a02323]">{agentsError}</p> : null}
-                  <form className="mt-5 grid gap-3 border-t border-[#edf3f8] pt-4" onSubmit={(event) => {
-                    event.preventDefault()
-                    if (!canAssign || !eligibleUsers.some((user) => user.userId === assignee) || assignee === lead.assignedAgentId) return
-                    void run('assignment', () => assignRentalLead(lead.id, assignee, context), 'Lead assignment saved.')
-                  }}>
-                    <label className="grid gap-2 text-sm font-medium text-[#29435d]">
-                      Assigned agent
-                      <select
-                        aria-label="Assign landlord lead"
-                        className="h-11 w-full min-w-0 rounded-xl border border-[#dce7f2] bg-white px-3 text-sm text-[#18324b] outline-none focus:border-[#91abc0] focus:ring-2 focus:ring-[#eef4fa] disabled:bg-[#f7fafc] disabled:text-[#60758b]"
-                        value={assignee}
-                        disabled={!canAssign || agentsLoading || Boolean(busy) || !eligibleUsers.length}
-                        onChange={(event) => setAssignee(event.target.value)}
-                      >
-                        <option value="">{agentsLoading && canAssign ? 'Loading agents…' : 'Choose agent'}</option>
-                        {lead.assignedAgentId && !eligibleUsers.some((user) => user.userId === lead.assignedAgentId) ? <option value={lead.assignedAgentId}>{ownerName} (current)</option> : null}
-                        {eligibleUsers.map((user) => <option key={user.userId} value={user.userId}>{user.fullName || user.email}</option>)}
-                      </select>
-                    </label>
-                    {canAssign ? <>
-                      {!agentsLoading && !eligibleUsers.length ? <p className="text-xs text-[#60758b]">No active agents available in this workspace.</p> : null}
-                      <Button type="submit" size="sm" className="justify-self-end" disabled={agentsLoading || Boolean(busy) || !eligibleUsers.some((user) => user.userId === assignee) || assignee === lead.assignedAgentId}>{busy === 'assignment' ? 'Saving…' : 'Save assignment'}</Button>
-                    </> : <p className="text-xs leading-5 text-[#60758b]">Your branch or organisation manager can change the assigned agent.</p>}
-                  </form>
-                </section>
-              </div>
+                </div>
+                {agentsError ? <p role="alert" className="mt-3 text-sm text-[#a02323]">{agentsError}</p> : null}
+                <form className="mt-5 grid gap-3 border-t border-[#edf3f8] pt-4" onSubmit={(event) => {
+                  event.preventDefault()
+                  if (!canAssign || !eligibleUsers.some((user) => user.userId === assignee) || assignee === lead.assignedAgentId) return
+                  void run('assignment', () => assignRentalLead(lead.id, assignee, context), 'Lead assignment saved.')
+                }}>
+                  <label className="grid gap-2 text-sm font-medium text-[#29435d]">
+                    Assigned agent
+                    <select
+                      aria-label="Assign landlord lead"
+                      className="h-11 w-full min-w-0 rounded-xl border border-[#dce7f2] bg-white px-3 text-sm text-[#18324b] outline-none focus:border-[#91abc0] focus:ring-2 focus:ring-[#eef4fa] disabled:bg-[#f7fafc] disabled:text-[#60758b]"
+                      value={assignee}
+                      disabled={!canAssign || agentsLoading || Boolean(busy) || !eligibleUsers.length}
+                      onChange={(event) => setAssignee(event.target.value)}
+                    >
+                      <option value="">{agentsLoading && canAssign ? 'Loading agents…' : 'Choose agent'}</option>
+                      {lead.assignedAgentId && !eligibleUsers.some((user) => user.userId === lead.assignedAgentId) ? <option value={lead.assignedAgentId}>{ownerName} (current)</option> : null}
+                      {eligibleUsers.map((user) => <option key={user.userId} value={user.userId}>{user.fullName || user.email}</option>)}
+                    </select>
+                  </label>
+                  {canAssign ? <>
+                    {!agentsLoading && !eligibleUsers.length ? <p className="text-xs text-[#60758b]">No active agents available in this workspace.</p> : null}
+                    <Button type="submit" size="sm" className="justify-self-end" disabled={agentsLoading || Boolean(busy) || !eligibleUsers.some((user) => user.userId === assignee) || assignee === lead.assignedAgentId}>{busy === 'assignment' ? 'Saving…' : 'Save assignment'}</Button>
+                  </> : <p className="text-xs leading-5 text-[#60758b]">Your branch or organisation manager can change the assigned agent.</p>}
+                </form>
+              </section>
             </div>
-            <Card title="Property portfolio">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-sm text-[#60758b]">
-                  {saved.portfolio.length} propert
-                  {saved.portfolio.length === 1 ? 'y' : 'ies'}
-                </p>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    chooseTab('Portfolio')
-                    setProperty({ id: uid(), category: 'residential' })
-                  }}
-                >
-                  <Plus size={16} />
-                  Add property
-                </Button>
-              </div>
-              {saved.portfolio.length ? (
-                portfolioCards
-              ) : (
-                <p className="text-sm text-[#60758b]">
-                  Add the landlord’s first property.
-                </p>
-              )}
-            </Card>
             <div className="grid gap-5 lg:grid-cols-2">
               <Card title="Activity logger">{activityForm}</Card>
               <Card title="Appointments">
@@ -786,168 +776,43 @@ export default function RentalLandlordLeadWorkspace({
           </>
         ) : null}
         {tab === 'Landlord profile' ? (
-          <form
+          <form noValidate
             onSubmit={(event) => {
               event.preventDefault()
-              void run(
-                'profile',
-                () => saveRentalLandlordProfile(lead.id, profile, context),
-                'Landlord profile saved.',
-              )
+              void profileSave.saveNow()
             }}
           >
-            <Card title="Landlord profile">
-              <fieldset>
-                <legend className="tenant-label">Landlord type</legend>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {LANDLORD_TYPES.map(([value, title]) => (
-                    <button
-                      type="button"
-                      key={value}
-                      data-rental-control="landlord-type"
-                      aria-pressed={profile.type === value}
-                      className={`flex items-center gap-3 rounded-xl border p-4 text-left text-sm font-semibold ${profile.type === value ? 'border-[#73a3c4] bg-[#eef5fa] text-[#20364c]' : 'border-[#dce7f2] bg-white text-[#60758b]'}`}
-                      onClick={() => updateProfile('type', value)}
-                    >
-                      {['company', 'close_corporation'].includes(value) ? (
-                        <Building2 size={20} />
-                      ) : (
-                        <Users size={20} />
-                      )}{' '}
-                      {title}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {PROFILE_FIELDS.filter(([key]) => visibleField(key)).map(
-                  (field) => (
-                    <Field
-                      key={field[0]}
-                      field={field}
-                      values={profile}
-                      onChange={updateProfile}
-                    />
-                  ),
-                )}
-              </div>
-            </Card>
-            <Card
-              title="Owners, representatives & signing authority"
-              className="mt-4"
-            >
-              <p className="text-sm text-[#60758b]">
-                Capture each owner, director, trustee, beneficiary, member or
-                authorised representative.
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#dce7f2] bg-white px-4 py-3">
+              <p role="status" aria-live="polite" className="text-sm text-[#29435d]">
+                {{ saved: 'All profile changes saved', pending: 'Changes waiting to save…', saving: 'Saving profile…', offline: 'Offline — draft retained in this tab', incomplete: 'Draft retained — complete the details below to save', conflict: 'Saved details changed — review your draft below', error: 'Save needs a retry — your draft is retained' }[profileSave.status]}
               </p>
-              <div className="mt-4 space-y-4">
-                {(profile.people || []).map((person, index) => (
-                  <section
-                    key={person.id}
-                    className="rounded-2xl border border-[#dce7f2] p-4"
-                  >
-                    <div className="flex justify-between gap-3">
-                      <h3 className="font-semibold text-[#20364c]">
-                        {person.role || peopleRole()} {index + 1}
-                      </h3>
-                      <button
-                        type="button"
-                        data-rental-control="landlord-person-remove"
-                        aria-label={`Remove person ${index + 1}`}
-                        onClick={() =>
-                          updateProfile(
-                            'people',
-                            profile.people.filter(
-                              (item) => item.id !== person.id,
-                            ),
-                          )
-                        }
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <Field
-                        field={['role', 'Role']}
-                        values={person}
-                        onChange={(key, value) =>
-                          updateProfile(
-                            'people',
-                            profile.people.map((item) =>
-                              item.id === person.id
-                                ? { ...item, [key]: value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      {PERSON_FIELDS.map((field) => (
-                        <Field
-                          key={field[0]}
-                          field={field}
-                          values={person}
-                          onChange={(key, value) =>
-                            updateProfile(
-                              'people',
-                              profile.people.map((item) =>
-                                item.id === person.id
-                                  ? { ...item, [key]: value }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      ))}
-                    </div>
-                    <label className="mt-4 flex items-center gap-2 text-sm text-[#20364c]">
-                      <input
-                        type="checkbox"
-                        checked={person.signingAuthority === true}
-                        onChange={(event) =>
-                          updateProfile(
-                            'people',
-                            profile.people.map((item) =>
-                              item.id === person.id
-                                ? {
-                                    ...item,
-                                    signingAuthority: event.target.checked,
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                      Authorised to sign the rental mandate
-                    </label>
-                  </section>
-                ))}
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                className="mt-4"
-                onClick={() =>
-                  updateProfile('people', [
-                    ...(profile.people || []),
-                    { id: uid(), role: peopleRole(), signingAuthority: false },
-                  ])
-                }
-              >
-                <Plus size={16} />
-                Add person
-              </Button>
-            </Card>
+              {['error', 'offline'].includes(profileSave.status) ? <Button type="button" size="sm" variant="secondary" onClick={() => void profileSave.saveNow()}>Retry profile save</Button> : null}
+            </div>
+            {profileSave.error ? <p role="alert" className="mb-4 rounded-xl bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{profileSave.error}</p> : null}
+            {profileSave.notice ? <p className="mb-4 text-sm text-[#29435d]">{profileSave.notice}</p> : null}
+            {Object.keys(profileSave.conflicts).length ? <section className="mb-4 rounded-xl border border-[#dce7f2] bg-white p-4" aria-label="Review profile changes">
+              <p className="text-sm text-[#29435d]">Another editor changed these details. Choose which value to keep before saving. Other saved changes have been retained.</p>
+              {Object.keys(profileSave.conflicts).map(key => {
+                const label = PROFILE_FIELDS.find(field => field[0] === key)?.[1] || (key === 'people' ? 'Owners and representatives' : key === 'type' ? 'Landlord type' : key === 'primarySignatoryId' ? 'Primary signatory' : key)
+                const display = value => key === 'primarySignatoryId' ? (profile.people || []).find(person => person.id === value)?.name || (profileSave.saved.people || []).find(person => person.id === value)?.name || 'Separate signatory details' : Array.isArray(value) ? value.map((person, index) => `Person ${index + 1}: ${[...PERSON_FIELDS, ['role','Role']].map(([field,title]) => `${title}: ${String(person[field] ?? '').trim() || 'Empty'}`).join('; ')}; Authorised to sign: ${person.signingAuthority ? 'Yes' : 'No'}`).join(' | ') || 'None' : String(value ?? '') || 'Empty'
+                return <div key={key} className="mt-3 border-t border-[#edf3f8] pt-3 text-sm">
+                  <p className="font-semibold">{label}</p><p className="mt-1 break-words">Your draft: {display(profile[key])}</p><p className="mt-1 break-words">Saved: {display(profileSave.saved[key])}</p>
+                  <div className="mt-2 flex flex-wrap gap-2"><Button size="sm" type="button" variant="secondary" onClick={() => profileSave.resolveConflict(key, false)}>Keep my {label.toLowerCase()}</Button><Button size="sm" type="button" variant="secondary" onClick={() => profileSave.resolveConflict(key, true)}>Use saved {label.toLowerCase()}</Button></div>
+                </div>
+              })}
+            </section> : null}
+            <RentalLandlordProfileEditor profile={profile} portfolio={saved.portfolio} saveState={profileSave.status} onChange={next => updateProfile(Object.fromEntries(Object.entries(next).filter(([key,value]) => profileSignature(value) !== profileSignature(profile[key]))))} />
             <div className="mt-4 flex justify-end gap-3">
               <Button
                 type="button"
                 variant="secondary"
-                disabled={Boolean(busy)}
-                onClick={() => setProfile(saved.profile)}
+                disabled={Boolean(busy) || profileSave.saving}
+                onClick={profileSave.resetProfile}
               >
                 Reset
               </Button>
-              <Button type="submit" disabled={Boolean(busy)}>
-                {busy === 'profile' ? 'Saving…' : 'Save landlord profile'}
+              <Button type="submit" disabled={Boolean(busy) || Object.keys(profileSave.conflicts).length > 0}>
+                {profileSave.saving ? 'Save latest changes' : 'Save landlord profile'}
               </Button>
             </div>
           </form>
@@ -1000,6 +865,7 @@ export default function RentalLandlordLeadWorkspace({
                                   setProperty((current) => ({
                                     ...current,
                                     canonicalPropertyId: event.target.value,
+                                    canonicalUnitId: '',
                                   }))
                                 }
                               >
@@ -1021,6 +887,18 @@ export default function RentalLandlordLeadWorkspace({
                               >
                                 Add a managed property
                               </Link>
+                            </label>
+                          ) : field[0] === 'canonicalUnitId' ? (
+                            <label key={field[0]} className="form-field">
+                              <span>Managed rental unit</span>
+                              <select value={property.canonicalUnitId || ''} disabled={!property.canonicalPropertyId || Boolean(property.mandateId || property.listingId)} onChange={event => {
+                                const unit = managedUnits.find(item => item.id === event.target.value)
+                                setProperty(current => ({ ...current, canonicalUnitId: event.target.value, ...(unit ? { unitNumber: unit.unitLabel, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, parking: unit.parkingCount } : {}) }))
+                              }}>
+                                <option value="">Match by unit number when creating the listing</option>
+                                {managedUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.unitLabel}</option>)}
+                              </select>
+                              {unitError ? <span role="alert">{unitError}</span> : null}
                             </label>
                           ) : (
                             <Field
@@ -1147,6 +1025,9 @@ export default function RentalLandlordLeadWorkspace({
                             listing.
                           </p>
                         )}
+                        {selected.canonicalPropertyId ? <Link className="block text-sm font-semibold text-[#1f4f78]" to={`/agent/rentals/portfolio/properties/${encodeURIComponent(selected.canonicalPropertyId)}`}>Open managed property and units</Link> : null}
+                        {selected.canonicalPropertyId ? <Link className="block text-sm font-semibold text-[#1f4f78]" to={`/agent/rentals/portfolio/properties/${encodeURIComponent(selected.canonicalPropertyId)}/landlord`}>Link an existing property owner</Link> : null}
+                        {selected.vacancyId ? <Link className="block text-sm font-semibold text-[#1f4f78]" to={`/agent/rentals/vacancies/${encodeURIComponent(selected.vacancyId)}`}>Open rental vacancy</Link> : null}
                       </div>
                     ) : null}
                   </Card>
@@ -1272,10 +1153,13 @@ export default function RentalLandlordLeadWorkspace({
           <div className="grid gap-5 lg:grid-cols-2">
             <RentalLandlordOnboardingPanel
               leadId={lead.id}
+              initialUploadPurpose={params.get('upload') === 'mandate' ? 'signed_mandate' : ''}
+              initialUploadSubject={params.get('uploadProperty') || ''}
+              onMandateUploaded={onMandateUploaded}
               revision={JSON.stringify([saved.profile, saved.portfolio])}
-              discoveryDirty={JSON.stringify(profile) !== JSON.stringify(saved.profile) || Boolean(property && JSON.stringify(property) !== JSON.stringify(saved.portfolio.find((item) => item.id === property.id)))}
+              discoveryDirty={profileSave.dirty || Boolean(property && JSON.stringify(property) !== JSON.stringify(saved.portfolio.find((item) => item.id === property.id)))}
             />
-            <Card title="Landlord documents">
+            {saved.documents.length || saved.portfolio.some((item) => item.listingId) ? <Card title="Saved references and linked listings">
               <p className="text-sm text-[#60758b]">
                 Identity, company or trust records, signing authority and
                 mandates.
@@ -1307,10 +1191,11 @@ export default function RentalLandlordLeadWorkspace({
                     Open listing documents · {item.title || item.address}
                   </Link>
                 ))}
-            </Card>
-            <Card title="Record a document reference">
+            </Card> : null}
+            <details className="tenant-card lg:col-span-2">
+              <summary className="cursor-pointer text-sm font-semibold text-[#245f86]">Add a document reference</summary>
               <form
-                className="grid gap-4"
+                className="mt-4 grid gap-4 sm:grid-cols-2"
                 onSubmit={(event) => {
                   event.preventDefault()
                   void run(
@@ -1368,7 +1253,7 @@ export default function RentalLandlordLeadWorkspace({
                   Save document reference
                 </Button>
               </form>
-            </Card>
+            </details>
           </div>
         ) : null}
         {tab === 'Activity' ? (
@@ -1419,10 +1304,10 @@ export default function RentalLandlordLeadWorkspace({
             </Card>
           </div>
         ) : null}
-        {tab === 'Overview' && primaryListing ? (
+        {tab === 'Overview' && linkedListingId ? (
           <Link
             className="inline-flex text-sm font-semibold text-[#1f4f78]"
-            to={`/agent/rentals/listings/${encodeURIComponent(primaryListing.listingId)}/marketing`}
+            to={`/agent/rentals/listings/${encodeURIComponent(linkedListingId)}/overview`}
           >
             Open linked rental listing
           </Link>

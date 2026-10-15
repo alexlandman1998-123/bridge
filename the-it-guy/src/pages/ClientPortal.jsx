@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import { buildListingSellerInformationModel } from '../services/listings/listingSellerInformationModel.js'
 import { DOCUMENT_IMAGE_UPLOAD_ACCEPT, DOCUMENT_IMAGE_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy.js'
 import { appointmentStartIso, calendarOperationalStatus, sastDateKey, sastParts } from '../core/appointments/attorneyCalendarModel.js'
@@ -13700,7 +13701,7 @@ function ClientPortal() {
                       <div className="grid gap-3 md:grid-cols-2">
                         <label className="grid gap-1.5">
                           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Property address</span>
-                          <input
+                          <AddressInput
                             className="rounded-[12px] border border-[#d5e1ee] bg-white px-3 py-2 text-sm text-[#142132] outline-none focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]"
                             value={sellerRequestForm.propertyAddress}
                             onChange={(event) => setSellerRequestForm((previous) => ({ ...previous, propertyAddress: event.target.value }))}

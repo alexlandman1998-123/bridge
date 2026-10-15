@@ -8,3 +8,8 @@ const evidence = buildRentalLeadWorkflowEvidence({ role: 'landlord' }, 'mandate_
 assert.equal(evidence.mandateReference, 'MAND-42')
 assert.equal(appendRentalLeadWorkflowEvidence({ workflow: { events: [{ stage: 'contacted' }] } }, evidence).events.length, 2)
 console.log('Rental lead workflow evidence model tests passed.')
+
+const confirmedContact = buildRentalLeadWorkflowEvidence({role:'landlord',stage:'contacted'},'appraisal_scheduled',{actionKey:'mark_contacted'})
+assert.equal(confirmedContact.actionKey,'mark_contacted')
+assert.equal(confirmedContact.scheduledFor,undefined)
+assert.throws(() => buildRentalLeadWorkflowEvidence({role:'landlord',stage:'contacted'},'appraisal_scheduled',{}),/Scheduled time/)

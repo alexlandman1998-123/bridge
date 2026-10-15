@@ -1,3 +1,4 @@
+import AddressInput from '../../components/location/AddressInput'
 import { Archive, ExternalLink, Pencil, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -76,7 +77,7 @@ function DevelopmentEditor({ item, canEdit, onSave, onCancel, saving }) {
         </label>
         <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
           <span className="text-sm font-medium text-[#51657b]">Address</span>
-          <Field value={form.address} disabled={!canEdit} onChange={(event) => updateField('address', event.target.value)} />
+          <AddressInput value={form.address} disabled={!canEdit} onChange={(event) => updateField('address', event.target.value)} />
         </label>
         <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
           <span className="text-sm font-medium text-[#51657b]">Assigned transferring attorney</span>

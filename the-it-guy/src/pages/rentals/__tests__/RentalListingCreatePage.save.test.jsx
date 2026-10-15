@@ -8,7 +8,7 @@ import RentalListingCreatePage from '../RentalListingCreatePage'
 
 window.scrollTo = vi.fn()
 
-const mocks = vi.hoisted(() => ({ params: {}, create: vi.fn(), progress: vi.fn(async () => { throw new Error('Cloud saving unavailable in this recovery fixture') }), activate: vi.fn(async () => {}), update: vi.fn(), navigate: vi.fn(), loadMaps: vi.fn(), load: vi.fn(async () => null), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' } }))
+const mocks = vi.hoisted(() => ({ params: {}, leads: vi.fn(async () => []), mandates: vi.fn(async () => []), handoff: vi.fn(async () => null), create: vi.fn(), progress: vi.fn(async () => { throw new Error('Cloud saving unavailable in this recovery fixture') }), activate: vi.fn(async () => {}), update: vi.fn(), navigate: vi.fn(), loadMaps: vi.fn(), load: vi.fn(async () => null), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' } }))
 vi.mock('../../../hooks/useListingCaptureSession', () => ({ default: () => 'test-session' }))
 vi.mock('react-router-dom', async (original) => ({ ...await original(), useNavigate: () => mocks.navigate, useParams: () => mocks.params }))
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => ({}) }))
@@ -16,11 +16,21 @@ vi.mock('../../../services/rentals/rentalWorkspaceScope', async (original) => ({
 vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ createRentalListingDraft: mocks.create, saveRentalListingProgress: mocks.progress, activateRentalListing: mocks.activate, updateRentalListingDraft: mocks.update, getRentalListingForAgent: mocks.load }))
 vi.mock('../../../services/syndicationChannelAvailabilityService', () => ({ UNAVAILABLE_SYNDICATION_CHANNELS: {}, getSyndicationChannelAvailability: async () => ({ property24: { available: true }, private_property: { available: true }, agency_website: { available: true } }) }))
 vi.mock('../../../lib/googleMaps', () => ({ hasGoogleMapsApiKey: () => true, loadGoogleMaps: mocks.loadMaps }))
-vi.mock('../../../services/rentals/rentalLeadService', () => ({ listRentalLeads: async () => [] }))
-vi.mock('../../../services/rentals/rentalLandlordListingHandoffService', () => ({ linkRentalLandlordLeadToListing: async () => null }))
+vi.mock('../../../services/rentals/rentalLeadService', () => ({ listRentalLeads: mocks.leads }))
+vi.mock('../../../services/rentals/rentalLandlordListingHandoffService', () => ({ linkRentalLandlordLeadToListing: mocks.handoff }))
+vi.mock('../../../services/rentals/rentalLandlordMandateRepository', () => ({ listRentalPropertyMandates: mocks.mandates }))
 const BASE_DRAFT_KEY = buildRentalListingDraftStorageKey({ organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' })
 const DRAFT_KEY = BASE_DRAFT_KEY + ':capture:test-session'
-afterEach(() => { mocks.params = {}; mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' }; cleanup(); vi.clearAllMocks(); mocks.load.mockReset().mockResolvedValue(null); mocks.progress.mockReset().mockRejectedValue(new Error('Cloud saving unavailable in this recovery fixture')); window.localStorage.clear() })
+afterEach(() => { mocks.params = {}; mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' }; cleanup(); vi.clearAllMocks(); mocks.leads.mockReset().mockResolvedValue([]); mocks.mandates.mockReset().mockResolvedValue([]); mocks.load.mockReset().mockResolvedValue(null); mocks.progress.mockReset().mockRejectedValue(new Error('Cloud saving unavailable in this recovery fixture')); window.localStorage.clear() })
+
+it('opens blank instead of resurrecting a deleted rental from the previous shared browser draft', async () => {
+  localStorage.setItem(BASE_DRAFT_KEY, JSON.stringify({ pendingListingId: 'deleted-rental', activeStep: 'review', form: { propertyAddress: 'Deleted property', monthlyRent: '11000' } }))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  expect((await screen.findByRole('combobox', { name: /Property address/i })).value).toBe('')
+  expect(mocks.load).not.toHaveBeenCalled()
+  expect(mocks.create).not.toHaveBeenCalled()
+  expect(mocks.activate).not.toHaveBeenCalled()
+})
 
 it('opens blank instead of resurrecting a deleted rental from the previous shared browser draft', async () => {
   localStorage.setItem(BASE_DRAFT_KEY, JSON.stringify({ pendingListingId: 'deleted-rental', activeStep: 'review', form: { propertyAddress: 'Deleted property', monthlyRent: '11000' } }))
@@ -69,6 +79,41 @@ it('retains the confirmed details receipt when activation fails and retries the 
   expect(mocks.update.mock.calls.at(-1)[1]).toMatchObject({ expectedUpdatedAt: '2026-10-11T09:00:00Z', coverImageId: 'saved-photo', galleryImages: [expect.objectContaining({ url: 'https://storage.test/saved-photo.jpg' })] })
   expect(mocks.update.mock.calls.at(-1)[1].galleryImages[0].file).toBeFalsy()
   expect(mocks.create).toHaveBeenCalledTimes(1)
+})
+
+it('retains the latest saved revision when vacancy linking fails and retries without creating another advert', async () => {
+  window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'review', form: { propertyAddress: '12 Example Road', monthlyRent: '11000' } }))
+  const saved = { id: 'saved-rental', updatedAt: '2026-10-14T20:00:00Z' }
+  mocks.create.mockRejectedValueOnce(Object.assign(new Error('Vacancy connection unavailable.'), { code: 'RENTAL_INVENTORY_LINK_FAILED', listingId: saved.id, expectedUpdatedAt: saved.updatedAt, savedListing: saved, galleryImages: [] }))
+  mocks.update.mockResolvedValueOnce({ listing: { ...saved, rentalVacancyId: 'vacancy' } })
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  fireEvent.click(await screen.findByRole('button', { name: /^(Save listing|Retry save listing)$/ }))
+  await screen.findByText('Vacancy connection unavailable.')
+  expect(mocks.activate).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: /^(Save listing|Retry save listing)$/ }))
+  await waitFor(() => expect(mocks.update).toHaveBeenCalledWith('saved-rental', expect.objectContaining({ expectedUpdatedAt: saved.updatedAt }), expect.anything()))
+  expect(mocks.create).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/agent/rentals/listings/saved-rental/marketing', expect.anything()))
+})
+
+it('reopens a landlord recovery draft after the portfolio was already linked, then finishes the same advert', async () => {
+  const form = { propertyAddress: '12 Saved Road', monthlyRent: '11000', rentalPriceFrequency: 'monthly' }
+  const saved = { id: 'saved-rental', organisationId: 'org-1', assignedAgentId: 'agent-1', listingCategory: 'rental', updatedAt: '2026-10-14T20:00:00Z', sellerCanonicalFacts: buildRentalCanonicalFacts(form), listingPublicationData: buildRentalPublicationDraft(form), listingMedia: [] }
+  const key = buildRentalListingDraftStorageKey(mocks.scope, { leadId: 'landlord-lead', portfolioPropertyId: 'home' }) + ':capture:test-session'
+  window.localStorage.setItem(key, JSON.stringify({ activeStep: 'review', pendingListingId: saved.id, form: { ...form, expectedUpdatedAt: saved.updatedAt } }))
+  const lead = { id: 'landlord-lead', name: 'Saved Owner', role: 'landlord', stage: 'listing_created', relationships: { listingId: saved.id }, raw: { rawEnquiryPayload: { role: 'landlord', landlordPortfolio: [{ id: 'home', address: form.propertyAddress, canonicalPropertyId: 'managed', listingId: saved.id }] } } }
+  mocks.leads.mockResolvedValue([lead])
+  mocks.mandates.mockResolvedValue([{ id: 'mandate', propertyId: 'managed', organisationId: 'org-1', mandateStatus: 'active', authorityStatus: 'confirmed', raw: { metadata_json: { leadId: lead.id, signedEvidenceReference: 'uploaded/mandate', signedAt: '2026-10-14' } } }])
+  mocks.load.mockResolvedValue(saved)
+  mocks.update.mockResolvedValue({ listing: saved })
+  render(<MemoryRouter initialEntries={['/rentals/new?leadId=landlord-lead&portfolioPropertyId=home']}><RentalListingCreatePage /></MemoryRouter>)
+  await screen.findByText(/Creating this listing for landlord lead Saved Owner/)
+  const save = await screen.findByRole('button', { name: /^(Save listing|Retry save listing)$/ })
+  await waitFor(() => expect(save.disabled).toBe(false))
+  fireEvent.click(save)
+  await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(saved.id, expect.anything(), expect.anything()))
+  expect(mocks.create).not.toHaveBeenCalled()
+  await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/agent/rentals/listings/saved-rental/marketing', expect.anything()))
 })
 
 it('shows errors only after continuing and focuses the address correction without saving', async () => {

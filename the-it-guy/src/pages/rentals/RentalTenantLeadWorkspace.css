@@ -41,6 +41,19 @@
   background: #eaf5fb;
   color: #135e89;
 }
+.rental-landlord-workspace .landlord-next-action .form-field > span {
+  color: #c3d3e0;
+}
+.rental-landlord-workspace .landlord-next-action .form-field > :is(input, select, textarea) {
+  border-color: #476077;
+  background: #1b3248;
+  color: white;
+  box-shadow: none;
+}
+.rental-landlord-workspace .landlord-next-action input::placeholder,
+.rental-landlord-workspace .landlord-next-action textarea::placeholder {
+  color: #a8bfd3;
+}
 @media (max-width: 639px) {
   .rental-tenant-workspace .tenant-card {
     padding: 16px;

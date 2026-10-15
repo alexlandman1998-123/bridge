@@ -5,11 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import QuickCreateDropdown from '../QuickCreateDropdown'
 
 const mocks = vi.hoisted(() => ({
-  role: 'agent', createLead: vi.fn(), createAppointment: vi.fn(), listings: vi.fn(),
+  role: 'agent', businessWorkspaceId: 'sales', createLead: vi.fn(), createAppointment: vi.fn(), listings: vi.fn(),
   profile: { id: '00000000-0000-4000-8000-000000000001', fullName: 'Test Agent', email: 'agent@example.test' },
 }))
 vi.mock('../../context/WorkspaceContext', () => ({ useWorkspace: () => ({
-  role: mocks.role, agencyWorkflowMode: 'agent',
+  role: mocks.role, agencyWorkflowMode: 'agent', businessWorkspaceId: mocks.businessWorkspaceId,
   profile: mocks.profile,
 }) }))
 vi.mock('../../lib/agencyCrmRepository', () => ({ createAgencyCrmLeadRecord: mocks.createLead }))
@@ -30,7 +30,7 @@ function openMenu(path = '/dashboard') {
   render(<MemoryRouter initialEntries={[path]}><QuickCreateDropdown initialOpen /><LocationProbe /></MemoryRouter>)
 }
 
-beforeEach(() => { mocks.role = 'agent'; vi.clearAllMocks(); mocks.listings.mockReset().mockResolvedValue([]) })
+beforeEach(() => { mocks.role = 'agent'; mocks.businessWorkspaceId = 'sales'; vi.clearAllMocks(); mocks.listings.mockReset().mockResolvedValue([]) })
 afterEach(cleanup)
 
 it('shows the seven supported Agent actions', () => {
@@ -41,6 +41,29 @@ it('shows the seven supported Agent actions', () => {
     expect(screen.getByTestId(`quick-create-${type}`)).toBeTruthy()
   }
   expect(screen.queryByTestId('quick-create-prospect')).toBeNull()
+})
+
+it.each(['landlord', 'tenant'])('opens native %s capture from a rental page without offering seller/buyer capture', role => {
+  openMenu('/agent/rentals/listings')
+  expect(screen.queryByTestId('quick-create-lead')).toBeNull()
+  fireEvent.click(screen.getByTestId(`quick-create-${role}-lead`))
+  expect(JSON.parse(screen.getByTestId('destination').textContent)).toMatchObject({ path: '/agent/rentals/pipeline/leads', search: `?create=${role}` })
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(mocks.createLead).not.toHaveBeenCalled()
+})
+
+it('keeps rental capture on shared pages while the Rentals business line is selected', () => {
+  mocks.businessWorkspaceId = 'rentals'
+  openMenu('/clients')
+  fireEvent.click(screen.getByTestId('quick-create-landlord-lead'))
+  expect(JSON.parse(screen.getByTestId('destination').textContent)).toMatchObject({ path: '/agent/rentals/pipeline/leads', search: '?create=landlord' })
+  expect(mocks.createLead).not.toHaveBeenCalled()
+})
+
+it('opens the rental listing form from Create in Rentals', () => {
+  openMenu('/agent/rentals/long-term/dashboard')
+  fireEvent.click(screen.getByTestId('quick-create-listing'))
+  expect(JSON.parse(screen.getByTestId('destination').textContent).path).toBe('/agent/rentals/listings/new')
 })
 
 it('requires a current property before handing Viewing to the listing-owned form', async () => {

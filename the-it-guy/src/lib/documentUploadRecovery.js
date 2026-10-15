@@ -63,7 +63,7 @@ export async function readSavedUploadByPath(client, { table = 'documents', colum
   return result.data ? { data: result.data, error: null } : null
 }
 
-export async function runRecoverableDocumentUpload({ client, scope, file, run, toSavedReceipt = savedReceipt, storageBuckets = ['documents'], storageResult = bucket => bucket, monitorSurface = null, onProgress = null, timeouts = {} }) {
+export async function runRecoverableDocumentUpload({ client, scope, file, run, toSavedReceipt = savedReceipt, storageBuckets = ['documents'], storageResult = bucket => bucket, recoverStorage = null, monitorSurface = null, onProgress = null, timeouts = {} }) {
   const report = createDocumentUploadProgressReporter(onProgress)
   const limits = { ...DOCUMENT_UPLOAD_TIMEOUTS, ...timeouts }
   report('preparing', '', { fileName: file?.name })
@@ -136,7 +136,17 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
         // the object exists before any metadata is submitted.
         if (state.storageStarted) {
           let allMissing = storageBuckets.length > 0
-          for (const bucket of storageBuckets) {
+          if (recoverStorage) {
+            // Signed, token-scoped uploads reconcile through their authorised
+            // API. Only an explicit missing-object result permits the same PUT.
+            const exists = await withDocumentUploadDeadline(() => recoverStorage(state.context), { timeoutMs: limits.recovery })
+            if (exists === true) {
+              state.uploaded = storageResult(storageBuckets[0], state.path)
+              writeReceipt(key, state)
+              return state.uploaded
+            }
+            allMissing = exists === false
+          } else for (const bucket of storageBuckets) {
             try {
               const result = await withDocumentUploadDeadline(() => client.storage.from(bucket).createSignedUrl(state.path, 60), { timeoutMs: limits.recovery })
               if (!result.error && result.data?.signedUrl) {

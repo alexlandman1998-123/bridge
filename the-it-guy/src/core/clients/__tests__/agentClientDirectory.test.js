@@ -69,7 +69,19 @@ test('reviewed identities retain aliases, stable profile routes, records and mer
   expect(clientMatchesStoredId(clients[0], new Set(['client:former']))).toBe(false)
   expect(getAgentClientProfile(clients, 'email:a@example.test').client.id).toBe('client:primary')
   expect(getAgentClientProfile(clients, 'client:former').client.id).toBe('client:primary')
+  expect(getAgentClientProfile(clients, 'lead:a').client.id).toBe('client:primary')
+  expect(getAgentClientProfile(clients, 'lead:b').client.id).toBe('client:primary')
+  expect(getAgentClientProfile(clients, 'lead:missing')).toBeNull()
   expect(resolveClientRedirect(identities.profiles, 'former').id).toBe('primary')
+})
+
+test('a landlord lead profile link follows its saved identity when contact details differ', () => {
+  const clients = buildAgentClientDirectory([source('landlord-lead', 'old@example.test', { typeLabel: 'Landlord' }), source('other-lead', 'old@example.test')], {
+    available: true,
+    profiles: [{ id: 'landlord', organisation_id: 'agency-a', name: 'Saved Landlord', primary_email: 'new@example.test' }, { id: 'other', organisation_id: 'agency-a', name: 'Other Client' }],
+    links: [{ source_kind: 'lead', source_id: 'landlord-lead', client_id: 'landlord' }, { source_kind: 'lead', source_id: 'other-lead', client_id: 'other' }],
+  })
+  expect(getAgentClientProfile(clients, 'lead:landlord-lead').client).toMatchObject({ id: 'client:landlord', name: 'Saved Landlord', email: 'new@example.test' })
 })
 
 test('a merged buyer and seller on one transaction do not double-count the deal', () => {

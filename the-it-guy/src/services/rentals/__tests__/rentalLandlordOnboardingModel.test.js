@@ -72,6 +72,6 @@ it('requires the agent to change the property set and does not infer an exceptio
       ...data,
       profile: { ...data.profile, type: 'foreign_owner' },
     }),
-  ).toContain('Resolve the landlord type with your agent.')
-  expect(rentalLandlordSubmissionErrors(data)).toEqual([])
+  ).toContain('Choose the underlying legal structure, or ask your agent to resolve it before submission.')
+  expect(rentalLandlordSubmissionErrors(data)).toContain('Enter the entity or trust registration number.')
 })

@@ -2,6 +2,7 @@ import { inferLeadCategoryFromRecord } from '../../lib/leadCategory.js'
 import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection.js'
 import { BUYER_LEAD_LIST_STAGES, resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle.js'
 import { DEVELOPMENT_LEAD_STAGES, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
+import { isRentalCrmLead } from '../../services/rentals/rentalCrmLeadModel.js'
 
 export const LEAD_LIST_PAGE_SIZE = 25
 
@@ -165,18 +166,19 @@ function getNextOpenTask(tasks = []) {
 }
 
 export function buildAgencyLeadListModel({ leads = [], contacts = [], activities = [], tasks = [], category = 'buyer', filters = {} } = {}) {
+  const salesLeads = leads.filter((lead) => !isRentalCrmLead(lead))
   const resolvedFilters = { ...DEFAULT_AGENCY_LEAD_FILTERS, ...filters }
   const contactById = buildContactById(contacts)
   const activitiesByLead = groupRowsByLeadId(activities)
   const tasksByLead = groupRowsByLeadId(tasks)
   const categoryCounts = { buyer: 0, seller: 0, development: 0, archived: 0 }
 
-  for (const lead of leads) {
+  for (const lead of salesLeads) {
     if (isAgencyLeadArchived(lead)) categoryCounts.archived += 1
     else categoryCounts[getAgencyLeadCategory(lead)] = (categoryCounts[getAgencyLeadCategory(lead)] || 0) + 1
   }
 
-  const filtered = leads.filter((lead) => {
+  const filtered = salesLeads.filter((lead) => {
     const archived = isAgencyLeadArchived(lead)
     const leadCategory = getAgencyLeadCategory(lead)
     if (category === 'archived' ? !archived : archived || leadCategory !== category) return false
@@ -254,14 +256,16 @@ function isSameDay(value, target = new Date()) {
 }
 
 export function buildAgencyLeadListSummary({ leads = [], tasks = [] } = {}) {
+  const rentalLeadIds = new Set(leads.filter(isRentalCrmLead).map(leadIdOf))
+  const salesLeads = leads.filter((lead) => !isRentalCrmLead(lead))
   const now = new Date()
   const weekStart = new Date(now)
   weekStart.setDate(now.getDate() - 7)
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const openTasks = tasks.filter((task) => normalizeKey(task?.status) !== 'completed')
+  const openTasks = tasks.filter((task) => !rentalLeadIds.has(leadIdOf(task)) && normalizeKey(task?.status) !== 'completed')
   const overdueTasks = openTasks.filter((task) => new Date(task?.dueDate || 0).getTime() < now.getTime())
-  const activeLeads = leads.filter((lead) => !isAgencyLeadArchived(lead))
-  const converted = leads.filter((lead) => {
+  const activeLeads = salesLeads.filter((lead) => !isAgencyLeadArchived(lead))
+  const converted = salesLeads.filter((lead) => {
     const stage = normalizeKey(`${lead?.stage} ${lead?.status}`)
     return new Date(lead?.updatedAt || lead?.createdAt || 0) >= monthStart && (stage.includes('converted') || stage.includes('listing active') || stage.includes('deal created'))
   })
@@ -321,7 +325,7 @@ function isConvertedLeadThisMonth(lead = {}, monthStart) {
 }
 
 export function buildAgencyLeadLandingMetrics(leads = [], { now = new Date() } = {}) {
-  const rows = Array.isArray(leads) ? leads : []
+  const rows = (Array.isArray(leads) ? leads : []).filter((lead) => !isRentalCrmLead(lead))
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const sourceCounts = new Map()
   let newLeads = 0

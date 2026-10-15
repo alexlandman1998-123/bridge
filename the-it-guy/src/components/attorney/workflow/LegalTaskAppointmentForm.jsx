@@ -59,7 +59,7 @@ export default function LegalTaskAppointmentForm({ task, recipient = {}, onCreat
       {[['recipientName', 'Recipient name', 'text'], ['recipientEmail', 'Recipient email', 'email'], ['date', 'Date', 'date'], ['startTime', 'Time (South Africa)', 'time']].map(([key, label, type]) => <label key={key} className="grid gap-1 text-sm">{label}<Field required type={type} disabled={busy} value={draft[key]} onChange={change(key)} /></label>)}
     </div>
     <label className="grid gap-1 text-sm">Appointment location<Field as="select" value={draft.locationMode} onChange={change('locationMode')} disabled={busy}><option value="physical_address">In person</option><option value="video_call">Video meeting</option><option value="phone_call">Phone call</option></Field></label>
-    <label className="grid gap-1 text-sm">{draft.locationMode === 'video_call' ? 'Meeting link' : draft.locationMode === 'phone_call' ? 'Phone number' : 'Address'}<Field required value={draft.location} onChange={change('location')} disabled={busy} /></label>
+    <label className="grid gap-1 text-sm">{draft.locationMode === 'video_call' ? 'Meeting link' : draft.locationMode === 'phone_call' ? 'Phone number' : 'Address'}<Field addressSearch={draft.locationMode === 'physical_address'} required value={draft.location} onChange={change('location')} disabled={busy} /></label>
     <label className="grid gap-1 text-sm">Instructions for recipient<Field as="textarea" rows={3} value={draft.instructions} onChange={change('instructions')} disabled={busy} /></label>
     <Button type="submit" disabled={busy}>{busy ? 'Scheduling…' : 'Schedule & send invite'}</Button>
   </form>

@@ -1,3 +1,4 @@
+import AddressInput from '../../components/location/AddressInput'
 import {
   Camera,
   Building2,
@@ -3167,7 +3168,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 <OrganisationCard title="Address" description="Office location used for branch routing, profile quality and local search.">
                   <div className="grid gap-4 md:grid-cols-2">
                     <OrganisationField label="Office Address" id="organisation-office-address" className="md:col-span-2">
-                      <Field id="organisation-office-address" className={INPUT_CLASS} value={form.addressLine1 || agencyInfo.physicalAddress || ''} disabled={!canEdit} onChange={(event) => updateField('addressLine1', event.target.value)} />
+                      <AddressInput id="organisation-office-address" className={INPUT_CLASS} addressFormat="street" value={form.addressLine1 || agencyInfo.physicalAddress || ''} disabled={!canEdit} onChange={(event) => updateField('addressLine1', event.target.value)} onAddressSelect={updateOrganisationAddress} />
                     </OrganisationField>
                     <div className="md:col-span-2">
                       <AddressAutocomplete

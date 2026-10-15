@@ -34,6 +34,17 @@ it('does not issue searches for short inputs and sanitises filter syntax', async
   await searchListingSellerLeads({ listing, search: 'Jane),%_' }, { client })
   expect(calls[0].filters.find(filter => filter[0] === 'or')[1]).toBe('first_name.ilike.%Jane%,last_name.ilike.%Jane%,email.ilike.%Jane%,phone.ilike.%Jane%')
 })
+it('keeps a rental landlord out of the seller picker when the same contact has a separate sales lead', async () => {
+  responses.leads.data.push(
+    { lead_id: id(6), contact_id: id(3), lead_category: 'seller', raw_enquiry_payload: { classification: 'rental', role: 'landlord' } },
+    { lead_id: id(7), contact_id: id(3), lead_category: 'seller', raw_enquiry_payload: { rentalCrm: { arch9RentalLead: true, role: 'landlord' } } },
+  )
+  const results = await searchListingSellerLeads({ listing, search: 'Jane' }, { client })
+  expect(results.map(result => result.leadId)).toEqual([id(4)])
+  const inverseFilter = calls.find(call => call.table === 'private_listings').filters.find(filter => filter[0] === 'or')[1]
+  expect(inverseFilter).not.toContain(id(6))
+  expect(inverseFilter).not.toContain(id(7))
+})
 it('fails closed on denied reads instead of reporting an empty match list', async () => {
   responses.leads = { error: new Error('Access denied') }
   await expect(searchListingSellerLeads({ listing, search: 'Jane' }, { client })).rejects.toThrow('Access denied')

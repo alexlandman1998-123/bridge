@@ -5,12 +5,12 @@ import RentalDistributionChannel from '../RentalDistributionChannel'
 import { rentalChannelStatus } from '../../../services/rentals/rentalChannelStatus'
 afterEach(cleanup)
 it('shows persisted portal references, valid live links, status and compact publication activity', () => {
-  render(<RentalDistributionChannel channelKey="property24" name="Property24" reference="Ref: 12345" publicUrl="www.property24.com/to-rent/demo/12345" status="on_portal" savedAt="2h ago" lastSynced="1h ago" />)
+  render(<RentalDistributionChannel channelKey="property24" name="Property24" reference="Ref: 12345" publicUrl="www.property24.com/to-rent/demo/12345" status="on_portal" savedAt="2h ago" lastSynced="2026-10-14T11:00:00Z" />)
   expect(screen.getByText('12345')).toBeTruthy()
   expect(screen.getByText('Live')).toBeTruthy()
   expect(screen.getByRole('link', { name: 'View listing' }).getAttribute('href')).toBe('https://www.property24.com/to-rent/demo/12345')
-  expect(screen.getByText('Arch9 saved')).toBeTruthy()
-  expect(screen.getByText('Portal updated')).toBeTruthy()
+  expect(screen.getByText(/^Updated ·/)).toBeTruthy()
+  expect(screen.queryByText('Arch9 saved')).toBeNull()
 })
 it('does not turn a submitted, expired or failed response into live publication', () => {
   expect(rentalChannelStatus('submitted')).toEqual({ label: 'Submitted', tone: 'syncing', live: false })

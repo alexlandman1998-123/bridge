@@ -20,7 +20,7 @@ import {
 import {
   recordPrivatePropertyListingSync,
 } from './privatePropertyListingSyncService.js'
-import { inspectPrivatePropertyListingRecovery } from './privatePropertyListingRecoveryService.js'
+import { inspectPrivatePropertyListingRecovery, inspectPrivatePropertyPublicLocation } from './privatePropertyListingRecoveryService.js'
 
 export const PRIVATE_PROPERTY_CONTROLLED_PUBLISH_SERVICE_VERSION = 'arch9_private_property_controlled_publish_rehearsal_v1'
 
@@ -254,7 +254,17 @@ export async function runPrivatePropertyControlledPublishRehearsal({
     report.nextStep = 'The existing Private Property record changed. Refresh the review before sending changes.'
     return report
   }
-  const recovery = readiness.recovery || await inspectPrivatePropertyListingRecovery({ portal, existingSync: currentBundle.existingSync, address: preview.payloadPreview.address })
+  const publicLocation = inspectPrivatePropertyPublicLocation({
+    listingUrl: currentBundle.listing.private_property_listing_url,
+    province: preview.payloadPreview.address.province,
+    reference: currentBundle.existingSync?.private_property_ref,
+  })
+  if (publicLocation.blockers.length) {
+    report.blockers = publicLocation.blockers
+    report.nextStep = publicLocation.message
+    return report
+  }
+  const recovery = readiness.recovery || await inspectPrivatePropertyListingRecovery({ portal, existingSync: currentBundle.existingSync, address: preview.payloadPreview.address, listingUrl: currentBundle.listing.private_property_listing_url })
   report.recovery = recovery
   if (recovery.checked) report.safety.privatePropertyApiCalled = true
   if (recovery.blockers.length) {

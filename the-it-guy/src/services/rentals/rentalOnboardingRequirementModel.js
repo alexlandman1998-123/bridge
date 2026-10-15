@@ -1,3 +1,4 @@
+import { resolvedLandlordType, landlordHasRepresentative, landlordPersonFields } from './rentalLandlordProfileRules.js'
 import { rentalApplicationDocumentSlots } from './rentalApplicationWizardModel.js'
 
 export const RENTAL_TENANT_REQUIREMENT_RULE_VERSION = 'rental_application_evidence_v1'
@@ -26,20 +27,24 @@ export function rentalTenantRequirementDefinitions(data = {}, policy = { version
 }
 
 export function rentalLandlordRequirementDefinitions({ profile = {}, portfolio = [] } = {}) {
-  // Exceptional/foreign legacy types must be resolved in discovery, never mapped
-  // to an individual. Proposed rules are stored only as a preview in Phase 3.
-  if (!['individual', 'multiple_owners', ...entities].includes(profile.type)) return []
-  const legal = pick(profile, ['type', 'name', 'idNumber', 'registrationNumber', 'country', 'nationality'])
+  const type = resolvedLandlordType(profile)
+  if (!type) return []
+  const legal = pick({ ...profile, type, idNumber: type === 'individual' ? profile.idNumber : '', nationality: type === 'individual' ? profile.nationality : '', registrationNumber: entities.includes(type) ? profile.registrationNumber : '' }, ['type', 'name', 'idNumber', 'registrationNumber', 'country', 'nationality'])
+  if (['foreign_owner', 'other_entity'].includes(profile.type)) Object.assign(legal, pick(profile, ['type', 'legalStructure', 'otherEntityDescription']))
+  const people = (profile.people || []).filter(person => person.id && person.name?.trim() && !['primary', 'entity', 'signatory'].includes(person.id))
+  const ownership = people.map(person => ({ id: person.id, ...pick(person, identityKeys), ownershipShare: landlordPersonFields(profile).some(([key]) => key === 'ownershipShare') ? person.ownershipShare ?? '' : '', signingAuthority: person.signingAuthority === true })).sort((a, b) => a.id.localeCompare(b.id))
+  const primarySignatoryId = String(profile.primarySignatoryId ?? '').trim()
+  const signatoryReference = primarySignatoryId ? { primarySignatoryId } : {}
   const requirements = []
   const add = (subject, scope, purpose, fingerprint = legal) => requirements.push(definition(subject, scope, purpose, true, fingerprint))
-  if (!entities.includes(profile.type)) { add('primary', 'identity', 'identity'); add('primary', 'identity', 'address', { ...legal, residentialAddress: profile.residentialAddress || '' }) }
-  else {
-    add('entity', 'identity', profile.type === 'trust' ? 'trust_founding' : 'entity_registration')
-    if (profile.type === 'trust') add('entity', 'identity', 'trust_authority')
-    add('entity', 'identity', 'beneficial_ownership')
-    add('signatory', 'identity', 'identity', pick(profile, ['authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality']))
+  if (type === 'individual') { add('primary', 'identity', 'identity'); add('primary', 'identity', 'address', { ...legal, residentialAddress: profile.residentialAddress || '' }) }
+  else if (entities.includes(type)) {
+    add('entity', 'identity', type === 'trust' ? 'trust_founding' : 'entity_registration')
+    if (type === 'trust') add('entity', 'identity', 'trust_authority')
+    add('entity', 'identity', 'beneficial_ownership', { ...legal, people: ownership })
   }
-  for (const person of profile.people || []) {
+  if (landlordHasRepresentative(profile)) add('signatory', 'identity', 'identity', { ...pick(profile, ['authorisedSignatoryName', 'authorisedSignatoryCapacity', 'authorisedSignatoryIdNumber', 'authorisedSignatoryNationality']), ...signatoryReference })
+  for (const person of people) {
     if (!person.id || ['primary', 'entity', 'signatory'].includes(person.id)) continue
     add(person.id, 'identity', 'identity', pick(person, identityKeys))
     add(person.id, 'identity', 'address', { ...pick(person, identityKeys), residentialAddress: person.residentialAddress || '' })
@@ -51,8 +56,8 @@ export function rentalLandlordRequirementDefinitions({ profile = {}, portfolio =
     add('property', scope, 'property_disclosure', rights)
     add('entity', scope, 'right_to_let', rights)
     add('entity', scope, 'signed_mandate', { ...rights, signedAt: property.mandateSignedAt || '', startsOn: property.mandateStartDate || '', endsOn: property.mandateEndDate || '' })
-    if (entities.includes(profile.type)) add('entity', scope, 'signing_authority', { ...rights, authorityBasis: profile.authorityBasis || '', signatory: profile.authorisedSignatoryName || '', signatoryId: profile.authorisedSignatoryIdNumber || '', capacity: profile.authorisedSignatoryCapacity || '' })
-    if (profile.type === 'multiple_owners') add('entity', scope, 'co_owner_authority', { ...rights, owners: (profile.people || []).map((person) => ({ id: person.id, ...pick(person, identityKeys) })).sort((a, b) => a.id.localeCompare(b.id)) })
+    if (landlordHasRepresentative(profile)) add('entity', scope, 'signing_authority', { ...rights, ...signatoryReference, authorityBasis: profile.authorityBasis || '', signatory: profile.authorisedSignatoryName || '', signatoryId: profile.authorisedSignatoryIdNumber || '', capacity: profile.authorisedSignatoryCapacity || '' })
+    if (type === 'multiple_owners') add('entity', scope, 'co_owner_authority', { ...rights, owners: ownership })
     const conditional = { ...rights, conditionalRuleVersion: RENTAL_LANDLORD_CONDITIONAL_RULE_VERSION }
     if (property.serviceType === 'managed_rental') {
       add('entity', scope, 'payout_account', { ...conditional, ...pick(property, ['payoutBeneficiaryType', 'payoutAccountHolder', 'payoutAccountReference']) })

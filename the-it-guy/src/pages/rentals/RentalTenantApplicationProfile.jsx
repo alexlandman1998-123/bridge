@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Button from '../../components/ui/Button'
-import { getRentalApplicationReview, savePersistedRentalApplication } from '../../services/rentals/rentalApplicationRepository.js'
+import { getRentalApplicationReview, getRentalApplicationDocumentUrl, savePersistedRentalApplication } from '../../services/rentals/rentalApplicationRepository.js'
 import { uploadRentalApplicationEvidence } from '../../services/rentals/rentalApplicationEvidenceService.js'
 import { rentalApplicationSavedDocumentSlots, initialiseRentalApplicationWizard, reuseRentalTenantIdentity } from '../../services/rentals/rentalApplicationWizardModel.js'
 import RentalApplicationWizard from '../../modules/rentals/shared/applications/RentalApplicationWizard.jsx'
@@ -47,25 +47,33 @@ export default function RentalTenantApplicationProfile({ applications = EMPTY, l
     catch (cause) { setError(cause.message || 'Unable to save application profile.'); return false }
     finally { guard.current = false; setSaving(false) }
   }
-  async function upload(file, slot) {
+  async function upload(file, slot, onProgress) {
     if (guard.current || readOnly) return
     guard.current = true; setSaving(true); setError(''); setNotice('')
     try {
-      const current = await persist()
+      const current = draft ? await persist() : { ...application, requirements: checklist }
       const savedSlot = rentalApplicationSavedDocumentSlots(current.data, current.requirements ?? null).find((item) => item.key === slot.key)
       if (!savedSlot?.requirementId) throw new Error('The saved checklist is unavailable. Reopen the application and retry.')
-      const result = await uploadRentalApplicationEvidence(current, file, savedSlot)
+      const result = await uploadRentalApplicationEvidence(current, file, savedSlot, { onProgress })
       setChecklist(result.application.requirements ?? null)
       setSaved(result.application); drafts.current.set(applicationId, { version: result.application.version, data: result.application.data, base: result.application, persisted: true }); setDocuments((items) => [result.document, ...items]); await onReload?.(); if (onReload) drafts.current.delete(applicationId); setNotice(`${file.name} uploaded.`)
-    } catch (cause) { setError(cause.message || 'Unable to upload evidence.') }
+    return true
+    } catch (cause) { setError(cause.message || 'Unable to upload evidence.'); return false }
     finally { guard.current = false; setSaving(false) }
+  }
+  async function openDocument(document) {
+    const preview = window.open('about:blank', '_blank')
+    if (!preview) { setError('Allow pop-ups for this workspace to open the document.'); return }
+    preview.opener = null
+    try { preview.location.href = await getRentalApplicationDocumentUrl(applicationId, document.id) }
+    catch (cause) { preview.close(); setError(cause.message || 'Unable to open this private document.') }
   }
   return <section className="tenant-card"><header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf3f8] pb-5"><div><p className="tenant-eyebrow">Tenant profile</p><h2 className="mt-1 text-xl font-semibold text-[#102033]">Application setup</h2><p className="mt-1 text-sm text-[#60758b]">{lead?.name}</p></div><Button type="button" onClick={onSetup} disabled={saving}>{applications.length ? 'Manage onboarding' : 'Set up application'}</Button></header>
     {error ? <p role="alert" className="mt-4 rounded-xl bg-[#fff5f4] p-3 text-sm text-[#9f3028]">{error}</p> : null}{notice ? <p role="status" className="mt-4 rounded-xl bg-[#effaf3] p-3 text-sm text-[#26724c]">{notice}</p> : null}
     <div className="my-5 flex flex-wrap items-end gap-3">{applications.length ? <label className="form-field min-w-0 flex-1"><span>Linked application</span><select value={applicationId} disabled={saving || Boolean(draft)} onChange={(event) => setApplicationId(event.target.value)}>{applications.map((item) => <option key={item.id} value={item.id}>{item.data?.property?.title || item.data?.property?.address || item.vacancyId || item.id} · {item.status}</option>)}</select></label> : null}{requirementsContent ? <Button type="button" variant="secondary" onClick={() => setRequirements((current) => !current)}>{requirements ? 'Application details' : 'Rental requirements'}</Button> : null}{draft ? <Button type="button" variant="secondary" disabled={saving} onClick={() => { drafts.current.delete(applicationId); setDraft(null) }}>Reset changes</Button> : null}</div>
     {requirements ? requirementsContent : !application ? <div className="rounded-xl border border-dashed border-[#dce7f2] p-6"><h3 className="font-semibold text-[#203a54]">Start the tenant’s application</h3><p className="mt-2 text-sm text-[#60758b]">Choose a property to create a draft, then complete it here or share the online form.</p><Button type="button" className="mt-4" onClick={onSetup}>Choose property</Button>{documentsContent}</div> : <>
       {readOnly ? <p className="mb-4 text-sm text-[#60758b]">Submitted application details are read-only. Review the application before requesting changes.</p> : applications.length > 1 ? <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl bg-[#f8fbfe] p-4"><label className="form-field min-w-0 flex-1"><span>Reuse this tenant’s contact details</span><select value={reuseId} disabled={saving} onChange={(event) => setReuseId(event.target.value)}><option value="">Choose a previous application</option>{applications.filter((item) => item.id !== applicationId).map((item) => <option key={item.id} value={item.id}>{item.data?.property?.title || item.id.slice(0, 8)}</option>)}</select></label><Button type="button" variant="secondary" disabled={saving || !reuseId} onClick={() => update(reuseRentalTenantIdentity(applications.find((item) => item.id === reuseId)?.data || {}, data))}>Use contact details</Button><p className="w-full text-xs text-[#60758b]">Financial answers, other applicants, documents and consent stay specific to this application.</p></div> : null}
-      <RentalApplicationWizard key={applicationId} agent data={data} onChange={update} onSave={save} busy={saving} readOnly={readOnly} documentsContent={<><RentalApplicationDocuments data={data} documents={documents} requirements={checklist} preview={Boolean(draft)} disabled={saving || readOnly} onUpload={readOnly ? undefined : upload} />{documentsContent}</>} declarationsContent={!readOnly ? <Button type="button" onClick={onSetup}>Manage tenant onboarding</Button> : null} />
+      <RentalApplicationWizard key={applicationId} agent data={data} onChange={update} onSave={save} busy={saving} readOnly={readOnly} documentsContent={<><RentalApplicationDocuments data={data} documents={documents} requirements={checklist} preview={Boolean(draft)} disabled={saving} onOpen={openDocument} onUpload={readOnly ? undefined : upload} />{documentsContent}</>} declarationsContent={!readOnly ? <Button type="button" onClick={onSetup}>Manage tenant onboarding</Button> : null} />
     </>}
   </section>
 }

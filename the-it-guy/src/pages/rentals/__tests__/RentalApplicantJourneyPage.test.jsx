@@ -129,7 +129,7 @@ it('saves changed discovery and uploads against the returned requirement generat
   const file = new File(['proof'], 'fresh.pdf', { type: 'application/pdf' })
   fireEvent.change(screen.getByLabelText('Upload Primary applicant identity'), { target: { files: [file] } })
   await screen.findByText('fresh.pdf uploaded.')
-  expect(uploadRentalApplicationFile).toHaveBeenCalledWith(file, expect.objectContaining({ requirementId: 'r-identity', generation: 2 }), 3, expect.any(Function))
+  expect(uploadRentalApplicationFile).toHaveBeenCalledWith(file, expect.objectContaining({ requirementId: 'r-identity', generation: 2 }), 3, expect.any(Function), expect.objectContaining({ onProgress: expect.any(Function) }))
   first.unmount(); mount(); await startApplication()
   fireEvent.click(screen.getByRole('button', { name: /Documents & FICA/ }))
   expect(screen.getByText('fresh.pdf · received')).toBeTruthy()

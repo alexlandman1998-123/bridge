@@ -71,13 +71,13 @@ function ApplicantOnboardingJourney({ token }) {
   })
   const save = () => run(async () => { await persist(); setNotice('Draft saved. You can return using the same link before it expires.') })
   const openDocument = (document) => run(async () => { const result = await request('POST', { action: 'open_document', documentId: document.id }); window.open(result.url, '_blank', 'noopener,noreferrer') })
-  const upload = (files, slot) => run(async () => {
-    let current = application.status === 'draft' ? await persist() : application
+  const upload = (files, slot, onProgress) => run(async () => {
+    let current = application.status === 'draft' && dirty ? await persist() : application
     const selected = Array.isArray(files) ? files : [files]
     for (const [index, file] of selected.entries()) {
       const savedSlot = rentalApplicationSavedDocumentSlots(current.data, current.requirements ?? null).find((item) => item.key === slot.key)
       if (!savedSlot?.requirementId) throw new Error('The saved checklist is unavailable. Reopen the application and retry.')
-      const result = await uploadRentalApplicationFile(file, { ...savedSlot, appendToPack: index > 0 }, current.version, (body) => request('POST', body))
+      const result = await uploadRentalApplicationFile(file, { ...savedSlot, appendToPack: index > 0 }, current.version, (body) => request('POST', body), { onProgress, scope: ['applicant', application.id, application.portalType || 'primary'] })
       current = result.application
       setApplication(current); setDocuments((items) => [result.document, ...items]); setNotice(`${file.name} uploaded.`)
     }

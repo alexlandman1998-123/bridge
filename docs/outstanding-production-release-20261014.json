@@ -1,0 +1,72 @@
+{
+  "releasedAt": "2026-10-14T16:46:06.290954+00:00",
+  "approval": "push all outstanding to production",
+  "sourceCommit": "25f6c380c2833a398ce9b435128c4bc0f898629d",
+  "branch": "codex/outstanding-production-20261014",
+  "sourceReconciliation": {
+    "baseProductionCommit": "e01bdbe46e9fbb96ca29a3f04386451d7edc92bc",
+    "workingFilesCaptured": 500,
+    "changedFiles": 58,
+    "sourceChangedDuringRelease": false,
+    "generatedTemporaryAndSecretFilesExcluded": true,
+    "originalWorkingTreePreserved": true
+  },
+  "deployment": {
+    "project": "bridge",
+    "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+    "teamId": "team_ezJ5RCE7qwTf14fw215IhPs5",
+    "deploymentId": "dpl_9pzcZ8nBp8Y2oaUosjppT9dLK7FW",
+    "url": "https://bridge-nxqaktdwd-alexs-projects-f5496a21.vercel.app",
+    "productionUrl": "https://app.arch9.co.za",
+    "target": "production",
+    "readyState": "READY",
+    "promoted": true
+  },
+  "database": {
+    "project": "isdowlnollckzvltkasn",
+    "guard": "passed; zero duplicate migration versions",
+    "recovery": "RECOVERY_LOCKED; eight physical backups verified live",
+    "migration": "20261014114244_separate_rental_leads_from_seller_linking.sql",
+    "scope": "One existing seller-link function replaced; no seeds, roles or historical data updates",
+    "localVersions": 1499,
+    "remoteVersions": 1499,
+    "pendingVersions": [],
+    "functionVerified": true,
+    "securityInvoker": true,
+    "anonymousExecute": false,
+    "authenticatedExecute": true,
+    "securityAdvisors": {
+      "before": 6,
+      "after": 6,
+      "new": 0
+    },
+    "noraRecordsUnchanged": true
+  },
+  "alreadyCurrent": {
+    "publicWebsites": "Source matches the previously released code; no new deployment needed",
+    "homeSeekersStandalone": "Source matches the previously released code; no new deployment needed",
+    "edgeFunctions": "Runtime source matches the previously released code; live versions unchanged"
+  },
+  "checks": {
+    "releaseFocused": "269 tests passed across 25 files",
+    "canonicalSave": "68 tests passed",
+    "atomicSellerLink": "PostgreSQL fixture passed, including rental-metadata rejection and preserving seller facts",
+    "app": "check:app passed: lint, baseline tests, build and login probe",
+    "website": "check:website passed: typecheck, tests and build",
+    "hostedBuild": "Production build, startup budget, operational script audit and schema compatibility passed"
+  },
+  "liveVerification": {
+    "domainPointsToReleasedDeployment": true,
+    "publicManifestMatchesSourceCommit": true,
+    "productionSupabaseOriginConfirmed": true,
+    "authRoute": "HTTP 200 and live browser sign-in rendered with matching release meta tag",
+    "featureAssets": "Rental listing detail, seller listing detail and leads route assets returned HTTP 200; rental description and onboarding controls present",
+    "runtimeErrorScan": "No error or fatal logs in the sampled 10-minute window"
+  },
+  "verificationLimits": [
+    "Live checks were read-only; no customer save, document upload, invitation, email or advert was manually invoked.",
+    "A broader sweep included unrelated existing test expectations and a PDF-proof test whose generated artifacts were excluded from the release copy; they are not release-scope acceptance checks.",
+    "CLI 2.121.0 read operations stalled; the installed 2.119.0 CLI verified backups and applied the exact migration. A later CLI dry-run connection timed out; the authenticated SQL inventory independently verified all 1499 local and remote versions match."
+  ],
+  "evidenceDirectory": "/Users/alexanderlandman/the-it-guy/output/production-release-20261014"
+}

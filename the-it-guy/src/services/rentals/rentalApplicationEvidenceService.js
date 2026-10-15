@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabaseClient.js'
 import { uploadRentalApplicationFile } from './rentalApplicationFileUpload.js'
-export async function uploadRentalApplicationEvidence(application, file, slot) {
+export async function uploadRentalApplicationEvidence(application, file, slot, { onProgress = null } = {}) {
   const { data, error } = await supabase.auth.getSession()
   if (error || !data?.session?.access_token) throw new Error('Sign in to upload application evidence.')
   const result = await uploadRentalApplicationFile(file, slot, application.version, async (body) => {
@@ -8,6 +8,6 @@ export async function uploadRentalApplicationEvidence(application, file, slot) {
     const payload = await response.json()
     if (!response.ok) throw new Error(payload.error || 'Unable to upload application evidence.')
     return payload
-  }, { monitorSurface: 'rentalAgent' })
+  }, { monitorSurface: 'rentalAgent', onProgress, scope: ['agent', application.id] })
   return { ...result, application: { ...application, ...result.application } }
 }

@@ -1,5 +1,5 @@
 import { resolvePrivatePropertyLocation } from '../server/services/privatePropertyLocationService.js'
-import { inspectPrivatePropertyListingRecovery, comparePrivatePropertyStoredAddress } from '../server/services/privatePropertyListingRecoveryService.js'
+import { inspectPrivatePropertyListingRecovery, comparePrivatePropertyStoredAddress, inspectPrivatePropertyPublicLocation } from '../server/services/privatePropertyListingRecoveryService.js'
 import { createRecoveryPortal } from './fixtures/private-property-recovery.mjs'
 import { createCataloguePortal } from './fixtures/private-property-location.mjs'
 import assert from 'node:assert/strict'
@@ -373,6 +373,26 @@ assert.equal(wrongAddress.safety.databaseWritten, false)
 const matchingActive = await buildPrivatePropertyGoLiveReadinessReport({ ...readyArgs, privateProperty: createRecoveryPortal({ propertyId: retainedSync.property_id, address: retainedAddress, status: 'For Sale' }) })
 assert.equal(matchingActive.ready, true)
 assert.equal(matchingActive.recovery.externalStatus, 'active')
+const wrongPublicUrl = 'https://www.privateproperty.co.za/commercial-sales/kwazulu-natal/durban/kloof/wyebank/T1234567'
+const conflictingPublicLocation = await buildPrivatePropertyGoLiveReadinessReport({
+  ...readyArgs,
+  client: createFakeClient({ ...tables, private_listings: [{ ...listing, private_property_listing_url: wrongPublicUrl }], private_property_listing_syncs: [retainedSync] }),
+  privateProperty: createRecoveryPortal({ propertyId: retainedSync.property_id, address: retainedAddress, status: 'For Sale' }),
+})
+assert.equal(conflictingPublicLocation.ready, false, 'matching feed fields cannot overrule a public advert in another province')
+assert.ok(conflictingPublicLocation.blockers.includes('private_property_public_location_mismatch'))
+assert.equal(conflictingPublicLocation.recovery.canReactivate, false)
+assert.match(conflictingPublicLocation.nextStep, /KwaZulu Natal.*Gauteng/)
+assert.equal(conflictingPublicLocation.safety.databaseWritten, false)
+assert.equal(inspectPrivatePropertyPublicLocation({ listingUrl: wrongPublicUrl, province: 'KwaZuluNatal', reference: 'T1234567' }).blockers.length, 0)
+const matchingPublicLocation = inspectPrivatePropertyPublicLocation({ listingUrl: 'https://www.privateproperty.co.za/for-sale/gauteng/pretoria/northern-pretoria/capital-park/T1234567?tracking=private#fragment', province: 'Gauteng', reference: 'T1234567' })
+assert.equal(matchingPublicLocation.checked, true)
+assert.deepEqual(matchingPublicLocation.blockers, [])
+assert.doesNotMatch(matchingPublicLocation.listingUrl, /tracking|fragment/)
+assert.deepEqual(inspectPrivatePropertyPublicLocation({ listingUrl: wrongPublicUrl, province: 'Gauteng', reference: 'T9999999' }).blockers, ['private_property_public_listing_reference_mismatch'])
+for (const listingUrl of ['', 'not-a-url', 'https://privateproperty.co.za.evil.test/for-sale/gauteng/T1234567', 'https://www.privateproperty.co.za/T1234567']) {
+  assert.equal(inspectPrivatePropertyPublicLocation({ listingUrl, province: 'Gauteng' }).checked, false, 'an absent or unrecognised link cannot establish the public province')
+}
 const unreadable = await inspectPrivatePropertyListingRecovery({ portal: { async getListingStatus() { throw new Error('private authentication data must not be returned') }, async getListingsDetails() { throw new Error('unavailable') } }, existingSync: retainedSync, address: retainedAddress })
 assert.deepEqual(unreadable.blockers, ['private_property_existing_record_not_verified'])
 assert.doesNotMatch(JSON.stringify(unreadable), /authentication data/)

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import RentalListingLandlordPanel from '../RentalListingLandlordPanel'
-const api=vi.hoisted(()=>({load:vi.fn(),save:vi.fn()}))
-vi.mock('../../../services/rentals/rentalListingLandlordService',()=>({loadListingLandlordSetup:api.load,saveListingLandlord:api.save,rentalListingHasLandlord:(listing,lead)=>Boolean(listing.sellerCanonicalFacts?.landlordContactId || lead?.id)}))
+const api=vi.hoisted(()=>({load:vi.fn(),save:vi.fn(),start:vi.fn(),request:vi.fn()}))
+vi.mock('../../../services/rentals/rentalListingLandlordService',()=>({loadListingLandlordSetup:api.load,saveListingLandlord:api.save,startListingLandlordOnboarding:api.start,rentalListingHasLandlord:(listing,lead)=>Boolean(listing.sellerCanonicalFacts?.landlordContactId || lead?.id)}))
+vi.mock('../../../services/rentals/rentalLandlordOnboardingService',()=>({requestRentalLandlordOnboarding:api.request}))
 const listing={id:'listing-1',listingCategory:'rental',organisationId:'org-1'}
 const scope={organisationId:'org-1',assignedAgentId:'agent-1'}
-beforeEach(()=>{vi.clearAllMocks();api.load.mockResolvedValue({contacts:[{id:'contact-1',name:'Existing Landlord',email:'owner@example.test',phone:'0123456789'}],linkedLead:null})})
+beforeEach(()=>{vi.resetAllMocks();api.load.mockResolvedValue({contacts:[{id:'contact-1',name:'Existing Landlord',email:'owner@example.test',phone:'0123456789'}],linkedLead:null})})
 afterEach(cleanup)
 function open(onSaved=vi.fn(),current=listing){return render(<MemoryRouter><RentalListingLandlordPanel listing={current} scope={scope} onSaved={onSaved}/></MemoryRouter>)}
 it('locks the profile until an existing landlord is actually saved',async()=>{
@@ -37,8 +38,108 @@ it('retains entered details and one client identity on a failed creation retry',
 })
 it('opens the existing profile after reloading a saved landlord connection',async()=>{
  open(vi.fn(),{...listing,sellerCanonicalFacts:{landlordContactId:'contact-1',landlordName:'Existing Landlord',landlordEmail:'owner@example.test',landlordType:'company'}})
- expect(screen.getByRole('heading',{name:'Landlord profile'})).toBeTruthy()
+ expect(screen.getByRole('heading',{name:'Existing Landlord'})).toBeTruthy()
  expect(screen.queryByText('Landlord profile locked')).toBeNull()
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Edit',exact:true}).disabled).toBe(false))
+ fireEvent.click(screen.getByRole('button',{name:'Edit',exact:true}))
  expect(screen.getByLabelText('Landlord or entity name').value).toBe('Existing Landlord')
  expect(screen.getByLabelText('Landlord type').value).toBe('company')
+})
+
+const connected={...listing,addressLine1:'12 Sample Road',sellerCanonicalFacts:{landlordContactId:'contact-1',landlordName:'Existing Landlord',landlordEmail:'owner@example.test',landlordType:'individual'}}
+const linkedLead={id:'landlord-lead',role:'landlord',relationships:{listingId:'listing-1'}}
+const onboarding={version:4,status:'draft',data:{profile:{name:'Existing Landlord',email:'owner@example.test',phone:'0123456789',type:'individual',people:[]},portfolio:[{id:'property-1',listingId:'listing-1',address:'12 Sample Road'}]},requirements:[],documents:[],accessLinks:[]}
+it('keeps a failed contact edit open with its values, then permits a verified retry',async()=>{
+ const onSaved=vi.fn();open(onSaved,connected)
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Edit',exact:true}).disabled).toBe(false))
+ fireEvent.click(screen.getByRole('button',{name:'Edit',exact:true}))
+ const dialog=screen.getByRole('dialog',{name:'Edit landlord contact'})
+ fireEvent.change(within(dialog).getByLabelText('Landlord or entity name'),{target:{value:'Updated Owner'}})
+ api.save.mockRejectedValueOnce(new Error('The saved client contact could not be verified.')).mockResolvedValueOnce({...connected,sellerCanonicalFacts:{...connected.sellerCanonicalFacts,landlordName:'Updated Owner'}})
+ fireEvent.click(within(dialog).getByRole('button',{name:'Save landlord details'}))
+ await within(dialog).findByRole('alert')
+ expect(within(dialog).getByLabelText('Landlord or entity name').value).toBe('Updated Owner')
+ expect(onSaved).not.toHaveBeenCalled()
+ fireEvent.click(within(dialog).getByRole('button',{name:'Save landlord details'}))
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+ expect(onSaved).toHaveBeenCalledTimes(1)
+ expect(api.save.mock.calls[1][2].expectedValues.landlordName).toBe('Existing Landlord')
+})
+it('opens the same saved onboarding here, retains other portfolio entries, and keeps uploads in Documents',async()=>{
+ const other={id:'property-2',listingId:'other-listing',address:'Other property',mandateId:'keep-mandate'}
+ api.load.mockResolvedValue({contacts:[],linkedLead,onboarding:{...onboarding,data:{...onboarding.data,portfolio:[...onboarding.data.portfolio,other]}}})
+ api.save.mockResolvedValue(connected);api.request.mockResolvedValue({onboarding})
+ open(vi.fn(),connected)
+ await screen.findByRole('button',{name:'Continue landlord onboarding'})
+ expect(screen.queryByRole('button',{name:'Upload file'})).toBeNull()
+ expect(screen.getByRole('link',{name:'Open Documents'}).getAttribute('href')).toBe('/agent/rentals/listings/listing-1/documents')
+ fireEvent.click(screen.getByRole('button',{name:'Continue landlord onboarding'}))
+ const dialog=screen.getByRole('dialog',{name:'Landlord onboarding'})
+ expect(within(dialog).getByLabelText('Full name / entity name').value).toBe('Existing Landlord')
+ fireEvent.change(within(dialog).getByLabelText('Residential / registered address'),{target:{value:'8 Owner Road'}})
+ fireEvent.click(within(dialog).getByText('Rental details for this property'))
+ fireEvent.change(within(dialog).getByLabelText('Rental service'),{target:{value:'managed_rental'}})
+ expect(within(dialog).getByLabelText('Proceeds account holder')).toBeTruthy()
+ fireEvent.click(within(dialog).getByRole('button',{name:'Save onboarding details'}))
+ await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1))
+ const context=api.save.mock.calls[0][2]
+ expect(context.linkedLead.id).toBe('landlord-lead')
+ expect(context.onboarding.version).toBe(4)
+ expect(context.discovery.profile.residentialAddress).toBe('8 Owner Road')
+ expect(context.discovery.profile).not.toHaveProperty('idNumber')
+ expect(context.discovery.portfolio[0].serviceType).toBe('managed_rental')
+ expect(context.discovery.portfolio[1]).toEqual(other)
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+})
+it('creates and revokes the native landlord secure link without sending an email',async()=>{
+ api.load.mockResolvedValue({contacts:[],linkedLead,onboarding})
+ api.request.mockImplementation(async(id,method,body)=>body?.action==='create_access' ? {token:'local-test-link',accessId:'access-1',expiresAt:'2026-10-21T08:00:00Z'} : {onboarding})
+ open(vi.fn(),connected)
+ fireEvent.click(await screen.findByRole('button',{name:'Create secure link'}))
+ const field=await screen.findByLabelText('Secure landlord onboarding link')
+ expect(field.value).toContain('/rental-landlord-onboarding/local-test-link')
+ expect(api.request).toHaveBeenCalledWith('landlord-lead','POST',{action:'create_access'})
+ fireEvent.click(screen.getByRole('button',{name:'Revoke this link'}))
+ await waitFor(()=>expect(screen.queryByLabelText('Secure landlord onboarding link')).toBeNull())
+ expect(api.request).toHaveBeenCalledWith('landlord-lead','POST',{action:'revoke_access',accessId:'access-1'})
+})
+it('locks submitted details and uses the existing versioned correction flow to reopen them',async()=>{
+ api.load.mockResolvedValue({contacts:[],linkedLead,onboarding:{...onboarding,status:'submitted'}})
+ api.request.mockResolvedValue({onboarding:{...onboarding,version:5,status:'draft'}})
+ open(vi.fn(),connected)
+ const correction=await screen.findByRole('button',{name:'Request corrections'})
+ expect(screen.getByRole('button',{name:'Edit',exact:true}).disabled).toBe(true)
+ expect(screen.queryByRole('button',{name:'Continue landlord onboarding'})).toBeNull()
+ fireEvent.click(correction)
+ const dialog=screen.getByRole('dialog',{name:'Request landlord corrections'})
+ fireEvent.change(within(dialog).getByLabelText('What should the landlord correct?'),{target:{value:'Please correct the address.'}})
+ fireEvent.click(within(dialog).getByRole('button',{name:'Request corrections'}))
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+ expect(api.request).toHaveBeenCalledWith('landlord-lead','POST',{action:'request_changes',version:4,patch:{message:'Please correct the address.'}})
+ expect(screen.getByRole('button',{name:'Continue landlord onboarding'})).toBeTruthy()
+ expect(api.save).not.toHaveBeenCalled()
+})
+it('does not create onboarding on page load and uses a stable reference if setup fails',async()=>{
+ open(vi.fn(),connected)
+ const start=await screen.findByRole('button',{name:'Start landlord onboarding'})
+ await waitFor(()=>expect(start.disabled).toBe(false))
+ expect(api.start).not.toHaveBeenCalled()
+ api.start.mockRejectedValueOnce(new Error('Onboarding setup unconfirmed')).mockResolvedValueOnce({listing:connected,setup:{contacts:[],linkedLead,onboarding}})
+ fireEvent.click(start)
+ await screen.findByText('Onboarding setup unconfirmed')
+ fireEvent.click(start)
+ await screen.findByRole('button',{name:'Continue landlord onboarding'})
+ expect(api.start.mock.calls[0][1].leadId).toBe(api.start.mock.calls[1][1].leadId)
+})
+it('does not display the previous onboarding profile while a different listing scope loads',async()=>{
+ api.load.mockResolvedValueOnce({contacts:[],linkedLead,onboarding})
+ const rendered=open(vi.fn(),connected)
+ await screen.findByRole('button',{name:'Continue landlord onboarding'})
+ const next={...connected,id:'listing-2',organisationId:'org-2',sellerCanonicalFacts:{landlordContactId:'contact-2',landlordName:'Different Owner',landlordEmail:'different@example.test',landlordType:'individual'}}
+ api.load.mockImplementationOnce(()=>new Promise(()=>{}))
+ rendered.rerender(<MemoryRouter><RentalListingLandlordPanel listing={next} scope={{organisationId:'org-2',assignedAgentId:'agent-2'}} onSaved={vi.fn()}/></MemoryRouter>)
+ expect(screen.getByRole('heading',{name:'Different Owner'})).toBeTruthy()
+ expect(screen.queryByRole('link',{name:'owner@example.test'})).toBeNull()
+ expect(screen.getByRole('link',{name:'different@example.test'})).toBeTruthy()
+ expect(screen.queryByRole('button',{name:'Continue landlord onboarding'})).toBeNull()
 })

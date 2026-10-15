@@ -35,7 +35,8 @@ describe('tenant workspace model', () => {
     ).toBe(7)
     expect(tenantJourneyStage({ stage: 'new' })).toBe(0)
     expect(tenantJourneyStage({ stage: 'placement_ready' }, [{ status: 'draft', rental_leases: [{ status: 'signed' }] }])).toBe(6)
-    expect(tenantJourneyStage({ relationships: { tenancyId: 'draft-tenancy' } })).toBe(6)
+    expect(tenantJourneyStage({ relationships: { tenancyId: 'activity-only-id' } })).toBe(0)
+    expect(tenantJourneyStage({ stage: 'placement_ready' }, [{id:'saved-tenancy',status:'draft',rental_leases:{id:'saved-lease',status:'draft'}}])).toBe(6)
     expect(tenantJourneyStage({ stage: 'qualified' }, [], [{ status: 'submitted' }])).toBe(5)
   })
   it('has ten questions, counts explicit No answers and preserves zero bedrooms', () => {
@@ -86,6 +87,9 @@ describe('tenant workspace model', () => {
       tenantEnquiryProperty({ relationships: { listingId: 'b' } }, matches)
         .listingTitle,
     ).toBe('Enquired property')
+    expect(tenantEnquiryProperty({relationships:{listingId:'a',enquiryListingId:'b'},raw:{enquiredListingId:'b'}},matches).listingTitle).toBe('Enquired property')
+    const original = tenantEnquiryProperty({relationships:{enquiryListingId:'b',listingId:'a',vacancyId:'v'},raw:{enquiredPropertyPrice:9000}},[],[{id:'v',listingId:'a',title:'Other home',askingRent:11000}])
+    expect(original.monthlyRent).toBe(9000);expect(original.listingTitle).toBe('Enquired rental property')
     expect(tenantEnquiryProperty({}, matches)).toBeNull()
     expect(
       tenantEnquiryProperty({

@@ -1,3 +1,4 @@
+import AddressInput from '../../components/location/AddressInput'
 import { getSellerDocumentDisplayGroupKey } from '../../lib/sellerDocumentExperienceModel.js'
 import { createSellerLeadDraftListing, hasSellerLeadDraftAddress } from '../../services/sellerLeadDraftListingService'
 import DocumentRequirementManager from '../../components/documents/DocumentRequirementManager.jsx'
@@ -27,7 +28,7 @@ import { applyListingSellerOnboardingSaveSnapshot, buildListingSellerCanonicalUp
 import { sellerOnboardingDraftPublicationBlocker } from '../../core/documents/sellerOnboardingDraftComparison.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Lightbulb, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { Suspense, createElement, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
@@ -93,6 +94,7 @@ import {
 } from '../../lib/sellerBasePackContract'
 import { inferLeadCategoryFromRecord, leadCategoryLabel, normalizeLeadCategory } from '../../lib/leadCategory'
 import { isRentalCrmLead } from '../../services/rentals/rentalCrmLeadModel'
+import { resolveAgencyLeadWorkspaceRedirect } from './agencyLeadWorkspaceRouteState'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import {
   ACTIVITY_TYPES,
@@ -10505,6 +10507,7 @@ const DEFAULT_LEAD_FILTER = {
 }
 
 function resolveLeadCategoryView(value = '') {
+  if (value && typeof value === 'object' && isRentalCrmLead(value)) return 'rental'
   if (typeof value === 'object' && value !== null) return inferLeadCategoryFromRecord(value, 'other')
   return normalizeLeadCategory(value, 'other')
 }
@@ -32967,6 +32970,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .filter(Boolean),
   })) : []
 
+  const rentalWorkspaceRedirect = isLeadWorkspaceRoute && resolveAgencyLeadWorkspaceRedirect(selectedLead || {})
+  if (rentalWorkspaceRedirect) return <Navigate to={rentalWorkspaceRedirect} replace />
+
   return (
     <section className="min-w-0 max-w-full space-y-5 overflow-hidden">
       <input
@@ -41823,7 +41829,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <>
                     <Field placeholder="Company name" value={sellerProfileEditForm.companyName} onChange={(event) => updateSellerProfileEditField('companyName', event.target.value)} />
                     <Field placeholder="Company registration number" value={sellerProfileEditForm.companyRegistrationNumber} onChange={(event) => updateSellerProfileEditField('companyRegistrationNumber', event.target.value)} />
-                    <Field placeholder="Registered address" className="sm:col-span-2" value={sellerProfileEditForm.companyRegisteredAddress} onChange={(event) => updateSellerProfileEditField('companyRegisteredAddress', event.target.value)} />
+                    <AddressInput placeholder="Registered address" className="sm:col-span-2" value={sellerProfileEditForm.companyRegisteredAddress} onChange={(event) => updateSellerProfileEditField('companyRegisteredAddress', event.target.value)} />
                     <Field as="textarea" rows={3} placeholder="Directors" className="sm:col-span-2" value={sellerProfileEditForm.companyDirectorsText} onChange={(event) => updateSellerProfileEditField('companyDirectorsText', event.target.value)} />
                     <Field placeholder="Authorised signatory" value={sellerProfileEditForm.authorisedSignatoryName} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryName', event.target.value)} />
                     <Field placeholder="Signatory capacity" value={sellerProfileEditForm.authorisedSignatoryCapacity} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryCapacity', event.target.value)} />
@@ -41831,7 +41837,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <Field placeholder="Signatory phone" value={sellerProfileEditForm.authorisedSignatoryPhone} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryPhone', event.target.value)} />
                     <Field placeholder="Signatory ID / passport" value={sellerProfileEditForm.authorisedSignatoryIdNumber || ''} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryIdNumber', event.target.value)} />
                     <Field placeholder="Signatory nationality" value={sellerProfileEditForm.authorisedSignatoryNationality || ''} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryNationality', event.target.value)} />
-                    <Field placeholder="Signatory address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedSignatoryAddress} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryAddress', event.target.value)} />
+                    <AddressInput placeholder="Signatory address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedSignatoryAddress} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryAddress', event.target.value)} />
                     <Field type="date" placeholder="Resolution date" value={sellerProfileEditForm.companyResolutionDate} onChange={(event) => updateSellerProfileEditField('companyResolutionDate', event.target.value)} />
                     <Field placeholder="Authority basis" value={sellerProfileEditForm.companyAuthorityBasis} onChange={(event) => updateSellerProfileEditField('companyAuthorityBasis', event.target.value)} />
                   </>
@@ -41841,7 +41847,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <>
                     <Field placeholder="Trust name" value={sellerProfileEditForm.trustName} onChange={(event) => updateSellerProfileEditField('trustName', event.target.value)} />
                     <Field placeholder="Trust registration number" value={sellerProfileEditForm.trustRegistrationNumber} onChange={(event) => updateSellerProfileEditField('trustRegistrationNumber', event.target.value)} />
-                    <Field placeholder="Registered address" className="sm:col-span-2" value={sellerProfileEditForm.trustRegisteredAddress} onChange={(event) => updateSellerProfileEditField('trustRegisteredAddress', event.target.value)} />
+                    <AddressInput placeholder="Registered address" className="sm:col-span-2" value={sellerProfileEditForm.trustRegisteredAddress} onChange={(event) => updateSellerProfileEditField('trustRegisteredAddress', event.target.value)} />
                     <Field as="textarea" rows={3} placeholder="Trustees" className="sm:col-span-2" value={sellerProfileEditForm.trusteesText} onChange={(event) => updateSellerProfileEditField('trusteesText', event.target.value)} />
                     <Field placeholder="Authorised trustee" value={sellerProfileEditForm.authorisedTrusteeName} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeName', event.target.value)} />
                     <Field placeholder="Trustee capacity" value={sellerProfileEditForm.authorisedTrusteeCapacity} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeCapacity', event.target.value)} />
@@ -41849,7 +41855,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <Field placeholder="Trustee phone" value={sellerProfileEditForm.authorisedTrusteePhone} onChange={(event) => updateSellerProfileEditField('authorisedTrusteePhone', event.target.value)} />
                     <Field placeholder="Trustee ID / passport" value={sellerProfileEditForm.authorisedTrusteeIdNumber || ''} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeIdNumber', event.target.value)} />
                     <Field placeholder="Trustee nationality" value={sellerProfileEditForm.authorisedTrusteeNationality || ''} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeNationality', event.target.value)} />
-                    <Field placeholder="Trustee address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedTrusteeAddress} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeAddress', event.target.value)} />
+                    <AddressInput placeholder="Trustee address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedTrusteeAddress} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeAddress', event.target.value)} />
                     <Field placeholder="Authority basis" className="sm:col-span-2" value={sellerProfileEditForm.trustAuthorityBasis} onChange={(event) => updateSellerProfileEditField('trustAuthorityBasis', event.target.value)} />
                   </>
                 ) : null}
@@ -41870,7 +41876,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
             {sellerLeadEditMode === 'address' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field placeholder="Street" className="sm:col-span-2" value={sellerProfileEditForm.residentialStreet} onChange={(event) => updateSellerProfileEditField('residentialStreet', event.target.value)} />
+                <AddressInput placeholder="Street" className="sm:col-span-2" value={sellerProfileEditForm.residentialStreet} onChange={(event) => updateSellerProfileEditField('residentialStreet', event.target.value)} />
                 <Field placeholder="Suburb" value={sellerProfileEditForm.residentialSuburb} onChange={(event) => updateSellerProfileEditField('residentialSuburb', event.target.value)} />
                 <Field placeholder="City" value={sellerProfileEditForm.residentialCity} onChange={(event) => updateSellerProfileEditField('residentialCity', event.target.value)} />
                 <Field placeholder="Province" value={sellerProfileEditForm.residentialProvince} onChange={(event) => updateSellerProfileEditField('residentialProvince', event.target.value)} />
@@ -41901,7 +41907,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
             {sellerLeadEditMode === 'property' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field placeholder="Property address" className="sm:col-span-2" value={sellerProfileEditForm.propertyAddress} onChange={(event) => updateSellerProfileEditField('propertyAddress', event.target.value)} />
+                <AddressInput placeholder="Property address" className="sm:col-span-2" value={sellerProfileEditForm.propertyAddress} onChange={(event) => updateSellerProfileEditField('propertyAddress', event.target.value)} />
                 <Field placeholder="Property type" value={sellerProfileEditForm.propertyType} onChange={(event) => updateSellerProfileEditField('propertyType', event.target.value)} />
                 <Field as="select" aria-label="Property title type" value={sellerProfileEditForm.ownershipScheme} onChange={(event) => {
                   const value = event.target.value
@@ -41994,20 +42000,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             organisationId={organisationId}
             actor={{ id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email }}
             assignedAgent={resolveAgentById(selectedAgentId || currentAgent.id)}
-            source={leadForm.leadSource} priority={leadForm.priority}
+            agents={eligibleLeadAssignmentOptions} lockPrimaryAgent={!isPrincipal}
+            source={leadForm.leadSource} onSourceChange={value => updateLeadFormField('leadSource', value)} sourceOptions={leadSourceOptions} priority={leadForm.priority}
             onClose={() => { setShowLeadForm(false); clearLeadForm(); void reloadRecords(organisationId, { applyLocalSnapshot: false }) }}
             metadataControls={<div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1.5 text-sm font-semibold">How did this lead find you?
-                <Field as="select" value={leadForm.leadSource} onChange={event => updateLeadFormField('leadSource', event.target.value)}>
-                  {leadSourceOptions.map(option => <option key={option}>{option}</option>)}
-                </Field>
-              </label>
               <label className="grid gap-1.5 text-sm font-semibold">Priority
                 <Field as="select" value={leadForm.priority} onChange={event => updateLeadFormField('priority', event.target.value)}>
                   {LEAD_PRIORITIES.map(option => <option key={option}>{option}</option>)}
                 </Field>
               </label>
-              {isPrincipal ? <AgentPicker agents={agentOptions} value={selectedAgentId} onChange={setSelectedAgentId} className="sm:col-span-2" /> : null}
             </div>}
             onCreated={(receipt, reportedProgress) => {
               setRecords(previous => ({ ...previous, leads: [receipt.lead, ...previous.leads.filter(lead => lead.leadId !== receipt.leadId)] }))
@@ -42386,7 +42387,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               Address
               <div className="relative">
                 <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f839c]" />
-                <Field
+                <AddressInput
                   className="pr-10 pl-10"
                   placeholder="Property address"
                   value={appointmentSchedulerAddressValue}

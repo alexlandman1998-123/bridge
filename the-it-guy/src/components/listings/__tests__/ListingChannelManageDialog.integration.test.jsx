@@ -11,6 +11,7 @@ import { deriveListingChannelUpdateStates, getListingChannelManageActivity } fro
 import { buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages } from '../../../services/listings/listingMarketingChannelPresentation'
 import { getListingPublicationChannelKey } from '../../../services/listings/listingPublicationState'
 import { sellerOnboardingDraftPublicationBlocker } from '../../../core/documents/sellerOnboardingDraftComparison'
+import { shouldRequireSyndicationReview } from '../../../services/syndicationReviewGateService'
 
 const source = readFileSync(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 function controllerSource(name) {
@@ -90,6 +91,55 @@ it.each(['Property24', 'Private Property'])('Manage updates only the existing %s
   if (channel === 'Property24') expect(sends[0][2].listingNumber).toBe('116284')
   else expect(sends[0][2].confirm).toBe('PRIVATE_PROPERTY_PUBLISH:listing-1:production')
   expect(ctx.loadListingData).toHaveBeenCalledWith({ showLoading: false })
+})
+it.each(['Property24', 'Private Property'])('updating saved %s content does not rewrite the seller record', async channel => {
+  const { ctx, popup } = fixture({ saveMarketingDraft: vi.fn(async () => ({ ok: false, error: new Error('Someone else saved changes to this seller record.') })) })
+  expect((await popup(channel).onUpdate()).ok).toBe(true)
+  expect(ctx.saveMarketingDraft).not.toHaveBeenCalled()
+})
+it.each(['Property24', 'Private Property'])('unsaved %s content is saved once before sending and never rewritten for the receipt', async channel => {
+  const dirty = { current: true }
+  const saveMarketingDraft = vi.fn(async () => {
+    if (!dirty.current) return { ok: false, error: new Error('Someone else saved changes to this seller record.') }
+    dirty.current = false
+    return { ok: true }
+  })
+  const { ctx, popup } = fixture({ marketingDraftDirtyRef: dirty, saveMarketingDraft })
+  expect((await popup(channel).onUpdate()).ok).toBe(true)
+  expect(saveMarketingDraft).toHaveBeenCalledOnce()
+  const send = channel === 'Property24' ? ctx.callProperty24ListingAction : ctx.callPrivatePropertyListingAction
+  expect(send).toHaveBeenCalledOnce()
+  expect(saveMarketingDraft.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0])
+})
+it.each([false, true])('Private Property review and submission share one guarded save (dirty=%s)', async initiallyDirty => {
+  const { ctx, popup } = fixture({ marketingDraftDirtyRef: { current: initiallyDirty } })
+  ctx.syndicationReview = null
+  ctx.syndicationReviewAcknowledgements = {}
+  ctx.shouldRequireSyndicationReview = shouldRequireSyndicationReview
+  ctx.setSyndicationReviewLoading = vi.fn()
+  ctx.setSyndicationReview = vi.fn()
+  ctx.setSyndicationReviewOpen = vi.fn()
+  ctx.setSyndicationReviewAcknowledgements = vi.fn()
+  ctx.saveMarketingDraft = vi.fn(async () => {
+    if (!ctx.marketingDraftDirtyRef.current) return { ok: false, error: new Error('Someone else saved changes to this seller record.') }
+    ctx.marketingDraftDirtyRef.current = false
+    return { ok: true }
+  })
+  ctx.callPrivatePropertyListingAction.mockImplementation(async action => action === 'syndication-review'
+    ? { review: { rollout: { enabled: false } } }
+    : { status: 'SUBMITTED', report: { syncResult: { arch9Status: 'submitted' } } })
+  for (const name of ['openSyndicationReview', 'requireSyndicationReviewBeforePublish']) {
+    vm.runInContext(transformSync(controllerSource(name), { loader: 'jsx' }).code, ctx)
+  }
+  expect((await popup('Private Property').onUpdate()).ok).toBe(true)
+  expect(ctx.saveMarketingDraft).toHaveBeenCalledTimes(initiallyDirty ? 1 : 0)
+  expect(ctx.callPrivatePropertyListingAction.mock.calls.map(row => row[0])).toEqual(['syndication-review', 'publish'])
+})
+it.each(['Property24', 'Private Property'])('a real seller conflict blocks unsaved %s changes before submission', async channel => {
+  const { ctx, popup } = fixture({ marketingDraftDirtyRef: { current: true }, saveMarketingDraft: vi.fn(async () => ({ ok: false, error: new Error('Someone else saved changes to this seller record.') })) })
+  await expect(popup(channel).onUpdate()).rejects.toThrow('Someone else saved changes to this seller record.')
+  expect(ctx.callProperty24ListingAction).not.toHaveBeenCalled()
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
 })
 it('a Property24 send failure rejects the popup action and records the failed stage', async () => {
   const { ctx, popup } = fixture({ callProperty24ListingAction: vi.fn(async () => { throw new Error('P24 rejected this listing.') }) })
@@ -248,9 +298,9 @@ it('Kingdom publication prepares its own saved snapshot without requiring an Age
   expect(ctx.publishKingdomWebsiteListing).toHaveBeenCalledWith('listing-1', 'publish')
   expect(ctx.setWebsiteListingPublication).not.toHaveBeenCalled()
 })
-it.each(['Property24', 'Private Property'])('a %s confirmation-save failure is not recorded as a rejected portal submission', async channel => {
-  const saveMarketingDraft = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, error: new Error('Save conflict.') })
-  const { ctx, popup } = fixture({ saveMarketingDraft })
+it.each(['Property24', 'Private Property'])('a %s confirmation-history failure is not recorded as a rejected portal submission', async channel => {
+  const recordListingPublicationStage = vi.fn(async (_, stage) => { if (stage === 'accepted') throw new Error('History unavailable.') })
+  const { ctx, popup } = fixture({ recordListingPublicationStage })
   await expect(popup(channel).onUpdate()).rejects.toThrow('accepted the request, but Arch9 could not save its confirmation')
   expect(ctx.recordListingPublicationStage.mock.calls.some(row => row[1] === 'failed')).toBe(false)
   expect(ctx.recordListingPublicationStage.mock.calls.some(row => row[1] === 'submitted')).toBe(true)

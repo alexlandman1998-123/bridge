@@ -1,3 +1,4 @@
+import AddressInput from '../location/AddressInput'
 import { sellerFicaBranch, sellerYesNoValue } from '../../lib/sellerFicaOnboardingFields.js'
 
 const inputClass = 'min-h-[42px] w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#22364a] outline-none focus:border-[#5b829e]'
@@ -17,7 +18,7 @@ function PersonList({ title, roleTitle, hint, rows = [], collectionKey, onAddPer
           ].map(([field, label]) => (
             <label key={field} className={`grid gap-1 text-xs font-semibold text-[#607387] ${field === 'residentialAddress' ? 'sm:col-span-2' : ''}`}>
               {label}
-              <input className={inputClass} value={person[field] || ''} onChange={(event) => onUpdatePerson(collectionKey, index, field, event.target.value)} />
+              {field === 'residentialAddress' ? <AddressInput className={inputClass} value={person[field] || ''} onChange={(event) => onUpdatePerson(collectionKey, index, field, event.target.value)} /> : <input className={inputClass} value={person[field] || ''} onChange={(event) => onUpdatePerson(collectionKey, index, field, event.target.value)} />}
             </label>
           ))}
           {collectionKey === 'companyBeneficialOwners' ? <>
@@ -35,11 +36,11 @@ function PersonList({ title, roleTitle, hint, rows = [], collectionKey, onAddPer
   )
 }
 
-export default function SellerFicaQuestions({ form = {}, onChange, onAddPerson, onUpdatePerson, onRemovePerson }) {
+export default function SellerFicaQuestions({ form = {}, onChange, onAddPerson, onUpdatePerson, onRemovePerson, compact = false }) {
   const branch = sellerFicaBranch(form)
   return (
-    <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-white p-4">
-      <div><h3 className="text-sm font-semibold text-[#22364a]">FICA declaration details</h3><p className="mt-1 text-sm text-[#60748b]">These answers will be reused when preparing the declaration. Evidence can be checked during agent review.</p></div>
+    <section className={compact ? 'space-y-4' : 'space-y-4 rounded-[18px] border border-[#dce6f2] bg-white p-4'}>
+      {!compact ? <div><h3 className="text-sm font-semibold text-[#22364a]">FICA declaration details</h3><p className="mt-1 text-sm text-[#60748b]">These answers will be reused when preparing the declaration. Evidence can be checked during agent review.</p></div> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1 text-sm font-medium text-[#2a4057]">Occupation or business activity
           <input className={inputClass} value={form.occupation || ''} onChange={(event) => onChange('occupation', event.target.value)} />

@@ -1,3 +1,4 @@
+import AddressInput from '../../location/AddressInput'
 import { Building2, Globe2, Hash, Landmark, Mail, MapPin, Phone, ShieldCheck } from 'lucide-react'
 
 function getFirmInitials(name = '') {
@@ -97,7 +98,7 @@ function FirmInfoStep({ values, errors = {}, onChange }) {
         </div>
         <div className="attorney-step-grid">
           <PremiumField label="Address Line 1" icon={MapPin} className="is-wide">
-            <input value={values.addressLine1 || ''} onChange={(event) => onChange('addressLine1', event.target.value)} />
+            <AddressInput addressFormat="street" value={values.addressLine1 || ''} onChange={(event) => onChange('addressLine1', event.target.value)} onAddressSelect={address => { if (address) { onChange('city', address.city || ''); onChange('province', address.province || ''); onChange('postalCode', address.postalCode || ''); onChange('country', address.country || 'South Africa') } }} />
           </PremiumField>
           <PremiumField label="Address Line 2" icon={MapPin} className="is-wide">
             <input value={values.addressLine2 || ''} onChange={(event) => onChange('addressLine2', event.target.value)} />

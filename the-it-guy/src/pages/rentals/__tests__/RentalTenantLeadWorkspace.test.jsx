@@ -131,6 +131,23 @@ function show(overrides = {}) {
   );
   return onReload;
 }
+it.each([
+  ['application_pending','Confirm application received','application_submitted'],
+  ['screening_pending','Continue to FICA','fica_pending'],
+  ['fica_pending','Confirm FICA review','fica_complete'],
+])('exposes the saved-record milestone action at %s',async(stage,action,toStage)=>{
+  const current={...lead,stage}
+  show({lead:current,applications:[{id:'app',leadId:current.id,status:'submitted',data:{}}]})
+  fireEvent.click(screen.getByRole('button',{name:action,exact:true}))
+  await waitFor(()=>expect(advanceRentalLead).toHaveBeenCalledWith(current,expect.objectContaining({toStage})))
+})
+it('keeps the lead on its current step when the application review blocks advancement',async()=>{
+  advanceRentalLead.mockRejectedValueOnce(new Error('Complete the current identity review in the linked application before advancing this lead.'))
+  show({lead:{...lead,stage:'screening_pending'}})
+  fireEvent.click(screen.getByRole('button',{name:'Continue to FICA',exact:true}))
+  expect((await screen.findAllByText('Complete the current identity review in the linked application before advancing this lead.')).length).toBeGreaterThan(0)
+  expect(screen.getByRole('button',{name:'Continue to FICA',exact:true})).toBeTruthy()
+})
 it('shows submitted tenant qualification and preferred times on the rental overview', () => {
   show({ lead: { ...lead, qualification: { ...lead.qualification, monthlyBudget: 12500, source: 'tenant_qualification_link', submittedAt: '2026-10-07T12:00:00Z', additionalNotes: '' },
     viewingRequest: { status: 'requested', timezone: 'Africa/Johannesburg', availabilitySlots: [{ date: '2026-10-15', startTime: '10:00', endTime: '11:00', label: 'Thu, 15 Oct 2026, 10:00-11:00' }] } } })
@@ -171,6 +188,10 @@ beforeEach(() => {
   logRentalLeadCommunication.mockResolvedValue({});
 });
 afterEach(cleanup);
+it('opens the saved rental listing directly from a tenant lead', () => {
+  show()
+  expect(screen.getByRole('link', { name: 'Open linked rental listing' }).getAttribute('href')).toBe('/agent/rentals/listings/original/overview')
+})
 it("shows the requested workspace tabs, journey and overview cards, keeping the actual enquiry", async () => {
   show();
   await screen.findByText("Original enquired home");

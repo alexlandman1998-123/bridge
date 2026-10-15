@@ -1,3 +1,4 @@
+import AddressInput from '../../../components/location/AddressInput'
 import { AlertCircle, Building2, Check, ClipboardList, DollarSign, FileText, Handshake, Home, Plus, Search, UserRound, UsersRound, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -650,7 +651,7 @@ function CommercialSalesDealCreateModal({ open, lookups = {}, rawLookups = {}, o
                         <Input value={manualProperty.property_name} onChange={(event) => setManualProperty((current) => ({ ...current, property_name: event.target.value }))} placeholder="e.g. Sandton Office Block" />
                       </Field>
                       <Field label="Property Address" required error={errors.manual_property_address}>
-                        <Input value={manualProperty.formatted_address} onChange={(event) => setManualProperty((current) => ({ ...current, formatted_address: event.target.value }))} placeholder="Street, suburb or node" />
+                        <AddressInput value={manualProperty.formatted_address} onChange={(event) => setManualProperty((current) => ({ ...current, formatted_address: event.target.value }))} placeholder="Street, suburb or node" />
                       </Field>
                       <Field label="Area / Node">
                         <Input value={manualProperty.area_node} onChange={(event) => setManualProperty((current) => ({ ...current, area_node: event.target.value }))} placeholder="e.g. Sandton" />

@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   Archive,
   CalendarDays,
@@ -3566,7 +3567,7 @@ function PipelineCanvassingPage() {
                           </label>
                           <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
                             Street address
-                            <Field
+                            <AddressInput
                               value={selectedProspect.streetAddress || ''}
                               onChange={(event) => {
                                 handleUpdateSelectedProspect('streetAddress', event.target.value)

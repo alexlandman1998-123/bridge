@@ -1,24 +1,44 @@
 import { useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Home } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Home, LoaderCircle } from 'lucide-react'
 
-export default function SellerPropertyGallery({ images = [], propertyTitle = 'Property listing', showThumbnails = false }) {
+export default function SellerPropertyGallery({ images = [], propertyTitle = 'Property listing', showThumbnails = false, loading = false, loadError = false, onRetry }) {
   const track = useRef(null)
   const [index, setIndex] = useState(0)
   const [failedImages, setFailedImages] = useState([])
+  const [retrying, setRetrying] = useState(false)
   const photos = images.filter((url) => !failedImages.includes(url))
+  const waiting = loading || retrying
+  const failed = loadError || images.length > 0
   const current = Math.min(index, Math.max(0, photos.length - 1))
   const selectPhoto = (next) => {
     setIndex(next)
     track.current?.scrollTo({ left: next * track.current.clientWidth, behavior: 'smooth' })
   }
   const move = (direction) => selectPhoto((current + direction + photos.length) % photos.length)
+  const retryPhotos = async () => {
+    setRetrying(true)
+    try {
+      await onRetry?.()
+      setFailedImages([])
+      setIndex(0)
+    } catch {
+      // Keep the failure visible so the user can retry again.
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   if (!photos.length) return (
     <div className={`absolute inset-0 grid place-items-center ${showThumbnails ? 'bg-[#eef3f1]' : 'bg-[linear-gradient(135deg,#0b2e2a_0%,#173f55_58%,#f3f8f5_58%,#f3f8f5_100%)]'}`}>
       <div className={showThumbnails ? 'max-w-sm px-6 py-5 text-center' : 'rounded-[16px] border border-white/20 bg-white/85 px-4 py-3 text-center shadow-[0_12px_28px_rgba(15,23,42,0.16)]'}>
-        <Home size={26} className="mx-auto text-[#063f37]" />
-        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#41566c]">Property image pending</p>
-        {showThumbnails ? <p className="mt-2 text-sm leading-6 text-[#64748b]">Listing photos will appear here once your agent adds them.</p> : null}
+        {waiting ? <LoaderCircle size={26} className="mx-auto animate-spin text-[#063f37]" /> : <Home size={26} className="mx-auto text-[#063f37]" />}
+        <p role={waiting ? 'status' : undefined} className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#41566c]">{waiting ? 'Loading listing photos' : failed ? 'Photos could not be loaded' : 'Property image pending'}</p>
+        {!waiting && failed ? (
+          <>
+            <p className="mt-2 text-sm leading-6 text-[#64748b]">The listing photo links are unavailable right now.</p>
+            <button type="button" onClick={retryPhotos} className="mt-3 min-h-11 rounded-lg border border-[#123f3a] px-4 py-2 text-sm font-semibold text-[#123f3a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#123f3a]">Retry loading photos</button>
+          </>
+        ) : !waiting && showThumbnails ? <p className="mt-2 text-sm leading-6 text-[#64748b]">Listing photos will appear here once your agent adds them.</p> : null}
       </div>
     </div>
   )

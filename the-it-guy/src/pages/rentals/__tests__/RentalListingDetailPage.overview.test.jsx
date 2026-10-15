@@ -6,6 +6,7 @@ import RentalListingDetailPage from '../RentalListingDetailPage'
 import { buildRentalListingOverview } from '../../../services/rentals/rentalListingOverviewModel'
 
 const mocks = vi.hoisted(() => ({ publication: [], refreshPublication: vi.fn(), retryPublication: vi.fn(), settle: vi.fn(), publishP24: vi.fn(), load: vi.fn(), overview: vi.fn(), expiry: vi.fn(), gallery: vi.fn(), createLead: vi.fn(), withdrawP24: vi.fn(), withdrawPP: vi.fn(), previewP24: vi.fn(), previewPP: vi.fn(), channels: vi.fn(async () => ({ activity: [], errors: {} })), status: vi.fn(), reconcile: vi.fn(), statusUpdate: vi.fn(), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }, workspace: {} }))
+vi.mock('../../../services/listings/listingOverviewPerformanceService', () => ({ getListingOverviewAnalytics: vi.fn(async ({ days }) => ({ windowDays: days, period: { startDate: '2026-09-14', endDate: '2026-10-13', completedDaysOnly: true } })) }))
 vi.mock('../../../services/listings/listingInitialPublicationService', () => ({ INITIAL_LISTING_PUBLICATION_EVENT: 'itg:initial-listing-publication', readInitialListingChannelResults: () => mocks.publication, watchInitialListingPublication: () => () => {}, refreshListingPublicationResults: mocks.refreshPublication, retryFailedListingChannels: mocks.retryPublication, requireSettledListingPublication: mocks.settle }))
 vi.mock('../../../services/rentals/rentalLeadService', () => ({ createRentalLead: mocks.createLead }))
 vi.mock('../../../components/listings/WebsiteListingPublicationPanel', () => ({ default: () => null }))
@@ -31,7 +32,7 @@ it('opens the saved rental document matrix from the listing Documents route', as
 })
 
 function mediaListing() {
-  return { id: 'listing-1', listingCategory: 'rental', title: 'Media rental', updatedAt: '2026-10-04T00:00:00Z', organisationId: 'org-1',
+  return { id: 'listing-1', listingCategory: 'rental', title: 'Media rental', addressLine1: '12 Example Road', updatedAt: '2026-10-04T00:00:00Z', organisationId: 'org-1',
     sellerCanonicalFacts: { marketingMedia: { videoLink: 'https://video.test/watch', virtualTourLink: 'https://tour.test/view' } },
     listingMedia: [
       { id: 'photo-a', media_type: 'image', file_url: 'https://images.test/a.jpg', sort_order: 0, is_cover: true },
@@ -46,6 +47,21 @@ function renderMedia(listing, tab='marketing') {
   mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
   return render(<MemoryRouter initialEntries={[`/agent/rentals/listings/listing-1/${tab}`]}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
 }
+
+async function openPortalRequirements(channel = 'Property24') {
+  await screen.findByRole('heading', { name: 'Listing Channels' })
+  fireEvent.click(screen.getAllByRole('button', { name: 'Manage listing', hidden: true })[channel === 'Property24' ? 0 : 1])
+  const dialog = await screen.findByRole('dialog', { name: `Manage ${channel} listing` })
+  return { dialog, portal: within(dialog).getByRole('region', { name: `${channel} requirements` }) }
+}
+
+it('keeps duplicate checklist and portal cards off the rental Marketing page', async () => {
+  renderMedia(mediaListing())
+  await screen.findByRole('heading', { name: 'Listing Channels' })
+  expect(screen.queryByRole('heading', { name: 'Listing checklist' })).toBeNull()
+  expect(screen.queryByRole('region', { name: 'Property24 requirements' })).toBeNull()
+  expect(screen.queryByRole('region', { name: 'Private Property requirements' })).toBeNull()
+})
 
 it('shows persisted partial results and retries the saved rental without creating or resending every website', async () => {
   const listing = { ...mediaListing(), listingStatus: 'active', sellerCanonicalFacts: { distribution: { selectedChannels: ['property24', 'private_property'] } } }
@@ -70,24 +86,27 @@ it('keeps a saved rental visible when status checking fails and offers no unknow
   expect(within(summary).queryByRole('button', { name: 'Retry failed channels' })).toBeNull()
   fireEvent.click(within(summary).getByRole('button', { name: 'Check status' }))
   await screen.findByText(/Your rental is saved. Advertising status could not be checked/)
-  expect(screen.getByRole('heading', { name: 'Media rental' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: '12 Example Road' })).toBeTruthy()
 })
-it('moves from the saved result directly to the rental advertising controls with keyboard focus', async () => {
+it('opens the rental advertising controls through the Marketing tab without a saved summary on Overview', async () => {
+  mocks.publication = [{ key: 'property24', label: 'Property24', status: 'submitted' }]
   renderMedia({ ...mediaListing(), listingStatus: 'active' }, 'overview')
-  const summary = await screen.findByRole('region', { name: 'Saved listing and advertising' })
-  fireEvent.click(within(summary).getByRole('button', { name: 'Review advertising' }))
-  const heading = await screen.findByRole('heading', { name: 'Listing Channels' })
-  await waitFor(() => expect(document.activeElement).toBe(heading))
+  await screen.findByRole('heading', { name: '12 Example Road' })
+  expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: 'Marketing' }))
+  expect(await screen.findByRole('heading', { name: 'Listing Channels' })).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'Saved listing and advertising' })).toBeTruthy()
 })
 it('checks durable initial requests before an alternative portal publish control sends anything', async () => {
   mocks.previewP24.mockResolvedValue({ report: { preview: { canSubmit: true, dataBlockers: [], technicalBlockers: [] } } })
   mocks.settle.mockRejectedValue(new Error('Check status before sending again.'))
   renderMedia(mediaListing())
-  const requirements = await screen.findByRole('region', { name: 'Property24 requirements' })
-  fireEvent.click(within(requirements).getByRole('button', { name: 'Check Property24 requirements' }))
+  const { portal: requirements, dialog } = await openPortalRequirements()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Check requirements' }))
   await waitFor(() => expect(within(requirements).getByRole('status').textContent).toBe('Ready to submit'))
-  fireEvent.click(screen.getAllByRole('button', { name: 'Publish', hidden: true })[0])
-  await screen.findByText('Check status before sending again.')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Publish advert' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Publish listing' }))
+  await within(dialog).findByText('Check status before sending again.')
   expect(mocks.settle).toHaveBeenCalledWith('listing-1', ['property24'])
   expect(mocks.publishP24).not.toHaveBeenCalled()
 })
@@ -203,7 +222,7 @@ it('keeps the tenant form and its values available when saving fails, then permi
   fireEvent.click(within(dialog).getByRole('button', { name: 'Add Tenant Lead' }))
   await within(dialog).findByText('Unable to save; please retry.')
   expect(within(dialog).getByLabelText('First name').value).toBe('Amy')
-  expect(within(screen.getByRole('table')).queryByText('Amy')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'No leads yet' })).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Add Tenant Lead' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(mocks.createLead).toHaveBeenCalledTimes(2)
@@ -253,7 +272,7 @@ it('shows a failed Private Property withdrawal without reporting success or relo
   expect(mocks.withdrawP24).not.toHaveBeenCalled()
   expect(mocks.load).toHaveBeenCalledTimes(1)
   expect(screen.queryByText('Rental withdrawn from Private Property.')).toBeNull()
-  expect(within(screen.getByRole('region',{name:'Private Property requirements'})).getByRole('status').textContent).toBe('Not checked')
+  expect(screen.queryByRole('region',{name:'Private Property requirements'})).toBeNull()
 })
 
 
@@ -274,14 +293,14 @@ it('renders cached portal reference, status and publication history and sends a 
   renderMedia(mediaListing())
   await screen.findByText('8765')
   expect(screen.getAllByRole('link',{name:'View listing'})[0].getAttribute('href')).toBe('https://www.property24.com/to-rent/demo/8765')
-  expect(screen.getByText('Accepted')).toBeTruthy()
+  expect(screen.getByText(/^Accepted ·/)).toBeTruthy()
   expect(mocks.status).not.toHaveBeenCalled()
-  fireEvent.click(screen.getAllByRole('button',{name:'Manage portal settings',hidden:true})[0])
-  const dialog=await screen.findByRole('dialog',{name:'Manage Property24'})
+  fireEvent.click(screen.getAllByRole('button',{name:'Manage listing',hidden:true})[0])
+  const dialog=await screen.findByRole('dialog',{name:'Manage Property24 listing'})
   fireEvent.change(within(dialog).getByLabelText('Rental portal status'),{target:{value:'Rented'}})
   fireEvent.click(within(dialog).getByRole('button',{name:'Send status change'}))
   await waitFor(()=>expect(mocks.statusUpdate).toHaveBeenCalledWith('listing-1','property24','Rented'))
-  await waitFor(() => expect(within(screen.getByRole('dialog',{name:'Manage Property24'})).getByRole('status').textContent).toBe('The portal accepted the status request. Refresh status to confirm its public state.'))
+  await waitFor(() => expect(within(screen.getByRole('dialog',{name:'Manage Property24 listing'})).getAllByRole('status').some(status => status.textContent === 'The portal accepted the status request. Refresh status to confirm its public state.')).toBe(true))
   expect(mocks.channels.mock.calls.length).toBeGreaterThan(1)
 })
 
@@ -290,22 +309,22 @@ it('shows refresh errors inside the open portal settings and lets the user retry
   mocks.status.mockRejectedValueOnce(new Error('Portal credentials unavailable')).mockResolvedValueOnce({lifecycle:{state:'active',listingNumber:'8765',isOnPortal:true}})
   renderMedia(mediaListing())
   await screen.findByText('8765')
-  fireEvent.click(screen.getAllByRole('button',{name:'Manage portal settings',hidden:true})[0])
-  let dialog=await screen.findByRole('dialog',{name:'Manage Property24'})
-  fireEvent.click(within(dialog).getByRole('button',{name:'Refresh portal status'}))
-  await waitFor(()=>expect(within(dialog).getByRole('alert').textContent).toBe('Portal credentials unavailable'))
+  fireEvent.click(screen.getAllByRole('button',{name:'Manage listing',hidden:true})[0])
+  let dialog=await screen.findByRole('dialog',{name:'Manage Property24 listing'})
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check latest status'}))
+  await waitFor(()=>expect(within(dialog).getAllByRole('alert').some(alert => alert.textContent.includes('Portal credentials unavailable'))).toBe(true))
   expect(mocks.status).toHaveBeenCalledWith('listing-1','property24',{refresh:true})
-  fireEvent.click(within(dialog).getByRole('button',{name:'Refresh portal status'}))
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check latest status'}))
   await waitFor(()=>expect(mocks.status).toHaveBeenCalledTimes(2))
-  await waitFor(() => expect(within(screen.getByRole('dialog',{name:'Manage Property24'})).getByRole('status').textContent).toBe('Property24 portal status refreshed.'))
+  await waitFor(() => expect(within(screen.getByRole('dialog',{name:'Manage Property24 listing'})).getAllByRole('status').some(status => status.textContent === 'Property24 portal status refreshed.')).toBe(true))
 })
 
 it('shows all Private Property requirements rather than a generic blocked message', async () => {
   mocks.channels.mockResolvedValue({errors:{},activity:[]})
   mocks.previewPP.mockResolvedValue({ready:false,readiness:{ready:false,blockers:['missing_description','missing_private_property_agent_id'],preview:{dataBlockers:['missing_description']}}})
   renderMedia(mediaListing())
-  const portal=await screen.findByRole('region',{name:'Private Property requirements'})
-  fireEvent.click(within(portal).getByRole('button',{name:'Check Private Property requirements'}))
+  const { portal, dialog } = await openPortalRequirements('Private Property')
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
   await within(portal).findByText('Assigned agent needs a portal mapping')
   expect(within(portal).getByText('Complete the listing description')).toBeTruthy()
   expect(screen.getAllByRole('button',{name:'Publish',hidden:true}).every(button=>button.disabled)).toBe(true)
@@ -315,12 +334,12 @@ it('shows Property24 failed photos and focuses the exact expiry field', async ()
   mocks.channels.mockResolvedValue({errors:{},activity:[]})
   mocks.previewP24.mockResolvedValue({report:{preview:{canSubmit:false,dataBlockers:['missing_expiry_date'],imageByteLoad:{summary:{loaded:2,failed:1}}}}})
   renderMedia(mediaListing())
-  const portal=await screen.findByRole('region',{name:'Property24 requirements'})
-  fireEvent.click(within(portal).getByRole('button',{name:'Check Property24 requirements'}))
+  const { portal, dialog } = await openPortalRequirements()
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
   await within(portal).findByText('Property24 expiry date must be in the future')
   expect(within(portal).getByText('Photos prepared: 2. Photos that failed: 1.')).toBeTruthy()
   fireEvent.click(within(portal).getByRole('button',{name:'Go to expiry date'}))
-  expect(document.activeElement).toBe(screen.getByLabelText('Property24 expiry date'))
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Property24 expiry date')))
 })
 it('ignores a late ready response after photos change and requires a fresh check', async () => {
   mocks.channels.mockResolvedValue({errors:{},activity:[]})
@@ -329,7 +348,8 @@ it('ignores a late ready response after photos change and requires a fresh check
   const listing=mediaListing()
   mocks.gallery.mockResolvedValue({listing:{...listing,updatedAt:'2026-10-04T11:00:00Z',listingMedia:listing.listingMedia.filter(row=>row.id!=='photo-b')}})
   renderMedia(listing)
-  fireEvent.click(await screen.findByRole('button',{name:'Check Private Property requirements'}))
+  const { dialog } = await openPortalRequirements('Private Property')
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
   await waitFor(()=>expect(mocks.previewPP).toHaveBeenCalledOnce())
   fireEvent.click(screen.getByRole('button',{name:'Remove photo 2'}))
   await screen.findByText('Photo removed from the rental listing.')
@@ -342,11 +362,11 @@ it('lets a failed check retry without carrying forward an old ready result', asy
   mocks.channels.mockResolvedValue({errors:{},activity:[]})
   mocks.previewP24.mockRejectedValueOnce(new Error('Readiness service unavailable')).mockResolvedValueOnce({report:{preview:{canSubmit:true,dataBlockers:[],technicalBlockers:[]}}})
   renderMedia(mediaListing())
-  const portal=await screen.findByRole('region',{name:'Property24 requirements'})
-  fireEvent.click(within(portal).getByRole('button',{name:'Check Property24 requirements'}))
-  await within(portal).findByRole('alert')
+  const { portal, dialog } = await openPortalRequirements()
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
+  await within(dialog).findByRole('alert')
   expect(within(portal).getByRole('status').textContent).toBe('Check failed')
-  fireEvent.click(within(portal).getByRole('button',{name:'Check Property24 requirements'}))
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
   await waitFor(()=>expect(within(portal).getByRole('status').textContent).toBe('Ready to submit'))
   expect(within(portal).queryByRole('alert')).toBeNull()
 })
@@ -355,11 +375,11 @@ it('disables publishing immediately when a previously ready portal is rechecked'
   let finish
   mocks.previewP24.mockResolvedValueOnce({report:{preview:{canSubmit:true,dataBlockers:[],technicalBlockers:[]}}}).mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
   renderMedia(mediaListing())
-  const portal=await screen.findByRole('region',{name:'Property24 requirements'})
-  fireEvent.click(within(portal).getByRole('button',{name:'Check Property24 requirements'}))
+  const { portal, dialog } = await openPortalRequirements()
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
   await waitFor(()=>expect(within(portal).getByRole('status').textContent).toBe('Ready to submit'))
   expect(screen.getAllByRole('button',{name:'Publish',hidden:true})[0].disabled).toBe(false)
-  fireEvent.click(within(portal).getByRole('button',{name:'Check Property24 requirements'}))
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
   expect(screen.getAllByRole('button',{name:'Publish',hidden:true})[0].disabled).toBe(true)
   await act(async()=>finish({report:{preview:{canSubmit:false,dataBlockers:['missing_description']}}}))
   expect(within(portal).getByRole('status').textContent).toBe('Needs attention')
@@ -367,10 +387,10 @@ it('disables publishing immediately when a previously ready portal is rechecked'
 it('keeps an expiry-save error separate from portal checks and makes View channels read-only', async () => {
   mocks.channels.mockResolvedValue({errors:{},activity:[]})
   renderMedia(mediaListing())
-  await screen.findByRole('region',{name:'Property24 requirements'})
+  await screen.findByRole('heading',{name:'Listing Channels'})
   fireEvent.click(screen.getByRole('button',{name:'Save expiry'}))
   await screen.findByText('Choose a Property24 expiry date before saving.')
-  expect(within(screen.getByRole('region',{name:'Property24 requirements'})).getByRole('status').textContent).toBe('Not checked')
+  expect(screen.queryByRole('region',{name:'Property24 requirements'})).toBeNull()
   fireEvent.click(screen.getByRole('button',{name:'View channels'}))
   expect(mocks.previewP24).not.toHaveBeenCalled();expect(mocks.previewPP).not.toHaveBeenCalled()
 })
@@ -382,15 +402,15 @@ it('discards a previous organisation response after switching workspaces', async
   const tree = <MemoryRouter initialEntries={['/agent/rentals/listings/listing-1/marketing']}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>
   const view = render(tree)
   await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(1))
-  const next = { ...mediaListing(), organisationId: 'org-2', title: 'Current organisation rental' }
+  const next = { ...mediaListing(), organisationId: 'org-2', title: 'Current organisation rental', addressLine1: '14 Current Road' }
   mocks.load.mockResolvedValue(next)
   mocks.scope = { ...mocks.scope, organisationId: 'org-2' }
   mocks.workspace = { currentWorkspace: { id: 'org-2' } }
   view.rerender(<MemoryRouter initialEntries={['/agent/rentals/listings/listing-1/marketing']}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
-  await screen.findByRole('heading', { name: 'Current organisation rental', level: 1 })
-  await act(async () => finishOld({ ...mediaListing(), title: 'Previous organisation rental' }))
-  expect(screen.queryByRole('heading', { name: 'Previous organisation rental', level: 1 })).toBeNull()
-  expect(screen.getByRole('heading', { name: 'Current organisation rental', level: 1 })).toBeTruthy()
+  await screen.findByRole('heading', { name: '14 Current Road', level: 1 })
+  await act(async () => finishOld({ ...mediaListing(), title: 'Previous organisation rental', addressLine1: '16 Previous Road' }))
+  expect(screen.queryByRole('heading', { name: '16 Previous Road', level: 1 })).toBeNull()
+  expect(screen.getByRole('heading', { name: '14 Current Road', level: 1 })).toBeTruthy()
 })
 
 it('clears a loaded rental immediately when branch permissions change', async () => {
@@ -411,14 +431,14 @@ it('keeps the latest load when requests finish in reverse order in the same work
   const tree = () => <MemoryRouter initialEntries={['/agent/rentals/listings/listing-1/marketing']}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>
   const view = render(tree())
   await waitFor(() => expect(mocks.load).toHaveBeenCalledTimes(1))
-  mocks.load.mockResolvedValue({ ...mediaListing(), title: 'Latest response' })
+  mocks.load.mockResolvedValue({ ...mediaListing(), title: 'Latest response', addressLine1: '20 Latest Road' })
   mocks.scope = { ...mocks.scope }
   mocks.workspace = { refreshed: true }
   view.rerender(tree())
-  await screen.findByRole('heading', { name: 'Latest response', level: 1 })
-  await act(async () => finishOld({ ...mediaListing(), title: 'Stale response' }))
-  expect(screen.queryByRole('heading', { name: 'Stale response', level: 1 })).toBeNull()
-  expect(screen.getByRole('heading', { name: 'Latest response', level: 1 })).toBeTruthy()
+  await screen.findByRole('heading', { name: '20 Latest Road', level: 1 })
+  await act(async () => finishOld({ ...mediaListing(), title: 'Stale response', addressLine1: '22 Stale Road' }))
+  expect(screen.queryByRole('heading', { name: '22 Stale Road', level: 1 })).toBeNull()
+  expect(screen.getByRole('heading', { name: '20 Latest Road', level: 1 })).toBeTruthy()
 })
 
 it('does not apply a photo save completion to the next organisation', async () => {
@@ -429,12 +449,12 @@ it('does not apply a photo save completion to the next organisation', async () =
   await waitFor(() => expect(mocks.gallery).toHaveBeenCalledTimes(1))
   mocks.scope = { ...mocks.scope, organisationId: 'org-2' }
   mocks.workspace = { currentWorkspace: { id: 'org-2' } }
-  const next = { ...mediaListing(), organisationId: 'org-2', title: 'Next agency rental' }
+  const next = { ...mediaListing(), organisationId: 'org-2', title: 'Next agency rental', addressLine1: '24 Next Road' }
   mocks.load.mockResolvedValue(next)
   view.rerender(<MemoryRouter initialEntries={['/agent/rentals/listings/listing-1/marketing']}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
-  await screen.findByRole('heading', { name: 'Next agency rental', level: 1 })
-  await act(async () => finish({ listing: { ...mediaListing(), title: 'Previous agency save' } }))
-  expect(screen.queryByRole('heading', { name: 'Previous agency save', level: 1 })).toBeNull()
+  await screen.findByRole('heading', { name: '24 Next Road', level: 1 })
+  await act(async () => finish({ listing: { ...mediaListing(), title: 'Previous agency save', addressLine1: '26 Previous Saved Road' } }))
+  expect(screen.queryByRole('heading', { name: '26 Previous Saved Road', level: 1 })).toBeNull()
   expect(screen.queryByText('Photo removed from the rental listing.')).toBeNull()
   expect(screen.getAllByRole('button', { name: /^Remove photo/ })).toHaveLength(2)
 })
@@ -446,8 +466,8 @@ it('offers reconciliation without a lost reference and keeps publish and status 
  await screen.findByText('Outcome unconfirmed')
  const publish=screen.getAllByRole('button',{name:'Publish',hidden:true})[0]
  expect(publish.disabled).toBe(true)
- fireEvent.click(screen.getAllByRole('button',{name:'Manage portal settings',hidden:true})[0])
- const dialog=await screen.findByRole('dialog',{name:'Manage Property24'})
+ fireEvent.click(screen.getAllByRole('button',{name:'Manage listing',hidden:true})[0])
+ const dialog=await screen.findByRole('dialog',{name:'Manage Property24 listing'})
  expect(within(dialog).getByRole('button',{name:'Send status change'}).disabled).toBe(true)
  fireEvent.click(within(dialog).getByRole('button',{name:'Reconcile previous request'}))
  await waitFor(()=>expect(mocks.reconcile).toHaveBeenCalledWith('listing-1','property24'))
@@ -464,12 +484,17 @@ it('offers reconciliation without a lost reference and keeps publish and status 
  expect(mocks.expiry).toHaveBeenCalledWith(listing.id,{expiryDate:'2028-04-30',expectedUpdatedAt:listing.updatedAt},expect.objectContaining({organisationId:'org-1',assignedAgentId:'agent-1'}))
  })
 
- it('shows a dismissible saved-not-sent receipt after editing without claiming publication', async () => {
+ it('keeps a saved edit on the rental workspace without the redundant Listing saved card', async () => {
   const listing = mediaListing()
   mocks.load.mockResolvedValue(listing)
   mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
   render(<MemoryRouter initialEntries={[{ pathname: '/agent/rentals/listings/listing-1/marketing', state: { rentalListingChangesNotSent: true } }]}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
-  expect(await screen.findByText(/This save did not update your public adverts/)).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: /Dismiss/ }))
+  const heading = await screen.findByRole('heading', { name: '12 Example Road', level: 1 })
+  expect(within(heading.closest('header')).queryByText('Media rental')).toBeNull()
+  expect(within(heading.closest('header')).getAllByText('12 Example Road')).toHaveLength(1)
+  expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
   expect(screen.queryByText(/This save did not update your public adverts/)).toBeNull()
+  expect(mocks.publishP24).not.toHaveBeenCalled()
+  expect(screen.getByRole('tab', { name: 'Landlord' })).toBeTruthy()
+  expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy()
  })

@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import {
   ArrowLeft,
   ArrowRight,
@@ -245,6 +246,7 @@ function FieldIcon({ icon: Icon }) {
 }
 
 function TextInput({ label, required = false, icon, prefix = '', compact = false, className = '', ...props }) {
+  if (/property address/i.test(label)) return <label className={`grid gap-2 ${className}`}><FieldLabel required={required}>{label}</FieldLabel><AddressInput {...props} required={required} /></label>
   const hasAdornment = Boolean(icon || prefix)
   return (
     <label className={`grid ${compact ? 'gap-1.5' : 'gap-2'} ${className}`}>
@@ -1388,7 +1390,7 @@ export default function PublicAgencyIntakePage() {
                       </IntakeSection>
 
                       <IntakeSection title="Property details">
-                        <TextInput icon={MapPin} label="Property address" value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} maxLength={1000} placeholder="Address or complex name" />
+                        <TextInput icon={MapPin} label="Property address" value={form.propertyAddress} onChange={(event) => updateForm('propertyAddress', event.target.value)} onAddressSelect={address => { if (address) updateForm('suburb', address.suburb || address.city || '') }} maxLength={1000} placeholder="Address or complex name" />
                         <div className="grid gap-4 sm:grid-cols-2">
                           <TextInput icon={MapPin} label="Suburb" value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} maxLength={160} placeholder="Suburb" />
                           <SelectInput icon={Home} label="Property type" value={form.sellerPropertyType} onChange={(event) => updateForm('sellerPropertyType', event.target.value)}>

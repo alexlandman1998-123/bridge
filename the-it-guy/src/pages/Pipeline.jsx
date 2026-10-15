@@ -1,3 +1,4 @@
+import AddressInput from '../components/location/AddressInput'
 import { ExternalLink, Funnel, KanbanSquare, Mail, MessageCircle, Plus, Table2, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -1397,7 +1398,7 @@ function LegacyPipeline() {
             </label>
             <label className="grid gap-2 xl:col-span-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property Address</span>
-              <Field value={sellerForm.propertyAddress} onChange={(event) => updateSellerForm('propertyAddress', event.target.value)} />
+              <AddressInput value={sellerForm.propertyAddress} onChange={(event) => updateSellerForm('propertyAddress', event.target.value)} />
             </label>
             <label className="grid gap-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property Type</span>

@@ -3,9 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import RentalTenantApplicationProfile from '../RentalTenantApplicationProfile'
 import { uploadRentalApplicationEvidence } from '../../../services/rentals/rentalApplicationEvidenceService.js'
-import { savePersistedRentalApplication, getRentalApplicationReview } from '../../../services/rentals/rentalApplicationRepository.js'
+import { savePersistedRentalApplication, getRentalApplicationReview, getRentalApplicationDocumentUrl } from '../../../services/rentals/rentalApplicationRepository.js'
 import { rentalApplicationFieldScenario } from '../../../../server/tests/fixtures/rentalApplicationFieldScenario.js'
-vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({ savePersistedRentalApplication: vi.fn(), getRentalApplicationReview: vi.fn().mockResolvedValue({ documents: [], version: 2, requirements: [] }) }))
+vi.mock('../../../services/rentals/rentalApplicationRepository.js', () => ({ savePersistedRentalApplication: vi.fn(), getRentalApplicationDocumentUrl: vi.fn(), getRentalApplicationReview: vi.fn().mockResolvedValue({ documents: [], version: 2, requirements: [] }) }))
 vi.mock('../../../services/rentals/rentalApplicationEvidenceService.js', () => ({ uploadRentalApplicationEvidence: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const application = { id: 'app', status: 'draft', version: 2, vacancyId: 'vacancy', data: { identity: { firstName: 'Alex', email: 'a@example.test', customKey: 'retained' }, employment: { employer: 'Acme' }, income: { monthlyIncome: '20000' }, rentalHistory: { currentAddress: 'Saved address' }, property: { title: '12 Main Road' }, extra: { retained: true } } }
@@ -109,5 +109,41 @@ it('uses the requirement generation returned after the agent saves discovery bef
   const file = new File(['proof'], 'agent.pdf', { type: 'application/pdf' })
   fireEvent.change(screen.getByLabelText('Upload Primary applicant identity'), { target: { files: [file] } })
   await screen.findByText('agent.pdf uploaded.')
-  expect(uploadRentalApplicationEvidence).toHaveBeenCalledWith(expect.objectContaining({ version: 3 }), file, expect.objectContaining({ requirementId: 'saved-identity', generation: 2 }))
+  expect(uploadRentalApplicationEvidence).toHaveBeenCalledWith(expect.objectContaining({ version: 3 }), file, expect.objectContaining({ requirementId: 'saved-identity', generation: 2 }), expect.objectContaining({ onProgress: expect.any(Function) }))
+})
+
+it('uploads an unchanged saved profile without advancing its version before a retry', async () => {
+  const requirements = [{ id: 'retry-identity', scopeKey: 'application', subjectId: 'primary', purpose: 'identity', active: true, required: true, mode: 'active', generation: 1, state: 'missing' }]
+  getRentalApplicationReview.mockResolvedValue({ version: 2, documents: [], requirements })
+  uploadRentalApplicationEvidence.mockRejectedValueOnce(new Error('Transfer interrupted'))
+  render(<RentalTenantApplicationProfile lead={lead} applications={[application]} />)
+  fireEvent.click(screen.getByRole('button', { name: /Documents & FICA/ }))
+  await waitFor(() => expect(screen.getByLabelText('Upload Primary applicant identity').disabled).toBe(false))
+  fireEvent.change(screen.getByLabelText('Upload Primary applicant identity'), { target: { files: [new File(['PDF'], 'retry.pdf', { type: 'application/pdf' })] } })
+  await screen.findByRole('button', { name: 'Retry upload' })
+  expect(savePersistedRentalApplication).not.toHaveBeenCalled()
+  expect(uploadRentalApplicationEvidence.mock.calls[0][0].version).toBe(2)
+  uploadRentalApplicationEvidence.mockResolvedValueOnce({ application: { ...application, version: 3, requirements }, document: { id: 'retry', file_name: 'retry.pdf', status: 'uploaded' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Retry upload' }))
+  await screen.findByText('retry.pdf uploaded.')
+  expect(uploadRentalApplicationEvidence.mock.calls[1][0].version).toBe(2)
+  expect(savePersistedRentalApplication).not.toHaveBeenCalled()
+})
+
+it('opens a submitted application file from the saved profile without enabling uploads', async () => {
+  const requirements = [{ id: 'open-identity', scopeKey: 'application', subjectId: 'primary', purpose: 'identity', active: true, required: true, mode: 'active', generation: 1, state: 'received', documentId: 'private-file' }]
+  const document = { id: 'private-file', document_type: 'identity', file_name: 'private.pdf', status: 'uploaded' }
+  getRentalApplicationReview.mockResolvedValue({ version: 2, documents: [document], requirements })
+  getRentalApplicationDocumentUrl.mockResolvedValue('https://private.test/scoped-file')
+  const preview = { location: {}, close: vi.fn() }, open = vi.spyOn(window, 'open').mockReturnValue(preview)
+  try {
+    render(<RentalTenantApplicationProfile lead={lead} applications={[{ ...application, status: 'submitted', data: { ...application.data, documentLinks: [{ documentId: document.id, subjectId: 'primary', purpose: 'identity', requirementId: requirements[0].id, generation: 1 }] } }]} />)
+    fireEvent.click(screen.getByRole('button', { name: /Documents & FICA/ }))
+    const button = await screen.findByRole('button', { name: 'Open private.pdf' })
+    expect(button.disabled).toBe(false)
+    expect(screen.queryByLabelText('Upload Primary applicant identity')).toBeNull()
+    fireEvent.click(button)
+    await waitFor(() => expect(preview.location.href).toBe('https://private.test/scoped-file'))
+    expect(getRentalApplicationDocumentUrl).toHaveBeenCalledWith('app', document.id)
+  } finally { open.mockRestore() }
 })

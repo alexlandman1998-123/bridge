@@ -40,8 +40,8 @@ function normaliseConsents(values = {}) {
 }
 
 function sourceMetadata(lead = {}) {
-  const raw = object(lead.rawEnquiryPayload || lead.raw_enquiry_payload || lead.raw || lead.metadata || lead)
-  return object(raw.rentalCrm || raw.rental_crm || raw)
+  const raw = [lead.rawEnquiryPayload, lead.raw_enquiry_payload, lead.raw, lead.metadata].map(object).find(value => Object.keys(value).length) || object(lead)
+  return { ...raw, ...object(raw.rentalCrm || raw.rental_crm) }
 }
 
 /**
@@ -64,8 +64,12 @@ export function createRentalCrmLeadMetadata({
   legacy = {},
 } = {}) {
   if (!text(organisationId)) throw new Error('Organisation is required for a rental CRM lead.')
+  const legacyFields = { ...object(legacy) }
+  delete legacyFields.rentalCrm
+  delete legacyFields.rental_crm
 
   return {
+    ...legacyFields,
     version: RENTAL_CRM_LEAD_MODEL_VERSION,
     arch9RentalLead: true,
     classification: 'rental',
@@ -82,7 +86,6 @@ export function createRentalCrmLeadMetadata({
     consents: normaliseConsents(consents),
     qualification: object(qualification),
     ingestion: object(ingestion),
-    ...object(legacy),
   }
 }
 
@@ -91,8 +94,8 @@ export function getRentalCrmLeadMetadata(lead = {}) {
   const relationshipSource = object(raw.relationships || raw.relationship_refs || raw)
   const consentSource = object(raw.consents || raw.consent)
   const metadata = createRentalCrmLeadMetadata({
-    leadId: raw.leadId || raw.lead_id || lead.leadId || lead.lead_id,
-    organisationId: raw.organisationId || raw.organisation_id || lead.organisationId || lead.organisation_id || 'legacy-unscoped',
+    leadId: lead.leadId || lead.lead_id || raw.leadId || raw.lead_id,
+    organisationId: lead.organisationId || lead.organisation_id || raw.organisationId || raw.organisation_id || 'legacy-unscoped',
     role: raw.role || raw.rentalRole || raw.rental_role || lead.rentalLeadRole || lead.rental_lead_role,
     stage: raw.stage || raw.rentalStage || raw.rental_stage || lead.rentalStage || lead.rental_stage || lead.stage,
     source: raw.source || raw.leadSource || lead.leadSource || lead.lead_source,
@@ -108,20 +111,28 @@ export function getRentalCrmLeadMetadata(lead = {}) {
 
   return {
     ...metadata,
+    relationships: normaliseRelationships({
+      ...relationshipSource,
+      listingId: relationshipSource.listingId || relationshipSource.listing_id || lead.listingId || lead.listing_id || lead.enquiredListingId || lead.enquired_listing_id,
+    }),
     isLegacyUnscoped: metadata.organisationId === 'legacy-unscoped',
   }
 }
 
 export function isRentalCrmLead(lead = {}) {
-  const raw = sourceMetadata(lead)
-  return raw.arch9RentalLead === true
-    || text(raw.classification).toLowerCase() === 'rental'
-    || text(raw.leadType || raw.lead_type).toLowerCase() === 'rental'
+  const sources = [lead, lead.rawEnquiryPayload, lead.raw_enquiry_payload, lead.raw, lead.metadata].map(object)
+  return sources.flatMap(raw => [raw, object(raw.rentalCrm), object(raw.rental_crm)]).some((entry) =>
+    text(entry.arch9RentalLead).toLowerCase() === 'true'
+    || text(entry.classification).toLowerCase() === 'rental'
+    || text(entry.leadType || entry.lead_type).toLowerCase() === 'rental')
 }
 
 export function patchRentalCrmLeadMetadata(lead = {}, patch = {}) {
   const current = getRentalCrmLeadMetadata(lead)
   const update = object(patch)
+  if (update.role && normaliseRole(update.role) !== current.role) {
+    throw new Error('A rental lead cannot switch between tenant and landlord journeys. Create the separate lead for that role.')
+  }
   return createRentalCrmLeadMetadata({
     ...current,
     ...update,

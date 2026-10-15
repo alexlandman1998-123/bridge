@@ -12,7 +12,14 @@ import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
 const text = (value) => String(value ?? '').trim()
 const hash = (value) => createHash('sha256').update(text(value)).digest('hex')
 const safeData = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-const publicApplication = (row = {}, requirements = null) => ({ id: text(row.id), status: text(row.status), version: Number(row.version || 1), data: publicRentalApplicationData(safeData(row.application_data)), updatedAt: row.updated_at || null, submittedAt: row.submitted_at || null, requirements, costs: row.cost_snapshot_json || {}, confirmation: row.confirmation_json || {}, feeDueAt: row.application_fee_due_at || null })
+// The applicant compares the visible property with this confirmation. Preserve
+// the complete server snapshot in the database, but project both public views
+// through the same field contract so bookkeeping fields cannot block intake.
+const publicConfirmation = (value = {}) => {
+  const saved = safeData(value)
+  return { ...saved, ...(saved.property ? { property: publicRentalApplicationData({ property: safeData(saved.property) }).property || {} } : {}) }
+}
+const publicApplication = (row = {}, requirements = null) => ({ id: text(row.id), status: text(row.status), version: Number(row.version || 1), data: publicRentalApplicationData(safeData(row.application_data)), updatedAt: row.updated_at || null, submittedAt: row.submitted_at || null, requirements, costs: row.cost_snapshot_json || {}, confirmation: publicConfirmation(row.confirmation_json), feeDueAt: row.application_fee_due_at || null })
 function admin(env = process.env, clientFactory = createClient) { const url = text(env.SUPABASE_URL || env.VITE_SUPABASE_URL); const key = text(env.SUPABASE_SERVICE_ROLE_KEY); if (!url || !key) throw new Error('Rental applicant access is not configured.'); return clientFactory(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) }
 function tokenFrom(input = {}) { const header = text(input.headers?.authorization || input.headers?.Authorization); return header.startsWith('Bearer ') ? header.slice(7).trim() : text(input.token) }
 
@@ -74,16 +81,18 @@ export async function handlePublicRentalApplication({ method = 'GET', headers = 
         if (result.error) throw result.error
         return { status: 200, body: { application: { ...own, requirements: (await readRentalSavedChecklist(db, application.data)).filter((item) => item.subjectId === subjectId) } } }
       }
-      if (body.subjectId !== subjectId && body.action !== 'complete_upload') return { status: 403, body: { error: 'Upload only your own documents.' } }
+      if (body.subjectId !== subjectId && !['complete_upload', 'recover_upload'].includes(body.action)) return { status: 403, body: { error: 'Upload only your own documents.' } }
       const uploaded = await uploadRentalApplicationDocument(db, application.data, body, { source: `person:${subjectId}`, signingSecret: env.SUPABASE_SERVICE_ROLE_KEY })
-      if (uploaded.uploadUrl) return { status: 201, body: uploaded }
+      if (uploaded.uploadUrl || typeof uploaded.uploaded === 'boolean') return { status: 201, body: uploaded }
       return { status: 201, body: { document: uploaded.document, application: { ...personRentalApplication(uploaded.application, subjectId, requirements), requirements: (await readRentalSavedChecklist(db, application.data)).filter((item) => item.subjectId === subjectId) } } }
     }
+    // A lost submission response can be retried without changing the signed answers.
+    const submittedRetry = method === 'PUT' && body?.action === 'submit' && application.data.submitted_at && ['submitted', 'under_review', 'approved', 'declined'].includes(application.data.status) && Number.isInteger(Number(body.version)) && Number(body.version) > 0 && Number(body.version) < Number(application.data.version)
     if (!['draft', 'submitted', 'under_review'].includes(application.data.status)) {
-      if (method !== 'GET') return { status: 409, body: { error: 'This application can no longer be edited.' } }
-      return { status: 200, body: { application: { id: text(application.data.id), status: text(application.data.status), updatedAt: application.data.updated_at || null, costs: application.data.cost_snapshot_json || {}, feeDueAt: application.data.application_fee_due_at || null }, outcomeVisible: ['approved', 'declined', 'withdrawn'].includes(application.data.status) } }
+      if (method !== 'GET' && !submittedRetry) return { status: 409, body: { error: 'This application can no longer be edited.' } }
+      return { status: 200, body: { application: { id: text(application.data.id), status: text(application.data.status), updatedAt: application.data.updated_at || null, costs: application.data.cost_snapshot_json || {}, feeDueAt: application.data.application_fee_due_at || null }, outcomeVisible: ['approved', 'declined', 'withdrawn'].includes(application.data.status), ...(submittedRetry ? { submitted: true } : {}) } }
     }
-    if (application.data.status !== 'draft' && !['GET', 'POST'].includes(method)) return { status: 409, body: { error: 'Submitted answers are locked. You can still upload outstanding documents.' } }
+    if (application.data.status !== 'draft' && !['GET', 'POST'].includes(method) && !submittedRetry) return { status: 409, body: { error: 'Submitted answers are locked. You can still upload outstanding documents.' } }
     const documents = await db.from('rental_application_documents').select('id, document_type, status, file_name, uploaded_at, created_at, intake_bundle_id').eq('application_id', application.data.id).order('created_at', { ascending: false })
     if (documents.error) throw documents.error
     const requirements = await readRentalSavedChecklist(db, application.data)
@@ -100,11 +109,22 @@ export async function handlePublicRentalApplication({ method = 'GET', headers = 
     }
     if (method === 'POST' && body.action === 'open_document') return { status: 200, body: await rentalApplicantDocumentUrl(db, application.data, text(body.documentId)) }
     if (application.data.status === 'draft' && ['PATCH', 'POST', 'PUT'].includes(method) && Object.keys(safeData(application.data.cost_snapshot_json)).length && !isRentalContextConfirmed(application.data)) return { status: 400, body: { error: 'Confirm the property, costs and privacy notice before continuing.' } }
-    if (method === 'PUT' && body?.action === 'submit') { const data = safeData(application.data.application_data); if (Number(body.version) !== Number(application.data.version)) return { status: 409, body: { error: 'This application changed. Refresh and try again.' } }; if (data.schemaVersion === RENTAL_APPLICATION_SCHEMA_VERSION && body.declarationAccepted !== true) return { status: 400, body: { error: 'Confirm your declaration and authority to submit.' } }; const consentTypes = Array.isArray(body?.consents) ? body.consents.map(text) : []; if (!isRentalApplicantPortalReadyToSubmit({ data, documents: documents.data || [], requirements, consents: Object.fromEntries(consentTypes.map((type) => [type, true])) })) return { status: 400, body: { error: 'Complete the required application fields and accept every consent. You can upload outstanding documents after submission.' } }; const wordingVersion = `rental-application-consent-v1:submission-${application.data.version}:${now}`; const consentRows = ['privacy','credit_check','identity_verification'].map((consent_type) => ({ application_id: application.data.id, organisation_id: application.data.organisation_id, consent_type, wording_version: wordingVersion, accepted_at: now, source: 'applicant', evidence_json: { accepted: true, submitted_at: now, subject: 'primary', source: 'applicant', entityType: data.entity?.type || 'individual', primaryContactRole: data.entity?.primaryContactRole || 'applicant', declarationAccepted: body.declarationAccepted === true } })); const consent = await db.from('rental_application_consents').upsert(consentRows, { onConflict: 'application_id,consent_type,wording_version' }); if (consent.error) throw consent.error; const update = await db.from('rental_applications').update({ status: 'submitted', submitted_at: now, submitted_snapshot_json: data, version: Number(application.data.version) + 1 }).eq('id', application.data.id).eq('version', application.data.version).eq('status', 'draft').select('id, status, version, application_data, updated_at, submitted_at, cost_snapshot_json, confirmation_json, application_fee_due_at').maybeSingle(); if (update.error || !update.data) return { status: 409, body: { error: 'This application changed. Refresh and try again.' } }; return { status: 200, body: { application: publicApplication(update.data, await readAfterSave(update.data)), submitted: true } } }
+    if (method === 'PUT' && body?.action === 'submit') {
+      if (submittedRetry) return { status: 200, body: { application: publicApplication(application.data, requirements), submitted: true } }
+      const data = safeData(application.data.application_data)
+      if (!Number.isInteger(Number(body.version)) || Number(body.version) !== Number(application.data.version)) return { status: 409, body: { error: 'This application changed. Refresh and try again.' } }
+      if (data.schemaVersion === RENTAL_APPLICATION_SCHEMA_VERSION && body.declarationAccepted !== true) return { status: 400, body: { error: 'Confirm your declaration and authority to submit.' } }
+      const consentTypes = Array.isArray(body?.consents) ? body.consents.map(text) : []
+      if (!isRentalApplicantPortalReadyToSubmit({ data, documents: documents.data || [], requirements, consents: Object.fromEntries(consentTypes.map(type => [type, true])) })) return { status: 400, body: { error: 'Complete the required application fields and accept every consent. You can upload outstanding documents after submission.' } }
+      const update = await db.rpc('rental_submit_tenant_application', { p_application_id: application.data.id, p_expected_version: Number(body.version), p_declaration_accepted: body.declarationAccepted === true, p_consents: consentTypes })
+      if (update.error) return { status: update.error.code === '40001' ? 409 : 400, body: { error: update.error.message || 'Unable to submit this application.' } }
+      if (!update.data?.id) return { status: 409, body: { error: 'This application changed. Refresh and try again.' } }
+      return { status: 200, body: { application: publicApplication(update.data, await readAfterSave(update.data)), submitted: true } }
+    }
     if (method === 'POST') {
       try {
         const uploaded = await uploadRentalApplicationDocument(db, application.data, body, { signingSecret: env.SUPABASE_SERVICE_ROLE_KEY })
-        return { status: 201, body: uploaded.uploadUrl ? uploaded : { document: uploaded.document, application: publicApplication(uploaded.application, await readAfterSave(uploaded.application)) } }
+        return { status: 201, body: uploaded.uploadUrl || typeof uploaded.uploaded === 'boolean' ? uploaded : { document: uploaded.document, application: publicApplication(uploaded.application, await readAfterSave(uploaded.application)) } }
       } catch (cause) { return { status: /changed/.test(cause.message) ? 409 : 400, body: { error: cause.message || 'Unable to upload document.' } } }
     }
     if (method !== 'PATCH') return { status: 405, body: { error: 'Method not allowed.' } }

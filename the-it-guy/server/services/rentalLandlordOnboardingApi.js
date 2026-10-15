@@ -1,3 +1,4 @@
+import { landlordProfileErrors } from '../../src/services/rentals/rentalLandlordProfileRules.js'
 import {
   createHash,
   createHmac,
@@ -6,7 +7,8 @@ import {
   timingSafeEqual,
 } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
-import { validateRentalDocumentUpload } from './rentalApplicationDocumentUpload.js'
+import { validateRentalDocumentUpload, rentalStorageObjectMissing } from './rentalApplicationDocumentUpload.js'
+import { isDefiniteUploadSaveRejection } from '../../src/lib/documentUploadRecovery.js'
 import { mapRentalRequirement } from '../../src/services/rentals/rentalSavedRequirementModel.js'
 import {
   rentalLandlordDiscovery,
@@ -23,8 +25,8 @@ const signature = (payload, secret) =>
   createHmac('sha256', secret).update(payload).digest('base64url')
 const hash = (value) => createHash('sha256').update(value).digest('hex')
 const fail = (error) => ({
-  status: /changed|locked/.test(error.message) ? 409 : 400,
-  body: { error: error.message || 'Unable to complete landlord onboarding.' },
+  status: error.status || (/changed|locked/.test(error.message) ? 409 : 400),
+  body: { error: error.message || 'Unable to complete landlord onboarding.', ...(error.code ? {code:error.code} : {}) },
 })
 async function snapshot(db, lead, source) {
   const result = await db.rpc('rental_landlord_onboarding_snapshot', {
@@ -40,10 +42,14 @@ async function snapshot(db, lead, source) {
   const data = rentalLandlordDiscovery(saved.payload)
   const m =
     saved.payload?.rentalCrm || saved.payload?.rental_crm || saved.payload || {}
+  const core = Object.fromEntries(['name','email','phone','type'].map(key=>[key,String(data.profile?.[key] ?? (key === 'type' ? 'individual' : '')).trim()]))
+  const consistent = m.landlordProfileConsistency?.version === 1 && ['name','email','phone','type'].every(key=>m.landlordProfileConsistency.capturedCore?.[key] === core[key])
   const response = {
     id: lead.lead_id,
     version: saved.version,
     status: saved.status,
+    consistency: { synced: consistent },
+    capabilities: { profileConsistency: saved.capabilities?.profileConsistency === true },
     data: source === 'landlord' ? publicRentalLandlordDiscovery(data) : data,
     requirements: (saved.requirements || []).map(mapRentalRequirement),
     documents: saved.documents || [],
@@ -76,7 +82,7 @@ async function command(
     p_source: source,
     p_actor: actor || null,
   })
-  if (result.error) throw new Error(result.error.message)
+  if (result.error) throw result.error
   return result.data
 }
 async function operate(db, lead, input, source, actor, secret) {
@@ -125,7 +131,7 @@ async function operate(db, lead, input, source, actor, secret) {
   if (!Number.isInteger(body.version))
     throw new Error('The saved onboarding version is required.')
   // The locked handoff command recognises committed retries before checking version.
-  if (!['complete_upload', 'link_property'].includes(action) && body.version !== current.version)
+  if (!['complete_upload', 'recover_upload', 'link_property'].includes(action) && body.version !== current.version)
     throw new Error('Landlord onboarding changed; reopen before saving.')
   if (
     current.status !== 'draft' &&
@@ -180,7 +186,7 @@ async function operate(db, lead, input, source, actor, secret) {
       },
     }
   }
-  if (action === 'complete_upload') {
+  if (['complete_upload', 'recover_upload'].includes(action)) {
     const [payload = '', digest = ''] = String(body.ticket || '').split('.')
     const expected = signature(payload, secret)
     if (
@@ -200,6 +206,17 @@ async function operate(db, lead, input, source, actor, secret) {
     )
       throw new Error('Upload receipt is unavailable or expired.')
     const info = await db.storage.from(bucket).info(ticket.storagePath)
+    if (action === 'recover_upload') {
+      if (!info.error && info.data) {
+        if (Number(info.data.size) !== ticket.fileSize || info.data.contentType !== ticket.mimeType) throw new Error('The uploaded file differs from the selected document.')
+        return { status: 200, body: { uploaded: true } }
+      }
+      if (!rentalStorageObjectMissing(info.error)) throw new Error('The original file transfer could not be checked. Please retry.')
+      if (current.status !== 'draft' || current.version !== ticket.version || !current.requirements.some(row => row.active && row.id === ticket.requirementId && row.generation === ticket.generation)) throw new Error('Landlord onboarding changed; reopen before uploading.')
+      const signed = await db.storage.from(bucket).createSignedUploadUrl(ticket.storagePath, { upsert: false })
+      if (signed.error) throw signed.error
+      return { status: 200, body: { uploaded: false, uploadUrl: signed.data.signedUrl } }
+    }
     if (info.error || !info.data)
       throw new Error('File upload is incomplete; retry it.')
     if (
@@ -226,7 +243,7 @@ async function operate(db, lead, input, source, actor, secret) {
         .eq('lead_id', lead.lead_id)
         .maybeSingle()
         .catch(() => ({ error: true }))
-      if (!stored.error && !stored.data)
+      if (isDefiniteUploadSaveRejection(cause) && !stored.error && !stored.data)
         await db.storage
           .from(bucket)
           .remove([ticket.storagePath])
@@ -234,11 +251,21 @@ async function operate(db, lead, input, source, actor, secret) {
       throw cause
     }
   } else if (action === 'save') {
+    if (!current.capabilities.profileConsistency) {
+      const cause = new Error('Profile saving is temporarily unavailable. Your draft is retained; please retry later.')
+      cause.status = 503
+      cause.code = 'LANDLORD_PROFILE_CONSISTENCY_UNAVAILABLE'
+      throw cause
+    }
     const merged = mergeRentalLandlordDiscovery(
       current.savedDiscovery,
       body.patch,
       { publicSource: source === 'landlord' },
     )
+    if (body.patch?.profile !== undefined) {
+      const errors = landlordProfileErrors(merged.profile)
+      if (errors.length) throw new Error(errors[0])
+    }
     // A managed property must remain within the lead's organisation/branch.
     for (const property of merged.portfolio)
       if (property.canonicalPropertyId) {
@@ -257,6 +284,18 @@ async function operate(db, lead, input, source, actor, secret) {
             'Choose a managed property in this landlord workspace.',
           )
       }
+    for (const property of merged.portfolio) {
+      const previous = current.savedDiscovery.portfolio.find(item => item.id === property.id)
+      if (source === 'agent' && ['mandateId', 'listingId', 'vacancyId'].some(key => (property[key] || '') !== (previous?.[key] || '')))
+        throw new Error('Use the rental handoff to link a mandate, listing or vacancy.')
+      if ((previous?.mandateId || previous?.listingId) && ((property.canonicalPropertyId || '') !== (previous.canonicalPropertyId || '') || (property.canonicalUnitId || '') !== (previous.canonicalUnitId || '')))
+        throw new Error('The managed property and unit cannot change after a mandate or listing is linked.')
+      if (property.canonicalUnitId) {
+        const unit = await db.from('rental_units').select('organisation_id,property_id,branch_id').eq('id', property.canonicalUnitId).maybeSingle()
+        if (unit.error || !unit.data || unit.data.property_id !== property.canonicalPropertyId || unit.data.organisation_id !== lead.organisation_id || (lead.branch_id && unit.data.branch_id !== lead.branch_id))
+          throw new Error('Choose a unit in this landlord property and branch.')
+      }
+    }
     result = await command(db, lead, { ...body, action }, source, actor, {
       ...merged,
       ...(body.expectedDiscovery
@@ -336,6 +375,7 @@ async function operate(db, lead, input, source, actor, secret) {
       status: 200,
       body: {
         onboarding: await snapshot(db, fresh.data, source),
+        consistency: result.consistency,
         documentId: completedId,
       },
     }
@@ -346,6 +386,7 @@ async function operate(db, lead, input, source, actor, secret) {
         saved: true,
         version: result.version,
         status: result.status,
+        consistency: result.consistency,
         documentId: completedId,
         checklistUnavailable: true,
       },

@@ -67,7 +67,7 @@ export default function RentalListingDocumentsPanel({ snapshot, onRefresh }) {
   }
   const runMutation = (action, message) => run(action, { mutation: true, message })
   const runRead = (action) => run(action)
-  const upload = (kind, section, row, files) => runMutation(() => uploadRentalListingRequirement(kind, section, row, files), `${files.length} file${files.length === 1 ? '' : 's'} uploaded. Current evidence refreshed.`)
+  const upload = (kind, section, row, files, onProgress) => runMutation(() => uploadRentalListingRequirement(kind, section, row, files, { onProgress }), `${files.length} file${files.length === 1 ? '' : 's'} uploaded. Current evidence refreshed.`)
   const review = (kind, section, document, outcome) => runMutation(() => reviewRentalListingDocument(kind, section, document, outcome), 'Evidence review recorded.')
   const open = (kind, section, document) => runRead(async () => {
     const preview = window.open('about:blank', '_blank')
