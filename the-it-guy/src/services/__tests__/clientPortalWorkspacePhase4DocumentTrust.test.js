@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter, buildDocumentCenter } from '../clientPortalWorkspaceService.js'
+import { getSellerRequiredDocuments } from '../sellerDocumentRequirementsService.js'
 
 test('seller portal retains custom requirements and suppresses removed checklist defaults', () => {
   const centre = buildDocumentCenter({
@@ -159,4 +160,18 @@ test.each(['buyer', 'seller'])('canonical %s checklist keeps optional and recomm
     })
   }
   expect(centre.summary).toMatchObject({ total: 2, outstanding: 2, blocking: 2 })
+})
+
+test('seller optional uploads retain their persisted request identity after profile-derived checklist hydration', () => {
+  const saved = { id: 'saved-bank-request', requirement_key: 'seller_bank_account_confirmation',
+    requirement_name: 'Seller Bank Account Confirmation', requirement_group: 'property',
+    document_visibility: 'seller_visible', status: 'uploaded', is_required: false }
+  const document = { id: 'saved-bank-file', requirement_id: saved.id, document_type: saved.requirement_key,
+    document_name: 'diagnostic-bank.pdf', storage_path: 'synthetic/bank.pdf', status: 'uploaded', visibility: 'seller_visible' }
+  const formData = { sellerType: 'individual', sellerFirstName: 'Test', sellerSurname: 'Seller', ownershipConfirmed: true }
+  const listing = { id: 'listing', documentRequirements: [saved], documents: [document] }
+  const centre = buildDocumentCenter({ listing, formData, requirements: getSellerRequiredDocuments(listing, formData), documents: [document] }, 'selling')
+  expect(centre.items.find(row => row.sourceType === 'required_document' && row.sourceId === saved.requirement_key)).toMatchObject({
+    required: false, status: 'uploaded', linkedDocument: { id: document.id },
+  })
 })

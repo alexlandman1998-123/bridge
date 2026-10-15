@@ -127,7 +127,7 @@ import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJo
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile'
 import { isBondStatementHandoff } from '../modules/bond/application/documents/bondDocumentWorkspacePresentation.js'
-import { BUYER_DOCUMENT_CATEGORIES, buildBuyerDocumentPresentationModel, resolveBuyerDocumentCategory } from '../core/clientPortal/buyerDocumentPresentationModel'
+import { BUYER_DOCUMENT_CATEGORIES, buildBuyerDocumentPresentationModel, resolveBuyerDocumentCategory, resolveBuyerDocumentStatus } from '../core/clientPortal/buyerDocumentPresentationModel'
 import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
@@ -3424,12 +3424,8 @@ function getBuyerMobileDocumentCategory(item = {}) {
 }
 
 function getBuyerMobileDocumentBucket(document = {}) {
-  const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
-  if (document?.actionRequired || ['required', 'requested', 'rejected', 'missing', 'outstanding'].includes(status)) return 'action'
-  if (document?.reviewRequired || ['uploaded', 'under_review', 'received', 'reviewed', 'pending_review'].includes(status)) return 'review'
-  if (document?.satisfied || ['approved', 'completed', 'verified', 'signed'].includes(status)) return 'approved'
-  if (document?.linkedDocument || document?.hasUploadedDocument || document?.uploaded) return 'review'
-  return document?.uploadSpec ? 'action' : 'review'
+  const status = resolveBuyerDocumentStatus(document)
+  return status === 'upcoming' ? 'review' : status
 }
 
 function resolveBuyerMobileDocumentUploadTarget(document = {}) {
@@ -3814,14 +3810,16 @@ function BuyerMobilePortal({
     counts.all += 1
     counts[bucket] += 1
     return counts
-  }, { action: 0, review: 0, approved: 0, all: 0 })
+  }, { action: 0, review: 0, approved: 0, optional: 0, all: 0 })
   const buyerDocumentFilters = [
     { key: 'action', label: 'Pending', count: buyerDocumentCounts.action },
     { key: 'review', label: 'Review', count: buyerDocumentCounts.review },
     { key: 'approved', label: 'Approved', count: buyerDocumentCounts.approved },
     { key: 'all', label: 'All', count: buyerDocumentCounts.all },
   ]
-  const activeBuyerDocumentFilter = buyerDocumentFilters.some((filter) => filter.key === buyerDocumentFilter)
+  const activeBuyerDocumentFilter = buyerDocumentFilter === 'action' && !buyerDocumentCounts.action && buyerDocumentCounts.optional
+    ? 'all'
+    : buyerDocumentFilters.some((filter) => filter.key === buyerDocumentFilter)
     ? buyerDocumentFilter
     : 'action'
   const visibleBuyerDocuments = buyerDocumentItems
@@ -4414,7 +4412,7 @@ function BuyerMobilePortal({
               description={buyerDocumentLoadError
                 ? 'Your secure document room could not be loaded.'
                 : buyerDocumentCounts.action
-                ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
+                ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? ' needs' : 's need'} action.`
                 : 'Review uploaded and approved purchase documents from your team.'}
             />
             {buyerDocumentLoadError ? (
@@ -4453,16 +4451,20 @@ function BuyerMobilePortal({
                     uploadingDocumentKey &&
                     (uploadingDocumentKey === target.uploadingKey || uploadingDocumentKey === target.requirementKey),
                 )
-                const Icon = bucket === 'approved' ? CheckCircle2 : bucket === 'review' ? Clock3 : UploadCloud
+                const Icon = bucket === 'approved' ? CheckCircle2 : bucket === 'review' ? Clock3 : bucket === 'optional' ? FileText : UploadCloud
                 const statusClasses = bucket === 'approved'
                   ? 'bg-[#eefbf3] text-[#1f7a46]'
                   : bucket === 'review'
                     ? 'bg-[#fff7e8] text-[#a76012]'
+                    : bucket === 'optional'
+                      ? 'bg-[#f2f4f7] text-[#667085]'
                     : 'bg-[#fff1f1] text-[#b42318]'
                 const statusLabel = bucket === 'approved'
                   ? 'Approved'
                   : bucket === 'review'
                     ? 'Awaiting review'
+                    : bucket === 'optional'
+                      ? 'Optional upload'
                     : item.status === 'rejected'
                       ? 'Rejected'
                       : 'Upload required'

@@ -3283,7 +3283,20 @@ function mergeSellerPortalSharedRequirements(rows, listing = {}) {
 }
 
 export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspaceMode = 'selling') {
-  const rawRequirements = resolveSellerPortalRawRequirements(portalData)
+  const rawRequirements = [...resolveSellerPortalRawRequirements(portalData)]
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const persistedRequirements = Array.isArray(listing.documentRequirements) ? listing.documentRequirements
+    : Array.isArray(listing.document_requirements) ? listing.document_requirements : []
+  // Required-only profile builders can omit optional persisted rows. Retain
+  // those rows' IDs and saved state before deriving the visible portal pack.
+  for (const saved of workspaceMode === 'selling' ? persistedRequirements : []) {
+    if (isDocumentRequirementRequired(saved)) continue
+    const key = normalizeDocumentMatchKey(saved.key || saved.requirement_key)
+    if (!key) continue
+    const index = rawRequirements.findIndex(row => normalizeDocumentMatchKey(row.key || row.requirement_key) === key)
+    if (index < 0) rawRequirements.push(saved)
+    else if (!rawRequirements[index].id) rawRequirements[index] = { ...rawRequirements[index], ...saved }
+  }
   const retiredRequirements = filterSellerPortalRequirements(
     rawRequirements.filter(isRetiredSellerPortalRequirement),
   )
@@ -3301,7 +3314,6 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
     }
   }
 
-  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
   const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
   const formData = resolveSellerPortalFormData(portalData)
   const mandatePacket =
@@ -3444,7 +3456,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       canonical_requirement_instance_id: id,
       key: typeKey,
       title,
-      description: String(definition?.description || requirement?.description || 'Supporting document required for your transaction.').trim(),
+      description: String(definition?.description || requirement?.description || (required ? 'Supporting document required for your transaction.' : 'Supporting document for your transaction.')).trim(),
       group: packKey,
       category: packKey,
       buyerCategoryKey: categoryKey,
