@@ -9135,7 +9135,6 @@ export async function createSellerClientPortalDocumentSignedUrl({
   filePath,
   expiresInSeconds = 60,
 } = {}) {
-  const client = requireClient()
   const normalizedToken = normalizeText(token)
   const normalizedFilePath = normalizeText(filePath)
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
@@ -9144,24 +9143,18 @@ export async function createSellerClientPortalDocumentSignedUrl({
   const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
 
   const context = await getSellerOnboardingByToken(normalizedToken, {
-    includeRequirementsAndDocuments: normalizedFilePath.startsWith('document-requirements/'),
+    includeRequirementsAndDocuments: true,
     requirePortalAccess: true,
     sellerPortalAccessToken: resolvedAccessToken,
   })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
-  if (normalizedFilePath.startsWith('document-requirements/')) {
-    const linked = context.listing.documents?.some(document => document.storage_path === normalizedFilePath && document.canonical_requirement_instance_id)
-    if (!linked) throw new Error('This document is not available in this client portal.')
-    const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
-    const { data, error } = await storageClient.storage.from('documents').createSignedUrl(normalizedFilePath, expiresInSeconds)
-    if (error || !data?.signedUrl) throw error || new Error('Unable to open this document right now.')
-    return data.signedUrl
-  }
-  const downloadContext = await resolvePrivateListingDocumentDownload(client, context.listing.id, normalizedFilePath)
-  if (!downloadContext.linked) {
+  // The authenticated portal payload proves the seller's visible files. An
+  // agent-only listing lookup cannot authorize a seller's anonymous session.
+  const linkedDocument = context.listing.documents?.find(document => privateListingDocumentPathMatches(document, normalizedFilePath))
+  if (!linkedDocument || (normalizedFilePath.startsWith('document-requirements/') && !linkedDocument.canonical_requirement_instance_id)) {
     throw new Error('This document is not available in this client portal.')
   }
-  if (downloadContext.canonicalFinalArtifact) {
+  if (getPrivateListingMandateArtifactMatch(context.listing, normalizedFilePath)) {
     throw new Error('The final signed mandate must be opened through its secure completion record.')
   }
 
@@ -9171,7 +9164,7 @@ export async function createSellerClientPortalDocumentSignedUrl({
     storageClient,
     normalizedFilePath,
     expiresInSeconds,
-    downloadContext.bucket,
+    getPrivateListingDocumentStorageBucket(linkedDocument),
   )
   if (!signedUrl) throw new Error('Unable to open this document right now.')
   return signedUrl
