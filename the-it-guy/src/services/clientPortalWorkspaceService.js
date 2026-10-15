@@ -1,6 +1,7 @@
 import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
 import { documentRequirementLabel, documentRequirementTypeKey, isDocumentRequirementRequired, matchDocumentRequirementLink } from '../core/documents/documentRequirementIdentity.js'
 import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
+import { isTransientBuyerPortalReadError } from '../lib/clientPortalReadRecovery.js'
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
   fetchClientPortalOriginatorFinanceByToken,
@@ -4243,6 +4244,9 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
         canonicalDocumentProjection,
       }
     } catch (error) {
+      // A transient failure is still an incomplete buyer load. Let the page's
+      // bounded recovery retry it instead of stranding the document room.
+      if (isTransientBuyerPortalReadError(error)) throw error
       console.error('[document-trust-phase4] Buyer canonical projection unavailable; legacy document reads are fenced.', error)
       portalData = {
         ...portalData,

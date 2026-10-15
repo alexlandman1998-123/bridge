@@ -165,6 +165,7 @@ import { buildSellerPortalOffersPayload } from '../services/sellerPortalOffersSe
 import { isClientPortalDemoToken } from '../lib/onboardingDemoLinks'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import usePortalWorkspaceRefresh from '../hooks/usePortalWorkspaceRefresh'
+import { isTransientBuyerPortalReadError, recoverBuyerPortalLoad } from '../lib/clientPortalReadRecovery.js'
 import useBuyerFinanceRefresh from '../hooks/useBuyerFinanceRefresh'
 import { shouldRefreshPortalDetails } from '../core/transactions/portalRefreshPolicy'
 import { MatterConversationAccess } from '../components/transaction/MatterConversation'
@@ -7755,6 +7756,7 @@ function ClientPortal() {
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const portalLoadRequestRef = useRef(0)
+  const [buyerPortalLoadRecoveryScope, setBuyerPortalLoadRecoveryScope] = useState('')
   const [sellerOverviewStats, setSellerOverviewStats] = useState(null)
   const portalDetailsRefreshRef = useRef({ scope: null, at: 0 })
   const portalMessageRequestRef = useRef(null)
@@ -8022,8 +8024,9 @@ function ClientPortal() {
     try {
       setLoading(true)
       setError('')
+      setBuyerPortalLoadRecoveryScope('')
       setDocumentActionError('')
-      const coreData = await withClientPortalLoadTimeout(
+      const readCore = () => withClientPortalLoadTimeout(
         isDemoRoute
           ? getProspectDemoClientPortalWorkspaceData(token, portalDataWorkspace)
           : getClientPortalWorkspaceData(token, portalDataWorkspace, {
@@ -8032,6 +8035,9 @@ function ClientPortal() {
             }),
         { phase: 'core', timeoutMs: CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS },
       )
+      const coreData = await (!isDemoRoute && !isSellerPortalToken
+        ? recoverBuyerPortalLoad(readCore, { isCurrent: isCurrentLoad })
+        : readCore())
       if (!isCurrentLoad()) return
       portalContextsRef.current = {
         contexts: coreData?.portalContext?.contexts || [],
@@ -8068,7 +8074,10 @@ function ClientPortal() {
       // session; only the explicit auth-required branch above can clear it.
       if (!hasCoreData) {
         setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your portal.'))
-        if (isClientPortalLoadTimeoutError(coreError)) {
+        if (!isDemoRoute && !isSellerPortalToken && isTransientBuyerPortalReadError(coreError)) {
+          setBuyerPortalLoadRecoveryScope(loadScope)
+        }
+        if ((!isDemoRoute && !isSellerPortalToken) || isClientPortalLoadTimeoutError(coreError)) {
           setPortal(null)
           setWorkspaceData(null)
           setLoading(false)
@@ -8304,6 +8313,18 @@ function ClientPortal() {
     void loadPortal()
     return () => { portalLoadRequestRef.current += 1 }
   }, [loadPortal])
+
+  // Recover initial buyer entry on reconnect, focus, or a bounded polling
+  // interval even when no transaction snapshot has loaded yet.
+  const buyerPortalReconnecting = !isDemoRoute && !isSellerPortalToken && !portal &&
+    Boolean(buyerPortalLoadRecoveryScope && buyerPortalLoadRecoveryScope === portalLoadScopeRef.current)
+  usePortalWorkspaceRefresh({
+    enabled: buyerPortalReconnecting && !loading && !hydratingPortal,
+    onRefresh: () => loadPortal(),
+    pollingIntervalMs: 45_000,
+    refreshOnMount: false,
+    scopeKey: `${token}:${portalDataWorkspace}`,
+  })
 
   useEffect(() => {
     setGuidedBondApplicationSuppressed(false)
@@ -10055,12 +10076,12 @@ function ClientPortal() {
     return (
       <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#f1d4cf] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
-          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">We could not load your client portal</h1>
+          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">{buyerPortalReconnecting ? 'Reconnecting to your portal' : 'We could not load your client portal'}</h1>
           <p className="mt-2 text-sm leading-6 text-[#b42318]">
-            {error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
+            {buyerPortalReconnecting ? 'Your connection was interrupted. We are reconnecting automatically.' : error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
           </p>
           <p className="mt-1 text-sm leading-6 text-[#5f7288]">
-            Please retry now. If loading continues to fail, contact your property representative for help. A temporary loading failure does not mean you need a new secure link.
+            {buyerPortalReconnecting ? 'You can leave this page open. Your portal will appear when the connection returns.' : 'Please retry now. If loading continues to fail, contact your property representative for help. A temporary loading failure does not mean you need a new secure link.'}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button

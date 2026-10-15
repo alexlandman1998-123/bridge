@@ -1,6 +1,23 @@
 import { expect, test } from 'vitest'
 import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter, buildDocumentCenter } from '../clientPortalWorkspaceService.js'
 import { getSellerRequiredDocuments } from '../sellerDocumentRequirementsService.js'
+import { readFileSync } from 'node:fs'
+import { isTransientBuyerPortalReadError } from '../../lib/clientPortalReadRecovery.js'
+
+const workspaceSource = readFileSync(new URL('../clientPortalWorkspaceService.js', import.meta.url), 'utf8')
+const buyerReadStart = workspaceSource.indexOf("  if (workspaceMode === 'buying' && !isSellerOnboardingToken(token)) {", workspaceSource.indexOf('export async function getClientPortalWorkspaceData'))
+const buyerReadEnd = workspaceSource.indexOf('\n  const sellerMatterId', buyerReadStart)
+const loadBuyerProjection = Function('scope', `with(scope) { return (async () => { ${workspaceSource.slice(buyerReadStart, buyerReadEnd)}; return portalData; })() }`)
+
+test.each([
+  new TypeError('fetch failed'), Object.assign(new Error('Read timed out'), { code: 'client_portal_read_timeout' }),
+])('an interrupted canonical document read reaches automatic portal recovery: %s', async error => {
+  await expect(loadBuyerProjection({
+    workspaceMode: 'buying', token: 'synthetic-link', isSellerOnboardingToken: () => false,
+    portalData: { transaction: { id: 'test' } }, isTransientBuyerPortalReadError,
+    fetchClientPortalCanonicalDocumentProjection: async () => { throw error },
+  })).rejects.toBe(error)
+})
 
 test('seller portal retains custom requirements and suppresses removed checklist defaults', () => {
   const centre = buildDocumentCenter({
