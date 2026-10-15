@@ -37,5 +37,22 @@ bundles if necessary and use a separately reviewed forward correction.
 
 ## Release state
 
-Database push and application deployment are in progress. Final deployment IDs,
-URLs and live verification will be recorded after they are confirmed.
+The four migrations were applied to production and their history, capability
+and function permissions were verified. All 34 synthetic draft/submission cases
+matched the browser rules in read-only production queries. Security-advisor
+finding counts were unchanged; existing findings were not represented as cleared.
+
+Kingdom was promoted successfully to `dpl_By41V5CGpmN24MWtrk1DnTgeS4KX`, served
+by `arch9-websites-staging` on its existing production custom domains. The live
+valuation page returned Google suggestions for a city lookup; no lead was submitted.
+
+The first main-app deployment exceeded its 130 KiB entry budget. Release-freshness
+checks and optional join/client notices now load separately; the immediate
+bootstrap-ready signal remains synchronous with mounting. Exact production public
+configuration builds at 131,990 bytes gzip, within the unchanged 133,120-byte limit.
+Bootstrap and stale-chunk recovery checks pass. No server environment values were
+passed to public builds. Admin resolves the shared address input from its own
+React/icon/utility dependencies and passes a clean, isolated install/build.
+
+Main app, admin and Home Seekers promotion and final Git push are being completed.
+Final URLs and deployment IDs are recorded below once confirmed.

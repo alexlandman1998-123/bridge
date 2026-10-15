@@ -32,4 +32,3 @@ export default function Arch9JoinRedirect({ fallback = null }) {
     </main>
   )
 }
-
