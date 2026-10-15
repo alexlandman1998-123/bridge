@@ -126,3 +126,37 @@ test('custom buyer requirements retain a usable canonical upload key and label',
   expect(centre.requiredDocuments[0].title).toBe('SARS letter')
   expect(centre.requiredDocuments[0].uploadSpec).toMatchObject({ requirementInstanceId: 'custom-id', requirementKey: 'custom_custom-id' })
 })
+
+test('legacy checklist rejects a same-type file linked to another request and prefers its exact file', () => {
+  const requirement = { id: 'request-A', key: 'buyer_proof_of_address', label: 'Proof of address', status: 'required', expectedFromRole: 'buyer' }
+  const wrongFile = { id: 'wrong-file', requirement_id: 'request-B', requirementKey: requirement.key,
+    document_type: requirement.key, status: 'approved', visibility: 'client', file_path: 'synthetic/wrong.pdf' }
+  for (const linkedFields of [{}, { uploadedDocument: wrongFile }, { uploaded_document_id: wrongFile.id }]) {
+    const missing = buildDocumentCenter({ requiredDocuments: [{ ...requirement, ...linkedFields }], documents: [wrongFile] }, 'buying')
+    expect(missing.items.find(row => row.sourceType === 'required_document')).toMatchObject({ status: 'required', linkedDocument: null })
+  }
+
+  const unlinked = { ...wrongFile, id: 'unlinked', requirement_id: null }
+  const exact = { ...wrongFile, id: 'exact-file', requirement_id: requirement.id, status: 'uploaded' }
+  const legacy = buildDocumentCenter({ requiredDocuments: [requirement], documents: [unlinked] }, 'buying')
+  expect(legacy.items.find(row => row.sourceType === 'required_document').linkedDocument?.id).toBe('unlinked')
+  const received = buildDocumentCenter({ requiredDocuments: [requirement], documents: [unlinked, wrongFile, exact] }, 'buying')
+  expect(received.items.find(row => row.sourceType === 'required_document')).toMatchObject({ status: 'uploaded', linkedDocument: { id: 'exact-file' } })
+  const renamedFile = { ...exact, requirementKey: 'old_type', document_type: 'old_type' }
+  const renamed = buildDocumentCenter({ requiredDocuments: [requirement], documents: [renamedFile] }, 'buying')
+  expect(renamed.items.find(row => row.sourceType === 'required_document').linkedDocument?.id).toBe('exact-file')
+})
+
+test.each(['buyer', 'seller'])('canonical %s checklist keeps optional and recommended documents uploadable without required actions', role => {
+  const centre = buildCanonicalBuyerDocumentCenter({ requirements: ['optional', 'recommended', 'required', 'blocker'].map(level => ({
+    id: `${role}-${level}`, document_definition_key: `${role}_${level}`, requirement_level: level,
+    status: 'pending', uploadable_by_roles: [role], document_definitions: { display_label: `${level} document` },
+  })), documents: [] }, '', role)
+  for (const level of ['optional', 'recommended']) {
+    expect(centre.items.find(row => row.sourceId === `${role}-${level}`)).toMatchObject({
+      required: false, isCoreRequirement: false, requirementLevel: level,
+      uploadSpec: { requirementInstanceId: `${role}-${level}` },
+    })
+  }
+  expect(centre.summary).toMatchObject({ total: 2, outstanding: 2, blocking: 2 })
+})

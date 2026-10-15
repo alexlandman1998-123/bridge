@@ -32,7 +32,7 @@ test('builds one summary and category model for every buyer document surface', (
     ],
   })
 
-  assert.deepEqual(model.counts, { action: 1, review: 1, approved: 1, upcoming: 1, total: 4 })
+  assert.deepEqual(model.counts, { action: 1, review: 1, approved: 1, upcoming: 1, optional: 0, total: 4 })
   assert.equal(model.completionPercent, 25)
   assert.equal(model.collectionPercent, 50)
   assert.equal(model.firstActionItem.id, 'payslip')
@@ -66,3 +66,23 @@ test('handles empty and malformed collections safely', () => {
   assert.equal(unavailable.completionPercent, 0)
   assert.equal(unavailable.collectionPercent, 0)
 })
+
+test('optional requests stay visible and uploadable without demanding action', () => {
+  const model = buildBuyerDocumentPresentationModel({ items: [
+    { id: 'optional', title: 'Supporting letter', status: 'required', required: false, uploadSpec: { requirementInstanceId: 'optional' } },
+    { id: 'recommended', title: 'Extra evidence', status: 'requested', requirementLevel: 'recommended', uploadSpec: { requirementInstanceId: 'recommended' } },
+    { id: 'approved', title: 'Required ID', status: 'approved', required: true },
+  ] })
+  expectOptional(model.items[0])
+  expectOptional(model.items[1])
+  assert.equal(model.counts.action, 0)
+  assert.equal(model.firstActionItem, null)
+  assert.equal(model.isComplete, true)
+})
+
+function expectOptional(item) {
+  assert.equal(item.presentationStatus, 'optional')
+  assert.equal(item.presentationStatusLabel, 'Optional upload')
+  assert.equal(item.isActionRequired, false)
+  assert.ok(item.uploadSpec)
+}

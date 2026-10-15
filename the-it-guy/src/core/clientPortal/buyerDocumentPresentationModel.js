@@ -1,3 +1,5 @@
+import { isDocumentRequirementRequired } from '../documents/documentRequirementIdentity.js'
+
 const ACTION_STATUSES = new Set(['required', 'requested', 'rejected', 'missing', 'outstanding', 'action_required', 'action-required'])
 const REVIEW_STATUSES = new Set(['uploaded', 'under_review', 'under-review', 'received', 'reviewed', 'pending_review', 'pending-review'])
 const APPROVED_STATUSES = new Set(['approved', 'completed', 'complete', 'verified', 'signed', 'available'])
@@ -38,6 +40,11 @@ export function resolveBuyerDocumentCategory(item = {}) {
 
 export function resolveBuyerDocumentStatus(item = {}) {
   const rawStatus = normalizeKey(item.status || item.requiredDocumentStatus || item.required_document_status)
+  if (!isDocumentRequirementRequired(item)) {
+    if (REVIEW_STATUSES.has(rawStatus)) return 'review'
+    if (item.satisfied || APPROVED_STATUSES.has(rawStatus)) return 'approved'
+    return 'optional'
+  }
   if (item.actionRequired || ACTION_STATUSES.has(rawStatus)) return 'action'
   if (item.reviewRequired || REVIEW_STATUSES.has(rawStatus)) return 'review'
   if (item.satisfied || APPROVED_STATUSES.has(rawStatus)) return 'approved'
@@ -47,6 +54,7 @@ export function resolveBuyerDocumentStatus(item = {}) {
 }
 
 function statusLabel(status, item = {}) {
+  if (status === 'optional') return item.uploadSpec ? 'Optional upload' : 'Optional document'
   if (status === 'action') return normalizeKey(item.status) === 'rejected' ? 'Rejected' : 'Action required'
   if (status === 'review') return 'In review'
   if (status === 'approved') return 'Approved'
@@ -86,7 +94,7 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
     result[item.presentationStatus] += 1
     result.total += 1
     return result
-  }, { action: 0, review: 0, approved: 0, upcoming: 0, total: 0 })
+  }, { action: 0, review: 0, approved: 0, upcoming: 0, optional: 0, total: 0 })
   const receivedCount = counts.review + counts.approved
   const completionPercent = normalizedLoadError ? 0 : counts.total ? Math.round((counts.approved / counts.total) * 100) : 100
   const collectionPercent = normalizedLoadError ? 0 : counts.total ? Math.round((receivedCount / counts.total) * 100) : 100
@@ -99,11 +107,11 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
         result[item.presentationStatus] += 1
         result.total += 1
         return result
-      }, { action: 0, review: 0, approved: 0, upcoming: 0, total: 0 })),
+      }, { action: 0, review: 0, approved: 0, upcoming: 0, optional: 0, total: 0 })),
     })
   })
   const sortedItems = [...normalizedItems].sort((left, right) => {
-    const priority = { action: 0, review: 1, approved: 2, upcoming: 3 }
+    const priority = { action: 0, review: 1, approved: 2, optional: 3, upcoming: 4 }
     const statusDifference = priority[left.presentationStatus] - priority[right.presentationStatus]
     if (statusDifference) return statusDifference
     if (left.presentationStatus === 'action') {

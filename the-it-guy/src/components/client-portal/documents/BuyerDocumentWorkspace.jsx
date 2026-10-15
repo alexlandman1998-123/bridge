@@ -9,6 +9,7 @@ const STATUS_STYLES = {
   review: 'border-sky-200 bg-sky-50 text-sky-700',
   approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   upcoming: 'border-slate-200 bg-slate-50 text-slate-600',
+  optional: 'border-slate-200 bg-slate-50 text-slate-600',
 }
 
 function DocumentStatusIcon({ status = 'upcoming', size = 18 }) {
@@ -132,7 +133,7 @@ export default function BuyerDocumentWorkspace({
             [`${model?.counts?.approved || 0} of ${model?.counts?.total || 0}`, 'Documents approved', 'approved'],
             [model?.counts?.action || 0, 'Needs your attention', 'action'],
             [model?.counts?.review || 0, 'Being reviewed', 'review'],
-            [model?.counts?.upcoming || 0, 'Not available yet', 'upcoming'],
+            [(model?.counts?.upcoming || 0) + (model?.counts?.optional || 0), model?.counts?.optional ? 'Optional / upcoming' : 'Not available yet', 'upcoming'],
           ].map(([value, label, status]) => (
             <article key={label} className="flex items-start gap-3 rounded-[14px] border border-[#edf2f7] p-3 lg:rounded-none lg:border-0 lg:px-5 first:lg:pl-0 last:lg:pr-0">
               <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full border ${STATUS_STYLES[status]}`}><DocumentStatusIcon status={status} /></span>
@@ -173,7 +174,7 @@ export default function BuyerDocumentWorkspace({
             {selectedDocumentMeta.length || selectedDocument.rejectionReason ? <section className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4"><h3 className="text-sm font-semibold text-[#142132]">Request details</h3>{selectedDocumentMeta.length ? <p className="mt-2 text-sm leading-6 text-[#52657b]">{selectedDocumentMeta.join(' · ')}</p> : null}{selectedDocument.rejectionReason ? <p className="mt-2 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">Team feedback: {selectedDocument.rejectionReason}</p> : null}</section> : null}
             <section className="mt-5 rounded-[16px] border p-4" style={{ borderColor: buyerPortalHexToRgba(theme.primary, 0.16), backgroundColor: buyerPortalHexToRgba(theme.primary, 0.045) }}><h3 className="text-sm font-semibold text-[#142132]">Why is this needed?</h3><p className="mt-2 text-sm leading-6 text-[#52657b]">{selectedDocument.education || selectedDocument.whatIsThis || 'This document supports compliance, legal, finance, or transfer progression for your purchase.'}</p></section>
             <div className="mt-5 grid gap-3">
-              <UploadAction item={selectedDocument} uploadingDocumentKey={uploadingDocumentKey} onUpload={onUpload} label={selectedDocument.presentationStatus === 'action' ? 'Upload document' : 'Replace document'} className="min-h-11 rounded-[12px] !border-[#111827] !bg-[#111827] px-4 !text-white hover:!bg-black" />
+              <UploadAction item={selectedDocument} uploadingDocumentKey={uploadingDocumentKey} onUpload={onUpload} label={selectedDocument.hasUploadedDocument || selectedDocument.linkedDocument ? 'Replace document' : 'Upload document'} className="min-h-11 rounded-[12px] !border-[#111827] !bg-[#111827] px-4 !text-white hover:!bg-black" />
               {canOpen ? <button type="button" disabled={openingDocumentPath === openKey} onClick={() => onOpenDocument(selectedDocument.linkedDocument)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] disabled:opacity-60"><FileText size={15} />{openingDocumentPath === openKey ? 'Opening...' : 'View document'}</button> : null}
               {selectedDocument.isActionRequired && !selectedDocument.uploadSpec && !canOpen ? <p className="rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#52657b]">Your team is preparing the secure upload step for this request. It will appear here automatically.</p> : null}
             </div>

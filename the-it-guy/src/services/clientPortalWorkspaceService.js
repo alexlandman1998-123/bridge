@@ -1,5 +1,5 @@
 import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
-import { documentRequirementLabel, documentRequirementTypeKey } from '../core/documents/documentRequirementIdentity.js'
+import { documentRequirementLabel, documentRequirementTypeKey, isDocumentRequirementRequired, matchDocumentRequirementLink } from '../core/documents/documentRequirementIdentity.js'
 import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
@@ -1782,9 +1782,8 @@ function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
 }
 
 function documentMatchesRequirement(document = {}, requirement = {}) {
-  const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
-  const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
-  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+  const explicitMatch = matchDocumentRequirementLink(document, requirement)
+  if (explicitMatch !== null) return explicitMatch
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
@@ -1804,9 +1803,12 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
+  const matchingDocuments = (uploadedDocuments || []).filter(document => documentMatchesRequirement(document, requirement))
+  const exactLinkedDocument = matchingDocuments.find(document => matchDocumentRequirementLink(document, requirement) === true)
+  if (exactLinkedDocument) return exactLinkedDocument
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   if (requirementKey) {
-    const exactDocument = (uploadedDocuments || []).find((document) => {
+    const exactDocument = matchingDocuments.find((document) => {
       const directKeys = [
         document?.requirementKey,
         document?.requirement_key,
@@ -1819,7 +1821,7 @@ function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement 
     })
     if (exactDocument) return exactDocument
   }
-  return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
+  return matchingDocuments[0] || null
 }
 
 function toDisplayText(value = '', fallback = '') {
@@ -1930,13 +1932,15 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
         ? requirement.uploaded_document
         : null
   const uploadedDocumentId = toDisplayText(requirement?.uploadedDocumentId || requirement?.uploaded_document_id)
-  const linkedDocument =
+  const suppliedDocument =
     embeddedLinkedDocument ||
-    (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
+    (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : null)
+  const linkedDocument = suppliedDocument && matchDocumentRequirementLink(suppliedDocument, requirement) !== false
+    ? suppliedDocument : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
   const uploadAllowed = requirement?.canUpload !== false && !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
   const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
-  const required = requirement?.required !== false && requirement?.is_required !== false && requirement?.isRequired !== false
+  const required = isDocumentRequirementRequired(requirement)
 
   return {
     id: `required_${key}`,
@@ -3429,6 +3433,8 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     const title = documentRequirementLabel(requirement, definition)
     const typeKey = documentRequirementTypeKey(requirement)
     const categoryKey = canonicalBuyerDocumentCategory(packKey)
+    const requirementLevel = requirement?.requirement_level || definition?.default_requirement_level || 'required'
+    const required = isDocumentRequirementRequired({ ...requirement, requirement_level: requirementLevel })
     return {
       id: `canonical_requirement_${id}`,
       sourceId: id,
@@ -3444,12 +3450,14 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       buyerCategoryKey: categoryKey,
       buyerCategoryLabel: categoryKey,
       status,
+      required,
+      requirementLevel,
       requiredDocumentStatus: status,
       rejectionReason: String(requirement?.rejection_reason || '').trim(),
       linkedDocument,
       hasUploadedDocument: Boolean(linkedDocument),
       isClientVisible: true,
-      isCoreRequirement: true,
+      isCoreRequirement: required,
       uploadKey: id,
       uploadSpec: uploadable && !terminal
         ? {
@@ -3485,6 +3493,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     })
   const items = [...requiredDocuments, ...unmatchedItems]
   const summary = items.reduce((result, item) => {
+    if (item.required === false) return result
     const status = normalizeDocumentStatus(item.status)
     result.total += 1
     if (status === 'rejected') result.rejected += 1

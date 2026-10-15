@@ -15,7 +15,13 @@ npm --prefix the-it-guy run test:canonical-document-upload-path
 ```
 
 The readiness command checks the gate, evidence artifact validation, fresh-link
-signing, developer lead access and the changed download control. Its browser test
+signing, developer lead access and the changed download control. It also exercises
+the buyer and seller checklist presentation: explicit request links take priority
+over document type aliases, and optional/recommended requests remain uploadable
+without required-action warnings or required-progress counts. The portal's actual
+ordinary and final-signed open handlers are tested with synthetic tab/signing
+transports for pre-opening, blocked tabs, closed tabs, failed signing and retry.
+Its browser test
 uses the actual component and Supabase Storage SDK against local HTTP fixtures.
 It hashes three downloaded files, checks reopening and replacement, invalidates
 the original link and denies a revoked viewer. Those authorization fixtures are

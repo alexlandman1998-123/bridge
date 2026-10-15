@@ -9564,6 +9564,8 @@ function ClientPortal() {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(resolvedOpeningKey)
+      if (!targetWindow) throw new Error('Unable to open this document. Please allow a new tab or pop-ups and try again.')
+      targetWindow.opener = null
       if (isDemoMode) {
         const demoMarkup = `
           <!doctype html>
@@ -9587,11 +9589,7 @@ function ClientPortal() {
           </html>
         `
         const demoUrl = URL.createObjectURL(new Blob([demoMarkup], { type: 'text/html;charset=utf-8' }))
-        if (targetWindow) {
-          targetWindow.location.href = demoUrl
-        } else if (typeof window !== 'undefined') {
-          window.open(demoUrl, '_blank', 'noopener,noreferrer')
-        }
+        targetWindow.location.replace(demoUrl)
         window.setTimeout(() => URL.revokeObjectURL(demoUrl), 15000)
         return
       }
@@ -9615,12 +9613,9 @@ function ClientPortal() {
       if (access?.available !== true || !signedUrl) {
         throw new Error(access?.message || 'The final signed document is still being securely published.')
       }
+      if (targetWindow.closed) throw new Error('The document tab was closed. Please try opening the document again.')
+      targetWindow.location.replace(signedUrl)
       recordPortalDocumentAccess()
-      if (targetWindow) {
-        targetWindow.location.href = signedUrl
-      } else if (typeof window !== 'undefined') {
-        window.open(signedUrl, '_blank', 'noopener,noreferrer')
-      }
     } catch (openError) {
       const message = openError.message || 'Unable to open this final signed document right now.'
       if (targetWindow && !targetWindow.closed) {
@@ -9673,10 +9668,13 @@ function ClientPortal() {
       return
     }
 
+    const targetWindow = openPortalDocumentWindow('Opening document')
     try {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(String(document?.file_path || document?.url || document?.id || 'opening'))
+      if (!targetWindow) throw new Error('Unable to open this document. Please allow a new tab or pop-ups and try again.')
+      targetWindow.opener = null
       const openDirectUrl = Boolean(document?.openDirectUrl && document?.url)
       const signedUrl = openDirectUrl
         ? document.url
@@ -9698,9 +9696,13 @@ function ClientPortal() {
       if (!signedUrl) {
         throw new Error('Unable to open this document right now.')
       }
-      window.open(signedUrl, '_blank', 'noopener,noreferrer')
+      if (targetWindow.closed) throw new Error('The document tab was closed. Please try opening the document again.')
+      targetWindow.location.replace(signedUrl)
       recordPortalDocumentAccess()
     } catch (openError) {
+      if (targetWindow && !targetWindow.closed) {
+        writePortalDocumentWindowMessage(targetWindow, { title: 'Document unavailable', message: openError.message, tone: 'error' })
+      }
       setDocumentActionError(openError.message || 'Unable to open this document right now.')
     } finally {
       setOpeningDocumentPath('')
