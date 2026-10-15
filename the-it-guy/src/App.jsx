@@ -196,7 +196,7 @@ const LocalClientTransactionPreviewPage = import.meta.env.DEV
   ? lazy(() => import('./components/clients/ClientTransactionsPanel').then(module => ({ default: module.LocalClientTransactionPreviewPage })))
   : null
 // Arch9 Legal shell integration (additive, disabled by default).
-import LegalWorkspaceProvider from './modules/legal/LegalWorkspaceProvider'
+const LegalWorkspaceProvider = lazy(() => import('./modules/legal/LegalWorkspaceProvider'))
 const LegalWorkspacePage = lazy(() => import('./modules/legal/LegalWorkspacePage'))
 const AttorneyDashboardPage = lazy(() => import('./pages/AttorneyDashboardPage'))
 const AttorneyFirmPage = lazy(() => import('./pages/AttorneyFirmPage'))

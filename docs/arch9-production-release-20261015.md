@@ -54,8 +54,9 @@ Bootstrap and stale-chunk recovery checks pass. No server environment values wer
 passed to public builds. Admin resolves the shared address input from its own
 React/icon/utility dependencies and passes a clean, isolated install/build.
 
-All four application promotions completed successfully. The production custom
-domains resolve to the following Ready deployments:
+All four application promotions completed successfully. These first release
+deployments were verified Ready on their production custom domains. A later
+Git-triggered build can replace the app alias with the same feature source:
 
 | Product | Production URL | Verified deployment |
 | --- | --- | --- |
@@ -64,8 +65,8 @@ domains resolve to the following Ready deployments:
 | Kingdom public website (`arch9-websites-staging`, existing production domain) | https://kingdomrealestate.co.za | `dpl_By41V5CGpmN24MWtrk1DnTgeS4KX` |
 | Home Seekers standalone website (`home-seekers-website`) | https://homeseeker.co.za | `dpl_4fdAmWfmAcXe8Q5MFFnSCCNwBZ6X` |
 
-The final primary application source is `eaaea82416205cb0b2e4379f2c806907b00c45b1`;
-subsequent release-record changes affect documentation only. The public login
+The primary feature release source is `eaaea82416205cb0b2e4379f2c806907b00c45b1`.
+The public login
 screen rendered correctly without captured console errors. Home Seekers rendered
 its current published home, and Kingdom's valuation form returned Google address
 predictions. No public enquiry was submitted during verification.
@@ -85,7 +86,15 @@ Storage transfers and agency canary flows still require named approved canary
 records; automated local acceptance and read-only production rule checks do not
 certify those live flows. Existing security-advisor findings remain unchanged.
 
+GitHub main publication was verified at
+`c225b864a4000ff1b9f85553553f6fa82291a9dd`. Its automatic Node 22 build exceeded
+the entry budget by roughly 0.2 KiB and was not promoted; the working manual
+production deployment remained live. A subsequent packaging correction loads the
+existing legal extension provider separately, retaining its context scope,
+access controls and draft protection. Its 10 existing checks, scoped lint,
+bootstrap recovery and stale-chunk recovery pass. The existing budget is unchanged.
+
 The release source and this record are retained on the attached
-`codex/arch9-production-20261015` worktree for recovery. Git main publication is
-verified separately after the final documentation commit. The original active
+`codex/arch9-production-20261015` worktree for recovery. Later packaging and release
+receipt commits are published through a normal fast-forward push. The original active
 checkout is preserved without resetting its branch, index or unrelated files.
