@@ -1,5 +1,11 @@
 # Rental lead pilot acceptance
 
+**Production update — 15 October 2026:** The approved release applied the four
+remaining landlord migrations and promoted the primary app, admin and public
+websites. See the [verified production release record](arch9-production-release-20261015.md).
+The local-phase results below are retained as historical evidence; hosted Auth,
+private Storage and named agency canary verification remain outstanding.
+
 ## Landlord profile acceptance — 15 October 2026
 
 The latest primary-app profile implementation now has a repeatable local matrix

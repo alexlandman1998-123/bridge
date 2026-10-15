@@ -1,5 +1,11 @@
 # bridge.
 
+**Production update — 15 October 2026:** The approved all-local Arch9 release
+is live, including the four remaining landlord profile migrations. Current
+deployment details, verification and provider limitations are recorded in
+[the production release record](../docs/arch9-production-release-20261015.md).
+Earlier local-phase notes below retain their original verification boundaries.
+
 ## Seller lead capture
 
 Add Seller Lead opens with first name, surname, phone, email, property address,

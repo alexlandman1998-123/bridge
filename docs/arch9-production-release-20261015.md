@@ -22,7 +22,7 @@ independent Only Realty checkout are excluded. The active working tree remains i
 - Pre-change database function definitions/ACLs captured privately outside Git;
   previous app deployment retained: `dpl_6L7vhStac5CHwftKmxgp4D1LCYo8`.
 
-## Exact pending database scope
+## Exact applied database scope
 
 1. `20261015074830_rental_landlord_next_action_contact_step.sql`
 2. `20261015083559_rental_landlord_profile_consistent_saving.sql`
@@ -54,5 +54,38 @@ Bootstrap and stale-chunk recovery checks pass. No server environment values wer
 passed to public builds. Admin resolves the shared address input from its own
 React/icon/utility dependencies and passes a clean, isolated install/build.
 
-Main app, admin and Home Seekers promotion and final Git push are being completed.
-Final URLs and deployment IDs are recorded below once confirmed.
+All four application promotions completed successfully. The production custom
+domains resolve to the following Ready deployments:
+
+| Product | Production URL | Verified deployment |
+| --- | --- | --- |
+| Primary workspace/API (`bridge`) | https://app.arch9.co.za | `dpl_HCPcub7ey4zkyNtdPWzHcoGueE8V` |
+| Operating Console (`bridge-admin`) | https://admin.arch9.co.za | `dpl_F5U3WWy5jRe85c2a5N74pFSAY24m` |
+| Kingdom public website (`arch9-websites-staging`, existing production domain) | https://kingdomrealestate.co.za | `dpl_By41V5CGpmN24MWtrk1DnTgeS4KX` |
+| Home Seekers standalone website (`home-seekers-website`) | https://homeseeker.co.za | `dpl_4fdAmWfmAcXe8Q5MFFnSCCNwBZ6X` |
+
+The final primary application source is `eaaea82416205cb0b2e4379f2c806907b00c45b1`;
+subsequent release-record changes affect documentation only. The public login
+screen rendered correctly without captured console errors. Home Seekers rendered
+its current published home, and Kingdom's valuation form returned Google address
+predictions. No public enquiry was submitted during verification.
+
+Home Seekers address suggestions have a remaining provider configuration issue:
+Google explicitly rejects requests from `https://homeseeker.co.za/` under the
+existing browser key's referrer restrictions. Manual address capture remains
+available. Add the Home Seekers production domains to the Google key's authorised
+websites through the existing Google Cloud account; no credential restriction was
+changed as part of this release. The same key returns suggestions on Kingdom.
+
+The changed Edge Function source was already present on remote main. The deployed
+function inventory and local checks were verified; unchanged workers were not
+redeployed or invoked. No email, provider publication or genuine customer record
+was sent or changed by the verification. Hosted authenticated saving, private
+Storage transfers and agency canary flows still require named approved canary
+records; automated local acceptance and read-only production rule checks do not
+certify those live flows. Existing security-advisor findings remain unchanged.
+
+The release source and this record are retained on the attached
+`codex/arch9-production-20261015` worktree for recovery. Git main publication is
+verified separately after the final documentation commit. The original active
+checkout is preserved without resetting its branch, index or unrelated files.
