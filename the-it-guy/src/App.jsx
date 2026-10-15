@@ -118,7 +118,6 @@ const PermissionGate = lazy(() => import('./components/PermissionGate'))
 const TokenRouteGate = lazy(() => import('./components/routing/TokenRouteGate'))
 
 const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
-const ARCH9_JOIN_URL = import.meta.env.VITE_ARCH9_JOIN_URL || 'https://admin.arch9.co.za/join'
 
 function resetLockedShellWindowScroll() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return
@@ -158,35 +157,7 @@ function PublicAwareRootRoute() {
   return isPublicWebsiteHost() ? <BridgeLanding /> : <Navigate to="/dashboard" replace />
 }
 
-function buildArch9JoinUrl(search = '') {
-  try {
-    const targetUrl = new URL(ARCH9_JOIN_URL)
-    const sourceParams = new URLSearchParams(search)
-    sourceParams.forEach((value, key) => {
-      targetUrl.searchParams.set(key, value)
-    })
-    return targetUrl.toString()
-  } catch {
-    return `${ARCH9_JOIN_URL}${search || ''}`
-  }
-}
-
-function Arch9JoinRedirect() {
-  const location = useLocation()
-  const targetUrl = buildArch9JoinUrl(location.search)
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.location.replace(targetUrl)
-  }, [targetUrl])
-
-  return (
-    <main className="center-shell">
-      <PageSkeleton label="Opening Arch9 join" />
-      <a href={targetUrl}>Continue to Arch9 join</a>
-    </main>
-  )
-}
+const Arch9JoinRedirect = lazy(() => import('./components/auth/Arch9JoinRedirect'))
 
 const ReleaseFreshnessGuard = lazy(() => import('./components/auth/ReleaseFreshnessGuard'))
 
@@ -1657,22 +1628,7 @@ function OrganisationSettingsManageRoute({ children, permission = PERMISSIONS.ma
   return children
 }
 
-function ClientAccessNotice({ onLogout }) {
-  return (
-    <section className="auth-loading-screen">
-      <div className="auth-loading-card" style={{ maxWidth: '560px' }}>
-        <h2>Client Access Uses Shared Transaction Links</h2>
-        <p>
-          The <strong>{APP_ROLE_LABELS.client}</strong> role does not use the internal module shell. Continue through
-          your secure external transaction link.
-        </p>
-        <button type="button" className="header-secondary-cta" onClick={onLogout} style={{ marginTop: 12 }}>
-          Logout
-        </button>
-      </div>
-    </section>
-  )
-}
+const ClientAccessNotice = lazy(() => import('./components/auth/ClientAccessNotice'))
 
 function ProtectedLayout({ onLogout, session }) {
   if (isSupabaseConfigured && !session) {
@@ -1844,7 +1800,7 @@ function AppRoutes() {
           <Routes>
           <Route path="/" element={<PublicAwareRootRoute />} />
           <Route path="/join-us/:token" element={<AppErrorBoundary scope="recruitment-application" title="Application failed to load"><RecruitmentApplicationPage /></AppErrorBoundary>} />
-          <Route path="/join" element={<Arch9JoinRedirect />} />
+          <Route path="/join" element={<Arch9JoinRedirect fallback={<PageSkeleton label="Opening Arch9 join" />} />} />
           <Route path="/buy" element={<BridgeBuyPage />} />
           <Route path="/buy/:slug" element={<BridgeBuyPage />} />
           <Route path="/development/:slug" element={<AppErrorBoundary scope="public-development-landing" title="Development page failed to load"><PublicDevelopmentLandingPage /></AppErrorBoundary>} />
