@@ -4,7 +4,7 @@ const READ_RPC_NAMES = new Set([
   'bridge_read_shared_matter_journey',
 ])
 const TRANSIENT_STATUSES = new Set([408, 502, 503, 504, 520, 521, 522, 523, 524])
-const TRANSIENT_CODES = new Set(['57014', '08006', '08001', '53300', 'client_portal_read_timeout', 'client_portal_load_timeout'])
+const TRANSIENT_CODES = new Set(['57014', '08006', '08001', '53300', 'client_portal_read_timeout', 'client_portal_read_unavailable', 'client_portal_load_timeout'])
 
 export function isTransientBuyerPortalReadError(error) {
   const code = String(error?.code || '')
@@ -67,8 +67,14 @@ export function createClientPortalReadFetch(fetchImpl = (...args) => globalThis.
           })(),
           aborted,
         ])
-        if (!result.transient || attempt === 1) return result.response
+        if (!result.transient) return result.response
         void result.response.body?.cancel().catch(() => {})
+        // PostgREST drops HTTP status from its error object. Preserve a clear
+        // network failure so the page can reconnect after both attempts fail.
+        if (attempt === 1) throw Object.assign(
+          new Error('Network request failed while loading the secure portal.'),
+          { code: 'client_portal_read_unavailable', status: result.response.status },
+        )
       } catch (error) {
         if (request.signal.aborted || !isTransientBuyerPortalReadError(error) || attempt === 1) throw error
       } finally {

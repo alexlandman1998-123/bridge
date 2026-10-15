@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
-import { createClientPortalReadFetch, recoverBuyerPortalLoad } from '../clientPortalReadRecovery.js'
+import { createClientPortalReadFetch, isTransientBuyerPortalReadError, recoverBuyerPortalLoad } from '../clientPortalReadRecovery.js'
 import { readFileSync } from 'node:fs'
 
 const url = 'https://portal.invalid/rest/v1/transactions?id=eq.test'
@@ -33,6 +33,18 @@ describe('buyer read transport', () => {
     await vi.advanceTimersByTimeAsync(125)
     expect((await pending).status).toBe(200)
     expect(transport.mock.calls[0][1].signal.aborted).toBe(true)
+    expect(transport).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([408, 502, 503, 504, 520, 521, 522, 523, 524])('preserves recovery after the SDK receives repeated HTTP %s failures', async status => {
+    const transport = vi.fn(async () => new Response('Upstream unavailable', { status }))
+    const client = createClient('https://portal.invalid', 'synthetic-public-key', {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: createClientPortalReadFetch(transport, { retryDelayMs: 0 }) },
+    })
+    const result = await client.from('transactions').select('id')
+    expect(result.data).toBeNull()
+    expect(isTransientBuyerPortalReadError(result.error)).toBe(true)
     expect(transport).toHaveBeenCalledTimes(2)
   })
 
