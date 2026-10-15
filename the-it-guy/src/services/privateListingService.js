@@ -9154,7 +9154,7 @@ export async function createSellerClientPortalDocumentSignedUrl({
   if (!linkedDocument || (normalizedFilePath.startsWith('document-requirements/') && !linkedDocument.canonical_requirement_instance_id)) {
     throw new Error('This document is not available in this client portal.')
   }
-  if (getPrivateListingMandateArtifactMatch(context.listing, normalizedFilePath)) {
+  if (linkedDocument.canonicalFinalArtifact === true || getPrivateListingMandateArtifactMatch(context.listing, normalizedFilePath)) {
     throw new Error('The final signed mandate must be opened through its secure completion record.')
   }
 

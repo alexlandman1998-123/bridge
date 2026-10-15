@@ -69,3 +69,10 @@ test('final mandate artifacts still require the secure completion route', async 
   await assert.rejects(f.action({ token: 'link', filePath: finalPath }), /secure completion record/)
   assert.equal(f.calls.some(call => call[0] === 'sign'), false)
 })
+
+test('a final artifact descriptor cannot use the generic download route', async () => {
+  const filePath = 'seller-portal/listing/final.pdf'
+  const f = fixture({ documents: [{ storage_path: filePath, canonicalFinalArtifact: true }] })
+  await assert.rejects(f.action({ token: 'link', filePath }), /secure completion record/)
+  assert.equal(f.calls.some(call => call[0] === 'sign'), false)
+})
