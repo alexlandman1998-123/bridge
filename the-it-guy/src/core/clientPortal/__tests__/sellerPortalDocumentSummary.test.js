@@ -51,3 +51,21 @@ test('identifies managed workflow actions without excluding normal seller upload
   assert.equal(isSellerTeamManagedDocument({ title: 'Prepare file', metadata: { requirementKey: 'signed_disclosure_form' } }), true)
   assert.equal(isSellerTeamManagedDocument({ title: 'Upload identity document', metadata: { requirementKey: 'identity' } }), false)
 })
+
+test('optional uploads do not become seller checklist actions or review blockers', () => {
+  const summary = buildSellerPortalDocumentSummary({
+    summary: { total: 4, outstanding: 2, underReview: 1, approved: 1, blocking: 2 },
+    items: [
+      { id: 'identity', sourceType: 'required_document', status: 'approved', required: true },
+      { id: 'bank', sourceType: 'required_document', status: 'required', required: false },
+      { id: 'title', sourceType: 'required_document', status: 'under_review', is_required: false },
+      { id: 'plans', sourceType: 'required_document', status: 'required', isRequired: false },
+    ],
+  })
+  assert.equal(summary.total, 1)
+  assert.equal(summary.approved, 1)
+  assert.equal(summary.actionRequired, 0)
+  assert.equal(summary.reviewRequired, 0)
+  assert.equal(summary.ready, true)
+  assert.deepEqual(summary.actionItems, [])
+})

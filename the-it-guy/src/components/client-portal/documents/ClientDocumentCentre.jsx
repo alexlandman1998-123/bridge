@@ -358,6 +358,7 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
     description: toText(requirement?.description || requirement?.requirement_description, 'This document is needed before your transaction can move forward.'),
     group: toText(requirement?.requirement_group || requirement?.group || requirement?.groupKey),
     status,
+    required: requirement?.required !== false && requirement?.is_required !== false && requirement?.isRequired !== false,
     rejectionReason: toText(requirement?.rejectionReason || requirement?.rejection_reason),
     linkedDocument,
     hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
@@ -473,6 +474,7 @@ function normalizeDocumentCentreItem(item = {}) {
     description: toText(item?.description || item?.notes, 'Supporting document required for your transaction.'),
     group: toText(item?.group || item?.requirement_group || item?.category),
     status: normalizeDocumentStatus(item?.status || 'required'),
+    required: item?.required !== false && item?.is_required !== false && item?.isRequired !== false,
     rejectionReason: toText(item?.rejectionReason || item?.rejection_reason),
     linkedDocument,
     hasUploadedDocument: Boolean(item?.hasUploadedDocument || item?.has_uploaded_document || linkedDocument),
@@ -656,7 +658,7 @@ function decoratePortalDocumentItem(item = {}, categoryKey = '') {
     ...item,
     sellerCategoryKey: categoryKey || 'property',
     sellerCategoryLabel: labels[categoryKey] || 'Property',
-    isCoreRequirement: categoryKey !== 'additional',
+    isCoreRequirement: categoryKey !== 'additional' && item?.required !== false,
   }
 }
 

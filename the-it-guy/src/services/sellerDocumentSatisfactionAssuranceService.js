@@ -69,8 +69,9 @@ export function assertSellerUploadTarget({
       throw new Error('The selected document does not match the requested document type.')
     }
     const status = normalizeSellerDocumentRequirementKey(requirement.status)
-    if (['not_applicable', 'approved', 'completed'].includes(status)) throw new Error('This document request is already closed.')
-    if (requirement.is_required === false) throw new Error('This document request is no longer required.')
+    if (['not_applicable', 'cancelled', 'approved', 'completed'].includes(status)) throw new Error('This document request is already closed.')
+    // Optional requests remain uploadable; retirement is a separate state.
+    if (String(requirement.generated_from?.archived) === 'true') throw new Error('This document request is no longer available.')
     const visibility = normalizeSellerDocumentRequirementKey(requirement.document_visibility || requirement.visibility)
     if (visibility && visibility !== 'seller_visible') throw new Error('This document request is not available in the seller portal.')
   }

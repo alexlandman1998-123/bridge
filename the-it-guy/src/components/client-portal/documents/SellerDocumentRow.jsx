@@ -24,7 +24,7 @@ function formatDocumentDate(value) {
   })
 }
 
-function getStatusPresentation(status = '') {
+function getStatusPresentation(status = '', required = true) {
   const normalized = normalizeDocumentStatus(status)
   if (normalized === 'rejected') {
     return {
@@ -33,6 +33,10 @@ function getStatusPresentation(status = '') {
     }
   }
   if (normalized === 'required' || normalized === 'requested') {
+    if (!required) return {
+      label: 'Optional upload',
+      classes: 'border-[#dbe5ef] bg-[#f8fbff] text-[#52657b]',
+    }
     return {
       label: normalized === 'requested' ? 'Awaiting seller' : 'Upload required',
       classes: 'border-[#f4c7c3] bg-[#fff3f1] text-[#c24138]',
@@ -165,6 +169,7 @@ function getSupportingLine(item = {}, normalizedStatus = '') {
   if (item?.lockedByTeam) {
     return item?.metaLine || 'Managed by your transaction team.'
   }
+  if (item?.required === false) return item?.metaLine || 'You can upload this document if available.'
   return item?.metaLine || 'Required before your transaction can move forward.'
 }
 
@@ -206,7 +211,7 @@ function SellerDocumentRow({
   const canUpload = Boolean(uploadKey && item?.uploadSpec && typeof onUpload === 'function')
   const canOpen = Boolean(documentHasOpenableArtifact(item?.linkedDocument) && typeof onOpenDocument === 'function')
   const normalizedStatus = normalizeDocumentStatus(item?.status || '')
-  const status = getStatusPresentation(normalizedStatus)
+  const status = getStatusPresentation(normalizedStatus, item?.required !== false)
   const category = getCategoryPresentation(item?.sellerCategoryKey || '')
   const Icon = item?.linkedDocument && (normalizedStatus === 'approved' || normalizedStatus === 'completed')
     ? CheckCircle2

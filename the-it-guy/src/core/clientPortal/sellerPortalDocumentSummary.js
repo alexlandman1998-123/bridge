@@ -80,7 +80,9 @@ export function buildSellerPortalDocumentSummary(documentCenter = {}) {
   const checklistItems = hasTypedDocumentItems
     ? items.filter((item) => ['required_document', 'additional_request'].includes(status(item?.sourceType || item?.source_type)))
     : items
-  const clientVisibleItems = checklistItems.filter((item) => !isSellerTeamManagedDocument(item))
+  const clientVisibleItems = checklistItems.filter((item) =>
+    !isSellerTeamManagedDocument(item) && item.required !== false && item.is_required !== false && item.isRequired !== false,
+  )
   const hasTeamManagedItems = clientVisibleItems.length !== items.length
   const displaySource = hasTeamManagedItems ? summaryFor(clientVisibleItems) : source
   const allActionItems = clientVisibleItems.filter(isActionItem)

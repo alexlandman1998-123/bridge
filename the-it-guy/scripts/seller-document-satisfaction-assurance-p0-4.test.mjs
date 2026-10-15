@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { getListingReadinessSummary } from '../src/lib/sellerDocumentRequirementEngine.js'
+import { getRequiredSellerDocuments, getListingReadinessSummary } from '../src/lib/sellerDocumentRequirementEngine.js'
 import {
   assertSellerUploadTarget,
   buildSellerDocumentAssuranceReport,
@@ -70,6 +70,37 @@ assert.doesNotThrow(() => assertSellerUploadTarget({
   requirement,
   requirementKey: 'levy_statement',
 }))
+const optionalBankConfirmation = getRequiredSellerDocuments({ sellerType: 'individual', sellerProfileCaptured: true })
+  .find((row) => row.requirement_key === 'seller_bank_account_confirmation')
+assert.equal(optionalBankConfirmation.is_required, false)
+for (const status of ['required', 'requested', 'rejected', 'expired', 'uploaded', 'under_review']) {
+  assert.doesNotThrow(() => assertSellerUploadTarget({
+    listingId: 'listing-1',
+    requirement: { ...optionalBankConfirmation, private_listing_id: 'listing-1', status },
+    requirementKey: 'seller_bank_account_confirmation',
+  }), `an applicable optional bank confirmation must accept uploads in ${status}`)
+}
+for (const closed of [
+  { status: 'not_applicable' },
+  { status: 'cancelled' },
+  { status: 'approved' },
+  { status: 'completed' },
+  { generated_from: { archived: true } },
+  { generated_from: { archived: 'true' } },
+]) {
+  assert.throws(() => assertSellerUploadTarget({
+    listingId: 'listing-1',
+    requirement: { ...optionalBankConfirmation, private_listing_id: 'listing-1', ...closed },
+    requirementKey: 'seller_bank_account_confirmation',
+  }), /already closed|no longer available/)
+}
+assert.throws(() => assertSellerUploadTarget({
+  listingId: 'listing-1',
+  requirement: { ...optionalBankConfirmation, document_visibility: 'internal' },
+  requirementKey: 'seller_bank_account_confirmation',
+}), /not available in the seller portal/)
+assert.equal(buildSellerDocumentAssuranceReport({ requirements: [optionalBankConfirmation] }).totalRequired, 0,
+  'accepting an optional upload must not make it a readiness blocker')
 assert.throws(() => assertSellerUploadTarget({
   listingId: 'listing-1',
   requirement,

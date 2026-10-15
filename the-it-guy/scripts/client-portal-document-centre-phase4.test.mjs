@@ -62,6 +62,25 @@ test('builds typed items for required documents with reupload state', () => {
   assert.equal(model.summary.blocking, 1)
 })
 
+test('seller document items preserve the optional flag and upload target', () => {
+  const model = buildDocumentCenter({
+    requiredDocuments: [{
+      key: 'seller_bank_account_confirmation',
+      label: 'Seller Bank Account Confirmation',
+      status: 'required',
+      is_required: false,
+      expectedFromRole: 'seller',
+    }],
+    documents: [],
+  }, 'selling')
+  const item = model.items.find((entry) => entry.sourceId === 'seller_bank_account_confirmation')
+  assert.ok(item, 'the optional request must remain visible')
+  assert.equal(item.required, false)
+  assert.equal(item.isCoreRequirement, false)
+  assert.deepEqual(item.uploadSpec, { type: 'requirement', requirementKey: 'seller_bank_account_confirmation' })
+  assert.equal(model.summary.blocking, 0)
+})
+
 test('buyer additional requests are visible by default and link uploaded documents', () => {
   const model = buildDocumentCenter({
     requiredDocuments: [],

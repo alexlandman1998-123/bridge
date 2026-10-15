@@ -1936,6 +1936,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
   const uploadAllowed = requirement?.canUpload !== false && !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
   const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
+  const required = requirement?.required !== false && requirement?.is_required !== false && requirement?.isRequired !== false
 
   return {
     id: `required_${key}`,
@@ -1946,6 +1947,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
     education: getDocumentEducationText(key, title),
     group: toDisplayText(requirement?.requirement_group || requirement?.group || requirement?.groupKey),
     status,
+    required,
     rejectionReason: toDisplayText(requirement?.rejectionReason || requirement?.rejection_reason || linkedDocument?.rejectionReason || linkedDocument?.rejection_reason),
     linkedDocument,
     hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
@@ -1974,7 +1976,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
       requirement?.canonicalDocumentRequestOwnerRole || requirement?.ownerRole || requirement?.expectedFromRole || '',
     canonicalDocumentRequestSource: requirement?.canonicalDocumentRequestSource || '',
     canonicalDocumentRequestPlanVersion: requirement?.canonicalDocumentRequestPlanVersion || '',
-    isCoreRequirement: true,
+    isCoreRequirement: required,
   }
 }
 
@@ -3676,7 +3678,10 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     .filter((document) => !getDocumentLookupKeys(document).some((key) => linkedUploadedDocumentKeys.has(key)))
     .map((document) => buildUploadedDocumentCenterItem(document))
   const items = dedupeDocumentCenterItems([...requiredItems, ...additionalItems, ...standaloneUploadedItems])
-  const activeItems = items.filter((item) => !['cancelled', 'not_applicable'].includes(normalizeDocumentStatus(item?.status)))
+  const activeItems = items.filter((item) =>
+    !['cancelled', 'not_applicable'].includes(normalizeDocumentStatus(item?.status)) &&
+    (workspaceMode !== 'selling' || item.required !== false),
+  )
   const summary = activeItems.reduce(
     (accumulator, item) => {
       const status = normalizeDocumentStatus(item?.status)

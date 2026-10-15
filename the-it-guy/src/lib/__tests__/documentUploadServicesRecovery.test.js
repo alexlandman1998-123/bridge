@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../documentUploadRecovery.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from '../../services/listings/listingSellerDocumentPersistenceModel.js'
 import { createDocumentUploadProgressReporter, withDocumentUploadDeadline } from '../documentUploadLifecycle.js'
+import { assertSellerUploadTarget, resolveExactSellerRequirement } from '../../services/sellerDocumentSatisfactionAssuranceService.js'
 
 function extract(path, name, values) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -162,6 +163,36 @@ for (const [label, path, name, parameters] of [
     assert.equal(f.state.saves, 1)
   })
 }
+
+test('seller: optional bank confirmation passes the actual upload validation and recovers its saved receipt', async () => {
+  const f = fixture()
+  const requirement = { id: f.id, private_listing_id: f.id, requirement_key: 'seller_bank_account_confirmation',
+    is_required: false, status: 'required', document_visibility: 'seller_visible' }
+  f.values.getSellerOnboardingByToken = async () => ({ listing: { id: f.id, documentRequirements: [requirement], documents: f.state.row ? [f.state.row] : [] } })
+  const action = extract('../../services/privateListingService.js', 'uploadSellerClientPortalDocument', {
+    ...f.values, assertSellerUploadTarget, resolveExactSellerRequirement,
+  })
+  const saved = await action({ token: f.id, accessToken: 'session', requirementKey: requirement.requirement_key, file: f.file })
+  assert.equal(saved.id, f.state.row.id)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+  assert.equal(f.state.deletes, 0)
+})
+
+test('seller: closed and archived optional requests are rejected before any file is uploaded', async () => {
+  for (const retired of [{ status: 'not_applicable' }, { status: 'cancelled' }, { generated_from: { archived: true } }]) {
+    const f = fixture()
+    const requirement = { id: f.id, private_listing_id: f.id, requirement_key: 'seller_bank_account_confirmation',
+      is_required: false, status: 'required', document_visibility: 'seller_visible', ...retired }
+    f.values.getSellerOnboardingByToken = async () => ({ listing: { id: f.id, documentRequirements: [requirement] } })
+    const action = extract('../../services/privateListingService.js', 'uploadSellerClientPortalDocument', {
+      ...f.values, assertSellerUploadTarget, resolveExactSellerRequirement,
+    })
+    await assert.rejects(action({ token: f.id, accessToken: 'session', requirementKey: requirement.requirement_key, file: f.file }), /already closed|no longer available/)
+    assert.equal(f.state.uploads, 0)
+    assert.equal(f.state.saves, 0)
+  }
+})
 
 test('developer: actual action retains bytes when the save cannot be read and recovers on a later retry', async () => {
   const f = fixture(); f.state.readable = false
