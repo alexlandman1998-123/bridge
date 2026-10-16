@@ -138,6 +138,10 @@ the advert live. Website public links continue to follow their publication URLs.
 Leave the field blank and choose **Remove link** to clear the portal URL and its
 matching external-link entries while retaining the advert reference and status.
 Old activity URLs do not restore a removed link in Manage.
+Listing Channels shows **View listing** only for a currently live portal advert.
+Inactive, removed, withdrawn, paused, failed and expired adverts show **No live
+listing link** while retaining their references. Historical activity cannot
+restore a cleared URL in the channel row.
 
 Focused checks: the ListingChannelManageDialog component and integration suites,
 ListingRelistDialog and listingChannelManagement/Relist service suites,

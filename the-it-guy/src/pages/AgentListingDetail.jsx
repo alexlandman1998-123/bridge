@@ -2361,6 +2361,7 @@ function DistributionChannel({
   subtitle = '',
   reference = '',
   publicUrl = '',
+  live: advertLive = false,
   status = 'pending',
   statusLabel = '',
   contextTitle = '',
@@ -2387,7 +2388,7 @@ function DistributionChannel({
         : 'text-[#526a82]'
   const manageActions = [secondaryAction, ...menuActions].filter(Boolean)
   const displayReference = normalizeListingChannelReference(reference)
-  const safePublicUrl = normalizeListingChannelPublicUrl(publicUrl || publicationState?.publicUrl)
+  const safePublicUrl = advertLive ? normalizeListingChannelPublicUrl(publicUrl) : ''
   return (
     <div className="listing-channel-columns border-b border-[#edf2f7] last:border-b-0">
       <div className="flex min-w-0 items-center gap-3">
@@ -2414,7 +2415,7 @@ function DistributionChannel({
             <ExternalLink size={12} />
           </a>
         ) : (
-          <p className="mt-1 text-xs font-medium text-[#8a98a8]">Listing link unavailable</p>
+          <p className="mt-1 text-xs font-medium text-[#8a98a8]">{advertLive ? 'Listing link unavailable' : 'No live listing link'}</p>
         )}
       </div>
       <div className="min-w-0 md:justify-self-start">
@@ -12969,8 +12970,6 @@ function AgentListingDetail() {
   }
 
   function renderMarketingConsole() {
-    const property24Url = marketingDraft.property24ListingUrl || listingRecord?.property24ListingUrl || listingRecord?.property24_listing_url || ''
-    const privatePropertyUrl = marketingDraft.privatePropertyListingUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url || privatePropertyLink?.url || ''
     const privatePropertyReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
     const property24ChannelStatus = overviewPublishedChannels[0].status
     const property24ChannelLabel = overviewPublishedChannels[0].statusLabel
@@ -12983,7 +12982,7 @@ function AgentListingDetail() {
         logoSrc: '/lead-sources/property24.png',
         name: 'Property24',
         reference: property24Reference,
-        publicUrl: getListingChannelViewUrl('property24', property24Url),
+        publicUrl: overviewPublishedChannels[0].href,
         status: property24ChannelStatus,
         statusLabel: property24ChannelLabel,
         live: overviewPublishedChannels[0].live,
@@ -12997,7 +12996,7 @@ function AgentListingDetail() {
         logoSrc: '/lead-sources/private-property.jpeg',
         name: 'Private Property',
         reference: privatePropertyReference,
-        publicUrl: getListingChannelViewUrl('private_property', privatePropertyUrl),
+        publicUrl: overviewPublishedChannels[1].href,
         status: privatePropertyChannelStatus,
         statusLabel: privatePropertyChannelLabel,
         live: overviewPublishedChannels[1].live,
@@ -13084,6 +13083,7 @@ function AgentListingDetail() {
               subtitle={channel.subtitle}
               reference={channel.reference}
               publicUrl={channel.publicUrl}
+              live={channel.live}
               status={channel.status}
               statusLabel={channel.statusLabel}
               lastSynced={channel.lastSynced}

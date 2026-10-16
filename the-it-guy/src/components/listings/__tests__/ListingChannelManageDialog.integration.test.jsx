@@ -1,5 +1,6 @@
 // @vitest-environment node
 import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import vm from 'node:vm'
 import { readFileSync } from 'node:fs'
 import { transformSync } from 'esbuild'
@@ -8,7 +9,7 @@ import ListingChannelManageDialog from '../ListingChannelManageDialog'
 import { saveListingChannelManagement } from '../../../services/listings/listingChannelManagement'
 import { isQuickListingPortalUpdateAccepted } from '../../../services/listings/listingQuickActionDelivery'
 import { deriveListingChannelUpdateStates, getListingChannelManageActivity } from '../../../services/listings/listingChannelUpdateState'
-import { buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages } from '../../../services/listings/listingMarketingChannelPresentation'
+import { buildListingChannelPublicationDisplay, buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, normalizeListingChannelPublicUrl, normalizeListingChannelReference, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages } from '../../../services/listings/listingMarketingChannelPresentation'
 import { buildListingPublicationSnapshot, getListingPublicationChannelKey } from '../../../services/listings/listingPublicationState'
 import { readListingRelistCheckpoints, relistListingChannels } from '../../../services/listings/listingRelistService'
 import { applyListingSellerOnboardingSaveSnapshot } from '../../../services/listings/listingSellerCanonicalUpdateModel'
@@ -17,6 +18,49 @@ import { shouldRequireSyndicationReview, canAcknowledgeSyndicationChannel } from
 import { persistSellerProfileOnboardingFormData } from '../../../services/privateListingService'
 
 const source = readFileSync(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+function distributionRow(display, publicationState) {
+  const start = source.indexOf('function DistributionChannel(')
+  const end = source.indexOf('\nfunction InfoTile(', start)
+  const ctx = {
+    React, ExternalLink: 'span', PlatformLogo: () => null, ListingChannelLastUpdate: () => null, ListingChannelManageMenu: 'div',
+    normalizeKey: value => String(value || '').toLowerCase(), formatStatusLabel: value => value,
+    normalizeListingChannelPublicUrl, normalizeListingChannelReference,
+  }
+  vm.createContext(ctx)
+  vm.runInContext(transformSync(source.slice(start, end), { loader: 'jsx', jsxFactory: 'React.createElement' }).code, ctx)
+  return renderToStaticMarkup(React.createElement(ctx.DistributionChannel, {
+    name: display.label, reference: display.reference, publicUrl: display.href,
+    live: display.live, status: display.status, statusLabel: display.statusLabel, publicationState,
+  }))
+}
+
+const rowPortals = [
+  ['private_property', 'Private Property', 'T5656136', 'https://www.privateproperty.co.za/T5656136'],
+  ['property24', 'Property24', '117721873', 'https://www.property24.com/for-sale/example/117721873'],
+]
+it.each(rowPortals.flatMap(([key, label, reference, publicUrl]) => ['inactive', 'removed', 'withdrawn', 'expired', 'paused', 'failed'].map(externalStatus => ({ key, label, reference, publicUrl, externalStatus }))))('$label hides its $externalStatus advert link despite old accepted activity', ({ key, label, reference, publicUrl, externalStatus }) => {
+  const publicationState = { stage: 'accepted', publicUrl }
+  const display = buildListingChannelPublicationDisplay({ key, label, reference, publicUrl, live: true, externalStatus, publicationState, lifecycleOnly: true })
+  const html = distributionRow({ ...display, reference }, publicationState)
+  expect(html).not.toContain('View listing')
+  expect(html).not.toContain('href=')
+  expect(html).toContain('No live listing link')
+  expect(html).toContain(reference)
+})
+it.each(rowPortals)('keeps the confirmed live %s advert link visible', (key, label, reference, publicUrl) => {
+  const display = buildListingChannelPublicationDisplay({ key, label, reference, publicUrl, live: true, externalStatus: 'active', lifecycleOnly: true })
+  const html = distributionRow({ ...display, reference })
+  expect(html).toContain(`href="${publicUrl}"`)
+  expect(html).toContain('View listing')
+})
+it.each(rowPortals)('does not restore a cleared %s link from historical activity', (key, label, reference, oldUrl) => {
+  const publicationState = { stage: 'accepted', publicUrl: oldUrl }
+  const display = buildListingChannelPublicationDisplay({ key, label, reference, publicUrl: '', live: true, externalStatus: 'active', publicationState, lifecycleOnly: true })
+  const html = distributionRow({ ...display, reference }, publicationState)
+  expect(html).not.toContain('View listing')
+  expect(html).toContain('Listing link unavailable')
+})
+
 function controllerSource(name) {
   const start = source.search(new RegExp(`^  (?:async )?function ${name}\\(`, 'm'))
   if (start < 0) throw new Error(`Missing controller: ${name}`)
