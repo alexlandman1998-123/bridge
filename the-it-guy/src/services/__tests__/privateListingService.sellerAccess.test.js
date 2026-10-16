@@ -13,6 +13,7 @@ import { getSellerOnboardingByToken, persistSellerProfileOnboardingFormData, sub
 import { repairSellerDocumentRequirementLinks, isUnlinkedSellerReviewDocument } from '../sellerDocumentReviewWorkflowService.js'
 import { applyListingSellerOnboardingSaveSnapshot, getSellerOnboardingSaveRevision, buildListingSellerCanonicalUpdate } from '../listings/listingSellerCanonicalUpdateModel.js'
 import { syncSellerDocumentRequirements } from '../../lib/sellerDocumentRequirementEngine.js'
+import { getSellerRequiredDocuments } from '../sellerDocumentRequirementsService.js'
 import { buildListingSellerProfileFormPatch, createListingSellerProfileBuilderDraft, selectListingSellerProfileBranch } from '../../lib/listingSellerProfileBuilderModel.js'
 
 const listingId = '00000000-0000-4000-8000-000000000001'
@@ -696,6 +697,42 @@ describe('exact upload requirement resolution', () => {
     expect(buildPrivateListingDocumentUploadPreparation(listing, [requirement('title_deed_copy', listingId, { status: 'not_applicable' })], 'title_deed_copy').missingRows).toEqual([])
     expect(buildPrivateListingDocumentUploadPreparation(listing, [requirement('seller_id')], 'id_document').missingRows).toEqual([])
     expect(buildPrivateListingDocumentUploadPreparation(listing, [], 'spouse_id_document').missingRows).toEqual([])
+  })
+  it.each(['seller_lead', 'onboarding_sent'])('prepares the displayed mandate before the capture marker is saved (%s)', listingStatus => {
+    const listing = { id: listingId, listingStatus, sellerOnboarding: { status: 'sent', formData: {
+      ownershipType: 'individual', maritalStatus: 'not_married', propertyStructureType: 'sectional_title',
+    } } }
+    const persisted = [requirement('seller_onboarding_submission', onboardingId)]
+    expect(getSellerRequiredDocuments(listing).some(row => (row.requirement_key || row.key) === 'signed_mandate')).toBe(true)
+    const plan = buildPrivateListingDocumentUploadPreparation(listing, persisted, 'signed_mandate')
+    expect(plan.missingRows).toHaveLength(1)
+    expect(plan.missingRows[0]).toMatchObject({ requirement_key: 'signed_mandate', is_required: true })
+  })
+  it('prepares the canonical disclosure request for its explicit legacy alias', () => {
+    const listing = { id: listingId, listingStatus: 'onboarding_sent', sellerOnboarding: { status: 'sent', formData: {
+      ownershipType: 'individual', maritalStatus: 'not_married', propertyStructureType: 'sectional_title',
+    } } }
+    expect(buildPrivateListingDocumentUploadPreparation(listing, [], 'signed_defect_form').missingRows)
+      .toEqual([expect.objectContaining({ requirement_key: 'signed_disclosure_form' })])
+  })
+  it.each([
+    ['individual', { ownershipType: 'individual', maritalStatus: 'not_married' }],
+    ['married', { ownershipType: 'individual', maritalStatus: 'married', maritalRegime: 'in_community' }],
+    ['company', { ownershipType: 'company', sellerType: 'company' }],
+    ['trust', { ownershipType: 'trust', sellerType: 'trust' }],
+    ['multiple owners', { ownershipType: 'multiple_individuals', sellerType: 'multiple_individuals', ownerCount: 2 }],
+    ['Kingstons baseline', { ownershipType: 'individual' }],
+  ])('prepares every displayed saved-model requirement for %s before submission', (name, formData) => {
+    const listing = { id: listingId, listingStatus: 'onboarding_sent',
+      ...(name === 'Kingstons baseline' ? { sellerProcessProfile: 'kingstons_residential' } : {}),
+      sellerOnboarding: { status: 'sent', formData: { ...formData, propertyStructureType: 'sectional_title' } } }
+    const displayed = getSellerRequiredDocuments(listing)
+    expect(displayed.length).toBeGreaterThan(0)
+    for (const row of displayed) {
+      const key = row.requirement_key || row.key
+      expect(buildPrivateListingDocumentUploadPreparation(listing, [], key).missingRows, `${name}: ${key}`)
+        .toEqual([expect.objectContaining({ requirement_key: key })])
+    }
   })
   it('permits generic internal files without inventing a requirement', () => {
     expect(resolvePrivateListingDocumentRequirement([], { documentType: 'listing_document', required: false })).toBeNull()

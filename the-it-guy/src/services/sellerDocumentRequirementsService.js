@@ -1266,7 +1266,7 @@ export function getSellerRequiredDocuments(listing = {}, formData = {}) {
   }
 }
 
-export function getExpectedSellerDocumentRequirements(listing = {}, formData = {}) {
+export function getExpectedSellerDocumentRequirements(listing = {}, formData = {}, { includeOptional = false } = {}) {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
     ? formData
     : getSellerOnboardingFormData(listing)
@@ -1275,7 +1275,7 @@ export function getExpectedSellerDocumentRequirements(listing = {}, formData = {
   }
   const requirementListing = coerceSellerDocumentLifecycle(listing, resolvedFormData)
   try {
-    return mergeSellerRequiredDocuments(generateSellerDocumentRequirements({
+    const generated = generateSellerDocumentRequirements({
       ...requirementListing,
       sellerOnboarding: {
         ...(requirementListing?.sellerOnboarding && typeof requirementListing.sellerOnboarding === 'object' ? requirementListing.sellerOnboarding : {}),
@@ -1288,7 +1288,8 @@ export function getExpectedSellerDocumentRequirements(listing = {}, formData = {
         ),
         formData: resolvedFormData,
       },
-    }))
+    })
+    return includeOptional ? generated : mergeSellerRequiredDocuments(generated)
   } catch (error) {
     console.warn('[seller-document-requirements] Failed to derive expected seller document requirements', {
       listingId: listing?.id || null,

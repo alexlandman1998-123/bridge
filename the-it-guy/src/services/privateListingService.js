@@ -72,6 +72,7 @@ import {
 } from './documents/sellerOnboardingFactTransformer'
 import {
   buildSellerDocumentRequirementReconciliationReport,
+  getExpectedSellerDocumentRequirements,
   summarizeSellerDocumentRequirementReconciliationReport,
 } from './sellerDocumentRequirementsService.js'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
@@ -2210,13 +2211,15 @@ export function resolvePrivateListingDocumentRequirement(requirements = [], {
 // Optional is not retired. Only the saved seller/property model can establish
 // that an optional request still applies; the upload button cannot opt it in.
 export function buildPrivateListingDocumentUploadPreparation(listing, requirements, requirementKey) {
-  const generated = syncSellerDocumentRequirementsFromEngine(listing, requirements).generatedRequirements || []
+  // Use the same saved-profile model as the seller document workspace. Its
+  // checklist can be ready before the older lifecycle/capture marker catches up.
+  const generated = getExpectedSellerDocumentRequirements(listing, {}, { includeOptional: true })
   const key = normalizeCompatibilityKey(requirementKey)
   const aliases = getPrivateListingDocumentMatchAliases(key)
   const hasTarget = requirements.some((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key)))
   return {
     currentOptionalRequirementKeys: generated.filter((row) => row.is_required === false).map((row) => row.requirement_key),
-    missingRows: hasTarget ? [] : generated.filter((row) => normalizeCompatibilityKey(row.requirement_key) === key),
+    missingRows: hasTarget ? [] : generated.filter((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key))),
   }
 }
 
