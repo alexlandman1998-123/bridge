@@ -26,7 +26,7 @@ function controllerSource(name) {
 function fixture(overrides = {}) {
   const calls = []
   const ctx = {
-    React, URL, URLSearchParams, ListingChannelManageDialog, Button: 'button', SlidersHorizontal: 'span', getListingPublicationChannelKey, getListingChannelViewUrl,
+    React, URL, URLSearchParams, ListingChannelManageDialog, ListingRelistDialog: () => null, relistSavedListing: vi.fn(), Button: 'button', SlidersHorizontal: 'span', getListingPublicationChannelKey, getListingChannelViewUrl,
     buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages,
     saveListingChannelManagement, isQuickListingPortalUpdateAccepted, getListingChannelManageActivity, sellerOnboardingDraftPublicationBlocker,
     listingId: 'listing-1', listingRecord: { id: 'listing-1', arch9Reference: 'A9-TEST-100001', listingStatus: 'active' },
@@ -71,7 +71,14 @@ function fixture(overrides = {}) {
     vm.runInContext(code, ctx)
   }
   const close = vi.fn()
-  return { ctx, calls, close, popup: channel => ctx.renderSimpleChannelManagePanel(channel, close).props }
+  const relistDialog = initialChannel => {
+    ctx.relistChannel = initialChannel
+    const element = source.match(/\{relistChannel !== null \? (<ListingRelistDialog[\s\S]*?\/>) : null\}/)?.[1]
+    if (!element) throw new Error('Missing relist dialog')
+    const code = transformSync(`(${element})`, { loader: 'jsx', jsx: 'transform', jsxFactory: 'React.createElement' }).code
+    return vm.runInContext(code, ctx).props
+  }
+  return { ctx, calls, close, relistDialog, popup: channel => ctx.renderSimpleChannelManagePanel(channel, close).props }
 }
 
 it.each(['Property24', 'Private Property'])('Manage blocks %s updates while seller draft differences await review', async channel => {
@@ -157,12 +164,21 @@ it('a cancelled Private Property update review sends nothing', async () => {
   expect(await popup('Private Property').onUpdate()).toEqual({ cancelled: true })
   expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
 })
-it.each(['Property24', 'Private Property'])('relisting from %s keeps that channel selected', channel => {
-  const { ctx, popup, close } = fixture()
+it.each(['Property24', 'Private Property'])('relisting from %s keeps that channel selected and offers the other connected portal', channel => {
+  const { ctx, popup, close, relistDialog } = fixture()
   popup(channel).onRelist()
   expect(close).toHaveBeenCalledOnce()
   expect(ctx.setRelistChannel).toHaveBeenCalledWith(channel)
-  expect(source).toContain('channels={relistChannel ? [relistChannel]')
+  const dialog = relistDialog(channel)
+  expect(dialog.initialChannel).toBe(channel)
+  expect(dialog.channels).toEqual(['Property24', 'Private Property'])
+})
+it.each([
+  [{ property24Reference: '', privatePropertyHasChannel: true }, 'Private Property'],
+  [{ property24Reference: '116284', privatePropertyHasChannel: false }, 'Property24'],
+])('offers only existing portal adverts for relisting', (availability, channel) => {
+  const { relistDialog } = fixture(availability)
+  expect(relistDialog(channel).channels).toEqual([channel])
 })
 it.each(['Property24', 'Private Property', 'Agency Website', 'Kingdom Website'])('withdraw confirmation targets %s only', async channel => {
   const { ctx, popup, close } = fixture()

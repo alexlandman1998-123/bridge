@@ -3724,13 +3724,15 @@ portal adverts, including withdrawn/inactive adverts. **Update and relist** open
 the property editor and retains the chosen portal. **Save and continue to relist**
 saves and verifies the edited property and publication details without sending
 ordinary portal updates, then returns to Marketing with that portal selected in
-the relist confirmation. A failed save stays in the editor; cancelling does not
-relist. Relisting sends the newly saved content against the existing identity.
+the relist dialog. Other existing portal adverts remain available to select in
+the same run. A failed save stays in the editor; cancelling does not relist.
+Relisting sends the newly saved content against the existing identity.
 
 Quick listing actions also offer **Relist listing**
-for an existing Property24 or Private Property advert. Confirm that it is the
-same property and choose the portals to restore. Edited details and materialized
-photos are saved before readiness is checked. Property24 receives an Active
+for an existing Property24 or Private Property advert. Choose one or more existing
+portal adverts to restore together; no same-property checkbox is required.
+Edited details and materialized photos are saved before readiness is checked.
+Property24 receives an Active
 content update against its existing advert number and the chosen future expiry
 date. Private Property verifies its retained address, requests ForSale (or ToLet
 for a rental record), waits for confirmed activation, and then sends the saved

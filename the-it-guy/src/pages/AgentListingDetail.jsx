@@ -13121,7 +13121,7 @@ function AgentListingDetail() {
         {renderProperty24ManagePanel()}
         {renderPrivatePropertyManagePanel()}
         {relistChannel !== null ? <ListingRelistDialog
-          channels={relistChannel ? [relistChannel] : [...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
+          channels={[...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
           initialChannel={relistChannel}
           expiryDate={getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate) ? addDaysToDateInput('', 90) : formatDateInputValue(marketingDraft.property24ExpiryDate)}
           minExpiryDate={addDaysToDateInput('', 1)}
