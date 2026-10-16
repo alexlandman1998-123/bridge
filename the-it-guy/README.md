@@ -254,6 +254,14 @@ test:seller-document-journey`, and root `npm run check:app`.
 
 ## Listing publication recovery
 
+Advertising results recheck failed and unconfirmed saved requests every 30 seconds
+while the page is visible, and when the window regains focus or a page is restored.
+A later successful request can therefore replace an old failure without another
+submission. Older overlapping reads cannot replace newer receipts. Genuine
+failures remain visible; hidden pages make no status reads and completed requests
+stop polling. These checks only read saved publishing jobs. Coverage is in the
+initial publication service, editor and progress component Vitest suites.
+
 A listing under review now explains that no adverts will be sent and directs the
 agent to Seller and Documents, activation, then Review. An unconfirmed initial
 publication request retains the saved listing ID and form instead of completing

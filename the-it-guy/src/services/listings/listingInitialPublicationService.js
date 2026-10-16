@@ -115,21 +115,24 @@ export async function retryFailedListingChannels({ listingId, listingStatus, cha
 }
 
 // Resume receipts from the server on a full reload, not just SPA navigation.
-// Poll only while a job is pending; hidden tabs do no status work.
-export function watchInitialListingPublication(listingId, { client = supabase, interval = 2500 } = {}) {
-  let stopped = false, timer, hadPending = false
+// Keep failures current too: a later request may succeed in another tab or
+// advertising control. These checks read saved receipts; they never resubmit.
+export function watchInitialListingPublication(listingId, { client = supabase, interval = 2500, attentionInterval = 30000 } = {}) {
+  let stopped = false, timer, hadPending = false, readVersion = 0
   async function refresh() {
     clearTimeout(timer)
     if (stopped || !listingId || !client) return
+    const version = ++readVersion
     if (typeof document !== 'undefined' && document.hidden) { timer = setTimeout(refresh, interval); return }
     try {
-      const results = await refreshListingPublicationResults(listingId, { client, shouldApply: () => !stopped })
-      if (stopped) return
+      const results = await refreshListingPublicationResults(listingId, { client, shouldApply: () => !stopped && version === readVersion })
+      if (stopped || version !== readVersion) return
       const pending = results.some(row => row.status === 'publishing')
       if (hadPending && !pending && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('itg:listings-updated', { detail: { listingId } }))
       hadPending = pending
       if (pending) timer = setTimeout(refresh, interval)
-    } catch { if (!stopped) timer = setTimeout(refresh, interval * 4) }
+      else if (results.some(row => ['needs_attention', 'uncertain'].includes(row.status))) timer = setTimeout(refresh, attentionInterval)
+    } catch { if (!stopped && version === readVersion) timer = setTimeout(refresh, interval * 4) }
   }
   void refresh()
   const requestQueued = event => {
@@ -137,8 +140,21 @@ export function watchInitialListingPublication(listingId, { client = supabase, i
       clearTimeout(timer); timer = setTimeout(refresh, interval)
     }
   }
-  if (typeof window !== 'undefined') window.addEventListener?.(INITIAL_LISTING_PUBLICATION_EVENT, requestQueued)
-  const visibility = () => { if (!document.hidden) void refresh() }
+  const resume = () => { void refresh() }
+  if (typeof window !== 'undefined') {
+    window.addEventListener?.(INITIAL_LISTING_PUBLICATION_EVENT, requestQueued)
+    window.addEventListener?.('focus', resume)
+    window.addEventListener?.('pageshow', resume)
+  }
+  const visibility = () => { if (!document.hidden) resume() }
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
-  return () => { stopped = true; clearTimeout(timer); if (typeof window !== 'undefined') window.removeEventListener?.(INITIAL_LISTING_PUBLICATION_EVENT, requestQueued); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility) }
+  return () => {
+    stopped = true; clearTimeout(timer)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener?.(INITIAL_LISTING_PUBLICATION_EVENT, requestQueued)
+      window.removeEventListener?.('focus', resume)
+      window.removeEventListener?.('pageshow', resume)
+    }
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility)
+  }
 }
