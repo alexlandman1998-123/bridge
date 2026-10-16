@@ -9,7 +9,9 @@ import { saveListingChannelManagement } from '../../../services/listings/listing
 import { isQuickListingPortalUpdateAccepted } from '../../../services/listings/listingQuickActionDelivery'
 import { deriveListingChannelUpdateStates, getListingChannelManageActivity } from '../../../services/listings/listingChannelUpdateState'
 import { buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages } from '../../../services/listings/listingMarketingChannelPresentation'
-import { getListingPublicationChannelKey } from '../../../services/listings/listingPublicationState'
+import { buildListingPublicationSnapshot, getListingPublicationChannelKey } from '../../../services/listings/listingPublicationState'
+import { readListingRelistCheckpoints, relistListingChannels } from '../../../services/listings/listingRelistService'
+import { applyListingSellerOnboardingSaveSnapshot } from '../../../services/listings/listingSellerCanonicalUpdateModel'
 import { sellerOnboardingDraftPublicationBlocker } from '../../../core/documents/sellerOnboardingDraftComparison'
 import { shouldRequireSyndicationReview, canAcknowledgeSyndicationChannel } from '../../../services/syndicationReviewGateService'
 import { persistSellerProfileOnboardingFormData } from '../../../services/privateListingService'
@@ -26,7 +28,8 @@ function controllerSource(name) {
 function fixture(overrides = {}) {
   const calls = []
   const ctx = {
-    React, URL, URLSearchParams, ListingChannelManageDialog, ListingRelistDialog: () => null, relistSavedListing: vi.fn(), Button: 'button', SlidersHorizontal: 'span', getListingPublicationChannelKey, getListingChannelViewUrl,
+    React, URL, URLSearchParams, ListingChannelManageDialog, ListingRelistDialog: () => null, Button: 'button', SlidersHorizontal: 'span', getListingPublicationChannelKey, getListingChannelViewUrl,
+    buildListingPublicationSnapshot, readListingRelistCheckpoints, relistListingChannels,
     buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages,
     saveListingChannelManagement, isQuickListingPortalUpdateAccepted, getListingChannelManageActivity, sellerOnboardingDraftPublicationBlocker,
     listingId: 'listing-1', listingRecord: { id: 'listing-1', arch9Reference: 'A9-TEST-100001', listingStatus: 'active' },
@@ -50,7 +53,18 @@ function fixture(overrides = {}) {
     getProperty24ReadinessCounts: () => ({ dataBlockers: 0, technicalBlockers: 0 }), getPrivatePropertyReadinessCounts: () => ({ dataBlockers: 0, technicalBlockers: 0, readinessBlockers: 0 }),
     getProperty24ReadinessIssues: response => [...(response.preview?.dataBlockers || []), ...(response.preview?.technicalBlockers || [])],
     getProperty24ApiMessage: response => response.message || 'Portal error',
-    saveMarketingDraft: vi.fn(async draft => { calls.push(['save', draft]); return { ok: true, draft } }),
+    saveMarketingDraft: vi.fn(async draft => { calls.push(['save', draft]); return { ok: true, draft, listing: ctx.listingRecord } }),
+    getPrivateListing: vi.fn(async () => ctx.listingRecord), buildPropertyDraft: vi.fn(() => ctx.marketingDraft), getPrivateListingActivity: vi.fn(async () => []),
+    createListingRelistPortalActions: vi.fn(({ channel }) => {
+      let live = false
+      return {
+        prepare: vi.fn(async () => channel === 'Property24' ? { canSubmit: true, identity: { listingNumber: '116284' } } : { ready: live, blockers: live ? [] : ['private_property_reactivation_required'], recovery: { checked: true, propertyId: 'existing-feed', externalStatus: live ? 'active' : 'inactive', canReactivate: true, listingType: 'Sale' } }),
+        observeState: vi.fn(async () => live), withdraw: vi.fn(async () => { live = false }),
+        activate: vi.fn(async () => { live = true; return { confirmed: true } }),
+        publish: vi.fn(async () => { calls.push(['relist', channel]); live = true; return { status: 'SUBMITTED', reference: channel === 'Property24' ? '116284' : 'T498201' } }),
+        observe: vi.fn(async () => live),
+      }
+    }),
     loadListingData: vi.fn(async () => {}), openSellerWorkspaceSection: vi.fn(), profile: { id: 'agent-1' },
     recordListingPublicationStage: vi.fn(async (...args) => { calls.push(['stage', ...args]); return { id: 'event-1' } }),
     createPrivateListingActivity: vi.fn(async payload => { calls.push(['activity', payload]); return { id: 'event-1' } }),
@@ -66,7 +80,7 @@ function fixture(overrides = {}) {
   for (const name of ['setSyndicationReviewUpdateChannel', 'setProperty24ManageOpen', 'setPrivatePropertyManageOpen', 'setManagedWebsiteChannel', 'setChannelManageCheckedAt', 'setChannelExpiries', 'setProperty24Action', 'setPrivatePropertyAction', 'setDetailError', 'setDetailMessage', 'setProperty24Preview', 'setPrivatePropertyPreview', 'setProperty24StatusCheck', 'setPrivatePropertyStatusCheck', 'setMarketingDraft', 'setChannelManageBusy', 'setQuickListingBusy', 'setQuickListingResults', 'setQuickListingResultAction', 'setWebsiteRefreshKey', 'setAgencyWebsitePublication', 'setKingdomWebsitePublication']) ctx[name] = vi.fn()
   Object.assign(ctx, overrides)
   vm.createContext(ctx)
-  for (const name of ['persistListingSnapshot', 'previewProperty24Listing', 'previewPrivatePropertyListing', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'refreshProperty24ListingStatus', 'refreshPrivatePropertyListingStatus', 'sendQuickListingPortalUpdate', 'saveSimpleChannelManagement', 'saveManagedListingExpiry', 'removeSelectedChannel', 'saveConfirmedPortalLink', 'simpleChannelMenu', 'renderSimpleChannelManagePanel']) {
+  for (const name of ['persistListingSnapshot', 'previewProperty24Listing', 'previewPrivatePropertyListing', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'refreshProperty24ListingStatus', 'refreshPrivatePropertyListingStatus', 'sendQuickListingPortalUpdate', 'relistSavedListing', 'saveSimpleChannelManagement', 'saveManagedListingExpiry', 'removeSelectedChannel', 'saveConfirmedPortalLink', 'simpleChannelMenu', 'renderSimpleChannelManagePanel']) {
     const code = transformSync(controllerSource(name), { loader: 'jsx', jsx: 'transform', jsxFactory: 'React.createElement' }).code
     vm.runInContext(code, ctx)
   }
@@ -180,6 +194,93 @@ it.each([
   const { relistDialog } = fixture(availability)
   expect(relistDialog(channel).channels).toEqual([channel])
 })
+it.each([['Property24'], ['Private Property'], ['Property24', 'Private Property']])('relisting saved adverts does not rewrite the seller record: %j', async (...channels) => {
+  const { ctx } = fixture({ saveMarketingDraft: vi.fn(async () => ({ ok: false, error: new Error('Someone else saved changes to this seller record.') })) })
+  const results = await ctx.relistSavedListing({ channels, expiryDate: ctx.marketingDraft.property24ExpiryDate })
+  expect(results).toHaveLength(channels.length)
+  expect(results.every(row => row.status === 'completed')).toBe(true)
+  expect(ctx.saveMarketingDraft).not.toHaveBeenCalled()
+  expect(ctx.getPrivateListing).toHaveBeenCalledWith('listing-1', { includeRequirementsAndDocuments: false, includePreviousListings: true, requireDistributionData: true })
+})
+it('relisting a clean form uses current saved details and the current expiry instead of stale browser values', async () => {
+  const { ctx } = fixture()
+  const current = { ...ctx.listingRecord, sellerOnboarding: { saveRevision: { onboardingId: 'seller-1', updatedAt: 'current' } } }
+  const currentDraft = { ...ctx.marketingDraft, price: '2600000', property24ExpiryDate: '2027-01-15' }
+  ctx.getPrivateListing.mockResolvedValue(current)
+  ctx.buildPropertyDraft.mockReturnValue(currentDraft)
+  await ctx.relistSavedListing({ channels: ['Property24'], expiryDate: ctx.marketingDraft.property24ExpiryDate })
+  expect(ctx.buildPropertyDraft).toHaveBeenCalledWith(current)
+  expect(ctx.createListingRelistPortalActions.mock.calls[0][0].property24Context().expiryDate).toBe('2027-01-15')
+  expect(ctx.recordListingPublicationStage).toHaveBeenLastCalledWith('Property24', 'accepted', currentDraft, { action: 'relist', reference: '116284' })
+  expect(ctx.saveMarketingDraft).not.toHaveBeenCalled()
+})
+it('a genuine conflict on unsaved relist edits blocks all portal actions and preserves the draft', async () => {
+  const error = Object.assign(new Error('Someone else saved changes to this seller record.'), { code: 'SELLER_UPDATE_CONFLICT' })
+  const { ctx } = fixture({ marketingDraftDirtyRef: { current: true }, saveMarketingDraft: vi.fn(async () => ({ ok: false, error })) })
+  const draft = ctx.marketingDraft
+  await expect(ctx.relistSavedListing({ channels: ['Property24', 'Private Property'], expiryDate: draft.property24ExpiryDate })).rejects.toBe(error)
+  expect(ctx.getPrivateListing).not.toHaveBeenCalled()
+  expect(ctx.createListingRelistPortalActions).not.toHaveBeenCalled()
+  expect(ctx.createPrivateListingActivity).not.toHaveBeenCalled()
+  expect(ctx.marketingDraft).toBe(draft)
+  expect(ctx.marketingDraftDirtyRef.current).toBe(true)
+  expect(ctx.channelMutationRef.current).toBe(false)
+})
+it('an edited Property24 expiry still uses guarded saving before relisting', async () => {
+  const { ctx } = fixture()
+  await ctx.relistSavedListing({ channels: ['Property24'], expiryDate: '2027-02-01' })
+  expect(ctx.saveMarketingDraft).toHaveBeenCalledOnce()
+  expect(ctx.saveMarketingDraft.mock.calls[0][0].property24ExpiryDate).toBe('2027-02-01')
+  expect(ctx.getPrivateListing).not.toHaveBeenCalled()
+})
+it('restores withdrawn stock once using the freshly read seller revision for both portals', async () => {
+  const { ctx } = fixture()
+  const listing = { ...ctx.listingRecord, sellerOnboarding: { saveRevision: { onboardingId: 'seller-1', updatedAt: 'current' } } }
+  ctx.getPrivateListing.mockResolvedValue(listing)
+  ctx.buildPropertyDraft.mockReturnValue({ ...ctx.marketingDraft, listingStatus: 'withdrawn' })
+  const results = await ctx.relistSavedListing({ channels: ['Property24', 'Private Property'], expiryDate: ctx.marketingDraft.property24ExpiryDate })
+  expect(results.every(row => row.status === 'completed')).toBe(true)
+  expect(ctx.saveMarketingDraft).toHaveBeenCalledOnce()
+  expect(ctx.saveMarketingDraft.mock.calls[0]).toEqual([
+    expect.objectContaining({ listingStatus: 'active', publicationStatus: 'Draft' }),
+    expect.objectContaining({ listingSnapshot: listing, listingVisibility: 'private', includePreviousListings: true }),
+  ])
+})
+it('a portal address blocker prevents restoring withdrawn stock or sending on the other portal', async () => {
+  const { ctx, calls } = fixture()
+  ctx.buildPropertyDraft.mockReturnValue({ ...ctx.marketingDraft, listingStatus: 'withdrawn' })
+  const portalActions = ctx.createListingRelistPortalActions.getMockImplementation()
+  ctx.createListingRelistPortalActions.mockImplementation(options => {
+    const actions = portalActions(options)
+    if (options.channel === 'Private Property') actions.prepare.mockResolvedValue({ blockers: ['private_property_locked_address_mismatch'], recovery: { checked: true, propertyId: 'existing-feed' } })
+    return actions
+  })
+  const results = await ctx.relistSavedListing({ channels: ['Property24', 'Private Property'], expiryDate: ctx.marketingDraft.property24ExpiryDate })
+  expect(results.every(row => row.status === 'blocked')).toBe(true)
+  expect(ctx.saveMarketingDraft).not.toHaveBeenCalled()
+  expect(ctx.createPrivateListingActivity).not.toHaveBeenCalled()
+  expect(calls.filter(row => row[0] === 'relist')).toEqual([])
+})
+it('uses the confirmed edit receipt when restoring a withdrawn listing instead of saving its old revision twice', async () => {
+  const { ctx } = fixture({ marketingDraftDirtyRef: { current: true } })
+  ctx.marketingDraft.listingStatus = 'withdrawn'
+  const receipt = { ...ctx.listingRecord, sellerOnboarding: { saveRevision: { onboardingId: 'seller-1', updatedAt: 'after-edits' } } }
+  ctx.saveMarketingDraft.mockImplementation(async (draft, options) => {
+    if (ctx.saveMarketingDraft.mock.calls.length > 1 && options.listingSnapshot !== receipt) return { ok: false, error: new Error('Someone else saved changes to this seller record.') }
+    return { ok: true, draft, listing: receipt }
+  })
+  const results = await ctx.relistSavedListing({ channels: ['Property24', 'Private Property'], expiryDate: ctx.marketingDraft.property24ExpiryDate })
+  expect(results.every(row => row.status === 'completed')).toBe(true)
+  expect(ctx.saveMarketingDraft).toHaveBeenCalledTimes(2)
+  expect(ctx.saveMarketingDraft.mock.calls[1][1].listingSnapshot).toBe(receipt)
+})
+it.each([null, { id: 'different-listing' }, { id: 'listing-1', listingStatus: 'sold' }])('refuses relisting when the latest saved listing is missing, changed or sold', async latest => {
+  const { ctx } = fixture({ getPrivateListing: vi.fn(async () => latest) })
+  ctx.buildPropertyDraft.mockReturnValue({ ...ctx.marketingDraft, listingStatus: 'active' })
+  await expect(ctx.relistSavedListing({ channels: ['Property24'], expiryDate: ctx.marketingDraft.property24ExpiryDate })).rejects.toThrow()
+  expect(ctx.createListingRelistPortalActions).not.toHaveBeenCalled()
+  expect(ctx.saveMarketingDraft).not.toHaveBeenCalled()
+})
 it.each(['Property24', 'Private Property', 'Agency Website', 'Kingdom Website'])('withdraw confirmation targets %s only', async channel => {
   const { ctx, popup, close } = fixture()
   popup(channel).onWithdraw()
@@ -281,6 +382,31 @@ it.each(['property24ListingUrl', 'privatePropertyListingUrl'])('clears %s throug
   expect(stored.form_data[field]).toBe('')
   expect(stored.form_data.property24Reference).toBe('116284')
   expect(stored.form_data.privatePropertyReference).toBe('T498201')
+})
+it('uses an explicitly confirmed revision for restoration while the real seller guard still rejects an old revision', async () => {
+  const id = '00000000-0000-4000-8000-000000000001'
+  const onboardingId = '00000000-0000-4000-8000-000000000002'
+  const oldSnapshot = { id, sellerOnboarding: { id: onboardingId, updatedAt: '2026-10-16T08:00:00Z' } }
+  let stored = { id: onboardingId, private_listing_id: id, token: 'local-token', status: 'in_progress', updated_at: '2026-10-16T08:01:00Z', form_data: {} }
+  const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: stored, error: null }) }
+  const client = { from: vi.fn(() => query), rpc: vi.fn(async (_, args) => {
+    if (args.p_revision.updatedAt !== stored.updated_at) return { error: { code: '40001' } }
+    stored = { ...stored, form_data: args.p_form_data, updated_at: new Date(Date.parse(stored.updated_at) + 1000).toISOString() }
+    return { data: stored, error: null }
+  }) }
+  const { ctx } = fixture({ listingId: id, listingRecord: oldSnapshot })
+  Object.assign(ctx, {
+    patchListing: () => oldSnapshot, buildListingSnapshotFormData: draft => ({ listingStatus: draft.listingStatus }),
+    persistSellerProfileOnboardingFormData: options => persistSellerProfileOnboardingFormData({ ...options, client }),
+    applyListingSellerOnboardingSaveSnapshot, setPrivateListings: vi.fn(),
+  })
+  const draft = { galleryImages: [], listingStatus: 'active' }
+  await expect(ctx.persistListingSnapshot(draft)).rejects.toMatchObject({ code: 'SELLER_UPDATE_CONFLICT' })
+  const confirmedSnapshot = applyListingSellerOnboardingSaveSnapshot(oldSnapshot, stored)
+  const restored = await ctx.persistListingSnapshot(draft, { listingSnapshot: confirmedSnapshot })
+  expect(restored.sellerOnboarding.saveRevision.updatedAt).toBe(stored.updated_at)
+  await expect(ctx.persistListingSnapshot(draft)).rejects.toMatchObject({ code: 'SELLER_UPDATE_CONFLICT' })
+  expect(oldSnapshot.sellerOnboarding.updatedAt).toBe('2026-10-16T08:00:00Z')
 })
 it('failed live-link persistence keeps the popup action failed', async () => {
   const { popup } = fixture({ saveMarketingDraft: async () => ({ ok: false, error: new Error('Save conflict.') }) })

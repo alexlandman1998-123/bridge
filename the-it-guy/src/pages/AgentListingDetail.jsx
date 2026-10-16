@@ -4795,8 +4795,8 @@ function AgentListingDetail() {
     }
   }
 
-  async function persistListingSnapshot(nextDraft, { message = '', persistCoreFields = false } = {}) {
-    if (!listingRecord?.id || !nextDraft) return null
+  async function persistListingSnapshot(nextDraft, { message = '', persistCoreFields = false, listingSnapshot = listingRecord } = {}) {
+    if (!listingSnapshot?.id || !nextDraft) return null
     const selectedCover = nextDraft.galleryImages.find((image) => String(image?.id) === String(nextDraft.coverImageId)) || nextDraft.galleryImages[0] || null
     const localListing = patchListing((row) => ({
       ...row,
@@ -4982,10 +4982,10 @@ function AgentListingDetail() {
     }
 
     const savedOnboarding = await persistSellerProfileOnboardingFormData({
-      listingId: listingRecord.id,
-      listingSnapshot: listingRecord,
+      listingId: listingSnapshot.id,
+      listingSnapshot,
       formData: buildListingSnapshotFormData(nextDraft),
-      status: listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || 'in_progress',
+      status: listingSnapshot?.sellerOnboardingStatus || listingSnapshot?.seller_onboarding_status || 'in_progress',
       allowProtectedSectionOverride: true,
       explicitClearFields: [
         'features',
@@ -5020,6 +5020,8 @@ function AgentListingDetail() {
   }
 
   async function saveMarketingDraft(draftOverride = marketingDraft, options = {}) {
+    // Restoration may use its confirmed receipt. Unsaved edits keep the editor's original revision.
+    const sourceListing = options.listingSnapshot || listingRecord
     const draft = draftOverride &&
       typeof draftOverride === 'object' &&
       !('nativeEvent' in draftOverride) &&
@@ -5033,35 +5035,35 @@ function AgentListingDetail() {
     const property24ExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('property24')) || null
     const privatePropertyExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('private')) || null
     const existingDescription = String(
-      listingRecord?.description ||
-        listingRecord?.listingDescription ||
-        listingRecord?.marketing?.description ||
-        listingRecord?.propertyDetails?.description ||
-        listingRecord?.listingPublicationData?.description ||
-        listingRecord?.publicationData?.description ||
+      sourceListing?.description ||
+        sourceListing?.listingDescription ||
+        sourceListing?.marketing?.description ||
+        sourceListing?.propertyDetails?.description ||
+        sourceListing?.listingPublicationData?.description ||
+        sourceListing?.publicationData?.description ||
         '',
     ).trim()
     const effectiveDescription = resolveMarketingDraftText(draft, 'description', existingDescription)
     const draftFeatures = normalizeListingFeatureSelections(draft.selectedFeatures)
     const existingFeatures = normalizeListingFeatureSelections(
-      listingRecord?.keySellingPoints,
-      listingRecord?.selectedFeatures,
-      listingRecord?.features,
-      listingRecord?.marketing?.selectedFeatures,
-      listingRecord?.marketing?.features,
-      listingRecord?.propertyDetails?.selectedFeatures,
-      listingRecord?.listingPublicationData?.features,
-      listingRecord?.publicationData?.features,
+      sourceListing?.keySellingPoints,
+      sourceListing?.selectedFeatures,
+      sourceListing?.features,
+      sourceListing?.marketing?.selectedFeatures,
+      sourceListing?.marketing?.features,
+      sourceListing?.propertyDetails?.selectedFeatures,
+      sourceListing?.listingPublicationData?.features,
+      sourceListing?.publicationData?.features,
     )
-    const existingAmenities = Array.isArray(listingRecord?.propertyDetails?.amenities)
-      ? listingRecord.propertyDetails.amenities
-      : Array.isArray(listingRecord?.listingPublicationData?.amenities)
-        ? listingRecord.listingPublicationData.amenities
-        : Array.isArray(listingRecord?.publicationData?.amenities)
-          ? listingRecord.publicationData.amenities
+    const existingAmenities = Array.isArray(sourceListing?.propertyDetails?.amenities)
+      ? sourceListing.propertyDetails.amenities
+      : Array.isArray(sourceListing?.listingPublicationData?.amenities)
+        ? sourceListing.listingPublicationData.amenities
+        : Array.isArray(sourceListing?.publicationData?.amenities)
+          ? sourceListing.publicationData.amenities
           : []
     const normalizedPrice = Number(String(draft.price ?? '').replace(/[^0-9.-]/g, '')) || 0
-    const previousAskingPrice = Number(listingRecord?.askingPrice || listingRecord?.asking_price || 0) || 0
+    const previousAskingPrice = Number(sourceListing?.askingPrice || sourceListing?.asking_price || 0) || 0
     const priceOnApplication = normalizeKey(draft.pricePresentation) === 'poa'
     if (!priceOnApplication && normalizedPrice <= 0) {
       const error = new Error('Enter a listing price or choose Price on application before saving or checking Property24.')
@@ -5080,14 +5082,14 @@ function AgentListingDetail() {
       listingPreviewDescription: resolveMarketingDraftText(
         draft,
         'listingPreviewDescription',
-        listingRecord?.listingPreviewDescription || listingRecord?.propertyDetails?.listingPreviewDescription || effectiveDescription,
+        sourceListing?.listingPreviewDescription || sourceListing?.propertyDetails?.listingPreviewDescription || effectiveDescription,
       ),
       selectedFeatures: effectiveFeatures,
       amenities: resolveMarketingDraftList(draft, 'amenities', existingAmenities),
     }
     let updatedListing = null
     try {
-      updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true })
+      updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true, listingSnapshot: sourceListing })
     } catch (error) {
       console.error('[AgentListingDetail] seller-onboarding listing save failed', error)
       setDetailError(error?.message || 'The listing could not be saved to all required records.')
@@ -5096,7 +5098,7 @@ function AgentListingDetail() {
     if (!updatedListing?.id || !isSupabaseConfigured) {
       markMarketingDraftDirty(false)
       setMarketingSaveConfirmed(true)
-      hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
+      hydratedMarketingListingIdRef.current = String(updatedListing?.id || sourceListing?.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage('Listing details saved locally.')
       return { ok: true, localOnly: true }
@@ -5198,7 +5200,7 @@ function AgentListingDetail() {
       if (distributionSync?.skipped || !distributionSync?.publication?.listing_id) {
         throw new Error('The listing could not be written to the Property24 publication record.')
       }
-      const verifiedListing = await getPrivateListing(updatedListing.id, { includeRequirementsAndDocuments: false })
+      const verifiedListing = await getPrivateListing(updatedListing.id, { includeRequirementsAndDocuments: false, includePreviousListings: Boolean(options.includePreviousListings) })
       const propertySaveVerification = verifyListingPropertyPersistenceCopies({
         form: {
           propertyAddress: effectiveDraft.addressLine1,
@@ -5487,18 +5489,37 @@ function AgentListingDetail() {
     setChannelManageBusy(true)
     try {
       await requireSettledListingPublication(listingRecord.id, channels.map(channel => channel === 'Property24' ? 'property24' : 'private_property'))
-      const saved = await saveMarketingDraft({ ...marketingDraft, ...(channels.includes('Property24') ? { property24ExpiryDate: expiryDate } : {}) }, { successMessage: '' })
-      if (!saved?.ok || saved.localOnly || !saved.draft) throw saved?.error || new Error('Your changes could not be saved. No relist has started.')
-      let draft = saved.draft
+      const expiryChanged = channels.includes('Property24') && formatDateInputValue(expiryDate) !== formatDateInputValue(marketingDraft.property24ExpiryDate)
+      let sourceListing = listingRecord
+      let draft = marketingDraft
+      if (marketingDraftDirtyRef.current || expiryChanged) {
+        const saved = await saveMarketingDraft({ ...draft, ...(channels.includes('Property24') ? { property24ExpiryDate: expiryDate } : {}) }, { successMessage: '', includePreviousListings: true })
+        if (!saved?.ok || saved.localOnly || !saved.draft || !saved.listing?.id) throw saved?.error || new Error('Your changes could not be saved. No relist has started.')
+        draft = saved.draft
+        sourceListing = saved.listing
+      } else {
+        // A clean form must not rewrite the seller revision just to relist saved content.
+        sourceListing = await getPrivateListing(listingRecord.id, { includeRequirementsAndDocuments: false, includePreviousListings: true, requireDistributionData: true })
+        if (sourceListing?.id !== listingRecord.id) throw new Error('The latest saved listing could not be loaded. No relist has started.')
+        draft = buildPropertyDraft(sourceListing)
+      }
+      if ([draft.listingStatus, sourceListing.listingStatus, sourceListing.status].some(status => ['sold', 'under_offer', 'transaction_created', 'deleted'].includes(normalizeKey(status)))) throw new Error('Review the sale outcome before relisting this property.')
+      if (!ensureMarketingMediaReady(draft, 'relisting')) throw new Error('Save the listing photos before relisting.')
+      if (channels.includes('Property24')) {
+        const expiryError = getProperty24ExpiryDateError(draft.property24ExpiryDate)
+        if (expiryError) throw new Error(expiryError)
+      }
+      const relistProperty24Reference = String(draft.property24Reference || sourceListing.property24Reference || sourceListing.property24_reference || '').trim()
       let restored = !['withdrawn', 'expired', 'archived'].includes(normalizeKey(draft.listingStatus))
       const snapshot = { ...buildListingPublicationSnapshot({ ...draft, listingStatus: 'active' }), property24ExpiryDate: draft.property24ExpiryDate }
       const history = await getPrivateListingActivity(listingRecord.id, { requireAvailable: true })
       const rows = Array.isArray(history) ? history : history?.activities || []
       const restoreSavedListing = async () => {
         if (restored) return
-        const restore = await saveMarketingDraft({ ...draft, listingStatus: 'active', publicationStatus: 'Draft' }, { successMessage: '', listingVisibility: 'private' })
-        if (!restore?.ok || restore.localOnly || !restore.draft) throw restore?.error || new Error('Arch9 could not restore the saved listing. No portal send was started.')
+        const restore = await saveMarketingDraft({ ...draft, listingStatus: 'active', publicationStatus: 'Draft' }, { successMessage: '', listingVisibility: 'private', listingSnapshot: sourceListing, includePreviousListings: true })
+        if (!restore?.ok || restore.localOnly || !restore.draft || !restore.listing?.id) throw restore?.error || new Error('Arch9 could not restore the saved listing. No portal send was started.')
         draft = restore.draft
+        sourceListing = restore.listing
         restored = true
       }
       const results = await relistListingChannels({
@@ -5510,11 +5531,11 @@ function AgentListingDetail() {
           if (!row?.id) throw new Error('Relist history could not be saved. Check the advert before trying again.')
         }
         const recordPublication = (stage, reference = '', error = '') => recordListingPublicationStage(channel, stage, draft, { action: 'relist', reference, ...(error ? { error } : {}) })
-        const property24Context = () => ({ ...getProperty24ActionContext(), environment: 'production', listingNumber: property24Reference, expiryDate, status: 'Active', photosChanged: true })
+        const property24Context = () => ({ ...getProperty24ActionContext(), environment: 'production', listingNumber: relistProperty24Reference, expiryDate: draft.property24ExpiryDate, status: 'Active', photosChanged: true })
         return {
           beforeSend: restoreSavedListing, recordCheckpoint, recordPublication,
           ...createListingRelistPortalActions({
-            listingId: listingRecord.id, channel, property24Reference, property24Context,
+            listingId: listingRecord.id, channel, property24Reference: relistProperty24Reference, property24Context,
             callProperty24: callProperty24ListingAction, callPrivateProperty: callPrivatePropertyListingAction,
             property24Message: getProperty24ApiMessage, privatePropertyReference: getPrivatePropertyReferenceFromResponse,
             onPrivatePropertyStatus: setPrivatePropertyStatusCheck,

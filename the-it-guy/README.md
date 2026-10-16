@@ -154,6 +154,12 @@ its previous revision. This prevents Arch9's own review or submission save from
 causing a seller conflict. Genuine conflicts on unsaved changes still block
 submission. Covered by the ListingChannelManageDialog integration suite.
 
+Relist reloads current saved property details when the form has no unsaved edits;
+it saves only pending edits or a changed Property24 expiry. Restoring withdrawn
+stock uses that read or the confirmed edit receipt as its seller-save revision,
+so the same relist does not reuse a revision it has already replaced. A real
+conflict still blocks edits before any portal withdrawal or submission.
+
 ## Address search across capture forms
 
 Full address entry uses the existing Google Places search in seller and owner
