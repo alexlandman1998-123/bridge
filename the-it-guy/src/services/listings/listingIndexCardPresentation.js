@@ -1,5 +1,31 @@
 const normalizeText = (value) => String(value ?? '').trim()
 
+export function getListingCardSellerContact(listing = {}) {
+  const facts = listing.sellerCanonicalFacts || listing.seller_canonical_facts_json || listing.sellerOnboarding?.canonicalFacts || {}
+  const seller = facts.seller || {}
+  const contact = seller.contact || seller.primary_contact || {}
+  const form = listing.sellerOnboarding?.formData || {}
+  const firstText = (...values) => values.map(normalizeText).find(Boolean) || ''
+  return {
+    name: firstText(
+      facts.fullName, facts.sellerName, facts.name,
+      [facts.firstName, facts.lastName].filter(Boolean).join(' '),
+      seller.full_name, seller.fullName,
+      [seller.first_name || seller.firstName, seller.surname || seller.lastName].filter(Boolean).join(' '),
+      contact.name,
+      form.fullName, form.sellerName,
+      [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].filter(Boolean).join(' '),
+      form.primaryContactName, listing.sellerName, listing.seller?.name,
+    ),
+    phone: firstText(
+      facts.phone, facts.sellerPhone, facts.mobile,
+      seller.phone, seller.mobile, contact.phone,
+      form.phone, form.sellerPhone, form.mobile,
+      listing.sellerPhone, listing.seller?.phone,
+    ),
+  }
+}
+
 export function getListingCardAddressLabel(listing = {}) {
   const unitNumber = normalizeText(listing.unitNumber || listing.unit_number || listing.propertyDetails?.unitNumber)
   const complexOrEstate = normalizeText(

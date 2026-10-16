@@ -69,7 +69,8 @@ export default async function PropertyPage({ params }: Props) {
   const consultant = property.consultant
   const whatsappHref = listingWhatsappHref(property, site)
   const lwp = hasEditorialPropertyExperience(site)
-  const showAffordability = site.templateKey === 'kingdom-v1' && property.transactionType === 'sale'
+  const kingdom = site.templateKey === 'kingdom-v1'
+  const showAffordability = kingdom && property.transactionType === 'sale'
   const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'RENTAL PRICE' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>{property.price ? <Link href={showAffordability ? "#property-affordability" : `/calculators?price=${property.price}#bond-calculator`}>{showAffordability ? 'Can I afford this property?' : property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
 
   return <main className={`property-page listing-detail-page ${templateClassName(site.templateKey)}${lwp ? ' lwp-listing-page' : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
@@ -81,8 +82,16 @@ export default async function PropertyPage({ params }: Props) {
       <article className="listing-detail-copy">{lwp && <div className="listing-story-heading"><p className="eyebrow">THE STORY</p><h2>More than a listing.</h2><p>A closer look at the details, spaces and setting that make this home worth seeing properly.</p></div>}{features.length ? <div className="listing-feature-tags" aria-label="Property features">{features.map((feature) => <span className={feature.icon ? '' : 'is-legacy'} key={feature.key}>{feature.icon ? <FeatureIcon icon={feature.icon} /> : null}{feature.label}</span>)}</div> : null}<ListingDescription description={property.description || 'Further property details will be supplied by the listing agent.'} />{property.amenities.length ? <section className="listing-amenities"><h2>{lwp ? 'Designed for the way you live' : 'More about this home'}</h2><ul>{property.amenities.map((item) => <li key={item}>{item}</li>)}</ul></section> : null}</article></div>
       <div className="listing-conversion-stack"><div className="listing-desktop-price">{pricePanel}</div><aside className="listing-agent-card" id="enquire"><div className="listing-agent-intro">{consultant?.avatarUrl ? <Image className="listing-agent-photo" src={consultant.avatarUrl} alt={`${consultant.name} property consultant`} width={64} height={64} /> : <span>{(consultant?.name || site.name).split(/\s+/).map((word) => word[0]).join('').slice(0, 2)}</span>}<div><p>{lwp ? 'THE PERSON BEHIND THE LISTING' : 'MEET YOUR PROPERTY CONSULTANT'}</p><h2>{consultant?.name || `${site.name} team`}</h2></div></div><p className="listing-agent-copy">{lwp ? `Speak to ${consultant?.name || 'the LWP team'} about the home, the viewing and the details that matter before your next step.` : `Arrange a viewing or ask a question. Your enquiry goes directly to ${consultant?.name || 'the local team'}.`}</p><LeadForm propertyId={property.id} />{whatsappHref ? <a className="listing-whatsapp" href={whatsappHref} target="_blank" rel="noreferrer">WhatsApp agent</a> : null}</aside></div>
     </section>
-    {similar.length > 0 ? <section className="section listing-similar-section"><div className="section-heading"><div><p className="eyebrow">YOU MAY ALSO LIKE</p><h2>Similar properties</h2></div></div><div className="property-grid">{similar.map((item) => <PropertyCard key={item.id} property={item} />)}</div></section> : null}
     {showAffordability ? <PropertyAffordability key={property.id} price={property.price} /> : null}
+    {similar.length > 0 ? <section className="section listing-similar-section" aria-labelledby="similar-properties-title">
+      <div className="listing-similar-inner">
+        <div className="section-heading">
+          <div><p className="eyebrow">YOU MAY ALSO LIKE</p><h2 id="similar-properties-title">Similar properties</h2>{kingdom ? <p className="listing-similar-intro">Keep exploring. Your next move could be right here.</p> : null}</div>
+          {kingdom ? <Link className="listing-similar-browse" href={`/properties?type=${property.transactionType}`}>View all properties <span aria-hidden="true">↗</span></Link> : null}
+        </div>
+        <div className="property-grid">{similar.map((item) => <PropertyCard key={item.id} property={item} variant={kingdom ? 'similar' : 'default'} />)}</div>
+      </div>
+    </section> : null}
     <div className="listing-mobile-actions"><a href="#enquire">Enquire</a>{whatsappHref ? <a href={whatsappHref} target="_blank" rel="noreferrer">WhatsApp</a> : null}</div><SiteFooter site={site} />
   </main>
 }

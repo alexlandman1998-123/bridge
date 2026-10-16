@@ -17,7 +17,7 @@ function statusStyle(status = '') {
   return 'border-[#f0caca] bg-[#fff5f5] text-[#a43d35]'
 }
 
-function ChannelReview({ title, channel, onContinue, continueLabel }) {
+function ChannelReview({ title, channel, onContinue, continueLabel, updating = false }) {
   const mapped = Object.entries(channel?.mappedOutcome || {}).filter(([, value]) => value !== null && value !== undefined && value !== '')
   const blockers = Array.isArray(channel?.blockers) ? channel.blockers : []
   const warnings = Array.isArray(channel?.warnings) ? channel.warnings : []
@@ -82,7 +82,7 @@ function ChannelReview({ title, channel, onContinue, continueLabel }) {
       ) : null}
 
       <div className="mt-4 flex justify-end">
-        <Button type="button" size="sm" variant="secondary" onClick={onContinue}>
+        <Button type="button" size="sm" variant="secondary" disabled={updating && !ready} onClick={onContinue}>
           {continueLabel}
         </Button>
       </div>
@@ -98,6 +98,7 @@ export default function SyndicationReviewModal({
   onRefresh,
   onContinuePrivateProperty,
   onContinueProperty24,
+  updateChannel = '',
 }) {
   const channels = review?.channels || {}
 
@@ -105,8 +106,8 @@ export default function SyndicationReviewModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Review channel settings"
-      subtitle="Arch9 keeps one listing record and checks how each portal can represent it before the portal's own readiness step."
+      title={updateChannel ? "Review Private Property update" : "Review channel settings"}
+      subtitle={updateChannel ? "Review these details, then continue the update you started." : "Arch9 keeps one listing record and checks how each portal can represent it before the portal's own readiness step."}
       className="max-w-4xl"
       footer={(
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -128,8 +129,8 @@ export default function SyndicationReviewModal({
             <ShieldCheck size={18} className="mt-0.5 shrink-0 text-[#1f4f78]" />
             <p>Portal credentials, branch access, agent mappings, and final catalogues are still checked server-side when you run each portal’s readiness step.</p>
           </div>
-          <ChannelReview title="Private Property" channel={channels.privateProperty} onContinue={onContinuePrivateProperty} continueLabel="Check Private Property readiness" />
-          <ChannelReview title="Property24" channel={channels.property24} onContinue={onContinueProperty24} continueLabel="Check Property24 readiness" />
+          <ChannelReview title="Private Property" channel={channels.privateProperty} onContinue={onContinuePrivateProperty} continueLabel={updateChannel ? "Continue update" : "Check Private Property readiness"} updating={Boolean(updateChannel)} />
+          {!updateChannel ? <ChannelReview title="Property24" channel={channels.property24} onContinue={onContinueProperty24} continueLabel="Check Property24 readiness" /> : null}
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-5 text-sm text-[#607387]">Run the review to see each portal’s current outcome.</div>

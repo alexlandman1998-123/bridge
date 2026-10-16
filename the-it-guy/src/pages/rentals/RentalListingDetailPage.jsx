@@ -71,7 +71,6 @@ import {
 import RentalLeadDialog, { INITIAL_RENTAL_LEAD_FORM } from './RentalLeadDialog'
 import { createRentalLead } from '../../services/rentals/rentalLeadService'
 import RentalListingOverview from './RentalListingOverview'
-import RentalListingInventoryPanel from './RentalListingInventoryPanel.jsx'
 import RentalListingLandlordPanel from './RentalListingLandlordPanel'
 import RentalListingRelatedPanels from './RentalListingRelatedPanels'
 import { RENTAL_OVERVIEW_TABS } from '../../services/rentals/rentalListingOverviewModel'
@@ -1567,12 +1566,13 @@ function ScopedRentalListingDetailPage() {
     try {
       const pending = portalChannels.find(item => item.key === channel)?.requiresReconciliation
       const result = pending ? await reconcileRentalPortalPublication(listingId,channel) : await getRentalPortalStatus(listingId,channel,{ refresh:true })
+      if (result.monitor?.apiError) throw new Error(result.monitor.apiError.message || 'Private Property status could not be checked.')
       if (pending && result.status === 'UNCERTAIN') throw new Error(result.message || 'The portal outcome is still unconfirmed. Check again before sending.')
       setChannelData(current => ({ ...current,[channel]:result,errors:{ ...current.errors,[channel]:'' } }))
       await recordRentalPublicationEvent(listingId,channel,'checked',{})
       setSuccessMessage(result.status === 'RECONCILED' ? result.message : `${channel === 'property24' ? 'Property24' : 'Private Property'} portal status refreshed.`)
-      await loadListing()
-      return { ok: true, message: result.status === 'RECONCILED' ? result.message : `${channel === 'property24' ? 'Property24' : 'Private Property'} portal status refreshed.` }
+      await loadListing({ background: true })
+      return { ok: true, message: result.status === 'RECONCILED' ? result.message : `${channel === 'property24' ? 'Property24' : 'Private Property'} portal status refreshed.`, portalStatus: channel === 'private_property' ? result.monitor?.externalStatus || result.status?.sync?.external_status : undefined }
     } catch (actionError) {
       setPublishError(actionError.message || 'Portal status could not be refreshed.')
       return { ok: false, error: actionError.message || 'Portal status could not be refreshed.' }
@@ -1713,11 +1713,13 @@ function ScopedRentalListingDetailPage() {
       setPrivatePropertyError('')
       setSuccessMessage('')
       const payload = await previewPrivatePropertyRentalListing(listingId)
-      if (!isCurrent()) return
+      if (!isCurrent()) return { ok: false, error: 'The saved rental changed during the check. Try the update again.' }
       setPrivatePropertyPreview(payload)
       setSuccessMessage(getRentalPortalReadiness('private_property',payload).ready ? 'Private Property listing requirements passed. You can now publish.' : 'Private Property has blockers to resolve before publishing.')
+      const readiness = getRentalPortalReadiness('private_property', payload)
+      return { ok: readiness.ready, payload, error: readiness.ready ? '' : `Private Property needs attention. ${readiness.issues.map(issue => issue.label).join('. ') || readiness.detail}` }
     } catch (previewError) {
-      if (!isCurrent()) return
+      if (!isCurrent()) return { ok: false, error: 'The saved rental changed during the check. Try the update again.' }
       setPrivatePropertyPreview(null)
       setPrivatePropertyReadinessError(previewError?.message || 'Unable to check Private Property rental readiness.')
       return { ok: false, error: previewError?.message || 'Unable to check Private Property rental readiness.' }
@@ -1726,22 +1728,23 @@ function ScopedRentalListingDetailPage() {
     }
   }
 
-  async function handlePrivatePropertyPublish() {
+  async function handlePrivatePropertyPublish({ updateExisting = false } = {}) {
     if (readInitialListingChannelResults(listingId).some(result => result.key === 'private_property' && result.status === 'publishing')) {
       setPrivatePropertyError('The initial submission is still in progress. Wait for its result.'); return { ok: false, error: 'The initial submission is still in progress. Wait for its result.' }
     }
-    if (!getRentalPortalReadiness('private_property',privatePropertyPreview).ready) {
-      setPrivatePropertyError('Check and resolve the Private Property listing requirements before publishing this rental.')
-      return { ok: false, error: 'Check and resolve the Private Property listing requirements before publishing this rental.' }
-    }
-    if (!window.confirm('Submit this rental listing to Private Property production?')) return { ok: false, error: 'Publication cancelled.' }
     try {
       setPublishingPrivateProperty(true)
       setPrivatePropertyError('')
+      const checked = updateExisting ? await handleCheckPrivatePropertyReadiness() : null
+      if (updateExisting && checked?.ok !== true) return checked || { ok: false, error: 'Private Property requirements could not be checked. Try again.' }
+      if (!getRentalPortalReadiness('private_property', checked?.payload || privatePropertyPreview).ready) {
+        throw new Error('Check and resolve the Private Property listing requirements before publishing this rental.')
+      }
+      if (!updateExisting && !window.confirm('Submit this rental listing to Private Property production?')) return { ok: false, error: 'Publication cancelled.' }
       const result = await performPortalAction('private_property','publish',() => publishPrivatePropertyRentalListing(listingId))
       const reference = result?.report?.privatePropertyReference || result?.report?.syncResult?.privatePropertyRef || ''
       setSuccessMessage(reference ? `Rental submitted to Private Property. Reference ${reference}.` : 'Rental submitted to Private Property.')
-      await loadListing()
+      await loadListing({ background: updateExisting })
       return { ok: true, message: reference ? `Rental submitted to Private Property. Reference ${reference}.` : 'Rental submitted to Private Property.' }
     } catch (publishError) {
       setPrivatePropertyError(publishError?.message || 'Unable to publish this rental to Private Property.')
@@ -1898,7 +1901,7 @@ function ScopedRentalListingDetailPage() {
 
         <RentalTabContent
           snapshot={overviewSnapshot}
-          agentPanel={<><RentalListingInventoryPanel key={`${organisationId}:${listingId}`} listingId={row.id} organisationId={organisationId} onConnected={loadListing} /><ListingAgentReassignmentPanel
+          agentPanel={<ListingAgentReassignmentPanel
           listingId={row.id}
           listing={listing}
           listingType="rental"
@@ -1906,7 +1909,7 @@ function ScopedRentalListingDetailPage() {
             await loadListing()
             setSuccessMessage(result.portalUpdateRequired ? 'Additional agents saved. Publish or update each portal to send them.' : 'Rental listing agent reassigned successfully.')
           }}
-        /></>}
+        />}
           onOpenTab={openRentalListingWorkspaceTab}
           onNavigate={navigate}
           onAddLead={openTenantLeadDialog}

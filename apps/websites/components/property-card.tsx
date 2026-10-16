@@ -13,8 +13,28 @@ function FeatureIcon({ kind }: { kind: 'bed' | 'bath' | 'parking' }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M3 12.5h18l-1.1 5H4.1zM6 12.5l1.4-3h9.2l1.4 3M6 17.5v1.8M18 17.5v1.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
 }
 
-export function PropertyCard({ property, variant = 'default' }: { property: PublicProperty; variant?: 'default' | 'results' }) {
+export function PropertyCard({ property, variant = 'default' }: { property: PublicProperty; variant?: 'default' | 'results' | 'similar' }) {
   const image = property.media.find((media) => media.type === 'image' && media.url)
+  if (variant === 'similar') return <article className="similar-property-card">
+    <Link className="similar-property-link" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
+      <div className="similar-property-image">
+        {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 640px) calc(100vw - 40px), (max-width: 960px) 50vw, 390px" /> : <div className="image-placeholder" />}
+        <span className="similar-property-status">{property.isShowcase ? 'Preview listing' : listingStatusLabel(property)}</span>
+      </div>
+      <div className="similar-property-copy">
+        <p className="similar-property-type">{property.propertyType}</p>
+        <strong className="similar-property-price">{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>
+        <h3>{property.title}</h3>
+        <p className="similar-property-location">{[property.suburb, property.province].filter(Boolean).join(', ')}</p>
+        <ul className="similar-property-features" aria-label="Property features">
+          {property.bedrooms != null ? <li><FeatureIcon kind="bed" />{property.bedrooms} {property.bedrooms === 1 ? 'bed' : 'beds'}</li> : null}
+          {property.bathrooms != null ? <li><FeatureIcon kind="bath" />{property.bathrooms} {property.bathrooms === 1 ? 'bath' : 'baths'}</li> : null}
+          {property.parkingBays != null ? <li><FeatureIcon kind="parking" />{property.parkingBays} parking</li> : null}
+        </ul>
+        <span className="similar-property-cta">View property <span aria-hidden="true">↗</span></span>
+      </div>
+    </Link>
+  </article>
   if (variant === 'results') return <article className="property-result-card">
     <Link className="property-result-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
       {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 760px) 100vw, 33vw" /> : <div className="image-placeholder" />}

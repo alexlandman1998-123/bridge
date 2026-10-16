@@ -104,6 +104,25 @@ Focused checks: `node scripts/listing-seller-canonical-update.test.mjs`,
 
 ## Portal Manage popups
 
+Existing Private Property adverts offer **Save and update Private Property** for
+sale and rental listings. This saves pending sale details, runs the required
+checks and sends to the existing advert. Rental updates run a fresh requirements
+check automatically. A required sale channel review shows only Private Property;
+**Continue update** resumes the original request, while closing cancels it.
+Other advert actions sit under **More actions**, and the main update is visible
+first on mobile. New advert publishing retains its existing confirmation.
+
+After acceptance, Arch9 checks the portal status once and shows Accepted,
+Processing or Needs attention. A failed status check retains the accepted send
+and asks for a status check before resending. An active advert still needs a
+public-page check to confirm the latest content. Focused checks:
+ListingChannelManageDialog component and integration suites,
+RentalPortalManagementPanel and RentalListingDetailPage.overview; the existing
+local browser check covers the single-action desktop and mobile flow with
+external requests blocked. Release verification on 16 October: 296 focused tests,
+lint, the baseline tests and the complete production build passed.
+
+
 Listing → Marketing opens a separate Manage popup for each channel. It shows
 that channel's saved status, advert reference, submission/check times, pending
 changes, errors, warnings and recent activity. Update and retry target that
@@ -116,6 +135,9 @@ Property24 and Private Property popups also let agents add or edit a live advert
 URL. Only HTTPS advert pages on the selected portal's domain are accepted.
 Saving a URL updates the saved link without sending a portal update or marking
 the advert live. Website public links continue to follow their publication URLs.
+Leave the field blank and choose **Remove link** to clear the portal URL and its
+matching external-link entries while retaining the advert reference and status.
+Old activity URLs do not restore a removed link in Manage.
 
 Focused checks: the ListingChannelManageDialog component and integration suites,
 ListingRelistDialog and listingChannelManagement/Relist service suites,
@@ -2874,8 +2896,7 @@ connect one draft vacancy through `rental_ensure_listing_vacancy`; retries retai
 the same listing, uploaded photos and confirmed save revision. An existing open
 vacancy is reused without overwriting its application/letting terms. Saving or
 linking does not open applications or publish an advert. Non-monthly rentals keep
-their existing pricing flow. Existing stock has an explicit **Connect rental
-vacancy** action in its overview; loading a listing performs no repair writes.
+their existing pricing flow. Loading a listing performs no repair writes.
 
 The property Landlord tab searches existing organisation contacts by name, email
 or phone, then records the chosen owner's share and primary-contact choice.
@@ -3674,7 +3695,7 @@ and save gallery order directly from Marketing. Photo-only saves retain the list
 facts and publication data verbatim, including older incomplete rentals. Removing
 the last photo clears the displayed cover rather than reviving an old preview.
 The guided Marketing editor can add, change or clear a public video and virtual-tour
-URL; saved links open from Marketing and appear in Listing Media Progress. These
+URL; saved links open from Marketing. These
 optional links do not change the portal readiness percentage. Edits target only
 the selected video/tour row and preserve other media and external links.
 

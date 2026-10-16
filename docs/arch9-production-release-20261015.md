@@ -98,3 +98,21 @@ The release source and this record are retained on the attached
 `codex/arch9-production-20261015` worktree for recovery. Later packaging and release
 receipt commits are published through a normal fast-forward push. The original active
 checkout is preserved without resetting its branch, index or unrelated files.
+
+## Final post-release verification receipt
+
+GitHub `main` was verified at `23aa53a1ac3d1ab6ad1d532876287a735e5a6a1b`.
+Its production deployment `dpl_ZYJKZC98hcgXuf3LzZyUxP3SnZLp` is Ready and
+serves https://app.arch9.co.za. The live HTML release marker matches that exact
+commit; the sign-in screen finished loading without captured console errors.
+Vercel's Node 22 build passed unchanged bundle, operational packaging and schema
+checks: entry 129,805 bytes gzip, CSS 158,070 bytes, legacy API 329,422 bytes.
+The optional legal provider's 10 checks, scoped lint and startup/stale-chunk recovery
+checks passed. The local Node 22 build was terminated during asset generation;
+the equivalent Vercel build is the completed build evidence for this correction.
+
+The Git release worktree is clean. This receipt was appended to the active
+workspace copy after live verification; application source is fully published.
+Admin, Kingdom and Home Seekers retain the verified deployments listed above.
+Hosted authenticated save/upload canaries and the Home Seekers Google referrer
+configuration limitation remain as stated above.

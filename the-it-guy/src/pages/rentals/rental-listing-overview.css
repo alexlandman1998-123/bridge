@@ -38,21 +38,29 @@
 .rental-overview-lead-empty { margin: 0 0 16px; padding: 18px 0; color: #607387; font-size: 13px; }
 .rental-overview-latest-activity > .rental-overview-action { margin-top: auto; }
 .rental-overview-columns { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 20px; }
-.rental-overview-tenant { align-self: stretch; display: flex; flex-direction: column; }
-.rental-overview-person { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.rental-overview-tenant { display: flex; flex-direction: column; }
+.rental-overview-person { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
 .rental-overview-person > span { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border: 1px solid #e1eaf4; border-radius: 50%; background: #eef4fa; color: #486987; font-size: 13px; }
 .rental-overview-person > div { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .rental-overview-person p,.rental-overview-tenant-empty p,.rental-overview-owner p { margin-top: 5px; font-size: 12px; line-height: 1.6; color: #6a8098; overflow-wrap: anywhere; }
-.rental-overview-tenant-empty { margin: 18px 0; font-size: 14px; }
-.rental-overview-owner { border-top: 1px solid #edf1f7; margin-top: 16px; padding: 18px 0; }
-.rental-overview-owner h3 { margin-bottom: 16px; }
-.rental-overview-owner > strong { font-size: 13px; }
-.rental-overview-tenant > .rental-overview-action { margin-top: auto; width: 100%; }
+.rental-overview-tenant-empty { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: 12px; background: #f6f8fb; font-size: 13px; }
+.rental-overview-tenant-empty > div { min-width: 0; }
+.rental-overview-tenant-icon { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 50%; background: #eaf0f6; color: #607891; }
+.rental-overview-owner { border-top: 1px solid #edf1f7; margin-top: 20px; padding-top: 20px; }
+.rental-overview-owner-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.rental-overview-owner-heading h3 { margin: 0; color: #18324b; font-size: 14px; }
+.rental-overview-owner > strong { display: block; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.rental-overview-owner-contact { margin-top: 4px; }
+.rental-overview-owner-contact p { margin: 2px 0 0; }
+.rental-overview-tenant > .rental-overview-action { margin-top: 14px; width: 100%; }
 .rental-overview-panel dl { margin-top: 18px; }
 .rental-overview-panel dl:not(:has(> div)) { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px 10px; }
 .rental-overview-panel dl > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid #edf1f7; }
 .rental-overview-panel dt { color: #607891; font-size: 12px; }
 .rental-overview-panel dd { margin: 0; text-align: right; color: #20364c; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.rental-overview-tenant .rental-overview-status-list { margin: 14px 0 0; }
+.rental-overview-tenant .rental-overview-status-list > div { align-items: flex-start; gap: 16px; }
+.rental-overview-tenant .rental-overview-status-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
 .rental-overview-marketing { padding: 0; overflow: hidden; }
 .rental-overview-marketing-heading { padding: 20px 20px 0; }
 .rental-overview-marketing-image { position: relative; height: 230px; background: linear-gradient(120deg,#173b57,#9cb6cd); }
@@ -63,10 +71,6 @@
 .rental-overview-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
 .rental-overview-facts > span { border: 1px solid #e1eaf4; border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #42617f; background: #f7faff; }
 .rental-overview-marketing-body > p { font-size: 13px; line-height: 1.7; color: #6a8098; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.rental-overview-listed { margin-top: 20px; padding-top: 16px; border-top: 1px solid #edf1f7; display: grid; gap: 8px; }
-.rental-overview-listed h3 { text-transform: uppercase; letter-spacing: .05em; }
-.rental-overview-listed > span { display: inline-flex; align-items: center; flex-wrap: wrap; justify-self: start; gap: 8px; border: 1px solid #e1eaf4; border-radius: 24px; padding: 5px 10px; background: #f7faff; font-size: 11px; font-weight: 600; color: #42617f; }
-.rental-overview-listed small { border: 1px solid #f9e0b7; border-radius: 20px; background: #fffbf4; color: #98661c; padding: 4px 8px; font-weight: 500; }
 .rental-overview-document-progress { display: flex; align-items: center; gap: 18px; font-size: 13px; }
 .rental-overview-document-progress > span { display: grid; place-items: center; width: 78px; height: 78px; flex-shrink: 0; border-radius: 50%; }
 .rental-overview-document-progress > span strong { display: grid; place-items: center; width: 62px; height: 62px; border-radius: 50%; background: white; }
@@ -78,5 +82,5 @@
 .rental-overview-table-wrap :is(th,td) { text-align: left; padding: 12px 8px; border-bottom: 1px solid #edf1f7; overflow-wrap: anywhere; }
 .rental-overview-subheading { margin-top: 24px; }
 .rental-overview-panel .rental-overview-application { display: flex; width: 100%; justify-content: space-between; }
-@media (max-width: 1100px) { .rental-overview-columns { grid-template-columns: repeat(2,minmax(0,1fr)); } .rental-overview-tenant { grid-row: span 2; } }
+@media (max-width: 1100px) { .rental-overview-columns { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 700px) { .rental-listing-tabs .rental-listing-tab-strip { grid-template-columns: repeat(4,minmax(0,1fr)); } .rental-listing-tabs .rental-listing-tab-strip button { font-size: 12px; } .rental-overview-metrics,.rental-overview-activity-grid,.rental-overview-columns { grid-template-columns: 1fr; } .rental-overview-tenant { grid-row: auto; } .rental-overview-refresh { align-items: start; } .rental-overview-panel { padding: 16px; } .rental-overview-marketing { padding: 0; } }

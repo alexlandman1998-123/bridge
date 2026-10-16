@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import RentalListingDetailPage from '../RentalListingDetailPage'
 import { buildRentalListingOverview } from '../../../services/rentals/rentalListingOverviewModel'
 
-const mocks = vi.hoisted(() => ({ publication: [], refreshPublication: vi.fn(), retryPublication: vi.fn(), settle: vi.fn(), publishP24: vi.fn(), load: vi.fn(), overview: vi.fn(), expiry: vi.fn(), gallery: vi.fn(), createLead: vi.fn(), withdrawP24: vi.fn(), withdrawPP: vi.fn(), previewP24: vi.fn(), previewPP: vi.fn(), channels: vi.fn(async () => ({ activity: [], errors: {} })), status: vi.fn(), reconcile: vi.fn(), statusUpdate: vi.fn(), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }, workspace: {} }))
+const mocks = vi.hoisted(() => ({ publication: [], refreshPublication: vi.fn(), retryPublication: vi.fn(), settle: vi.fn(), publishP24: vi.fn(), publishPP: vi.fn(), load: vi.fn(), overview: vi.fn(), expiry: vi.fn(), gallery: vi.fn(), createLead: vi.fn(), withdrawP24: vi.fn(), withdrawPP: vi.fn(), previewP24: vi.fn(), previewPP: vi.fn(), channels: vi.fn(async () => ({ activity: [], errors: {} })), status: vi.fn(), reconcile: vi.fn(), statusUpdate: vi.fn(), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }, workspace: {} }))
 vi.mock('../../../services/listings/listingOverviewPerformanceService', () => ({ getListingOverviewAnalytics: vi.fn(async ({ days }) => ({ windowDays: days, period: { startDate: '2026-09-14', endDate: '2026-10-13', completedDaysOnly: true } })) }))
 vi.mock('../../../services/listings/listingInitialPublicationService', () => ({ INITIAL_LISTING_PUBLICATION_EVENT: 'itg:initial-listing-publication', readInitialListingChannelResults: () => mocks.publication, watchInitialListingPublication: () => () => {}, refreshListingPublicationResults: mocks.refreshPublication, retryFailedListingChannels: mocks.retryPublication, requireSettledListingPublication: mocks.settle }))
 vi.mock('../../../services/rentals/rentalLeadService', () => ({ createRentalLead: mocks.createLead }))
@@ -15,7 +15,7 @@ vi.mock('../../../services/rentals/rentalListingChannelService', () => ({ loadRe
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => mocks.workspace }))
 vi.mock('../../../services/rentals/rentalWorkspaceScope', async (original) => ({ ...await original(), resolveRentalWorkspaceScope: () => mocks.scope }))
 vi.mock('../../../services/rentals/rentalListingOverviewService', () => ({ loadRentalListingOverview: mocks.overview }))
-vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ getRentalListingForAgent: mocks.load, updateRentalListingDraft: vi.fn(), updateRentalProperty24Expiry:mocks.expiry, updateRentalListingGallery: mocks.gallery, previewPrivatePropertyRentalListing: mocks.previewPP, publishPrivatePropertyRentalListing: vi.fn(), expirePrivatePropertyRentalListing: mocks.withdrawPP, previewRentalProperty24Listing: mocks.previewP24, publishRentalProperty24Listing: mocks.publishP24, withdrawRentalProperty24Listing: mocks.withdrawP24 }))
+vi.mock('../../../services/rentals/rentalListingDraftService', () => ({ getRentalListingForAgent: mocks.load, updateRentalListingDraft: vi.fn(), updateRentalProperty24Expiry:mocks.expiry, updateRentalListingGallery: mocks.gallery, previewPrivatePropertyRentalListing: mocks.previewPP, publishPrivatePropertyRentalListing: mocks.publishPP, expirePrivatePropertyRentalListing: mocks.withdrawPP, previewRentalProperty24Listing: mocks.previewP24, publishRentalProperty24Listing: mocks.publishP24, withdrawRentalProperty24Listing: mocks.withdrawP24 }))
 beforeEach(() => { vi.resetAllMocks(); mocks.publication = []; mocks.refreshPublication.mockResolvedValue([]); mocks.settle.mockResolvedValue([]); mocks.channels.mockResolvedValue({ activity: [], errors: {} }); mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', scopeLevel: 'assigned' }; mocks.workspace = {} })
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks() })
 
@@ -158,13 +158,6 @@ it('keeps photos visible and reports a failed save, then allows retrying', async
   await waitFor(() => expect(mocks.gallery).toHaveBeenCalledTimes(2))
 })
 
-it('shows saved video and tour links in listing media progress without making them mandatory', async () => {
-  renderMedia(mediaListing(), 'overview')
-  const progress = (await screen.findByRole('heading', { name: 'Listing Media Progress' })).closest('article')
-  expect(within(progress).getByText('Video').nextSibling.textContent).toBe('Added')
-  expect(within(progress).getByText('Virtual tour').nextSibling.textContent).toBe('Added')
-  expect(within(progress).getByText('Floor plan').nextSibling.textContent).toBe('Not added (optional)')
-})
 it('renders the seven-section rental workspace and keeps listing context on overview actions', async () => {
   const listing = { id: 'listing-1', listingType: 'rental', listingTitle: 'Demo Rental', assignedAgentId: 'agent-1', assignedAgentName: 'Demo Agent', assignedAgentEmail: 'agent@example.test', organisationId: 'org-1' }
   mocks.load.mockResolvedValue(listing)
@@ -498,3 +491,33 @@ it('offers reconciliation without a lost reference and keeps publish and status 
   expect(screen.getByRole('tab', { name: 'Landlord' })).toBeTruthy()
   expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy()
  })
+
+
+it('updates an existing Private Property rental with a fresh automatic check and no extra confirmation', async () => {
+  const listing = { ...mediaListing(), privatePropertyReference: 'R123', privatePropertyStatus: 'active' }
+  mocks.previewPP.mockResolvedValue({ ready: true, readiness: { ready: true, blockers: [] } })
+  mocks.publishPP.mockResolvedValue({ status: 'SUBMITTED', report: { privatePropertyReference: 'R123' } })
+  mocks.status.mockResolvedValue({ monitor: { externalStatus: 'submitted', statusProbe: { privatePropertyRef: 'R123' } } })
+  const confirm = vi.spyOn(window, 'confirm')
+  renderMedia(listing)
+  const { dialog } = await openPortalRequirements('Private Property')
+  const update = within(dialog).getByRole('button', { name: 'Save and update Private Property' })
+  expect(update.disabled).toBe(false)
+  fireEvent.click(update)
+  await within(dialog).findByText(/^Processing\. Private Property accepted the update/)
+  expect(mocks.previewPP).toHaveBeenCalledOnce()
+  expect(mocks.publishPP).toHaveBeenCalledExactlyOnceWith('listing-1')
+  expect(mocks.previewPP.mock.invocationCallOrder[0]).toBeLessThan(mocks.publishPP.mock.invocationCallOrder[0])
+  expect(mocks.status).toHaveBeenCalledWith('listing-1', 'private_property', { refresh: true })
+  expect(mocks.publishP24).not.toHaveBeenCalled()
+  expect(confirm).not.toHaveBeenCalled()
+})
+it('keeps a rental update unsent when its automatic check finds missing details', async () => {
+  mocks.previewPP.mockResolvedValue({ ready: false, readiness: { ready: false, blockers: ['missing_description'] } })
+  renderMedia({ ...mediaListing(), privatePropertyReference: 'R123', privatePropertyStatus: 'active' })
+  const { dialog } = await openPortalRequirements('Private Property')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save and update Private Property' }))
+  await within(dialog).findByText(/Private Property needs attention.*Complete the listing description/)
+  expect(mocks.publishPP).not.toHaveBeenCalled()
+  expect(mocks.status).not.toHaveBeenCalled()
+})

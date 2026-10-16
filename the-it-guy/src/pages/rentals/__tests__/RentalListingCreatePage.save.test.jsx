@@ -32,15 +32,6 @@ it('opens blank instead of resurrecting a deleted rental from the previous share
   expect(mocks.activate).not.toHaveBeenCalled()
 })
 
-it('opens blank instead of resurrecting a deleted rental from the previous shared browser draft', async () => {
-  localStorage.setItem(BASE_DRAFT_KEY, JSON.stringify({ pendingListingId: 'deleted-rental', activeStep: 'review', form: { propertyAddress: 'Deleted property', monthlyRent: '11000' } }))
-  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
-  expect((await screen.findByRole('combobox', { name: /Property address/i })).value).toBe('')
-  expect(mocks.load).not.toHaveBeenCalled()
-  expect(mocks.create).not.toHaveBeenCalled()
-  expect(mocks.activate).not.toHaveBeenCalled()
-})
-
 it('activates a new rental after saving without landlord, mandate, deposit or availability capture', async () => {
   window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ activeStep: 'review', form: { propertyAddress: '12 Example Road', monthlyRent: '11000', rentalPriceFrequency: 'monthly' } }))
   mocks.create.mockResolvedValue({ listing: { id: 'listing-1' } })

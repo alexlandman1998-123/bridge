@@ -14,11 +14,14 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
   const canMutate = !channel.loading && !channel.loadError && !channel.requiresReconciliation
   const inactive = ['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(channel.status)
   const hasReference = Boolean(channel.reference)
+  const updateExisting = channel.key === 'private_property' && hasReference
+  const automaticCheck = updateExisting && !preview && !checking && !previewError
   const edit = () => { onClose(); onEdit?.() }
   const fix = (action) => { onClose(); window.setTimeout(() => onFix?.(action), 0) }
 
   return <ListingChannelManageDialog
     channelName={channel.label}
+    streamlinedUpdate={updateExisting}
     listingStatus={listing.listingStatus || listing.listing_status || 'draft'}
     listing={listing}
     portal={{
@@ -34,7 +37,7 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
     isSale={false}
     confirmWithdrawal
     externalBusy={busy || checking}
-    canUpdate={canMutate && hasReference && !inactive && readiness.ready}
+    canUpdate={canMutate && hasReference && !inactive && (updateExisting || readiness.ready)}
     canPublish={canMutate && !hasReference && readiness.ready}
     canWithdraw={canMutate && hasReference && !inactive}
     updateUnavailableMessage={channel.requiresReconciliation ? 'Reconcile the previous request before sending another change.' : inactive ? 'This advert is inactive. Review its portal status before sending content updates.' : 'Check requirements before updating this advert.'}
@@ -42,14 +45,14 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
     onFix={onEdit ? edit : undefined}
     onRefresh={onRefresh && (hasReference || channel.requiresReconciliation) ? onRefresh : undefined}
     onPreview={onCheck}
-    onUpdate={hasReference ? onPublish : undefined}
+    onUpdate={hasReference && onPublish ? updateExisting ? () => onPublish({ updateExisting: true }) : onPublish : undefined}
     onPublish={!hasReference ? onPublish : undefined}
     onWithdraw={onWithdraw}
     renderChannelSettings={({ disabled, run }) => <>
       {onCheck ? <section aria-label={`${channel.label} requirements`} className="rounded-xl border border-[#e3ebf2] p-4 text-sm">
         <h4 className="font-semibold text-[#243d56]">Listing requirements</h4>
-        <p role="status" className="mt-2 font-semibold text-[#243d56]">{readiness.state}</p>
-        <p className="mt-1 text-xs leading-5 text-[#607387]">{readiness.detail}</p>
+        <p role="status" className="mt-2 font-semibold text-[#243d56]">{automaticCheck ? 'Checked automatically when you update' : readiness.state}</p>
+        <p className="mt-1 text-xs leading-5 text-[#607387]">{automaticCheck ? 'Arch9 checks the saved listing and portal setup before sending your update.' : readiness.detail}</p>
         {preview && channel.key === 'property24' ? <p className="mt-2 text-xs text-[#607387]">Photos prepared: {readiness.imagesLoaded}. Photos that failed: {readiness.imagesFailed}.</p> : null}
         {readiness.issues.length ? <ul className="mt-3 space-y-3">{readiness.issues.map(issue => <li key={issue.key}>
           <p className="font-semibold text-[#8a5b13]">{issue.label}</p>
@@ -59,7 +62,7 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
         {readiness.warnings.length ? <details className="mt-3 text-xs text-[#607387]"><summary className="cursor-pointer font-semibold">Recommendations</summary><ul className="mt-2 space-y-2">{readiness.warnings.map(issue => <li key={issue.key}>{issue.label}</li>)}</ul></details> : null}
       </section> : null}
       {channel.requiresReconciliation && onRefresh ? <Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={() => void run(onRefresh, 'Previous request checked.', 'Reconciling previous request…')}>Reconcile previous request</Button> : null}
-      <details className="rounded-xl border border-[#e3ebf2] p-4" open={!channel.publicUrl}>
+      <details className="rounded-xl border border-[#e3ebf2] p-4" open={!channel.publicUrl && !updateExisting}>
         <summary className="cursor-pointer text-sm font-semibold text-[#243d56]">Portal settings</summary>
         <div className="mt-4 grid gap-4 text-sm">
           <label className="grid gap-2 font-semibold text-[#243d56]">Rental portal status

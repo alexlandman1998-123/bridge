@@ -3681,6 +3681,20 @@ function AgentListingDetail() {
   const [syndicationReviewLoading, setSyndicationReviewLoading] = useState(false)
   const [syndicationReview, setSyndicationReview] = useState(null)
   const [syndicationReviewAcknowledgements, setSyndicationReviewAcknowledgements] = useState({})
+  const [syndicationReviewUpdateChannel, setSyndicationReviewUpdateChannel] = useState('')
+  const syndicationReviewContinuationRef = useRef({ listingId, pending: null })
+  useEffect(() => {
+    const continuation = syndicationReviewContinuationRef.current
+    continuation.listingId = listingId
+    setSyndicationReviewOpen(false)
+    setSyndicationReviewUpdateChannel('')
+    return () => {
+      continuation.listingId = null
+      continuation.pending?.resolve(false)
+      continuation.pending = null
+    }
+  }, [listingId])
+
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [sellerDocumentWorkflowAction, setSellerDocumentWorkflowAction] = useState('')
   const [sellerDocumentDeliveries, setSellerDocumentDeliveries] = useState([])
@@ -4988,6 +5002,8 @@ function AgentListingDetail() {
         'videoLink',
         'virtualTourLink',
         'externalListingLinks',
+        'property24ListingUrl',
+        'privatePropertyListingUrl',
       ],
     })
     if (!savedOnboarding?.id) {
@@ -6448,35 +6464,59 @@ function AgentListingDetail() {
     }
   }
 
-  async function requireSyndicationReviewBeforePublish(channel) {
+  async function requireSyndicationReviewBeforePublish(channel, { waitForReview = false } = {}) {
+    if (waitForReview && syndicationReviewContinuationRef.current.listingId !== listingId) return false
     const currentReview = syndicationReview
     const acknowledged = Boolean(syndicationReviewAcknowledgements[channel])
-    if (!shouldRequireSyndicationReview({
-      review: currentReview,
-      channel,
-      acknowledged,
-      draftDirty: marketingDraftDirtyRef.current,
-    })) {
-      if (currentReview) return true
-      const review = await openSyndicationReview({ requiredForChannel: channel, showModal: false })
-      const reviewRequired = shouldRequireSyndicationReview({
-        review,
-        channel,
-        acknowledged: false,
-        draftDirty: marketingDraftDirtyRef.current,
-      })
-      if (reviewRequired) setSyndicationReviewOpen(true)
-      return !reviewRequired
+    if (currentReview && !shouldRequireSyndicationReview({
+      review: currentReview, channel, acknowledged, draftDirty: marketingDraftDirtyRef.current,
+    })) return true
+    const review = await openSyndicationReview({ requiredForChannel: channel, showModal: false })
+    if (!review) {
+      if (waitForReview) throw new Error('The saved listing could not be reviewed. Check the listing details and try the update again.')
+      return false
     }
-    await openSyndicationReview({ requiredForChannel: channel })
-    return false
+    if (waitForReview && syndicationReviewContinuationRef.current.listingId !== listingId) return false
+    const reviewRequired = shouldRequireSyndicationReview({
+      review, channel, acknowledged: false, draftDirty: marketingDraftDirtyRef.current,
+    })
+    if (!reviewRequired) return true
+    if (!waitForReview) {
+      setSyndicationReviewOpen(true)
+      return false
+    }
+    const continuation = syndicationReviewContinuationRef.current
+    if (continuation.listingId !== listingId) return false
+    setSyndicationReviewUpdateChannel(channel)
+    return new Promise(resolve => {
+      continuation.pending = { channel, resolve }
+      setSyndicationReviewOpen(true)
+    })
+  }
+
+  function closeSyndicationReview() {
+    const continuation = syndicationReviewContinuationRef.current
+    continuation.pending?.resolve(false)
+    continuation.pending = null
+    setSyndicationReviewUpdateChannel('')
+    setSyndicationReviewOpen(false)
   }
 
   function continueSyndicationReview(channel, action) {
+    const continuation = syndicationReviewContinuationRef.current
+    const pending = continuation.pending
+    if (!pending && syndicationReviewUpdateChannel) return
+    if (pending && (pending.channel !== channel || !canAcknowledgeSyndicationChannel(syndicationReview, channel))) return
     if (canAcknowledgeSyndicationChannel(syndicationReview, channel)) {
       setSyndicationReviewAcknowledgements((previous) => ({ ...previous, [channel]: true }))
     }
     setSyndicationReviewOpen(false)
+    if (pending) {
+      continuation.pending = null
+      setSyndicationReviewUpdateChannel('')
+      pending.resolve(true)
+      return
+    }
     void action()
   }
 
@@ -6526,7 +6566,8 @@ function AgentListingDetail() {
     try { await requireSettledListingPublication(listingId, ['private_property']) }
     catch (error) { setDetailError(error.message || 'Check advertising status before sending again.'); if (fromManage) throw error; return null }
     if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Private Property')) { if (fromManage) throw new Error('Save the listing photos before updating Private Property.'); return null }
-    if (!await requireSyndicationReviewBeforePublish('privateProperty')) return fromManage ? { deferred: true } : null
+    const resumeUpdate = fromManage && privatePropertyHasChannel
+    if (!await requireSyndicationReviewBeforePublish('privateProperty', { waitForReview: resumeUpdate })) return resumeUpdate ? { cancelled: true } : fromManage ? { deferred: true } : null
     const confirmation = `PRIVATE_PROPERTY_PUBLISH:${listingRecord?.id || ''}:production`
     if (!fromManage && !window.confirm('Submit this exact Arch9 listing to Private Property production? Private Property will begin processing the listing after submission.')) return null
     setPrivatePropertyAction('publish')
@@ -6725,12 +6766,18 @@ function AgentListingDetail() {
     const isProperty24 = portal === 'property24'
     const field = isProperty24 ? 'property24ListingUrl' : 'privatePropertyListingUrl'
     try {
-      const value = validateListingPortalPublicUrl(portal, linkValue ?? marketingDraft[field])
-      const result = await saveMarketingDraft({ ...marketingDraft, [field]: value }, { successMessage: '' })
+      const input = String(linkValue ?? marketingDraft[field] ?? '').trim()
+      const value = input ? validateListingPortalPublicUrl(portal, input) : ''
+      const platformKey = isProperty24 ? 'property24' : 'privateproperty'
+      const externalLinks = (marketingDraft.externalLinks || []).flatMap(link => {
+        if (String(link.platform || '').toLowerCase().replace(/[^a-z0-9]/g, '') !== platformKey) return [link]
+        return value ? [{ ...link, url: value }] : []
+      })
+      const result = await saveMarketingDraft({ ...marketingDraft, [field]: value, externalLinks }, { successMessage: '' })
       if (!result?.ok || result.localOnly) throw result?.error || new Error('The portal link could not be saved. Try again.')
       await loadListingData({ showLoading: false })
-      setDetailMessage(`${isProperty24 ? 'Property24' : 'Private Property'} link saved. Open the public advert to verify it.`)
-      return { ...result, message: 'Live portal link saved. Saving a link does not publish or confirm the advert.' }
+      setDetailMessage(value ? `${isProperty24 ? 'Property24' : 'Private Property'} link saved. Open the public advert to verify it.` : `${isProperty24 ? 'Property24' : 'Private Property'} link removed.`)
+      return { ...result, message: value ? 'Live portal link saved. Saving a link does not publish or confirm the advert.' : 'Live portal link removed.' }
     } catch (error) {
       setDetailError(error?.message || 'The portal link could not be saved.')
       if (fromManage) throw error
@@ -12740,8 +12787,8 @@ function AgentListingDetail() {
     const publication = listingPublicationStates[key]
     const updateState = channelUpdateStates[channelName]
     const reference = isP24 ? property24Reference : isPP ? marketingDraft.privatePropertyReference || privatePropertyLink?.reference : listingRecord?.arch9Reference || listingRecord?.listingReference
-    const publicUrl = isP24 ? getListingChannelViewUrl(key, marketingDraft.property24ListingUrl || publication?.publicUrl)
-      : isPP ? getListingChannelViewUrl(key, marketingDraft.privatePropertyListingUrl || privatePropertyLink?.url || publication?.publicUrl)
+    const publicUrl = isP24 ? getListingChannelViewUrl(key, marketingDraft.property24ListingUrl ?? publication?.publicUrl)
+      : isPP ? getListingChannelViewUrl(key, marketingDraft.privatePropertyListingUrl ?? privatePropertyLink?.url ?? publication?.publicUrl)
       : !websiteLive ? ''
       : channelName === 'Kingdom Website' ? buildKingdomWebsiteListingPublicUrl(website, listingRecord?.id, marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title, listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode)
       : buildWebsiteListingPublicUrl(website, listingRecord?.id, marketingDraft.headline || listingRecord?.listingTitle)
@@ -12763,7 +12810,7 @@ function AgentListingDetail() {
         const message = isP24
           ? response.status?.portalCheck?.isOnPortal ? 'Property24 confirms this listing is live.' : 'Property24 does not currently show this listing as live.'
           : response.monitor?.status === 'ACTIVATED' ? 'Private Property confirms this listing is active.' : `Private Property status checked: ${formatStatusLabel(response.monitor?.externalStatus || 'awaiting activation')}.`
-        return { ok: true, message }
+        return { ok: true, message, portalStatus: isPP ? response.monitor?.externalStatus : undefined }
       }
       const next = channelName === 'Kingdom Website' ? await getKingdomWebsitePublicationStatus(listingRecord.id) : await getWebsiteListingPublicationStatus(listingRecord.id, { includePartner: false })
       if (channelName === 'Kingdom Website') setKingdomWebsitePublication(next)
@@ -12783,7 +12830,7 @@ function AgentListingDetail() {
     const update = async () => {
       if (isP24 || isPP) {
         const response = isP24 ? await publishProperty24Listing({ fromManage: true }) : await publishPrivatePropertyListing({ fromManage: true })
-        if (response?.deferred) return response
+        if (response?.deferred || response?.cancelled) return response
         if (!response || !isQuickListingPortalUpdateAccepted(channelName, 'price_reduction', response)) throw new Error(`${channelName} has not confirmed acceptance. Check status before sending again.`)
         return { ok: true, message: `${channelName} accepted the update. Open the public advert to check the saved details.` }
       }
@@ -12833,6 +12880,7 @@ function AgentListingDetail() {
     return <ListingChannelManageDialog
       key={channelName}
       channelName={channelName}
+      streamlinedUpdate={isPP && hasAdvert}
       preparationMessage={websiteReadiness.preparationMessage}
       listingStatus={currentStatus}
       listing={{ address: marketingDraft.formattedAddress || listingRecord?.addressLine1 || listingRecord?.title, title: marketingDraft.headline, imageUrl: coverImage?.url, priceLabel: formatCurrency(marketingDraft.price), reference: listingRecord?.arch9Reference || listingRecord?.listingCode, statusLabel: formatStatusLabel(currentStatus) }}
@@ -17589,7 +17637,8 @@ function AgentListingDetail() {
 
       <SyndicationReviewModal
         open={syndicationReviewOpen}
-        onClose={() => !syndicationReviewLoading && setSyndicationReviewOpen(false)}
+        onClose={() => !syndicationReviewLoading && closeSyndicationReview()}
+        updateChannel={syndicationReviewUpdateChannel}
         review={syndicationReview}
         loading={syndicationReviewLoading}
         onRefresh={() => openSyndicationReview()}

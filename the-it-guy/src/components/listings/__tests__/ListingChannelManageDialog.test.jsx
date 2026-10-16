@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import ListingChannelManageDialog from '../ListingChannelManageDialog'
+import SyndicationReviewModal from '../SyndicationReviewModal'
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const props = {
   channelName: 'Property24', listingStatus: 'active', expiryDate: '2026-11-30', minExpiryDate: '2026-10-11', canUpdateExpiry: true,
@@ -249,6 +250,32 @@ it.each(['Property24', 'Private Property'])('saves the %s live advert link witho
   expect(props.onSave).not.toHaveBeenCalled()
   expect(props.onClose).not.toHaveBeenCalled()
 })
+it.each(['Property24', 'Private Property'])('removes the %s link while retaining its advert reference', async channelName => {
+  const portal = { ...props.portal, reference: channelName === 'Property24' ? '116284' : 'T498201', publicUrl: channelName === 'Property24' ? props.portal.publicUrl : 'https://www.privateproperty.co.za/for-sale/example/T498201' }
+  const onSavePublicUrl = vi.fn(async () => ({ ok: true }))
+  const { rerender } = render(<ListingChannelManageDialog {...props} channelName={channelName} portal={portal} onSavePublicUrl={onSavePublicUrl} />)
+  fireEvent.change(screen.getByLabelText('Live portal link'), { target: { value: '   ' } })
+  click('Remove link')
+  await waitFor(() => expect(onSavePublicUrl).toHaveBeenCalledWith(''))
+  await screen.findByText('Live portal link removed.')
+  rerender(<ListingChannelManageDialog {...props} channelName={channelName} portal={{ ...portal, publicUrl: '' }} onSavePublicUrl={onSavePublicUrl} />)
+  expect(screen.queryByRole('link', { name: 'View advert' })).toBeNull()
+  expect(screen.getByText(portal.reference)).toBeTruthy()
+  expect(props.onUpdate).not.toHaveBeenCalled()
+  expect(props.onSave).not.toHaveBeenCalled()
+  expect(props.onClose).not.toHaveBeenCalled()
+})
+it('keeps a failed link removal available to retry without hiding the saved advert', async () => {
+  const onSavePublicUrl = vi.fn().mockRejectedValueOnce(new Error('Link could not be removed.')).mockResolvedValueOnce({ ok: true })
+  render(<ListingChannelManageDialog {...props} onSavePublicUrl={onSavePublicUrl} />)
+  fireEvent.change(screen.getByLabelText('Live portal link'), { target: { value: '' } })
+  click('Remove link')
+  await screen.findByText('Link could not be removed.')
+  expect(screen.getByRole('link', { name: 'View advert' }).getAttribute('href')).toBe(props.portal.publicUrl)
+  click('Remove link')
+  await screen.findByText('Live portal link removed.')
+  expect(onSavePublicUrl).toHaveBeenCalledTimes(2)
+})
 it.each(['https://www.privateproperty.co.za/for-sale/example/T123', 'https://property24.com.evil.test/listing', 'http://www.property24.com/for-sale/example/123', 'https://user:secret@www.property24.com/listing/123', 'https://www.property24.com/'])('rejects an invalid Property24 link: %s', async value => {
   const onSavePublicUrl = vi.fn()
   render(<ListingChannelManageDialog {...props} onSavePublicUrl={onSavePublicUrl} />)
@@ -265,4 +292,66 @@ it('keeps the pasted live link after a save failure', async () => {
   click('Save link')
   await screen.findByText('Link could not be saved.')
   expect(screen.getByLabelText('Live portal link').value).toBe(value)
+})
+
+
+it('saves and updates an existing Private Property advert with one action, then checks its status', async () => {
+  const onUpdate = vi.fn(async () => ({ ok: true }))
+  const onRefresh = vi.fn(async () => ({ ok: true, portalStatus: 'submitted' }))
+  render(<ListingChannelManageDialog {...props} channelName="Private Property" streamlinedUpdate onUpdate={onUpdate} onRefresh={onRefresh} />)
+  expect(screen.queryByRole('button', { name: 'Send update' })).toBeNull()
+  expect(screen.getByText('More actions').closest('details').open).toBe(false)
+  click('Save and update Private Property')
+  await screen.findByText(/^Processing\. Private Property accepted the update/)
+  expect(onUpdate).toHaveBeenCalledOnce()
+  expect(onRefresh).toHaveBeenCalledOnce()
+  expect(onUpdate.mock.invocationCallOrder[0]).toBeLessThan(onRefresh.mock.invocationCallOrder[0])
+  expect(props.onPreview).not.toHaveBeenCalled()
+  expect(props.onClose).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('More actions'))
+  expect(screen.getByRole('button', { name: 'Withdraw advert' })).toBeTruthy()
+})
+it('retains an accepted update when the automatic status check fails', async () => {
+  const onUpdate = vi.fn(async () => ({ ok: true }))
+  const onRefresh = vi.fn(async () => ({ ok: false, error: 'Status service unavailable' }))
+  render(<ListingChannelManageDialog {...props} channelName="Private Property" streamlinedUpdate onUpdate={onUpdate} onRefresh={onRefresh} />)
+  click('Save and update Private Property')
+  await screen.findByText(/Accepted\. Private Property accepted the update, but its latest status could not be checked/)
+  expect(onUpdate).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('alert')).toBeNull()
+  click('Check latest status')
+  await screen.findByText('Status service unavailable')
+  expect(onUpdate).toHaveBeenCalledOnce()
+})
+it.each(['failed', 'inactive'])('reports accepted updates with a %s advert as needing attention', async portalStatus => {
+  render(<ListingChannelManageDialog {...props} channelName="Private Property" streamlinedUpdate onRefresh={async () => ({ ok: true, portalStatus })} />)
+  click('Save and update Private Property')
+  await screen.findByText(new RegExp(`Needs attention.*reports the advert as ${portalStatus}`))
+})
+it('does not refresh or report acceptance when a required review is cancelled', async () => {
+  const onRefresh = vi.fn()
+  render(<ListingChannelManageDialog {...props} channelName="Private Property" streamlinedUpdate onUpdate={async () => ({ cancelled: true })} onRefresh={onRefresh} />)
+  click('Save and update Private Property')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Done' }).disabled).toBe(false))
+  expect(onRefresh).not.toHaveBeenCalled()
+  expect(screen.queryByText(/^Accepted\./)).toBeNull()
+  expect(props.onClose).not.toHaveBeenCalled()
+})
+it('does not check status after a blocked update or permit duplicate sends while saving', async () => {
+  let finish
+  const onUpdate = vi.fn(() => new Promise(resolve => { finish = resolve }))
+  const onRefresh = vi.fn()
+  render(<ListingChannelManageDialog {...props} channelName="Private Property" streamlinedUpdate onUpdate={onUpdate} onRefresh={onRefresh} />)
+  click('Save and update Private Property'); click('Save and update Private Property')
+  expect(onUpdate).toHaveBeenCalledOnce()
+  expect(screen.getByRole('button', { name: 'Done' }).disabled).toBe(true)
+  await act(async () => finish({ ok: false, error: 'Add a listing photo.' }))
+  expect(screen.getByRole('alert').textContent).toContain('Add a listing photo.')
+  expect(onRefresh).not.toHaveBeenCalled()
+})
+it.each([true, false])('keeps an update review on Private Property and requires ready data (ready=%s)', ready => {
+  render(<SyndicationReviewModal open updateChannel="privateProperty" review={{ channels: { privateProperty: { dataReady: ready } } }} onClose={() => {}} />)
+  expect(screen.getByRole('heading', { name: 'Review Private Property update' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Continue update' }).disabled).toBe(!ready)
+  expect(screen.queryByRole('button', { name: 'Check Property24 readiness' })).toBeNull()
 })

@@ -22,7 +22,7 @@ export default function ListingChannelManageDialog({
   isSale = true, canUpdateExpiry = false, initialResults = [], externalBusy = false,
   canUpdate = false, canPublish = false, canRelist = false, canWithdraw = false, expirySetting, activeExpiryChannels = [], preparationMessage = '',
   onClose, onSave, onFix, onRefresh, onPreview, onUpdate, onPublish, onRetry, onRelist, onWithdraw, onSaveExpiry, onVerify, onSavePublicUrl,
-  renderChannelSettings, confirmWithdrawal = false, updateUnavailableMessage = '',
+  renderChannelSettings, confirmWithdrawal = false, updateUnavailableMessage = '', streamlinedUpdate = false,
 }) {
   const id = useId()
   const operationRef = useRef(false)
@@ -35,6 +35,7 @@ export default function ListingChannelManageDialog({
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [noticeWarning, setNoticeWarning] = useState(false)
   const [publicUrlDraft, setPublicUrlDraft] = useState(portal.publicUrl || '')
   const [results, setResults] = useState(initialResults)
   const disabled = busy || externalBusy
@@ -63,12 +64,14 @@ export default function ListingChannelManageDialog({
     try {
       const outcome = await callback()
       if (outcome?.deferred) { onClose(); return }
+      if (outcome?.cancelled) { setAction(''); return }
       if (outcome?.results) setResults(outcome.results)
       if (outcome?.ok === false) {
         setError(outcome.error || 'Some updates need attention. Your saved changes are kept.')
       } else {
         setAction('')
-        setNotice(outcome?.message || success)
+        setNoticeWarning(Boolean(outcome?.warning))
+        setNotice(outcome?.warning || outcome?.message || success)
       }
     } catch (failure) {
       setError(failure?.message || 'This action could not be completed. Check the channel before trying again.')
@@ -87,8 +90,39 @@ export default function ListingChannelManageDialog({
     setExpiry(expiryDate)
   }
 
+  async function updateAdvert() {
+    await run(async () => {
+      const outcome = await onUpdate()
+      if (outcome?.ok === false || outcome?.cancelled || outcome?.deferred || !onRefresh) return outcome
+      setProgress(`Checking ${channelName} status…`)
+      try {
+        const checked = await onRefresh()
+        if (checked?.ok === false) throw new Error(checked.error)
+        const status = checked?.portalStatus
+        if (['inactive', 'removed', 'withdrawn', 'expired', 'failed'].includes(status)) {
+          return { ...outcome, warning: `Needs attention. ${channelName} accepted the update but reports the advert as ${status}. Check its status before sending again.` }
+        }
+        return { ...outcome, message: ['submitted', 'pending', 'processing', 'draft', 'queued'].includes(status)
+          ? `Processing. ${channelName} accepted the update and is still processing the advert. You can check its latest status here.`
+          : `Accepted. ${checked?.message || 'The latest advert status was checked.'} Open the public advert to confirm the updated details.` }
+      } catch {
+        // A failed status check must never turn an accepted send into a retry.
+        return { ...outcome, warning: `Accepted. ${channelName} accepted the update, but its latest status could not be checked. Use Check latest status before sending again.` }
+      }
+    }, 'Update accepted. Open the public advert to confirm the updated details.', `Saving and updating ${channelName}…`)
+  }
+
   async function saveExpiry(applyToAllChannels) {
     await run(() => onSaveExpiry({ expiryDate: expiry, applyToAllChannels }), 'Listing expiry saved.', 'Saving listing expiry…')
+  }
+
+  async function savePublicUrl() {
+    const value = publicUrlDraft.trim()
+    await run(
+      () => onSavePublicUrl(value ? validateListingPortalPublicUrl(channelName === 'Property24' ? 'property24' : 'private_property', value) : ''),
+      value ? 'Live portal link saved.' : 'Live portal link removed.',
+      value ? 'Saving live portal link…' : 'Removing live portal link…',
+    )
   }
 
   async function save() {
@@ -109,7 +143,7 @@ export default function ListingChannelManageDialog({
       <div ref={feedbackRef}>
         {disabled ? <p role="status" aria-live="polite" className="flex items-center gap-2 rounded-xl border border-[#dbe6f2] bg-[#eef5fc] p-3 text-sm text-[#315b82]"><Loader2 size={16} className="shrink-0 animate-spin" />{progress || 'A channel update is in progress…'}</p> : null}
         {error ? <div role="alert" className="rounded-xl border border-[#efc4c4] bg-[#fff5f5] p-3 text-sm text-[#a43d35]"><ErrorDetail message={error} /></div> : null}
-        {notice ? <p role="status" aria-live="polite" className="rounded-xl border border-[#cfe7d7] bg-[#eef9f2] p-3 text-sm text-[#257044]">{notice}</p> : null}
+        {notice ? <p role="status" aria-live="polite" className={`rounded-xl border p-3 text-sm ${noticeWarning ? 'border-[#f0d6af] bg-[#fff8eb] text-[#8a5711]' : 'border-[#cfe7d7] bg-[#eef9f2] text-[#257044]'}`}>{notice}</p> : null}
       </div>
       <div role="tablist" aria-label={`${channelName} listing sections`} className="flex gap-5 border-b border-[#e3ebf2]">
         {[['overview', 'Overview'], ['activity', 'Recent activity']].map(([key, label]) => <button key={key} id={`${id}-${key}-tab`} type="button" role="tab" aria-selected={tab === key} aria-controls={`${id}-${key}`} className={`pb-3 text-sm font-semibold ${tab === key ? 'border-b-2 border-[#176f52] text-[#176f52]' : 'text-[#607387]'}`} onClick={() => setTab(key)}>{key === 'activity' ? <History size={14} className="mr-1.5 inline" /> : null}{label}</button>)}
@@ -124,25 +158,33 @@ export default function ListingChannelManageDialog({
               <div><p className="text-xs text-[#607387]">Last status check</p><p className="mt-1 text-xs text-[#243d56]">{timestamp(portal.checkedAt)}</p></div>
             </div>
             {expiryDate ? <div className="rounded-xl bg-[#f6f9fb] p-3 text-sm text-[#243d56]"><p>Listing expiry: <strong>{expiryDate}</strong></p>{expirySetting?.message ? <p className="mt-1 text-xs text-[#607387]">{expirySetting.message}</p> : null}{['update_failed', 'update_uncertain', 'expiry_failed', 'expiry_uncertain'].includes(expirySetting?.state) ? <p role="alert" className="mt-2 text-xs text-[#a43d35]">Expiry needs attention on this channel. Check the latest status before trying again.</p> : null}</div> : null}
-            {onSavePublicUrl ? <details className="rounded-xl border border-[#e3ebf2] p-3" open={!publicUrl}><summary className="cursor-pointer text-sm font-semibold text-[#243d56]">{publicUrl ? 'Edit live portal link' : 'Add live portal link'}</summary><label className="mt-3 grid gap-2 text-sm font-semibold text-[#243d56]">Live portal link<Field type="url" value={publicUrlDraft} placeholder={channelName === 'Property24' ? 'https://www.property24.com/for-sale/…' : 'https://www.privateproperty.co.za/for-sale/…'} disabled={disabled} onChange={event => setPublicUrlDraft(event.target.value)} /></label><p className="mt-2 text-xs leading-5 text-[#607387]">Paste this advert’s public {channelName} URL. Saving the link does not publish the advert or confirm it is live.</p><Button type="button" variant="secondary" size="sm" className="mt-3" disabled={disabled || !publicUrlDraft.trim() || publicUrlDraft.trim() === publicUrl} onClick={() => void run(() => onSavePublicUrl(validateListingPortalPublicUrl(channelName === 'Property24' ? 'property24' : 'private_property', publicUrlDraft)), 'Live portal link saved.', 'Saving live portal link…')}>Save link</Button></details> : null}
+            {onSavePublicUrl ? <details className="rounded-xl border border-[#e3ebf2] p-3" open={!publicUrl}>
+              <summary className="cursor-pointer text-sm font-semibold text-[#243d56]">{publicUrl ? 'Edit live portal link' : 'Add live portal link'}</summary>
+              <label className="mt-3 grid gap-2 text-sm font-semibold text-[#243d56]">Live portal link<Field type="url" value={publicUrlDraft} placeholder={`Paste a ${channelName} advert URL`} disabled={disabled} onChange={event => setPublicUrlDraft(event.target.value)} /></label>
+              <p className="mt-2 text-xs leading-5 text-[#607387]">Paste this advert’s public {channelName} URL, or leave it blank to remove the saved link. Saving the link does not publish the advert or confirm it is live.</p>
+              <Button type="button" variant="secondary" size="sm" className="mt-3" disabled={disabled || publicUrlDraft.trim() === publicUrl} onClick={() => void savePublicUrl()}>{publicUrl && !publicUrlDraft.trim() ? 'Remove link' : 'Save link'}</Button>
+            </details> : null}
             <div className="flex flex-wrap gap-2">{onRefresh ? <Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={() => void run(onRefresh, 'Latest channel status checked.', `Checking ${channelName} status…`)}><RefreshCw size={14} className={busy && progress === `Checking ${channelName} status…` ? 'animate-spin' : ''} />Check latest status</Button> : null}{publicUrl ? <a href={publicUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-[#dbe6f2] px-3 py-2 text-sm font-semibold text-[#35546c]">View advert<ExternalLink size={14} /></a> : <p className="self-center text-xs text-[#607387]">Public listing link unavailable</p>}</div>
             {['submitted', 'accepted'].includes(stage) ? <p className="rounded-xl bg-[#eef5fc] p-3 text-sm text-[#315b82]">{stage === 'submitted' ? 'Submission recorded. The final portal response is not confirmed; check status before sending again.' : 'The portal accepted the last submission. Check the public advert to confirm its content.'}</p> : null}
             {issues.length ? <div role="alert" className="rounded-xl border border-[#f0d6af] bg-[#fff8eb] p-3 text-sm text-[#8a5711]"><h4 className="mb-2 flex items-center gap-2 font-semibold"><TriangleAlert size={16} />{channelName} needs attention</h4><div className="space-y-2">{issues.map(message => <ErrorDetail key={message} message={message} />)}</div><div className="mt-3 flex flex-wrap gap-2">{onFix ? <Button type="button" size="sm" variant="secondary" disabled={disabled} onClick={onFix}>Edit listing details</Button> : null}{onRetry ? <Button type="button" size="sm" variant="secondary" disabled={disabled} onClick={() => begin('retry')}>Retry failed update</Button> : null}</div></div> : null}
             {preparationMessage ? <p className="rounded-xl border border-[#dbe6f2] bg-[#eef5fc] p-3 text-sm leading-6 text-[#315b82]">{preparationMessage}</p> : null}
-            {warnings.length ? <details className="rounded-xl bg-[#f7f9fc] p-3 text-sm text-[#607387]" open><summary className="cursor-pointer font-semibold">Warnings ({warnings.length})</summary><ul className="mt-2 space-y-1 pl-4 list-disc">{warnings.map(message => <li key={message}>{summarizeListingPortalError(message)}</li>)}</ul></details> : null}
+            {warnings.length ? <details className="rounded-xl bg-[#f7f9fc] p-3 text-sm text-[#607387]" open={!streamlinedUpdate}><summary className="cursor-pointer font-semibold">Warnings ({warnings.length})</summary><ul className="mt-2 space-y-1 pl-4 list-disc">{warnings.map(message => <li key={message}>{summarizeListingPortalError(message)}</li>)}</ul></details> : null}
             {renderChannelSettings?.({ disabled, run })}
             <div className="rounded-xl bg-[#f6f9fb] p-4"><h4 className="text-sm font-semibold text-[#243d56]">Saved changes</h4>{changes.length ? <><p className="mt-1 text-xs text-[#607387]">Different from the last accepted submission.</p><details className="mt-2 text-sm text-[#243d56]"><summary className="cursor-pointer font-semibold">Review changes ({changes.length})</summary><ul className="mt-3 space-y-3">{changes.map(change => <li key={change.key}><strong>{change.label}</strong><p className="mt-1 break-words text-xs text-[#607387]">{change.previousValue} → {change.currentValue}</p></li>)}</ul></details></> : <p className="mt-1 text-xs text-[#607387]">{portal.publicationState?.publishedSnapshot ? 'No changes since the last accepted submission.' : 'No earlier submission snapshot is available for comparison.'}</p>}</div>
             {onVerify && publicUrl ? <Button type="button" variant="secondary" size="sm" disabled={disabled} onClick={() => begin('verify')}><CheckCircle2 size={14} />Confirm public advert is current</Button> : null}
           </div>
-          <aside className="grid content-start gap-2 border-t border-[#e3ebf2] pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0 [&_button]:h-auto [&_button]:min-h-10 [&_button]:whitespace-normal [&_button]:px-3 [&_button]:py-2 [&_button]:text-xs"><h4 className="mb-1 text-sm font-semibold text-[#142132]">Advert actions</h4>
+          <aside className={`grid content-start gap-2 ${streamlinedUpdate ? 'order-first md:order-last' : ''} border-t border-[#e3ebf2] pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0 [&_button]:h-auto [&_button]:min-h-10 [&_button]:whitespace-normal [&_button]:px-3 [&_button]:py-2 [&_button]:text-xs`}><h4 className="mb-1 text-sm font-semibold text-[#142132]">Advert actions</h4>
             {onPublish ? <Button type="button" className="justify-start" disabled={disabled || !canPublish} onClick={() => begin('publish')}><Send size={15} />{isPortal ? 'Publish advert' : 'Publish to website'}</Button> : null}
-            {onUpdate ? <Button type="button" className="justify-start" disabled={disabled || !canUpdate} onClick={() => begin('update')}><Send size={15} />Update advert</Button> : null}
+            {onUpdate ? <Button type="button" className="justify-start" disabled={disabled || !canUpdate} onClick={() => streamlinedUpdate ? void updateAdvert() : begin('update')}><Send size={15} />{streamlinedUpdate ? `Save and update ${channelName}` : 'Update advert'}</Button> : null}
             {onFix ? <Button type="button" variant="secondary" className="justify-start" disabled={disabled} onClick={onFix}><Pencil size={15} />{portal.reference ? 'Edit listing details' : 'Set up advert'}</Button> : null}
+            {streamlinedUpdate ? <p className="text-xs leading-5 text-[#607387]">Saves your changes, checks the requirements and updates this existing advert.</p> : null}
+            <details open={!streamlinedUpdate}><summary className={streamlinedUpdate ? 'cursor-pointer py-2 text-xs font-semibold text-[#607387]' : 'hidden'}>More actions</summary><div className="grid gap-2">
             {onPreview ? <Button type="button" variant="secondary" className="justify-start" disabled={disabled} onClick={() => void run(onPreview, 'Listing requirements checked. Review any issues above.', `Checking ${channelName} requirements…`)}><Eye size={15} />Check requirements</Button> : null}
             {onRelist ? <Button type="button" variant="secondary" className="justify-start" disabled={disabled || !canRelist} onClick={onRelist}><RefreshCw size={15} />Relist / reactivate</Button> : null}
             {supportsExpiry ? <Button type="button" variant="secondary" className="justify-start" disabled={disabled || !canUpdateExpiry} onClick={() => begin('expiry')}><CalendarDays size={15} />Listing expiry</Button> : null}
             {onWithdraw ? <Button type="button" variant="secondary" className="justify-start text-[#a43d35]" disabled={disabled || !canWithdraw} onClick={confirmWithdrawal ? () => begin('withdraw') : onWithdraw}><X size={15} />Withdraw advert</Button> : null}
             {isSale ? <><h4 className="mt-4 text-sm font-semibold text-[#142132]">Whole listing</h4><p className="mb-1 text-xs leading-5 text-[#607387]">Sold and Under offer update all active channels.</p><Button type="button" variant="secondary" className="justify-start" disabled={disabled || !canChangeSale} onClick={() => begin('status')}>Change listing status</Button></> : null}
+            </div></details>
             {onUpdate && !canUpdate && portal.reference ? <p className="text-xs leading-5 text-[#607387]">{updateUnavailableMessage || (onRelist ? 'An inactive advert may need relisting before content updates can be sent.' : 'Publish this advert from listing setup before sending an update.')}</p> : null}
           </aside>
         </div>

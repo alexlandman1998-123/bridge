@@ -11,7 +11,8 @@ import { deriveListingChannelUpdateStates, getListingChannelManageActivity } fro
 import { buildWebsiteListingPublicUrl, buildKingdomWebsiteListingPublicUrl, getListingChannelViewUrl, validateListingPortalPublicUrl, getWebsiteListingReadiness, getPrivatePropertyReadinessMessages } from '../../../services/listings/listingMarketingChannelPresentation'
 import { getListingPublicationChannelKey } from '../../../services/listings/listingPublicationState'
 import { sellerOnboardingDraftPublicationBlocker } from '../../../core/documents/sellerOnboardingDraftComparison'
-import { shouldRequireSyndicationReview } from '../../../services/syndicationReviewGateService'
+import { shouldRequireSyndicationReview, canAcknowledgeSyndicationChannel } from '../../../services/syndicationReviewGateService'
+import { persistSellerProfileOnboardingFormData } from '../../../services/privateListingService'
 
 const source = readFileSync(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 function controllerSource(name) {
@@ -39,6 +40,7 @@ function fixture(overrides = {}) {
     kingdomWebsitePublication: { status: 'published', hostname: 'kingdom.test', websiteStatus: 'published' },
     coverImage: null, channelManageBusy: false, quickListingBusy: false, property24Action: '', privatePropertyAction: '',
     marketingDraftDirtyRef: { current: false }, channelMutationRef: { current: false }, isSupabaseConfigured: true,
+    syndicationReviewContinuationRef: { current: { listingId: 'listing-1', pending: null } }, syndicationReviewUpdateChannel: '',
     normalizeKey: value => String(value || '').toLowerCase(), formatDateInputValue: value => value, addDaysToDateInput: () => '2026-10-13', formatCurrency: value => 'R '+value, formatStatusLabel: value => value,
     getPrivatePropertyStatusCheckedAt: () => '', getProperty24ExpiryDateError: () => '', ensureMarketingMediaReady: () => true,
     requireSettledListingPublication: vi.fn(async () => {}), requireSyndicationReviewBeforePublish: vi.fn(async () => true),
@@ -61,10 +63,10 @@ function fixture(overrides = {}) {
     openPropertyDetailsFromMarketing: vi.fn(), setRelistChannel: vi.fn(), setChannelRemoval: vi.fn(), setChannelRemovalError: vi.fn(),
     window: { dispatchEvent() {} }, Event: class {},
   }
-  for (const name of ['setProperty24ManageOpen', 'setPrivatePropertyManageOpen', 'setManagedWebsiteChannel', 'setChannelManageCheckedAt', 'setChannelExpiries', 'setProperty24Action', 'setPrivatePropertyAction', 'setDetailError', 'setDetailMessage', 'setProperty24Preview', 'setPrivatePropertyPreview', 'setProperty24StatusCheck', 'setPrivatePropertyStatusCheck', 'setMarketingDraft', 'setChannelManageBusy', 'setQuickListingBusy', 'setQuickListingResults', 'setQuickListingResultAction', 'setWebsiteRefreshKey', 'setAgencyWebsitePublication', 'setKingdomWebsitePublication']) ctx[name] = vi.fn()
+  for (const name of ['setSyndicationReviewUpdateChannel', 'setProperty24ManageOpen', 'setPrivatePropertyManageOpen', 'setManagedWebsiteChannel', 'setChannelManageCheckedAt', 'setChannelExpiries', 'setProperty24Action', 'setPrivatePropertyAction', 'setDetailError', 'setDetailMessage', 'setProperty24Preview', 'setPrivatePropertyPreview', 'setProperty24StatusCheck', 'setPrivatePropertyStatusCheck', 'setMarketingDraft', 'setChannelManageBusy', 'setQuickListingBusy', 'setQuickListingResults', 'setQuickListingResultAction', 'setWebsiteRefreshKey', 'setAgencyWebsitePublication', 'setKingdomWebsitePublication']) ctx[name] = vi.fn()
   Object.assign(ctx, overrides)
   vm.createContext(ctx)
-  for (const name of ['previewProperty24Listing', 'previewPrivatePropertyListing', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'refreshProperty24ListingStatus', 'refreshPrivatePropertyListingStatus', 'sendQuickListingPortalUpdate', 'saveSimpleChannelManagement', 'saveManagedListingExpiry', 'removeSelectedChannel', 'saveConfirmedPortalLink', 'simpleChannelMenu', 'renderSimpleChannelManagePanel']) {
+  for (const name of ['persistListingSnapshot', 'previewProperty24Listing', 'previewPrivatePropertyListing', 'publishProperty24Listing', 'publishPrivatePropertyListing', 'refreshProperty24ListingStatus', 'refreshPrivatePropertyListingStatus', 'sendQuickListingPortalUpdate', 'saveSimpleChannelManagement', 'saveManagedListingExpiry', 'removeSelectedChannel', 'saveConfirmedPortalLink', 'simpleChannelMenu', 'renderSimpleChannelManagePanel']) {
     const code = transformSync(controllerSource(name), { loader: 'jsx', jsx: 'transform', jsxFactory: 'React.createElement' }).code
     vm.runInContext(code, ctx)
   }
@@ -150,9 +152,9 @@ it('does not report blocked HTTP-success responses as published', async () => {
   const { popup } = fixture({ callProperty24ListingAction: vi.fn(async () => ({ status: 'BLOCKED' })) })
   await expect(popup('Property24').onUpdate()).rejects.toThrow('has not confirmed acceptance')
 })
-it('required Private Property review opens before any send', async () => {
+it('a cancelled Private Property update review sends nothing', async () => {
   const { ctx, popup } = fixture({ requireSyndicationReviewBeforePublish: async () => false })
-  expect(await popup('Private Property').onUpdate()).toEqual({ deferred: true })
+  expect(await popup('Private Property').onUpdate()).toEqual({ cancelled: true })
   expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
 })
 it.each(['Property24', 'Private Property'])('relisting from %s keeps that channel selected', channel => {
@@ -215,6 +217,54 @@ it.each(['Property24', 'Private Property'])('saving a %s URL changes only its sa
   expect(ctx.callProperty24ListingAction).not.toHaveBeenCalled()
   expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
   expect(saved.listingStatus).toBe('active')
+})
+it.each(['Property24', 'Private Property'])('clearing a %s URL removes its saved copies without restoring the activity link', async channel => {
+  const key = channel === 'Property24' ? 'property24' : 'private_property'
+  const field = channel === 'Property24' ? 'property24ListingUrl' : 'privatePropertyListingUrl'
+  const { ctx, popup } = fixture()
+  const oldUrl = ctx.marketingDraft[field]
+  const otherChannel = channel === 'Property24' ? 'Private Property' : 'Property24'
+  const otherLink = { platform: otherChannel, url: ctx.marketingDraft[channel === 'Property24' ? 'privatePropertyListingUrl' : 'property24ListingUrl'], status: 'Published' }
+  ctx.marketingDraft.externalLinks = [{ platform: channel, url: oldUrl, status: 'Published' }, otherLink]
+  ctx.listingPublicationStates[key] = { stage: 'accepted', publicUrl: oldUrl }
+  ctx.privatePropertyLink = { url: ctx.marketingDraft.privatePropertyListingUrl, reference: 'T498201' }
+  ctx.saveMarketingDraft.mockImplementation(async draft => { ctx.marketingDraft = draft; return { ok: true, draft } })
+  const outcome = await popup(channel).onSavePublicUrl('')
+  const saved = ctx.saveMarketingDraft.mock.calls[0][0]
+  expect(saved[field]).toBe('')
+  expect(saved.externalLinks).toEqual([otherLink])
+  expect(saved.property24Reference).toBe('116284')
+  expect(saved.privatePropertyReference).toBe('T498201')
+  expect(popup(channel).portal.publicUrl).toBe('')
+  expect(popup(channel).portal.reference).toBe(channel === 'Property24' ? '116284' : 'T498201')
+  expect(ctx.loadListingData).toHaveBeenCalledWith({ showLoading: false })
+  expect(outcome.message).toContain('removed')
+  expect(ctx.callProperty24ListingAction).not.toHaveBeenCalled()
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
+})
+it.each(['property24ListingUrl', 'privatePropertyListingUrl'])('clears %s through the real seller-profile merge instead of reviving the old URL', async field => {
+  const id = '00000000-0000-4000-8000-000000000001'
+  const onboardingId = '00000000-0000-4000-8000-000000000002'
+  let stored = { id: onboardingId, private_listing_id: id, token: 'local-token', status: 'in_progress', updated_at: '2026-10-16T08:00:00Z', form_data: { [field]: 'https://old.example/advert', property24Reference: '116284', privatePropertyReference: 'T498201' } }
+  const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: stored, error: null }) }
+  const client = { from: vi.fn(() => query), rpc: vi.fn(async (name, args) => {
+    expect(name).toBe('save_private_listing_seller_onboarding_profile')
+    stored = { ...stored, form_data: args.p_form_data }
+    return { data: stored, error: null }
+  }) }
+  const { ctx } = fixture({ listingId: id, listingRecord: { id, sellerOnboarding: { id: onboardingId, updatedAt: stored.updated_at } } })
+  Object.assign(ctx, {
+    isSupabaseConfigured: true, patchListing: () => ctx.listingRecord,
+    buildListingSnapshotFormData: draft => ({ [field]: draft[field] }),
+    persistSellerProfileOnboardingFormData: options => persistSellerProfileOnboardingFormData({ ...options, client }),
+    applyListingSellerOnboardingSaveSnapshot: (listing, onboarding) => ({ ...listing, sellerOnboarding: { formData: onboarding.form_data } }),
+    setPrivateListings: vi.fn(),
+  })
+  const saved = await ctx.persistListingSnapshot({ galleryImages: [], [field]: '' })
+  expect(saved.sellerOnboarding.formData[field]).toBe('')
+  expect(stored.form_data[field]).toBe('')
+  expect(stored.form_data.property24Reference).toBe('116284')
+  expect(stored.form_data.privatePropertyReference).toBe('T498201')
 })
 it('failed live-link persistence keeps the popup action failed', async () => {
   const { popup } = fixture({ saveMarketingDraft: async () => ({ ok: false, error: new Error('Save conflict.') }) })
@@ -304,4 +354,52 @@ it.each(['Property24', 'Private Property'])('a %s confirmation-history failure i
   await expect(popup(channel).onUpdate()).rejects.toThrow('accepted the request, but Arch9 could not save its confirmation')
   expect(ctx.recordListingPublicationStage.mock.calls.some(row => row[1] === 'failed')).toBe(false)
   expect(ctx.recordListingPublicationStage.mock.calls.some(row => row[1] === 'submitted')).toBe(true)
+})
+
+
+function enableUpdateReview(ctx, { ready = true } = {}) {
+  const review = { rollout: { enabled: true, mode: 'review' }, channels: { privateProperty: { dataReady: ready } } }
+  Object.assign(ctx, {
+    syndicationReview: review, syndicationReviewAcknowledgements: {}, syndicationReviewUpdateChannel: 'privateProperty', shouldRequireSyndicationReview, canAcknowledgeSyndicationChannel,
+    syndicationReviewContinuationRef: { current: { listingId: 'listing-1', pending: null } },
+    openSyndicationReview: vi.fn(async () => review), setSyndicationReviewOpen: vi.fn(), setSyndicationReviewAcknowledgements: vi.fn(),
+  })
+  for (const name of ['requireSyndicationReviewBeforePublish', 'continueSyndicationReview', 'closeSyndicationReview']) {
+    vm.runInContext(transformSync(controllerSource(name), { loader: 'jsx' }).code, ctx)
+  }
+}
+it('continues the original Private Property update exactly once after its required review', async () => {
+  const { ctx, popup } = fixture()
+  enableUpdateReview(ctx)
+  const outcome = popup('Private Property').onUpdate()
+  await vi.waitFor(() => expect(ctx.setSyndicationReviewOpen).toHaveBeenCalledWith(true))
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
+  const preview = vi.fn()
+  ctx.continueSyndicationReview('privateProperty', preview)
+  ctx.continueSyndicationReview('privateProperty', preview)
+  expect((await outcome).ok).toBe(true)
+  expect(ctx.callPrivatePropertyListingAction).toHaveBeenCalledOnce()
+  expect(ctx.callPrivatePropertyListingAction.mock.calls[0][0]).toBe('publish')
+  expect(preview).not.toHaveBeenCalled()
+  expect(ctx.callProperty24ListingAction).not.toHaveBeenCalled()
+})
+it.each(['cancel', 'blocked', 'other-channel'])('an update review cannot send on %s', async action => {
+  const { ctx, popup } = fixture()
+  enableUpdateReview(ctx, { ready: action !== 'blocked' })
+  const outcome = popup('Private Property').onUpdate()
+  await vi.waitFor(() => expect(ctx.setSyndicationReviewOpen).toHaveBeenCalledWith(true))
+  if (action !== 'cancel') ctx.continueSyndicationReview(action === 'other-channel' ? 'property24' : 'privateProperty', vi.fn())
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
+  ctx.closeSyndicationReview()
+  expect(await outcome).toEqual({ cancelled: true })
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
+})
+it('blocks an update when review could not load or the listing changed during review loading', async () => {
+  const { ctx, popup } = fixture()
+  enableUpdateReview(ctx)
+  ctx.openSyndicationReview.mockResolvedValueOnce(null)
+  await expect(popup('Private Property').onUpdate()).rejects.toThrow('could not be reviewed')
+  ctx.syndicationReviewContinuationRef.current.listingId = 'another-listing'
+  expect(await popup('Private Property').onUpdate()).toEqual({ cancelled: true })
+  expect(ctx.callPrivatePropertyListingAction).not.toHaveBeenCalled()
 })

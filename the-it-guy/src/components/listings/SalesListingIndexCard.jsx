@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { ArrowRight, ImagePlus, UserRound } from 'lucide-react'
+import { ArrowRight, ImagePlus, Phone, UserRound } from 'lucide-react'
 import ListingLiveChannels from './ListingLiveChannels'
+import { getListingCardSellerContact } from '../../services/listings/listingIndexCardPresentation'
 const text = (value) => String(value ?? '').trim()
 
 function getAgentInitials(agent = {}) {
@@ -66,6 +67,9 @@ function ListingCardImage({ src = '', fallbackSrc = '', alt = '', priority = fal
 }
 
 export default function SalesListingIndexCard({ card, imageSource = { src: card.imageUrl }, priority = false, priceLabel, onOpen, openLabel = 'Open', actions = null }) {
+  const seller = getListingCardSellerContact(card.listingRecord || card)
+  const dialNumber = seller.phone.replace(/[^+\d]/g, '')
+  const canCallSeller = /^\+?\d{6,15}$/.test(dialNumber)
   return (
     <article
       style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
@@ -113,6 +117,19 @@ export default function SalesListingIndexCard({ card, imageSource = { src: card.
             {card.assignedAgent?.email ? (
               <p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">{card.assignedAgent.email}</p>
             ) : null}
+          </div>
+        </div>
+
+        <div className="flex min-w-0 items-start gap-3 rounded-[10px] border border-[#e3ebf4] bg-[#f8fafc] px-3 py-2.5" aria-label="Seller contact">
+          <UserRound size={16} className="mt-0.5 shrink-0 text-[#6d8095]" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#6d8095]">Seller</p>
+            <p className="mt-0.5 break-words text-[0.8rem] font-semibold text-[#20364d]">{seller.name || 'Name not captured'}</p>
+            {canCallSeller ? (
+              <a href={`tel:${dialNumber}`} onClick={(event) => event.stopPropagation()} aria-label={`Call seller${seller.name ? ` ${seller.name}` : ''} on ${seller.phone}`} className="mt-1 inline-flex min-h-7 items-center gap-1.5 break-all text-[0.76rem] font-medium text-[#1f4f78] underline decoration-[#b5cadd] underline-offset-2 hover:text-[#153953] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1f4f78]">
+                <Phone size={12} className="shrink-0" aria-hidden="true" />{seller.phone}
+              </a>
+            ) : <p className="mt-1 flex min-h-7 items-center break-words text-[0.72rem] text-[#6d8095]">{seller.phone || 'Phone not captured'}</p>}
           </div>
         </div>
 
