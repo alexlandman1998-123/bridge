@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { refreshListingPhotoUrls } from '../listingPhotoStorage.js'
+import { refreshListingPhotoUrls, hasListingPhotoLoadError } from '../listingPhotoStorage.js'
 import { fetchArch9ListingForProperty24Preview } from '../../../../server/services/property24Arch9ListingPreviewService.js'
 import { fetchArch9ListingForPrivatePropertyPreview } from '../../../../server/services/privatePropertyListingPreviewService.js'
 
@@ -77,4 +77,18 @@ test('both portal loaders refresh rental photos before mapping their payloads', 
     assert.equal(bundle.media[0].file_url, `${origin}/fresh/${path}`)
   }
   assert.equal(calls.length, 2)
+})
+
+
+test('marketing gallery accepts the structured media draft created after editing a listing', () => {
+  for (const media of [undefined, null, {}, { coverImageId: '', galleryImages: [], floorplans: [], videoLink: '', virtualTourLink: '' }, { galleryImages: [{ url: 'https://example.test/photo.jpg' }] }, { galleryImages: null }, 'invalid legacy value', [null]]) {
+    assert.equal(hasListingPhotoLoadError(media), false)
+  }
+  assert.equal(hasListingPhotoLoadError({ galleryImages: [{ mediaLoadError: 'Photo viewing link unavailable' }] }), true)
+  assert.equal(hasListingPhotoLoadError({ galleryImages: [], floorplans: [{ mediaLoadError: 'Floor plan unavailable' }] }), false)
+})
+test('persisted gallery rows still surface a failed image viewing link without crashing other media', () => {
+  assert.equal(hasListingPhotoLoadError([{ media_type: 'image', mediaLoadError: 'Unavailable' }]), true)
+  assert.equal(hasListingPhotoLoadError([{ media_type: 'video', mediaLoadError: 'Unavailable' }]), false)
+  assert.equal(hasListingPhotoLoadError([{ media_type: 'image', file_url: 'https://example.test/photo.jpg' }]), false)
 })

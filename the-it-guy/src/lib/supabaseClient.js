@@ -642,6 +642,10 @@ export function createScopedSupabaseClient(headers = {}) {
 
   const scopedClient = createClient(supabaseUrl, supabaseKey, {
     auth: {
+      // Even an in-memory GoTrue client acquires a browser lock by storageKey.
+      // Portal capabilities must never share the signed-in agent's Auth lock.
+      // A random, non-secret key also isolates separate portal clients/tabs.
+      storageKey: `arch9:scoped-auth:${globalThis.crypto?.randomUUID?.() || `${Date.now()}:${Math.random()}`}`,
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,

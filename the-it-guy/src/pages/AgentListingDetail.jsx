@@ -1,4 +1,5 @@
 import AddressInput from '../components/location/AddressInput'
+import { hasListingPhotoLoadError } from '../services/listings/listingPhotoStorage.js'
 import { getSellerDocumentDisplayGroupKey } from '../lib/sellerDocumentExperienceModel.js'
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
@@ -12984,7 +12985,7 @@ function AgentListingDetail() {
                   images={[coverImage?.url, ...marketingDraft.galleryImages.map(image => image.url)].filter((url, index, urls) => url && urls.indexOf(url) === index)}
                   propertyTitle={marketingDraft.headline || listingRecord?.listingTitle || 'Property listing'}
                   loading={listingSupportingDataLoading}
-                  loadError={!listingSupportingDataLoading && (!listingSupportingDataReady || Boolean(listingRecord?.listingMedia?.some(media => media.media_type === 'image' && media.mediaLoadError)))}
+                  loadError={!listingSupportingDataLoading && (!listingSupportingDataReady || hasListingPhotoLoadError(listingRecord?.listingMedia))}
                   onRetry={() => loadListingData({ showLoading: false })}
                   showThumbnails
                 />

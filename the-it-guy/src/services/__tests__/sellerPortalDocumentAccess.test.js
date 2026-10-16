@@ -106,3 +106,24 @@ test('a rejected preparation cannot continue with an unverified request', async 
   const denied = Object.assign(new Error('Session expired'), { code: 'P0001' })
   await assert.rejects(prepareSellerPortalOptionalUploadTarget({ client: { rpc: async () => ({ error: denied }) }, requirementKey: 'title_deed_copy', currentOptionalKeys: ['title_deed_copy'] }), denied)
 })
+
+test('secure seller preflight reads do not wait on an unrelated agent Auth client', async () => {
+  const current = readFileSync(new URL('../privateListingService.js', import.meta.url), 'utf8')
+  const begin = current.indexOf('export async function getSellerOnboardingByToken(')
+  const finish = current.indexOf('\nasync function ', begin + 1)
+  const scoped = {}
+  const calls = []
+  const scope = {
+    normalizeText: value => String(value || '').trim(),
+    requireClient: () => { throw new Error('Agent session is blocked') },
+    requireSellerPortalStorageClient: (token, session) => { calls.push([token, session]); return scoped },
+    fetchSellerClientPortalCorePayloadByToken: async (client, _token, args) => {
+      assert.equal(client, scoped); assert.equal(args.requirePortalAccess, true)
+      return { portalAuth: { authRequired: true } }
+    },
+    buildSellerPortalAuthRequiredError: () => Object.assign(new Error('Seller sign-in required'), { code: 'seller_auth_required' }),
+  }
+  const read = Function('scope', `with(scope) { return (${current.slice(begin, finish).replace(/^export /, '')}) }`)(scope)
+  await assert.rejects(read('seller-link', { corePayload: true, requirePortalAccess: true, sellerPortalAccessToken: 'seller-session' }), { code: 'seller_auth_required' })
+  assert.deepEqual(calls, [['seller-link', 'seller-session']])
+})

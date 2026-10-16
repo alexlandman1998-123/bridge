@@ -8009,9 +8009,13 @@ async function canManageSellerOnboardingProjections(client, listingId) {
 }
 
 export async function getSellerOnboardingByToken(token, options = {}) {
-  const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  // Public seller reads use their own capability/session and must not wait on
+  // an unrelated agent Auth refresh or storage lock in the same browser.
+  const client = options?.requirePortalAccess === true
+    ? requireSellerPortalStorageClient(normalizedToken, options?.sellerPortalAccessToken)
+    : requireClient()
 
   const corePayload = options?.corePayload === true
   const portalPayload = corePayload
@@ -8619,12 +8623,12 @@ export async function uploadSellerClientPortalDocument({
   reviewedSigningVersionDigest = '',
   onProgress = null,
 } = {}) {
-  const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!file) throw new Error('A file is required.')
 
   const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+  const client = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
 
   const context = await getSellerOnboardingByToken(normalizedToken, {
     includeRequirementsAndDocuments: true,
@@ -8640,7 +8644,7 @@ export async function uploadSellerClientPortalDocument({
     (currentSignedCopy && (currentSignedCopy.reviewedSigningVersionId !== reviewedSigningVersionId || currentSignedCopy.reviewedSigningVersionDigest !== reviewedSigningVersionDigest))) {
     throw new Error('Reopen the current signing copy before uploading its signed file. The reviewed version changed or is missing.')
   }
-  const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
+  const storageClient = client
   const filePolicy = validateDocumentUploadFile(file, { surface: 'seller_portal', listingId: listing.id })
 
   const normalizedRequirementKey = normalizeText(requirementKey)

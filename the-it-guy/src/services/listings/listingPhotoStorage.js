@@ -1,3 +1,10 @@
+// Persisted media uses rows; an edited listing keeps a structured draft.
+// Both are valid page states, including before any photos have been added.
+export function hasListingPhotoLoadError(media) {
+  if (Array.isArray(media)) return media.some(row => row?.media_type === 'image' && Boolean(row.mediaLoadError))
+  return Array.isArray(media?.galleryImages) && media.galleryImages.some(row => Boolean(row?.mediaLoadError))
+}
+
 // Viewing URLs expire; bucket/path identify the original private object.
 export async function refreshListingPhotoUrls(client, rows = [], { strict = false } = {}) {
   const groups = new Map()
