@@ -48,6 +48,25 @@ export function resolveExactSellerRequirement({ requirements = [], requirementKe
   return null
 }
 
+// Only universally optional supporting files can be prepared by a portal.
+// Conditional, signing, retired and canonical requests retain their own owner.
+export async function prepareSellerPortalOptionalUploadTarget({ client, token, accessToken, listingId, requirementKey: key, requirements = [], currentOptionalKeys = [] }) {
+  const existing = resolveExactSellerRequirement({ requirements, requirementKey: key })
+  if (existing) return existing
+  const normalizedKey = normalizeSellerDocumentRequirementKey(key)
+  if (!['title_deed_copy', 'seller_bank_account_confirmation'].includes(normalizedKey) ||
+      !currentOptionalKeys.includes(normalizedKey)) return null
+  const { data, error } = await client.rpc('bridge_prepare_seller_optional_document_upload', {
+    p_token: token, p_access_token: accessToken, p_requirement_key: normalizedKey,
+  })
+  if (error) throw error
+  if (!data?.id || data.private_listing_id !== listingId || requirementKey(data) !== normalizedKey || data.is_required !== false) {
+    throw new Error('The optional document request could not be verified. Please refresh the portal.')
+  }
+  assertSellerUploadTarget({ listingId, requirement: data, requirementKey: normalizedKey })
+  return data
+}
+
 export function assertSellerUploadTarget({
   listingId = '',
   requirement = null,

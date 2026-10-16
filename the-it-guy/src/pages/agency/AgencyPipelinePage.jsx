@@ -4433,7 +4433,10 @@ function buildSellerLeadMandatePacketForDocuments({
     listingRecord?.mandate_packet_id,
   )
 
-  if (!packetId && !finalSignedRecorded) return null
+  // A preview URL from a physical upload is not a completed signing packet.
+  // Keep that upload linked to its real document/review status instead of
+  // replacing it with a synthetic completed artifact.
+  if (!packetId || !versionId || !finalSignedRecorded) return null
 
   return {
     ...packet,
@@ -40668,6 +40671,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const canUpload = documentRow.canUpload !== false && documentRow.can_upload !== false && !completionAcknowledgementOnly && (physicalCopy || requestPresentation.action === 'upload_document') && (physicalCopy || !isFicaDocument || detailsCaptured)
                         return SELLER_DOCUMENT_SELECTION_KEYS[basePackDocumentKey] ? <SellerDocumentWorkflowActions
                           compact filesOnly item={documentRow} copy={physicalCopy} request={portalSigningRequest}
+                          hasSavedFile={hasFile}
+                          onDownloadSaved={() => documentRow.canonicalFinalArtifact ? void handleOpenSellerLeadFinalSignedDocument(documentRow) : void handleDownloadSellerLeadDocumentUrl(documentRow)}
                           busy={Boolean(sellerPortalSigningBusy || sellerLeadDocumentUploadingKey || sellerLeadMandateUploading || openingSellerLeadDocumentId)}
                           onDownload={() => portalSigningRequest?.status === 'signed' ? void handleSellerLeadPortalSigningPreview(basePackDocumentKey, portalSigningRequest.id, { download: true }) : void handleDownloadSellerLeadPhysicalSigningCopy(documentRow)}
                           onUpload={event => void handleSellerLeadDocumentUpload(event, { ...documentRow, uploadExisting: true }, category)}

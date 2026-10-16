@@ -71,3 +71,18 @@ it('rejected online copies can be replaced without erasing old signatures', () =
   render(<SellerDocumentWorkflowActions filesOnly item={{label:'FICA'}} copy={{}} request={{status:'revoked',revoke_reason:'agent_review_rejected: Missing authority'}} />)
   expect(screen.getByLabelText('Upload manually FICA').disabled).toBe(false)
 })
+
+it('downloads existing uploaded evidence without requiring a generated signing copy', () => {
+  const downloadSaved = vi.fn(), downloadPrepared = vi.fn()
+  render(<SellerDocumentWorkflowActions filesOnly item={{ label: 'Mandate', status: 'under_review', canDownload: true }}
+    hasSavedFile onDownloadSaved={downloadSaved} onDownload={downloadPrepared} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Download', exact: true }))
+  expect(downloadSaved).toHaveBeenCalledOnce()
+  expect(downloadPrepared).not.toHaveBeenCalled()
+})
+it('does not enable download for an empty requirement or an explicitly denied file', () => {
+  const { rerender } = render(<SellerDocumentWorkflowActions filesOnly item={{ label: 'Mandate' }} />)
+  expect(screen.getByRole('button', { name: 'Download', exact: true }).disabled).toBe(true)
+  rerender(<SellerDocumentWorkflowActions filesOnly hasSavedFile item={{ label: 'Mandate', canDownload: false }} />)
+  expect(screen.getByRole('button', { name: 'Download', exact: true }).disabled).toBe(true)
+})

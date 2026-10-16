@@ -76,3 +76,33 @@ test('a final artifact descriptor cannot use the generic download route', async 
   await assert.rejects(f.action({ token: 'link', filePath }), /secure completion record/)
   assert.equal(f.calls.some(call => call[0] === 'sign'), false)
 })
+
+const { prepareSellerPortalOptionalUploadTarget } = await import('../sellerDocumentSatisfactionAssuranceService.js')
+for (const key of ['title_deed_copy', 'seller_bank_account_confirmation']) {
+  test(`prepares missing optional ${key} before transferring bytes and reuses its exact identity`, async () => {
+    const row = { id: 'request', private_listing_id: 'own-listing', requirement_key: key, is_required: false, status: 'required', document_visibility: 'seller_visible' }
+    let calls = 0
+    const client = { rpc: async (name, args) => {
+      calls++; assert.equal(name, 'bridge_prepare_seller_optional_document_upload')
+      assert.deepEqual(args, { p_token: 'own-token', p_access_token: 'own-session', p_requirement_key: key })
+      return { data: row }
+    } }
+    const input = { client, token: 'own-token', accessToken: 'own-session', listingId: 'own-listing', requirementKey: key, currentOptionalKeys: [key] }
+    assert.equal(await prepareSellerPortalOptionalUploadTarget(input), row)
+    assert.equal(await prepareSellerPortalOptionalUploadTarget({ ...input, requirements: [row] }), row)
+    assert.equal(calls, 1)
+    await assert.rejects(prepareSellerPortalOptionalUploadTarget({ ...input, listingId: 'other-listing' }), /could not be verified/)
+  })
+}
+test('portal preparation cannot invent conditional requests or revive retired optional requests', async () => {
+  const client = { rpc: () => { throw new Error('Must not write') } }
+  for (const key of ['gas_compliance_certificate', 'signed_mandate', 'seller_bank_account_confirmation']) {
+    assert.equal(await prepareSellerPortalOptionalUploadTarget({ client, requirementKey: key, currentOptionalKeys: [] }), null)
+  }
+  const retired = { id: 'retired', requirement_key: 'title_deed_copy', status: 'not_applicable', is_required: false }
+  assert.equal(await prepareSellerPortalOptionalUploadTarget({ client, requirements: [retired], requirementKey: 'title_deed_copy', currentOptionalKeys: ['title_deed_copy'] }), retired)
+})
+test('a rejected preparation cannot continue with an unverified request', async () => {
+  const denied = Object.assign(new Error('Session expired'), { code: 'P0001' })
+  await assert.rejects(prepareSellerPortalOptionalUploadTarget({ client: { rpc: async () => ({ error: denied }) }, requirementKey: 'title_deed_copy', currentOptionalKeys: ['title_deed_copy'] }), denied)
+})

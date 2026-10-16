@@ -170,10 +170,10 @@ test('a lost Storage response reconciles the configured fallback bucket without 
     saves++
     return path
   } })
-  await assert.rejects(retry(), { code: 'document_save_unconfirmed' })
+  assert.match(await retry(), /^record\//)
   assert.match(await retry(), /^record\//)
   assert.equal(uploads, 1)
-  assert.equal(saves, 1)
+  assert.equal(saves, 2)
   assert.equal(lookups[1][0], 'configured-private-documents')
   assert.equal(lookups[0][1], lookups[1][1])
 })
@@ -223,4 +223,38 @@ test('a failed actor lookup cannot change a signed-in retry identity; anonymous 
   const result = await runRecoverableDocumentUpload({ client: { auth: { getUser: async () => ({ error: { name: 'AuthSessionMissingError' }, data: { user: null } }) } }, scope: ['token-portal-check'], file, run })
   assert.equal(result, 'verified')
   assert.equal(calls, 1)
+})
+
+for (const surface of ['buyer_portal', 'seller_portal', 'seller_profile', 'agent_listing']) {
+  test(`${surface}: a lost Storage reply completes without another client click or duplicate bytes`, async () => {
+    let transfers = 0, saves = 0, lookups = 0
+    let uploadedPath = ''
+    const client = { storage: { from: () => ({ createSignedUrl: async path => {
+      lookups++; assert.equal(path, uploadedPath)
+      return { data: { signedUrl: 'https://example.test/private-file' } }
+    } }) } }
+    const saved = await runRecoverableDocumentUpload({ client, scope: [surface, crypto.randomUUID()],
+      file: new File(['real transferred bytes'], 'transfer.pdf', { type: 'application/pdf' }),
+      run: async attempt => {
+        uploadedPath = attempt.path('own-context/transfer.pdf')
+        await attempt.upload(async () => { transfers++; throw new TypeError('Reply lost after commit') })
+        return (await attempt.persist({ save: async () => { saves++; return { data: { id: 'saved', file_path: uploadedPath } } }, read: async () => null })).data
+      } })
+    assert.equal(saved.file_path, uploadedPath)
+    assert.deepEqual([transfers, saves, lookups], [1, 1, 1])
+  })
+}
+
+test('a denied Storage reconciliation retains recovery and never submits a document record', async () => {
+  let transfers = 0, saves = 0
+  const client = { storage: { from: () => ({ createSignedUrl: async () => ({ error: { statusCode: 403, message: 'Denied' } }) }) } }
+  const action = () => runRecoverableDocumentUpload({ client, scope: ['denied-storage', 'fixed-scope'], file: new File(['bytes'], 'denied.pdf', { lastModified: 1 }),
+    run: async attempt => {
+      attempt.path('own/denied.pdf')
+      await attempt.upload(async () => { transfers++; throw new TypeError('Lost reply') })
+      saves++
+    } })
+  await assert.rejects(action(), { code: 'document_save_unconfirmed' })
+  await assert.rejects(action(), { code: 'document_save_unconfirmed' })
+  assert.deepEqual([transfers, saves], [1, 0])
 })

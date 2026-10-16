@@ -134,7 +134,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
         if (state.uploaded) return state.uploaded
         // A lost Storage response is retained too. Reconciliation must prove
         // the object exists before any metadata is submitted.
-        if (state.storageStarted) {
+        const reconcile = async () => {
           let allMissing = storageBuckets.length > 0
           if (recoverStorage) {
             // Signed, token-scoped uploads reconcile through their authorised
@@ -143,7 +143,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
             if (exists === true) {
               state.uploaded = storageResult(storageBuckets[0], state.path)
               writeReceipt(key, state)
-              return state.uploaded
+              return true
             }
             allMissing = exists === false
           } else for (const bucket of storageBuckets) {
@@ -152,13 +152,18 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
               if (!result.error && result.data?.signedUrl) {
                 state.uploaded = storageResult(bucket, state.path)
                 writeReceipt(key, state)
-                return state.uploaded
+                return true
               }
               const missing = Number(result.error?.statusCode || result.error?.status) === 404 || /(?:object|bucket) (?:not found|does not exist)/i.test(String(result.error?.message || ''))
               if (!missing) allMissing = false
             } catch { allMissing = false }
           }
-          if (!allMissing) throw unconfirmed()
+          return allMissing ? false : null
+        }
+        if (state.storageStarted) {
+          const exists = await reconcile()
+          if (exists === true) return state.uploaded
+          if (exists !== false) throw unconfirmed()
           // A confirmed missing object may be retried at the SAME path. Every
           // upload callback uses upsert:false, so an earlier PUT finishing late
           // cannot create a second file or overwrite the selected bytes.
@@ -171,11 +176,14 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
           return state.uploaded
         } catch (error) {
           const conflict = [error, error?.cause].some(value => value?.code === '23505' || /duplicate|already.?exists/i.test(`${value?.code || ''} ${value?.message || ''}`))
-          if (conflict) throw unconfirmed(error)
-          if (isDefiniteUploadSaveRejection(error) || [400, 401, 403, 404, 413, 415].includes(Number(error?.statusCode || error?.status || error?.cause?.statusCode || error?.cause?.status))) {
+          if (!conflict && (isDefiniteUploadSaveRejection(error) || [400, 401, 403, 404, 413, 415].includes(Number(error?.statusCode || error?.status || error?.cause?.statusCode || error?.cause?.status)))) {
             forgetReceipt(key)
             throw error
           }
+          // A successful transfer can lose only its reply. Check the exact
+          // retained path now so the client need not click Retry to save it.
+          // This check never resends bytes or interprets a denied read as absence.
+          try { if (await reconcile() === true) return state.uploaded } catch { /* Keep the recovery reference. */ }
           throw unconfirmed(error)
         }
       },

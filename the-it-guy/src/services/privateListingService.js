@@ -83,7 +83,7 @@ import {
   assertSellerUploadTarget,
   buildSellerDocumentAssuranceReport,
   documentExactlyMatchesSellerRequirement,
-  resolveExactSellerRequirement,
+  prepareSellerPortalOptionalUploadTarget,
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
 import { buildPrivateListingDocumentPersistenceReceipt } from './listings/listingSellerDocumentPersistenceModel.js'
@@ -8646,9 +8646,12 @@ export async function uploadSellerClientPortalDocument({
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
   const requiredDocuments = Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []
-  const matchedRequirement = resolveExactSellerRequirement({
-    requirements: requiredDocuments,
-    requirementKey: normalizedRequirementKey,
+  const matchedRequirement = await prepareSellerPortalOptionalUploadTarget({
+    client, token: normalizedToken, accessToken: resolvedAccessToken, listingId: listing.id,
+    requirements: requiredDocuments, requirementKey: normalizedRequirementKey,
+    currentOptionalKeys: getExpectedSellerDocumentRequirements(listing, {}, { includeOptional: true })
+      .filter(row => row.is_required === false || row.required === false)
+      .map(row => row.requirement_key || row.key),
   })
   if (matchedRequirement?.canonical_shared_requirement) {
     if (canonicalRequirementInstanceId && canonicalRequirementInstanceId !== matchedRequirement.canonical_requirement_instance_id) throw new Error('This upload does not match the selected request.')
