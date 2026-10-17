@@ -1,9 +1,10 @@
 import { homeSeekersPath } from './homeSeekersRoutes.js'
+import { homeSeekersPixelSurface, setHomeSeekersMeasurementConsent } from './homeSeekersPixel.js'
 // Agent overview supplied on 8 October 2026. All fees and examples exclude VAT.
-export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
+export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, ffcTransferFee: 950, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
 export const recruitmentPaymentOptions = Object.freeze([
   Object.freeze({ id: 'deals', title: 'Post Paid', amount: recruitmentPricing.dealFundedMonthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.dealFundedMonthlyFee, copy: 'Your monthly fee builds up as a balance and is deducted when your deals register. A maximum of 50% of any one deal goes towards that balance, so you retain at least half of each cheque.', note: 'Solo agents only.' }),
-  Object.freeze({ id: 'monthly', title: 'Prepaid', amount: recruitmentPricing.monthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.monthlyFee, copy: 'Your R9,000 monthly invoice must be paid on the 1st of every month, in advance. Your subscription is settled separately from your deals, with no brokerage commission split.', note: 'The standard option. Pay monthly, in advance.' }),
+  Object.freeze({ id: 'monthly', title: 'Prepaid', amount: recruitmentPricing.monthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.monthlyFee, copy: 'Your R9,000 monthly subscription is collected by debit order on the 1st of every month, in advance. Your subscription is settled separately from your deals, with no brokerage commission split.', note: 'The standard option. Pay monthly, in advance.' }),
   Object.freeze({ id: 'upfront', title: 'Upfront', amount: recruitmentPricing.upfrontAnnualFee, period: '/ year', annualFee: recruitmentPricing.upfrontAnnualFee, copy: 'Pay R100,000 upfront for your subscription for the year. Save R8,000 compared with twelve Prepaid payments of R9,000.', note: 'Your subscription is settled for the year. The R1,500 fee still applies to each registered sale.' }),
 ])
 export function recruitmentExample(sales = 10, optionId = 'monthly') {
@@ -33,10 +34,9 @@ export async function submitRecruitmentApplication(details, { fetcher = fetch, p
 }
 
 // IDs are configuration, never inferred from another brand's analytics account.
-export const campaignMeasurementConfigured = Boolean(import.meta.env?.VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID || import.meta.env?.VITE_HOME_SEEKERS_META_PIXEL_ID)
+export const campaignMeasurementConfigured = Boolean(homeSeekersPixelSurface() || import.meta.env?.VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID)
 export function enableRecruitmentMeasurement() {
   const gaId = import.meta.env?.VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID
-  const pixelId = import.meta.env?.VITE_HOME_SEEKERS_META_PIXEL_ID
   if (/^G-[A-Z0-9]+$/.test(gaId || '') && !document.getElementById('hs-recruitment-ga')) {
     window.dataLayer = window.dataLayer || []
     window.gtag = window.gtag || function () { window.dataLayer.push(arguments) }
@@ -44,18 +44,12 @@ export function enableRecruitmentMeasurement() {
     window.gtag('config', gaId, { send_page_view: false })
     const script = document.createElement('script'); script.id = 'hs-recruitment-ga'; script.async = true; script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`; document.head.append(script)
   }
-  if (/^\d+$/.test(pixelId || '') && !document.getElementById('hs-recruitment-meta')) {
-    const queue = function (...args) { queue.callMethod ? queue.callMethod(...args) : queue.queue.push(args) }
-    queue.queue = []; queue.loaded = true; queue.version = '2.0'; window.fbq = window.fbq || queue
-    window.fbq('init', pixelId)
-    const script = document.createElement('script'); script.id = 'hs-recruitment-meta'; script.async = true; script.src = 'https://connect.facebook.net/en_US/fbevents.js'; document.head.append(script)
-  }
+  setHomeSeekersMeasurementConsent(true)
   window.gtag?.('consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted' })
-  window.fbq?.('consent', 'grant')
 }
 export function disableRecruitmentMeasurement() {
   window.gtag?.('consent', 'update', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' })
-  window.fbq?.('consent', 'revoke')
+  setHomeSeekersMeasurementConsent(false)
 }
 export function trackRecruitmentConversion(eventType, { measurementAllowed = false, duplicate = false, gaId = import.meta.env?.VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID, pixelId = import.meta.env?.VITE_HOME_SEEKERS_META_PIXEL_ID } = {}) {
   if (duplicate || !measurementAllowed) return

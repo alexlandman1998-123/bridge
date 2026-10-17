@@ -4,6 +4,7 @@ import { ArrowRight, Check, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { trackHomeSeekersEvent } from './homeSeekersWebsiteData'
 import { recruitmentPricing, recruitmentPaymentOptions, recruitmentExample, trackRecruitmentConversion, campaignMeasurementConfigured, enableRecruitmentMeasurement, disableRecruitmentMeasurement } from './homeSeekersRecruitment'
+import { HOME_SEEKERS_MEASUREMENT_CONSENT_EVENT, homeSeekersMeasurementConsent } from './homeSeekersPixel'
 import HomeSeekersMobileNav from './HomeSeekersMobileNav'
 import HomeSeekersFooter from './HomeSeekersFooter'
 import RecruitmentSignupModal from './recruitment/RecruitmentSignupModal'
@@ -11,7 +12,7 @@ import Modal from '../components/ui/Modal'
 import './HomeSeekersJoin.css'
 
 const nav = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['About', 'about'], ['Join us', 'join']]
-const { monthlyFee, transactionFee, referralMonthlyCredit, referralLimit } = recruitmentPricing
+const { monthlyFee, transactionFee, ffcTransferFee, referralMonthlyCredit, referralLimit } = recruitmentPricing
 const example = recruitmentExample()
 const annualCommission = example.commission
 const annualFee = example.cost
@@ -41,7 +42,7 @@ const paymentDetails = {
   },
   monthly: {
     suits: 'Agents who want a predictable monthly payment and to settle their subscription separately from their sales.',
-    steps: ['Your R9,000 monthly invoice must be paid on the 1st of every month, in advance.', 'Your subscription is paid separately from your registered deals. There is no brokerage commission split.', 'Twelve monthly payments total R108,000 for the year. Each registered sale adds the same R1,500 fee.'],
+    steps: ['Your R9,000 monthly subscription is collected by debit order on the 1st of every month, in advance.', 'Your subscription is paid separately from your registered deals. There is no brokerage commission split.', 'Twelve monthly payments total R108,000 for the year. Each registered sale adds the same R1,500 fee.'],
   },
   upfront: {
     suits: 'Agents who prefer to settle their subscription with one annual payment.',
@@ -59,15 +60,17 @@ const included = [
   { title: 'The brand in front of you', items: ['Print-ready For Sale board artwork with your face and number', 'Listing presentations and seller proposal material', 'Our in-house design studio', 'Social templates and campaign artwork', 'Live and recorded sales training from practising agents', 'Bond origination: earn on the bonds you refer', 'The 45-Day Guarantee'] },
 ]
 const faqs = [
-  ['How do the three options differ?', 'The support is the same. Option 1, Post Paid: R10,000 a month settled from registered deals, for solo agents. Option 2, Prepaid: R9,000 on invoice, due on the 1st of every month. Option 3, Upfront: R100,000 for your subscription for the year. Every option adds R1,500 per registered sale. All fees exclude VAT. You can change your payment option at renewal.'],
+  ['How do the three options differ?', 'The support is the same. Option 1, Post Paid: R10,000 a month settled from registered deals, for solo agents. Option 2, Prepaid: R9,000 collected by debit order on the 1st of every month, in advance. Option 3, Upfront: R100,000 for your subscription for the year. Every option adds R1,500 per registered sale. All fees exclude VAT. You can change your payment option at renewal.'],
   ['Do you take a share of my commission?', 'There is no brokerage split, cap or royalty. You keep 100% of your commission, less the agreed subscription and R1,500 fee per registered sale.'],
+  ['Who carries the 45-day guarantee reduction?', 'If a qualifying property is not sold within 45 days, the agreed commission is reduced by 50%. The reduction comes off your commission as the agent. The guarantee requires an exclusive mandate, a listing price within 2.5% of our recommendation, reasonable access for viewings and good-faith consideration of market-value offers.'],
   ['What happens if I choose to pay from my deals?', 'The R10,000 monthly fee accrues as a balance. When a deal registers, a maximum of 50% of that deal goes towards the balance, so you retain at least half of each cheque. The balance continues to accrue during quiet months. This option is for solo agents only.'],
   ['Do I need an office?', 'No. There is no desk requirement, office hours, floor duty or compulsory Monday meeting.'],
+  ['Can I join from anywhere in South Africa?', 'Yes. Agents can join from anywhere in South Africa. There is no office or desk requirement.'],
   ['What happens to my current listings?', 'Mandates stay with your current agency until they expire. We’ll help you plan the move so nothing falls over.'],
   ['Am I an employee?', 'No. You’re an independent practitioner running your own business and keeping your own book.'],
   ['Can I bring my team?', 'Yes. The leader pays R9,000 a month or R100,000 upfront for their own seat only. Additional team members must pay monthly and cannot be paid upfront. Seats 2 to 5 cost R7,000 each per month. From seat 6 onwards, the cost is R6,000 each per month. One account, one invoice. All fees exclude VAT; registered-sale fees still apply.'],
   ['What production level is this for?', 'Five registered sales in the last twelve months, or R6 million of property sold. Compare the fees against your own production: a fixed fee can cost more than a split at lower sales levels.'],
-  ['Are there any other joining costs?', 'There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs R700 for the runner handling the transfer, plus R640 payable directly to the PPRA.'],
+  ['Are there any other joining costs?', `There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs ${money(ffcTransferFee)} once off.`],
 ]
 
 function Eyebrow({ children }) {
@@ -124,7 +127,7 @@ export default function HomeSeekersJoin() {
   const [selectedOption, setSelectedOption] = useState(null)
   const [rentalOpen, setRentalOpen] = useState(false)
   const openSignup = () => setSignupOpen(true)
-  const [measurementAllowed, setMeasurementAllowed] = useState(false)
+  const [measurementAllowed, setMeasurementAllowed] = useState(() => homeSeekersMeasurementConsent() === 'granted')
   const [heroPassed, setHeroPassed] = useState(false)
   const [applicationVisible, setApplicationVisible] = useState(false)
   const heroRef = useRef(null)
@@ -134,7 +137,7 @@ export default function HomeSeekersJoin() {
     const description = document.querySelector('meta[name="description"]')
     const previousDescription = description?.content
     document.title = 'Join Home Seekers | Three ways in. Your commission.'
-    if (description) description.content = 'Choose Post Paid at R10,000 a month from your deals, Prepaid at R9,000 on invoice on the 1st of every month, or Upfront at R100,000 for the leader’s annual seat. All exclude VAT, plus R1,500 per registered sale.'
+    if (description) description.content = 'Join from anywhere in South Africa. Choose Post Paid at R10,000 a month from your deals, Prepaid at R9,000 by debit order on the 1st of every month, or Upfront at R100,000 for the leader’s annual seat. All exclude VAT, plus R1,500 per registered sale.'
     return () => {
       document.title = previousTitle
       if (description) description.content = previousDescription
@@ -152,7 +155,11 @@ export default function HomeSeekersJoin() {
     observer.observe(applicationRef.current)
     return () => observer.disconnect()
   }, [])
-  useEffect(() => () => { if (measurementAllowed) disableRecruitmentMeasurement() }, [measurementAllowed])
+  useEffect(() => {
+    const changed = () => setMeasurementAllowed(homeSeekersMeasurementConsent() === 'granted')
+    window.addEventListener(HOME_SEEKERS_MEASUREMENT_CONSENT_EVENT, changed)
+    return () => window.removeEventListener(HOME_SEEKERS_MEASUREMENT_CONSENT_EVENT, changed)
+  }, [])
   function updateMeasurement(allowed) {
     setMeasurementAllowed(allowed)
     if (allowed) enableRecruitmentMeasurement()
@@ -178,7 +185,7 @@ export default function HomeSeekersJoin() {
         <h1 id="join-title"><span>Your commission is not</span> <em>our business model.</em></h1>
         <p>Keep 100% of your commission. Choose a payment option that fits your cash flow.</p>
         <div className="hs-join__actions"><ApplyLink onOpen={openSignup} /><a className="hs-join__text-link" href="#fees">See the three options<ArrowRight size={18} aria-hidden="true" /></a></div>
-        <div className="hs-join__hero-notes"><small>All fees exclude VAT. R1,500 per registered sale on every option.</small><small>For agents with five registered sales in the last twelve months, or R6 million of property sold.</small></div>
+        <div className="hs-join__hero-notes"><small>Agents can join from anywhere in South Africa.</small><small>All fees exclude VAT. R1,500 per registered sale on every option.</small><small>For agents with five registered sales in the last twelve months, or R6 million of property sold.</small></div>
       </div>
       <div className="hs-join__hero-bottom"><span>Your business. Your book.</span><span>A fixed fee. A clearer future.</span></div>
     </section>
@@ -217,7 +224,7 @@ export default function HomeSeekersJoin() {
           </ul>
         </div>
         <div className="hs-join__fee-summary-footer">
-          <p><strong>FFC transfer:</strong> R700 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p>
+          <p><strong>FFC transfer:</strong> {money(ffcTransferFee)} once off.</p>
           <ApplyLink onOpen={openSignup} />
         </div>
       </div>
@@ -282,13 +289,13 @@ export default function HomeSeekersJoin() {
 
     <section className="hs-join__section hs-join__light hs-join__guarantee" aria-labelledby="guarantee-title">
       <div className="hs-join__badge" aria-label="45-day guarantee"><strong>45</strong><span>Day</span><b>Guarantee</b></div>
-      <div><Eyebrow>One more <strong>thing</strong></Eyebrow><h2 id="guarantee-title">Something to say<br /><em>when you walk in the door.</em></h2><p className="hs-join__statement">Sold in 45 days,<br />or we cut our commission.</p><p>Sole mandate, listed at the price we recommend, subject to the published terms. Give a seller a reason to pick you over the agent who sat in that chair yesterday.</p><a className="hs-join__text-link" href={homeSeekersPath(`/guarantee#guarantee`)} onClick={openGuarantee}>How the guarantee works<ArrowRight size={18} aria-hidden="true" /></a></div>
+      <div><Eyebrow>One more <strong>thing</strong></Eyebrow><h2 id="guarantee-title">Something to say<br /><em>when you walk in the door.</em></h2><p className="hs-join__statement">Sold in 45 days,<br />or the agreed commission is reduced by 50%.</p><p>Exclusive mandate, with a listing price within 2.5% of our recommendation, subject to the published terms. The 50% reduction comes off your commission as the agent. Give a seller a reason to pick you over the agent who sat in that chair yesterday.</p><a className="hs-join__text-link" href={homeSeekersPath(`/guarantee#guarantee`)} onClick={openGuarantee}>How the guarantee works<ArrowRight size={18} aria-hidden="true" /></a></div>
     </section>
 
     <section className="hs-join__section hs-join__light hs-join__white" aria-labelledby="fit-title">
       <Eyebrow>Let’s be <strong>straight</strong></Eyebrow><h2 id="fit-title">A better fit.<br /><em>For the right agent.</em></h2>
       <div className="hs-join__two-columns hs-join__fit"><article><h3>This is for you if</h3><CheckList items={['You did five registered sales in the last twelve months, or sold R6 million of property', 'You’re tired of discounting to win listings', 'You’d rather know what your business costs than guess', 'You want to build something that’s actually yours']} /></article><article><h3>This isn’t for you yet if</h3><CheckList items={['You’re still in your first year', 'You need someone to hand you leads to survive', 'The fixed annual commitment would put pressure on your business']} /></article></div>
-      <p>Break-even against a 70/30 split is about {example.breakEvenSales.toFixed(1)} sales a year under the comparison assumptions. Below that, you may be better off where you are. We’d rather tell you now than take your money for six months.</p>
+      <p>With Prepaid at R9,000 a month plus R1,500 per registered sale, break-even against a 70/30 split is about {example.breakEvenSales.toFixed(1)} sales a year, assuming R1.5 million per sale and 5% commission, excluding VAT. In whole sales, you need six registered sales a year to come out ahead on those assumptions. Your own sale prices and commission rates will change that number.</p>
       <p className="hs-join__fine">Not sure which payment option fits your cash flow? <a href="#fees">Compare the three ways in</a> and discuss your last twelve months with us.</p>
     </section>
 
@@ -308,9 +315,9 @@ export default function HomeSeekersJoin() {
         <section><h4>Who it suits</h4><p>{paymentDetails[selectedOption.id].suits}</p></section>
         <section><h4>How payment works</h4><ol>{paymentDetails[selectedOption.id].steps.map((step) => <li key={step}>{step}</li>)}</ol></section>
         {paymentDetails[selectedOption.id].example && <aside className="hs-option-modal__example"><h4>A subscription example</h4><p>{paymentDetails[selectedOption.id].example}</p><small>This illustrates the subscription deduction only. The registered-sale fee and VAT are separate.</small></aside>}
-        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>You can bring your team on this option. {selectedOption.id === 'monthly' ? 'The team leader pays R9,000 on invoice on the 1st of every month. Additional seats are paid monthly at the rates below and cannot be paid upfront.' : 'R100,000 upfront covers the leader’s own seat for the year. Additional seats are paid monthly at the rates below and cannot be paid upfront.'} One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
+        {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>You can bring your team on this option. {selectedOption.id === 'monthly' ? 'The team leader pays R9,000 by debit order on the 1st of every month. Additional seats are paid monthly at the rates below and cannot be paid upfront.' : 'R100,000 upfront covers the leader’s own seat for the year. Additional seats are paid monthly at the rates below and cannot be paid upfront.'} One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
         <section><h4>Same support on every option</h4><p>Listing platforms, CRM, deal administration, training, compliance support and your choice of LOOM or CMA Info.</p></section>
-        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: R700 to the runner handling the transfer, plus R640 payable directly to the PPRA.</p></div>
+        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: {money(ffcTransferFee)} once off.</p></div>
         <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setSelectedOption(null)}>Back to options</button><button type="button" className="hs-option-modal__join" onClick={() => { setSelectedOption(null); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
       </>}
     </Modal>

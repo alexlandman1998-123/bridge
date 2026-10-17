@@ -1,5 +1,6 @@
 import { normalizeRecruitmentProfile } from '../pages/recruitment/recruitmentProfileModel'
 import { normalizeRecruitmentContact, recruitmentSignupErrors } from '../pages/recruitment/recruitmentContactModel'
+import { trackHomeSeekersRecruitmentSuccess } from '../pages/homeSeekersPixel'
 
 export async function recruitmentSignupRequest(action, details = {}, { endpoint = '/api/public/recruitment-intake', token, fetcher = fetch, timeoutMs = 20000, accessToken } = {}) {
   if (action === 'signup' && Object.keys(recruitmentSignupErrors(details.contact, details.password)).length) throw new Error('Check your contact details, password and consent.')
@@ -33,6 +34,8 @@ export async function recruitmentSignupRequest(action, details = {}, { endpoint 
       error.retryAfterSeconds = Number.isFinite(result.retryAfterSeconds) ? result.retryAfterSeconds : 0
       throw error
     }
+    try { trackHomeSeekersRecruitmentSuccess(action, result, { endpoint, submissionKey: details.submissionKey }) }
+    catch { /* Advertising tools must never change an application response. */ }
     return result
   } catch (error) {
     if (controller.signal.aborted) throw new Error('The connection took too long. Please retry with the same details.')

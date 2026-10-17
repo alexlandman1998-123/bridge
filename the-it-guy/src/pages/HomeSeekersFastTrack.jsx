@@ -21,7 +21,7 @@ const steps = [
   [
     "04",
     "Hold us to day 45.",
-    "If the qualifying guarantee is not met, our commission comes down.",
+    "If a qualifying property is not sold within 45 days, the agreed commission is reduced by 50%.",
   ],
 ];
 
@@ -49,7 +49,7 @@ export default function HomeSeekersFastTrack({ compact = false, onValuation }) {
         </h2>
         {!compact && (
           <small>
-            Exclusive mandate and recommended-price conditions apply.{" "}
+            Exclusive mandate and a listing price within 2.5% of our recommendation required.{" "}
             <a href={homeSeekersPath("/guarantee#guarantee")}>Read the guarantee terms.</a>
           </small>
         )}

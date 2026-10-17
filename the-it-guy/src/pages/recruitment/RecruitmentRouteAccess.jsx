@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import AppErrorBoundary from '../../components/AppErrorBoundary'
 import useRecruitmentApplicantGate from './useRecruitmentApplicantGate'
+import HomeSeekersMeasurement from '../HomeSeekersMeasurement'
 
 const HomeSeekersLogin = lazy(() => import('../HomeSeekersLogin'))
 const RecruitmentApplicantSetupPage = lazy(() => import('./RecruitmentApplicantSetupPage'))
@@ -17,7 +18,7 @@ export default function RecruitmentRouteAccess({ session, logout, pendingInviteP
 
   if (location.pathname === '/applicant' || location.pathname.startsWith('/applicant/')) {
     if (session?.user && !applicantGate.checking && !applicantGate.error && !applicantGate.required) return <Navigate to="/dashboard" replace />
-    return <Suspense fallback={createElement(Loading, { label: 'Opening My Profile' })}><AppErrorBoundary scope="applicant-setup" title="My Profile failed to load" brandName="Home Seekers" fallbackPath="/applicant/my-profile" fallbackLabel="My Profile"><RecruitmentApplicantSetupPage /></AppErrorBoundary></Suspense>
+    return <><HomeSeekersMeasurement /><Suspense fallback={createElement(Loading, { label: 'Opening My Profile' })}><AppErrorBoundary scope="applicant-setup" title="My Profile failed to load" brandName="Home Seekers" fallbackPath="/applicant/my-profile" fallbackLabel="My Profile"><RecruitmentApplicantSetupPage /></AppErrorBoundary></Suspense></>
   }
   if (applicantGate.checking) return createElement(Loading, { label: 'Checking workspace access' })
   if (applicantGate.error) return <div role="alert"><p>Workspace access could not be checked.</p><button type="button" onClick={applicantGate.retry}>Retry</button><button type="button" onClick={logout}>Sign out</button></div>

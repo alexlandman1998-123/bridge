@@ -39,7 +39,7 @@ const process = [
   [
     "04",
     "Hold us to day 45.",
-    "Sold, or our commission comes down. Either way, the decision to continue is yours.",
+    "If a qualifying property is not sold within 45 days, the agreed commission is reduced by 50%. The decision to continue is yours.",
   ],
 ];
 const salePreviews = [

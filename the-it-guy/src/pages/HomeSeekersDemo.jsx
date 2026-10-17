@@ -51,7 +51,7 @@ function CampaignTrack() {
     <div className="hs-campaign-hero__track" aria-label="The 45-day sales process">
       <span><b>DAY 01</b> Price it right. Launch it hard.</span>
       <span><b>DAY 14</b> Viewings, feedback, momentum.</span>
-      <span><b>DAY 45</b> Sold, or the commission drops.</span>
+      <span><b>DAY 45</b> Sold, or commission reduced by 50%.</span>
     </div>
   );
 }
@@ -161,7 +161,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
           </Eyebrow>
           <h1>Sold faster than<em> your hubby can fix the porch light.</em></h1>
           <p>
-            45 days, or we cut the commission. No crossed fingers. Just a
+            45 days, or the agreed commission is reduced by 50%. No crossed fingers. Just a
             published promise.
           </p>
           <div className="hs-brief-actions">
@@ -177,7 +177,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
             </a>
           </div>
           <small>
-            Exclusive mandate. Listed at the recommended price.{" "}
+            Exclusive mandate. Listing price within 2.5% of our recommendation.{" "}
             <a href="#guarantee">Full terms published - no small print.</a>
           </small>
         </div>
@@ -287,7 +287,7 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
         </p>
         <div className="hs-presentation-proof__stats" aria-label="Home Seekers performance">
           <div><strong>28</strong><span>AVERAGE DAYS<br />TO OFFER</span></div>
-          <div><strong>86%</strong><span>SOLD WITHIN<br />45 DAYS</span></div>
+          <div><strong>97%</strong><span>OF OUR MANDATES SELL<br />WITHIN 45 DAYS</span></div>
           <div><strong>97.4%</strong><span>OF ASKING<br />ACHIEVED</span></div>
         </div>
       </section>
@@ -321,16 +321,16 @@ export default function HomeSeekersDemo({ guaranteePage = false }) {
                   <li><span>01</span><span>Live on the market within <em>3 working days</em> of signature</span></li>
                   <li><span>02</span><span>The full marketing plan, executed as agreed</span></li>
                   <li><span>03</span><span>Written feedback every single week</span></li>
-                  <li><span>04</span><span>Agreed Commission reduced to half</span></li>
+                  <li><span>04</span><span>If a qualifying property is not sold within 45 days, the agreed commission is reduced by 50%</span></li>
                 </ol>
-                <small>Our promise has a consequence. Not just a nice headline.</small>
+                <small>The 50% reduction comes off the agent’s commission.</small>
               </article>
               <article>
                 <span className="hs-guarantee__label">02 / YOUR PART</span>
                 <h3>What makes it work.</h3>
                 <ol>
                   <li><span>01</span><span>An exclusive mandate for the guarantee period</span></li>
-                  <li><span>02</span><span>Listing at the recommended price</span></li>
+                  <li><span>02</span><span>A listing price within 2.5% of our recommendation</span></li>
                   <li><span>03</span><span>Reasonable access for viewings</span></li>
                   <li><span>04</span><span>Considering market-value offers in good faith</span></li>
                 </ol>

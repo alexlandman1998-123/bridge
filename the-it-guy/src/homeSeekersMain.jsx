@@ -1,6 +1,7 @@
 import { Component, lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import HomeSeekersMeasurement from './pages/HomeSeekersMeasurement'
 import './index.css'
 
 // The public deployment must not import App or its private CRM/auth shell.
@@ -45,6 +46,7 @@ function PageRedirect({ to }) {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
+      <HomeSeekersMeasurement />
       <WebsiteErrorBoundary>
         <Suspense fallback={<main role="status" style={{ padding: '48px 24px', textAlign: 'center' }}>Loading Home Seekers…</main>}>
           <Routes>
