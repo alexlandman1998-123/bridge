@@ -24,8 +24,8 @@ const INTEGRATION_CARDS = [
   },
   {
     to: '/settings/integrations/meta',
-    label: 'Meta Lead Ads',
-    description: 'Connect Facebook and Instagram forms, then choose how each form reaches your CRM.',
+    label: 'Facebook & Meta Leads',
+    description: 'Connect a Facebook Page for listing posts and route Facebook and Instagram lead forms into your CRM.',
     icon: Radio,
     brandLabel: 'Meta',
     brandClassName: 'text-[#1877f2]',
@@ -39,12 +39,12 @@ const INTEGRATION_CARDS = [
     brandClassName: 'text-[#0f7f4f]',
   },
   {
+    to: '/settings/integrations/whatsapp',
     label: 'WhatsApp',
-    description: 'WhatsApp delivery is managed by Arch9 while organisation-level sender and template setup is prepared.',
+    description: 'Connect your business number for the shared WhatsApp inbox and bulk template campaigns.',
     icon: MessageCircle,
     brandLabel: 'WhatsApp',
     brandClassName: 'text-[#1a9b62]',
-    status: 'Managed by Arch9',
   },
 ]
 

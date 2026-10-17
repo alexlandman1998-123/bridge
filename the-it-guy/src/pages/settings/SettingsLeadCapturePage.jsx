@@ -879,9 +879,9 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
     <div className={settingsPageClass}>
       {!showDigitalCards ? <SettingsPageHeader
         kicker="Integrations"
-        title={showMeta ? 'Meta Lead Ads' : 'Digital Cards'}
+        title={showMeta ? 'Facebook Pages & Meta Lead Ads' : 'Digital Cards'}
         description={showMeta
-          ? 'Connect Facebook and Instagram forms, then route enquiries to the right team or agent.'
+          ? 'Connect your Facebook Page to post listings and choose the lead forms that feed your CRM.'
           : 'Create shareable agent cards, QR codes, and enquiry links for your team.'}
         actions={
           <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
@@ -892,7 +892,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
 
       {showMeta && canManage ? (
-        <SettingsSectionCard title="Facebook & Instagram Lead Ads" description="Authorise a Meta Page, choose the forms you want to receive, and set their routing.">
+        <SettingsSectionCard title="Facebook Page connection" description="Authorise your Page for listing posts. Choose Facebook and Instagram lead forms below if you also want to capture their enquiries.">
           <div className="grid gap-3">
             <div className="flex flex-col gap-4 rounded-[18px] border border-[#c9ddf3] bg-[linear-gradient(135deg,#f7fbff_0%,#edf7ff_100%)] p-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
@@ -903,7 +903,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <PrimaryButton onClick={authorizeMeta} disabled={saving || !organisationId}>{metaConnections.length ? 'Manage connection' : 'Connect Meta'}</PrimaryButton>
+                <PrimaryButton onClick={authorizeMeta} disabled={saving || !organisationId}>{metaConnections.length ? 'Manage connection' : 'Connect Facebook Page'}</PrimaryButton>
                 <a href="https://developers.facebook.com/tools/lead-ads-testing/" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#d7e2ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#bfccdb] hover:bg-[#f7fafd]"><ExternalLink size={16} /> Test a form</a>
               </div>
             </div>

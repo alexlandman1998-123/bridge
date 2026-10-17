@@ -124,7 +124,7 @@ it('allows saving a draft without a sender and keeps delivery readiness pending'
   render(<CreateWhatsAppCampaign onBack={vi.fn()} />)
   fireEvent.change(await screen.findByLabelText('Campaign name'), { target: { value: 'New homes' } })
   expect(screen.getByRole('heading', { name: 'New homes' })).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Set up connection' }).getAttribute('href')).toBe('/settings/integrations/meta')
+  expect(screen.getByRole('link', { name: 'Set up connection' }).getAttribute('href')).toBe('/settings/integrations/whatsapp')
   expect(screen.getAllByText('Pending')).toHaveLength(5)
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
   await screen.findByText('Draft saved.')

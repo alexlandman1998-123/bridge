@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import { whatsappAccessToken } from "../_shared/metaCredentials.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -16,6 +17,7 @@ const CORS_HEADERS = {
 type OrganizationConnection = {
   id: string;
   meta_access_token: string;
+  token_ciphertext?: string | null;
   phone_number_id: string;
   branch_id?: string | null;
   connection_status: string;
@@ -168,7 +170,7 @@ async function resolveOrganisationConnection(
     const branchConnection = await supabase
       .from("organisation_communication_channels")
       .select(
-        "id, meta_access_token, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
+        "id, meta_access_token, token_ciphertext, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
       )
       .eq("organisation_id", organisationId)
       .eq("branch_id", branchId)
@@ -186,7 +188,7 @@ async function resolveOrganisationConnection(
   const orgConnection = await supabase
     .from("organisation_communication_channels")
     .select(
-      "id, meta_access_token, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
+      "id, meta_access_token, token_ciphertext, phone_number_id, branch_id, connection_status, verification_status, display_phone_number",
     )
     .eq("organisation_id", organisationId)
     .is("branch_id", null)
@@ -589,7 +591,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const whatsappToken = normalizeText(connection.meta_access_token);
+  const whatsappToken = await whatsappAccessToken(connection);
   const phoneNumberId = normalizeText(connection.phone_number_id);
   if (!whatsappToken || !phoneNumberId) {
     if (deliveryId) {
@@ -618,10 +620,9 @@ Deno.serve(async (req) => {
         response: responseBody || null,
       });
     }
-    const providerMessageId = normalizeText(
-      safeJson(responseBody)?.messages?.[0]?.id ||
-        safeJson(responseBody)?.messages?.[0]?.message_id,
-    );
+    const messages = safeJson(responseBody).messages;
+    const firstMessage = safeJson(Array.isArray(messages) ? messages[0] : null);
+    const providerMessageId = normalizeText(firstMessage.id || firstMessage.message_id);
     if (deliveryId) {
       await markDeliverySent(supabase, deliveryId, providerMessageId);
     }

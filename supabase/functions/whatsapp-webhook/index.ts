@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { applyWhatsAppCampaignWebhook } from "../_shared/whatsappCampaignWebhook.js";
+import { applyWhatsAppInboxWebhook } from "../_shared/metaIntegrationCore.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -170,7 +171,8 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "Empty webhook payload." });
   }
   const signature = text(req.headers.get("x-hub-signature-256"));
-  const webhookSecret = text(Deno.env.get("WHATSAPP_WEBHOOK_APP_SECRET"));
+  const webhookSecret = text(Deno.env.get("WHATSAPP_WEBHOOK_APP_SECRET")) ||
+    text(Deno.env.get("META_APP_SECRET"));
   if (!webhookSecret) {
     return jsonResponse(500, {
       error: "Webhook secret is not configured.",
@@ -196,6 +198,7 @@ Deno.serve(async (req) => {
   // can recover a database failure without losing delivery or opt-out events.
   try {
     await applyWhatsAppCampaignWebhook(supabase, payload);
+    await applyWhatsAppInboxWebhook(supabase, payload);
   } catch {
     return jsonResponse(500, { error: "Campaign webhook processing failed. Retry required." });
   }

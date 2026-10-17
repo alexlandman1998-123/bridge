@@ -1,5 +1,6 @@
 import { createClient } from 'supabase'
 import { createCampaignHandler } from './handler.js'
+import { whatsappAccessToken } from '../_shared/metaCredentials.ts'
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' }
 Deno.serve(async (req) => {
@@ -22,10 +23,11 @@ Deno.serve(async (req) => {
         const member = await userDb.rpc('bridge_is_active_member', { target_org: org })
         return !member.error && member.data === true ? data.user.id : null
       },
-      meta: async (connection: { meta_access_token: string }, path: string, payload?: unknown) => {
+      meta: async (connection: { meta_access_token: string; token_ciphertext?: string }, path: string, payload?: unknown) => {
         const version = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v23.0'
         if (!/^v\d+\.\d+$/.test(version)) throw new Error('Invalid Meta Graph API version configuration.')
-        const response = await fetch(`https://graph.facebook.com/${version}/${path}`, { method: payload ? 'POST' : 'GET', headers: { Authorization: `Bearer ${connection.meta_access_token}`, 'Content-Type': 'application/json' }, ...(payload ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.timeout(15000) })
+        const token = await whatsappAccessToken(connection)
+        const response = await fetch(`https://graph.facebook.com/${version}/${path}`, { method: payload ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(payload ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.timeout(15000) })
         const body = await response.json()
         if (!response.ok || body.error) {
           const error = Object.assign(new Error(`Meta: ${body.error?.message || 'Request failed'}${body.error?.code ? ` (${body.error.code})` : ''}`), { definitive: response.status >= 400 && response.status < 500 })

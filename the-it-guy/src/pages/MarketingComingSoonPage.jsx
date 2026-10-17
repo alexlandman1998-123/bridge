@@ -1,4 +1,5 @@
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import WhatsAppInbox from '../components/marketing/WhatsAppInbox'
 import { CreateEmailCampaign, EmailCampaignDetail, EmailCampaignOverview } from '../components/marketing/EmailCampaigns'
 import { LaunchesOverview } from '../components/marketing/LaunchesAuctions'
 import MarketingDashboard from '../components/marketing/MarketingDashboard'
@@ -47,6 +48,7 @@ export default function MarketingComingSoonPage() {
   }
 
   if (section === 'whatsapp') {
+    if (campaignView === 'inbox') return <WhatsAppInbox />
     const whatsappTab = ['overview', 'past', 'audiences', 'settings'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'overview'
     const whatsappParams = { section: 'whatsapp', ...(whatsappTab === 'overview' ? {} : { tab: whatsappTab }) }
     const openWhatsAppTab = (tab) => setSearchParams({ section: 'whatsapp', ...(tab === 'overview' ? {} : { tab }) })
@@ -54,11 +56,11 @@ export default function MarketingComingSoonPage() {
     const openCreateCampaign = (id) => setSearchParams({ ...whatsappParams, view: 'create', ...(typeof id === 'string' ? { id } : {}) })
     const openCampaign = (id) => setSearchParams({ ...whatsappParams, view: 'detail', id })
     const rememberDraft = (id) => setSearchParams({ ...whatsappParams, view: 'create', id }, { replace: true })
-    return campaignView === 'create'
+    return <><nav aria-label="WhatsApp" className="mb-5 flex flex-wrap gap-5 text-sm font-semibold text-blue-800"><Link to="/marketing?section=whatsapp" aria-current="page">Campaigns</Link><Link to="/marketing?section=whatsapp&view=inbox">Inbox</Link><Link to="/settings/integrations/whatsapp">Connections</Link></nav>{campaignView === 'create'
       ? <CreateWhatsAppCampaign onBack={openOverview} campaignId={searchParams.get('id')} onDraftCreated={rememberDraft} />
       : campaignView === 'detail'
         ? <WhatsAppCampaignDetail campaignId={searchParams.get('id')} onBack={openOverview} />
-        : <WhatsAppCampaignOverview selectedView={whatsappTab} onViewChange={openWhatsAppTab} onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
+        : <WhatsAppCampaignOverview selectedView={whatsappTab} onViewChange={openWhatsAppTab} onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />}</>
   }
 
   if (section === 'website') {

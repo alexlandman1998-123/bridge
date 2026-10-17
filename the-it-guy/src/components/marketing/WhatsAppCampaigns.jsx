@@ -36,7 +36,7 @@ function useWorkspace(org) {
 function Status({ value }) { return <span className={`wa-status wa-status-${value} wa-status-${value === 'sent' || value === 'read' || value === 'delivered' ? 'sent' : 'draft'}`}>{statusLabel(value)}</span> }
 function ErrorNotice({ children }) { return children ? <p className="wa-error" role="alert">{children}</p> : null }
 function SenderNotice({ senders }) {
-  return !senders.some((s) => s.connection_status === 'connected') ? <aside className="wa-notice"><strong>Connect a WhatsApp Business sender</strong><p>You can prepare and save drafts now. Connect your business account in integration settings before sending.</p><a href="/settings/integrations/meta">Set up connection</a> · <a href="https://business.facebook.com/wa/manage/" target="_blank" rel="noreferrer">Open WhatsApp Manager</a></aside> : null
+  return !senders.some((s) => s.connection_status === 'connected') ? <aside className="wa-notice"><strong>Connect a WhatsApp Business sender</strong><p>You can prepare and save drafts now. Connect your business account in integration settings before sending.</p><a href="/settings/integrations/whatsapp">Set up connection</a> · <a href="https://business.facebook.com/wa/manage/" target="_blank" rel="noreferrer">Open WhatsApp Manager</a></aside> : null
 }
 const campaignRate = (count, total) => total > 0 ? `${(Number(count || 0) / total * 100).toFixed(1)}%` : '—'
 const campaignTotals = (campaigns) => campaigns.reduce((totals, campaign) => {

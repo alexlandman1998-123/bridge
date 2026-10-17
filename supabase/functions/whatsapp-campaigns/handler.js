@@ -16,7 +16,7 @@ export function createCampaignHandler({ db, authorize, meta }) {
   async function sender(org, id) {
     if (!uuid(id)) throw new Error('Choose a connected WhatsApp sender.')
     const row = await result(db.from('organisation_communication_channels').select('*').eq('organisation_id', org).eq('id', id).eq('provider', 'meta').eq('channel_type', 'whatsapp').eq('connection_status', 'connected').single())
-    if (!row.meta_access_token || !/^\d+$/.test(row.waba_id) || !/^\d+$/.test(row.phone_number_id)) throw new Error('The sender needs its Meta access token, WhatsApp Business Account ID and Phone Number ID configured by an administrator.')
+    if (!(row.meta_access_token || row.token_ciphertext) || !/^\d+$/.test(row.waba_id) || !/^\d+$/.test(row.phone_number_id)) throw new Error('The sender needs its Meta access token, WhatsApp Business Account ID and Phone Number ID configured by an administrator.')
     return row
   }
   async function templates(connection, name = '') {

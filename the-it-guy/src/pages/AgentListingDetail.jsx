@@ -1,4 +1,5 @@
 import AddressInput from '../components/location/AddressInput'
+import ListingFacebookPostPanel from '../components/listings/ListingFacebookPostPanel'
 import { hasListingPhotoLoadError } from '../services/listings/listingPhotoStorage.js'
 import { getSellerDocumentDisplayGroupKey } from '../lib/sellerDocumentExperienceModel.js'
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
@@ -13130,6 +13131,8 @@ function AgentListingDetail() {
             onSold={() => openQuickListingAction('sold')}
           />
         </article>
+
+        <ListingFacebookPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
 
         <ListingShowDaysPanel
           key={`${listingOrganisationId}:${listingShowDaySnapshot.id}`}

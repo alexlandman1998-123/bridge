@@ -410,6 +410,7 @@ const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDev
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
+const SettingsWhatsAppPage = lazy(() => import('./pages/settings/SettingsWhatsAppPage'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
 const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
@@ -3872,6 +3873,16 @@ function AppRoutes() {
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent', 'developer']}>
                         <SettingsLeadCapturePage section="meta" />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="integrations/whatsapp"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
+                        <SettingsWhatsAppPage />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }
