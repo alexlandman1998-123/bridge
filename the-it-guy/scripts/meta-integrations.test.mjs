@@ -58,6 +58,59 @@ function sqlClient(db){return {rpc:async(name,args)=>{try{return {data:(await db
 }}}
 const receive=(db,mid,at=time,phone='100',waba='200')=>db.query('select whatsapp_inbox_receive($1,$2,$3,$4,$5,$6,$7,$8,$9) id',[phone,waba,'27821234567',mid,at,mid,'text','{}','Customer'])
 
+test('Meta lead ingestion accepts the CRM source constraint without weakening routing, deduplication or historical guards',async()=>{
+  const db=new PGlite()
+  try{
+    await db.exec(`create role authenticated;create role service_role;
+      create table meta_lead_ads_connections(id uuid primary key,organisation_id uuid,page_id text,connection_status text);
+      create table meta_lead_ads_forms(id uuid primary key,organisation_id uuid,page_id text,form_id text,is_active boolean,lead_type text,branch_id uuid,assigned_agent_id uuid,form_name text);
+      create table meta_lead_ads_imports(id uuid primary key,organisation_id uuid,connection_id uuid,form_mapping_id uuid,status text);
+      create table organisation_branches(id uuid primary key,organisation_id uuid);
+      create table organisation_users(user_id uuid,organisation_id uuid,status text);
+      create table contacts(contact_id uuid primary key default gen_random_uuid(),organisation_id uuid,assigned_agent_id uuid,first_name text,last_name text,email text,phone text,contact_type text,notes text,updated_at timestamptz default now());
+      create table leads(lead_id uuid primary key default gen_random_uuid(),organisation_id uuid,branch_id uuid,assigned_agent_id uuid,assigned_user_id uuid,contact_id uuid,lead_domain text,lead_category text,lead_type text,lead_direction text,lead_source text,source_channel text,stage text,status text,priority text,ownership_status text,assigned_at timestamptz,sla_due_at timestamptz,source_reference_id text,source_received_at timestamptz,raw_enquiry_payload jsonb,notes text,acknowledgement_status text,created_at timestamptz);
+      create table lead_activities(organisation_id uuid,lead_id uuid,agent_id uuid,activity_type text,activity_note text,activity_date timestamptz,outcome text);`)
+    const constraintSource=readFileSync(new URL('../../supabase/migrations/20260915173619_agent_profile_public_intake_source.sql',import.meta.url),'utf8')
+    await db.exec(constraintSource.slice(0,constraintSource.indexOf('alter table if exists public.agency_public_intake_submissions')))
+    const foundation=readFileSync(new URL('../../supabase/migrations/20260906175502_meta_lead_ads_backfill_foundation.sql',import.meta.url),'utf8')
+    const start=foundation.indexOf('create function public.meta_ingest_lead_ad(')
+    await db.exec(foundation.slice(start,foundation.indexOf('\nrevoke all on function public.meta_ingest_lead_ad',start)))
+    const signature='public.meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid)'
+    await db.exec(`revoke all on function ${signature} from public;grant execute on function ${signature} to service_role;`)
+    await db.query("insert into meta_lead_ads_connections values($1,$2,'300','connected')",[connection,org])
+    await db.query("insert into meta_lead_ads_forms values($1,$2,'300','400',true,'buyer',null,null,'Review form')",[id(80),org])
+    const ingest=(leadgen='live-review',target=org,source='live',importId=null)=>db.query('select meta_ingest_lead_ad($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) id',[leadgen,target,'300','400','Sample Buyer',`${leadgen}@example.com`,'','{}',source,time,importId])
+    await assert.rejects(ingest(),/leads_source_channel_check/)
+    assert.equal((await db.query('select count(*)::int n from contacts')).rows[0].n,0)
+    await db.exec(readFileSync(new URL('../../supabase/migrations/20261017210140_meta_lead_ads_canonical_source_channel.sql',import.meta.url),'utf8'))
+    const created=(await ingest()).rows[0].id
+    assert.equal((await ingest()).rows[0].id,created)
+    const live=(await db.query('select * from leads where lead_id=$1',[created])).rows[0]
+    assert.equal(live.source_channel,'facebook');assert.equal(live.lead_source,'Facebook')
+    assert.equal(live.source_reference_id,'meta-leadgen:live-review')
+    assert.equal(live.raw_enquiry_payload.arch9_meta.ingestion_source,'live')
+    assert.equal(new Date(live.created_at).toISOString(),time)
+    assert.ok(live.sla_due_at)
+    assert.deepEqual((await db.query('select (select count(*)::int from leads) leads,(select count(*)::int from contacts) contacts,(select count(*)::int from lead_activities) activities')).rows[0],{leads:1,contacts:1,activities:1})
+    await assert.rejects(ingest('foreign',other),/not connected/)
+    await db.query('insert into organisation_branches values($1,$2)',[id(82),other])
+    await db.query('update meta_lead_ads_forms set branch_id=$1',[id(82)])
+    await assert.rejects(ingest('foreign-branch'),/branch routing crosses organisation/)
+    await db.exec('update meta_lead_ads_forms set branch_id=null')
+    await assert.rejects(ingest('history',org,'historical'),/requires an import job/)
+    await db.query("insert into meta_lead_ads_imports values($1,$2,$3,$4,'ready')",[id(81),org,connection,id(80)])
+    await db.exec("update meta_lead_ads_forms set lead_type='seller'")
+    const historicalId=(await ingest('history',org,'historical',id(81))).rows[0].id
+    const historical=(await db.query('select * from leads where lead_id=$1',[historicalId])).rows[0]
+    assert.equal(historical.source_channel,'facebook');assert.equal(historical.lead_type,'seller')
+    assert.equal(historical.acknowledgement_status,'skipped');assert.equal(historical.sla_due_at,null)
+    assert.equal(new Date(historical.source_received_at).toISOString(),time)
+    assert.equal(historical.raw_enquiry_payload.arch9_meta.import_id,id(81))
+    const privileges=(await db.query('select has_function_privilege($1,$2,\'execute\') staff,has_function_privilege($3,$2,\'execute\') server',['authenticated',signature,'service_role'])).rows[0]
+    assert.deepEqual(privileges,{staff:false,server:true})
+  }finally{await db.close()}
+})
+
 test('signed-event ingestion is idempotent, ordered and scoped; credentials and RPCs stay server-only',async()=>{
   const db=await fixture()
   try{
