@@ -2062,6 +2062,33 @@ The schema includes:
 
 ## WhatsApp campaigns
 
+Agency administrators connect their own sender in Settings → Integrations →
+WhatsApp using Meta Embedded Signup. A new number can be activated with the
+administrator's six-digit registration PIN, which is sent to Meta without being
+stored. Marketing → WhatsApp → Inbox receives customer messages, supports
+attachments up to 8 MB and permits replies during Meta's 24-hour customer-service
+window. Connection tokens are encrypted and inaccessible to browser database
+queries. All inbox and connection operations require active workspace membership.
+
+Listings → Marketing → Post to Facebook prepares a server-generated preview from
+saved public listing details and requires a separate Publish action. It checks
+listing access, seller-review blocks and the Page's posting permission. A claimed
+reply or post is never automatically retried after an uncertain provider response.
+Page posting requires `pages_manage_posts`; lead webhook subscriptions require
+`pages_manage_metadata`. Each agency authorizes and selects its own Page.
+
+Apply `20261017172424_meta_inbox_and_listing_posts.sql` before deploying
+`meta-integrations` and the corresponding WhatsApp/Meta function updates. Embedded
+Signup uses `META_WHATSAPP_LOGIN_CONFIG_ID` (the Arch9 configuration is the default).
+The WhatsApp webhook accepts `WHATSAPP_WEBHOOK_APP_SECRET` or `META_APP_SECRET` for
+signature verification. The provider app must be published and obtain the relevant
+advanced access before agencies outside the app's roles can onboard.
+
+Focused checks: `node --test scripts/meta-integrations.test.mjs
+scripts/whatsapp-campaigns.test.mjs` and the Vitest `MetaIntegrations`,
+`metaIntegrationSignup` and `WhatsAppCampaigns` tests.
+
+
 The primary app's Marketing → WhatsApp page uses persisted campaign and consent
 records, with template definitions fetched from the selected sender's Meta WABA.
 It supports saved drafts, explicit recipient selection (up to 500), search and

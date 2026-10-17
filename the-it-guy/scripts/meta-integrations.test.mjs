@@ -30,7 +30,7 @@ test('authorization precedes data access and connection management requires an a
   const denied=createMetaIntegrationHandler({db,authorize:async()=>null})
   for(const action of ['workspace','inbox','reply','media','preview_post','publish_post','finish_whatsapp']) await assert.rejects(denied({organisationId:org,action},''),/membership/)
   const staff=createMetaIntegrationHandler({db,authorize:async()=>({userId:user,isAdmin:false})})
-  for(const action of ['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','disconnect_sender','health_sender']) await assert.rejects(staff({organisationId:org,action},''),/administrator/)
+  for(const action of ['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','disconnect_sender','health_sender']) await assert.rejects(staff({organisationId:org,action},''),/administrator/)
   assert.equal(touched,false)
 })
 
@@ -94,6 +94,21 @@ test('real reply flow sends once under concurrency and never repeats an uncertai
     assert.equal((await db.query('select delivery_status from whatsapp_inbox_messages where id=$1',[id(11)])).rows[0].delivery_status,'read')
     await db.query("update whatsapp_inbox_conversations set last_inbound_at='2026-10-15' where id=$1",[conversationId])
     await assert.rejects(call(id(12)),/24-hour/)
+  }finally{await db.close()}
+})
+
+test('phone activation is admin-only, scoped to a pending sender, and never stores the PIN',async()=>{
+  const db=await fixture()
+  try{
+    const calls=[]
+    await db.query("update organisation_communication_channels set connection_status='pending' where id=$1",[sender])
+    const handler=createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>({userId:user,isAdmin:true}),now:()=>new Date(time),graph:async(token,path,payload)=>{calls.push({token,path,payload});return payload?{success:true}:{id:'100',status:'CONNECTED'}}})
+    const call=(fields={})=>handler({organisationId:org,action:'register_sender',senderId:sender,pin:'123456',...fields},'Bearer test')
+    await assert.rejects(call({senderId:foreign}),/not found/);await assert.rejects(call({pin:'123'}),/six-digit/);assert.equal(calls.length,0)
+    assert.equal((await call()).sender.connection_status,'connected')
+    assert.deepEqual(calls[0],{token:'secret',path:'100/register',payload:{messaging_product:'whatsapp',pin:'123456'}})
+    assert.ok(!JSON.stringify((await db.query('select * from organisation_communication_channels where id=$1',[sender])).rows).includes('123456'))
+    await assert.rejects(call(),/pending sender/);assert.equal(calls.length,2)
   }finally{await db.close()}
 })
 

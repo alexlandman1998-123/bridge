@@ -37,7 +37,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!isUuid(org)) throw new Error('Choose an organisation workspace.')
     const actor=await authorize(authorization,org)
     if(!actor?.userId) throw new Error('Active staff membership is required.')
-    const adminActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','health_sender','disconnect_sender']
+    const adminActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender']
     if(adminActions.includes(action)&&!actor.isAdmin) throw new Error('An organisation administrator must manage Meta connections.')
     if(action==='workspace') {
       const [senders,pages]=await Promise.all([
@@ -78,13 +78,19 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       const saved=own?await result(db.from('organisation_communication_channels').update(fields).eq('id',own.id).eq('organisation_id',org).select(safeSender).single()):await result(db.from('organisation_communication_channels').insert(fields).select(safeSender).single())
       return {sender:saved}
     }
-    if(action==='health_sender'||action==='disconnect_sender') {
+    if(action==='register_sender'||action==='health_sender'||action==='disconnect_sender') {
       const row=await channel(org,payload.senderId)
       if(action==='disconnect_sender') {
         await result(db.from('organisation_communication_channels').update({connection_status:'disconnected',disconnected_at:now().toISOString(),meta_access_token:'',token_ciphertext:null,is_default:false}).eq('id',row.id).eq('organisation_id',org))
         return {disconnected:true}
       }
-      const phone=await graph(await senderToken(row),`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status`)
+      const token=await senderToken(row)
+      if(action==='register_sender') {
+        if(row.connection_status!=='pending'||!/^\d{6}$/.test(text(payload.pin))) throw new Error('Choose a pending sender and enter its six-digit registration PIN.')
+        try { await graph(token,`${row.phone_number_id}/register`,{messaging_product:'whatsapp',pin:text(payload.pin)}) }
+        catch { throw new Error('Meta could not register this number. Check the PIN and phone verification in WhatsApp Manager, then check the connection before retrying.') }
+      }
+      const phone=await graph(token,`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status`)
       const sender=await result(db.from('organisation_communication_channels').update({connection_status:phone.status==='CONNECTED'?'connected':'pending',last_checked_at:now().toISOString(),last_error_message:null}).eq('id',row.id).eq('organisation_id',org).select(safeSender).single())
       return {sender}
     }

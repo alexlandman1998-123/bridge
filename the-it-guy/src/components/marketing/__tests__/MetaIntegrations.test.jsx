@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import WhatsAppInbox from '../WhatsAppInbox'
 import ListingFacebookPostPanel from '../../listings/ListingFacebookPostPanel'
-const mocks=vi.hoisted(()=>({request:vi.fn(),org:'org-one'}))
-vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({organisationId:mocks.org,loading:false,senders:[{connection_status:'connected'}]})}))
-vi.mock('../../../services/metaIntegrationService',()=>({metaIntegrationRequest:mocks.request}))
+import SettingsWhatsAppPage from '../../../pages/settings/SettingsWhatsAppPage'
+const mocks=vi.hoisted(()=>({request:vi.fn(),org:'org-one',senders:[]}))
+vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({organisationId:mocks.org,loading:false,canManage:true,refresh:async()=>{},senders:mocks.senders})}))
+vi.mock('../../../services/metaIntegrationService',()=>({metaIntegrationRequest:mocks.request,launchWhatsAppSignup:vi.fn(),prepareFacebookSdk:vi.fn()}))
 const conversation={id:'conversation-one',contact_phone:'27821234567',contact_name:'Customer One',last_message_preview:'Private customer message',status:'open',canReply:true}
 const page={id:'page-one',page_name:'Agency Page',canPost:true}
-beforeEach(()=>{mocks.org='org-one';mocks.request.mockImplementation(async(_org,action)=>{
+beforeEach(()=>{mocks.org='org-one';mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action)=>{
   if(action==='inbox')return {conversations:[conversation]}
   if(action==='messages')return {conversation,messages:[]}
   if(action==='workspace')return {pages:[page]}
@@ -52,4 +53,18 @@ it('requires a new preview after changing the caption',async()=>{
   expect(screen.queryByRole('button',{name:'Publish to Facebook'})).toBeNull()
   fireEvent.click(screen.getByRole('button',{name:'Preview Facebook post'}));await screen.findByRole('dialog',{name:'Review Facebook post'})
   expect(mocks.request.mock.calls.filter(c=>c[1]==='preview_post')[1][2].caption).toBe('A different caption')
+})
+it('requires the agency administrator to enter a PIN before activating a pending number',async()=>{
+  mocks.senders=[{id:'sender-pending',connection_status:'pending',display_phone_number:'+27 82 999 8888'}]
+  mocks.request.mockResolvedValue({sender:{connection_status:'connected'}})
+  render(wrap(<SettingsWhatsAppPage/>))
+  fireEvent.click(screen.getByRole('button',{name:'Activate number'}))
+  const dialog=within(screen.getByRole('dialog',{name:'Activate WhatsApp number'}))
+  expect(dialog.getByRole('button',{name:'Activate number'}).disabled).toBe(true)
+  expect(mocks.request).not.toHaveBeenCalled()
+  fireEvent.change(dialog.getByLabelText('Registration PIN'),{target:{value:'123456'}})
+  fireEvent.click(dialog.getByRole('button',{name:'Activate number'}))
+  await screen.findByText('Number activated. The inbox and campaigns can use this sender.')
+  expect(mocks.request).toHaveBeenCalledWith('org-one','register_sender',{senderId:'sender-pending',pin:'123456'})
+  expect(screen.queryByLabelText('Registration PIN')).toBeNull()
 })
