@@ -4,8 +4,8 @@ import { decryptMetaToken, encryptMetaToken } from '../_shared/metaCredentials.t
 
 const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
 const env=(name:string)=>Deno.env.get(name)?.trim()||'';
-const ADMIN=new Set(['owner','principal','director','admin','super_admin','developer','agency_admin','branch_manager']);
-const STAFF=new Set([...ADMIN,'agent','senior_agent','manager','broker','assistant']);
+const ADMIN=new Set(['owner','principal','director','admin','super_admin','developer','agency_admin']);
+const STAFF=new Set([...ADMIN,'agent','senior_agent','manager','branch_manager','broker','assistant']);
 
 Deno.serve(async req=>{
   if(req.method==='OPTIONS') return new Response('ok',{headers});
