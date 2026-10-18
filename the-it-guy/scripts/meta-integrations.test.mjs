@@ -7,11 +7,199 @@ import { createCampaignDelivery } from '../../supabase/functions/_shared/whatsap
 import { createCampaignHandler } from '../../supabase/functions/whatsapp-campaigns/handler.js'
 import { createMetaIntegrationHandler } from '../../supabase/functions/meta-integrations/handler.js'
 import { decodeInboxAttachment,readMetaIntegrationPayload } from '../../supabase/functions/_shared/whatsappInboxMessaging.js'
+import { instagramPermalink, instagramSnapshot, inspectInstagramPhoto, jpegDimensions } from '../../supabase/functions/_shared/instagramListing.js'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const org=id(1), other=id(2), user=id(3), sender=id(4), foreign=id(5), listingId=id(6), connection=id(7)
 const time='2026-10-17T17:00:00.000Z', origin='https://example.supabase.co'
 const listing={id:listingId,organisation_id:org,title:'Family home',description:'Public description',asking_price:1000000,suburb:'Claremont',city:'Cape Town',listing_status:'active',is_active:true,updated_at:time,notes:'PRIVATE NOTE',street_address:'PRIVATE ADDRESS'}
+
+const instagramPhoto={id:id(900),media_type:'image',file_url:`${origin}/storage/v1/object/public/listing-media/cover.jpg`,is_cover:true}
+function jpeg(width=1200,height=800){return new Uint8Array([255,216,255,192,0,17,8,height>>8,height&255,width>>8,width&255,3,1,17,0,2,17,0,3,17,0,255,217])}
+async function instagramHarness(){
+ const db=await fixture()
+ await db.query("update meta_lead_ads_connections set granted_scopes=array['pages_manage_posts','instagram_basic','instagram_content_publish','pages_read_engagement'] where id=$1",[connection])
+ const state={account:'500',containerStatus:'FINISHED',creates:0,publishes:0,hash:'photo-v1',captionStale:false,reviewBlocked:false,createLost:false,publishLost:false,linkLost:false,denied:false,calls:[]}
+ const handler=createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>state.denied?null:{userId:user,isAdmin:true},now:()=>new Date(),config:{storageOrigin:origin},decrypt:async()=> 'provider-secret',
+  loadListing:async(_actor,target,savedId)=>target===org&&savedId===listingId?{listing:{...listing,is_active:state.active!==false,updated_at:state.captionStale?'changed':time},media:[instagramPhoto]}:null,
+  assertPublishable:async()=>{if(state.reviewBlocked)throw Error('Review seller differences')},inspectPhoto:async()=>({width:1200,height:800,bytes:100,sha256:state.hash}),
+  graph:async(_token,path,payload)=>{
+   state.calls.push({path,payload})
+   if(path.startsWith('300?'))return {id:'300',instagram_business_account:state.account?{id:state.account,username:'arch9_test',name:'Arch9 Test'}:null}
+   if(path==='500/media'){state.creates++;if(state.createRejected)throw Object.assign(Error('Rejected'),{definitive:true});if(state.createLost)throw Error('Connection lost');return {id:String(600+state.creates)}}
+   if(path==='500/media_publish'){state.publishes++;if(state.publishRejected)throw Object.assign(Error('Rejected'),{definitive:true});if(state.publishLost)throw Error('Connection lost');return {id:String(700+state.publishes)}}
+   if(/^6\d+\?/.test(path))return {id:path.split('?')[0],status_code:state.containerStatus}
+   if(/^7\d+\?/.test(path)){if(state.linkLost)throw Error('Link unavailable');return {id:path.split('?')[0],permalink:'https://www.instagram.com/p/Arch9_test/'}}
+   throw Error(`Unexpected graph request ${path}`)
+  }})
+ const call=(action,extra={})=>handler({organisationId:org,listingId,connectionId:connection,instagramAccountId:'500',action,...extra},'Bearer test')
+ return {db,state,call}
+}
+
+test('Instagram previews use only public listing photos, bounded JPEG images and 2,200-character captions',async()=>{
+ const snapshot=instagramSnapshot(listing,[instagramPhoto],{},origin)
+ assert.ok(!JSON.stringify(snapshot).includes('PRIVATE'));assert.equal(snapshot.imageId,instagramPhoto.id)
+ assert.equal(instagramSnapshot(listing,[instagramPhoto],{caption:'😀'.repeat(2200)},origin).caption.length,4400)
+ assert.throws(()=>instagramSnapshot(listing,[instagramPhoto],{caption:'a'.repeat(2201)},origin),/2,200/)
+ assert.throws(()=>instagramSnapshot(listing,[{...instagramPhoto,file_url:'https://other.example/cover.jpg'}],{},origin),/public listing photo/)
+ assert.throws(()=>instagramSnapshot(listing,[{...instagramPhoto,file_url:instagramPhoto.file_url+'?token=private'}],{},origin),/public listing photo/)
+ assert.deepEqual(jpegDimensions(jpeg()),{width:1200,height:800,bytes:23})
+ assert.throws(()=>jpegDimensions(new Uint8Array([137,80,78,71])),/JPEG/)
+ assert.throws(()=>jpegDimensions(jpeg(2000,400)),/aspect ratio/)
+ assert.throws(()=>jpegDimensions(jpeg(200,200)),/320/)
+ let fetches=0
+ const fetcher=async(url,options)=>{fetches++;assert.equal(url,instagramPhoto.file_url);assert.equal(options.redirect,'error');return new Response(jpeg())}
+ const inspected=await inspectInstagramPhoto(instagramPhoto.file_url,origin,fetcher)
+ assert.match(inspected.sha256,/^[0-9a-f]{64}$/);assert.equal(inspected.width,1200)
+ assert.equal(instagramPermalink('https://www.instagram.com/p/Safe_post/?tracking=value'),'https://www.instagram.com/p/Safe_post/')
+ for(const url of ['javascript:alert(1)','https://evil.example/p/unsafe/','https://www.instagram.com@evil.example/p/unsafe/','https://www.instagram.com/direct/inbox/'])assert.equal(instagramPermalink(url),null)
+ await assert.rejects(inspectInstagramPhoto('https://127.0.0.1/private',origin,fetcher),/public listing photo/);assert.equal(fetches,1)
+ await assert.rejects(inspectInstagramPhoto(instagramPhoto.file_url,origin,async()=>new Response(new Uint8Array(8*1024*1024+1))),/8 MB/)
+ await assert.rejects(inspectInstagramPhoto(instagramPhoto.file_url,origin,async()=>new Response(jpeg(),{headers:{'content-length':String(9*1024*1024)}})),/8 MB/)
+})
+
+test('Instagram discovers only permitted linked professional accounts without returning credentials',async()=>{
+ const {db,state,call}=await instagramHarness()
+ try{
+  const accounts=await call('instagram_accounts');assert.equal(accounts.accounts[0].id,'500');assert.ok(!JSON.stringify(accounts).includes('secret'));assert.ok(!JSON.stringify(accounts).includes('encrypted'))
+  state.account=null;assert.equal((await call('instagram_accounts')).accounts.length,0)
+  state.account='500';await db.query("update meta_lead_ads_connections set granted_scopes=array['instagram_basic'] where id=$1",[connection])
+  const before=state.calls.length;const denied=await call('instagram_accounts');assert.equal(denied.accounts.length,0);assert.match(denied.issues[0],/permission/);assert.equal(state.calls.length,before)
+  await assert.rejects(call('preview_instagram_post'),/permission/);assert.equal(state.creates,0)
+  state.denied=true;await assert.rejects(call('instagram_accounts'),/membership/)
+ }finally{await db.close()}
+})
+
+test('Instagram claims create and publish once, separates Facebook history and rejects cross-platform IDs',async()=>{
+ const {db,state,call}=await instagramHarness()
+ try{
+  const preview=(await call('preview_instagram_post')).post
+  assert.equal(state.creates,0);assert.equal(state.publishes,0);assert.equal(preview.target_account_id,'500')
+  assert.ok(!JSON.stringify(preview).includes('PRIVATE'))
+  await assert.rejects(call('publish_post',{postId:preview.id}),/preview not found/)
+  await Promise.all([call('publish_instagram_post',{postId:preview.id}),call('publish_instagram_post',{postId:preview.id})])
+  assert.equal(state.creates,1);assert.equal(state.publishes,1)
+  const post=(await call('publish_instagram_post',{postId:preview.id})).post
+  assert.equal(post.status,'published');assert.equal(post.public_url,'https://www.instagram.com/p/Arch9_test/');assert.equal(state.publishes,1)
+  assert.equal((await call('listing_posts')).posts.length,0);assert.equal((await call('instagram_listing_posts')).posts.length,1)
+  state.active=false;assert.equal((await call('instagram_listing_options')).canPublish,false);assert.equal((await call('instagram_listing_posts')).posts[0].status,'published');state.active=true
+  const fb=(await call('preview_post',{mode:'text'})).post
+  await assert.rejects(call('publish_instagram_post',{postId:fb.id}),/preview not found/)
+  await assert.rejects(call('preview_instagram_post',{organisationId:other}),/access/)
+  await assert.rejects(db.query("insert into meta_listing_posts(organisation_id,listing_id,connection_id,platform,snapshot_json,created_by) values($1,$2,$3,'instagram','{}',$4)",[org,listingId,connection,user]),/check constraint/)
+ }finally{await db.close()}
+})
+
+test('Instagram blocks changed listing photos, reviews, linked accounts and connection permissions before publication',async()=>{
+ const {db,state,call}=await instagramHarness()
+ try{
+  const preview=(await call('preview_instagram_post')).post
+  state.hash='photo-v2';await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/photo changed/);state.hash='photo-v1'
+  state.captionStale=true;await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/changed/);state.captionStale=false
+  state.reviewBlocked=true;await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/seller differences/);state.reviewBlocked=false
+  state.account='501';await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/account.*changed/);state.account='500'
+  await db.query("update meta_lead_ads_connections set token_ciphertext='replacement-encrypted' where id=$1",[connection])
+  await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/connection changed/)
+  assert.equal(state.creates,0);assert.equal(state.publishes,0)
+ }finally{await db.close()}
+})
+
+test('Instagram processing can finish later while read-only status checks never publish',async()=>{
+ const {db,state,call}=await instagramHarness()
+ try{
+  state.containerStatus='IN_PROGRESS'
+  const preview=(await call('preview_instagram_post')).post
+  const pending=(await call('publish_instagram_post',{postId:preview.id})).post
+  assert.equal(pending.status,'publishing');assert.ok(pending.provider_container_id);assert.equal(state.publishes,0)
+  state.containerStatus='FINISHED';await call('refresh_instagram_post',{postId:preview.id});assert.equal(state.publishes,0)
+  await Promise.all([call('publish_instagram_post',{postId:preview.id}),call('publish_instagram_post',{postId:preview.id})])
+  assert.equal(state.creates,1);assert.equal(state.publishes,1)
+ }finally{await db.close()}
+})
+
+test('Instagram lost create and publish responses never repeat provider writes and published containers reconcile',async()=>{
+ for(const phase of ['create','publish']){
+  const {db,state,call}=await instagramHarness()
+  try{
+   state[`${phase}Lost`]=true
+   const preview=(await call('preview_instagram_post')).post
+   const lost=(await call('publish_instagram_post',{postId:preview.id})).post
+   assert.equal(lost.status,'unknown');await call('publish_instagram_post',{postId:preview.id})
+   assert.equal(state.creates,1);assert.equal(state.publishes,phase==='publish'?1:0)
+   if(phase==='publish'){
+    state.containerStatus='PUBLISHED'
+    const reconciled=(await call('refresh_instagram_post',{postId:preview.id})).post
+    assert.equal(reconciled.status,'published');assert.equal(reconciled.public_url,null);assert.equal(state.publishes,1)
+   }
+  }finally{await db.close()}
+ }
+})
+
+test('Instagram permalink errors preserve a successful publish and can be repaired without another post',async()=>{
+ const {db,state,call}=await instagramHarness()
+ try{
+  state.linkLost=true
+  const preview=(await call('preview_instagram_post')).post
+  const published=(await call('publish_instagram_post',{postId:preview.id})).post
+  assert.equal(published.status,'published');assert.equal(published.public_url,null)
+  state.linkLost=false
+  assert.equal((await call('refresh_instagram_post',{postId:preview.id})).post.public_url,'https://www.instagram.com/p/Arch9_test/')
+  assert.equal(state.publishes,1)
+ }finally{await db.close()}
+})
+
+test('Instagram rejected, expired and abandoned preparations stop safely without repeating a provider call',async()=>{
+ for(const phase of ['createRejected','publishRejected','ERROR','EXPIRED','abandoned','abandonedPublish']){
+  const {db,state,call}=await instagramHarness()
+  try{
+   if(phase.includes('Rejected'))state[phase]=true
+   else state.containerStatus=['abandoned','abandonedPublish'].includes(phase)?'IN_PROGRESS':phase
+   const preview=(await call('preview_instagram_post')).post
+   const saved=(await call('publish_instagram_post',{postId:preview.id})).post
+   if(phase==='abandoned'){
+    await db.query("update meta_listing_posts set provider_container_id=null,publishing_started_at=now()-interval '5 minutes' where id=$1",[preview.id])
+    assert.equal((await call('refresh_instagram_post',{postId:preview.id})).post.status,'unknown')
+   }else if(phase==='abandonedPublish'){
+    await db.query("update meta_listing_posts set publish_requested_at=now()-interval '5 minutes' where id=$1",[preview.id])
+    state.containerStatus='FINISHED'
+    assert.equal((await call('refresh_instagram_post',{postId:preview.id})).post.status,'unknown')
+   }else assert.equal(saved.status,'failed')
+   await call('publish_instagram_post',{postId:preview.id})
+   assert.equal(state.creates,1);assert.equal(state.publishes,phase==='publishRejected'?1:0)
+  }finally{await db.close()}
+ }
+})
+
+test('Instagram service claims enforce current membership, preview author, tenant and connection version under real database roles',async()=>{
+ const {db,call}=await instagramHarness()
+ try{
+  const preview=(await call('preview_instagram_post')).post
+  for(const role of ['anon','authenticated']){
+   await db.exec(`set role ${role}`)
+   await assert.rejects(db.query('select * from meta_listing_posts'),/permission denied/)
+   await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'container')",[org,user,preview.id]),/permission denied/)
+   await db.exec('reset role')
+  }
+  await db.query('insert into auth.users values($1)',[id(778)])
+  await db.query("insert into organisation_users(organisation_id,user_id,role,status) values($1,$2,'agent','active'),($3,$4,'principal','active')",[org,id(778),other,user])
+  await db.exec('alter role service_role bypassrls;set role service_role')
+  await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'container')",[other,user,preview.id]),/preview not found/)
+  await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'container')",[org,id(778),preview.id]),/preview not found/)
+  await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'container')",[org,id(777),preview.id]),/membership/)
+  await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'invalid')",[org,user,preview.id]),/Invalid/)
+  assert.equal((await db.query("select meta_instagram_post_claim($1,$2,$3,'container') claimed",[org,user,preview.id])).rows[0].claimed,true)
+  assert.equal((await db.query("select meta_instagram_post_claim($1,$2,$3,'container') claimed",[org,user,preview.id])).rows[0].claimed,false)
+  await db.exec('reset role')
+  await db.query("update organisation_users set status='inactive' where user_id=$1",[user])
+  await db.exec('set role service_role')
+  await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'publish')",[org,user,preview.id]),/membership/)
+  await db.exec('reset role')
+  await db.query("update organisation_users set status='active' where user_id=$1",[user])
+  await db.query("update meta_lead_ads_connections set connection_status='disconnected' where id=$1",[connection])
+  await db.exec('set role service_role')
+  await assert.rejects(db.query("select meta_instagram_post_claim($1,$2,$3,'publish')",[org,user,preview.id]),/connection changed/)
+ }finally{await db.exec('reset role');await db.close()}
+})
 
 test('24-hour reply boundary and public listing snapshots',()=>{
   const now=Date.parse(time)
@@ -53,6 +241,7 @@ async function fixture(){
   await db.exec(readFileSync(new URL('../../supabase/migrations/20261018094503_whatsapp_inbox_agent_ownership.sql',import.meta.url),'utf8'))
   await db.exec(readFileSync(new URL('../../supabase/migrations/20261018111956_whatsapp_inbox_messaging.sql',import.meta.url),'utf8'))
   await db.exec(readFileSync(new URL('../../supabase/migrations/20261018125856_whatsapp_business_app_sync.sql',import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261018140502_instagram_listing_posts.sql',import.meta.url),'utf8'))
   await db.query('insert into organisations values($1),($2)',[org,other]);await db.query('insert into auth.users values($1)',[user]);await db.query("insert into organisation_users(organisation_id,user_id,role,status,first_name,last_name) values($1,$2,'principal','active','Agency','Owner')",[org,user]);await db.query('insert into private_listings values($1,$2)',[listingId,org])
   await db.query("insert into organisation_communication_channels(id,organisation_id,provider,channel_type,phone_number_id,waba_id,connection_status,meta_access_token) values($1,$2,'meta','whatsapp','100','200','connected','secret'),($3,$4,'meta','whatsapp','101','201','connected','foreign-secret')",[sender,org,foreign,other])
   await db.query("insert into meta_lead_ads_connections(id,organisation_id,page_id,page_name,connection_status,token_ciphertext,granted_scopes,page_tasks) values($1,$2,'300','Test Page','connected','encrypted',array['pages_manage_posts'],array['CREATE_CONTENT'])",[connection,org])

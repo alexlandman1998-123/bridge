@@ -2060,6 +2060,52 @@ The schema includes:
 1. `sql/schema.sql`
 2. `sql/seed.sql`
 
+## Instagram listing posts (stage 6, built locally, unreleased)
+
+Listing → Marketing now includes Instagram beside Facebook. Staff who can access
+and publish the reviewed listing select a professional account linked to an agency
+Facebook Page, a saved public listing photo, and a caption. They review the exact
+account, photo and caption before publishing. Recent results retain the account,
+processing/published/failed/unconfirmed state and verified Instagram permalink.
+Drafts and previews clear on user, role, agency and listing changes.
+
+This first version publishes one JPEG photo to the feed. Photo bytes are fetched
+only from the configured public `listing-media` bucket without redirects, capped
+at 8 MB, checked for JPEG dimensions/aspect ratio, and fingerprinted. Captions are
+limited to 2,200 Unicode characters including any public listing link. Private
+addresses and notes are never used in generated captions. A changed listing,
+photo, connection or linked account requires a new reviewed preview. Reels,
+Stories, carousels and Instagram scheduling are outside this version.
+
+The existing encrypted Facebook Page connection is reused. At combined release,
+the Facebook Login for Business configuration and app review must include
+`instagram_basic`, `instagram_content_publish` and `pages_read_engagement`.
+Each agency links its professional Instagram account to its own Page and
+reconnects Meta to grant these permissions. Missing permissions, personal accounts
+and missing Page links show connection guidance; Arch9 never accepts a pasted
+Instagram account/token as publishing authority.
+
+The two provider writes (create media container, then publish it) each have a
+service-only PostgreSQL claim. Current membership, preview author, tenant and
+connection version are checked transactionally. Processing containers can be
+finished later after all listing/photo checks repeat. Status refreshes never
+publish. Lost responses or abandoned claims remain unconfirmed and never repeat
+provider writes. A `PUBLISHED` container can confirm a lost publish response
+without guessing a post from its caption; a missing permalink can be retrieved
+later without publishing again. Instagram and Facebook job IDs/history remain
+separate. Tokens and connection ciphertext never appear in preview/history data.
+
+Release migration `20261018140502_instagram_listing_posts.sql`, the
+`meta-integrations` function and the primary frontend with the combined package.
+Run an approved real-account photo publication and permalink/status check after
+release, including the Meta review demonstration. The local build does not change
+Meta permissions, connect an account, or publish any live post.
+
+Focused checks extend `scripts/meta-integrations.test.mjs` and use
+`ListingInstagramPostPanel.test.jsx`. Provider behavior follows Meta's
+[content publishing guide](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/content-publishing)
+and [photo media reference](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media).
+
 ## WhatsApp audiences and campaign routing (stage 5, built locally, unreleased)
 
 Marketing → WhatsApp → Audiences saves Buyer, Seller and Recruitment filters for
