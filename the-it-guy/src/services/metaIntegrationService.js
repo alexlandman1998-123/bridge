@@ -37,10 +37,10 @@ export function launchWhatsAppSignup({ sdk, intent, organisationId, coexistence 
     const fail = (error) => { if (!stopped) { cleanup(); reject(error instanceof Error ? error : new Error('WhatsApp connection did not finish.')) } }
     const finish = async () => {
       if (stopped || finishing || !exchanged || !assets) return
-      if (!assets.phone_number_id) { fail(new Error('The business account was selected without a phone number. Add a number in WhatsApp Manager before connecting it.')); return }
+      if (!/^[0-9]{1,32}$/.test(String(assets.waba_id||''))) { fail(new Error('Meta did not return a business account. Restart the connection.')); return }
       finishing = true
       try {
-        const result = await metaIntegrationRequest(organisationId, 'finish_whatsapp', { state: intent.state, wabaId: assets.waba_id, phoneNumberId: assets.phone_number_id })
+        const result = await metaIntegrationRequest(organisationId, 'finish_whatsapp', { state: intent.state, wabaId: assets.waba_id, phoneNumberId: assets.phone_number_id || '' })
         if (!stopped) { cleanup(); resolve(result) }
       } catch (error) { fail(error) }
     }
@@ -50,7 +50,10 @@ export function launchWhatsAppSignup({ sdk, intent, organisationId, coexistence 
         if (typeof event.data === 'string' && event.data.length > 65536) return
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
         if (data?.type !== 'WA_EMBEDDED_SIGNUP') return
-        if (['FINISH','FINISH_ONLY_WABA','FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING','FINISH_GRANT_ONLY_API_ACCESS'].includes(data.event)) { assets = data.data; void finish() }
+        if (['FINISH','FINISH_ONLY_WABA','FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING','FINISH_GRANT_ONLY_API_ACCESS'].includes(data.event)) {
+          if (data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' && !intent.coexistence) { fail(new Error('Restart the connection using the WhatsApp Business phone app option.')); return }
+          if (!assets) { assets = data.data; void finish() }
+        }
         else if (data.event === 'CANCEL') fail(new Error('WhatsApp connection was cancelled.'))
         else if (data.event === 'ERROR') fail(new Error('Meta could not complete WhatsApp signup. Check the business account in Meta and try again.'))
       } catch { /* Ignore messages that are not the Meta signup session event. */ }
@@ -69,6 +72,6 @@ export function launchWhatsAppSignup({ sdk, intent, organisationId, coexistence 
         exchanged = true
         void finish()
       } catch (error) { fail(error) }
-    }, { config_id: intent.configurationId, response_type: 'code', override_default_response_type: true, extras: { setup: {}, ...(coexistence ? { featureType: 'whatsapp_business_app_onboarding' } : {}) } })
+    }, { config_id: intent.configurationId, response_type: 'code', override_default_response_type: true, extras: { ...((intent.coexistence ?? coexistence) ? { featureType: 'whatsapp_business_app_onboarding' } : {}) } })
   })
 }

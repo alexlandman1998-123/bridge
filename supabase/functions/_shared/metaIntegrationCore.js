@@ -1,3 +1,4 @@
+import { captureBusinessAppWebhook } from './whatsappBusinessApp.js'
 export const META_ADMIN_ROLES = ['owner','principal','director','admin','super_admin','developer','agency_admin']
 export const META_STAFF_ROLES = [...META_ADMIN_ROLES,'agent','senior_agent','manager','branch_manager','broker','assistant']
 export const text = (value) => typeof value === 'string' ? value.trim() : ''
@@ -48,6 +49,7 @@ export function publicListingPost(listing, media = [], input = {}, storageOrigin
 }
 
 export function inboundWhatsApp(message, value, entry) {
+  if (['edit','revoke'].includes(message?.type)) return null
   const from = text(message?.from)
   const seconds = Number(message?.timestamp)
   const at = new Date(seconds * 1000)
@@ -65,6 +67,7 @@ export function inboundWhatsApp(message, value, entry) {
 }
 
 export async function applyWhatsAppInboxWebhook(db, payload) {
+  await captureBusinessAppWebhook(db,payload)
   for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
     for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
       const value = change.value || {}

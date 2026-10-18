@@ -415,3 +415,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/document-requirement-dispatcher/deno.json"
 entrypoint = "./functions/document-requirement-dispatcher/index.ts"
+
+[functions.whatsapp-business-app-worker]
+enabled = true
+# Server-only credential check shared with the existing campaign worker.
+verify_jwt = false
+entrypoint = "./functions/whatsapp-business-app-worker/index.ts"

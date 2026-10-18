@@ -3,6 +3,8 @@ import { createClient } from "supabase";
 import { applyWhatsAppCampaignWebhook } from "../_shared/whatsappCampaignWebhook.js";
 import { applyWhatsAppInboxWebhook } from "../_shared/metaIntegrationCore.js";
 
+import { readWhatsAppWebhookBody } from "../_shared/whatsappBusinessApp.js";
+
 type JsonRecord = Record<string, unknown>;
 
 const CORS_HEADERS = {
@@ -166,7 +168,9 @@ Deno.serve(async (req) => {
     return jsonResponse(405, { error: "Method not allowed." });
   }
 
-  const rawBody = await req.text();
+  let rawBody: string;
+  try { rawBody = await readWhatsAppWebhookBody(req); }
+  catch { return jsonResponse(413, { error: "Webhook payload too large." }); }
   if (!rawBody) {
     return jsonResponse(400, { error: "Empty webhook payload." });
   }

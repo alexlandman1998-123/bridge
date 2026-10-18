@@ -26,3 +26,25 @@ it('cancels an unfinished signup without connecting assets later',async()=>{
   window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'100',phone_number_id:'200'}}}))
   expect(invoke).not.toHaveBeenCalled()
 })
+it('accepts WABA-only phone app completion in either callback order and uses the prepared onboarding mode',async()=>{
+  let callback,options
+  const promise=launchWhatsAppSignup({sdk:{login:(cb,config)=>{callback=cb;options=config}},intent:{state:'intent',configurationId:'v4-config',coexistence:true},organisationId:'org'})
+  expect(options.extras).toEqual({featureType:'whatsapp_business_app_onboarding'})
+  const selection={requiresPhoneSelection:true,wabaId:'100',phones:[{id:'200',displayPhoneNumber:'+27 82 000 0000'}]}
+  invoke.mockImplementation(async(_name,{body})=>({data:body.action==='exchange_whatsapp_code'?{exchanged:true}:selection}))
+  window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'100'}}}))
+  expect(invoke).not.toHaveBeenCalled()
+  await callback({authResponse:{code:'fake-code'}})
+  await expect(promise).resolves.toEqual(selection)
+  expect(invoke.mock.calls[1][1].body).toEqual({organisationId:'org',action:'finish_whatsapp',state:'intent',wabaId:'100',phoneNumberId:''})
+})
+it('does not change a prepared cloud flow to phone-app onboarding through client flags',async()=>{
+  let options
+  const control=new AbortController()
+  const promise=launchWhatsAppSignup({sdk:{login:(_cb,value)=>{options=value}},intent:{state:'intent',coexistence:false},coexistence:true,organisationId:'org',signal:control.signal})
+  expect(options.extras).toEqual({})
+  const failure=expect(promise).rejects.toThrow('phone app option')
+  window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'100'}}}))
+  await failure
+  expect(invoke).not.toHaveBeenCalled()
+})

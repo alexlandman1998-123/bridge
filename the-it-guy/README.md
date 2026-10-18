@@ -2062,6 +2062,73 @@ The schema includes:
 
 ## WhatsApp campaigns
 
+WhatsApp Business phone-app syncing (stage 3) uses Meta's supported coexistence
+onboarding. Select the phone-app option **before** connecting. Arch9 resolves a
+WABA-only callback on the server, asks you to choose if several authorized numbers
+are available, and checks `is_on_biz_app` with `platform_type=CLOUD_API` before
+saving. A phone-app number is already registered: Arch9 never submits a new
+registration PIN for it. Authorization, current membership and number ownership
+are checked together when saving the connection.
+
+The initial contacts and history requests start after connecting and are claimed
+once per onboarding session, contacts first. Keep WhatsApp Business open while
+Meta prepares the data. Meta allows the initial requests within 24 hours; an
+unconfirmed request is not automatically repeated. WhatsApp Connections shows
+requested, receiving, completed, declined and failed states. Declining history
+sharing leaves new-message syncing available. A later reconnect uses a fresh
+session; old queued work and stale account events cannot restore that session.
+
+Phone-app replies and available history appear in the existing private inbox.
+The number and Meta message ID prevent duplicates across API sends, phone-app
+echoes, history and later media updates. Imported history never adds unread
+alerts, reopens a closed conversation, opens a customer-service window, creates
+CRM records, or grants message/campaign consent. Contact sync supplies inbox
+labels only, with ordered removal markers. Edits and deletions update the original
+message, including when they arrive first; deletions hide text and attachments.
+A changed history version clears older cached pages so their contents can be
+read again from the server.
+
+Webhook bodies up to 12 MB are saved before acknowledgement; oversized bodies
+are rejected for retry rather than acknowledged and dropped. A server-only worker
+processes 100-item transactions with leased jobs and saved checkpoints. The
+minute scheduler continues without an open browser. Failed saved updates can be
+retried from Connections; that operation never sends a WhatsApp message or
+repeats the one-time Meta data request. Completed job payloads are cleared.
+Disconnecting in Arch9 removes local access and tokens. Full phone-app offboarding
+is performed in WhatsApp Business → Settings → Account → Business Platform.
+Signed account-disconnection events stop processing; reconnect notifications
+alone never restore credentials.
+
+For the combined release, apply `20261018125856_whatsapp_business_app_sync.sql`
+after the stage 2 inbox migration. Deploy `meta-integrations`, `whatsapp-webhook`,
+`whatsapp-business-app-worker` and the primary app together. The migration reuses
+Vault's `arch9_project_url` and `arch9_service_role_key` and schedules the private
+worker every minute when `pg_cron` is available; verify that schedule and `pg_net`
+after release. A v4 Facebook Login for Business configuration must be selected
+in `META_WHATSAPP_LOGIN_CONFIG_ID`, with the required advanced permissions.
+Subscribe the Meta app to `messages`, `history`, `smb_app_state_sync`,
+`smb_message_echoes` and `account_update`. These provider settings have not been
+changed by this local build.
+
+Meta determines number eligibility, history sharing and available media.
+Coexistence numbers have Meta’s fixed 20-message-per-second throughput limit. Its
+current documentation describes up to 180 days of one-to-one history and media
+assets from the last 14 days; group chats and unsupported companion-device
+messages may be unavailable. Arch9 shows placeholders instead of inventing
+missing content. The existing 8 MB inbox download limit still applies. Use
+[Meta's coexistence guide](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users)
+and [v4 setup](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/version-4)
+for provider eligibility and configuration.
+
+Focused checks extend `scripts/meta-integrations.test.mjs`, the existing campaign
+checks, `metaIntegrationSignup.test.js`, `WhatsAppMessaging.test.jsx` and
+`WhatsAppBusinessAppSync.test.jsx`. They use actual local PostgreSQL permission
+logic and a simulated provider, not live phone numbers. After the combined release,
+verify an eligible owner's real phone app, the five webhook subscriptions, history
+consent/progress, two-way messages, media, edits/deletions and worker execution.
+This stage is built locally and has not been applied or deployed.
+
+
 Marketing → WhatsApp → Inbox also supports approved one-to-one templates, including
 outside the 24-hour reply window. Select the connected number's template and
 language, fill its variables, record when/how the recipient agreed to messages,

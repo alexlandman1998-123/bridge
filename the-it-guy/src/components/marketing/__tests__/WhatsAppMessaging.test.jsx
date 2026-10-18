@@ -235,3 +235,26 @@ it('clears unread badges immediately on membership changes and ignores a delayed
   await act(async()=>{delayed.resolve({unreadCount:99});await delayed.promise})
   expect(screen.queryByText('99')).toBeNull()
 })
+
+it('clears cached older content after an edit or deletion and reloads current history',async()=>{
+ const latest=row('latest','2026-10-18'),old=row('old-private','2026-10-17'),cursor={at:latest.event_at,id:latest.id}
+ mocks.request.mockResolvedValueOnce({conversation:{content_version:0},messages:[latest],nextCursor:cursor}).mockResolvedValueOnce({conversation:{content_version:0},messages:[old],nextCursor:null}).mockResolvedValueOnce({conversation:{content_version:1},messages:[latest],nextCursor:cursor}).mockResolvedValueOnce({conversation:{content_version:1},messages:[{...old,body_text:'',revoked_at:'2026-10-18'}],nextCursor:null})
+ const hook=renderHook(()=>useWhatsAppHistory(historyProps))
+ await waitFor(()=>expect(hook.result.current.rows).toHaveLength(1))
+ await act(()=>hook.result.current.loadOlder());expect(hook.result.current.rows).toHaveLength(2)
+ await act(()=>hook.result.current.refresh())
+ expect(hook.result.current.rows.map(item=>item.id)).toEqual(['latest'])
+ expect(hook.result.current.nextCursor).toEqual(cursor)
+ expect(hook.result.current.olderLoaded).toBe(false)
+ await act(()=>hook.result.current.loadOlder())
+ expect(hook.result.current.rows[1].body_text).toBe('');expect(hook.result.current.rows[1].revoked_at).toBe('2026-10-18')
+})
+it('returns to the current newest page when an older-page request detects changed content',async()=>{
+ const cursor={at:'2026-10-18',id:'latest'}
+ mocks.request.mockResolvedValueOnce({conversation:{content_version:0},messages:[row('latest','2026-10-18')],nextCursor:cursor}).mockResolvedValueOnce({conversation:{content_version:1},messages:[row('old-stale-position','2026-10-17')],nextCursor:null}).mockResolvedValueOnce({conversation:{content_version:1},messages:[row('fresh-head','2026-10-19')],nextCursor:cursor})
+ const hook=renderHook(()=>useWhatsAppHistory(historyProps))
+ await waitFor(()=>expect(hook.result.current.rows).toHaveLength(1))
+ await act(()=>hook.result.current.loadOlder())
+ expect(hook.result.current.rows.map(item=>item.id)).toEqual(['fresh-head'])
+ expect(mocks.request).toHaveBeenLastCalledWith('agency-one','message_page',{conversationId:'thread-one'})
+})

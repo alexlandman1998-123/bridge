@@ -1,9 +1,10 @@
+import { finishWhatsAppAuthorization, startBusinessAppSync } from './businessAppOnboarding.js'
 import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
 import { handleCrmLink } from './crmLinks.js'
 import { handleInboxMessaging } from './inboxMessaging.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
-const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message'
+const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,onboarding_mode,business_app_session,business_app_connected_at'
 const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tasks,last_error_message'
 const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
@@ -40,7 +41,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!isUuid(org)) throw new Error('Choose an organisation workspace.')
     const actor=await authorize(authorization,org)
     if(!actor?.userId) throw new Error('Active staff membership is required.')
-    const connectionActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender']
+    const connectionActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender','business_app_status','start_business_app_sync','retry_business_app_updates']
     if(connectionActions.includes(action)&&!actor.isAdmin&&!actor.canConnectOwn) throw new Error('An organisation administrator must manage Meta connections.')
     if(['set_sender_owner','assign_conversation'].includes(action)&&!actor.isAdmin) throw new Error('Agency management must change WhatsApp ownership and assignments.')
     if(['crm_context','link_crm','unlink_crm','crm_conversations'].includes(action)) {
@@ -70,8 +71,8 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       if(!actor.isAdmin&&payload.ownerUserId&&payload.ownerUserId!==actor.userId) throw new Error('You can connect only your own WhatsApp number.')
       if(owner){if(!isUuid(owner)) throw new Error('Choose an active agent.');await result(db.rpc('whatsapp_staff_is_admin',{p_org:org,p_actor:owner}))}
       const state=crypto.randomUUID()+crypto.randomUUID()
-      await result(db.from('meta_whatsapp_authorizations').insert({state_hash:await hash(state),organisation_id:org,requested_by:actor.userId,owner_user_id:owner,expires_at:new Date(now().getTime()+600000).toISOString()}))
-      return {state,appId:config.appId,configurationId:config.whatsappConfigId,graphVersion:config.graphVersion}
+      await result(db.from('meta_whatsapp_authorizations').insert({state_hash:await hash(state),organisation_id:org,requested_by:actor.userId,owner_user_id:owner,coexistence:payload.coexistence===true,expires_at:new Date(now().getTime()+600000).toISOString()}))
+      return {state,appId:config.appId,configurationId:config.whatsappConfigId,graphVersion:config.graphVersion,coexistence:payload.coexistence===true}
     }
     if(action==='exchange_whatsapp_code') {
       const session=await authSession(org,actor,payload.state)
@@ -82,23 +83,15 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       await result(db.from('meta_whatsapp_authorizations').update({token_ciphertext:await encrypt(token)}).eq('state_hash',session.state_hash))
       return {exchanged:true}
     }
-    if(action==='finish_whatsapp') {
-      const session=await authSession(org,actor,payload.state)
-      const wabaId=text(payload.wabaId),phoneId=text(payload.phoneNumberId)
-      if(!session.token_ciphertext||!isMetaId(wabaId)||!isMetaId(phoneId)) throw new Error('Choose a WhatsApp Business Account and phone number in Meta.')
-      const token=await decrypt(session.token_ciphertext)
-      const [business,phone,numbers]=await Promise.all([graph(token,`${wabaId}?fields=id,name`),graph(token,`${phoneId}?fields=id,display_phone_number,verified_name,code_verification_status,status`),graph(token,`${wabaId}/phone_numbers?fields=id&limit=100`)])
-      if(text(business.id)!==wabaId||text(phone.id)!==phoneId||!numbers.data?.some(n=>text(n.id)===phoneId)) throw new Error('The selected phone number does not belong to the authorized WhatsApp business account.')
-      const existing=await result(db.from('organisation_communication_channels').select('id,organisation_id,owner_user_id,ownership_version').eq('phone_number_id',phoneId).eq('provider','meta').eq('channel_type','whatsapp').eq('connection_status','connected').maybeSingle())
-      if(existing&&existing.organisation_id!==org) throw new Error('This phone number is already connected to another workspace.')
-      const own=existing||await result(db.from('organisation_communication_channels').select('id,owner_user_id,ownership_version').eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp').eq('phone_number_id',phoneId).maybeSingle())
-      if(!actor.isAdmin&&(session.owner_user_id!==actor.userId||(own&&own.owner_user_id!==actor.userId))) throw new Error('An administrator must transfer an existing agency or agent number.')
-      const consumed=await result(db.from('meta_whatsapp_authorizations').update({consumed_at:now().toISOString(),token_ciphertext:null}).eq('state_hash',session.state_hash).is('consumed_at',null).select('state_hash').maybeSingle())
-      if(!consumed) throw new Error('This WhatsApp connection was already completed.')
-      await graph(token,`${wabaId}/subscribed_apps`,{})
-      const fields={organisation_id:org,owner_user_id:session.owner_user_id||null,ownership_changed_by:actor.userId,provider:'meta',channel_type:'whatsapp',waba_id:wabaId,phone_number_id:phoneId,display_phone_number:text(phone.display_phone_number),business_display_name:text(phone.verified_name)||text(business.name),connection_status:phone.status==='CONNECTED'?'connected':'pending',verification_status:phone.code_verification_status==='VERIFIED'?'verified':'pending',meta_access_token:'',token_ciphertext:await encrypt(token),connected_at:now().toISOString(),created_by:actor.userId,last_error_message:null}
-      const saved=own?await result(db.from('organisation_communication_channels').update(fields).eq('id',own.id).eq('organisation_id',org).eq('ownership_version',own.ownership_version).select(safeSender).single()):await result(db.from('organisation_communication_channels').insert(fields).select(safeSender).single())
-      return {sender:saved}
+    if(action==='finish_whatsapp')return finishWhatsAppAuthorization({db,org,actor,payload,session:await authSession(org,actor,payload.state),graph,decrypt,encrypt,hash,now,senderToken})
+    if(['business_app_status','start_business_app_sync','retry_business_app_updates'].includes(action)) {
+      const row=await channel(org,payload.senderId)
+      if(!actor.isAdmin&&row.owner_user_id!==actor.userId)throw new Error('You can manage only your own WhatsApp number.')
+      if(action==='start_business_app_sync') {
+        if(!Number.isInteger(payload.ownershipVersion)||row.ownership_version!==payload.ownershipVersion)throw new Error('Refresh this number before starting sync.')
+        return startBusinessAppSync({db,org,actor,sender:row,graph,senderToken})
+      }
+      return result(db.rpc('whatsapp_business_app_status',{p_org:org,p_actor:actor.userId,p_sender:row.id,p_retry:action==='retry_business_app_updates',p_version:payload.ownershipVersion??null}))
     }
     if(action==='register_sender'||action==='health_sender'||action==='disconnect_sender') {
       const row=await channel(org,payload.senderId)
@@ -107,14 +100,16 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
         await result(db.from('organisation_communication_channels').update({connection_status:'disconnected',disconnected_at:now().toISOString(),meta_access_token:'',token_ciphertext:null,is_default:false}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select('id').single())
         return {disconnected:true}
       }
+      if(action==='register_sender'&&row.onboarding_mode==='coexistence')throw new Error('Phone app numbers are already registered. Reconnect through Meta; do not register them again.')
       const token=await senderToken(row)
       if(action==='register_sender') {
         if(row.connection_status!=='pending'||!/^\d{6}$/.test(text(payload.pin))) throw new Error('Choose a pending sender and enter its six-digit registration PIN.')
         try { await graph(token,`${row.phone_number_id}/register`,{messaging_product:'whatsapp',pin:text(payload.pin)}) }
         catch { throw new Error('Meta could not register this number. Check the PIN and phone verification in WhatsApp Manager, then check the connection before retrying.') }
       }
-      const phone=await graph(token,`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status`)
-      const sender=await result(db.from('organisation_communication_channels').update({connection_status:phone.status==='CONNECTED'?'connected':'pending',last_checked_at:now().toISOString(),last_error_message:null}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select(safeSender).single())
+      const phone=await graph(token,`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status,is_on_biz_app,platform_type`)
+      if(text(phone.id)!==row.phone_number_id)throw new Error('Meta did not confirm the selected WhatsApp number.')
+      const sender=await result(db.from('organisation_communication_channels').update({connection_status:(row.onboarding_mode==='coexistence'?phone.is_on_biz_app===true&&phone.platform_type==='CLOUD_API':phone.status==='CONNECTED')?'connected':'pending',last_checked_at:now().toISOString(),last_error_message:null}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select(safeSender).single())
       return {sender}
     }
     if(action==='inbox') {

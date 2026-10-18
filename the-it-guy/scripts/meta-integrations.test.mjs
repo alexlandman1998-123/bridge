@@ -51,6 +51,8 @@ async function fixture(){
   await db.exec(readFileSync(new URL('../../supabase/migrations/20260913134659_whatsapp_campaigns.sql',import.meta.url),'utf8'))
   await db.exec(`create table whatsapp_campaign_jobs(id uuid primary key default gen_random_uuid(),campaign_id uuid,status text);grant select,insert,update on whatsapp_campaign_jobs to service_role;`)
   await db.exec(readFileSync(new URL('../../supabase/migrations/20261018094503_whatsapp_inbox_agent_ownership.sql',import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261018111956_whatsapp_inbox_messaging.sql',import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261018125856_whatsapp_business_app_sync.sql',import.meta.url),'utf8'))
   await db.query('insert into organisations values($1),($2)',[org,other]);await db.query('insert into auth.users values($1)',[user]);await db.query("insert into organisation_users(organisation_id,user_id,role,status,first_name,last_name) values($1,$2,'principal','active','Agency','Owner')",[org,user]);await db.query('insert into private_listings values($1,$2)',[listingId,org])
   await db.query("insert into organisation_communication_channels(id,organisation_id,provider,channel_type,phone_number_id,waba_id,connection_status,meta_access_token) values($1,$2,'meta','whatsapp','100','200','connected','secret'),($3,$4,'meta','whatsapp','101','201','connected','foreign-secret')",[sender,org,foreign,other])
   await db.query("insert into meta_lead_ads_connections(id,organisation_id,page_id,page_name,connection_status,token_ciphertext,granted_scopes,page_tasks) values($1,$2,'300','Test Page','connected','encrypted',array['pages_manage_posts'],array['CREATE_CONTENT'])",[connection,org])
@@ -311,7 +313,7 @@ test('a reassignment after reply access prevents the outbound claim and never ca
 test('embedded signup binds the owner on the server and an agent cannot claim an existing agency number',async()=>{
  const db=await teamFixture()
  try{
-  const extra={config:{appId:'app',whatsappConfigId:'config',graphVersion:'v23.0'},hash:async value=>`hash:${value}`,encrypt:async()=> 'encrypted',decrypt:async()=> 'fake-token',exchangeCode:async()=> 'fake-token'}
+  const extra={now:()=>new Date(),config:{appId:'app',whatsappConfigId:'config',graphVersion:'v23.0'},hash:async value=>`hash:${value}`,encrypt:async()=> 'encrypted',decrypt:async()=> 'fake-token',exchangeCode:async()=> 'fake-token'}
   let phone='100',subscriptions=0
   extra.graph=async(_token,path,payload)=>{if(payload){subscriptions++;return {success:true}};if(path.startsWith('200/phone_numbers'))return {data:[{id:phone}]};if(path.startsWith('200?'))return {id:'200',name:'Business'};return {id:phone,display_phone_number:'+27 82 000 0000',verified_name:'Business',status:'CONNECTED'}}
   const a=staffHandler(db,agentA,extra)
@@ -558,8 +560,7 @@ test('only an exact campaign reply context is attributed, with sender and recipi
  }finally{await db.close()}
 })
 
-const messagingMigration=new URL('../../supabase/migrations/20261018111956_whatsapp_inbox_messaging.sql',import.meta.url)
-async function messagingFixture(){const db=await teamFixture();await db.exec(readFileSync(messagingMigration,'utf8'));return db}
+async function messagingFixture(){return teamFixture()}
 const approvedTemplate={id:'800',name:'agent_follow_up',language:'en',status:'APPROVED',category:'UTILITY',components:[{type:'BODY',text:'Hello {{1}}, following up on your enquiry.'}]}
 const pdf={mimeType:'application/pdf',filename:'property.pdf',base64:Buffer.from('%PDF-1.7\nFictional test document').toString('base64')}
 const messagingHandler=(db,actor=user,extra={})=>staffHandler(db,actor,{hash:async bytes=>Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex'),uploadMedia:async()=>({id:'900'}),graph:async(_token,path)=>path.includes('/message_templates')?{data:[approvedTemplate]}:{messages:[{id:'wamid.inbox'}]},...extra})
@@ -727,5 +728,309 @@ test('the real service role can send stage 2 messages and browser roles cannot c
   await db.exec('reset role;set role authenticated')
   await assert.rejects(db.query('select * from whatsapp_inbox_uploads'),/permission denied/)
   await assert.rejects(db.query('select whatsapp_inbox_claim($1,$2,$3,$4,$5,$6,$7)',[org,user,conversationId,id(116),'{}',1,1]),/permission denied/)
+ }finally{await db.close()}
+})
+
+
+
+const businessAppCore=await import('../../supabase/functions/_shared/whatsappBusinessApp.js')
+const {createBusinessAppWorker}=await import('../../supabase/functions/whatsapp-business-app-worker/worker.js')
+const businessPhone='27820000000',customerPhone='27821234567'
+const liveAt=()=>new Date(Date.now()-1000).toISOString()
+const epoch=value=>String(Math.floor(Date.parse(value)/1000))
+const appPayload=(field,value={},phoneId='100',waba='200')=>({object:'whatsapp_business_account',entry:[{id:waba,time:Math.floor(Date.now()/1000),changes:[{field,value:{messaging_product:'whatsapp',metadata:{phone_number_id:phoneId,display_phone_number:businessPhone},...value}}]}]})
+const appMessage=(messageId,fields={})=>({id:messageId,from:customerPhone,timestamp:epoch(liveAt()),type:'text',text:{body:'Fictional phone app message'},...fields})
+async function appFixture(){const db=await teamFixture();await own(staffHandler(db),agentA);await db.query("update organisation_communication_channels set onboarding_mode='coexistence',business_app_session=$2,business_app_connected_at=now()-interval '1 hour',display_phone_number=$3 where id=$1",[sender,id(600),businessPhone]);return db}
+const drainApp=(db,options={})=>createBusinessAppWorker({db:sqlClient(db),...options})()
+const appStatus=(db,actor=agentA)=>request(staffHandler(db,actor),'business_app_status',{senderId:sender})
+const onboardingSetup=(db,{phones=[{id:'102',display_phone_number:'+27 82 333 4444',is_on_biz_app:true,platform_type:'CLOUD_API'}],sendSync,subscribe}={})=>{
+ const calls=[]
+ const graph=async(_token,path,payload)=>{
+  calls.push({path,payload})
+  if(path.includes('/smb_app_data'))return sendSync?sendSync(path,payload):{request_id:`request-${payload.sync_type}`}
+  if(path.endsWith('/subscribed_apps')){if(subscribe)await subscribe();return {success:true}}
+  if(path.startsWith('200/phone_numbers'))return {data:phones}
+  if(path.startsWith('200?'))return {id:'200',name:'Fictional business'}
+  const phone=phones.find(row=>path.startsWith(`${row.id}?`));return {...phone,verified_name:'Fictional phone app'}
+ }
+ return {calls,handler:staffHandler(db,agentA,{now:()=>new Date(),config:{appId:'app',whatsappConfigId:'v4-config',graphVersion:'v25.0'},hash:async value=>`hash:${value}`,encrypt:async()=> 'encrypted',decrypt:async()=> 'fake-token',exchangeCode:async()=> 'fake-token',graph})}
+}
+async function beginApp(handler){const intent=await request(handler,'begin_whatsapp',{coexistence:true});await request(handler,'exchange_whatsapp_code',{state:intent.state,code:'fake-code'});return intent}
+
+test('phone app onboarding resolves WABA-only completion, verifies coexistence and requests contacts and history exactly once',async()=>{
+ const db=await teamFixture()
+ try{
+  const {handler,calls}=onboardingSetup(db),intent=await beginApp(handler)
+  const connected=await request(handler,'finish_whatsapp',{state:intent.state,wabaId:'200'})
+  assert.equal(connected.sender.onboarding_mode,'coexistence');assert.equal(connected.sender.connection_status,'connected');assert.equal(connected.sender.owner_user_id,agentA)
+  assert.equal(connected.sync.history,'requested')
+  assert.deepEqual(calls.filter(call=>call.path.includes('smb_app_data')).map(call=>call.payload.sync_type),['smb_app_state_sync','history'])
+  assert.equal(calls.some(call=>call.path.endsWith('/register')),false)
+  assert.ok(!JSON.stringify(connected).includes('encrypted'));assert.ok(!JSON.stringify(connected).includes('fake-token'))
+  await Promise.all([request(handler,'start_business_app_sync',{senderId:connected.sender.id,ownershipVersion:1}),request(handler,'start_business_app_sync',{senderId:connected.sender.id,ownershipVersion:1})])
+  assert.equal(calls.filter(call=>call.path.includes('smb_app_data')).length,2)
+  await db.query("update organisation_communication_channels set connection_status='pending' where id=$1",[connected.sender.id])
+  await assert.rejects(request(handler,'register_sender',{senderId:connected.sender.id,pin:'123456'}),/already registered/)
+ }finally{await db.close()}
+})
+
+test('multiple authorized phone app numbers require a choice and rejected or foreign assets cannot finish onboarding',async()=>{
+ const db=await teamFixture()
+ try{
+  const phones=['102','103'].map(number=>({id:number,display_phone_number:number,is_on_biz_app:true,platform_type:'CLOUD_API'}))
+  const {handler,calls}=onboardingSetup(db,{phones}),intent=await beginApp(handler)
+  const choice=await request(handler,'finish_whatsapp',{state:intent.state,wabaId:'200'})
+  assert.equal(choice.requiresPhoneSelection,true);assert.equal(choice.phones.length,2)
+  assert.equal(calls.some(call=>call.path.endsWith('/subscribed_apps')),false)
+  await assert.rejects(request(handler,'finish_whatsapp',{state:intent.state,wabaId:'200',phoneNumberId:'999'}),/does not belong/)
+  const result=await request(handler,'finish_whatsapp',{state:intent.state,wabaId:'200',phoneNumberId:'103'})
+  assert.equal(result.sender.phone_number_id,'103')
+  const next=await beginApp(handler)
+  const rejected=onboardingSetup(db,{phones:[{id:'104',is_on_biz_app:false,platform_type:'CLOUD_API'}]}).handler
+  await assert.rejects(request(rejected,'finish_whatsapp',{state:next.state,wabaId:'200',phoneNumberId:'104'}),/not confirmed/)
+ }finally{await db.close()}
+})
+
+test('a membership revocation during Meta verification blocks the final number save and all sync requests',async()=>{
+ const db=await teamFixture()
+ try{
+  const {handler,calls}=onboardingSetup(db,{subscribe:()=>db.query("update organisation_users set status='suspended' where user_id=$1",[agentA])}),intent=await beginApp(handler)
+  await assert.rejects(request(handler,'finish_whatsapp',{state:intent.state,wabaId:'200'}),/membership/)
+  assert.equal((await db.query("select count(*)::int n from organisation_communication_channels where phone_number_id='102'")).rows[0].n,0)
+  assert.equal(calls.filter(call=>call.path.includes('smb_app_data')).length,0)
+ }finally{await db.close()}
+})
+
+test('an unconfirmed one-time contacts request is never repeated and does not prevent requesting history',async()=>{
+ const db=await teamFixture()
+ try{
+  const {handler,calls}=onboardingSetup(db,{sendSync:(_path,payload)=>{if(payload.sync_type==='smb_app_state_sync')throw Error('Response lost');return {request_id:'history-request'}}}),intent=await beginApp(handler)
+  const result=await request(handler,'finish_whatsapp',{state:intent.state,wabaId:'200'})
+  assert.equal(result.sync.requests.smb_app_state_sync.status,'unknown');assert.equal(result.sync.requests.history.status,'requested')
+  await request(handler,'start_business_app_sync',{senderId:result.sender.id,ownershipVersion:1})
+  assert.equal(calls.filter(call=>call.path.includes('smb_app_data')).length,2)
+ }finally{await db.close()}
+})
+
+test('phone app echoes enter the current private inbox once, without unread alerts, reply windows or provider sends',async()=>{
+ const db=await appFixture()
+ try{
+  const payload=appPayload('smb_message_echoes',{message_echoes:[appMessage('wamid.app-echo',{from:businessPhone,to:customerPhone})]})
+  await applyWhatsAppInboxWebhook(sqlClient(db),payload);await applyWhatsAppInboxWebhook(sqlClient(db),payload)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,0)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_business_app_events')).rows[0].n,1)
+  await drainApp(db)
+  const conversation=(await db.query('select * from whatsapp_inbox_conversations')).rows[0]
+  assert.equal(conversation.assigned_user_id,agentA);assert.equal(conversation.unread_count,0);assert.equal(conversation.last_inbound_at,null)
+  const messages=await request(staffHandler(db,agentA),'message_page',{conversationId:conversation.id})
+  assert.equal(messages.messages.length,1);assert.equal(messages.messages[0].message_origin,'business_app');assert.equal(messages.messages[0].created_by,null);assert.equal(messages.conversation.canReply,false)
+  await assert.rejects(request(staffHandler(db,agentB),'message_page',{conversationId:conversation.id}),/not found/)
+  await assert.rejects(appStatus(db,agentB),/own WhatsApp/)
+ }finally{await db.close()}
+})
+
+test('history uses checkpoints for over a thousand messages, recovers a lost processing response and imports without consent side effects',async()=>{
+ const db=await appFixture()
+ try{
+  const old=new Date(Date.now()-86400000).toISOString(),messages=Array.from({length:1600},(_,index)=>appMessage(`wamid.history-${index}`,{timestamp:epoch(old),text:{body:index===0?'STOP':`Fictional history ${index}`}}))
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{metadata:{phase:2,chunk_order:1,progress:100},threads:[{id:customerPhone,messages}]}]}))
+  const adapter=sqlClient(db),rpc=adapter.rpc;let lost=false
+  adapter.rpc=async(name,args)=>{const result=await rpc(name,args);if(name==='whatsapp_business_app_process'&&!lost&&!result.error){lost=true;return {data:null,error:Error('Lost response after committed checkpoint')}}return result}
+  await createBusinessAppWorker({db:adapter,limit:1})()
+  assert.equal((await db.query('select cursor_position from whatsapp_business_app_events')).rows[0].cursor_position,100)
+  assert.notEqual((await appStatus(db)).history,'complete')
+  await Promise.all([drainApp(db),drainApp(db)]);await drainApp(db)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,1600)
+  assert.equal((await db.query('select unread_count,last_inbound_at from whatsapp_inbox_conversations')).rows[0].unread_count,0)
+  assert.equal((await appStatus(db)).history,'complete')
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_permissions')).rows[0].n,0)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_marketing_contacts')).rows[0].n,0)
+  assert.deepEqual((await db.query('select payload_json from whatsapp_business_app_events')).rows[0].payload_json,{})
+ }finally{await db.close()}
+})
+
+test('late history and media hydrate placeholders without overwriting real content, reopening closed chats or duplicating live arrivals',async()=>{
+ const db=await appFixture()
+ try{
+  const old=new Date(Date.now()-86400000).toISOString(),placeholder=appMessage('wamid.placeholder',{type:'media_placeholder',timestamp:epoch(old)})
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{metadata:{phase:1,chunk_order:2,progress:55},threads:[{id:customerPhone,messages:[placeholder]}]}]}));await drainApp(db)
+  const conversation=(await db.query('select * from whatsapp_inbox_conversations')).rows[0]
+  await db.query("update whatsapp_inbox_conversations set status='closed' where id=$1",[conversation.id])
+  const media=appMessage('wamid.placeholder',{type:'image',image:{id:'900',mime_type:'image/jpeg',caption:'Fictional photo'},timestamp:epoch(old)})
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{messages:[media]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{threads:[{id:customerPhone,messages:[placeholder]}]}]}));await drainApp(db)
+  const message=(await db.query('select * from whatsapp_inbox_messages')).rows[0]
+  assert.equal(message.message_type,'image');assert.equal(message.media_json.id,'900');assert.equal(message.body_text,'Fictional photo')
+  const current=(await db.query('select * from whatsapp_inbox_conversations')).rows[0]
+  assert.equal(current.status,'closed');assert.equal(current.unread_count,0);assert.equal(current.last_inbound_at,null);assert.ok(current.content_version>conversation.content_version)
+  const live=appMessage('wamid.live-after-history')
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{threads:[{id:customerPhone,messages:[live]}]}]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[live]}));await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[live]}))
+  const opened=(await db.query('select * from whatsapp_inbox_conversations')).rows[0]
+  assert.equal(opened.unread_count,1);assert.ok(opened.last_inbound_at);assert.equal(opened.status,'open')
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,2)
+ }finally{await db.close()}
+})
+
+test('contact sync labels existing chats, preserves removals against stale adds, and never creates CRM or campaign records',async()=>{
+ const db=await appFixture()
+ try{
+  const timestamp=Math.floor(Date.now()/1000)-10
+  const sync=(action,name,seconds=timestamp)=>appPayload('smb_app_state_sync',{state_sync:[{type:'contact',contact:{phone_number:customerPhone,full_name:name},action,metadata:{timestamp:String(seconds)}}]})
+  await applyWhatsAppInboxWebhook(sqlClient(db),sync('add','Private phone book name'));await drainApp(db)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_conversations')).rows[0].n,0)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{contacts:[{wa_id:customerPhone,profile:{name:'Provider profile'}}],messages:[appMessage('wamid.contact-live')]}))
+  assert.equal((await db.query('select contact_name from whatsapp_inbox_conversations')).rows[0].contact_name,'Private phone book name')
+  await applyWhatsAppInboxWebhook(sqlClient(db),sync('remove','',timestamp+1));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),sync('add','Stale private name',timestamp));await drainApp(db)
+  assert.equal((await db.query('select contact_name from whatsapp_inbox_conversations')).rows[0].contact_name,'')
+  assert.equal((await db.query('select count(*)::int n from whatsapp_marketing_contacts')).rows[0].n,0)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_permissions')).rows[0].n,0)
+ }finally{await db.close()}
+})
+
+test('edits and deletion tombstones arriving before the original survive older history and media without opening a reply window',async()=>{
+ const db=await appFixture()
+ try{
+  const original=appMessage('wamid.edit-original',{timestamp:epoch(new Date(Date.now()-86400000).toISOString()),text:{body:'Old private content'}})
+  const edit=appMessage('wamid.edit-event',{type:'edit',edit:{original_message_id:original.id,message:{type:'text',text:{body:'Updated private content'}}}})
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[edit]}));await drainApp(db)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,0)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{threads:[{id:customerPhone,messages:[original]}]}]}));await drainApp(db)
+  assert.equal((await db.query('select body_text from whatsapp_inbox_messages')).rows[0].body_text,'Updated private content')
+  const revoke=appMessage('wamid.revoke-event',{type:'revoke',revoke:{original_message_id:original.id}})
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[revoke]}));await drainApp(db)
+  const deleted=(await db.query('select * from whatsapp_inbox_messages')).rows[0]
+  assert.equal(deleted.body_text,'');assert.deepEqual(deleted.media_json,{});assert.ok(deleted.revoked_at)
+  const version=(await db.query('select content_version from whatsapp_inbox_conversations')).rows[0].content_version
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{messages:[original]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[edit]}));await drainApp(db)
+  assert.equal((await db.query('select body_text from whatsapp_inbox_messages')).rows[0].body_text,'')
+  const conversation=(await db.query('select * from whatsapp_inbox_conversations')).rows[0]
+  assert.equal(conversation.content_version,version);assert.equal(conversation.last_inbound_at,null);assert.equal(conversation.unread_count,0)
+ }finally{await db.close()}
+})
+
+test('history refusal is visible, progress cannot regress, and a phone-app disconnect cancels queued work without restoring tokens on reconnect events',async()=>{
+ const db=await appFixture()
+ try{
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{errors:[{code:2593109}]}]}));await drainApp(db)
+  assert.equal((await appStatus(db)).history,'declined')
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{metadata:{progress:100}}]}));await drainApp(db)
+  assert.equal((await appStatus(db)).history,'declined')
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',{message_echoes:[appMessage('wamid.cancelled',{from:businessPhone,to:customerPhone})]}))
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('account_update',{event:'PARTNER_REMOVED',phone_number:businessPhone,disconnection_info:{reason:'PRIMARY_INACTIVITY'}}))
+  await drainApp(db)
+  assert.equal((await db.query('select status from whatsapp_business_app_events order by created_at desc limit 1')).rows[0].status,'cancelled')
+  await applyWhatsAppInboxWebhook(sqlClient(db),{...appPayload('account_update',{event:'ACCOUNT_RECONNECTED'}),entry:[{...appPayload('account_update').entry[0],time:Math.floor(Date.now()/1000)+1,changes:[{field:'account_update',value:{event:'ACCOUNT_RECONNECTED'}}]}]})
+  const current=(await db.query('select connection_status,meta_access_token,token_ciphertext from organisation_communication_channels where id=$1',[sender])).rows[0]
+  assert.equal(current.connection_status,'disconnected');assert.equal(current.meta_access_token,'');assert.equal(current.token_ciphertext,null)
+ }finally{await db.close()}
+})
+
+test('foreign WABA/number combinations and non-coexistence numbers cannot import phone-app data, and browser roles cannot execute worker or import functions',async()=>{
+ const db=await appFixture()
+ try{
+  const value={message_echoes:[appMessage('wamid.foreign',{from:businessPhone,to:customerPhone})]}
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',value,'100','201'))
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',value,'101','201'))
+  assert.equal((await db.query('select count(*)::int n from whatsapp_business_app_events')).rows[0].n,0)
+  await db.exec('alter role service_role bypassrls;set role service_role')
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',value));await drainApp(db)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,1)
+  await db.exec('reset role;set role authenticated')
+  for(const table of ['whatsapp_business_app_events','whatsapp_business_app_contacts','whatsapp_business_app_requests','whatsapp_business_app_mutations'])await assert.rejects(db.query(`select * from ${table}`),/permission denied/)
+  await assert.rejects(db.query('select * from whatsapp_business_app_claim_event()'),/permission denied/)
+  await assert.rejects(db.query('select private.run_whatsapp_business_app_worker()'),/permission denied/)
+  await db.exec('reset role')
+  const checks=(await db.query("select c.relname,c.relrowsecurity,has_table_privilege('authenticated',c.oid,'SELECT') as browser_read from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relname like 'whatsapp_business_app_%'")).rows
+  assert.equal(checks.length,4);assert.ok(checks.every(row=>row.relrowsecurity&&!row.browser_read))
+  const functions=(await db.query("select p.proname,p.prosecdef,has_function_privilege('authenticated',p.oid,'EXECUTE') browser_call,has_function_privilege('anon',p.oid,'EXECUTE') public_call from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and (p.proname like 'whatsapp_business_app_%' or p.proname='whatsapp_finish_authorization')")).rows
+  assert.ok(functions.length>=10);assert.ok(functions.every(row=>!row.prosecdef&&!row.browser_call&&!row.public_call))
+ }finally{await db.close()}
+})
+
+test('saved update leases reject stale workers, retry failures safely and expire one-time requests after 24 hours',async()=>{
+ const db=await appFixture()
+ try{
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',{message_echoes:[appMessage('wamid.retry',{from:businessPhone,to:customerPhone})]}))
+  const job=(await db.query('select * from whatsapp_business_app_claim_event()')).rows[0]
+  assert.equal((await db.query('select whatsapp_business_app_process($1,$2,$3,$4,$5) accepted',[job.id,id(699),'[]',0,true])).rows[0].accepted,false)
+  await db.query("update whatsapp_business_app_events set attempts=5 where id=$1",[job.id]);await db.query('select whatsapp_business_app_fail($1,$2)',[job.id,job.lease_token])
+  assert.equal((await appStatus(db)).failedUpdates,1)
+  await assert.rejects(request(staffHandler(db,agentB),'retry_business_app_updates',{senderId:sender,ownershipVersion:2}),/own WhatsApp/)
+  await request(staffHandler(db,agentA),'retry_business_app_updates',{senderId:sender,ownershipVersion:2});await drainApp(db)
+  assert.equal((await appStatus(db)).failedUpdates,0);assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,1)
+  await db.query("update organisation_communication_channels set business_app_connected_at=now()-interval '25 hours' where id=$1",[sender])
+  await assert.rejects(request(staffHandler(db,agentA),'start_business_app_sync',{senderId:sender,ownershipVersion:2}),/period expired/)
+ }finally{await db.close()}
+})
+
+test('phone app normalization ignores group and malformed messages and bounds signed webhook capture',async()=>{
+ const rows=businessAppCore.businessAppItems('history',{metadata:{display_phone_number:businessPhone},history:[{threads:[{id:'123@g.us',messages:[appMessage('group')]},{id:customerPhone,messages:[appMessage('good'),appMessage('',{timestamp:'not a time'})]}],metadata:{progress:100}}]})
+ assert.deepEqual(rows.map(row=>row.kind),['message','progress'])
+ const body=new Request('https://example.test',{method:'POST',body:'{}',headers:{'content-length':String(13*1024*1024)}})
+ await assert.rejects(businessAppCore.readWhatsAppWebhookBody(body),/too large/)
+ await assert.rejects(businessAppCore.readWhatsAppWebhookBody(new Request('https://example.test',{method:'POST',body:'x'.repeat(12*1024*1024+1)})),/too large/)
+ const raw=JSON.stringify({message:'Fictional café customer ☀️'})
+ assert.equal(await businessAppCore.readWhatsAppWebhookBody(new Request('https://example.test',{method:'POST',body:raw})),raw)
+})
+
+test('API sends, phone-app echoes and outbound history share one message identity and retain the actual staff author',async()=>{
+ const db=await appFixture()
+ try{
+  const inbound=appMessage('wamid.api-context')
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[inbound]}))
+  const conversationId=(await db.query('select id from whatsapp_inbox_conversations')).rows[0].id
+  const handler=messagingHandler(db,agentA,{now:()=>new Date(),graph:async()=>({messages:[{id:'wamid.same-outbound'}]})})
+  await sendMessage(handler,conversationId,id(710),{message:'API original'})
+  const historical=appMessage('wamid.same-outbound',{from:businessPhone,history_context:{status:'READ'},text:{body:'History copy'}})
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{metadata:{progress:100},threads:[{id:customerPhone,messages:[historical]}]}]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',{message_echoes:[{...historical,to:customerPhone,history_context:{status:'SENT'}}]}));await drainApp(db)
+  const rows=(await db.query("select * from whatsapp_inbox_messages where direction='outbound'")).rows
+  assert.equal(rows.length,1);assert.equal(rows[0].created_by,agentA);assert.equal(rows[0].message_origin,'cloud_api');assert.equal(rows[0].body_text,'API original');assert.equal(rows[0].delivery_status,'read')
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{metadata:{progress:20}}]}));await drainApp(db)
+  assert.equal((await appStatus(db)).progress,100)
+ }finally{await db.close()}
+})
+
+test('new onboarding generations cancel old queued history and stale or malformed account events cannot disconnect a verified connection',async()=>{
+ const db=await appFixture()
+ try{
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('smb_message_echoes',{message_echoes:[appMessage('wamid.stale-session',{from:businessPhone,to:customerPhone})]}))
+  await db.query('update organisation_communication_channels set business_app_session=$2,business_app_connected_at=now() where id=$1',[sender,id(601)])
+  const old=appPayload('account_update',{event:'ACCOUNT_OFFBOARDED'});old.entry[0].time=Math.floor(Date.now()/1000)-7200
+  await applyWhatsAppInboxWebhook(sqlClient(db),old)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('account_update',{event:'PARTNER_REMOVED',phone_number:'invalid number'}))
+  assert.equal((await db.query('select connection_status from organisation_communication_channels where id=$1',[sender])).rows[0].connection_status,'connected')
+  await drainApp(db)
+  assert.equal((await db.query('select status from whatsapp_business_app_events')).rows[0].status,'cancelled')
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,0)
+  await assert.rejects(db.query('select whatsapp_business_app_claim_request($1,$2,$3,$4,$5,$6)',[org,agentA,sender,2,'history',id(600)]),/Refresh/)
+ }finally{await db.close()}
+})
+
+test('a caption edit before its media asset preserves the edit and can hydrate the later file without restoring deleted content',async()=>{
+ const db=await appFixture()
+ try{
+  const timestamp=epoch(new Date(Date.now()-86400000).toISOString()),original='wamid.edited-media'
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{threads:[{id:customerPhone,messages:[appMessage(original,{type:'media_placeholder',timestamp})]}]}]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[appMessage('wamid.caption-edit',{type:'edit',edit:{original_message_id:original,message:{type:'image',image:{caption:'Corrected caption'}}}})]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{messages:[appMessage(original,{type:'image',timestamp,image:{id:'900',mime_type:'image/jpeg',caption:'Old caption'}})]}));await drainApp(db)
+  const row=(await db.query('select * from whatsapp_inbox_messages')).rows[0]
+  assert.equal(row.message_type,'image');assert.equal(row.body_text,'Corrected caption');assert.equal(row.media_json.id,'900');assert.ok(row.edited_at)
+ }finally{await db.close()}
+})
+
+test('old media arriving on the normal message route retains history provenance and never opens a reply window',async()=>{
+ const db=await appFixture()
+ try{
+  const timestamp=epoch(new Date(Date.now()-86400000).toISOString()),mid='wamid.normal-history-media'
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('history',{history:[{threads:[{id:customerPhone,messages:[{id:mid,from:customerPhone,timestamp,type:'media_placeholder'}]}]}]}));await drainApp(db)
+  await applyWhatsAppInboxWebhook(sqlClient(db),appPayload('messages',{messages:[{id:mid,from:customerPhone,timestamp,type:'image',image:{id:'900',caption:'Historical photo',mime_type:'image/jpeg'}}]}))
+  const row=(await db.query('select * from whatsapp_inbox_messages')).rows[0]
+  assert.equal(row.message_origin,'history');assert.equal(row.media_json.id,'900');assert.equal(row.body_text,'Historical photo')
+  const conversation=(await db.query('select * from whatsapp_inbox_conversations')).rows[0]
+  assert.equal(conversation.unread_count,0);assert.equal(conversation.last_inbound_at,null)
  }finally{await db.close()}
 })

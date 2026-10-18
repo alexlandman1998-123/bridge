@@ -91,7 +91,7 @@ it('offers personal connection controls to an agent without agency ownership or 
  mocks.request.mockResolvedValue({appId:'app',graphVersion:'v23.0',state:'state'})
  fireEvent.click(screen.getByRole('button',{name:'Connect my WhatsApp'}))
  await screen.findByText(/Connecting for: You/)
- expect(mocks.request).toHaveBeenCalledWith('org-one','begin_whatsapp',{ownerUserId:'user-one'})
+ expect(mocks.request).toHaveBeenCalledWith('org-one','begin_whatsapp',{ownerUserId:'user-one',coexistence:false})
  view.unmount()
  mocks.request.mockImplementation(async(_org,action)=>action==='inbox_page'?{conversations:[{...conversation,assigned_user_id:'user-one'}]}:{conversation:{...conversation,assigned_user_id:'user-one'},messages:[]})
  render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
