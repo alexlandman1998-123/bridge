@@ -1034,3 +1034,326 @@ test('old media arriving on the normal message route retains history provenance 
   assert.equal(conversation.unread_count,0);assert.equal(conversation.last_inbound_at,null)
  }finally{await db.close()}
 })
+
+// Stage 4 exercises the actual migration, triggers and worker in PostgreSQL.
+const autoTemplate={id:'900',name:'lead_ack',language:'en_US',status:'APPROVED',category:'UTILITY',components:[{type:'BODY',text:'Hello {{1}}, thanks for your enquiry.'}]}
+const autoConfig=(extra={})=>({name:'Buyer acknowledgement',kind:'buyer',trigger:'new_lead',action:'message',stage:'',delayMinutes:0,startMinute:0,endMinute:1440,days:[1,2,3,4,5,6,7],timezone:'Africa/Johannesburg',assignAgentId:agentA,senderId:sender,template:autoTemplate,values:{'body.1':{source:'first_name'}},taskTitle:'',...extra})
+async function autoFixture(){
+ const db=await crmFixture()
+ await db.exec(`alter table leads add column stage text default 'New Lead',add column status text default 'open',add column lead_domain text default 'agency',add column created_at timestamptz default now(),add column ownership_status text,add column assigned_at timestamptz;
+ alter table recruitment_leads add column status text default 'new',add column details_json jsonb default '{}',add column created_at timestamptz default now();
+ create table tasks(task_id uuid primary key default gen_random_uuid(),organisation_id uuid,lead_id uuid,assigned_agent_id uuid,created_by uuid,title text,description text,due_date date,status text,priority text,metadata jsonb);
+ alter table tasks enable row level security;grant select on tasks to authenticated;create policy task_org on tasks for select to authenticated using(organisation_id=current_setting('test.org')::uuid);`)
+ await db.exec(readFileSync(new URL('../../supabase/migrations/20261018131742_whatsapp_crm_automations.sql',import.meta.url),'utf8'))
+ return db
+}
+const autoHandler=(db,extra={})=>staffHandler(db,user,{now:()=>new Date(),graph:async()=>({data:[autoTemplate]}),...extra})
+async function autoRule(db,extra={},enable=true){
+ const handler=autoHandler(db),{rule}=await request(handler,'automation_save',{rule:autoConfig(extra)})
+ return enable?(await request(handler,'automation_enable',{ruleId:rule.id,version:rule.version,confirmed:true})).rule:rule
+}
+async function autoLead(db,n=900,extra={}){
+ const row={lead_id:id(n),organisation_id:org,contact_id:id(40),lead_category:'buyer',...extra},columns=Object.keys(row)
+ await db.query(`insert into leads(${columns.join(',')}) values(${columns.map((_,i)=>`$${i+1}`).join(',')})`,Object.values(row))
+ return row.lead_id
+}
+async function autoPermission(db){
+ const conversation=(await receive(db,'auto-inbound',new Date(Date.now()-3600000).toISOString())).rows[0].id
+ await db.query('update whatsapp_inbox_conversations set assigned_user_id=$1 where id=$2',[agentA,conversation])
+ await db.query("insert into whatsapp_inbox_permissions(conversation_id,organisation_id,status,source,consent_at,recorded_by) values($1,$2,'opted_in','Signed WhatsApp agreement',now()-interval '1 day',$3)",[conversation,org,user])
+ return conversation
+}
+async function autoWorker(db,meta=async(_sender,path)=>path.includes('message_templates')?{data:[autoTemplate]}:{messages:[{id:`wamid.auto.${crypto.randomUUID()}`}]} ,limit=10){
+ const {createAutomationWorker}=await import('../../supabase/functions/whatsapp-automation-worker/worker.js')
+ return createAutomationWorker({db:sqlClient(db),meta,limit})()
+}
+const autoRuns=async db=>(await db.query('select * from whatsapp_automation_runs order by created_at,id')).rows
+
+test('automation rules start disabled, affect future events only, and require current management access',async()=>{
+ const db=await autoFixture()
+ try{
+  const disabled=await autoRule(db,{},false)
+  assert.equal(disabled.enabled,false)
+  await autoLead(db)
+  assert.equal((await autoRuns(db)).length,0)
+  await request(autoHandler(db),'automation_enable',{ruleId:disabled.id,version:disabled.version,confirmed:true})
+  assert.equal((await autoRuns(db)).length,0)
+  await autoLead(db,901)
+  assert.equal((await autoRuns(db)).length,1)
+  assert.equal((await db.query('select assigned_agent_id from leads where lead_id=$1',[id(901)])).rows[0].assigned_agent_id,agentA)
+  await autoLead(db,902,{assigned_agent_id:agentB,assigned_user_id:agentB})
+  assert.equal((await db.query('select assigned_agent_id from leads where lead_id=$1',[id(902)])).rows[0].assigned_agent_id,agentB)
+  await autoLead(db,903,{raw_enquiry_payload:{arch9_meta:{ingestion_source:'historical'}}})
+  assert.equal((await autoRuns(db)).length,2)
+  await assert.rejects(request(staffHandler(db,agentA),'automation_list'),/management/)
+  await assert.rejects(request(autoHandler(db),'automation_save',{ruleId:disabled.id,version:disabled.version,rule:autoConfig()}),/changed/)
+  await assert.rejects(request(autoHandler(db),'automation_enable',{ruleId:disabled.id,version:2}),/Confirm/)
+  await assert.rejects(request(autoHandler(db),'automation_save',{rule:autoConfig({senderId:foreign})}),/not found/)
+ }finally{await db.close()}
+})
+
+test('new lead automation sends a personalized approved template once and links its receipt to CRM',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db)
+  await autoRule(db)
+  const lead=await autoLead(db)
+  let sends=0
+  const meta=async(_sender,path,payload)=>{if(path.includes('message_templates'))return {data:[autoTemplate]};sends++;assert.equal(payload.to,'27821234567');assert.equal(payload.template.components[0].parameters[0].text,'Buyer');return {messages:[{id:'wamid.automation'}]}}
+  await Promise.all([autoWorker(db,meta),autoWorker(db,meta)])
+  await autoWorker(db,meta)
+  assert.equal(sends,1)
+  const [job]=await autoRuns(db);assert.equal(job.status,'sent')
+  const message=(await db.query('select * from whatsapp_inbox_messages where automation_run_id=$1',[job.id])).rows[0]
+  assert.equal(message.delivery_status,'sent');assert.equal(message.conversation_id,thread)
+  assert.match((await db.query('select last_message_preview from whatsapp_inbox_conversations where id=$1',[thread])).rows[0].last_message_preview,/Hello Buyer/ )
+  assert.equal((await db.query('select lead_id from whatsapp_inbox_crm_links where conversation_id=$1',[thread])).rows[0].lead_id,lead)
+ }finally{await db.close()}
+})
+
+test('automatic messages skip absent consent; sending hours respect DST and weekends',async()=>{
+ const db=await autoFixture()
+ try{
+  await autoRule(db)
+  await autoLead(db)
+  await autoWorker(db,async()=>{throw Error('No provider call expected')})
+  assert.match((await autoRuns(db))[0].reason,/permission/)
+  const config=autoConfig({timezone:'America/New_York',days:[1,2,3,4,5],startMinute:540,endMinute:1020})
+  const at=async stamp=>new Date((await db.query('select private.whatsapp_automation_time($1,$2) at',[config,stamp])).rows[0].at).toISOString()
+  assert.equal(await at('2026-10-30T21:00:00Z'),'2026-11-02T14:00:00.000Z')
+  assert.equal(await at('2026-11-02T14:00:00Z'),'2026-11-02T14:00:00.000Z')
+  assert.equal(await at('2026-11-02T22:00:00Z'),'2026-11-03T14:00:00.000Z')
+ }finally{await db.close()}
+})
+
+test('automation follow-ups anchor to a sent message, ignore imported history and never chain themselves',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db)
+  await autoRule(db)
+  await autoRule(db,{name:'One follow-up',trigger:'no_response',delayMinutes:60,assignAgentId:null})
+  await autoLead(db)
+  await autoWorker(db,undefined,1)
+  let jobs=await autoRuns(db)
+  assert.equal(jobs.length,2);assert.equal(jobs.filter(job=>job.status==='queued').length,1)
+  const followup=jobs.find(job=>job.status==='queued')
+  assert.ok(followup.anchor_message_id)
+  await db.query("insert into whatsapp_inbox_messages(organisation_id,conversation_id,channel_id,direction,message_type,body_text,event_at,message_origin,live_received,delivery_status) values($1,$2,$3,'inbound','text','Old history',now(),'history',false,'received')",[org,thread,sender])
+  assert.equal((await autoRuns(db)).find(job=>job.id===followup.id).status,'queued')
+  await db.query("update whatsapp_automation_runs set due_at=now() where id=$1",[followup.id])
+  await autoWorker(db)
+  jobs=await autoRuns(db);assert.equal(jobs.length,2);assert.ok(jobs.every(job=>job.status==='sent'))
+  await db.query("insert into whatsapp_inbox_messages(organisation_id,conversation_id,channel_id,direction,message_type,body_text,delivery_status,event_at,created_by) values($1,$2,$3,'outbound','text','Another manual message','sent',now(),$4)",[org,thread,sender,user])
+  assert.equal((await autoRuns(db)).length,2)
+ }finally{await db.close()}
+})
+
+test('pending automation stops on replies, opt-outs, stage changes, phone changes, reassignment and rule edits',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db),rule=await autoRule(db,{delayMinutes:60})
+  await autoLead(db,910)
+  await receive(db,'auto-live-reply',new Date(Date.now()+1000).toISOString())
+  assert.match((await autoRuns(db))[0].reason,/replied/)
+  await autoLead(db,911)
+  await db.query("update whatsapp_inbox_permissions set status='opted_out',opted_out_at=now() where conversation_id=$1",[thread])
+  assert.match((await autoRuns(db)).find(job=>job.record_id===id(911)).reason,/opted out/)
+  await autoLead(db,912)
+  await db.query("update leads set stage='Contacted' where lead_id=$1",[id(912)])
+  await db.query("update leads set stage='New Lead' where lead_id=$1",[id(912)])
+  assert.equal((await autoRuns(db)).find(job=>job.record_id===id(912)).status,'skipped')
+  await autoLead(db,913)
+  await db.query("update contacts set phone='+27829999999' where contact_id=$1",[id(40)])
+  assert.equal((await autoRuns(db)).find(job=>job.record_id===id(913)).status,'skipped')
+  await db.query("update contacts set phone='27821234567' where contact_id=$1",[id(40)])
+  await autoLead(db,914)
+  await db.query('update whatsapp_inbox_conversations set assigned_user_id=$1 where id=$2',[agentB,thread])
+  assert.match((await autoRuns(db)).find(job=>job.record_id===id(914)).reason,/assignment/)
+  await autoLead(db,915)
+  await request(autoHandler(db),'automation_disable',{ruleId:rule.id,version:rule.version})
+  assert.match((await autoRuns(db)).find(job=>job.record_id===id(915)).reason,/switched off/)
+ }finally{await db.close()}
+})
+
+test('automation rechecks consent after Meta template lookup and never retries an uncertain provider attempt',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db)
+  await autoRule(db)
+  await autoLead(db,920)
+  let sends=0
+  await autoWorker(db,async(_sender,path)=>{
+   if(path.includes('message_templates')){await receive(db,'reply-during-template-lookup',new Date(Date.now()+1000).toISOString());return {data:[autoTemplate]}}
+   sends++;return {messages:[{id:'must-not-send'}]}
+  })
+  assert.equal(sends,0);assert.equal((await autoRuns(db))[0].status,'skipped')
+  // A different number isolates the next event from the earlier reply.
+  await db.query("update contacts set phone='27829999999' where contact_id=$1",[id(40)])
+  const newThread=(await db.query("insert into whatsapp_inbox_conversations(organisation_id,channel_id,contact_phone,assigned_user_id) values($1,$2,'27829999999',$3) returning id",[org,sender,agentA])).rows[0].id
+  await db.query("insert into whatsapp_inbox_permissions(conversation_id,organisation_id,status,source,consent_at,recorded_by) select $1,organisation_id,'opted_in',source,consent_at,recorded_by from whatsapp_inbox_permissions where conversation_id=$2",[newThread,thread])
+  await db.query('update whatsapp_inbox_conversations set assigned_user_id=$1 where id=$2',[agentA,newThread])
+  await autoLead(db,921)
+  const uncertain=async(_sender,path)=>{if(path.includes('message_templates'))return {data:[autoTemplate]};sends++;throw Error('Lost response with secret token')}
+  await autoWorker(db,uncertain);await autoWorker(db,uncertain)
+  assert.equal(sends,1)
+  let job=(await autoRuns(db)).find(row=>row.record_id===id(921));assert.equal(job.status,'unknown');assert.ok(!JSON.stringify(job).includes('secret token'))
+  await db.query("select whatsapp_inbox_status('100','200','wamid.late',$1,'delivered',now(),null)",[`arch9-inbox:${job.message_id}`])
+  job=(await autoRuns(db)).find(row=>row.id===job.id);assert.equal(job.status,'sent')
+ }finally{await db.close()}
+})
+
+test('stage-change tasks are durable and recruitment stays restricted to its managers',async()=>{
+ const db=await autoFixture()
+ try{
+  await autoRule(db,{name:'Seller stage task',kind:'seller',trigger:'stage_changed',stage:'contacted',action:'task',assignAgentId:null,taskTitle:'Call seller'})
+  const lead=await autoLead(db,930,{lead_category:'seller',assigned_agent_id:agentA,assigned_user_id:agentA})
+  await db.query("update leads set stage='Contacted' where lead_id=$1",[lead])
+  await autoWorker(db,async()=>{throw Error('Tasks never call Meta')});await autoWorker(db)
+  let tasks=(await db.query('select * from tasks')).rows;assert.equal(tasks.length,1);assert.equal(tasks[0].lead_id,lead);assert.equal(tasks[0].assigned_agent_id,agentA)
+  await autoRule(db,{kind:'recruitment',trigger:'stage_changed',stage:'interview',action:'task',assignAgentId:null,taskTitle:'Arrange recruitment interview'})
+  await db.query("update recruitment_leads set status='interview' where id=$1",[recruit])
+  await autoWorker(db)
+  tasks=(await db.query('select * from tasks')).rows;assert.equal(tasks.length,2);assert.equal(tasks.find(task=>!task.lead_id).metadata.recruitment_lead_id,recruit)
+  await db.exec(`set role authenticated;set test.org='${org}';set test.actor='${agentA}';`)
+  assert.equal((await db.query('select * from tasks')).rows.length,1)
+  await assert.rejects(db.query('select * from whatsapp_automation_rules'),/permission/)
+  await assert.rejects(db.query('select whatsapp_automation_next()'),/permission/)
+  await db.exec('reset role')
+  const acl=(await db.query("select bool_and(relrowsecurity) secured from pg_class where relname in ('whatsapp_automation_rules','whatsapp_automation_subjects','whatsapp_automation_runs')")).rows[0]
+  assert.equal(acl.secured,true)
+  await db.exec(`set role service_role;`)
+  const listed=await sqlClient(db).rpc('whatsapp_automation_rules_request',{p_org:org,p_actor:user,p_action:'list'})
+  assert.equal(listed.error,null);assert.equal(listed.data.rules.length,2)
+  await db.exec('reset role')
+ }finally{await db.close()}
+})
+
+test('automation leases recover before sending, while ownership, membership and template drift block dispatch',async()=>{
+ const db=await autoFixture()
+ try{
+  await autoPermission(db);await autoRule(db);await autoLead(db,940)
+  const first=(await db.query('select whatsapp_automation_next() job')).rows[0].job
+  assert.equal((await db.query('select whatsapp_automation_next() job')).rows[0].job,null)
+  await db.query("update whatsapp_automation_runs set lease_until=now()-interval '1 second' where id=$1",[first.id])
+  const second=(await db.query('select whatsapp_automation_next() job')).rows[0].job
+  assert.notEqual(first.lease_token,second.lease_token)
+  assert.equal((await db.query('select whatsapp_automation_prepare($1,$2) result',[first.id,first.lease_token])).rows[0].result.ready,false)
+  await db.query('update organisation_communication_channels set owner_user_id=$1 where id=$2',[agentB,sender])
+  await db.query('select whatsapp_automation_prepare($1,$2)',[second.id,second.lease_token])
+  assert.match((await autoRuns(db))[0].reason,/ownership|assignment/)
+  await autoRule(db,{name:'Different stage task',trigger:'stage_changed',stage:'qualified',action:'task',assignAgentId:null,taskTitle:'Call buyer'})
+  await db.query("update leads set stage='Qualified' where lead_id=$1",[id(940)])
+  await db.query("update organisation_users set status='inactive' where user_id=$1",[user])
+  await autoWorker(db)
+  assert.match((await autoRuns(db)).find(job=>job.record_id===id(940)&&job.id!==first.id).reason,/management/)
+  // Inactive rule owners cannot break ordinary lead capture or assign a new lead.
+  await autoLead(db,941)
+  assert.equal((await db.query('select assigned_user_id from leads where lead_id=$1',[id(941)])).rows[0].assigned_user_id,null)
+ }finally{await db.close()}
+})
+
+test('automatic agency acknowledgements preserve an agency queue and current service-role SQL privileges',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db)
+  await db.query('update whatsapp_inbox_conversations set assigned_user_id=null where id=$1',[thread])
+  await db.query('update contacts set assigned_agent_id=null where contact_id=$1',[id(40)])
+  await autoRule(db);await autoLead(db,950)
+  assert.equal((await db.query('select assigned_agent_id from contacts where contact_id=$1',[id(40)])).rows[0].assigned_agent_id,agentA)
+  await db.exec('set role service_role')
+  await autoWorker(db)
+  assert.equal((await autoRuns(db))[0].status,'sent')
+  assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[thread])).rows[0].assigned_user_id,null)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_crm_link_events')).rows[0].n,1)
+  await db.exec('reset role')
+  const exposed=(await db.query("select n.nspname,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where (p.proname like 'whatsapp_automation_%' or p.proname='run_whatsapp_automation_worker') and (has_function_privilege('authenticated',p.oid,'execute') or has_function_privilege('anon',p.oid,'execute'))")).rows
+  assert.deepEqual(exposed,[])
+ }finally{await db.close()}
+})
+
+test('automation rejects template drift and recovers a crashed provider claim without a second send',async()=>{
+ const db=await autoFixture()
+ try{
+  await autoPermission(db);await autoRule(db);await autoLead(db,960)
+  let sends=0
+  await autoWorker(db,async(_sender,path)=>{if(path.includes('message_templates'))return {data:[{...autoTemplate,status:'PAUSED'}]};sends++;return {messages:[{id:'no'}]}})
+  assert.equal(sends,0);assert.equal((await autoRuns(db))[0].status,'failed')
+  await autoLead(db,961)
+  const claimed=(await db.query('select whatsapp_automation_next() job')).rows[0].job
+  await db.query('select whatsapp_automation_prepare($1,$2,true,$3,$4)',[claimed.id,claimed.lease_token,'Hello Buyer',autoTemplate])
+  await db.query("update whatsapp_automation_runs set lease_until=now()-interval '1 second' where id=$1",[claimed.id])
+  await autoWorker(db,async()=>{sends++;throw Error('Must not reach Meta')})
+  assert.equal(sends,0)
+  const job=(await autoRuns(db)).find(row=>row.id===claimed.id)
+  assert.equal(job.status,'unknown')
+  assert.equal((await db.query('select delivery_status from whatsapp_inbox_messages where id=$1',[job.id])).rows[0].delivery_status,'unknown')
+ }finally{await db.close()}
+})
+
+test('automation hours defer real queued work, expired actions stop and overlapping enabled rules are rejected',async()=>{
+ const db=await autoFixture()
+ try{
+  const today=Number((await db.query('select extract(isodow from now())::integer dow')).rows[0].dow)
+  await autoRule(db,{action:'task',taskTitle:'Call buyer',days:[today===7?1:today+1]})
+  await autoLead(db,970)
+  await autoWorker(db,async()=>{throw Error('No Meta calls for deferred tasks')})
+  let job=(await autoRuns(db))[0]
+  assert.equal(job.status,'queued');assert.match(job.reason,/hours/);assert.ok(new Date(job.due_at)>new Date())
+  assert.equal((await db.query('select count(*)::int n from tasks')).rows[0].n,0)
+  const duplicate=await autoRule(db,{action:'task',taskTitle:'Another buyer task'},false)
+  await assert.rejects(request(autoHandler(db),'automation_enable',{ruleId:duplicate.id,version:duplicate.version,confirmed:true}),/existing rule/)
+  await db.query("update whatsapp_automation_runs set due_at=now(),expires_at=now()-interval '1 second' where id=$1",[job.id])
+  await autoWorker(db);job=(await autoRuns(db))[0]
+  assert.equal(job.status,'skipped');assert.match(job.reason,/expired/)
+  // An administrator from one agency cannot list or change another agency's rules.
+  const wrong=await sqlClient(db).rpc('whatsapp_automation_rules_request',{p_org:other,p_actor:user,p_action:'list'})
+  assert.ok(wrong.error)
+ }finally{await db.close()}
+})
+
+test('automation cancellation cannot obstruct CRM deletion or a category moving out of scope',async()=>{
+ const db=await autoFixture()
+ try{
+  await autoRule(db,{action:'task',taskTitle:'Call buyer',delayMinutes:60})
+  await autoLead(db,980)
+  await db.query("update leads set lead_category='landlord' where lead_id=$1",[id(980)])
+  assert.match((await autoRuns(db))[0].reason,/category/)
+  await autoLead(db,981)
+  await db.query('delete from leads where lead_id=$1',[id(981)])
+  assert.match((await autoRuns(db)).find(job=>job.record_id===id(981)).reason,/deleted/)
+ }finally{await db.close()}
+})
+
+test('delayed signed delivery confirmation can start a follow-up, while pre-enable sends cannot backfill it',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db)
+  const rule=await autoRule(db,{trigger:'no_response',delayMinutes:60,assignAgentId:null})
+  await db.query("update whatsapp_automation_rules set enabled_at=now()-interval '1 day' where id=$1",[rule.id])
+  await db.query('insert into whatsapp_inbox_crm_links(conversation_id,organisation_id,lead_id,linked_by) values($1,$2,$3,$4)',[thread,org,buyerA,user])
+  for(const [n,age] of [[990,'10 minutes'],[991,'2 days']]){
+   await db.query("insert into whatsapp_inbox_messages(id,organisation_id,conversation_id,channel_id,direction,message_type,body_text,delivery_status,event_at,created_by) values($1,$2,$3,$4,'outbound','text','Manual follow-up','unknown',now()-$5::interval,$6)",[id(n),org,thread,sender,age,user])
+   await db.query("update whatsapp_inbox_messages set delivery_status='delivered' where id=$1",[id(n)])
+  }
+  const runs=await autoRuns(db)
+  assert.equal(runs.length,1);assert.equal(runs[0].anchor_message_id,id(990))
+ }finally{await db.close()}
+})
+
+test('direct automation permission can be renewed without re-subscribing to bulk campaigns',async()=>{
+ const db=await autoFixture()
+ try{
+  const thread=await autoPermission(db)
+  await autoRule(db,{trigger:'stage_changed',stage:'contacted',assignAgentId:null})
+  await db.query("insert into whatsapp_marketing_contacts(organisation_id,full_name,phone,consent_status,opted_out_at) values($1,'Buyer Seller','27821234567','opted_out',now()-interval '10 minutes')",[org])
+  await db.query("update leads set stage='Contacted' where lead_id=$1",[buyerA])
+  await autoWorker(db,async()=>{throw Error('Old direct permission must not send')})
+  assert.match((await autoRuns(db))[0].reason,/permission/)
+  await db.query("update whatsapp_inbox_permissions set consent_at=now()-interval '5 minutes',source='New explicit one-to-one agreement' where conversation_id=$1",[thread])
+  await db.query("update leads set stage='New Lead' where lead_id=$1",[buyerA])
+  await db.query("update leads set stage='Contacted' where lead_id=$1",[buyerA])
+  await autoWorker(db)
+  assert.equal((await autoRuns(db)).filter(job=>job.status==='sent').length,1)
+  assert.equal((await db.query("select consent_status from whatsapp_marketing_contacts where organisation_id=$1",[org])).rows[0].consent_status,'opted_out')
+ }finally{await db.close()}
+})

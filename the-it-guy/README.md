@@ -2060,6 +2060,48 @@ The schema includes:
 1. `sql/schema.sql`
 2. `sql/seed.sql`
 
+## WhatsApp lead automations (built locally, unreleased)
+
+Marketing → WhatsApp → Automations lets agency management configure new-lead
+acknowledgements and assignment, one delayed follow-up after a sent message, and
+stage-change messages or tasks. Buyer, Seller and Recruitment use their own rules;
+Recruitment configuration, activity and tasks retain its management restriction.
+New rules and edits save switched off. Enabling applies only to future events;
+historical Meta imports and WhatsApp history do not start new-lead outreach.
+Assignment fills an empty Buyer/Seller primary agent and unassigned contact at
+capture; it preserves existing assignments. Message/task delays and configurable
+weekdays, hours and IANA time zone apply to the queued action. The default window
+is Monday–Friday, 09:00–17:00 Africa/Johannesburg.
+
+Automated messages use a live approved text template with fixed text or contact
+name variables, plus recorded one-to-one permission for the selected sender.
+CRM capture and bulk permission do not supply that permission. Agent senders must
+belong to the lead's current agent. An agency queue is preserved. A sent message
+in an explicitly linked conversation can start one follow-up for the current
+stage/assignment/contact; follow-ups do not start another follow-up. Customer
+replies, opt-outs, CRM/phone/assignment changes, closing a conversation and
+switching off or editing a rule stop pending work. Imported history does not act
+as a new customer reply. Tasks use the existing task list, with Recruitment
+restricted to its managers. Actions waiting more than seven days beyond their
+initial due time expire.
+
+The latest 100 actions show the lead, outcome and skip reason. Sent means Meta
+accepted submission; inbox receipts report delivery. A durable claim permits one
+provider attempt. An uncertain send is never automatically repeated; a later
+signed delivery receipt reconciles it. Unsent worker leases can recover safely.
+
+Release `20261018131742_whatsapp_crm_automations.sql`, `meta-integrations`,
+`whatsapp-automation-worker` and the primary frontend with Stages 1–3. The private
+scheduler uses the existing Vault entries `arch9_project_url` and
+`arch9_service_role_key`, pg_net and a one-minute pg_cron job. All new tables have
+RLS and browser access revoked. Nothing in this local build enables a live rule
+or contacts Meta recipients. Verify the deployed worker, scheduler and a permitted
+review recipient during the combined release.
+
+Focused checks use the existing `scripts/meta-integrations.test.mjs` and
+`scripts/whatsapp-campaigns.test.mjs`, plus
+`src/components/marketing/__tests__/WhatsAppAutomations.test.jsx`.
+
 ## WhatsApp campaigns
 
 WhatsApp Business phone-app syncing (stage 3) uses Meta's supported coexistence

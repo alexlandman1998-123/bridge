@@ -421,3 +421,9 @@ enabled = true
 # Server-only credential check shared with the existing campaign worker.
 verify_jwt = false
 entrypoint = "./functions/whatsapp-business-app-worker/index.ts"
+
+[functions.whatsapp-automation-worker]
+enabled = true
+# Server-only credential check shared with the campaign worker.
+verify_jwt = false
+entrypoint = "./functions/whatsapp-automation-worker/index.ts"

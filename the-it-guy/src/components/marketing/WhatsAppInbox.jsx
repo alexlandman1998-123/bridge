@@ -49,7 +49,7 @@ export default function WhatsAppInbox() {
   const current=detail.conversation
   return <section className="space-y-5">
     <header className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-semibold text-slate-900">WhatsApp inbox</h1><p className="mt-1 text-sm text-slate-600">{workspace.canManage?'Agency conversations and agent assignments.':'Conversations assigned to you, including your connected WhatsApp Business number.'}</p></div><Button variant="secondary" disabled={Boolean(busy)} onClick={()=>void refresh()}><RefreshCw size={16}/>Refresh</Button></header>
-    <nav aria-label="WhatsApp" className="flex gap-5 text-sm font-semibold text-blue-800"><Link to="/marketing?section=whatsapp">Campaigns</Link><span aria-current="page">Inbox</span><Link to="/settings/integrations/whatsapp">Connections</Link></nav>
+    <nav aria-label="WhatsApp" className="flex gap-5 text-sm font-semibold text-blue-800"><Link to="/marketing?section=whatsapp">Campaigns</Link><span aria-current="page">Inbox</span><Link to="/marketing?section=whatsapp&view=automations">Automations</Link><Link to="/settings/integrations/whatsapp">Connections</Link></nav>
     {(list.error||workspace.error)&&<p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800">{list.error||workspace.error}</p>}
     {requestedOrg&&requestedOrg!==org&&<p role="alert" className="rounded-xl border bg-white p-4 text-sm">This WhatsApp link belongs to another workspace. Switch to that workspace before opening it.</p>}
     {requestedOrg===org&&crmKind&&crmRecord&&<WhatsAppCrmConversations key={`${scope}:${crmKind}:${crmRecord}`} organisationId={org} accessScope={scope} kind={crmKind} recordId={crmRecord} onSelect={selectConversation}/>}
