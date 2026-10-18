@@ -38,6 +38,7 @@ import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
 import { buildBuyerPropertyEnquiryContext } from './buyerPropertyEnquiryModel'
 import { buildBuyerViewingRequestSummary } from './buyerViewingRequestSummary'
 import LeadWorkspaceLoadingShell from './LeadWorkspaceLoadingShell'
+import CrmWhatsAppLink from '../../components/marketing/CrmWhatsAppLink'
 import { buildLeadArchivePatch, resolveSellerLeadActionTokens } from './sellerLeadActionModel'
 import { buildSellerLeadReadinessRows } from './sellerLeadReadinessDisplayModel'
 import {
@@ -34385,6 +34386,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
             {isLeadWorkspaceRoute ? (
             <article className="mx-auto w-full max-w-[1680px] space-y-6">
+              {selectedLead ? <div className="flex justify-end"><CrmWhatsAppLink organisationId={organisationId} kind={selectedLeadIsSeller ? 'seller' : 'buyer'} recordId={selectedLead.leadId || selectedLead.lead_id} /></div> : null}
               <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_18px_48px_rgba(31,54,78,0.07)]">
                 {selectedLead && !selectedLeadIsSeller && leadWorkspaceTab === 'buyer_dashboard' ? (
                   <div className="bg-white px-4 py-4 sm:px-6 sm:py-5">

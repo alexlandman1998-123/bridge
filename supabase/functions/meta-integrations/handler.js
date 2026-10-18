@@ -1,4 +1,5 @@
 import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
+import { handleCrmLink } from './crmLinks.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
 const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message'
@@ -41,6 +42,9 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     const connectionActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender']
     if(connectionActions.includes(action)&&!actor.isAdmin&&!actor.canConnectOwn) throw new Error('An organisation administrator must manage Meta connections.')
     if(['set_sender_owner','assign_conversation'].includes(action)&&!actor.isAdmin) throw new Error('Agency management must change WhatsApp ownership and assignments.')
+    if(['crm_context','link_crm','unlink_crm','crm_conversations'].includes(action)) {
+      return handleCrmLink({db,actor,org,action,payload,conversation})
+    }
     if(action==='workspace') {
       let senderQuery=db.from('organisation_communication_channels').select(safeSender).eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp')
       if(!actor.isAdmin) senderQuery=senderQuery.eq('owner_user_id',actor.userId)

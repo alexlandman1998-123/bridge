@@ -368,3 +368,191 @@ test('the real service role can route and reply through server-only functions wi
   await assert.rejects(request(a,'messages',{conversationId}),/not found/)
  }finally{await db.close()}
 })
+
+const crmMigration = new URL('../../supabase/migrations/20261018110212_whatsapp_inbox_crm_links.sql',import.meta.url)
+const buyerA=id(42),sellerA=id(43),buyerB=id(44),foreignLead=id(45),recruit=id(46)
+async function crmFixture(){
+ const db=await teamFixture()
+ await db.exec(`alter table organisations add column type text default 'agency';
+  alter table organisation_users add column id uuid default gen_random_uuid(),add column membership_status text,add column workspace_role text,add column organisation_role text,add column organization_role text;
+  create table contacts(contact_id uuid primary key,organisation_id uuid,assigned_agent_id uuid,first_name text,last_name text,phone text);
+  create table leads(lead_id uuid primary key,organisation_id uuid,contact_id uuid,assigned_user_id uuid,assigned_agent_id uuid,lead_category text,lead_source text,raw_enquiry_payload jsonb default '{}');
+  create table recruitment_leads(id uuid primary key,organisation_id uuid,name text,phone text,source text);
+  grant select on contacts,leads,recruitment_leads to authenticated;
+  alter table contacts enable row level security;alter table leads enable row level security;alter table recruitment_leads enable row level security;
+  alter role service_role bypassrls;`)
+ // Execute the real agency scope helpers and restrictive lead policy, rather
+ // than mocking their authorization decisions in JavaScript.
+ const twoTier=readFileSync(new URL('../../supabase/migrations/20260913075746_agency_two_tier_access.sql',import.meta.url),'utf8')
+ for(const [start,end] of [['create or replace function public.bridge_agency_open_operations','$$;'],['create or replace function public.bridge_agency_record_scope','$scope$;']]){
+  const index=twoTier.indexOf(start);await db.exec(twoTier.slice(index,twoTier.indexOf(end,index)+end.length))
+ }
+ await db.exec(`create policy lead_member on leads for select to authenticated using(exists(select 1 from organisation_users m where m.organisation_id=leads.organisation_id and m.user_id=auth.uid() and m.status='active'));
+  create policy contact_member on contacts for select to authenticated using(exists(select 1 from organisation_users m where m.organisation_id=contacts.organisation_id and m.user_id=auth.uid() and m.status='active'));
+  create policy contact_assignment on contacts as restrictive for select to authenticated using(bridge_agency_record_scope(organisation_id,assigned_agent_id));`)
+ const policyStart=twoTier.indexOf('create policy agency_two_tier_records on public.leads')
+ await db.exec(twoTier.slice(policyStart,twoTier.indexOf(';',policyStart)+1))
+ const recSource=readFileSync(new URL('../../supabase/migrations/20261005124526_recruitment_workspace.sql',import.meta.url),'utf8')
+ const recStart=recSource.indexOf('create policy recruitment_leads_management')
+ await db.exec(recSource.slice(recStart,recSource.indexOf(';',recStart)+1))
+ await db.exec(readFileSync(crmMigration,'utf8'))
+ await db.query("insert into contacts values($1,$2,$3,'Buyer','Seller','082 123 4567'),($4,$2,$5,'Other','Agent','+27 (82) 123-4567'),($6,$7,$8,'Foreign','Customer','27821234567')",[id(40),org,agentA,id(41),agentB,id(49),other,outsider])
+ for(const [lead,contact,assigned,target,kind] of [[buyerA,id(40),agentA,org,'buyer'],[sellerA,id(40),agentA,org,'seller'],[buyerB,id(41),agentB,org,'buyer'],[foreignLead,id(49),outsider,other,'buyer']]){
+  await db.query("insert into leads values($1,$2,$3,$4,$4,$5,'Facebook','{\"campaign_name\":\"Original Meta campaign\"}')",[lead,target,contact,assigned,kind])
+ }
+ await db.query("insert into recruitment_leads values($1,$2,'Recruitment Candidate','0027821234567','Facebook Lead Ads'),($3,$4,'Foreign Recruit','27821234567','Facebook Lead Ads')",[recruit,org,id(48),other])
+ return db
+}
+function rpcRole(db,role,actor=user){return {rpc:(name,args)=>db.transaction(async tx=>{
+ await tx.exec(`set local role ${role}`)
+ await tx.query("select set_config('test.actor',$1,true),set_config('test.org',$2,true)",[actor,org])
+ return sqlClient(tx).rpc(name,args)
+})}}
+const crmHandler=(db,actor=user,extra={})=>createMetaIntegrationHandler({
+ db:rpcRole(db,'service_role',actor),authorize:async()=>({userId:actor,isAdmin:actor===user,userDb:rpcRole(db,'authenticated',actor)}),...extra,
+})
+const crmContext=(handler,conversationId)=>request(handler,'crm_context',{conversationId})
+const crmLink=(handler,conversationId,kind,recordId,linkVersion=0,assignmentVersion=1)=>request(handler,'link_crm',{conversationId,kind,recordId,linkVersion,assignmentVersion})
+
+test('CRM phone matching uses full canonical numbers and actual lead/contact/recruitment RLS',async()=>{
+ const db=await crmFixture()
+ try{
+  for(const [value,expected] of [['+27 (82) 123-4567','27821234567'],['0027821234567','27821234567'],['0821234567','27821234567'],['+44821234567','44821234567'],['0821234567 ext 4',null],['',null]]){
+   assert.equal((await db.query('select whatsapp_crm_phone($1) phone',[value])).rows[0].phone,expected)
+  }
+  const records=async actor=>(await rpcRole(db,'authenticated',actor).rpc('whatsapp_crm_records',{p_org:org,p_phone:'27821234567'})).data
+  assert.deepEqual((await records(agentA)).map(x=>x.recordId).sort(),[buyerA,sellerA].sort())
+  const management=await records(user)
+  assert.equal(management.length,4);assert.ok(management.some(x=>x.recordId===recruit))
+  assert.equal(management.some(x=>x.recordId===foreignLead),false)
+  assert.deepEqual(await records(outsider),[])
+  await db.query("update organisation_users set status='inactive' where user_id=$1",[agentA])
+  assert.deepEqual(await records(agentA),[])
+ }finally{await db.close()}
+})
+
+test('CRM links require an explicit matching choice, retain sources, audit changes and reject stale saves',async()=>{
+ const db=await crmFixture()
+ try{
+  const conversationId=(await receive(db,'crm-choice')).rows[0].id,admin=crmHandler(db)
+  const before=await crmContext(admin,conversationId)
+  assert.equal(before.linked,null);assert.equal(before.version,0);assert.equal(before.candidates.length,4)
+  await crmLink(admin,conversationId,'seller',sellerA)
+  const linked=await crmContext(admin,conversationId)
+  assert.equal(linked.linked.recordId,sellerA);assert.equal(linked.linked.path,`/pipeline/leads/${sellerA}`)
+  await assert.rejects(crmLink(admin,conversationId,'buyer',buyerA),/link changed/)
+  await assert.rejects(crmLink(admin,conversationId,'buyer',foreignLead,1),/unavailable/)
+  await request(admin,'unlink_crm',{conversationId,linkVersion:1,assignmentVersion:1})
+  assert.equal((await crmContext(admin,conversationId)).linked,null)
+  const audit=(await db.query('select * from whatsapp_inbox_crm_link_events order by version')).rows
+  assert.equal(audit.length,2);assert.equal(audit[1].previous_lead_id,sellerA);assert.equal(audit[1].lead_id,null)
+  assert.equal((await db.query('select raw_enquiry_payload from leads where lead_id=$1',[sellerA])).rows[0].raw_enquiry_payload.campaign_name,'Original Meta campaign')
+ }finally{await db.close()}
+})
+
+test('inbox access never grants recruitment or another agent CRM access, and CRM access never grants inbox access',async()=>{
+ const db=await crmFixture()
+ try{
+  const conversationId=(await receive(db,'crm-private')).rows[0].id
+  await assign(staffHandler(db),conversationId,agentA,1)
+  const a=crmHandler(db,agentA),b=crmHandler(db,agentB),admin=crmHandler(db)
+  await assert.rejects(crmContext(b,conversationId),/not found/)
+  await assert.rejects(crmLink(a,conversationId,'buyer',buyerB,0,2),/unavailable/)
+  await assert.rejects(crmLink(a,conversationId,'recruitment',recruit,0,2),/unavailable/)
+  await crmLink(admin,conversationId,'recruitment',recruit,0,2)
+  const hidden=await crmContext(a,conversationId)
+  assert.equal(hidden.linked,null);assert.equal(hidden.linkedUnavailable,true)
+  assert.equal(JSON.stringify(hidden).includes(recruit),false)
+  assert.equal(JSON.stringify(hidden).includes('Recruitment Candidate'),false)
+  await assert.rejects(request(a,'crm_conversations',{kind:'recruitment',recordId:recruit}),/unavailable/)
+  assert.equal((await request(b,'crm_conversations',{kind:'buyer',recordId:buyerB})).conversations.length,0)
+  assert.equal((await request(a,'crm_conversations',{kind:'buyer',recordId:buyerA})).conversations[0].id,conversationId)
+  await request(a,'unlink_crm',{conversationId,linkVersion:1,assignmentVersion:2})
+  await assert.rejects(rpcRole(db,'authenticated',agentA).rpc('whatsapp_crm_link_request',{p_org:org,p_actor:user,p_action:'context',p_conversation:conversationId}).then(result=>{if(result.error)throw result.error}),/permission denied/)
+ }finally{await db.close()}
+})
+
+test('CRM linking rechecks handoffs and changed phone numbers after the visible-record lookup',async()=>{
+ const db=await crmFixture()
+ try{
+  const conversationId=(await receive(db,'crm-race')).rows[0].id
+  await assign(staffHandler(db),conversationId,agentA,1)
+  const userDb=rpcRole(db,'authenticated',agentA),real=userDb.rpc
+  let race='handoff'
+  userDb.rpc=async(name,args)=>{
+   const answer=await real(name,args)
+   if(race==='handoff'){race='';await assign(staffHandler(db),conversationId,agentB,2)}
+   else if(race==='phone'){race='';await db.query("update contacts set phone='0829999999' where contact_id=$1",[id(40)])}
+   else if(race==='crm-assignment'){race='';await db.query('update leads set assigned_user_id=$1,assigned_agent_id=$1 where lead_id=$2',[agentB,buyerA])}
+   return answer
+  }
+  const handler=crmHandler(db,agentA,{authorize:async()=>({userId:agentA,userDb})})
+  await assert.rejects(crmLink(handler,conversationId,'buyer',buyerA,0,2),/not found/)
+  await assign(staffHandler(db),conversationId,agentA,3);race='phone'
+  await assert.rejects(crmLink(handler,conversationId,'buyer',buyerA,0,4),/phone no longer matches/)
+  await db.query("update contacts set phone='0821234567' where contact_id=$1",[id(40)]);race='crm-assignment'
+  await assert.rejects(crmLink(handler,conversationId,'buyer',buyerA,0,4),/record or permissions changed/)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_crm_link_events')).rows[0].n,0)
+ }finally{await db.close()}
+})
+
+test('CRM links persist through number transfers without widening record permissions',async()=>{
+ const db=await crmFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  const conversationId=(await receive(db,'crm-transfer')).rows[0].id
+  await crmLink(crmHandler(db,agentA),conversationId,'buyer',buyerA)
+  await own(staffHandler(db),agentB,2)
+  await assert.rejects(crmContext(crmHandler(db,agentA),conversationId),/not found/)
+  const context=await crmContext(crmHandler(db,agentB),conversationId)
+  assert.equal(context.linkedUnavailable,true);assert.equal(context.linked,null)
+  assert.equal((await crmContext(crmHandler(db),conversationId)).linked.recordId,buyerA)
+  await assert.rejects(crmLink(crmHandler(db),conversationId,'seller',sellerA,1,1),/assignment changed/)
+ }finally{await db.close()}
+})
+
+test('linked records are re-read under current CRM permissions and phone changes do not erase the saved relationship',async()=>{
+ const db=await crmFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  const conversationId=(await receive(db,'crm-current-record')).rows[0].id,a=crmHandler(db,agentA),admin=crmHandler(db)
+  await crmLink(a,conversationId,'buyer',buyerA)
+  assert.equal(JSON.stringify(await crmContext(a,conversationId)).includes('accessStamp'),false)
+  await db.query("update contacts set phone='0829999999' where contact_id=$1",[id(40)])
+  const changed=await crmContext(a,conversationId)
+  assert.equal(changed.linked.recordId,buyerA);assert.equal(changed.linked.phoneMatches,false);assert.equal(changed.candidates.length,0)
+  assert.equal((await request(a,'crm_conversations',{kind:'buyer',recordId:buyerA})).conversations[0].linked,true)
+  await db.query('update leads set assigned_user_id=$1,assigned_agent_id=$1 where lead_id=$2',[agentB,buyerA])
+  const hidden=await crmContext(a,conversationId)
+  assert.equal(hidden.linked,null);assert.equal(hidden.linkedUnavailable,true);assert.equal(JSON.stringify(hidden).includes(buyerA),false)
+  await assert.rejects(request(a,'crm_conversations',{kind:'buyer',recordId:buyerA}),/unavailable/)
+  assert.equal((await crmContext(admin,conversationId)).linked.recordId,buyerA)
+ }finally{await db.close()}
+})
+
+test('only an exact campaign reply context is attributed, with sender and recipient isolation and webhook deduplication',async()=>{
+ const db=await crmFixture()
+ try{
+  const person=id(60),campaign=id(61),recipient=id(62)
+  await db.query("insert into whatsapp_marketing_contacts(id,organisation_id,full_name,phone) values($1,$2,'Campaign Customer','27821234567')",[person,org])
+  await db.query("insert into whatsapp_campaigns(id,organisation_id,name,sender_id) values($1,$2,'Seller campaign',$3)",[campaign,org,sender])
+  await db.query("insert into whatsapp_campaign_recipients(id,organisation_id,campaign_id,contact_id,full_name,phone,payload,consent_snapshot,status,provider_message_id) values($1,$2,$3,$4,'Campaign Customer','27821234567','{}','{}','sent','wamid.campaign')",[recipient,org,campaign,person])
+  const payload=(messageId,replyTo,from='27821234567',phone='100',waba='200')=>({entry:[{id:waba,changes:[{field:'messages',value:{metadata:{phone_number_id:phone},messages:[{id:messageId,from,timestamp:String(Date.parse(time)/1000),type:'text',text:{body:'Interested'},...(replyTo?{context:{id:replyTo}}:{})}]}}]}]})
+  for(const body of [payload('campaign-reply','wamid.campaign'),payload('campaign-reply','wamid.campaign'),payload('no-context'),payload('wrong-context','wamid.other'),payload('other-person','wamid.campaign','27829999999'),payload('foreign-reply','wamid.campaign','27821234567','101','201')]) await applyWhatsAppInboxWebhook(sqlClient(db),body)
+  const rows=(await db.query('select provider_message_id,campaign_recipient_id from whatsapp_inbox_messages order by provider_message_id')).rows
+  assert.equal(rows.length,5);assert.equal(rows.filter(x=>x.campaign_recipient_id).length,1)
+  assert.equal(rows.find(x=>x.provider_message_id==='campaign-reply').campaign_recipient_id,recipient)
+  const thread=(await db.query("select id from whatsapp_inbox_conversations where channel_id=$1 and contact_phone='27821234567'",[sender])).rows[0]
+  assert.deepEqual((await crmContext(crmHandler(db),thread.id)).campaigns,[{id:campaign,name:'Seller campaign'}])
+  assert.equal((await db.query('select consent_status from whatsapp_marketing_contacts where id=$1',[person])).rows[0].consent_status,'unknown')
+  await applyWhatsAppInboxWebhook(sqlClient(db),payload('late-callback','wamid.late'))
+  await db.query("update whatsapp_campaign_recipients set provider_message_id='wamid.late',status='unknown' where id=$1",[recipient])
+  // The recipient's callback can arrive after the inbound reply. The preserved
+  // exact provider context still resolves without guessing or duplicate sends.
+  await db.query('update whatsapp_inbox_messages set campaign_recipient_id=null where conversation_id=$1',[thread.id])
+  assert.deepEqual((await crmContext(crmHandler(db),thread.id)).campaigns,[{id:campaign,name:'Seller campaign'}])
+  assert.equal((await db.query("select reply_to_provider_message_id from whatsapp_inbox_messages where provider_message_id='late-callback'")).rows[0].reply_to_provider_message_id,'wamid.late')
+  await applyWhatsAppInboxWebhook(sqlClient(db),payload('late-callback','wamid.changed-context'))
+  assert.equal((await db.query("select reply_to_provider_message_id from whatsapp_inbox_messages where provider_message_id='late-callback'")).rows[0].reply_to_provider_message_id,'wamid.late')
+ }finally{await db.close()}
+})

@@ -15,6 +15,7 @@ const page={id:'page-one',page_name:'Agency Page',canPost:true}
 beforeEach(()=>{mocks.org='org-one';mocks.viewer='user-one';mocks.canManage=true;mocks.canConnectOwn=true;vi.mocked(prepareFacebookSdk).mockResolvedValue({});mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action)=>{
   if(action==='inbox')return {conversations:[conversation]}
   if(action==='messages')return {conversation,messages:[]}
+  if(action==='crm_context')return {version:0,assignmentVersion:1,linked:null,candidates:[],campaigns:[]}
   if(action==='workspace')return {pages:[page]}
   if(action==='listing_posts')return {posts:[]}
   if(action==='preview_post')return {post:{id:'post-one',status:'draft',snapshot_json:{caption:'Reviewed listing caption',mode:'text'}}}

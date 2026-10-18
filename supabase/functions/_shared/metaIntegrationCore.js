@@ -74,6 +74,13 @@ export async function applyWhatsAppInboxWebhook(db, payload) {
         if (inbound) {
           const saved = await db.rpc('whatsapp_inbox_receive', inbound)
           if (saved.error) throw new Error('Unable to save incoming WhatsApp message.')
+          if (text(message.context?.id)) {
+            const attribution = await db.rpc('whatsapp_inbox_campaign_reply', {
+              p_phone_id: inbound.p_phone_id, p_waba_id: inbound.p_waba_id, p_from: inbound.p_from,
+              p_message_id: inbound.p_message_id, p_reply_to: text(message.context.id),
+            })
+            if (attribution.error) throw new Error('Unable to save WhatsApp campaign reply attribution.')
+          }
         }
       }
       for (const item of Array.isArray(value.statuses) ? value.statuses : []) {

@@ -2062,6 +2062,34 @@ The schema includes:
 
 ## WhatsApp campaigns
 
+WhatsApp Inbox → CRM record suggests Buyer, Seller and Recruitment records with
+the same canonical phone number in the current agency. Choose the record and
+**Link record**; multiple matches never merge contacts or choose a lead
+automatically. The selected record can be reviewed before linking. Existing
+lead/contact permissions and Recruitment's management-only access still apply,
+independently of inbox assignment. Linking does not change either assignment,
+consent, Meta lead source or send a message. Link changes are versioned and
+audited; changed CRM records, permissions and conversation assignments require
+a fresh lookup before saving. An unavailable linked record exposes no identity
+and can be unlinked by a person who currently has conversation access.
+
+Buyer/Seller lead workspaces and Recruitment records include **WhatsApp**. This
+opens matching or already-linked conversations the current person may read,
+with a choice when several numbers/conversations are available. Links are bound
+to the agency; the user must switch workspace for a different agency's link.
+An older conversation can open directly even outside the latest 100 sidebar
+entries. No conversation or CRM record is created automatically. Initial
+outbound contact and additional messaging formats belong to the next inbox stage.
+
+Campaign attribution uses Meta's exact reply-to message ID, sender and recipient;
+a matching phone alone is not attributed. Preserved reply context resolves late
+delivery callbacks without guessing, sending again or changing permission records.
+Apply `20261018110212_whatsapp_inbox_crm_links.sql` after the ownership migration,
+then deploy `meta-integrations`, `whatsapp-webhook` and the primary app together.
+This CRM-link build is local and tested; it has not been released. Its focused
+checks are the existing `scripts/meta-integrations.test.mjs` and
+`src/components/marketing/__tests__/WhatsAppCrmLink.test.jsx`.
+
 Agency administrators connect their own sender in Settings → Integrations →
 WhatsApp using Meta Embedded Signup. A new number can be activated with the
 administrator's six-digit registration PIN, which is sent to Meta without being
