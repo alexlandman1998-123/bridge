@@ -1708,6 +1708,38 @@ test('ambiguous audience phones require an explicit CRM record and one phone is 
 })
 
 const campaignRoute=(db,route,extra={})=>request(autoHandler(db),'meta_routes_save',{route:{formMappingId:id(1100),campaignId:'500',campaignName:'Seller campaign',leadType:'seller',agentId:agentB,branchId:null,...route},...extra})
+test('active Owners can route Recruitment and run its automations while tenant and membership guards remain enforced',async()=>{
+ const db=await audienceFixture()
+ try{
+  const signatures=['private.whatsapp_recruitment_manager(uuid,uuid)','public.whatsapp_automation_rules_request(uuid,uuid,text,uuid,integer,jsonb)','public.whatsapp_automation_prepare(uuid,uuid,boolean,text,jsonb)']
+  const acl=()=>db.query('select oid::regprocedure::text signature,proowner,proacl,prosecdef,proconfig from pg_proc where oid=any($1::regprocedure[]) order by oid',[signatures])
+  const before=(await acl()).rows
+  await db.query("update organisation_users set role='owner' where organisation_id=$1 and user_id=$2",[org,user])
+  await assert.rejects(campaignRoute(db,{leadType:'recruitment',agentId:null}),/Recruitment management/)
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261018165200_meta_whatsapp_recruitment_owner_access.sql',import.meta.url),'utf8'))
+  assert.deepEqual((await acl()).rows,before)
+  const allowed=async(actor=user,target=org)=>(await db.query('select private.whatsapp_recruitment_manager($1,$2) ok',[target,actor])).rows[0].ok
+  assert.equal(await allowed(),true)
+  assert.equal(await allowed(user,other),false)
+  assert.equal(await allowed(agentA),false)
+  assert.equal(await allowed(outsider),false)
+  await campaignRoute(db,{leadType:'recruitment',agentId:null})
+  const route=await sqlClient(db).rpc('meta_form_routes_save',{p_org:org,p_actor:user,p_connection:connection,p_forms:[{id:'400',name:'Recruitment review',leadType:'recruitment'}]})
+  assert.equal(route.error,null)
+  await autoRule(db,{kind:'recruitment',trigger:'stage_changed',stage:'interview',action:'task',assignAgentId:null,taskTitle:'Review recruitment enquiry'})
+  await db.query("update recruitment_leads set status='interview' where id=$1",[recruit])
+  await autoWorker(db,async()=>{throw Error('Task automation must not contact Meta')})
+  assert.equal((await db.query('select count(*)::integer total from tasks')).rows[0].total,1)
+  assert.equal((await autoRuns(db))[0].status,'task_created')
+  await db.query("update recruitment_leads set status='new' where id=$1",[recruit])
+  await db.query("update recruitment_leads set status='interview' where id=$1",[recruit])
+  await db.query("update organisation_users set status='inactive' where organisation_id=$1 and user_id=$2",[org,user])
+  assert.equal(await allowed(),false)
+  await autoWorker(db,async()=>{throw Error('Inactive owners must not send')})
+  assert.equal((await db.query('select count(*)::integer total from tasks')).rows[0].total,1)
+  assert.equal((await autoRuns(db)).at(-1).status,'skipped')
+ }finally{await db.close()}
+})
 async function metaIngest(db,leadgen,campaignId='500',extra={}){
  const result=await rpcRole(db,'service_role',user).rpc('meta_ingest_lead_ad_routed',{p_leadgen_id:leadgen,p_organisation_id:org,p_page_id:'300',p_form_id:'400',p_full_name:'Fictional Meta Enquiry',p_email:`${leadgen}@example.com`,p_phone:'27820007777',p_payload:{id:leadgen,form_id:'400',campaign_id:campaignId},p_ingestion_source:'live',p_meta_created_at:new Date().toISOString(),p_import_id:null,...extra})
  if(result.error)throw result.error;return result.data
