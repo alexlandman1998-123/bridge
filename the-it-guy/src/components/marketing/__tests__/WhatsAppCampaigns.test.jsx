@@ -2,7 +2,7 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { CreateWhatsAppCampaign, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
+import { CreateWhatsAppCampaign, WhatsAppCampaignDetail, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
 const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one' }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org } } }) }))
 vi.mock('../../../services/whatsappCampaignService', () => ({ whatsappCampaignRequest: mocks.request }))
@@ -65,9 +65,65 @@ it('completes the four steps, checks each field and requires confirmation before
   fireEvent.click(send)
   await waitFor(() => expect(back).toHaveBeenCalledTimes(1))
   expect(mocks.request.mock.calls.filter((c) => c[1] === 'prepare')).toHaveLength(1)
+  expect(mocks.request.mock.calls.some((c) => c[1] === 'dispatch')).toBe(false)
   const saved = mocks.request.mock.calls.find((c) => c[1] === 'save')[2].campaign
   expect(saved.contact_ids).toEqual(['contact-one'])
   expect(saved.parameter_values['body.1']).toEqual({ source: 'first_name', text: '' })
+})
+
+it('saves the scheduled time, rejects past times and binds confirmation to the final schedule', async () => {
+  const campaign = { id: 'draft-one', revision: 1, status: 'draft', name: 'Scheduled homes', sender_id: 'sender-one', template, parameter_values: { 'body.1': { source: 'first_name' } }, contact_ids: ['contact-one'], scheduled_at: new Date(Date.now() + 86400000).toISOString() }
+  const original = mocks.request.getMockImplementation()
+  mocks.request.mockImplementation(async (org, action, data) => action === 'workspace' ? { ...emptyWorkspace, campaigns: [campaign] } : original(org, action, data))
+  const back = vi.fn()
+  const view = render(<CreateWhatsAppCampaign campaignId="draft-one" onBack={back} />)
+  await screen.findByLabelText('Campaign name')
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  await screen.findByRole('option', { name: /new_listing/ })
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  expect(screen.getByLabelText('Delivery timing').value).toBe('later')
+  const time = screen.getByLabelText(/Scheduled sending time/)
+  fireEvent.change(time, { target: { value: '2020-01-01T10:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }))
+  expect(screen.getByRole('alert').textContent).toContain('future sending time')
+  expect(mocks.request.mock.calls.some((c) => c[1] === 'preflight')).toBe(false)
+  fireEvent.change(time, { target: { value: '2099-01-01T10:00' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }))
+  await screen.findByRole('button', { name: 'Schedule for 1 recipients' })
+  fireEvent.click(screen.getByRole('checkbox', { name: /reviewed the message/ }))
+  fireEvent.change(time, { target: { value: '2099-01-01T11:00' } })
+  expect(screen.queryByRole('button', { name: 'Schedule for 1 recipients' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }))
+  const schedule = await screen.findByRole('button', { name: 'Schedule for 1 recipients' })
+  expect(schedule.disabled).toBe(true)
+  fireEvent.click(screen.getByRole('checkbox', { name: /reviewed the message/ }))
+  fireEvent.click(schedule)
+  await waitFor(() => expect(back).toHaveBeenCalledTimes(1))
+  view.unmount()
+  const saves = mocks.request.mock.calls.filter((c) => c[1] === 'save')
+  expect(saves.at(-1)[2].campaign.scheduled_at).toBe(new Date('2099-01-01T11:00').toISOString())
+  expect(mocks.request.mock.calls.filter((c) => c[1] === 'prepare')).toHaveLength(1)
+  expect(mocks.request.mock.calls.some((c) => c[1] === 'dispatch')).toBe(false)
+})
+
+it('shows paused delivery and resumes or cancels without a browser sending loop', async () => {
+  let state = 'paused'
+  mocks.request.mockImplementation(async (_org, action) => {
+    if (action === 'detail') return { campaign: { name: 'Queued homes', display_status: state, delivery_state: state, delivery_error: state === 'paused' ? 'The template is no longer approved.' : null }, recipients: [{ id: 'r1', full_name: 'Alex', phone: '27821234567', status: 'queued' }] }
+    if (action === 'resume') { state = 'queued'; return {} }
+    if (action === 'cancel') { state = 'cancelled'; return {} }
+    throw new Error(`Unexpected ${action}`)
+  })
+  render(<WhatsAppCampaignDetail campaignId="queued-one" onBack={vi.fn()} />)
+  await screen.findByText('Delivery is paused.', { exact: false })
+  expect(screen.getByRole('alert').textContent).toContain('no longer approved')
+  fireEvent.click(screen.getByRole('button', { name: 'Resume sending' }))
+  await screen.findByText(/Sending continues in the background/)
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel remaining messages' }))
+  await screen.findByText('cancelled')
+  expect(screen.queryByRole('button', { name: 'Resume sending' })).toBeNull()
+  expect(mocks.request.mock.calls.some((c) => c[1] === 'dispatch')).toBe(false)
 })
 it('resumes saved draft fields and keeps incomplete draft saving available', async () => {
   const campaign = { id: 'draft-one', revision: 2, status: 'draft', name: 'Saved homes', sender_id: 'sender-one', template, parameter_values: { 'body.1': { text: 'Alex' } }, contact_ids: [] }

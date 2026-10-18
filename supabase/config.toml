@@ -343,6 +343,12 @@ verify_jwt = true
 import_map = "./functions/whatsapp-campaigns/deno.json"
 entrypoint = "./functions/whatsapp-campaigns/index.ts"
 
+[functions.whatsapp-campaign-worker]
+enabled = true
+# The worker validates a server credential itself, including opaque secret keys.
+verify_jwt = false
+entrypoint = "./functions/whatsapp-campaign-worker/index.ts"
+
 [functions.meta-integrations]
 enabled = true
 verify_jwt = false

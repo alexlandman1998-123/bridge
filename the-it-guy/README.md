@@ -2118,18 +2118,49 @@ message webhooks, and set `WHATSAPP_GRAPH_VERSION` if overriding the existing
 integration's v23.0 default. Production sender configuration remains in the
 existing administrative integration; the campaign UI never collects tokens.
 
-Sending runs in resumable batches of five while the campaign page remains open.
-Closing it leaves unclaimed recipients queued; use **Send remaining** in results.
-Each recipient is atomically claimed before the Meta request. An interrupted or
-ambiguous attempt is marked unconfirmed and is never automatically resent.
-Approval is rechecked before each batch and consent before each individual claim.
-Delivery/read callbacks are monotonic and correlated using message IDs or
-`biz_opaque_callback_data`; read counts include only actual read callbacks.
-Signed STOP, unsubscribe and opt-out replies revoke permission. Other replies
-are not presented as a shared inbox. Scheduling and shared reply handling are
-outside this version. Read receipts can be unavailable, and acceptance by Meta
-is not delivery. A real sender/template/recipient smoke test is still required
-after an explicitly approved deployment.
+Campaigns now use a durable server queue. In the final Review step, choose
+**Send now** or **Schedule for later**; the date/time field states the browser's
+time zone and is stored as a UTC instant. Changing the time invalidates readiness
+and confirmation. Confirmation snapshots the audience and approved message and
+atomically creates a delivery job. Once confirmation succeeds, the browser can
+close. Results show scheduled, sending, paused and cancelled states, with pause,
+resume and cancel controls. Messages already in progress may finish after a pause
+or cancellation. Historical unfinished campaigns require an explicit **Resume**;
+the migration does not enqueue them automatically.
+
+The `whatsapp-campaign-worker` checks current sender identity and template approval
+on every invocation and consent/phone immediately before each recipient claim.
+It leases up to three campaigns, sends up to 50 recipients per campaign in groups
+of five within a bounded time budget, and leaves remaining recipients for another
+minute tick. Leases expire after three minutes if a worker stops. An interrupted
+or ambiguous recipient attempt is never returned to the queue; it appears as
+unconfirmed and must be investigated before sending another campaign. Delivery
+and read callbacks remain monotonic and correlated using message IDs or
+`biz_opaque_callback_data`. STOP, unsubscribe and opt-out replies revoke permission.
+Acceptance by Meta is not delivery, and read receipts may be unavailable.
+
+For an approved rollout, apply
+`20261018082522_whatsapp_campaign_background_delivery.sql`, deploy the
+`whatsapp-campaign-worker` and updated `whatsapp-campaigns` functions, and deploy
+the primary app. The worker authenticates server credentials itself; browser user
+JWTs and public keys cannot invoke it. Reuse Vault secrets `arch9_project_url`
+and `arch9_service_role_key`, with `pg_cron` and `pg_net` enabled. The migration
+registers `whatsapp-campaign-worker` once per minute when pg_cron is available;
+otherwise it emits a setup notice. Opaque service keys use the `apikey` header;
+legacy service JWTs also use Bearer. No secrets belong in a migration or browser.
+
+Release verification must confirm that the cron job exists and its runs reach the
+worker successfully, then check a consented test recipient in **Arch9 Meta Review**
+with the campaign page closed. Verify scheduled sending, opt-out suppression and
+actual provider callbacks. The local checks use isolated SQL and a fake Meta
+provider and do not prove live scheduler or delivery configuration. No real
+messages, migrations or deployments are performed by those checks.
+
+To halt delivery during recovery, unschedule `whatsapp-campaign-worker` and pause
+active campaigns using their results controls. Already claimed requests may
+finish. Keep recipient attempts and provider IDs intact; never reset processing,
+sent or unconfirmed recipients to queued. Restore the worker and browser endpoint
+as a compatible pair before allowing new confirmations.
 
 Focused local verification:
 

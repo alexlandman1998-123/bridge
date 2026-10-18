@@ -1,7 +1,8 @@
+import { campaignResult as result, createCampaignDelivery } from '../_shared/whatsappCampaignDelivery.js'
+
 import { buildTemplateMessage, canonicalJson, clean, MAX_CAMPAIGN_RECIPIENTS, normalizePhone, templateIdentity } from '../_shared/whatsappCampaign.js'
 
 const uuid = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean(v))
-const result = async (query) => { const { data, error } = await query; if (error) throw new Error(error.message); return data }
 async function allRows(query) {
   const rows = []
   for (let offset = 0; ; offset += 500) {
@@ -13,24 +14,10 @@ async function allRows(query) {
 const safeSenderFields = 'id,organisation_id,business_display_name,display_phone_number,connection_status,verification_status,waba_id,phone_number_id'
 
 export function createCampaignHandler({ db, authorize, meta }) {
-  async function sender(org, id) {
+  const { sender: loadSender, templates } = createCampaignDelivery({ db, meta })
+  const sender = async (org, id) => {
     if (!uuid(id)) throw new Error('Choose a connected WhatsApp sender.')
-    const row = await result(db.from('organisation_communication_channels').select('*').eq('organisation_id', org).eq('id', id).eq('provider', 'meta').eq('channel_type', 'whatsapp').eq('connection_status', 'connected').single())
-    if (!(row.meta_access_token || row.token_ciphertext) || !/^\d+$/.test(row.waba_id) || !/^\d+$/.test(row.phone_number_id)) throw new Error('The sender needs its Meta access token, WhatsApp Business Account ID and Phone Number ID configured by an administrator.')
-    return row
-  }
-  async function templates(connection, name = '') {
-    const rows = []
-    let after = ''
-    for (let page = 0; page < 100; page++) {
-      const query = new URLSearchParams({ fields: 'id,name,status,category,language,components,parameter_format', limit: '100', ...(after ? { after } : {}), ...(name ? { name } : {}) })
-      const body = await meta(connection, `${connection.waba_id}/message_templates?${query}`)
-      rows.push(...(body.data || []))
-      if (!body.paging?.next) return rows
-      after = body.paging.cursors?.after
-      if (!after) throw new Error('Meta returned incomplete template pagination. Please try again.')
-    }
-    throw new Error('Too many templates to load. Please narrow the selection in WhatsApp Manager.')
+    return loadSender(org, id)
   }
   async function campaign(org, id) {
     if (!uuid(id)) throw new Error('Choose a campaign.')
@@ -92,7 +79,9 @@ export function createCampaignHandler({ db, authorize, meta }) {
         if (draft.sender_id) await sender(org, draft.sender_id)
         const ids = [...new Set(draft.contact_ids || [])]
         if (ids.length > MAX_CAMPAIGN_RECIPIENTS || ids.some((id) => !uuid(id))) throw new Error(`Select up to ${MAX_CAMPAIGN_RECIPIENTS} contacts.`)
-        const fields = { name, sender_id: draft.sender_id || null, template: draft.template || {}, parameter_values: draft.parameter_values || {}, contact_ids: ids, updated_at: new Date().toISOString() }
+        const scheduledAt = draft.scheduled_at ? new Date(draft.scheduled_at) : null
+        if (scheduledAt && (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now())) throw new Error('Choose a future sending time.')
+        const fields = { scheduled_at: scheduledAt?.toISOString() || null, name, sender_id: draft.sender_id || null, template: draft.template || {}, parameter_values: draft.parameter_values || {}, contact_ids: ids, updated_at: new Date().toISOString() }
         if (draft.id) {
           if (!uuid(draft.id) || !Number.isInteger(draft.revision)) throw new Error('Reload the draft before saving.')
           return { campaign: await result(db.from('whatsapp_campaigns').update({ ...fields, revision: draft.revision + 1 }).eq('organisation_id', org).eq('id', draft.id).eq('status', 'draft').eq('revision', draft.revision).select().single()) }
@@ -102,6 +91,7 @@ export function createCampaignHandler({ db, authorize, meta }) {
         const existing = await result(db.from('whatsapp_campaigns').select('*').eq('organisation_id', org).eq('id', draft.client_id).maybeSingle())
         if (existing) {
           const savedFields = Object.fromEntries(Object.keys(fields).filter((key) => key !== 'updated_at').map((key) => [key, existing[key]]))
+          if (savedFields.scheduled_at) savedFields.scheduled_at = new Date(savedFields.scheduled_at).toISOString()
           const requestedFields = { ...fields }; delete requestedFields.updated_at
           if (existing.status !== 'draft' || canonicalJson(savedFields) !== canonicalJson(requestedFields)) throw new Error('This draft was already saved with different details. Reopen it from the campaign list before making further changes.')
           return { campaign: existing }
@@ -112,6 +102,7 @@ export function createCampaignHandler({ db, authorize, meta }) {
         const row = await campaign(org, payload.campaignId)
         if (row.status !== 'draft') throw new Error('This campaign has already started.')
         if (payload.revision !== row.revision) throw new Error('This draft changed. Reopen it before reviewing and sending.')
+        if (row.scheduled_at && new Date(row.scheduled_at).getTime() <= Date.now()) throw new Error('Choose a future sending time.')
         const validated = await validateCampaign(org, row)
         return { recipients: validated.messages.length, revision: row.revision }
       }
@@ -120,41 +111,24 @@ export function createCampaignHandler({ db, authorize, meta }) {
         if (row.status !== 'draft') return { campaignId: row.id }
         if (payload.revision !== row.revision) throw new Error('This draft changed. Review it again before sending.')
         const { template, messages } = await validateCampaign(org, row)
-        await result(db.rpc('whatsapp_campaign_prepare', { p_id: row.id, p_org: org, p_revision: row.revision, p_template: template, p_messages: messages }))
+        await result(db.rpc('whatsapp_campaign_enqueue', { p_id: row.id, p_org: org, p_revision: row.revision, p_template: template, p_messages: messages }))
         return { campaignId: row.id }
       }
-      case 'dispatch': {
+      // Older clients may still ask to dispatch. They now enqueue a legacy
+      // unfinished campaign; only the service worker can send its messages.
+      case 'dispatch':
+      case 'resume':
+      case 'pause':
+      case 'cancel': {
         const row = await campaign(org, payload.campaignId)
-        if (row.status !== 'sending') throw new Error('Review and confirm the campaign before sending.')
-        const connection = await sender(org, row.sender_id)
-        if (connection.phone_number_id !== row.phone_number_id || connection.waba_id !== row.waba_id) throw new Error('The sender changed. Remaining messages have been paused.')
-        const available = await templates(connection, row.template.name)
-        const current = available.find((t) => t.id === row.template.id && t.language === row.template.language)
-        if (current?.status !== 'APPROVED' || templateIdentity(current) !== templateIdentity(row.template)) throw new Error('The template changed or is no longer approved. Remaining messages have been paused.')
-        const queued = await result(db.from('whatsapp_campaign_recipients').select('id').eq('organisation_id', org).eq('campaign_id', row.id).eq('status', 'queued').order('id').limit(5))
-        await Promise.all(queued.map(async ({ id }) => {
-          const claimed = await result(db.rpc('whatsapp_campaign_claim', { p_id: id, p_org: org }))
-          const recipient = claimed?.[0]
-          if (!recipient) return
-          let response
-          try {
-            response = await meta(connection, `${connection.phone_number_id}/messages`, { ...recipient.payload, biz_opaque_callback_data: `arch9-wa:${recipient.id}` })
-          } catch (error) {
-            await result(db.from('whatsapp_campaign_recipients').update({ status: error.definitive ? 'failed' : 'unknown', error_message: error.definitive ? error.message : 'Meta response was not confirmed. Check delivery before sending another campaign to this recipient.', ...(error.definitive ? { failed_at: new Date().toISOString() } : {}), updated_at: new Date().toISOString() }).eq('id', recipient.id).eq('status', 'processing'))
-            return
-          }
-          const messageId = response.messages?.[0]?.id
-          if (!messageId) {
-            await result(db.from('whatsapp_campaign_recipients').update({ status: 'unknown', error_message: 'Meta returned no message ID. Check delivery before sending again.' }).eq('id', recipient.id).eq('status', 'processing'))
-            return
-          }
-          await result(db.rpc('whatsapp_campaign_status', { p_message_id: messageId, p_callback: `arch9-wa:${recipient.id}`, p_phone_id: connection.phone_number_id, p_waba_id: connection.waba_id, p_status: 'sent', p_at: new Date().toISOString(), p_error: null }))
-        }))
+        await result(db.rpc('whatsapp_campaign_job_control', { p_id: row.id, p_org: org, p_action: payload.action === 'dispatch' ? 'resume' : payload.action }))
+        // Stop cached clients from polling their old synchronous send loop.
+        if (payload.action === 'dispatch') throw new Error('Sending now runs in the background. Reopen campaign results to see progress.')
         return { campaign: await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()) }
       }
       case 'detail': {
         const row = await campaign(org, payload.campaignId)
-        return { campaign: row, recipients: await allRows(() => db.from('whatsapp_campaign_recipients').select('id,full_name,phone,status,error_message,attempted_at,sent_at,delivered_at,read_at').eq('organisation_id', org).eq('campaign_id', row.id).order('id')) }
+        return { campaign: await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()), recipients: await allRows(() => db.from('whatsapp_campaign_recipients').select('id,full_name,phone,status,error_message,attempted_at,sent_at,delivered_at,read_at').eq('organisation_id', org).eq('campaign_id', row.id).order('id')) }
       }
       default: throw new Error('Unknown WhatsApp campaign action.')
     }
