@@ -60,6 +60,18 @@ it('saves the selected account, listing photo and exact caption in the reviewed 
   expect(mocks.request.mock.calls.filter(call => call[1] === 'preview_instagram_post')).toHaveLength(2)
 })
 
+it('previews a saved gallery viewing link and sends only the reviewed post ID on confirmation', async () => {
+  const url = 'https://example.supabase.co/storage/v1/object/sign/documents/private-listings/listing-one/gallery/photo.jpg?token=temporary-test-viewer'
+  mocks.photos = [{ ...photo, url }]
+  render(view())
+  await preview()
+  expect(screen.getByAltText('Reviewed listing photo for Instagram').src).toBe(url)
+  expect(mocks.request.mock.calls.some(call => call[1] === 'publish_instagram_post')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Publish to Instagram' }))
+  await screen.findByText('Meta accepted this Instagram post.')
+  expect(mocks.request).toHaveBeenCalledWith('org-one', 'publish_instagram_post', { postId: post.id })
+})
+
 it('shows processing and separates a status check from finishing the publish', async () => {
   mocks.publish = { ...post, status: 'publishing', provider_container_id: 'container-one', publish_requested_at: null }
   render(view()); await preview()

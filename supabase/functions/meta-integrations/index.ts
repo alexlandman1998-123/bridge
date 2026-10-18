@@ -54,7 +54,7 @@ Deno.serve(async req=>{
         if(listing.error||!listing.data) return null;
         const publication=await actor.userDb.from('listing_publication_data').select('title,description,asking_price,suburb,updated_at').eq('listing_id',id).maybeSingle();
         if(publication.error) throw new Error('Saved public listing details could not be loaded.');
-        const media=await actor.userDb.from('listing_media').select('id,media_type,file_url,sort_order,is_cover').eq('listing_id',id).eq('media_type','image').order('is_cover',{ascending:false}).order('sort_order').limit(50);
+        const media=await actor.userDb.from('listing_media').select('id,listing_id,media_type,file_url,storage_bucket,storage_path,sort_order,is_cover').eq('listing_id',id).eq('media_type','image').order('is_cover',{ascending:false}).order('sort_order').limit(50);
         if(media.error) throw new Error('Listing photos could not be loaded.');
         const saved=publication.data;
         return {listing:{...listing.data,...(saved?{title:saved.title,description:saved.description,asking_price:saved.asking_price,suburb:saved.suburb}:{}),updated_at:`${listing.data.updated_at}:${saved?.updated_at||''}`},media:media.data||[]};

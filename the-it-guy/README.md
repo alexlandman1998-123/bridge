@@ -2060,18 +2060,27 @@ The schema includes:
 1. `sql/schema.sql`
 2. `sql/seed.sql`
 
-## Instagram listing posts (stage 6, built locally, unreleased)
+## Instagram listing posts
 
 Listing → Marketing now includes Instagram beside Facebook. Staff who can access
 and publish the reviewed listing select a professional account linked to an agency
-Facebook Page, a saved public listing photo, and a caption. They review the exact
+Facebook Page, a saved gallery or public listing photo, and a caption. They review the exact
 account, photo and caption before publishing. Recent results retain the account,
 processing/published/failed/unconfirmed state and verified Instagram permalink.
 Drafts and previews clear on user, role, agency and listing changes.
 
 This first version publishes one JPEG photo to the feed. Photo bytes are fetched
-only from the configured public `listing-media` bucket without redirects, capped
-at 8 MB, checked for JPEG dimensions/aspect ratio, and fingerprinted. Captions are
+only from configured Supabase Storage without redirects, capped at 8 MB, checked
+for JPEG dimensions/aspect ratio, and fingerprinted. Existing public
+`listing-media` URLs remain supported. Gallery uploads in the private `documents`
+bucket use the saved object identity under `private-listings/<listing>/gallery/`;
+old viewing links are refreshed through the caller's storage permissions.
+One-hour signed links are returned for viewing and passed to Meta only after
+explicit Publish. Saved snapshots retain a canonical object URL without a signed
+token. The original photo stays private; no public copy, bucket-policy change or
+service-role storage signing is used. Missing or changed gallery photos and
+revoked storage access block publishing. Deploy this gallery handoff with the
+Meta integration function and frontend, then run a controlled live test. Captions are
 limited to 2,200 Unicode characters including any public listing link. Private
 addresses and notes are never used in generated captions. A changed listing,
 photo, connection or linked account requires a new reviewed preview. Reels,
@@ -2093,7 +2102,7 @@ publish. Lost responses or abandoned claims remain unconfirmed and never repeat
 provider writes. A `PUBLISHED` container can confirm a lost publish response
 without guessing a post from its caption; a missing permalink can be retrieved
 later without publishing again. Instagram and Facebook job IDs/history remain
-separate. Tokens and connection ciphertext never appear in preview/history data.
+separate. Meta access tokens and connection ciphertext never appear in preview/history data.
 
 Release migration `20261018140502_instagram_listing_posts.sql`, the
 `meta-integrations` function and the primary frontend with the combined package.

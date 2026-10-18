@@ -7,7 +7,7 @@ import { createCampaignDelivery } from '../../supabase/functions/_shared/whatsap
 import { createCampaignHandler } from '../../supabase/functions/whatsapp-campaigns/handler.js'
 import { createMetaIntegrationHandler } from '../../supabase/functions/meta-integrations/handler.js'
 import { decodeInboxAttachment,readMetaIntegrationPayload } from '../../supabase/functions/_shared/whatsappInboxMessaging.js'
-import { instagramPermalink, instagramSnapshot, inspectInstagramPhoto, jpegDimensions } from '../../supabase/functions/_shared/instagramListing.js'
+import { instagramPermalink, instagramPhotos, instagramSnapshot, inspectInstagramPhoto, jpegDimensions, signInstagramPhotos } from '../../supabase/functions/_shared/instagramListing.js'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const org=id(1), other=id(2), user=id(3), sender=id(4), foreign=id(5), listingId=id(6), connection=id(7)
@@ -15,13 +15,15 @@ const time='2026-10-17T17:00:00.000Z', origin='https://example.supabase.co'
 const listing={id:listingId,organisation_id:org,title:'Family home',description:'Public description',asking_price:1000000,suburb:'Claremont',city:'Cape Town',listing_status:'active',is_active:true,updated_at:time,notes:'PRIVATE NOTE',street_address:'PRIVATE ADDRESS'}
 
 const instagramPhoto={id:id(900),media_type:'image',file_url:`${origin}/storage/v1/object/public/listing-media/cover.jpg`,is_cover:true}
+const privateInstagramPhoto={...instagramPhoto,listing_id:listingId,storage_bucket:'documents',storage_path:`private-listings/${listingId}/gallery/cover.jpg`,file_url:`${origin}/storage/v1/object/sign/documents/private-listings/${listingId}/gallery/cover.jpg?token=expired-test-viewer`}
 function jpeg(width=1200,height=800){return new Uint8Array([255,216,255,192,0,17,8,height>>8,height&255,width>>8,width&255,3,1,17,0,2,17,0,3,17,0,255,217])}
-async function instagramHarness(){
+async function instagramHarness({privateGallery=false}={}){
  const db=await fixture()
  await db.query("update meta_lead_ads_connections set granted_scopes=array['pages_manage_posts','instagram_basic','instagram_content_publish','pages_read_engagement'] where id=$1",[connection])
- const state={account:'500',containerStatus:'FINISHED',creates:0,publishes:0,hash:'photo-v1',captionStale:false,reviewBlocked:false,createLost:false,publishLost:false,linkLost:false,denied:false,calls:[]}
+ const state={account:'500',containerStatus:'FINISHED',creates:0,publishes:0,hash:'photo-v1',captionStale:false,reviewBlocked:false,createLost:false,publishLost:false,linkLost:false,denied:false,calls:[],media:[privateGallery?privateInstagramPhoto:instagramPhoto],signings:0}
  const handler=createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>state.denied?null:{userId:user,isAdmin:true},now:()=>new Date(),config:{storageOrigin:origin},decrypt:async()=> 'provider-secret',
-  loadListing:async(_actor,target,savedId)=>target===org&&savedId===listingId?{listing:{...listing,is_active:state.active!==false,updated_at:state.captionStale?'changed':time},media:[instagramPhoto]}:null,
+  loadListing:async(_actor,target,savedId)=>target===org&&savedId===listingId?{listing:{...listing,is_active:state.active!==false,updated_at:state.captionStale?'changed':time},media:state.media}:null,
+  photoLinks:async(_actor,photos)=>{if(state.signingDenied)throw Error('Listing photo access could not be verified');return photos.map(photo=>photo.private?{...photo,url:`${origin}/storage/v1/object/sign/documents/${photo.path}?token=test-viewer-${++state.signings}`}:photo)},
   assertPublishable:async()=>{if(state.reviewBlocked)throw Error('Review seller differences')},inspectPhoto:async()=>({width:1200,height:800,bytes:100,sha256:state.hash}),
   graph:async(_token,path,payload)=>{
    state.calls.push({path,payload})
@@ -36,9 +38,10 @@ async function instagramHarness(){
  return {db,state,call}
 }
 
-test('Instagram previews use only public listing photos, bounded JPEG images and 2,200-character captions',async()=>{
+test('Instagram previews use saved listing photos, bounded JPEG images and 2,200-character captions',async()=>{
  const snapshot=instagramSnapshot(listing,[instagramPhoto],{},origin)
  assert.ok(!JSON.stringify(snapshot).includes('PRIVATE'));assert.equal(snapshot.imageId,instagramPhoto.id)
+ assert.ok(instagramSnapshot({...listing,bridge_listing_public_url:'https://agency.example/listing'},[instagramPhoto],{},origin).caption.endsWith('https://agency.example/listing'))
  assert.equal(instagramSnapshot(listing,[instagramPhoto],{caption:'😀'.repeat(2200)},origin).caption.length,4400)
  assert.throws(()=>instagramSnapshot(listing,[instagramPhoto],{caption:'a'.repeat(2201)},origin),/2,200/)
  assert.throws(()=>instagramSnapshot(listing,[{...instagramPhoto,file_url:'https://other.example/cover.jpg'}],{},origin),/public listing photo/)
@@ -56,6 +59,62 @@ test('Instagram previews use only public listing photos, bounded JPEG images and
  await assert.rejects(inspectInstagramPhoto('https://127.0.0.1/private',origin,fetcher),/public listing photo/);assert.equal(fetches,1)
  await assert.rejects(inspectInstagramPhoto(instagramPhoto.file_url,origin,async()=>new Response(new Uint8Array(8*1024*1024+1))),/8 MB/)
  await assert.rejects(inspectInstagramPhoto(instagramPhoto.file_url,origin,async()=>new Response(jpeg(),{headers:{'content-length':String(9*1024*1024)}})),/8 MB/)
+})
+
+test('Instagram resolves only this listing gallery and refreshes private links through caller storage permissions',async()=>{
+ const [photo]=instagramPhotos([privateInstagramPhoto],origin,listingId)
+ assert.equal(photo.private,true);assert.equal(photo.url,`${origin}/storage/v1/object/authenticated/documents/${privateInstagramPhoto.storage_path}`)
+ assert.equal(instagramPhotos([{...privateInstagramPhoto,storage_bucket:null,storage_path:null}],origin,listingId)[0].url,photo.url)
+ assert.equal(instagramPhotos([{...instagramPhoto,storage_bucket:'listing-media',storage_path:'cover.jpg'}],origin,listingId).length,1)
+ for(const changed of [
+  {listing_id:other}, {storage_bucket:'seller-documents'}, {storage_path:`private-listings/${other}/gallery/cover.jpg`},
+  {storage_path:`private-listings/${listingId}/documents/identity.jpg`}, {storage_path:`private-listings/${listingId}/gallery/../identity.jpg`},
+  {storage_path:`private-listings/${listingId}/gallery/%2e%2e/identity.jpg`}, {storage_path:`private-listings/${listingId}/gallery//identity.jpg`},
+  {storage_path:`private-listings/${listingId}/gallery/invalid\nname.jpg`},
+ ])assert.equal(instagramPhotos([{...privateInstagramPhoto,...changed}],origin,listingId).length,0)
+ const calls=[]
+ const client={storage:{from(bucket){assert.equal(bucket,'documents');return {createSignedUrls:async(paths,ttl)=>{calls.push({paths,ttl});return {data:paths.map(path=>({path,signedUrl:`${origin}/storage/v1/object/sign/documents/${path}?token=temporary-test-viewer`}))}}}}}}
+ const linked=await signInstagramPhotos(client,[photo,photo,instagramPhotos([instagramPhoto],origin)[0]],origin)
+ assert.deepEqual(calls,[{paths:[photo.path],ttl:3600}]);assert.match(linked[0].url,/token=temporary-test-viewer/);assert.equal(linked[2].url,instagramPhoto.file_url)
+ const inspected=await inspectInstagramPhoto(linked[0].url,origin,async(_url,options)=>{assert.equal(options.redirect,'error');return new Response(jpeg())},photo)
+ assert.equal(inspected.width,1200)
+ const denied={storage:{from:()=>({createSignedUrls:async()=>({error:{message:'Denied private storage'}})})}}
+ await assert.rejects(signInstagramPhotos(denied,[photo],origin),/access could not be verified/)
+ const invalid={storage:{from:()=>({createSignedUrls:async()=>({data:[{path:photo.path,signedUrl:'https://evil.example/photo.jpg'}]})})}}
+ await assert.rejects(signInstagramPhotos(invalid,[photo],origin),/viewing link/)
+ for(const url of ['https://evil.example/photo.jpg',`${origin}/storage/v1/object/sign/documents/other.jpg?token=secret`,`${linked[0].url}&download=1`]){
+  await assert.rejects(inspectInstagramPhoto(url,origin,()=>{throw Error('Must never fetch')},photo),/viewing link/)
+ }
+ await assert.rejects(inspectInstagramPhoto(linked[0].url,origin,()=>{throw Error(`Network failure ${linked[0].url}`)},photo),error=>!error.message.includes('token='))
+})
+
+test('Instagram publishes a private gallery JPEG only after confirmation without persisting its signed links',async()=>{
+ const {db,state,call}=await instagramHarness({privateGallery:true})
+ try{
+  const options=await call('instagram_listing_options');assert.equal(options.photos.length,1);assert.match(options.photos[0].url,/token=test-viewer/)
+  const preview=(await call('preview_instagram_post',{imageUrl:'https://evil.example/private.jpg'})).post
+  assert.match(preview.snapshot_json.imageUrl,/token=test-viewer/);assert.equal(state.creates,0)
+  const saved=(await db.query('select snapshot_json from meta_listing_posts where id=$1',[preview.id])).rows[0].snapshot_json
+  assert.ok(!JSON.stringify(saved).includes('token='));assert.match(saved.imageUrl,/\/object\/authenticated\/documents\//)
+  const published=(await call('publish_instagram_post',{postId:preview.id})).post
+  assert.equal(published.status,'published');assert.equal(state.creates,1);assert.equal(state.publishes,1)
+  assert.match(state.calls.find(item=>item.path==='500/media').payload.image_url,/\/object\/sign\/documents\/.+\?token=test-viewer/)
+  assert.ok(!JSON.stringify((await db.query('select snapshot_json from meta_listing_posts where id=$1',[preview.id])).rows).includes('token='))
+  state.signingDenied=true
+  const history=await call('instagram_listing_posts');assert.equal(history.posts[0].status,'published');assert.equal(history.posts[0].snapshot_json.imageUrl,'')
+ }finally{await db.close()}
+})
+
+test('Instagram blocks revoked or replaced private gallery photos before any provider write',async()=>{
+ const {db,state,call}=await instagramHarness({privateGallery:true})
+ try{
+  const preview=(await call('preview_instagram_post')).post
+  state.signingDenied=true;await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/access could not be verified/)
+  state.signingDenied=false;state.media=[];await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/listing.*photo/)
+  state.media=[{...privateInstagramPhoto,storage_path:`private-listings/${listingId}/gallery/replacement.jpg`}]
+  await assert.rejects(call('publish_instagram_post',{postId:preview.id}),/changed/)
+  assert.equal(state.creates,0);assert.equal(state.publishes,0)
+ }finally{await db.close()}
 })
 
 test('Instagram discovers only permitted linked professional accounts without returning credentials',async()=>{
