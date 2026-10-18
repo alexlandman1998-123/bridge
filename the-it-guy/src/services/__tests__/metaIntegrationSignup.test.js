@@ -3,7 +3,26 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { launchWhatsAppSignup } from '../metaIntegrationService'
 const invoke=vi.hoisted(()=>vi.fn())
 vi.mock('../../lib/supabaseClient',()=>({invokeEdgeFunction:invoke}))
-afterEach(()=>vi.clearAllMocks())
+afterEach(()=>{vi.clearAllMocks();vi.restoreAllMocks()})
+it('uses the regular callback type required by the real Meta SDK',async()=>{
+  let callback
+  const controller=new AbortController()
+  const promise=launchWhatsAppSignup({sdk:{login:cb=>{
+    if(Object.prototype.toString.call(cb)!=='[object Function]') throw new TypeError('Expression is of type asyncfunction, not function')
+    callback=cb
+  }},intent:{state:'intent',configurationId:'config'},organisationId:'org',signal:controller.signal})
+  const rejected=expect(promise).rejects.toThrow('Meta did not authorize')
+  try { callback?.({});await rejected }
+  finally { controller.abort() }
+  expect(invoke).not.toHaveBeenCalled()
+})
+it('removes the signup listener and timeout when the SDK throws while opening login',async()=>{
+  const remove=vi.spyOn(window,'removeEventListener'),clear=vi.spyOn(window,'clearTimeout'),schedule=vi.spyOn(window,'setTimeout')
+  await expect(launchWhatsAppSignup({sdk:{login:()=>{throw new Error('Meta login could not open.')}},intent:{state:'intent'},organisationId:'org'})).rejects.toThrow('could not open')
+  expect(remove).toHaveBeenCalledWith('message',expect.any(Function))
+  expect(clear).toHaveBeenCalledWith(schedule.mock.results[0].value)
+  expect(invoke).not.toHaveBeenCalled()
+})
 it('exchanges the short-lived code immediately and only trusts exact Facebook origins',async()=>{
   let callback
   invoke.mockResolvedValue({data:{exchanged:true}})

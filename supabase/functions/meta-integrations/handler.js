@@ -115,6 +115,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       }
       if(action==='register_sender'&&row.onboarding_mode==='coexistence')throw new Error('Phone app numbers are already registered. Reconnect through Meta; do not register them again.')
       const token=await senderToken(row)
+      if(!text(token)) throw new Error('Reconnect this WhatsApp number before checking its connection.')
       if(action==='register_sender') {
         if(row.connection_status!=='pending'||!/^\d{6}$/.test(text(payload.pin))) throw new Error('Choose a pending sender and enter its six-digit registration PIN.')
         try { await graph(token,`${row.phone_number_id}/register`,{messaging_product:'whatsapp',pin:text(payload.pin)}) }

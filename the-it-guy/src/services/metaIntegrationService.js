@@ -63,15 +63,19 @@ export function launchWhatsAppSignup({ sdk, intent, organisationId, coexistence 
     signal?.addEventListener('abort', onAbort, { once: true })
     window.addEventListener('message', onMessage)
     if (signal?.aborted) { onAbort(); return }
-    sdk.login(async response => {
+    const onLogin = async response => {
       if (stopped) return
-      if (!response.authResponse?.code) { fail(new Error('Meta did not authorize the WhatsApp connection.')); return }
+      if (!response?.authResponse?.code) { fail(new Error('Meta did not authorize the WhatsApp connection.')); return }
       try {
         // Exchange immediately: Meta codes expire before the whole session does.
         await metaIntegrationRequest(organisationId, 'exchange_whatsapp_code', { state: intent.state, code: response.authResponse.code })
         exchanged = true
         void finish()
       } catch (error) { fail(error) }
-    }, { config_id: intent.configurationId, response_type: 'code', override_default_response_type: true, extras: { ...((intent.coexistence ?? coexistence) ? { featureType: 'whatsapp_business_app_onboarding' } : {}) } })
+    }
+    try {
+      // Meta's SDK accepts a regular callback, not an AsyncFunction.
+      sdk.login(response => { void onLogin(response) }, { config_id: intent.configurationId, response_type: 'code', override_default_response_type: true, extras: { ...((intent.coexistence ?? coexistence) ? { featureType: 'whatsapp_business_app_onboarding' } : {}) } })
+    } catch (error) { fail(error) }
   })
 }

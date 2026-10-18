@@ -348,6 +348,17 @@ test('real reply flow sends once under concurrency and never repeats an uncertai
   }finally{await db.close()}
 })
 
+test('a disconnected sender without credentials requests reconnection without calling Meta',async()=>{
+  const db=await fixture()
+  try{
+    await db.query("update organisation_communication_channels set connection_status='disconnected',meta_access_token='',token_ciphertext=null where id=$1",[sender])
+    let calls=0
+    const handler=createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>({userId:user,isAdmin:true}),graph:async()=>{calls++;throw Error('Unexpected provider call')}})
+    await assert.rejects(handler({organisationId:org,action:'health_sender',senderId:sender},'Bearer test'),/Reconnect this WhatsApp number/)
+    assert.equal(calls,0)
+  }finally{await db.close()}
+})
+
 test('phone activation is scoped to a permitted pending sender and never stores the PIN',async()=>{
   const db=await fixture()
   try{
