@@ -13,7 +13,7 @@ const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tas
 const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
 
-export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,downloadMedia,uploadMedia,inspectPhoto,now=()=>new Date()}) {
+export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,downloadMedia,uploadMedia,inspectPhoto=null,now=()=>new Date()}) {
   async function channel(org,id) {
     if(!isUuid(id)) throw new Error('Choose a WhatsApp sender.')
     const row=await result(db.from('organisation_communication_channels').select('*').eq('organisation_id',org).eq('id',id).eq('provider','meta').eq('channel_type','whatsapp').maybeSingle())
