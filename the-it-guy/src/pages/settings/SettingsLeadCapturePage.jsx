@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import MetaCampaignRoutes from '../../components/marketing/MetaCampaignRoutes'
 import MetaLeadFormRouting from '../../components/marketing/MetaLeadFormRouting'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
@@ -413,6 +414,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const [metaConnections, setMetaConnections] = useState([])
   const [metaPages, setMetaPages] = useState([])
   const [metaForms, setMetaForms] = useState([])
+  const [metaRouteRevision,setMetaRouteRevision] = useState(0)
   const [metaConnectionId, setMetaConnectionId] = useState('')
   const [metaImports, setMetaImports] = useState([])
   const [metaImportFormId, setMetaImportFormId] = useState('')
@@ -523,7 +525,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
     setSaving(true); setError('')
     try {
       await selectMetaLeadAdsForms(organisationId,metaConnectionId,metaForms.filter((form)=>form.selected).map((form)=>({id:form.id,name:form.name,branchId:form.branchId||null,assignedAgentId:form.assignedAgentId||null,leadType:form.leadType||'buyer'})))
-      setNotice('Facebook Lead Ads forms connected and subscribed to leadgen.'); await load()
+      setNotice('Facebook lead form routes saved. Unchecked forms no longer import leads.'); setMetaRouteRevision(old=>old+1); await load()
     } catch(metaError) { setError(metaError.message||'Meta forms could not be enabled.') } finally { setSaving(false) }
   }
   async function refreshMetaImports() {
@@ -912,7 +914,8 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
             </div>
             {metaConnections.map((connection) => <div key={connection.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><strong>{connection.page_name}</strong><p className="text-sm text-[#6b7d93]">{connection.connection_status}{connection.last_error_message ? ` · ${connection.last_error_message}` : ''}</p></div>)}
             {metaPages.length ? <div className="grid gap-2">{metaPages.map((page) => <SecondaryButton key={page.id} onClick={() => chooseMetaPage(page.id)} disabled={saving}>Use {page.name}</SecondaryButton>)}</div> : null}
-            {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <MetaLeadFormRouting key={form.id} form={form} agents={users.filter(isActiveAgentUser).map((user) => ({ id: getUserId(user), name: getUserDisplayName(user) }))} onChange={(patch) => setMetaForms((current) => current.map((item,i) => i === index ? { ...item, ...patch } : item))} />)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
+            {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <MetaLeadFormRouting key={form.id} form={form} agents={users.filter(isActiveAgentUser).map((user) => ({ id: getUserId(user), name: getUserDisplayName(user) }))} onChange={(patch) => setMetaForms((current) => current.map((item,i) => i === index ? { ...item, ...patch } : item))} />)}<PrimaryButton onClick={enableMetaForms} disabled={saving}>Save form routes</PrimaryButton></div> : null}
+            <MetaCampaignRoutes key={`${organisationId}:${metaRouteRevision}`} organisationId={organisationId}/>
             {metaForms.some((form) => form.selected) ? (
               <div className="mt-2 grid gap-4 rounded-[16px] border border-[#c9ddf3] bg-[#f7fbff] p-4">
                 <div>

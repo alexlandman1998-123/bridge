@@ -58,3 +58,18 @@ export async function hmacValid(raw:string, signature:string, secret:string) {
   let diff=0; for(let i=0;i<expected.length;i++) diff|=expected.charCodeAt(i)^signature.toLowerCase().charCodeAt(i);
   return diff===0;
 }
+
+export function assertMetaLeadContext(detail: RecordValue, leadgenId: string, formId: string) {
+  if (text(detail.id) !== leadgenId || (text(detail.form_id) && text(detail.form_id) !== formId)) throw new Error("Meta returned a lead for a different form or lead ID.");
+  if (text(detail.campaign_id) && !/^[0-9]{1,30}$/.test(text(detail.campaign_id))) throw new Error("Meta returned an invalid campaign ID.");
+}
+
+export async function loadMetaPageForms(pageId:string,token:string,request:(path:string,token:string)=>Promise<RecordValue>){
+  const rows:RecordValue[]=[];let after="";
+  for(let page=0;page<5;page++){
+    const response=await request(`${pageId}/leadgen_forms?fields=id,name,status&limit=200${after?`&after=${encodeURIComponent(after)}`:""}`,token);
+    rows.push(...(Array.isArray(response.data)?response.data as RecordValue[]:[]));const paging=response.paging as RecordValue|undefined;after=text((paging?.cursors as RecordValue)?.after);
+    if(!paging?.next)return rows;if(!after||after.length>1000)throw new Error("The full Page form list could not be verified.");
+  }
+  throw new Error("The full Page form list could not be verified. Reduce the active form library before saving routes.");
+}

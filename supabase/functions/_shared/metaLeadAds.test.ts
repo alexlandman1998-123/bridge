@@ -1,5 +1,5 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType } from "./metaLeadAds.ts";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
+import { loadMetaPageForms, assertMetaLeadContext, contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType } from "./metaLeadAds.ts";
 
 Deno.test("keeps Buyer, Seller and Recruitment destinations separate and rejects invalid results", () => {
   assertEquals(metaLeadType("recruitment"), "recruitment");
@@ -29,4 +29,28 @@ Deno.test("validates Meta sha256 signatures", async () => {
   const signature=`sha256=${[...bytes].map(v=>v.toString(16).padStart(2,"0")).join("")}`;
   assertEquals(await hmacValid(raw,signature,secret),true);
   assertEquals(await hmacValid(raw+"x",signature,secret),false);
+});
+
+Deno.test("campaign routing accepts only the retrieved lead and form context", () => {
+  assertMetaLeadContext({id:"100",form_id:"200",campaign_id:"300"},"100","200");
+  assertMetaLeadContext({id:"100"},"100","200");
+  assertThrows(()=>assertMetaLeadContext({id:"999",form_id:"200"},"100","200"));
+  assertThrows(()=>assertMetaLeadContext({id:"100",form_id:"999"},"100","200"));
+  assertThrows(()=>assertMetaLeadContext({id:"100",campaign_id:"seller campaign"},"100","200"));
+});
+
+Deno.test("Page form selection loads all pages without following provider URLs", async () => {
+  const paths:string[]=[];
+  const forms=await loadMetaPageForms("300","test-token",async(path,token)=>{
+    paths.push(path);assertEquals(token,"test-token");
+    return paths.length===1?{data:[{id:"400",name:"First"}],paging:{next:"https://untrusted.example/ignored",cursors:{after:"next & cursor"}}}:{data:[{id:"401",name:"Second"}]};
+  });
+  assertEquals(forms.map(form=>form.id),["400","401"]);
+  assertEquals(paths[1],"300/leadgen_forms?fields=id,name,status&limit=200&after=next%20%26%20cursor");
+});
+Deno.test("incomplete or unbounded Page form lists cannot be saved as partial selections", async () => {
+  await assertRejects(()=>loadMetaPageForms("300","test",async()=>({data:[],paging:{next:"next",cursors:{}}})));
+  let calls=0;
+  await assertRejects(()=>loadMetaPageForms("300","test",async()=>{calls++;return {data:[],paging:{next:"next",cursors:{after:String(calls)}}}}));
+  assertEquals(calls,5);
 });

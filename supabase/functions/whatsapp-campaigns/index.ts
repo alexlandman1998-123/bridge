@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
         if (error || !data.user) return null
         const userDb = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } })
         const member = await userDb.rpc('bridge_is_active_member', { target_org: org })
-        return !member.error && member.data === true ? data.user.id : null
+        return !member.error && member.data === true ? {userId:data.user.id,userDb} : null
       },
       meta: campaignMeta,
     })

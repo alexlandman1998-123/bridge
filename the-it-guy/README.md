@@ -2060,6 +2060,58 @@ The schema includes:
 1. `sql/schema.sql`
 2. `sql/seed.sql`
 
+## WhatsApp audiences and campaign routing (stage 5, built locally, unreleased)
+
+Marketing → WhatsApp → Audiences saves Buyer, Seller and Recruitment filters for
+areas, stages and agents. Areas match stored CRM values exactly, ignoring letter
+case: active Buyer requirements, seller listing locations and Recruitment areas.
+Closed records are excluded unless deliberately included. Previews show current
+matches, invalid/shared phones and existing WhatsApp campaign permission. No
+contact or permission is created by an audience. Email subscriptions, requirement
+matching consent and one-to-one permission do not supply campaign opt-in.
+
+The campaign builder previews a saved audience and reviews at most 500 selected
+phones. A shared phone needs a specific CRM record choice, including when search
+narrows the visible rows. Larger previews require narrowing rather than silently
+truncating. Saving freezes the reviewed record, phone, assignment and filter
+version. Readiness, transactional enqueue and final worker claims recheck them;
+changed CRM records, permission or archived/edited audience definitions block or
+skip unsent recipients. Audience edits never add recipients to an existing send.
+Management controls CRM audiences and campaign reply routes; Recruitment audiences,
+campaigns and recipient results retain its stricter management access. Browser
+clients cannot read the per-message CRM snapshots.
+
+Exact campaign replies use Meta's reply-to message ID, sending number, WABA and
+recipient phone. They can link the reviewed existing CRM record and route to its
+agent, a chosen active agent or the agency queue. Manual campaigns can route to
+an agent without inventing a CRM link. Existing manual handoffs and different CRM
+links are preserved. Changed or ambiguous routes show an agency-review notice in
+the inbox. Signed provider receipts reconcile replies arriving before their
+campaign's delivery callback. Duplicate callbacks never repeat routing. Bulk
+campaigns continue to require agency-owned numbers.
+
+Lead Capture settings keeps each form's default Buyer/Seller/Recruitment route.
+An exact Meta campaign ID can override its type and agent for that form; other
+campaigns use the default. Names are labels, not classifiers. The normal signed
+webhook and historical ingestion share the same resolver. Existing Meta lead IDs
+retain their first destination after routing edits. Historical imports retain
+suppression of new-lead messaging/notifications. Active imports must finish before
+route changes. Saving form choices is atomic and disables unchecked forms; an
+empty selection stops form intake while preserving the Page connection. The full
+Page form list is verified before saving, with bounded pagination and explicit
+failure rather than partial changes.
+
+Release `20261018133534_whatsapp_campaign_audiences_and_routing.sql`, then
+`meta-integrations`, `whatsapp-campaigns`, `whatsapp-campaign-worker`,
+`meta-lead-ads-admin`, `meta-lead-ads-webhook` and the primary frontend with the
+combined package. No live rules, provider settings or recipients were changed by
+this local implementation. Verify real campaign reply context, lead form routing
+and the worker on approved review data after the combined release.
+
+Focused checks use the existing `scripts/meta-integrations.test.mjs`,
+`scripts/whatsapp-campaigns.test.mjs`, `WhatsAppAudiences.test.jsx` and
+`supabase/functions/_shared/metaLeadAds.test.ts`.
+
 ## WhatsApp lead automations (built locally, unreleased)
 
 Marketing → WhatsApp → Automations lets agency management configure new-lead

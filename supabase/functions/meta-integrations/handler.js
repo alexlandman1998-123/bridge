@@ -3,6 +3,7 @@ import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicLis
 import { handleCrmLink } from './crmLinks.js'
 import { handleInboxMessaging } from './inboxMessaging.js'
 import { handleAutomations } from './automations.js'
+import { handleAudiences, handleCampaignRoutes } from './audiences.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
 const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,onboarding_mode,business_app_session,business_app_connected_at'
@@ -42,6 +43,9 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!isUuid(org)) throw new Error('Choose an organisation workspace.')
     const actor=await authorize(authorization,org)
     if(!actor?.userId) throw new Error('Active staff membership is required.')
+    if(['audience_list','audience_save','audience_preview','audience_archive','audience_options'].includes(action))return handleAudiences({db,actor,org,action,payload})
+    if(['meta_routes_list','meta_routes_save','meta_routes_disable'].includes(action))return handleCampaignRoutes({db,actor,org,action,payload})
+    if(action==='campaign_reply_status')return result(db.rpc('whatsapp_campaign_reply_status',{p_org:org,p_actor:actor.userId,p_conversation:payload.conversationId}))
     if(['automation_list','automation_save','automation_enable','automation_disable','automation_templates','automation_runs'].includes(action)) {
       return handleAutomations({db,actor,org,action,payload,channel,graph,senderToken})
     }

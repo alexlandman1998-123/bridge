@@ -333,11 +333,11 @@ test('embedded signup binds the owner on the server and an agent cannot claim an
 })
 
 test('agent numbers are excluded from campaign selection, provider delivery and database recipient claims',async()=>{
- const db=await teamFixture()
+ const db=await audienceFixture()
  try{
   const admin=staffHandler(db),campaign=id(30),person=id(31)
   await db.query("insert into whatsapp_campaigns(id,organisation_id,name,sender_id) values($1,$2,'Agency campaign',$3)",[campaign,org,sender])
-  await db.query("insert into whatsapp_campaign_jobs(campaign_id,status) values($1,'queued')",[campaign])
+  await db.query("insert into whatsapp_campaign_jobs(campaign_id,organisation_id,scheduled_for,status) values($1,$2,now(),'queued')",[campaign,org])
   await assert.rejects(own(admin,agentA),/Complete or cancel active campaigns/)
   await db.exec("update whatsapp_campaign_jobs set status='completed'")
   await own(admin,agentA)
@@ -345,8 +345,8 @@ test('agent numbers are excluded from campaign selection, provider delivery and 
   await assert.rejects(loadSender(org,sender),/agency number/)
   const campaigns=createCampaignHandler({db:sqlClient(db),authorize:async()=>agentA,meta:async()=>({})})
   assert.equal((await campaigns({organisationId:org,action:'workspace'},'Bearer test')).senders.length,0)
-  await db.query("insert into whatsapp_marketing_contacts(id,organisation_id,full_name,phone) values($1,$2,'Customer','27821234567')",[person,org])
-  const recipient=()=>db.query("insert into whatsapp_campaign_recipients(organisation_id,campaign_id,contact_id,full_name,phone,payload,consent_snapshot) values($1,$2,$3,'Customer','27821234567','{}','{}') returning id",[org,campaign,person])
+  await db.query("insert into whatsapp_marketing_contacts(id,organisation_id,full_name,phone) values($1,$2,'Customer','27821234566')",[person,org])
+  const recipient=()=>db.query("insert into whatsapp_campaign_recipients(organisation_id,campaign_id,contact_id,full_name,phone,payload,consent_snapshot) values($1,$2,$3,'Customer','27821234566','{}','{}') returning id",[org,campaign,person])
   await assert.rejects(recipient(),/Bulk campaigns require an agency number/)
   await own(admin,null,2)
   const rid=(await recipient()).rows[0].id
@@ -1355,5 +1355,303 @@ test('direct automation permission can be renewed without re-subscribing to bulk
   await autoWorker(db)
   assert.equal((await autoRuns(db)).filter(job=>job.status==='sent').length,1)
   assert.equal((await db.query("select consent_status from whatsapp_marketing_contacts where organisation_id=$1",[org])).rows[0].consent_status,'opted_out')
+ }finally{await db.close()}
+})
+
+// Stage 5 uses the real campaign queue, CRM scope and routed Meta ingestion.
+async function audienceFixture(){
+ const db=await autoFixture()
+ await db.exec(`drop table whatsapp_campaign_jobs;alter table contacts alter column contact_id set default gen_random_uuid();
+ alter table contacts add column email text,add column contact_type text,add column notes text,add column updated_at timestamptz default now();
+ alter table leads alter column lead_id set default gen_random_uuid();
+ alter table leads add column branch_id uuid,add column lead_type text,add column lead_direction text,add column source_channel text,add column priority text,add column sla_due_at timestamptz,add column source_reference_id text,add column source_received_at timestamptz,add column notes text,add column acknowledgement_status text;
+ alter table recruitment_leads alter column id set default gen_random_uuid();
+ alter table recruitment_leads add column email text,add column area text default '',add column meta_leadgen_id text unique,add column meta_source_json jsonb default '{}',add column intake_channel text;
+ create table organisation_branches(id uuid primary key,organisation_id uuid);
+ create table meta_lead_ads_forms(id uuid primary key default gen_random_uuid(),organisation_id uuid,connection_id uuid,page_id text,form_id text,form_name text,lead_type text,is_active boolean,branch_id uuid,assigned_agent_id uuid);
+ create table meta_lead_ads_imports(id uuid primary key,organisation_id uuid,connection_id uuid,form_mapping_id uuid,status text);
+ create table lead_requirements(requirement_id uuid primary key default gen_random_uuid(),organisation_id uuid,lead_id uuid,areas text[],suburbs text[],city text,status text default 'active');
+ create table lead_activities(organisation_id uuid,lead_id uuid,agent_id uuid,activity_type text,activity_note text,activity_date timestamptz,outcome text);`)
+ await db.exec(readFileSync(new URL('../../supabase/migrations/20261018082522_whatsapp_campaign_background_delivery.sql',import.meta.url),'utf8'))
+ const ingestion=readFileSync(new URL('../../supabase/migrations/20261018092935_meta_lead_ads_recruitment_routing.sql',import.meta.url),'utf8')
+ for(const signature of ['create or replace function public.meta_ingest_lead_ad(','create function public.meta_ingest_lead_ad_routed(']){
+  const start=ingestion.indexOf(signature),end=ingestion.indexOf('$$;',start)+3
+  await db.exec(ingestion.slice(start,end))
+ }
+ await db.exec(readFileSync(new URL('../../supabase/migrations/20261018133534_whatsapp_campaign_audiences_and_routing.sql',import.meta.url),'utf8'))
+ await db.query("insert into meta_lead_ads_forms values($1,$2,$3,'300','400','Property enquiry','buyer',true,null,null)",[id(1100),org,connection])
+ await db.query("insert into lead_requirements(organisation_id,lead_id,areas,status) values($1,$2,array['Claremont'],'active'),($1,$3,array['Durban'],'active')",[org,buyerA,buyerB])
+ await db.query("insert into whatsapp_marketing_contacts(id,organisation_id,full_name,phone,consent_status,consent_source,consent_at) values($1,$2,'Buyer Seller','27821234567','opted_in','Campaign agreement',now()-interval '1 day')",[id(1101),org])
+ return db
+}
+const audienceFilters=(extra={})=>({kind:'buyer',areas:['claremont'],stages:[],agentId:null,includeClosed:false,...extra})
+async function savedAudience(db,filters=audienceFilters()){
+ return (await request(autoHandler(db),'audience_save',{audience:{name:'Claremont buyers',filters}})).audience
+}
+const audiencePreview=(db,filters=audienceFilters(),extra={})=>request(autoHandler(db),'audience_preview',{filters,...extra})
+const planFor=(a,rows,extra={})=>({audienceId:a.id,version:a.version,mode:'record_owner',agentId:null,targets:rows.map(row=>({contactId:row.contact_id,recordId:row.record_id,kind:row.kind,state:row.state})),...extra})
+async function savedAudienceCampaign(db,a,rows,extra={}){
+ const fields={name:'Claremont campaign',sender_id:sender,template:autoTemplate,parameter_values:{'body.1':{source:'first_name'}},contact_ids:rows.map(row=>row.contact_id),scheduled_at:null,...extra}
+ const result=await sqlClient(db).rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:user,p_action:'save',p_id:id(1110),p_fields:fields,p_plan:planFor(a,rows)})
+ if(result.error)throw result.error
+ return result.data.campaign
+}
+
+test('saved WhatsApp audiences preview current CRM areas without creating or assuming campaign consent',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  assert.equal(a.filters.kind,'buyer');assert.equal(preview.matched,1);assert.equal(preview.eligiblePhones,1)
+  assert.equal(preview.rows[0].record_id,buyerA);assert.equal(preview.rows[0].owner_id,agentA)
+  assert.deepEqual(preview.rows[0].state,(await db.query('select private.whatsapp_automation_snapshot($1,$2) state',['buyer',buyerA])).rows[0].state)
+  await db.query("update whatsapp_marketing_contacts set consent_status='opted_out',opted_out_at=now()")
+  assert.equal((await audiencePreview(db)).eligiblePhones,0)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_marketing_contacts')).rows[0].n,1)
+  await assert.rejects(request(staffHandler(db,agentA),'audience_list'),/management/)
+ }finally{await db.close()}
+})
+
+test('audience campaign snapshots save atomically and stale CRM or audience changes block preparation',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  const campaign=await savedAudienceCampaign(db,a,preview.rows)
+  assert.equal(campaign.audience_plan.targets[0].recordId,buyerA)
+  const same=await savedAudienceCampaign(db,a,preview.rows);assert.equal(same.id,campaign.id)
+  await db.query("update leads set stage='Qualified' where lead_id=$1",[buyerA])
+  const validation=await sqlClient(db).rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:user,p_action:'validate',p_id:campaign.id})
+  assert.match(validation.error.message,/changed/)
+  const payload=[{contact_id:id(1101),payload:{to:'27821234567'}}]
+  await assert.rejects(db.query('select whatsapp_campaign_prepare($1,$2,1,$3,$4)',[campaign.id,org,autoTemplate,payload]),/changed/)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_campaign_recipients')).rows[0].n,0)
+ }finally{await db.close()}
+})
+
+async function queuedAudienceCampaign(db,a,rows){
+ const campaign=await savedAudienceCampaign(db,a,rows)
+ await db.query('select whatsapp_campaign_enqueue($1,$2,$3,$4,$5)',[campaign.id,org,campaign.revision,autoTemplate,rows.map(row=>({contact_id:row.contact_id,payload:{messaging_product:'whatsapp',to:row.phone,type:'template',template:{name:autoTemplate.name,language:{code:'en_US'}}}}))])
+ return campaign
+}
+async function claimedAudienceRecipient(db){
+ const lease=(await db.query('select * from whatsapp_campaign_jobs_claim(1)')).rows[0]
+ const recipient=(await db.query('select * from whatsapp_campaign_recipients order by id limit 1')).rows[0]
+ const rows=(await db.query('select * from whatsapp_campaign_claim($1,$2,$3)',[recipient.id,org,lease.lease_token])).rows
+ return {lease,recipient:rows[0],rows}
+}
+
+test('CRM target checks run again on the final bulk claim and a changed target never reaches Meta',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  await queuedAudienceCampaign(db,a,preview.rows)
+  await db.query("update lead_requirements set areas=array['Durban'] where lead_id=$1",[buyerA])
+  const claimed=await claimedAudienceRecipient(db)
+  assert.equal(claimed.rows.length,0)
+  const recipient=(await db.query('select * from whatsapp_campaign_recipients')).rows[0]
+  assert.equal(recipient.status,'skipped');assert.match(recipient.error_message,/CRM recipient|changed/)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_campaign_audience_plans')).rows[0].n,1)
+ }finally{await db.close()}
+})
+
+test('exact campaign replies link the reviewed CRM record and its agent once, including callbacks arriving late',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  await queuedAudienceCampaign(db,a,preview.rows)
+  const {recipient}=await claimedAudienceRecipient(db)
+  assert.ok(recipient.crm_route_snapshot.target)
+  const thread=(await receive(db,'campaign-before-status',new Date().toISOString())).rows[0].id
+  await db.query("select whatsapp_inbox_campaign_reply('100','200','27821234567','campaign-before-status','wamid.campaign-late')")
+  assert.equal((await db.query('select count(*)::int n from whatsapp_campaign_reply_routes')).rows[0].n,0)
+  await db.query("select whatsapp_campaign_status('wamid.campaign-late',$1,'100','200','delivered',now(),null)",[`arch9-wa:${recipient.id}`])
+  await db.query("select whatsapp_campaign_status('wamid.campaign-late',$1,'100','200','read',now(),null)",[`arch9-wa:${recipient.id}`])
+  assert.equal((await db.query('select count(*)::int n from whatsapp_campaign_reply_routes')).rows[0].n,1)
+  assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[thread])).rows[0].assigned_user_id,agentA)
+  assert.equal((await db.query('select lead_id from whatsapp_inbox_crm_links where conversation_id=$1',[thread])).rows[0].lead_id,buyerA)
+  const result=await request(staffHandler(db,agentA),'campaign_reply_status',{conversationId:thread})
+  assert.equal(result.routes[0].status,'routed')
+  await assert.rejects(request(staffHandler(db,agentB),'campaign_reply_status',{conversationId:thread}),/assignment|access|conversation/i)
+ }finally{await db.close()}
+})
+
+test('campaign reply routing preserves manual handoffs and existing CRM links instead of guessing',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  await queuedAudienceCampaign(db,a,preview.rows)
+  const {recipient}=await claimedAudienceRecipient(db)
+  await db.query("select whatsapp_campaign_status('wamid.manual',$1,'100','200','sent',now(),null)",[`arch9-wa:${recipient.id}`])
+  const thread=(await receive(db,'manual-handoff-reply',new Date().toISOString())).rows[0].id
+  await db.query('update whatsapp_inbox_conversations set assigned_user_id=$1 where id=$2',[agentB,thread])
+  await db.query("select whatsapp_inbox_campaign_reply('100','200','27821234567','manual-handoff-reply','wamid.manual')")
+  assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[thread])).rows[0].assigned_user_id,agentB)
+  assert.equal((await db.query('select status from whatsapp_campaign_reply_routes')).rows[0].status,'preserved')
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_crm_links')).rows[0].n,0)
+  // A reply without Meta's exact context cannot attach itself by matching phone.
+  await receive(db,'unattributed-reply',new Date().toISOString())
+  assert.equal((await db.query('select count(*)::int n from whatsapp_campaign_reply_routes')).rows[0].n,1)
+ }finally{await db.close()}
+})
+
+test('ambiguous audience phones require an explicit CRM record and one phone is queued only once',async()=>{
+ const db=await audienceFixture()
+ try{
+  const duplicate=await autoLead(db,1120,{assigned_user_id:agentB,assigned_agent_id:agentB})
+  await db.query("insert into lead_requirements(organisation_id,lead_id,areas) values($1,$2,array['Claremont'])",[org,duplicate])
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  assert.equal(preview.matched,2);assert.equal(preview.eligiblePhones,1);assert.ok(preview.rows.every(row=>row.phone_matches===2))
+  await assert.rejects(savedAudienceCampaign(db,a,preview.rows),/once|distinct|phone/)
+  await queuedAudienceCampaign(db,a,preview.rows.filter(row=>row.record_id===duplicate))
+  const rows=(await db.query('select * from whatsapp_campaign_recipients')).rows
+  assert.equal(rows.length,1);assert.equal(rows[0].crm_route_snapshot.target.recordId,duplicate)
+ }finally{await db.close()}
+})
+
+const campaignRoute=(db,route,extra={})=>request(autoHandler(db),'meta_routes_save',{route:{formMappingId:id(1100),campaignId:'500',campaignName:'Seller campaign',leadType:'seller',agentId:agentB,branchId:null,...route},...extra})
+async function metaIngest(db,leadgen,campaignId='500',extra={}){
+ const result=await rpcRole(db,'service_role',user).rpc('meta_ingest_lead_ad_routed',{p_leadgen_id:leadgen,p_organisation_id:org,p_page_id:'300',p_form_id:'400',p_full_name:'Fictional Meta Enquiry',p_email:`${leadgen}@example.com`,p_phone:'27820007777',p_payload:{id:leadgen,form_id:'400',campaign_id:campaignId},p_ingestion_source:'live',p_meta_created_at:new Date().toISOString(),p_import_id:null,...extra})
+ if(result.error)throw result.error;return result.data
+}
+
+test('exact Meta campaign IDs override form defaults for Buyer, Seller and Recruitment without reclassifying duplicates',async()=>{
+ const db=await audienceFixture()
+ try{
+  const {route}=await campaignRoute(db)
+  const seller=await metaIngest(db,'seller-override')
+  assert.equal(seller.lead_type,'seller')
+  const stored=(await db.query('select * from leads where lead_id=$1',[seller.crm_lead_id])).rows[0]
+  assert.equal(stored.assigned_agent_id,agentB)
+  const fallback=await metaIngest(db,'buyer-default','999');assert.equal(fallback.lead_type,'buyer')
+  await campaignRoute(db,{leadType:'recruitment',agentId:null},{routeId:route.id,version:route.version})
+  const recruitResult=await metaIngest(db,'recruitment-override');assert.equal(recruitResult.lead_type,'recruitment');assert.ok(recruitResult.recruitment_lead_id)
+  const duplicate=await metaIngest(db,'seller-override');assert.equal(duplicate.crm_lead_id,seller.crm_lead_id);assert.equal(duplicate.lead_type,'seller')
+  await db.query("insert into meta_lead_ads_imports values($1,$2,$3,$4,'ready')",[id(1121),org,connection,id(1100)])
+  await assert.rejects(campaignRoute(db),/historical import/)
+  await assert.rejects(metaIngest(db,'bad-historical','500',{p_ingestion_source:'historical'}),/import job/)
+ }finally{await db.close()}
+})
+
+test('form routing saves all selections atomically, stops unchecked forms and rejects cross-agency agents',async()=>{
+ const db=await audienceFixture()
+ try{
+  const call=forms=>sqlClient(db).rpc('meta_form_routes_save',{p_org:org,p_actor:user,p_connection:connection,p_forms:forms})
+  const bad=await call([{id:'400',name:'Existing form',leadType:'seller',assignedAgentId:outsider,branchId:null}]);assert.ok(bad.error)
+  assert.equal((await db.query('select lead_type from meta_lead_ads_forms')).rows[0].lead_type,'buyer')
+  const saved=await call([{id:'400',name:'Existing form',leadType:'seller',assignedAgentId:agentA,branchId:null}]);assert.equal(saved.error,null)
+  const stopped=await call([]);assert.equal(stopped.error,null)
+  assert.equal((await db.query('select is_active from meta_lead_ads_forms')).rows[0].is_active,false)
+  await assert.rejects(metaIngest(db,'disabled-form'),/not enabled/)
+ }finally{await db.close()}
+})
+
+test('Recruitment audiences and prepared campaign CRM snapshots stay private under real browser roles',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db,audienceFilters({kind:'recruitment',areas:[]})),preview=await audiencePreview(db,a.filters)
+  assert.equal(preview.rows.length,1)
+  await db.query("update recruitment_leads set status='agent_activated' where id=$1",[recruit]);assert.equal((await audiencePreview(db,a.filters)).matched,0)
+  await db.query("update recruitment_leads set status='new' where id=$1",[recruit])
+  await queuedAudienceCampaign(db,a,preview.rows)
+  await db.exec(`set role authenticated;set test.org='${org}';set test.actor='${agentA}';`)
+  assert.equal((await db.query('select id from whatsapp_campaigns')).rows.length,0)
+  assert.equal((await db.query('select id,full_name from whatsapp_campaign_recipients')).rows.length,0)
+  await assert.rejects(db.query('select crm_route_snapshot from whatsapp_campaign_recipients'),/permission/)
+  for(const table of ['whatsapp_saved_audiences','whatsapp_campaign_audience_plans','whatsapp_campaign_reply_routes','meta_lead_ads_campaign_routes'])await assert.rejects(db.query(`select * from ${table}`),/permission/)
+  await db.exec(`set test.actor='${user}';`)
+  assert.equal((await db.query('select id from whatsapp_campaigns')).rows.length,1)
+  await db.exec('reset role')
+  const outsiderReply=await rpcRole(db,'service_role',agentA).rpc('whatsapp_audiences_request',{p_org:other,p_actor:agentA,p_action:'list'})
+  assert.ok(outsiderReply.error)
+  const acl=(await db.query("select bool_and(relrowsecurity) secured from pg_class where relname in ('whatsapp_saved_audiences','whatsapp_campaign_audience_plans','whatsapp_campaign_reply_routes','meta_lead_ads_campaign_routes')")).rows[0]
+  assert.equal(acl.secured,true)
+  const openFunctions=(await db.query("select proname from pg_proc where pronamespace='public'::regnamespace and proname in ('whatsapp_audiences_request','whatsapp_campaign_plan_request','whatsapp_campaign_reply_status','meta_campaign_routes_request','meta_form_routes_save') and (has_function_privilege('anon',oid,'execute') or has_function_privilege('authenticated',oid,'execute'))")).rows;assert.deepEqual(openFunctions,[])
+ }finally{await db.close()}
+})
+
+test('the real campaign worker sends reviewed targets once and skips changed CRM records without provider calls',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  await queuedAudienceCampaign(db,a,preview.rows)
+  await db.query('update leads set assigned_agent_id=$1,assigned_user_id=$1 where lead_id=$2',[agentB,buyerA])
+  const {createCampaignWorker}=await import('../../supabase/functions/whatsapp-campaign-worker/worker.js')
+  let sent=0
+  const meta=async(_sender,path)=>{if(path.includes('message_templates'))return {data:[autoTemplate]};sent++;return {messages:[{id:'wamid.must-not-send'}]}}
+  await db.exec('set role service_role')
+  await createCampaignWorker({db:sqlClient(db),meta})()
+  assert.equal(sent,0)
+  assert.equal((await db.query('select status from whatsapp_campaign_recipients')).rows[0].status,'skipped')
+  await db.exec('reset role')
+ }finally{await db.close()}
+})
+
+test('campaign replies preserve an existing CRM link and reject matching message IDs on a foreign sender',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  await queuedAudienceCampaign(db,a,preview.rows)
+  const {recipient}=await claimedAudienceRecipient(db)
+  await db.query("select whatsapp_campaign_status('wamid.bound',$1,'100','200','sent',now(),null)",[`arch9-wa:${recipient.id}`])
+  const thread=(await receive(db,'existing-crm',new Date().toISOString())).rows[0].id
+  await db.query('insert into whatsapp_inbox_crm_links(conversation_id,organisation_id,lead_id,linked_by) values($1,$2,$3,$4)',[thread,org,sellerA,user])
+  await db.query("select whatsapp_inbox_campaign_reply('100','200','27821234567','existing-crm','wamid.bound')")
+  assert.equal((await db.query('select lead_id from whatsapp_inbox_crm_links where conversation_id=$1',[thread])).rows[0].lead_id,sellerA)
+  assert.equal((await db.query('select status from whatsapp_campaign_reply_routes')).rows[0].status,'needs_review')
+  await receive(db,'foreign-route',new Date().toISOString(),'101','201')
+  await db.query("select whatsapp_inbox_campaign_reply('101','201','27821234567','foreign-route','wamid.bound')")
+  assert.equal((await db.query('select count(*)::int n from whatsapp_campaign_reply_routes')).rows[0].n,1)
+ }finally{await db.close()}
+})
+
+test('a sender disconnect during Meta validation blocks the final audience recipient claim',async()=>{
+ const db=await audienceFixture()
+ try{
+  const a=await savedAudience(db),preview=await audiencePreview(db)
+  await queuedAudienceCampaign(db,a,preview.rows)
+  const {createCampaignWorker}=await import('../../supabase/functions/whatsapp-campaign-worker/worker.js')
+  let sent=0
+  await createCampaignWorker({db:sqlClient(db),meta:async(_sender,path)=>{if(path.includes('message_templates')){await db.query("update organisation_communication_channels set connection_status='disconnected' where id=$1",[sender]);return {data:[autoTemplate]}}sent++;return {messages:[{id:'must-not-send'}]}}})()
+  assert.equal(sent,0);const row=(await db.query('select status,attempted_at from whatsapp_campaign_recipients')).rows[0];assert.equal(row.status,'queued');assert.equal(row.attempted_at,null)
+  assert.equal((await db.query('select connection_status from organisation_communication_channels where id=$1',[sender])).rows[0].connection_status,'disconnected')
+ }finally{await db.close()}
+})
+
+test('campaign routing preserves historical suppression and freezes rules during active import previews',async()=>{
+ const db=await audienceFixture()
+ try{
+  const {route}=await campaignRoute(db,{leadType:'recruitment',agentId:null})
+  await db.query("insert into meta_lead_ads_imports values($1,$2,$3,$4,'ready')",[id(1130),org,connection,id(1100)])
+  const lead=await metaIngest(db,'historical-campaign','500',{p_ingestion_source:'historical',p_import_id:id(1130),p_meta_created_at:'2026-09-01T12:00:00Z'})
+  const candidate=(await db.query('select * from recruitment_leads where id=$1',[lead.recruitment_lead_id])).rows[0]
+  assert.equal(candidate.meta_source_json.ingestion_source,'historical')
+  assert.equal(candidate.meta_source_json.submitted_at,'2026-09-01T12:00:00+00:00')
+  await assert.rejects(request(autoHandler(db),'meta_routes_disable',{routeId:route.id,version:route.version}),/historical import/)
+  const attempt=await sqlClient(db).rpc('meta_form_routes_save',{p_org:org,p_actor:user,p_connection:connection,p_forms:[]});assert.match(attempt.error.message,/historical imports/)
+  await db.query("update meta_lead_ads_imports set status='completed'")
+  await request(autoHandler(db),'meta_routes_disable',{routeId:route.id,version:route.version})
+  assert.equal((await metaIngest(db,'future-default')).lead_type,'buyer')
+  // Existing destinations survive both later route edits and revocation of that route's manager.
+  await db.query('update meta_lead_ads_campaign_routes set enabled=true')
+  await db.query("update organisation_users set status='inactive' where user_id=$1",[user])
+  const duplicate=await metaIngest(db,'historical-campaign');assert.equal(duplicate.recruitment_lead_id,lead.recruitment_lead_id)
+ }finally{await db.close()}
+})
+
+test('manual campaigns can assign exact replies to an agent without inventing a CRM link',async()=>{
+ const db=await audienceFixture()
+ try{
+  const fields={name:'Manual campaign',sender_id:sender,template:autoTemplate,parameter_values:{},contact_ids:[id(1101)],scheduled_at:null}
+  const saved=await sqlClient(db).rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:user,p_action:'save',p_id:id(1140),p_fields:fields,p_plan:{audienceId:null,version:null,mode:'agent',agentId:agentA,targets:[]}})
+  assert.equal(saved.error,null)
+  const unauthorized=await sqlClient(db).rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:agentA,p_action:'save',p_id:id(1140),p_existing:true,p_version:1,p_fields:fields,p_plan:null});assert.match(unauthorized.error.message,/management/)
+  const unreviewed=await sqlClient(db).rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:agentA,p_action:'validate',p_id:id(1140)});assert.match(unreviewed.error.message,/management/)
+  await db.query('select whatsapp_campaign_enqueue($1,$2,1,$3,$4)',[id(1140),org,autoTemplate,[{contact_id:id(1101),payload:{to:'27821234567'}}]])
+  const {recipient}=await claimedAudienceRecipient(db)
+  await db.query("select whatsapp_campaign_status('wamid.manual-route',$1,'100','200','sent',now(),null)",[`arch9-wa:${recipient.id}`])
+  const thread=(await receive(db,'manual-route-reply',new Date().toISOString())).rows[0].id
+  await db.query("select whatsapp_inbox_campaign_reply('100','200','27821234567','manual-route-reply','wamid.manual-route')")
+  assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[thread])).rows[0].assigned_user_id,agentA)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_crm_links')).rows[0].n,0)
+  assert.match((await db.query('select reason from whatsapp_campaign_reply_routes')).rows[0].reason,/assigned to the selected reply queue/)
  }finally{await db.close()}
 })

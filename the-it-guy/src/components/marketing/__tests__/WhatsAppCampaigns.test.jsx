@@ -3,15 +3,16 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateWhatsAppCampaign, WhatsAppCampaignDetail, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
-const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one' }))
-vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org } } }) }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one',viewer:'viewer-one',role:'principal' }))
+vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org },user:{id:mocks.viewer},currentMembership:{role:mocks.role,status:'active'} } }) }))
 vi.mock('../../../services/whatsappCampaignService', () => ({ whatsappCampaignRequest: mocks.request }))
+vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({canManage:false,loading:false,organisationId:mocks.org,accessScope:`${mocks.org}:${mocks.viewer}:${mocks.role}`})}))
 const template = { id: 'template-one', name: 'new_listing', language: 'en_US', category: 'MARKETING', status: 'APPROVED', components: [{ type: 'BODY', text: 'Hello {{1}}' }] }
 const contacts = [{ id: 'contact-one', full_name: 'Alex Buyer', phone: '27821234567', consent_status: 'opted_in' }, { id: 'contact-two', full_name: 'Pat Buyer', phone: '27821234568', consent_status: 'unknown' }]
 const senders = [{ id: 'sender-one', display_phone_number: '+27 82 999 8888', connection_status: 'connected', business_display_name: 'Kingdom' }]
 const emptyWorkspace = { campaigns: [], contacts, senders }
 afterEach(() => { cleanup(); vi.clearAllMocks() })
-beforeEach(() => { mocks.org = 'org-one'; mocks.request.mockImplementation(async (_org, action, data) => {
+beforeEach(() => { mocks.org = 'org-one';mocks.viewer='viewer-one';mocks.role='principal'; mocks.request.mockImplementation(async (_org, action, data) => {
   if (action === 'workspace') return emptyWorkspace
   if (action === 'templates') return { templates: [template] }
   if (action === 'save') return { campaign: { ...data.campaign, id: 'draft-one', status: 'draft', revision: (data.campaign.revision || 0) + 1 } }
@@ -203,4 +204,19 @@ it('uses Meta template metadata and blocks incomplete variables before review', 
   expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true)
   fireEvent.change(screen.getByLabelText('Body · 1 value source'), { target: { value: 'first_name' } })
   expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(false)
+})
+
+it('clears private campaign data immediately after a role or user changes in the same agency',async()=>{
+ const privateRow={id:'recruitment-private',name:'Private recruitment campaign',display_status:'draft',status:'draft',template,contact_ids:[],recipients:0}
+ mocks.request.mockResolvedValue({...emptyWorkspace,campaigns:[privateRow]})
+ const view=render(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
+ await screen.findByText('Private recruitment campaign')
+ mocks.role='agent';mocks.request.mockRejectedValue(Error('Access revoked'))
+ view.rerender(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
+ expect(screen.queryByText('Private recruitment campaign')).toBeNull()
+ await screen.findByText('Access revoked')
+ mocks.role='principal';mocks.viewer='viewer-two';mocks.request.mockResolvedValue(emptyWorkspace)
+ view.rerender(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
+ await screen.findByText('Your first campaign starts here')
+ expect(screen.queryByText('Private recruitment campaign')).toBeNull()
 })

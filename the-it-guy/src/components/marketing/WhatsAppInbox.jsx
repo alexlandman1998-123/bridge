@@ -1,3 +1,4 @@
+import { WhatsAppCampaignReplyNotice } from './MetaCampaignRoutes'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Download, MessageCircle, RefreshCw } from 'lucide-react'
@@ -64,7 +65,7 @@ export default function WhatsAppInbox() {
         <header className="flex flex-wrap items-center justify-between gap-3 border-b p-4"><div><h2 className="font-semibold">{current.contact_name||current.contact_phone}</h2><p className="text-xs text-slate-500">{current.contact_phone} · {current.status}</p></div><Button variant="secondary" size="sm" disabled={Boolean(busy)} onClick={()=>void update('conversation_status',{status:current.status==='closed'?'open':'closed'})}>{current.status==='closed'?'Reopen':'Close conversation'}</Button></header>
         {workspace.canManage?<ConversationAssignment key={selectedId} conversation={current} assignees={workspace.assignees||[]} busy={Boolean(busy)} onAssign={id=>update('assign_conversation',{assignedUserId:id||null})}/>:current.assigned_user_id&&<p className="border-b px-4 py-2 text-xs font-semibold text-blue-800">Assigned to you</p>}
         {detail.sender?.display_phone_number&&<p className="border-b px-4 py-2 text-xs text-slate-600">Replying from {detail.sender.display_phone_number}</p>}
-        <WhatsAppCrmLink key={`crm:${selectionKey}:${current.assignment_version}`} organisationId={org} accessScope={scope} conversationId={selectedId} assignmentVersion={current.assignment_version}/>
+        <WhatsAppCampaignReplyNotice key={`${selectionKey}:${current.last_message_at}:${current.assignment_version}`} organisationId={org} conversationId={current.id} accessScope={scope}/><WhatsAppCrmLink key={`crm:${selectionKey}:${current.assignment_version}`} organisationId={org} accessScope={scope} conversationId={selectedId} assignmentVersion={current.assignment_version}/>
         <div className="max-h-[55vh] flex-1 space-y-4 overflow-auto bg-slate-50 p-5" aria-label="Conversation messages">
           {detail.nextCursor&&<Button variant="secondary" disabled={detail.loadingOlder} onClick={()=>void detail.loadOlder()}>{detail.loadingOlder?'Loading…':'Load older messages'}</Button>}
           {[...detail.rows].reverse().map(message=><article key={message.id} className={`max-w-[90%] rounded-xl border p-3 sm:max-w-[80%] ${message.direction==='outbound'?'ml-auto border-green-200 bg-green-50':'border-slate-200 bg-white'}`}>

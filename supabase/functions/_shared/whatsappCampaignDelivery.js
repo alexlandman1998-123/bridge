@@ -39,7 +39,7 @@ export function createCampaignDelivery({ db, meta }) {
       await Promise.all(queued.slice(offset, offset + 5).map(async ({ id }) => {
         const claimed = await campaignResult(db.rpc('whatsapp_campaign_claim', { p_id: id, p_org: row.organisation_id, p_token: leaseToken }))
         const recipient = claimed?.[0]
-        if (!recipient) return
+        if (!recipient || recipient.status !== 'processing') return
         let response
         try {
           response = await meta(connection, `${connection.phone_number_id}/messages`, { ...recipient.payload, biz_opaque_callback_data: `arch9-wa:${recipient.id}` })

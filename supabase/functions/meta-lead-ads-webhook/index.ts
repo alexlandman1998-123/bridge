@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
-import { contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType, RecordValue, text } from "../_shared/metaLeadAds.ts";
+import { assertMetaLeadContext, contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType, RecordValue, text } from "../_shared/metaLeadAds.ts";
 
 const GRAPH_VERSION = text(Deno.env.get("META_GRAPH_VERSION")) || "v23.0";
 const json = (status:number, body:RecordValue) => new Response(JSON.stringify(body), {status, headers:{"content-type":"application/json"}});
@@ -53,6 +53,7 @@ Deno.serve(async (req) => {
       const response=await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(change.leadgenId)}?fields=id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,field_data&access_token=${encodeURIComponent(token)}`);
       const detail=await response.json() as RecordValue;
       if(!response.ok) throw new Error(text((detail.error as RecordValue)?.message)||"Meta lead retrieval failed.");
+      assertMetaLeadContext(detail,change.leadgenId,change.formId);
       const fields=leadFields(detail.field_data), contact=contactFromFields(fields);
       const ingested=await db.rpc("meta_ingest_lead_ad_routed",{p_leadgen_id:change.leadgenId,p_organisation_id:connection.organisation_id,p_page_id:change.pageId,p_form_id:change.formId,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields},p_ingestion_source:"live",p_meta_created_at:text(detail.created_time)||null,p_import_id:null});
       if(ingested.error) throw new Error(ingested.error.message);

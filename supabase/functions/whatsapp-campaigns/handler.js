@@ -1,6 +1,7 @@
+import { replyPlan } from '../_shared/whatsappAudience.js'
 import { campaignResult as result, createCampaignDelivery } from '../_shared/whatsappCampaignDelivery.js'
 
-import { buildTemplateMessage, canonicalJson, clean, MAX_CAMPAIGN_RECIPIENTS, normalizePhone, templateIdentity } from '../_shared/whatsappCampaign.js'
+import { buildTemplateMessage, clean, MAX_CAMPAIGN_RECIPIENTS, normalizePhone, templateIdentity } from '../_shared/whatsappCampaign.js'
 
 const uuid = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean(v))
 async function allRows(query) {
@@ -19,8 +20,9 @@ export function createCampaignHandler({ db, authorize, meta }) {
     if (!uuid(id)) throw new Error('Choose a connected WhatsApp sender.')
     return loadSender(org, id)
   }
-  async function campaign(org, id) {
+  async function campaign(org, id, actor) {
     if (!uuid(id)) throw new Error('Choose a campaign.')
+    if(actor?.userDb){const accessible=await result(actor.userDb.from('whatsapp_campaigns').select('id').eq('organisation_id',org).eq('id',id).maybeSingle());if(!accessible)throw new Error('Campaign not found in your current workspace access.')}
     return result(db.from('whatsapp_campaigns').select('*').eq('organisation_id', org).eq('id', id).single())
   }
   async function validateCampaign(org, row) {
@@ -40,8 +42,9 @@ export function createCampaignHandler({ db, authorize, meta }) {
     // a real user and the established active-organisation membership predicate.
     const org = clean(payload.organisationId)
     if (!uuid(org)) throw new Error('Select an organisation workspace.')
-    const actor = await authorize(authorization, org)
-    if (!actor) throw new Error('Sign in with an active membership of this organisation.')
+    const authorizationResult = await authorize(authorization, org)
+    const actor = typeof authorizationResult === 'string' ? {userId:authorizationResult} : authorizationResult
+    if (!actor?.userId) throw new Error('Sign in with an active membership of this organisation.')
     switch (payload.action) {
       case 'workspace': {
         const [campaigns, contacts, senders] = await Promise.all([
@@ -49,7 +52,9 @@ export function createCampaignHandler({ db, authorize, meta }) {
           allRows(() => db.from('whatsapp_marketing_contacts').select('*').eq('organisation_id', org).order('full_name').order('id')),
           result(db.from('organisation_communication_channels').select(safeSenderFields).eq('organisation_id', org).eq('provider', 'meta').eq('channel_type', 'whatsapp').is('owner_user_id', null).order('created_at')),
         ])
-        return { campaigns, contacts, senders }
+        const access=await result(db.rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:actor.userId,p_action:'list'}))
+        const visible=new Map(access.campaigns.map(row=>[row.id,row.plan]))
+        return { campaigns:campaigns.filter(row=>visible.has(row.id)).map(row=>({...row,audience_plan:visible.get(row.id)})),contacts,senders }
       }
       case 'crm_contacts': return { contacts: await allRows(() => db.from('contacts').select('contact_id,first_name,last_name,phone').eq('organisation_id', org).order('contact_id')) }
       case 'templates': return { templates: await templates(await sender(org, payload.senderId)) }
@@ -62,7 +67,7 @@ export function createCampaignHandler({ db, authorize, meta }) {
         const source = clean(contact.consent_source)
         const at = new Date(contact.consent_at)
         if (consent && (contact.confirmed !== true || !source || source.length > 1000 || !Number.isFinite(at.getTime()) || at.getTime() > Date.now())) throw new Error('Record when and how the recipient opted in, and confirm that the permission covers your WhatsApp messages.')
-        const row = { organisation_id: org, full_name: name, phone, consent_status: consent ? 'opted_in' : 'unknown', consent_source: consent ? source : null, consent_at: consent ? at.toISOString() : null, opted_out_at: null, updated_by: actor, updated_at: new Date().toISOString() }
+        const row = { organisation_id: org, full_name: name, phone, consent_status: consent ? 'opted_in' : 'unknown', consent_source: consent ? source : null, consent_at: consent ? at.toISOString() : null, opted_out_at: null, updated_by: actor.userId, updated_at: new Date().toISOString() }
         // Existing permissions can only be replaced by an explicit new opt-in.
         const existing = await result(db.from('whatsapp_marketing_contacts').select('id').eq('organisation_id', org).eq('phone', phone).maybeSingle())
         if (existing && !consent) throw new Error('This phone is already recorded. Use its opt-out action or record a new opt-in.')
@@ -70,7 +75,7 @@ export function createCampaignHandler({ db, authorize, meta }) {
       }
       case 'opt_out': {
         if (!uuid(payload.contactId)) throw new Error('Choose a contact.')
-        return { contact: await result(db.from('whatsapp_marketing_contacts').update({ consent_status: 'opted_out', opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString(), updated_by: actor }).eq('organisation_id', org).eq('id', payload.contactId).select().single()) }
+        return { contact: await result(db.from('whatsapp_marketing_contacts').update({ consent_status: 'opted_out', opted_out_at: new Date().toISOString(), updated_at: new Date().toISOString(), updated_by: actor.userId }).eq('organisation_id', org).eq('id', payload.contactId).select().single()) }
       }
       case 'save': {
         const draft = payload.campaign || {}
@@ -82,34 +87,25 @@ export function createCampaignHandler({ db, authorize, meta }) {
         const scheduledAt = draft.scheduled_at ? new Date(draft.scheduled_at) : null
         if (scheduledAt && (!Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now())) throw new Error('Choose a future sending time.')
         const fields = { scheduled_at: scheduledAt?.toISOString() || null, name, sender_id: draft.sender_id || null, template: draft.template || {}, parameter_values: draft.parameter_values || {}, contact_ids: ids, updated_at: new Date().toISOString() }
-        if (draft.id) {
-          if (!uuid(draft.id) || !Number.isInteger(draft.revision)) throw new Error('Reload the draft before saving.')
-          return { campaign: await result(db.from('whatsapp_campaigns').update({ ...fields, revision: draft.revision + 1 }).eq('organisation_id', org).eq('id', draft.id).eq('status', 'draft').eq('revision', draft.revision).select().single()) }
-        }
-        if (!uuid(draft.client_id)) throw new Error('A draft identifier is required.')
-        // Stable client ID means a lost save response cannot create two drafts.
-        const existing = await result(db.from('whatsapp_campaigns').select('*').eq('organisation_id', org).eq('id', draft.client_id).maybeSingle())
-        if (existing) {
-          const savedFields = Object.fromEntries(Object.keys(fields).filter((key) => key !== 'updated_at').map((key) => [key, existing[key]]))
-          if (savedFields.scheduled_at) savedFields.scheduled_at = new Date(savedFields.scheduled_at).toISOString()
-          const requestedFields = { ...fields }; delete requestedFields.updated_at
-          if (existing.status !== 'draft' || canonicalJson(savedFields) !== canonicalJson(requestedFields)) throw new Error('This draft was already saved with different details. Reopen it from the campaign list before making further changes.')
-          return { campaign: existing }
-        }
-        return { campaign: await result(db.from('whatsapp_campaigns').insert({ ...fields, id: draft.client_id, organisation_id: org, created_by: actor }).select().single()) }
+        if(draft.id&&(!uuid(draft.id)||!Number.isInteger(draft.revision)))throw new Error('Reload the draft before saving.')
+        if(!draft.id&&!uuid(draft.client_id))throw new Error('A draft identifier is required.')
+        delete fields.updated_at
+        return result(db.rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:actor.userId,p_action:'save',p_id:draft.id||draft.client_id,p_version:draft.revision??null,p_existing:Boolean(draft.id),p_fields:fields,p_plan:replyPlan(draft.audience_plan)}))
       }
       case 'preflight': {
-        const row = await campaign(org, payload.campaignId)
+        const row = await campaign(org, payload.campaignId, actor)
         if (row.status !== 'draft') throw new Error('This campaign has already started.')
         if (payload.revision !== row.revision) throw new Error('This draft changed. Reopen it before reviewing and sending.')
         if (row.scheduled_at && new Date(row.scheduled_at).getTime() <= Date.now()) throw new Error('Choose a future sending time.')
+        if(actor.userDb)await result(db.rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:actor.userId,p_action:'validate',p_id:row.id}))
         const validated = await validateCampaign(org, row)
         return { recipients: validated.messages.length, revision: row.revision }
       }
       case 'prepare': {
-        const row = await campaign(org, payload.campaignId)
+        const row = await campaign(org, payload.campaignId, actor)
         if (row.status !== 'draft') return { campaignId: row.id }
         if (payload.revision !== row.revision) throw new Error('This draft changed. Review it again before sending.')
+        if(actor.userDb)await result(db.rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:actor.userId,p_action:'validate',p_id:row.id}))
         const { template, messages } = await validateCampaign(org, row)
         await result(db.rpc('whatsapp_campaign_enqueue', { p_id: row.id, p_org: org, p_revision: row.revision, p_template: template, p_messages: messages }))
         return { campaignId: row.id }
@@ -120,14 +116,14 @@ export function createCampaignHandler({ db, authorize, meta }) {
       case 'resume':
       case 'pause':
       case 'cancel': {
-        const row = await campaign(org, payload.campaignId)
+        const row = await campaign(org, payload.campaignId, actor)
         await result(db.rpc('whatsapp_campaign_job_control', { p_id: row.id, p_org: org, p_action: payload.action === 'dispatch' ? 'resume' : payload.action }))
         // Stop cached clients from polling their old synchronous send loop.
         if (payload.action === 'dispatch') throw new Error('Sending now runs in the background. Reopen campaign results to see progress.')
         return { campaign: await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()) }
       }
       case 'detail': {
-        const row = await campaign(org, payload.campaignId)
+        const row = await campaign(org, payload.campaignId, actor)
         return { campaign: await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()), recipients: await allRows(() => db.from('whatsapp_campaign_recipients').select('id,full_name,phone,status,error_message,attempted_at,sent_at,delivered_at,read_at').eq('organisation_id', org).eq('campaign_id', row.id).order('id')) }
       }
       default: throw new Error('Unknown WhatsApp campaign action.')
