@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import MetaLeadFormRouting from '../../components/marketing/MetaLeadFormRouting'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
@@ -392,6 +393,8 @@ function AgentCardEditorDialog({ editor, listingOptions = [], listingLoading = f
     </div>
   )
 }
+
+const metaLeadTypeLabel = (kind) => ({ buyer: 'Buyer', seller: 'Seller', recruitment: 'Recruitment' }[kind] || 'Buyer')
 
 export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
@@ -909,7 +912,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
             </div>
             {metaConnections.map((connection) => <div key={connection.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><strong>{connection.page_name}</strong><p className="text-sm text-[#6b7d93]">{connection.connection_status}{connection.last_error_message ? ` · ${connection.last_error_message}` : ''}</p></div>)}
             {metaPages.length ? <div className="grid gap-2">{metaPages.map((page) => <SecondaryButton key={page.id} onClick={() => chooseMetaPage(page.id)} disabled={saving}>Use {page.name}</SecondaryButton>)}</div> : null}
-            {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <div key={form.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><label><input type="checkbox" checked={Boolean(form.selected)} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,selected:event.target.checked}:item))} /> <span className="ml-2 font-semibold">{form.name}</span></label><div className="mt-3 flex flex-wrap gap-3"><label className="text-sm font-medium text-[#52677e]">Lead type <select className="ml-2 rounded border p-1" value={form.leadType||'buyer'} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,leadType:event.target.value}:item))}><option value="buyer">Buyer</option><option value="seller">Seller</option></select></label><label className="text-sm font-medium text-[#52677e]">Route to <select className="ml-2 rounded border p-1" value={form.assignedAgentId||''} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,assignedAgentId:event.target.value}:item))}><option value="">Agency queue</option>{users.filter(isActiveAgentUser).map((user)=><option key={getUserId(user)} value={getUserId(user)}>{getUserDisplayName(user)}</option>)}</select></label></div></div>)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
+            {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <MetaLeadFormRouting key={form.id} form={form} agents={users.filter(isActiveAgentUser).map((user) => ({ id: getUserId(user), name: getUserDisplayName(user) }))} onChange={(patch) => setMetaForms((current) => current.map((item,i) => i === index ? { ...item, ...patch } : item))} />)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
             {metaForms.some((form) => form.selected) ? (
               <div className="mt-2 grid gap-4 rounded-[16px] border border-[#c9ddf3] bg-[#f7fbff] p-4">
                 <div>
@@ -917,7 +920,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
                   <p className="mt-1 text-sm text-[#5f7288]">Preview a form before importing. Historical leads keep their original Meta submission date and do not trigger new-lead notifications or SLA timers.</p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
-                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">Form<select className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFormId} onChange={(event) => { setMetaImportFormId(event.target.value); setMetaImportPreview(null) }}><option value="">Choose form</option>{metaForms.filter((form) => form.selected).map((form) => <option key={form.id} value={form.id}>{form.name} · {form.leadType === 'seller' ? 'Seller' : 'Buyer'}</option>)}</select></label>
+                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">Form<select className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFormId} onChange={(event) => { setMetaImportFormId(event.target.value); setMetaImportPreview(null) }}><option value="">Choose form</option>{metaForms.filter((form) => form.selected).map((form) => <option key={form.id} value={form.id}>{form.name} · {metaLeadTypeLabel(form.leadType)}</option>)}</select></label>
                   <label className="grid gap-1 text-sm font-medium text-[#52677e]">From (optional)<input type="date" className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFrom} onChange={(event) => { setMetaImportFrom(event.target.value); setMetaImportPreview(null) }} /></label>
                   <label className="grid gap-1 text-sm font-medium text-[#52677e]">To (optional)<input type="date" className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportTo} onChange={(event) => { setMetaImportTo(event.target.value); setMetaImportPreview(null) }} /></label>
                 </div>

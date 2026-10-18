@@ -1,5 +1,14 @@
-import { assertEquals } from "jsr:@std/assert@1";
-import { contactFromFields, hmacValid, leadFields, leadgenChanges } from "./metaLeadAds.ts";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType } from "./metaLeadAds.ts";
+
+Deno.test("keeps Buyer, Seller and Recruitment destinations separate and rejects invalid results", () => {
+  assertEquals(metaLeadType("recruitment"), "recruitment");
+  assertEquals(metaLeadType(undefined), "buyer");
+  assertThrows(() => metaLeadType("unknown"));
+  for (const kind of ["buyer", "seller"]) assertEquals(metaLeadDestination({lead_type:kind,crm_lead_id:"crm-id"}), {lead_type:kind,crm_lead_id:"crm-id",recruitment_lead_id:null});
+  assertEquals(metaLeadDestination({lead_type:"recruitment",recruitment_lead_id:"recruit-id"}), {lead_type:"recruitment",crm_lead_id:null,recruitment_lead_id:"recruit-id"});
+  for (const value of [{}, {crm_lead_id:"missing-type"}, {lead_type:"recruitment",crm_lead_id:"wrong"}, {lead_type:"buyer",recruitment_lead_id:"wrong"}, {lead_type:"recruitment",recruitment_lead_id:"a",crm_lead_id:"b"}]) assertThrows(() => metaLeadDestination(value));
+});
 
 Deno.test("extracts leadgen notifications and ignores other Page changes", () => {
   assertEquals(leadgenChanges({entry:[{id:"page-1",changes:[{field:"feed",value:{}},{field:"leadgen",value:{leadgen_id:"lead-1",form_id:"form-1",page_id:"page-1"}}]}]}),[

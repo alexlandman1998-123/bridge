@@ -4137,6 +4137,29 @@ The database tests execute the migration in an isolated in-memory PostgreSQL
 instance and check organisation isolation, management-only access, private file
 access, invalid stages and stale saves. They do not access a remote project.
 
+Meta forms can be classified as **Buyer**, **Seller** or **Recruitment** in
+**Settings → Facebook Pages & Meta Lead Ads**. Recruitment routes to the agency's
+management-only Recruitment pipeline at **Lead Received**; property-agent and
+branch assignment do not apply. The Overview retains the Meta form, campaign,
+ad, original submission date and form answers. An enquiry creates no applicant
+account, application, membership, invitation or automatic message. Email addresses
+from Meta are not marked verified or used to merge separate enquiries.
+
+Live webhooks and historical imports use the same server-only routed ingestion.
+Repeated Meta lead IDs recover the original destination even after a form is
+reclassified. Historical imports keep their original submission time in the Meta
+receipt; the Recruitment receipt time records when Arch9 received the import.
+Finish an active historical import before changing its form routing. Recruitment
+event payloads follow the same agency management roles as Recruitment records.
+
+Release order: apply `20261018092935_meta_lead_ads_recruitment_routing.sql`, deploy
+`meta-lead-ads-admin` and `meta-lead-ads-webhook`, then release the primary app.
+The existing property ingestion RPC deliberately rejects Recruitment mappings to
+prevent an older handler from creating a Buyer lead. Local validation also uses
+`src/components/marketing/__tests__/MetaLeadFormRouting.test.jsx`,
+`node --test scripts/meta-integrations.test.mjs`, and the Deno
+`supabase/functions/_shared/metaLeadAds.test.ts` tests from the repository root.
+
 Phase 1 captures staff and referral enquiries at **Lead Received**. Name and at
 least one contact method are required; source, preferred area, referrer and notes
 can be saved. Receipt time, capturing user, intake channel and an intake key are

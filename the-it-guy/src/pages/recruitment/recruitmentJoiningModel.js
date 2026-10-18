@@ -1,7 +1,7 @@
 export const joiningEntryPoints = {
   recruitment: 'Recruitment', agents: 'Agents', branch: 'Branch staff', settings_users: 'Settings users',
   agency_setup: 'Agency setup', commercial_brokers: 'Commercial brokers', website: 'Website',
-  public_link: 'Public application link', private_link: 'Private application invitation', legacy: 'Existing record',
+  public_link: 'Public application link', private_link: 'Private application invitation', meta_lead_ad: 'Facebook Lead Ads', legacy: 'Existing record',
 }
 export const joiningRoles = [['agent', 'Agent'], ['senior_agent', 'Senior agent'], ['commercial_broker', 'Commercial broker']]
 export const joiningBusinessAreas = [['sales', 'Sales'], ['rentals', 'Rentals'], ['short_term_rentals', 'Short-term rentals'], ['commercial', 'Commercial']]

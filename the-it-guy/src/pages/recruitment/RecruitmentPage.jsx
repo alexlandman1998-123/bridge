@@ -12,6 +12,7 @@ import RecruitmentJoiningDialog from './RecruitmentJoiningDialog'
 import RecruitmentIntakeLinks from './RecruitmentIntakeLinks'
 import CopyRecruitmentIntakeLink from './CopyRecruitmentIntakeLink'
 import RecruitmentJourney from './RecruitmentJourney'
+import RecruitmentMetaSource from './RecruitmentMetaSource'
 import Modal from '../../components/ui/Modal'
 import RecruitmentNextAction from './RecruitmentNextAction'
 import RecruitmentDocumentPack from './RecruitmentDocumentPack'
@@ -140,7 +141,7 @@ export function RecruitmentWorkspace({ lead, organisationId, onSave, onUpload, o
             </dl>
           </section>
         </div>
-      </div>{!dialog && <>{reviewPanel}{preservedApproval}{contractPanel}{signingPanel}{onboardingPanel}{activationPanel}</>}{lead.details_json?.notes && <div className="mt-6 border-t border-[#edf2f7] pt-5"><h3 className="font-semibold text-[#20364c]">Recruitment notes</h3><p className="mt-2 whitespace-pre-wrap text-sm text-[#60758b]">{lead.details_json.notes}</p></div>}</>}
+      </div>{!dialog && <>{reviewPanel}{preservedApproval}{contractPanel}{signingPanel}{onboardingPanel}{activationPanel}</>}<RecruitmentMetaSource lead={lead} />{lead.details_json?.notes && <div className="mt-6 border-t border-[#edf2f7] pt-5"><h3 className="font-semibold text-[#20364c]">Recruitment notes</h3><p className="mt-2 whitespace-pre-wrap text-sm text-[#60758b]">{lead.details_json.notes}</p></div>}</>}
       {tab === 'details' && <RecruitmentAgentDetails
         lead={lead} draft={draft} organisationId={organisationId} onChange={change} onDetailChange={detail} onSubmit={save}
         disabled={busy || reviewDirty || approvalDirty || signingDirty || onboardingDirty || activationDirty} busy={busy} dirty={detailsDirty} isNew={isNew}

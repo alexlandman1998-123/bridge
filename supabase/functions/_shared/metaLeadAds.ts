@@ -1,5 +1,23 @@
 export type RecordValue = Record<string, unknown>;
 
+export function metaLeadType(value: unknown): string {
+  const kind = text(value) || "buyer";
+  if (!["buyer", "seller", "recruitment"].includes(kind)) throw new Error("Choose Buyer, Seller or Recruitment.");
+  return kind;
+}
+
+export function metaLeadDestination(value: unknown) {
+  const result = (value || {}) as RecordValue;
+  if (!text(result.lead_type)) throw new Error("Meta ingestion did not return a lead type.");
+  const kind = metaLeadType(result.lead_type);
+  const crmId = text(result.crm_lead_id) || null;
+  const recruitmentId = text(result.recruitment_lead_id) || null;
+  if (kind === "recruitment" ? !recruitmentId || crmId : !crmId || recruitmentId) {
+    throw new Error("Meta ingestion did not return a valid lead destination.");
+  }
+  return { lead_type: kind, crm_lead_id: crmId, recruitment_lead_id: recruitmentId };
+}
+
 export function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 export function leadFields(fieldData: unknown) {
   const result: Record<string, string> = {};

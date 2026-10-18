@@ -21,6 +21,18 @@ vi.mock('../../../services/recruitmentService', () => ({ getRecruitmentInvitatio
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 const lead = { ...emptyRecruitmentLead(), id: 'agent-1', name: 'Sam Agent', email: 'sam@example.test', phone: '0821234567', area: 'Pretoria', version: 1 }
 const wrap = (element) => render(<MemoryRouter>{element}</MemoryRouter>)
+it('shows a Meta recruitment enquiry with its campaign, original date and answers at Lead Received', () => {
+  wrap(<RecruitmentWorkspace lead={{ ...lead, source: 'Facebook Lead Ads', intake_channel: 'meta_lead_ad', meta_leadgen_id: 'meta-1', meta_source_json: { form_name: 'Recruitment form', campaign_name: 'Join our agency', ad_name: 'Agent opportunity', submitted_at: '2026-09-01T12:00:00Z', ingestion_source: 'historical', normalized_fields: { years_experience: '5', preferred_area: 'Pretoria' } } }} />)
+  const source = within(screen.getByRole('region', { name: 'Meta recruitment source' }))
+  expect(source.getByText('Recruitment form')).toBeTruthy()
+  expect(source.getByText('Join our agency')).toBeTruthy()
+  expect(source.getByText('Agent opportunity')).toBeTruthy()
+  expect(source.getByText(/Historical import/)).toBeTruthy()
+  expect(source.getByText('years experience')).toBeTruthy()
+  expect(source.getByText('5')).toBeTruthy()
+  expect(document.querySelector('[aria-current="step"]').textContent).toBe('1Lead Received')
+  expect(screen.queryByRole('button', { name: 'Approve Application' })).toBeNull()
+})
 it('requires review of matching enquiries and links a selected invitation without merging records', async () => {
   const matches = { leads: [{ id: 'prior', name: 'Prior Agent', status: 'lead_received' }], members: [], invites: [{ id: 'pending', type: 'branch_invite', role: 'agent' }, { id: 'privileged', role: 'principal' }, { id: 'linked', role: 'agent', linkedLeadId: 'prior' }] }
   const create = vi.fn().mockRejectedValueOnce(Object.assign(new Error('Review existing records.'), { outcome: 'review_required', matches })).mockResolvedValueOnce({ id: 'new' })

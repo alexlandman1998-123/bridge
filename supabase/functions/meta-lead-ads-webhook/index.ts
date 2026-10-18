@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
-import { contactFromFields, hmacValid, leadFields, leadgenChanges, RecordValue, text } from "../_shared/metaLeadAds.ts";
+import { contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType, RecordValue, text } from "../_shared/metaLeadAds.ts";
 
 const GRAPH_VERSION = text(Deno.env.get("META_GRAPH_VERSION")) || "v23.0";
 const json = (status:number, body:RecordValue) => new Response(JSON.stringify(body), {status, headers:{"content-type":"application/json"}});
@@ -37,9 +37,9 @@ Deno.serve(async (req) => {
     const connectionResult=await db.from("meta_lead_ads_connections").select("id,organisation_id,token_ciphertext,connection_status").eq("page_id",change.pageId).maybeSingle();
     const connection=connectionResult.data;
     if(!connection || connection.connection_status!=="connected") { results.push({leadgenId:change.leadgenId,status:"ignored"}); continue; }
-    const mappingResult=await db.from("meta_lead_ads_forms").select("id").eq("organisation_id",connection.organisation_id).eq("page_id",change.pageId).eq("form_id",change.formId).eq("is_active",true).maybeSingle();
+    const mappingResult=await db.from("meta_lead_ads_forms").select("id,lead_type").eq("organisation_id",connection.organisation_id).eq("page_id",change.pageId).eq("form_id",change.formId).eq("is_active",true).maybeSingle();
     if(!mappingResult.data) { results.push({leadgenId:change.leadgenId,status:"ignored"}); continue; }
-    const eventInsert=await db.from("meta_lead_ads_events").insert({leadgen_id:change.leadgenId,organisation_id:connection.organisation_id,connection_id:connection.id,form_mapping_id:mappingResult.data.id,page_id:change.pageId,form_id:change.formId,payload_json:change.raw,status:"received",attempts:1}).select("id").single();
+    const eventInsert=await db.from("meta_lead_ads_events").insert({leadgen_id:change.leadgenId,organisation_id:connection.organisation_id,connection_id:connection.id,form_mapping_id:mappingResult.data.id,lead_type:metaLeadType(mappingResult.data.lead_type),page_id:change.pageId,form_id:change.formId,payload_json:change.raw,status:"received",attempts:1}).select("id").single();
     let eventId=text(eventInsert.data?.id);
     if(eventInsert.error?.code==="23505") {
       const existing=(await db.from("meta_lead_ads_events").select("id,status,attempts").eq("leadgen_id",change.leadgenId).maybeSingle()).data;
@@ -54,9 +54,10 @@ Deno.serve(async (req) => {
       const detail=await response.json() as RecordValue;
       if(!response.ok) throw new Error(text((detail.error as RecordValue)?.message)||"Meta lead retrieval failed.");
       const fields=leadFields(detail.field_data), contact=contactFromFields(fields);
-      const ingested=await db.rpc("meta_ingest_lead_ad",{p_leadgen_id:change.leadgenId,p_organisation_id:connection.organisation_id,p_page_id:change.pageId,p_form_id:change.formId,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields},p_ingestion_source:"live",p_meta_created_at:text(detail.created_time)||null,p_import_id:null});
+      const ingested=await db.rpc("meta_ingest_lead_ad_routed",{p_leadgen_id:change.leadgenId,p_organisation_id:connection.organisation_id,p_page_id:change.pageId,p_form_id:change.formId,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields},p_ingestion_source:"live",p_meta_created_at:text(detail.created_time)||null,p_import_id:null});
       if(ingested.error) throw new Error(ingested.error.message);
-      await db.from("meta_lead_ads_events").update({status:"processed",crm_lead_id:ingested.data,processed_at:new Date().toISOString(),payload_json:detail,ingestion_source:"live",meta_created_at:text(detail.created_time)||null,error_message:null}).eq("id",eventId);
+      const savedEvent=await db.from("meta_lead_ads_events").update({status:"processed",...metaLeadDestination(ingested.data),processed_at:new Date().toISOString(),payload_json:detail,ingestion_source:"live",meta_created_at:text(detail.created_time)||null,error_message:null}).eq("id",eventId);
+      if(savedEvent.error) throw new Error(savedEvent.error.message);
       results.push({leadgenId:change.leadgenId,status:"processed"});
     } catch(error) {
       const message=error instanceof Error ? error.message : "Lead processing failed.";

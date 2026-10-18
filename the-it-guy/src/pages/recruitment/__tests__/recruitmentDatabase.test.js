@@ -2575,3 +2575,92 @@ it('preserves staff document notifications after extending the queue deduplicati
   await contactServer()
   expect((await db.query("select count(*)::int as n from recruitment_contact_notifications where lead_id=$1 and event_kind='documents_received'",[lead.id])).rows[0].n).toBe(3)
 })
+
+const metaConnection='a0000000-0000-4000-8000-000000000001',metaForm='a0000000-0000-4000-8000-000000000002',metaImport='a0000000-0000-4000-8000-000000000003'
+let metaRecruit
+const routedMeta=(leadgen='meta-recruit-live',overrides={})=>{
+ const args={p_leadgen_id:leadgen,p_organisation_id:org,p_page_id:'meta-page',p_form_id:'meta-form',p_full_name:'Meta Recruit',p_email:'meta-recruit@example.test',p_phone:'+27821234567',p_payload:{campaign_id:'campaign-1',campaign_name:'Join our agency',ad_name:'Agent opportunity',normalized_fields:{years_experience:'5'},access_token:'must-not-copy'},p_ingestion_source:'live',p_meta_created_at:'2026-09-01T12:00:00Z',p_import_id:null,...overrides}
+ return db.query(`select meta_ingest_lead_ad_routed(${Object.keys(args).map((key,i)=>`${key}=>$${i+1}`).join(',')}) result`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v))
+}
+it('routes Meta recruitment through the full journey guards without creating property contacts, applications, accounts or messages',async()=>{
+ await db.exec(`reset role;
+ create table meta_lead_ads_connections(id uuid primary key,organisation_id uuid,page_id text,connection_status text);
+ create table meta_lead_ads_forms(id uuid primary key,connection_id uuid,organisation_id uuid,page_id text,form_id text,is_active boolean,lead_type text constraint meta_lead_ads_forms_lead_type_check check(lead_type in ('buyer','seller')),branch_id uuid,assigned_agent_id uuid,form_name text);
+ create table meta_lead_ads_imports(id uuid primary key,organisation_id uuid,connection_id uuid,form_mapping_id uuid,status text);
+ create table contacts(contact_id uuid primary key default gen_random_uuid(),organisation_id uuid,assigned_agent_id uuid,first_name text,last_name text,email text,phone text,contact_type text,notes text,updated_at timestamptz default now());
+ create table leads(lead_id uuid primary key default gen_random_uuid(),organisation_id uuid,branch_id uuid,assigned_agent_id uuid,assigned_user_id uuid,contact_id uuid,lead_domain text,lead_category text,lead_type text,lead_direction text,lead_source text,source_channel text check(source_channel='facebook'),stage text,status text,priority text,ownership_status text,assigned_at timestamptz,sla_due_at timestamptz,source_reference_id text,source_received_at timestamptz,raw_enquiry_payload jsonb,notes text,acknowledgement_status text,created_at timestamptz);
+ create table lead_activities(organisation_id uuid,lead_id uuid,agent_id uuid,activity_type text,activity_note text,activity_date timestamptz,outcome text);
+ create table meta_lead_ads_events(id uuid primary key default gen_random_uuid(),leadgen_id text unique,organisation_id uuid,form_mapping_id uuid,crm_lead_id uuid references leads(lead_id),payload_json jsonb);
+ alter table meta_lead_ads_events enable row level security;grant select on meta_lead_ads_events to authenticated;
+ grant all on meta_lead_ads_connections,meta_lead_ads_forms,meta_lead_ads_imports,contacts,leads,lead_activities,meta_lead_ads_events to service_role;
+ create function bridge_is_active_member(uuid) returns boolean language sql security invoker as $$ select exists(select 1 from organisation_users where organisation_id=$1 and user_id=auth.uid() and status='active') $$;`)
+ await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261017210140_meta_lead_ads_canonical_source_channel.sql',import.meta.url),'utf8'))
+ await db.exec('revoke all on function meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) from public,anon,authenticated;grant execute on function meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) to service_role;')
+ await db.exec(readFileSync(new URL('../../../../../supabase/migrations/20261018092935_meta_lead_ads_recruitment_routing.sql',import.meta.url),'utf8'))
+ await db.query("insert into meta_lead_ads_connections values($1,$2,'meta-page','connected')",[metaConnection,org])
+ await db.query("insert into meta_lead_ads_forms values($1,$2,$3,'meta-page','meta-form',true,'recruitment',null,null,'Recruitment enquiry')",[metaForm,metaConnection,org])
+ const counts=async()=>(await db.query(`select (select count(*)::int from contacts) contacts,(select count(*)::int from leads) leads,(select count(*)::int from auth.users) users,(select count(*)::int from organisation_users) members,(select count(*)::int from invites) invites,(select count(*)::int from recruitment_contact_notifications) notifications,(select count(*)::int from recruitment_submission_email_queue) emails`)).rows[0]
+ const before=await counts();await contactServer()
+ const result=(await routedMeta()).rows[0].result;metaRecruit=result.recruitment_lead_id
+ expect(result).toEqual({lead_type:'recruitment',crm_lead_id:null,recruitment_lead_id:metaRecruit})
+ expect((await routedMeta()).rows[0].result).toEqual(result)
+ await db.exec('reset role;');expect(await counts()).toEqual(before)
+ const captured=(await db.query('select * from recruitment_leads where id=$1',[metaRecruit])).rows[0]
+ expect(captured).toMatchObject({name:'Meta Recruit',email:'meta-recruit@example.test',phone:'+27821234567',source:'Facebook Lead Ads',status:'lead_received',intake_channel:'meta_lead_ad',email_verification_status:'not_requested',application_json:{},contact_capture_json:{},joining_invite_id:null,application_submitted_at:null,meta_source_json:{campaign_name:'Join our agency',ad_name:'Agent opportunity',normalized_fields:{years_experience:'5'},ingestion_source:'live',submitted_at:'2026-09-01T12:00:00+00:00'}})
+ expect(JSON.stringify(captured.meta_source_json)).not.toContain('must-not-copy')
+ expect(captured.joining_json.origin.entryPoint).toBe('meta_lead_ad')
+ expect(captured.activity_json.map(e=>e.type)).toEqual(['lead_received'])
+ await asUser(manager)
+ expect((await db.query("update recruitment_leads set area='Pretoria',details_json=details_json||'{\"notes\":\"Staff follow up\"}'::jsonb where id=$1 returning version",[metaRecruit])).rows[0].version).toBe(2)
+ for(const [column,value] of [['meta_source_json','{}'],['meta_leadgen_id','forged']]) await expect(db.query(`update recruitment_leads set ${column}=$1 where id=$2`,[value,metaRecruit])).rejects.toThrow('receipt cannot be changed')
+ await expect(db.query("update recruitment_leads set status='application_submitted' where id=$1",[metaRecruit])).rejects.toThrow()
+ await expect(db.query("insert into recruitment_leads(organisation_id,name,email,source,intake_channel,meta_leadgen_id,meta_source_json) values($1,'Forged','fake@example.test','Facebook Lead Ads','meta_lead_ad','fake','{\"leadgen_id\":\"fake\"}')",[org])).rejects.toThrow('require server ingestion')
+ await expect(db.query("insert into recruitment_leads(organisation_id,name,email,joining_json) values($1,'Forged origin','forged-origin@example.test','{\"version\":\"recruitment-joining-v1\",\"origin\":{\"entryPoint\":\"meta_lead_ad\"}}')",[org])).rejects.toThrow('requires a Meta recruitment receipt')
+})
+it('deduplicates live and historical Meta recruitment, preserves submission dates and keeps Buyer/Seller routing intact',async()=>{
+ await contactServer()
+ await expect(routedMeta('historical',{p_ingestion_source:'historical'})).rejects.toThrow('requires an import job')
+ await db.query("insert into meta_lead_ads_imports values($1,$2,$3,$4,'ready')",[metaImport,org,metaConnection,metaForm])
+ const history=(await routedMeta('meta-recruit-history',{p_ingestion_source:'historical',p_import_id:metaImport})).rows[0].result
+ expect((await routedMeta('meta-recruit-history')).rows[0].result).toEqual(history)
+ const historical=(await db.query('select * from recruitment_leads where id=$1',[history.recruitment_lead_id])).rows[0]
+ expect(historical.meta_source_json).toMatchObject({ingestion_source:'historical',import_id:metaImport,submitted_at:'2026-09-01T12:00:00+00:00'})
+ expect(historical.details_json.notes).toContain('historical import');expect(historical.application_submitted_at).toBeNull()
+ await expect(db.exec("update meta_lead_ads_forms set lead_type='buyer'")).rejects.toThrow('Complete the historical import')
+ await db.exec("update meta_lead_ads_imports set status='completed';update meta_lead_ads_forms set lead_type='seller'")
+ expect((await routedMeta()).rows[0].result).toEqual({lead_type:'recruitment',crm_lead_id:null,recruitment_lead_id:metaRecruit})
+ await expect(db.query('select meta_ingest_lead_ad($1,$2,$3,$4,$5,$6,$7,$8)',['meta-recruit-live',org,'meta-page','meta-form','Sample','sample@example.test','','{}'])).rejects.toThrow('already routed to Recruitment')
+ for(const kind of ['seller','buyer']){
+  await db.query('update meta_lead_ads_forms set lead_type=$1',[kind])
+  const result=(await routedMeta(`meta-${kind}`)).rows[0].result
+  const lead=(await db.query('select * from leads where lead_id=$1',[result.crm_lead_id])).rows[0]
+  expect(result).toMatchObject({lead_type:kind,recruitment_lead_id:null})
+  expect(lead).toMatchObject({lead_type:kind,source_channel:'facebook',source_reference_id:`meta-leadgen:meta-${kind}`});expect(lead.sla_due_at).toBeTruthy()
+  await db.exec("update meta_lead_ads_forms set lead_type='recruitment'");expect((await routedMeta(`meta-${kind}`)).rows[0].result).toEqual(result)
+ }
+ await expect(db.query('select meta_ingest_lead_ad($1,$2,$3,$4,$5,$6,$7,$8)',['legacy-recruit',org,'meta-page','meta-form','Sample','sample@example.test','','{}'])).rejects.toThrow('Use routed Meta ingestion')
+ await expect(routedMeta('missing-contact',{p_email:'',p_phone:''})).rejects.toThrow('email address or phone')
+ await expect(routedMeta('foreign',{p_organisation_id:other})).rejects.toThrow('not connected')
+ await expect(routedMeta('bad-form',{p_form_id:'foreign-form'})).rejects.toThrow('not enabled')
+ await expect(routedMeta('bad-import',{p_ingestion_source:'historical',p_import_id:crypto.randomUUID()})).rejects.toThrow('does not belong')
+ await db.exec('reset role;');expect((await db.query('select count(*)::int n from recruitment_leads where meta_leadgen_id is not null')).rows[0].n).toBe(2)
+})
+it('protects Meta recruitment records and event payloads by tenant and role; only the server can ingest',async()=>{
+ await contactServer()
+ await db.query("insert into meta_lead_ads_events(leadgen_id,organisation_id,form_mapping_id,lead_type,recruitment_lead_id,payload_json) values('private-event',$1,$2,'recruitment',$3,'{\"name\":\"Private candidate\"}')",[org,metaForm,metaRecruit])
+ await db.query("insert into meta_lead_ads_events(leadgen_id,organisation_id,lead_type,payload_json) values('property-event',$1,'buyer','{}')",[org])
+ await expect(db.query("insert into meta_lead_ads_events(leadgen_id,organisation_id,lead_type,recruitment_lead_id) values('foreign-event',$1,'recruitment',$2)",[other,metaRecruit])).rejects.toThrow('foreign key')
+ await expect(db.query('update meta_lead_ads_forms set assigned_agent_id=$1',[agent])).rejects.toThrow('meta_recruitment_form_routing_check')
+ await asUser(manager)
+ expect((await db.query("select leadgen_id from meta_lead_ads_events where leadgen_id='private-event'")).rows).toHaveLength(1)
+ expect((await db.query('select id from recruitment_leads where id=$1',[metaRecruit])).rows).toHaveLength(1)
+ await expect(routedMeta('staff-forged')).rejects.toThrow('permission denied')
+ await asUser(agent)
+ expect((await db.query('select id from recruitment_leads where id=$1',[metaRecruit])).rows).toHaveLength(0)
+ expect((await db.query('select leadgen_id from meta_lead_ads_events')).rows).toEqual([{leadgen_id:'property-event'}])
+ await db.exec('reset role;');const outsider=crypto.randomUUID()
+ await db.query("insert into organisation_users(organisation_id,user_id,status,role) values($1,$2,'active','principal')",[other,outsider]);await asUser(outsider)
+ expect((await db.query('select id from recruitment_leads where id=$1',[metaRecruit])).rows).toHaveLength(0)
+ expect((await db.query('select leadgen_id from meta_lead_ads_events')).rows).toHaveLength(0)
+ await db.exec('reset role;set role anon;');await expect(routedMeta('anon-forged')).rejects.toThrow('permission denied');await expect(db.query('select * from recruitment_leads')).rejects.toThrow('permission denied')
+})
