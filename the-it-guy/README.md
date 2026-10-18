@@ -2062,6 +2062,38 @@ The schema includes:
 
 ## WhatsApp campaigns
 
+Marketing → WhatsApp → Inbox also supports approved one-to-one templates, including
+outside the 24-hour reply window. Select the connected number's template and
+language, fill its variables, record when/how the recipient agreed to messages,
+and review before sending. Direct-message permission is audited separately from
+bulk-campaign consent; STOP revokes it. A newer bulk opt-out also blocks templates
+until newer direct-message agreement is recorded. This never opts anyone into
+bulk campaigns.
+
+Photo/PDF replies use private, conversation-bound Meta uploads: JPEG/PNG up to
+5 MB and PDF up to 8 MB. Matching photo/document template headers use the same
+uploads. Video headers and other outbound attachment formats are unavailable.
+Uploads expire in Arch9 after one day and cannot be reused across conversations,
+agencies, agents or number ownership changes. Incoming downloads retain their
+existing 8 MB limit. Template definitions are checked again at sending time.
+
+History loads in stable 50-item pages with **Load older** controls and conversation
+search. Refreshes retain loaded older history but recheck agent access. The
+header's WhatsApp unread badge updates inside Arch9 every 30 seconds, on focus
+and after reading a thread; the open inbox refreshes every 15 seconds. This stage
+does not add operating-system push alerts. Failed send connections offer
+**Check message**, which only reads the saved receipt. Any explicit retry uses
+the same immutable request identifier, preventing a second provider submission.
+
+For the combined release, apply `20261018111956_whatsapp_inbox_messaging.sql`
+after the ownership and CRM-link migrations, then deploy `meta-integrations`,
+`whatsapp-webhook` and the primary app with the other pending stages. This stage
+is implemented and tested locally; it has not been applied or deployed. Focused
+checks extend `scripts/meta-integrations.test.mjs`, `MetaIntegrations.test.jsx`
+and `WhatsAppCrmLink.test.jsx`, plus `WhatsAppMessaging.test.jsx`. They use local
+SQL, fictional people and a simulated Meta service; live uploads, template
+approval, delivered messages and callbacks require the later release check.
+
 WhatsApp Inbox → CRM record suggests Buyer, Seller and Recruitment records with
 the same canonical phone number in the current agency. Choose the record and
 **Link record**; multiple matches never merge contacts or choose a lead
@@ -2077,9 +2109,9 @@ Buyer/Seller lead workspaces and Recruitment records include **WhatsApp**. This
 opens matching or already-linked conversations the current person may read,
 with a choice when several numbers/conversations are available. Links are bound
 to the agency; the user must switch workspace for a different agency's link.
-An older conversation can open directly even outside the latest 100 sidebar
-entries. No conversation or CRM record is created automatically. Initial
-outbound contact and additional messaging formats belong to the next inbox stage.
+An older conversation can open directly without loading every sidebar page.
+No conversation or CRM record is created automatically. The inbox composer
+supports approved templates and attachments in these existing conversations.
 
 Campaign attribution uses Meta's exact reply-to message ID, sender and recipient;
 a matching phone alone is not attributed. Preserved reply context resolves late

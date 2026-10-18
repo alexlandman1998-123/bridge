@@ -6,6 +6,7 @@ import { canReply, publicListingPost, applyWhatsAppInboxWebhook } from '../../su
 import { createCampaignDelivery } from '../../supabase/functions/_shared/whatsappCampaignDelivery.js'
 import { createCampaignHandler } from '../../supabase/functions/whatsapp-campaigns/handler.js'
 import { createMetaIntegrationHandler } from '../../supabase/functions/meta-integrations/handler.js'
+import { decodeInboxAttachment,readMetaIntegrationPayload } from '../../supabase/functions/_shared/whatsappInboxMessaging.js'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const org=id(1), other=id(2), user=id(3), sender=id(4), foreign=id(5), listingId=id(6), connection=id(7)
@@ -554,5 +555,177 @@ test('only an exact campaign reply context is attributed, with sender and recipi
   assert.equal((await db.query("select reply_to_provider_message_id from whatsapp_inbox_messages where provider_message_id='late-callback'")).rows[0].reply_to_provider_message_id,'wamid.late')
   await applyWhatsAppInboxWebhook(sqlClient(db),payload('late-callback','wamid.changed-context'))
   assert.equal((await db.query("select reply_to_provider_message_id from whatsapp_inbox_messages where provider_message_id='late-callback'")).rows[0].reply_to_provider_message_id,'wamid.late')
+ }finally{await db.close()}
+})
+
+const messagingMigration=new URL('../../supabase/migrations/20261018111956_whatsapp_inbox_messaging.sql',import.meta.url)
+async function messagingFixture(){const db=await teamFixture();await db.exec(readFileSync(messagingMigration,'utf8'));return db}
+const approvedTemplate={id:'800',name:'agent_follow_up',language:'en',status:'APPROVED',category:'UTILITY',components:[{type:'BODY',text:'Hello {{1}}, following up on your enquiry.'}]}
+const pdf={mimeType:'application/pdf',filename:'property.pdf',base64:Buffer.from('%PDF-1.7\nFictional test document').toString('base64')}
+const messagingHandler=(db,actor=user,extra={})=>staffHandler(db,actor,{hash:async bytes=>Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex'),uploadMedia:async()=>({id:'900'}),graph:async(_token,path)=>path.includes('/message_templates')?{data:[approvedTemplate]}:{messages:[{id:'wamid.inbox'}]},...extra})
+const sendMessage=(handler,conversationId,requestId,fields={})=>request(handler,'send_message',{conversationId,assignmentVersion:1,requestId,kind:'text',message:'A direct reply',...fields})
+const allowTemplates=(handler,conversationId,version=0,assignmentVersion=1,at=new Date(Date.parse(time)-60000).toISOString())=>request(handler,'message_permission',{conversationId,operation:'save',confirmed:true,source:'Recipient requested WhatsApp follow-up',consentAt:at,version,assignmentVersion})
+
+test('inbox file validation rejects mismatched formats, oversized and malformed data and bounds JSON requests',async()=>{
+ assert.equal(decodeInboxAttachment(pdf).mimeType,'application/pdf')
+ assert.throws(()=>decodeInboxAttachment({...pdf,mimeType:'image/png'}),/contents/)
+ assert.throws(()=>decodeInboxAttachment({...pdf,base64:'!!!='}),/invalid/)
+ assert.throws(()=>decodeInboxAttachment({...pdf,mimeType:'text/html'}),/JPEG, PNG or PDF/)
+ assert.throws(()=>decodeInboxAttachment({...pdf,base64:'A'.repeat(12*1024*1024)}),/larger than/)
+ await assert.rejects(readMetaIntegrationPayload(new Request('https://example.test',{method:'POST',body:JSON.stringify({action:'send_message',message:'x'.repeat(60000)})})),/too large/)
+ assert.equal((await readMetaIntegrationPayload(new Request('https://example.test',{method:'POST',body:JSON.stringify({action:'upload_attachment',file:pdf})}))).file.filename,pdf.filename)
+})
+
+test('inbox messages claim once under concurrency, checks never resend and request IDs cannot change intent',async()=>{
+ const db=await messagingFixture()
+ try{
+  const conversationId=(await receive(db,'stage2-send')).rows[0].id;let sent=0
+  const handler=messagingHandler(db,user,{graph:async()=>{sent++;return {messages:[{id:'wamid.once'}]}}})
+  const fields=[handler,conversationId,id(100)]
+  await Promise.all([sendMessage(...fields),sendMessage(...fields)])
+  assert.equal(sent,1)
+  assert.equal((await request(handler,'message_receipt',{conversationId,requestId:id(100)})).message.delivery_status,'sent')
+  await assert.rejects(sendMessage(handler,conversationId,id(100),{message:'A changed request'}),/already used/)
+  assert.equal(sent,1)
+  assert.equal((await request(handler,'message_receipt',{conversationId,requestId:id(101)})).message,null)
+  const uncertain=messagingHandler(db,user,{graph:async()=>{sent++;throw Error('Response lost')}})
+  assert.equal((await sendMessage(uncertain,conversationId,id(102))).message.delivery_status,'unknown')
+  await sendMessage(uncertain,conversationId,id(102));assert.equal(sent,2)
+ }finally{await db.close()}
+})
+
+test('approved one-to-one templates require separate permission and remain available on private agent numbers outside the reply window',async()=>{
+ const db=await messagingFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  const conversationId=(await receive(db,'stage2-template',new Date(Date.parse(time)-2*86400000).toISOString())).rows[0].id
+  let sent=0;const handler=messagingHandler(db,agentA,{graph:async(_token,path,body)=>{if(path.includes('/message_templates'))return {data:[approvedTemplate]};sent++;assert.equal(body.template.language.code,'en');return {messages:[{id:'wamid.template'}]}}})
+  await assert.rejects(sendMessage(handler,conversationId,id(103)),/24-hour/)
+  const templateFields={kind:'template',message:'',template:approvedTemplate,values:{'body.1':{source:'text',text:'Sample Customer'}}}
+  await assert.rejects(sendMessage(handler,conversationId,id(104),templateFields),/permission/)
+  await allowTemplates(handler,conversationId)
+  assert.equal((await sendMessage(handler,conversationId,id(104),templateFields)).message.delivery_status,'sent')
+  assert.equal(sent,1)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_marketing_contacts')).rows[0].n,0)
+  const changed={...approvedTemplate,components:[{type:'BODY',text:'Different wording'}]}
+  await assert.rejects(sendMessage(handler,conversationId,id(105),{...templateFields,template:changed}),/template changed/)
+  assert.equal(sent,1)
+ }finally{await db.close()}
+})
+
+test('attachments stay bound to their conversation, actor and number and can supply an approved template header',async()=>{
+ const db=await messagingFixture()
+ try{
+  const conversationId=(await receive(db,'stage2-attachment')).rows[0].id;let uploads=0;const sent=[]
+  const template={...approvedTemplate,id:'801',components:[{type:'HEADER',format:'DOCUMENT'},...approvedTemplate.components]}
+  const handler=messagingHandler(db,user,{uploadMedia:async(_token,phone,file)=>{uploads++;assert.equal(phone,'100');assert.equal(file.mimeType,'application/pdf');return {id:'900'}},graph:async(_token,path,body)=>{if(path.includes('/message_templates'))return {data:[template]};sent.push(body);return {messages:[{id:`wamid.media.${sent.length}`}]}}})
+  const uploadFields={conversationId,assignmentVersion:1,requestId:id(106),file:pdf}
+  const uploaded=await request(handler,'upload_attachment',uploadFields)
+  await request(handler,'upload_attachment',uploadFields);assert.equal(uploads,1)
+  assert.equal((await sendMessage(handler,conversationId,id(107),{kind:'document',uploadId:uploaded.upload.id,message:'Requested property details'})).message.media_json.id,'900')
+  assert.equal(sent[0].document.id,'900');assert.equal(sent[0].document.link,undefined)
+  await allowTemplates(handler,conversationId)
+  await sendMessage(handler,conversationId,id(108),{kind:'template',uploadId:uploaded.upload.id,message:'',template,values:{'body.1':{source:'text',text:'Sample'}}})
+  assert.equal(sent[1].template.components[0].parameters[0].document.id,'900')
+  const otherThread=(await db.query("insert into whatsapp_inbox_conversations(organisation_id,channel_id,contact_phone) values($1,$2,'27829999999') returning id",[org,sender])).rows[0].id
+  await assert.rejects(sendMessage(handler,otherThread,id(109),{kind:'document',uploadId:uploaded.upload.id}),/attachment/)
+  await db.query("update whatsapp_inbox_uploads set expires_at='2020-01-01' where id=$1",[uploaded.upload.id])
+  await assert.rejects(sendMessage(handler,conversationId,id(110),{kind:'document',uploadId:uploaded.upload.id}),/current attachment/)
+  assert.equal(sent.length,2)
+ }finally{await db.close()}
+})
+
+test('handoffs during provider template checks block the final claim and unconfirmed uploads never send',async()=>{
+ const db=await messagingFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  const conversationId=(await receive(db,'stage2-race')).rows[0].id;let sent=0
+  const handler=messagingHandler(db,agentA,{graph:async(_token,path)=>{if(path.includes('/message_templates')){await assign(staffHandler(db),conversationId,agentB,1);return {data:[approvedTemplate]}}sent++;return {messages:[{id:'unexpected'}]}}})
+  await allowTemplates(handler,conversationId)
+  await assert.rejects(sendMessage(handler,conversationId,id(111),{kind:'template',message:'',template:approvedTemplate,values:{'body.1':{source:'text',text:'Sample'}}}),/assignment|not found/)
+  assert.equal(sent,0)
+  const failedUpload=messagingHandler(db,agentB,{uploadMedia:async()=>{throw Error('Lost upload response')}})
+  await assert.rejects(request(failedUpload,'upload_attachment',{conversationId,assignmentVersion:2,requestId:id(112),file:pdf}),/not confirmed/)
+  assert.equal((await db.query('select status from whatsapp_inbox_uploads where id=$1',[id(112)])).rows[0].status,'unknown')
+ }finally{await db.close()}
+})
+
+test('STOP revokes template permission idempotently and newer explicit agreement does not opt into bulk campaigns',async()=>{
+ const db=await messagingFixture()
+ try{
+  const conversationId=(await receive(db,'stage2-stop')).rows[0].id,handler=messagingHandler(db)
+  await allowTemplates(handler,conversationId)
+  const stoppedAt=new Date(Date.parse(time)+1000).toISOString()
+  await db.query('select whatsapp_inbox_optout($1,$2,$3,$4)',['100','200','27821234567',stoppedAt])
+  await db.query('select whatsapp_inbox_optout($1,$2,$3,$4)',['100','200','27821234567',stoppedAt])
+  assert.equal((await request(handler,'message_permission',{conversationId})).permission.version,2)
+  await assert.rejects(sendMessage(handler,conversationId,id(113),{kind:'template',template:approvedTemplate,values:{'body.1':{source:'text',text:'Sample'}}}),/permission/)
+  await assert.rejects(allowTemplates(handler,conversationId,2),/after their last opt-out/)
+  await allowTemplates(handler,conversationId,2,1,new Date(Date.parse(stoppedAt)+1000).toISOString())
+  assert.equal((await db.query('select count(*)::int n from whatsapp_marketing_contacts')).rows[0].n,0)
+  assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_permission_events')).rows[0].n,3)
+ }finally{await db.close()}
+})
+
+test('a newer bulk opt-out blocks direct templates, including legacy opt-outs without a timestamp',async()=>{
+ const db=await messagingFixture()
+ try{
+  const conversationId=(await receive(db,'stage2-bulk-optout')).rows[0].id,handler=messagingHandler(db)
+  await allowTemplates(handler,conversationId)
+  const optedOutAt=new Date(Date.parse(time)+1000).toISOString()
+  await db.query("insert into whatsapp_marketing_contacts(organisation_id,full_name,phone,consent_status,updated_at) values($1,'Fictional recipient','27821234567','opted_out',$2)",[org,optedOutAt])
+  const fields={kind:'template',template:approvedTemplate,values:{'body.1':{source:'text',text:'Fictional'}}}
+  await assert.rejects(sendMessage(handler,conversationId,id(117),fields),/permission/)
+  await allowTemplates(handler,conversationId,1,1,new Date(Date.parse(time)+2000).toISOString())
+  assert.equal((await sendMessage(handler,conversationId,id(117),fields)).message.delivery_status,'sent')
+  const contact=(await db.query("select consent_status,opted_out_at from whatsapp_marketing_contacts where organisation_id=$1",[org])).rows[0]
+  assert.equal(contact.consent_status,'opted_out');assert.equal(contact.opted_out_at,null)
+ }finally{await db.close()}
+})
+
+test('conversation pages and search reach older assigned chats while excluding other agents',async()=>{
+ const db=await messagingFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  await db.query("insert into whatsapp_inbox_conversations(id,organisation_id,channel_id,contact_phone,contact_name,last_message_at,assigned_user_id) select gen_random_uuid(),$1,$2,'2782000'||lpad(n::text,4,'0'),'Fictional customer '||n,$3::timestamptz-interval '1 second'*n,$4 from generate_series(1,106) n",[org,sender,time,agentA])
+  const a=messagingHandler(db,agentA),b=messagingHandler(db,agentB)
+  const first=await request(a,'inbox_page'),second=await request(a,'inbox_page',{cursor:first.nextCursor}),third=await request(a,'inbox_page',{cursor:second.nextCursor})
+  assert.equal(new Set([...first.conversations,...second.conversations,...third.conversations].map(row=>row.id)).size,106)
+  assert.equal(third.nextCursor,null);assert.equal(third.conversations.length,6)
+  assert.equal((await request(a,'inbox_page',{search:'Fictional customer 106'})).conversations.length,1)
+  assert.equal((await request(b,'inbox_page',{search:'Fictional customer 106'})).conversations.length,0)
+ }finally{await db.close()}
+})
+
+test('history uses stable keyset pages, notifications obey current assignments and cached conversation IDs are re-authorized',async()=>{
+ const db=await messagingFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  const conversationId=(await receive(db,'stage2-history')).rows[0].id,a=messagingHandler(db,agentA),b=messagingHandler(db,agentB)
+  for(let index=0;index<105;index++)await db.query("insert into whatsapp_inbox_messages(id,organisation_id,conversation_id,channel_id,provider_message_id,direction,message_type,body_text,media_json,delivery_status,event_at) values($1,$2,$3,$4,$5,'inbound','text',$5,'{}','received',$6)",[id(200+index),org,conversationId,sender,`history-${index}`,time])
+  assert.equal((await request(a,'inbox_notifications')).unreadCount,1);assert.equal((await request(b,'inbox_notifications')).unreadCount,0)
+  const first=await request(a,'message_page',{conversationId}),second=await request(a,'message_page',{conversationId,cursor:first.nextCursor}),third=await request(a,'message_page',{conversationId,cursor:second.nextCursor})
+  assert.equal(new Set([...first.messages,...second.messages,...third.messages].map(row=>row.id)).size,106)
+  assert.equal(first.messages.length,50);assert.equal(third.nextCursor,null)
+  assert.equal((await request(a,'inbox_notifications')).unreadCount,0)
+  const cached=await request(a,'inbox_page',{knownIds:[conversationId]});assert.deepEqual(cached.visibleIds,[conversationId])
+  await assign(staffHandler(db),conversationId,agentB,1)
+  assert.deepEqual((await request(a,'inbox_page',{knownIds:[conversationId]})).visibleIds,[])
+  await assert.rejects(request(a,'message_page',{conversationId,cursor:first.nextCursor}),/not found/)
+  await assert.rejects(request(a,'inbox_page',{cursor:{at:time}}),/cursor/)
+ }finally{await db.close()}
+})
+
+test('the real service role can send stage 2 messages and browser roles cannot call claims or read uploads',async()=>{
+ const db=await messagingFixture()
+ try{
+  await db.exec('alter role service_role bypassrls;set role service_role')
+  const conversationId=(await receive(db,'stage2-service-role')).rows[0].id,handler=messagingHandler(db)
+  assert.equal((await sendMessage(handler,conversationId,id(114))).message.delivery_status,'sent')
+  await allowTemplates(handler,conversationId)
+  assert.equal((await request(handler,'upload_attachment',{conversationId,assignmentVersion:1,requestId:id(115),file:pdf})).upload.status,'ready')
+  await db.exec('reset role;set role authenticated')
+  await assert.rejects(db.query('select * from whatsapp_inbox_uploads'),/permission denied/)
+  await assert.rejects(db.query('select whatsapp_inbox_claim($1,$2,$3,$4,$5,$6,$7)',[org,user,conversationId,id(116),'{}',1,1]),/permission denied/)
  }finally{await db.close()}
 })

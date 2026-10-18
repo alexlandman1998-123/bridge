@@ -7,6 +7,7 @@ import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } 
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import useDismissableMenu from '../hooks/useDismissableMenu'
 import LazyQuickCreateDropdown from './LazyQuickCreateDropdown'
+import WhatsAppUnread from './marketing/WhatsAppUnread'
 
 function getPageTitle(pathname, stateTitle, role) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
@@ -917,6 +918,7 @@ function HeaderBar({ onLogout, user }) {
   const workspaceContext = useWorkspace()
   const { role, agencyWorkflowMode } = workspaceContext
   const notificationUserId = user?.id || workspaceContext.profile?.id || null
+  const whatsappControl = <WhatsAppUnread organisationId={workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id} viewerId={notificationUserId} role={role} membership={workspaceContext.currentMembership} enabled={['agent','principal','headquarters'].includes(role)} />
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [activeNotificationFilter, setActiveNotificationFilter] = useState('all')
@@ -1444,7 +1446,7 @@ function HeaderBar({ onLogout, user }) {
       <header className="no-print ui-shell-header ui-shell-header-attorney-dashboard">
         <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
           {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
-          {notificationsControl}
+          {whatsappControl}{notificationsControl}
           {avatarControl}
         </div>
       </header>
@@ -1470,7 +1472,7 @@ function HeaderBar({ onLogout, user }) {
             <Plus size={16} />
             {clientsWorkspaceCopy.addLabel}
           </button>
-          {notificationsControl}
+          {whatsappControl}{notificationsControl}
           {avatarControl}
         </div>
       </header>
@@ -1482,7 +1484,7 @@ function HeaderBar({ onLogout, user }) {
       <header className="no-print ui-shell-header ui-shell-header-no-title ui-shell-header-developer-dashboard">
         <div className="ui-shell-actions ui-shell-actions-developer-dashboard">
           {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
-          {notificationsControl}
+          {whatsappControl}{notificationsControl}
           {avatarControl}
         </div>
       </header>
@@ -1542,7 +1544,7 @@ function HeaderBar({ onLogout, user }) {
 
           {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
 
-          {notificationsControl}
+          {whatsappControl}{notificationsControl}
           {avatarControl}
         </div>
       </header>
@@ -1592,7 +1594,7 @@ function HeaderBar({ onLogout, user }) {
 
         {!hideQuickCreateInHeader ? <LazyQuickCreateDropdown /> : null}
 
-        {notificationsControl}
+        {whatsappControl}{notificationsControl}
         {avatarControl}
       </div>
     </header>

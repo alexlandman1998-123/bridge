@@ -1,5 +1,6 @@
 import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
 import { handleCrmLink } from './crmLinks.js'
+import { handleInboxMessaging } from './inboxMessaging.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
 const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message'
@@ -7,7 +8,7 @@ const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tas
 const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
 
-export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,downloadMedia,now=()=>new Date()}) {
+export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,downloadMedia,uploadMedia,now=()=>new Date()}) {
   async function channel(org,id) {
     if(!isUuid(id)) throw new Error('Choose a WhatsApp sender.')
     const row=await result(db.from('organisation_communication_channels').select('*').eq('organisation_id',org).eq('id',id).eq('provider','meta').eq('channel_type','whatsapp').maybeSingle())
@@ -44,6 +45,9 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(['set_sender_owner','assign_conversation'].includes(action)&&!actor.isAdmin) throw new Error('Agency management must change WhatsApp ownership and assignments.')
     if(['crm_context','link_crm','unlink_crm','crm_conversations'].includes(action)) {
       return handleCrmLink({db,actor,org,action,payload,conversation})
+    }
+    if(['inbox_page','message_page','inbox_notifications','message_permission','message_receipt','inbox_templates','upload_attachment','send_message'].includes(action)) {
+      return handleInboxMessaging({db,actor,org,action,payload,conversation,channel,senderToken,graph,uploadMedia,hash,now})
     }
     if(action==='workspace') {
       let senderQuery=db.from('organisation_communication_channels').select(safeSender).eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp')

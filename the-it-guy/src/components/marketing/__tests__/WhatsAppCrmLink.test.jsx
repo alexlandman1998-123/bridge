@@ -20,8 +20,8 @@ beforeEach(() => {
   mocks.request.mockImplementation(async (_org, action) => {
     if (action === 'crm_context') return empty
     if (action === 'crm_conversations') return { record: buyer, conversations: [] }
-    if (action === 'inbox') return { conversations: [] }
-    if (action === 'messages') return { conversation: { id: 'thread-one', assigned_user_id: 'agent-one', assignment_version: 3, contact_phone: '27821234567', canReply: true }, messages: [{ id: 'message-one', direction: 'inbound', body_text: 'Older conversation text' }] }
+    if (action === 'inbox_page') return { conversations: [] }
+    if (action === 'message_page') return { conversation: { id: 'thread-one', assigned_user_id: 'agent-one', assignment_version: 3, contact_phone: '27821234567', canReply: true }, messages: [{ id: 'message-one', direction: 'inbound', body_text: 'Older conversation text' }] }
     if (action === 'link_crm' || action === 'unlink_crm') return { saved: true }
     throw Error(`Unexpected ${action}`)
   })
@@ -107,12 +107,12 @@ it('opens CRM conversations through an agency-scoped link and requires choosing 
 it('opens a permitted deep-linked conversation even when it is older than the latest 100', async () => {
   render(wrap(<WhatsAppInbox />, '/marketing?section=whatsapp&view=inbox&organisationId=org-one&conversation=thread-one'))
   await screen.findByText('Older conversation text')
-  expect(mocks.request).toHaveBeenCalledWith('org-one', 'messages', { conversationId: 'thread-one' })
+  expect(mocks.request).toHaveBeenCalledWith('org-one', 'message_page', { conversationId: 'thread-one' })
 })
 
 it('does not load a CRM record or conversation from a different workspace link', async () => {
   render(wrap(<WhatsAppInbox />, '/marketing?section=whatsapp&view=inbox&organisationId=org-two&conversation=thread-two&crmKind=buyer&crmRecord=buyer-two'))
   await screen.findByText('This WhatsApp link belongs to another workspace. Switch to that workspace before opening it.')
   await waitFor(() => expect(mocks.request).toHaveBeenCalled())
-  expect(mocks.request.mock.calls.some(call => ['messages', 'crm_conversations'].includes(call[1]))).toBe(false)
+  expect(mocks.request.mock.calls.some(call => ['message_page', 'crm_conversations'].includes(call[1]))).toBe(false)
 })

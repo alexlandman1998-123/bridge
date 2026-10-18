@@ -2,6 +2,7 @@ import { META_ADMIN_ROLES, META_STAFF_ROLES } from '../_shared/metaIntegrationCo
 import { createClient } from 'supabase';
 import { createMetaIntegrationHandler } from './handler.js';
 import { decryptMetaToken, encryptMetaToken } from '../_shared/metaCredentials.ts';
+import { readMetaIntegrationPayload } from '../_shared/whatsappInboxMessaging.js';
 
 const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
 const env=(name:string)=>Deno.env.get(name)?.trim()||'';
@@ -25,7 +26,14 @@ Deno.serve(async req=>{
     }
     const handler=createMetaIntegrationHandler({db,graph,encrypt:encryptMetaToken,decrypt:decryptMetaToken,
       config:{appId:env('META_APP_ID')||'1010066162083846',whatsappConfigId:env('META_WHATSAPP_LOGIN_CONFIG_ID')||'1078235214654031',graphVersion,storageOrigin:new URL(url).origin},
-      hash:async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(b=>b.toString(16).padStart(2,'0')).join(''),
+      hash:async(value:string|Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value).buffer:new Uint8Array(value).buffer))).map(b=>b.toString(16).padStart(2,'0')).join(''),
+      uploadMedia:async(token:string,phoneId:string,file:{bytes:Uint8Array;mimeType:string;filename:string})=>{
+        const form=new FormData();form.set('messaging_product','whatsapp');form.set('type',file.mimeType);form.set('file',new Blob([new Uint8Array(file.bytes).buffer],{type:file.mimeType}),file.filename);
+        const response=await fetch(`https://graph.facebook.com/${graphVersion}/${phoneId}/media`,{method:'POST',headers:{Authorization:`Bearer ${token}`},body:form,signal:AbortSignal.timeout(30000)});
+        const body=await response.json();
+        if(!response.ok||body.error)throw Object.assign(new Error('Meta could not upload this attachment.'),{definitive:response.status>=400&&response.status<500});
+        return body;
+      },
       authorize:async(authorization:string,org:string)=>{
         const token=authorization.replace(/^Bearer\s+/i,'');
         if(!token||token===serviceKey) return null;
@@ -77,7 +85,6 @@ Deno.serve(async req=>{
         return {mimeType:mime,base64:btoa(binary)};
       },
     });
-    const raw=await req.text();if(raw.length>50000) throw new Error('Meta integration request is too large.');
-    return new Response(JSON.stringify(await handler(JSON.parse(raw),req.headers.get('authorization')||'')),{headers});
+    return new Response(JSON.stringify(await handler(await readMetaIntegrationPayload(req),req.headers.get('authorization')||'')),{headers});
   } catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:'Meta integration request failed.'}),{status:400,headers});}
 });

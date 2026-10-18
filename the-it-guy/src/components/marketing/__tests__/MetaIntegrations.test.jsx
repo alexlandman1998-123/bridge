@@ -13,8 +13,8 @@ vi.mock('../../../services/metaIntegrationService',()=>({metaIntegrationRequest:
 const conversation={id:'conversation-one',contact_phone:'27821234567',contact_name:'Customer One',last_message_preview:'Private customer message',status:'open',canReply:true,assigned_user_id:null,assignment_version:1}
 const page={id:'page-one',page_name:'Agency Page',canPost:true}
 beforeEach(()=>{mocks.org='org-one';mocks.viewer='user-one';mocks.canManage=true;mocks.canConnectOwn=true;vi.mocked(prepareFacebookSdk).mockResolvedValue({});mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action)=>{
-  if(action==='inbox')return {conversations:[conversation]}
-  if(action==='messages')return {conversation,messages:[]}
+  if(action==='inbox_page')return {conversations:[conversation]}
+  if(action==='message_page')return {conversation,messages:[]}
   if(action==='crm_context')return {version:0,assignmentVersion:1,linked:null,candidates:[],campaigns:[]}
   if(action==='workspace')return {pages:[page]}
   if(action==='listing_posts')return {posts:[]}
@@ -30,15 +30,19 @@ it('hides the previous workspace conversation immediately when the next load fai
   view.rerender(wrap(<WhatsAppInbox/>))
   expect(screen.queryByText('Private customer message')).toBeNull();await screen.findByText('Workspace unavailable')
 })
-it('reconciles a lost reply with the same request identifier and body',async()=>{
-  let attempts=0
+it('checks a lost send without submitting the message again',async()=>{
   const original=mocks.request.getMockImplementation()
-  mocks.request.mockImplementation(async(org,action,fields)=>{if(action!=='reply')return original(org,action,fields);attempts++;if(attempts===1)throw Error('Connection lost');return {message:{delivery_status:'sent'}}})
+  mocks.request.mockImplementation(async(org,action,fields)=>{
+    if(action==='send_message')throw Error('Connection lost')
+    if(action==='message_receipt')return {message:{delivery_status:'sent'}}
+    return original(org,action,fields)
+  })
   render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
   fireEvent.change(await screen.findByLabelText('Reply'),{target:{value:'Thanks for contacting us'}})
-  fireEvent.click(screen.getByRole('button',{name:'Send reply'}));await screen.findByRole('button',{name:'Check reply'})
-  fireEvent.click(screen.getByRole('button',{name:'Check reply'}));await waitFor(()=>expect(screen.getByLabelText('Reply').value).toBe(''))
-  const calls=mocks.request.mock.calls.filter(c=>c[1]==='reply');expect(calls).toHaveLength(2);expect(calls[0][2]).toEqual(calls[1][2]);expect(calls[0][2].requestId).toMatch(/^[0-9a-f-]{36}$/)
+  fireEvent.click(screen.getByRole('button',{name:'Send message'}));await screen.findByRole('button',{name:'Check message'})
+  fireEvent.click(screen.getByRole('button',{name:'Check message'}));await waitFor(()=>expect(screen.getByLabelText('Reply').value).toBe(''))
+  const sends=mocks.request.mock.calls.filter(c=>c[1]==='send_message'),checks=mocks.request.mock.calls.filter(c=>c[1]==='message_receipt')
+  expect(sends).toHaveLength(1);expect(checks).toHaveLength(1);expect(checks[0][2].requestId).toBe(sends[0][2].requestId);expect(sends[0][2].requestId).toMatch(/^[0-9a-f-]{36}$/)
 })
 it('previews before publishing and does not repeat an uncertain post',async()=>{
   render(wrap(<ListingFacebookPostPanel organisationId="org-one" listingId="listing-one"/>))
@@ -89,7 +93,7 @@ it('offers personal connection controls to an agent without agency ownership or 
  await screen.findByText(/Connecting for: You/)
  expect(mocks.request).toHaveBeenCalledWith('org-one','begin_whatsapp',{ownerUserId:'user-one'})
  view.unmount()
- mocks.request.mockImplementation(async(_org,action)=>action==='inbox'?{conversations:[{...conversation,assigned_user_id:'user-one'}]}:{conversation:{...conversation,assigned_user_id:'user-one'},messages:[]})
+ mocks.request.mockImplementation(async(_org,action)=>action==='inbox_page'?{conversations:[{...conversation,assigned_user_id:'user-one'}]}:{conversation:{...conversation,assigned_user_id:'user-one'},messages:[]})
  render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
  await screen.findByText('Assigned to you')
  expect(screen.queryByLabelText('Assign conversation')).toBeNull()
@@ -113,14 +117,14 @@ it('removes private messages and reply drafts immediately when the signed-in per
  view.rerender(wrap(<WhatsAppInbox/>))
  expect(screen.queryByText('Private customer message')).toBeNull()
  expect(screen.queryByDisplayValue('Private draft')).toBeNull()
- await screen.findByText('Conversation not found in your inbox')
+ await screen.findAllByText('Conversation not found in your inbox')
 })
 it('clears a thread and unsent draft when a refresh removes its assignment',async()=>{
  render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
  fireEvent.change(await screen.findByLabelText('Reply'),{target:{value:'Private draft'}})
- mocks.request.mockImplementation(async(_org,action)=>{if(action==='inbox')return {conversations:[]};throw Error('Conversation not found in your inbox')})
+ mocks.request.mockImplementation(async(_org,action)=>{if(action==='inbox_page')return {conversations:[]};throw Error('Conversation not found in your inbox')})
  fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
  await waitFor(()=>expect(screen.queryByDisplayValue('Private draft')).toBeNull())
  expect(screen.queryByText('Private customer message')).toBeNull()
- expect(screen.queryByRole('button',{name:'Send reply'})).toBeNull()
+ expect(screen.queryByRole('button',{name:'Send message'})).toBeNull()
 })

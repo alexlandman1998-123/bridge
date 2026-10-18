@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import MobileNotificationBell from './MobileNotificationBell.jsx'
+import WhatsAppUnread from '../marketing/WhatsAppUnread'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -68,6 +69,7 @@ export default function MobileHeader() {
           )}
         </Link>
 
+        <WhatsAppUnread organisationId={currentWorkspace.id || simpleWorkspace.id} viewerId={workspace.profile?.id} role={workspace.role} membership={workspace.currentMembership} enabled={['agent','principal','headquarters'].includes(workspace.role)} />
         <MobileNotificationBell />
         <Link
           to="/mobile/more"

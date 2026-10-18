@@ -74,6 +74,10 @@ export async function applyWhatsAppInboxWebhook(db, payload) {
         if (inbound) {
           const saved = await db.rpc('whatsapp_inbox_receive', inbound)
           if (saved.error) throw new Error('Unable to save incoming WhatsApp message.')
+          if (['stop','unsubscribe','opt out','opt-out'].includes(inbound.p_body.toLowerCase())) {
+            const optedOut=await db.rpc('whatsapp_inbox_optout',{p_phone_id:inbound.p_phone_id,p_waba_id:inbound.p_waba_id,p_from:inbound.p_from,p_at:inbound.p_at})
+            if(optedOut.error)throw new Error('Unable to record the inbox opt-out.')
+          }
           if (text(message.context?.id)) {
             const attribution = await db.rpc('whatsapp_inbox_campaign_reply', {
               p_phone_id: inbound.p_phone_id, p_waba_id: inbound.p_waba_id, p_from: inbound.p_from,
