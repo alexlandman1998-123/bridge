@@ -3880,11 +3880,9 @@ function AppRoutes() {
                 <Route
                   path="integrations/whatsapp"
                   element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['agent', 'developer']}>
-                        <SettingsWhatsAppPage />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
+                    <RoleRoute allowedRoles={['agent', 'developer']}>
+                      <SettingsWhatsAppPage />
+                    </RoleRoute>
                   }
                 />
                 <Route

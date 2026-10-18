@@ -1,11 +1,12 @@
+import { META_ADMIN_ROLES, META_STAFF_ROLES } from '../_shared/metaIntegrationCore.js';
 import { createClient } from 'supabase';
 import { createMetaIntegrationHandler } from './handler.js';
 import { decryptMetaToken, encryptMetaToken } from '../_shared/metaCredentials.ts';
 
 const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
 const env=(name:string)=>Deno.env.get(name)?.trim()||'';
-const ADMIN=new Set(['owner','principal','director','admin','super_admin','developer','agency_admin']);
-const STAFF=new Set([...ADMIN,'agent','senior_agent','manager','branch_manager','broker','assistant']);
+const ADMIN=new Set(META_ADMIN_ROLES);
+const STAFF=new Set(META_STAFF_ROLES);
 
 Deno.serve(async req=>{
   if(req.method==='OPTIONS') return new Response('ok',{headers});
@@ -32,7 +33,7 @@ Deno.serve(async req=>{
         if(error||!data.user) return null;
         const member=await db.from('organisation_users').select('role,status').eq('organisation_id',org).eq('user_id',data.user.id).maybeSingle();
         if(member.error||member.data?.status!=='active'||!STAFF.has(member.data.role)) return null;
-        return {userId:data.user.id,isAdmin:ADMIN.has(member.data.role),userDb:createClient(url,anon,{global:{headers:{Authorization:`Bearer ${token}`}},auth:{persistSession:false,autoRefreshToken:false}})};
+        return {canConnectOwn:true,userId:data.user.id,isAdmin:ADMIN.has(member.data.role),userDb:createClient(url,anon,{global:{headers:{Authorization:`Bearer ${token}`}},auth:{persistSession:false,autoRefreshToken:false}})};
       },
       exchangeCode:async(code:string)=>{
         const response=await fetch(`https://graph.facebook.com/${graphVersion}/oauth/access_token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:env('META_APP_ID')||'1010066162083846',client_secret:env('META_APP_SECRET'),code}),signal:AbortSignal.timeout(15000)});

@@ -2070,6 +2070,44 @@ attachments up to 8 MB and permits replies during Meta's 24-hour customer-servic
 window. Connection tokens are encrypted and inaccessible to browser database
 queries. All inbox and connection operations require active workspace membership.
 
+Each WhatsApp number belongs either to the agency or to an active staff member.
+Agency numbers retain the shared inbox and bulk-campaign capability. Agent-owned
+numbers are inbox-only; campaign selection, the worker, database recipient claims
+and default notification-sender lookup exclude them. Existing numbers remain
+agency numbers when the migration is applied.
+
+Agents can open WhatsApp Connections and use **Connect my WhatsApp**. Their
+Embedded Signup session is bound to their own user on the server, and cannot
+claim a number already belonging to the agency or another agent. Agency
+management can connect for an agent or change a number's owner. Changing number
+ownership transfers its conversations to that agent or the agency queue; an
+active scheduled, running or paused campaign must be completed or cancelled first.
+
+New conversations on an agent number are assigned to its owner. Agency-number
+replies enter the agency queue. Agents can read, reply, change status and download
+attachments only in conversations currently assigned to them. Agency management
+can oversee all conversations and assign or transfer them. Manual handoffs remain
+in place when another message arrives. Transfer a number before deleting its
+owner account, so deletion cannot silently make an agent number a campaign sender.
+Inactive owners cannot use the inbox;
+new conversations on their numbers fall back to agency oversight. Reassignment
+checks and the outbound database claim prevent sending from a stale assignment.
+Assignment versions prevent concurrent saves from overwriting each other, and
+the private ledger records changes. User, role and workspace changes clear cached
+conversations, drafts, connection details and management controls.
+
+Apply `20261018094503_whatsapp_inbox_agent_ownership.sql`, then deploy
+`meta-integrations`, `whatsapp-campaigns`, `whatsapp-campaign-worker` and
+`send-whatsapp`, followed by the primary app. Keep the ownership-aware server
+handlers when rolling back a frontend: the old server handlers read the entire
+agency inbox. Live phone onboarding still requires the number owner's Meta
+authorization and Meta's onboarding eligibility. The local checks use fictional
+data and a fake provider; they send no real messages or connection requests.
+
+Focused checks: `node --test scripts/meta-integrations.test.mjs
+scripts/whatsapp-campaigns.test.mjs` and the Vitest `MetaIntegrations`,
+`useMetaWorkspace`, `metaIntegrationSignup` and `WhatsAppCampaigns` tests.
+
 Listings → Marketing → Post to Facebook prepares a server-generated preview from
 saved public listing details and requires a separate Publish action. It checks
 listing access, seller-review blocks and the Page's posting permission. A claimed

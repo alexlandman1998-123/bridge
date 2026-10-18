@@ -1,3 +1,5 @@
+export const META_ADMIN_ROLES = ['owner','principal','director','admin','super_admin','developer','agency_admin']
+export const META_STAFF_ROLES = [...META_ADMIN_ROLES,'agent','senior_agent','manager','branch_manager','broker','assistant']
 export const text = (value) => typeof value === 'string' ? value.trim() : ''
 export const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(value))
 export const isMetaId = (value) => /^\d{1,32}$/.test(text(value))

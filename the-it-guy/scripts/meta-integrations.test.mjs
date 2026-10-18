@@ -3,6 +3,8 @@ import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import { canReply, publicListingPost, applyWhatsAppInboxWebhook } from '../../supabase/functions/_shared/metaIntegrationCore.js'
+import { createCampaignDelivery } from '../../supabase/functions/_shared/whatsappCampaignDelivery.js'
+import { createCampaignHandler } from '../../supabase/functions/whatsapp-campaigns/handler.js'
 import { createMetaIntegrationHandler } from '../../supabase/functions/meta-integrations/handler.js'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -36,25 +38,29 @@ test('authorization precedes data access and connection management requires an a
 
 async function fixture(){
   const db=new PGlite()
-  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table organisations(id uuid primary key);
-    create table organisation_communication_channels(id uuid primary key,organisation_id uuid,branch_id uuid,provider text,channel_type text,waba_id text,phone_number_id text,meta_business_id text,display_phone_number text,business_display_name text,connection_status text,verification_status text,is_default boolean,connected_at timestamptz,disconnected_at timestamptz,last_error_message text,last_checked_at timestamptz,created_by uuid,created_at timestamptz default now(),updated_at timestamptz,meta_access_token text);
+  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql as $$ select nullif(current_setting('test.actor',true),'')::uuid $$;grant usage on schema auth to authenticated;create table organisation_users(organisation_id uuid,user_id uuid,role text,status text,first_name text,last_name text,email text);grant select on organisation_users to authenticated;create table organisations(id uuid primary key);
+    create table organisation_communication_channels(id uuid primary key default gen_random_uuid(),organisation_id uuid,branch_id uuid,provider text,channel_type text,waba_id text,phone_number_id text,meta_business_id text,display_phone_number text,business_display_name text,connection_status text,verification_status text,is_default boolean,connected_at timestamptz,disconnected_at timestamptz,last_error_message text,last_checked_at timestamptz,created_by uuid,created_at timestamptz default now(),updated_at timestamptz,meta_access_token text);
     create table meta_lead_ads_connections(id uuid primary key,organisation_id uuid,page_id text,page_name text,connection_status text,token_ciphertext text,last_error_message text,connected_at timestamptz default now());
     create table private_listings(id uuid primary key,organisation_id uuid);
     grant all on organisation_communication_channels to anon,authenticated;
     alter table organisation_communication_channels enable row level security;
     create policy org_read on organisation_communication_channels for select to authenticated using(organisation_id=current_setting('test.org',true)::uuid);`)
   await db.exec(readFileSync(new URL('../../supabase/migrations/20261017172424_meta_inbox_and_listing_posts.sql',import.meta.url),'utf8'))
-  await db.query('insert into organisations values($1),($2)',[org,other]);await db.query('insert into auth.users values($1)',[user]);await db.query('insert into private_listings values($1,$2)',[listingId,org])
+  await db.exec(`create function bridge_is_active_member(uuid) returns boolean language sql as $$ select $1=current_setting('test.org',true)::uuid $$;`)
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20260913134659_whatsapp_campaigns.sql',import.meta.url),'utf8'))
+  await db.exec(`create table whatsapp_campaign_jobs(id uuid primary key default gen_random_uuid(),campaign_id uuid,status text);grant select,insert,update on whatsapp_campaign_jobs to service_role;`)
+  await db.exec(readFileSync(new URL('../../supabase/migrations/20261018094503_whatsapp_inbox_agent_ownership.sql',import.meta.url),'utf8'))
+  await db.query('insert into organisations values($1),($2)',[org,other]);await db.query('insert into auth.users values($1)',[user]);await db.query("insert into organisation_users(organisation_id,user_id,role,status,first_name,last_name) values($1,$2,'principal','active','Agency','Owner')",[org,user]);await db.query('insert into private_listings values($1,$2)',[listingId,org])
   await db.query("insert into organisation_communication_channels(id,organisation_id,provider,channel_type,phone_number_id,waba_id,connection_status,meta_access_token) values($1,$2,'meta','whatsapp','100','200','connected','secret'),($3,$4,'meta','whatsapp','101','201','connected','foreign-secret')",[sender,org,foreign,other])
   await db.query("insert into meta_lead_ads_connections(id,organisation_id,page_id,page_name,connection_status,token_ciphertext,granted_scopes,page_tasks) values($1,$2,'300','Test Page','connected','encrypted',array['pages_manage_posts'],array['CREATE_CONTENT'])",[connection,org])
   return db
 }
 
 // Minimal PostgREST adapter: executes the real handler queries against PostgreSQL.
-function sqlClient(db){return {rpc:async(name,args)=>{try{return {data:(await db.query(`select * from ${name}(${Object.keys(args).map((k,i)=>`${k}=>$${i+1}`).join(',')})`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v))).rows,error:null}}catch(error){return {data:null,error}}},from:table=>{
+function sqlClient(db){return {rpc:async(name,args)=>{try{const rows=(await db.query(`select * from ${name}(${Object.keys(args).map((k,i)=>`${k}=>$${i+1}`).join(',')})`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v))).rows;return {data:rows.length===1&&Object.keys(rows[0]).length===1&&Object.hasOwn(rows[0],name)?rows[0][name]:rows,error:null}}catch(error){return {data:null,error}}},from:table=>{
   let columns='*',filters=[],values=[],mutation=null,mode='',order=[],limit=''
   const bind=v=>{values.push(v&&typeof v==='object'&&!Array.isArray(v)?JSON.stringify(v):v);return `$${values.length}`}
-  const q={select(c='*'){columns=c;return q},eq(k,v){filters.push(`${k}=${bind(v)}`);return q},is(k,v){assert.equal(v,null);filters.push(`${k} is null`);return q},gt(k,v){filters.push(`${k}>${bind(v)}`);return q},lte(k,v){filters.push(`${k}<=${bind(v)}`);return q},order(k,o={}){order.push(`${k} ${o.ascending===false?'desc':'asc'}`);return q},limit(n){limit=` limit ${Number(n)}`;return q},single(){mode='single';return q},maybeSingle(){mode='maybe';return q},update(patch){mutation=`update ${table} set ${Object.entries(patch).map(([k,v])=>`${k}=${bind(v)}`).join(',')}`;return q},insert(row){mutation=`insert into ${table}(${Object.keys(row).join(',')}) values(${Object.values(row).map(bind).join(',')})`;return q},async then(resolve){try{const where=filters.length?` where ${filters.join(' and ')}`:'';const sql=mutation?`${mutation}${where} returning ${columns}`:`select ${columns} from ${table}${where}${order.length?` order by ${order.join(',')}`:''}${limit}`;const rows=(await db.query(sql,values)).rows;if(mode==='single'&&rows.length!==1)throw Error('Expected one row');return resolve({data:mode?rows[0]||null:rows,error:null})}catch(error){return resolve({data:null,error})}}};return q
+  const q={select(c='*'){columns=c;return q},eq(k,v){filters.push(`${k}=${bind(v)}`);return q},is(k,v){assert.equal(v,null);filters.push(`${k} is null`);return q},gt(k,v){filters.push(`${k}>${bind(v)}`);return q},lte(k,v){filters.push(`${k}<=${bind(v)}`);return q},order(k,o={}){order.push(`${k} ${o.ascending===false?'desc':'asc'}`);return q},limit(n){limit=` limit ${Number(n)}`;return q},range(a,b){limit=` limit ${b-a+1} offset ${a}`;return q},single(){mode='single';return q},maybeSingle(){mode='maybe';return q},update(patch){mutation=`update ${table} set ${Object.entries(patch).map(([k,v])=>`${k}=${bind(v)}`).join(',')}`;return q},insert(row){mutation=`insert into ${table}(${Object.keys(row).join(',')}) values(${Object.values(row).map(bind).join(',')})`;return q},async then(resolve){try{const where=filters.length?` where ${filters.join(' and ')}`:'';const sql=mutation?`${mutation}${where} returning ${columns}`:`select ${columns} from ${table}${where}${order.length?` order by ${order.join(',')}`:''}${limit}`;const rows=(await db.query(sql,values)).rows;if(mode==='single'&&rows.length!==1)throw Error('Expected one row');return resolve({data:mode?rows[0]||null:rows,error:null})}catch(error){return resolve({data:null,error})}}};return q
 }}}
 const receive=(db,mid,at=time,phone='100',waba='200')=>db.query('select whatsapp_inbox_receive($1,$2,$3,$4,$5,$6,$7,$8,$9) id',[phone,waba,'27821234567',mid,at,mid,'text','{}','Customer'])
 
@@ -120,7 +126,7 @@ test('signed-event ingestion is idempotent, ordered and scoped; credentials and 
     assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,2)
     await applyWhatsAppInboxWebhook(sqlClient(db),{entry:[{id:'200',changes:[{field:'messages',value:{metadata:{phone_number_id:'100'},messages:[{id:'webhook',from:'27821234567',timestamp:String(Date.parse(time)/1000),type:'text',text:{body:'Hello'}}]}}]}]})
     assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,3)
-    await db.exec(`set role authenticated;set test.org='${org}';`)
+    await db.exec(`set role authenticated;set test.org='${org}';set test.actor='${user}';`)
     assert.equal((await db.query('select id,phone_number_id from organisation_communication_channels')).rows.length,1)
     for(const col of ['meta_access_token','token_ciphertext']) await assert.rejects(db.query(`select ${col} from organisation_communication_channels`),/permission denied/)
     await assert.rejects(db.query("update organisation_communication_channels set meta_access_token='forged'"),/permission denied/)
@@ -139,7 +145,7 @@ test('real reply flow sends once under concurrency and never repeats an uncertai
     await Promise.all([call(),call()]);assert.equal(sent,1)
     assert.equal((await call()).message.delivery_status,'sent');assert.equal(sent,1)
     await assert.rejects(call(id(10),{message:'Changed'}),/different message/)
-    await assert.rejects(call(id(11),{organisationId:other}),/not found/)
+    await assert.rejects(call(id(11),{organisationId:other}),/not found|membership/)
     uncertain=true;assert.equal((await call(id(11))).message.delivery_status,'unknown');await call(id(11));assert.equal(sent,2)
     const callback=(status,phone='100')=>db.query('select whatsapp_inbox_status($1,$2,$3,$4,$5,$6,$7) ok',[phone,'200','wamid.late',`arch9-inbox:${id(11)}`,status,time,'failure'])
     assert.equal((await callback('read','101')).rows[0].ok,false)
@@ -150,7 +156,7 @@ test('real reply flow sends once under concurrency and never repeats an uncertai
   }finally{await db.close()}
 })
 
-test('phone activation is admin-only, scoped to a pending sender, and never stores the PIN',async()=>{
+test('phone activation is scoped to a permitted pending sender and never stores the PIN',async()=>{
   const db=await fixture()
   try{
     const calls=[]
@@ -181,4 +187,184 @@ test('real listing preview and publishing preserve JSONB snapshots, reject stale
     assert.equal((await call('publish_post',{postId:lost.id})).post.status,'unknown');await call('publish_post',{postId:lost.id});assert.equal(posts,2)
     await assert.rejects(db.query('insert into meta_listing_posts(organisation_id,listing_id,connection_id,snapshot_json,created_by) values($1,$2,$3,$4,$5)',[other,listingId,connection,'{}',user]),/foreign key/)
   }finally{await db.close()}
+})
+
+const agentA=id(20),agentB=id(21),outsider=id(22)
+async function teamFixture(){
+ const db=await fixture()
+ for(const [actor,target,name] of [[agentA,org,'Agent A'],[agentB,org,'Agent B'],[outsider,other,'Other Agent']]){
+  await db.query('insert into auth.users values($1)',[actor])
+  await db.query("insert into organisation_users(organisation_id,user_id,role,status,first_name) values($1,$2,'agent','active',$3)",[target,actor,name])
+ }
+ return db
+}
+const staffHandler=(db,actor=user,extra={})=>createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>({userId:actor,isAdmin:actor===user,canConnectOwn:true}),now:()=>new Date(time),graph:async()=>({messages:[{id:'wamid.staff-reply'}]}),...extra})
+const request=(handler,action,fields={})=>handler({organisationId:org,action,...fields},'Bearer test')
+const assign=(handler,conversationId,assignedUserId,assignmentVersion)=>request(handler,'assign_conversation',{conversationId,assignedUserId,assignmentVersion})
+const own=(handler,ownerUserId,ownershipVersion=1)=>request(handler,'set_sender_owner',{senderId:sender,ownerUserId,ownershipVersion})
+
+test('agency queue, agent assignment, handoff and attachment access execute against real permission SQL',async()=>{
+ const db=await teamFixture()
+ try{
+  const admin=staffHandler(db),a=staffHandler(db,agentA),b=staffHandler(db,agentB),foreignAgent=staffHandler(db,outsider)
+  const conversationId=(await receive(db,'assigned-incoming')).rows[0].id
+  assert.equal((await request(admin,'inbox')).conversations.length,1)
+  assert.equal((await request(a,'inbox',{actorUserId:user,isAdmin:true})).conversations.length,0)
+  await assert.rejects(own(a,agentB),/management/)
+  assert.equal((await assign(admin,conversationId,agentA,1)).conversation.assignment_version,2)
+  assert.equal((await request(a,'inbox')).conversations[0].id,conversationId)
+  assert.equal((await request(b,'inbox')).conversations.length,0)
+  await assert.rejects(request(foreignAgent,'inbox'),/membership/)
+  for(const action of ['messages','reply','conversation_status']) await assert.rejects(request(b,action,{conversationId,requestId:id(23),message:'forged',status:'closed',assignmentVersion:2}),/not found/)
+  await assert.rejects(assign(a,conversationId,agentB,2),/management/)
+  await assert.rejects(assign(admin,conversationId,outsider,2),/membership/)
+  await assert.rejects(assign(admin,conversationId,agentB,1),/assignment changed/)
+  const message=(await db.query("update whatsapp_inbox_messages set media_json='{\"id\":\"900\",\"filename\":\"private.pdf\"}' where conversation_id=$1 returning id",[conversationId])).rows[0]
+  let downloads=0
+  const files=staffHandler(db,agentB,{downloadMedia:async()=>{downloads++;return {base64:'ZmlsZQ==',mimeType:'application/pdf'}}})
+  await assert.rejects(request(files,'media',{messageId:message.id}),/not found/);assert.equal(downloads,0)
+  await assign(admin,conversationId,agentB,2)
+  await assert.rejects(request(a,'messages',{conversationId}),/not found/)
+  const thread=await request(b,'messages',{conversationId})
+  assert.equal(thread.messages[0].body_text,'assigned-incoming')
+  assert.equal(thread.conversation.assignment_version,3)
+  await request(files,'media',{messageId:message.id});assert.equal(downloads,1)
+  await request(b,'conversation_status',{conversationId,status:'closed',assignmentVersion:3})
+  assert.equal((await db.query('select status from whatsapp_inbox_conversations where id=$1',[conversationId])).rows[0].status,'closed')
+  assert.deepEqual((await db.query('select from_user_id,to_user_id,actor_user_id,assignment_version from whatsapp_inbox_assignments order by assignment_version')).rows,[{from_user_id:null,to_user_id:agentA,actor_user_id:user,assignment_version:2},{from_user_id:agentA,to_user_id:agentB,actor_user_id:user,assignment_version:3}])
+ }finally{await db.close()}
+})
+
+test('number ownership moves history, assigns new inbound chats, preserves manual handoffs and hides other agent numbers',async()=>{
+ const db=await teamFixture()
+ try{
+  const admin=staffHandler(db),a=staffHandler(db,agentA),b=staffHandler(db,agentB)
+  const original=(await receive(db,'existing-history')).rows[0].id
+  await own(admin,agentA)
+  assert.equal((await db.query('select actor_user_id from whatsapp_inbox_assignments where conversation_id=$1',[original])).rows[0].actor_user_id,user)
+  await assert.rejects(db.query('delete from auth.users where id=$1',[agentA]),/foreign key/)
+  assert.equal((await db.query('select owner_user_id from organisation_communication_channels where id=$1',[sender])).rows[0].owner_user_id,agentA)
+  await db.query("update organisation_communication_channels set connection_status='pending' where id=$1",[sender])
+  const activation=[]
+  const agentSetup=staffHandler(db,agentA,{graph:async(_token,path,payload)=>{activation.push({path,payload});return payload?{success:true}:{id:'100',status:'CONNECTED'}}})
+  assert.equal((await request(agentSetup,'register_sender',{senderId:sender,pin:'654321'})).sender.connection_status,'connected')
+  assert.equal(activation[0].payload.pin,'654321')
+  assert.ok(!JSON.stringify((await db.query('select * from organisation_communication_channels where id=$1',[sender])).rows).includes('654321'))
+  assert.equal((await request(a,'inbox')).conversations.length,1)
+  const next=(await db.query("select whatsapp_inbox_receive('100','200','27821234568','new-owned',$1,'Hello','text','{}','Next Customer') id",[time])).rows[0].id
+  assert.equal((await request(a,'messages',{conversationId:next})).conversation.assigned_user_id,agentA)
+  await assign(admin,original,agentB,2)
+  await receive(db,'handoff-stays-with-b')
+  assert.equal((await request(b,'messages',{conversationId:original})).conversation.assigned_user_id,agentB)
+  assert.equal((await request(a,'inbox')).conversations.length,1)
+  await assert.rejects(request(b,'disconnect_sender',{senderId:sender}),/only your own/)
+  const workspaceA=await request(a,'workspace'),workspaceB=await request(b,'workspace')
+  assert.equal(workspaceA.senders[0].owner_user_id,agentA);assert.equal(workspaceA.assignees.length,0);assert.equal(workspaceA.currentUserId,agentA)
+  assert.equal(workspaceB.senders.length,0)
+  await assert.rejects(own(admin,agentB,1),/ownership changed/)
+  await own(admin,null,2)
+  assert.equal((await request(a,'inbox')).conversations.length,0);assert.equal((await request(b,'inbox')).conversations.length,0)
+  assert.equal((await request(admin,'inbox')).conversations.length,2)
+  const owner=(await db.query('select owner_user_id,ownership_version,is_default from organisation_communication_channels where id=$1',[sender])).rows[0]
+  assert.deepEqual(owner,{owner_user_id:null,ownership_version:3,is_default:false})
+  await own(admin,agentA,3)
+  await db.exec(`set role authenticated;set test.org='${org}';set test.actor='${agentB}';`)
+  assert.equal((await db.query('select id from organisation_communication_channels')).rows.length,0)
+  await db.exec(`set test.actor='${agentA}';`)
+  assert.equal((await db.query('select id from organisation_communication_channels')).rows[0].id,sender)
+  await assert.rejects(db.query('select token_ciphertext from organisation_communication_channels'),/permission denied/)
+  await assert.rejects(db.query('select whatsapp_inbox_request($1,$2,$3)',[org,user,'list']),/permission denied/)
+  await assert.rejects(db.query('select whatsapp_sender_set_owner($1,$2,$3,$4,$5)',[org,user,sender,agentB,4]),/permission denied/)
+  await assert.rejects(db.query('select * from whatsapp_inbox_assignments'),/permission denied/)
+ }finally{await db.close()}
+})
+
+test('membership revocation blocks old inbox access; inbound messages fall back to agency oversight',async()=>{
+ const db=await teamFixture()
+ try{
+  await own(staffHandler(db),agentA)
+  await receive(db,'before-revocation')
+  await db.query("update organisation_users set status='inactive' where user_id=$1",[agentA])
+  await assert.rejects(request(staffHandler(db,agentA),'inbox'),/membership/)
+  await assert.rejects(own(staffHandler(db),outsider,2),/membership/)
+  const next=(await db.query("select whatsapp_inbox_receive('100','200','27821234569','after-revocation',$1,'Hello','text','{}','Next Customer') id",[time])).rows[0].id
+  assert.equal((await request(staffHandler(db),'messages',{conversationId:next})).conversation.assigned_user_id,null)
+  assert.equal((await request(staffHandler(db),'inbox')).conversations.length,2)
+ }finally{await db.close()}
+})
+
+test('a reassignment after reply access prevents the outbound claim and never calls Meta',async()=>{
+ const db=await teamFixture()
+ try{
+  const admin=staffHandler(db),conversationId=(await receive(db,'before-race')).rows[0].id
+  await assign(admin,conversationId,agentA,1)
+  const client=sqlClient(db),originalRpc=client.rpc
+  client.rpc=async(name,args)=>{const response=await originalRpc(name,args);if(name==='whatsapp_inbox_request'&&args.p_action==='access')await assign(admin,conversationId,agentB,2);return response}
+  let calls=0
+  const agent=staffHandler(db,agentA,{db:client,graph:async()=>{calls++;return {messages:[{id:'wamid.should-not-send'}]}}})
+  await assert.rejects(request(agent,'reply',{conversationId,message:'Old assignment',requestId:id(24)}),/assignment changed/)
+  assert.equal(calls,0);assert.equal((await db.query("select count(*)::int n from whatsapp_inbox_messages where direction='outbound'")).rows[0].n,0)
+ }finally{await db.close()}
+})
+
+test('embedded signup binds the owner on the server and an agent cannot claim an existing agency number',async()=>{
+ const db=await teamFixture()
+ try{
+  const extra={config:{appId:'app',whatsappConfigId:'config',graphVersion:'v23.0'},hash:async value=>`hash:${value}`,encrypt:async()=> 'encrypted',decrypt:async()=> 'fake-token',exchangeCode:async()=> 'fake-token'}
+  let phone='100',subscriptions=0
+  extra.graph=async(_token,path,payload)=>{if(payload){subscriptions++;return {success:true}};if(path.startsWith('200/phone_numbers'))return {data:[{id:phone}]};if(path.startsWith('200?'))return {id:'200',name:'Business'};return {id:phone,display_phone_number:'+27 82 000 0000',verified_name:'Business',status:'CONNECTED'}}
+  const a=staffHandler(db,agentA,extra)
+  await assert.rejects(request(a,'begin_whatsapp',{ownerUserId:agentB}),/only your own/)
+  const intent=await request(a,'begin_whatsapp')
+  await request(a,'exchange_whatsapp_code',{state:intent.state,code:'fake-code'})
+  await assert.rejects(request(a,'finish_whatsapp',{state:intent.state,wabaId:'200',phoneNumberId:'100'}),/administrator must transfer/)
+  assert.equal(subscriptions,0)
+  assert.equal((await db.query('select owner_user_id,consumed_at from meta_whatsapp_authorizations')).rows[0].owner_user_id,agentA)
+  phone='102'
+  const connected=(await request(a,'finish_whatsapp',{state:intent.state,wabaId:'200',phoneNumberId:phone,ownerUserId:agentB})).sender
+  assert.equal(connected.owner_user_id,agentA);assert.equal(subscriptions,1)
+  await assert.rejects(request(a,'finish_whatsapp',{state:intent.state,wabaId:'200',phoneNumberId:phone}),/expired/)
+  const admin=staffHandler(db,user,extra),adminIntent=await request(admin,'begin_whatsapp',{ownerUserId:agentB})
+  assert.equal((await db.query('select owner_user_id from meta_whatsapp_authorizations where state_hash=$1',[`hash:${adminIntent.state}`])).rows[0].owner_user_id,agentB)
+ }finally{await db.close()}
+})
+
+test('agent numbers are excluded from campaign selection, provider delivery and database recipient claims',async()=>{
+ const db=await teamFixture()
+ try{
+  const admin=staffHandler(db),campaign=id(30),person=id(31)
+  await db.query("insert into whatsapp_campaigns(id,organisation_id,name,sender_id) values($1,$2,'Agency campaign',$3)",[campaign,org,sender])
+  await db.query("insert into whatsapp_campaign_jobs(campaign_id,status) values($1,'queued')",[campaign])
+  await assert.rejects(own(admin,agentA),/Complete or cancel active campaigns/)
+  await db.exec("update whatsapp_campaign_jobs set status='completed'")
+  await own(admin,agentA)
+  const {sender:loadSender}=createCampaignDelivery({db:sqlClient(db),meta:async()=>{throw Error('No provider call permitted')}})
+  await assert.rejects(loadSender(org,sender),/agency number/)
+  const campaigns=createCampaignHandler({db:sqlClient(db),authorize:async()=>agentA,meta:async()=>({})})
+  assert.equal((await campaigns({organisationId:org,action:'workspace'},'Bearer test')).senders.length,0)
+  await db.query("insert into whatsapp_marketing_contacts(id,organisation_id,full_name,phone) values($1,$2,'Customer','27821234567')",[person,org])
+  const recipient=()=>db.query("insert into whatsapp_campaign_recipients(organisation_id,campaign_id,contact_id,full_name,phone,payload,consent_snapshot) values($1,$2,$3,'Customer','27821234567','{}','{}') returning id",[org,campaign,person])
+  await assert.rejects(recipient(),/Bulk campaigns require an agency number/)
+  await own(admin,null,2)
+  const rid=(await recipient()).rows[0].id
+  await own(admin,agentA,3)
+  await assert.rejects(db.query("update whatsapp_campaign_recipients set status='processing' where id=$1",[rid]),/Bulk campaigns require an agency number/)
+ }finally{await db.close()}
+})
+
+test('the real service role can route and reply through server-only functions without table-owner privileges',async()=>{
+ const db=await teamFixture()
+ try{
+  await db.exec('alter role service_role bypassrls;set role service_role;')
+  const admin=staffHandler(db),a=staffHandler(db,agentA)
+  await own(admin,agentA)
+  const conversationId=(await receive(db,'service-role-incoming')).rows[0].id
+  const thread=await request(a,'messages',{conversationId})
+  assert.equal(thread.conversation.assigned_user_id,agentA)
+  assert.equal(thread.messages[0].body_text,'service-role-incoming')
+  const sent=await request(a,'reply',{conversationId,message:'Service role reply',requestId:id(35)})
+  assert.equal(sent.message.delivery_status,'sent');assert.equal(sent.message.created_by,agentA)
+  await assign(admin,conversationId,agentB,1)
+  await assert.rejects(request(a,'messages',{conversationId}),/not found/)
+ }finally{await db.close()}
 })

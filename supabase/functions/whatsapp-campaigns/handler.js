@@ -47,7 +47,7 @@ export function createCampaignHandler({ db, authorize, meta }) {
         const [campaigns, contacts, senders] = await Promise.all([
           allRows(() => db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).order('created_at', { ascending: false }).order('id')),
           allRows(() => db.from('whatsapp_marketing_contacts').select('*').eq('organisation_id', org).order('full_name').order('id')),
-          result(db.from('organisation_communication_channels').select(safeSenderFields).eq('organisation_id', org).eq('provider', 'meta').eq('channel_type', 'whatsapp').order('created_at')),
+          result(db.from('organisation_communication_channels').select(safeSenderFields).eq('organisation_id', org).eq('provider', 'meta').eq('channel_type', 'whatsapp').is('owner_user_id', null).order('created_at')),
         ])
         return { campaigns, contacts, senders }
       }

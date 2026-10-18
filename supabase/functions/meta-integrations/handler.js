@@ -1,9 +1,9 @@
-import { canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
+import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
-const safeSender = 'id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message'
+const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message'
 const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tasks,last_error_message'
-const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at'
+const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
 
 export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,downloadMedia,now=()=>new Date()}) {
@@ -13,11 +13,12 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!row) throw new Error('WhatsApp sender not found in this workspace.')
     return row
   }
-  async function conversation(org,id) {
+  async function inboxRequest(org,actor,action,extra={}) {
+    return result(db.rpc('whatsapp_inbox_request',{p_org:org,p_actor:actor.userId,p_action:action,...extra}))
+  }
+  async function conversation(org,actor,id) {
     if(!isUuid(id)) throw new Error('Choose a conversation.')
-    const row=await result(db.from('whatsapp_inbox_conversations').select('*').eq('organisation_id',org).eq('id',id).maybeSingle())
-    if(!row) throw new Error('Conversation not found in this workspace.')
-    return row
+    return (await inboxRequest(org,actor,'access',{p_conversation:id})).conversation
   }
   async function page(org,id) {
     if(!isUuid(id)) throw new Error('Choose a connected Facebook Page.')
@@ -37,19 +38,31 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!isUuid(org)) throw new Error('Choose an organisation workspace.')
     const actor=await authorize(authorization,org)
     if(!actor?.userId) throw new Error('Active staff membership is required.')
-    const adminActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender']
-    if(adminActions.includes(action)&&!actor.isAdmin) throw new Error('An organisation administrator must manage Meta connections.')
+    const connectionActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender']
+    if(connectionActions.includes(action)&&!actor.isAdmin&&!actor.canConnectOwn) throw new Error('An organisation administrator must manage Meta connections.')
+    if(['set_sender_owner','assign_conversation'].includes(action)&&!actor.isAdmin) throw new Error('Agency management must change WhatsApp ownership and assignments.')
     if(action==='workspace') {
-      const [senders,pages]=await Promise.all([
-        result(db.from('organisation_communication_channels').select(safeSender).eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp').order('created_at')),
+      let senderQuery=db.from('organisation_communication_channels').select(safeSender).eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp')
+      if(!actor.isAdmin) senderQuery=senderQuery.eq('owner_user_id',actor.userId)
+      const [senders,pages,members]=await Promise.all([
+        result(senderQuery.order('created_at')),
         result(db.from('meta_lead_ads_connections').select(safePage).eq('organisation_id',org).order('connected_at')),
+        actor.isAdmin?result(db.from('organisation_users').select('user_id,first_name,last_name,email,role').eq('organisation_id',org).eq('status','active')):[],
       ])
-      return {senders:senders||[],pages:(pages||[]).map(p=>({...p,canPost:canPublishPage(p)})),canManage:actor.isAdmin}
+      const assignees=(members||[]).filter(m=>META_STAFF_ROLES.includes(m.role)).map(m=>({id:m.user_id,name:[m.first_name,m.last_name].filter(Boolean).join(' ')||m.email||'Team member'}))
+      return {senders:senders||[],pages:(pages||[]).map(p=>({...p,canPost:canPublishPage(p)})),canManage:actor.isAdmin,canConnectOwn:Boolean(actor.canConnectOwn),currentUserId:actor.userId,assignees}
+    }
+    if(action==='set_sender_owner') {
+      if(!isUuid(payload.senderId)||!(payload.ownerUserId==null||payload.ownerUserId===''||isUuid(payload.ownerUserId))) throw new Error('Choose a number and an active agent.')
+      return result(db.rpc('whatsapp_sender_set_owner',{p_org:org,p_actor:actor.userId,p_sender:payload.senderId,p_owner:text(payload.ownerUserId)||null,p_version:Number.isInteger(payload.ownershipVersion)?payload.ownershipVersion:null}))
     }
     if(action==='begin_whatsapp') {
       if(!config.appId||!config.whatsappConfigId) throw new Error('WhatsApp embedded signup is not configured.')
+      const owner=actor.isAdmin?text(payload.ownerUserId)||null:actor.userId
+      if(!actor.isAdmin&&payload.ownerUserId&&payload.ownerUserId!==actor.userId) throw new Error('You can connect only your own WhatsApp number.')
+      if(owner){if(!isUuid(owner)) throw new Error('Choose an active agent.');await result(db.rpc('whatsapp_staff_is_admin',{p_org:org,p_actor:owner}))}
       const state=crypto.randomUUID()+crypto.randomUUID()
-      await result(db.from('meta_whatsapp_authorizations').insert({state_hash:await hash(state),organisation_id:org,requested_by:actor.userId,expires_at:new Date(now().getTime()+600000).toISOString()}))
+      await result(db.from('meta_whatsapp_authorizations').insert({state_hash:await hash(state),organisation_id:org,requested_by:actor.userId,owner_user_id:owner,expires_at:new Date(now().getTime()+600000).toISOString()}))
       return {state,appId:config.appId,configurationId:config.whatsappConfigId,graphVersion:config.graphVersion}
     }
     if(action==='exchange_whatsapp_code') {
@@ -68,20 +81,22 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       const token=await decrypt(session.token_ciphertext)
       const [business,phone,numbers]=await Promise.all([graph(token,`${wabaId}?fields=id,name`),graph(token,`${phoneId}?fields=id,display_phone_number,verified_name,code_verification_status,status`),graph(token,`${wabaId}/phone_numbers?fields=id&limit=100`)])
       if(text(business.id)!==wabaId||text(phone.id)!==phoneId||!numbers.data?.some(n=>text(n.id)===phoneId)) throw new Error('The selected phone number does not belong to the authorized WhatsApp business account.')
-      const existing=await result(db.from('organisation_communication_channels').select('id,organisation_id').eq('phone_number_id',phoneId).eq('provider','meta').eq('channel_type','whatsapp').eq('connection_status','connected').maybeSingle())
+      const existing=await result(db.from('organisation_communication_channels').select('id,organisation_id,owner_user_id,ownership_version').eq('phone_number_id',phoneId).eq('provider','meta').eq('channel_type','whatsapp').eq('connection_status','connected').maybeSingle())
       if(existing&&existing.organisation_id!==org) throw new Error('This phone number is already connected to another workspace.')
+      const own=existing||await result(db.from('organisation_communication_channels').select('id,owner_user_id,ownership_version').eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp').eq('phone_number_id',phoneId).maybeSingle())
+      if(!actor.isAdmin&&(session.owner_user_id!==actor.userId||(own&&own.owner_user_id!==actor.userId))) throw new Error('An administrator must transfer an existing agency or agent number.')
       const consumed=await result(db.from('meta_whatsapp_authorizations').update({consumed_at:now().toISOString(),token_ciphertext:null}).eq('state_hash',session.state_hash).is('consumed_at',null).select('state_hash').maybeSingle())
       if(!consumed) throw new Error('This WhatsApp connection was already completed.')
       await graph(token,`${wabaId}/subscribed_apps`,{})
-      const fields={organisation_id:org,provider:'meta',channel_type:'whatsapp',waba_id:wabaId,phone_number_id:phoneId,display_phone_number:text(phone.display_phone_number),business_display_name:text(phone.verified_name)||text(business.name),connection_status:phone.status==='CONNECTED'?'connected':'pending',verification_status:phone.code_verification_status==='VERIFIED'?'verified':'pending',meta_access_token:'',token_ciphertext:await encrypt(token),connected_at:now().toISOString(),created_by:actor.userId,last_error_message:null}
-      const own=existing||await result(db.from('organisation_communication_channels').select('id').eq('organisation_id',org).eq('phone_number_id',phoneId).maybeSingle())
-      const saved=own?await result(db.from('organisation_communication_channels').update(fields).eq('id',own.id).eq('organisation_id',org).select(safeSender).single()):await result(db.from('organisation_communication_channels').insert(fields).select(safeSender).single())
+      const fields={organisation_id:org,owner_user_id:session.owner_user_id||null,ownership_changed_by:actor.userId,provider:'meta',channel_type:'whatsapp',waba_id:wabaId,phone_number_id:phoneId,display_phone_number:text(phone.display_phone_number),business_display_name:text(phone.verified_name)||text(business.name),connection_status:phone.status==='CONNECTED'?'connected':'pending',verification_status:phone.code_verification_status==='VERIFIED'?'verified':'pending',meta_access_token:'',token_ciphertext:await encrypt(token),connected_at:now().toISOString(),created_by:actor.userId,last_error_message:null}
+      const saved=own?await result(db.from('organisation_communication_channels').update(fields).eq('id',own.id).eq('organisation_id',org).eq('ownership_version',own.ownership_version).select(safeSender).single()):await result(db.from('organisation_communication_channels').insert(fields).select(safeSender).single())
       return {sender:saved}
     }
     if(action==='register_sender'||action==='health_sender'||action==='disconnect_sender') {
       const row=await channel(org,payload.senderId)
+      if(!actor.isAdmin&&row.owner_user_id!==actor.userId) throw new Error('You can manage only your own WhatsApp number.')
       if(action==='disconnect_sender') {
-        await result(db.from('organisation_communication_channels').update({connection_status:'disconnected',disconnected_at:now().toISOString(),meta_access_token:'',token_ciphertext:null,is_default:false}).eq('id',row.id).eq('organisation_id',org))
+        await result(db.from('organisation_communication_channels').update({connection_status:'disconnected',disconnected_at:now().toISOString(),meta_access_token:'',token_ciphertext:null,is_default:false}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select('id').single())
         return {disconnected:true}
       }
       const token=await senderToken(row)
@@ -91,26 +106,22 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
         catch { throw new Error('Meta could not register this number. Check the PIN and phone verification in WhatsApp Manager, then check the connection before retrying.') }
       }
       const phone=await graph(token,`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status`)
-      const sender=await result(db.from('organisation_communication_channels').update({connection_status:phone.status==='CONNECTED'?'connected':'pending',last_checked_at:now().toISOString(),last_error_message:null}).eq('id',row.id).eq('organisation_id',org).select(safeSender).single())
+      const sender=await result(db.from('organisation_communication_channels').update({connection_status:phone.status==='CONNECTED'?'connected':'pending',last_checked_at:now().toISOString(),last_error_message:null}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select(safeSender).single())
       return {sender}
     }
     if(action==='inbox') {
-      const conversations=await result(db.from('whatsapp_inbox_conversations').select('*').eq('organisation_id',org).order('last_message_at',{ascending:false}).limit(100))
-      return {conversations:(conversations||[]).map(c=>({...c,canReply:canReply(c,now().getTime())}))}
+      const data=await inboxRequest(org,actor,'list')
+      return {conversations:data.conversations.map(c=>({...c,canReply:canReply(c,now().getTime())}))}
     }
-    if(action==='messages'||action==='conversation_status') {
-      const row=await conversation(org,payload.conversationId)
-      if(action==='conversation_status') {
-        if(!['open','closed'].includes(payload.status)) throw new Error('Choose open or closed.')
-        await result(db.from('whatsapp_inbox_conversations').update({status:payload.status,updated_at:now().toISOString()}).eq('id',row.id).eq('organisation_id',org))
-        return {status:payload.status}
-      }
-      const messages=await result(db.from('whatsapp_inbox_messages').select(safeMessages).eq('organisation_id',org).eq('conversation_id',row.id).order('event_at',{ascending:false}).order('id',{ascending:false}).limit(100))
-      await result(db.from('whatsapp_inbox_conversations').update({unread_count:0}).eq('id',row.id).eq('organisation_id',org).eq('last_inbound_at',row.last_inbound_at))
-      return {conversation:{...row,canReply:canReply(row,now().getTime())},messages:(messages||[]).reverse()}
+    if(action==='messages'||action==='conversation_status'||action==='assign_conversation') {
+      if(!isUuid(payload.conversationId)) throw new Error('Choose a conversation.')
+      if(action==='conversation_status'&&!['open','closed'].includes(payload.status)) throw new Error('Choose open or closed.')
+      if(action==='assign_conversation'&&payload.assignedUserId&&!isUuid(payload.assignedUserId)) throw new Error('Choose an active agent or the agency queue.')
+      const data=await inboxRequest(org,actor,action==='messages'?'thread':action==='assign_conversation'?'assign':payload.status,{p_conversation:payload.conversationId,p_assignee:action==='assign_conversation'?text(payload.assignedUserId)||null:null,p_version:Number.isInteger(payload.assignmentVersion)?payload.assignmentVersion:null})
+      return {...data,conversation:{...data.conversation,canReply:canReply(data.conversation,now().getTime())}}
     }
     if(action==='reply') {
-      const row=await conversation(org,payload.conversationId),body=text(payload.message),id=text(payload.requestId)
+      const row=await conversation(org,actor,payload.conversationId),body=text(payload.message),id=text(payload.requestId)
       if(!isUuid(id)||!body||body.length>4096) throw new Error('Write a reply of 1 to 4,096 characters.')
       const previous=await result(db.from('whatsapp_inbox_messages').select('id,conversation_id,body_text,delivery_status,created_by').eq('id',id).eq('organisation_id',org).maybeSingle())
       if(previous) {
@@ -141,7 +152,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     }
     if(action==='media') {
       if(!isUuid(payload.messageId)) throw new Error('Choose a message attachment.')
-      const message=await result(db.from('whatsapp_inbox_messages').select('channel_id,media_json').eq('id',payload.messageId).eq('organisation_id',org).maybeSingle())
+      const message=await inboxRequest(org,actor,'media',{p_message:payload.messageId})
       if(!message||!isMetaId(message.media_json?.id)) throw new Error('Attachment not found in this workspace.')
       const sender=await channel(org,message.channel_id)
       return await downloadMedia(await senderToken(sender),message.media_json.id)
