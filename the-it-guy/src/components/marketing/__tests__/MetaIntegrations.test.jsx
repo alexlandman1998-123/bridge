@@ -5,15 +5,17 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import WhatsAppInbox from '../WhatsAppInbox'
 import ListingFacebookPostPanel from '../../listings/ListingFacebookPostPanel'
+import { prepareFacebookSdk } from '../../../services/metaIntegrationService'
 import SettingsWhatsAppPage from '../../../pages/settings/SettingsWhatsAppPage'
-const mocks=vi.hoisted(()=>({request:vi.fn(),org:'org-one',senders:[]}))
-vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({organisationId:mocks.org,loading:false,canManage:true,refresh:async()=>{},senders:mocks.senders})}))
+const mocks=vi.hoisted(()=>({request:vi.fn(),org:'org-one',senders:[],canManage:true,canConnectOwn:true,viewer:'user-one'}))
+vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({organisationId:mocks.org,accessScope:`${mocks.org}:${mocks.viewer}`,currentUserId:mocks.viewer,loading:false,canManage:mocks.canManage,canConnectOwn:mocks.canConnectOwn,assignees:[{id:'agent-a',name:'Sam Agent'},{id:'user-one',name:'Agency Owner'}],refresh:async()=>{},senders:mocks.senders})}))
 vi.mock('../../../services/metaIntegrationService',()=>({metaIntegrationRequest:mocks.request,launchWhatsAppSignup:vi.fn(),prepareFacebookSdk:vi.fn()}))
-const conversation={id:'conversation-one',contact_phone:'27821234567',contact_name:'Customer One',last_message_preview:'Private customer message',status:'open',canReply:true}
+const conversation={id:'conversation-one',contact_phone:'27821234567',contact_name:'Customer One',last_message_preview:'Private customer message',status:'open',canReply:true,assigned_user_id:null,assignment_version:1}
 const page={id:'page-one',page_name:'Agency Page',canPost:true}
-beforeEach(()=>{mocks.org='org-one';mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action)=>{
-  if(action==='inbox')return {conversations:[conversation]}
-  if(action==='messages')return {conversation,messages:[]}
+beforeEach(()=>{mocks.org='org-one';mocks.viewer='user-one';mocks.canManage=true;mocks.canConnectOwn=true;vi.mocked(prepareFacebookSdk).mockResolvedValue({});mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action)=>{
+  if(action==='inbox_page')return {conversations:[conversation]}
+  if(action==='message_page')return {conversation,messages:[]}
+  if(action==='crm_context')return {version:0,assignmentVersion:1,linked:null,candidates:[],campaigns:[]}
   if(action==='workspace')return {pages:[page]}
   if(action==='listing_posts')return {posts:[]}
   if(action==='preview_post')return {post:{id:'post-one',status:'draft',snapshot_json:{caption:'Reviewed listing caption',mode:'text'}}}
@@ -28,15 +30,19 @@ it('hides the previous workspace conversation immediately when the next load fai
   view.rerender(wrap(<WhatsAppInbox/>))
   expect(screen.queryByText('Private customer message')).toBeNull();await screen.findByText('Workspace unavailable')
 })
-it('reconciles a lost reply with the same request identifier and body',async()=>{
-  let attempts=0
+it('checks a lost send without submitting the message again',async()=>{
   const original=mocks.request.getMockImplementation()
-  mocks.request.mockImplementation(async(org,action,fields)=>{if(action!=='reply')return original(org,action,fields);attempts++;if(attempts===1)throw Error('Connection lost');return {message:{delivery_status:'sent'}}})
+  mocks.request.mockImplementation(async(org,action,fields)=>{
+    if(action==='send_message')throw Error('Connection lost')
+    if(action==='message_receipt')return {message:{delivery_status:'sent'}}
+    return original(org,action,fields)
+  })
   render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
   fireEvent.change(await screen.findByLabelText('Reply'),{target:{value:'Thanks for contacting us'}})
-  fireEvent.click(screen.getByRole('button',{name:'Send reply'}));await screen.findByRole('button',{name:'Check reply'})
-  fireEvent.click(screen.getByRole('button',{name:'Check reply'}));await waitFor(()=>expect(screen.getByLabelText('Reply').value).toBe(''))
-  const calls=mocks.request.mock.calls.filter(c=>c[1]==='reply');expect(calls).toHaveLength(2);expect(calls[0][2]).toEqual(calls[1][2]);expect(calls[0][2].requestId).toMatch(/^[0-9a-f-]{36}$/)
+  fireEvent.click(screen.getByRole('button',{name:'Send message'}));await screen.findByRole('button',{name:'Check message'})
+  fireEvent.click(screen.getByRole('button',{name:'Check message'}));await waitFor(()=>expect(screen.getByLabelText('Reply').value).toBe(''))
+  const sends=mocks.request.mock.calls.filter(c=>c[1]==='send_message'),checks=mocks.request.mock.calls.filter(c=>c[1]==='message_receipt')
+  expect(sends).toHaveLength(1);expect(checks).toHaveLength(1);expect(checks[0][2].requestId).toBe(sends[0][2].requestId);expect(sends[0][2].requestId).toMatch(/^[0-9a-f-]{36}$/)
 })
 it('previews before publishing and does not repeat an uncertain post',async()=>{
   render(wrap(<ListingFacebookPostPanel organisationId="org-one" listingId="listing-one"/>))
@@ -67,4 +73,58 @@ it('requires the agency administrator to enter a PIN before activating a pending
   await screen.findByText('Number activated. The inbox and campaigns can use this sender.')
   expect(mocks.request).toHaveBeenCalledWith('org-one','register_sender',{senderId:'sender-pending',pin:'123456'})
   expect(screen.queryByLabelText('Registration PIN')).toBeNull()
+})
+it('saves an assignment with the visible version and keeps the API scoped to the organisation',async()=>{
+ const original=mocks.request.getMockImplementation()
+ mocks.request.mockImplementation(async(org,action,fields)=>action==='assign_conversation'?{conversation:{...conversation,assigned_user_id:fields.assignedUserId,assignment_version:2}}:original(org,action,fields))
+ render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
+ fireEvent.change(await screen.findByLabelText('Assign conversation'),{target:{value:'agent-a'}})
+ fireEvent.click(screen.getByRole('button',{name:'Save assignment'}))
+ await waitFor(()=>expect(mocks.request).toHaveBeenCalledWith('org-one','assign_conversation',{conversationId:'conversation-one',assignedUserId:'agent-a',assignmentVersion:1}))
+})
+it('offers personal connection controls to an agent without agency ownership or assignment controls',async()=>{
+ mocks.canManage=false;mocks.senders=[{id:'own-sender',owner_user_id:'user-one',connection_status:'connected'}]
+ const view=render(wrap(<SettingsWhatsAppPage/>))
+ expect(screen.queryByRole('button',{name:'Change owner'})).toBeNull()
+ expect(screen.queryByLabelText('Connect number for')).toBeNull()
+ expect(screen.getByRole('button',{name:'Disconnect'})).toBeTruthy()
+ mocks.request.mockResolvedValue({appId:'app',graphVersion:'v23.0',state:'state'})
+ fireEvent.click(screen.getByRole('button',{name:'Connect my WhatsApp'}))
+ await screen.findByText(/Connecting for: You/)
+ expect(mocks.request).toHaveBeenCalledWith('org-one','begin_whatsapp',{ownerUserId:'user-one',coexistence:false})
+ view.unmount()
+ mocks.request.mockImplementation(async(_org,action)=>action==='inbox_page'?{conversations:[{...conversation,assigned_user_id:'user-one'}]}:{conversation:{...conversation,assigned_user_id:'user-one'},messages:[]})
+ render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
+ await screen.findByText('Assigned to you')
+ expect(screen.queryByLabelText('Assign conversation')).toBeNull()
+})
+it('changes number ownership with a version check and explains the effect on existing conversations',async()=>{
+ mocks.senders=[{id:'agency-sender',owner_user_id:null,ownership_version:4,connection_status:'connected',display_phone_number:'+27 82 000 0000'}]
+ mocks.request.mockResolvedValue({saved:true})
+ render(wrap(<SettingsWhatsAppPage/>))
+ fireEvent.click(screen.getByRole('button',{name:'Change owner'}))
+ const modal=within(screen.getByRole('dialog',{name:'Change WhatsApp number owner'}))
+ expect(modal.getByText(/moves all conversations/)).toBeTruthy()
+ fireEvent.change(modal.getByLabelText('Number owner'),{target:{value:'agent-a'}})
+ fireEvent.click(modal.getByRole('button',{name:'Save ownership'}))
+ await screen.findByText(/Number ownership saved/)
+ expect(mocks.request).toHaveBeenCalledWith('org-one','set_sender_owner',{senderId:'agency-sender',ownerUserId:'agent-a',ownershipVersion:4})
+})
+it('removes private messages and reply drafts immediately when the signed-in person changes in the same agency',async()=>{
+ const view=render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
+ fireEvent.change(await screen.findByLabelText('Reply'),{target:{value:'Private draft'}})
+ mocks.viewer='user-two';mocks.canManage=false;mocks.request.mockRejectedValue(Error('Conversation not found in your inbox'))
+ view.rerender(wrap(<WhatsAppInbox/>))
+ expect(screen.queryByText('Private customer message')).toBeNull()
+ expect(screen.queryByDisplayValue('Private draft')).toBeNull()
+ await screen.findAllByText('Conversation not found in your inbox')
+})
+it('clears a thread and unsent draft when a refresh removes its assignment',async()=>{
+ render(wrap(<WhatsAppInbox/>));fireEvent.click(await screen.findByRole('button',{name:/Customer One/}))
+ fireEvent.change(await screen.findByLabelText('Reply'),{target:{value:'Private draft'}})
+ mocks.request.mockImplementation(async(_org,action)=>{if(action==='inbox_page')return {conversations:[]};throw Error('Conversation not found in your inbox')})
+ fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
+ await waitFor(()=>expect(screen.queryByDisplayValue('Private draft')).toBeNull())
+ expect(screen.queryByText('Private customer message')).toBeNull()
+ expect(screen.queryByRole('button',{name:'Send message'})).toBeNull()
 })
