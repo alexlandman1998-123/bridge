@@ -17,8 +17,3 @@ export function resolveAgencyLeadWorkspaceRedirect(lead = {}) {
   const id = String(lead.leadId || lead.lead_id || lead.id || '').trim()
   return id && isRentalCrmLead(lead) ? `/agent/rentals/pipeline/leads/${encodeURIComponent(id)}` : ''
 }
-
-export function resolveAgencyLeadWorkspaceRedirect(lead = {}) {
-  const id = String(lead.leadId || lead.lead_id || lead.id || '').trim()
-  return id && isRentalCrmLead(lead) ? `/agent/rentals/pipeline/leads/${encodeURIComponent(id)}` : ''
-}
