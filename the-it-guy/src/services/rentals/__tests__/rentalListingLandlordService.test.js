@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import { createClient } from '@supabase/supabase-js'
 vi.mock('../../../lib/supabaseClient',()=>({supabase:null,isSupabaseConfigured:false}))
 import { createListingLandlordLead, loadListingLandlordSetup, saveListingLandlord, startListingLandlordOnboarding } from '../rentalListingLandlordService'
 const capable={capabilities:{profileConsistency:true},consistency:{synced:true}}
@@ -121,6 +122,69 @@ it('uses an insert and exact scoped readback for onboarding creation, without wr
  expect(contacts).toEqual(['leads','leads'])
  expect(insert).toMatchObject({lead_id:'stable-lead',contact_id:'contact-1',lead_category:'seller',raw_enquiry_payload:{classification:'rental',role:'landlord',relationships:{listingId:'listing-1'}}})
  expect(result.id).toBe('stable-lead')
+})
+function landlordLeadClient({ loseAcknowledgement=false, insertError=null, readback=rows=>rows }={}) {
+ const leads=new Map()
+ const fetch=vi.fn(async(url,options)=>{
+   const request=new URL(url)
+   expect(request.pathname).toBe('/rest/v1/leads')
+   if(options.method==='POST') {
+     const payload=JSON.parse(options.body)
+     if(insertError)return Response.json(insertError,{status:403})
+     if(leads.has(payload.lead_id))return Response.json({code:'23505',message:'Lead already exists'},{status:409})
+     leads.set(payload.lead_id,payload)
+     if(loseAcknowledgement)throw new TypeError('Acknowledgement lost')
+     return Response.json({lead_id:payload.lead_id},{status:201})
+   }
+   expect(options.method).toBe('GET')
+   expect(request.searchParams.get('lead_id')).toBe('eq.stable-lead')
+   expect(request.searchParams.get('organisation_id')).toBe('eq.org-1')
+   return Response.json(readback([...leads.values()]))
+ })
+ const client=createClient('https://landlord-onboarding.invalid','local-test-key',{
+   auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch},
+ })
+ return {client,fetch,leads}
+}
+it('starts listing landlord onboarding using the installed Supabase query builder',async()=>{
+ const connected={...listing,addressLine1:'12 Sample Road',sellerCanonicalFacts:{...values,landlordContactId:'contact-1'}}
+ const database=landlordLeadClient()
+ const dependencies=api();dependencies.getListing.mockResolvedValue(connected)
+ dependencies.loadSetup=vi.fn().mockResolvedValue({contacts:[{id:'contact-1'}],linkedLead:null})
+ dependencies.createLead=(...args)=>createListingLandlordLead(...args,database.client)
+ const onboarding={...capable,version:1,status:'draft',data:{profile:{name:'Landlord'},portfolio:[]}}
+ dependencies.requestOnboarding=vi.fn().mockResolvedValue({onboarding})
+ const result=await startListingLandlordOnboarding('listing-1',{organisationId:'org-1',leadId:'stable-lead',assignedAgentId:'agent-1'},dependencies)
+ expect(database.fetch.mock.calls.map(([,options])=>options.method)).toEqual(['POST','GET'])
+ expect(result.listing.sellerCanonicalFacts.landlordLeadId).toBe('stable-lead')
+ expect(result.setup.linkedLead.id).toBe('stable-lead')
+ expect(result.setup.onboarding).toBe(onboarding)
+ expect(dependencies.requestOnboarding).toHaveBeenCalledWith('stable-lead')
+})
+it('recovers a committed lead after a lost acknowledgement and a duplicate insert retry with the installed client',async()=>{
+ const database=landlordLeadClient({loseAcknowledgement:true})
+ const discovery={profile:{name:'Owner',type:'individual'},portfolio:[{address:'12 Road',listingId:'listing-1'}]}
+ const context={leadId:'stable-lead',organisationId:'org-1',assignedAgentId:'agent-1'}
+ const first=await createListingLandlordLead(listing,{id:'contact-1'},discovery,context,database.client)
+ const retried=await createListingLandlordLead(listing,{id:'contact-1'},{...discovery,profile:{name:'Changed draft'}},context,database.client)
+ expect(first.id).toBe('stable-lead');expect(retried.id).toBe(first.id)
+ expect(retried.raw.raw_enquiry_payload).toEqual(first.raw.raw_enquiry_payload)
+ expect(database.leads.size).toBe(1)
+ expect(database.fetch.mock.calls.map(([,options])=>options.method)).toEqual(['POST','GET','POST','GET'])
+})
+it('reports the database error when an insert fails without a matching saved lead',async()=>{
+ const database=landlordLeadClient({insertError:{code:'42501',message:'Permission denied for landlord lead'}})
+ const discovery={profile:{name:'Owner'},portfolio:[{address:'12 Road'}]}
+ await expect(createListingLandlordLead(listing,{id:'contact-1'},discovery,{leadId:'stable-lead',organisationId:'org-1'},database.client)).rejects.toThrow('Permission denied for landlord lead')
+ expect(database.fetch).toHaveBeenCalledTimes(2)
+})
+it.each(['contact','role','listing'])('rejects a saved lead with an unrelated %s when recovering an acknowledgement',async(mismatch)=>{
+ const database=landlordLeadClient({loseAcknowledgement:true,readback:rows=>rows.map(row=>({
+   ...row,contact_id:mismatch==='contact' ? 'other-contact' : row.contact_id,
+   raw_enquiry_payload:{...row.raw_enquiry_payload,...(mismatch==='role' ? {role:'tenant'} : {}),...(mismatch==='listing' ? {relationships:{listingId:'other-listing'}} : {})},
+ }))})
+ const discovery={profile:{name:'Owner'},portfolio:[{address:'12 Road'}]}
+ await expect(createListingLandlordLead(listing,{id:'contact-1'},discovery,{leadId:'stable-lead',organisationId:'org-1'},database.client)).rejects.toThrow('Acknowledgement lost')
 })
 it('loads the explicitly saved rental landlord connection and rejects ambiguous or unavailable connections',async()=>{
  const first={id:'first',role:'landlord',relationships:{listingId:'listing-1'}}

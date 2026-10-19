@@ -154,7 +154,7 @@ export async function createListingLandlordLead(listing, contact, discovery, con
     raw_enquiry_payload: createRentalCrmLeadMetadata({ leadId: context.leadId, organisationId: context.organisationId, role: 'landlord', assignedAgentId, branchId: listing.branchId || listing.branch_id, relationships: { listingId: listing.id }, legacy: { landlordProfile: discovery.profile, landlordPortfolio: discovery.portfolio } }),
   }
   // Insert only: an uncertain acknowledgement must never overwrite a committed lead.
-  const result = await client.from('leads').insert(payload).select('lead_id').single().catch((error) => ({ error }))
+  const result = await Promise.resolve(client.from('leads').insert(payload).select('lead_id').single()).catch((error) => ({ error }))
   const readback = await client.from('leads').select('lead_id,organisation_id,contact_id,raw_enquiry_payload').eq('lead_id', context.leadId).eq('organisation_id', context.organisationId).maybeSingle()
   const raw = readback.data
   if (readback.error || !raw || raw.contact_id !== contact.id || getRentalLeadMetadata(raw).role !== 'landlord' || getRentalLeadMetadata(raw).relationships.listingId !== listing.id) throw new Error(result.error?.message || 'Landlord onboarding setup could not be verified. Retry to confirm it.')
