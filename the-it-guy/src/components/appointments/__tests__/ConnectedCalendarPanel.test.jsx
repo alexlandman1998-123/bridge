@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import {afterEach,beforeEach,it,expect,vi} from 'vitest'
 const api=vi.hoisted(()=>({read:vi.fn(),connect:vi.fn(),disconnect:vi.fn(),act:vi.fn()}))
 vi.mock('../../../services/calendarProviderService',()=>({readCalendarProviderStatus:api.read,startCalendarProviderConnection:api.connect,disconnectCalendarProvider:api.disconnect,actOnCalendarProviderEvent:api.act}))
@@ -9,11 +9,11 @@ const connection={id:'connection',provider:'google',status:'connected',accountLa
 const event={provider:'google',appointmentId:'booking',status:'queued',reviewToken:'review'}
 const data=(changes={})=>({verified:true,connections:[connection],events:[{...event,...changes}]})
 const panel=props=><ConnectedCalendarPanel organisationId="org" viewerKey="agent" appointmentId="booking" {...props} />
-beforeEach(()=>{vi.resetAllMocks();api.read.mockResolvedValue(data());api.act.mockResolvedValue(data());api.disconnect.mockResolvedValue({verified:true,status:'disconnected'})})
-afterEach(()=>cleanup())
+beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.resetAllMocks();api.read.mockResolvedValue(data());api.act.mockResolvedValue(data());api.disconnect.mockResolvedValue({verified:true,status:'disconnected'})})
+afterEach(()=>{cleanup();vi.useRealTimers()})
 it('shows persisted queued and synced states without treating a connection as a synced appointment',async()=>{
  render(panel());await screen.findByText('Waiting to sync');expect(screen.queryByText(/^Synced/)).toBeNull()
- api.read.mockResolvedValue(data({status:'synced',lastSyncedAt:'2026-10-08T19:00Z'}));fireEvent(window,new Event('online'));await screen.findByText(/^Synced · Last checked/)
+ api.read.mockResolvedValue(data({status:'synced',lastSyncedAt:'2026-10-08T19:00Z'}));vi.setSystemTime(Date.now()+5000);fireEvent(window,new Event('online'));await screen.findByText(/^Synced · Last checked/)
 })
 it('keeps a failed status read visible and only reports disconnected after a verified retry',async()=>{
  api.read.mockRejectedValueOnce(new Error('Permission denied')).mockResolvedValueOnce({verified:true,connections:[],events:[]})
@@ -36,8 +36,8 @@ it('explains retained copies before disconnecting and reports a failed disconnec
 })
 it('never exposes an old account or late result after changing workspace',async()=>{
  let finish;api.read.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve})).mockResolvedValueOnce({verified:true,connections:[],events:[]})
- const view=render(panel());view.rerender(panel({organisationId:'other',viewerKey:'other-agent'}));await screen.findByRole('button',{name:'Connect Google'})
- finish(data());await waitFor(()=>expect(screen.queryByText('owner@example.test')).toBeNull());expect(api.read).toHaveBeenLastCalledWith('other','booking')
+ const view=render(panel());await act(async () => {}); view.rerender(panel({organisationId:'other',viewerKey:'other-agent'}));await screen.findByRole('button',{name:'Connect Google'})
+ finish(data());await waitFor(()=>expect(screen.queryByText('owner@example.test')).toBeNull());expect(api.read).toHaveBeenLastCalledWith('other','booking',expect.objectContaining({signal:expect.any(AbortSignal)}))
 })
 it('shows guest restrictions and blocks repeated actions while work is pending',async()=>{
  api.read.mockResolvedValue(data({status:'needs_review',observed:{reason:'provider_has_guests'}}));let finish;api.act.mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
@@ -57,5 +57,5 @@ it('routes inconsistent saved schedules to the editor instead of claiming an out
 it('keeps a failed action visible when background status polling succeeds',async()=>{
  api.read.mockResolvedValue(data({status:'failed'}));api.act.mockRejectedValue(new Error('Retry could not be verified'))
  render(panel());await screen.findByRole('button',{name:'Retry sync'});fireEvent.click(screen.getByRole('button',{name:'Retry sync'}));await screen.findByText(/Retry could not be verified/)
- fireEvent(window,new Event('online'));await waitFor(()=>expect(api.read).toHaveBeenCalledTimes(2));expect(screen.getByText(/Retry could not be verified/)).toBeTruthy()
+ vi.setSystemTime(Date.now()+5000);fireEvent(window,new Event('online'));await waitFor(()=>expect(api.read).toHaveBeenCalledTimes(2));expect(screen.getByText(/Retry could not be verified/)).toBeTruthy()
 })

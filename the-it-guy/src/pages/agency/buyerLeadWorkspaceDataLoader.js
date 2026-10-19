@@ -36,6 +36,15 @@ async function fetchBuyerJourneyEnrichmentFromRepository(organisationId, leadId,
 function mergeSeedWithJourneyEnrichment(seedSnapshot = {}, enrichment = {}) {
   return {
     ...seedSnapshot,
+    leads: (seedSnapshot.leads || []).map((lead) => (
+      enrichment?.leadLinkage && normalizeText(lead.leadId || lead.lead_id) === normalizeText(enrichment.leadLinkage.lead_id)
+        ? {
+          ...lead,
+          convertedTransactionId: normalizeText(enrichment.leadLinkage.converted_transaction_id) || null,
+          convertedDealId: normalizeText(enrichment.leadLinkage.converted_transaction_id) || null,
+        }
+        : lead
+    )),
     contacts: Array.isArray(enrichment?.contacts) ? enrichment.contacts : (seedSnapshot.contacts || []),
     leadActivities: Array.isArray(enrichment?.leadActivities) ? enrichment.leadActivities : (seedSnapshot.leadActivities || []),
     tasks: Array.isArray(seedSnapshot?.tasks) ? seedSnapshot.tasks : [],

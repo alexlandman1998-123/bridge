@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const read = vi.hoisted(() => vi.fn())
 vi.mock('../../../services/calendarSupportService', () => ({ readCalendarHealth: read, calendarSupportDeadline: p => p }))
@@ -8,8 +8,8 @@ vi.mock('../AppointmentSupportPanel', () => ({ default: ({ appointmentId }) => <
 import CalendarHealthPanel from '../CalendarHealthPanel'
 const report = { issues: [{ issue_key: 'one', kind: 'missing_reminder', title: 'Viewing', appointment_id: 'appt', inspectAllowed: true }], monitor: { status: 'not_started' }, truncated: false }
 const panel = props => <CalendarHealthPanel organisationId="org" viewerKey="agent" {...props} />
-beforeEach(() => { read.mockReset(); read.mockResolvedValue(report) })
-afterEach(cleanup)
+beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); read.mockReset(); read.mockResolvedValue(report) })
+afterEach(() => { cleanup(); vi.useRealTimers() })
 it('shows current scoped findings, warns of unverified background monitoring and opens the support dialog', async () => {
  render(panel()); await screen.findByText(/A future reminder job is missing/)
  expect(screen.getByText(/Background monitoring needs verification/)).toBeTruthy()
@@ -23,13 +23,13 @@ it('does not expose an inspect action for connection-only or inaccessible appoin
 })
 it('retains verified findings after failed refresh and labels them stale', async () => {
  render(panel()); await screen.findByText(/A future reminder job is missing/)
- read.mockRejectedValueOnce(new Error('Health denied')); fireEvent(window, new Event('online'))
+ read.mockRejectedValueOnce(new Error('Health denied')); vi.setSystemTime(Date.now() + 5000); fireEvent(window, new Event('online'))
  await screen.findByText(/Showing the last verified result/); expect(screen.getByText(/A future reminder job is missing/)).toBeTruthy()
  fireEvent.click(screen.getByRole('button', { name: 'Retry health check', hidden: true })); await waitFor(() => expect(screen.queryByText(/Health denied/)).toBeNull())
 })
 it('never shows an old workspace issue after its late request resolves', async () => {
  let finish; read.mockImplementationOnce(() => new Promise(resolve => { finish = resolve })).mockResolvedValueOnce({ ...report, issues: [] })
- const view = render(panel()); view.rerender(panel({ organisationId: 'other', viewerKey: 'other-agent' }))
+ const view = render(panel()); await act(async () => {}); view.rerender(panel({ organisationId: 'other', viewerKey: 'other-agent' }))
  await screen.findByText(/No issues found/); finish(report)
  await waitFor(() => expect(screen.queryByText(/A future reminder job is missing/)).toBeNull())
 })

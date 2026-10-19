@@ -29,7 +29,7 @@ it('keeps a last verified booking on failed refresh and removes it after a verif
   await act(async () => {})
   expect(screen.getByText('Verified client')).toBeTruthy()
   act(() => window.dispatchEvent(new Event('itg:agency-crm-updated')))
-  await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
   expect(screen.getByRole('alert').textContent).toContain('Showing the last verified schedule')
   expect(screen.getByText('Verified client')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }))

@@ -174,15 +174,18 @@ export function createUatReportTestHandler({ env = process.env, createDb = creat
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}`, 'GraphQL-Cost': mode, 'GraphQL-Billing': 'report' } : {}) },
           body: JSON.stringify({ query, variables }),
         });
-        const payload = await result.json();
+        const payload = await result.json().catch(() => ({}));
         const errors = [...(Array.isArray(payload?.errors) ? payload.errors : []), ...(Array.isArray(payload?.data?.login?.errors) ? payload.data.login.errors : [])];
         requests.push({ stage: mode || 'login', httpStatus: result.status,
           requestId: /^[a-zA-Z0-9._:-]{1,200}$/.test(result.headers.get('x-request-id') || '') ? result.headers.get('x-request-id') : null,
           errorCodes: errors.map((error) => error?.extensions?.code).filter((value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value)).slice(0, 10),
           errorPaths: errors.map((error) => Array.isArray(error?.path) ? error.path.filter((part) => typeof part === 'number' || typeof part === 'string' && /^[a-zA-Z][a-zA-Z0-9_]{0,60}$/.test(part)).slice(0, 10) : []).slice(0, 10),
         });
-        if (!result.ok || payload?.errors?.length) throw fail(502, `The supplier ${mode || 'login'} request failed. No automatic retry will occur.`);
-        return { payload, headers: result.headers };
+        const ok = result.ok && !payload?.errors?.length;
+        // A report can be charged even when its HTTP or GraphQL result fails.
+        // Preserve numeric billing before judging the returned property fields.
+        if (!ok && mode !== 'report') throw fail(502, `The supplier ${mode || 'login'} request failed. No automatic retry will occur.`);
+        return { payload, headers: result.headers, ok };
       };
       const login = await post('mutation ($input: LoginInput!) { login(login: $input) { tokenPayload { token } errors { ... on Error { message } } } }', { input: { email: env.KNOWLEDGE_FACTORY_EMAIL.trim(), password: env.KNOWLEDGE_FACTORY_PASSWORD } });
       const token = login.payload?.data?.login?.tokenPayload?.token;
@@ -195,7 +198,7 @@ export function createUatReportTestHandler({ env = process.env, createDb = creat
       const evidence = executionEvidence(executed.payload, executed.headers, approvedTest, preflight.maximumCredits);
       const property = supplierProperty(executed.payload, approvedTest.propertyId);
       let report = null;
-      let reportIssue = null;
+      let reportIssue = executed.ok ? null : 'The supplier returned an error with this report. Review its billing before requesting another report.';
       try {
         report = reportData(property, approvedTest.productId);
         if (currentSupplierTransfer(property)?.isCurrentOwner !== true || !report.owners.length || report.owners.some((owner) => !owner.name)) {

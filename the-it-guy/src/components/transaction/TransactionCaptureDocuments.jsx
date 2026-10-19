@@ -23,7 +23,7 @@ export default function TransactionCaptureDocuments({ parties, financeType, entr
   }
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5" aria-label="Existing transaction documents">
     <h3 className="font-semibold text-slate-800">Existing documents</h3>
-    <p className="text-sm text-slate-600">Add the files you already have, or continue and upload them later. Files are saved after the transaction is created. Received documents still need review.</p>
+    <p className="text-sm text-slate-600">Add existing documents now, or upload them from the transaction later.</p>
     {!saved ? <div className="grid gap-3 sm:grid-cols-2">
       <label className="space-y-1 text-sm">Document for<select className="block w-full rounded-lg border p-2" value={selectedOption.value} onChange={(event) => setSelected(event.target.value)} disabled={busy}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
       <label className="space-y-1 text-sm">Choose documents<input className="block w-full" type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} multiple accept={DOCUMENT_UPLOAD_ACCEPT} onChange={addFiles} disabled={busy} /><span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>

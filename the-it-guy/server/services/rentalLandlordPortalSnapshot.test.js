@@ -18,6 +18,9 @@ beforeAll(async () => {
   const scoped = rentalOnboardingClient(db, {}, actor, true)
   vacancyId = (await scoped.rpc('rental_ensure_listing_vacancy', { p_listing_id: listing, p_organisation_id: org })).data.vacancyId
   await db.exec(`
+    create table organisation_branding(organisation_id uuid primary key,organisation_display_name text,logo_light_url text,logo_dark_url text,logo_icon_url text,primary_brand_color text,secondary_brand_color text,accent_brand_color text);
+    insert into organisation_branding values('${org}','Kingdom Real Estate','https://example.test/light.svg','https://example.test/dark.svg',null,'#123456','#234567','#bc3456');
+    insert into organisation_settings values('${org}','{"privateSetting":"must-not-leak"}');
     create table rental_entity_documents(id uuid primary key,property_id uuid,organisation_id uuid,document_label text,document_category text,link_state text,created_at timestamptz default now());
     create table rental_client_portal_memberships(id uuid primary key,organisation_id uuid,user_id uuid,audience text,tenancy_id uuid,property_id uuid,status text,revoked_at timestamptz);
     insert into rental_client_portal_memberships(id,organisation_id,user_id,audience,property_id,status) values('${membershipId}','${org}','${actor}','landlord','${property}','active');
@@ -38,6 +41,14 @@ it('shows the same saved listing and vacancy in token and signed-in landlord por
   expect(accountView.body.vacancies).toHaveLength(1)
   expect(accountView.body.vacancies[0]).toMatchObject({ id: vacancyId, unit_id: unit, status: 'draft' })
   expect(Object.keys(accountView.body.listings[0]).sort()).toEqual(['id','listing_status','listing_visibility','rental_unit_id','rental_vacancy_id','title'])
+  expect(accountView.body.branding).toMatchObject({ organisationId: org, agencyName: 'Kingdom Real Estate', logoDarkUrl: 'https://example.test/dark.svg', logoLightUrl: 'https://example.test/light.svg', primaryColour: '#123456', secondaryColour: '#234567', accentColour: '#bc3456' })
+  expect(JSON.stringify(accountView.body)).not.toContain('must-not-leak')
+})
+it('uses the current agency onboarding CI ahead of the public branding row', async () => {
+  await db.query('update organisation_settings set settings_json=$1 where organisation_id=$2', [JSON.stringify({ agencyOnboarding: { branding: { primaryColour: '#987654', accentColour: '#654321', logoDarkUrl: 'https://example.test/current.svg' } } }), org])
+  const result = await account()
+  expect(result.status).toBe(200)
+  expect(result.body.branding).toMatchObject({ agencyName: 'Kingdom Real Estate', primaryColour: '#987654', secondaryColour: '#234567', accentColour: '#654321', logoDarkUrl: 'https://example.test/current.svg' })
 })
 it('denies another account and a membership whose organisation does not match the property', async () => {
   const missing = await handleRentalClientPortalAccount({ env, headers: { authorization: 'Bearer fixture-agent' }, query: { membershipId: listing, audience: 'landlord' } })
@@ -51,4 +62,5 @@ it('denies a revoked public link before returning any property state', async () 
   const response = await handlePublicRentalLandlordPortal({ env, token })
   expect(response.status).toBe(401)
   expect(response.body.property).toBeUndefined()
+  expect(response.body.branding).toBeUndefined()
 })

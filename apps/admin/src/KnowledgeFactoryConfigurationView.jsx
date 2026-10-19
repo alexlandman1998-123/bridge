@@ -81,6 +81,74 @@ function ApprovedUatTest({ organisationId, api = TEST_API, label = 'Basic' }) {
   </section>
 }
 
+
+function ReportChargeReview({ row, busy, onReview }) {
+  const [credits, setCredits] = useState('')
+  const [deducted, setDeducted] = useState('')
+  const [reference, setReference] = useState('')
+  return <li><p>{row.status} · {row.reserved_credits} reserved · {row.charged_credits ?? 'unknown'} charged credits</p>
+    <form className="property24-credentials-form" onSubmit={event => { event.preventDefault(); onReview({ action: 'review_charge', intentId: row.purchase_intent_id, chargedCredits: Number(credits), deductedCredits: Number(deducted), supplierReference: reference }) }}>
+      <label><span>Confirmed supplier credits</span><input required type="number" min="0" step="1" value={credits} onChange={event => setCredits(event.target.value)} /></label>
+      <label><span>Confirmed amount deducted (credits)</span><input required type="number" min="0" step="1" value={deducted} onChange={event => setDeducted(event.target.value)} /></label>
+      <label><span>Supplier charge confirmation reference</span><input required minLength={3} maxLength={250} value={reference} onChange={event => setReference(event.target.value)} /></label>
+      <button type="submit" disabled={busy || credits === '' || deducted === ''}>Record confirmed charge</button>
+    </form>
+    {row.status === 'reserved' ? <p>This report is not marked sent. Confirm zero charged and deducted credits before releasing its reservation.</p> : null}
+  </li>
+}
+
+function ReportCommercePanel({ organisationId }) {
+  const [state, setState] = useState(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [price, setPrice] = useState('')
+  const [productId, setProductId] = useState('basic_owner_lookup')
+  const [form, setForm] = useState({ environment: 'uat', evidenceAuditId: '', supplierReference: '', reviewNote: '', expiresAt: '', fieldsReviewed: false, feeScheduleConfirmed: false })
+  const api = 'https://app.arch9.co.za/api/admin/knowledge-factory/report-commerce'
+  useEffect(() => {
+    let active = true
+    request(organisationId, null, api).then(value => { if (active) setState(value) }).catch(failure => { if (active) setError(failure.message) })
+    return () => { active = false }
+  }, [organisationId])
+  async function perform(input) {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await request(organisationId, input, api)
+      setNotice(result.message || 'Report accounting updated.')
+      setState(await request(organisationId, null, api))
+    } catch (failure) { setError(failure.message) } finally { setBusy(false) }
+  }
+  const update = (field, value) => setForm(previous => ({ ...previous, [field]: value }))
+  const evidence = state?.diagnostics?.find(item => item.id === form.evidenceAuditId)
+  return <section aria-label="Report approval and monthly billing">
+    <h3>Report approval and monthly billing</h3>
+    <p>Customer charges accumulate on the agency’s monthly invoice after a live report is saved. Test reports are excluded. Invoices are issued here after the month closes; delivery and payment collection are handled separately.</p>
+    {error ? <p role="alert">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
+    {!state ? <p>Loading report accounting…</p> : <>
+      <form className="property24-credentials-form" onSubmit={event => { event.preventDefault(); void perform({ ...form, productId: evidence?.productId, action: 'approve_cost' }) }}>
+        <label><span>Saved supplier report evidence</span><select required value={form.evidenceAuditId} onChange={event => update('evidenceAuditId', event.target.value)}><option value="">Choose a completed diagnostic</option>{state.diagnostics.map(item => <option key={item.id} value={item.id} disabled={!item.complete}>{item.productId === 'basic_owner_lookup' ? 'Basic' : 'Full'} · {item.createdAt.slice(0,10)} · {item.complete ? 'Complete evidence' : 'Incomplete fields or billing'}</option>)}</select></label>
+        <label><span>Approval environment</span><select value={form.environment} onChange={event => update('environment',event.target.value)}><option value="uat">Supplier test environment</option><option value="live">Supplier live environment</option></select></label>
+        <label><span>Supplier fee confirmation reference</span><input required minLength={3} maxLength={250} value={form.supplierReference} onChange={event => update('supplierReference',event.target.value)} /></label>
+        <label><span>Review note</span><input required minLength={10} maxLength={1000} value={form.reviewNote} onChange={event => update('reviewNote',event.target.value)} /></label>
+        <label><span>Approval expires (within 30 days)</span><input required type="date" value={form.expiresAt} onChange={event => update('expiresAt',event.target.value)} /></label>
+        <label><input type="checkbox" checked={form.fieldsReviewed} onChange={event => update('fieldsReviewed',event.target.checked)} />I reviewed the report fields and their completeness.</label>
+        <label><input type="checkbox" checked={form.feeScheduleConfirmed} onChange={event => update('feeScheduleConfirmed',event.target.checked)} />The supplier confirmed this fee schedule for the selected environment.</label>
+        <button className="secondary-button" disabled={busy || !evidence?.complete || !form.fieldsReviewed || !form.feeScheduleConfirmed}>Save reviewed cost approval</button>
+      </form>
+      <form className="property24-credentials-form" onSubmit={event => { event.preventDefault(); void perform({ action: 'save_package', productId, customerPriceCents: Math.round(Number(price)*100) }) }}>
+        <label><span>Report package</span><select value={productId} onChange={event => setProductId(event.target.value)}><option value="basic_owner_lookup">Basic owner report</option><option value="full_canvassing_report">Full property report</option></select></label>
+        <label><span>Agency price per report (ZAR)</span><input required type="number" min="0.01" max="1000" step="0.01" value={price} onChange={event => setPrice(event.target.value)} /></label>
+        <button type="submit" disabled={busy}>Save price and approve package</button>
+      </form>
+      <ul>{state.approvals.map(approval => <li key={approval.id}>{approval.product_id === 'basic_owner_lookup' ? 'Basic' : 'Full'} · {approval.supplier_environment} · maximum {approval.maximum_credits} credits · expires {approval.expires_at.slice(0,10)} {approval.revoked_at ? '· revoked' : <button type="button" disabled={busy} onClick={() => void perform({ action: 'revoke_approval', approvalId: approval.id })}>Revoke approval</button>}</li>)}</ul>
+      {state.usageReview.length ? <details><summary>Supplier usage awaiting completion or review ({state.usageReview.length})</summary><ul>{state.usageReview.map(row => <ReportChargeReview key={row.purchase_intent_id} row={row} busy={busy} onReview={input => void perform(input)} />)}</ul><p>Uncertain charges retain their reservation until the supplier confirms the amount. Recording a charge does not request another report or bill the agency for a failed report.</p></details> : null}
+      <h4>Monthly agency invoices</h4>
+      {!state.invoices.length ? <p>No live report charges yet.</p> : <ul>{state.invoices.map(invoice => <li key={invoice.id}>{invoice.invoice_month.slice(0,7)} · {invoice.status} · {money(invoice.knowledge_factory_report_invoice_lines.reduce((sum,line) => sum+line.amount_cents,0))} {invoice.status === 'draft' && invoice.invoice_month < new Date().toISOString().slice(0,7)+'-01' ? <button type="button" disabled={busy} onClick={() => void perform({ action: 'issue_invoice', invoiceId: invoice.id })}>Issue monthly invoice</button> : null}</li>)}</ul>}
+    </>}
+  </section>
+}
+
 function SetupForm({ organisationId }) {
   const [status, setStatus] = useState(null)
   const [limits, setLimits] = useState({})
@@ -101,7 +169,7 @@ function SetupForm({ organisationId }) {
       if (!active) return
       setStatus(result)
       setLimits(Object.fromEntries(LIMITS.map(([key, , column]) => [key, result.policy?.[column] ?? ''])))
-      setRate(result.policy?.supplier_credits_per_cent ? String(result.policy.supplier_credits_per_cent) : '')
+      setRate(result.policy?.supplier_credits_per_cent ? String(result.policy.supplier_credits_per_cent) : '30')
       setProducts(result.policy?.allowed_product_ids || ['basic_owner_lookup'])
     }).catch((failure) => { if (active) setError(failure.message) })
     return () => { active = false }
@@ -155,9 +223,16 @@ function SetupForm({ organisationId }) {
         <button className="secondary-button" type="submit" disabled={busy || !status.supplier.uatEndpointConfigured || !status.supplier.credentialsConfigured}>{busy ? 'Working…' : 'Validate cost only'}</button>
       </form>
       {quote?.estimate ? <div role="status"><h3>Maximum-cost estimate · property {quote.estimate.propertyId}</h3><p>Up to {quote.estimate.maximumCredits} supplier credits: complexity {quote.estimate.complexity} + maximum field fees {quote.estimate.maximumSurcharge}.</p><p>Illustrative maximum: {money(Math.ceil(quote.estimate.maximumCredits / 40))} subscription / {money(Math.ceil(quote.estimate.maximumCredits / 30))} prepaid. Confirm the supplier account plan before setting a customer price.</p><p>Conservative estimate, not supplier-confirmed billing. No product approved or report generated.</p></div> : quote?.item ? <div role="status"><h3>Supplier cost evidence · property {quote.item.property_id}</h3><p>{quote.item.credits_consumed} supplier credits · field cost {quote.item.field_cost} · type cost {quote.item.type_cost} · surcharge {quote.item.price_surcharge}</p><p>Illustrative supplier value: {money(Math.ceil(quote.item.credits_consumed / 40))} subscription / {money(Math.ceil(quote.item.credits_consumed / 30))} prepaid. This is not the customer price or an invoice.</p><p>Billing status: {quote.billing?.status || 'Not supplied'} · amount deducted: {quote.billing?.amountDeducted ?? 'Not supplied'} credits. Calculated credits and actual deduction are separate.</p></div> : null}
+      {quote?.estimate?.ownerFieldFees ? <div>
+        <h4>Owner fields within this estimate</h4>
+        <p>The two name versions, owner type and share total {quote.estimate.ownerFieldFees.creditsPerOwner} credits per returned owner: approximately {money(Math.ceil(quote.estimate.ownerFieldFees.creditsPerOwner / 30))} prepaid. This component excludes the property, transfer and query charges.</p>
+        <p>The full estimate allows up to {quote.estimate.ownerFieldFees.maximumOwners} owners ({quote.estimate.ownerFieldFees.maximumCredits} owner-field credits). Actual billing still needs supplier verification; the earlier UAT sample was charged at the full allowance despite displaying one placeholder owner.</p>
+        <p>Phone numbers are not included in this query. Their availability and cost remain unverified.</p>
+      </div> : null}
       <h3>Report readiness</h3>
       <ul>{status.products.map((product) => <li key={product.product_id}>{product.name || product.product_id}: {product.status} · customer price {money(product.customer_price_cents)}</li>)}</ul>
       <p>Remaining release review: exact supplier cost and field contract, approved customer pricing, named-user access and active capped pilot. None is bypassed by this setup screen.</p>
+      <ReportCommercePanel organisationId={organisationId} />
       <ApprovedUatTest organisationId={organisationId} />
       <ApprovedUatTest organisationId={organisationId} api={FULL_TEST_API} label="Full" />
     </>}

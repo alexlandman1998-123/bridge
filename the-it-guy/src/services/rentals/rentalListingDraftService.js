@@ -286,6 +286,7 @@ export async function listRentalListingsForAgent(agentId, options = {}) {
   if (!normalizeText(options.organisationId) || !normalizeText(agentId)) throw new Error('Select an organisation and sign in before loading rentals.')
   const rows = await getAgentPrivateListings(agentId, {
     organisationId: options.organisationId,
+    ...(options.signal ? { signal: options.signal } : {}),
     branchId: options.branchId,
     assignedAgentIds: options.assignedAgentIds,
     includeAllOrganisationListings: options.includeAllOrganisationListings,

@@ -20,6 +20,7 @@ export default function TransactionJourneyTracker({
   title = 'Transaction journey',
   subtitle = 'One aligned view of every milestone through registration.',
   action = null,
+  onOpenWorkspace,
   variant = 'summary',
   audience = 'shared',
   loading = false,
@@ -46,7 +47,7 @@ export default function TransactionJourneyTracker({
 
   if (model?.highLevelJourney?.ruleVersion === 1) {
     return <section data-transaction-journey="shared" data-journey-audience={audience} data-journey-source="shared-high-level-journey" className="space-y-4">
-      <DeveloperOverviewJourney model={model} loading={loading} title={title} action={action} />
+      <DeveloperOverviewJourney model={model} loading={loading} title={title} action={action} onOpenWorkspace={onOpenWorkspace} />
       {isDetailed && !loading && model.legalJourney ? <SharedLegalJourney result={model.legalJourney}
         showConversation={conversationAudience} conversationRequiresPortal={conversationRequiresPortal} /> : null}
     </section>

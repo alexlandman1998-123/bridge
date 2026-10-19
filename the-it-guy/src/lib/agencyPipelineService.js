@@ -2006,9 +2006,10 @@ function applyAppointmentScope(rows = [], { includeAll = false, agentId = '', ag
   })
 }
 
-async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', leadId = '', from = null, to = null } = {}) {
+async function listAppointmentsFromSupabase(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', leadId = '', from = null, to = null, signal } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   const scopedListingId = normalizeText(listingId)
+  const read = (query) => signal ? query.abortSignal(signal) : query
   const selectModern =
     'appointment_id, organisation_id, lead_id, agent_id, archived_at, archived_by, archive_reason, calendar_delivery_managed, invitations_enabled, reminders_enabled, reminder_rules, attach_calendar_invite, email_theme, email_template_key, calendar_revision, request_issued_at, hold_expires_at, has_confirmed_reservation, scheduling_owner_user_id, appointment_type, custom_type_label, title, appointment_date, start_time, end_time, date_time, end_date_time, timezone, all_day, location_type, location, meeting_url, contact_id, listing_id, transaction_id, related_entity_type, related_entity_id, linked_workflow, linked_workflow_stage, linked_task_id, linked_transaction_stage, workflow_completion_effect, visibility_scope, completion_behavior, appointment_instructions, required_documents, calendar_event_uid, ics_generated_at, external_calendar_status, external_calendar_provider, external_calendar_event_id, resource_id, allow_outside_business_hours, scheduling_override_reason, status, notes, outcome_summary, client_feedback, agent_notes, next_step, follow_up_date, offer_invite_id, created_by, created_at, updated_at, completed_at, cancelled_at, cancelled_by, cancellation_reason'
   const selectLegacy =
@@ -2036,7 +2037,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
 
   let appointmentRows = []
   let appointmentError = null
-  const rpcResult = await supabase.rpc(leadId ? 'bridge_list_lead_appointments' : 'bridge_list_calendar_appointments_with_times', {
+  const rpcResult = await read(supabase.rpc(leadId ? 'bridge_list_lead_appointments' : 'bridge_list_calendar_appointments_with_times', {
     p_organisation_id: scopedOrganisationId,
     p_include_all: includeAll === true,
     ...(leadId ? { p_lead_id: normalizeText(leadId) } : {
@@ -2044,7 +2045,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
       p_from: from || null,
       p_to: to || null,
     }),
-  })
+  }))
   if (leadId && rpcResult.error) throw rpcResult.error
   if (!rpcResult.error) {
     if (!Array.isArray(rpcResult.data)) throw new Error('Appointment data could not be verified. Please retry.')
@@ -2054,7 +2055,7 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
       throw rpcResult.error
     }
     for (const select of [selectModern, selectLegacy, selectMinimal]) {
-      const result = await buildQuery(select)
+      const result = await read(buildQuery(select))
       if (!result.error) {
         if (!Array.isArray(result.data)) throw new Error('Appointment data could not be verified. Please retry.')
         appointmentRows = result.data
@@ -2079,21 +2080,21 @@ async function listAppointmentsFromSupabase(organisationId, { includeAll = false
     let participantError = null
     for (let index = 0; index < appointmentIds.length; index += APPOINTMENT_PARTICIPANT_FETCH_BATCH_SIZE) {
       const appointmentIdBatch = appointmentIds.slice(index, index + APPOINTMENT_PARTICIPANT_FETCH_BATCH_SIZE)
-      let participantResult = await supabase
+      let participantResult = await read(supabase
         .from('appointment_participants')
         .select(
           'participant_id, appointment_id, organisation_id, user_id, contact_id, name, email, phone, participant_role, is_required, rsvp_status, proposed_new_time, rsvp_comment, rsvp_token, invitation_sent_at, last_invitation_sent_at, responded_at, rsvp_revoked_at, proposal_id, proposal_response, created_at, updated_at',
         )
         .eq('organisation_id', scopedOrganisationId)
-        .in('appointment_id', appointmentIdBatch)
+        .in('appointment_id', appointmentIdBatch))
       if (participantResult.error && isMissingColumnError(participantResult.error)) {
-        participantResult = await supabase
+        participantResult = await read(supabase
           .from('appointment_participants')
           .select(
             'participant_id, appointment_id, organisation_id, name, email, phone, participant_role, rsvp_status, proposed_new_time, responded_at, created_at, updated_at',
           )
           .eq('organisation_id', scopedOrganisationId)
-          .in('appointment_id', appointmentIdBatch)
+          .in('appointment_id', appointmentIdBatch))
       }
       if (participantResult.error) {
         participantError = participantResult.error
@@ -2173,7 +2174,7 @@ function normalizeAppointmentResourceRow(row = {}) {
   }
 }
 
-async function listAppointmentResourcesFromSupabase(organisationId, { includeInactive = false } = {}) {
+async function listAppointmentResourcesFromSupabase(organisationId, { includeInactive = false, signal } = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   let query = supabase
     .from('appointment_resources')
@@ -2185,7 +2186,7 @@ async function listAppointmentResourcesFromSupabase(organisationId, { includeIna
     query = query.eq('is_active', true)
   }
 
-  const { data, error } = await query
+  const { data, error } = await (signal ? query.abortSignal(signal) : query)
   if (error) {
     if (error?.code === '42P01' || error?.code === 'PGRST205') {
       return []
@@ -2196,7 +2197,7 @@ async function listAppointmentResourcesFromSupabase(organisationId, { includeIna
   return (Array.isArray(data) ? data : []).map((row) => normalizeAppointmentResourceRow(row))
 }
 
-export async function listAppointmentResourcesAsync(organisationId, { includeInactive = false } = {}) {
+export async function listAppointmentResourcesAsync(organisationId, { includeInactive = false, signal } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
     if (isUnsafeFallbackAllowed()) return []
@@ -2214,7 +2215,7 @@ export async function listAppointmentResourcesAsync(organisationId, { includeIna
     })
   }
   if (!isSupabaseConfigured || !supabase) throw new Error('Appointment resources require the database connection.')
-  return listAppointmentResourcesFromSupabase(scopedOrganisationId, { includeInactive })
+  return listAppointmentResourcesFromSupabase(scopedOrganisationId, { includeInactive, signal })
 }
 
 function buildSchedulingConflictErrorMessage(conflicts = []) {
@@ -3435,7 +3436,7 @@ export function getAppointmentsDashboardSummary(
   return buildAppointmentsDashboardSummary(rows, { now })
 }
 
-export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', leadId = '', from = null, to = null } = {}) {
+export async function listAppointmentsAsync(organisationId, { includeAll = false, agentId = '', agentEmail = '', agentKeys = [], listingId = '', leadId = '', from = null, to = null, signal } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
     assertLocalFallbackAllowed('agencyPipelineService.listAppointmentsAsync', organisationId, fallbackReason)
@@ -3450,7 +3451,7 @@ export async function listAppointmentsAsync(organisationId, { includeAll = false
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Appointment scheduling requires the database connection.')
   }
-  return listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, leadId, from, to })
+  return listAppointmentsFromSupabase(organisationId, { includeAll, agentId, agentEmail, agentKeys, listingId, leadId, from, to, signal })
 }
 
 export async function getAppointmentsDashboardSummaryAsync(

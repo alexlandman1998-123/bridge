@@ -1,7 +1,11 @@
+import { verifyBoundaryReceipt } from '../../server/services/knowledgeFactoryBoundaryReceipt.js';
 import { createClient } from "@supabase/supabase-js";
+import { attemptKnowledgeFactorySellerFiling } from '../../server/services/knowledgeFactorySellerFiling.js';
 import { packageReportQuery, packageReportQueryFingerprint, PACKAGE_COST_RECIPE_IDS } from "./package-report-recipes.js";
 import { supplierProperty, currentSupplierTransfer, connectionItems } from "./supplier-contract.js";
 import { isKnowledgeFactoryV1UatEndpoint } from "./supplier-endpoint.js";
+import { reportEnvironment, reportSupplierRuntime } from "../../server/services/knowledgeFactoryReportRuntime.js";
+import { currentReportApproval, reportAccounting } from "../../server/services/knowledgeFactoryReportAccounting.js";
 import { supplierCosts as parseSupplierCosts, supplierBilling, usableSupplierCosts } from "./supplier-costs.js";
 import { packageCostEnvelope, assertEnvelopeFitsQuote } from "./package-cost-envelope.js";
 
@@ -43,9 +47,9 @@ async function body(request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
-function runtime() {
-  const url = text(process.env.SUPABASE_URL, 2_000);
-  const key = text(process.env.SUPABASE_SERVICE_ROLE_KEY, 10_000);
+function runtime(env = process.env) {
+  const url = text(env.SUPABASE_URL, 2_000);
+  const key = text(env.SUPABASE_SERVICE_ROLE_KEY, 10_000);
   if (!url || !key) {
     const error = new Error(
       "Missing private server configuration for report confirmation.",
@@ -55,19 +59,7 @@ function runtime() {
   }
   return { url, key };
 }
-function supplierRuntime() {
-  const endpoint = text(process.env.KNOWLEDGE_FACTORY_GRAPHQL_ENDPOINT, 2_000);
-  const email = text(process.env.KNOWLEDGE_FACTORY_EMAIL, 500);
-  const password = process.env.KNOWLEDGE_FACTORY_PASSWORD;
-  if (!endpoint || !email || !password) {
-    const error = new Error(
-      "Missing private server configuration for report execution.",
-    );
-    error.status = 503;
-    throw error;
-  }
-  return { endpoint, email, password };
-}
+function supplierRuntime(env = process.env) { return reportSupplierRuntime(env); }
 
 let supplierSession = null;
 
@@ -162,15 +154,17 @@ export function quoteFitsCommercialLimits(credits, preflight) {
     quotedCredits <= preflight.packageCreditCap &&
     preflight.monthCredits + quotedCredits <= preflight.monthlyCreditCap;
 }
-function supplierError(payload, fallback) {
-  const message = text(payload?.errors?.[0]?.message, 300);
-  return message ? `${fallback}: ${message}` : fallback;
+function supplierError(_payload, fallback) {
+  return fallback;
 }
+
 async function supplierToken(config) {
-  if (supplierSession?.expiresAt > Date.now() + 10_000)
+  if (supplierSession?.endpoint === config.endpoint && supplierSession?.email === config.email && supplierSession?.expiresAt > Date.now() + 10_000)
     return supplierSession.token;
   const response = await fetch(config.endpoint, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(20_000),
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       query:
@@ -184,23 +178,21 @@ async function supplierToken(config) {
     text(payload?.data?.login?.tokenPayload?.expiresUtc),
   );
   if (!response.ok || !token || !Number.isFinite(expiresAt)) {
-    const error = new Error(
-      text(payload?.errors?.[0]?.message, 300) ||
-        text(payload?.data?.login?.errors?.[0]?.message, 300) ||
-        `Knowledge Factory login request failed (HTTP ${response.status}).`,
-    );
+    const error = new Error("Knowledge Factory could not authenticate the selected report environment.");
     error.status = 502;
     throw error;
   }
-  supplierSession = { token, expiresAt };
+  supplierSession = { token, expiresAt, endpoint: config.endpoint, email: config.email };
   return token;
 }
 function reportQuery(productId) {
   return packageReportQuery(productId, "CanvassingReport");
 }
-async function supplierReport(config, productId, propertyId) {
+export async function supplierReport(config, productId, propertyId, recordCharge = async () => {}) {
   const response = await fetch(config.endpoint, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(20_000),
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${await supplierToken(config)}`,
@@ -214,6 +206,8 @@ async function supplierReport(config, productId, propertyId) {
     }),
   });
   const payload = await response.json().catch(() => ({}));
+  await recordCharge({ costs: supplierCosts(payload), billing: supplierBilling(payload),
+    vendorRequestId: text(response.headers.get("x-request-id"), 200) || null });
   if (!response.ok || payload?.errors?.length) {
     const error = new Error(
       supplierError(payload, "Knowledge Factory could not return this report"),
@@ -231,6 +225,8 @@ async function supplierReport(config, productId, propertyId) {
 export async function supplierQuote(config, productId, propertyId) {
   const response = await fetch(config.endpoint, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(20_000),
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${await supplierToken(config)}`,
@@ -251,7 +247,7 @@ export async function supplierQuote(config, productId, propertyId) {
     error.status = 502;
     throw error;
   }
-  const estimate = packageCostEnvelope({ endpoint: config.endpoint, productId, query: packageReportQuery(productId, "CanvassingReportQuote"), payload });
+  const estimate = packageCostEnvelope({ endpoint: config.endpoint, productId, query: packageReportQuery(productId, "CanvassingReportQuote"), payload, environment: config.environment || "uat" });
   return {
     estimate,
     costs: { fieldCost: estimate.fieldCost, typeCost: estimate.typeCost, surcharge: estimate.maximumSurcharge, credits: estimate.maximumCredits },
@@ -362,18 +358,7 @@ function reportDefinitionSnapshot(product) {
       : [],
   };
 }
-function costValidationSnapshot(validation) {
-  return {
-    supplierApiVersion: validation?.supplier_api_version || null,
-    supplierQuerySha256: validation?.supplier_query_sha256 || null,
-    recipeId: text(validation?.recipe_id, 80) || null,
-    validatedAt: text(validation?.created_at, 80) || null,
-    fieldCost: metric(validation?.field_cost),
-    typeCost: metric(validation?.type_cost),
-    surcharge: metric(validation?.price_surcharge),
-    creditsConsumed: metric(validation?.credits_consumed),
-  };
-}
+
 export function opportunitySignals(data) {
   const transactions = Array.isArray(data?.transactions) ? data.transactions : [];
   const datedTransactions = transactions
@@ -469,6 +454,7 @@ async function assertPackageCommercialPolicy(
   organisationId,
   actorId,
   product,
+  environment = reportEnvironment(),
 ) {
   const { data: policy, error: policyError } = await db
     .from("knowledge_factory_package_commercial_policies")
@@ -499,31 +485,9 @@ async function assertPackageCommercialPolicy(
     throw commercialFailure(
       "This package has no validated complete-query recipe yet.",
     );
-  const { data: validations, error: validationError } = await db
-    .from("knowledge_factory_cost_validations")
-    .select(
-      "recipe_id, field_cost, type_cost, price_surcharge, credits_consumed, outcome, supplier_api_version, supplier_query_sha256, created_at",
-    )
-    .eq("organisation_id", organisationId)
-    .eq("outcome", "validated")
-    .eq("recipe_id", recipeId)
-    .eq("supplier_api_version", "v1")
-    .eq("supplier_query_sha256", packageReportQueryFingerprint(product.product_id))
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (validationError)
-    throw new Error("Package cost-validation evidence could not be checked.");
-  const validation = validations?.[0];
-  if (!validation)
-    throw commercialFailure(
-      "This package has not yet passed complete-query UAT cost validation.",
-    );
-  const estimatedCredits = metric(validation.credits_consumed);
-  if (metric(validation.field_cost) === null ||
-      metric(validation.type_cost) === null || metric(validation.price_surcharge) === null || estimatedCredits === null)
-    throw commercialFailure(
-      "This package has no complete supplier cost evidence. It cannot be purchased yet.",
-    );
+  const approval = await currentReportApproval(db, { organisationId, productId: product.product_id,
+    environment, querySha256: packageReportQueryFingerprint(product.product_id) });
+  const estimatedCredits = Number(approval.maximum_credits);
   const packageCreditCap =
     product.product_id === "basic_owner_lookup"
       ? Number(policy.basic_report_credit_cap || policy.per_report_credit_cap || 0)
@@ -578,7 +542,9 @@ async function assertPackageCommercialPolicy(
     packageCreditCap,
     monthlyCreditCap: Number(policy.monthly_credit_cap || 0),
     rolloutStage: policy.rollout_stage,
-    costValidation: costValidationSnapshot(validation),
+    costValidation: { kind: "reviewed_maximum", approvalId: approval.id, maximumCredits: estimatedCredits,
+      supplierEnvironment: approval.supplier_environment, querySha256: approval.supplier_query_sha256 },
+    approvalId: approval.id,
   };
 }
 
@@ -643,7 +609,7 @@ async function assertPilotAccess(
     );
 }
 
-export default async function handler(request, response) {
+export default async function handler(request, response, { createDb = createClient, env = process.env } = {}) {
   if (request.method !== "POST")
     return json(response, 405, { error: "Method not allowed." });
   try {
@@ -657,8 +623,8 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "A valid organisation and action are required.",
       });
-    const config = runtime();
-    const db = createClient(config.url, config.key, {
+    const config = runtime(env);
+    const db = createDb(config.url, config.key, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const actorId = await reportActor(request, db, organisationId);
@@ -672,7 +638,7 @@ export default async function handler(request, response) {
         .eq("status", "uat_validated")
         .order("customer_price_cents", { ascending: true });
       if (error) throw new Error("Approved report packages are unavailable.");
-      return json(response, 200, { products: (data || []).map(productView) });
+      return json(response, 200, { products: (data || []).map(productView), supplierEnvironment: reportEnvironment(env) });
     }
     if (action === "quote") {
       const productId = text(input.productId, 80);
@@ -695,9 +661,16 @@ export default async function handler(request, response) {
         return json(response, 409, {
           error: "This report package is not yet approved for UAT use.",
         });
-      const commercialPreflight = await assertPackageCommercialPolicy(db, organisationId, actorId, product);
-      const supplierConfig = supplierRuntime();
-      if (!isKnowledgeFactoryV1UatEndpoint(supplierConfig.endpoint)) {
+      const commercialPreflight = await assertPackageCommercialPolicy(db, organisationId, actorId, product, reportEnvironment(env));
+      const supplierConfig = supplierRuntime(env);
+      const boundarySnapshot = verifyBoundaryReceipt({receipt:input.boundaryReceipt,organisationId,actorId,propertyId:selectedPropertyId,environment:supplierConfig.environment,key:config.key});
+      const targetSellerLeadId = input.sellerLeadId || null;
+      if (targetSellerLeadId) {
+        if (!validUuid(targetSellerLeadId)) return json(response,400,{error:'Select a valid seller lead.'});
+        const target = await db.rpc('knowledge_factory_validate_seller_target',{p_org:organisationId,p_actor:actorId,p_property:selectedPropertyId,p_lead:targetSellerLeadId});
+        if (target.error) return json(response,409,{error:'That seller lead cannot be linked to this property. Choose an available lead or use the existing property link.'});
+      }
+      if (supplierConfig.environment === "uat" && !isKnowledgeFactoryV1UatEndpoint(supplierConfig.endpoint)) {
         const error = new Error(
           "Cost-only report quotes are restricted to the UAT supplier endpoint.",
         );
@@ -710,7 +683,7 @@ export default async function handler(request, response) {
         failure.status = 502;
         throw failure;
       }
-      if (!quoteFitsCommercialLimits(quote.costs.credits, commercialPreflight))
+      if (quote.costs.credits > commercialPreflight.estimatedCredits || !quoteFitsCommercialLimits(quote.costs.credits, commercialPreflight))
         throw commercialFailure("The supplier quote exceeds the current report or monthly credit limit.");
       const quoteExpiresAt = new Date(Date.now() + 20 * 60_000).toISOString();
       const { data, error } = await db
@@ -718,12 +691,15 @@ export default async function handler(request, response) {
         .insert({
           organisation_id: organisationId,
           actor_id: actorId,
+          supplier_environment: supplierConfig.environment,
           property_id: selectedPropertyId,
           product_id: product.product_id,
           product_name: product.name,
           included_fields: product.field_manifest,
           customer_price_cents: product.customer_price_cents,
           request_purpose: purpose,
+          boundary_snapshot: boundarySnapshot,
+          target_seller_lead_id: targetSellerLeadId,
           status: "quoted",
           quoted_supplier_credits: quote.costs.credits,
           quoted_field_cost: quote.costs.fieldCost,
@@ -732,7 +708,7 @@ export default async function handler(request, response) {
           quote_expires_at: quoteExpiresAt,
         })
         .select(
-          "id, property_id, product_id, product_name, customer_price_cents, request_purpose, status, quoted_supplier_credits, quoted_field_cost, quoted_type_cost, quoted_price_surcharge, quote_expires_at, created_at",
+          "id, supplier_environment, property_id, product_id, product_name, customer_price_cents, request_purpose, status, quoted_supplier_credits, quoted_field_cost, quoted_type_cost, quoted_price_surcharge, quote_expires_at, created_at, target_seller_lead_id",
         )
         .single();
       if (error || !data) throw new Error("Your report quote could not be saved.");
@@ -744,6 +720,7 @@ export default async function handler(request, response) {
       if (auditError) throw new Error("Quote provenance could not be saved. This estimate cannot be executed.");
       return json(response, 201, {
         intent: data,
+        boundary: {status:boundarySnapshot?.status || 'unavailable',reason:boundarySnapshot?.reason || null},
         estimate: quote.estimate,
         message:
           "Conservative maximum-cost estimate saved, not supplier-confirmed billing. No report has been requested or charged.",
@@ -765,7 +742,7 @@ export default async function handler(request, response) {
         .eq("status", "confirmed_pending_execution")
         .gt("quote_expires_at", new Date().toISOString())
         .select(
-          "id, property_id, product_id, product_name, included_fields, customer_price_cents, request_purpose, quoted_supplier_credits",
+          "id, property_id, product_id, product_name, included_fields, customer_price_cents, request_purpose, quoted_supplier_credits, supplier_environment, boundary_snapshot, target_seller_lead_id",
         )
         .maybeSingle();
       if (intentError)
@@ -775,6 +752,8 @@ export default async function handler(request, response) {
           error:
             "This report selection is no longer available to execute. It may already have been processed.",
         });
+      let reservationCreated = false;
+      let supplierDispatched = false;
       try {
         const { data: product, error: productError } = await db
           .from("knowledge_factory_report_products")
@@ -797,10 +776,17 @@ export default async function handler(request, response) {
           organisationId,
           actorId,
           product,
+          reportEnvironment(env),
         );
         if (!quoteFitsCommercialLimits(intent.quoted_supplier_credits, commercialPreflight))
           throw commercialFailure("This quote no longer fits the current report or monthly credit limit. Request a new estimate.");
-        const supplierConfig = supplierRuntime();
+        const supplierConfig = supplierRuntime(env);
+        if (intent.target_seller_lead_id) {
+          const target = await db.rpc('knowledge_factory_validate_seller_target',{p_org:organisationId,p_actor:actorId,p_property:intent.property_id,p_lead:intent.target_seller_lead_id});
+          if (target.error) throw new Error('The selected seller lead is no longer available for this property. No supplier report was requested.');
+        }
+        if (intent.supplier_environment !== supplierConfig.environment)
+          throw new Error("The supplier environment changed. Request a new estimate.");
         // Refuse old/versionless quotes. Provenance uses the existing immutable
         // audit log; no schema migration or activation is needed for this fix.
         const { data: evidence, error: evidenceError } = await db.from("knowledge_factory_audit_log")
@@ -811,6 +797,7 @@ export default async function handler(request, response) {
         if (evidenceError || !savedEstimate || savedEstimate.supplierApiVersion !== "v1" ||
             evidence.property_reference !== String(intent.property_id) ||
             savedEstimate.productId !== intent.product_id ||
+            (savedEstimate.supplierEnvironment || "uat") !== supplierConfig.environment ||
             savedEstimate.supplierQuerySha256 !== packageReportQueryFingerprint(intent.product_id) ||
             savedEstimate.maximumCredits !== Number(intent.quoted_supplier_credits))
           throw new Error("This quote lacks current v1 maximum-cost provenance. Request a new estimate.");
@@ -828,12 +815,34 @@ export default async function handler(request, response) {
           supplierConfig.endpoint,
           Math.max(commercialPreflight.estimatedCredits, Number(intent.quoted_supplier_credits)),
         );
+        await reportAccounting(db, "reserve_report_credits", {
+          p_intent_id: intent.id, p_actor_id: actorId, p_maximum_credits: freshQuote.estimate.maximumCredits,
+          p_environment: supplierConfig.environment, p_query_sha256: packageReportQueryFingerprint(intent.product_id),
+          p_approval_id: commercialPreflight.approvalId,
+        });
+        reservationCreated = true;
+        // Complete login before marking a potentially charged data request sent.
+        await supplierToken(supplierConfig);
+        await reportAccounting(db, "record_report_charge", { p_intent_id: intent.id, p_actor_id: actorId, p_action: "dispatch" });
+        supplierDispatched = true;
         const result = await supplierReport(
           supplierConfig,
           intent.product_id,
           Number(intent.property_id),
+          ({ costs, billing, vendorRequestId }) => reportAccounting(db, "record_report_charge", {
+            p_intent_id: intent.id, p_actor_id: actorId, p_action: "charge",
+            p_credits: Number.isSafeInteger(costs.credits) ? costs.credits : null,
+            p_deducted: Number.isSafeInteger(billing.amountDeducted) ? billing.amountDeducted : null,
+            p_vendor_request_id: vendorRequestId,
+          }),
         );
-        if (!usableSupplierCosts(result.costs) || result.costs.credits > freshQuote.estimate.maximumCredits) {
+        if (!usableSupplierCosts(result.costs) ||
+            ![result.costs.fieldCost, result.costs.typeCost, result.costs.surcharge, result.costs.credits, result.billing.amountDeducted].every(Number.isSafeInteger) ||
+            result.billing.rootSurcharge !== 0 || result.billing.rootFieldCount !== 1 ||
+            result.billing.complexity !== result.costs.fieldCost + result.costs.typeCost ||
+            result.billing.surcharge !== result.billing.fieldSurcharge ||
+            result.costs.credits > freshQuote.estimate.maximumCredits ||
+            result.billing.status?.toLowerCase() !== "charged" || result.billing.amountDeducted === null || result.billing.amountDeducted > freshQuote.estimate.maximumCredits) {
           await writeAudit(db, {
             organisation_id: organisationId, actor_id: actorId, operation: "property_report",
             request_purpose: intent.request_purpose, property_reference: String(intent.property_id),
@@ -846,11 +855,17 @@ export default async function handler(request, response) {
           throw new Error("The supplier executed the request but billing needs administrator review. Do not retry this report.");
         }
         const savedReportData = reportData(result.property, intent.product_id);
+        if (intent.boundary_snapshot) savedReportData.boundary = intent.boundary_snapshot;
+        if (currentSupplierTransfer(result.property)?.isCurrentOwner !== true || !savedReportData.owners.length ||
+            savedReportData.owners.some(owner => !owner.name))
+          throw new Error("The supplier returned incomplete current-owner data. The charge needs review; do not repeat this report.");
         const definitionSnapshot = reportDefinitionSnapshot(product);
         const requestContextSnapshot = {
           supplierApiVersion: "v1",
+          supplierEnvironment: supplierConfig.environment,
           supplierQuerySha256: packageReportQueryFingerprint(intent.product_id),
           purchaseIntentId: intent.id,
+          targetSellerLeadId: intent.target_seller_lead_id || null,
           productId: intent.product_id,
           productName: text(intent.product_name, 200) || null,
           requestPurpose: text(intent.request_purpose, 500) || null,
@@ -866,67 +881,14 @@ export default async function handler(request, response) {
           reportSnapshotVersion: "canvassing-report-v1",
           definitionVersion: definitionSnapshot.definitionVersion,
         };
-        const { data: request, error: requestError } = await db
-          .from("knowledge_factory_report_requests")
-          .insert({
-            organisation_id: organisationId,
-            actor_id: actorId,
-            property_id: intent.property_id,
-            requested_report_types: [intent.product_id],
-            request_purpose: intent.request_purpose,
-            status: "ready",
-            confirmed_at: new Date().toISOString(),
-            quote_expires_at: new Date().toISOString(),
-            field_cost: result.costs.fieldCost,
-            type_cost: result.costs.typeCost,
-            price_surcharge: result.costs.surcharge,
-            credits_consumed: result.costs.credits,
-            vendor_request_id: result.vendorRequestId,
-            report_summary: summary,
-          })
-          .select("id")
-          .single();
-        if (requestError || !request)
-          throw new Error("The report execution record could not be saved.");
-        const { data: savedResult, error: resultError } = await db
-          .from("knowledge_factory_report_results")
-          .insert({
-            organisation_id: organisationId,
-            purchase_intent_id: intent.id,
-            report_request_id: request.id,
-            actor_id: actorId,
-            product_id: intent.product_id,
-            property_id: intent.property_id,
-            report_data: savedReportData,
-            report_snapshot_version: "canvassing-report-v1",
-            report_definition_snapshot: definitionSnapshot,
-            cost_validation_snapshot: commercialPreflight.costValidation,
-            request_context_snapshot: requestContextSnapshot,
-            opportunity_signals: opportunitySignals(savedReportData),
-            field_cost: result.costs.fieldCost,
-            type_cost: result.costs.typeCost,
-            price_surcharge: result.costs.surcharge,
-            credits_consumed: result.costs.credits,
-            vendor_request_id: result.vendorRequestId,
-          })
-          .select(
-            "id, report_data, report_snapshot_version, opportunity_signals, credits_consumed, executed_at",
-          )
-          .single();
-        if (resultError || !savedResult)
-          throw new Error("The report result could not be saved.");
-        const { error: completionError } = await db
-          .from("knowledge_factory_report_purchase_intents")
-          .update({
-            status: "executed",
-            executed_at: new Date().toISOString(),
-            report_request_id: request.id,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", intent.id)
-          .eq("status", "executing");
-        if (completionError)
-          throw new Error("The report execution could not be completed.");
+        const savedResult = await reportAccounting(db, "complete_report", {
+          p_intent_id: intent.id, p_actor_id: actorId,
+          p_request: { field_cost: result.costs.fieldCost, type_cost: result.costs.typeCost,
+            price_surcharge: result.costs.surcharge, report_summary: summary },
+          p_result: { report_data: savedReportData, report_definition_snapshot: definitionSnapshot,
+            cost_validation_snapshot: commercialPreflight.costValidation, request_context_snapshot: requestContextSnapshot,
+            opportunity_signals: opportunitySignals(savedReportData) },
+        });
         await writeAudit(db, {
           organisation_id: organisationId,
           actor_id: actorId,
@@ -937,7 +899,7 @@ export default async function handler(request, response) {
             mode: "package_execution",
             purchase_intent_id: intent.id,
             product_id: intent.product_id,
-            report_request_id: request.id,
+            report_request_id: savedResult.report_request_id,
             commercial_preflight: commercialPreflight,
             supplier_billing: result.billing,
           },
@@ -948,6 +910,7 @@ export default async function handler(request, response) {
           price_surcharge: result.costs.surcharge,
           credits_consumed: result.costs.credits,
         });
+        const sellerFiling = await attemptKnowledgeFactorySellerFiling({ db, report: savedResult, actorId });
         return json(response, 200, {
           report: {
             id: savedResult.id,
@@ -956,9 +919,15 @@ export default async function handler(request, response) {
             opportunitySignals: savedResult.opportunity_signals,
             creditsConsumed: savedResult.credits_consumed,
             executedAt: savedResult.executed_at,
+            sellerFiling,
           },
         });
       } catch (error) {
+        if (reservationCreated && !supplierDispatched) {
+          await reportAccounting(db, "record_report_charge", { p_intent_id: intent.id, p_actor_id: actorId, p_action: "release" });
+        }
+        // Dispatch is irreversible: a timeout or malformed response can be charged.
+        if (supplierDispatched) error.retryable = false;
         await db
           .from("knowledge_factory_report_purchase_intents")
           .update({
@@ -1007,7 +976,7 @@ export default async function handler(request, response) {
       .eq("status", "quoted")
       .gt("quote_expires_at", confirmedAt)
       .select(
-        "id, property_id, product_id, product_name, customer_price_cents, request_purpose, status, quoted_supplier_credits, quoted_field_cost, quoted_type_cost, quoted_price_surcharge, quote_expires_at, confirmation_attested_at, confirmed_at, created_at",
+        "id, supplier_environment, property_id, product_id, product_name, customer_price_cents, request_purpose, status, quoted_supplier_credits, quoted_field_cost, quoted_type_cost, quoted_price_surcharge, quote_expires_at, confirmation_attested_at, confirmed_at, created_at, target_seller_lead_id",
       )
       .maybeSingle();
     if (error || !data)

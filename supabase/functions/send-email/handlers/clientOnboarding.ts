@@ -107,13 +107,10 @@ function matchesBuyerTarget(
   row: BuyerParticipantTarget,
   target: ReturnType<typeof payloadBuyerTarget>,
 ) {
-  return Boolean(
-    (target.participantId && normalizeText(row.id) === target.participantId) ||
-      (target.buyerPartyId &&
-        normalizeText(row.buyer_party_id) === target.buyerPartyId) ||
-      (target.email &&
-        normalizeEmail(row.participant_email) === target.email),
-  );
+  if (target.participantId && normalizeText(row.id) !== target.participantId) return false;
+  if (target.buyerPartyId && normalizeText(row.buyer_party_id) !== target.buyerPartyId) return false;
+  if (target.email && normalizeEmail(row.participant_email) !== target.email) return false;
+  return Boolean(target.participantId || target.buyerPartyId || target.email);
 }
 
 async function loadBuyerParticipantTarget(
@@ -168,7 +165,7 @@ async function loadBuyerParticipantTarget(
       normalizeText((row as Record<string, unknown>).status).toLowerCase(),
     )
   );
-  const candidateRows = activeRows.length ? activeRows : rows;
+  const candidateRows = activeRows;
   const participant = target.hasTarget
     ? candidateRows.find((row) => matchesBuyerTarget(row, target)) || null
     : candidateRows.find((row) => row.is_primary_buyer === true) ||

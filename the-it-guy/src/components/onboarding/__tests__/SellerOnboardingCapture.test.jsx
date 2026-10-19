@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { SellerOnboarding, normalizeFormData } from '../../../pages/SellerOnboarding.jsx'
+import { SellerOnboarding, ReviewReadinessPanel, normalizeFormData } from '../../../pages/SellerOnboarding.jsx'
 import * as demoLinks from '../../../lib/onboardingDemoLinks.js'
 import { buildSellerProfileCanonicalPayload } from '../../../lib/sellerProfileCaptureModel.js'
+import { getSellerFicaOnboardingMissing } from '../../../lib/sellerFicaOnboardingFields.js'
+
 
 beforeEach(() => { vi.spyOn(window, 'scrollTo').mockImplementation(() => {}) })
 
@@ -13,6 +15,65 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 function capture(props = {}) {
   return render(<MemoryRouter><SellerOnboarding tokenOverride="demo-seller-onboarding" embedded {...props} /></MemoryRouter>)
 }
+
+test('saved beneficial owners remain complete after loading and saving the seller review', async () => {
+  const owner = { id: 'beneficial-owner-1', name: 'Sam', surname: 'Ngwenya',
+    idNumber: '8001015009087', nationality: 'South African', residentialAddress: '1 Example Road', ownershipShare: '100' }
+  const base = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+  const draft = { ...base, sellerOnboarding: { ...base.sellerOnboarding, formData: {
+    ...base.sellerOnboarding.formData, ownershipType: 'company', ownerEntityType: 'company', ownerStructureType: 'company',
+    companyName: 'Example Company', companyBeneficialOwners: [owner],
+    occupation: 'Business owner', sourceOfFunds: 'Business income', politicallyExposedPerson: 'no',
+  } } }
+  const persist = vi.fn(async row => row)
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue(draft)
+  capture({ completionModeOverride: 'agent_assisted', onDraftSaved: persist })
+  await screen.findByRole('heading', { name: 'Beneficial owners', exact: true })
+  expect(screen.getByDisplayValue(owner.idNumber)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  const readiness = within(screen.getByRole('region', { name: 'Onboarding readiness' }))
+  expect(within(readiness.getByText('Legal owner').parentElement).getByText('Example Company')).toBeTruthy()
+  expect(within(readiness.getByText('Contact').parentElement).getByText('Thabo Mokoena')).toBeTruthy()
+  expect(readiness.getByText('Company resolution date')).toBeTruthy()
+  expect(readiness.getByRole('button', { name: 'Save draft and finish later' })).toBeTruthy()
+  expect(screen.queryByText(/Beneficial owners \/ controllers/)).toBeNull()
+  const reopened = normalizeFormData(persist.mock.calls[0][0])
+  expect(reopened.companyBeneficialOwners[0]).toMatchObject(owner)
+  expect(getSellerFicaOnboardingMissing(reopened)).toEqual([])
+})
+
+test('completing beneficial owners clears the review warning in the open form', async () => {
+  const base = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+  const draft = { ...base, sellerOnboarding: { ...base.sellerOnboarding, formData: {
+    ...base.sellerOnboarding.formData, ownershipType: 'company', ownerEntityType: 'company', ownerStructureType: 'company',
+    companyName: 'Example Company', companyBeneficialOwners: [],
+    occupation: 'Business owner', sourceOfFunds: 'Business income', politicallyExposedPerson: 'no',
+  } } }
+  const persist = vi.fn(async row => row)
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue(draft)
+  capture({ completionModeOverride: 'agent_assisted', onDraftSaved: persist })
+  await screen.findByRole('heading', { name: 'Beneficial owners', exact: true })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  expect(screen.getAllByText(/Beneficial owners \/ controllers/).length).toBeGreaterThan(0)
+  fireEvent.click(screen.getByRole('button', { name: /Seller details.*Beneficial owners/ }))
+  const owners = within(screen.getByRole('heading', { name: 'Beneficial owners', exact: true }).closest('section'))
+  fireEvent.click(owners.getByRole('button', { name: 'Add', exact: true }))
+  for (const [label, value] of Object.entries({
+    'First name': 'Sam', Surname: 'Ngwenya', 'ID / passport number': '8001015009087',
+    Nationality: 'South African', 'Residential address': '1 Example Road', 'Ownership share, if known': '100',
+  })) fireEvent.change(owners.getByLabelText(label, { exact: true }), { target: { value } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(persist).toHaveBeenCalledTimes(3))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  expect(screen.queryByText(/Beneficial owners \/ controllers/)).toBeNull()
+})
 
 test('embedded agent capture has one working draft action and saves incomplete answers without remote writes', async () => {
   const saved = vi.fn()
@@ -145,8 +206,9 @@ test('seller can save incomplete information from the final step without complet
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
   fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
   await screen.findByRole('heading', { name: 'Check your seller file' })
-  fireEvent.click(screen.getByRole('button', { name: 'Save available details', exact: true }))
-  await screen.findByText('Your details have been saved. Some information is still missing. You can return to this link to add it later.')
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft and finish later', exact: true }))
+  await screen.findByText('Draft saved. Your information has not been submitted. Return to this link, complete the missing details, then submit to your agent.')
+
   expect(submitted).not.toHaveBeenCalled()
   expect(saved.mock.calls.at(-1)[0].sellerOnboarding.status).toBe('in_progress')
 })
@@ -355,4 +417,27 @@ test('an agent lock still prevents changing ownership while an explicit unlock a
     vi.restoreAllMocks()
     vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   }
+})
+
+
+test.each([false, true])('review separates legal owner and contact and explains draft versus submission (assisted=%s)', (agentAssisted) => {
+  const onSubmit = vi.fn()
+  const props = { legalOwnerName: 'Example Company', contactName: 'Sam Ngwenya',
+    ownershipLabel: 'Company', ownerKind: 'company', propertyAddress: '1 Example Road', agentAssisted, onSubmit }
+  const view = render(<ReviewReadinessPanel {...props} issueGroups={[{ label: 'Seller details', missing: ['Company resolution date'] }]} />)
+  const panel = within(screen.getByRole('region', { name: 'Onboarding readiness' }))
+  expect(within(panel.getByText('Legal owner').parentElement).getByText('Example Company')).toBeTruthy()
+  expect(within(panel.getByText('Contact').parentElement).getByText('Sam Ngwenya')).toBeTruthy()
+  expect(panel.getByText(/The legal owner is a company/)).toBeTruthy()
+  expect(panel.getByText('Company resolution date')).toBeTruthy()
+  expect(panel.getByText('1 detail needs attention')).toBeTruthy()
+  expect(panel.getByText(/Save draft keeps your answers without submitting/)).toBeTruthy()
+  fireEvent.click(panel.getByRole('button', { name: 'Save draft and finish later' }))
+  expect(onSubmit).toHaveBeenCalledTimes(1)
+  view.rerender(<ReviewReadinessPanel {...props} issueGroups={[{ label: 'Seller details', missing: [] }]} />)
+  expect(panel.getByText('Required details filled in')).toBeTruthy()
+  expect(panel.queryByRole('button', { name: 'Save draft and finish later' })).toBeNull()
+  expect(panel.getByRole('button', { name: agentAssisted ? 'Submit seller details' : 'Submit to agent for review' })).toBeTruthy()
+  expect(panel.getByText(/Your agent must still review the details and supporting documents/)).toBeTruthy()
+
 })

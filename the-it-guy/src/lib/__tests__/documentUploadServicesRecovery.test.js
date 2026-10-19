@@ -205,3 +205,47 @@ test('developer: actual action retains bytes when the save cannot be read and re
   assert.equal(f.state.saves, 1)
   assert.equal(f.state.deletes, 0)
 })
+
+test('buyer onboarding upload persists its actual bucket and buyer-only identity despite a lost save reply', async () => {
+  const f = fixture()
+  const action = extract('../api.js', 'uploadOnboardingRequiredDocument', {
+    ...f.values,
+    requireOnboardingTokenClient: f.values.requireClient,
+    resolveOnboardingTokenContext: async () => ({ transactionId: f.id, purchaserType: 'individual' }),
+    resolveTransactionAndContext: async () => ({ transaction: { id: f.id, purchaser_type: 'individual' }, buyer: { email: 'qa@example.invalid' } }),
+    getOnboardingFinanceSnapshot: () => ({ financeType: 'cash' }),
+    deriveOnboardingFinanceManagedBy: () => 'agent',
+    ensureTransactionRequiredDocuments: async () => [{ key: 'id_document', label: 'Buyer ID' }],
+    uploadToDocumentsBucket: async () => { f.state.uploads++; return 'private-documents' },
+  })
+  const result = await action({ token: f.id, documentKey: 'id_document', file: f.file })
+  assert.equal(result.documentId, f.state.row.id)
+  assert.equal(result.fileBucket, 'private-documents')
+  assert.equal(f.state.row.file_bucket, 'private-documents')
+  assert.equal(f.state.row.client_recipient_role, 'buyer')
+  assert.equal(f.state.row.uploaded_by_party, 'buyer')
+  assert.equal(f.state.row.source, 'buyer_onboarding_upload')
+  assert.equal(f.state.deletes, 0)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+  assert.equal(result.saved, true)
+})
+
+test('buyer onboarding setup persists canonical requirements with the guarded professional creation command', async () => {
+  const f = fixture(), calls = []
+  const action = extract('../api.js', 'prepareBuyerOnboardingDocumentWorkspace', {
+    ...f.values,
+    TRANSACTION_CANONICAL_PERSISTENCE_MODES: { creationRpc: 'transaction_creation_rpc' },
+    resolveTransactionDocumentRequirements: async input => { calls.push(input); return { canonicalSync: { instances: [{ id: 'requirement' }] }, requirements: [{ id: 'requirement' }] } },
+  })
+  await action(f.id)
+  assert.equal(calls[0].transactionId, f.id)
+  assert.equal(calls[0].client, f.values.requireClient())
+  assert.equal(calls[0].writeLegacyProjection, false)
+  assert.equal(calls[0].persistenceMode, 'transaction_creation_rpc')
+  const incomplete = extract('../api.js', 'prepareBuyerOnboardingDocumentWorkspace', {
+    ...f.values, TRANSACTION_CANONICAL_PERSISTENCE_MODES: { creationRpc: 'transaction_creation_rpc' },
+    resolveTransactionDocumentRequirements: async () => ({ canonicalSync: { instances: [] }, requirements: [] }),
+  })
+  await assert.rejects(incomplete(f.id), /before sharing the buyer portal/)
+})

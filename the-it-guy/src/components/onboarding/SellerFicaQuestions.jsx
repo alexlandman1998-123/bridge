@@ -11,7 +11,8 @@ function PersonList({ title, roleTitle, hint, rows = [], collectionKey, onAddPer
         <button type="button" className="rounded-[9px] border border-[#cbd9e8] bg-white px-3 py-2 text-sm font-semibold text-[#35546c]" onClick={() => onAddPerson(collectionKey, roleTitle)}>Add</button>
       </div>
       {rows.map((person, index) => (
-        <div key={person.id || `${collectionKey}-${index}`} className="grid gap-3 rounded-[12px] border border-[#dce6f2] bg-white p-3 sm:grid-cols-2">
+        <div key={person.id || `${collectionKey}-${index}`} role="group" aria-label={`${roleTitle} ${index + 1}`} className="grid gap-3 rounded-[12px] border border-[#dce6f2] bg-white p-3 sm:grid-cols-2">
+          <p className="text-sm font-semibold text-[#22364a] sm:col-span-2">{roleTitle} {index + 1}</p>
           {[
             ['name', 'First name'], ['surname', 'Surname'], ['idNumber', 'ID / passport number'],
             ['nationality', 'Nationality'], ['residentialAddress', 'Residential address'],

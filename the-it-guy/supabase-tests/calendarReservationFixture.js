@@ -56,6 +56,10 @@ export async function setupCalendarReservationDatabase(db, loadSql = sql) {
   await db.exec(await loadSql('20261008202747_calendar_historical_reconciliation.sql'))
   await db.exec(await loadSql('20261008205719_calendar_connected_provider_sync.sql'))
   await db.exec(await loadSql('20261008220735_calendar_operational_health_support.sql'))
+  await db.exec(await loadSql('20261019165256_calendar_time_change_workflow.sql'))
+  await db.exec(await loadSql('20261019172522_calendar_time_change_notifications.sql'))
+  await db.exec(await loadSql('20261019174614_calendar_time_change_alignment.sql'))
+  await db.exec(await loadSql('20261019175522_calendar_time_change_access_guards.sql'))
   await db.exec(`alter table appointments enable row level security; alter table appointment_participants enable row level security;
     grant select,insert,update,delete on appointments,appointment_participants,appointment_reschedule_requests,appointment_resources to authenticated;
     create policy appointments_read on appointments for select to authenticated using (public.bridge_is_active_member(organisation_id) and (created_by=auth.uid() or agent_id=auth.uid()));

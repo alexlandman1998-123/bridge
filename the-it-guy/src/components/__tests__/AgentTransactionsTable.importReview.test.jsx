@@ -16,20 +16,22 @@ const summaries={
 }
 beforeEach(()=>mocks.load.mockResolvedValue(summaries))
 afterEach(()=>{cleanup();vi.resetAllMocks()})
-it('shows trusted review badges and filters pending and reviewed imports separately',async()=>{
+it('keeps review badges searchable without filter pills',async()=>{
 render(<Table rows={rows} />);await screen.findByText('Imported · Reviewed')
 expect(screen.getByText('Import source unverified')).toBeTruthy()
-fireEvent.click(screen.getByRole('button',{name:'Needs Review'}))
-expect(screen.queryByText('Normal Buyer')).toBeNull();expect(screen.queryByText('Verified Buyer')).toBeNull();expect(screen.getByText('Pending Buyer')).toBeTruthy();expect(screen.getByText('Partial Buyer')).toBeTruthy();expect(screen.getByText('Candidate Buyer')).toBeTruthy()
-fireEvent.click(screen.getByRole('button',{name:'Reviewed imports'}));expect(screen.getByText('Verified Buyer')).toBeTruthy();expect(screen.queryByText('Pending Buyer')).toBeNull()
-fireEvent.click(screen.getByRole('button',{name:'Imported deals'}));expect(screen.queryByText('Normal Buyer')).toBeNull();expect(screen.getByText('Pending Buyer')).toBeTruthy()
+expect(screen.queryByRole('button',{name:'Needs Review'})).toBeNull()
+fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Imported · Reviewed'}})
+expect(screen.getByText('Verified Buyer')).toBeTruthy();expect(screen.queryByText('Pending Buyer')).toBeNull()
+fireEvent.change(screen.getByRole('searchbox'),{target:{value:'no match'}})
+fireEvent.click(screen.getByRole('button',{name:'Clear search'}))
+expect(screen.getByText('Normal Buyer')).toBeTruthy();expect(screen.getByText('Pending Buyer')).toBeTruthy()
 })
 it('clears a stale reviewed badge on refresh and does not claim verification on failure',async()=>{
 render(<Table rows={rows} />);await screen.findByText('Imported · Reviewed')
 mocks.load.mockRejectedValueOnce(new Error('Status needs database update'))
 fireEvent(window,new Event('itg:transaction-updated'))
 await screen.findByText('Status needs database update');expect(screen.queryByText('Imported · Reviewed')).toBeNull()
-fireEvent.click(screen.getByRole('button',{name:'Reviewed imports'}));expect(screen.queryByText('Verified Buyer')).toBeNull()
+fireEvent.change(screen.getByRole('searchbox'),{target:{value:'Imported · Reviewed'}});expect(screen.queryByText('Verified Buyer')).toBeNull()
 })
 it('rechecks confirmations when the transaction snapshot changes',async()=>{
 const {rerender}=render(<Table rows={rows} />);await screen.findByText('Imported · Reviewed')

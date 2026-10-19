@@ -96,6 +96,10 @@ const provinceRows = parsePrivatePropertyModelRows('<ProvinceModel><Id>1</Id><Co
 assert.deepEqual(provinceRows, [{ id: 1, name: 'Gauteng', countryId: 1, provinceId: null, cityId: null }])
 const activeListings = parsePrivatePropertyActiveListings('<ActiveListing><ListingType>Sale Listing</ListingType><PrivatePropertyRef>T2870287</PrivatePropertyRef><UniqueId>PRV-202608201031-U8YM</UniqueId></ActiveListing>')
 assert.deepEqual(activeListings, [{ listingType: 'Sale Listing', privatePropertyRef: 'T2870287', uniqueId: 'PRV-202608201031-U8YM' }])
+const rentalEvents = parsePrivatePropertyListingEvents('<LisitngEventFeedData><ListingFeedRef>rental-feed-id</ListingFeedRef><EventDescription>rr4801768</EventDescription></LisitngEventFeedData>')
+assert.equal(rentalEvents[0].privatePropertyRef, 'rr4801768')
+assert.equal(rentalEvents[0].propertyId, 'rental-feed-id')
+
 const events = parsePrivatePropertyListingEvents('<LisitngEventFeedData><TimeStamp>2026-08-24T07:56:09.6449114Z</TimeStamp><ListingFeedRef>PRV-202608201031-U8YM</ListingFeedRef><ListingFeedEventType>Activated</ListingFeedEventType><EventDescription>T2870287</EventDescription><ListingFeedEventStatus>Active</ListingFeedEventStatus></LisitngEventFeedData>')
 assert.equal(events[0].listingFeedEventType, 'Activated')
 assert.equal(events[0].propertyId, 'PRV-202608201031-U8YM')

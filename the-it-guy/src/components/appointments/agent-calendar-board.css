@@ -1,0 +1,116 @@
+.arch9-agent-calendar{--a-bg:#f5f7f6;--a-panel:#ffffff;--a-text:#233c32;--a-secondary:#687c73;--a-line:#e6ece8;--a-green:#176d50;--a-on-green:#ffffff;--a-soft:#eaf4ee;--a-hover:#f5f8f6;--a-mint:#edf6f0;--a-mint-text:#245e42;--a-blue:#eff3fa;--a-blue-text:#3c5e90;--a-violet:#f3f0f8;--a-violet-text:#75588f;--a-amber:#91651a;--a-amber-bg:#fff6e4;--a-red:#a45146;--a-red-bg:#fbeeea;color:var(--a-text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.45;width:100%;position:relative;color-scheme:light}
+.arch9-agent-calendar *{box-sizing:border-box}
+.arch9-agent-calendar [hidden]{display:none!important}
+.arch9-agent-calendar button,.arch9-agent-calendar select,.arch9-agent-calendar input{font:inherit;color:inherit}
+.arch9-agent-calendar button{cursor:pointer}
+.arch9-agent-calendar button:focus-visible,.arch9-agent-calendar select:focus-visible,.arch9-agent-calendar input:focus-visible{outline:2px solid var(--a-green);outline-offset:3px}
+.arch9-agent-calendar svg{width:16px;height:16px;flex-shrink:0}
+.arch9-agent-calendar .ac-header{background:var(--a-panel);border:1px solid var(--a-line);border-radius:12px;margin-bottom:10px;box-shadow:0 2px 8px #233c3204;overflow:hidden}
+.arch9-agent-calendar .ac-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px 10px}
+.arch9-agent-calendar h2{font-size:23px;line-height:1.2;letter-spacing:-.6px;margin:0;font-weight:600}
+.arch9-agent-calendar .ac-button{border:1px solid var(--a-line);background:var(--a-panel);border-radius:7px;min-height:34px;padding:7px 11px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.arch9-agent-calendar .ac-button:hover{background:var(--a-hover)}
+.arch9-agent-calendar .ac-button.ac-primary{background:var(--a-green);border-color:var(--a-green);color:var(--a-on-green);font-weight:500}
+.arch9-agent-calendar .ac-button.ac-primary:hover{filter:brightness(.94)}
+.arch9-agent-calendar .ac-icon-button{padding:7px;width:33px;flex-shrink:0}
+.arch9-agent-calendar .ac-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:0 16px 12px}
+.arch9-agent-calendar .ac-date-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.arch9-agent-calendar .ac-range{font-size:14px;font-weight:600;margin-right:10px;letter-spacing:-.15px}
+.arch9-agent-calendar .ac-view-controls{display:flex;align-items:center;gap:8px}
+.arch9-agent-calendar .ac-select{background:var(--a-panel);border:1px solid var(--a-line);border-radius:7px;min-height:34px;padding:6px 27px 6px 10px;max-width:100%}
+.arch9-agent-calendar .ac-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;background:var(--a-hover);border-top:1px solid var(--a-line)}
+.arch9-agent-calendar .ac-filters .ac-select{font-size:12px;background:var(--a-panel);min-height:34px}
+.arch9-agent-calendar .ac-counts{display:flex;align-items:center;gap:10px;margin-left:auto;flex-wrap:wrap}
+.arch9-agent-calendar .ac-count{font-size:11px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--a-secondary)}
+.arch9-agent-calendar button.ac-count{border:0;padding:4px 7px;border-radius:5px;background:var(--a-amber-bg);color:var(--a-amber)}
+.arch9-agent-calendar button.ac-count.ac-reschedule{color:var(--a-red);background:var(--a-red-bg)}
+.arch9-agent-calendar .ac-count svg{width:12px;height:12px}
+.arch9-agent-calendar .ac-calendar{background:var(--a-panel);border:1px solid var(--a-line);border-radius:9px;overflow:hidden}
+.arch9-agent-calendar .ac-grid-head{display:grid;grid-template-columns:49px repeat(var(--ac-days),minmax(0,1fr));border-bottom:1px solid var(--a-line)}
+.arch9-agent-calendar .ac-zone{display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--a-secondary)}
+.arch9-agent-calendar .ac-day-head{padding:11px 0 10px;text-align:center;border-left:1px solid var(--a-line)}
+.arch9-agent-calendar .ac-day-name{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--a-secondary);display:block;margin-bottom:3px}
+.arch9-agent-calendar .ac-day-number{border:0;background:transparent;padding:0;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-size:18px;font-weight:500}
+.arch9-agent-calendar .ac-day-head.ac-today{background:color-mix(in srgb,var(--a-soft) 40%,var(--a-panel))}
+.arch9-agent-calendar .ac-today .ac-day-number{background:var(--a-green);color:var(--a-on-green)}
+.arch9-agent-calendar .ac-today .ac-day-name{color:var(--a-green)}
+.arch9-agent-calendar .ac-grid-body{display:grid;grid-template-columns:49px repeat(var(--ac-days),minmax(0,1fr));position:relative}
+.arch9-agent-calendar .ac-hours{position:relative;height:var(--ac-height,560px);color:var(--a-secondary);font-size:11px;font-variant-numeric:tabular-nums}
+.arch9-agent-calendar .ac-hour-label{position:absolute;right:9px;transform:translateY(-50%)}
+.arch9-agent-calendar .ac-hour-label:first-child{transform:none;top:6px!important}
+.arch9-agent-calendar .ac-day-column{border-left:1px solid var(--a-line);height:var(--ac-height,560px);position:relative;background:repeating-linear-gradient(to bottom,transparent 0,transparent 27px,color-mix(in srgb,var(--a-line) 45%,transparent) 27px,color-mix(in srgb,var(--a-line) 45%,transparent) 28px,transparent 28px,transparent 55px,var(--a-line) 55px,var(--a-line) 56px)}
+.arch9-agent-calendar .ac-day-column.ac-today{background-color:color-mix(in srgb,var(--a-soft) 25%,var(--a-panel))}
+.arch9-agent-calendar .ac-day-column.ac-weekend{background-color:color-mix(in srgb,var(--a-bg) 50%,var(--a-panel))}
+.arch9-agent-calendar .ac-slot{position:absolute;left:0;right:0;height:56px;border:0;background:transparent;width:100%;padding:0}
+.arch9-agent-calendar .ac-slot:hover{background:color-mix(in srgb,var(--a-soft) 60%,transparent)}
+.arch9-agent-calendar .ac-event{position:absolute;text-align:left;border:0;border-left:3px solid var(--a-event-accent);border-radius:5px;padding:5px 6px;overflow:hidden;min-width:0;z-index:2;display:flex;flex-direction:column;gap:1px;background:var(--a-event-bg);color:var(--a-event-fg)}
+.arch9-agent-calendar .ac-event.ac-viewing{--a-event-bg:var(--a-mint);--a-event-fg:var(--a-mint-text);--a-event-accent:#75a88a}
+.arch9-agent-calendar .ac-event.ac-valuation{--a-event-bg:var(--a-blue);--a-event-fg:var(--a-blue-text);--a-event-accent:#8faed0}
+.arch9-agent-calendar .ac-event.ac-meeting{--a-event-bg:var(--a-violet);--a-event-fg:var(--a-violet-text);--a-event-accent:#b49aca}
+.arch9-agent-calendar .ac-event:hover{filter:brightness(.97);box-shadow:0 2px 7px #0000000a;z-index:3}
+.arch9-agent-calendar .ac-event-time{font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.arch9-agent-calendar .ac-event-title{font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.arch9-agent-calendar .ac-event-place{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;opacity:.96}
+.arch9-agent-calendar .ac-event-state{display:flex;align-items:center;gap:4px;font-size:11px;margin-top:2px;white-space:nowrap}
+.arch9-agent-calendar .ac-event-state svg{height:10px;width:10px}
+.arch9-agent-calendar .ac-event.ac-short .ac-event-place,.arch9-agent-calendar .ac-event.ac-short .ac-event-state{display:none}
+.arch9-agent-calendar .ac-event.ac-completed{opacity:.65}
+.arch9-agent-calendar .ac-event-agent{position:absolute;right:4px;bottom:4px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;background:color-mix(in srgb,var(--a-panel) 70%,transparent);color:var(--a-event-fg)}
+.arch9-agent-calendar .ac-event.ac-tiny{padding:2px 5px;justify-content:center}
+.arch9-agent-calendar .ac-event.ac-tiny .ac-event-time,.arch9-agent-calendar .ac-event.ac-short .ac-event-agent{display:none}
+.arch9-agent-calendar .ac-calendar-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--a-line);padding:10px 12px;color:var(--a-secondary);font-size:11px}
+.arch9-agent-calendar .ac-legend{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+.arch9-agent-calendar .ac-legend span{display:flex;gap:5px;align-items:center}
+.arch9-agent-calendar .ac-dot{width:6px;height:6px;display:inline-block;border-radius:50%}
+.arch9-agent-calendar .ac-dot.ac-green{background:#75a88a}
+.arch9-agent-calendar .ac-dot.ac-blue{background:#8faed0}
+.arch9-agent-calendar .ac-dot.ac-purple{background:#b49aca}
+.arch9-agent-calendar .ac-agenda-day{border-bottom:1px solid var(--a-line)}
+.arch9-agent-calendar .ac-agenda-day:last-child{border-bottom:0}
+.arch9-agent-calendar .ac-agenda-label{padding:12px 16px;background:var(--a-bg);font-size:12px;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+.arch9-agent-calendar .ac-agenda-label span{font-weight:400;color:var(--a-secondary);font-size:11px}
+.arch9-agent-calendar .ac-agenda-event{width:100%;border:0;border-top:1px solid var(--a-line);background:var(--a-panel);padding:14px 16px;text-align:left;display:grid;grid-template-columns:75px minmax(0,1fr) auto;gap:12px;align-items:center}
+.arch9-agent-calendar .ac-agenda-event:hover{background:var(--a-hover)}
+.arch9-agent-calendar .ac-agenda-time{font-size:12px;font-variant-numeric:tabular-nums}
+.arch9-agent-calendar .ac-agenda-time small{font-size:11px;display:block;color:var(--a-secondary)}
+.arch9-agent-calendar .ac-agenda-title{font-size:13px;font-weight:500}
+.arch9-agent-calendar .ac-agenda-place{font-size:12px;color:var(--a-secondary);margin-top:3px}
+.arch9-agent-calendar .ac-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;border-radius:4px;padding:3px 6px;background:var(--a-soft);color:var(--a-green);max-width:100%}
+.arch9-agent-calendar .ac-status.ac-pending{background:var(--a-amber-bg);color:var(--a-amber)}
+.arch9-agent-calendar .ac-status.ac-needs-reschedule{background:var(--a-red-bg);color:var(--a-red)}
+.arch9-agent-calendar .ac-status.ac-completed{background:var(--a-bg);color:var(--a-secondary)}
+.arch9-agent-calendar .ac-empty{padding:30px 15px;text-align:center;color:var(--a-secondary);display:flex;flex-direction:column;align-items:center;gap:10px;border-bottom:1px solid var(--a-line)}
+.arch9-agent-calendar .ac-empty strong{color:var(--a-text);font-size:15px;font-weight:500}
+.arch9-agent-calendar .ac-empty p{margin:0;font-size:12px}
+.arch9-agent-calendar .ac-month-labels,.arch9-agent-calendar .ac-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.arch9-agent-calendar .ac-month-labels span{padding:12px 0;text-align:center;font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--a-secondary);border-bottom:1px solid var(--a-line)}
+.arch9-agent-calendar .ac-month-cell{border-right:1px solid var(--a-line);border-bottom:1px solid var(--a-line);min-height:116px;padding:7px 4px;min-width:0}
+.arch9-agent-calendar .ac-month-cell:nth-child(7n){border-right:0}
+.arch9-agent-calendar .ac-month-cell.ac-outside{background:var(--a-bg);color:var(--a-secondary)}
+.arch9-agent-calendar .ac-month-cell.ac-today{background:color-mix(in srgb,var(--a-soft) 35%,var(--a-panel))}
+.arch9-agent-calendar .ac-month-cell .ac-day-number{font-size:12px;width:24px;height:24px;margin:0 0 4px 4px}
+.arch9-agent-calendar .ac-month-event{border:0;background:var(--a-soft);color:var(--a-green);text-align:left;display:block;border-radius:3px;padding:4px;margin-top:3px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.arch9-agent-calendar{box-sizing:border-box;background:var(--a-bg);padding:6px;border-radius:12px;min-width:0}
+.arch9-agent-calendar .ac-grid-scroll{overflow-x:auto;overscroll-behavior-x:contain}
+.arch9-agent-calendar .ac-view-week>.ac-grid-head,.arch9-agent-calendar .ac-view-week>.ac-grid-body,.arch9-agent-calendar .ac-view-week>.ac-all-day{min-width:740px}
+.arch9-agent-calendar .ac-view-three_day>.ac-grid-head,.arch9-agent-calendar .ac-view-three_day>.ac-grid-body,.arch9-agent-calendar .ac-view-three_day>.ac-all-day{min-width:440px}
+.arch9-agent-calendar .ac-all-day{display:grid;grid-template-columns:49px repeat(var(--ac-days),minmax(0,1fr));border-bottom:1px solid var(--a-line);font-size:11px}
+.arch9-agent-calendar .ac-all-day>span{padding:8px 4px;color:var(--a-secondary)}
+.arch9-agent-calendar .ac-all-day>div{border-left:1px solid var(--a-line);padding:4px;min-width:0}
+.arch9-agent-calendar .ac-agenda-place{display:block}
+.arch9-agent-calendar .ac-viewing{--ac-accent:#75a88a;--ac-bg:#edf6f0;--ac-fg:#245e42}
+.arch9-agent-calendar .ac-valuation{--ac-accent:#8faed0;--ac-bg:#eff3fa;--ac-fg:#3c5e90}
+.arch9-agent-calendar .ac-meeting{--ac-accent:#b49aca;--ac-bg:#f3f0f8;--ac-fg:#75588f}
+.arch9-agent-calendar .ac-event,.arch9-agent-calendar .ac-month-event{background:var(--ac-bg);color:var(--ac-fg);border-left:3px solid var(--ac-accent)}
+.arch9-agent-calendar .ac-dot{background:var(--ac-accent)}
+.arch9-agent-calendar .ac-counts{font-size:11px;color:var(--a-secondary)}
+.arch9-agent-calendar .ac-counts .ac-count{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:5px;padding:4px 7px;font-size:11px}
+.arch9-agent-calendar .ac-pending{background:var(--a-amber-bg);color:var(--a-amber)}
+.arch9-agent-calendar .ac-reschedule{background:var(--a-red-bg);color:var(--a-red)}
+.arch9-agent-calendar .ac-count[aria-pressed=true]{outline:1px solid currentColor;outline-offset:1px}
+@media(max-width:760px){.arch9-agent-calendar .ac-counts{margin-left:0}.arch9-agent-calendar .ac-event-agent{display:none}.arch9-agent-calendar .ac-range{font-size:13px}}
+@media(max-width:640px){.arch9-agent-calendar .ac-heading{padding:16px 14px 12px}.arch9-agent-calendar .ac-toolbar{padding:0 14px 16px}.arch9-agent-calendar .ac-filters{padding:12px 14px}.arch9-agent-calendar{padding:0}.arch9-agent-calendar .ac-heading h2{font-size:22px}.arch9-agent-calendar .ac-toolbar{align-items:flex-end}.arch9-agent-calendar .ac-date-controls{flex:1}.arch9-agent-calendar .ac-range{width:100%;margin-bottom:5px}.arch9-agent-calendar .ac-counts{width:100%;gap:7px}.arch9-agent-calendar .ac-filters .ac-select{max-width:100%;min-height:38px}.arch9-agent-calendar .ac-agenda-event{grid-template-columns:57px minmax(0,1fr);padding:14px 12px;gap:10px}.arch9-agent-calendar .ac-agenda-event>.ac-status{grid-column:2;justify-self:start}.arch9-agent-calendar .ac-calendar-foot>span{display:none}.arch9-agent-calendar .ac-month-cell{min-height:75px}.arch9-agent-calendar .ac-month-event{font-size:10px}.arch9-agent-calendar .ac-button,.arch9-agent-calendar .ac-select{min-height:39px}}
+@media(pointer:coarse){.arch9-agent-calendar .ac-button,.arch9-agent-calendar .ac-select,.arch9-agent-calendar .ac-counts button{min-height:44px}.arch9-agent-calendar .ac-icon-button{min-width:44px}}
+
+
+.arch9-agent-calendar .ac-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

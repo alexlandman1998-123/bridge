@@ -11,6 +11,45 @@ function assert(value: unknown, message = "Assertion failed") {
   if (!value) throw new Error(message);
 }
 
+Deno.test("acknowledgement centers the agency logo and tagline on a fixed dark header", () => {
+  const html = buildLeadAcknowledgementEmailHtml({
+    enquiryKind: "sale",
+    organisationName: "Only Realty",
+    organisationLogoUrl: "https://example.test/only-realty-white.png",
+    organisationTagline: "Property & people",
+    organisationBrandPrimaryColor: "#ffffff",
+  });
+  const header = html.match(/<td align="center" valign="middle" bgcolor="#07152f"[^>]*>([\s\S]*?)<\/td>/);
+  assert(header, "Logo needs its own centered dark header cell");
+  assert(header![0].includes("background-image:linear-gradient(#07152f,#07152f)"));
+  assert(header![1].includes('src="https://example.test/only-realty-white.png"'));
+  assert(header![1].includes("margin:0 auto"));
+  assert(header![1].includes("color:#ffffff;\">Property &amp; people</p>"));
+  assert(!header![1].includes('align="right"'));
+});
+
+Deno.test("acknowledgement without a logo shows a readable agency name in the dark header", () => {
+  const html = buildLeadAcknowledgementEmailHtml({ organisationName: "Agency & Co" });
+  assert(html.includes('color:#ffffff;">Agency &amp; Co</div>'));
+  assert(!html.includes('margin:12px 0 0;font-size:14px'));
+});
+
+Deno.test("buyer intro welcomes the buyer and introduces the agent before one qualification button", () => {
+  const input = { enquiryKind: "sale" as const, recipientName: "Taylor Buyer", agentName: "Jamie Agent", agentEmail: "jamie@example.test", viewingAvailabilityUrl: "https://example.test/viewing-preferences/token" };
+  for (const render of [buildLeadAcknowledgementEmailHtml, buildLeadAcknowledgementEmailText]) {
+    const email = render(input);
+    assert(email.indexOf("Hi Taylor") < email.indexOf("Your agent"));
+    assert(email.indexOf("Your agent") < email.indexOf("Tell us what you’re looking for"));
+    assert(email.includes(input.viewingAvailabilityUrl));
+    assert(email.includes("three viewing times"));
+    assert(email.includes("requested times"));
+  }
+  const html = buildLeadAcknowledgementEmailHtml(input);
+  assert(html.split(`href="${input.viewingAvailabilityUrl}"`).length === 2);
+  assert(!html.includes("Email Jamie</a>"));
+  assert(!buildLeadAcknowledgementEmailHtml({ enquiryKind: "sale", agentEmail: input.agentEmail }).includes('>Tell us what you’re looking for</a>'));
+});
+
 Deno.test("tenant acknowledgement has a rental design and a qualification CTA in both formats", () => {
   const url = "https://example.test/viewing-preferences/tenant-token";
   const html = buildLeadAcknowledgementEmailHtml({ enquiryKind: "rental", viewingAvailabilityUrl: url });

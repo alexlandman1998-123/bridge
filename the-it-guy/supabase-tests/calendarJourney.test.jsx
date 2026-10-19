@@ -2,6 +2,9 @@
 // Real mobile form, application services, migration RPCs and worker gates.
 // Only the Supabase transport and outbound HTTP are replaced; no hosted data.
 import React from 'react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import AppointmentRsvpPage from '../src/pages/AppointmentRsvpPage'
+import { changeCalendarTime } from '../src/services/calendarTimeChangeService'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import process from 'node:process'
@@ -14,7 +17,7 @@ import { appointmentMatchesAgent, appointmentReadState } from '../src/core/appoi
 import { getPrincipalAgentDetailCommandCentre } from '../src/modules/agency/agents/principalAgentCommandCentreService.js'
 import { getAppointmentDashboardData } from '../src/services/appointmentDashboardService.js'
 
-const transport = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), lostSave: false }))
+const transport = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), lostSave: false, lostTimeChange: false, lostGuestResponse: false }))
 vi.mock('../src/lib/supabaseClient', () => ({
   isSupabaseConfigured: true,
   supabase: transport,
@@ -45,7 +48,16 @@ async function role(user = actor, name = 'authenticated') {
   await db.query("select set_config('request.jwt.claims',$1,false)", [JSON.stringify({ sub: user })])
   await db.exec(`set role ${identifier(name)}`)
 }
-async function rpc(name, args = {}) {
+// Match PostgREST's cancellable read surface while retaining real local SQL.
+function rpc(name, args = {}) {
+  const promise = executeRpc(name, args)
+  promise.abortSignal = signal => {
+    signal.throwIfAborted()
+    return promise.then(result => { signal.throwIfAborted(); return result })
+  }
+  return promise
+}
+async function executeRpc(name, args = {}) {
   try {
     const entries = Object.entries(args)
     const result = await db.query(`select ${identifier(name)}(${entries.map(([key], i) => `${identifier(key)}=>$${i + 1}`).join(',')}) as value`,
@@ -54,6 +66,8 @@ async function rpc(name, args = {}) {
       transport.lostSave = false
       throw new Error('Save response lost after commit')
     }
+    if (name === 'mutate_calendar_time_change' && transport.lostTimeChange) { transport.lostTimeChange = false; throw new Error('Time-change response lost after commit') }
+    if (name === 'respond_calendar_time_change_by_token' && transport.lostGuestResponse) { transport.lostGuestResponse = false; throw new Error('Guest response lost after commit') }
     return { data: result.rows[0].value, error: null }
   } catch (error) { return { data: null, error } }
 }
@@ -91,16 +105,20 @@ beforeAll(async () => {
   await db.exec(`alter table profiles add column full_name text;
     alter table appointment_resources add column resource_name text;
     alter table appointments add column offer_invite_id uuid;
-    grant select on appointments,appointment_participants,profiles to service_role;
+    grant select on appointments,appointment_participants,appointment_reschedule_requests,profiles to service_role;
     grant select on appointment_resources to authenticated;`)
 }, 30000)
 beforeEach(async () => {
   cleanup()
   await db.exec('reset role;truncate appointments,appointment_participants,private.calendar_mutation_receipts,private.calendar_provider_receipts cascade')
   await db.query("update organisation_users set status='active' where organisation_id=$1 and user_id=$2", [org, actor])
+  transport.rpc.mockClear()
+  transport.from.mockClear()
   transport.rpc.mockImplementation(rpc)
   transport.from.mockImplementation(from)
   transport.lostSave = false
+  transport.lostTimeChange = false
+  transport.lostGuestResponse = false
   await role()
 })
 afterEach(cleanup)
@@ -264,4 +282,139 @@ it('denies another organisation and removed member across the application read, 
   await expect(updateAppointmentAsync(org, row.appointmentId, { status: 'cancelled' }, { actor: agent })).rejects.toThrow()
   await db.exec('reset role')
   await db.query("update organisation_users set status='active' where organisation_id=$1 and user_id=$2", [org, actor])
+})
+
+async function timeChangeBooking() {
+ const row = await createAppointmentAsync(org, { commandId:id(800),appointmentType:'client_meeting',date:'2099-07-25',startTime:'10:00',endTime:'11:00',assignedAgent:agent,
+  participants:[{userId:second,name:'Buyer',email:'other@example.test',participantRole:'Buyer',isRequired:true}] }, {actor:agent})
+ await db.exec('reset role')
+ const buyer=(await db.query('select rsvp_token from appointment_participants where appointment_id=$1 and user_id=$2',[row.appointmentId,second])).rows[0]
+ await db.query("select * from submit_appointment_rsvp($1,'Accepted')",[buyer.rsvp_token])
+ return row.appointmentId
+}
+it('takes a time request through the real mobile screen, organiser review and individual approval',async()=>{
+ const appointmentId=await timeChangeBooking()
+ const buyer={id:second,name:'Buyer',email:'other@example.test'}
+ await role(second)
+ let row=(await read()).find(row=>row.appointmentId===appointmentId)
+ const changed=vi.fn()
+ let view=render(<MobileAppointmentWorkspace appointment={row} organisationId={org} actor={buyer} onTimeChanged={changed} />)
+ fireEvent.click(await screen.findByRole('button',{name:'Request a new time'}))
+ change('Preferred date','2099-07-26');change('Preferred time','11:00');change('Message (optional)','Please move our viewing.')
+ fireEvent.click(screen.getByRole('button',{name:'Send request'}))
+ await waitFor(()=>expect(changed).toHaveBeenCalledTimes(1))
+ expect(Date.parse((await read())[0].dateTime)).toBe(Date.parse('2099-07-25T08:00Z'))
+ expect(screen.queryByRole('button',{name:'Propose this time'})).toBeNull()
+ view.unmount();await role()
+ row=(await read())[0]
+ view=render(<MobileAppointmentWorkspace appointment={row} organisationId={org} actor={agent} onTimeChanged={changed} />)
+ fireEvent.click(await screen.findByRole('button',{name:'Propose this time'}))
+ await screen.findByText('New time proposed')
+ expect(screen.queryByRole('button',{name:'Accept proposed time'})).toBeNull()
+ expect(Date.parse((await read())[0].dateTime)).toBe(Date.parse('2099-07-25T08:00Z'))
+ view.unmount();await role(second)
+ row=(await read())[0]
+ render(<MobileAppointmentWorkspace appointment={row} organisationId={org} actor={buyer} onTimeChanged={changed} />)
+ fireEvent.click(await screen.findByRole('button',{name:'Accept new time'}))
+ await screen.findByText('The new appointment time is confirmed.')
+ expect(Date.parse((await read())[0].dateTime)).toBe(Date.parse('2099-07-26T09:00Z'))
+ expect(changed).toHaveBeenCalledTimes(3)
+})
+it('retries a lost screen response with the same command and creates one request and one history event',async()=>{
+ const appointmentId=await timeChangeBooking();await role(second)
+ const row=(await read())[0];const changed=vi.fn();transport.lostTimeChange=true
+ render(<MobileAppointmentWorkspace appointment={row} organisationId={org} actor={{id:second,email:'other@example.test'}} onTimeChanged={changed} />)
+ fireEvent.click(await screen.findByRole('button',{name:'Request a new time'}))
+ change('Preferred date','2099-07-26');change('Preferred time','11:00')
+ fireEvent.click(screen.getByRole('button',{name:'Send request'}))
+ await screen.findByText(/Time-change response lost after commit/)
+ fireEvent.click(screen.getByRole('button',{name:'Send request'}))
+ await waitFor(()=>expect(changed).toHaveBeenCalledTimes(1))
+ await db.exec('reset role')
+ expect((await db.query('select count(*)::int as n from appointment_reschedule_requests where appointment_id=$1',[appointmentId])).rows[0].n).toBe(1)
+ expect((await db.query("select count(*)::int as n from private.calendar_time_change_events where appointment_id=$1 and action='requested'",[appointmentId])).rows[0].n).toBe(1)
+})
+
+it('takes an email guest from request through organiser review, secure approval and a queued confirmation',async()=>{
+ const appointmentId=await timeChangeBooking()
+ await db.exec('reset role')
+ const originalToken=(await db.query('select rsvp_token from appointment_participants where appointment_id=$1 and user_id=$2',[appointmentId,second])).rows[0].rsvp_token
+ await role(actor,'anon');await db.query("select set_config('request.jwt.claims','{}',false)")
+ const emailPage=url=>render(<MemoryRouter initialEntries={[url]}><Routes><Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage/>}/></Routes></MemoryRouter>)
+ let view=emailPage(`/appointment-rsvp/${originalToken}?action=reschedule`)
+ await screen.findByLabelText('Preferred date')
+ change('Preferred date','2099-07-26');change('Preferred start time','11:00')
+ fireEvent.click(screen.getByRole('button',{name:'Send time request'}))
+ await screen.findByText(/new time request was sent to the organiser/)
+ view.unmount()
+ await role()
+ let state=(await db.query('select get_calendar_time_change($1) as v',[appointmentId])).rows[0].v
+ expect(state.active.status).toBe('pending')
+ const request=state.active.id
+ const messages=[]
+ const deliver=async job=>dispatchCalendarAppointmentJob(transport,job,configuration,async(_url,options)=>{
+  messages.push(JSON.parse(options.body));return new Response(JSON.stringify({ok:true,emailId:`controlled-${job.id}`}))
+ })
+ let claimed=await claim()
+ await deliver(claimed.find(job=>job.channel==='email'&&job.event_kind.startsWith('time_change:requested:')&&job.recipient_id===actor))
+ expect(messages[0].actionLink).toBe(`https://app.example.test/pipeline/calendar?appointmentId=${appointmentId}`)
+ await role()
+ await changeCalendarTime({appointmentId,expectedRevision:state.revision,commandId:id(850),action:'propose',requestId:request,preferredStart:'2099-07-26T09:00Z'})
+ claimed=await claim()
+ await deliver(claimed.find(job=>job.channel==='email'&&job.event_kind.startsWith('time_change:proposed:')&&job.recipient_id===second))
+ const proposal=messages.at(-1)
+ expect(proposal.attachCalendarInvite).toBe(false)
+ expect(proposal.type).toBe('appointment_time_change_proposed')
+ const url=new URL(proposal.acceptLink)
+ await role(actor,'anon');await db.query("select set_config('request.jwt.claims','{}',false)")
+ view=emailPage(url.pathname+url.search)
+ await screen.findByRole('button',{name:'Submit RSVP'})
+ // Merely opening the action link still leaves the original booking untouched.
+ await role();expect(Date.parse((await read())[0].dateTime)).toBe(Date.parse('2099-07-25T08:00Z'))
+ await role(actor,'anon');await db.query("select set_config('request.jwt.claims','{}',false)")
+ fireEvent.click(screen.getByRole('button',{name:'Submit RSVP'}))
+ await screen.findByText('The new appointment time is confirmed.')
+ view.unmount()
+ claimed=await claim()
+ await deliver(claimed.find(job=>job.channel==='email'&&job.event_kind.startsWith('time_change:confirmed:')&&job.recipient_id===second))
+ const confirmation=messages.at(-1)
+ expect(confirmation.type).toBe('appointment_time_change_confirmed');expect(confirmation.attachCalendarInvite).toBe(true)
+ expect(Date.parse(confirmation.dateTime)).toBe(Date.parse('2099-07-26T09:00Z'))
+ expect(confirmation.idempotencyKey).toMatch(/^calendar-appointment:/)
+})
+
+
+it('recovers a lost final guest approval through the actual public screen without duplicate changes or confirmations',async()=>{
+ const appointmentId=await timeChangeBooking();await role(second)
+ let state=(await db.query('select get_calendar_time_change($1) as v',[appointmentId])).rows[0].v
+ const request=(await changeCalendarTime({appointmentId,expectedRevision:state.revision,commandId:id(910),action:'request',preferredStart:'2099-07-26T09:00Z'})).active.id
+ await role();state=(await db.query('select get_calendar_time_change($1) as v',[appointmentId])).rows[0].v
+ await changeCalendarTime({appointmentId,expectedRevision:state.revision,commandId:id(911),action:'propose',requestId:request,preferredStart:'2099-07-26T09:00Z'})
+ await db.exec('reset role');const token=(await db.query('select rsvp_token from appointment_participants where appointment_id=$1 and user_id=$2',[appointmentId,second])).rows[0].rsvp_token
+ await role(null,'anon');transport.lostGuestResponse=true
+ render(<MemoryRouter initialEntries={[`/appointment-rsvp/${token}?action=accept`]}><Routes><Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage/>}/></Routes></MemoryRouter>)
+ const button=await screen.findByRole('button',{name:'Submit RSVP'})
+ fireEvent.click(button);fireEvent.click(button)
+ await screen.findByText('Guest response lost after commit')
+ const before=(await jobs()).map(j=>j.id).sort();await role(null,'anon')
+ fireEvent.click(screen.getByRole('button',{name:'Submit RSVP'}))
+ await screen.findByText('The new appointment time is confirmed.')
+ expect((await jobs()).map(j=>j.id).sort()).toEqual(before)
+ const calls=transport.rpc.mock.calls.filter(([name])=>name==='respond_calendar_time_change_by_token')
+ expect(calls).toHaveLength(2);expect(calls[0][1].p_command_id).toBe(calls[1][1].p_command_id)
+ expect((await db.query("select count(*)::int as n from private.calendar_time_change_events where appointment_id=$1 and action='confirmed'",[appointmentId])).rows[0].n).toBe(1)
+})
+it('keeps an organiser conflict visible without moving the booking or queuing proposal notices',async()=>{
+ const appointmentId=await timeChangeBooking();await role(second)
+ const state=(await db.query('select get_calendar_time_change($1) as v',[appointmentId])).rows[0].v
+ await changeCalendarTime({appointmentId,expectedRevision:state.revision,commandId:id(920),action:'request',preferredStart:'2099-07-26T09:00Z'})
+ await role()
+ await createAppointmentAsync(org,{commandId:id(921),appointmentType:'client_meeting',date:'2099-07-26',startTime:'11:00',endTime:'12:00',assignedAgent:agent},{actor:agent})
+ const row=(await read()).find(row=>row.appointmentId===appointmentId)
+ render(<MobileAppointmentWorkspace appointment={row} organisationId={org} actor={agent}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'Propose this time'}))
+ await screen.findByText(/already reserved/)
+ expect(screen.getByRole('button',{name:'Suggest another time'})).toBeTruthy()
+ expect(Date.parse((await read()).find(row=>row.appointmentId===appointmentId).dateTime)).toBe(Date.parse('2099-07-25T08:00Z'))
+ expect((await jobs()).filter(j=>j.appointment_id===appointmentId&&j.event_kind.startsWith('time_change:proposed:'))).toEqual([])
 })

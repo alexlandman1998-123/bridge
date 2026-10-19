@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireKnowledgeFactoryExecutive } from "../../server/services/knowledgeFactoryAdminAccess.js";
 
 const PRODUCT_IDS = new Set(["basic_owner_lookup", "full_canvassing_report"]);
-const STAGES = new Set(["controlled_uat", "pilot", "suspended"]);
+const STAGES = new Set(["controlled_uat", "pilot", "production", "suspended"]);
 
 function text(value, max = 1000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -82,50 +82,17 @@ function defaultPolicy() {
     monthly_report_cap: 100,
     daily_report_cap_per_user: 10,
     rollout_stage: "controlled_uat",
-    supplier_credits_per_cent: 40,
+    supplier_credits_per_cent: 30,
     configured: false,
   };
 }
 async function administrator(request, db, organisationId) {
   return (await requireKnowledgeFactoryExecutive(request, db, organisationId)).userId;
 }
-function monthStart() {
-  const now = new Date();
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-  ).toISOString();
-}
-function total(rows, field) {
-  return (rows || []).reduce(
-    (sum, row) => sum + (Number(row?.[field]) || 0),
-    0,
-  );
-}
 async function usage(db, organisationId) {
-  const since = monthStart();
-  const [resultsResponse, intentsResponse] = await Promise.all([
-    db
-      .from("knowledge_factory_report_results")
-      .select("credits_consumed, executed_at")
-      .eq("organisation_id", organisationId)
-      .gte("executed_at", since)
-      .limit(10_000),
-    db
-      .from("knowledge_factory_report_purchase_intents")
-      .select("customer_price_cents, executed_at")
-      .eq("organisation_id", organisationId)
-      .eq("status", "executed")
-      .gte("executed_at", since)
-      .limit(10_000),
-  ]);
-  if (resultsResponse.error || intentsResponse.error)
-    throw new Error("Commercial usage could not be calculated.");
-  return {
-    monthStartsAt: since,
-    reportCount: (resultsResponse.data || []).length,
-    creditsConsumed: total(resultsResponse.data, "credits_consumed"),
-    customerRevenueCents: total(intentsResponse.data, "customer_price_cents"),
-  };
+  const { data, error } = await db.rpc('knowledge_factory_report_usage', { p_organisation_id: organisationId });
+  if (error || !data) throw new Error('Commercial usage could not be calculated.');
+  return data;
 }
 
 export default async function handler(request, response) {

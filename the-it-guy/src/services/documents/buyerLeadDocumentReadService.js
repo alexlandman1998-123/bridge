@@ -6,6 +6,7 @@ const buyerSources = new Set([
   'agent_buyer_document_upload',
   'developer_buyer_document_upload',
   'client_portal_atomic_upload',
+  'buyer_onboarding_upload',
   'client_portal_requested_document_upload',
 ])
 
@@ -88,6 +89,14 @@ export function buildBuyerLeadDocumentReadModel({ leadRows = [], canonicalRows =
     stagedCount: uploads.filter((row) => !row.isCanonical).length,
     unmatchedCount: uploads.filter((row) => row.status === 'uploaded_unmatched').length,
   }
+}
+
+// Once linked, all buyer entry points must operate on the transaction room.
+// A second lead-only room cannot see or update the portal's exact requirements.
+export function buyerLeadDocumentContext({ leadId, transactionId = '' } = {}) {
+  return transactionId
+    ? { contextType: 'transaction', contextId: transactionId }
+    : { contextType: 'buyer_lead', contextId: leadId }
 }
 
 export async function fetchBuyerLeadCanonicalDocumentRows(client, { transactionId, organisationId, leadId } = {}) {

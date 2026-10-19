@@ -14,7 +14,9 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
   const canMutate = !channel.loading && !channel.loadError && !channel.requiresReconciliation
   const inactive = ['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(channel.status)
   const hasReference = Boolean(channel.reference)
-  const updateExisting = channel.key === 'private_property' && hasReference
+  const hasAdvert = hasReference || channel.hasAdvertIdentity === true
+  const updateExisting = hasAdvert
+
   const automaticCheck = updateExisting && !preview && !checking && !previewError
   const edit = () => { onClose(); onEdit?.() }
   const fix = (action) => { onClose(); window.setTimeout(() => onFix?.(action), 0) }
@@ -37,16 +39,17 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
     isSale={false}
     confirmWithdrawal
     externalBusy={busy || checking}
-    canUpdate={canMutate && hasReference && !inactive && (updateExisting || readiness.ready)}
-    canPublish={canMutate && !hasReference && readiness.ready}
-    canWithdraw={canMutate && hasReference && !inactive}
+    canUpdate={canMutate && hasAdvert && !inactive && (updateExisting || readiness.ready)}
+    canPublish={canMutate && !hasAdvert && readiness.ready}
+    canWithdraw={canMutate && hasAdvert && !inactive}
     updateUnavailableMessage={channel.requiresReconciliation ? 'Reconcile the previous request before sending another change.' : inactive ? 'This advert is inactive. Review its portal status before sending content updates.' : 'Check requirements before updating this advert.'}
     onClose={onClose}
     onFix={onEdit ? edit : undefined}
-    onRefresh={onRefresh && (hasReference || channel.requiresReconciliation) ? onRefresh : undefined}
+    onRefresh={onRefresh && (hasAdvert || channel.requiresReconciliation) ? onRefresh : undefined}
     onPreview={onCheck}
-    onUpdate={hasReference && onPublish ? updateExisting ? () => onPublish({ updateExisting: true }) : onPublish : undefined}
-    onPublish={!hasReference ? onPublish : undefined}
+    onUpdate={hasAdvert && onPublish ? updateExisting ? () => onPublish({ updateExisting: true }) : onPublish : undefined}
+    onPublish={!hasAdvert ? onPublish : undefined}
+
     onWithdraw={onWithdraw}
     renderChannelSettings={({ disabled, run }) => <>
       {onCheck ? <section aria-label={`${channel.label} requirements`} className="rounded-xl border border-[#e3ebf2] p-4 text-sm">
@@ -66,12 +69,13 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
         <summary className="cursor-pointer text-sm font-semibold text-[#243d56]">Portal settings</summary>
         <div className="mt-4 grid gap-4 text-sm">
           <label className="grid gap-2 font-semibold text-[#243d56]">Rental portal status
-            <Field as="select" value={status} onChange={event => setStatus(event.target.value)} disabled={disabled || !hasReference || !canMutate}>
+            <Field as="select" value={status} onChange={event => setStatus(event.target.value)} disabled={disabled || !hasAdvert || !canMutate}>
               {RENTAL_PORTAL_STATUSES[channel.key].map(option => <option key={option}>{option}</option>)}
             </Field>
           </label>
-          <Button type="button" size="sm" disabled={disabled || !hasReference || !canMutate || !onChangeStatus} onClick={() => void run(() => onChangeStatus(status), 'Portal status request sent. Check latest status to confirm it.')}>Send status change</Button>
-          {!hasReference ? <p className="text-xs text-[#607387]">A portal reference is required before changing its status.</p> : null}
+          <Button type="button" size="sm" disabled={disabled || !hasAdvert || !canMutate || !onChangeStatus} onClick={() => void run(() => onChangeStatus(status), 'Portal status request sent. Check latest status to confirm it.')}>Send status change</Button>
+          {!hasAdvert ? <p className="text-xs text-[#607387]">A saved portal advert is required before changing its status.</p> : null}
+
           <label className="grid gap-2 font-semibold text-[#243d56]">Public listing URL
             <Field type="url" value={url} onChange={event => { setUrl(event.target.value); setConfirmed(false) }} placeholder={`https://${channel.key === 'property24' ? 'www.property24.com' : 'www.privateproperty.co.za'}/to-rent/…`} disabled={disabled} />
           </label>

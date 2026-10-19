@@ -73,3 +73,24 @@ it('clears old property state when an account relationship changes and access is
   await screen.findByText('Access revoked')
   expect(screen.queryByText('Saved Property · Unit A')).toBeNull()
 })
+
+it.each([false, true])('renders the live landlord overview totals instead of demo numbers (account=%s)', async signedIn => {
+  fetch.mockResolvedValue(response({ ...landlord, portfolio: { expectedRent: 11000, collectedRent: 8800, outstanding: 2200, activeLeases: 1, collectionRate: 80, attentionCount: 1, occupied: 1, totalUnits: 2, occupancyRate: 50, asOf: '2026-10-19', financialAvailable: true } }))
+  mount(RentalLandlordPortalPage, 'overview', signedIn ? { accountMembershipId: 'membership-2' } : {})
+  const metrics = await screen.findByRole('region', { name: 'Rental overview totals' })
+  expect(metrics.textContent.replace(/\s/g, '')).toContain('R11000')
+  expect(metrics.textContent.replace(/\s/g, '')).toContain('R8800')
+  expect(metrics.textContent.replace(/\s/g, '')).toContain('R2200')
+  expect(metrics.textContent).toContain('1 account needs attention')
+  expect(metrics.textContent).toContain('1 of 2 homes')
+  expect(metrics.textContent).toContain('50% occupied')
+  expect(metrics.textContent).not.toMatch(/62500|57500/)
+})
+
+it('shows missing financial totals as unavailable instead of zero', async () => {
+  fetch.mockResolvedValue(response({ ...landlord, portfolio: { expectedRent: 11000, collectedRent: null, outstanding: null, financialAvailable: false, occupied: 1, totalUnits: 2, occupancyRate: 50 } }))
+  mount(RentalLandlordPortalPage, 'overview')
+  expect(await screen.findByText(/Financial records are unavailable/)).toBeTruthy()
+  expect(screen.getByText('Account balances unavailable')).toBeTruthy()
+  expect(screen.getByText('1 of 2 homes')).toBeTruthy()
+})

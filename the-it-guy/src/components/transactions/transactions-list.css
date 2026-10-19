@@ -1,0 +1,173 @@
+.agent-transactions-refined.agent-transactions-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-table-card-head {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border: 1px solid #e3ebf5;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-table-shell {
+  padding: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .table-wrap {
+  max-height: none;
+  border: 1px solid #e3ebf5;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-bottom: 1px solid #e8eef6;
+}
+
+.agent-transactions-refined.agent-transactions-panel .agent-transactions-search {
+  width: min(360px, 100%);
+  min-width: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-ops-count {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table {
+  width: 100%;
+  min-width: 0;
+  border-spacing: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table .agent-transactions-sticky-first {
+  width: 28%;
+  min-width: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table th:nth-child(2),
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(2) {
+  width: 23%;
+  min-width: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table th:nth-child(3),
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(3) {
+  width: 12%;
+  min-width: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table th:nth-child(4),
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(4) {
+  width: 23%;
+  min-width: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-category {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: #617287;
+  font-size: 0.82rem;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table th:last-child,
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td:last-child {
+  width: 14%;
+  min-width: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table tbody tr {
+  height: auto;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td {
+  padding: 1.15rem 1rem;
+  border: 0;
+  border-bottom: 1px solid #edf3f8;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-property-cell {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 0.8rem;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-property-thumb {
+  width: 56px;
+  height: 56px;
+  box-shadow: none;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-property-title,
+.agent-transactions-refined.agent-transactions-panel .transaction-property-suburb,
+.agent-transactions-refined.agent-transactions-panel .transaction-progress-stage {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.agent-transactions-refined.agent-transactions-panel .transaction-progress-summary {
+  flex-wrap: wrap;
+}
+
+.agent-transactions-refined.agent-transactions-panel .ui-data-table .transaction-row-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 860px) {
+  .agent-transactions-refined.agent-transactions-panel .table-wrap {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .transaction-list-toolbar {
+    padding: 0 0 1rem;
+    background: transparent;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .agent-transactions-search {
+    width: 100%;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table thead {
+    display: none;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td:nth-child(n) {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
+    gap: 0.75rem;
+    padding: 0.9rem;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table tbody tr:last-child td {
+    border-bottom: 1px solid #edf3f8;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .ui-data-table.agent-transactions-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .agent-transactions-refined.agent-transactions-panel .ui-data-table .transaction-row-actions {
+    justify-content: flex-start;
+  }
+}

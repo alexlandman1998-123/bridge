@@ -860,6 +860,7 @@ export function clearAttorneyOperationalWorkspaceCache({ firmId = '', userId = '
 }
 
 export async function getAttorneyOperationalWorkspaceData(firmId = null, userId = null, options = {}) {
+  options.signal?.throwIfAborted()
   const client = requireClient()
   const timer = createPerfTimer('attorney.service.operations', {
     firmId: normalizeText(firmId) || null,
@@ -869,6 +870,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
   const providedUserId = normalizeText(userId || options.userId)
   const authUser = options.authUser || buildScopedAuthUser(providedUserId) || await getAuthenticatedUser(client)
   const resolvedFirm = options.resolvedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
+  options.signal?.throwIfAborted()
   const currentUserId = providedUserId || authUser.id
   const cacheKey = getOperationalWorkspaceCacheKey(resolvedFirm?.id, currentUserId)
   timer.mark('context:resolved', {
@@ -896,6 +898,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     resolvedFirm,
     currentUserId,
     timer,
+    signal: options.signal,
   })
     .then((data) => {
       if (operationalWorkspaceInflight.get(cacheKey) === loadPromise) {
@@ -937,6 +940,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   const currentUserId = providedUserId || authUser.id
 
   const resolvedFirm = context.resolvedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
+  context.signal?.throwIfAborted()
   timer.mark('firm:resolved', {
     firmId: resolvedFirm?.id || null,
   })
@@ -973,6 +977,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   }
 
   const currentMembership = await getCurrentUserAttorneyMembership(resolvedFirm.id, currentUserId).catch(() => null)
+  context.signal?.throwIfAborted()
   timer.mark('membership:resolved', {
     status: currentMembership?.status || null,
     active: Boolean(currentMembership?.isActive),
@@ -1022,6 +1027,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     getAttorneyFirmDepartments(resolvedFirm.id).catch(() => []),
     getAttorneyFirmMembers(resolvedFirm.id).catch(() => []),
   ])
+  context.signal?.throwIfAborted()
   timer.mark('firmDirectory:loaded', {
     departments: departments?.length || 0,
     members: members?.length || 0,
@@ -1036,6 +1042,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
 
   const allProfileIds = [...new Set(activeMembers.map((member) => member.userId).filter(Boolean))]
   const profilesById = await fetchProfilesById(client, allProfileIds)
+  context.signal?.throwIfAborted()
   timer.mark('profiles:loaded', {
     profiles: Object.keys(profilesById || {}).length,
   })
@@ -1070,6 +1077,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   const assignments = resolvedCurrentMembership?.isActive
     ? await getFirmAttorneyAssignments(resolvedFirm.id)
     : []
+  context.signal?.throwIfAborted()
   timer.mark('assignments:loaded', {
     assignments: assignments?.length || 0,
     scope: 'matter_team',
@@ -1079,6 +1087,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
 
   const transactionIds = [...new Set(relevantAssignments.map((assignment) => assignment.transactionId).filter(Boolean))]
   const transactions = await fetchAttorneyMatterTransactions(client, transactionIds)
+  context.signal?.throwIfAborted()
   timer.mark('transactions:loaded', {
     transactionIds: transactionIds.length,
     transactions: transactions.length,
@@ -1106,6 +1115,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   ])
   if (listingResult.error) throw listingResult.error
   const listingsById = new Map((listingResult.data || []).map(row => [row.id, row]))
+  context.signal?.throwIfAborted()
   timer.mark('propertyContext:loaded', {
     units: Object.keys(unitsById || {}).length,
     developments: Object.keys(developmentsById || {}).length,
@@ -1118,6 +1128,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     fetchAttorneyWorkspaceAppointments(client, transactionIds, resolvedFirm.organisationId),
     fetchPacketSigners(client, transactionIds),
   ])
+  context.signal?.throwIfAborted()
   timer.mark('matterDependencies:loaded', {
     buyers: Object.keys(buyersById || {}).length,
     checklistItems: checklistItems?.length || 0,
@@ -1130,10 +1141,12 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     client,
     appointments.map((appointment) => appointment.appointment_id).filter(Boolean),
   )
+  context.signal?.throwIfAborted()
   const rescheduleRequestsByAppointment = await fetchRescheduleRequestsByAppointment(
     client,
     appointments.map((appointment) => appointment.appointment_id).filter(Boolean),
   )
+  context.signal?.throwIfAborted()
   timer.mark('appointmentDependencies:loaded', {
     participantGroups: Object.keys(participantsByAppointment || {}).length,
     rescheduleGroups: Object.keys(rescheduleRequestsByAppointment || {}).length,

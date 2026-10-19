@@ -7,6 +7,8 @@ import {
   loadProperty24ImageBytesForPreview,
 } from '../server/services/property24Arch9ListingPreviewService.js'
 import { extractMatterportSpaceId, extractYouTubeVideoId } from '../server/services/listingPortalVideo.js'
+import { buildProperty24ListingSubmitPlan, buildProperty24RentalListingSubmitPlan } from '../server/property24/publishService.js'
+import { RENTAL_LISTING_RELEASE_GATE_FIXTURE } from '../src/services/rentals/rentalListingReleaseGateModel.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -490,3 +492,75 @@ assert.deepEqual(partialFailure.results.map(row => row.status), ['FAILED', 'LOAD
 assert.equal(partialFailure.summary.failed, 1)
 assert.equal(partialFailure.summary.loaded, 2)
 console.log('Property24 bounded photo preparation and ordered byte budget checks passed.')
+
+// Requirements checks deliberately skip photo downloads. Exercise the same
+// builders used by the API so an empty byte payload cannot hide saved photos.
+const originalFetch = globalThis.fetch
+try {
+  for (const [category, buildPlan] of [
+    ['rental', buildProperty24RentalListingSubmitPlan],
+    ['sale', buildProperty24ListingSubmitPlan],
+  ]) {
+    const id = `requirements-${category}`
+    const listing = {
+      ...RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+      id,
+      listing_category: category,
+      listing_type: category === 'rental' ? 'Rental' : 'Sale',
+      listing_status: 'active',
+      asking_price: 22000,
+      photos: [],
+    }
+    const tables = {
+      private_listings: [listing],
+      listing_publication_data: [{ listing_id: id, listing_type: listing.listing_type }],
+      listing_media: [
+        { listing_id: id, media_type: 'image', file_url: 'https://images.example.test/cover.jpg', is_cover: true, sort_order: 0 },
+        { listing_id: id, media_type: 'image', file_url: 'https://images.example.test/second.jpg', sort_order: 1 },
+      ],
+    }
+    const args = {
+      supabase: createFakeClient(tables), listingId: id,
+      agencyId: '31382', agentId: '77959', agentSourceReference: 'preview-test-agent',
+      suburbId: '12345', propertyTypeId: '5', expiryDate: '2099-12-31',
+      environment: 'production', sandboxPayloadTestMode: false, photosChanged: true,
+    }
+    let downloads = 0
+    globalThis.fetch = async (url) => {
+      downloads += 1
+      assert.ok(tables.listing_media.some(row => row.file_url === url))
+      return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/jpeg' } })
+    }
+    const requirements = await buildPlan({ ...args, loadImageBytes: false })
+    assert.equal(requirements.canPreview, true, `${category}: ${JSON.stringify(requirements.dataBlockers)}`)
+    assert.equal(requirements.canSubmit, true, `${category}: ${JSON.stringify(requirements.technicalBlockers)}`)
+    assert.equal(requirements.previewPayload.photos.length, 2)
+    assert.ok(requirements.previewPayload.photos.every(photo => !photo.bytesLoaded))
+    assert.equal(requirements.imageByteLoad.summary.loaded, 0)
+    assert.equal(downloads, 0, 'Requirements checks must not download photo bytes')
+
+    const submission = await buildPlan(args)
+    assert.equal(submission.canSubmit, true)
+    assert.equal(submission.payload.photos.length, 2)
+    assert.equal(submission.imageByteLoad.summary.loaded, 2)
+    assert.equal(downloads, 2, 'Submission must still prepare every saved photo')
+
+    globalThis.fetch = async (url) => url.endsWith('second.jpg')
+      ? new Response('', { status: 503 })
+      : new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } })
+    const failedPhoto = await buildPlan(args)
+    assert.equal(failedPhoto.canSubmit, false, 'A failed photo must still block submission')
+    assert.ok(failedPhoto.technicalBlockers.includes('listing_image_bytes_not_loaded_for_property24_submit'))
+    assert.equal(failedPhoto.imageByteLoad.summary.failed, 1)
+
+    const emptyGallery = await buildPlan({ ...args, supabase: createFakeClient({ ...tables, listing_media: [] }), loadImageBytes: false })
+    assert.equal(emptyGallery.canSubmit, false, 'A genuinely empty gallery must still block a new advert')
+    assert.ok(emptyGallery.dataBlockers.includes('missing_listing_image'))
+    const emptyReplacement = await buildPlan({ ...args, supabase: createFakeClient({ ...tables, listing_media: [] }), listingNumber: '123456' })
+    assert.equal(emptyReplacement.canSubmit, false, 'An existing advert must not receive an empty replacement gallery')
+    assert.ok(emptyReplacement.dataBlockers.includes('missing_listing_image'))
+  }
+} finally {
+  globalThis.fetch = originalFetch
+}
+console.log('Property24 sale/rental requirements and submission photo checks passed.')

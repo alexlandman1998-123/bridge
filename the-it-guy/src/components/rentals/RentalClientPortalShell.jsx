@@ -46,7 +46,7 @@ export default function RentalClientPortalShell({ role = 'tenant', activeKey = '
   const address = [property?.address_line_1, property?.suburb, property?.city].filter(Boolean).join(', ')
   const pathFor = (item) => `?section=${item.key}`
 
-  return <div className="min-h-screen bg-[#f7f7f8] text-[#101823]">
+  return <div className="min-h-screen bg-[#f7f7f8] text-[#101823]" style={{ '--landlord-primary': theme.primary, '--landlord-secondary': theme.secondary, '--landlord-accent': theme.accent }}>
     <BuyerPortalDesktopSidebar
       brandName={brandName}
       brandLogoUrl={brandLogoUrl}

@@ -23,7 +23,8 @@ test('saved database field names reach FICA validation and generation without re
   const cleared = buildCanonicalSellerOnboardingPayload({ ...saved, companyName: '', companyDirectors: [] }).canonicalSellerFacts
   assert.equal(cleared.seller.company.name, '')
   assert.deepEqual(cleared.seller.company.directors, [])
-  assert.ok(getSellerFicaOnboardingMissing({ ...saved, company_beneficial_owners: [] }).includes('Beneficial owners / controllers'))
+  assert.ok(getSellerFicaOnboardingMissing({ ...saved, company_beneficial_owners: [] }).includes('Beneficial owners / controllers: add at least one person'))
+
   const trust = { ...saved, owner_structure_type: 'trust', trust_name: 'Ana Trust', trust_trustees: [owner], authorised_trustee_capacity: 'Trustee', trust_founders: [owner], trust_beneficiary_class: 'Descendants' }
   assert.deepEqual(getSellerFicaOnboardingMissing(trust), [])
   const trustFacts = buildCanonicalSellerOnboardingPayload(trust).canonicalSellerFacts
@@ -68,4 +69,19 @@ test('a director who signs reuses their captured identity', () => {
   assert.equal(facts.seller.company.authorised_signatory.id_number, person.idNumber)
   assert.equal(facts.seller.company.authorised_signatory.nationality, person.nationality)
   assert.equal(facts.seller.company.authorised_signatory.residential_address, person.residentialAddress)
+})
+
+
+test('beneficial owner warnings identify only missing fields and the affected row', () => {
+  const form = { ...risk, ownerStructureType: 'company', companyBeneficialOwners: [
+    { ...person, ownershipShare: '100' },
+    { ...person, surname: '', nationality: '', residentialAddress: '', ownershipShare: '' },
+  ] }
+  assert.deepEqual(getSellerFicaOnboardingMissing(form), [
+    'Beneficial owners / controllers, person 2: add surname, nationality, residential address',
+    'Beneficial owners / controllers, person 2: add an ownership share or explain how this person controls the company',
+  ])
+  assert.deepEqual(getSellerFicaOnboardingMissing({ ...form, companyBeneficialOwners: [] }), [
+    'Beneficial owners / controllers: add at least one person',
+  ])
 })

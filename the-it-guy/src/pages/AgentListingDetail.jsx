@@ -2,6 +2,8 @@ import AddressInput from '../components/location/AddressInput'
 import ListingFacebookPostPanel from '../components/listings/ListingFacebookPostPanel'
 import ListingInstagramPostPanel from '../components/listings/ListingInstagramPostPanel'
 import { hasListingPhotoLoadError } from '../services/listings/listingPhotoStorage.js'
+import useCalendarRead from '../hooks/useCalendarRead'
+
 import { getSellerDocumentDisplayGroupKey } from '../lib/sellerDocumentExperienceModel.js'
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
@@ -3870,9 +3872,6 @@ function AgentListingDetail() {
     attorney: 'Arch9 Conveyancing',
     bondOriginator: 'Arch9 Finance',
   })
-  const [viewings, setViewings] = useState([])
-  const [viewingsLoading, setViewingsLoading] = useState(false)
-  const [viewingsError, setViewingsError] = useState('')
 
   const markMarketingDraftDirty = useCallback((dirty = true) => {
     marketingDraftDirtyRef.current = Boolean(dirty)
@@ -4579,17 +4578,17 @@ function AgentListingDetail() {
     }
   }
 
-  const refreshListingViewings = useCallback(async () => {
-    if (!listingId) return
-    const localRows = isUnsafeFallbackAllowed() ? getViewingRequestsForListing(listingId) : []
-    let appointmentRows = []
-    setViewingsLoading(true)
-    setViewingsError('')
-    if (listingOrganisationId && isSupabaseConfigured) {
-      try {
+  const viewingSource = useCalendarRead({
+    intervalMs: 0,
+    scopeKey: JSON.stringify([listingId, listingOrganisationId, profile?.id, currentWorkspace?.id]),
+    enabled: Boolean(listingId),
+    read: async signal => {
+      const localRows = isUnsafeFallbackAllowed() ? getViewingRequestsForListing(listingId) : []
+      let appointmentRows = []
+      if (listingOrganisationId && isSupabaseConfigured) {
         const appointments = await listAppointmentsAsync(listingOrganisationId, {
           includeAll: true,
-          listingId,
+          listingId, signal,
         })
         appointmentRows = (Array.isArray(appointments) ? appointments : [])
           .filter((appointment) => String(appointment?.listingId || appointment?.listing_id || '') === String(listingId) &&
@@ -4597,10 +4596,11 @@ function AgentListingDetail() {
           .map(mapAppointmentToViewingRecord)
         if (appointmentRows.length) {
           const appointmentIds = appointmentRows.map((row) => row.appointment_id).filter(Boolean)
+          signal.throwIfAborted()
           const { data: rounds, error: roundsError } = await supabase.from('listing_viewing_rounds')
             .select('appointment_id,round_number,booking_source,status')
             .eq('organisation_id', listingOrganisationId)
-            .in('appointment_id', appointmentIds)
+            .in('appointment_id', appointmentIds).abortSignal(signal)
           if (roundsError) console.warn('[AgentListingDetail] viewing round details unavailable.', roundsError)
           const latestRounds = new Map()
           for (const round of rounds || []) {
@@ -4613,16 +4613,16 @@ function AgentListingDetail() {
             booking_source: latestRounds.get(row.appointment_id)?.booking_source || '',
           }))
         }
-      } catch (error) {
-        console.warn('[AgentListingDetail] listing appointments load failed.', error)
-        setViewingsError(error?.message || 'Viewing appointments could not be loaded.')
-        setViewingsLoading(false)
-        return
       }
-    }
-    setViewings(mergeAppointmentAndLocalViewings(appointmentRows, localRows))
-    setViewingsLoading(false)
-  }, [listingId, listingOrganisationId])
+      signal.throwIfAborted()
+      return mergeAppointmentAndLocalViewings(appointmentRows, localRows)
+    },
+  })
+  const viewings = viewingSource.data || []
+  const viewingsLoading = viewingSource.status === 'loading'
+  const viewingsError = viewingSource.error
+  const refreshListingViewings = viewingSource.reload
+  const refreshViewingsAutomatically = viewingSource.refresh
 
   const refreshListingOverview = useCallback(async () => {
     await Promise.allSettled([
@@ -4636,17 +4636,10 @@ function AgentListingDetail() {
 
   useEffect(() => {
     if (!listingId) return undefined
-    void refreshListingViewings()
-    const refreshViewings = () => {
-      void refreshListingViewings()
-    }
+    const refreshViewings = () => { void refreshViewingsAutomatically() }
     window.addEventListener('itg:viewings-updated', refreshViewings)
-    window.addEventListener('itg:agency-crm-updated', refreshViewings)
-    return () => {
-      window.removeEventListener('itg:viewings-updated', refreshViewings)
-      window.removeEventListener('itg:agency-crm-updated', refreshViewings)
-    }
-  }, [listingId, refreshListingViewings])
+    return () => window.removeEventListener('itg:viewings-updated', refreshViewings)
+  }, [listingId, refreshViewingsAutomatically])
 
   const listingAnalyticsSummary = useMemo(() => buildListingWorkspaceAnalyticsSummary({
     interests: interestedLeadRows,
@@ -5513,6 +5506,7 @@ function AgentListingDetail() {
         if (expiryError) throw new Error(expiryError)
       }
       const relistProperty24Reference = String(draft.property24Reference || sourceListing.property24Reference || sourceListing.property24_reference || '').trim()
+
       let restored = !['withdrawn', 'expired', 'archived'].includes(normalizeKey(draft.listingStatus))
       const snapshot = { ...buildListingPublicationSnapshot({ ...draft, listingStatus: 'active' }), property24ExpiryDate: draft.property24ExpiryDate }
       const history = await getPrivateListingActivity(listingRecord.id, { requireAvailable: true })
@@ -5523,6 +5517,7 @@ function AgentListingDetail() {
         if (!restore?.ok || restore.localOnly || !restore.draft || !restore.listing?.id) throw restore?.error || new Error('Arch9 could not restore the saved listing. No portal send was started.')
         draft = restore.draft
         sourceListing = restore.listing
+
         restored = true
       }
       const results = await relistListingChannels({
@@ -5539,6 +5534,7 @@ function AgentListingDetail() {
           beforeSend: restoreSavedListing, recordCheckpoint, recordPublication,
           ...createListingRelistPortalActions({
             listingId: listingRecord.id, channel, property24Reference: relistProperty24Reference, property24Context,
+
             callProperty24: callProperty24ListingAction, callPrivateProperty: callPrivatePropertyListingAction,
             property24Message: getProperty24ApiMessage, privatePropertyReference: getPrivatePropertyReferenceFromResponse,
             onPrivatePropertyStatus: setPrivatePropertyStatusCheck,
@@ -13056,6 +13052,7 @@ function AgentListingDetail() {
                   propertyTitle={marketingDraft.headline || listingRecord?.listingTitle || 'Property listing'}
                   loading={listingSupportingDataLoading}
                   loadError={!listingSupportingDataLoading && (!listingSupportingDataReady || hasListingPhotoLoadError(listingRecord?.listingMedia))}
+
                   onRetry={() => loadListingData({ showLoading: false })}
                   showThumbnails
                 />
@@ -13136,6 +13133,7 @@ function AgentListingDetail() {
         <ListingFacebookPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
         <ListingInstagramPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
 
+
         <ListingShowDaysPanel
           key={`${listingOrganisationId}:${listingShowDaySnapshot.id}`}
           organisationId={listingOrganisationId}
@@ -13147,7 +13145,8 @@ function AgentListingDetail() {
         {renderProperty24ManagePanel()}
         {renderPrivatePropertyManagePanel()}
         {relistChannel !== null ? <ListingRelistDialog
-          channels={[...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
+          channels={relistChannel ? [relistChannel] : [...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
+
           initialChannel={relistChannel}
           expiryDate={getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate) ? addDaysToDateInput('', 90) : formatDateInputValue(marketingDraft.property24ExpiryDate)}
           minExpiryDate={addDaysToDateInput('', 1)}

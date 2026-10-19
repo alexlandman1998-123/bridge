@@ -37,7 +37,16 @@
     "supabase-tests/calendarHealth.test.js",
     "src/services/__tests__/calendarSupportService.test.js",
     "src/components/appointments/__tests__/AppointmentSupportPanel.test.jsx",
-    "src/components/appointments/__tests__/CalendarHealthPanel.test.jsx"
+    "src/components/appointments/__tests__/CalendarHealthPanel.test.jsx",
+    "supabase-tests/calendarTimeChange.test.js",
+    "supabase-tests/calendarTimeChangeNotifications.test.js",
+    "supabase-tests/calendarTimeChangeAlignment.test.js",
+    "supabase-tests/calendarTimeChangeEmail.test.js",
+    "src/components/appointments/__tests__/AppointmentTimeChange.test.jsx",
+    "src/services/__tests__/calendarTimeChangeService.test.js",
+    "src/services/__tests__/calendarReadCancellation.test.js",
+    "src/hooks/__tests__/useCalendarRead.test.jsx",
+    "src/pages/agency/__tests__/AgencyPipelinePage.calendarRefresh.test.jsx"
   ],
   "nativeTests": [
     "supabase-tests/calendarReservationsConcurrent.test.js",
@@ -52,7 +61,8 @@
     "resend-webhook/index.test.ts",
     "send-email/index.calendar.test.ts",
     "calendar-provider-connection/index.test.ts",
-    "calendar-provider-sync-worker/index.test.ts"
+    "calendar-provider-sync-worker/index.test.ts",
+    "send-email/handlers/appointment.test.ts"
   ],
   "scenarios": [
     {
@@ -152,6 +162,14 @@
         {
           "file": "supabase-tests/calendarJourney.test.jsx",
           "titleContains": "reschedules then cancels"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "retires old reminders"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeEmail.test.js",
+          "titleContains": "sends a reviewed confirmation"
         }
       ]
     },
@@ -172,6 +190,14 @@
         {
           "file": "supabase-tests/calendarReservationsConcurrent.test.js",
           "titleContains": "gives conflicting simultaneous bookings one winner"
+        },
+        {
+          "file": "supabase-tests/calendarReservationsConcurrent.test.js",
+          "titleContains": "gives competing time requests"
+        },
+        {
+          "file": "supabase-tests/calendarReservationsConcurrent.test.js",
+          "titleContains": "fences a competing booking behind final approval"
         }
       ]
     },
@@ -242,6 +268,10 @@
         {
           "file": "supabase-tests/calendarJourney.test.jsx",
           "titleContains": "reschedules then cancels"
+        },
+        {
+          "file": "supabase-tests/calendarReservationsConcurrent.test.js",
+          "titleContains": "approval queued behind a committed cancel"
         }
       ]
     },
@@ -282,6 +312,10 @@
         {
           "file": "supabase-tests/calendarReservations.test.js",
           "titleContains": "does not turn an individual decline"
+        },
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "takes an email guest from request"
         }
       ]
     },
@@ -292,6 +326,18 @@
         {
           "file": "supabase-tests/calendarReservations.test.js",
           "titleContains": "holds both times"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChange.test.js",
+          "titleContains": "requires organiser review and every required"
+        },
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "keeps an organiser conflict visible"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "keeps the same original-time reminders"
         }
       ]
     },
@@ -302,6 +348,22 @@
         {
           "file": "supabase-tests/calendarReservations.test.js",
           "titleContains": "expires or rejects only the replacement"
+        },
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "recovers a lost final guest approval"
+        },
+        {
+          "file": "supabase-tests/calendarReservationsConcurrent.test.js",
+          "titleContains": "simultaneous final guest approvals"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeNotifications.test.js",
+          "titleContains": "rejects a stale proposal version"
+        },
+        {
+          "file": "supabase-tests/calendarReservationsConcurrent.test.js",
+          "titleContains": "approval queued behind a committed expire"
         }
       ]
     },
@@ -322,6 +384,10 @@
         {
           "file": "supabase-tests/calendarDelivery.test.js",
           "titleContains": "stops delivery to removed"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeNotifications.test.js",
+          "titleContains": "replay receipt after the participant was revoked"
         }
       ]
     },
@@ -342,6 +408,14 @@
         {
           "file": "supabase-tests/calendarDelivery.test.js",
           "titleContains": "runs a committed save through the real SQL"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "retains a delivered receipt"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "keeps a frozen reminder claim"
         }
       ]
     },
@@ -382,6 +456,10 @@
         {
           "file": "supabase-tests/calendarJourney.test.jsx",
           "titleContains": "saves a mobile shared request"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeEmail.test.js",
+          "titleContains": "renders clear lifecycle wording"
         }
       ]
     },
@@ -392,6 +470,10 @@
         {
           "file": "supabase-tests/calendarDelivery.test.js",
           "titleContains": "bounds transient retries"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "eligible for reviewed retry after another guest votes"
         }
       ]
     },
@@ -452,6 +534,14 @@
         {
           "file": "supabase-tests/calendarProviderWorker.test.js",
           "titleContains": "through real SQL, encrypted credentials"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "copy unchanged until approval"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeAlignment.test.js",
+          "titleContains": "fences a provider claim for the old time"
         }
       ]
     },
@@ -462,6 +552,10 @@
         {
           "file": "supabase-tests/calendarJourney.test.jsx",
           "titleContains": "saves a mobile shared request"
+        },
+        {
+          "file": "supabase-tests/calendarJourney.test.jsx",
+          "titleContains": "takes a time request through the real mobile screen"
         }
       ]
     },
@@ -472,6 +566,14 @@
         {
           "file": "supabase-tests/calendarJourney.test.jsx",
           "titleContains": "denies another organisation"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeNotifications.test.js",
+          "titleContains": "booking becomes internal-only"
+        },
+        {
+          "file": "supabase-tests/calendarTimeChangeNotifications.test.js",
+          "titleContains": "membership was removed"
         }
       ]
     }
@@ -629,6 +731,22 @@
       {
         "path": "supabase/migrations/20261008221320_calendar_health_monitor_schedule.sql",
         "sha256": "72bf1332cf540978e720ec24ac3d4854d1f59c76c4bcdd6f65483239f3834133"
+      },
+      {
+        "path": "supabase/migrations/20261019165256_calendar_time_change_workflow.sql",
+        "sha256": "ee22be3823c0466c664e353a67302c4804079335c63e64a029badec0c506ed4a"
+      },
+      {
+        "path": "supabase/migrations/20261019172522_calendar_time_change_notifications.sql",
+        "sha256": "e651b1288f7b6cb4e0ee83f538d92f98f1287671436544eb5b337cf687c625c9"
+      },
+      {
+        "path": "supabase/migrations/20261019174614_calendar_time_change_alignment.sql",
+        "sha256": "f75b9b608bb7da6ce4df1dacdef8f1e0cec392b5468f29dba6a250a060b8c23f"
+      },
+      {
+        "path": "supabase/migrations/20261019175522_calendar_time_change_access_guards.sql",
+        "sha256": "8d0ff6e6619cd2621af31cbff7a404bbaa4181cf130276d46cabc4d783e924bc"
       }
     ],
     "functions": [

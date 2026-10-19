@@ -1,6 +1,6 @@
 import { assertEquals, assert, assertRejects } from "jsr:@std/assert@1";
 import type { SupabaseClient } from "supabase";
-import { createTenantQualificationLink } from "./tenantQualificationLink.ts";
+import { createTenantQualificationLink, createLeadQualificationLink } from "./tenantQualificationLink.ts";
 const input = { organisationId: "org", leadId: "lead", to: "tenant@example.test", recipientName: "Tenant", organisationName: "Rental agency", agentName: "Agent", agentEmail: "agent@example.test" };
 function fixture({ email = input.to, status = "New Lead", listingId = "", error = false } = {}) {
   const calls: string[] = [];
@@ -38,6 +38,21 @@ Deno.test("links use only properties in the tenant organisation", async () => {
   await createTenantQualificationLink(client, input);
   assert(calls.includes("private_listings:organisation_id=org"));
   assertEquals(inserts[0].selected_property_ids, [listingId]);
+});
+Deno.test("automatic buyer intros create a hashed sale form link with the enquired property", async () => {
+  const listingId = "11111111-1111-4111-8111-111111111111";
+  for (const property of [listingId, ""]) {
+    const { client, calls, inserts } = fixture({ listingId: property });
+    const url = await createLeadQualificationLink(client, input, "sale");
+    assert(url.includes("/viewing-preferences/"));
+    assertEquals(inserts[0].response.enquiryKind, "sale");
+    assertEquals(inserts[0].selected_property_ids, property ? [property] : []);
+    assertEquals(inserts[0].lead_id, input.leadId);
+    assert(calls.includes("leads:organisation_id=org"));
+    assert(inserts[0].token_hash !== url.split("/").at(-1));
+  }
+  await assertRejects(() => createLeadQualificationLink(fixture({ email: "other@example.test" }).client, input, "sale"));
+  await assertRejects(() => createLeadQualificationLink(fixture({ error: true }).client, input, "sale"));
 });
 Deno.test("recipient mismatch, closed lead, storage failure and unavailable service cannot create a sendable link", async () => {
   for (const options of [{ email: "other@example.test" }, { status: "Lost" }, { error: true }]) {

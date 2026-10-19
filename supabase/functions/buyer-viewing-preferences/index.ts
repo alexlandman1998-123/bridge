@@ -1111,7 +1111,9 @@ Deno.serve(async (req) => {
     body.responseNotes || body.response_notes,
     1200,
   );
-  if (!confirmedPropertyIds.length) {
+  const isUnmatchedBuyerIntro = enquiryKind === "sale" &&
+    asRecord(link.response).enquiryKind === "sale" && allowedIds.size === 0 && properties.length === 0;
+  if (!confirmedPropertyIds.length && !isUnmatchedBuyerIntro) {
     return jsonResponse(400, {
       error: "Choose at least one property you would like to view.",
       code: "properties_required",

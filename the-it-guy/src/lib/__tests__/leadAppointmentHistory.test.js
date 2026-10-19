@@ -7,6 +7,26 @@ const org = '10000000-0000-4000-8000-000000000001'
 const lead = '20000000-0000-4000-8000-000000000001'
 beforeEach(() => { vi.resetAllMocks() })
 describe('lead appointment service', () => {
+  it('passes cancellation through the calendar RPC and participant reads', async () => {
+    const signal = new AbortController().signal
+    const rpcAbort = vi.fn().mockResolvedValue({ data: [{ appointment_id: '40000000-0000-4000-8000-000000000001', organisation_id: org, date_time: '2027-10-01T09:40:00Z', status: 'confirmed' }], error: null })
+    const participantAbort = vi.fn().mockResolvedValue({ data: [], error: null })
+    rpc.mockReturnValue({ abortSignal: rpcAbort })
+    const query = { select: () => query, eq: () => query, in: () => query, abortSignal: participantAbort }
+    from.mockReturnValue(query)
+    await expect(listAppointmentsAsync(org, { signal })).resolves.toHaveLength(1)
+    expect(rpcAbort).toHaveBeenCalledWith(signal)
+    expect(participantAbort).toHaveBeenCalledWith(signal)
+  })
+  it('keeps cancellation on the legacy calendar fallback', async () => {
+    const signal = new AbortController().signal
+    rpc.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ error: { code: 'PGRST202' } }) })
+    const abortSignal = vi.fn().mockResolvedValue({ data: [], error: null })
+    const query = { select: () => query, eq: () => query, order: () => query, abortSignal }
+    from.mockReturnValue(query)
+    await expect(listAppointmentsAsync(org, { signal })).resolves.toEqual([])
+    expect(abortSignal).toHaveBeenCalledWith(signal)
+  })
   it('uses the scoped history reader without date bounds', async () => {
     rpc.mockResolvedValue({ data: [], error: null })
     expect(await listAppointmentsAsync(org, { leadId: lead, from: '2026-01-01', to: '2026-12-31' })).toEqual([])

@@ -21,6 +21,13 @@ function eventTitle(eventType: string) {
     appointment_updated: "Appointment Updated",
     appointment_cancelled: "Appointment Cancelled",
     appointment_rescheduled: "Appointment Rescheduled",
+    appointment_time_change_requested: "New Appointment Time Requested",
+    appointment_time_change_proposed: "New Appointment Time Proposed",
+    appointment_time_change_confirmed: "New Appointment Time Confirmed",
+    appointment_time_change_declined: "Current Appointment Time Kept",
+    appointment_time_change_withdrawn: "Time-change Request Withdrawn",
+    appointment_time_change_expired: "Time-change Request Expired",
+
     appointment_confirmation_required: "Appointment Requested",
     appointment_reminder: "Appointment Reminder",
     appointment_documents_required: "Documents Needed Before Your Appointment",
@@ -672,6 +679,7 @@ export function buildAppointmentSubject(
   } = {},
 ) {
   const title = eventTitle(eventType);
+  if (eventType.startsWith("appointment_time_change_")) return `${title}: ${pickText(options.appointmentTitle || humanizeAppointmentType(appointmentType), "Appointment")}`;
   const typeLabel = pickText(
     options.appointmentTitle || humanizeAppointmentType(appointmentType),
     "Appointment",
@@ -812,11 +820,21 @@ export function buildAppointmentEmailHtml({
     emailTheme,
     emailTemplateKey,
   });
+  if (eventType.startsWith("appointment_time_change_")) {
+    const contentHtml = [
+      renderBridgeSummaryCard([{label:"Appointment",value:typeLabel},{label:"Date",value:pickText(appointmentDate,"TBC")},{label:"Time",value:pickText(appointmentTime,"TBC")},{label:"Location",value:pickText(meetingUrl || location,"To be confirmed")}],eventType === "appointment_time_change_proposed" ? "Proposed replacement" : "Current booking"),
+      notes ? `<div style="white-space:pre-line;line-height:1.65;font-size:15px;color:#35506d;margin:18px 0">${escapeHtml(notes)}</div>` : "",
+      actionLink ? renderBridgeCta(acceptLink || declineLink ? "Review proposed time" : "View appointment",actionLink,{primaryColor}) : "",
+      renderBridgeIntroParagraphs(["Opening a link does not change your appointment. Submit your response on the page to confirm your choice."]),
+    ].join("");
+    return renderBridgeEmailLayout({preheader:`${eventTitle(eventType)} for ${typeLabel}`,title:eventTitle(eventType),greeting:`Hi ${pickText(recipientName,"there")},`,contentHtml,
+      helpBody:`Need help? Reply to this email and your ${resolvedOrganisationName} team will assist you.`,organisationName:resolvedOrganisationName,supportEmail:supportEmail || "",supportPhone:supportPhone || "",branding});
+  }
   const safeAcceptLink = escapeHtml(acceptLink || "");
   const safeDeclineLink = escapeHtml(declineLink || "");
   const safeRescheduleLink = escapeHtml(rescheduleLink || "");
 
-  if (isKingstonsValuationInvite) {
+  if (isKingstonsValuationInvite && !eventType.startsWith("appointment_time_change_")) {
     return renderKingstonsAppointmentEmail({
       eventType,
       recipientName,
@@ -1064,7 +1082,7 @@ export function buildAppointmentEmailText({
     emailTemplateKey,
   });
 
-  if (isKingstonsValuationInvite) {
+  if (isKingstonsValuationInvite && !eventType.startsWith("appointment_time_change_")) {
     const kingstons = buildKingstonsValuationInviteCopy({
       eventType,
       participantRole,
@@ -1129,12 +1147,12 @@ export function buildAppointmentEmailText({
     `Hi ${pickText(recipientName, "there")},`,
     "",
     `${eventTitle(eventType)}: ${typeLabel}`,
-    sellerRecipient ? "This is your seller valuation appointment." : null,
+    sellerRecipient && !eventType.startsWith("appointment_time_change_") ? "This is your seller valuation appointment." : null,
     appointmentDate ? `Date: ${appointmentDate}` : null,
     appointmentTime ? `Time: ${appointmentTime}` : null,
     relatedListing ? `Listing / Property: ${relatedListing}` : null,
     meetingUrl || location ? `Location: ${meetingUrl || location}` : null,
-    status ? `Status: ${status}` : null,
+    status && !eventType.startsWith("appointment_time_change_") ? `Status: ${status}` : null,
     hostSentence ? `Host: ${hostSentence}` : null,
     agentBio ? `About your agent: ${agentBio}` : null,
     attachCalendarInvite !== false

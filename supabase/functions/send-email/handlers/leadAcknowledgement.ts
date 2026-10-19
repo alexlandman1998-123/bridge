@@ -3,7 +3,7 @@ import {
   type LeadEnquiryKind,
   resolveLeadEnquiryKind,
 } from "../services/leadAcknowledgementContext.ts";
-import { createTenantQualificationLink } from "../services/tenantQualificationLink.ts";
+import { createLeadQualificationLink } from "../services/tenantQualificationLink.ts";
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
   buildLeadAcknowledgementEmailHtml,
@@ -133,9 +133,9 @@ export async function renderLeadAcknowledgementEnvelope(
     normalizeText(payload.organisationId || payload.organisation_id),
     normalizeText(payload.leadId || payload.lead_id),
   );
-  if (enquiryKind === "rental") {
+  if (enquiryKind === "rental" || enquiryKind === "sale") {
     try {
-      content.viewingAvailabilityUrl = await createTenantQualificationLink(
+      content.viewingAvailabilityUrl = await createLeadQualificationLink(
         supabase,
         {
           organisationId: normalizeText(
@@ -148,9 +148,10 @@ export async function renderLeadAcknowledgementEnvelope(
           agentName: content.agentName,
           agentEmail: content.agentEmail,
         },
+        enquiryKind,
       );
     } catch {
-      throw new Error("Unable to create the tenant qualification link.");
+      throw new Error("Unable to create the qualification and viewing-time link.");
     }
   }
   const html = buildLeadAcknowledgementEmailHtml({

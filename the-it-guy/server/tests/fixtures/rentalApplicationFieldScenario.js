@@ -15,7 +15,7 @@ export function rentalApplicationFieldScenario(type) {
   Object.assign(data.employment, { employmentType: 'employed' })
   Object.assign(data.contacts, { preferredContactMethod: 'email' })
   Object.assign(data.household, { occupantCount: 2, leasePeriodMonths: 12, pets: 'no', guarantorRequired: false })
-  Object.assign(data.income, { otherIncome: 0, monthlyObligations: 1500 })
+  Object.assign(data.income, { incomeBasis: 'net', incomeFrequency: 'monthly', rentPayer: 'self', depositPayer: 'self', otherIncome: 0, monthlyObligations: 1500 })
   Object.assign(data.rentalHistory, { housingSituation: 'renting' })
   Object.assign(data.people[0], { id: 'additional-person', role: type === 'joint_individuals' ? 'co_tenant' : type === 'trust' ? 'trustee' : type === 'individual' ? 'guarantor' : 'authorised_signatory', identityType: 'passport', employmentType: 'employed' })
   return data

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateWhatsAppCampaign, WhatsAppCampaignDetail, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
 const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one',viewer:'viewer-one',role:'principal' }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org },user:{id:mocks.viewer},currentMembership:{role:mocks.role,status:'active'} } }) }))
+
 vi.mock('../../../services/whatsappCampaignService', () => ({ whatsappCampaignRequest: mocks.request }))
 vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({canManage:false,loading:false,organisationId:mocks.org,accessScope:`${mocks.org}:${mocks.viewer}:${mocks.role}`})}))
 const template = { id: 'template-one', name: 'new_listing', language: 'en_US', category: 'MARKETING', status: 'APPROVED', components: [{ type: 'BODY', text: 'Hello {{1}}' }] }
@@ -219,4 +220,78 @@ it('clears private campaign data immediately after a role or user changes in the
  view.rerender(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
  await screen.findByText('Your first campaign starts here')
  expect(screen.queryByText('Private recruitment campaign')).toBeNull()
+})
+
+const detailCampaign = { id: 'sent-one', name: 'October homes', status: 'sending', template, sent_at: '2026-10-19T06:31:00Z' }
+const recipient = (id, fields = {}) => ({ id, full_name: `Recipient ${id}`, phone: '27821234567', status: 'sent', ...fields })
+
+it('summarises confirmed receipts without double-counting read messages or hiding failures', async () => {
+  mocks.request.mockResolvedValue({ campaign: detailCampaign, recipients: [
+    recipient('read', { status: 'read', read_at: '2026-10-19T06:40:00Z' }),
+    recipient('delivered', { status: 'delivered', delivered_at: '2026-10-19T06:35:00Z' }),
+    recipient('failed', { status: 'failed', error_message: 'Number is unavailable.' }),
+  ] })
+  const back = vi.fn()
+  render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={back} />)
+  await screen.findByRole('heading', { name: 'October homes' })
+  expect(screen.getByText('Partially sent')).toBeTruthy()
+  const summary = within(screen.getByRole('region', { name: 'Campaign results summary' }))
+  for (const [label, count] of [['Recipients', '3'], ['Delivered', '2'], ['Read', '1'], ['Failed', '1']]) {
+    expect(summary.getByText(label).closest('article').querySelector('strong').textContent).toBe(count)
+  }
+  const table = within(screen.getByRole('table', { name: 'Recipient results' }))
+  expect(table.getByText('Confirmed by read receipt')).toBeTruthy()
+  expect(table.getByText('Number is unavailable.')).toBeTruthy()
+  expect(screen.getByText('new_listing')).toBeTruthy()
+  expect(screen.queryByRole('navigation', { name: 'WhatsApp' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'WhatsApp campaigns' }))
+  expect(back).toHaveBeenCalledTimes(1)
+  expect(mocks.request.mock.calls.every((call) => call[1] === 'detail')).toBe(true)
+})
+
+it('keeps stale processing results unconfirmed instead of showing a successful send', async () => {
+  mocks.request.mockResolvedValue({ campaign: detailCampaign, recipients: [recipient('uncertain', { status: 'processing', attempted_at: new Date(Date.now() - 180000).toISOString() })] })
+  render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={vi.fn()} />)
+  await screen.findByText('Needs attention')
+  expect(screen.getByText('Unconfirmed')).toBeTruthy()
+  expect(screen.getByText('Delivery unconfirmed. Check Meta before sending again.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Send remaining/ })).toBeNull()
+})
+
+it('shows an empty recipient state for a draft without inventing results', async () => {
+  mocks.request.mockResolvedValue({ campaign: { ...detailCampaign, status: 'draft', sent_at: null }, recipients: [] })
+  render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={vi.fn()} />)
+  expect(screen.queryByRole('region', { name: 'Campaign results summary' })).toBeNull()
+  await screen.findByText('Recipient results will appear after this campaign starts sending.')
+  expect(screen.getByText('Not started')).toBeTruthy()
+  expect(screen.getByText('draft')).toBeTruthy()
+  expect(screen.queryByRole('table')).toBeNull()
+})
+
+it('retains verified results on refresh failure and clears the error after a successful retry', async () => {
+  const data = { campaign: detailCampaign, recipients: [recipient('one', { delivered_at: '2026-10-19T06:35:00Z', status: 'delivered' })] }
+  mocks.request.mockResolvedValueOnce(data).mockRejectedValueOnce(new Error('Results unavailable.')).mockResolvedValue(data)
+  render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh results' }))
+  await screen.findByRole('alert')
+  expect(screen.getByRole('table', { name: 'Recipient results' })).toBeTruthy()
+  expect(screen.getByText('Recipient one')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh results' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  expect(mocks.request.mock.calls).toHaveLength(3)
+})
+
+it('preserves the existing resume-send action for queued recipients', async () => {
+  let dispatched = false
+  mocks.request.mockImplementation(async (_org, action) => {
+    if (action === 'detail') return { campaign: detailCampaign, recipients: [recipient('one', { status: dispatched ? 'sent' : 'queued' })] }
+    if (action === 'resume') { dispatched = true; return { campaign: { queued: 0 } } }
+    throw new Error(`Unexpected ${action}`)
+  })
+  render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Resume sending' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume sending' })).toBeNull())
+  expect(mocks.request.mock.calls.filter((call) => call[1] === 'resume')).toHaveLength(1)
+  expect(mocks.request.mock.calls.some((call) => call[1] === 'prepare')).toBe(false)
+
 })

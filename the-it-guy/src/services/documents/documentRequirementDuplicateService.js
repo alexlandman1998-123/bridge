@@ -1,3 +1,4 @@
+import { documentRequirementParty } from '../../core/documents/documentRequirementIdentity.js'
 const normalizedName = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
 
 export function requirementSubject(row) {
@@ -12,7 +13,7 @@ export function findDuplicateRequirements(requirements, context, payload, defini
   const name = normalizedName(payload.label || definitionLabel)
   return requirements.filter(row => {
     if (row.context_type !== context.contextType || row.context_id !== context.contextId
-      || row.requested_from_role !== payload.party
+      || documentRequirementParty(row) !== payload.party
       || (row.status === 'not_applicable' && row.applicability_override !== 'removed')) return false
     const subject = requirementSubject(row)
     if (subject.subjectKind !== (payload.subjectKind || 'party') || subject.subjectId !== (payload.subjectId || null)) return false

@@ -42,6 +42,8 @@ export function quoteKnowledgeFactoryReportPurchase({
   propertyId,
   productId,
   purpose,
+  boundaryReceipt,
+  sellerLeadId,
 } = {}) {
   return call({
     action: "quote",
@@ -49,6 +51,8 @@ export function quoteKnowledgeFactoryReportPurchase({
     propertyId: text(propertyId),
     productId: text(productId),
     purpose: text(purpose),
+    boundaryReceipt: boundaryReceipt || null,
+    sellerLeadId: sellerLeadId || null,
   });
 }
 export function confirmKnowledgeFactoryReportPurchase({ organisationId, intentId, attested } = {}) {

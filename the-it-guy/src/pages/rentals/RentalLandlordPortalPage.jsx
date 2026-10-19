@@ -18,7 +18,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import RentalClientPortalShell from "../../components/rentals/RentalClientPortalShell";
-import LandlordOverview from "../../components/rentals/LandlordOverview";
+import LandlordOverview, { LandlordOverviewMetrics } from "../../components/rentals/LandlordOverview";
 import LandlordPropertyWorkspace from "../../components/rentals/LandlordPropertyWorkspace";
 import LandlordRentStatementsPage from "../../components/rentals/LandlordRentStatementsPage";
 import LandlordMaintenancePage from "../../components/rentals/LandlordMaintenancePage";
@@ -54,7 +54,7 @@ function Card({ icon: Icon, eyebrow, title, children }) {
   return (
     <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,.05)] sm:p-6">
       <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#edf5ff] text-[#1769d1]">
+        <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[color-mix(in_srgb,var(--landlord-accent)_15%,white)] text-[var(--landlord-primary)]">
           <Icon size={19} />
         </span>
         <div>
@@ -105,7 +105,7 @@ function InstructionForm({
       </label>
       <button
         disabled={saving}
-        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#10213a] px-4 text-sm font-semibold text-white disabled:opacity-60"
+        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--landlord-primary)] px-4 text-sm font-semibold text-white disabled:opacity-60"
       >
         {saving ? (
           <Loader2 className="animate-spin" size={16} />
@@ -200,6 +200,7 @@ function RentalLandlordPortalContent({
       );
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error);
+      setBranding(payload.branding || {});
       setData(payload);
     } catch (cause) {
       setError(cause?.message || "Unable to open landlord portal.");
@@ -446,7 +447,7 @@ function RentalLandlordPortalContent({
               rentRoll: [],
             },
       }}
-      branding={demo ? branding : {}}
+      branding={branding}
       onNavigate={navigateSection}
     />
     </>
@@ -818,12 +819,13 @@ function RentalLandlordPortalContent({
   const liveMaintenance = <Card icon={Wrench} eyebrow="Maintenance" title="Saved maintenance requests"><div className="mt-4 space-y-3">{(data?.maintenanceRequests || []).map(request => <article key={request.id} className="rounded-xl border border-slate-200 p-4"><p className="font-semibold">{units.find(unit => unit.id === request.unit_id)?.unit_label || 'Property'} · {label(request.category)}</p><p className="text-sm text-slate-600">{label(request.status)} · {label(request.priority)}</p></article>)}</div>{!data?.maintenanceRequests?.length ? <p className="mt-4 text-sm text-slate-600">No maintenance requests have been saved for this property.</p> : null}<button type="button" className="mt-4 underline" onClick={() => navigateSection('approvals')}>Send a maintenance instruction</button></Card>;
   const liveRent = <div className="space-y-4"><p className="text-sm text-slate-600">Saved lease and move-in payment progress appears below. Your rental team supplies the ongoing rent statement separately.</p>{liveProgress}</div>;
   const liveSettings = <Card icon={Building2} eyebrow="Portal access" title="Your property relationship"><p className="mt-4 text-sm text-slate-600">This portal is connected to {property.name || 'your rental property'}. Contact your rental team to change access or property details.</p><button type="button" className="mt-4 underline" onClick={() => navigateSection('messages')}>Message your rental team</button></Card>;
-  const content = demo ? demoContent : activeKey === 'properties' ? selectedPropertyId ? liveProgress : <div className="space-y-4">{properties}{liveProgress}</div> : activeKey === 'rent' ? liveRent : activeKey === 'maintenance' ? liveMaintenance : activeKey === 'documents' ? liveDocuments : activeKey === 'settings' ? liveSettings : ['messages', 'support', 'approvals'].includes(activeKey) ? approvals : <div className="space-y-4">{liveProgress}{support}</div>;
+  const content = demo ? demoContent : activeKey === 'properties' ? selectedPropertyId ? liveProgress : <div className="space-y-4">{properties}{liveProgress}</div> : activeKey === 'rent' ? liveRent : activeKey === 'maintenance' ? liveMaintenance : activeKey === 'documents' ? liveDocuments : activeKey === 'settings' ? liveSettings : ['messages', 'support', 'approvals'].includes(activeKey) ? approvals : <div className="space-y-4"><LandlordOverviewMetrics portfolio={data?.portfolio || {}} />{liveProgress}{support}</div>;
+
   return (
     <RentalClientPortalShell
       role="landlord"
       activeKey={activeKey}
-      branding={demo ? branding : {}}
+      branding={branding}
       property={property}
       subtitle="Property oversight, approvals and instructions in one secure workspace."
       showPropertyHero={false}

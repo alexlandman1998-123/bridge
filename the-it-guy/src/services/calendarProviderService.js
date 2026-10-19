@@ -1,15 +1,16 @@
 import { supabase, isSupabaseConfigured, invokeEdgeFunction, getEdgeFunctionInvokeError } from '../lib/supabaseClient'
 
 const supported = provider => provider === 'google' || provider === 'outlook'
-async function rpc(name, args) {
+async function rpc(name, args, signal) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Calendar connections are not available in this workspace.')
-  const result = await supabase.rpc(name, args)
+  const query = supabase.rpc(name, args)
+  const result = await (signal ? query.abortSignal(signal) : query)
   if (result.error) throw new Error(result.error.message || 'Calendar connection could not be verified. Retry.')
   if (!result.data || typeof result.data !== 'object') throw new Error('Calendar connection could not be verified. Retry.')
   return result.data
 }
-export async function readCalendarProviderStatus(organisationId, appointmentId = null) {
-  const data = await rpc('read_calendar_provider_status', { p_organisation_id: organisationId, p_appointment_id: appointmentId })
+export async function readCalendarProviderStatus(organisationId, appointmentId = null, { signal } = {}) {
+  const data = await rpc('read_calendar_provider_status', { p_organisation_id: organisationId, p_appointment_id: appointmentId }, signal)
   if (data.verified !== true || !Array.isArray(data.connections) || !Array.isArray(data.events)) throw new Error('Calendar connection status could not be verified. Retry.')
   return data
 }

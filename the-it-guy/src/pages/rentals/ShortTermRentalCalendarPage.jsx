@@ -1,45 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import useCalendarRead from '../../hooks/useCalendarRead'
+import { useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { listShortTermBookings } from '../../services/rentals/rentalShortTermBookingRepository.js'
 import { buildShortTermCalendarBoard, startOfCalendarWeek } from '../../services/rentals/shortTermRentalCalendarModel.js'
 import { listShortTermUnitInventory } from '../../services/rentals/rentalShortTermInventoryRepository.js'
-import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope.js'
+import { buildRentalWorkspaceKey, resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope.js'
 import { BookingCalendar, CalendarHeader, CalendarLegend, CalendarListView, CalendarToolbar } from './ShortTermCalendarComponents.jsx'
 
 const addDays = (value, amount) => { const date = new Date(value); date.setDate(date.getDate() + amount); return date }
 
 export default function ShortTermRentalCalendarPage() {
   const workspace = useWorkspace()
-  const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace])
-  const [bookings, setBookings] = useState([])
-  const [units, setUnits] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const scope = resolveRentalWorkspaceScope(workspace)
   const [view, setView] = useState('calendar')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [weekStart, setWeekStart] = useState(() => startOfCalendarWeek(new Date()))
 
-  const load = useCallback(async () => {
-    if (!scope.organisationId) {
-      setBookings([]); setUnits([]); setLoading(false)
-      return
-    }
-    try {
-      setLoading(true); setError('')
-      const [nextBookings, nextUnits] = await Promise.all([
-        listShortTermBookings({ organisationId: scope.organisationId, branchId: scope.listingBranchId, from: addDays(weekStart, -1).toISOString() }),
-        listShortTermUnitInventory({ organisationId: scope.organisationId, branchId: scope.listingBranchId }),
+  const source = useCalendarRead({
+    intervalMs: 0,
+    scopeKey: JSON.stringify([buildRentalWorkspaceKey(scope), weekStart.toISOString()]), enabled: Boolean(scope.organisationId),
+    read: async signal => {
+      const results = await Promise.allSettled([
+        listShortTermBookings({ organisationId: scope.organisationId, branchId: scope.listingBranchId, from: addDays(weekStart, -1).toISOString() }, { signal }),
+        listShortTermUnitInventory({ organisationId: scope.organisationId, branchId: scope.listingBranchId }, { signal }),
       ])
-      setBookings(nextBookings); setUnits(nextUnits)
-    } catch (cause) {
-      setError(cause?.message || 'Unable to load the Short-Term calendar.')
-    } finally {
-      setLoading(false)
-    }
-  }, [scope.listingBranchId, scope.organisationId, weekStart])
-
-  useEffect(() => { void load() }, [load])
+      signal.throwIfAborted()
+      const failure = results.find(result => result.status === 'rejected')
+      if (failure) throw failure.reason
+      const [bookings, units] = results.map(result => result.value)
+      return { bookings, units }
+    },
+  })
+  const bookings = source.data?.bookings || []
+  const units = source.data?.units || []
+  const loading = source.status === 'loading'
+  const error = source.error
   const board = useMemo(() => buildShortTermCalendarBoard({ units, bookings, weekStart }), [bookings, units, weekStart])
   const filteredBoard = useMemo(() => {
     const query = search.trim().toLowerCase()

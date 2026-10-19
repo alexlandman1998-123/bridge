@@ -1051,6 +1051,7 @@ function RentalTabContent({
     const privatePropertyStatus = privatePropertyChannel.status || 'not_published'
     const property24Reference = property24Channel.reference || ''
     const privatePropertyReference = privatePropertyChannel.reference || ''
+    const privatePropertyHasAdvert = Boolean(privatePropertyReference || privatePropertyChannel.hasAdvertIdentity)
     const property24Url = property24Channel.publicUrl || ''
     const privatePropertyUrl = privatePropertyChannel.publicUrl || ''
     const property24LastSynced = property24Channel.lastSyncedAt || listing.property24LastSyncedAt || listing.property24_last_synced_at || publication.property24LastSyncedAt || publication.property24_last_synced_at
@@ -1092,7 +1093,7 @@ function RentalTabContent({
               property24Reference || property24Channel.requiresReconciliation ? <button key="refresh" type="button" onClick={() => onRefreshPortal('property24')} disabled={portalBusy} className={channelMenuItemClass}><RefreshCw size={15} />{property24Channel.requiresReconciliation ? 'Reconcile previous request' : 'Refresh portal status'}</button> : null,
               property24Url ? <a key="view" href={property24Url} target="_blank" rel="noreferrer" className={channelMenuItemClass}><Eye size={15} />View live listing</a> : null,
               <button key="check" type="button" title="Checks the saved listing details, photos and portal setup without publishing." onClick={onCheckProperty24} disabled={checkingProperty24 || publishing} className={channelMenuItemClass}>{checkingProperty24 ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check listing requirements</button>,
-              <button key="publish" type="button" onClick={onPublish} disabled={portalBusy || publishing || property24Channel.loading || property24Channel.loadError || property24Channel.requiresReconciliation || !getProperty24PreviewDetails(property24Preview).canSubmit} className={channelMenuItemClass}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{property24Reference ? 'Update listing' : 'Publish'}</button>,
+              <button key="publish" type="button" onClick={onPublish} disabled={portalBusy || publishing || property24Channel.loading || property24Channel.loadError || property24Channel.requiresReconciliation || (!property24Reference && !getProperty24PreviewDetails(property24Preview).canSubmit) || (property24Reference && ['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(property24Status))} className={channelMenuItemClass}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{property24Reference ? 'Update listing' : 'Publish'}</button>,
               property24Reference && !['not_published', 'expired', 'removed', 'withdrawn'].includes(property24Status) ? <button key="withdraw" type="button" onClick={onWithdrawProperty24} disabled={publishing || property24Channel.loading || property24Channel.loadError || property24Channel.requiresReconciliation} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Withdraw listing</button> : null,
             ].filter(Boolean)}
           />
@@ -1114,11 +1115,12 @@ function RentalTabContent({
             lastSynced={privatePropertyLastSynced}
             actions={[
               <button key="manage" type="button" onClick={() => onManagePortal('private_property')} className={channelMenuItemClass}><SlidersHorizontal size={15} />Manage listing</button>,
-              privatePropertyReference || privatePropertyChannel.requiresReconciliation ? <button key="refresh" type="button" onClick={() => onRefreshPortal('private_property')} disabled={portalBusy} className={channelMenuItemClass}><RefreshCw size={15} />{privatePropertyChannel.requiresReconciliation ? 'Reconcile previous request' : 'Refresh portal status'}</button> : null,
+              privatePropertyHasAdvert || privatePropertyChannel.requiresReconciliation ? <button key="refresh" type="button" onClick={() => onRefreshPortal('private_property')} disabled={portalBusy} className={channelMenuItemClass}><RefreshCw size={15} />{privatePropertyChannel.requiresReconciliation ? 'Reconcile previous request' : 'Refresh portal status'}</button> : null,
+
               privatePropertyUrl ? <a key="view" href={privatePropertyUrl} target="_blank" rel="noreferrer" className={channelMenuItemClass}><Eye size={15} />View live listing</a> : null,
               <button key="check" type="button" title="Checks the saved listing details, photos and portal setup without publishing." onClick={onCheckPrivateProperty} disabled={checkingPrivateProperty || publishingPrivateProperty} className={channelMenuItemClass}>{checkingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check listing requirements</button>,
-              <button key="publish" type="button" onClick={onPublishPrivateProperty} disabled={portalBusy || privatePropertyChannel.loading || privatePropertyChannel.loadError || privatePropertyChannel.requiresReconciliation || !getRentalPortalReadiness('private_property',privatePropertyPreview).ready || publishingPrivateProperty} className={channelMenuItemClass}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{privatePropertyReference ? 'Update listing' : 'Publish'}</button>,
-              privatePropertyReference && !['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatus) ? <button key="withdraw" type="button" onClick={onWithdrawPrivateProperty} disabled={publishingPrivateProperty || privatePropertyChannel.loading || privatePropertyChannel.loadError || privatePropertyChannel.requiresReconciliation} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Withdraw listing</button> : null,
+              <button key="publish" type="button" onClick={onPublishPrivateProperty} disabled={portalBusy || privatePropertyChannel.loading || privatePropertyChannel.loadError || privatePropertyChannel.requiresReconciliation || (!privatePropertyHasAdvert && !getRentalPortalReadiness('private_property',privatePropertyPreview).ready) || (privatePropertyHasAdvert && ['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatus)) || publishingPrivateProperty} className={channelMenuItemClass}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{privatePropertyHasAdvert ? 'Update listing' : 'Publish'}</button>,
+              privatePropertyHasAdvert && !['not_published', 'inactive', 'expired', 'removed', 'withdrawn'].includes(privatePropertyStatus) ? <button key="withdraw" type="button" onClick={onWithdrawPrivateProperty} disabled={publishingPrivateProperty || privatePropertyChannel.loading || privatePropertyChannel.loadError || privatePropertyChannel.requiresReconciliation} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Withdraw listing</button> : null,
             ].filter(Boolean)}
           />
           <WebsiteListingPublicationPanel key={`agency:${row.id}`} variant="channel" showConnectionState hideDisconnected={kingdomWebsiteAvailable} manageActions={websiteManagement('agency_website', 'Agency Website')} listingId={row.id} listingTitle={row.title} listingReference={listing.arch9Reference || listing.listingReference || listing.listingCode || ''} savedAt={formatRelativeTime(detail.lastUpdatedAt)} onPrepare={onPrepareWebsitePublication} onStatusChange={onWebsiteStatus} onPublicationAction={onWebsiteEvent} publicationState={websitePublicationStates.agency_website} />
@@ -1203,6 +1205,7 @@ function ScopedRentalListingDetailPage() {
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState('')
   const readinessRequestsRef = useRef({ property24: 0, private_property: 0 })
+  const portalSubmissionRef = useRef(false)
   const readinessRevisionRef = useRef('')
   readinessRevisionRef.current = `${organisationId}:${listingId}:${listing?.updatedAt || listing?.updated_at || ''}`
   const [property24Preview, setProperty24Preview] = useState(null)
@@ -1615,19 +1618,27 @@ function ScopedRentalListingDetailPage() {
     finally { portalActionRef.current = false; setPortalAction('') }
   }
 
-  async function handleProperty24Publish() {
+  async function handleProperty24Publish({ updateExisting = false } = {}) {
+    const updating = updateExisting || Boolean(portalChannels.find(channel => channel.key === 'property24')?.hasAdvertIdentity)
+    if (portalSubmissionRef.current) return { ok: false, error: 'A portal submission is already in progress.' }
     if (readInitialListingChannelResults(listingId).some(result => result.key === 'property24' && result.status === 'publishing')) {
       setPublishError('The initial submission is still in progress. Wait for its result.'); return { ok: false, error: 'The initial submission is still in progress. Wait for its result.' }
+
     }
-    const previewDetails = getProperty24PreviewDetails(property24Preview)
-    if (!property24Preview || !previewDetails.canSubmit) {
-      setPublishError('Run a clean Property24 readiness check before publishing this rental.')
-      return { ok: false, error: 'Run a clean Property24 readiness check before publishing this rental.' }
-    }
+    portalSubmissionRef.current = true
     try {
       setPublishing(true)
       setPublishError('')
       setSuccessMessage('')
+      const checked = updating ? await handleCheckProperty24Readiness() : null
+      if (updating && checked?.ok !== true) {
+        const failure = checked || { ok: false, error: 'Property24 requirements could not be checked. Try again.' }
+        setPublishError(failure.error)
+        return failure
+      }
+      if (!getProperty24PreviewDetails(checked?.payload || property24Preview).canSubmit) {
+        throw new Error('Check and resolve the Property24 listing requirements before publishing this rental.')
+      }
       const result = await performPortalAction('property24','publish',() => publishRentalProperty24Listing(listingId))
       const listingNumber = result?.report?.databaseWrite?.listingNumber ||
         result?.report?.property24Response?.data?.listingNumber ||
@@ -1642,6 +1653,7 @@ function ScopedRentalListingDetailPage() {
       setPublishError(publishRequestError?.message || 'Unable to publish this rental to Property24.')
       return { ok: false, error: publishRequestError?.message || 'Unable to publish this rental to Property24.' }
     } finally {
+      portalSubmissionRef.current = false
       setPublishing(false)
     }
   }
@@ -1676,24 +1688,27 @@ function ScopedRentalListingDetailPage() {
       setPublishError('')
       setSuccessMessage('')
       const payload = await previewRentalProperty24Listing(listingId)
-      if (!isCurrent()) return
+      if (!isCurrent()) return { ok: false, error: 'The saved rental changed during the check. Try the update again.' }
       const previewDetails = getProperty24PreviewDetails(payload)
       setProperty24Preview(payload)
+      const readiness = getRentalPortalReadiness('property24', payload)
+      const result = { ok: readiness.ready, payload, error: readiness.ready ? '' : `Property24 needs attention. ${readiness.issues.map(issue => issue.label).join('. ') || readiness.detail}` }
       if (previewDetails.dataBlockers.length) {
         setSuccessMessage('')
-        return
+        return result
       }
       if (previewDetails.sandboxAgentPending && previewDetails.technicalBlockers.length === 1) {
         setSuccessMessage('Property24 sandbox preview is ready. Real publishing still needs the Property24 agent ID.')
-        return
+        return result
       }
       if (previewDetails.technicalBlockers.length) {
         setSuccessMessage('')
-        return
+        return result
       }
       setSuccessMessage(previewDetails.canSubmit ? 'Property24 listing requirements passed. You can now publish.' : '')
+      return result
     } catch (previewError) {
-      if (!isCurrent()) return
+      if (!isCurrent()) return { ok: false, error: 'The saved rental changed during the check. Try the update again.' }
       setProperty24Preview(null)
       setProperty24PreviewError(previewError?.message || 'Unable to check Property24 rental readiness.')
       return { ok: false, error: previewError?.message || 'Unable to check Property24 rental readiness.' }
@@ -1729,27 +1744,36 @@ function ScopedRentalListingDetailPage() {
   }
 
   async function handlePrivatePropertyPublish({ updateExisting = false } = {}) {
+    const updating = updateExisting || Boolean(portalChannels.find(channel => channel.key === 'private_property')?.hasAdvertIdentity)
+    if (portalSubmissionRef.current) return { ok: false, error: 'A portal submission is already in progress.' }
     if (readInitialListingChannelResults(listingId).some(result => result.key === 'private_property' && result.status === 'publishing')) {
       setPrivatePropertyError('The initial submission is still in progress. Wait for its result.'); return { ok: false, error: 'The initial submission is still in progress. Wait for its result.' }
     }
+    portalSubmissionRef.current = true
     try {
       setPublishingPrivateProperty(true)
       setPrivatePropertyError('')
-      const checked = updateExisting ? await handleCheckPrivatePropertyReadiness() : null
-      if (updateExisting && checked?.ok !== true) return checked || { ok: false, error: 'Private Property requirements could not be checked. Try again.' }
+      const checked = updating ? await handleCheckPrivatePropertyReadiness() : null
+      if (updating && checked?.ok !== true) {
+        const failure = checked || { ok: false, error: 'Private Property requirements could not be checked. Try again.' }
+        setPrivatePropertyError(failure.error)
+        return failure
+      }
       if (!getRentalPortalReadiness('private_property', checked?.payload || privatePropertyPreview).ready) {
         throw new Error('Check and resolve the Private Property listing requirements before publishing this rental.')
       }
-      if (!updateExisting && !window.confirm('Submit this rental listing to Private Property production?')) return { ok: false, error: 'Publication cancelled.' }
+      if (!updating && !window.confirm('Submit this rental listing to Private Property production?')) return { ok: false, error: 'Publication cancelled.' }
       const result = await performPortalAction('private_property','publish',() => publishPrivatePropertyRentalListing(listingId))
       const reference = result?.report?.privatePropertyReference || result?.report?.syncResult?.privatePropertyRef || ''
       setSuccessMessage(reference ? `Rental submitted to Private Property. Reference ${reference}.` : 'Rental submitted to Private Property.')
-      await loadListing({ background: updateExisting })
+      await loadListing({ background: updating })
+
       return { ok: true, message: reference ? `Rental submitted to Private Property. Reference ${reference}.` : 'Rental submitted to Private Property.' }
     } catch (publishError) {
       setPrivatePropertyError(publishError?.message || 'Unable to publish this rental to Private Property.')
       return { ok: false, error: publishError?.message || 'Unable to publish this rental to Private Property.' }
     } finally {
+      portalSubmissionRef.current = false
       setPublishingPrivateProperty(false)
     }
   }
@@ -1863,7 +1887,8 @@ function ScopedRentalListingDetailPage() {
 
             </div>
             <div className="max-w-5xl">
-              <h1 className="break-words text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{formatRentalHeroAddress(row)}</h1>
+              <h1 className="break-words text-xl font-semibold tracking-[-0.04em] text-white sm:text-2xl">{formatRentalHeroAddress(row)}</h1>
+
               <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-white/90">
                 <span>{row.propertyType || 'Rental property'}</span>
                 {row.bedrooms ? <><span className="text-white/50">•</span><span>{row.bedrooms} {Number(row.bedrooms) === 1 ? 'bed' : 'beds'}</span></> : null}
@@ -1955,7 +1980,7 @@ function ScopedRentalListingDetailPage() {
           channelActivity={channelData.activity || []}
           onManagePortal={channel => { setPublishError(''); setSuccessMessage(''); setManagePortal(channel) }}
           onRefreshPortal={handleRefreshPortal}
-          portalBusy={Boolean(portalAction)}
+          portalBusy={Boolean(portalAction) || publishing || publishingPrivateProperty}
           landlordPanel={<RentalListingLandlordPanel key={`${organisationId}:${listingId}`} listing={listing} scope={rentalScope} onSaved={(saved) => { if (!mountedRef.current) return; loadRequestRef.current += 1; setLoading(false); setListing(saved); setEditForm(buildRentalListingEditForm(saved)) }} />}
         />
         {managePortal && portalChannels.find(channel => channel.key === managePortal) ? <RentalPortalManagementPanel

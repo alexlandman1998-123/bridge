@@ -79,3 +79,14 @@ await assert.rejects(
 )
 
 console.log('buyer lead workspace data loader tests passed')
+
+clearBuyerLeadWorkspaceDataLoaderCache()
+const staleSeed = { ...buyerSnapshot, leads: [{ leadId: 'buyer-refresh', leadCategory: 'buyer', convertedTransactionId: null, propertyInterest: 'Saved enquiry' }] }
+const refreshed = await loadBuyerLeadWorkspaceData({
+ organisationId: 'workspace-refresh', leadId: 'buyer-refresh', seedSnapshot: staleSeed,
+ fetchWorkspace: async () => { throw new Error('Must keep the targeted enrichment path') },
+ fetchJourneyEnrichment: async () => ({ leadLinkage: { lead_id: 'buyer-refresh', converted_transaction_id: 'transaction-saved' }, contacts: [], leadActivities: [] }),
+})
+assert.equal(refreshed.leads[0].convertedTransactionId, 'transaction-saved', 'returning from manual onboarding must refresh the cached transaction link')
+assert.equal(refreshed.leads[0].propertyInterest, 'Saved enquiry', 'linkage refresh preserves the captured lead details')
+console.log('buyer workspace stale onboarding linkage refresh passed')

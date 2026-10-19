@@ -1,6 +1,7 @@
+import { calendarDeliveryLabel, calendarTimeChangeLabel } from '../../core/appointments/calendarDeliveryLabels'
 import { useEffect, useRef, useState } from 'react'
 import { calendarSupportDeadline, readAppointmentSupport, recoverAppointmentDelivery } from '../../services/calendarSupportService'
-import useAppointmentReconciliation from '../../hooks/useAppointmentReconciliation'
+import useCalendarRead from '../../hooks/useCalendarRead'
 
 const stamp = value => value ? new Date(value).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' }) : '—'
 export default function AppointmentSupportPanel(props) {
@@ -8,22 +9,16 @@ export default function AppointmentSupportPanel(props) {
   return <SupportDetails key={`${props.organisationId}:${props.viewerKey}:${props.appointmentId}`} {...props} />
 }
 function SupportDetails({ organisationId, appointmentId, appointmentRevision }) {
-  const [snapshot, setSnapshot] = useState(null)
-  const [readError, setReadError] = useState('')
   const [actionError, setActionError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const active = useRef(true), pending = useRef(false), command = useRef(null)
-  const { revision: refresh, reload } = useAppointmentReconciliation({ scopeKey: `${organisationId}:${appointmentId}` })
+  const { data: snapshot, error: readError, reload } = useCalendarRead({
+    scopeKey: `${organisationId}:${appointmentId}`, revision: appointmentRevision,
+    read: signal => readAppointmentSupport(organisationId, appointmentId, { signal }),
+  })
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
-  useEffect(() => {
-    let current = true
-    calendarSupportDeadline(readAppointmentSupport(organisationId, appointmentId)).then(data => {
-      if (current) { setSnapshot(data); setReadError('') }
-    }).catch(error => { if (current) setReadError(error.message) })
-    return () => { current = false }
-  }, [organisationId, appointmentId, appointmentRevision, refresh])
   async function recover(action, jobId = null) {
     if (pending.current || !snapshot) return
     const fingerprint = JSON.stringify({ action, jobId, revision: snapshot.revision, reason: reason.trim() })
@@ -49,7 +44,7 @@ function SupportDetails({ organisationId, appointmentId, appointmentRevision }) 
       <label>Recovery reason<input maxLength={500} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} /></label>
       {snapshot.reconcileAllowed ? <button type="button" disabled={busy || Boolean(readError) || !reason.trim()} onClick={() => recover('reconcile')}>Reconcile future reminders</button> : null}
       <ul aria-label="Delivery receipts">{snapshot.jobs.map(job => <li key={job.id}>
-        Revision {job.revision} · {job.event_kind} · {job.channel === 'email' ? job.recipient_email : 'In app'} · {job.status.replaceAll('_', ' ')} · attempt {job.attempt_count}/{job.max_attempts}
+        Revision {job.revision} · {calendarDeliveryLabel(job.event_kind)} · {job.channel === 'email' ? job.recipient_email : 'In app'} · {job.status.replaceAll('_', ' ')} · attempt {job.attempt_count}/{job.max_attempts}
         <span className="block">Due {stamp(job.scheduled_for)} · expires {stamp(job.expires_at)}{job.support_retry_until ? ` · retry deadline ${stamp(job.support_retry_until)}` : ''} · accepted {stamp(job.accepted_at)} · delivered {stamp(job.delivered_at)} · receipt {job.provider_message_id || 'none'}</span>
         {job.last_error ? <span className="block">{job.last_error}</span> : null}
         {job.retry_allowed ? <button type="button" disabled={busy || Boolean(readError) || !reason.trim()} onClick={() => recover('retry', job.id)}>Retry eligible delivery</button> : null}
@@ -58,7 +53,7 @@ function SupportDetails({ organisationId, appointmentId, appointmentRevision }) 
       <ul aria-label="Attendance responses">{snapshot.participants.map(person => <li key={person.id}>{person.name || person.email} · {person.role}{person.required ? ' · required' : ''} · {person.response} · responded {stamp(person.respondedAt)}{person.revokedAt ? ' · removed' : ''}</li>)}</ul>
       <p>Changes recorded from the monitoring release onward:</p>
       <ul aria-label="Appointment change history">{snapshot.history.map((entry, index) => <li key={`${entry.source}:${entry.created_at}:${index}`}>
-        {stamp(entry.created_at)} · revision {entry.revision} · {entry.status} · {entry.changed_fields.join(', ')} · {entry.actor_id || 'server workflow'}{entry.reason ? ` · ${entry.reason}` : ''}
+        {stamp(entry.created_at)} · {entry.source === 'time_change' ? calendarTimeChangeLabel(entry.status) : `revision ${entry.revision} · ${entry.status} · ${entry.changed_fields.join(', ')}`} · {entry.actor_label || entry.actor_id || 'server workflow'}{entry.reason ? ` · ${entry.reason}` : ''}
       </li>)}</ul>
       {snapshot.historyTruncated ? <p>Only the latest 100 changes are shown.</p> : null}
     </>}

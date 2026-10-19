@@ -163,8 +163,14 @@ Deno.serve(async (req: Request) => {
     const type = normalizedType.replaceAll("-", "_");
     if (type === "home_seekers_recruitment_code") return await handleHomeSeekersRecruitmentCodeEmail(req, payload);
     if (type === "recruitment_invitation") return await handleRecruitmentInvitationEmail(req, payload);
+    // Lifecycle notices always require a durable job; omitting the key must not
+    // turn a worker-owned email into a public legacy send.
+    const calendarDeliveryKey = normalizeText(payload.idempotencyKey);
+    if (type.startsWith('appointment_time_change_') && !/^calendar-appointment:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(calendarDeliveryKey)) {
+      return jsonResponse(403, { error: 'A durable calendar delivery job is required.' });
+    }
     // Durable calendar payloads are prepared and frozen only by the server worker.
-    if (normalizeText(payload.idempotencyKey).startsWith('calendar-appointment:')) {
+    if (calendarDeliveryKey.startsWith('calendar-appointment:')) {
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
       if (!serviceKey || req.headers.get('authorization') !== `Bearer ${serviceKey}`) {
         return jsonResponse(403, { error: 'Calendar worker authorization required.' });
@@ -796,6 +802,12 @@ Deno.serve(async (req: Request) => {
         "appointment_updated",
         "appointment_cancelled",
         "appointment_rescheduled",
+        "appointment_time_change_requested",
+        "appointment_time_change_proposed",
+        "appointment_time_change_confirmed",
+        "appointment_time_change_declined",
+        "appointment_time_change_withdrawn",
+        "appointment_time_change_expired",
         "appointment_confirmation_required",
         "appointment_reminder",
         "appointment_documents_required",
@@ -1298,6 +1310,12 @@ Deno.serve(async (req: Request) => {
           "appointment_updated",
           "appointment_cancelled",
           "appointment_rescheduled",
+        "appointment_time_change_requested",
+        "appointment_time_change_proposed",
+        "appointment_time_change_confirmed",
+        "appointment_time_change_declined",
+        "appointment_time_change_withdrawn",
+        "appointment_time_change_expired",
           "appointment_confirmation_required",
           "appointment_reminder",
           "appointment_documents_required",
@@ -1462,6 +1480,12 @@ Deno.serve(async (req: Request) => {
         "appointment_updated",
         "appointment_cancelled",
         "appointment_rescheduled",
+        "appointment_time_change_requested",
+        "appointment_time_change_proposed",
+        "appointment_time_change_confirmed",
+        "appointment_time_change_declined",
+        "appointment_time_change_withdrawn",
+        "appointment_time_change_expired",
         "appointment_confirmation_required",
         "appointment_reminder",
         "appointment_documents_required",

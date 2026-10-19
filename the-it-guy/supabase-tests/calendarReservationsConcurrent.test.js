@@ -241,4 +241,67 @@ describe.skipIf(!socket)('Independent local PostgreSQL reservation transactions'
     expect((await admin.query('select count(*)::int as n from private.calendar_repair_entries')).rows[0].n).toBe(1)
   })
 
+  async function as(client, user=actor, role='authenticated') {
+    await client.query('reset role')
+    await client.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify(role==='anon'?{}:{sub:user,email:user===actor?'agent@example.test':'other@example.test'})])
+    await client.query(`set role ${role}`)
+  }
+  async function workflow(client=first) {return (await client.query('select get_calendar_time_change($1) as v',[booking])).rows[0].v}
+  async function timeAction(client,revision,command,action,request=null,start=null) {
+    return (await client.query('select mutate_calendar_time_change($1,$2,$3,$4,$5,$6,null) as v',[booking,revision,command,action,request,start])).rows[0].v
+  }
+  async function timeBooking(proposed=true) {
+    await as(first)
+    const saved=(await first.query('select save_calendar_appointment_with_delivery($1,$2,$3,$4,null,$5) as v',[org,booking,JSON.stringify(input()),JSON.stringify(people([{user_id:id(4),name:'Buyer',email:'other@example.test',participant_role:'Buyer',is_required:true}])),id(700)])).rows[0].v
+    await first.query("select * from submit_appointment_rsvp($1,'Accepted')",[saved.participants.find(p=>p.user_id===id(4)).rsvp_token])
+    if(!proposed)return workflow()
+    const request=(await timeAction(first,(await workflow()).revision,id(701),'request',null,'2099-07-21T08:00Z')).state.active.id
+    const state=(await timeAction(first,(await workflow()).revision,id(702),'propose',request,'2099-07-21T08:00Z')).state
+    const token=(await admin.query('select rsvp_token from appointment_participants where appointment_id=$1 and user_id=$2',[booking,id(4)])).rows[0].rsvp_token
+    return {request,revision:state.active.proposal_revision,token,state}
+  }
+  const guestVote=(client,p,key=id(703))=>client.query("select respond_calendar_time_change_by_token($1,$2,$3,$4,'Accepted') as v",[p.token,p.request,p.revision,key])
+
+  it('serializes identical time-request retries into one request and history event',async()=>{
+    const state=await timeBooking(false);await first.query('begin')
+    await timeAction(first,state.revision,id(710),'request',null,'2099-07-21T08:00Z')
+    const pending=timeAction(second,state.revision,id(710),'request',null,'2099-07-21T08:00Z')
+    await waitForBlockedConnection();await first.query('commit');expect((await pending).replayed).toBe(true)
+    expect((await admin.query("select count(*)::int as n from private.calendar_time_change_events where action='requested'")).rows[0].n).toBe(1)
+  })
+  it('gives competing time requests one winner and rejects the stale request',async()=>{
+    const state=await timeBooking(false);await first.query('begin')
+    await timeAction(first,state.revision,id(711),'request',null,'2099-07-21T08:00Z')
+    const pending=timeAction(second,state.revision,id(712),'request',null,'2099-07-22T08:00Z').catch(e=>e)
+    await waitForBlockedConnection();await first.query('commit');expect((await pending).code).toBe('40001')
+    expect((await admin.query("select count(*)::int as n from appointment_reschedule_requests where status='pending'")).rows[0].n).toBe(1)
+  })
+  it('replays simultaneous final guest approvals after the winning transaction rotates the token',async()=>{
+    const proposal=await timeBooking();await as(first,null,'anon');await as(second,null,'anon')
+    await first.query('begin');await guestVote(first,proposal)
+    const pending=guestVote(second,proposal)
+    await waitForBlockedConnection();await first.query('commit');expect((await pending).rows[0].v).toMatchObject({replayed:true,outcome:'confirmed'})
+    expect((await admin.query("select count(*)::int as n from private.calendar_time_change_events where action='confirmed'")).rows[0].n).toBe(1)
+    expect((await admin.query("select count(*)::int as n from calendar_delivery_jobs where event_kind like 'time_change:confirmed:%' and channel='email'")).rows[0].n).toBe(2)
+  })
+  it.each(['withdraw','cancel','expire'])('rejects a guest approval queued behind a committed %s',async action=>{
+    const proposal=await timeBooking();await as(first);await as(second,null,'anon')
+    if(action==='expire'){await admin.query("update appointment_reschedule_requests set hold_expires_at=now()-interval '1 second' where id=$1",[proposal.request]);await as(first,actor,'service_role')}
+    await first.query('begin')
+    if(action==='withdraw')await timeAction(first,proposal.state.revision,id(713),'withdraw',proposal.request)
+    else if(action==='cancel')await first.query('select save_calendar_appointment_with_delivery($1,$2,$3,null,$4,$5)',[org,booking,JSON.stringify({status:'cancelled',cancellation_reason:'Client cancelled'}),proposal.state.revision,id(714)])
+    else await first.query('select expire_calendar_holds()')
+    const pending=guestVote(second,proposal).catch(e=>e)
+    await waitForBlockedConnection();await first.query('commit');expect(['42501','40001','22023']).toContain((await pending).code)
+    const row=(await admin.query('select date_time,status from appointments where appointment_id=$1',[booking])).rows[0]
+    expect(Date.parse(row.date_time)).toBe(Date.parse('2099-07-20T08:00Z'));expect(row.status).toBe(action==='cancel'?'cancelled':'confirmed')
+  })
+  it('fences a competing booking behind final approval and then releases the original slot',async()=>{
+    const proposal=await timeBooking();await as(first,null,'anon');await as(second)
+    await first.query('begin');await guestVote(first,proposal)
+    const pending=second.query('select save_calendar_appointment_with_delivery($1,$2,$3,$4,null,$5)',[org,id(720),JSON.stringify(input({appointment_date:'2099-07-21',date_time:'2099-07-21T08:00Z',end_date_time:'2099-07-21T09:00Z'})),JSON.stringify(people([])),id(721)]).catch(e=>e)
+    await waitForBlockedConnection();await first.query('commit');expect((await pending).code).toBe('23P01')
+    expect((await save(second,id(722),id(723))).rows[0].receipt.verified).toBe(true)
+  })
+
 })

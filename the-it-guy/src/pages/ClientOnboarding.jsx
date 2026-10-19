@@ -2195,7 +2195,7 @@ function ClientOnboarding() {
       const resolvedDemoConfig = isDemoRoute ? await resolveProspectDemoConfig(token) : null
       const data = isDemoOnboarding
         ? getDemoBuyerOnboardingPayload(token, resolvedDemoConfig)
-        : await fetchClientOnboardingByToken(token)
+        : await fetchClientOnboardingByToken(token, buyerLinkTarget)
       setDemoConfig(resolvedDemoConfig)
       setSubmittedClientPortalPath('')
       const initialFlow =
@@ -3402,6 +3402,7 @@ function ClientOnboarding() {
           fundingSources,
         }),
         ...buyerLinkTarget,
+        ...(formData.__bridge_buyer_capture_revision ? { __bridge_buyer_capture_revision: formData.__bridge_buyer_capture_revision } : {}),
       }
       if (isDemoOnboarding) {
         setPayload((previous) => ({
@@ -3439,6 +3440,7 @@ function ClientOnboarding() {
           fundingSources,
         }),
         ...buyerLinkTarget,
+        ...(formData.__bridge_buyer_capture_revision ? { __bridge_buyer_capture_revision: formData.__bridge_buyer_capture_revision } : {}),
       }
       validateOnboardingSubmission(
         submissionData,

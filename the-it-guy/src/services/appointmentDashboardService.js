@@ -422,6 +422,7 @@ async function loadRows(params = {}) {
     listingId: normalizeText(params.listingId),
     from: params.dateRange?.from || null,
     to: params.dateRange?.to || null,
+    signal: params.signal,
   })
 }
 

@@ -1,4 +1,4 @@
-import { PARTY_ENTITY_OPTIONS, PARTY_MARITAL_OPTIONS, PARTY_MARRIAGE_REGIME_OPTIONS, PARTY_PERSON_ROLES, createTransactionPartyPerson, isNaturalParty, transactionPartyMissingDetails } from '../../core/transactions/transactionPartyProfile.js'
+import { PARTY_ENTITY_OPTIONS, PARTY_MARITAL_OPTIONS, PARTY_MARRIAGE_REGIME_OPTIONS, PARTY_PERSON_ROLES, createTransactionPartyPerson, isNaturalParty } from '../../core/transactions/transactionPartyProfile.js'
 
 const inputClass = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800'
 function Input({ label, value, onChange, type = 'text' }) {
@@ -10,10 +10,9 @@ function Select({ label, value, onChange, options }) {
 export default function TransactionPartyCapture({ side, value, onChange, readOnly = false }) {
   const patch = (changes) => !readOnly && onChange({ ...value, ...changes })
   const personPatch = (id, changes) => patch({ people: value.people.map((person) => person.id === id ? { ...person, ...changes } : changes.primaryContact === true ? { ...person, primaryContact: false } : person) })
-  const missing = transactionPartyMissingDetails(value, side)
   return <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label={`${side} party details`}>
     <h3 className="font-semibold text-slate-800">{side} entity and people</h3>
-    {readOnly ? <p className="text-sm text-slate-600">These details come from the linked listing. Make corrections in its seller profile before creating the transaction.</p> : null}
+    {readOnly ? <p className="text-sm text-slate-600">From the linked listing’s seller profile.</p> : null}
     <fieldset disabled={readOnly} className="space-y-3">
     <Select label={`${side} entity type`} value={value.entityType} options={PARTY_ENTITY_OPTIONS.filter((option) => side === 'Seller' || option.value !== 'deceased_estate')} onChange={(entityType) => patch({ entityType })} />
     {!isNaturalParty(value.entityType) && value.entityType !== 'unknown' ? <div className="grid gap-3 sm:grid-cols-2">
@@ -45,6 +44,6 @@ export default function TransactionPartyCapture({ side, value, onChange, readOnl
         <input type="checkbox" checked={person.signatory} onChange={(event) => onChange({ ...value, people: value.people.map((saved) => saved.id === person.id ? { ...saved, signatory: event.target.checked } : saved) })} />{person.name || 'Unnamed person'}
       </label>)}
     </fieldset> : null}
-    {missing.length ? <details className="text-sm text-amber-800"><summary>{missing.length} details still to confirm</summary><ul className="mt-2 list-disc space-y-1 pl-5">{missing.map((item) => <li key={item}>{item}</li>)}</ul></details> : <p className="text-sm text-emerald-800">Party details captured. Documents still need to be provided and reviewed.</p>}
+
   </section>
 }

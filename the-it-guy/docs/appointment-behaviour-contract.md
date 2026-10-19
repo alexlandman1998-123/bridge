@@ -711,3 +711,42 @@ this does not stop the independent delivery/provider jobs. Preserve incident,
 change and command history and use a forward correction. The five Phase 9 live
 acceptance gates remain pending until performed; local implementation does not
 claim deployment, actual email or real account synchronization.
+
+
+## Time-change workflow acceptance (19 October 2026)
+
+The five-step time-change implementation extends the existing calendar contract.
+The shared acceptance runner now includes the request/review/required-approval
+journeys, lifecycle emails, retained reminders and connected copies. It maps those
+checks to the existing A10, A12, A19, A23–A25, A27, A29, A33–A34 and A40–A42 cases;
+the original case IDs and requirements remain unchanged.
+
+The final acceptance step adds joined public-screen recovery after a committed
+approval loses its response, organiser conflict feedback, and independent native
+PostgreSQL races. Concurrent retries of one command create one request or final
+confirmation. Competing requests reject the stale decision. Cancellation,
+withdrawal and expiry win against a guest response queued behind them. A final
+approval rejects a competing booking at its new slot and releases its old slot.
+The existing provider concurrency and controlled HTTP worker checks remain part
+of the same run. Both process timezones must pass without skipped assertions.
+
+Negative checks exposed visibility and membership gaps. The append-only
+`20261019175522_calendar_time_change_access_guards.sql` migration applies the
+current participant/visibility boundary to signed-in workflow reads and writes,
+public invitation context, and the existing response owner. Moving a booking to
+internal-only removes external-client access even if the roster still contains
+that client. Internal staff also need current active organisation membership;
+removing it blocks workflow reads, token responses and pending lifecycle notices.
+Replaying a previously successful capability command checks current
+recipient access before returning current booking times. Receipt replay still
+survives confirmation token rotation for a permitted attendee. No historical
+bookings, rosters or delivery records are rewritten by these guards.
+
+Release the app, delivery/send-email functions and the four 19 October migrations
+in manifest order only after explicit approval. The local runner never deploys,
+applies hosted migrations or sends real email. A local browser fixture exercises
+production components/services against an isolated native PostgreSQL test
+database; it does not certify hosted authentication, inbox delivery, provider
+account writes or a real agent pilot. Those existing live acceptance gates remain
+pending. A failed build, skipped assertion, missing scenario evidence or changed
+source snapshot keeps the local report incomplete.

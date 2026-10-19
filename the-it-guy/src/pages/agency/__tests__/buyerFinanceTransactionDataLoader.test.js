@@ -6,7 +6,9 @@ import {
 } from '../buyerFinanceTransactionDataLoader.js'
 
 assert.equal(shouldLoadBuyerFinanceTransactionTab('buyer_profile'), true)
-assert.equal(shouldLoadBuyerFinanceTransactionTab('onboarding_otp'), true)
+assert.equal(shouldLoadBuyerFinanceTransactionTab('documents'), true)
+assert.equal(shouldLoadBuyerFinanceTransactionTab('overview', { hasLinkedTransaction: true }), true)
+assert.equal(shouldLoadBuyerFinanceTransactionTab('onboarding_otp'), false)
 assert.equal(shouldLoadBuyerFinanceTransactionTab('overview'), false)
 assert.equal(shouldLoadBuyerFinanceTransactionTab('appointments'), false)
 
@@ -76,3 +78,7 @@ await assert.rejects(
 )
 
 console.log('buyer finance and transaction data loader tests passed')
+
+assert.equal(shouldLoadBuyerFinanceTransactionTab('overview', { hasLinkedTransaction: true }), true)
+assert.equal(shouldLoadBuyerFinanceTransactionTab('overview', { hasLinkedTransaction: false }), false)
+assert.equal(shouldLoadBuyerFinanceTransactionTab('activity', { hasLinkedTransaction: true }), false)

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import CalendarInvitationResponse from '../components/appointments/CalendarInvitationResponse'
+import { readCalendarInvitation } from '../services/calendarTimeChangeService'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 import {
@@ -18,8 +20,14 @@ function normalizeText(value = '') {
 
 export default function AppointmentRsvpPage() {
   const { token = '' } = useParams()
+  return <AppointmentRsvpContent key={token} />
+}
+
+function AppointmentRsvpContent() {
+  const { token = '' } = useParams()
   const [searchParams] = useSearchParams()
   const initialAction = normalizeText(searchParams.get('action'))
+  const [managedContext, setManagedContext] = useState(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -44,6 +52,8 @@ export default function AppointmentRsvpPage() {
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
     async function loadInvitation() {
       setLoading(true)
       setError('')
@@ -57,15 +67,13 @@ export default function AppointmentRsvpPage() {
         if (!normalizeText(token)) {
           throw new Error('This appointment RSVP link is invalid or has expired.')
         }
+        const context = await readCalendarInvitation(token, { signal: controller.signal })
+        if (context.managed === true) { if (!cancelled) setManagedContext(context); return }
         const rsvpResult = await supabase.rpc('get_appointment_rsvp_by_token', { p_token: token })
         if (rsvpResult.error) throw rsvpResult.error
         const row = Array.isArray(rsvpResult.data) ? rsvpResult.data[0] : null
         if (!row) throw new Error('This appointment RSVP link is invalid or has expired.')
-        const context = await supabase.rpc('get_calendar_invitation_context', { p_token: token })
-        if (context.error) throw context.error
-        if (!context.data) throw new Error('This request or its temporary hold has expired. Ask the agent to issue a new request.')
-        const current = context.data.managed ? context.data : row
-
+        const current = row
 
         if (!cancelled) {
           setParticipant({
@@ -97,12 +105,15 @@ export default function AppointmentRsvpPage() {
       } catch (loadError) {
         if (!cancelled) setError(loadError?.message || 'Unable to load this appointment RSVP.')
       } finally {
+        clearTimeout(timeout)
         if (!cancelled) setLoading(false)
       }
     }
     void loadInvitation()
     return () => {
       cancelled = true
+      clearTimeout(timeout)
+      controller.abort()
     }
   }, [token])
 
@@ -158,6 +169,8 @@ export default function AppointmentRsvpPage() {
       setSubmitting(false)
     }
   }
+
+  if (managedContext) return <CalendarInvitationResponse token={token} context={managedContext} initialAction={initialAction} />
 
   return (
     <main className="min-h-screen bg-[#f3f7fb] px-4 py-8 text-[#17263a]">

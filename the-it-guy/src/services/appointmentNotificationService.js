@@ -1160,11 +1160,12 @@ export async function markAppointmentReminderFailed(reminderId, error) {
 }
 
 // Persisted, scoped delivery receipts; this reader never dispatches mail.
-export async function readCalendarDeliveryJobs(appointmentId, { remindersOnly = false } = {}) {
+export async function readCalendarDeliveryJobs(appointmentId, { remindersOnly = false, signal } = {}) {
   ensureReady()
-  const result = await supabase.from('calendar_delivery_jobs')
+  const query = supabase.from('calendar_delivery_jobs')
     .select('id,appointment_id,participant_id,revision,event_kind,channel,status,recipient_id,recipient_email,scheduled_for,next_attempt_at,attempt_count,last_error,provider_message_id,accepted_at,delivered_at')
     .eq('appointment_id', appointmentId).order('created_at', { ascending: false })
+  const result = await (signal ? query.abortSignal(signal) : query)
   if (result.error) throw result.error
   if (!Array.isArray(result.data)) throw new Error('Appointment delivery could not be verified.')
   return result.data.filter(job => !remindersOnly || job.event_kind.startsWith('reminder:'))

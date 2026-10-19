@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { rentalPortalJourneyDatabase, actor, org, tenantMembership, landlordMembership, tenantToken, landlordToken } from '../tests/fixtures/rentalPortalJourneyDatabase.js'
 import { rentalOnboardingClient } from '../tests/fixtures/rentalOnboardingClient.js'
@@ -25,6 +26,22 @@ beforeAll(async () => {
   mock.client = rentalOnboardingClient(db, serviceStorage, actor)
 }, 30000)
 afterAll(async () => { await db?.close() })
+
+it('serves only the authorised property ledger totals through both landlord access methods', async () => {
+  await db.exec(readFileSync(new URL('../../../supabase/migrations/20260830092741_rental_financial_model.sql', import.meta.url), 'utf8'))
+  await db.exec('create table rental_financial_correction_requests(id uuid, organisation_id uuid, tenancy_id uuid, correction_kind text, status text, effective_date date, original_payment_id uuid)')
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  const charge = randomUUID(), payment = randomUUID()
+  await db.query("insert into rental_financial_charges(id,organisation_id,tenancy_id,charge_type,effective_date,due_date,amount,description,created_by) values($1,$2,$3,'rent',$4,$4,10000,'Saved monthly rent',$5)", [charge, org, tenancyId, today, actor])
+  await db.query("insert into rental_financial_payments(id,organisation_id,tenancy_id,received_date,amount,payment_reference,payment_method,created_by) values($1,$2,$3,$4,8000,'landlord-overview-fixture','bank_transfer',$5)", [payment, org, tenancyId, today, actor])
+  await db.query('insert into rental_financial_allocations(organisation_id,tenancy_id,payment_id,charge_id,amount,allocated_on,created_by) values($1,$2,$3,$4,8000,$5,$6)', [org, tenancyId, payment, charge, today, actor])
+  const tokenView = await landlord(), signedIn = await account('landlord')
+  expect(tokenView.status).toBe(200)
+  expect(signedIn.status).toBe(200)
+  expect(tokenView.body.portfolio).toEqual(signedIn.body.portfolio)
+  expect(tokenView.body.portfolio).toMatchObject({ collectedRent: 8000, outstanding: 2000, attentionCount: 1, financialAvailable: true })
+  expect(JSON.stringify(tokenView.body.portfolio)).not.toMatch(/payment_reference|payment_method|created_by|landlord-overview-fixture/)
+})
 
 it('returns identical saved progress through tenant token and account access without inventing an active lease', async () => {
   const publicResult = await tenant(), accountResult = await account()

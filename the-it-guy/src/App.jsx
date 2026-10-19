@@ -402,6 +402,7 @@ const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
+const TransactionSellerOnboarding = lazy(() => import('./pages/TransactionSellerOnboarding.jsx'))
 const SellerDocumentSigning = lazy(() => import('./pages/SellerDocumentSigning'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
@@ -3880,9 +3881,12 @@ function AppRoutes() {
                 <Route
                   path="integrations/whatsapp"
                   element={
-                    <RoleRoute allowedRoles={['agent', 'developer']}>
-                      <SettingsWhatsAppPage />
-                    </RoleRoute>
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
+                        <SettingsWhatsAppPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+
                   }
                 />
                 <Route
@@ -4055,6 +4059,7 @@ function AppRoutes() {
           <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="bond-application-portal-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/bond-application/:accessToken" element={<TokenRouteGate paramKey="accessToken" title="Invalid bond application access link"><AppErrorBoundary scope="bond-application-access-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
+          <Route path="/seller/transaction/:token" element={<TokenRouteGate><AppErrorBoundary scope="transaction-seller-onboarding" title="Seller details failed to load"><TransactionSellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/sign/:token" element={<TokenRouteGate><AppErrorBoundary scope="seller-document-signing" title="Seller document signing failed to load"><SellerDocumentSigning /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/collaboration/invite/:invitationToken" element={<AppErrorBoundary scope="seller-collaboration-portal" title="Seller collaboration failed to load"><SellerCollaborationPortal /></AppErrorBoundary>} />

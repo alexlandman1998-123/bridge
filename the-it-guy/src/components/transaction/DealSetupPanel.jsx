@@ -1,38 +1,30 @@
-import TransactionSellerProfile from './TransactionSellerProfile.jsx'
 import useImportedDealReviewStatuses from '../../hooks/useImportedDealReviewStatuses.js'
 import { importedDealReviewStatus } from '../../core/transactions/importedDealReviewStatus.js'
 import ImportedDealReviewBadge from './ImportedDealReviewBadge.jsx'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { buildTransactionSellerPatch, loadTransactionSellerEditContext } from '../../services/transactionSellerSaveService.js'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { loadTransactionSellerEditContext } from '../../services/transactionSellerSaveService.js'
 import Button from '../ui/Button'
 import { loadCanonicalDealSetup, saveCanonicalDealTerms } from '../../services/dealSetupService'
-import TransactionBuyerPartiesPanel from './TransactionBuyerPartiesPanel'
-import DealSetupReadinessPanel from './DealSetupReadinessPanel'
+import TransactionBuyerOnboardingPanel from './TransactionBuyerOnboardingPanel.jsx'
+import DealSetupPartyOverview from './DealSetupPartyOverview.jsx'
 
 import { resolveDealSetupFinanceType, validateDealSetupFunding } from '../../core/transactions/dealSetupContract.js'
 import { identifyDealImport } from '../../core/transactions/dealSetupCompatibilityAudit.js'
 
+const TransactionSellerOnboardingPanel = lazy(() => import('./TransactionSellerOnboardingPanel.jsx'))
 const TransactionDetailReviewPanel = lazy(() => import('./TransactionDetailReviewPanel.jsx'))
 
-export default function DealSetupPanel({ transactionId, organisationId = '', canEdit = false, embedded = false, onSaved, sellerDetails = null, onSaveSellerDetails, onEditSellerProfile, onOpenLinkedSellerProfile }) {
+export default function DealSetupPanel({ transactionId, organisationId = '', canEdit = false, onSaved, onSendBuyerLink, onSendSellerLink, buyerDetails = null, sellerDetails = null, onEditSellerProfile }) {
   const [reviewTransaction, setReviewTransaction] = useState(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [draft, setDraft] = useState(null)
-  const [activeParty, setActiveParty] = useState('buyer')
-  const [sellerDraft, setSellerDraft] = useState({ name: '', email: '', phone: '' })
-  const [sellerBusy, setSellerBusy] = useState(false)
-  const [sellerError, setSellerError] = useState('')
-  const [sellerMessage, setSellerMessage] = useState('')
-  const [sellerContext, setSellerContext] = useState(null)
-  const [sellerLoading, setSellerLoading] = useState(Boolean(sellerDetails))
-  const sellerPending = useRef(null)
-  const sellerInFlight = useRef(false)
-  const sellerGeneration = useRef(0)
+  const [activeParty, setActiveParty] = useState(() => sellerDetails ? 'overview' : 'buyer')
   const sellerEnabled = Boolean(sellerDetails)
-  const sellerDirty = Boolean(sellerContext && Object.keys(buildTransactionSellerPatch(sellerDraft, sellerContext.details)).length)
+  const [sellerContext, setSellerContext] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [isDirty, setIsDirty] = useState(false)
+  const [saveAttempted, setSaveAttempted] = useState(false)
   const [refreshToken, setRefreshToken] = useState(0)
 
   const reviewStatuses = useImportedDealReviewStatuses(reviewTransaction ? [reviewTransaction] : [], refreshToken)
@@ -58,51 +50,21 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   }, [transactionId])
 
   useEffect(() => {
-    sellerGeneration.current += 1
-    sellerInFlight.current = false
-    setSellerBusy(false)
     if (!sellerEnabled) return undefined
     let active = true
-    setSellerContext(null); setSellerLoading(true); setSellerError(''); setSellerMessage('')
-    sellerPending.current = null
-    loadTransactionSellerEditContext({ transactionId }).then((context) => {
-      if (active) { setSellerContext(context); setSellerDraft(context.details) }
-    }).catch((loadError) => { if (active) setSellerError(loadError.message) })
-      .finally(() => { if (active) setSellerLoading(false) })
-    return () => { active = false; sellerGeneration.current += 1 }
+    setSellerContext(null)
+    loadTransactionSellerEditContext({transactionId}).then(context => { if (active) setSellerContext(context) })
+      .catch(() => { if (active) setSellerContext(null) })
+    return () => { active = false }
   }, [transactionId, sellerEnabled])
-
-  useEffect(() => {
-    if (!sellerDirty) return undefined
-    const preventUnload = (event) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', preventUnload)
-    return () => window.removeEventListener('beforeunload', preventUnload)
-  }, [sellerDirty])
-
-  async function reloadSeller() {
-    const generation = sellerGeneration.current
-    setSellerLoading(true); setSellerError(''); setSellerMessage('')
-    try {
-      const context = await loadTransactionSellerEditContext({ transactionId })
-      if (generation !== sellerGeneration.current) return
-      setSellerContext(context); setSellerDraft(context.details); sellerPending.current = null
-    } catch (loadError) { if (generation === sellerGeneration.current) setSellerError(loadError.message) }
-    finally { if (generation === sellerGeneration.current) setSellerLoading(false) }
-  }
 
   function update(section, key, value) {
     setDraft((current) => ({ ...current, [section]: { ...current[section], [key]: value } }))
     setIsDirty(true)
   }
 
-  function updateSeller(key, value) {
-    setSellerDraft((current) => ({ ...current, [key]: value }))
-    sellerPending.current = null
-    setSellerError('')
-    setSellerMessage('')
-  }
-
   async function save() {
+    setSaveAttempted(true)
     setBusy(true); setError('')
     try {
       const result = await saveCanonicalDealTerms({ transactionId, terms: draft.terms, finance: draft.finance })
@@ -112,25 +74,6 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
       window.dispatchEvent(new CustomEvent('deal-setup:updated', { detail: { transactionId } }))
       await onSaved?.(result)
     } catch (saveError) { setError(saveError.message || 'Deal Setup could not be saved.') } finally { setBusy(false) }
-  }
-
-  async function saveSeller(event) {
-    event.preventDefault()
-    if (!onSaveSellerDetails || sellerInFlight.current || !sellerContext || sellerLoading || sellerContext.blockedReason) return
-    const generation = sellerGeneration.current
-    sellerInFlight.current = true
-    setSellerBusy(true); setSellerError(''); setSellerMessage('')
-    try {
-      const patch = buildTransactionSellerPatch(sellerDraft, sellerContext.details)
-      const signature = JSON.stringify(patch)
-      if (sellerPending.current?.signature !== signature) sellerPending.current = { signature, mutationId: crypto.randomUUID() }
-      const receipt = await onSaveSellerDetails(sellerDraft, { context: sellerContext, mutationId: sellerPending.current.mutationId })
-      if (generation !== sellerGeneration.current) return
-      if (!receipt?.revision || !receipt?.details) throw new Error('The seller save could not be confirmed. Your entries are still in this form. Retry to check the same save.')
-      setSellerContext(receipt); setSellerDraft(receipt.details); sellerPending.current = null
-      setSellerMessage('Seller details saved.')
-    } catch (saveError) { if (generation === sellerGeneration.current) setSellerError(saveError.message || 'Seller details could not be saved.') }
-    finally { if (generation === sellerGeneration.current) { sellerInFlight.current = false; setSellerBusy(false) } }
   }
 
   if (!draft) return <section className="rounded-[18px] border border-borderDefault bg-surface p-5 text-sm text-textMuted">
@@ -151,34 +94,24 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   return <section className="space-y-5">
     {canEdit && reviewTransaction && (reviewStatus || identifyDealImport(reviewTransaction).status !== 'not_identified') ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-warning/20 bg-warningSoft p-5"><div><h3 className="font-semibold text-textStrong">Review imported details</h3><div className="mt-2"><ImportedDealReviewBadge status={reviewStatus} /></div><p className="mt-1 text-sm text-textMuted">Check buyers, sellers, the property, captured attorney details and funding against the original document.</p>{reviewStatuses.error ? <p role="status" className="mt-1 text-xs text-warning">{reviewStatuses.error}</p> : null}{isDirty ? <p className="mt-1 text-xs text-warning">Save Deal Setup changes before reviewing details.</p> : null}</div><Button type="button" variant="secondary" disabled={busy || isDirty} onClick={() => setReviewOpen(true)}>Review details</Button></div> : null}
     {sellerDetails ? <div role="tablist" aria-label="Deal setup party" className="flex gap-2 rounded-[14px] border border-borderDefault bg-surface p-2">
-      {['buyer', 'seller'].map((party) => <button key={party} type="button" role="tab" aria-selected={activeParty === party} aria-controls={`deal-setup-${party}`} onClick={() => setActiveParty(party)} className={`flex-1 rounded-control px-4 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 ${activeParty === party ? 'bg-primary text-white' : 'text-textMuted hover:bg-surfaceAlt'}`}>{party === 'buyer' ? 'Buyer' : 'Seller'}</button>)}
+      {['overview', 'buyer', 'seller'].map((party) => <button key={party} type="button" role="tab" aria-selected={activeParty === party} aria-controls={`deal-setup-${party}`} onClick={() => setActiveParty(party)} className={`flex-1 rounded-control px-4 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 ${activeParty === party ? 'bg-primary text-white' : 'text-textMuted hover:bg-surfaceAlt'}`}>{({ overview: 'Overview', buyer: 'Buyer', seller: 'Seller' })[party]}</button>)}
     </div> : null}
+    {sellerDetails ? <section id="deal-setup-overview" role="tabpanel" aria-label="Buyer and seller overview" hidden={activeParty !== 'overview'}>
+      <DealSetupPartyOverview buyers={draft.buyers || []} buyerDetails={buyerDetails} purchaserType={draft.terms.purchaserType} sellerDetails={sellerContext?.details || sellerDetails} sellerType={sellerDetails.type || reviewTransaction?.seller_type} onSelectParty={setActiveParty} />
+    </section> : null}
     {sellerDetails ? <section id="deal-setup-seller" role="tabpanel" aria-label="Seller details" hidden={activeParty !== 'seller'} className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-      <h3 className="text-section-title font-semibold text-textStrong">Seller details</h3>
-      <p className="mt-1 text-secondary text-textMuted">Save current seller contacts across this linked journey. Review legal identity in the listing seller profile.</p>
-      <form onSubmit={saveSeller} className="mt-5 space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="text-sm font-medium text-textMuted">Seller name<input disabled={!canEdit || sellerBusy || sellerLoading || !sellerContext || !sellerContext.nameEditable || Boolean(sellerContext.blockedReason)} value={sellerDraft.name} onChange={(event) => updateSeller('name', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" /></label>
-          <label className="text-sm font-medium text-textMuted">Email<input disabled={!canEdit || sellerBusy || sellerLoading || !sellerContext || Boolean(sellerContext.blockedReason)} type="email" value={sellerDraft.email} onChange={(event) => updateSeller('email', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" /></label>
-          <label className="text-sm font-medium text-textMuted">Phone<input disabled={!canEdit || sellerBusy || sellerLoading || !sellerContext || Boolean(sellerContext.blockedReason)} type="tel" value={sellerDraft.phone} onChange={(event) => updateSeller('phone', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" /></label>
-        </div>
-        {sellerError ? <p role="alert" className="rounded-control bg-dangerSoft px-3 py-2 text-sm text-danger">{sellerError}</p> : null}
-        {sellerContext?.blockedReason ? <p role="alert" className="text-sm text-warning">{sellerContext.blockedReason}</p> : null}
-        {sellerMessage ? <p role="status" className="text-sm text-success">{sellerMessage}</p> : null}
-        <div className="flex flex-wrap gap-2">{canEdit && onSaveSellerDetails ? <Button type="submit" disabled={sellerBusy || sellerLoading || !sellerContext || Boolean(sellerContext.blockedReason)}>{sellerBusy ? 'Saving…' : 'Save seller details'}</Button> : null}{sellerError ? <Button type="button" variant="secondary" disabled={sellerBusy || sellerLoading} onClick={reloadSeller}>Use latest saved details (discard my entries)</Button> : null}{sellerContext?.revision?.listingId ? onOpenLinkedSellerProfile ? <Button type="button" variant="secondary" disabled={sellerBusy} onClick={() => onOpenLinkedSellerProfile(sellerContext.revision.listingId)}>Open linked seller profile</Button> : null : canEdit && onEditSellerProfile ? <Button type="button" variant="secondary" disabled={sellerBusy} onClick={onEditSellerProfile}>Edit seller type and bond</Button> : null}</div>
-      </form>
-      <TransactionSellerProfile transactionId={transactionId} refreshKey={sellerContext?.revision?.onboardingUpdatedAt || sellerContext?.revision?.transactionUpdatedAt} />
+      <Suspense fallback={<p className="p-5 text-sm text-textMuted">Loading seller options…</p>}><TransactionSellerOnboardingPanel key={transactionId} transactionId={transactionId} canEdit={canEdit} onEditBond={onEditSellerProfile} onSendLink={onSendSellerLink} onSaved={async receipt => {
+        setSellerContext(receipt)
+        await reloadSetup(); await onSaved?.(receipt)
+      }} /></Suspense>
     </section> : null}
     <div id="deal-setup-buyer" role={sellerDetails ? 'tabpanel' : undefined} aria-label={sellerDetails ? 'Buyer details' : undefined} hidden={Boolean(sellerDetails && activeParty !== 'buyer')} className="space-y-5">
-    <DealSetupReadinessPanel setup={draft} hasUnsavedChanges={isDirty} />
-    {draft.buyerLinkIssues?.length ? <div role="status" className="rounded-control border border-warning/20 bg-warningSoft px-4 py-3 text-sm text-warning">
-      <p className="font-semibold">Buyer details need checking</p>
-      <ul className="mt-2 list-disc space-y-1 pl-5">{draft.buyerLinkIssues.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul>
-    </div> : null}
-    {error ? <p className="rounded-control bg-dangerSoft px-4 py-3 text-sm text-danger">{error}</p> : null}
+    {error ? <p role="alert" className="rounded-control bg-dangerSoft px-4 py-3 text-sm text-danger">{error}</p> : null}
+    <TransactionBuyerOnboardingPanel key={transactionId} transactionId={transactionId} organisationId={organisationId} buyers={draft.buyers || []} purchaserType={draft.terms.purchaserType} canEdit={canEdit} onSendLink={onSendBuyerLink} onUpdated={async () => { await reloadSetup(); await onSaved?.() }} />
 
+    <div className="grid items-start gap-4 xl:grid-cols-2">
     <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-textMuted">Step 1</p><h3 className="mt-1 text-section-title font-semibold text-textStrong">Deal basics</h3><p className="mt-1 text-secondary text-textMuted">Record the commercial terms used across the transaction.</p></div></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="mt-1 text-section-title font-semibold text-textStrong">Deal basics</h3><p className="mt-1 text-secondary text-textMuted">Record the commercial terms used across the transaction.</p></div></div>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-textMuted">Purchaser type<select disabled={!canEdit || busy} value={draft.terms.purchaserType} onChange={(event) => update('terms', 'purchaserType', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2"><option value="">Select purchaser type…</option><option value="individual">Individual</option><option value="married_coc">Married</option><option value="company">Company / CC</option><option value="trust">Trust</option></select></label>
         <label className="text-sm font-medium text-textMuted">Purchase price<input disabled={!canEdit || busy} type="number" min="0" step="0.01" value={draft.terms.purchasePrice ?? ''} onChange={(event) => update('terms', 'purchasePrice', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" /></label>
@@ -186,10 +119,10 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
       </div>
     </section>
 
-    <TransactionBuyerPartiesPanel transactionId={transactionId} organisationId={organisationId} purchaserType={draft.terms.purchaserType} canEdit={canEdit} embedded={embedded} onUpdated={reloadSetup} />
+
 
     <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-textMuted">Step 3</p><h3 className="mt-1 text-section-title font-semibold text-textStrong">Funding</h3><p className="mt-1 text-secondary text-textMuted">Only the fields relevant to this finance route are shown.</p></div>{isDirty ? <Button type="button" disabled={!canEdit || busy} onClick={save}>{busy ? 'Saving…' : 'Save Deal Setup'}</Button> : null}</div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="mt-1 text-section-title font-semibold text-textStrong">Funding</h3><p className="mt-1 text-secondary text-textMuted">Only the fields relevant to this finance route are shown.</p></div>{isDirty ? <Button type="button" disabled={!canEdit || busy} onClick={save}>{busy ? 'Saving…' : 'Save Deal Setup'}</Button> : null}</div>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-textMuted">Finance type<select disabled={!canEdit || busy} value={unresolvedFinanceType ? draft.finance.type : financeType} onChange={(event) => update('finance', 'type', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2"><option value="">Select finance type…</option>{unresolvedFinanceType ? <option value={draft.finance.type} disabled>Unresolved: {draft.finance.type}</option> : null}<option value="cash">Cash</option><option value="bond">Bond</option><option value="hybrid">Cash and bond</option></select></label>
         {usesBond ? <label className="text-sm font-medium text-textMuted">Finance managed by<select disabled={!canEdit || busy} value={draft.finance.managedBy} onChange={(event) => update('finance', 'managedBy', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2"><option value="">Select route owner…</option><option value="client">Buyer</option><option value="bond_originator">Bond originator</option></select></label> : null}
@@ -197,14 +130,13 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
         {usesBond ? <label className="text-sm font-medium text-textMuted">Bond amount<input disabled={!canEdit || busy} type="number" min="0" step="0.01" value={draft.finance.bondAmount ?? ''} onChange={(event) => update('finance', 'bondAmount', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" /></label> : null}
         {usesBond ? <label className="text-sm font-medium text-textMuted">Bank<input disabled={!canEdit || busy} value={draft.finance.bank} onChange={(event) => update('finance', 'bank', event.target.value)} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Optional until a bank is selected" /></label> : null}
       </div>
-      {unresolvedFinanceType ? <p role="status" className="mt-4 rounded-control bg-warningSoft p-3 text-sm text-warning">Imported finance type “{draft.finance.type}” is unresolved. Check the original document and choose Cash, Bond, or Cash and bond. No finance route has been assumed.</p> : null}
+      {saveAttempted && unresolvedFinanceType ? <p role="status" className="mt-4 rounded-control bg-warningSoft p-3 text-sm text-warning">Imported finance type “{draft.finance.type}” is unresolved. Check the original document and choose Cash, Bond, or Cash and bond. No finance route has been assumed.</p> : null}
       <p className="mt-4 text-sm text-textMuted">For Cash and Cash and bond, cash includes the deposit. For Bond, deposit plus bond equals the price. Enter 0 when no deposit is required.</p>
-      {!fundingValidation.valid ? <div role="status" className="mt-3 rounded-control bg-warningSoft p-3 text-sm text-warning"><p className="font-semibold">Funding needs checking</p><ul className="mt-2 list-disc space-y-1 pl-5">{fundingValidation.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul><p className="mt-2">You can save a draft; these details do not count as complete yet.</p></div> : null}
+      {saveAttempted && !fundingValidation.valid ? <div role="status" className="mt-3 rounded-control bg-warningSoft p-3 text-sm text-warning"><p className="font-semibold">Funding needs checking</p><ul className="mt-2 list-disc space-y-1 pl-5">{fundingValidation.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul><p className="mt-2">You can save a draft; these details do not count as complete yet.</p></div> : null}
       {!financeType ? <p className="mt-4 text-sm text-textMuted">Choose Cash, Bond, or Cash and bond to continue.</p> : null}
     </section>
 
-    <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-textMuted">Documents</p><h3 className="mt-1 text-section-title font-semibold text-textStrong">Document requirements</h3><p className="mt-1 text-secondary text-textMuted">Requirements are calculated from saved Deal Setup details. Track uploads and document completion in the Documents tab. Document tasks are tracked separately from setup progress and imported-detail verification. Reusable buyer FICA documents are not requested twice.</p></div><span className="rounded-full bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">Review in Documents</span></div></section>
-
+    </div>
     <div className="flex justify-end"><Button type="button" disabled={!canEdit || busy || !isDirty} onClick={save}>{busy ? 'Saving…' : 'Save Deal Setup'}</Button></div>
     </div>
   </section>

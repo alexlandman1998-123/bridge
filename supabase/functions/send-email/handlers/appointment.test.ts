@@ -29,3 +29,10 @@ Deno.test('Calendar sender uses the persisted provider rendering and stops super
  assert(await freezeCalendarProviderMessage({rpc:async()=>({data:null})},message)===null,'Superseded messages must not send');
  const legacy={...message,idempotencyKey:'legacy'};assert(await freezeCalendarProviderMessage(client,legacy)===legacy&&calls===1,'Dedicated legacy senders must retain their owner');
 });
+Deno.test('Time-change proposals never attach a replacement ICS before agreement; confirmations preserve the same UID',()=>{
+ const proposed={...fixture,type:'appointment_time_change_proposed' as const,attachCalendarInvite:false};
+ assert(buildIcsAttachment(proposed)===null,'Proposals cannot reserve a replacement in an external calendar');
+ const confirmed={...fixture,type:'appointment_time_change_confirmed' as const,calendarSequence:4,dateTime:'2027-10-02T09:30Z',endDateTime:'2027-10-02T10:00Z',appointmentDate:'2027-10-02'};
+ const ics=content(confirmed);
+ assert(ics.includes('UID:bridge-booking@bridge.app')&&ics.includes('SEQUENCE:4')&&ics.includes('DTSTART:20271002T093000Z'),'Confirmation must update the same appointment after agreement');
+});

@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({ workspace: null, organisation: null, read: vi.
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => mocks.workspace }))
 vi.mock('../../../context/OrganisationContext', () => ({ useOptionalOrganisation: () => mocks.organisation }))
 vi.mock('../../../services/mobileDashboardService.js', () => ({ getMobileCalendarSnapshotAsync: mocks.read }))
+vi.mock('../../../components/appointments/ConnectedCalendarPanel', () => ({ default: () => null }))
+vi.mock('../../../components/appointments/CalendarHealthPanel', () => ({ default: () => null }))
 const appointment = { id: 'viewing', dateTime: '2026-10-06T08:00:00Z', timeLabel: '10:00', statusLabel: 'Confirmed', statusTone: 'green', typeLabel: 'Viewing', clientName: 'Saved client', propertyAddress: '18 Oak Avenue' }
 beforeEach(() => {
   vi.resetAllMocks()
@@ -22,7 +24,7 @@ afterEach(() => { cleanup(); vi.useRealTimers() })
 it('requests the exact SAST week and groups appointments by SAST date without reloading for each day', async () => {
   render(<MobileCalendarPage />)
   await act(async () => {})
-  expect(mocks.read).toHaveBeenCalledWith({ workspace: mocks.workspace, organisation: mocks.organisation.organisation, dateRange: { from: '2026-10-04T22:00:00.000Z', to: '2026-10-11T21:59:59.999Z' } })
+  expect(mocks.read).toHaveBeenCalledWith({ workspace: mocks.workspace, organisation: mocks.organisation.organisation, signal: expect.any(AbortSignal), dateRange: { from: '2026-10-04T22:00:00.000Z', to: '2026-10-11T21:59:59.999Z' } })
   expect(screen.getByText('Saved client')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Thursday, 08 October' }))
   expect(screen.queryByText('Saved client')).toBeNull()
@@ -52,6 +54,7 @@ it('hides old appointments during a workspace switch and ignores a late response
   mocks.workspace = { ...mocks.workspace, currentWorkspace: { id: 'org-two' } }
   mocks.organisation = { organisation: { id: 'org-two' }, loading: false }
   mocks.read.mockResolvedValueOnce({ appointments: [{ ...appointment, clientName: 'New workspace client' }] })
+  await act(async () => {})
   rerender(<MobileCalendarPage />)
   expect(screen.queryByText('Saved client')).toBeNull()
   await act(async () => {})
@@ -99,6 +102,7 @@ it('retains the last verified week after a failed background refresh and retries
   await act(async () => {})
   expect(screen.getByText('Saved client')).toBeTruthy()
   mocks.read.mockRejectedValueOnce(new Error('Disconnected'))
+  vi.setSystemTime(Date.now() + 5000)
   fireEvent(window, new Event('itg:agency-crm-updated'))
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)) })
   expect(screen.getByText('Disconnected')).toBeTruthy()
@@ -118,6 +122,7 @@ it('clears a previous organisation snapshot when the workspace uses an organisat
   expect(screen.getByText('Saved client')).toBeTruthy()
   mocks.workspace = { ...mocks.workspace, currentWorkspace: { organisationId: 'second-org' } }
   mocks.read.mockRejectedValueOnce(new Error('No access in new organisation'))
+  await act(async () => {})
   rerender(<MobileCalendarPage />)
   expect(screen.queryByText('Saved client')).toBeNull()
   await act(async () => {})

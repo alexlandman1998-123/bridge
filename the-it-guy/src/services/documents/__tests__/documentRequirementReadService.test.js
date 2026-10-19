@@ -126,3 +126,31 @@ test('saved documents refresh other open tabs without copying private document d
   stop(); assert.equal(listeners.size, 0)
   assert.doesNotThrow(() => notifyDocumentRequirementContextChanged(null, { target: { dispatchEvent() { throw Error('unavailable') }, CustomEvent: target.CustomEvent } }))
 })
+
+
+test('legacy client-owned buyer requirements use the exact shared row and never enter the seller checklist', () => {
+  const snapshot = { requirements: [{ id: 'buyer-address', requested_from_role: 'client', document_definition_key: 'buyer_proof_of_address',
+    pack_key: 'buyer_identity_fica', status: 'under_review', requirement_level: 'required' }],
+    documents: [{ id: 'buyer-file', canonical_requirement_instance_id: 'buyer-address', is_current_evidence: true, file_path: 'buyer-address.pdf' }] }
+  const rows = mergeDocumentRequirementRows([{ key: 'buyer_proof_of_address', status: 'missing' }], snapshot, { party: 'buyer' })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].canonicalRequirementInstanceId, 'buyer-address')
+  assert.equal(rows[0].status, 'under_review')
+  assert.equal(rows[0].category, 'buyer')
+  assert.equal(rows[0].uploadedDocumentId, 'buyer-file')
+  assert.equal(mergeDocumentRequirementRows([], snapshot, { party: 'seller' }).length, 0)
+})
+
+
+test('an authoritative transaction checklist retains exact co-buyer slots without duplicating derived lead prompts', () => {
+  const rows = mergeDocumentRequirementRows([{ key: 'derived_primary_id', label: 'ID / Passport', partyId: 'primary' }], {
+    requirements: [
+      { id: 'primary-id', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', requested_from_contact_id: 'primary', status: 'under_review' },
+      { id: 'joint-id', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', requested_from_contact_id: 'joint', status: 'pending' },
+    ], documents: [],
+  }, { party: 'buyer', canonicalOnly: true })
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(row => row.canonicalRequirementInstanceId), ['primary-id', 'joint-id'])
+  assert.deepEqual(rows.map(row => row.status), ['under_review', 'pending'])
+})
+

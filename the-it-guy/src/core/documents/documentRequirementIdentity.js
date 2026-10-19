@@ -43,3 +43,13 @@ export function isDocumentRequirementRequired(requirement = {}) {
   return requirement.required !== false && requirement.is_required !== false && requirement.isRequired !== false &&
     !['optional', 'recommended'].includes(level)
 }
+
+export function documentRequirementParty(row) {
+  const role = String(row?.requested_from_role || '').trim().toLowerCase()
+  // Transaction/onboarding compatibility rows use client for the buyer.
+  // Explicit seller ownership must never enter the buyer's checklist.
+  if (['client', 'purchaser', 'buying_client'].includes(role)) return 'buyer'
+  if (['vendor', 'selling_client'].includes(role)) return 'seller'
+  return role
+
+}

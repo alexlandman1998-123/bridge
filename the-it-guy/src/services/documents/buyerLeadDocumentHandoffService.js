@@ -181,6 +181,19 @@ export async function promoteStagedBuyerLeadDocuments(client, {
   if (leadQuery.error) throw leadQuery.error
   if (!leadQuery.data) throw new Error('The source buyer lead could not be read.')
   const rows = stagedBuyerLeadDocumentRows(leadQuery.data)
+  // Conversion calls this path directly too. Validate every staged object
+  // before inserting any transaction mirrors, rather than leaving a partial
+  // handoff or claiming that a missing object was carried through.
+  for (const row of rows) {
+    if (row._reconciliationConflict) throw new Error('Conflicting buyer lead document metadata needs manual review.')
+    if (row.canonicalDocumentId || row.canonical_document_id) continue
+    const { bucket, path } = assertStagedFile(row, { organisationId, leadId })
+    if (!resolveBuyerLeadDocumentTarget(row.key || row.documentType || row.document_type).documentDefinitionKey) {
+      throw new Error('An unknown buyer document type needs manual review before handoff.')
+    }
+    const object = await client.storage.from(bucket).info(path)
+    if (object.error || !object.data) throw new Error('A staged buyer file could not be verified in storage. No files were handed off.')
+  }
   const outcomes = []
   for (const row of rows) {
     if (row._reconciliationConflict) throw new Error('Conflicting buyer lead document metadata needs manual review.')

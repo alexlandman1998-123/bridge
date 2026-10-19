@@ -1,3 +1,4 @@
+import { hydrateBuyerOnboardingCapture } from '../core/transactions/buyerOnboardingCapture.js'
 import { saveTransactionSellerDetails } from '../services/transactionSellerSaveService.js'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation.js'
 import { createFreshDocumentSignedUrl } from './documentAccess.js'
@@ -8912,6 +8913,21 @@ async function getOrCreateTransactionOnboardingRecord(
   }
 
   return normalizeOnboardingRow(insertResult.data, normalizedType)
+}
+
+// Professional action used before exposing an onboarding draft's document room.
+// Persist the same canonical requirements as transaction creation; rollout flags
+// must not leave a new portal with a legacy-only checklist that cannot upload.
+export async function prepareBuyerOnboardingDocumentWorkspace(transactionId) {
+  if (!normalizeNullableUuid(transactionId)) throw new Error('A saved transaction is required for buyer document setup.')
+  const result = await resolveTransactionDocumentRequirements({
+    transactionId, client: requireClient(), writeLegacyProjection: false,
+    persistenceMode: TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc,
+  })
+  if (!result?.canonicalSync?.instances?.length || !result?.requirements?.length) {
+    throw new Error('Buyer document requirements could not be prepared. Please retry before sharing the buyer portal.')
+  }
+  return result
 }
 
 export async function ensureTransactionRequiredDocuments(
@@ -27614,7 +27630,7 @@ async function ensureAttorneyMatterAssignment(client, { transactionId, selection
   return assignment
 }
 
-async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buyerId, selection, actorProfile }) {
+async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buyerId, selection, actorProfile, preserveWorkflowState = false }) {
   if (selection?.roleType !== 'bond_originator') return null
 
   const workflow = await fetchRawBondHybridWorkflow(client, transactionId, {
@@ -27700,6 +27716,11 @@ async function ensureBondApplicationWorkspaceRecord(client, { transactionId, buy
   }
 
   if (existingQuery.data?.[0]?.id) {
+    if (preserveWorkflowState) {
+      delete payload.status
+      delete payload.notes
+      delete payload.metadata
+    }
     const updated = await updateRecordByIdWithMissingColumnFallback(
       client,
       'transaction_bond_applications',
@@ -27736,6 +27757,7 @@ async function propagateTransactionRoleplayersIfPossible(
     actorRole = null,
     buyerId = null,
     financeType = 'cash',
+    preserveWorkflowState = false,
   } = {},
 ) {
   if (!transactionId || !rolePlayers.length) return { participants: [], attorneyAssignments: [], bondApplications: [] }
@@ -27792,6 +27814,7 @@ async function propagateTransactionRoleplayersIfPossible(
         buyerId,
         selection,
         actorProfile,
+        preserveWorkflowState,
       })
       if (application) {
         results.bondApplications.push(application)
@@ -28483,7 +28506,7 @@ async function replayRoleplayerAllocationForCompletedOnboarding(
   }
 }
 
-export async function saveTransactionRoleplayerSelections({ transactionId, roleplayers = [], actorRole = null, preserveUnspecifiedRoleplayers = false, source = 'buyer_onboarding_roleplayer_confirmation' } = {}) {
+export async function saveTransactionRoleplayerSelections({ transactionId, roleplayers = [], actorRole = null, preserveUnspecifiedRoleplayers = false, source = 'buyer_onboarding_roleplayer_confirmation', allocationOnly = false } = {}) {
   if (!transactionId) throw new Error('Transaction is required.')
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -28506,21 +28529,27 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       },
     }))
   const transferAttorney = selections.find((item) => item.roleType === 'transfer_attorney')
-  if (!transferAttorney) {
+  if (!transferAttorney && !allocationOnly) {
     throw new Error('Transfer Attorney is required before buyer onboarding can be sent.')
   }
+
+  if (allocationOnly && !selections.length) throw new Error('Select a transaction professional to allocate.')
 
   const transaction = await fetchTransactionRowById(client, transactionId)
   if (!transaction?.id) {
     throw new Error('Transaction not found.')
   }
 
-  if (source === 'imported_transaction_conveyancing') {
+  if (transferAttorney && (source === 'imported_transaction_conveyancing' || allocationOnly)) {
     const firmId = await resolveAttorneyFirmIdForCreationRoleplayer(client, {
       ...transferAttorney,
       partnerName: transferAttorney.companyName || transferAttorney.contactPerson,
     }, transactionId)
     if (!firmId) throw new Error('The selected partner is not linked to an active attorney workspace.')
+  }
+
+  if (allocationOnly && selections.some((selection) => selection.roleType === 'bond_originator') && !isBondFinanceType(normalizeFinanceType(transaction.finance_type, { allowUnknown: true }))) {
+    throw new Error('Choose Bond or Combination finance before allocating a bond originator.')
   }
 
   for (const selection of selections) {
@@ -28535,31 +28564,33 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
   }
 
   const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
-  const bondOriginatorName = bondOriginator?.companyName || bondOriginator?.contactPerson || (preserveUnspecifiedRoleplayers ? transaction.bond_originator : null) || null
-  const bondOriginatorEmail = bondOriginator?.email || (preserveUnspecifiedRoleplayers ? transaction.assigned_bond_originator_email : null) || null
+  // Standalone allocation changes only the chosen professional; buyer delivery
+  // remains an explicit action in the onboarding confirmation flow.
+  const preserveOtherAssignments = allocationOnly || preserveUnspecifiedRoleplayers
+  const roleplayerPatch = {
+    ...(transferAttorney ? {
+      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
+      assigned_attorney_email: transferAttorney.email || null,
+    } : {}),
+    ...(bondOriginator || !preserveOtherAssignments ? {
+      bond_originator: bondOriginator?.companyName || bondOriginator?.contactPerson || null,
+      assigned_bond_originator_email: bondOriginator?.email || null,
+    } : {}),
+    ...(allocationOnly && bondOriginator ? { finance_managed_by: 'bond_originator' } : {}),
+    updated_at: new Date().toISOString(),
+  }
+  const updatedTransaction = { ...transaction, ...roleplayerPatch }
   await updateRecordByIdWithMissingColumnFallback(
     client,
     'transactions',
     transactionId,
-    {
-      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
-      assigned_attorney_email: transferAttorney.email || null,
-      bond_originator: bondOriginatorName,
-      assigned_bond_originator_email: bondOriginatorEmail,
-      updated_at: new Date().toISOString(),
-    },
+    roleplayerPatch,
     'id, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, updated_at',
   )
 
   await propagateTransactionRoleplayersIfPossible(client, {
     transactionId,
-    transaction: {
-      ...transaction,
-      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
-      assigned_attorney_email: transferAttorney.email || null,
-      bond_originator: bondOriginatorName,
-      assigned_bond_originator_email: bondOriginatorEmail,
-    },
+    transaction: updatedTransaction,
     rolePlayers: selections.map((selection) => ({
       roleType: selection.roleType,
       selectionSource: selection.selectionSource,
@@ -28584,6 +28615,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     actorRole: normalizedActorRole,
     buyerId: transaction.buyer_id || null,
     financeType: transaction.finance_type || 'cash',
+    preserveWorkflowState: allocationOnly,
   })
 
   await logTransactionEventIfPossible(client, {
@@ -28636,18 +28668,14 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     })
   }
 
-  await replayRoleplayerAllocationForCompletedOnboarding(client, {
-    transactionId,
-    transaction: {
-      ...transaction,
-      attorney: transferAttorney.companyName || transferAttorney.contactPerson || null,
-      assigned_attorney_email: transferAttorney.email || null,
-      bond_originator: bondOriginatorName,
-      assigned_bond_originator_email: bondOriginatorEmail,
-    },
-    actorProfile,
-    actorRole: normalizedActorRole,
-  })
+  if (!allocationOnly) {
+    await replayRoleplayerAllocationForCompletedOnboarding(client, {
+      transactionId,
+      transaction: updatedTransaction,
+      actorProfile,
+      actorRole: normalizedActorRole,
+    })
+  }
 
   await publishWorkflowChangedIfPossible(client, {
     transactionId,
@@ -43922,7 +43950,21 @@ function normalizeBuyerOnboardingBranding({
   }
 }
 
-export async function fetchClientOnboardingByToken(token) {
+async function hydrateSharedBuyerCapture(client, formData, buyerTarget = {}) {
+  const captureResult = await client.rpc('bridge_get_buyer_onboarding_capture', {
+    p_participant_id: buyerTarget.buyerParticipantId || buyerTarget.buyer_participant_id || null,
+    p_buyer_id: buyerTarget.buyerPartyId || buyerTarget.buyer_party_id || null,
+    p_target_nonce: buyerTarget.buyerTargetNonce || buyerTarget.buyer_target_nonce || null,
+  })
+  if (captureResult.error) {
+    if (!isMissingFunctionError(captureResult.error, 'bridge_get_buyer_onboarding_capture') && !isMissingSchemaError(captureResult.error)) throw captureResult.error
+  } else {
+    return hydrateBuyerOnboardingCapture(formData, captureResult.data)
+  }
+  return formData
+}
+
+export async function fetchClientOnboardingByToken(token, buyerTarget = {}) {
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
   const { transaction, unit, buyer, organisation, brandingOrganisation, brandingSource, development } = await resolveTransactionAndContext(
@@ -43948,7 +43990,8 @@ export async function fetchClientOnboardingByToken(token) {
       }
     }
   }
-  const existingFormData = formDataRow?.formData || {}
+  let existingFormData = formDataRow?.formData || {}
+  existingFormData = await hydrateSharedBuyerCapture(client, existingFormData, buyerTarget)
   const financeSnapshot = getOnboardingFinanceSnapshot({
     formData: existingFormData,
     transaction,
@@ -45862,7 +45905,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
 
   const safeName = filePolicy.safeName
   return runRecoverableDocumentUpload({ client: client, scope: ['buyer_onboarding', token, transaction.id, requiredDocument.key], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
-    toSavedReceipt: result => ({ documentId: result.data.id, documentKey: requiredDocument.key, filePath: result.data.file_path }),
+    toSavedReceipt: result => ({ documentId: result.data.id, documentKey: requiredDocument.key, filePath: result.data.file_path, fileBucket: result.data.file_bucket }),
     run: async attempt => {
       const filePath = attempt.path(`onboarding/${transaction.id}/${requiredDocument.key}/${Date.now()}-${safeName}`)
       const uploadedBucket = await attempt.upload(() => uploadToDocumentsBucket(client, filePath, file))
@@ -45871,6 +45914,10 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
         transaction_id: transaction.id,
         name: `${requiredDocument.label} - ${safeName}`,
         file_path: filePath,
+        file_bucket: uploadedBucket,
+        source: 'buyer_onboarding_upload',
+        uploaded_by_party: 'buyer',
+        client_recipient_role: 'buyer',
         category: requiredDocument.label,
         document_type:
           normalizePortalDocumentType(
@@ -45889,7 +45936,7 @@ export async function uploadOnboardingRequiredDocument({ token, documentKey, fil
           let insertResult = await client
             .from('documents')
             .insert(baseDocumentPayload)
-            .select('id, transaction_id, name, file_path, category, is_client_visible, created_at')
+            .select('id, transaction_id, name, file_path, file_bucket, category, is_client_visible, created_at')
             .single()
 
           if (
@@ -47061,6 +47108,7 @@ export async function fetchClientPortalByToken(token) {
     transaction.id,
     transaction.purchaser_type,
   )
+  if (onboardingFormData) onboardingFormData.formData = await hydrateSharedBuyerCapture(client, onboardingFormData.formData || {})
   const onboardingFormValues = onboardingFormData?.formData || {}
   const buyerBondOriginatorRequest =
     onboardingFormValues.buyer_bond_originator_request || onboardingFormValues.buyerBondOriginatorRequest || null

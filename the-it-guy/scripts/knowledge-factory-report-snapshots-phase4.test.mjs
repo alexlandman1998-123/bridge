@@ -65,7 +65,7 @@ assert.match(
 );
 assert.match(
   executionApi,
-  /report_snapshot_version: "canvassing-report-v1"[\s\S]*report_definition_snapshot: definitionSnapshot[\s\S]*cost_validation_snapshot: commercialPreflight\.costValidation[\s\S]*request_context_snapshot: requestContextSnapshot[\s\S]*opportunity_signals: opportunitySignals\(savedReportData\)/,
+  /"complete_report"[\s\S]*report_definition_snapshot: definitionSnapshot[\s\S]*cost_validation_snapshot: commercialPreflight\.costValidation[\s\S]*request_context_snapshot: requestContextSnapshot[\s\S]*opportunity_signals: opportunitySignals\(savedReportData\)/,
   "Supplier execution must persist the complete immutable snapshot with the result.",
 );
 assert.match(

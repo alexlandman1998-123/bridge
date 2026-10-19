@@ -7,8 +7,8 @@ Deno.test('Durable calendar sender rejects public credentials before recipient s
  let calls=0;globalThis.fetch=(async()=>{calls++;throw new Error('Provider access forbidden in authorization fixture');}) as typeof fetch;
  const body=JSON.stringify({type:'appointment_confirmed',to:'buyer@example.test',idempotencyKey:'calendar-appointment:10000000-0000-4000-8000-000000000003'});
  try{
-  for(const authorization of ['', 'Bearer public-fixture-key']){
-   const response=await handler(new Request('https://fixture.example.test',{method:'POST',headers:{'Content-Type':'application/json',Authorization:authorization},body}));
+  for(const type of ['appointment_confirmed','appointment_time_change_requested','appointment_time_change_proposed','appointment_time_change_confirmed','appointment_time_change_declined','appointment_time_change_withdrawn','appointment_time_change_expired']) for(const idempotencyKey of type.startsWith('appointment_time_change_') ? ['', 'legacy', 'CALENDAR-APPOINTMENT:10000000-0000-4000-8000-000000000003', 'calendar-appointment:10000000-0000-4000-8000-000000000003'] : ['calendar-appointment:10000000-0000-4000-8000-000000000003']) for(const authorization of ['', 'Bearer public-fixture-key']){
+   const response=await handler(new Request('https://fixture.example.test',{method:'POST',headers:{'Content-Type':'application/json',Authorization:authorization},body:JSON.stringify({...JSON.parse(body),type,idempotencyKey})}));
    if(response.status!==403)throw new Error('Public calendar delivery must be rejected');
   }
   if(calls!==0)throw new Error('Rejected callers must not reach database or provider');

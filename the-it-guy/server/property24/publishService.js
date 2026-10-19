@@ -467,7 +467,9 @@ export async function buildProperty24ListingSubmitPlan({
     },
   })
   preview.summary.photoFingerprint = photoChange.fingerprint
-  if (photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
+  // Requirements-only previews leave bytes unloaded; only an attempted byte
+  // preparation can establish that the submission has no usable photos.
+  if (loadImageBytes && photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
     preview.dataBlockers.push('missing_listing_image')
     preview.canSubmit = false
     preview.canPreview = false
@@ -573,7 +575,7 @@ export async function buildProperty24RentalListingSubmitPlan({
     },
   })
   preview.summary.photoFingerprint = photoChange.fingerprint
-  if (photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
+  if (loadImageBytes && photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
     preview.dataBlockers.push('missing_listing_image')
     preview.canSubmit = false
     preview.canPreview = false

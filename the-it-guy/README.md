@@ -6,6 +6,70 @@ deployment details, verification and provider limitations are recorded in
 [the production release record](../docs/arch9-production-release-20261015.md).
 Earlier local-phase notes below retain their original verification boundaries.
 
+Local development and Vitest use separate Vite cache directories:
+`node_modules/.vite-dev` and `node_modules/.vite-vitest`. This keeps a test run
+from replacing dependencies referenced by an already running development server,
+which can otherwise cause lazy-loaded pages to fail to load.
+
+## Buyer journey
+
+The overview’s next action opens its named workflow. Contact logging opens Activity,
+viewing outcomes open the completion form, sending onboarding sends the invitation,
+and manual capture opens the shared form. Each active action has “Mark as completed”:
+contact and qualification use their saved completion handlers, viewing uses an audited
+manual completion with a reason, and later stages refresh and validate their actual
+delivery, submission, signed OTP, transaction or document evidence. Missing evidence
+keeps the stage open and explains what to finish. A completed journey opens the
+transaction instead of offering another completion.
+
+Focused checks: `node src/services/__tests__/buyerNextActionCompletionService.test.js`
+and `npx vitest run src/components/journey/__tests__/JourneyStageOverrideActions.buyer.test.jsx --maxWorkers=1`.
+
+All agencies, including Kingstons, share this journey:
+Captured → Contacted → Qualified → Viewing → Buyer onboarding sent →
+Buyer onboarding submitted → Offer to purchase signed → Transaction created →
+Buyer documents uploaded.
+
+Sent and submitted onboarding are separate milestones. A prepared link or pack
+alone does not prove delivery, and a draft onboarding transaction does not finish
+the transaction milestone. Signed OTP evidence and all applicable required buyer
+uploads are tracked independently; earlier uploads still count. Missing, rejected,
+expired, or unmatched files keep the document milestone open. Organisation-specific
+legal terms and development unit reservations retain their existing routing.
+
+The header’s Buyer Readiness percentage and completed-step count use the same
+evidence-backed milestones as the Buyer Journey, including onboarding and documents.
+It reaches 100% when every journey step is complete.
+
+Until onboarding is submitted, Buyer Profile shows contact details and the onboarding
+actions only. The full onboarding sections and verification appear after submission.
+Buyer Profile starts with the onboarding actions, followed by contact details.
+The Offer tab is retired. Documents owns signed OTP upload and viewing; the Buyer
+Journey’s Transaction setup action owns the setup checklist and transaction creation.
+Old Offer/OTP tab links open Documents, and old onboarding links open Buyer Profile.
+It offers sending onboarding and manual capture. Manual capture opens
+the same active onboarding form and saved record as the buyer link. Sending catches
+up the earlier journey steps and awaits actual submission; opening manual capture
+does not mark onboarding sent or submitted.
+
+The buyer overview pairs the property enquiry with a preferred viewing times card.
+It shows buyer-submitted options and notes and distinguishes preferences from confirmed
+appointments. The bottom Viewing Planner is temporarily hidden; viewing actions open
+Appointments. Activity capture remains in Activity.
+
+
+Matches populates automatically using the buyer’s preferred areas and the existing
+enquiry price band. With no preferred areas captured, it uses the enquiry property’s
+city and suburb. Matches refresh when those details change. Missing search locations
+show a prompt to add buyer areas or link an enquiry property; they do not show
+price-only recommendations. Listings without the selected location details are excluded.
+
+Location check: `node src/pages/agency/__tests__/buyerMatchLocationModel.test.js`.
+
+Focused checks: `npm run test:buyer-leads-journey-alignment-phase7` and
+`npm run test:buyer-process-definition-phase1`.
+
+
 ## Seller lead capture
 
 Add Seller Lead opens with first name, surname, phone, email, property address,
@@ -72,6 +136,19 @@ and `node scripts/seller-lead-listing-prefill-alignment.test.mjs`.
 
 ## Seller signing pack preparation
 
+Seller onboarding review distinguishes the legal owner from the contact and
+explains why company owners need beneficial-owner details. Missing people and
+missing fields within each person are listed separately, including the row number.
+Review and submission use the same required-details checklist. Incomplete answers
+offer **Save draft and finish later**; complete answers offer **Submit to agent for
+review** (or **Submit seller details** for agency-assisted capture). Saving confirms
+that the draft has not been submitted. Filled-in details remain subject to agent
+and supporting-document review. The review contains one final action; the ordinary
+draft action remains available. This messaging change is prepared locally and has
+not been deployed. Focused checks: `SellerOnboardingCapture.test.jsx`,
+`sellerFicaOnboardingFields.test.js` and `sellerOnboardingReview.test.js`.
+
+
 Seller onboarding's final review keeps document uploads in agent-assisted manual
 capture. Sellers see one **Next: your seller portal** card explaining that their
 private portal link is where they upload supporting documents and track the
@@ -109,18 +186,29 @@ sale and rental listings. This saves pending sale details, runs the required
 checks and sends to the existing advert. Rental updates run a fresh requirements
 check automatically. A required sale channel review shows only Private Property;
 **Continue update** resumes the original request, while closing cancels it.
+Existing Property24 and Private Property rental adverts also run a fresh check
+from either Update listing or the Manage dialog update action. Valid updates
+continue automatically; failed or blocked checks show the specific issue and
+send nothing. Existing update actions do not depend on a previous manual Check,
+and one submission lock covers the check and send to prevent duplicate clicks.
+New advert publishing retains its separate readiness review.
+
 Other advert actions sit under **More actions**, and the main update is visible
 first on mobile. New advert publishing retains its existing confirmation.
 
 After acceptance, Arch9 checks the portal status once and shows Accepted,
 Processing or Needs attention. A failed status check retains the accepted send
 and asks for a status check before resending. An active advert still needs a
-public-page check to confirm the latest content. Focused checks:
-ListingChannelManageDialog component and integration suites,
-RentalPortalManagementPanel and RentalListingDetailPage.overview; the existing
-local browser check covers the single-action desktop and mobile flow with
-external requests blocked. Release verification on 16 October: 296 focused tests,
-lint, the baseline tests and the complete production build passed.
+public-page check to confirm the latest content. This update is prepared locally
+and has not been deployed. Focused checks: ListingChannelManageDialog component
+and integration suites, RentalPortalManagementPanel and
+RentalListingDetailPage.overview; the existing local browser check covers the
+single-action desktop and mobile flow with external requests blocked.
+Verification on 15 October: 136 focused tests and 24 browser checks passed,
+as did lint and the baseline tests. The normal production build and a 4096 MB
+heap-limit retry were both terminated by the system (SIGKILL); a completed
+production build is still required before release.
+
 
 
 Listing → Marketing opens a separate Manage popup for each channel. It shows
@@ -137,11 +225,9 @@ Saving a URL updates the saved link without sending a portal update or marking
 the advert live. Website public links continue to follow their publication URLs.
 Leave the field blank and choose **Remove link** to clear the portal URL and its
 matching external-link entries while retaining the advert reference and status.
-Old activity URLs do not restore a removed link in Manage.
-Listing Channels shows **View listing** only for a currently live portal advert.
-Inactive, removed, withdrawn, paused, failed and expired adverts show **No live
-listing link** while retaining their references. Historical activity cannot
-restore a cleared URL in the channel row.
+Old activity URLs do not restore a removed link in Manage. This removal correction
+is prepared locally and has not been deployed.
+
 
 Focused checks: the ListingChannelManageDialog component and integration suites,
 ListingRelistDialog and listingChannelManagement/Relist service suites,
@@ -158,11 +244,6 @@ its previous revision. This prevents Arch9's own review or submission save from
 causing a seller conflict. Genuine conflicts on unsaved changes still block
 submission. Covered by the ListingChannelManageDialog integration suite.
 
-Relist reloads current saved property details when the form has no unsaved edits;
-it saves only pending edits or a changed Property24 expiry. Restoring withdrawn
-stock uses that read or the confirmed edit receipt as its seller-save revision,
-so the same relist does not reuse a revision it has already replaced. A real
-conflict still blocks edits before any portal withdrawal or submission.
 
 ## Address search across capture forms
 
@@ -258,13 +339,6 @@ test:seller-document-journey`, and root `npm run check:app`.
 
 ## Listing publication recovery
 
-Advertising results recheck failed and unconfirmed saved requests every 30 seconds
-while the page is visible, and when the window regains focus or a page is restored.
-A later successful request can therefore replace an old failure without another
-submission. Older overlapping reads cannot replace newer receipts. Genuine
-failures remain visible; hidden pages make no status reads and completed requests
-stop polling. These checks only read saved publishing jobs. Coverage is in the
-initial publication service, editor and progress component Vitest suites.
 
 A listing under review now explains that no adverts will be sent and directs the
 agent to Seller and Documents, activation, then Review. An unconfirmed initial
@@ -338,6 +412,51 @@ saving blocked. Refresh does not save, approve, reopen seller onboarding, or sen
 signing links.
 
 Focused check: `npm run test:listing-seller-canonical-update`.
+
+## Buyer and seller document continuity checks (19 October 2026)
+
+Buyer onboarding draft actions now prepare the canonical transaction document
+room before opening or sharing onboarding. Linked buyer leads read, upload and
+remove requirements in that same transaction context. Legacy `client` ownership
+is treated as buyer ownership by the shared controls, without including seller
+requirements. The portal uses persisted onboarding status while profile data
+loads, and an absent shared checklist cannot display “all caught up” over an
+outstanding saved checklist.
+
+Pre-transaction buyer uploads retain their object and recovery reference after
+an uncertain lead save. Direct conversion verifies all staged objects before
+writing transaction mirrors. Onboarding upload metadata retains the actual
+Storage bucket and buyer audience so saved files remain visible on the lead.
+
+The append-only migration
+`20261019210931_buyer_document_upload_continuity.sql` repairs the older buyer
+portal upload RPC: require stored bytes, set the buyer audience explicitly,
+reopen replacement review, update only the exact requirement and reject
+ambiguous type-only matching. This migration is prepared locally and awaits
+explicit production approval. It also corrects audience metadata on existing files only where exact buyer-upload provenance and the linked requirement prove buyer-only visibility; shared agreements and all stored bytes are preserved.
+
+Focused checks: `node scripts/buyer-document-upload-continuity.test.mjs`, the
+buyer lead staged upload/handoff/read tests, shared requirement read/command
+and upload recovery tests, `DocumentRequirementManager.test.jsx`, portal
+Phase 4 document trust tests and `node scripts/seller-document-journey.test.mjs
+--review-only`. Existing seller continuity, requirement matching and upload
+state checks also pass. These local checks do not replace hosted upload tests.
+
+Live evidence is recorded privately in `output/document-flow-audit/`: the
+approved synthetic QA buyer upload saved through the token-scoped portal API,
+reopened against the same requirement and transaction, appeared in the buyer
+lead read model, downloaded with matching SHA-256 and rejected an invalid token.
+The production read-only audit found all 46 listing seller objects present,
+no unpromoted files on already-linked transactions, and no orphan or mismatched
+seller promotion links. A fresh hosted seller upload/conversion test and the
+production migrations remain pending approval. Chrome’s native picker allowed
+the buyer-lead browser test to reach the save command, where it reproduced the
+legacy `client` audience constraint failure. The tested corrective migration
+`20261019212951_buyer_document_requirement_audience.sql` normalises buyer/seller
+aliases in both command uploads and later promotion. It preserves access,
+identity, revision, receipt and Storage checks and awaits production approval.
+No successful buyer-lead browser save or fresh hosted seller sign-off is claimed.
+
 
 ## Document upload feedback
 
@@ -846,6 +965,15 @@ per-image/total byte limits remain unchanged. Initial channel receipts appear
 individually, with one persisted-detail refresh after all selected submissions
 settle instead of a full reload per channel. Browser uploads remain bounded to
 two storage operations, preserving successful uploads on retries.
+Property24 requirements checks recognise saved gallery photos without downloading
+their bytes. An intentionally empty preview byte payload no longer reports
+missing photos or keeps Publish disabled. Submission still downloads every
+selected photo and blocks on failed downloads or a genuinely empty gallery.
+Focused check: `npm run test:property24-preview-listing`, including sale/rental
+requirements, successful submission preparation, failed photos and empty galleries.
+Deployed to the primary app on 19 October 2026. Kingdom's existing rental passed
+all 20 photos and Property24 confirmed listing 117731148 on its portal. The
+focused checks and Vercel production build passed; no database migration was needed.
 The forward migration `20261010094542_seller_existing_evidence_agent_access.sql`
 fixes agent uploads of existing signed evidence through an authorized boolean
 signing-conflict check. Private signing documents remain unreadable to agents;
@@ -1020,6 +1148,93 @@ and exposes no recipient identities, signing tokens or document HTML. Release it
 with the compatible frontend and the required alignment guards after approval.
 The Phase 6 checkpoint in the saving report records local checks and limitations;
 no hosted migrations or deployment were performed.
+
+## Transaction overview
+
+Overview highlights one immediate saved workflow step in a contrasting green
+Current Progress card. It follows the saved active workflow, otherwise the first
+unfinished subprocess, and opens its relevant workspace. OTP, finance, transfer,
+bond registration and cancellation use the same saved facts; missing or legacy-only
+facts remain unavailable.
+Deal Summary sits alongside at the same desktop height and shows purchase price,
+finance type and the seller's existing bond answer (Yes/No/Not confirmed). Recent
+activity and its composer remain in Activity. Focused checks:
+`node --test src/core/transactions/__tests__/overviewWorkflowProgress.test.js` and
+`npx vitest run src/components/transaction/__tests__/TransactionOverviewProgress.test.jsx`.
+
+## Transaction buyer capture
+
+Deal Setup → Buyer contains buyer details, deal basics and funding. Document
+requirements and readiness stay in Documents. Buyer profiles edit inline, and
+manual capture reuses the lead/onboarding personal, spouse, company and trustee
+questions. Existing onboarding answers appear only for an explicitly identified
+buyer; they are never assigned using a shared name or email address.
+
+Manual capture saves a reusable buyer profile, without creating a CRM lead,
+sending onboarding or marking onboarding complete. Capturing an existing
+transaction buyer retains their participant ID, ownership, signature setting and
+metadata. An email/phone profile match requires an explicit link action before
+using that saved profile. Linked-listing sellers retain their existing guarded
+listing profile authority.
+
+Focused checks: DealSetupPanel, TransactionBuyerPartiesPanel.links,
+buyerCaptureDetails and buyerProfileCapturedParty Vitest tests.
+
+## Transaction seller capture
+
+Deal Setup → Seller supports full manual seller capture for transactions without
+linked listings. It reuses the seller editor for personal and spouse details,
+multiple owners, companies/directors, trusts/trustees/beneficial owners,
+representatives and FICA answers. Partial details may be saved without email.
+Property/mandate editing and document requirements are excluded from this form.
+Existing seller bond allocation remains in the transaction routing editor.
+
+The canonical source is the transaction's existing
+`onboarding_form_data.__bridge_transaction_parties.seller` snapshot. Contact
+projections and the primary seller contact update in one guarded command with
+an original revision and retry receipt. Buyers, unrelated form answers,
+professional assignments and unidentified legacy participants are preserved.
+Additional seller people appear in Parties from the full profile, without
+creating additional access or invitation rows.
+Capturing a seller creates no CRM lead, listing, portal invitation, document
+verification, signature or onboarding submission.
+
+Requires `20261019192602_transaction_seller_manual_capture.sql`. A missing
+migration is shown as a load error and never treated as an empty seller profile.
+Linked listings continue through their established seller capture authority.
+
+Focused verification: `node scripts/transaction-seller-manual-capture.test.mjs`
+installs the real migrations in isolated PostgreSQL with synthetic permissions.
+The TransactionSellerCapturePanel, transactionSellerCaptureService and
+DealSetupPanel Vitest suites cover the editor and its integration.
+The optional local preview is
+`node scripts/fixtures/transaction-seller-capture-browser.mjs`; it uses only
+synthetic local PostgreSQL and never connects to hosted data or email.
+
+## Transaction parties
+
+Transaction Parties combines buyers, sellers and professional roleplayers in one
+contact directory. Cards open name, entity/company, email and phone details;
+professional assignments remain available on their cards. Old Parties navigation
+resolves to the combined tab. Documents and onboarding summaries remain in their
+dedicated workspaces. Focused check:
+`npx vitest run src/components/transaction/__tests__/TransactionPartiesDirectory.test.jsx src/components/transaction/__tests__/TransactionRoleAllocationDialog.test.jsx`.
+
+## Historical transaction milestones
+
+Transaction Overview → Record historical progress records only the milestones
+explicitly confirmed by the transaction team, with optional historical dates.
+Other milestones remain unknown unless confirmed by the normal workflow. The
+same confirmations feed professional and party journey views; they do not mark
+documents/legal tasks complete, restart onboarding or send messages. Unchecking
+a milestone removes its historical confirmation while retaining the audit trail.
+Concurrent edits require reopening the form rather than overwriting another save.
+
+Saving requires `supabase/migrations/20261019183254_transaction_historical_journey.sql`
+from the repository root. This migration is prepared locally and requires an
+approved database release before use. Focused checks:
+`node scripts/transaction-historical-journey.test.mjs` (isolated PostgreSQL),
+`npx vitest run src/components/transaction/__tests__/TransactionHistoricalJourneyDialog.test.jsx src/services/__tests__/transactionHistoricalJourneyService.test.js`.
 
 ## Transaction buyer and seller capture
 
@@ -1424,6 +1639,47 @@ or remote write. The three proposed contracts and remaining work are recorded in
 
 ## Appointment behaviour and failure baseline
 
+The desktop appointment editor groups appointment type, organisers, clients,
+time and address in aligned rows. Type choices follow the active organisation;
+an existing specialist booking keeps its type when edited. Organisers use an
+avatar picker with a primary organiser and optional co-organisers. The client
+picker searches loaded leads locally and supports several clients. Create new
+client saves through the existing CRM lead service before selecting that client,
+with agent notification emails disabled for this quick capture. Extra guests,
+notes and invitation preferences remain optional. Focused checks:
+`AppointmentPeopleFields.test.jsx` and
+`AgencyPipelinePage.calendarRefresh.test.jsx`. These changes are local only.
+
+The request limits now also cover mobile calendars, listing viewings, connected
+calendar status, delivery receipts, health/support panels, rental calendars and
+attorney scheduling. The shared `useCalendarRead` hook uses stable viewer/scope
+keys, one active read and one trailing refresh, five-second automatic request
+spacing and a thirty-second error pause. Explicit Retry bypasses that pause but
+waits for an outstanding read to settle. Deadlines abort supported transports;
+legacy reads keep their queue occupied until they settle and do not start later
+enrichment stages after cancellation. Hidden/offline tabs pause automatic work.
+Rental and listing calendars remain event-driven without periodic polling.
+Rental management shares one listing-history read between lease and event data.
+These changes are local only; no deployment, migration or live-data repair is
+included. Focused regression coverage is in `useCalendarRead.test.jsx`,
+`CalendarRequestBudget.test.jsx`, `calendarReadCancellation.test.js` and
+`rentalCalendarReads.test.js`, alongside the existing calendar and attorney suites.
+
+
+Calendar refreshes now share one active read and at most one follow-up, with a
+five-second minimum between automatic requests and a longer pause after errors.
+Explicit retries remain available. Leaving the screen, changing viewer or range,
+and reaching the read deadline abort the underlying appointment and attendance
+requests. Routine polling, tab focus and calendar navigation reload appointments
+without refetching the CRM or listing catalogue. CRM change notifications share a
+separate queue that waits for outstanding reads to settle, including reads whose
+screen deadline has expired. This fix is prepared locally and is not yet deployed.
+
+Focused verification: `npx vitest run src/lib/__tests__/coalescedRefresh.test.js
+src/hooks/__tests__/usePipelineAppointments.test.jsx
+src/lib/__tests__/leadAppointmentHistory.test.js
+src/pages/agency/__tests__/AgencyPipelinePage.calendarRefresh.test.jsx --maxWorkers=1`.
+
 [Appointment behaviour and acceptance rules](docs/appointment-behaviour-contract.md)
 defines the calendar repair contract: lifecycle, ownership, access, timezones,
 notifications, archive and consistency across agent screens. Unconfirmed bookings
@@ -1542,6 +1798,140 @@ explicit approval. Phase 8 additionally requires OAuth app registration, server-
 provider/encryption secrets, deployment of both provider functions, and controlled
 Google/Outlook acceptance. No real provider accounts have been connected or changed
 by the local implementation.
+
+## Appointment time-change workflow foundation
+
+Phase 1 of the new time-change workflow is implemented locally in
+`20261019165256_calendar_time_change_workflow.sql`. It adds one active request per
+ordinary managed appointment, organiser review, individual required-attendee
+approval, withdrawal, decline, expiry and server-written decision history. A
+request retains the original duration. The original reservation stays in place
+until the replacement receives every required approval and passes a fresh
+conflict check. Internal appointments with only the organiser can move when the
+organiser proposes the replacement. Existing specialist scheduling keeps its own
+workflow.
+
+`get_calendar_time_change` returns authorised state and history.
+`mutate_calendar_time_change` uses the displayed revision and a repeatable command
+ID for request/propose/decline/withdraw/accept/decline_proposal actions. The
+invitation-token request/withdraw endpoint exposes only the token holder's safe
+schedule context. The existing hold-expiry worker closes expired requests without
+reopening cancelled or archived appointments. No historical rows are rewritten by
+the migration.
+
+Phase 2 adds a shared time-change panel to the desktop appointment card and mobile
+appointment workspace. It provides a preferred date/time and optional message,
+organiser review (propose the requested time, suggest another, or keep the current
+time), individual approval/decline, withdrawal, expiry feedback and collapsed
+actor history. Issued ordinary appointments keep their schedule read-only in the
+normal edit form; drafts and dedicated specialist workflows retain their existing
+schedule controls. Other appointment details remain editable independently.
+
+Reads use the shared calendar queue with stable viewer/appointment scope; changing
+form fields or rerendering does not issue another read. Mutations retain a command
+ID after a lost response and block double submissions. A newer revision requires
+fresh state, and late results are discarded after switching appointments. Existing
+proposal-response controls defer to the new panel to avoid duplicate reads and
+actions. An absent migration shows a release-pending message.
+
+Phase 3 adds the local `20261019172522_calendar_time_change_notifications.sql`
+migration and six branded HTML/plain-text email events: requested, proposed,
+confirmed, declined, withdrawn and expired. Request notices go to the organiser
+and requester; proposed/final outcomes go to permitted current attendees.
+Organisers receive the existing authenticated `appointmentId` calendar deep link;
+attendees receive their own expiring invitation capability. Proposed replacements
+have no ICS attachment; the agreed confirmation can update the same calendar UID.
+Private appointment notes and instructions are excluded from lifecycle emails.
+
+The public response page supports accepted guests requesting another time,
+withdrawal of their pending request, and individual proposal acceptance/decline.
+Email-link GETs never submit a response. A proposal response checks its exact ID
+and version, with a hashed-token command receipt that survives token rotation on
+the last required approval. A retry reports the current request outcome rather
+than stale pending approval. Replaced/revoked/expired invitations cannot submit
+new responses. Public pages do one scoped read and explicit refreshes, without
+focus polling or browser-side notification delivery. Specialist invitations keep
+their existing response owner.
+
+Lifecycle jobs share the existing durable worker, saved notification choices,
+visibility rules, claim leases, frozen provider payloads and provider idempotency
+keys. A partial attendee approval preserves other attendees' pending messages;
+material edits/token rotation supersede stale payloads. No message jobs or
+historical data are backfilled by this migration. The updated send-email function,
+delivery worker, app and migrations must be released together after approval;
+none were deployed and no real messages were sent during this local work.
+Phase 4 adds `20261019174614_calendar_time_change_alignment.sql`. Reminder
+receipts follow a private snapshot of the actual booking and recipient rather
+than proposal/vote revisions. Requests, partial approvals, withdrawal, decline and
+expiry keep original reminders; final agreement retires them and schedules only
+future reminders at the agreed time. Repeated reconciliation and reviewed recovery
+retain existing receipts and frozen idempotency keys. Material edits, privacy,
+preferences, cancellation, archive and repair suppression remain dispatch gates.
+Reminder emails have no ICS attachment or invitation-response buttons, so a
+reminder cannot create a stale copy or carry a rotated proposal capability.
+
+Google/Outlook copies retain their copy key and material version while a request
+is under review. Only the committed schedule changes their target; existing
+provider lease checks fence claims for the old time after confirmation. Synced
+legacy copy hashes are adopted locally without sending an external update;
+active claims, frozen creates and outside-change reviews are preserved. Existing
+provider polling, disconnection, retries and conflict-review ownership continue.
+
+The scoped support timeline includes request decisions and individual votes.
+In-app lifecycle messages use clear titles and the existing appointment deep link.
+Delivery UI retains valid reminder/lifecycle receipts across partial approvals,
+with stable read scope and no read triggered by ordinary rerenders. The existing
+health scanner and reviewed recovery recognise retained reminder receipts.
+Phases 1–4 remain local and require an explicitly approved migration/function
+release. Live email delivery and real provider updates have not been exercised.
+
+Phase 5 extends the existing acceptance runner and its A01–A42 evidence matrix
+with all time-change checks. It adds independent PostgreSQL races for duplicate
+requests, final approval retries, cancellation/withdrawal/expiry and conflicting
+bookings, plus real public-screen lost-response recovery and organiser conflict
+feedback. Negative permission checks resulted in the append-only
+`20261019175522_calendar_time_change_access_guards.sql` migration: an external
+client loses workflow/token access when a booking becomes internal-only, and a
+revoked participant cannot use an old response receipt to read the current time.
+Permitted attendees retain safe retry after final confirmation rotates tokens.
+
+Run the existing complete local acceptance command with an isolated test socket:
+
+```sh
+CALENDAR_LOCAL_PG_SOCKET=/absolute/path/to/calendar-phase3-local/socket node scripts/check-calendar-acceptance.mjs --output ../tmp/calendar-time-change-acceptance-<unique-run>
+```
+
+It runs both UTC and SAST, native concurrency, attorney compatibility, operator,
+Edge and app checks, with immutable logs and per-case assertion evidence. A
+skipped/missing test, failed app check or changed source is not a pass. Read the
+[time-change acceptance boundaries](docs/appointment-behaviour-contract.md#time-change-workflow-acceptance-19-october-2026).
+No hosted migrations, provider writes or real email are authorised by this work.
+
+Run the real migrations and existing reservation/delivery regressions in an
+isolated local PostgreSQL fixture from this package with:
+
+```sh
+npx vitest run supabase-tests/calendarTimeChange.test.js supabase-tests/calendarReservations.test.js supabase-tests/calendarDelivery.test.js --maxWorkers=1 --testTimeout=30000
+```
+
+Reminder/provider/history integration checks:
+
+```sh
+npx vitest run supabase-tests/calendarTimeChangeAlignment.test.js supabase-tests/calendarProviderSync.test.js supabase-tests/calendarHealth.test.js src/components/appointments/__tests__/AppointmentDeliveryStatus.test.jsx src/components/appointments/__tests__/AppointmentSupportPanel.test.jsx --maxWorkers=1 --testTimeout=30000
+```
+
+Email/capability checks:
+
+```sh
+npx vitest run supabase-tests/calendarTimeChangeNotifications.test.js supabase-tests/calendarTimeChangeEmail.test.js src/pages/__tests__/AppointmentRsvpPage.test.jsx --maxWorkers=1 --testTimeout=30000
+```
+
+Screen/API/local-SQL journey checks:
+
+```sh
+npx vitest run src/components/appointments/__tests__/AppointmentTimeChange.test.jsx src/services/__tests__/calendarTimeChangeService.test.js src/pages/agency/__tests__/AgencyPipelinePage.calendarRefresh.test.jsx src/components/appointments/__tests__/MobileAppointmentWorkspace.test.jsx supabase-tests/calendarJourney.test.jsx --maxWorkers=1 --testTimeout=30000
+```
+
 
 ## Attorney calendar saving
 
@@ -2211,132 +2601,6 @@ Focused checks use the existing `scripts/meta-integrations.test.mjs` and
 
 ## WhatsApp campaigns
 
-WhatsApp Business phone-app syncing (stage 3) uses Meta's supported coexistence
-onboarding. Select the phone-app option **before** connecting. Arch9 resolves a
-WABA-only callback on the server, asks you to choose if several authorized numbers
-are available, and checks `is_on_biz_app` with `platform_type=CLOUD_API` before
-saving. A phone-app number is already registered: Arch9 never submits a new
-registration PIN for it. Authorization, current membership and number ownership
-are checked together when saving the connection.
-
-The initial contacts and history requests start after connecting and are claimed
-once per onboarding session, contacts first. Keep WhatsApp Business open while
-Meta prepares the data. Meta allows the initial requests within 24 hours; an
-unconfirmed request is not automatically repeated. WhatsApp Connections shows
-requested, receiving, completed, declined and failed states. Declining history
-sharing leaves new-message syncing available. A later reconnect uses a fresh
-session; old queued work and stale account events cannot restore that session.
-
-Phone-app replies and available history appear in the existing private inbox.
-The number and Meta message ID prevent duplicates across API sends, phone-app
-echoes, history and later media updates. Imported history never adds unread
-alerts, reopens a closed conversation, opens a customer-service window, creates
-CRM records, or grants message/campaign consent. Contact sync supplies inbox
-labels only, with ordered removal markers. Edits and deletions update the original
-message, including when they arrive first; deletions hide text and attachments.
-A changed history version clears older cached pages so their contents can be
-read again from the server.
-
-Webhook bodies up to 12 MB are saved before acknowledgement; oversized bodies
-are rejected for retry rather than acknowledged and dropped. A server-only worker
-processes 100-item transactions with leased jobs and saved checkpoints. The
-minute scheduler continues without an open browser. Failed saved updates can be
-retried from Connections; that operation never sends a WhatsApp message or
-repeats the one-time Meta data request. Completed job payloads are cleared.
-Disconnecting in Arch9 removes local access and tokens. Full phone-app offboarding
-is performed in WhatsApp Business → Settings → Account → Business Platform.
-Signed account-disconnection events stop processing; reconnect notifications
-alone never restore credentials.
-
-For the combined release, apply `20261018125856_whatsapp_business_app_sync.sql`
-after the stage 2 inbox migration. Deploy `meta-integrations`, `whatsapp-webhook`,
-`whatsapp-business-app-worker` and the primary app together. The migration reuses
-Vault's `arch9_project_url` and `arch9_service_role_key` and schedules the private
-worker every minute when `pg_cron` is available; verify that schedule and `pg_net`
-after release. A v4 Facebook Login for Business configuration must be selected
-in `META_WHATSAPP_LOGIN_CONFIG_ID`, with the required advanced permissions.
-Subscribe the Meta app to `messages`, `history`, `smb_app_state_sync`,
-`smb_message_echoes` and `account_update`. These provider settings have not been
-changed by this local build.
-
-Meta determines number eligibility, history sharing and available media.
-Coexistence numbers have Meta’s fixed 20-message-per-second throughput limit. Its
-current documentation describes up to 180 days of one-to-one history and media
-assets from the last 14 days; group chats and unsupported companion-device
-messages may be unavailable. Arch9 shows placeholders instead of inventing
-missing content. The existing 8 MB inbox download limit still applies. Use
-[Meta's coexistence guide](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users)
-and [v4 setup](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/version-4)
-for provider eligibility and configuration.
-
-Focused checks extend `scripts/meta-integrations.test.mjs`, the existing campaign
-checks, `metaIntegrationSignup.test.js`, `WhatsAppMessaging.test.jsx` and
-`WhatsAppBusinessAppSync.test.jsx`. They use actual local PostgreSQL permission
-logic and a simulated provider, not live phone numbers. After the combined release,
-verify an eligible owner's real phone app, the five webhook subscriptions, history
-consent/progress, two-way messages, media, edits/deletions and worker execution.
-This stage is built locally and has not been applied or deployed.
-
-
-Marketing → WhatsApp → Inbox also supports approved one-to-one templates, including
-outside the 24-hour reply window. Select the connected number's template and
-language, fill its variables, record when/how the recipient agreed to messages,
-and review before sending. Direct-message permission is audited separately from
-bulk-campaign consent; STOP revokes it. A newer bulk opt-out also blocks templates
-until newer direct-message agreement is recorded. This never opts anyone into
-bulk campaigns.
-
-Photo/PDF replies use private, conversation-bound Meta uploads: JPEG/PNG up to
-5 MB and PDF up to 8 MB. Matching photo/document template headers use the same
-uploads. Video headers and other outbound attachment formats are unavailable.
-Uploads expire in Arch9 after one day and cannot be reused across conversations,
-agencies, agents or number ownership changes. Incoming downloads retain their
-existing 8 MB limit. Template definitions are checked again at sending time.
-
-History loads in stable 50-item pages with **Load older** controls and conversation
-search. Refreshes retain loaded older history but recheck agent access. The
-header's WhatsApp unread badge updates inside Arch9 every 30 seconds, on focus
-and after reading a thread; the open inbox refreshes every 15 seconds. This stage
-does not add operating-system push alerts. Failed send connections offer
-**Check message**, which only reads the saved receipt. Any explicit retry uses
-the same immutable request identifier, preventing a second provider submission.
-
-For the combined release, apply `20261018111956_whatsapp_inbox_messaging.sql`
-after the ownership and CRM-link migrations, then deploy `meta-integrations`,
-`whatsapp-webhook` and the primary app with the other pending stages. This stage
-is implemented and tested locally; it has not been applied or deployed. Focused
-checks extend `scripts/meta-integrations.test.mjs`, `MetaIntegrations.test.jsx`
-and `WhatsAppCrmLink.test.jsx`, plus `WhatsAppMessaging.test.jsx`. They use local
-SQL, fictional people and a simulated Meta service; live uploads, template
-approval, delivered messages and callbacks require the later release check.
-
-WhatsApp Inbox → CRM record suggests Buyer, Seller and Recruitment records with
-the same canonical phone number in the current agency. Choose the record and
-**Link record**; multiple matches never merge contacts or choose a lead
-automatically. The selected record can be reviewed before linking. Existing
-lead/contact permissions and Recruitment's management-only access still apply,
-independently of inbox assignment. Linking does not change either assignment,
-consent, Meta lead source or send a message. Link changes are versioned and
-audited; changed CRM records, permissions and conversation assignments require
-a fresh lookup before saving. An unavailable linked record exposes no identity
-and can be unlinked by a person who currently has conversation access.
-
-Buyer/Seller lead workspaces and Recruitment records include **WhatsApp**. This
-opens matching or already-linked conversations the current person may read,
-with a choice when several numbers/conversations are available. Links are bound
-to the agency; the user must switch workspace for a different agency's link.
-An older conversation can open directly without loading every sidebar page.
-No conversation or CRM record is created automatically. The inbox composer
-supports approved templates and attachments in these existing conversations.
-
-Campaign attribution uses Meta's exact reply-to message ID, sender and recipient;
-a matching phone alone is not attributed. Preserved reply context resolves late
-delivery callbacks without guessing, sending again or changing permission records.
-Apply `20261018110212_whatsapp_inbox_crm_links.sql` after the ownership migration,
-then deploy `meta-integrations`, `whatsapp-webhook` and the primary app together.
-This CRM-link build is local and tested; it has not been released. Its focused
-checks are the existing `scripts/meta-integrations.test.mjs` and
-`src/components/marketing/__tests__/WhatsAppCrmLink.test.jsx`.
 
 Agency administrators connect their own sender in Settings → Integrations →
 WhatsApp using Meta Embedded Signup. A new number can be activated with the
@@ -2346,43 +2610,6 @@ attachments up to 8 MB and permits replies during Meta's 24-hour customer-servic
 window. Connection tokens are encrypted and inaccessible to browser database
 queries. All inbox and connection operations require active workspace membership.
 
-Each WhatsApp number belongs either to the agency or to an active staff member.
-Agency numbers retain the shared inbox and bulk-campaign capability. Agent-owned
-numbers are inbox-only; campaign selection, the worker, database recipient claims
-and default notification-sender lookup exclude them. Existing numbers remain
-agency numbers when the migration is applied.
-
-Agents can open WhatsApp Connections and use **Connect my WhatsApp**. Their
-Embedded Signup session is bound to their own user on the server, and cannot
-claim a number already belonging to the agency or another agent. Agency
-management can connect for an agent or change a number's owner. Changing number
-ownership transfers its conversations to that agent or the agency queue; an
-active scheduled, running or paused campaign must be completed or cancelled first.
-
-New conversations on an agent number are assigned to its owner. Agency-number
-replies enter the agency queue. Agents can read, reply, change status and download
-attachments only in conversations currently assigned to them. Agency management
-can oversee all conversations and assign or transfer them. Manual handoffs remain
-in place when another message arrives. Transfer a number before deleting its
-owner account, so deletion cannot silently make an agent number a campaign sender.
-Inactive owners cannot use the inbox;
-new conversations on their numbers fall back to agency oversight. Reassignment
-checks and the outbound database claim prevent sending from a stale assignment.
-Assignment versions prevent concurrent saves from overwriting each other, and
-the private ledger records changes. User, role and workspace changes clear cached
-conversations, drafts, connection details and management controls.
-
-Apply `20261018094503_whatsapp_inbox_agent_ownership.sql`, then deploy
-`meta-integrations`, `whatsapp-campaigns`, `whatsapp-campaign-worker` and
-`send-whatsapp`, followed by the primary app. Keep the ownership-aware server
-handlers when rolling back a frontend: the old server handlers read the entire
-agency inbox. Live phone onboarding still requires the number owner's Meta
-authorization and Meta's onboarding eligibility. The local checks use fictional
-data and a fake provider; they send no real messages or connection requests.
-
-Focused checks: `node --test scripts/meta-integrations.test.mjs
-scripts/whatsapp-campaigns.test.mjs` and the Vitest `MetaIntegrations`,
-`useMetaWorkspace`, `metaIntegrationSignup` and `WhatsAppCampaigns` tests.
 
 Listings → Marketing → Post to Facebook prepares a server-generated preview from
 saved public listing details and requires a separate Publish action. It checks
@@ -2973,6 +3200,19 @@ src/components/marketing/__tests__/ShowDayCreate.test.jsx`.
 
 ## Rental tenancy register
 
+The rental operations dashboard's occupancy and portfolio totals include units
+from all active, accessible rental portfolio properties, including properties
+without confirmed management mandates. Units marked notice given remain occupied.
+Release `20261019152345_rental_dashboard_active_portfolio.sql` with the dashboard
+change; this updates dashboard reads without changing mandate authority rules.
+Failed sections show an unavailable state while successful sections retain their
+figures. Refresh dashboard, window focus and a visible-page 60-second refresh
+reload saved data; older filter responses cannot replace the current results.
+Focused checks: `npx vitest run server/tests/rentalDashboardMandates.test.js
+src/pages/rentals/__tests__/RentalOperationsDashboardPage.test.jsx --maxWorkers=1`
+and `npm run test:rentals-phase16r`. Local verification does not release the app
+or apply this migration to production.
+
 The dashboard's Active Mandates total counts one per current rental listing,
 including saved drafts, within its organisation, branch and agent filters. Previous
 listings are excluded. Selecting the card opens Listings. This count updates on
@@ -3168,6 +3408,33 @@ an invented appointment date. It has not been applied remotely. Focused checks:
 and the local database `rentalLeadJourneyGuards` Vitest suites.
 
 ## Rental onboarding discovery
+
+Tenant application first version adds gross/net income, monthly expense categories,
+funding contributions and sponsors, other adult occupants and a dependent count,
+employment arrangements/verification contacts, and a first-time-renter history
+route. The final review displays saved answers with section edit links. Tenant
+onboarding reuses buyer/seller welcome, mobile header, illustration, option card,
+section header and action components, with the buyer form dimensions and inputs.
+
+New applications reuse the saved qualification move date, occupants, pets,
+employment and deposit availability. Existing drafts offer **Use saved qualification
+answers**, which fills only missing answers. Neither path imports screening consent
+or internal call notes. Tenant edits and submitted snapshots are retained.
+
+Rental application settings now include optional rent/net-income guidance, income
+document periods and sponsor/guarantor preferences. These are review guidance;
+no automatic approval or decline rule is introduced. New applications snapshot
+these settings; existing applications keep their policy. Explicit net income is
+projected into the legacy income field for existing review/evidence readers.
+Sponsors retain separate identity, permission and income evidence requirements.
+
+Release requires `20261019204416_rental_application_first_version.sql` with the
+matching primary app. This migration is prepared locally, not applied remotely.
+Focused checks include `rentalApplicationFirstVersion`, field mapping, wizard,
+applicant journey, tenant profile and application settings tests, plus the existing
+rental qualification/application connection and handoff acceptance checks.
+
+
 
 The repaired rental flow now has one joined acceptance check covering new landlord
 and tenant leads, saved discovery/uploads and mandate, listing/vacancy, attended
@@ -3626,14 +3893,37 @@ retries. A failed submission keeps the applicant’s answers. Local Vite preview
 return an explicit unavailable response and never write live applications or
 analytics; browser success checks must use a mocked response.
 
-Optional campaign configuration: `VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID` and
-`VITE_HOME_SEEKERS_META_PIXEL_ID`. No IDs are configured by this change. Scripts
-load only after the visitor opts into campaign measurement. Application and
-guarantee events contain no application answers or contact details. First-party
+Meta Pixel `2613784669083210` is configured for `homeseeker.co.za` and
+`www.homeseeker.co.za`, plus the Home Seekers applicant portal at
+`app.arch9.co.za/applicant/my-profile`. Google Analytics remains optional through
+`VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID`. Scripts load only after the visitor opts
+into measurement; the preference is remembered on each origin and can be changed
+through Tracking preferences or the existing Join checkbox. Preview hosts, the
+embedded demo, internal preview visits and other private app routes are excluded.
+The unconditional noscript image is deliberately omitted so it cannot bypass the
+visitor's choice. Meta automatic form configuration and automatic history tracking
+are disabled; explicit events contain no application answers, contact details,
+passwords, file names, document paths or document contents. First-party
 application conversions are recorded only by successful database capture; client
 requests cannot manufacture that event. Guarantee clicks have a separate event.
 The PPRA event is reserved; no letter link or section appears until an approved
 PDF is supplied.
+
+The Meta events requested on 17 October 2026 are PageView on each page visit,
+ViewContent (`Agent Join Page`) on Join, Lead (`Agent Application`) after a
+successful initial signup, CompleteRegistration (`Agent Email Verified`) after a
+successful email-code verification, and SubmitApplication
+(`Agent Documents Uploaded`) only after a confirmed upload returns a complete
+required document pack. Failed requests, incomplete packs, context/resume calls
+and preview walkthroughs do not trigger these milestones. Random receipt/owner
+UUIDs are retained locally for retry/reload deduplication and are never sent to
+Meta. Browser-only deduplication does not span devices or cleared browser storage.
+The website and primary app both need release for the full upload journey; no
+database migration is required. Local checks use fixture responses and an
+intercepted Meta script, not real applications or advertising conversions.
+Focused checks include `src/pages/__tests__/homeSeekersPixel.test.js` and the
+existing recruitment signup, popup and applicant setup Vitest suites. After an
+approved release, the pixel owner should confirm receipt in Meta Events Manager.
 
 Pricing assumptions live in `src/pages/homeSeekersRecruitment.js`. The agent
 overview supplied on 8 October 2026 replaces the September offer: R10,000/month
@@ -3646,6 +3936,24 @@ The comparison uses ten R1.5m sales at 5% commission and option 2; competitor
 figures are illustrations from the supplied overview, not verified quotations.
 This updates public offering information, not billing or applicant eligibility
 enforcement. The brand font and PPRA letter remain unverified launch inputs.
+
+The FFC transfer correction confirmed on 18 October 2026 restores R700 for the
+runner plus R640 payable directly to the PPRA (R1,340 in total). The earlier
+R950 total came from the supplied plan and was superseded by this confirmation.
+The 17 October 2026 copy alignment uses debit order on the 1st for Prepaid
+throughout the page and option dialogs,
+and explicitly welcomes agents from anywhere in South Africa. The 45-day
+hit-rate copy states that 97% of our mandates sell within 45 days. Guarantee copy
+consistently specifies a 50% reduction in the agreed commission, borne by the agent,
+and requires an exclusive mandate
+with a listing price within 2.5% of the recommendation, alongside the existing
+viewing-access and good-faith-offer conditions. The comparison retains its
+calculated 5.1-sales break-even (six whole sales) at R1.5m and 5% commission;
+4.6–4.7 cannot be derived from those assumptions. The growth illustration
+updated on 18 October 2026 explicitly uses 6% commission and shows rounded costs
+of 26%, 17%, 14%, 10% and 8% at five, eight, ten, fifteen and twenty sales. Its
+ten-sale annual cost remains R123,000. These are public copy changes;
+they do not configure billing or update an externally managed bot.
 
 Focused verification (from this package):
 `node --test server/tests/homeSeekersRecruitment.test.js server/tests/homeSeekersWebsiteBridge.test.js`.
@@ -4109,20 +4417,31 @@ Manage portal settings offers Property24 rental lifecycle statuses and Private
 Property ToLet/Inactive, with the existing reactivation and readiness protections.
 Update listing remains gated by each portal's readiness preview.
 
+Private Property rental withdrawal and status refresh use the saved feed property ID
+and branch when the public advert number is missing. The channel remains an existing
+advert, so it offers updates rather than a new publication. Inactive adverts, failed
+status loads and unresolved requests retain their existing safeguards. Activation
+event parsing now captures both sale (`T…`) and rental (`RR…`) advert numbers from
+Private Property's description field and saves them to the sync and listing records. Late events can repair a missing
+number without overwriting a newer status check or withdrawal.
+Focused regression coverage uses the existing Private Property post-submit monitor
+and operational checks, rental publication recovery, channel model, management panel
+and rental listing page tests. No migration is required.
+
+
 Sales Listing Channels now offer **Relist** and **Update and relist** for existing
 portal adverts, including withdrawn/inactive adverts. **Update and relist** opens
 the property editor and retains the chosen portal. **Save and continue to relist**
 saves and verifies the edited property and publication details without sending
 ordinary portal updates, then returns to Marketing with that portal selected in
-the relist dialog. Other existing portal adverts remain available to select in
-the same run. A failed save stays in the editor; cancelling does not relist.
-Relisting sends the newly saved content against the existing identity.
+the relist confirmation. A failed save stays in the editor; cancelling does not
+relist. Relisting sends the newly saved content against the existing identity.
 
 Quick listing actions also offer **Relist listing**
-for an existing Property24 or Private Property advert. Choose one or more existing
-portal adverts to restore together; no same-property checkbox is required.
-Edited details and materialized photos are saved before readiness is checked.
-Property24 receives an Active
+for an existing Property24 or Private Property advert. Confirm that it is the
+same property and choose the portals to restore. Edited details and materialized
+photos are saved before readiness is checked. Property24 receives an Active
+
 content update against its existing advert number and the chosen future expiry
 date. Private Property verifies its retained address, requests ForSale (or ToLet
 for a rental record), waits for confirmed activation, and then sends the saved
@@ -4437,6 +4756,15 @@ with a buyer-style header and readiness based on saved information: onboarding
 captured, experience, qualifications/registration, preferred area and supporting
 documents. Captured information still requires human review. Joined and no-longer-
 proceeding leads appear in Closed Leads. Only leads closed as not proceeding can be reopened.
+
+Applicants waiting for verification can choose **Edit email address** in the shared
+signup and Home Seekers flows, including after account preparation fails or a
+signup response is lost. The contact form retains their name, phone and email for
+correction, clears the password and asks for consent again. Continuing captures
+the corrected address with a fresh receipt and requests its verification code;
+the earlier capture remains intact. Ordinary retries keep the original receipt.
+Focused checks: `RecruitmentSignupModal.test.jsx`, `recruitmentSignup.test.js` and
+`recruitmentApplicantAccess.test.js`. This correction is prepared locally.
 
 Records live independently of property leads in `recruitment_leads`. PDF/JPG/PNG
 files up to 10 MB use the private `recruitment-documents` bucket. The append-only

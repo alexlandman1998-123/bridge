@@ -1,6 +1,3 @@
-import { captureBusinessAppWebhook } from './whatsappBusinessApp.js'
-export const META_ADMIN_ROLES = ['owner','principal','director','admin','super_admin','developer','agency_admin']
-export const META_STAFF_ROLES = [...META_ADMIN_ROLES,'agent','senior_agent','manager','branch_manager','broker','assistant']
 export const text = (value) => typeof value === 'string' ? value.trim() : ''
 export const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(value))
 export const isMetaId = (value) => /^\d{1,32}$/.test(text(value))
@@ -49,7 +46,6 @@ export function publicListingPost(listing, media = [], input = {}, storageOrigin
 }
 
 export function inboundWhatsApp(message, value, entry) {
-  if (['edit','revoke'].includes(message?.type)) return null
   const from = text(message?.from)
   const seconds = Number(message?.timestamp)
   const at = new Date(seconds * 1000)
@@ -67,7 +63,6 @@ export function inboundWhatsApp(message, value, entry) {
 }
 
 export async function applyWhatsAppInboxWebhook(db, payload) {
-  await captureBusinessAppWebhook(db,payload)
   for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
     for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
       const value = change.value || {}
@@ -77,17 +72,6 @@ export async function applyWhatsAppInboxWebhook(db, payload) {
         if (inbound) {
           const saved = await db.rpc('whatsapp_inbox_receive', inbound)
           if (saved.error) throw new Error('Unable to save incoming WhatsApp message.')
-          if (['stop','unsubscribe','opt out','opt-out'].includes(inbound.p_body.toLowerCase())) {
-            const optedOut=await db.rpc('whatsapp_inbox_optout',{p_phone_id:inbound.p_phone_id,p_waba_id:inbound.p_waba_id,p_from:inbound.p_from,p_at:inbound.p_at})
-            if(optedOut.error)throw new Error('Unable to record the inbox opt-out.')
-          }
-          if (text(message.context?.id)) {
-            const attribution = await db.rpc('whatsapp_inbox_campaign_reply', {
-              p_phone_id: inbound.p_phone_id, p_waba_id: inbound.p_waba_id, p_from: inbound.p_from,
-              p_message_id: inbound.p_message_id, p_reply_to: text(message.context.id),
-            })
-            if (attribution.error) throw new Error('Unable to save WhatsApp campaign reply attribution.')
-          }
         }
       }
       for (const item of Array.isArray(value.statuses) ? value.statuses : []) {

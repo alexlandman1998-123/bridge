@@ -477,7 +477,7 @@ export async function getMobileDeveloperTransactionSnapshotAsync({ workspace = {
   }
 }
 
-export async function getMobileCalendarSnapshotAsync({ workspace = {}, organisation = null, dateRange } = {}) {
+export async function getMobileCalendarSnapshotAsync({ workspace = {}, organisation = null, dateRange, signal } = {}) {
   const organisationId = getOrganisationId(workspace, organisation)
   const category = resolveMobileRoleCategory(workspace)
   const profile = workspace.profile || {}
@@ -488,7 +488,7 @@ export async function getMobileCalendarSnapshotAsync({ workspace = {}, organisat
   if (!isSupabaseConfigured) throw new Error('Calendar data is unavailable while offline.')
   if (!dateRange?.from || !dateRange?.to || !Number.isFinite(Date.parse(dateRange.from)) || !Number.isFinite(Date.parse(dateRange.to)) || Date.parse(dateRange.to) < Date.parse(dateRange.from)) throw new Error('Select a valid calendar week.')
   return getAppointmentDashboardData({
-    organisationId, includeAll, userId, userEmail, dateRange,
+    organisationId, includeAll, userId, userEmail, dateRange, signal,
     module: { developer: 'developer', attorney: 'attorney', bond_originator: 'bond', commercial: 'commercial', principal: 'default' }[category] || 'agent',
   })
 }

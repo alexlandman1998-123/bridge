@@ -249,9 +249,12 @@ Deno.test("client intro rendering has distinct buyer and seller copy and no agen
         select: () => q,
         eq: () => q,
         maybeSingle: async () => ({
-          data: table === "organisations" ? { name: "Intro Agency" } : null,
+          data: table === "organisations" ? { name: "Intro Agency" }
+            : table === "leads" ? { lead_domain: "agency", status: "New Lead", contact_id: "intro-contact", raw_enquiry_payload: {} }
+            : table === "contacts" ? { email: "client@real-agency.co.za" } : null,
           error: null,
         }),
+        insert: async () => ({ error: null }),
       };
       return q;
     },
@@ -275,6 +278,8 @@ Deno.test("client intro rendering has distinct buyer and seller copy and no agen
     equal(message.text.includes("Hi Taylor"), true);
     equal(message.replyTo, "jamie@agency.co.za");
     equal(message.subject.includes("selling"), enquiryKind === "seller");
+    equal(message.html.includes("/viewing-preferences/"), enquiryKind === "sale");
+    equal(message.text.includes("/viewing-preferences/"), enquiryKind === "sale");
   }
 });
 

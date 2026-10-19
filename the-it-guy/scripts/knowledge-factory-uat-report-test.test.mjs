@@ -38,7 +38,7 @@ function runtime(options = {}) {
     if (options.throwAt === calls.length) throw new Error('PRIVATE-PASSWORD provider failure');
     if (input.headers['GraphQL-Cost'] === 'validate') return Response.json(options.preflight || { extensions: { operationCost: cost } });
     assert.equal(body.variables.id, APPROVED_TEST.propertyId);
-    return Response.json(options.execution || { data: { propertyReports: { nodes: [property] } }, extensions: { operationCost: cost, billing } });
+    return Response.json(options.execution || { data: { propertyReports: { nodes: [property] } }, extensions: { operationCost: cost, billing } }, { status: options.executionStatus || 200 });
   };
   return { db, calls, handler: createUatReportTestHandler({ env: options.env || env, createDb: () => db, fetcher, now: () => options.now ?? Date.parse('2026-10-01T10:00:00Z'), approvedTest: options.approvedTest || APPROVED_TEST }) };
 }
@@ -150,6 +150,23 @@ test('missing billing preserves diagnostic report but cannot approve pricing; da
     const run = runtime({ execution }); const reply = response(); await run.handler(request(), reply);
     assert.equal(reply.code, 200); assert.equal(reply.body.ready, false); assert.equal(run.db.rows.get(APPROVED_TEST.resultId).outcome, 'failed');
     assert.equal(run.calls.length, 3);
+  }
+});
+test('charged HTTP and GraphQL failures retain billing evidence without approving or retrying the report', async () => {
+  for (const executionStatus of [200, 503]) {
+    const charged = { ...billing, status: 'charged' };
+    const execution = { data: { propertyReports: { nodes: [property] } }, errors: [{ message: 'PRIVATE-SUPPLIER-ERROR' }], extensions: { operationCost: cost, billingCost: charged } };
+    const run = runtime({ execution, executionStatus }); const reply = response();
+    await run.handler(request(), reply);
+    assert.equal(reply.code, 200);
+    assert.equal(reply.body.ready, false);
+    const saved = run.db.rows.get(APPROVED_TEST.resultId);
+    assert.equal(saved.outcome, 'failed');
+    assert.equal(saved.request_metadata.billing.amountDeducted, charged.amountDeducted);
+    assert.equal(saved.request_metadata.requests[2].httpStatus, executionStatus);
+    assert.equal(saved.request_metadata.executionSent, true);
+    assert.doesNotMatch(JSON.stringify(saved), /PRIVATE-OWNER|PRIVATE-STREET|PRIVATE-SUPPLIER-ERROR/);
+    await run.handler(request(), response()); assert.equal(run.calls.length, 3);
   }
 });
 test('billing metadata is numeric/key-only; zero deduction is valid and over-budget/mismatched billing is not readiness', () => {

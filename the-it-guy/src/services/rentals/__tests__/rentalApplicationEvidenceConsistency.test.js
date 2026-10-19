@@ -45,7 +45,9 @@ it('allows a complete guarantor-funded student to submit without primary income 
   const documents = slots.map((item, i) => ({ id: `d${i}`, document_type: item.type, status: 'uploaded' }))
   expect(isRentalApplicantPortalReadyToSubmit({ data, documents, consents })).toBe(true)
   documents[0].status = 'rejected'
-  expect(isRentalApplicantPortalReadyToSubmit({ data, documents, consents })).toBe(false)
+  // Submission captures details; rejected evidence still blocks document review.
+  expect(isRentalApplicantPortalReadyToSubmit({ data, documents, consents })).toBe(true)
+  expect(rentalApplicationDocumentProgress({ data, documents }).uploaded).toBe(slots.length - 1)
 })
 it('requires additional person identity and contact, and assigns entity income to the entity', () => {
   const data = complete(); delete data.people[0].identityNumber; delete data.people[0].phone

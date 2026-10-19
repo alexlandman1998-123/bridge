@@ -29,7 +29,7 @@ function referenceForEvent(event = {}) {
   const direct = normalizePrivatePropertyText(event.privatePropertyRef)
   if (direct) return direct
   const description = normalizePrivatePropertyText(event.eventDescription)
-  return /^T\d+/i.test(description) ? description : ''
+  return /^(?:T|RR)\d+$/i.test(description) ? description : ''
 }
 
 function eventPropertyId(event = {}) {
@@ -71,11 +71,15 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
   const byPropertyId = new Map(syncRows.map((row) => [normalizePrivatePropertyText(row.property_id), row]))
   const results = []
   let staleEventCount = 0
+  let repairedReferenceCount = 0
   const latestByProperty = new Map()
+  const referenceEvents = new Map()
   for (const event of events) {
     const id = eventPropertyId(event)
     const previous = latestByProperty.get(id)
     if (!previous || (Date.parse(event.eventDate) || 0) > (Date.parse(previous.eventDate) || 0)) latestByProperty.set(id, event)
+    const previousReference = referenceEvents.get(id)
+    if (referenceForEvent(event) && (!previousReference || (Date.parse(event.eventDate) || 0) > (Date.parse(previousReference.eventDate) || 0))) referenceEvents.set(id, event)
   }
   for (const event of latestByProperty.values()) {
     const propertyId = eventPropertyId(event)
@@ -83,7 +87,23 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
     if (!sync) continue
     // Replayed feed history cannot undo a newer status probe or event.
     const observedAt = Math.max(Date.parse(sync.last_checked_at) || 0, Date.parse(sync.last_event_at) || 0)
-    if ((Date.parse(event.eventDate) || 0) <= observedAt) { staleEventCount += 1; continue }
+    const reference = referenceForEvent(referenceEvents.get(propertyId)) || sync.private_property_ref || ''
+    if ((Date.parse(event.eventDate) || 0) <= observedAt) {
+      staleEventCount += 1
+      // Advert identity is immutable for this exact branch/feed record. Recover it
+      // independently of event age, without replaying old publication status.
+      if (!sync.private_property_ref && reference) {
+        const listingRepair = await client.from('private_listings').update({ private_property_reference: reference })
+          .eq('id', sync.private_listing_id).eq('organisation_id', config.organisation_id).is('private_property_reference', null)
+        if (listingRepair.error) throw listingRepair.error
+        const syncRepair = await client.from('private_property_listing_syncs').update({ private_property_ref: reference })
+          .eq('private_listing_id', sync.private_listing_id).eq('environment', 'production').eq('branch_guid', guid)
+          .eq('property_id', propertyId).is('private_property_ref', null)
+        if (syncRepair.error) throw syncRepair.error
+        repairedReferenceCount += 1
+      }
+      continue
+    }
     const externalStatus = resolvePrivatePropertyExternalStatus({ eventType: event.listingFeedEventType || event.eventType, eventStatus: event.eventStatus, fallback: sync.external_status || 'submitted' })
     const recorded = await recordPrivatePropertyListingSync({
       client,
@@ -92,7 +112,7 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
       branchGuid: guid,
       environment: 'production',
       listingType: sync.listing_type,
-      privatePropertyRef: referenceForEvent(event) || sync.private_property_ref || '',
+      privatePropertyRef: reference,
       externalStatus,
       isOnPortal: externalStatus === 'active',
       eventType: event.listingFeedEventType || event.eventType || '',
@@ -107,7 +127,7 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
     results.push({ listingId: sync.private_listing_id, propertyId, externalStatus, syncId: recorded.sync?.id || null })
   }
   await updateCheckpoint({ client, config, continuationKey })
-  return { configId: config.id, branchGuid: guid, status: 'COMPLETE', checkpoint, continuationKey: continuationKey || checkpoint, eventCount: events.length, staleEventCount, processed: results.length, unmatchedEventCount: [...latestByProperty.keys()].filter((id) => !byPropertyId.has(id)).length, results }
+  return { configId: config.id, branchGuid: guid, status: 'COMPLETE', checkpoint, continuationKey: continuationKey || checkpoint, eventCount: events.length, staleEventCount, repairedReferenceCount, processed: results.length, unmatchedEventCount: [...latestByProperty.keys()].filter((id) => !byPropertyId.has(id)).length, results }
 }
 
 export async function runPrivatePropertyEventReconciliation({ client, secrets = process.env, createPrivateProperty = createPrivatePropertyClient } = {}) {
@@ -128,7 +148,7 @@ export async function runPrivatePropertyEventReconciliation({ client, secrets = 
     version: PRIVATE_PROPERTY_EVENT_RECONCILIATION_SERVICE_VERSION,
     phase: 'private-property-phase3-event-reconciliation',
     generatedAt: new Date().toISOString(),
-    safety: { listingsCreated: false, listingsEdited: false, portalCalls: reports.length, databaseWrites: reports.reduce((sum, report) => sum + Number(report.processed || 0), 0) },
+    safety: { listingsCreated: false, listingsEdited: false, portalCalls: reports.length, databaseWrites: reports.reduce((sum, report) => sum + Number(report.processed || 0) + Number(report.repairedReferenceCount || 0), 0) },
     status: failed.length ? 'ATTENTION_REQUIRED' : 'COMPLETE',
     configuredBranchCount: configs.length,
     processedEventCount: reports.reduce((sum, report) => sum + Number(report.processed || 0), 0),

@@ -98,7 +98,7 @@ assert.doesNotMatch(agencyPipelinePageSource, /Buyer Onboarding \+ OTP Transacti
 assert.doesNotMatch(agencyPipelinePageSource, /Send onboarding first, then prepare or upload the OTP as the transaction source of truth\./)
 assert.doesNotMatch(agencyPipelinePageSource, /OTP Transaction History/)
 assert.doesNotMatch(agencyPipelinePageSource, /Buyer Preview/)
-for (const overviewPanelLabel of ['Buyer Qualification', 'What’s next', 'Activity Logger', 'Viewing Planner']) {
+for (const overviewPanelLabel of ['Qualification Questions', 'What’s next', 'BuyerViewingRequestCard', 'Viewing Planner']) {
   assert.match(agencyPipelinePageSource, new RegExp(overviewPanelLabel), `${overviewPanelLabel} should render from the buyer overview workspace.`)
 }
 

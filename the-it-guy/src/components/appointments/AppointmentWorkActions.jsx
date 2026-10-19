@@ -3,10 +3,11 @@ import { addAppointmentOutcomeAsync, setAppointmentArchiveAsync, updateAppointme
 import { getAppointmentRescheduleRequests } from '../../services/appointmentRescheduleService'
 import { appointmentWorkflowActions } from '../../core/appointments/appointmentWorkflow'
 
-export default function AppointmentWorkActions({ appointment, organisationId, actor, onSaved }) {
+export default function AppointmentWorkActions({ appointment, organisationId, actor, onSaved, timeChangesHandled = false }) {
   const [clock, setClock] = useState(Date.now())
   const actions = appointmentWorkflowActions(appointment, actor, clock)
   const isProposal = actions.state.status === 'alternative_proposed'
+  const showResponse = actions.canRespond && !(isProposal && timeChangesHandled)
   const proposalKey = `${organisationId}:${actor.id}:${appointment.appointmentId}:${appointment.calendarRevision}`
   const [proposalRead, setProposalRead] = useState(null)
   const [retryProposal, setRetryProposal] = useState(0)
@@ -22,7 +23,7 @@ export default function AppointmentWorkActions({ appointment, organisationId, ac
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
   useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 15000); return () => clearInterval(timer) }, [])
   useEffect(() => {
-    if (!isProposal) return
+    if (!isProposal || timeChangesHandled) return
     let current = true, timer
     const expectedId = actions.selfParticipant?.proposalId
     Promise.race([getAppointmentRescheduleRequests({ appointmentId:appointment.appointmentId, statuses:['proposed'], requireVerified:true }),
@@ -33,7 +34,7 @@ export default function AppointmentWorkActions({ appointment, organisationId, ac
         if (current) setProposalRead({key:proposalKey,row})
       }).catch(failure => { if (current) setProposalRead({key:proposalKey,error:failure.message}) }).finally(() => clearTimeout(timer))
     return () => {current = false;clearTimeout(timer)}
-  }, [isProposal, proposalKey, appointment.appointmentId, actions.selfParticipant?.proposalId, retryProposal])
+  }, [isProposal, timeChangesHandled, proposalKey, appointment.appointmentId, actions.selfParticipant?.proposalId, retryProposal])
   async function run(action) {
     if (pending.current || (['accept','decline'].includes(action) && !canAnswer)) return
     if (['archive','restore'].includes(action) && !note.trim()) { setError('Give a short reason for archiving or restoring this appointment.'); return }
@@ -62,9 +63,10 @@ export default function AppointmentWorkActions({ appointment, organisationId, ac
     } catch (failure) { if (active.current) setError(failure?.message || 'Unable to save this action. Refresh and retry.') }
     finally { pending.current = false; if (active.current) setBusy(false) }
   }
+  if (!actions.canManage && isProposal && timeChangesHandled) return null
   if (!actions.canManage && !actions.canRespond) return <p className="text-sm">You can view this appointment. The responsible agent manages its details.</p>
   return <section aria-label="Appointment actions" className="grid gap-2 text-sm [&_button]:rounded-lg [&_button]:border [&_button]:border-slate-300 [&_button]:bg-white [&_button]:px-3 [&_button]:py-2 [&_button]:disabled:opacity-50 [&_textarea]:rounded-lg [&_textarea]:border [&_textarea]:p-2" aria-busy={busy}>
-    {isProposal && actions.canRespond ? <div aria-label="Proposed appointment time">
+    {isProposal && showResponse ? <div aria-label="Proposed appointment time">
       <p>Original booking: {appointment.date} · {appointment.startTime}–{appointment.endTime} · {appointment.timezone}. It remains reserved until approval.</p>
       {proposal?.error ? <p role="alert">{proposal.error} <button type="button" onClick={() => {setProposalRead(null);setRetryProposal(value => value+1)}}>Retry proposed time</button></p> : proposal?.row ? <>
         <p>Proposed booking: {new Date(proposal.row.preferredStart).toLocaleString('en-ZA',{timeZone:proposal.row.proposedTimezone})} to {new Date(proposal.row.preferredEnd).toLocaleString('en-ZA',{timeZone:proposal.row.proposedTimezone})} · {proposal.row.proposedTimezone}{proposal.row.proposedAllDay ? ' · All day' : ''}</p>
@@ -75,7 +77,7 @@ export default function AppointmentWorkActions({ appointment, organisationId, ac
     {error ? <p role="alert">{error}</p> : null}
     {message ? <p role="status">{message}</p> : null}
     <div className="flex flex-wrap gap-2">
-      {actions.canRespond ? <><button type="button" disabled={busy || !canAnswer} onClick={() => run('accept')}>{isProposal ? 'Accept proposed time' : 'Accept my invitation'}</button><button type="button" disabled={busy || !canAnswer} onClick={() => run('decline')}>{isProposal ? 'Decline proposed time' : 'Decline my invitation'}</button></> : null}
+      {showResponse ? <><button type="button" disabled={busy || !canAnswer} onClick={() => run('accept')}>{isProposal ? 'Accept proposed time' : 'Accept my invitation'}</button><button type="button" disabled={busy || !canAnswer} onClick={() => run('decline')}>{isProposal ? 'Decline proposed time' : 'Decline my invitation'}</button></> : null}
       {actions.canConfirm ? <button type="button" disabled={busy} onClick={() => run('confirmed')}>Confirm appointment</button> : null}
       {actions.canReissue ? <button type="button" disabled={busy} onClick={() => run('reissue')}>Issue new 24-hour request</button> : null}
       {actions.canCancel ? <button type="button" disabled={busy} onClick={() => run('cancelled')}>Cancel appointment</button> : null}

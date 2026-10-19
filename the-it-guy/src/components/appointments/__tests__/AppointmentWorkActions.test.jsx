@@ -44,3 +44,11 @@ it('keeps responses disabled for an expired proposal',async()=>{
  render(<AppointmentWorkActions appointment={{...row,status:'alternative_proposed'}} actor={actor} organisationId="org" />)
  await screen.findByText(/deadline has passed/);expect(screen.getByRole('button',{name:'Accept proposed time'}).disabled).toBe(true)
 })
+it('leaves proposal responses to the new time-change panel without another proposal read',async()=>{
+ render(<AppointmentWorkActions appointment={{...row,status:'alternative_proposed'}} organisationId="org" actor={actor} timeChangesHandled />)
+ await act(async()=>{})
+ expect(api.proposal).not.toHaveBeenCalled()
+ expect(screen.queryByRole('button',{name:'Accept proposed time'})).toBeNull()
+ expect(screen.queryByRole('button',{name:'Decline proposed time'})).toBeNull()
+ expect(screen.getByRole('button',{name:'Cancel appointment'})).toBeTruthy()
+})

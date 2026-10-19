@@ -35,6 +35,14 @@ function normalize(value) {
   return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+export function isBuyerLeadDocumentApplicable(documentKey, financeType = '') {
+  const key = normalize(documentKey)
+  const finance = normalize(financeType)
+  if (key === 'proof_of_funds') return ['cash', 'cash_sale', 'cash_deal', 'hybrid', 'combination'].includes(finance)
+  if (['bank_statements', 'bond_pre_approval'].includes(key)) return ['bond', 'hybrid', 'combination'].includes(finance)
+  return true
+}
+
 export function resolveBuyerLeadDocumentTarget(documentKey, {
   financeType = '',
   purchaserType = '',

@@ -3,7 +3,7 @@ import { createElement, useMemo } from 'react'
 import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
 
-const BUYER_TABS = Object.freeze(['Overview', 'Matches', 'Buyer Profile', 'Offer', 'Documents', 'Appointments', 'Activity'])
+const BUYER_TABS = Object.freeze(['Overview', 'Matches', 'Buyer Profile', 'Documents', 'Appointments', 'Activity'])
 const SELLER_TABS = Object.freeze(['Overview', 'Seller Profile', 'Property', 'Appointments', 'Documents', 'Activity'])
 const NEUTRAL_TABS = Object.freeze(['Overview', 'Profile', 'Property', 'Appointments', 'Documents', 'Activity'])
 

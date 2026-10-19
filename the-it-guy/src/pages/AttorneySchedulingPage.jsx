@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import useCalendarRead from '../hooks/useCalendarRead'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import AttorneySchedulingWorkspace from '../components/attorney/scheduling/AttorneySchedulingWorkspace'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -15,91 +16,42 @@ function normalizeText(value = '') {
 function AttorneySchedulingPage() {
   const { role, profile, workspace: activeWorkspace } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [data, setData] = useState(null)
   const [resources, setResources] = useState([])
-  const [resourcesLoading, setResourcesLoading] = useState(false)
-  const loadRequestIdRef = useRef(0)
   const attorneyFirmId = useMemo(() => {
     if (normalizeText(activeWorkspace?.type) === 'attorney_firm') return normalizeText(activeWorkspace?.id)
     return normalizeText(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
   }, [activeWorkspace?.id, activeWorkspace?.type, profile?.primaryAttorneyFirmId, profile?.primary_attorney_firm_id])
   const currentUserId = normalizeText(profile?.id || profile?.userId)
 
-  const loadWorkspace = useCallback(async ({ force = false, background = false } = {}) => {
-    const requestId = loadRequestIdRef.current + 1
-    loadRequestIdRef.current = requestId
-    const timer = createPerfTimer('attorney.page.scheduling', {
-      firmId: attorneyFirmId || null,
-      userId: currentUserId || null,
-      force: Boolean(force),
-    })
-    let outcome = 'success'
-    if (!background) setLoading(true)
-    setError('')
-    try {
-      timer.mark('workspace:start')
-      const next = await getAttorneyOperationalWorkspaceData(attorneyFirmId || null, currentUserId || null, { force })
-      timer.mark('workspace:end', {
-        hasFirm: Boolean(next?.firm?.id),
-        matters: next?.matterQueue?.length || 0,
-        appointments: next?.appointmentQueue?.length || 0,
-      })
-      if (loadRequestIdRef.current !== requestId) return
-      setData(next)
-      setLoading(false)
-
-      const organisationIds = [...new Set([next?.firm?.organisationId, ...(next?.matterQueue || []).map(row => row.organisationId)].map(normalizeText).filter(Boolean))]
-      if (organisationIds.length) {
-        setResourcesLoading(true)
-        const resourceTimer = createPerfTimer('attorney.page.scheduling.resources', {
-          organisations: organisationIds.length,
-        })
-        Promise.all(organisationIds.map(async organisationId => {
-          const rows = await listAppointmentResourcesAsync(organisationId, { includeInactive: false })
+  const scopeKey = JSON.stringify([attorneyFirmId, currentUserId, role])
+  const source = useCalendarRead({
+    scopeKey, enabled: role === 'attorney', reconcile: false,
+    read: async signal => {
+      const timer = createPerfTimer('attorney.page.scheduling', { firmId: attorneyFirmId, userId: currentUserId })
+      try {
+        const next = await getAttorneyOperationalWorkspaceData(attorneyFirmId || null, currentUserId || null, { force: true, signal })
+        signal.throwIfAborted()
+        const organisationIds = [...new Set([next?.firm?.organisationId, ...(next?.matterQueue || []).map(row => row.organisationId)].map(normalizeText).filter(Boolean))]
+        const results = await Promise.allSettled(organisationIds.map(async organisationId => {
+          const rows = await listAppointmentResourcesAsync(organisationId, { includeInactive: false, signal })
           return (rows || []).map(row => ({ ...row, organisationId }))
-        })).then(scopes => [...new Map(scopes.flat().map(row => [row.resourceId, row])).values()])
-          .then((resourceRows) => {
-            if (loadRequestIdRef.current !== requestId) return
-            setResources(Array.isArray(resourceRows) ? resourceRows : [])
-            resourceTimer.mark('resources:end', {
-              resources: Array.isArray(resourceRows) ? resourceRows.length : 0,
-            })
-          })
-          .catch(() => {
-            if (loadRequestIdRef.current !== requestId) return
-            setError('Boardrooms could not refresh. Reload before changing a boardroom.')
-            resourceTimer.mark('resources:failed')
-          })
-          .finally(() => {
-            if (loadRequestIdRef.current !== requestId) return
-            setResourcesLoading(false)
-            resourceTimer.end()
-          })
-      } else {
-        setResources([])
-        setResourcesLoading(false)
-      }
-    } catch (loadError) {
-      outcome = 'failed'
-      if (loadRequestIdRef.current !== requestId) return
-      setError(loadError?.message || 'Unable to load attorney scheduling workspace.')
-      setLoading(false)
-      setResourcesLoading(false)
-    } finally {
-      timer.end({ outcome })
-    }
-  }, [attorneyFirmId, currentUserId])
-
-  useEffect(() => {
-    setData(null)
-    setResources([])
-    void loadWorkspace()
-    return () => {
-      loadRequestIdRef.current += 1
-    }
-  }, [loadWorkspace])
+        }))
+        signal.throwIfAborted()
+        const failure = results.find(result => result.status === 'rejected')
+        if (failure) throw failure.reason
+        const scopes = results.map(result => result.value)
+        setResources([...new Map(scopes.flat().map(row => [row.resourceId, row])).values()])
+        setData(next)
+        return next
+      } finally { timer.end() }
+    },
+  })
+  const { reload, refresh } = source
+  const loading = !source.hasSnapshot && source.status === 'loading'
+  const error = source.error
+  const resourcesLoading = source.status === 'loading'
+  useEffect(() => { setData(null); setResources([]) }, [scopeKey])
 
   const refreshWorkspace = useCallback(({ savedAppointment } = {}) => {
     if (savedAppointment?.appointment?.appointment_id) {
@@ -112,13 +64,13 @@ function AttorneySchedulingPage() {
         ] }
       })
     }
-    return loadWorkspace({ force: true, background: true })
-  }, [loadWorkspace])
+    return reload()
+  }, [reload])
 
   useAttorneyDashboardLiveRefresh({
     firmId: attorneyFirmId,
     enabled: Boolean(data?.firm?.id && data?.permissions?.can_manage_signing_appointments),
-    onRefresh: refreshWorkspace,
+    onRefresh: refresh,
   })
 
   const showAppointments = Boolean(data?.permissions?.can_manage_signing_appointments)
@@ -152,6 +104,8 @@ function AttorneySchedulingPage() {
       </section>
     )
   }
+
+  if (error && !data) return <section className="page"><p role="alert">{error} <button type="button" onClick={reload}>Retry calendar</button></p></section>
 
   if (!data?.firm?.id) {
     return <Navigate to="/attorney/onboarding" replace />

@@ -17,6 +17,8 @@ export default function JourneyStageOverrideActions({
   stage = null,
   compact = true,
   disabled = false,
+  buttonLabel = 'Mark complete',
+  source = 'journey_rail',
   onCreated,
   onError,
 }) {
@@ -24,6 +26,7 @@ export default function JourneyStageOverrideActions({
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState('')
+  const [savedOverride, setSavedOverride] = useState(null)
   const actionModel = useMemo(
     () => buildJourneyStageOverrideActionModel({ entityType, stage }),
     [entityType, stage],
@@ -35,6 +38,7 @@ export default function JourneyStageOverrideActions({
     setPendingAction(markCompleteAction)
     setReason('')
     setLocalError('')
+    setSavedOverride(null)
   }
 
   const closeDialog = () => {
@@ -51,10 +55,11 @@ export default function JourneyStageOverrideActions({
       return
     }
 
+    let persistedOverride = savedOverride
     try {
       setSaving(true)
       setLocalError('')
-      const override = await createJourneyStageOverride({
+      persistedOverride = persistedOverride || await createJourneyStageOverride({
         organisationId,
         entityType,
         entityId,
@@ -63,16 +68,19 @@ export default function JourneyStageOverrideActions({
         reason: normalizedReason,
         notificationMode: pendingAction.notificationMode,
         metadata: {
-          source: 'journey_rail',
+          source,
           stageLabel: stage?.label || '',
         },
       })
-      onCreated?.(override)
+      setSavedOverride(persistedOverride)
+      await onCreated?.(persistedOverride)
       setPendingAction(null)
       setReason('')
       setLocalError('')
     } catch (error) {
-      const message = error?.message || 'Journey override could not be saved.'
+      const message = persistedOverride
+        ? `Completion was saved, but the journey could not refresh. Try refreshing again. ${error?.message || ''}`.trim()
+        : error?.message || 'Journey override could not be saved.'
       setLocalError(message)
       onError?.(message)
     } finally {
@@ -84,7 +92,7 @@ export default function JourneyStageOverrideActions({
     <>
       <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" disabled={disabled || saving} onClick={openDialog}>
         <CheckCircle2 size={16} />
-        {saving ? 'Saving...' : 'Mark complete'}
+        {saving ? 'Saving...' : buttonLabel}
       </Button>
       <Modal open={Boolean(pendingAction)} onClose={closeDialog} title={`Mark ${stage?.label || 'stage'} complete`}>
         <div className="grid gap-4">
@@ -103,7 +111,7 @@ export default function JourneyStageOverrideActions({
           {localError ? <p className="rounded-[12px] border border-[#f8d7da] bg-[#fff5f6] px-3 py-2 text-sm font-semibold text-[#8d2831]">{localError}</p> : null}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={closeDialog} disabled={saving}>Cancel</Button>
-            <Button type="button" onClick={submitOverride} disabled={saving}>{saving ? 'Saving...' : 'Save override'}</Button>
+            <Button type="button" onClick={submitOverride} disabled={saving}>{saving ? 'Saving...' : savedOverride ? 'Refresh journey' : 'Save override'}</Button>
           </div>
         </div>
       </Modal>

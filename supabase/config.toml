@@ -349,6 +349,7 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/whatsapp-campaign-worker/index.ts"
 
+
 [functions.meta-integrations]
 enabled = true
 verify_jwt = false

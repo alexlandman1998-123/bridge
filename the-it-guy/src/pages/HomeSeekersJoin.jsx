@@ -12,13 +12,16 @@ import Modal from '../components/ui/Modal'
 import './HomeSeekersJoin.css'
 
 const nav = [['Selling', 'selling'], ['Buying', 'buying'], ['Renting', 'renting'], ['About', 'about'], ['Join us', 'join']]
-const { monthlyFee, transactionFee, ffcTransferFee, referralMonthlyCredit, referralLimit } = recruitmentPricing
+const { monthlyFee, transactionFee, ffcRunnerFee, ffcPpraFee, ffcTransferFee, referralMonthlyCredit, referralLimit } = recruitmentPricing
+
 const example = recruitmentExample()
 const annualCommission = example.commission
 const annualFee = example.cost
+const growthCommissionRate = 0.06
 const traditionalCost = example.traditionalCost
 const balloonCost = example.balloonCost
 const money = (amount) => `R${Math.round(amount).toLocaleString('en-ZA')}`
+const ffcTransferCopy = `${money(ffcRunnerFee)} for the runner handling the transfer, plus ${money(ffcPpraFee)} payable directly to the PPRA (${money(ffcTransferFee)} in total).`
 const rentalFileFee = 1000
 const rentalManagementFeeRate = 0.035
 const rentalAgentCharges = [
@@ -70,7 +73,8 @@ const faqs = [
   ['Am I an employee?', 'No. You’re an independent practitioner running your own business and keeping your own book.'],
   ['Can I bring my team?', 'Yes. The leader pays R9,000 a month or R100,000 upfront for their own seat only. Additional team members must pay monthly and cannot be paid upfront. Seats 2 to 5 cost R7,000 each per month. From seat 6 onwards, the cost is R6,000 each per month. One account, one invoice. All fees exclude VAT; registered-sale fees still apply.'],
   ['What production level is this for?', 'Five registered sales in the last twelve months, or R6 million of property sold. Compare the fees against your own production: a fixed fee can cost more than a split at lower sales levels.'],
-  ['Are there any other joining costs?', `There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs ${money(ffcTransferFee)} once off.`],
+  ['Are there any other joining costs?', `There is no joining fee, desk fee, franchise royalty, marketing levy or exit fee. Your Fidelity Fund Certificate transfer costs ${ffcTransferCopy}`],
+
 ]
 
 function Eyebrow({ children }) {
@@ -224,7 +228,8 @@ export default function HomeSeekersJoin() {
           </ul>
         </div>
         <div className="hs-join__fee-summary-footer">
-          <p><strong>FFC transfer:</strong> {money(ffcTransferFee)} once off.</p>
+          <p><strong>FFC transfer:</strong> {ffcTransferCopy}</p>
+
           <ApplyLink onOpen={openSignup} />
         </div>
       </div>
@@ -253,9 +258,9 @@ export default function HomeSeekersJoin() {
     <section className="hs-join__section" aria-labelledby="growth-title">
       <Eyebrow>The part <strong>nobody else can say</strong></Eyebrow><h2 id="growth-title">The better you get,<br /><em>the cheaper we get.</em></h2>
       <p className="hs-join__intro">Your subscription stays fixed. As your sales grow, the total fees take a smaller share of your commission.</p>
-      <div className="hs-join__growth">{[5, 8, 10, 15, 20].map((sales) => <div key={sales}><span>{sales} sales a year</span><strong>{Math.round(recruitmentExample(sales).effectivePercent)}<small>%</small></strong><span>of your commission</span></div>)}</div>
+      <div className="hs-join__growth">{[5, 8, 10, 15, 20].map((sales) => <div key={sales}><span>{sales} sales a year</span><strong>{Math.round(recruitmentExample(sales, 'monthly', growthCommissionRate).effectivePercent)}<small>%</small></strong><span>of your commission</span></div>)}</div>
       <div className="hs-join__two-columns hs-join__prose"><p>The traditional split takes thirty percent whether you do four sales or forty. The balloon model takes a monthly fee and then ten percent on top of it.</p><p>On option 2, we charge R9,000 a month and R1,500 per registered sale. At ten sales, that’s {money(annualFee)} for the year. You can plan around it.</p></div>
-      <p className="hs-join__fine">Rounded percentages using option 2, an average R1.5 million sale price and 5% commission, excluding VAT.</p>
+      <p className="hs-join__fine">Rounded percentages using option 2, an average R1.5 million sale price and {growthCommissionRate * 100}% commission, excluding VAT.</p>
     </section>
 
     <section className="hs-join__section hs-join__light" aria-labelledby="team-title">
@@ -317,7 +322,8 @@ export default function HomeSeekersJoin() {
         {paymentDetails[selectedOption.id].example && <aside className="hs-option-modal__example"><h4>A subscription example</h4><p>{paymentDetails[selectedOption.id].example}</p><small>This illustrates the subscription deduction only. The registered-sale fee and VAT are separate.</small></aside>}
         {selectedOption.id !== 'deals' && <section><h4>Bringing a team?</h4><p>You can bring your team on this option. {selectedOption.id === 'monthly' ? 'The team leader pays R9,000 by debit order on the 1st of every month. Additional seats are paid monthly at the rates below and cannot be paid upfront.' : 'R100,000 upfront covers the leader’s own seat for the year. Additional seats are paid monthly at the rates below and cannot be paid upfront.'} One account, one invoice.</p><table><caption>Team seat subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Subscription</th></tr></thead><tbody><tr><th scope="row">Team leader</th><td>{money(selectedOption.amount)} {selectedOption.id === 'monthly' ? 'per month' : 'upfront for the year'}</td></tr><tr><th scope="row">Seats 2 to 5</th><td>{money(7000)} each per month<span className="hs-join__seat-math">{money(7000 * 12)} a year (R7,000 × 12)</span></td></tr><tr><th scope="row">Seat 6 onwards</th><td>{money(6000)} each per month<span className="hs-join__seat-math">{money(6000 * 12)} a year (R6,000 × 12)</span></td></tr></tbody></table><p>The registered-sale fee still applies. Team seats cannot be paid from deals.</p></section>}
         <section><h4>Same support on every option</h4><p>Listing platforms, CRM, deal administration, training, compliance support and your choice of LOOM or CMA Info.</p></section>
-        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: {money(ffcTransferFee)} once off.</p></div>
+        <div className="hs-option-modal__fees"><strong>Keep 100% of your commission.</strong><p>Less your chosen subscription and {money(transactionFee)} per registered sale. All fees exclude VAT.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee. FFC transfer: {ffcTransferCopy}</p></div>
+
         <div className="hs-option-modal__actions"><button type="button" className="hs-option-modal__back" onClick={() => setSelectedOption(null)}>Back to options</button><button type="button" className="hs-option-modal__join" onClick={() => { setSelectedOption(null); openSignup() }}>Join Home Seekers<ArrowRight size={17} aria-hidden="true" /></button></div>
       </>}
     </Modal>
