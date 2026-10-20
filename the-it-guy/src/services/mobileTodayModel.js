@@ -36,8 +36,8 @@ export function buildMobileToday({ tasks = [], leads = [], contacts = [], appoin
   const todayEnd = addCalendarDays(sastDayStart(now), 1).getTime()
   const nowTime = new Date(now).getTime()
   const keys = new Set([profile.id, profile.userId, profile.email].map((key) => text(key).toLowerCase()).filter(Boolean))
-  const followUps = availability.followUps === false ? [] : tasks.filter((task) => {
-    if (closedTask(task)) return false
+  const checklist = availability.followUps === false ? [] : tasks.filter((task) => {
+    if (['cancelled', 'canceled'].includes(text(task.status).toLowerCase())) return false
     return category === 'principal' || includeAllFollowUps || [task.assignedAgentId, task.assignedAgentEmail].some((key) => keys.has(text(key).toLowerCase()))
   }).map((task) => {
     const lead = leads.find((item) => text(item.leadId) === text(task.leadId))
@@ -48,6 +48,9 @@ export function buildMobileToday({ tasks = [], leads = [], contacts = [], appoin
     const name = [contact?.firstName, contact?.lastName].filter(Boolean).join(' ')
     return {
       id: `task:${task.taskId || task.id}`, kind: 'followUps', title: text(task.title) || 'Follow-up',
+      taskId: task.taskId || task.id, leadId: task.leadId,
+      completed: closedTask(task), originalStatus: text(task.status) || 'Pending',
+      updatedToday: sameSastDay(Date.parse(task.updatedAt || ''), now),
       body: name || text(lead?.propertyAddress || lead?.listingTitle),
       meta: `${overdue ? 'Overdue · ' : ''}${dateLabel(due, now, !/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || ''))}`,
       status: overdue ? 'Overdue' : text(task.status) || 'Pending', description: text(task.description),
@@ -55,6 +58,7 @@ export function buildMobileToday({ tasks = [], leads = [], contacts = [], appoin
       dueToday, rank: overdue ? 0 : dueToday ? 2 : 6, time: due ?? Infinity,
     }
   }).sort((a, b) => a.rank - b.rank || a.time - b.time)
+  const followUps = checklist.filter(item => !item.completed)
 
   const appointmentItems = availability.appointments === false ? [] : appointments.filter((row) => !isClosedAppointment(row)).map((row) => {
     const time = Date.parse(appointmentStartIso(row) || '')
@@ -89,6 +93,7 @@ export function buildMobileToday({ tasks = [], leads = [], contacts = [], appoin
       deals: available.deals ? dealItems.length : null,
     },
     available, items: { appointments: appointmentItems, followUps, deals: dealItems },
+    taskChecklist: checklist.filter(item => item.dueToday && (!item.completed || sameSastDay(item.time, now) || item.updatedToday)).map(item => ({ ...item, dueOnToday: sameSastDay(item.time, now) })),
     action: queue[0] || null, radar: queue.slice(1, 3),
   }
 }

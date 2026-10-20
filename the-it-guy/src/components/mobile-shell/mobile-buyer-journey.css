@@ -1,0 +1,25 @@
+.mobile-live-buyer-journey { padding: 16px; border: 1px solid #e1e8e2; border-radius: 12px; background: #fff; color: #19251f; }
+.mobile-live-journey-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mobile-live-journey-heading h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.mobile-live-journey-heading-actions > span { padding: 3px 8px; border-radius: 6px; background: #edf5ef; color: #386348; font-size: 11px; font-weight: 500; }
+.mobile-live-buyer-journey > p, .mobile-live-journey-summary, .mobile-live-buyer-journey [role="alert"] { margin: 6px 0 0; color: #718077; font-size: 12px; line-height: 1.5; }
+.mobile-live-buyer-journey [role="alert"] button { min-height: 44px; margin-top: 8px; padding: 0 12px; border: 1px solid #dce5de; border-radius: 8px; color: #315d41; }
+.mobile-live-journey-progress { height: 3px; margin: 14px 0 20px; overflow: hidden; border-radius: 2px; background: #edf1ed; }
+.mobile-live-journey-progress > span { display: block; height: 100%; background: #3d7758; }
+.mobile-live-buyer-journey ol { margin: 0; padding: 0; list-style: none; }
+.mobile-live-buyer-journey li { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; padding-bottom: 14px; }
+.mobile-live-buyer-journey li:last-child { padding-bottom: 0; }
+.mobile-live-buyer-journey li:not(:last-child)::before { content: ''; position: absolute; left: 17px; top: 36px; bottom: 0; width: 1px; background: #e2e9e3; }
+.mobile-live-buyer-journey li.is-complete::before { background: #a8c5b2; }
+.mobile-live-journey-marker { display: flex; align-items: center; justify-content: center; height: 36px; border-radius: 8px; background: #f0f3f1; color: #849189; font-size: 12px; font-weight: 600; }
+.mobile-live-journey-stage { padding: 11px 12px; border: 1px solid #e4eae5; border-radius: 8px; }
+.mobile-live-journey-stage h3, .mobile-live-journey-stage-title { display: block; margin: 0; font-size: 13px; line-height: 1.4; font-weight: 500; }
+.mobile-live-journey-stage p, .mobile-live-journey-stage-detail { display: block; margin: 4px 0 0; color: #718077; font-size: 11px; line-height: 1.4; }
+.mobile-live-journey-stage small { display: block; margin-top: 4px; color: #718077; font-size: 10px; }
+.mobile-live-buyer-journey .is-complete .mobile-live-journey-marker { background: #3d7758; color: #fff; }
+.mobile-live-buyer-journey .is-complete .mobile-live-journey-stage { background: #f6faf7; }
+.mobile-live-buyer-journey .is-current .mobile-live-journey-marker { background: #192b22; color: #fff; }
+.mobile-live-buyer-journey .is-current .mobile-live-journey-stage { border-color: #789a85; background: #fbfdfb; }
+
+.mobile-live-journey-heading-actions { display: flex; align-items: center; gap: 4px; }
+.mobile-live-journey-heading-actions button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 8px; color: #65756b; }

@@ -3,6 +3,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { MobileLeadCreateContext } from '../../../components/mobile-shell/mobileLeadCreateContext.js'
 import MobileModulePage from '../MobileModulePage.jsx'
 
 const mocks = vi.hoisted(() => ({
@@ -23,7 +24,8 @@ vi.mock('../../../services/mobileDashboardService', () => ({
 }))
 vi.mock('../../../services/agentLeadWorkspaceService', () => ({ listAgentLeadWorkspaceRows: mocks.leads }))
 vi.mock('../../../services/mobileProductivityService', () => ({ getOfflineDrafts: () => [] }))
-vi.mock('../../../components/mobile-shell/MobileCreateSheet', () => ({ default: () => null, MobileDraftCard: () => null }))
+vi.mock('../../../components/mobile-shell/MobileLeadCreateFlow.jsx', () => ({ default: ({ initialType }) => <div data-testid="lead-create-form" data-lead-type={initialType}>Desktop lead capture</div> }))
+vi.mock('../../../components/mobile-shell/MobileCreateSheet', () => ({ default: ({ open, copyOverrides, draftContext }) => open ? <div data-testid="lead-create-form" data-lead-type={draftContext?.leadType}>{copyOverrides?.title}</div> : null, MobileDraftCard: () => null }))
 
 const snapshot = { transactions: [{ id: 'tx-one', title: '18 Oak Avenue', to: '/mobile/transaction/tx-one' }] }
 const lead = { id: 'lead-one', name: 'Sarah Williams', enquiredPropertyAddress: '18 Oak Avenue', source: 'Property24' }
@@ -71,12 +73,12 @@ it('opens the new-leads view with only the agent’s assigned new leads and can 
   ] })
   render(<MemoryRouter initialEntries={['/mobile/leads?stage=new&scope=assigned']}><MobileModulePage moduleKey="leads" /></MemoryRouter>)
   await act(async () => {})
-  expect(screen.getByRole('heading', { name: 'New leads' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'New leads', level: 1 })).toBeTruthy()
   expect(screen.getByText('Sarah Williams')).toBeTruthy()
   expect(screen.queryByText('Other agent buyer')).toBeNull()
   expect(screen.queryByText('Contacted buyer')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'View all leads' }))
-  expect(screen.getByRole('heading', { name: 'Leads' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Leads', level: 1 })).toBeTruthy()
   expect(screen.getByText('Contacted buyer')).toBeTruthy()
 })
 
@@ -89,7 +91,7 @@ it('loads saved leads after Transactions without crashing before the lead reques
   expect(screen.getByLabelText('Loading Leads')).toBeTruthy()
   expect(mocks.leads).toHaveBeenCalledWith({ organisationId: 'org-one', actor: expect.objectContaining({ id: 'agent-one', role: 'agent' }) })
   await act(async () => request.resolve({ rows: [lead] }))
-  fireEvent.click(screen.getByRole('button', { name: /Sarah Williams.*Open buyer journey/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Sarah Williams.*Open journey/ }))
   expect(screen.getByRole('heading', { name: 'Buyer journey: Sarah Williams' })).toBeTruthy()
 })
 
@@ -135,4 +137,20 @@ it('shows recently loaded transactions immediately while the asynchronous read i
   expect(screen.getByRole('heading', { name: 'Transactions' })).toBeTruthy()
   expect(screen.getByText('18 Oak Avenue')).toBeTruthy()
   expect(screen.queryByLabelText('Loading Transactions')).toBeNull()
+})
+
+it.each(['buyer', 'seller', 'tenant', 'landlord'])('opens the shared capture flow for a direct %s creation link', async type => {
+  mocks.leads.mockResolvedValue({ rows: [] })
+  render(<MemoryRouter initialEntries={[`/mobile/leads?create=lead&leadType=${type}`]}><MobileModulePage moduleKey="leads" /></MemoryRouter>)
+  expect((await screen.findByTestId('lead-create-form')).getAttribute('data-lead-type')).toBe(type)
+})
+
+it('opens the shared popup from the lead header plus without changing pages', async () => {
+  mocks.leads.mockResolvedValue({ rows: [lead] })
+  const openLeadCreate = vi.fn()
+  render(<MemoryRouter initialEntries={['/mobile/leads']}><MobileLeadCreateContext.Provider value={{ openLeadCreate }}><MobileModulePage moduleKey="leads" /></MobileLeadCreateContext.Provider></MemoryRouter>)
+  await screen.findByRole('heading', { name: 'Leads', level: 1 })
+  fireEvent.click(screen.getByRole('button', { name: 'Add lead' }))
+  expect(openLeadCreate).toHaveBeenCalledOnce()
+  expect(screen.getByText('Sarah Williams')).toBeTruthy()
 })

@@ -7,6 +7,20 @@ const task = (id, dueDate, extra = {}) => ({ taskId: id, title: `Call ${id}`, as
 const appointment = (id, dateTime, extra = {}) => ({ id, dateTime, status: 'confirmed', statusKey: 'confirmed', typeLabel: 'Property Viewing', ...extra })
 
 describe('mobile Today priorities', () => {
+  it('keeps today and overdue tasks with same-day completions available for undo', () => {
+    const result = buildMobileToday({ now, profile, tasks: [
+      task('late', '2026-10-05'), task('today', '2026-10-06'), task('future', '2026-10-07'), task('undated', ''),
+      task('done-today', '2026-10-06', { status: 'Completed' }),
+      task('done-late', '2026-10-04', { status: 'Completed', updatedAt: now.toISOString() }),
+      task('old-done', '2026-10-04', { status: 'Completed', updatedAt: '2026-10-04T10:00:00Z' }),
+      task('cancelled', '2026-10-06', { status: 'Cancelled' }), task('other', '2026-10-06', { assignedAgentId: 'other' }),
+    ] })
+    expect(result.taskChecklist.map(item => item.taskId).sort()).toEqual(['done-late', 'done-today', 'late', 'today'])
+    expect(result.taskChecklist.find(item => item.taskId === 'done-late').completed).toBe(true)
+    expect(result.counts.followUps).toBe(2)
+    expect(result.taskChecklist.filter(item => item.dueOnToday).map(item => item.taskId).sort()).toEqual(['done-today', 'today'])
+    expect(result.taskChecklist.find(item => item.taskId === 'late').dueOnToday).toBe(false)
+  })
   it('counts due work, excludes closed and other-agent tasks, and prioritises overdue follow-ups', () => {
     const today = buildMobileToday({ now, profile,
       tasks: [task('future', '2026-10-07'), task('due', '2026-10-06'), task('late', '2026-10-05'), task('closed', '2026-10-05', { status: 'Completed' }), task('other', '2026-10-05', { assignedAgentId: 'someone-else' })],

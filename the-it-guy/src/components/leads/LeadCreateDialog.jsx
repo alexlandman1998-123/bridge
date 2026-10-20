@@ -26,6 +26,9 @@ function createLeadCreateDraft(overrides = {}) {
 
 function LeadCreateDialogContent({
   category = 'buyer',
+  title,
+  subtitle,
+  className = '',
   agents = [],
   currentAgent = {},
   saving = false,
@@ -68,11 +71,11 @@ function LeadCreateDialogContent({
     <Modal
       open
       onClose={saving ? undefined : onClose}
-      title={`Add ${category === 'development' ? 'Development' : buyer ? 'Buyer' : 'Seller'} Lead`}
-      subtitle={lockProperty && propertyLabel
+      title={title || `Add ${category === 'development' ? 'Development' : buyer ? 'Buyer' : 'Seller'} Lead`}
+      subtitle={subtitle !== undefined ? subtitle : lockProperty && propertyLabel
         ? `Capture the contact details now. This lead will be linked to ${propertyLabel}.`
         : 'Capture the contact details now and complete the full workspace afterwards.'}
-      className="max-w-4xl"
+      className={`max-w-4xl ${className}`}
       footer={(
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>

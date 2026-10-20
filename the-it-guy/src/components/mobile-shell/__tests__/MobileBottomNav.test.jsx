@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import MobileBottomNav from '../MobileBottomNav.jsx'
 
 const mocks = vi.hoisted(() => ({ workspace: null }))
+vi.mock('../MobileConnectSheet.jsx', () => ({ default: ({ onClose }) => <div role="dialog" aria-label="Connect with me"><button onClick={onClose}>Close contact sheet</button></div> }))
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => mocks.workspace }))
 beforeEach(() => {
   mocks.workspace = { role: 'developer' }
@@ -61,4 +62,15 @@ it('dismisses on native cancel, the close button, and a location change', () => 
   fireEvent.click(screen.getByRole('button', { name: 'Open page menu' }))
   fireEvent.click(screen.getByRole('button', { name: 'Navigate externally' }))
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('offers Connect with me in the agency menu and closes the menu before opening the sheet', async () => {
+  mocks.workspace = { role: 'agent' }
+  setup()
+  fireEvent.click(screen.getByRole('button', { name: 'Open page menu' }))
+  fireEvent.click(screen.getByRole('button', { name: /Connect with me/ }))
+  expect(screen.queryByRole('dialog', { name: 'Pages' })).toBeNull()
+  expect(await screen.findByRole('dialog', { name: 'Connect with me' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Close contact sheet' }))
+  expect(screen.queryByRole('dialog', { name: 'Connect with me' })).toBeNull()
 })

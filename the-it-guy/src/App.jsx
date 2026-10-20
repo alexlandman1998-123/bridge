@@ -354,6 +354,8 @@ const Financials = lazy(() => import('./pages/Financials'))
 const RetiredDocumentGeneratorPage = lazy(() => import('./pages/RetiredDocumentGeneratorPage'))
 const MobileDemoLayout = lazy(() => import('./components/mobile-shell/MobileDemoLayout'))
 const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
+const MobileLeadActionProvider = lazy(() => import('./components/mobile-shell/MobileLeadActionProvider'))
+const MobileAgencyActionWorkspace = lazy(() => import('./pages/agency/AgencyPipelinePage'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
 const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopmentsPage'))
 const MobileDemoHomePage = lazy(() => import('./pages/mobile/MobileDemoHomePage'))
@@ -1655,11 +1657,15 @@ function SetupProtectedLayout({ session }) {
 }
 
 function MobileProtectedLayout({ onLogout, session }) {
+  const { pathname } = useLocation()
   if (isSupabaseConfigured && !session) {
     return <Navigate to="/auth" replace />
   }
 
-  return <MobileLayout onLogout={onLogout} />
+  return <MobileLeadActionProvider key={pathname} renderWorkspace={({ leadId, rental }) => rental
+    ? <RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadWorkspacePage embeddedLeadId={leadId} actionOnly /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>
+    : <SalesWorkspaceGuard><RoleRoute allowedRoles={['agent', 'developer']}><MobileAgencyActionWorkspace initialViewMode="leads" embeddedLeadId={leadId} /></RoleRoute></SalesWorkspaceGuard>
+  }><MobileLayout onLogout={onLogout} /></MobileLeadActionProvider>
 }
 
 function MobileTransactionWorkspacePage() {

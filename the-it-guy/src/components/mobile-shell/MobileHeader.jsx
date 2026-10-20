@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import MobileNotificationBell from './MobileNotificationBell.jsx'
-import WhatsAppUnread from '../marketing/WhatsAppUnread'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -42,16 +41,16 @@ export default function MobileHeader() {
   const showLogo = Boolean(logoUrl) && !(logoLoadFailure.url === logoUrl && logoLoadFailure.failed)
 
   return (
-    <header className="mobile-shell-header sticky top-0 z-30 border-b px-5 pb-4 pt-[max(0.9rem,env(safe-area-inset-top))] backdrop-blur-xl" data-mobile-header>
+    <header className="mobile-shell-header sticky top-0 z-30 border-b px-5 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]" data-mobile-header>
       <div className="mx-auto flex max-w-[520px] items-center gap-3">
-        <Link to="/mobile/home" className="flex min-w-0 flex-1 items-center text-inherit" aria-label={`${workspaceName} mobile home`}>
+        <Link to="/mobile/home" className="flex min-h-11 min-w-0 flex-1 items-center text-inherit" aria-label={`${workspaceName} mobile home`}>
           {showLogo ? (
-            <span className="flex h-12 w-full min-w-0 max-w-[205px] items-center">
+            <span className="flex h-11 w-full min-w-0 max-w-[180px] items-center">
               <img
                 key={logoUrl}
                 src={logoUrl}
                 alt={`${workspaceName} logo`}
-                className="block h-10 w-full object-contain object-left"
+                className="block h-9 w-full object-contain object-left"
                 onLoad={() => setLogoLoadFailure({ url: logoUrl, failed: false })}
                 onError={() => setLogoLoadFailure({ url: logoUrl, failed: true })}
               />
@@ -69,7 +68,6 @@ export default function MobileHeader() {
           )}
         </Link>
 
-        <WhatsAppUnread organisationId={currentWorkspace.id || simpleWorkspace.id} viewerId={workspace.profile?.id} role={workspace.role} membership={workspace.currentMembership} enabled={['agent','principal','headquarters'].includes(workspace.role)} />
         <MobileNotificationBell />
         <Link
           to="/mobile/more"

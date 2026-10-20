@@ -384,6 +384,9 @@ export default function MobileHome() {
       midnightTimer = window.setTimeout(() => { refresh({ force: true }); scheduleDayRefresh() }, nextDay.getTime() - Date.now() + 1000)
     }
     scheduleDayRefresh()
+    const leadRefreshTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh({ force: true })
+    }, 60_000)
 
     return () => {
       active = false
@@ -391,6 +394,7 @@ export default function MobileHome() {
       MOBILE_DASHBOARD_UPDATED_EVENTS.forEach((event) => window.removeEventListener(event, refreshAfterUpdate))
       document.removeEventListener('visibilitychange', resume)
       window.clearTimeout(midnightTimer)
+      window.clearInterval(leadRefreshTimer)
     }
   }, [organisation, organisationLoading, workspace])
 
@@ -432,13 +436,31 @@ export default function MobileHome() {
     navigate(action.to)
   }
 
+  async function updateHomeTask(task, completed) {
+    const organisationId = snapshot?.organisationId || organisation?.id || organisation?.organisationId || organisation?.organisation_id || organisation?.workspaceId || workspace.currentWorkspace?.organisationId || workspace.currentWorkspace?.organisation_id || workspace.currentWorkspace?.id || workspace.workspace?.id
+    const taskId = task.taskId || String(task.id || '').replace(/^task:/, '')
+    const { updateAgencyCrmLeadTask } = await import('../../lib/agencyCrmRepository.js')
+    await updateAgencyCrmLeadTask(organisationId, taskId, {
+      status: completed ? 'Completed' : (String(task.originalStatus).toLowerCase() === 'completed' ? 'Pending' : task.originalStatus || 'Pending'),
+      leadId: task.leadId,
+    }, { actor: workspace.profile || {} })
+    load()
+  }
+
+  async function contactHomeLead(lead) {
+    const organisationId = snapshot?.organisationId || organisation?.id || organisation?.organisationId || organisation?.organisation_id || organisation?.workspaceId || workspace.currentWorkspace?.organisationId || workspace.currentWorkspace?.organisation_id || workspace.currentWorkspace?.id || workspace.workspace?.id
+    const { markMobileBuyerLeadContacted } = await import('../../services/mobileLeadContactService.js')
+    await markMobileBuyerLeadContacted({ organisationId, leadId: lead.leadId, actor: workspace.profile || {} })
+    load()
+  }
+
   if (organisationLoading || state.workspace !== workspace || state.organisation !== organisation || state.loading) return <MobileLoadingState label="Loading mobile dashboard" />
   if (state.error) return <MobileErrorState title="We couldn't load your dashboard." body={state.error} onRetry={load} />
 
   if (['agent', 'principal', 'developer', 'default'].includes(snapshot?.category)) {
     return <>
       {showUnsupportedNotice && <MobileCard><h2>That page is not available on mobile yet.</h2><p>You can continue from your mobile workspace.</p></MobileCard>}
-      <AgentDashboard snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} brandStyle={brandStyle} />
+      <AgentDashboard key={`${snapshot?.organisationId || ''}:${snapshot?.viewerId || workspace.profile?.id || workspace.profile?.userId || ''}`} snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} onUpdateTask={updateHomeTask} onContactLead={contactHomeLead} brandStyle={brandStyle} />
     </>
   }
 

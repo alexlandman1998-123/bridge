@@ -37,10 +37,12 @@ export default function RentalLeadDialog({
   error,
   linkedListing,
   roleLocked = false,
+  title,
+  className = '',
 }) {
   const isLandlord = resolveRentalLeadRole(form.role) === "landlord";
   return (
-    <Modal open onClose={() => { if (!saving) onClose() }} title={roleLocked ? 'Add Tenant Lead' : 'Create rental lead'} className="max-w-3xl">
+    <Modal open onClose={() => { if (!saving) onClose() }} title={title || (roleLocked ? 'Add Tenant Lead' : 'Create rental lead')} className={`max-w-3xl ${className}`}>
       <div className="rental-module">
       <form onSubmit={onSubmit}>
         <fieldset disabled={saving} className="min-w-0 border-0 p-0">
@@ -217,7 +219,7 @@ export default function RentalLeadDialog({
             ) : (
               <Plus size={16} aria-hidden="true" />
             )}
-            {roleLocked ? 'Add Tenant Lead' : 'Create Rental Lead'}
+            {roleLocked ? isLandlord ? 'Add Landlord Lead' : 'Add Tenant Lead' : 'Create Rental Lead'}
           </button>
         </div>
         </fieldset>

@@ -11686,11 +11686,11 @@ function BuyerLeadAssignmentDropdown({
   )
 }
 
-function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
+function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const { leadId: routeLeadIdParam = '' } = useParams()
-  const routeLeadId = normalizeText(routeLeadIdParam)
+  const routeLeadId = normalizeText(embeddedLeadId || routeLeadIdParam)
   const routeLeadWorkspaceTab = useMemo(() => resolveLeadWorkspaceTabFromSearch(location.search), [location.search])
   const replaceLeadWorkspaceTabInUrl = useCallback((tab = '') => {
     const nextUrl = buildLeadWorkspaceTabUrl({
@@ -36901,7 +36901,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </form>
 
                               <div className="grid min-w-0 gap-4 xl:grid-rows-[1fr_auto]" data-testid="buyer-overview-right-column">
-                              <section className="flex min-h-0 min-w-0 flex-col rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
+                              <section data-mobile-next-best-action className="flex min-h-0 min-w-0 flex-col rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                                 <div className="min-w-0">
                                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">What’s next</p>
 	                                    <h3 className="mt-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">{buyerJourneyWhatsNext.title}</h3>

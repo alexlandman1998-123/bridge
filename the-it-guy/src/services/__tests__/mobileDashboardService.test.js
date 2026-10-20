@@ -16,6 +16,14 @@ import { buildResidentialActiveWork, clearMobileDashboardCache, getCachedMobileD
 
 const workspace = { role: 'agent', profile: { id: 'me', email: 'me@example.test' } }
 const organisation = { id: 'org-one' }
+
+it('uses a personal first name for greetings and omits a company alias', async () => {
+  const personal = getMobileDashboardSnapshot({ workspace: { ...workspace, profile: { ...workspace.profile, firstName: 'Alexander' } } })
+  expect(personal.displayName).toBe('Alexander')
+  const company = await getMobileDashboardSnapshotAsync({ workspace: { ...workspace, profile: { ...workspace.profile, firstName: 'Kingdom' } }, organisation: { ...organisation, name: 'Kingdom Real Estate' } })
+  expect(company.displayName).toBe('')
+  expect(getMobileDashboardSnapshot({ workspace: { role: 'agent', profile: {} } }).displayName).toBe('')
+})
 beforeEach(() => {
   clearMobileDashboardCache()
   vi.clearAllMocks()
@@ -28,6 +36,21 @@ beforeEach(() => {
   api.leads.mockResolvedValue([])
   api.rollup.mockResolvedValue(null)
   api.documents.mockResolvedValue(null)
+})
+
+it('rebuilds today’s buyer contact progress from saved records within the viewer’s scope', async () => {
+  const firstContactedAt = new Date().toISOString()
+  api.crm.mockResolvedValue({ tasks: [], tasksAvailable: true, leadsAvailable: true, leads: [
+    { leadId: 'mine', assignedAgentId: 'me', leadCategory: 'buyer', stage: 'Contacted', firstContactedAt },
+    { leadId: 'other', assignedAgentId: 'other', leadCategory: 'buyer', stage: 'Contacted', firstContactedAt },
+    { leadId: 'seller', assignedAgentId: 'me', leadCategory: 'seller', stage: 'Contacted', firstContactedAt },
+    { leadId: 'old', assignedAgentId: 'me', leadCategory: 'buyer', stage: 'Contacted', firstContactedAt: '2020-01-01T10:00:00Z' },
+  ] })
+  const personal = await getMobileDashboardSnapshotAsync({ workspace, organisation })
+  expect(personal.viewerId).toBe('me')
+  expect(personal.momentum).toEqual({ available: true, contactedLeadIds: ['mine'] })
+  const team = await getMobileDashboardSnapshotAsync({ workspace: { ...workspace, role: 'principal' }, organisation })
+  expect(team.momentum.contactedLeadIds).toEqual(['mine', 'other'])
 })
 afterEach(() => vi.restoreAllMocks())
 

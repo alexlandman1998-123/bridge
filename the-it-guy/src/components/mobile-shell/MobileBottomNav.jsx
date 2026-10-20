@@ -9,18 +9,23 @@ import {
   CalendarDays,
   ChevronRight,
   Plus,
+  QrCode,
   StickyNote,
   Upload,
   CalendarPlus,
   UsersRound,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getMobileNavItems, getMobilePageMenuItems, resolveMobileRoleCategory } from '../../config/mobileShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useMobileLeadCreate } from './mobileLeadCreateContext.js'
 import { isMobileCreateType } from './mobileCreateConfig'
 import './mobile-navigation.css'
+import './mobile-connect-sheet.css'
+
+const MobileConnectSheet = lazy(() => import('./MobileConnectSheet.jsx'))
 
 const ICONS = {
   home: Home,
@@ -49,11 +54,14 @@ const CREATE_ACTIONS = [
 
 export default function MobileBottomNav() {
   const workspace = useWorkspace()
+  const leadCreate = useMobileLeadCreate()
   const navigate = useNavigate()
   const location = useLocation()
   const items = getMobileNavItems(workspace)
   const menuItems = getMobilePageMenuItems(workspace)
   const [createOpen, setCreateOpen] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
+  const supportsContactCard = ['agent', 'principal', 'default'].includes(resolveMobileRoleCategory(workspace))
   const [menuLocation, setMenuLocation] = useState(null)
   const menuOpen = menuLocation === location.key
   const menuRef = useRef(null)
@@ -71,6 +79,7 @@ export default function MobileBottomNav() {
 
   function openAction(action) {
     setCreateOpen(false)
+    if (action.key === 'lead' && resolveMobileRoleCategory(workspace) !== 'developer' && leadCreate) { leadCreate.openLeadCreate(); return }
     navigate(action.key === 'lead' && resolveMobileRoleCategory(workspace) === 'developer' ? '/mobile/developer/leads?create=lead' : action.to)
   }
 
@@ -88,7 +97,9 @@ export default function MobileBottomNav() {
             return <Link key={item.key} to={item.to} onClick={() => setMenuLocation(null)} aria-current={matchesPage(item) ? 'page' : undefined}><span className="mobile-page-menu-icon"><Icon size={20} strokeWidth={1.8} aria-hidden="true" /></span><span>{item.label}</span><ChevronRight size={17} aria-hidden="true" /></Link>
           })}
         </nav>
+        {supportsContactCard && <button type="button" className="mobile-connect-menu-button" onClick={() => { setMenuLocation(null); setConnectOpen(true) }}><QrCode size={25} aria-hidden="true" /><span><strong>Connect with me</strong><small>Scan to save my contact</small></span><ChevronRight size={17} aria-hidden="true" /></button>}
       </dialog>
+      {connectOpen && <Suspense fallback={null}><MobileConnectSheet workspace={workspace} onClose={() => setConnectOpen(false)} /></Suspense>}
       {createOpen ? (
         <div className="fixed inset-0 z-50 bg-[#10243a]/28 backdrop-blur-sm" onClick={() => setCreateOpen(false)}>
           <div

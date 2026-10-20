@@ -10,11 +10,18 @@ const profile = { id: 'me' }
 const base = { displayName: 'Alex', greeting: 'Good afternoon', activeWork: [], listings: [], summaryCards: [], quickActions: [] }
 beforeEach(() => {
   HTMLElement.prototype.scrollTo = vi.fn()
+  HTMLElement.prototype.scrollIntoView = vi.fn()
   window.matchMedia = vi.fn(() => ({ matches: true }))
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
 })
 afterEach(cleanup)
+
+it('omits the greeting from the home header', () => {
+  render(<AgentDashboard snapshot={{ ...base, displayName: '' }} onOpen={vi.fn()} />)
+  expect(screen.queryByText('Good afternoon', { exact: true })).toBeNull()
+  expect(screen.queryByText(/Good afternoon,/)).toBeNull()
+})
 
 it('shows two agent header counters before commission and opens only today’s appointments or assigned new leads', () => {
   const today = buildMobileToday({ now, profile, appointments: [
@@ -31,9 +38,8 @@ it('shows two agent header counters before commission and opens only today’s a
   fireEvent.click(within(summary).getByRole('button', { name: '2 New leads' }))
   expect(onOpen).toHaveBeenCalledWith('/mobile/leads?stage=new&scope=assigned')
   fireEvent.click(within(summary).getByRole('button', { name: '1 Appointments today' }))
-  const dialog = screen.getByRole('dialog')
-  expect(within(dialog).getByRole('button', { name: /Viewing today/i })).toBeTruthy()
-  expect(within(dialog).queryByText(/Tomorrow/)).toBeNull()
+  expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).toBeNull()
 })
 
 it('places personal commission before today-only appointments and opens their saved details', () => {
@@ -120,7 +126,8 @@ it('opens a developer’s own portfolio from the shared dashboard and keeps agen
   fireEvent.click(screen.getByRole('button', { name: 'Open developments' }))
   expect(onOpen).toHaveBeenLastCalledWith('/mobile/developments')
   rerender(<AgentDashboard snapshot={{ ...base, category: 'agent' }} onOpen={onOpen} />)
-  expect(screen.getByRole('button', { name: /^Listings/ })).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'Tasks and new leads' })).toBeTruthy()
+  expect(screen.queryByRole('navigation', { name: 'Dashboard pages' })).toBeNull()
   expect(screen.queryByRole('button', { name: /^Developments/ })).toBeNull()
 })
 
@@ -169,9 +176,10 @@ it('gives developers two top counters, then all transaction and lead cards befor
   fireEvent.click(within(leads).getByRole('link', { name: /New Buyer 6/ }))
   expect(onOpen).toHaveBeenLastCalledWith('/mobile/developer/leads/lead-5')
   rerender(<AgentDashboard snapshot={{ ...base, category: 'agent', transactions, newLeads }} onOpen={onOpen} />)
-  expect(screen.getByRole('heading', { name: 'Today' })).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'Today' })).toBeNull()
   expect(screen.getByLabelText('Today summary')).toBeTruthy()
-  expect(screen.getByText('Pipeline value')).toBeTruthy()
+  expect(screen.queryByText('Pipeline value')).toBeNull()
+  expect(screen.queryByText('Active deals', { exact: true })).toBeNull()
   expect(screen.queryByRole('region', { name: 'Swipe through new leads' })).toBeNull()
 })
 
@@ -229,4 +237,56 @@ it('keeps the selected tab in sync when swiping between dashboard panels', () =>
   fireEvent.scroll(book)
   expect(screen.getByRole('button', { name: 'Developments' }).getAttribute('aria-current')).toBe('page')
   expect(screen.getByLabelText('Page 3 of 3')).toBeTruthy()
+})
+
+it('places up to three appointments below the daily scroller and opens the calendar', () => {
+  const today = buildMobileToday({ now, profile, appointments: [0, 1, 2, 3].map(index => ({ id: `visit-${index}`, dateTime: `2026-10-06T${11 + index}:00:00Z`, typeLabel: 'Viewing', statusKey: 'confirmed', clientName: `Client ${index}` })) })
+  const onOpen = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'principal', today }} onOpen={onOpen} />)
+  const appointments = screen.getByRole('region', { name: 'Appointments today' })
+  expect(screen.getByRole('region', { name: 'Tasks and new leads' }).compareDocumentPosition(appointments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(within(appointments).getAllByRole('time')).toHaveLength(3)
+  expect(within(appointments).queryByText(/Client 3/)).toBeNull()
+  fireEvent.click(within(appointments).getByRole('button', { name: 'View calendar' }))
+  expect(onOpen).toHaveBeenCalledWith('/mobile/calendar')
+})
+
+
+it('shows at most three recorded deal actions below appointments and opens the saved transaction', () => {
+  const deals = [0, 1, 2, 3].map(index => ({ id: `deal-${index}`, title: `${index} Oak Avenue`, nextAction: `Review signed offer ${index}`, stage: 'Offer', to: `/mobile/transaction/deal-${index}` }))
+  const today = buildMobileToday({ now, profile, deals })
+  const onOpen = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'principal', today }} onOpen={onOpen} />)
+  const attention = screen.getByRole('region', { name: 'Deals needing attention' })
+  expect(screen.getByRole('region', { name: 'Appointments today' }).compareDocumentPosition(attention) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(within(attention).queryByText('3 Oak Avenue')).toBeNull()
+  fireEvent.click(within(attention).getByRole('button', { name: /0 Oak Avenue/ }))
+  expect(onOpen).toHaveBeenLastCalledWith('/mobile/transaction/deal-0')
+  fireEvent.click(within(attention).getByRole('button', { name: 'View deals' }))
+  expect(onOpen).toHaveBeenLastCalledWith('/mobile/transactions')
+})
+
+it('hides deal attention when there are no recorded actions or the same action is already a task', () => {
+  const today = buildMobileToday({ now, profile, deals: [{ id: 'one', title: '18 Oak Avenue', nextAction: 'Review offer', to: '/mobile/transaction/one' }] })
+  today.taskChecklist = [{ id: 'task', title: 'Review offer', body: '18 Oak Avenue', completed: false }]
+  const view = render(<AgentDashboard snapshot={{ ...base, category: 'agent', today }} onOpen={vi.fn()} />)
+  expect(screen.queryByRole('region', { name: 'Deals needing attention' })).toBeNull()
+  view.rerender(<AgentDashboard snapshot={{ ...base, category: 'principal', today: buildMobileToday({ now, deals: [{ id: 'no-action', title: 'No action' }] }) }} onOpen={vi.fn()} />)
+  expect(screen.queryByRole('region', { name: 'Deals needing attention' })).toBeNull()
+})
+
+it('shows a retry when deal actions are unavailable', () => {
+  const onRefresh = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'principal', today: buildMobileToday({ now, availability: { deals: false } }) }} onOpen={vi.fn()} onRefresh={onRefresh} />)
+  fireEvent.click(within(screen.getByRole('region', { name: 'Deals needing attention' })).getByRole('button', { name: 'Retry deals' }))
+  expect(onRefresh).toHaveBeenCalledOnce()
+})
+
+it('opens appointment creation from the matching plus in the appointments container', () => {
+  const onCreateAppointment = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'agent', today: buildMobileToday({ now }) }} onOpen={vi.fn()} onCreateAppointment={onCreateAppointment} />)
+  const section = screen.getByRole('region', { name: 'Appointments today' })
+  fireEvent.click(within(section).getByRole('button', { name: 'Add appointment' }))
+  expect(onCreateAppointment).toHaveBeenCalledOnce()
+  expect(within(section).getByRole('button', { name: 'View calendar' })).toBeTruthy()
 })

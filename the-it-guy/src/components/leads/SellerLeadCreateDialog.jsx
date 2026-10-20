@@ -15,7 +15,7 @@ const EMPTY_CAPTURE = Object.freeze({ sellerOnboarding: { status: 'not_started',
   propertyCategory: '', propertyType: '', propertyStructureType: '',
 } } })
 
-export default function SellerLeadCreateDialog({ organisationId, actor, assignedAgent, agents = [], lockPrimaryAgent = false, source, onSourceChange, sourceOptions, priority, metadataControls, onClose, onCreated }) {
+export default function SellerLeadCreateDialog({ organisationId, actor, assignedAgent, agents = [], lockPrimaryAgent = false, source, onSourceChange, sourceOptions, priority, metadataControls, onClose, onCreated, className = '' }) {
   const [receipt] = useState(createSellerLeadCaptureReceipt)
   const [primaryAgent, setPrimaryAgent] = useState(assignedAgent)
   const [additionalAgents, setAdditionalAgents] = useState([])
@@ -61,7 +61,7 @@ export default function SellerLeadCreateDialog({ organisationId, actor, assigned
       setClosing(false)
     }
   }
-  return <Modal open title="Create Seller Lead" className="max-w-4xl" onClose={uploading || preparingDocuments || closing || finishing ? undefined : closeCapture}>
+  return <Modal open title="Create Seller Lead" className={`max-w-4xl ${className}`} onClose={uploading || preparingDocuments || closing || finishing ? undefined : closeCapture}>
     <fieldset disabled={uploading || preparingDocuments || closing || finishing} className="space-y-4">
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       <SellerOnboarding embedded captureDraft={EMPTY_CAPTURE} completionModeOverride="agent_assisted" captureLayout="tabs"

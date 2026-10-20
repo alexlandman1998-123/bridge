@@ -13,7 +13,7 @@ import { getAgentPrivateListings } from './privateListingService'
 import { buildMobileToday, isLeadAssignedToActor, isNewAgentLead } from './mobileTodayModel.js'
 import { getAppointmentDashboardData } from './appointmentDashboardService.js'
 import { AGENCY_CRM_UPDATED_EVENT } from '../lib/agencyCrmUpdateBus.js'
-import { sastDayStart } from '../core/appointments/attorneyCalendarModel.js'
+import { sastDayStart, sameSastDay } from '../core/appointments/attorneyCalendarModel.js'
 import { fetchTransactionDocumentsWorkspace, getTransactionRollup } from '../lib/transactionWorkspaceApi.js'
 import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJourneyAdapter.js'
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
@@ -71,16 +71,19 @@ if (typeof window !== 'undefined') {
   })
 }
 
-function getDisplayName(workspace = {}) {
+function getDisplayName(workspace = {}, organisation = null) {
   const profile = workspace.profile || {}
-  return profile.firstName || String(profile.fullName || '').split(' ').filter(Boolean)[0] || 'there'
+  const name = String(profile.firstName || profile.first_name || profile.fullName || profile.full_name || '').trim().split(/\s+/)[0] || ''
+  const organisationNames = [organisation?.name, organisation?.displayName, workspace.workspace?.name, workspace.workspace?.displayName, workspace.currentWorkspace?.name, workspace.currentWorkspace?.displayName]
+  const isOrganisationName = organisationNames.some(label => String(label || '').trim().split(/\s+/)[0]?.toLowerCase() === name.toLowerCase())
+  return isOrganisationName || name.toLowerCase() === 'there' ? '' : name
 }
 
 function getGreeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good Morning'
-  if (hour < 18) return 'Good Afternoon'
-  return 'Good Evening'
+  const hour = Number(new Intl.DateTimeFormat('en-ZA', { timeZone: 'Africa/Johannesburg', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
 }
 
 function normalizeText(value = '', fallback = '') {
@@ -582,7 +585,7 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
   }) : []
   const crm = crmResult.status === 'fulfilled' ? crmResult.value : {}
   const agentNewLeadsAvailable = crmResult.status === 'fulfilled' && crm.leadsAvailable !== false && Array.isArray(crm.leads)
-  const agentNewLeads = agentNewLeadsAvailable ? crm.leads.filter(lead => isLeadAssignedToActor(lead, profile) && isNewAgentLead(lead)) : []
+  const agentNewLeads = agentNewLeadsAvailable ? crm.leads.filter(lead => (category === 'principal' || isLeadAssignedToActor(lead, profile)) && isNewAgentLead(lead)) : []
   const today = buildMobileToday({
     ...crm, profile, category, includeAllFollowUps: includeAll, deals: activeWork,
     appointments: appointmentResult.status === 'fulfilled' ? appointmentResult.value.appointments : [],
@@ -637,11 +640,22 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
 
   const snapshot = {
     category,
-    displayName: getDisplayName(workspace),
+    organisationId,
+    viewerId: profile.id || profile.userId || '',
+    momentum: {
+      available: agentNewLeadsAvailable && crm.tasksAvailable !== false && Array.isArray(crm.tasks),
+      contactedLeadIds: agentNewLeadsAvailable ? crm.leads.filter(lead => lead.leadCategory === 'buyer' &&
+        (category === 'principal' || isLeadAssignedToActor(lead, profile)) &&
+        lead.firstContactedAt && sameSastDay(Date.parse(lead.firstContactedAt), new Date())).map(lead => lead.leadId) : [],
+    },
+    displayName: getDisplayName(workspace, organisation),
     greeting: getGreeting(),
     generatedAt: new Date().toISOString(),
     ...(category === 'agent' ? { commission } : {}),
-    ...(category === 'agent' ? { newLeads: agentNewLeads, newLeadsAvailable: agentNewLeadsAvailable } : {}),
+    ...(['agent', 'principal', 'default'].includes(category) ? { newLeads: agentNewLeads.map(lead => {
+      const contact = (crm.contacts || []).find(item => item.contactId === lead.contactId)
+      return { ...lead, contactName: [contact?.firstName, contact?.lastName].filter(Boolean).join(' '), contactPhone: contact?.phone || lead.phone || '' }
+    }), newLeadsAvailable: agentNewLeadsAvailable } : {}),
     summaryCards: category === 'developer' ? [
       { key: 'active', label: 'Active Transactions', value: activeRows.length, tone: 'green' },
       { key: 'developments', label: 'Developments', value: developments.length, tone: 'blue' },

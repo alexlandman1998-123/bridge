@@ -1,0 +1,47 @@
+.mobile-lead-action-module.ui-modal { width: min(100%, 760px); max-width: 760px; border-radius: 12px; }
+.mobile-lead-action-module .ui-modal-head { position: sticky; top: 0; z-index: 10; background: #fff; }
+.mobile-lead-action-module .ui-modal-body { padding: 12px; }
+.mobile-lead-action-workspace { min-width: 0; }
+.mobile-lead-action-workspace .page-content { padding: 0; }
+.mobile-lead-action-workspace .tenant-workspace { padding: 0; }
+.mobile-lead-action-workspace [data-mobile-next-best-action] { scroll-margin-top: 12px; }
+.mobile-live-journey-stage-button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; cursor: pointer; }
+.mobile-live-journey-stage-button > svg { flex-shrink: 0; color: #718077; }
+.mobile-live-journey-action { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 16px; padding: 10px; border: 1px solid #dce5de; border-radius: 8px; background: #f3f8f3; color: #315d41; font-size: 12px; font-weight: 500; }
+@media (max-width: 600px) {
+  .mobile-lead-action-module.ui-modal { max-height: calc(100dvh - 16px); }
+  .mobile-lead-action-workspace [data-testid="buyer-overview-right-column"] { order: -1; }
+}
+
+.mobile-tenant-action-content { display: grid; gap: 14px; color: #19251f; }
+.mobile-tenant-action-name { margin: 0; color: #65756b; font-size: 13px; font-weight: 500; }
+.mobile-tenant-action-content .tenant-card { min-width: 0; margin: 0; padding: 16px; border-radius: 10px; box-shadow: none; }
+.mobile-tenant-action-content .tenant-next { background: #f5f8f5; border: 1px solid #dfe7df; color: #19251f; }
+.mobile-tenant-action-content .tenant-next h2 { color: #19251f; font-size: 18px; }
+.mobile-tenant-action-content .tenant-next p { color: #65756b; font-size: 12px; line-height: 1.6; }
+.mobile-tenant-action-content .tenant-next button { min-height: 44px; border-radius: 8px; background: #218158; color: #fff; }
+.mobile-tenant-action-content > [role="alert"] { color: #a72d25; font-size: 12px; }
+.mobile-tenant-action-content > [role="status"] { color: #218158; font-size: 12px; }
+
+/* Focused tenant action sheet: one surface, one action. */
+.mobile-tenant-action-module.ui-modal { max-width: 520px; border: 1px solid #e1e7e2; border-radius: 16px; background: #fff; }
+.mobile-tenant-action-module .ui-modal-head { align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #edf0ed; }
+.mobile-tenant-action-module .ui-modal-head h3 { margin: 0; color: #65756b; font-size: 12px; font-weight: 500; line-height: 1.5; }
+.mobile-tenant-action-module .ui-modal-head .ui-icon-button { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: #53665a; box-shadow: none; }
+.mobile-tenant-action-module .ui-modal-head .ui-icon-button:focus { outline: none; box-shadow: none; }
+.mobile-tenant-action-module .ui-modal-head .ui-icon-button:focus-visible { outline: 2px solid #218158; outline-offset: -3px; }
+.mobile-tenant-action-module .ui-modal-body { padding: 20px; }
+.mobile-tenant-action-module .mobile-tenant-action-content { gap: 8px; }
+.mobile-tenant-action-module .mobile-tenant-action-name { color: #65756b; font-size: 13px; line-height: 1.5; }
+.mobile-tenant-action-module .tenant-next.tenant-card { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.mobile-tenant-action-module .tenant-next h2 { margin: 0; color: #19251f; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -.5px; }
+.mobile-tenant-action-module .tenant-next p { margin: 12px 0 0; color: #65756b; font-size: 13px; line-height: 1.65; }
+.mobile-tenant-action-module .tenant-next button { width: 100%; min-height: 48px; margin-top: 24px; padding: 12px 16px; border: 0; border-radius: 8px; background: #218158; color: #fff; font-size: 13px; font-weight: 600; }
+.mobile-tenant-action-module .tenant-next button:disabled { opacity: .6; }
+.mobile-tenant-action-module .tenant-next button:focus-visible { outline: 2px solid #218158; outline-offset: 3px; }
+.mobile-tenant-action-module .mobile-tenant-action-content > .tenant-card:not(.tenant-next) { margin-top: 16px; border: 1px solid #e1e7e2; }
+@media (max-width: 600px) {
+  .ui-modal-overlay:has(> .mobile-tenant-action-module) { align-items: end; padding: 12px; }
+  .mobile-tenant-action-module.ui-modal { width: 100%; max-height: calc(100dvh - 24px); margin: 0; }
+  .mobile-tenant-action-module .ui-modal-body { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+}
