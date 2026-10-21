@@ -29,6 +29,8 @@ jobs:
           the-it-guy/server/tests/remainingRpcScope.test.js
           the-it-guy/server/tests/remainingPublicRpcAccess.test.js
           the-it-guy/server/tests/leadProspectAccess.test.js
+      - name: Verify recovery evidence fails closed
+        run: node scripts/supabase-push-lock-recovery.test.mjs
       - name: Audit primary app production dependencies
         run: npm --prefix the-it-guy audit --package-lock-only --omit=dev --audit-level=moderate
       - name: Audit public website production dependencies

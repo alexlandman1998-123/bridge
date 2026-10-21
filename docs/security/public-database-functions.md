@@ -87,3 +87,9 @@ MFA enrollment/enforcement is deferred at the owner's request on 21 October 2026
 | Kingdom customer domains — production of the project named arch9-websites-staging | `dpl_56yJjS6hjqrRDej7Jn1TbbfMqLNJ` |
 
 The focused security CI [passed all 61 tests and three production package audits](https://github.com/alexlandman1998-123/bridge/actions/runs/39592659291). The source PR uses the documented `direct-production-pilot` migration-freeze exception for these reviewed, already verified corrections. Historical ledger drift remains unresolved and broad migration pushes remain blocked. Keep the PR in draft until its merge can preserve the exact live business-source baselines; merging it is not a prerequisite to these completed production releases.
+
+### Subsequent API key and recovery coverage review
+
+Live Google Places requests on 21 October verified rejection without a referrer and for an unrelated origin, while the primary, admin and Kingdom origins continued to return autocomplete results. The complete Google API allowlist still requires authenticated console access. The [API key and backup coverage review](api-key-and-backup-coverage.md) records the tested boundaries and remaining configuration work.
+
+The July database recovery exercise was a live-data branch clone, not restoration from an identified backup. Recovery evidence has been corrected and the gate now blocks that insufficient proof, failed live verification and unavailable completed backups. It reports database-only coverage; uploaded Storage file bytes need separate encrypted backups. A synthetic encryption/restore test passed, but a company-owned off-site destination and an actual isolated backup-restore exercise remain pending. No customer file was exported, no production restore was run, and MFA stays deferred.
