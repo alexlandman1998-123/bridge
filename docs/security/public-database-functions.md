@@ -74,4 +74,16 @@ Document HTML previews are sandboxed without script execution, PDF calls disable
 
 The release covers the primary app, admin, the websites production project and the production deployment of the project named arch9-websites-staging, which actually serves Kingdom's customer domains. Kingdom home, properties, blog, valuation and health returned 200 after promotion. Client/onboarding/offer/seller checks passed all 15 cases again, and the anonymous 508-table scan had no errors or new sensitive-data exposure. The minimum for new passwords is now 12 characters with leaked-password protection retained; existing passwords/sessions were not reset. GitHub vulnerability alerts and automatic dependency security updates are enabled. A focused security workflow is added to the source PR.
 
-Remaining owner-dependent work includes MFA enrollment/enforcement and recovery flows, CAPTCHA provider configuration, storage-file backup/restore coverage and any paid point-in-time recovery choice. Google/provider-side key restrictions and historical exposure forensics remain unverified. A failed Vercel candidate was held off live domains and replaced by a tested build with the explicit monorepo/shared-source settings.
+MFA enrollment/enforcement is deferred at the owner's request on 21 October 2026; no privileged sign-in rollout is enabled by this release. Remaining owner-dependent work includes recovery flows, CAPTCHA provider configuration, storage-file backup/restore coverage and any paid point-in-time recovery choice. Google/provider-side key restrictions and historical exposure forensics remain unverified. A failed Vercel candidate was held off live domains and replaced by a tested build with the explicit monorepo/shared-source settings.
+
+
+### Verified production release identities
+
+| Product / live domain | Promoted deployment |
+| --- | --- |
+| Primary workspace — app.arch9.co.za | `dpl_8L3aYTZ8EqRDFJqCwKwydndKbgRS` |
+| Internal console — admin.arch9.co.za | `dpl_A9RW59D89amoKhtKhRLosFFJujg4` |
+| Websites production project | `dpl_D39q6mpSCCGdHSACukFmDHGGGFjp` |
+| Kingdom customer domains — production of the project named arch9-websites-staging | `dpl_56yJjS6hjqrRDej7Jn1TbbfMqLNJ` |
+
+The focused security CI [passed all 61 tests and three production package audits](https://github.com/alexlandman1998-123/bridge/actions/runs/39592659291). The source PR uses the documented `direct-production-pilot` migration-freeze exception for these reviewed, already verified corrections. Historical ledger drift remains unresolved and broad migration pushes remain blocked. Keep the PR in draft until its merge can preserve the exact live business-source baselines; merging it is not a prerequisite to these completed production releases.
