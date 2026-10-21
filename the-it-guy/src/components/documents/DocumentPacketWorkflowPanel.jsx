@@ -1156,7 +1156,7 @@ export default function DocumentPacketWorkflowPanel({
         </div>
         <div className="h-[540px] overflow-hidden rounded-[12px] border border-[#dce6f2] bg-[#f8fbff]">
           {previewHtml ? (
-            <iframe title={`${packetType}-packet-preview`} srcDoc={previewHtml} className="h-full w-full border-0 bg-white" />
+            <iframe sandbox="allow-same-origin allow-modals" title={`${packetType}-packet-preview`} srcDoc={previewHtml} className="h-full w-full border-0 bg-white" />
           ) : (
             <div className="flex h-full items-center justify-center px-4 text-xs text-[#6b7d93]">Preview not available yet.</div>
           )}

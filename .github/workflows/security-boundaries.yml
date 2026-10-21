@@ -1,0 +1,37 @@
+name: Security boundaries
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  security-boundaries:
+    name: Security boundary and dependency checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: the-it-guy/package-lock.json
+      - name: Install focused test dependencies
+        run: npm --prefix the-it-guy ci --ignore-scripts --no-audit --no-fund
+      - name: Verify access boundaries and credential handling
+        run: >-
+          node --test --test-concurrency=1
+          scripts/api-credentials-security.test.mjs
+          the-it-guy/server/tests/anonymousAccessBoundary.test.js
+          the-it-guy/server/tests/anonymousPolicyTimeouts.test.js
+          the-it-guy/server/tests/privilegedRpcAccess.test.js
+          the-it-guy/server/tests/remainingRpcScope.test.js
+          the-it-guy/server/tests/remainingPublicRpcAccess.test.js
+          the-it-guy/server/tests/leadProspectAccess.test.js
+      - name: Audit primary app production dependencies
+        run: npm --prefix the-it-guy audit --package-lock-only --omit=dev --audit-level=moderate
+      - name: Audit public website production dependencies
+        run: npm --prefix apps/websites audit --package-lock-only --omit=dev --audit-level=moderate
+      - name: Audit admin production dependencies
+        run: npm --prefix apps/admin audit --package-lock-only --omit=dev --audit-level=moderate

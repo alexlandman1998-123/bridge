@@ -473,7 +473,7 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
         setLoading(true)
         setError('')
         setPages([])
-        task = pdfjsLib.getDocument({ url: documentUrl, withCredentials: false })
+        task = pdfjsLib.getDocument({ url: documentUrl, withCredentials: false , isEvalSupported: false })
         const loaded = await task.promise
         if (cancelled) return
         setPdf(loaded)
@@ -544,7 +544,7 @@ function DocumentPreview({ documentUrl, fallbackHtml, fields, activeFieldId, onF
           ))
         ) : fallbackHtml ? (
           <div className="h-[72vh] bg-white">
-            <iframe title="signer-document-preview" srcDoc={fallbackHtml} className="h-full w-full border-0 bg-white" />
+            <iframe sandbox="allow-same-origin allow-modals" title="signer-document-preview" srcDoc={fallbackHtml} className="h-full w-full border-0 bg-white" />
           </div>
         ) : documentUrl ? (
           <div className="h-[72vh] bg-white">

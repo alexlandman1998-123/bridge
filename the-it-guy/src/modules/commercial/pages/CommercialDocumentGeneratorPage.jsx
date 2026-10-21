@@ -762,7 +762,7 @@ function CommercialDocumentGeneratorPage() {
           </div>
           <div className="mt-4 rounded-3xl border border-slate-200 bg-[#fbfcfe] p-3">
             {previewHtml ? (
-              <iframe title="Commercial document preview" srcDoc={previewHtml} className="h-[640px] w-full rounded-2xl border border-slate-200 bg-white" />
+              <iframe sandbox="allow-same-origin allow-modals" title="Commercial document preview" srcDoc={previewHtml} className="h-[640px] w-full rounded-2xl border border-slate-200 bg-white" />
             ) : (
               <div className="flex h-[640px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white text-sm text-slate-500">
                 Generate a preview to inspect the rendered document.
