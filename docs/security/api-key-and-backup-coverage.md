@@ -45,6 +45,16 @@ Use a company-owned private Backblaze B2 bucket in its EU region, separate from 
 
 Published [B2 pricing](https://www.backblaze.com/cloud-storage/pricing) includes the first 10 GB of storage free and prices additional storage at $6.95/TB/month. A single current 5.88 GB copy should fit that storage allowance, but history, changes and other account usage can exceed it. Source-provider egress, recovery traffic and any EU-specific quote must be checked separately. Set billing alerts/caps before activation; a cap that stops backups must surface as a failure, not a healthy backup.
 
+### Approved free-only setup — 21 October 2026
+
+The owner approved preparing this option using the free allowance only. Account creation and connection remain pending; this approval does not authorize paid usage, payment details, paid PITR or a paid restore project.
+
+Use [Backblaze's B2 sign-up](https://www.backblaze.com/sign-up/s3), which states that no credit card is required. The company owner must complete the password, verification and terms acceptance, selecting the EU region when offered. Do not add a payment method or enable paid usage. After sign-in, verify the actual account's free storage/download/transaction caps before connecting a worker; an alert alone is not a spending guarantee.
+
+Configure one private encrypted backup bucket, no public access, and a separate bucket-scoped worker credential. Before the first transfer, verify that both Backblaze capacity and Supabase's included egress can cover the copy and integrity checks. The observed 5.88 GB source size is a planning input, not a live account-quota check. If either remaining free allowance cannot be verified, do not upload.
+
+Reserve headroom below the 10 GB allowance: stop before projected total stored bytes exceed **9,000,000,000 bytes**, including encrypted payload overhead, retained historical versions, control manifests and unfinished uploads. This is a conservative proposed worker ceiling, not a provider quota already configured. Recheck source size and retained destination versions before every run; do not infer usage from only today's visible files. Maintain a single backup writer. A provider refusal, incomplete quota inventory, failed verification or quota limit must produce a failed/pending backup status. Do not auto-upgrade or delete recovery history to fit. No recurrence is enabled until the initial verified copy, credential recovery arrangements and failure reporting are complete.
+
 ### Credentials and retention
 
 - Keep the bucket private. Give the backup worker a bucket-scoped list/read/write application key without account administration, lifecycle changes or permanent-delete permissions. Keep lifecycle/retention administration with the owner, separate from the app. Test required capabilities; do not widen to an account-wide master key to resolve a tool error.
