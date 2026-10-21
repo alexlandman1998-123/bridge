@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import {
@@ -222,14 +223,14 @@ async function dispatchEvent(
   }
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") {
     return jsonResponse(405, { error: "POST is required." });
   }
 
   const supabaseUrl = websiteLeadText(Deno.env.get("SUPABASE_URL"), 2048);
   const serviceRoleKey = websiteLeadText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
     4096,
   );
   if (!await serviceRoleRequest(request, serviceRoleKey, supabaseUrl)) {
@@ -292,4 +293,4 @@ Deno.serve(async (request) => {
       error: websiteLeadErrorMessage(error),
     });
   }
-});
+}));

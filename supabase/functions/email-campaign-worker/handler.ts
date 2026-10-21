@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../_shared/apiCredentials.ts";
 import { escapeHtml } from "../_shared/emailDocument.js";
 import { inspectEmailHtml, renderCampaignDelivery } from "../_shared/emailContent.js";
 import { checkCampaignContent } from "../_shared/emailCampaignContentCheck.ts";
@@ -35,7 +36,7 @@ export function createWorkerHandler({ createClient, env, fetcher = fetch }: { cr
 return async (req: Request) => {
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
   const workerSecret = text(env("EMAIL_CAMPAIGN_WORKER_SECRET"));
-  const serviceKey = text(env("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = text(supabaseServiceKey({ get: env }));
   const hasWorkerSecret = Boolean(workerSecret) && text(req.headers.get("x-arch9-email-worker-secret")) === workerSecret;
   const hasServiceAuthorization = Boolean(serviceKey) && text(req.headers.get("authorization")) === `Bearer ${serviceKey}`;
   const cronKey = text(req.headers.get("x-arch9-email-cron-key"));
@@ -44,7 +45,7 @@ return async (req: Request) => {
   const hasCronAuthorization = Boolean(expectedCronDigest) && Boolean(cronDigest) && cronDigest === expectedCronDigest;
   if (!hasWorkerSecret && !hasServiceAuthorization && !hasCronAuthorization) return json(401, { error: "Worker authentication failed." });
   const url = text(env("SUPABASE_URL"));
-  const key = text(env("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey({ get: env }));
   const resendKey = text(env("RESEND_API_KEY"));
   if (!url || !key || !resendKey) return json(500, { error: "Email worker is not configured." });
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });

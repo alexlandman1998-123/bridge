@@ -1,3 +1,4 @@
+import { supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -16,13 +17,13 @@ const normaliseUrl = (value: unknown) => text(value).replace(/\/+$/, "");
 
 type Check = { key: string; label: string; ok: boolean };
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
 
   const authorization = text(req.headers.get("authorization"));
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const anonKey = text(Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY"));
+  const anonKey = text(supabasePublishableKey() || Deno.env.get("SUPABASE_PUBLISHABLE_KEY"));
   if (!authorization || !url || !anonKey) return json(401, { error: "A signed-in Executive session is required." });
 
   const caller = createClient(url, anonKey, {
@@ -89,4 +90,4 @@ Deno.serve(async (req) => {
     ];
     return json(502, { ready: false, checkedAt, platformSenderDomain: senderDomain, checks, error: "Unable to check the Resend platform configuration." });
   }
-});
+}));

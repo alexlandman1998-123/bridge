@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { handleRecruitmentInvitationEmail } from "./handlers/recruitmentInvitation.ts";
 import { handleHomeSeekersRecruitmentCodeEmail } from "./handlers/recruitmentVerificationCode.ts";
 import { handleClientOnboardingEmail } from "./handlers/clientOnboarding.ts";
@@ -142,7 +143,7 @@ function resolveTransactionId(payload: EmailRequestEnvelope): string {
   return normalizeText(payload.transactionId ?? payload.transaction_id);
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
@@ -165,7 +166,7 @@ Deno.serve(async (req: Request) => {
     if (type === "recruitment_invitation") return await handleRecruitmentInvitationEmail(req, payload);
     // Durable calendar payloads are prepared and frozen only by the server worker.
     if (normalizeText(payload.idempotencyKey).startsWith('calendar-appointment:')) {
-      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+      const serviceKey = supabaseServiceKey() || '';
       if (!serviceKey || req.headers.get('authorization') !== `Bearer ${serviceKey}`) {
         return jsonResponse(403, { error: 'Calendar worker authorization required.' });
       }
@@ -1477,4 +1478,4 @@ Deno.serve(async (req: Request) => {
     console.error("Unhandled function error", err);
     return jsonResponse(500, { error: String(err) });
   }
-});
+}));

@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import type { SendBuyerOfferLinkPayload } from "../types.ts";
 import {
@@ -62,7 +63,7 @@ export async function handleBuyerOfferLinkEmail(
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   const supabase = supabaseUrl && serviceRoleKey
     ? createClient(supabaseUrl, serviceRoleKey, {

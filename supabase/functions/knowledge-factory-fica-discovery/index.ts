@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   hasServiceRoleClaim,
@@ -156,7 +157,7 @@ async function discover(
   return { environment: "uat", action: action.action, schema };
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") {
     return reply(405, { error: "method_not_allowed" });
   }
@@ -167,9 +168,9 @@ Deno.serve(async (request) => {
   // so accept the verified service-role claim as well as an exact key match.
   const exactOperatorKey = await matchesOperatorKey(
     bearer,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+    supabaseServiceKey() || "",
   );
-  if (!exactOperatorKey && !hasServiceRoleClaim(bearer)) {
+  if (!exactOperatorKey && !(supabaseServiceKey() && bearer === supabaseServiceKey())) {
     return reply(403, { error: "operator_access_required" });
   }
   const body = await request.json().catch(() => null);
@@ -186,4 +187,4 @@ Deno.serve(async (request) => {
       environment: "uat",
     });
   }
-});
+}));

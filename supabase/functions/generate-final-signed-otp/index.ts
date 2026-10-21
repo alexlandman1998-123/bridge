@@ -1,3 +1,4 @@
+import { withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -32,7 +33,7 @@ function response(status: number, body: JsonRecord) {
  * artifact. It remains deployed only to return a deterministic, auditable
  * error to old callers until OTP is moved onto the canonical PDF finaliser.
  */
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
@@ -52,4 +53,4 @@ Deno.serve(async (req: Request) => {
     retryable: false,
     requiredAction: "REISSUE_CANONICAL_OTP_PDF",
   });
-});
+}));

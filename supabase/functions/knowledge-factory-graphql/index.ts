@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { supplierCosts } from "../_shared/knowledgeFactorySupplierCosts.mjs";
@@ -58,7 +59,7 @@ function json(request: Request, status: number, body: Json): Response {
 
 function serviceClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const key = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey());
   if (!url || !key) throw new Error("Supabase service credentials are unavailable.");
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
@@ -329,7 +330,7 @@ function reportSummary(body: Json, requestedTypes: string[]) {
   };
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors(request) });
   if (request.method !== "POST") return json(request, 405, { error: "Method not allowed." });
   let body: Json;
@@ -511,4 +512,4 @@ Deno.serve(async (request) => {
     const status = /Unauthenticated|membership|required|belong/.test(message) ? 403 : 502;
     return json(request, status, { error: message });
   }
-});
+}));

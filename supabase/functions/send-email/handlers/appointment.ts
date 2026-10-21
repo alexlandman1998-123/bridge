@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import type { SendAppointmentEmailPayload } from "../types.ts";
 import {
@@ -198,7 +199,7 @@ export async function handleAppointmentEmail(
     rawPayload.supportPhone || rawPayload.support_phone,
   );
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = normalizeText(supabaseServiceKey());
   const supabase = supabaseUrl && serviceKey
     ? createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },

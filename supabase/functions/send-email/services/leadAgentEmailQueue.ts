@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -39,7 +40,7 @@ export async function leadAgentEmailQueueResponse(
     });
   }
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = normalizeText(supabaseServiceKey());
   const token = normalizeText(request.headers.get("authorization")).replace(
     /^Bearer\s+/i,
     "",
@@ -52,7 +53,7 @@ export async function leadAgentEmailQueueResponse(
   }
   const caller = makeClient(
     url,
-    normalizeText(Deno.env.get("SUPABASE_ANON_KEY")) || key,
+    normalizeText(supabasePublishableKey()) || key,
     {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },

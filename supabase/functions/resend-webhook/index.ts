@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -61,7 +62,7 @@ async function verifySvixSignature(req: Request, rawBody: string, secret: string
   });
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method !== "POST") return response(405, { error: "Method not allowed." });
   const rawBody = await req.text();
   const webhookSecret = text(Deno.env.get("RESEND_WEBHOOK_SECRET"));
@@ -77,7 +78,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const serviceKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = text(supabaseServiceKey());
   if (!url || !serviceKey) return response(500, { error: "Webhook storage is not configured." });
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const providerEventId = text(req.headers.get("svix-id"));
@@ -219,4 +220,4 @@ Deno.serve(async (req: Request) => {
     processing_status: "processed", processed_at: now,
   }).eq("id", audit.data.id);
   return response(200, { received: true, processed: true, status: delivered ? "delivered" : "failed" });
-});
+}));

@@ -24,3 +24,7 @@ outputs
 **/outputs
 private-evidence
 **/private-evidence
+
+# Exclude nested and backup environment files from deployment uploads.
+.env*
+**/.env*

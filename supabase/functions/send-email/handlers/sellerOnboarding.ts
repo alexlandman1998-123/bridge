@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import type { SendSellerOnboardingPayload } from "../types.ts";
 import {
@@ -313,7 +314,7 @@ export async function handleSellerOnboardingEmail(
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });

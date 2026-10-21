@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   renderBridgeCta,
@@ -52,8 +53,8 @@ export async function handleRecruitmentInvitationEmail(
   },
 ) {
   const url = Deno.env.get("SUPABASE_URL") || "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const serviceKey = supabaseServiceKey() || "";
+  const anonKey = supabasePublishableKey() || "";
   const apiKey = Deno.env.get("RESEND_API_KEY") || "";
   const baseUrl = Deno.env.get("CLIENT_APP_URL") ||
     Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("APP_BASE_URL") ||

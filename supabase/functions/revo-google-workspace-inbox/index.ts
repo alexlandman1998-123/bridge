@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
@@ -10,7 +11,7 @@ const now = () => new Date().toISOString();
 
 function serviceClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const key = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey());
   return url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 }
 function callbackUrl() { return `${text(Deno.env.get("SUPABASE_URL")).replace(/\/$/, "")}/functions/v1/revo-google-workspace-inbox`; }
@@ -43,7 +44,7 @@ async function markFailed(db: any, connection: Record<string, unknown>, actorUse
   await recordEvent(db, connection, actorUserId, "authorization_failed", { code });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const db = serviceClient();
   if (!db) return json(500, { error: "Server configuration is unavailable." });
@@ -120,4 +121,4 @@ Deno.serve(async (req) => {
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : "Unable to begin the Google mailbox connection." });
   }
-});
+}));
