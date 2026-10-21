@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { assertMetaLeadContext, contactFromFields, hmacValid, leadFields, leadgenChanges, metaLeadDestination, metaLeadType, RecordValue, text } from "../_shared/metaLeadAds.ts";
@@ -6,7 +7,7 @@ const GRAPH_VERSION = text(Deno.env.get("META_GRAPH_VERSION")) || "v23.0";
 const json = (status:number, body:RecordValue) => new Response(JSON.stringify(body), {status, headers:{"content-type":"application/json"}});
 
 function client() {
-  const url=text(Deno.env.get("SUPABASE_URL")), key=text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const url=text(Deno.env.get("SUPABASE_URL")), key=text(supabaseServiceKey());
   return url && key ? createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}}) : null;
 }
 function bytesFromBase64(value:string) { return Uint8Array.from(atob(value), c=>c.charCodeAt(0)); }
@@ -19,7 +20,7 @@ async function decrypt(ciphertext:string) {
   return new TextDecoder().decode(clear);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if(req.method==="GET") {
     const q=new URL(req.url).searchParams;
     if(text(q.get("hub.mode"))==="subscribe" && text(q.get("hub.verify_token"))===text(Deno.env.get("META_LEAD_ADS_VERIFY_TOKEN")))
@@ -69,4 +70,4 @@ Deno.serve(async (req) => {
     }
   }
   return json(200,{received:true,results});
-});
+}));

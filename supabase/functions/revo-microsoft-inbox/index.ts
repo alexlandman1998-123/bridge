@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
@@ -9,7 +10,7 @@ const now = () => new Date().toISOString();
 
 function serviceClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const key = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey());
   return url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 }
 
@@ -53,7 +54,7 @@ async function recordEvent(db: any, connection: Record<string, unknown>, actorUs
   await db.from("revo_inbox_connection_events").insert({ organisation_id: connection.organisation_id, connection_id: connection.id, actor_user_id: actorUserId, event_type: eventType, metadata_json: metadata });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const db = serviceClient();
   if (!db) return json(500, { error: "Server configuration is unavailable." });
@@ -131,4 +132,4 @@ Deno.serve(async (req) => {
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : "Unable to begin the Microsoft mailbox connection." });
   }
-});
+}));

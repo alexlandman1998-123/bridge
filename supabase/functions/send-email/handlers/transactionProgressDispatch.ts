@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   renderBridgeEmailLayout,
@@ -43,7 +44,7 @@ function record(value: unknown): Record<string, unknown> {
 
 function serviceClient() {
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = normalizeText(supabaseServiceKey());
   return url && key
     ? createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -66,10 +67,9 @@ function jwtRole(authorization: string) {
 
 function isServiceRequest(req: Request) {
   const authorization = normalizeText(req.headers.get("authorization"));
-  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = normalizeText(supabaseServiceKey());
   return Boolean(
-    (serviceKey && authorization === `Bearer ${serviceKey}`) ||
-      jwtRole(authorization) === "service_role",
+    (serviceKey && authorization === `Bearer ${serviceKey}`),
   );
 }
 
@@ -98,7 +98,7 @@ async function assertProfessionalAccess(
   }
 
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const anonKey = normalizeText(Deno.env.get("SUPABASE_ANON_KEY"));
+  const anonKey = normalizeText(supabasePublishableKey());
   const userClient = createClient(url, anonKey, {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },

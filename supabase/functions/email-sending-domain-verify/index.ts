@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -23,7 +24,7 @@ const records = (value: unknown) => Array.isArray(value)
   })).filter((record) => record.name && record.type && record.value)
   : [];
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
 
@@ -34,8 +35,8 @@ Deno.serve(async (req) => {
   if (!authorization || !organisationId || !domainId) return json(401, { error: "A signed-in session, organisation and sending domain are required." });
 
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const anonKey = text(Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY"));
-  const serviceKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const anonKey = text(supabasePublishableKey() || Deno.env.get("SUPABASE_PUBLISHABLE_KEY"));
+  const serviceKey = text(supabaseServiceKey());
   const resendKey = text(Deno.env.get("RESEND_API_KEY"));
   if (!url || !anonKey || !serviceKey || !resendKey) return json(500, { error: "Sending-domain verification is not configured." });
 
@@ -108,4 +109,4 @@ Deno.serve(async (req) => {
       records: records(details?.records),
     },
   });
-});
+}));

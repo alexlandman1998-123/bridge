@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -10,8 +11,8 @@ const json = (status: number, body: Json) => new Response(JSON.stringify(body), 
 
 function configured() {
   const supabaseUrl = text(Deno.env.get("SUPABASE_URL"));
-  const anonKey = text(Deno.env.get("SUPABASE_ANON_KEY"));
-  const serviceKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const anonKey = text(supabasePublishableKey());
+  const serviceKey = text(supabaseServiceKey());
   const vercelToken = text(Deno.env.get("VERCEL_TOKEN"));
   const projectId = text(Deno.env.get("VERCEL_WEBSITE_PROJECT_ID"));
   const teamId = text(Deno.env.get("VERCEL_TEAM_ID"));
@@ -45,7 +46,7 @@ async function recordDomainActivity(admin: ReturnType<typeof createClient>, valu
   if (result.error) console.error("Website domain audit event could not be recorded", result.error.message);
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return json(405, { error: "Method not allowed." });
   try {
@@ -109,4 +110,4 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json(422, { error: error instanceof Error ? error.message : "Website domain management could not be completed." });
   }
-});
+}));

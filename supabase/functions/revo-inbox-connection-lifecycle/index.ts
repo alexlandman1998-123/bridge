@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
@@ -9,7 +10,7 @@ const now = () => new Date().toISOString();
 
 function serviceClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const key = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey());
   return url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 }
 function microsoftConfig() {
@@ -74,7 +75,7 @@ async function verifyMailbox(connection: any, accessToken: string) {
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
   const db = serviceClient();
@@ -129,4 +130,4 @@ Deno.serve(async (req) => {
     }
     return json(400, { error: code });
   }
-});
+}));

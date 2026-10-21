@@ -11,6 +11,7 @@ const JSON_REPORT_PATH = path.join('docs', 'supabase-production-recovery-lock.js
 const MARKDOWN_REPORT_PATH = path.join('docs', 'supabase-production-recovery-lock-report.md')
 const TEST_PACKET_PATH = path.join('docs', 'supabase-production-recovery-test-packet.md')
 const RECOVERY_METHODS = new Set(['pitr', 'physical_backup', 'equivalent_managed_backup'])
+const RESTORE_TEST_METHODS = new Set(['physical_backup_restore', 'pitr_restore', 'logical_backup_restore', 'managed_backup_restore'])
 
 function findRepoRoot(startDir) {
   let current = startDir
@@ -45,6 +46,7 @@ function defaultEvidence() {
     physicalBackupCount: 0,
     equivalentManagedBackupAccepted: false,
     recoveryTested: false,
+    backupRestoreTest: null,
     testedAt: null,
     testedBy: '',
     acceptedBy: '',
@@ -95,7 +97,8 @@ function liveRecoveryState(repoRoot) {
   if (!result.ok) return { checked: true, ok: false, error: (result.stderr || result.error).trim() }
   const status = parseJsonLoose(result.stdout)
   if (!status) return { checked: true, ok: false, error: 'The production backup response was not valid JSON.' }
-  const backups = Array.isArray(status.backups) ? status.backups : (Array.isArray(status) ? status : [])
+  const records = Array.isArray(status.backups) ? status.backups : (Array.isArray(status) ? status : [])
+  const backups = records.filter((backup) => backup.status === 'COMPLETED')
   return {
     checked: true,
     ok: true,
@@ -120,10 +123,22 @@ function validateRecoveryEvidence(evidence, live) {
     if (!String(evidence.acceptedBy || '').trim()) blockers.push('accepted_by_pending')
     if (!String(evidence.restoreTarget || '').trim()) blockers.push('restore_target_pending')
     if (!String(evidence.evidenceUrlOrTicket || '').trim()) blockers.push('evidence_reference_pending')
+    // A live database clone can pass row-count checks without ever reading a
+    // backup. It must not be accepted as evidence that backups can be restored.
+    const restore = evidence.backupRestoreTest
+    if (!restore || !RESTORE_TEST_METHODS.has(restore.method)) blockers.push('backup_restore_not_proven')
+    else {
+      if (restore.sourceProjectRef !== PRODUCTION_PROJECT_REF) blockers.push('restore_source_project_mismatch')
+      if (!String(restore.sourceBackupId || '').trim()) blockers.push('restore_backup_reference_missing')
+      const target = String(restore.targetProjectRef || '').trim()
+      if (!target || target === PRODUCTION_PROJECT_REF || target === 'vaszuxjeoajeuhlcnzzf') blockers.push('restore_target_not_isolated')
+      if (restore.smokeChecksPassed !== true) blockers.push('restored_backup_checks_pending')
+    }
+    if (live?.checked && !live.ok) blockers.push('live_recovery_check_failed')
     if (live?.ok) {
       if (evidence.pitrEnabled === true && live.pitrEnabled !== true) blockers.push('pitr_claim_not_live')
       if (Number(evidence.physicalBackupCount) > live.physicalBackupCount) blockers.push('physical_backup_count_exceeds_live')
-      if (!live.recoverable && evidence.equivalentManagedBackupAccepted !== true) blockers.push('live_recovery_not_available')
+      if (!live.recoverable) blockers.push('live_recovery_not_available')
     }
   }
   return { locked: blockers.length === 0, blockers }
@@ -148,7 +163,7 @@ Production project: \`${result.productionProjectRef}\`
 
 **Status: ${result.status}**
 
-Production promotion remains blocked until this report says \`RECOVERY_LOCKED\`. This report does not enable PITR, restore data, apply SQL, repair ledgers, or modify production.
+Production promotion remains blocked until this report says \`RECOVERY_LOCKED\`. This is a database-only recovery gate: Supabase database backups do not include Storage file bytes. A locked database gate does not prove full application recovery. This report does not enable PITR, restore data, apply SQL, repair ledgers, or modify production.
 
 ## Summary
 
@@ -171,7 +186,7 @@ ${result.blockers.length ? result.blockers.map((blocker) => `- \`${blocker}\``).
 
 ## Evidence Rule
 
-The lock requires a matching production project, a recorded recoverable mechanism, a completed restore/recovery test, a named tester, a named approver, a restore target, and a durable evidence reference. The evidence file must not contain secrets or exported production data.
+The lock requires a matching production project, a recorded recoverable mechanism, a completed restore from an identified backup into an isolated target, successful smoke checks, a named tester, a named approver, and a durable evidence reference. A live database clone is insufficient. If live verification is requested, a failed provider check blocks the lock. The evidence file must not contain secrets or exported production data.
 
 ## Recovery Test Packet
 
@@ -207,11 +222,12 @@ ${markdownTable(['Field', 'Value'], [
 
 ## Required Restore Test
 
-1. Restore production from a physical backup or equivalent managed backup into a temporary non-production target.
+1. Restore an identified production physical/PITR/logical backup into a temporary isolated target. Creating a copy of the current live database is not a backup restore test. Do not use production or the active staging project as the target.
 2. Confirm the restored database starts and can answer read-only smoke queries.
 3. Confirm the restore target is isolated from production traffic.
 4. Record the restore target name/ref, tester, approver, timestamp, and ticket/reference.
 5. Do not copy database URLs, passwords, backup secrets, or exported production rows into this repository.
+6. Test encrypted Storage file recovery independently; database backups contain file metadata, not file bytes. See \`docs/security/api-key-and-backup-coverage.md\`.
 
 ## Evidence To Record
 
@@ -225,6 +241,13 @@ After the restore test has genuinely passed, update \`${EVIDENCE_PATH}\` like th
   "physicalBackupCount": ${Number(evidence.physicalBackupCount) > 0 ? Number(evidence.physicalBackupCount) : Math.max(Number(result.live.physicalBackupCount) || 0, 1)},
   "equivalentManagedBackupAccepted": ${evidence.equivalentManagedBackupAccepted === true},
   "recoveryTested": true,
+  "backupRestoreTest": {
+    "method": "physical_backup_restore",
+    "sourceProjectRef": "${PRODUCTION_PROJECT_REF}",
+    "sourceBackupId": "<backup-id-or-PITR-timestamp>",
+    "targetProjectRef": "<isolated-restore-project-ref>",
+    "smokeChecksPassed": true
+  },
   "testedAt": "<ISO-8601 timestamp>",
   "testedBy": "<person or team>",
   "acceptedBy": "<release owner>",
@@ -261,6 +284,8 @@ function buildResult(repoRoot, options) {
     status: validation.locked ? 'RECOVERY_LOCKED' : 'RECOVERY_LOCK_BLOCKED',
     locked: validation.locked,
     productionProjectRef: PRODUCTION_PROJECT_REF,
+    recoveryScope: 'database',
+    storageObjectsIncluded: false,
     evidencePath: EVIDENCE_PATH,
     evidenceCreated: created,
     evidence,

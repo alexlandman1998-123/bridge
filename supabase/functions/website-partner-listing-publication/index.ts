@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { websitePublicationJobContext } from "../_shared/listingPublicationJob.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
@@ -90,14 +91,14 @@ async function removePaths(admin: Client, paths: string[]) {
   return removed.error ? paths.length : 0;
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
   if (request.method !== "POST") return json(405, { error: "Method not allowed." });
 
   try {
     const supabaseUrl = value(Deno.env.get("SUPABASE_URL"));
-    const anonKey = value(Deno.env.get("SUPABASE_ANON_KEY"));
-    const serviceKey = value(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const anonKey = value(supabasePublishableKey());
+    const serviceKey = value(supabaseServiceKey());
     if (!supabaseUrl || !anonKey || !serviceKey) failure(503, "Website publishing is not configured.");
     const token = value(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
     if (!token) failure(401, "Sign in before publishing a listing.");
@@ -175,4 +176,4 @@ Deno.serve(async (request) => {
     const safe = error as Error & { status?: number };
     return json(safe.status || 500, { error: value(safe.message) || "Website publication failed." });
   }
-});
+}));

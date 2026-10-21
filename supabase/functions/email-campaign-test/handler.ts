@@ -1,3 +1,4 @@
+import { supabasePublishableKey } from "../_shared/apiCredentials.ts";
 import { inspectEmailHtml, renderCampaignDelivery } from "../_shared/emailContent.js";
 import { checkCampaignContent } from "../_shared/emailCampaignContentCheck.ts";
 const text = (v: unknown) => String(v || "").trim();
@@ -7,7 +8,7 @@ export function createCampaignTestHandler({ createClient, env, fetcher = fetch }
 return async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
-  const url = text(env("SUPABASE_URL")); const anon = text(env("SUPABASE_ANON_KEY")); const resend = text(env("RESEND_API_KEY"));
+  const url = text(env("SUPABASE_URL")); const anon = text(supabasePublishableKey({ get: env })); const resend = text(env("RESEND_API_KEY"));
   if (!url || !anon || !resend) return json(500, { error: "Test sending is not configured." });
   const auth = text(req.headers.get("authorization")); const userDb = createClient(url, anon, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
   const { data: userData } = await userDb.auth.getUser(); const user = userData.user; if (!user?.email) return json(401, { error: "Sign in to send a test." });

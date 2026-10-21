@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.49.9';
 import { dispatchTransactionHandoffJob } from '../_shared/transactionHandoffDelivery.ts';
@@ -16,7 +17,7 @@ async function sameCredential(left: string, right: string) {
 }
 
 function serviceCredentials() {
-  const legacy = text(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+  const legacy = text(supabaseServiceKey());
   let secrets: string[] = [];
   try {
     const configured = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}');
@@ -50,7 +51,7 @@ function validAppUrl(value: string) {
   } catch { return false; }
 }
 
-Deno.serve(async request => {
+Deno.serve(withApiCredentials(async request => {
   if (request.method !== 'POST') return json(405, { error: 'POST is required.' });
   const credentials = serviceCredentials();
   if (!await authorized(request, credentials)) return json(403, { error: 'Worker authorization required.' });
@@ -93,4 +94,4 @@ Deno.serve(async request => {
     const results = await Promise.all((claimed.data || []).map((job: any) => dispatchTransactionHandoffJob(client, job, config)));
     return json(200, { ok: true, claimed: results.length, results });
   } catch { return json(503, { error: 'Dispatch worker could not complete.' }); }
-});
+}));

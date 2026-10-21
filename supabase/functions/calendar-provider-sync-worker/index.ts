@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 // Pinned dependency follows the existing Edge Function entrypoint pattern.
 // deno-lint-ignore no-import-prefix
 import { createClient } from "npm:@supabase/supabase-js@2.49.9";
@@ -12,11 +13,11 @@ const json = (status: number, body: unknown) =>
       "Cache-Control": "no-store",
     },
   });
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") {
     return json(405, { error: "POST is required." });
   }
-  const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const secret = supabaseServiceKey() || "";
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return json(403, { error: "Worker authorization required." });
   }
@@ -48,4 +49,4 @@ Deno.serve(async (request) => {
     claimed: results.length,
     completed: results.filter((r) => r.status === "fulfilled").length,
   });
-});
+}));

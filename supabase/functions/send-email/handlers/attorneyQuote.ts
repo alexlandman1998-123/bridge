@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   renderBridgeCta,
@@ -23,7 +24,7 @@ type QuoteEnvelope = Record<string, unknown>;
 
 function createUserClient(req: Request) {
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const anonKey = normalizeText(Deno.env.get("SUPABASE_ANON_KEY"));
+  const anonKey = normalizeText(supabasePublishableKey());
   const authorization = normalizeText(req.headers.get("authorization"));
   if (!supabaseUrl || !anonKey || !authorization) return null;
   return createClient(supabaseUrl, anonKey, {
@@ -34,7 +35,7 @@ function createUserClient(req: Request) {
 
 function createServiceClient() {
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(supabaseServiceKey());
   if (!supabaseUrl || !serviceRoleKey) return null;
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },

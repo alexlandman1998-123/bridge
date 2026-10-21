@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { resolveLeadEnquiryKind } from "../send-email/services/leadAcknowledgementContext.ts";
@@ -182,7 +183,7 @@ function jsonResponse(status: number, body: JsonRecord) {
 async function invokeSendEmailFunction(payload: JsonRecord) {
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"), 500);
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
     5000,
   );
   if (!supabaseUrl || !serviceRoleKey) return null;
@@ -763,7 +764,7 @@ async function getAuthenticatedUser(
   return data.user;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -775,8 +776,8 @@ Deno.serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const anonKey = supabasePublishableKey() || "";
+  const serviceRoleKey = supabaseServiceKey() || "";
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return jsonResponse(503, {
       error: "Viewing preferences are temporarily unavailable.",
@@ -1429,4 +1430,4 @@ Deno.serve(async (req) => {
       submittedAt: now,
     },
   });
-});
+}));

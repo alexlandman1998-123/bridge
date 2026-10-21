@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { loadMetaPageForms, assertMetaLeadContext, contactFromFields, leadFields, metaLeadDestination, metaLeadType, RecordValue, text } from "../_shared/metaLeadAds.ts";
@@ -9,7 +10,7 @@ const CORS={"access-control-allow-origin":"*","access-control-allow-headers":"au
 const json=(status:number,body:RecordValue)=>new Response(JSON.stringify(body),{status,headers:{...CORS,"content-type":"application/json"}});
 const base64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes));
 async function sha256(value:string){const b=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));return [...b].map(v=>v.toString(16).padStart(2,"0")).join("");}
-function serviceClient(){const u=text(Deno.env.get("SUPABASE_URL")),k=text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));return u&&k?createClient(u,k,{auth:{persistSession:false,autoRefreshToken:false}}):null;}
+function serviceClient(){const u=text(Deno.env.get("SUPABASE_URL")),k=text(supabaseServiceKey());return u&&k?createClient(u,k,{auth:{persistSession:false,autoRefreshToken:false}}):null;}
 function callbackUrl(){return `${text(Deno.env.get("SUPABASE_URL")).replace(/\/$/,"")}/functions/v1/meta-lead-ads-admin`;}
 async function encrypt(token:string){const kb=Uint8Array.from(atob(text(Deno.env.get("META_TOKEN_ENCRYPTION_KEY"))),c=>c.charCodeAt(0));if(kb.length!==32)throw new Error("Meta token encryption is not configured.");const iv=crypto.getRandomValues(new Uint8Array(12));const key=await crypto.subtle.importKey("raw",kb,"AES-GCM",false,["encrypt"]);const cipher=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(token)));return `${base64(iv)}.${base64(cipher)}`;}
 async function decrypt(ciphertext:string){const kb=Uint8Array.from(atob(text(Deno.env.get("META_TOKEN_ENCRYPTION_KEY"))),c=>c.charCodeAt(0)),[a,b]=ciphertext.split(".");const key=await crypto.subtle.importKey("raw",kb,"AES-GCM",false,["decrypt"]);return new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:Uint8Array.from(atob(a),c=>c.charCodeAt(0))},key,Uint8Array.from(atob(b),c=>c.charCodeAt(0))));}
@@ -18,7 +19,7 @@ function requestedDate(value:unknown,label:string){const raw=text(value);if(!raw
 function inRange(value:unknown,from:Date|null,to:Date|null){const date=new Date(text(value));if(Number.isNaN(date.getTime()))return false;return (!from||date>=from)&&(!to||date<=to);}
 async function actor(req:Request,db:any,organisationId:string){const jwt=text(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");const user=(await db.auth.getUser(jwt)).data.user;if(!user)throw new Error("Unauthenticated.");const member=await db.from("organisation_users").select("role,status").eq("organisation_id",organisationId).eq("user_id",user.id).maybeSingle();if(!member.data||member.data.status!=="active"||!["principal","owner","director","admin","super_admin","developer","agency_admin"].includes(member.data.role))throw new Error("Organisation administrator access required.");return user.id;}
 
-Deno.serve(async(req)=>{
+Deno.serve(withApiCredentials(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:CORS}); const db=serviceClient();if(!db)return json(500,{error:"Service is not configured."});
   const url=new URL(req.url), code=text(url.searchParams.get("code")), state=text(url.searchParams.get("state"));
   if(req.method==="GET"&&code&&state){
@@ -132,4 +133,4 @@ Deno.serve(async(req)=>{
     if(action==="disconnect"){const token=await decrypt(row.token_ciphertext);await graph(`${row.page_id}/subscribed_apps`,token,{method:"DELETE"}).catch(()=>null);await db.from("meta_lead_ads_connections").update({connection_status:"disconnected",disconnected_at:new Date().toISOString(),token_ciphertext:await encrypt(crypto.randomUUID())}).eq("id",row.id);return json(200,{disconnected:true});}
     return json(400,{error:"Unsupported action."});
   }catch(error){return json(502,{error:error instanceof Error?error.message:"Meta operation failed."});}
-});
+}));

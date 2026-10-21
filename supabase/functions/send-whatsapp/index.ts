@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { whatsappAccessToken } from "../_shared/metaCredentials.ts";
@@ -114,7 +115,7 @@ function messageParameters(variables: string[]) {
 
 function createServiceClient() {
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = normalizeText(supabaseServiceKey());
   if (!url || !serviceKey) return null;
   return createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -125,7 +126,7 @@ async function resolveRequestActorUserId(
   supabase: any,
   authorizationHeader: string,
 ) {
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(supabaseServiceKey());
   const normalizedAuth = normalizeText(authorizationHeader);
   const token = normalizedAuth.replace(/^Bearer\s+/i, "");
   if (!token || !supabase) return "";
@@ -434,7 +435,7 @@ function mapDeliveryFailure(error: unknown) {
     || normalizeText(body.error);
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: CORS_HEADERS });
   }
@@ -646,4 +647,4 @@ Deno.serve(async (req) => {
     }
     return toResponse(500, { success: false, error: reason });
   }
-});
+}));

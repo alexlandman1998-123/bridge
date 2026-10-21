@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { transactionHandoffManagedByWorker } from '../services/transactionHandoffDispatch.ts';
 import { createClient } from "supabase";
 import {
@@ -365,7 +366,7 @@ export async function handleTransactionRoleplayerIntroEmail(
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!supabaseUrl || !serviceRoleKey) {
@@ -691,7 +692,7 @@ export async function handleTransactionRoleplayerHandoffEmail(
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!supabaseUrl || !serviceRoleKey) {

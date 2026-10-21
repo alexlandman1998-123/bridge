@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { applyWhatsAppCampaignWebhook } from "../_shared/whatsappCampaignWebhook.js";
@@ -85,7 +86,7 @@ async function verifyWebhookSignature(
 
 function createSupabaseClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = text(supabaseServiceKey());
   if (!url || !serviceRoleKey) return null;
   return createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -139,7 +140,7 @@ function readStatusTimestamp(item: JsonRecord, status: string) {
   return { status: normalizedStatus || "sent", sent_at: eventAt, updated_at: now };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: CORS_HEADERS });
 
   const supabase = createSupabaseClient();
@@ -298,4 +299,4 @@ Deno.serve(async (req) => {
     providerMessageId: providerMessageId || null,
     error: lastError || null,
   });
-});
+}));

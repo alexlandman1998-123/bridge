@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { META_ADMIN_ROLES, META_STAFF_ROLES } from '../_shared/metaIntegrationCore.js';
 import { createClient } from 'supabase';
 import { createMetaIntegrationHandler } from './handler.js';
@@ -9,11 +10,11 @@ const env=(name:string)=>Deno.env.get(name)?.trim()||'';
 const ADMIN=new Set(META_ADMIN_ROLES);
 const STAFF=new Set(META_STAFF_ROLES);
 
-Deno.serve(async req=>{
+Deno.serve(withApiCredentials(async req=>{
   if(req.method==='OPTIONS') return new Response('ok',{headers});
   if(req.method!=='POST') return new Response(JSON.stringify({error:'Method not allowed.'}),{status:405,headers});
   try {
-    const url=env('SUPABASE_URL'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),anon=env('SUPABASE_ANON_KEY');
+    const url=env('SUPABASE_URL'),serviceKey=supabaseServiceKey({ get: env }),anon=supabasePublishableKey({ get: env });
     if(!url||!serviceKey||!anon) throw new Error('Meta integration storage is not configured.');
     const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
     const graphVersion=env('META_GRAPH_VERSION')||'v23.0';
@@ -87,4 +88,4 @@ Deno.serve(async req=>{
     });
     return new Response(JSON.stringify(await handler(await readMetaIntegrationPayload(req),req.headers.get('authorization')||'')),{headers});
   } catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:'Meta integration request failed.'}),{status:400,headers});}
-});
+}));

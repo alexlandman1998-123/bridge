@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient, type SupabaseClient } from "supabase";
 import {
   type LeadEnquiryKind,
@@ -204,7 +205,7 @@ export async function handleLeadAcknowledgementEmail(
     return jsonResponse(400, { error: "Missing required field: to" });
   }
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = normalizeText(supabaseServiceKey());
   const client = url && key
     ? createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },

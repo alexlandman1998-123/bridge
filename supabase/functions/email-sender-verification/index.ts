@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -22,15 +23,15 @@ const records = (value: unknown) => Array.isArray(value)
   })).filter((record) => record.name && record.type && record.value)
   : [];
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
   const authorization = req.headers.get("authorization") || "";
   const organisationId = String((await req.json().catch(() => ({})))?.organisationId || "").trim();
   if (!authorization || !organisationId) return json(400, { error: "Organisation and signed-in session are required." });
   const url = Deno.env.get("SUPABASE_URL") || "";
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const anonKey = supabasePublishableKey() || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
+  const serviceKey = supabaseServiceKey() || "";
   const resendKey = Deno.env.get("RESEND_API_KEY") || "";
   if (!url || !anonKey || !serviceKey || !resendKey) return json(500, { error: "Sender verification is not configured." });
   const caller = createClient(url, anonKey, { global: { headers: { authorization } }, auth: { persistSession: false } });
@@ -91,4 +92,4 @@ Deno.serve(async (req) => {
     await db.from("email_sender_identities").update({ verification_status: nextStatus, verified_at: nextStatus === "verified" ? now : null, last_verified_at: now }).eq("id", identity.id);
   }
   return json(200, { verified, checked: (identities || []).length, domainsVerified, domainsChecked: (domainRows || []).length });
-});
+}));

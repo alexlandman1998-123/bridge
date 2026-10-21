@@ -13,3 +13,7 @@ migration-evidence/**/backups/
 output/imports/
 .playwright-cli/
 output/previews/
+
+# Never commit runtime credentials, including backups.
+.env*
+!.env.example

@@ -69,7 +69,7 @@ export async function renderSitePlanPdfFirstPage(file) {
   const pdfjsLib = await import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
   const bytes = new Uint8Array(await file.arrayBuffer())
-  const loadingTask = pdfjsLib.getDocument({ data: bytes })
+  const loadingTask = pdfjsLib.getDocument({ data: bytes , isEvalSupported: false })
 
   try {
     const document = await loadingTask.promise
@@ -137,7 +137,7 @@ export async function extractSitePlanPdfTextAnchors(file) {
   const pdfjsLib = await import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
   const bytes = new Uint8Array(await file.arrayBuffer())
-  const loadingTask = pdfjsLib.getDocument({ data: bytes })
+  const loadingTask = pdfjsLib.getDocument({ data: bytes , isEvalSupported: false })
 
   try {
     const document = await loadingTask.promise

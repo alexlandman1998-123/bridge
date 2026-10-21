@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import {
@@ -68,18 +69,8 @@ function isServiceRoleProjectJwt(
     supabaseUrl: string;
   },
 ) {
-  const token = normalizeFinalArtifactText(bearer);
-  if (!token) return false;
-  if (token === serviceKey) return true;
-  const claims = decodeJwtPayload(token);
-  const expectedRef = projectRefFromSupabaseUrl(supabaseUrl);
-  const expiresAt = Number(claims.exp);
-  return normalizeFinalArtifactText(claims.role) === "service_role" &&
-    normalizeFinalArtifactText(claims.iss) === "supabase" &&
-    (!expectedRef ||
-      normalizeFinalArtifactText(claims.ref) === expectedRef) &&
-    (!Number.isFinite(expiresAt) ||
-      expiresAt > Math.floor(Date.now() / 1000));
+  // A decoded JWT payload cannot establish service authority.
+  return Boolean(serviceKey && bearer && bearer.trim() === serviceKey);
 }
 
 async function authorizeClientPortal({ admin, portalToken, packet }: {
@@ -208,7 +199,7 @@ async function authorizeSigner(
       "signed";
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
@@ -223,10 +214,10 @@ Deno.serve(async (req: Request) => {
   try {
     const url = normalizeFinalArtifactText(Deno.env.get("SUPABASE_URL"));
     const anonKey = normalizeFinalArtifactText(
-      Deno.env.get("SUPABASE_ANON_KEY"),
+      supabasePublishableKey(),
     );
     const serviceKey = normalizeFinalArtifactText(
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+      supabaseServiceKey(),
     );
     if (!url || !anonKey || !serviceKey) {
       return jsonResponse(500, {
@@ -395,4 +386,4 @@ Deno.serve(async (req: Request) => {
       errorCode: "FINAL_ACCESS_UNAVAILABLE",
     });
   }
-});
+}));

@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.49.9";
 import {
@@ -120,10 +121,10 @@ async function dispatchJob(
   }
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") return json(405, { error: "POST is required." });
   const supabaseUrl = text(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = text(supabaseServiceKey());
   const suppliedKey = text(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
   if (!serviceRoleKey || suppliedKey !== serviceRoleKey) {
     return json(403, { error: "Service-role authorization is required." });
@@ -152,4 +153,4 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json(500, { ok: false, error: error instanceof Error ? error.message : "Worker failed." });
   }
-});
+}));
