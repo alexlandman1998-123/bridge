@@ -1,4 +1,5 @@
 import { inspectCampaignEmail } from './emailContent.js';
+import { checkCampaignSourceFreshness } from './emailCampaignSourceFreshness.js';
 
 const bucketPrefix = '/storage/v1/object/public/email-campaign-images/';
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -10,6 +11,8 @@ export async function checkCampaignContent({ db, campaign, supabaseUrl, fetcher 
 }) {
   const report = inspectCampaignEmail(campaign, context);
   if (!report.ready) return report;
+  const sourceFreshness = await checkCampaignSourceFreshness({ db, campaign });
+  if (!sourceFreshness.ready) return { ...report, ready: false, errors: [sourceFreshness.reason], sourceFreshness };
   const errors: string[] = [];
   const own = new URL(supabaseUrl);
   const owned = new Map<string, string>();
@@ -57,5 +60,5 @@ export async function checkCampaignContent({ db, campaign, supabaseUrl, fetcher 
       } finally { clearTimeout(timeout); }
     }
   }
-  return { ...report, ready: errors.length === 0, errors: [...new Set(errors)], warnings: [...new Set(report.warnings)] };
+  return { ...report, ready: errors.length === 0, errors: [...new Set(errors)], warnings: [...new Set(report.warnings)], sourceFreshness };
 }

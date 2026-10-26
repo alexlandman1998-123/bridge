@@ -95,6 +95,7 @@ export function readAgencyIntakeAttribution(searchParams, agencySlug = '') {
       pageUrl: typeof window !== 'undefined' ? window.location.href : '',
       referrer: typeof document !== 'undefined' ? document.referrer : '',
       clientAttribution,
+      ...(params.get('campaignResponse') ? { campaignResponseToken: normalizeText(params.get('campaignResponse')) } : {}),
     },
   }
 }
@@ -115,6 +116,10 @@ export async function resolveAgencyPublicIntake(slug = '') {
   const safeSlug = normalizeSlug(slug)
   if (!safeSlug) throw new Error('Agency intake link is missing.')
   const params = new URLSearchParams({ slug: safeSlug })
+  if (typeof window !== 'undefined') {
+    const responseToken = new URLSearchParams(window.location?.search || '').get('campaignResponse')
+    if (responseToken) params.set('campaignResponse', responseToken)
+  }
   const response = await fetch(`/api/public/agency-intake?${params.toString()}`, {
     headers: { Accept: 'application/json' },
   })

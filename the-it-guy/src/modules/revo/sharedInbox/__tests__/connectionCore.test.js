@@ -18,8 +18,8 @@ assert.equal(intent.mailboxAddress, 'enquiries@revopropertysite.test')
 assert.equal(intent.providerKey, 'microsoft_365')
 assert.equal(buildRevoInboxConnectionIntent({ ...intent, providerKey: 'GOOGLE_WORKSPACE' }).providerKey, 'google_workspace')
 assert.throws(() => buildRevoInboxConnectionIntent({ ...intent, providerKey: 'imap' }), /Microsoft 365 or Google Workspace/)
-assert.throws(() => buildRevoInboxConnectionIntent({ ...intent, organisationId: 'not-revo' }), /only available for the Revo workspace/)
-await assert.rejects(() => manageRevoInboxProviderConnection({ organisationId, connectionId: channelId, action: 'delete' }), /valid Revo mailbox connection action/)
+assert.throws(() => buildRevoInboxConnectionIntent({ ...intent, organisationId: 'not-revo' }), /valid organisation workspace/)
+await assert.rejects(() => manageRevoInboxProviderConnection({ organisationId, connectionId: channelId, action: 'delete' }), /valid mailbox connection action/)
 
 const connection = normalizeRevoInboxProviderConnection({
   id: '33333333-3333-4333-8333-333333333333',
@@ -35,3 +35,5 @@ assert.equal(connection.status, 'connected')
 assert.deepEqual(connection.grantedScopes, ['gmail.modify'])
 
 console.log('Revo provider connection core checks passed.')
+
+assert.equal(buildRevoInboxConnectionIntent({ ...intent, organisationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }).organisationId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')

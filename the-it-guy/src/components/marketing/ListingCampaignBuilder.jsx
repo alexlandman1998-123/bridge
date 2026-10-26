@@ -24,6 +24,9 @@ import {
   propertyCampaignPayload,
 } from '../../services/listingCampaignModel'
 import { checkedPropertyPack } from '../../services/propertyCampaignPackModel'
+import CampaignContactReview from './CampaignContactReview'
+import { createContactProvenance, confirmCampaignContacts, PROPERTY_CONTACT_FIELDS, withContactOverride } from '../../services/campaignContactProvenance'
+import { MarketingAnchor } from './MarketingNavigation.jsx'
 import './JustListedCampaignBuilder.css'
 
 const initialSettings = {
@@ -156,6 +159,7 @@ export default function ListingCampaignBuilder({
           listingId: item.listingId,
           agentId: item.agentId,
           source: projectPropertySource(family, item, settings),
+          contactProvenance: createContactProvenance(item.source),
         })),
         settings,
       )
@@ -192,10 +196,10 @@ export default function ListingCampaignBuilder({
     setContent(propertyCampaignCopy(next))
     setError('')
   }
-  function changeContact(index, key, value) {
+  function changeContact(index, key, value, enabled = true) {
     const items = propertyItems(builder).map((item, i) =>
       i === index
-        ? { ...item, source: { ...item.source, [key]: value } }
+        ? PROPERTY_CONTACT_FIELDS.includes(key) ? withContactOverride(item, key, value, PROPERTY_CONTACT_FIELDS, enabled) : { ...item, source: { ...item.source, [key]: value } }
         : item,
     )
     const next = assemble(items, builder.settings)
@@ -244,6 +248,7 @@ export default function ListingCampaignBuilder({
           listingId: item.listingId,
           agentId: item.agentId,
           source: projectPropertySource(family, item, settings),
+          contactProvenance: createContactProvenance(item.source),
         })),
         settings,
       )
@@ -260,12 +265,14 @@ export default function ListingCampaignBuilder({
   const gaps = builder ? propertyCampaignGaps(builder) : []
   function preview() {
     try {
+      const next = assemble(propertyItems(builder).map((item) => confirmCampaignContacts(item)), builder.settings)
       checkedPropertyPack(
-        { status: 'draft', listing_builder: builder, channel_content: content },
+        { status: 'draft', listing_builder: next, channel_content: content },
         currents,
         events.find((item) => item.id === builder.settings.eventId),
       )
       setError('')
+      setBuilder(next)
       setStep(3)
     } catch (err) {
       setError(err.message)
@@ -611,38 +618,7 @@ export default function ListingCampaignBuilder({
                         {source.agentName} · {source.agencyName}
                       </p>
                       <p>{source.destination}</p>
-                      {!currents[index]?.source.agentName && (
-                        <label>
-                          Public agent name
-                          <input
-                            value={source.agentName}
-                            maxLength={120}
-                            onChange={(event) =>
-                              changeContact(
-                                index,
-                                'agentName',
-                                event.target.value,
-                              )
-                            }
-                          />
-                        </label>
-                      )}
-                      {!currents[index]?.source.destination && (
-                        <label>
-                          Public enquiry contact
-                          <input
-                            value={source.destination}
-                            maxLength={240}
-                            onChange={(event) =>
-                              changeContact(
-                                index,
-                                'destination',
-                                event.target.value,
-                              )
-                            }
-                          />
-                        </label>
-                      )}
+                      <CampaignContactReview builder={item} content={index === 0 ? content : undefined} onRefresh={refresh} onOverride={(key, value, enabled) => changeContact(index, key, value, enabled)} />
                       {!['en-ZA', 'af-ZA'].includes(
                         currents[index]?.source.language,
                       ) && (
@@ -664,13 +640,13 @@ export default function ListingCampaignBuilder({
                           </select>
                         </label>
                       )}
-                      <a
+                      <MarketingAnchor
                         href={`/agent/listings/${item.listingId}`}
                         target="_blank"
                         rel="noreferrer"
                       >
                         Open listing
-                      </a>
+                      </MarketingAnchor>
                     </div>
                   </article>
                 )

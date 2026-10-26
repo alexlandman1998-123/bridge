@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Inbox } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_SECTIONS, isCommercialNavItemActive, isCommercialNavItemAvailable } from '../commercialNavigation'
@@ -56,6 +56,7 @@ function CommercialSidebar({ scope = null }) {
             <DashboardIcon size={17} />
             <span>{COMMERCIAL_DASHBOARD_NAV_ITEM.label}</span>
           </Link>
+          <Link to="/inbox" className={`${sectionButtonBaseClass} ${sectionButtonInactiveClass}`}><Inbox size={17} /><span>Inbox</span></Link>
 
           <div>
             {visibleSections.map((section) => {

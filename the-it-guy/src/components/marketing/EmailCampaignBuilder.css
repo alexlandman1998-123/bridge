@@ -1,6 +1,6 @@
 .eb-builder {
   --eb-green: #18765b;
-  --eb-ink: #14243e;
+  --eb-ink: var(--color-text-strong);
   --eb-border: #e4eaf0;
   color: var(--eb-ink);
   padding: 24px 0;
@@ -8,10 +8,29 @@
   min-height: calc(100dvh - 96px);
   display: flex;
   flex-direction: column;
-  font-size: 14px;
+  font-size: 0.9375rem;
+  line-height: 1.58;
 }
 .eb-builder * {
   box-sizing: border-box;
+}
+.eb-linked-campaign {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 14px 18px;
+  border: 1px solid #d7e6dc;
+  border-radius: 10px;
+  background: #edf6f0;
+}
+.eb-builder .eb-linked-campaign > p {
+  flex: 1 1 280px;
+  color: #496b56;
+  font-size: .8125rem;
+  font-weight: 400;
 }
 .eb-builder button,
 .eb-builder input,
@@ -61,20 +80,22 @@
 .eb-builder h3,
 .eb-builder p {
   margin: 0;
+  font-weight: 600;
 }
 .eb-builder h1 {
-  font-size: 24px;
-  font-weight: 500;
+  font-size: 2rem;
+  font-weight: 600;
   letter-spacing: -0.6px;
   margin: 10px 0;
 }
 .eb-builder h2 {
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.3px;
 }
 .eb-builder h3 {
   font-size: 15px;
+  font-weight: 600;
 }
 .eb-header {
   display: flex;
@@ -93,7 +114,7 @@
   border: 0;
   background: none;
   color: var(--eb-green);
-  font-size: 13px;
+  font-size: 0.875rem;
   justify-content: flex-start;
   margin-bottom: 12px;
 }
@@ -125,7 +146,7 @@
   align-items: center;
   gap: 7px;
   color: var(--eb-green);
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 .eb-header-actions {
@@ -168,7 +189,7 @@
   border: 1px solid var(--eb-border);
   background: white;
   flex-shrink: 0;
-  color: #8490a2;
+  color: var(--color-text-body);
 }
 .eb-stepper .is-current .eb-step-number {
   background: var(--eb-green);
@@ -179,12 +200,12 @@
 .eb-stepper strong,
 .eb-stepper small {
   display: block;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
-.eb-stepper strong { font-weight: 500; font-size: 13px; }
+.eb-stepper strong { font-weight: 600; font-size: 0.875rem; }
 .eb-stepper small {
   margin-top: 5px;
-  color: #8390a6;
+  color: var(--color-text-muted);
   font-weight: 400;
 }
 .eb-stepper .is-current small {
@@ -217,15 +238,15 @@
   padding: 24px;
 }
 .eb-eyebrow {
-  font-size: 10px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 1.4px;
-  color: #7c8ba0;
+  color: var(--color-text-muted);
 }
 .eb-intro {
   line-height: 1.6;
-  color: #7a8799;
-  font-size: 13px;
+  color: var(--color-text-body);
+  font-size: 0.875rem;
   margin-bottom: 24px !important;
 }
 .eb-field {
@@ -233,7 +254,7 @@
   flex-direction: column;
   gap: 8px;
   margin: 20px 0;
-  font-size: 12px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 .eb-field > span {
@@ -262,12 +283,12 @@
   line-height: 1.6;
 }
 .eb-field input::placeholder {
-  color: #a1abba;
+  color: var(--color-text-body);
 }
 .eb-field small {
   font-weight: 400;
-  color: #8994a5;
-  font-size: 11px;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 .eb-field .eb-validation {
@@ -281,7 +302,7 @@
   border-radius: 8px;
   padding: 18px;
   color: #72592e;
-  font-size: 12px;
+  font-size: 0.875rem;
   line-height: 1.6;
   margin-top: 24px;
 }
@@ -289,7 +310,7 @@
   margin: 5px 0 12px;
 }
 .eb-attention button {
-  font-size: 12px;
+  font-size: 0.875rem;
   padding: 7px 10px;
 }
 .eb-domain-list {
@@ -298,6 +319,7 @@
 .eb-domain-list > h3,
 .eb-sender-heading {
   margin: 26px 0 12px;
+  font-weight: 600;
 }
 .eb-domain-list article {
   border: 1px solid var(--eb-border);
@@ -349,15 +371,15 @@
 .eb-dns-record strong,
 .eb-dns-record small,
 .eb-dns-record code { display: block; }
-.eb-dns-record strong { font-size: 11px; }
-.eb-dns-record small { color: #7d899a; font-size: 10px; margin: 4px 0; }
+.eb-dns-record strong { font-size: 0.875rem; }
+.eb-dns-record small { color: var(--color-text-muted); font-size: 0.75rem; margin: 4px 0; }
 .eb-dns-record code {
-  color: #41516a;
+  color: var(--color-text-body);
   font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   overflow-wrap: anywhere;
   white-space: normal;
 }
-.eb-dns-record button { flex-shrink: 0; font-size: 11px; padding: 7px 9px; }
+.eb-dns-record button { flex-shrink: 0; font-size: 0.875rem; padding: 7px 9px; }
 .eb-domain-verify { margin-top: 12px; }
 .eb-context > section {
   padding: 23px;
@@ -365,25 +387,26 @@
 }
 .eb-context h2 {
   margin-bottom: 22px;
+  font-weight: 600;
 }
 .eb-check {
   display: flex;
   align-items: center;
   gap: 11px;
   margin: 19px 0;
-  color: #8b97a8;
-  font-size: 12px;
+  color: var(--color-text-body);
+  font-size: 0.875rem;
 }
 .eb-check.is-complete {
   color: var(--eb-green);
 }
 .eb-check span {
-  color: #53647d;
+  color: var(--color-text-body);
 }
 .eb-check small {
   margin-left: auto;
-  font-size: 10px;
-  color: #929dab;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 .eb-inbox > div {
   display: flex;
@@ -408,23 +431,23 @@
 .eb-inbox strong,
 .eb-inbox b {
   display: block;
-  font-size: 12px;
+  font-size: 0.875rem;
   margin-bottom: 5px;
   overflow-wrap: anywhere;
 }
 .eb-inbox p {
-  font-size: 11px;
-  color: #8a95a6;
+  font-size: 0.875rem;
+  color: var(--color-text-body);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .eb-inbox small {
-  font-size: 10px;
-  color: #a1aaba;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 .eb-context-note {
-  font-size: 12px;
-  color: #8e9aad;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
   line-height: 1.7;
   padding: 0 12px;
 }
@@ -454,8 +477,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #708098;
-  font-size: 11px;
+  color: var(--color-text-body);
+  font-size: 0.875rem;
 }
 .eb-bottom span svg {
   color: var(--eb-green);
@@ -465,7 +488,7 @@
   margin: 25px auto 45px;
 }
 .eb-contained > p {
-  color: #78869b;
+  color: var(--color-text-body);
   line-height: 1.6;
   margin-bottom: 25px;
 }
@@ -480,7 +503,7 @@
   display: block;
 }
 .eb-review-grid small {
-  color: #8995a5;
+  color: var(--color-text-muted);
   margin-bottom: 7px;
 }
 .eb-error,
@@ -553,6 +576,7 @@
 .eb-library h2,
 .eb-inspector h2 {
   margin-bottom: 20px;
+  font-weight: 600;
 }
 .eb-tabs {
   display: flex;
@@ -562,7 +586,7 @@
   border: 0;
   flex: 1;
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: 0.875rem;
 }
 .eb-tabs button[aria-pressed="true"] {
   background: #e9f3ef;
@@ -585,11 +609,11 @@
 .eb-block-library button {
   justify-content: flex-start;
   padding: 12px 10px;
-  font-size: 12px;
+  font-size: 0.875rem;
 }
 .eb-block-library svg:last-child {
   margin-left: auto;
-  color: #8b9aad;
+  color: var(--color-text-body);
 }
 .eb-brand {
   border-top: 1px solid var(--eb-border);
@@ -598,6 +622,7 @@
 }
 .eb-brand h3 {
   margin-bottom: 17px;
+  font-weight: 600;
 }
 .eb-brand img {
   max-width: 100%;
@@ -610,14 +635,14 @@
   padding: 20px 0;
 }
 .eb-brand p {
-  font-size: 11px;
-  color: #8290a4;
+  font-size: 0.875rem;
+  color: var(--color-text-body);
   margin: 15px 0 7px;
 }
 .eb-brand small {
-  font-size: 10px;
+  font-size: 0.75rem;
   line-height: 1.5;
-  color: #8493a6;
+  color: var(--color-text-muted);
   display: block;
   margin-top: 10px;
 }
@@ -625,7 +650,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 0.875rem;
 }
 .eb-colour input {
   width: 30px;
@@ -737,6 +762,7 @@
 }
 .eb-rendered-block h1 {
   letter-spacing: -0.5px;
+  font-weight: 600;
 }
 .eb-rendered-block img {
   max-width: 100%;
@@ -753,7 +779,7 @@
   color: #668476;
 }
 .eb-image-placeholder span {
-  font-size: 11px;
+  font-size: 0.875rem;
 }
 .eb-image-thumb {
   width: 100%;
@@ -763,23 +789,23 @@
   margin-top: 18px;
 }
 .eb-inspector > small {
-  font-size: 11px;
-  color: #8290a0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
   line-height: 1.6;
 }
 .eb-inspector details {
   border-top: 1px solid var(--eb-border);
   padding: 15px 0;
-  font-size: 12px;
-  color: #697d95;
+  font-size: 0.875rem;
+  color: var(--color-text-body);
 }
 .eb-inspector summary {
   cursor: pointer;
 }
 .eb-inspector > p {
-  font-size: 12px;
+  font-size: 0.875rem;
   line-height: 1.7;
-  color: #8290a0;
+  color: var(--color-text-body);
   margin: 18px 0;
 }
 .eb-template-list {
@@ -801,10 +827,10 @@
 .eb-template-list small {
   display: block;
   margin: 8px 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .eb-template-list button {
-  font-size: 11px;
+  font-size: 0.875rem;
   padding: 7px;
 }
 .eb-listing-picker {
@@ -815,7 +841,7 @@
 }
 .eb-listing-picker button {
   padding: 7px;
-  font-size: 11px;
+  font-size: 0.875rem;
   text-align: left;
   justify-content: flex-start;
 }
@@ -826,16 +852,16 @@
 }
 .eb-listing-picker small {
   display: block;
-  color: #8b96a5;
+  color: var(--color-text-muted);
   margin-top: 5px;
 }
 .eb-selected-listing {
   padding: 12px 0;
   border-bottom: 1px solid var(--eb-border);
-  font-size: 12px;
+  font-size: 0.875rem;
 }
 .eb-selected-listing button {
-  font-size: 10px;
+  font-size: 0.875rem;
   padding: 6px;
 }
 .eb-code {
@@ -873,11 +899,12 @@
 }
 .eb-modal h2 {
   margin-bottom: 17px;
+  font-weight: 600;
 }
 .eb-modal p {
-  font-size: 13px;
+  font-size: 0.875rem;
   line-height: 1.7;
-  color: #79879a;
+  color: var(--color-text-body);
 }
 .eb-preview-modal {
   max-width: 760px;
@@ -928,8 +955,8 @@
   max-width: 100%;
 }
 .eb-import-summary span, .eb-import small {
-  font-size: 12px;
-  color: #58697d;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 .eb-modal .eb-import-error, .eb-import-error {
   color: #a32727;
@@ -945,6 +972,7 @@
 }
 .eb-import h3 {
   margin: 20px 0 12px;
+  font-weight: 600;
 }
 .eb-content-check {
   border-top: 1px solid var(--eb-border);
@@ -971,7 +999,7 @@
   justify-content: space-between !important;
   width: 100%;
   margin: 8px 0;
-  font-size: 12px !important;
+  font-size: 0.875rem !important;
 }
 @media (min-width: 1600px) {
   .eb-workspace {
@@ -991,10 +1019,12 @@
   }
   .eb-header-actions button {
     padding: 8px;
-    font-size: 11px;
+    font-size: 0.875rem;
   }
   .eb-builder {
     padding: 18px 0;
+    font-size: 0.9375rem;
+    line-height: 1.58;
   }
   .eb-canvas-heading {
     flex-wrap: wrap;
@@ -1007,6 +1037,8 @@
 @media (max-width: 900px) {
   .eb-builder {
     min-height: 0;
+    font-size: 0.9375rem;
+    line-height: 1.58;
   }
   .eb-stage {
     display: block;
@@ -1066,6 +1098,8 @@
 @media (max-width: 560px) {
   .eb-builder {
     padding: 14px 0;
+    font-size: 0.9375rem;
+    line-height: 1.58;
   }
   .eb-title-row > input {
     width: 230px;
@@ -1109,7 +1143,7 @@
     padding: 12px;
   }
   .eb-bottom button {
-    font-size: 11px;
+    font-size: 0.875rem;
     padding: 10px;
   }
   .eb-bottom > div {
@@ -1138,7 +1172,7 @@
   border: 1px solid var(--eb-border);
   border-radius: 5px;
   padding: 12px;
-  font-size: 13px;
+  font-size: 0.875rem;
   line-height: 1.6;
   outline-color: var(--eb-green);
 }

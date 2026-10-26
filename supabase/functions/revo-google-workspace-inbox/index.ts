@@ -1,7 +1,8 @@
+import { requireInboxMailbox, requireInboxMailboxUser, isInboxReturnUrlAllowed } from "../_shared/sharedInboxAccess.ts";
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
-const REVO_ORGANISATION_ID = "322c3853-2d82-4413-97e6-b4cd8bc32a7c";
 const PROVIDER_KEY = "google_workspace";
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization,x-client-info,apikey,content-type", "access-control-allow-methods": "GET,POST,OPTIONS" };
 const text = (value: unknown) => String(value ?? "").trim();
@@ -10,7 +11,7 @@ const now = () => new Date().toISOString();
 
 function serviceClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const key = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey());
   return url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
 }
 function callbackUrl() { return `${text(Deno.env.get("SUPABASE_URL")).replace(/\/$/, "")}/functions/v1/revo-google-workspace-inbox`; }
@@ -21,29 +22,19 @@ function providerConfig() {
   return { clientId, clientSecret };
 }
 function providerScopes() { return ["openid", "email", "https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send"].join(" "); }
-function isReturnUrlAllowed(value: string) { return /^https:\/\/app\.arch9\.co\.za\/revo\/inbox(?:\/settings)?(?:\?|$)/.test(value) || /^http:\/\/(localhost|127\.0\.0\.1):\d+\/revo\/inbox(?:\/settings)?(?:\?|$)/.test(value); }
 function randomUrlSafe(bytes = 32) { return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(bytes)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); }
 async function sha256(value: string) { const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))); return [...digest].map((item) => item.toString(16).padStart(2, "0")).join(""); }
 async function pkceChallenge(verifier: string) { const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))); return btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); }
 
-async function requireRevoAdmin(req: Request, db: any, organisationId: string) {
-  if (organisationId !== REVO_ORGANISATION_ID) throw new Error("This provider connection is only available for Revo.");
-  const bearer = text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
-  const user = (await db.auth.getUser(bearer)).data.user;
-  if (!user) throw new Error("Sign in before connecting a mailbox.");
-  const membership = await db.from("organisation_users").select("role,status").eq("organisation_id", organisationId).eq("user_id", user.id).maybeSingle();
-  if (!membership.data || membership.data.status !== "active" || !["principal", "owner", "director", "admin", "super_admin", "agency_admin"].includes(text(membership.data.role).toLowerCase())) throw new Error("Revo organisation administrator access is required.");
-  return user.id;
-}
 async function recordEvent(db: any, connection: Record<string, unknown>, actorUserId: string | null, eventType: string, metadata: Record<string, unknown> = {}) {
   await db.from("revo_inbox_connection_events").insert({ organisation_id: connection.organisation_id, connection_id: connection.id, actor_user_id: actorUserId, event_type: eventType, metadata_json: metadata });
 }
 async function markFailed(db: any, connection: Record<string, unknown>, actorUserId: string | null, code: string) {
-  await db.from("revo_inbox_provider_connections").update({ status: "error", last_error_code: code }).eq("id", connection.id);
+  await db.from("revo_inbox_provider_connections").update({ status: "error", last_error_code: code }).eq("id", connection.id).eq("status", "authorizing").eq("updated_at", connection.updated_at);
   await recordEvent(db, connection, actorUserId, "authorization_failed", { code });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const db = serviceClient();
   if (!db) return json(500, { error: "Server configuration is unavailable." });
@@ -58,9 +49,10 @@ Deno.serve(async (req) => {
     if (!stateRow) return json(400, { error: "Google connection state is invalid or expired." });
     const claimed = await db.from("revo_inbox_oauth_states").update({ consumed_at: now() }).eq("state_hash", stateHash).eq("provider_key", PROVIDER_KEY).is("consumed_at", null).select("state_hash").maybeSingle();
     if (!claimed.data) return json(400, { error: "Google connection has already been completed or expired." });
-    const connectionResult = await db.from("revo_inbox_provider_connections").select("*").eq("id", stateRow.connection_id).eq("organisation_id", REVO_ORGANISATION_ID).eq("provider_key", PROVIDER_KEY).maybeSingle();
+    const connectionResult = await db.from("revo_inbox_provider_connections").select("*").eq("id", stateRow.connection_id).eq("organisation_id", stateRow.organisation_id).eq("provider_key", PROVIDER_KEY).maybeSingle();
     const connection = connectionResult.data;
-    if (!connection) return json(404, { error: "Mailbox connection was not found." });
+    if (!connection || connection.status !== "authorizing") return json(404, { error: "Mailbox connection was not found." });
+    try { await requireInboxMailboxUser(db, stateRow.organisation_id, stateRow.requested_by, connection.channel_id); } catch { return json(403, { error: "Mailbox access is required." }); }
     const providerError = text(url.searchParams.get("error"));
     if (providerError || !code) {
       await markFailed(db, connection, stateRow.requested_by, providerError || "authorization_cancelled");
@@ -75,19 +67,15 @@ Deno.serve(async (req) => {
       const profileResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", { headers: { authorization: `Bearer ${token.access_token}` } });
       const profile = await profileResponse.json();
       if (!profileResponse.ok || !text(profile.emailAddress)) throw new Error("gmail_account_verification_failed");
-      if (connection.connection_kind === "delegated_shared_mailbox") {
-        const mailboxResponse = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(connection.mailbox_address)}/profile`, { headers: { authorization: `Bearer ${token.access_token}` } });
-        if (!mailboxResponse.ok) throw new Error("delegated_mailbox_verification_failed");
-      }
-      const vaultResult = await db.rpc("revo_store_inbox_connection_credential", { p_connection_id: connection.id, p_secret: { provider: PROVIDER_KEY, access_token: token.access_token, refresh_token: text(token.refresh_token), expires_in: Number(token.expires_in || 0), token_type: text(token.token_type), scope: text(token.scope) } });
-      if (vaultResult.error) throw new Error("credential_storage_failed");
-      const update = await db.from("revo_inbox_provider_connections").update({ status: "connected", provider_account_id: text(profile.emailAddress).toLowerCase(), granted_scopes: text(token.scope).split(/\s+/).filter(Boolean), connected_by: stateRow.requested_by, connected_at: now(), last_verified_at: now(), last_error_code: null, disconnected_at: null, disconnected_by: null }).eq("id", connection.id);
-      if (update.error) throw new Error("connection_update_failed");
+      if (connection.connection_kind !== "individual_mailbox") throw new Error("google_delegation_unsupported");
+      if (text(profile.emailAddress).toLowerCase() !== text(connection.mailbox_address).toLowerCase()) throw new Error("mailbox_identity_mismatch");
+      const completed = await db.rpc("shared_inbox_complete_oauth", { p_state_hash: stateHash, p_account: text(profile.emailAddress).toLowerCase(), p_secret: { provider: PROVIDER_KEY, access_token: token.access_token, refresh_token: text(token.refresh_token), expires_at: Date.now() + Number(token.expires_in || 3600) * 1000, expires_in: Number(token.expires_in || 0), token_type: text(token.token_type), scope: text(token.scope) } });
+      if (completed.error) throw new Error("authorization_cancelled");
       await recordEvent(db, connection, stateRow.requested_by, "authorization_completed", { providerAccountId: text(profile.emailAddress).toLowerCase(), connectionKind: connection.connection_kind });
       return Response.redirect(`${stateRow.return_url}${stateRow.return_url.includes("?") ? "&" : "?"}google_connection=connected`, 302);
     } catch (error) {
       const failureCode = error instanceof Error ? error.message.replace(/[^a-z0-9_]/gi, "_").slice(0, 120) : "authorization_failed";
-      await markFailed(db, connection, stateRow.requested_by, failureCode);
+      if (failureCode !== "authorization_cancelled") await markFailed(db, connection, stateRow.requested_by, failureCode);
       return Response.redirect(`${stateRow.return_url}${stateRow.return_url.includes("?") ? "&" : "?"}google_connection=failed`, 302);
     }
   }
@@ -97,17 +85,19 @@ Deno.serve(async (req) => {
     const body = await req.json();
     if (text(body.action) !== "start_authorization") return json(400, { error: "Unsupported action." });
     const organisationId = text(body.organisationId);
-    const actorUserId = await requireRevoAdmin(req, db, organisationId);
     const channelId = text(body.channelId);
+    const actorUserId = await requireInboxMailbox(req, db, organisationId, channelId);
     const mailboxAddress = text(body.mailboxAddress).toLowerCase();
     const connectionKind = text(body.connectionKind);
     const returnUrl = text(body.returnUrl);
-    if (!channelId || !mailboxAddress || !["individual_mailbox", "delegated_shared_mailbox"].includes(connectionKind) || !isReturnUrlAllowed(returnUrl)) return json(400, { error: "The Google connection request is incomplete." });
+    if (!channelId || !mailboxAddress || !["individual_mailbox", "delegated_shared_mailbox"].includes(connectionKind) || !isInboxReturnUrlAllowed(returnUrl)) return json(400, { error: "The Google connection request is incomplete." });
     const config = providerConfig();
-    const channel = await db.from("revo_inbox_channels").select("id").eq("id", channelId).eq("organisation_id", organisationId).eq("provider_key", PROVIDER_KEY).maybeSingle();
+    const channel = await db.from("revo_inbox_channels").select("id,address").eq("id", channelId).eq("organisation_id", organisationId).eq("provider_key", PROVIDER_KEY).maybeSingle();
     if (!channel.data) return json(404, { error: "Choose a Revo Google Workspace channel before connecting it." });
+    if (text(channel.data.address).toLowerCase() !== mailboxAddress) return json(400, { error: "The connection address must match the mailbox address." });
     const existing = await db.from("revo_inbox_provider_connections").select("*").eq("channel_id", channelId).maybeSingle();
     if (existing.data?.status === "connected") return json(409, { error: "This mailbox is already connected. Disconnect it before reconnecting." });
+    if (connectionKind !== "individual_mailbox") return json(400, { error: "Connect each Google mailbox with its own account, then share access in Inbox settings." });
     const connectionPayload = { organisation_id: organisationId, channel_id: channelId, provider_key: PROVIDER_KEY, connection_kind: connectionKind, mailbox_address: mailboxAddress, status: "authorizing", granted_scopes: [], connected_by: null, connected_at: null, last_error_code: null, disconnected_at: null, disconnected_by: null };
     const connectionResult = existing.data ? await db.from("revo_inbox_provider_connections").update(connectionPayload).eq("id", existing.data.id).select("*").single() : await db.from("revo_inbox_provider_connections").insert(connectionPayload).select("*").single();
     if (connectionResult.error || !connectionResult.data) throw new Error("Unable to prepare the Google mailbox connection.");
@@ -120,4 +110,4 @@ Deno.serve(async (req) => {
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : "Unable to begin the Google mailbox connection." });
   }
-});
+}));

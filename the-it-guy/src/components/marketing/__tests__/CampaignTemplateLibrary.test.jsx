@@ -16,11 +16,10 @@ function mount(props = {}) {
 }
 const category = (name) => within(screen.getByRole('navigation', { name: 'Campaign categories' })).getByRole('button', { name, exact: true })
 
-it('shows the 18 launch families with category labels, drafts and honest planned-pack descriptions', () => {
+it('shows the 19 launch families with category labels, drafts and honest planned-pack descriptions', () => {
   mount()
-  expect(screen.getAllByRole('article')).toHaveLength(18)
+  expect(screen.getAllByRole('article')).toHaveLength(19)
   expect(screen.getByRole('heading', { name: 'Just Listed', exact: true })).toBeTruthy()
-  expect(screen.getByText(/personalised designs, downloads/)).toBeTruthy()
   const card = screen.getByRole('heading', { name: 'Show Day / Open House' }).closest('article')
   fireEvent.click(within(card).getByText(/Pack checklist/))
   expect(within(card).getByText('Attendee follow-up')).toBeTruthy()
@@ -46,7 +45,7 @@ it('combines category and tag search, and can recover from no matches', () => {
   fireEvent.change(screen.getByRole('textbox', { name: 'Search templates' }), { target: { value: 'no-such-campaign' } })
   expect(screen.getByRole('heading', { name: 'No matching templates' })).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
-  expect(screen.getAllByRole('article')).toHaveLength(18)
+  expect(screen.getAllByRole('article')).toHaveLength(19)
 })
 
 it('passes the selected catalogue definition to the existing draft flow without saving', () => {
@@ -73,7 +72,7 @@ it('resets the category when changing collection and preserves private ownership
 
 it('keeps ready-made campaigns usable while saved storage is loading or unavailable', () => {
   const callbacks = mount({ loading: true, error: 'Storage unavailable' })
-  expect(screen.getAllByRole('article')).toHaveLength(18)
+  expect(screen.getAllByRole('article')).toHaveLength(19)
   fireEvent.click(screen.getByRole('button', { name: 'My templates' }))
   expect(screen.getByRole('alert').textContent).toContain('Storage unavailable')
   expect(screen.queryByRole('article')).toBeNull()
@@ -81,7 +80,7 @@ it('keeps ready-made campaigns usable while saved storage is loading or unavaila
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(callbacks.onRetry).toHaveBeenCalledOnce()
   fireEvent.click(screen.getByRole('button', { name: 'Ready-made' }))
-  expect(screen.getAllByRole('article')).toHaveLength(18)
+  expect(screen.getAllByRole('article')).toHaveLength(19)
 })
 
 it('allows administrators to edit shared templates', () => {

@@ -18,7 +18,7 @@ function mockDb() {
     from(table) {
       let operation = 'select', values, options, filters = [], limit
       const execute = () => {
-        if (table === 'email_campaign_assets' && state.assetError) return { data: null, error: new Error('Unavailable') }
+        if ((table === 'email_campaign_assets' && state.assetError) || table === state.eligibilityError) return { data: null, error: new Error('Unavailable') }
         const rows = (state.tables[table] || []).filter((row) => filters.every((filter) => filter(row)))
         const selected = limit ? rows.slice(0, limit) : rows
         if (operation === 'update') {
@@ -58,21 +58,45 @@ const check = () => createContentCheckHandler({ createClient, env, fetcher })(re
 const test = (patch = {}) => createCampaignTestHandler({ createClient, env, fetcher })(request({ organisationId: org, senderIdentityId: 'sender', html: '<script>stale()</script>', contentJson: state.tables.email_campaigns[0].content_json, subject: 'News', ...patch }))
 const worker = () => createWorkerHandler({ createClient, env, fetcher })(request({}, { 'x-arch9-email-worker-secret': 'worker-test-secret' }))
 const providerCalls = () => fetcher.mock.calls.filter(([url]) => url === 'https://api.resend.com/emails')
+const listingId = '22222222-2222-4222-8222-222222222222'
+function addListingSource(patch = {}) {
+  state.tables.private_listings = [{ id: listingId, organisation_id: org, asking_price: 2400000, listing_status: 'active', is_active: true }]
+  state.tables.email_campaigns[0].content_json.ai_campaign = {
+    listing_id: listingId, objective: 'new_listing', language: 'en',
+    source_snapshot: { version: 1, listing_id: listingId, organisation_id: org, asking_price: 2400000, listing_status: 'active', is_active: true },
+    ...patch,
+  }
+}
+function addSecondRecipient() {
+  const email = 'second-buyer@example.com'
+  state.tables.email_campaign_recipients.push({ ...state.tables.email_campaign_recipients[0], id: 'second-recipient', email })
+  for (const table of ['contact_marketing_preferences', 'contact_email_subscriptions', 'email_marketing_contacts']) state.tables[table].push({ ...state.tables[table][0], email })
+}
+function addSavedShowDay() {
+  const id = '33333333-3333-4333-8333-333333333333'
+  const start = new Date(Date.now() + 86400000).toISOString()
+  const end = new Date(Date.now() + 93600000).toISOString()
+  addListingSource({ objective: 'show_day', event: { id, start, end } })
+  state.tables.marketing_events = [{ id, organisation_id: org, event_type: 'show_day', subject_type: 'listing', subject_id: listingId, status: 'upcoming', metadata: { visibility: 'public' }, starts_at: start, ends_at: end }]
+}
 beforeEach(() => {
-  const identity = { id: 'sender', organisation_id: org, display_name: 'Agency', from_email: 'agent@example.com', verification_status: 'verified', sending_paused_at: null }
+  const identity = { id: 'sender', organisation_id: org, display_name: 'Agency', from_email: 'agent@example.com', verification_status: 'verified', sending_paused_at: null, email_sending_domain_id: 'domain' }
   state = { user: { id: 'user', email: 'agent@example.com' }, permitted: true, writes: [], tables: {
-    email_campaigns: [{ id: 'campaign', organisation_id: org, subject: 'News', preview_text: 'A property update', content_json: { version: 1, mode: 'advanced', blocks: [], advancedHtml: `<html><body><p>Hello {{first_name}}</p><img src="${image}" alt="Hero"><a href="https://example.com/news?x=1&amp;y=2">View</a></body></html>` }, html: '<script>stale()</script>', status: 'sending', email_sender_identities: identity }],
+    email_campaigns: [{ id: 'campaign', organisation_id: org, subject: 'News', preview_text: 'A property update', content_json: { version: 1, mode: 'advanced', blocks: [], advancedHtml: `<html><body><p>Hello {{first_name}}</p><img src="${image}" alt="Hero"><a href="https://example.com/news?x=1&amp;y=2">View</a></body></html>` }, html: '<script>stale()</script>', status: 'sending', sender_identity_id: 'sender', subscription_type_id: 'property-updates', email_sender_identities: identity }],
     email_sender_identities: [identity],
+    email_sending_domains: [{ id: 'domain', organisation_id: org, domain_name: 'example.com', provider_domain_id: 'provider-domain', verification_status: 'verified' }],
     email_campaign_assets: [{ organisation_id: org, storage_path: path, mime_type: 'image/png', byte_size: 8 }],
     email_campaign_dispatch_jobs: [{ id: 'job', campaign_id: 'campaign', organisation_id: org, status: 'queued', run_at: '2020-01-01T00:00:00Z' }],
     email_sending_policies: [{ organisation_id: org, approved_at: '2020-01-01', paused_at: null, daily_recipient_limit: 500, max_recipients_per_worker_run: 50 }],
     email_campaign_recipients: [{ id: 'recipient', organisation_id: org, campaign_id: 'campaign', email: 'buyer@example.com', status: 'queued', recipient_snapshot: { first_name: 'Alex' }, tracking_token: 'recipient-token', send_attempts: 0 }],
     contact_marketing_preferences: [{ organisation_id: org, email: 'buyer@example.com', marketing_consent_status: 'opted_in', unsubscribe_token: 'personal-token' }],
+    contact_email_subscriptions: [{ organisation_id: org, email: 'buyer@example.com', subscription_type_id: 'property-updates', status: 'subscribed' }],
+    email_marketing_contacts: [{ organisation_id: org, email: 'buyer@example.com', is_valid_email: true }],
   } }
   db = mockDb()
   createClient = vi.fn(() => db)
-  env = (key) => ({ SUPABASE_URL: base, SUPABASE_ANON_KEY: 'anon-test-key', SUPABASE_SERVICE_ROLE_KEY: 'service-test-key', EMAIL_CAMPAIGN_WORKER_SECRET: 'worker-test-secret', RESEND_API_KEY: 'resend-test-key' })[key]
-  fetcher = vi.fn(async (_url, options) => options.method === 'HEAD' ? new Response(null, { headers: { 'content-type': 'image/png', 'content-length': '8' } }) : Response.json({ id: 'message-id' }))
+  env = (key) => ({ SUPABASE_URL: base, SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({default:'sb_publishable_test'}), SUPABASE_SECRET_KEYS: JSON.stringify({default:'sb_secret_test'}), EMAIL_CAMPAIGN_WORKER_SECRET: 'worker-test-secret', RESEND_API_KEY: 'resend-test-key' })[key]
+  fetcher = vi.fn(async (_url, options) => String(_url).includes('/domains/') ? Response.json({ id: 'provider-domain', name: 'example.com', status: 'verified', records: [] }) : options.method === 'HEAD' ? new Response(null, { headers: { 'content-type': 'image/png', 'content-length': '8' } }) : Response.json({ id: 'message-id' }))
 })
 
 it('checks the actual saved document and owned public image without sending or writing', async () => {
@@ -169,7 +193,7 @@ it('blocks malformed queued content even when scheduling was called directly', a
 
 it('rechecks hosted image availability at dispatch time and preserves a partial delivery state', async () => {
   state.tables.email_campaign_recipients.push({ id: 'previous', campaign_id: 'campaign', organisation_id: org, status: 'sent' })
-  fetcher.mockResolvedValue(new Response(null, { status: 404 }))
+  fetcher.mockImplementation(async (url) => String(url).includes('/domains/') ? Response.json({ id: 'provider-domain', name: 'example.com', status: 'verified' }) : new Response(null, { status: 404 }))
   await worker()
   expect(providerCalls()).toHaveLength(0)
   expect(state.tables.email_campaigns[0].status).toBe('partially_failed')
@@ -200,6 +224,187 @@ it('does not deliver after consent has been revoked', async () => {
   expect(providerCalls()).toHaveLength(0)
 })
 
+it('rechecks the category subscription immediately before delivery', async () => {
+  state.tables.contact_email_subscriptions[0].status = 'unsubscribed'
+  await worker()
+  expect(state.tables.email_campaign_recipients[0].status).toBe('suppressed')
+  expect(providerCalls()).toHaveLength(0)
+})
+
+it.each(['email_suppressions', 'contact_marketing_preferences', 'contact_email_subscriptions', 'email_marketing_contacts'])('keeps recipients queued when eligibility cannot be read: %s', async (table) => {
+  state.eligibilityError = table
+  await worker()
+  expect(state.tables.email_campaign_recipients[0].status).toBe('queued')
+  expect(providerCalls()).toHaveLength(0)
+})
+
+it('does not deliver after an address becomes invalid', async () => {
+  state.tables.email_marketing_contacts[0].is_valid_email = false
+  await worker()
+  expect(state.tables.email_campaign_recipients[0].status).toBe('suppressed')
+  expect(providerCalls()).toHaveLength(0)
+})
+
+it('does not send the same claimed recipient on repeated worker runs', async () => {
+  await worker()
+  await worker()
+  expect(providerCalls()).toHaveLength(1)
+})
+
+it('checks a persisted AI listing snapshot during review and immediately before actual dispatch', async () => {
+  addListingSource()
+  expect(await (await check()).json()).toMatchObject({ ready: true, sourceFreshness: { code: 'source_current' } })
+  expect(providerCalls()).toHaveLength(0)
+  expect(await (await worker()).json()).toMatchObject({ processed: 1 })
+  expect(providerCalls()).toHaveLength(1)
+  expect(state.tables.email_campaign_recipients[0].status).toBe('sent')
+})
+
+it.each([
+  ['changed price', { asking_price: 2500000 }, 'asking price changed'],
+  ['withdrawn listing', { listing_status: 'withdrawn' }, 'no longer active'],
+  ['sold listing', { listing_status: 'sold' }, 'no longer active'],
+  ['under-offer listing', { listing_status: 'under_offer' }, 'no longer active'],
+  ['inactive listing', { is_active: false }, 'no longer active'],
+  ['different agency', { organisation_id: '33333333-3333-4333-8333-333333333333' }, 'no longer available'],
+])('stops a queued AI email before claims when source is %s', async (_label, patch, reason) => {
+  addListingSource()
+  Object.assign(state.tables.private_listings[0], patch)
+  expect(await (await check()).json()).toMatchObject({ ready: false, errors: [expect.stringContaining(reason)] })
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(db.rpc.mock.calls.some(([name]) => name === 'email_reserve_send')).toBe(false)
+  expect(state.tables.email_campaign_recipients[0]).toMatchObject({ status: 'failed', send_attempts: 0, error_reason: expect.stringContaining(reason) })
+  expect(state.tables.email_campaigns[0].status).toBe('failed')
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'failed', last_error: expect.stringContaining(reason) })
+})
+
+it('fails closed for old AI drafts without provenance rather than silently assuming their facts are current', async () => {
+  state.tables.email_campaigns[0].content_json.ai_campaign = { listing_id: listingId, objective: 'new_listing' }
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'failed', last_error: expect.stringContaining('listing snapshot') })
+})
+
+it('rejects a removed listing and an expired or invalid show day before claims', async () => {
+  addListingSource()
+  state.tables.private_listings = []
+  expect(await (await check()).json()).toMatchObject({ ready: false, sourceFreshness: { code: 'source_missing' } })
+  addListingSource({ objective: 'show_day', event: { start: '2020-01-01T10:00:00+02:00', end: '2020-01-01T12:00:00+02:00' } })
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'failed', last_error: expect.stringContaining('already started or passed') })
+})
+
+it('keeps recipients queued on unavailable source reads and can resume once the source is confirmed', async () => {
+  addListingSource()
+  state.eligibilityError = 'private_listings'
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaign_recipients[0]).toMatchObject({ status: 'queued', send_attempts: 0 })
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'queued', locked_at: null, last_error: expect.stringContaining('could not be checked') })
+  state.eligibilityError = null
+  await worker()
+  expect(providerCalls()).toHaveLength(1)
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'completed', last_error: null })
+})
+
+it.each(['sending', 'sent', 'delivered', 'opened', 'clicked', 'bounced', 'complained', 'unsubscribed'])('preserves existing %s evidence when the source stops the remainder', async (status) => {
+  addListingSource()
+  state.tables.email_campaign_recipients.push({ id: 'previous', campaign_id: 'campaign', organisation_id: org, status, provider_message_id: 'accepted-message' })
+  state.tables.private_listings[0].asking_price = 2500000
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaigns[0].status).toBe('partially_failed')
+  expect(state.tables.email_campaign_recipients.find((row) => row.id === 'previous')).toMatchObject({ status, provider_message_id: 'accepted-message' })
+  expect(state.tables.email_campaign_recipients[0].status).toBe('failed')
+})
+
+it('stops a batch when listing facts change after its first accepted recipient', async () => {
+  addListingSource()
+  addSecondRecipient()
+  const transport = fetcher.getMockImplementation()
+  fetcher.mockImplementation(async (url, options) => {
+    const response = await transport(url, options)
+    if (url === 'https://api.resend.com/emails') state.tables.private_listings[0].asking_price = 2500000
+    return response
+  })
+  expect(await (await worker()).json()).toMatchObject({ processed: 1 })
+  expect(providerCalls()).toHaveLength(1)
+  expect(state.tables.email_campaign_recipients[0]).toMatchObject({ status: 'sent', provider_message_id: 'message-id' })
+  expect(state.tables.email_campaign_recipients[1]).toMatchObject({ status: 'failed', send_attempts: 0 })
+  expect(state.tables.email_campaigns[0].status).toBe('partially_failed')
+  expect(state.tables.email_campaign_dispatch_jobs[0].status).toBe('failed')
+})
+
+it('retains accepted recipients and queues the rest if a later source read is temporarily unavailable', async () => {
+  addListingSource()
+  addSecondRecipient()
+  const transport = fetcher.getMockImplementation()
+  fetcher.mockImplementation(async (url, options) => {
+    const response = await transport(url, options)
+    if (url === 'https://api.resend.com/emails') state.eligibilityError = 'private_listings'
+    return response
+  })
+  expect(await (await worker()).json()).toMatchObject({ processed: 1 })
+  expect(providerCalls()).toHaveLength(1)
+  expect(state.tables.email_campaign_recipients[0].status).toBe('sent')
+  expect(state.tables.email_campaign_recipients[1]).toMatchObject({ status: 'queued', send_attempts: 0 })
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'queued', locked_at: null, last_error: expect.stringContaining('Remaining recipients stay queued') })
+})
+
+it('delivers a current public saved show day after checking its exact listing and times', async () => {
+  addSavedShowDay()
+  expect(await (await check()).json()).toMatchObject({ ready: true })
+  expect(await (await worker()).json()).toMatchObject({ processed: 1 })
+  expect(providerCalls()).toHaveLength(1)
+})
+
+it.each([
+  ['cancelled', { status: 'cancelled' }, 'no longer public'],
+  ['made private', { metadata: { visibility: 'private' } }, 'no longer public'],
+  ['rescheduled', { starts_at: new Date(Date.now() + 90000000).toISOString() }, 'date or times changed'],
+  ['linked to another listing', { subject_id: org }, 'no longer available'],
+  ['moved to another agency', { organisation_id: listingId }, 'no longer available'],
+])('blocks saved show-day delivery when the event is %s after preparation', async (_label, patch, reason) => {
+  addSavedShowDay()
+  Object.assign(state.tables.marketing_events[0], patch)
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaign_recipients[0]).toMatchObject({ status: 'failed', send_attempts: 0, error_reason: expect.stringContaining(reason) })
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'failed', last_error: expect.stringContaining(reason) })
+})
+
+it('fails a removed event and waits on a temporarily unreadable event without claiming recipients', async () => {
+  addSavedShowDay()
+  state.tables.marketing_events = []
+  expect(await (await check()).json()).toMatchObject({ ready: false, sourceFreshness: { code: 'event_missing' } })
+  addSavedShowDay()
+  state.eligibilityError = 'marketing_events'
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(db.rpc.mock.calls.some(([name]) => name === 'email_reserve_send')).toBe(false)
+  expect(state.tables.email_campaign_recipients[0]).toMatchObject({ status: 'queued', send_attempts: 0 })
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'queued', last_error: expect.stringContaining('show day could not be checked') })
+})
+
+it('stops the remaining recipients if a saved show day is cancelled during a batch', async () => {
+  addSavedShowDay()
+  addSecondRecipient()
+  const transport = fetcher.getMockImplementation()
+  fetcher.mockImplementation(async (url, options) => {
+    const response = await transport(url, options)
+    if (url === 'https://api.resend.com/emails') state.tables.marketing_events[0].status = 'cancelled'
+    return response
+  })
+  expect(await (await worker()).json()).toMatchObject({ processed: 1 })
+  expect(providerCalls()).toHaveLength(1)
+  expect(state.tables.email_campaign_recipients[0]).toMatchObject({ status: 'sent', provider_message_id: 'message-id' })
+  expect(state.tables.email_campaign_recipients[1]).toMatchObject({ status: 'failed', send_attempts: 0 })
+  expect(state.tables.email_campaigns[0].status).toBe('partially_failed')
+  expect(state.tables.email_campaign_dispatch_jobs[0]).toMatchObject({ status: 'failed', last_error: expect.stringContaining('no longer public') })
+})
+
 it('does not deliver for an unapproved or paused sending policy', async () => {
   state.tables.email_sending_policies[0].approved_at = null
   await worker()
@@ -220,4 +425,37 @@ it('denies unauthenticated worker calls without touching the database', async ()
   expect(response.status).toBe(401)
   expect(createClient).not.toHaveBeenCalled()
   expect(fetcher).not.toHaveBeenCalled()
+})
+
+
+it('sends a setup test to the signed-in inbox without requiring a campaign draft', async () => {
+  const response = await test({ setupTest: true, contentJson: null, html: null })
+  expect(response.status).toBe(200)
+  expect(JSON.parse(providerCalls()[0][1].body)).toMatchObject({ to: [state.user.email], subject: 'Your agency email is ready' })
+  expect(db.rpc).toHaveBeenCalledWith('email_reserve_send', expect.objectContaining({ p_test: true, p_actor_id: 'user' }))
+})
+it('denies setup tests addressed to someone else', async () => {
+  expect((await test({ setupTest: true, recipientEmail: 'someone@else.com' })).status).toBe(400)
+  expect(providerCalls()).toHaveLength(0)
+})
+it('stops tests and campaigns when quota reservation fails', async () => {
+  db.rpc.mockImplementation(async (name) => ({ data: name !== 'email_reserve_send', error: null }))
+  expect((await test({ setupTest: true })).status).toBe(429)
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaign_recipients[0].status).toBe('queued')
+})
+it('does not send using cached verification when the provider reports DNS loss', async () => {
+  fetcher.mockImplementation(async () => Response.json({ id: 'provider-domain', name: 'example.com', status: 'failed' }))
+  expect((await test({ setupTest: true })).status).toBe(400)
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaigns[0].status).toBe('failed')
+})
+it('requeues a campaign when verification cannot be confirmed during a provider outage', async () => {
+  fetcher.mockResolvedValue(new Response(null, { status: 503 }))
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+  expect(state.tables.email_campaign_dispatch_jobs[0].status).toBe('queued')
+  expect(state.tables.email_campaign_recipients[0].status).toBe('queued')
 })

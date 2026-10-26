@@ -1,6 +1,6 @@
 import { getBuyerNextActionCompletion, checkBuyerNextActionEvidence, buildBuyerNextBestActionButtons } from '../../services/buyerNextActionCompletionService.js'
 import { AppointmentOrganisers, AppointmentClients } from '../../components/appointments/AppointmentPeopleFields'
-import { toggleAppointmentClient } from '../../components/appointments/appointmentPeopleModel'
+import { mergeAppointmentClients, toggleAppointmentClient } from '../../components/appointments/appointmentPeopleModel'
 import WorkspaceCalendar from '../../components/appointments/WorkspaceCalendar'
 import AddressInput from '../../components/location/AddressInput'
 import { getSellerDocumentDisplayGroupKey } from '../../lib/sellerDocumentExperienceModel.js'
@@ -6002,7 +6002,7 @@ function buildLeadContactFallback(lead = {}) {
 
 function isGenericLeadPersonName(value = '') {
   const normalized = normalizeKey(value).replace(/\s+/g, ' ')
-  return !normalized || ['lead', 'contact', 'buyer', 'seller', 'unnamed lead', 'unnamed'].includes(normalized)
+  return !normalized || ['lead', 'contact', 'client', 'buyer', 'seller', 'unnamed lead', 'unnamed'].includes(normalized)
 }
 
 function sanitizeLeadRequestedByCandidate(value = '') {
@@ -12025,6 +12025,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   const appointmentReloadWindowRef = useRef(buildAppointmentReloadRange({ isCalendarMode, calendarView, calendarCursorDate }))
   const principalView = isOverviewMode ? 'reporting' : 'operational'
   const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [appointmentDirectory, setAppointmentDirectory] = useState({ organisationId: '', clients: [], loading: false, error: '' })
+  const [appointmentDirectoryRetry, setAppointmentDirectoryRetry] = useState(0)
+  useEffect(() => {
+    if (!appointmentModalOpen || !organisationId) return undefined
+    let cancelled = false
+    setAppointmentDirectory({ organisationId, clients: [], loading: true, error: '' })
+    void import('../../core/clients/agentClientDirectory').then(({ loadAgentClientDirectory }) => loadAgentClientDirectory({
+      profile, role, workspace: { id: organisationId }, currentMembership, deferActivity: true,
+    })).then(directory => {
+      if (!cancelled) setAppointmentDirectory({ organisationId, clients: directory.clients || [], loading: false, error: '' })
+    }).catch(() => {
+      if (!cancelled) setAppointmentDirectory({ organisationId, clients: [], loading: false, error: 'Some saved clients could not load. You can still choose a loaded contact or retry.' })
+    })
+    return () => { cancelled = true }
+  }, [appointmentModalOpen, appointmentDirectoryRetry, organisationId, profile, role, currentMembership])
   const [appointmentEditMode, setAppointmentEditMode] = useState(false)
   const [appointmentNoteOpen, setAppointmentNoteOpen] = useState(false)
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('')
@@ -13609,18 +13624,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   ])
 
   useEffect(() => {
-    if (isLeadWorkspaceRoute) {
-      if (routeLeadId) return
-      if (selectedLeadId && records.leads.length && !records.leads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
-        setSelectedLeadId('')
-      }
-      return
-    }
-    if (!selectedLeadId && records.leads.length) {
-      setSelectedLeadId(records.leads[0].leadId)
-    }
-    if (selectedLeadId && !records.leads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
-      setSelectedLeadId(records.leads[0]?.leadId || '')
+    if (!isLeadWorkspaceRoute || routeLeadId) return
+    if (selectedLeadId && records.leads.length && !records.leads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
+      setSelectedLeadId('')
     }
   }, [isLeadWorkspaceRoute, records.leads, routeLeadId, selectedLeadId])
 
@@ -13762,7 +13768,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   }, [leadTypeView, records.leads])
 
   useEffect(() => {
-    if (isLeadWorkspaceRoute) return
+    if (isLeadWorkspaceRoute || isCalendarMode) return
     if (!selectedLeadId && filteredLeads.length) {
       setSelectedLeadId(filteredLeads[0].leadId)
       return
@@ -13770,7 +13776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     if (selectedLeadId && !filteredLeads.some((row) => normalizeLeadIdentityKey(row?.leadId) === normalizeLeadIdentityKey(selectedLeadId))) {
       setSelectedLeadId(filteredLeads[0]?.leadId || '')
     }
-  }, [filteredLeads, isLeadWorkspaceRoute, selectedLeadId])
+  }, [filteredLeads, isCalendarMode, isLeadWorkspaceRoute, selectedLeadId])
 
   const allLeadById = useMemo(() => {
     const map = new Map()
@@ -15721,7 +15727,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   }), [selectedLead, selectedLeadLifecycleDiagnostic?.onboarding, selectedLeadLifecycleDiagnostic?.onboardingPrefill])
   useEffect(() => {
     if (!selectedLead) {
-      setBuyerProfileForm({})
+      setBuyerProfileForm((previous) => Object.keys(previous).length ? {} : previous)
       return
     }
     if (editingBuyerProfileSectionKey) return
@@ -20042,12 +20048,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   if (selectedAppointment && appointmentForm.appointmentType && !appointmentTypeOptions.some(option => option.value === appointmentForm.appointmentType)) {
     appointmentTypeOptions.push({ value: appointmentForm.appointmentType, label: getAppointmentTypeLabel(appointmentForm.appointmentType) })
   }
-  const appointmentClients = useMemo(() => Array.from(new Map(appointmentLinkOptions.filter(option => option.entityType === 'lead').map(option => ({
-    id: option.value, leadId: option.entityId, contactId: option.contact?.contactId || option.lead?.contactId || '', listingId: option.lead?.listingId || '',
-    name: resolveLeadDisplayName(option.lead, option.contact, null, 'Client'),
-    email: option.contact?.email || option.lead?.email || '', phone: option.contact?.phone || option.lead?.phone || '',
-    role: leadCategoryLabelForView(option.lead),
-  })).map(client => [client.contactId || client.email.toLowerCase() || client.id, client])).values()), [appointmentLinkOptions])
+  const appointmentClients = useMemo(() => mergeAppointmentClients(
+    appointmentLinkOptions.filter(option => ['lead', 'client'].includes(option.entityType)).map(option => {
+      const contact = resolveLeadContactSnapshot(option.lead || {}, option.contact)
+      return {
+        id: option.value, leadId: option.entityType === 'lead' ? option.entityId : '',
+        contactId: option.contact?.contactId || option.lead?.contactId || '', listingId: option.lead?.listingId || '',
+        name: resolveLeadDisplayName(option.lead || {}, contact, canvassingProspectById.get(normalizeText(option.lead?.canvassingProspectId)), ''),
+        email: contact?.email || '', phone: contact?.phone || '',
+        role: option.lead ? leadCategoryLabelForView(option.lead) : option.contact?.contactType || 'Client',
+      }
+    }),
+    appointmentDirectory.organisationId === organisationId ? appointmentDirectory.clients : [],
+  ), [appointmentLinkOptions, appointmentDirectory, organisationId, canvassingProspectById])
 
   async function handleCreateAppointmentClient(draft) {
     const assignedAgent = resolveAgentById(appointmentForm.assignedAgentId || currentAgent.id)
@@ -22832,6 +22845,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     resetActivityComposer()
     resetTaskComposer()
     setError('')
+  }
+
+  function prepareCrmFollowUpDraft(proposal) {
+    if (!selectedLead || proposal.leadId !== selectedLead.leadId || (selectedLead.updatedAt && proposal.updatedAt !== selectedLead.updatedAt)) {
+      throw new Error('The selected lead changed. Refresh its saved brief before preparing a follow-up.')
+    }
+    if (isActivitySaving || activityComposerOpen || editingActivityId || editingTaskId || normalizeText(taskForm.title) || normalizeText(taskForm.description) || normalizeText(activityForm.activityNote)) {
+      throw new Error('Finish or close your current activity draft first. Your existing work has been kept.')
+    }
+    openActivityComposer('task')
+    setTaskForm((previous) => ({ ...previous, title: 'Follow up on property enquiry', description: proposal.description, dueDate: '' }))
   }
 
   function handleAppendActivitySuggestion(text) {
@@ -39207,6 +39231,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                         roleplayers={selectedLeadActivityRoleplayers}
                         showHeader={false}
                         showSidebar={false}
+                        followUpAssistant={{ organisationId, leadId: selectedLead.leadId, updatedAt: selectedLead.updatedAt, onPrepareFollowUp: prepareCrmFollowUpDraft }}
                       />
                     </Suspense>
                   ) : null}
@@ -41804,7 +41829,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
               disabled={Boolean(selectedAppointment && !appointmentWorkflowActions(selectedAppointment, { id: currentAgent.id, canManageCalendar: isPrincipal }).canEdit)} onChange={setAppointmentForm} />
           </section>
           <section className="ae-full-row">
-            <AppointmentClients form={appointmentForm} clients={appointmentClients} onChange={setAppointmentForm} onCreate={handleCreateAppointmentClient} onCreatingChange={setAppointmentClientSaving} />
+            <AppointmentClients form={appointmentForm} clients={appointmentClients} loading={appointmentDirectory.loading} loadError={appointmentDirectory.error} onRetry={() => setAppointmentDirectoryRetry(value => value + 1)} onChange={setAppointmentForm} onCreate={handleCreateAppointmentClient} onCreatingChange={setAppointmentClientSaving} />
           </section>
           <section className="grid gap-3">
             <p className="text-sm font-semibold text-[#102033]">When</p>

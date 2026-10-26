@@ -66,12 +66,7 @@ export default function CampaignTemplateLibrary({
     >
       <header className="mc-library-heading">
         <div className="mc-library-intro">
-          <span className="mc-library-eyebrow">THE PLAYBOOK COLLECTION</span>
-          <h1 id="mc-library-heading">Campaign templates</h1>
-          <p>
-            Choose what you want to achieve. Start with editable copy and make
-            it your own.
-          </p>
+          <h1 id="mc-library-heading">Campaign &amp; Automation Templates</h1>
         </div>
         <button className="mc-button mc-primary" onClick={() => onCreate()}>
           <Plus size={17} /> Create template
@@ -129,13 +124,6 @@ export default function CampaignTemplateLibrary({
           })}
         </nav>
       </div>
-      {filter === 'ready' && (
-        <p className="mc-shop-note">
-          Editable channel drafts are available now. Asset lists describe the
-          planned packs; personalised designs, downloads and automatic filling
-          of details are not available yet.
-        </p>
-      )}
       {filter !== 'ready' && error && (
         <div role="alert" className="mc-error">
           {error}{' '}
@@ -148,10 +136,6 @@ export default function CampaignTemplateLibrary({
         <p role="status">Loading saved templates…</p>
       ) : (
         <>
-          <p className="mc-shop-count" role="status">
-            {filtered.length} {filtered.length === 1 ? 'campaign' : 'campaigns'}
-            {filter === 'ready' ? ' · Ready-made' : ''}
-          </p>
           <div className="mc-library-grid">
             {filtered.map((template) => (
               <article key={template.id} className="mc-library-card">

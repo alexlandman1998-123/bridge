@@ -1,3 +1,4 @@
+import { createContactProvenance } from '../campaignContactProvenance'
 import { expect, it } from 'vitest'
 import {
   cleanListingBuilder,
@@ -59,6 +60,12 @@ it('never uses an address-derived legacy title and never invents a price', () =>
   expect(result.source.price).toBe('')
   expect(justListedGaps(result.source).join(' ')).toMatch(/listing headline/)
 })
+it('does not replace a removed public agent name with an older listing label', () => {
+  const result = justListedSource({ ...listing, assignedAgentName: 'Previously stored agent label' }, agency, {})
+  expect(result.source.agentName).toBe('')
+  expect(result.source.destination).toBe('')
+  expect(justListedGaps(result.source).join(' ')).toContain('public name')
+})
 it('honours each public address visibility and keeps unknown visibility private', () => {
   for (const [visibility, expected] of [
     ['show_exact_address', '99 Secret Road'],
@@ -115,7 +122,7 @@ it('honours shared enquiry routing and rejects unsafe link destinations', () => 
 it('builds a versioned draft with editable copy and no expiring photo URLs or private fields', () => {
   const { source } = justListedSource(listing, agency, agent)
   const payload = justListedPayload(
-    { version: 1, template: 'new-listing', listingId, source },
+    { version: 1, template: 'new-listing', listingId, source, contactProvenance: { ...createContactProvenance(source), confirmed: true } },
     justListedCopy(source),
   )
   expect(payload.status).toBe('draft')

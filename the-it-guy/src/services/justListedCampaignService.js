@@ -188,9 +188,10 @@ export async function loadPropertyShowDays(organisationId) {
     .filter(
       (event) =>
         event.listingId &&
-        event.startsAt &&
-        event.endsAt &&
-        ['upcoming', 'open'].includes(event.status.toLowerCase()) &&
+        Number.isFinite(Date.parse(event.startsAt)) &&
+        Number.isFinite(Date.parse(event.endsAt)) &&
+        Date.parse(event.endsAt) > Date.parse(event.startsAt) &&
+        ['planning', 'upcoming'].includes(String(event.status || '').toLowerCase()) &&
         event.visibility === 'public',
     )
     .map((event) => ({

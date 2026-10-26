@@ -1,3 +1,5 @@
+import { cleanCampaignPlaybook } from './campaignPlaybookModel'
+import { CAMPAIGN_OBJECTIVES, cleanCampaignSetup } from './campaignSetupModel'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { validateChannelContent } from './marketingCampaignTemplates'
 import { cleanListingBuilder } from './justListedCampaignModel'
@@ -12,12 +14,13 @@ export const CAMPAIGN_GOALS = {
   buyer_leads: 'Generate buyer leads',
   promote_listing: 'Promote a listing',
   reengage: 'Reconnect with your database',
-  custom: 'Custom objective',
+  custom: 'Custom goal',
 }
 export const CAMPAIGN_CHANNELS = {
   email: 'Email',
   whatsapp: 'WhatsApp',
   meta: 'Meta',
+  chatgpt: 'ChatGPT Ads',
   social: 'Organic social',
 }
 export const CAMPAIGN_STATUSES = {
@@ -34,6 +37,9 @@ function requireScope(organisationId) {
     throw new Error('Campaigns require a connected workspace.')
 }
 function failure(error) {
+  if (error?.code === '23514' && /marketing_campaign_channels_valid/.test(error.message || '')) return new Error('Campaign channel storage needs its database update before ChatGPT Ads can be saved. Your draft is still here.')
+  if (['42703', 'PGRST204'].includes(error?.code) && /campaign_setup/.test(error.message || '')) return new Error('Campaign setup storage needs its database update before these choices can be saved.')
+  if (error?.code === 'PGRST204' && /playbook/.test(error.message || '')) return new Error('Playbook storage is not enabled in this workspace yet. Your changes have not been saved.')
   if (
     error?.code === 'PGRST204' &&
     /campaign_builder/.test(error.message || '')
@@ -87,6 +93,11 @@ export function campaignPayload(input) {
   payload.end_date = input.end_date || null
   payload.status = input.status || 'draft'
   payload.planned_channels = [...new Set(input.planned_channels || [])]
+  if (Object.hasOwn(input, 'campaign_setup')) {
+    payload.campaign_setup = cleanCampaignSetup(input.campaign_setup)
+    if (payload.campaign_setup.metaObjective) payload.objective = CAMPAIGN_OBJECTIVES[payload.campaign_setup.metaObjective].label
+    if (payload.goal === 'custom' && !payload.campaign_setup.customGoal) throw new Error('Describe your custom goal.')
+  }
   if (!payload.name || payload.name.length > 120)
     throw new Error('Give your campaign a name of up to 120 characters.')
   if (
@@ -167,6 +178,8 @@ export function campaignPayload(input) {
       input.channel_content,
       payload.planned_channels,
     )
+  if (Object.hasOwn(input, 'playbook') && input.playbook === null) payload.playbook = null
+  if (input.playbook != null) payload.playbook = cleanCampaignPlaybook(input.playbook, payload.planned_channels)
   if (input.listing_builder != null) {
     payload.listing_builder = cleanListingBuilder(input.listing_builder)
     if (
@@ -219,7 +232,7 @@ export async function loadMarketingCampaigns(organisationId) {
       rows(
         scoped(
           'email_campaigns',
-          'id,name,status,subject,scheduled_for,sent_at,created_at',
+          'id,name,status,subject,scheduled_for,sent_at,created_at,updated_at,ai_listing_id:content_json->ai_campaign->>listing_id,ai_objective:content_json->ai_campaign->>objective,ai_event_id:content_json->ai_campaign->event->>id',
         ),
       )
         .then((data) => ({ data }))
@@ -227,7 +240,7 @@ export async function loadMarketingCampaigns(organisationId) {
       rows(
         scoped(
           'whatsapp_campaign_performance',
-          'id,name,status,display_status,sent_at,created_at,recipients,delivered,read,failed',
+          'id,name,status,display_status,scheduled_at,sent_at,created_at,recipients,delivered,read,failed',
         ),
       )
         .then((data) => ({ data }))
@@ -297,6 +310,7 @@ export async function saveMarketingCampaign(organisationId, input, existing) {
       .eq('id', input.id)
       .maybeSingle()
     if (recovered.data) {
+      if (payload.campaign_setup && canonicalCampaignJson(recovered.data.campaign_setup) !== canonicalCampaignJson(payload.campaign_setup)) throw new Error('This draft was already saved with a different setup. Reopen it before changing its objective or audience.')
       if (
         payload.campaign_builder &&
         (canonicalCampaignJson(recovered.data.campaign_builder) !==
@@ -387,7 +401,7 @@ export function linkedActivities(workspace, campaign, channel) {
     }))
 }
 export function channelProgress(workspace, campaign, channel) {
-  if (['meta', 'social'].includes(channel)) return 'Planned'
+  if (['meta', 'social', 'chatgpt'].includes(channel)) return 'Planned'
   const linked = linkedActivities(workspace, campaign, channel)
   if (!linked.length) return 'Planned'
   if (workspace.channels[channel]?.error || linked.some((row) => !row.activity))

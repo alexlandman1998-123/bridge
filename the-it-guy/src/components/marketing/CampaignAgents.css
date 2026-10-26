@@ -1,0 +1,59 @@
+.mc-agents-workspace .mc-agent-summary { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.mc-agents-workspace .mc-agent-summary > div:nth-child(3) { background: linear-gradient(120deg,#fff5e8,#fffdf8); border-color: #eee1ce; }
+.mc-agents-workspace .mc-agent-summary > div:nth-child(4) { background: linear-gradient(120deg,#f1edf9,#fdfcff); border-color: #e4dded; }
+.mc-agent-coaching-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; padding: 17px 22px; border-bottom: 1px solid #e8eee9; }
+.mc-agent-coaching-stats dt { font-size: 10px; color: #7a877f; margin-bottom: 6px; }
+.mc-agent-coaching-stats dd { font-size: 19px; font-variant-numeric: tabular-nums; margin: 0; color: #4d6958; }
+.mc-agent-needs-support { background: #fefaf3; }
+.mc-agent-needs-support dd { color: #9c7136; }
+.mc-agent-coaching { padding: 20px; border: 1px solid #ecdfcd; border-radius: 14px; background: #fffdf8; margin-bottom: 24px; }
+.mc-workspace .mc-agent-coaching > h3 { font-size: 16px; color: #6e5635; }
+.mc-workspace .mc-agent-coaching > p { font-size: 12px; color: #897c69; margin-top: 6px; }
+.mc-agent-coaching ul { list-style: none; padding: 0; margin: 16px 0 0; }
+.mc-agent-coaching li { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 14px 0; border-top: 1px solid #eee7db; }
+.mc-agent-coaching li > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
+.mc-agent-coaching li span { font-size: 10px; color: #a06b36; }
+.mc-agent-coaching li strong { font-size: 14px; }
+.mc-agent-coaching li small { color: #877f72; font-size: 12px; }
+.mc-agent-coaching li > a { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; color: #46775b; font-size: 12px; }
+.mc-agent-source-note { padding: 12px 14px; border-radius: 8px; background: #fdf7e9; color: #886c36; font-size: 12px; margin-top: 14px !important; }
+.mc-agent-reuse { border: 1px solid #dce7df; border-radius: 16px; background: #fff; margin-top: 28px; overflow: hidden; }
+.mc-agent-reuse > header { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 22px; background: linear-gradient(115deg,#eaf3ed,#f7faf8); }
+.mc-workspace .mc-agent-reuse h3 { font-size: 18px; color: #284c39; }
+.mc-workspace .mc-agent-reuse header p { font-size: 12px; color: #718276; margin-top: 5px; }
+.mc-agent-reuse label, .mc-agent-copy-form label, .mc-agent-copy-review label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #617669; }
+.mc-agent-reuse select, .mc-agent-copy-dialog :is(input,select,textarea) { border: 1px solid #dbe5dd; border-radius: 8px; background: #fff; color: #344d3c; padding: 10px 12px; width: 100%; font: inherit; font-size: 13px; }
+.mc-agent-reuse ol { padding: 0 22px; margin: 0; list-style: none; }
+.mc-agent-reuse li { display: flex; align-items: center; gap: 22px; padding: 20px 0; border-bottom: 1px solid #e9eee9; }
+.mc-agent-reuse li:last-child { border-bottom: 0; }
+.mc-agent-reuse-result { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.mc-agent-reuse-result a { font-size: 14px; font-weight: 600; color: #345a43; }
+.mc-agent-reuse-result span, .mc-agent-reuse-metric span { font-size: 11px; color: #7d8a80; }
+.mc-agent-reuse-metric { display: flex; flex-direction: column; gap: 2px; min-width: 130px; }
+.mc-agent-reuse-metric strong { font-size: 24px; color: #3f7455; font-variant-numeric: tabular-nums; font-weight: 600; }
+.mc-agent-reuse-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.mc-agent-reuse li .mc-agent-reuse-actions { flex-direction: column; align-items: flex-end; }
+.mc-agent-reuse-actions .mc-button { font-size: 12px; }
+.mc-agent-reuse-actions .mc-text-button { font-size: 11px; }
+.mc-agent-campaign-with-actions { border: 1px solid #e1e8e2; border-radius: 14px; overflow: hidden; }
+.mc-agent-campaign-with-actions > .mc-campaign-row { border: 0; }
+.mc-agent-campaign-with-actions > .mc-agent-reuse-actions { padding: 14px 24px; background: #f7faf7; border-top: 1px solid #e7eee8; }
+.mc-workspace .mc-agent-reuse-empty { padding: 26px 22px; font-size: 13px; color: #7b8a7f; }
+.mc-workspace .mc-agent-reuse-note { padding: 14px 22px; background: #fafcfb; border-top: 1px solid #edf1ed; font-size: 11px; color: #8b978e; }
+.mc-agent-copy-dialog { max-width: 800px; --mc-green: #3d7d64; --mc-line: #e1e8e3; --mc-text: #334b3c; --mc-ink: #22392b; --mc-muted: #7d8d81; }
+.mc-agent-copy-steps { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #9aaba0; margin-bottom: 18px; }
+.mc-agent-copy-steps span[aria-current] { color: #39744f; font-weight: 650; }
+.mc-agent-copy-source { padding: 12px; border-radius: 8px; background: #f3f7f3; font-size: 13px; color: #627b6b; margin-bottom: 20px; }
+.mc-agent-copy-form, .mc-agent-copy-review { display: flex; flex-direction: column; gap: 18px; }
+.mc-agent-copy-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.mc-agent-copy-summary { display: flex; align-items: center; gap: 15px; padding: 18px; border: 1px solid #d6e8db; border-radius: 10px; color: #4c825e; background: #f2f8f2; }
+.mc-agent-copy-summary > div { display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; min-width: 0; }
+.mc-agent-copy-summary span { font-size: 13px; color: #698271; }
+.mc-agent-copy-review fieldset { display: flex; flex-direction: column; gap: 12px; border: 1px solid #dfe8e1; border-radius: 10px; padding: 16px; min-width: 0; }
+.mc-agent-copy-review legend { color: #5f7d68; font-size: 12px; padding: 0 7px; }
+.mc-agent-copy-review details summary { color: #477c59; font-size: 13px; cursor: pointer; margin-bottom: 16px; }
+.mc-agent-copy-actions { display: flex; justify-content: space-between; gap: 14px; }
+.mc-agent-copy-dialog .mc-note { font-size: 12px; color: #7e8d82; }
+.mc-agent-copy-dialog :is(input,textarea,select):focus-visible, .mc-agents-workspace :is(a,button,select):focus-visible { outline: 2px solid #4e9069; outline-offset: 3px; }
+@media(max-width: 1000px) { .mc-agent-reuse li { flex-wrap: wrap; gap: 14px; } .mc-agent-reuse li .mc-agent-reuse-actions { flex-basis: 100%; flex-direction: row; align-items: center; } }
+@media(max-width: 640px) { .mc-agents-workspace .mc-agent-summary { grid-template-columns: repeat(2,minmax(0,1fr)); } .mc-agent-coaching li { flex-direction: column; align-items: flex-start; gap: 10px; } .mc-agent-reuse > header { flex-direction: column; align-items: stretch; } .mc-agent-copy-fields { grid-template-columns: 1fr; } .mc-agent-copy-actions .mc-button { font-size: 12px; } }

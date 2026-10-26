@@ -6,6 +6,8 @@ import { CreateWhatsAppCampaign, WhatsAppCampaignDetail, WhatsAppCampaignOvervie
 const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one',viewer:'viewer-one',role:'principal' }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org },user:{id:mocks.viewer},currentMembership:{role:mocks.role,status:'active'} } }) }))
 
+vi.mock('../MarketingAudiences', () => ({ default: () => null, MarketingAudiencePicker: () => null }))
+vi.mock('../ChannelWorkspaceTemplates', () => ({ default: () => null }))
 vi.mock('../../../services/whatsappCampaignService', () => ({ whatsappCampaignRequest: mocks.request }))
 vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({canManage:false,loading:false,organisationId:mocks.org,accessScope:`${mocks.org}:${mocks.viewer}:${mocks.role}`})}))
 const template = { id: 'template-one', name: 'new_listing', language: 'en_US', category: 'MARKETING', status: 'APPROVED', components: [{ type: 'BODY', text: 'Hello {{1}}' }] }
@@ -294,4 +296,41 @@ it('preserves the existing resume-send action for queued recipients', async () =
   expect(mocks.request.mock.calls.filter((call) => call[1] === 'resume')).toHaveLength(1)
   expect(mocks.request.mock.calls.some((call) => call[1] === 'prepare')).toBe(false)
 
+})
+
+
+it('keeps campaign provenance when choosing a sender and a new approved template', async () => {
+  const reference = { id: 'marketing-plan', revision: 3, title: 'Reviewed heading', body: 'Reviewed wording' }
+  const campaign = { id: 'draft-one', revision: 1, status: 'draft', name: 'Linked homes', sender_id: '', template: {}, parameter_values: { __arch9_campaign: reference, 'body.1': { source: 'text', text: 'Old variable' } }, contact_ids: ['contact-one'] }
+  const original = mocks.request.getMockImplementation()
+  mocks.request.mockImplementation(async (org, action, data) => action === 'workspace' ? { ...emptyWorkspace, campaigns: [campaign] } : original(org, action, data))
+  render(<CreateWhatsAppCampaign campaignId="draft-one" onBack={vi.fn()} />)
+  fireEvent.change(await screen.findByLabelText('WhatsApp sender'), { target: { value: 'sender-one' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  await screen.findByRole('option', { name: /new_listing/ })
+  fireEvent.change(screen.getByLabelText('Approved template & language'), { target: { value: 'template-one' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+  await screen.findByText('Draft saved.')
+  const saved = mocks.request.mock.calls.find((call) => call[1] === 'save')[2].campaign
+  expect(saved.parameter_values).toEqual({ __arch9_campaign: reference })
+})
+
+it('saves the linked WhatsApp draft before returning to campaign results and ignores a late unmounted response', async () => {
+  const reference = { id: 'marketing-plan', revision: 3 }
+  const campaign = { id: 'draft-one', revision: 1, status: 'draft', name: 'Linked homes', sender_id: '', template: {}, parameter_values: { __arch9_campaign: reference }, contact_ids: [] }
+  let complete
+  const pending = new Promise((resolve) => { complete = resolve })
+  const original = mocks.request.getMockImplementation()
+  mocks.request.mockImplementation(async (org, action, data) => action === 'workspace' ? { ...emptyWorkspace, campaigns: [campaign] } : action === 'save' ? pending : original(org, action, data))
+  const onOpen = vi.fn()
+  const view = render(<CreateWhatsAppCampaign campaignId="draft-one" onBack={vi.fn()} onOpenMarketingCampaign={onOpen} />)
+  fireEvent.change(await screen.findByLabelText('Campaign name'), { target: { value: 'Latest reviewed name' } })
+  fireEvent.click(screen.getByRole('button', { name: 'View campaign results' }))
+  expect(onOpen).not.toHaveBeenCalled()
+  expect(mocks.request.mock.calls.find((call) => call[1] === 'save')[2].campaign.name).toBe('Latest reviewed name')
+  view.unmount()
+  complete({ campaign: { ...campaign, revision: 2 } })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(onOpen).not.toHaveBeenCalled()
 })

@@ -22,6 +22,9 @@ import {
   justListedGaps,
   justListedPayload,
 } from '../../services/justListedCampaignModel'
+import { MarketingAnchor } from './MarketingNavigation.jsx'
+import CampaignContactReview from './CampaignContactReview'
+import { assertCampaignContacts, contactProvenanceReview, createContactProvenance, confirmCampaignContacts, PROPERTY_CONTACT_FIELDS, withContactOverride } from '../../services/campaignContactProvenance'
 import './JustListedCampaignBuilder.css'
 
 const channels = {
@@ -102,6 +105,7 @@ export default function JustListedCampaignBuilder({
         listingId: id,
         agentId: data.agentId,
         source: data.source,
+        contactProvenance: createContactProvenance(data.source),
       })
       setContent(justListedCopy(data.source))
       setStep(2)
@@ -122,22 +126,23 @@ export default function JustListedCampaignBuilder({
     source &&
       current &&
       JUST_LISTED_SOURCE_FIELDS.some(
-        (key) => (source[key] || '') !== (current.source[key] || ''),
-      ),
+        (key) => !PROPERTY_CONTACT_FIELDS.includes(key) && (source[key] || '') !== (current.source[key] || ''),
+      ) || (builder && current && !contactProvenanceReview(builder, current.source, undefined, { requireConfirmed: false }).ready),
   )
   const coverUrl = source?.imageId
     ? current?.images?.find((image) => image.id === source.imageId)?.url ||
       (source.imageId === current?.source.imageId ? current?.coverUrl : '')
     : current?.coverUrl
-  const gaps = source ? justListedGaps(source) : []
+  const contacts = builder ? contactProvenanceReview(builder, null, undefined, { requireConfirmed: false }) : null
+  const gaps = source ? [...justListedGaps(source), ...(contacts?.ready ? [] : [contacts.message])] : []
   const previewBody = content[channel]?.body || ''
   const displayedBody = previewBody.startsWith(`${content[channel]?.title}\n\n`)
     ? previewBody.slice(content[channel].title.length + 2)
     : previewBody
-  function changeSource(key, value) {
-    const next = { ...source, [key]: value }
-    setBuilder({ ...builder, source: next })
-    setContent(justListedCopy(next))
+  function changeSource(key, value, enabled = true) {
+    const next = PROPERTY_CONTACT_FIELDS.includes(key) ? withContactOverride(builder, key, value, PROPERTY_CONTACT_FIELDS, enabled) : { ...builder, source: { ...source, [key]: value } }
+    setBuilder(next)
+    setContent(justListedCopy(next.source))
   }
   async function refreshSource() {
     const token = ++request.current
@@ -152,7 +157,7 @@ export default function JustListedCampaignBuilder({
       )
       if (request.current !== token) return
       setCurrent(data)
-      setBuilder({ ...builder, source: data.source, agentId: data.agentId })
+      setBuilder({ ...builder, source: data.source, agentId: data.agentId, contactProvenance: createContactProvenance(data.source) })
       setContent(justListedCopy(data.source))
       setStep(2)
     } catch (err) {
@@ -174,6 +179,7 @@ export default function JustListedCampaignBuilder({
       )
       if (request.current !== token) return
       setCurrent(fresh)
+      assertCampaignContacts(builder, fresh.source)
       if (
         fresh.source.location !== source.location ||
         fresh.agentId !== builder.agentId
@@ -347,30 +353,7 @@ export default function JustListedCampaignBuilder({
                       · {source.tone || 'Agency default'}
                     </dd>
                   </dl>
-                  {!current.source.agentName && (
-                    <label>
-                      Assigned agent’s public name
-                      <input
-                        maxLength={120}
-                        value={source.agentName}
-                        onChange={(event) =>
-                          changeSource('agentName', event.target.value)
-                        }
-                      />
-                    </label>
-                  )}
-                  {!current.source.destination && (
-                    <label>
-                      Public enquiry email or phone
-                      <input
-                        maxLength={240}
-                        value={source.destination}
-                        onChange={(event) =>
-                          changeSource('destination', event.target.value)
-                        }
-                      />
-                    </label>
-                  )}
+                  <CampaignContactReview builder={builder} content={content} onRefresh={refreshSource} nameLabel="Assigned agent’s public name" destinationLabel="Public enquiry email or phone" onOverride={changeSource} />
                   {!['en-ZA', 'af-ZA'].includes(current.source.language) && (
                     <label>
                       Language for this draft
@@ -402,13 +385,13 @@ export default function JustListedCampaignBuilder({
                   <p className="jl-note">
                     Changes here affect this campaign only. Property facts are
                     maintained in your listing editor.{' '}
-                    <a
+                    <MarketingAnchor
                       href={`/agent/listings/${builder.listingId}`}
                       target="_blank"
                       rel="noreferrer"
                     >
                       Open listing
-                    </a>
+                    </MarketingAnchor>
                   </p>
                 </div>
                 <div className="jl-mini-preview">
@@ -542,6 +525,7 @@ export default function JustListedCampaignBuilder({
               disabled={gaps.length > 0 || privacyChanged}
               onClick={() => {
                 setError('')
+                setBuilder(confirmCampaignContacts(builder))
                 setStep(3)
               }}
             >

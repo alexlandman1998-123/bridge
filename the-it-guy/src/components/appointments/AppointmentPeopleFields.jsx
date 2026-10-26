@@ -64,7 +64,7 @@ export function AppointmentOrganisers({ form, agents, currentAgentId, canChangeP
 }
 
 const emptyClient = { firstName: '', lastName: '', email: '', phone: '', leadCategory: 'buyer' }
-export function AppointmentClients({ form, clients, onChange, onCreate, onCreatingChange }) {
+export function AppointmentClients({ form, clients, loading = false, loadError = '', onRetry, onChange, onCreate, onCreatingChange }) {
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState(emptyClient)
   const [busy, setBusy] = useState(false)
@@ -79,7 +79,9 @@ export function AppointmentClients({ form, clients, onChange, onCreate, onCreati
     catch (failure) { setError(failure.message || 'Unable to save this client. Your details are still here; please try again.') }
     finally { setBusy(false); onCreatingChange?.(false) }
   }
-  return <PeoplePicker label="Clients" placeholder="Choose clients from your leads" options={clients} selected={selected} disabled={busy} panelOnly={creating} onToggle={client => onChange(previous => toggleAppointmentClient(previous, client))}>
+  return <PeoplePicker label="Clients" placeholder="Choose clients or leads" options={clients} selected={selected} disabled={busy} panelOnly={creating} onToggle={client => onChange(previous => toggleAppointmentClient(previous, client))}>
+    {loading ? <p className="ae-picker-hint" role="status">Loading saved clients…</p> : null}
+    {loadError ? <p className="ae-picker-hint" role="alert">{loadError} <button type="button" onClick={onRetry}>Retry clients</button></p> : null}
     {creating ? <div className="ae-client-create" aria-label="New client">
       <strong>New client</strong><p>Save a lead and add them to this appointment.</p>
       <div className="ae-client-create-grid">{[['firstName', 'First name'], ['lastName', 'Surname'], ['email', 'Email'], ['phone', 'Phone']].map(([key, label]) => <label key={key}>{label}<input autoFocus={key === 'firstName'} type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} disabled={busy} value={draft[key]} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))} /></label>)}</div>

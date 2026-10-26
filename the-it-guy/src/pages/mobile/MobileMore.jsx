@@ -1,6 +1,6 @@
-import { QrCode, Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle, UsersRound } from 'lucide-react'
+import { QrCode, Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Megaphone, Search, Settings, Store, TrendingUp, UserCircle, UsersRound } from 'lucide-react'
 import { lazy, Suspense, useState } from 'react'
-import { resolveMobileRoleCategory } from '../../config/mobileShell'
+import { canAccessMobileMarketing, resolveMobileRoleCategory } from '../../config/mobileShell'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
@@ -35,11 +35,16 @@ export default function MobileMore() {
   const workspaceName = workspace.workspace?.name || 'Workspace'
   const prefersDesktop = userPrefersDesktopOnMobile()
   const desktopLandingRoute = getDesktopLandingRoute(workspace)
+  const marketingItems = canAccessMobileMarketing(workspace) ? [
+    { key: 'marketing', label: 'Marketing', icon: Megaphone, meta: 'Campaigns, channels and marketing calendar', to: '/mobile/marketing' },
+    { key: 'campaigns', label: 'Campaigns', icon: Megaphone, meta: 'Plan, prepare and follow up campaigns', to: '/mobile/marketing?section=campaigns' },
+    { key: 'template-shop', label: 'Template shop', icon: Store, meta: 'Browse and personalise marketing templates', to: '/mobile/marketing?section=campaigns&page=studio' },
+  ] : []
   const moreItems = workspace.role === 'developer' ? [
     { key: 'developments', label: 'Developments', icon: Building2, meta: 'Portfolio and available units', to: '/mobile/developments' },
     { key: 'leads', label: 'Leads', icon: UsersRound, meta: 'Buyer interest and development enquiries', to: '/mobile/developer/leads' },
     ...MORE_ITEMS,
-  ] : MORE_ITEMS
+  ] : [...marketingItems, ...MORE_ITEMS]
 
   async function handleLogout() {
     await Promise.resolve(onLogout?.())

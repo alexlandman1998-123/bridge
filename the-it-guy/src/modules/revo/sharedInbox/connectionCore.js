@@ -1,4 +1,3 @@
-import { REVO_ORGANISATION_ID } from '../revoExtensionRegistry.js'
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient.js'
 
 export const REVO_INBOX_CONNECTION_STATUSES = Object.freeze(['draft', 'authorizing', 'connected', 'expired', 'error', 'disconnected'])
@@ -17,26 +16,27 @@ function uuid(value = '') {
     && parts.every((part) => /^[0-9a-f]+$/i.test(part))
 }
 
-function requireRevoOrganisation(organisationId) {
-  if (text(organisationId) !== REVO_ORGANISATION_ID) throw new Error('Provider connections are only available for the Revo workspace.')
-  return REVO_ORGANISATION_ID
+function requireInboxOrganisation(organisationId) {
+  const normalized = text(organisationId)
+  if (!uuid(normalized)) throw new Error('Choose a valid organisation workspace for Inbox.')
+  return normalized
 }
 
 function requireClient() {
-  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured for Revo provider connections.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured for inbox provider connections.')
   return supabase
 }
 
 export function buildRevoInboxConnectionIntent({ organisationId, channelId, providerKey, connectionKind, mailboxAddress, actorUserId } = {}) {
   const provider = text(providerKey).toLowerCase()
   const kind = text(connectionKind).toLowerCase()
-  if (!uuid(channelId)) throw new Error('Choose a valid Revo inbox channel.')
+  if (!uuid(channelId)) throw new Error('Choose a valid shared inbox channel.')
   if (!REVO_INBOX_OAUTH_PROVIDERS.includes(provider)) throw new Error('Choose Microsoft 365 or Google Workspace.')
   if (!REVO_INBOX_CONNECTION_KINDS.includes(kind)) throw new Error('Choose an individual or delegated shared mailbox connection.')
   if (!text(mailboxAddress)) throw new Error('Enter the mailbox address to connect.')
-  if (!uuid(actorUserId)) throw new Error('A signed-in Revo administrator is required to start a provider connection.')
+  if (!uuid(actorUserId)) throw new Error('A signed-in organisation administrator is required to start a provider connection.')
   return Object.freeze({
-    organisationId: requireRevoOrganisation(organisationId),
+    organisationId: requireInboxOrganisation(organisationId),
     channelId: text(channelId),
     providerKey: provider,
     connectionKind: kind,
@@ -71,7 +71,7 @@ export async function loadRevoInboxProviderConnections(organisationId) {
   const { data, error } = await client
     .from('revo_inbox_provider_connections')
     .select('id, organisation_id, channel_id, provider_key, connection_kind, mailbox_address, status, granted_scopes, connected_by, connected_at, last_verified_at, last_sync_at, last_error_code, disconnected_at')
-    .eq('organisation_id', requireRevoOrganisation(organisationId))
+    .eq('organisation_id', requireInboxOrganisation(organisationId))
     .order('updated_at', { ascending: false })
   if (error) throw error
   return (data || []).map(normalizeRevoInboxProviderConnection)
@@ -117,23 +117,24 @@ export async function startRevoGoogleWorkspaceInboxAuthorization(input = {}) {
 
 export async function manageRevoInboxProviderConnection({ organisationId, connectionId, action } = {}) {
   const permittedActions = ['health_check', 'disconnect']
-  if (!uuid(connectionId) || !permittedActions.includes(text(action))) throw new Error('Choose a valid Revo mailbox connection action.')
+  if (!uuid(connectionId) || !permittedActions.includes(text(action))) throw new Error('Choose a valid mailbox connection action.')
   const client = requireClient()
   const { data, error } = await client.functions.invoke('revo-inbox-connection-lifecycle', {
-    body: { organisationId: requireRevoOrganisation(organisationId), connectionId: text(connectionId), action: text(action) },
+    body: { organisationId: requireInboxOrganisation(organisationId), connectionId: text(connectionId), action: text(action) },
   })
   if (error) throw error
-  if (!REVO_INBOX_CONNECTION_STATUSES.includes(text(data?.status))) throw new Error('The mailbox connection returned an invalid lifecycle status.')
+  if (text(data?.status) !== 'queued' && !REVO_INBOX_CONNECTION_STATUSES.includes(text(data?.status))) throw new Error('The mailbox connection returned an invalid lifecycle status.')
   return text(data.status)
 }
 
 export async function syncRevoInboxProviderConnection({ organisationId, connectionId } = {}) {
-  if (!uuid(connectionId)) throw new Error('Choose a valid Revo mailbox connection to sync.')
+  if (!uuid(connectionId)) throw new Error('Choose a valid mailbox connection to sync.')
   const client = requireClient()
   const { data, error } = await client.functions.invoke('revo-inbox-sync', {
-    body: { organisationId: requireRevoOrganisation(organisationId), connectionId: text(connectionId) },
+    body: { organisationId: requireInboxOrganisation(organisationId), connectionId: text(connectionId) },
   })
   if (error) throw error
+  if (text(data?.status) === 'queued') return Object.freeze({ status: 'queued' })
   if (text(data?.status) !== 'completed') throw new Error('The provider inbox sync did not complete.')
   return Object.freeze({ imported: Number(data.imported || 0), skipped: Number(data.skipped || 0) })
 }

@@ -3,6 +3,7 @@ import {
   cleanPropertyBuilder,
 } from './listingCampaignContract'
 import { buildListingAdvertPreview } from './listings/listingAdvertPreviewModel'
+import { assertCampaignContacts, cleanContactProvenance } from './campaignContactProvenance'
 
 const text = (value) => String(value ?? '').trim()
 export const JUST_LISTED_SOURCE_FIELDS = LISTING_SOURCE_FIELDS
@@ -50,6 +51,7 @@ export function cleanListingBuilder(input) {
     listingId: input.listingId,
     agentId: input.agentId || '',
     source,
+    ...(input.contactProvenance !== undefined ? { contactProvenance: cleanContactProvenance(input.contactProvenance, source) } : {}),
   }
 }
 
@@ -112,7 +114,7 @@ export function justListedSource(listing, agency, agent = {}) {
           .join(' · '),
         description: preview.description,
         agencyName: agency.agencyName,
-        agentName: agent.name || listing.assignedAgentName,
+        agentName: agent.name,
         agentEmail: agent.email,
         agentPhone: agent.phone,
         destination,
@@ -219,6 +221,7 @@ export function justListedCopy(source) {
 }
 export function justListedPayload(builder, content) {
   const data = cleanListingBuilder(builder)
+  assertCampaignContacts(data)
   const gaps = justListedGaps(data.source)
   if (gaps.length) throw new Error(gaps.join(' '))
   return {

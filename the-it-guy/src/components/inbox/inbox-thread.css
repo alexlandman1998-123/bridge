@@ -1,0 +1,6 @@
+.inbox-email-body{display:block;width:100%;height:360px;border:1px solid #dce5e8;border-radius:8px;background:#fff;margin:8px 0}
+.inbox-message-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.inbox-body-toggle{font-size:12px;margin:6px 0;padding:4px 8px}
+.inbox-message-attachments{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:6px}
+.inbox-message-attachments li{overflow-wrap:anywhere;font-size:12px}
+.inbox-message-attachments button{max-width:100%;white-space:normal;text-align:left;padding:6px 9px;border:1px solid #dce5e8;border-radius:6px;background:#f3f7f6}

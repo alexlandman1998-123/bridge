@@ -1,5 +1,6 @@
 import { campaignShopTemplates } from './marketingCampaignCatalogue'
 import { validateChannelContent } from './marketingCampaignTemplates'
+import { assertCampaignContacts, cleanContactProvenance, contactProvenanceReview, GENERAL_CONTACT_FIELDS } from './campaignContactProvenance'
 
 const field = (key, label, max = 2000, options = {}) => ({
   key,
@@ -11,6 +12,7 @@ export const RELATIONSHIP_CAMPAIGNS = [
   'key-handover',
   'review-request',
   'referral-request',
+  'client-check-in',
 ]
 export const generalChannels = (template) =>
   template === 'review-request'
@@ -101,6 +103,7 @@ export const GENERAL_CAMPAIGNS = {
     fields: [field('reviewUrl', 'Review link', 240, { type: 'url' })],
   },
   'referral-request': { carousel: 0, stories: 1, route: 'agent', fields: [] },
+  'client-check-in': { carousel: 0, stories: 1, route: 'agent', fields: [] },
   'market-update': {
     carousel: 5,
     stories: 2,
@@ -186,6 +189,7 @@ export function cleanGeneralBuilder(input) {
     template: input.template,
     agentId: input.agentId,
     source,
+    ...(input.contactProvenance !== undefined ? { contactProvenance: cleanContactProvenance(input.contactProvenance, source, GENERAL_CONTACT_FIELDS) } : {}),
     details,
     reviewed: input.reviewed === true,
     permission: config.permission ? input.permission === true : false,
@@ -199,6 +203,8 @@ export function generalCampaignGaps(builder, now = Date.now()) {
   const gaps = [],
     { source, details } = builder,
     config = GENERAL_CAMPAIGNS[builder.template]
+  const contacts = contactProvenanceReview(builder, null, GENERAL_CONTACT_FIELDS)
+  if (!contacts.ready) gaps.push(contacts.message)
   for (const [key, label] of [
     ['agencyName', 'agency name'],
     ['agentName', 'public agent name'],
@@ -307,6 +313,7 @@ function sections(builder) {
           ? `Welkom tuis${d.publicName ? ', ' + d.publicName : ''}.`
           : `Welcome home${d.publicName ? ', ' + d.publicName : ''}.`,
     'review-request': af ? 'Hoe was jou ervaring?' : 'How was your experience?',
+    'client-check-in': af ? 'Hoe gaan dit met jou eiendomsplanne?' : 'How are your property plans taking shape?',
     'referral-request': af
       ? 'Ken jy iemand wat wil trek?'
       : 'Know someone making a move?',
@@ -346,6 +353,7 @@ function sections(builder) {
         'key-handover': 'Antwoord jou agent',
         'review-request': 'Laat ’n resensie',
         'referral-request': 'Stel ons voor',
+        'client-check-in': 'Gesels met jou agent',
       }[template]
     : generalTemplate(template).cta
   let points = []
@@ -420,6 +428,8 @@ function sections(builder) {
           'Thank you for choosing us. We would appreciate your honest feedback.',
           'You are welcome to share your experience, whatever your opinion.',
         ]
+  if (template === 'client-check-in')
+    points = af ? ['Ons loer net in om te hoor of jou planne of eiendomsvrae verander het.', 'As jy hulp nodig het, antwoord gerus wanneer dit jou pas. Geen druk om nou op te tree nie.'] : ['Checking in to ask whether your plans or property questions have changed.', 'If you need a hand, reply when it suits you. There is no pressure to make a move.']
   if (template === 'referral-request')
     points = af
       ? [
@@ -508,11 +518,11 @@ export function checkedGeneralPack(campaign, current) {
   const builder = cleanGeneralBuilder(campaign.campaign_builder),
     gaps = generalCampaignGaps(builder)
   if (gaps.length) throw new Error(gaps.join(' '))
+  assertCampaignContacts(builder, current.source, GENERAL_CONTACT_FIELDS)
   if (
     current.agentId !== builder.agentId ||
     generalSourceKeys(builder.template).some((key) => {
-      if (['agentName', 'destination'].includes(key) && !current.source[key])
-        return false
+      if (GENERAL_CONTACT_FIELDS.includes(key)) return false
       if (
         key === 'language' &&
         !['en-ZA', 'af-ZA'].includes(current.source.language)

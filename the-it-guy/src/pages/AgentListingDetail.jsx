@@ -14725,6 +14725,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                 </div>
                 <div>
                   <h4 className="text-[1rem] font-semibold text-[#142132]">Listing Snapshot</h4>
+                  <button type="button" className="min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold" onClick={() => navigate(`/marketing?section=email&view=create&ai=1&listingId=${encodeURIComponent(listingId)}`)}>Create with AI</button>
                   <p className="text-sm text-[#607387]">Quick read on how this property will present across the platform.</p>
                 </div>
               </div>

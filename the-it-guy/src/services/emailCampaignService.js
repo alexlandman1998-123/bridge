@@ -164,6 +164,8 @@ export async function getEmailCampaignWorkspace(organisationId) {
   return { campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: campaignAudiences, usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
 }
 
+const canonicalEmailIntent = (value) => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry) ? Object.fromEntries(Object.keys(entry).sort().map((key) => [key, entry[key]])) : entry)
+const emailCampaignConflict = () => Object.assign(new Error('This email draft changed in another session or is no longer editable. Reload the saved draft before saving again. Your current edits have not been saved.'), { code: 'EMAIL_CAMPAIGN_CONFLICT' })
 export async function saveEmailCampaign({ campaign, organisationId, userId }) {
   const payload = {
     organisation_id: organisationId,
@@ -174,10 +176,29 @@ export async function saveEmailCampaign({ campaign, organisationId, userId }) {
     updated_by: userId || null,
   }
   if (!payload.name) throw new Error('Add a campaign name before saving.')
+  const expectedUpdatedAt = campaign.updatedAt || campaign.updated_at
+  if (campaign.id && (typeof expectedUpdatedAt !== 'string' || !Number.isFinite(Date.parse(expectedUpdatedAt)))) throw emailCampaignConflict()
   const query = campaign.id
-    ? supabase.from('email_campaigns').update(payload).eq('organisation_id', organisationId).eq('status', 'draft').eq('id', campaign.id).select().single()
-    : supabase.from('email_campaigns').insert({ ...payload, created_by: userId }).select().single()
-  const { data, error } = await query
+    ? supabase.from('email_campaigns').update(payload).eq('organisation_id', organisationId).eq('status', 'draft').eq('id', campaign.id).eq('updated_at', expectedUpdatedAt).select().single()
+    : supabase.from('email_campaigns').insert({ ...payload, ...(campaign.clientId ? { id: campaign.clientId } : {}), created_by: userId }).select().single()
+  let outcome
+  try { outcome = await query } catch (error) { outcome = { error } }
+  const { data, error } = outcome
+  if (!campaign.id && campaign.clientId && (error || !data)) {
+    const originalError = error || new Error('The email draft save could not be confirmed. Retry the same draft before creating another one.')
+    let recovered
+    try {
+      recovered = await supabase.from('email_campaigns')
+        .select('id,organisation_id,name,subject,preview_text,sender_identity_id,reply_to_email,subscription_type_id,audience_filter,content_json,html,updated_by,created_by,status,updated_at')
+        .eq('organisation_id', organisationId).eq('id', campaign.clientId).eq('created_by', userId).maybeSingle()
+    } catch { throw originalError }
+    if (recovered.error || !recovered.data) throw originalError
+    const expected = { ...payload, created_by: userId }
+    const actual = Object.fromEntries(Object.keys(expected).map((key) => [key, recovered.data[key]]))
+    if (recovered.data.id === campaign.clientId && recovered.data.organisation_id === organisationId && recovered.data.created_by === userId && recovered.data.status === 'draft' && canonicalEmailIntent(expected) === canonicalEmailIntent(actual)) return recovered.data
+    throw Object.assign(new Error('This draft identity already has saved work. Reopen the saved draft before continuing; your current changes have not replaced it.'), { code: error?.code || 'EMAIL_CAMPAIGN_CREATE_CONFLICT' })
+  }
+  if (campaign.id && ((!error && !data) || error?.code === 'PGRST116')) throw emailCampaignConflict()
   if (error) throw error
   return data
 }

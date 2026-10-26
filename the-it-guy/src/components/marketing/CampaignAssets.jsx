@@ -5,7 +5,7 @@ import {
 } from '../../services/generalCampaignModel'
 import { useEffect, useRef, useState } from 'react'
 import { Download, Images, Mail, MessageCircle, RefreshCw } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { MarketingLink as Link } from './MarketingNavigation.jsx'
 import {
   loadCampaignPack,
   handoffCampaignDraft,

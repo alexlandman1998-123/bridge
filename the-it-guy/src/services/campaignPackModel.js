@@ -2,6 +2,7 @@ import { propertyPackText } from './propertyCampaignPackModel'
 import { PROPERTY_CAMPAIGNS } from './listingCampaignContract'
 import { cleanListingBuilder, justListedGaps } from './justListedCampaignModel'
 import { validateChannelContent } from './marketingCampaignTemplates'
+import { assertCampaignContacts } from './campaignContactProvenance'
 import {
   createEmailDocument,
   newBlock,
@@ -48,6 +49,7 @@ export function checkedCampaignPack(campaign, current) {
   if (!campaign || campaign.status !== 'draft')
     throw new Error('Open a saved Just Listed draft to prepare its assets.')
   const builder = cleanListingBuilder(campaign.listing_builder)
+  assertCampaignContacts(builder, current.source)
   const gaps = justListedGaps(builder.source)
   if (gaps.length) throw new Error(gaps.join(' '))
   const fields = [
@@ -62,10 +64,6 @@ export function checkedCampaignPack(campaign, current) {
     builder.agentId !== current.agentId ||
     fields.some(
       (key) => (builder.source[key] || '') !== (current.source[key] || ''),
-    ) ||
-    ['agentName', 'destination'].some(
-      (key) =>
-        current.source[key] && builder.source[key] !== current.source[key],
     )
   )
     throw new Error(
@@ -124,6 +122,17 @@ export function campaignPackText(pack) {
     'READ-ME.txt': `${family} campaign pack\n\n${pack.designs ? pack.designs.map((design) => `${design.label} (${design.width} × ${design.height})`).join('\n') : '1 photo post (1080 × 1080)\n5 carousel slides, in numbered order (1080 × 1080)\n2 stories, in numbered order (1080 × 1920)'}\n\nReview the images and wording before sharing. Artwork summarises your listing; full wording is in the text files. Photos may repeat where fewer than five are available. No messages have been sent or scheduled.\nCampaign: ${pack.campaign.name}\nRevision: ${pack.campaign.revision}`,
   }
 }
+export function checkedEmailCopyPack(campaign, agencyName) {
+  if (!campaign?.planned_channels?.includes('email'))
+    throw new Error('Add Email to the saved campaign before preparing an email draft.')
+  const content = validateChannelContent(campaign.channel_content || {}, campaign.planned_channels)
+  if (!content.email?.title?.trim() || !content.email?.body?.trim())
+    throw new Error('Add an email subject and message in Edit campaign, then save before preparing the email draft.')
+  if (!agencyName?.trim()) throw new Error('Your agency name is unavailable. Refresh before preparing the email draft.')
+  return { campaign, content, source: { agencyName: agencyName.trim() }, copyOnly: true }
+}
+
+
 export function campaignEmailDraft(pack) {
   const document = createEmailDocument({ name: pack.source.agencyName })
   document.globalStyles.primaryColour = /^#[0-9a-f]{6}$/i.test(
@@ -142,6 +151,7 @@ export function campaignEmailDraft(pack) {
     id: pack.campaign.id,
     revision: pack.campaign.revision,
     audience_pending: true,
+    ...(pack.playbookStep ? { playbook_step: pack.playbookStep.id } : {}),
   }
   return {
     name: pack.campaign.name,

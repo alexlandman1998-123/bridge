@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
+import CrmFollowUpAssistant from './CrmFollowUpAssistant'
 
 function normalizeText(value = '') {
   return String(value ?? '').trim()
@@ -149,6 +150,7 @@ export default function LeadActivityWorkspace({
   roleplayers = [],
   showHeader = true,
   showSidebar = true,
+  followUpAssistant,
 }) {
   const workspaceRef = useRef(null)
   const [openMenuId, setOpenMenuId] = useState('')
@@ -231,6 +233,7 @@ export default function LeadActivityWorkspace({
   return (
     <section ref={workspaceRef} className="min-w-0">
       <div className="min-w-0 space-y-4">
+        {followUpAssistant?.leadId && <CrmFollowUpAssistant key={`${followUpAssistant.organisationId}:${followUpAssistant.leadId}`} {...followUpAssistant} />}
         {showHeader ? (
         <header className="rounded-[24px] border border-[#dbe7f2] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)] sm:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

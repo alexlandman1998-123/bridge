@@ -1,3 +1,5 @@
+import { cleanContactProvenance } from './campaignContactProvenance'
+
 export const LISTING_SOURCE_FIELDS = [
   'title',
   'price',
@@ -83,7 +85,8 @@ export function cleanPropertyItem(input) {
   )
   if (Object.values(source).some((value) => value.length > 6000))
     throw new Error('Shorten the listing campaign details before saving.')
-  return { listingId: input.listingId, agentId: input.agentId || '', source }
+  const contactProvenance = cleanContactProvenance(input.contactProvenance, source)
+  return { listingId: input.listingId, agentId: input.agentId || '', source, ...(contactProvenance ? { contactProvenance } : {}) }
 }
 export function cleanPropertyBuilder(input) {
   if (
@@ -150,6 +153,7 @@ export const propertyItems = (builder) => [
     listingId: builder.listingId,
     agentId: builder.agentId,
     source: builder.source,
+    ...(builder.contactProvenance ? { contactProvenance: builder.contactProvenance } : {}),
   },
   ...(builder.additionalListings || []),
 ]

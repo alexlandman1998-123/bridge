@@ -1,3 +1,5 @@
+import { cleanCampaignPlaybook, playbookStepCopy } from './campaignPlaybookModel'
+import { checkedChannelCopyPack, campaignChannelBrief } from './campaignChannelBrief'
 import { propertyItems } from './listingCampaignContract'
 import { checkedPropertyPack } from './propertyCampaignPackModel'
 import { checkedGeneralPack } from './generalCampaignModel'
@@ -12,6 +14,7 @@ import {
   campaignEmailDraft,
   campaignHandoffId,
   checkedCampaignPack,
+  checkedEmailCopyPack,
 } from './campaignPackModel'
 import { linkMarketingActivity } from './marketingCampaignService'
 import { saveEmailCampaign } from './emailCampaignService'
@@ -23,13 +26,13 @@ async function confirmActor(userId) {
     throw new Error('Your account changed. Reopen campaigns.')
 }
 
-export async function loadCampaignPack(organisationId, userId, expected) {
+export async function loadCampaignPack(organisationId, userId, expected, channel = 'email', stepId = null) {
   if (!isSupabaseConfigured || !supabase || !organisationId || !userId)
     throw new Error('Choose a connected agency workspace.')
   const auth = await supabase.auth.getUser()
   if (auth.error || auth.data?.user?.id !== userId)
     throw new Error('Your account changed. Reopen campaigns.')
-  const { data: campaign, error } = await supabase
+  let { data: campaign, error } = await supabase
     .from('marketing_campaigns')
     .select('*')
     .eq('organisation_id', organisationId)
@@ -50,8 +53,23 @@ export async function loadCampaignPack(organisationId, userId, expected) {
         'The campaign owner or an agency administrator must prepare these assets and channel drafts.',
       )
   }
+  let playbookStep = null
+  if (stepId) {
+    const playbook = cleanCampaignPlaybook(campaign.playbook, campaign.planned_channels)
+    if (playbook.sourceRevision !== campaign.revision) throw new Error('The campaign brief changed. Review and save its playbook before preparing this step.')
+    playbookStep = playbook.steps.find((step) => step.id === stepId && step.channel === channel)
+    if (!playbookStep) throw new Error('This playbook step changed or is unavailable. Reload the playbook.')
+    campaign = { ...campaign, channel_content: { ...campaign.channel_content, [channel]: playbookStepCopy(playbook, playbookStep) } }
+  }
+  const complete = (pack) => playbookStep ? { ...pack, playbookStep } : pack
+  if (!campaign.campaign_builder && !campaign.listing_builder) {
+    if (channel !== 'email') return complete(checkedChannelCopyPack(campaign, channel))
+    const agency = await supabase.from('organisations').select('name').eq('id', organisationId).maybeSingle()
+    if (agency.error) throw new Error('The agency could not be loaded. Refresh before preparing the email draft.')
+    return complete(checkedEmailCopyPack(campaign, agency.data?.name))
+  }
   if (campaign.campaign_builder) {
-    return checkedGeneralPack(
+    return complete(checkedGeneralPack(
       campaign,
       await loadGeneralCampaignContext(
         organisationId,
@@ -62,7 +80,7 @@ export async function loadCampaignPack(organisationId, userId, expected) {
           ? [campaign.campaign_builder.details]
           : []),
       ),
-    )
+    ))
   }
   if (campaign.listing_builder?.version === 2) {
     const family = campaign.listing_builder.template
@@ -81,13 +99,13 @@ export async function loadCampaignPack(organisationId, userId, expected) {
     const events = campaign.listing_builder.settings?.eventId
       ? await loadPropertyShowDays(organisationId)
       : []
-    return checkedPropertyPack(
+    return complete(checkedPropertyPack(
       campaign,
       currents,
       events.find(
         (event) => event.id === campaign.listing_builder.settings.eventId,
       ),
-    )
+    ))
   }
   const choices = await loadJustListedChoices(organisationId, userId)
   const current = await loadJustListedSource(
@@ -96,7 +114,7 @@ export async function loadCampaignPack(organisationId, userId, expected) {
     campaign.listing_builder?.listingId,
     choices,
   )
-  return checkedCampaignPack(campaign, current)
+  return complete(checkedCampaignPack(campaign, current))
 }
 
 export async function handoffCampaignDraft(
@@ -104,15 +122,16 @@ export async function handoffCampaignDraft(
   userId,
   expected,
   channel,
+  stepId = null,
 ) {
   if (!['email', 'whatsapp'].includes(channel))
     throw new Error('Choose email or WhatsApp.')
-  const pack = await loadCampaignPack(organisationId, userId, expected)
+  const pack = await loadCampaignPack(organisationId, userId, expected, channel, stepId)
   const id = await campaignHandoffId(
     organisationId,
     pack.campaign.id,
     pack.campaign.revision,
-    channel,
+    stepId ? `${channel}:playbook:${stepId}` : channel,
   )
   await confirmActor(userId)
   // A deterministic ID makes a retry safe even if draft creation succeeded but
@@ -149,7 +168,8 @@ export async function handoffCampaignDraft(
     }
     if (
       saved.content_json?.arch9_campaign?.id !== pack.campaign.id ||
-      saved.content_json?.arch9_campaign?.revision !== pack.campaign.revision
+      saved.content_json?.arch9_campaign?.revision !== pack.campaign.revision ||
+      (stepId && saved.content_json?.arch9_campaign?.playbook_step !== stepId)
     )
       throw new Error(
         'The existing email draft could not be matched to this campaign.',
@@ -170,6 +190,7 @@ export async function handoffCampaignDraft(
               id: pack.campaign.id,
               revision: pack.campaign.revision,
               wording: pack.content.whatsapp.body,
+              ...(stepId ? { playbook_step: stepId } : {}),
             },
           },
         },
@@ -179,7 +200,8 @@ export async function handoffCampaignDraft(
     if (
       saved?.parameter_values?.__arch9_campaign?.id !== pack.campaign.id ||
       saved?.parameter_values?.__arch9_campaign?.revision !==
-        pack.campaign.revision
+        pack.campaign.revision ||
+      (stepId && saved?.parameter_values?.__arch9_campaign?.playbook_step !== stepId)
     )
       throw new Error(
         'The existing WhatsApp draft could not be matched to this campaign.',
@@ -233,4 +255,11 @@ export async function handoffCampaignDraft(
     }
   }
   return { id: saved.id, status: saved.status || 'draft' }
+}
+
+export async function loadCampaignChannelBrief(organisationId, userId, expected, channel, stepId = null) {
+  if (!['meta', 'social', 'chatgpt'].includes(channel)) throw new Error('Choose Meta ads, ChatGPT Ads or Organic social.')
+  const pack = await loadCampaignPack(organisationId, userId, expected, channel, stepId)
+  await confirmActor(userId)
+  return campaignChannelBrief(pack.campaign, channel)
 }

@@ -1,8 +1,10 @@
 {
-  "generatedAt": "2026-10-12T19:27:49.938Z",
-  "status": "RECOVERY_LOCKED",
-  "locked": true,
+  "generatedAt": "2026-10-26T08:21:30.139Z",
+  "status": "RECOVERY_LOCK_BLOCKED",
+  "locked": false,
   "productionProjectRef": "isdowlnollckzvltkasn",
+  "recoveryScope": "database",
+  "storageObjectsIncluded": false,
   "evidencePath": "docs/supabase-production-recovery-evidence.json",
   "evidenceCreated": false,
   "evidence": {
@@ -11,7 +13,7 @@
     "pitrEnabled": false,
     "physicalBackupCount": 8,
     "equivalentManagedBackupAccepted": true,
-    "recoveryTested": true,
+    "recoveryTested": false,
     "testedAt": "2026-07-25T18:55:39.570Z",
     "testedBy": "Codex using Supabase CLI preview branch restore/clone",
     "acceptedBy": "Alexander Landman production migration workflow request",
@@ -22,15 +24,19 @@
       "Restore test used an isolated Supabase preview branch created from production with --with-data; production project isdowlnollckzvltkasn was not restored over or mutated.",
       "The temporary restore target reported ACTIVE_HEALTHY and read-only REST smoke checks returned aggregate counts for organisations, profiles, leads, document_templates, and legal_document_master_migrations.",
       "Temporary restore branch 34d01c00-a842-4f2b-a782-7bd9da3025e5 was deleted after evidence capture to avoid copied production data sprawl and ongoing branch cost.",
-      "Do not commit credentials, database URLs, backup secrets, or exported production data in this file."
-    ]
+      "Do not commit credentials, database URLs, backup secrets, or exported production data in this file.",
+      "2026-10-21 coverage review: the July --with-data branch exercise demonstrates a live database clone and aggregate smoke checks, not restoration from an identified backup. Keep this historical record, but do not use it as completed backup-restore proof.",
+      "Supabase database backups omit Storage object bytes. An independent encrypted Storage backup and isolated recovery exercise remain pending; no production restore has been attempted."
+    ],
+    "backupRestoreTest": null,
+    "recordedExerciseType": "live_database_clone"
   },
   "live": {
-    "checked": true,
-    "ok": true,
-    "pitrEnabled": false,
-    "physicalBackupCount": 8,
-    "recoverable": true
+    "checked": false,
+    "ok": false
   },
-  "blockers": []
+  "blockers": [
+    "recovery_test_not_recorded",
+    "backup_restore_not_proven"
+  ]
 }

@@ -8,6 +8,7 @@ import {
   propertyCampaignGaps,
 } from './listingCampaignModel'
 import { validateChannelContent } from './marketingCampaignTemplates'
+import { assertCampaignContacts } from './campaignContactProvenance'
 
 export function checkedPropertyPack(campaign, currents, event) {
   const builder = cleanPropertyBuilder(campaign.listing_builder)
@@ -20,13 +21,11 @@ export function checkedPropertyPack(campaign, currents, event) {
       current,
       builder.settings,
     )
+    assertCampaignContacts(item, fresh)
     if (
       current.agentId !== item.agentId ||
       ['title', 'price', 'location', 'facts', 'description', 'agencyName'].some(
         (key) => (item.source[key] || '') !== (fresh[key] || ''),
-      ) ||
-      ['destination', 'agentName'].some(
-        (key) => fresh[key] && fresh[key] !== item.source[key],
       )
     )
       throw new Error(

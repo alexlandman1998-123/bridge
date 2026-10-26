@@ -4,6 +4,7 @@ import {
   propertyItems,
 } from './listingCampaignContract'
 import { justListedGaps, justListedPayload } from './justListedCampaignModel'
+import { contactProvenanceReview } from './campaignContactProvenance'
 export function projectPropertySource(template, current, settings = {}) {
   const source = { ...current.source }
   const area = current.publicArea ?? source.location
@@ -32,6 +33,8 @@ export function propertyCampaignGaps(builder, now = Date.now()) {
   const gaps = [],
     { template, settings = {} } = builder
   for (const item of propertyItems(builder)) {
+    const contacts = contactProvenanceReview(item, null, undefined, { requireConfirmed: false })
+    if (!contacts.ready) gaps.push(contacts.message)
     const source = { ...item.source }
     if (['coming-soon', 'just-sold'].includes(template))
       source.price ||= 'Not advertised'
@@ -150,6 +153,7 @@ export function propertyCampaignPayload(input, content) {
       template: 'new-listing',
       listingId: builder.listingId,
       agentId: builder.agentId,
+      contactProvenance: builder.contactProvenance,
       source: {
         ...builder.source,
         price: builder.source.price || 'Not advertised',

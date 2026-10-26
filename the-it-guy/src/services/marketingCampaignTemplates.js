@@ -1,3 +1,4 @@
+import { reusablePlaybook } from './campaignPlaybookModel'
 import { campaignShopTemplates } from './marketingCampaignCatalogue'
 
 // Keep older starter links working, including the newsletter and milestone plans.
@@ -179,7 +180,7 @@ for (const template of campaignShopTemplates) {
 
 export function validateChannelContent(
   content = {},
-  channels = ['email', 'whatsapp', 'meta', 'social'],
+  channels = ['email', 'whatsapp', 'meta', 'social', 'chatgpt'],
 ) {
   if (!content || typeof content !== 'object' || Array.isArray(content))
     throw new Error('Use valid channel draft content.')
@@ -226,9 +227,11 @@ export function templateFromCampaign(campaign) {
         )
       : 30
   return {
+    ...(campaign.playbook ? { playbook: reusablePlaybook(campaign.playbook, campaign.planned_channels) } : {}),
     name: campaign.name,
     goal: campaign.goal,
     objective: campaign.objective,
+    ...(campaign.campaign_setup ? { campaign_setup: { ...campaign.campaign_setup, audienceId: '' } } : {}),
     audience: campaign.audience || '',
     offer: campaign.offer || '',
     area: campaign.area || '',

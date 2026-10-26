@@ -48,7 +48,7 @@ import { filterNavigationItems } from '../auth/permissions/navigationPermissions
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
 import { preloadAgencyLeadsRoute } from '../routes/leadsRouteLoader'
 import { preloadAgentTransactionsRoute } from '../routes/transactionsRouteLoader'
-import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from '../modules/revo/revoExtensionRegistry'
+import { withSharedInboxNavigation } from '../modules/sharedInbox/navigation'
 import { REVO_INBOX_VIEWS, resolveRevoInboxView } from '../modules/revo/sharedInbox/sharedInboxViews'
 
 const ICON_BY_KEY = {
@@ -102,6 +102,7 @@ const ICON_BY_KEY = {
   marketing_campaigns: Megaphone,
   marketing_email: Mail,
   marketing_whatsapp: MessageCircle,
+  marketing_meta: Network,
   marketing_events: CalendarDays,
   marketing_show_days: CalendarDays,
   marketing_launches: Trophy,
@@ -250,7 +251,7 @@ const BOND_NAV_SECTIONS = [
   {
     key: 'workspace',
     label: 'Overview',
-    itemKeys: ['dashboard', 'bond_applications', 'bond_developments', 'partners', 'clients'],
+    itemKeys: ['dashboard', 'revo_shared_inbox', 'bond_applications', 'bond_developments', 'partners', 'clients'],
   },
   {
     key: 'organisation',
@@ -387,8 +388,6 @@ function Sidebar() {
     branding,
     loading: organisationLoading,
     membershipRole: organisationMembershipRole,
-    organisation,
-    organisationSettings,
   } = useOrganisation()
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: role === 'attorney' })
   const location = useLocation()
@@ -444,29 +443,10 @@ function Sidebar() {
       const moduleFilteredItems = role === 'attorney'
         ? filterAttorneyModuleNavigationItems(items, attorneyModuleState.modules)
         : items
-      const workspaceItems = isWorkspaceExtensionFeatureEnabled(REVO_EXTENSION_KEY, 'shared_inbox', {
-        organisation,
-        organisationSettings,
-      })
-        ? (() => {
-            const inboxItem = {
-            key: 'revo_shared_inbox',
-            label: 'Inbox',
-            to: '/revo/inbox',
-            activeMatch: ['/revo/inbox'],
-            }
-            const dashboardIndex = moduleFilteredItems.findIndex((item) => item.key === 'dashboard')
-            if (dashboardIndex < 0) return [...moduleFilteredItems, inboxItem]
-            return [
-              ...moduleFilteredItems.slice(0, dashboardIndex + 1),
-              inboxItem,
-              ...moduleFilteredItems.slice(dashboardIndex + 1),
-            ]
-          })()
-        : moduleFilteredItems
+      const workspaceItems = withSharedInboxNavigation(moduleFilteredItems)
       return filterNavigationItems(workspaceItems, navPermissionContext)
     },
-    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, organisation, organisationSettings, profile, role, workspaceContext.businessWorkspaceId, workspaceContext.rentalOperatingMode],
+    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role, workspaceContext.businessWorkspaceId, workspaceContext.rentalOperatingMode],
   )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
@@ -539,8 +519,8 @@ function Sidebar() {
     const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
 
     if (item.key === 'revo_shared_inbox') {
-      const isInboxPage = location.pathname === '/revo/inbox'
-      const isInboxActive = isInboxPage || location.pathname.startsWith('/revo/inbox/')
+      const isInboxPage = ['/inbox', '/revo/inbox'].includes(location.pathname)
+      const isInboxActive = isInboxPage || location.pathname.startsWith('/inbox/') || location.pathname.startsWith('/revo/inbox/')
       const inboxView = resolveRevoInboxView(new URLSearchParams(location.search).get('view'))
       const inboxExpanded = expandedMenus[item.key] ?? isInboxActive
       return (
@@ -564,7 +544,7 @@ function Sidebar() {
             {REVO_INBOX_VIEWS.map((view) => (
               <Link
                 key={view.key}
-                to={`/revo/inbox?view=${view.key}`}
+                to={`/inbox?view=${view.key}`}
                 className={`ui-sidebar-link ui-sidebar-link-child ${isInboxPage && inboxView === view.key ? 'ui-sidebar-link-active' : ''}`.trim()}
                 aria-current={isInboxPage && inboxView === view.key ? 'page' : undefined}
               >{view.label}</Link>
@@ -657,7 +637,7 @@ function Sidebar() {
 
         {menuExpanded ? (
           <div className="space-y-1 pl-3">
-            {item.children.map((childItem) => renderNavItem(childItem, { child: true }))}
+            {item.children.map((childItem) => renderNavItem(childItem, { child: item.key !== 'marketing_workspace' }))}
           </div>
         ) : null}
       </div>

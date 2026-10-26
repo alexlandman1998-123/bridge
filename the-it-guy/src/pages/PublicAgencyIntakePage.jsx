@@ -61,6 +61,7 @@ const INITIAL_FORM = Object.freeze({
   sellerTimeline: '',
   message: '',
   privacyConsent: false,
+  emailMarketingConsent: false,
   website: '',
   selectedListings: [],
 })
@@ -604,6 +605,14 @@ function ListingSelectionCard({ listing = {}, selected = false, onToggle }) {
   )
 }
 
+function CampaignMarketingConsent({ response, checked, onChange }) {
+  if (!response?.marketingConsentOptional) return null
+  return <label className="flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-4">
+    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-[var(--intake-primary)]" />
+    <span className="text-[13px] leading-5 text-slate-600"><strong className="block text-slate-700">Optional future marketing emails</strong>{response.marketingConsentCopy}<span className="mt-1 block text-xs">This is separate from asking the agency to respond to your enquiry.</span></span>
+  </label>
+}
+
 function SuccessState({ agencyName = '', intent = '', duplicate = false, onReset }) {
   return (
     <section className="mx-auto w-full max-w-[620px] rounded-lg border border-white/80 bg-white p-6 text-center shadow-[0_24px_70px_rgba(30,55,58,0.10)] sm:p-8" aria-live="polite">
@@ -751,6 +760,7 @@ export default function PublicAgencyIntakePage() {
   const attribution = useMemo(() => readAgencyIntakeAttribution(searchParams, agencySlug), [searchParams, agencySlug])
   const activeAgencySlug = normalizeText(intake?.slug || agencySlug)
   const requestedIntent = normalizeText(searchParams.get('intent')).toLowerCase()
+  const responseToken = searchParams.get('campaignResponse') || ''
   const hasExplicitIntent = ['buy', 'sell'].includes(requestedIntent)
 
   useEffect(() => {
@@ -771,7 +781,13 @@ export default function PublicAgencyIntakePage() {
     return () => {
       cancelled = true
     }
-  }, [agencySlug, reloadKey])
+  }, [agencySlug, reloadKey, responseToken])
+
+  useEffect(() => {
+    setIntent('')
+    setSubmitted(false)
+    setForm((previous) => ({ ...previous, privacyConsent: false, emailMarketingConsent: false }))
+  }, [responseToken])
 
   useEffect(() => {
     if (!intake?.agency?.name) return undefined
@@ -1010,6 +1026,7 @@ export default function PublicAgencyIntakePage() {
         message: normalizeText(form.message) || null,
         privacyConsent: true,
         privacyPolicyVersion: intake?.intake?.privacyPolicyVersion || AGENCY_PUBLIC_INTAKE_PRIVACY_VERSION,
+        ...(intake?.campaignResponse ? { emailMarketingConsent: form.emailMarketingConsent === true, marketingConsentVersion: intake.campaignResponse.marketingConsentVersion } : {}),
         website: form.website,
         sourceChannel: attribution.sourceChannel === 'card' ? 'website' : attribution.sourceChannel,
         campaignCode: attribution.campaignCode,
@@ -1183,6 +1200,7 @@ export default function PublicAgencyIntakePage() {
                         <p className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs leading-5 text-slate-500">
                           {intake.intake.consentCopy || `By sending this enquiry, you consent to ${agencyName} using these details to respond to you.`}
                         </p>
+                        <CampaignMarketingConsent response={intake.campaignResponse} checked={form.emailMarketingConsent} onChange={(value) => updateForm('emailMarketingConsent', value)} />
 
                         {formError ? (
                           <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-5 text-rose-800" role="alert">
@@ -1340,6 +1358,7 @@ export default function PublicAgencyIntakePage() {
                               {intake.intake.consentCopy || `I consent to ${agencyName} collecting and using these details to respond to my enquiry.`}
                             </span>
                           </label>
+                          <CampaignMarketingConsent response={intake.campaignResponse} checked={form.emailMarketingConsent} onChange={(value) => updateForm('emailMarketingConsent', value)} />
                         </>
                       ) : null}
 
@@ -1433,6 +1452,7 @@ export default function PublicAgencyIntakePage() {
                           {intake.intake.consentCopy || `I consent to ${agencyName} collecting and using these details to respond to my enquiry.`}
                         </span>
                       </label>
+                      <CampaignMarketingConsent response={intake.campaignResponse} checked={form.emailMarketingConsent} onChange={(value) => updateForm('emailMarketingConsent', value)} />
 
                       {formError ? (
                         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-5 text-rose-800" role="alert">

@@ -1,3 +1,4 @@
+import { createContactProvenance } from '../../../services/campaignContactProvenance'
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
@@ -118,6 +119,7 @@ it('reopens saved copy, preserves edits after failure, and rebuilds only on expl
       listingId,
       agentId,
       source,
+      contactProvenance: { ...createContactProvenance(source), confirmed: true },
     },
     channel_content: {
       ...justListedCopy(source),
@@ -141,6 +143,18 @@ it('reopens saved copy, preserves edits after failure, and rebuilds only on expl
   expect(
     screen.queryByRole('button', { name: 'Refresh and rebuild wording' }),
   ).toBeNull()
+})
+
+it('requires a legacy draft to refresh contact provenance before it can reach preparation', async () => {
+  const campaign = { listing_builder: { version: 1, template: 'new-listing', listingId, agentId, source }, channel_content: justListedCopy(source) }
+  render(<JustListedCampaignBuilder {...props()} campaign={campaign} />)
+  const refresh = await screen.findByRole('button', { name: 'Refresh public contacts and wording' })
+  expect(screen.getByRole('button', { name: /Confirm and preview/ }).disabled).toBe(true)
+  fireEvent.click(refresh)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Confirm and preview/ }).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: /Confirm and preview/ }))
+  expect(screen.getByLabelText('Message').value).toContain(source.destination)
+  expect(campaign.listing_builder).not.toHaveProperty('contactProvenance')
 })
 it('requires explicit refresh after public location or assigned agent changes', async () => {
   const campaign = {

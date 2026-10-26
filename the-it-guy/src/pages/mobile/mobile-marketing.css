@@ -1,0 +1,751 @@
+/* The mobile shell owns page scrolling. Keep the shared marketing workflows
+   fluid within its 520px column, including when opened on a wider screen. */
+.mobile-marketing,
+.mobile-marketing-content {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.mobile-marketing {
+  padding-bottom: 16px;
+}
+
+.mobile-marketing-nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  padding: 4px 0 16px;
+  margin-bottom: 8px;
+}
+
+.mobile-marketing-nav > label {
+  color: #536d5e;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mobile-marketing-nav > select {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 48px;
+  width: 100%;
+  border: 1px solid #dce7df;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  color: #234734;
+  font: inherit;
+  font-size: 16px;
+}
+
+.mobile-marketing-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.mobile-marketing-nav :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 6px;
+  border: 1px solid #dce7df;
+  border-radius: 12px;
+  background: #fff;
+  color: #456353;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mobile-marketing-shortcuts svg {
+  flex-shrink: 0;
+}
+
+.mobile-marketing-nav :is([aria-current='page'], [aria-pressed='true']) {
+  border-color: #235640;
+  background: #235640;
+  color: #fff;
+}
+
+.mobile-marketing-content :is(.mc-workspace, .wa-page, .eb-builder, .website-workspace) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-inline: 0;
+  padding-inline: 0;
+}
+
+/* A 16px editing font prevents iOS from zooming away from the surrounding flow.
+   Artwork and rendered email content retain their own typography. */
+.mobile-marketing .mobile-marketing-content :is(
+  input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']),
+  select,
+  textarea,
+  [contenteditable='true']
+) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 16px;
+}
+
+.mobile-marketing .mobile-marketing-content :is(
+  input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']),
+  select
+) {
+  min-height: 44px;
+}
+
+.mobile-marketing-content :is(
+  .mc-button, .mc-text-button, .mc-workspace-navigation button, .mc-tabs button,
+  .mc-mode-filters button, .mc-shop-categories button, .ct-channel-filters button,
+  .ct-card-preview summary, .mc-shop-details > summary, .mc-shop-assets > summary,
+  .wa-primary-button, .wa-secondary-button, .wa-back-link, .wa-refresh, .wa-tabs button,
+  .email-workspace-nav button, .email-campaign-tabs button, .eb-builder button:not(.eb-select-block),
+  .ma-button, .ma-text-button, .ma-back, .cp-remove, .meta-inline-button,
+  .ww-back, .ww-refresh, .ww-publish, .ww-rollback, .wlo-preview-device-toggle button
+) {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.mobile-marketing-content :is(.ma-icon-button, .wa-more, .wa-page-number, .cp-remove) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-marketing :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid #257a55;
+  outline-offset: 3px;
+}
+
+.mobile-marketing-content :is(
+  .mc-page-heading, .mc-detail-heading, .mc-library-heading, .mc-panel-heading,
+  .mc-campaign-heading, .mc-list-controls, .mc-publishing-heading,
+  .wa-page-header, .wa-create-header, .email-landing-heading, .email-list-toolbar,
+  .mo-header, .mo-header-actions, .meta-panel header, .wlo-header, .wst-header,
+  .ww-operations-heading, .wlo-card-heading
+) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.mobile-marketing .mobile-marketing-content :is(.mc-page-heading, .mc-detail-shell, .mc-panel, .ct-library, .mc-studio-intro, .mc-agents-workspace, .mc-enquiries, .ma-library, .meta-lane, .meta-panel) {
+  padding: 16px;
+}
+
+.mobile-marketing-content :is(.mc-page-heading, .wa-title-block, .meta-title, .show-event-banner-copy) h1 {
+  font-size: 26px;
+  overflow-wrap: anywhere;
+}
+
+.mobile-marketing-content :is(.mc-heading-actions, .mc-studio-actions, .mc-form-actions, .ct-editor-actions, .mc-publishing-buttons, .ma-form-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 8px;
+}
+
+.mobile-marketing-content :is(.mc-heading-actions, .mc-studio-actions, .mc-form-actions, .ct-editor-actions, .ma-form-actions) > :is(button, a) {
+  flex: 1 1 140px;
+  justify-content: center;
+  white-space: normal;
+  text-align: center;
+}
+
+.mobile-marketing-content :is(.mc-panel-heading > div, .mc-panel-heading .mc-search, .mc-campaign-heading .mc-search, .mc-library-controls .mc-search, .ct-library-controls .mc-search) {
+  flex-basis: auto;
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.mobile-marketing-content :is(.mc-workspace-navigation, .mc-tabs, .mc-mode-filters, .mc-shop-categories, .email-campaign-tabs, .wa-tabs) {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.mobile-marketing-content .mc-workspace-navigation {
+  margin-top: 0;
+}
+
+.mobile-marketing-content :is(.mc-workspace-navigation, .mc-detail-shell .mc-tabs) button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.mobile-marketing-content :is(
+  .mc-library-grid, .ct-template-grid, .ct-editor, .ct-form-row, .mc-fields,
+  .mc-asset-grid, .mc-channel-summary, .mc-result-grid, .cp-layout, .cp-context,
+  .mc-agent-card-grid, .meta-lanes, .meta-overview-bottom, .ma-builder, .cs-format-grid,
+  .cs-layout, .mo-grid-primary, .mo-grid-secondary, .mo-channel-workspace
+) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mobile-marketing-content :is(.mc-fields > *, .mc-search, .ct-library-controls > label, .mc-asset-kind, .mc-link-activity > label) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.mobile-marketing-content :is(.mc-search input, .ct-library-controls select, .mc-asset-kind select, .mc-link-activity select) {
+  width: 100%;
+}
+
+.mobile-marketing-content :is(.mc-library-card, .mc-campaign-row, .ct-template-card, .ct-content-preview, .mc-detail-title, .mc-activity-row, .mc-link-activity) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mobile-marketing-content :is(.mc-library-card footer, .mc-activity-row, .mc-link-activity, .ct-library-controls, .mc-publishing-heading, .cp-step-actions) {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mobile-marketing-content .mc-library-card footer > :is(button, a) {
+  flex: 1 1 100%;
+  justify-content: center;
+}
+
+.mobile-marketing-content .ct-editor-preview {
+  position: static;
+}
+
+.mobile-marketing-content .ct-content-preview {
+  padding: 14px;
+}
+
+.mobile-marketing-content .cs-format {
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+  min-height: 230px;
+  padding: 18px 16px 0;
+}
+
+.mobile-marketing-content .cs-format-art {
+  width: 100%;
+}
+
+.mobile-marketing-content .ct-starter-row {
+  grid-auto-columns: minmax(0, 86%);
+}
+
+.mobile-marketing-content .mc-wizard-top {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 18px 16px;
+}
+
+.mobile-marketing-content .mc-wizard .mc-wizard-top h2 {
+  font-size: 23px;
+}
+
+.mobile-marketing-content :is(.mc-wizard-body, .mc-wizard-review section) {
+  padding: 16px;
+}
+
+.mobile-marketing-content .mc-wizard-steps {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px 16px;
+}
+
+.mobile-marketing-content .mc-wizard-steps li {
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.mobile-marketing-content :is(.mc-wizard-start, .mc-wizard-template, .jl-confirm) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mobile-marketing-content .mc-wizard-footer {
+  flex-wrap: wrap;
+  padding: 16px;
+}
+
+.mobile-marketing-content .mc-wizard-footer > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.mobile-marketing-content .mc-wizard-footer .mc-button {
+  flex: 1 1 120px;
+  justify-content: center;
+}
+
+.mobile-marketing-content :is(.mc-wizard-review dl, .jl-confirm dl, .cp-step-editor > div, .cp-follow-row) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mobile-marketing-content .cp-follow-row > button {
+  justify-self: end;
+  margin-bottom: 0;
+}
+
+.mobile-marketing-content .cp-step {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.mobile-marketing-content :is(.cp-step > article, .cp-response, .cp-context > section) {
+  padding: 12px;
+}
+
+.mobile-marketing-content .cp-handoff :is(small, span) {
+  min-width: 0;
+  flex-basis: 100%;
+}
+
+.mobile-marketing-content :is(.jl-builder, .jl-fields, .jl-heading > div, .jl-listing > div, .jl-actions) {
+  min-width: 0;
+}
+
+.mobile-marketing-content :is(.jl-steps, .jl-channel-tabs, .jl-actions) {
+  flex-wrap: wrap;
+}
+
+.mobile-marketing-content :is(.jl-mini-preview img, .jl-copy-preview > img) {
+  max-width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+/* Email and WhatsApp retain all editor tools and use the shell's one page
+   scroller. Only bounded pickers, canvases and wide result tables scroll inside. */
+.mobile-marketing-content :is(.eb-builder, .eb-stage, .eb-workspace, .wa-builder.wa-live, .wa-builder-content) {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.mobile-marketing-content .eb-builder {
+  padding-top: 0;
+}
+
+.mobile-marketing-content :is(.eb-workspace, .eb-details-layout, .eb-review-grid, .email-workspace-grid, .email-support-grid, .email-settings-grid, .email-editor-grid, .wa-builder.wa-live .wa-create-grid, .wa-builder-sidebar, .wa-live .wa-field-grid) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.mobile-marketing-content :is(.eb-header, .eb-basics, .eb-inspector, .wa-builder.wa-live .wa-card-heading, .wa-builder.wa-live .wa-editor-fields, .wa-live .wa-contact-manager, .email-settings-workspace, .email-settings-card) {
+  min-width: 0;
+  padding: 16px;
+}
+
+.mobile-marketing-content :is(.eb-header > div, .eb-title-row, .eb-header-actions) {
+  min-width: 0;
+  width: 100%;
+}
+
+.mobile-marketing-content .eb-title-row > input {
+  width: 100%;
+}
+
+.mobile-marketing-content :is(.eb-header-actions, .eb-bottom, .eb-bottom > div, .wa-builder-footer > div:last-child) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-marketing-content :is(.eb-header-actions > button, .eb-bottom button, .wa-builder-footer > div:last-child > button) {
+  flex: 1 1 120px;
+  white-space: normal;
+}
+
+.mobile-marketing-content :is(.eb-stepper, .wa-builder.wa-live .wa-step-header) {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.mobile-marketing-content :is(.eb-stepper > button, .wa-builder.wa-live .wa-step-header button) {
+  min-height: 58px;
+  padding: 10px;
+}
+
+.mobile-marketing-content .eb-stepper small {
+  margin-top: 3px;
+}
+
+.mobile-marketing-content .eb-context,
+.mobile-marketing-content .eb-brand {
+  display: block;
+}
+
+.mobile-marketing-content .eb-context-note {
+  display: block;
+}
+
+.mobile-marketing-content .eb-library {
+  max-height: none;
+  overflow: visible;
+}
+
+.mobile-marketing-content .eb-canvas-heading,
+.mobile-marketing-content .eb-preview-recipient {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.mobile-marketing-content .eb-preview-recipient select {
+  max-width: 100%;
+  width: 100%;
+}
+
+.mobile-marketing-content .eb-canvas-scroll {
+  max-height: none;
+  padding: 24px 6px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.mobile-marketing-content .eb-block-toolbar {
+  flex-wrap: wrap;
+  max-width: calc(100% - 14px);
+}
+
+.mobile-marketing-content .eb-block-toolbar button {
+  min-width: 36px;
+  min-height: 44px;
+}
+
+.mobile-marketing-content .eb-bottom > div:first-child span {
+  display: flex;
+}
+
+.mobile-marketing-content :is(.eb-import-image > span, .eb-import-image .eb-field) {
+  min-width: 0;
+  flex-basis: 100%;
+}
+
+.mobile-marketing-content .eb-modal-backdrop {
+  padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  align-items: center;
+}
+
+.mobile-marketing-content .eb-modal {
+  box-sizing: border-box;
+  max-height: calc(100dvh - 24px);
+  padding: 58px 16px 20px;
+  overscroll-behavior: contain;
+}
+
+.mobile-marketing-content .eb-modal-close {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-marketing-content .eb-preview-modal {
+  height: calc(100dvh - 24px);
+}
+
+.mobile-marketing-content .eb-preview-modal iframe {
+  min-height: 180px;
+}
+
+.mobile-marketing-content :is(.wa-builder-footer, .show-create-page .show-create-footer) {
+  position: static;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mobile-marketing-content .wa-builder.wa-live .wa-editor-fields :is(input:not([type='checkbox']), select) {
+  font-size: 16px;
+}
+
+.mobile-marketing-content :is(.wa-live .wa-review, .wa-builder-template-meta) {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.mobile-marketing-content .wa-live .wa-review dd {
+  margin-bottom: 10px;
+}
+
+.mobile-marketing-content :is(.wa-contact-row > span, .wa-checkbox, .email-sender-cards article > div, .email-settings-dns span, .wa-campaign-return > p) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mobile-marketing-content :is(.wa-table-scroll, .ma-table-wrap, .wlo-table-wrap, .email-campaign-table-wrap, .mc-enquiries-table-wrap) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-marketing-content .ma-rule {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.mobile-marketing-content .ma-rule > :is(input, select) {
+  grid-column: 1;
+  grid-row: auto;
+  width: 100%;
+}
+
+.mobile-marketing-content .ma-rule > button {
+  grid-column: 2;
+  grid-row: 1 / 4;
+}
+
+.mobile-marketing-content .ma-row-actions {
+  margin-left: 0;
+  width: 100%;
+}
+
+.mobile-marketing-content .ma-list-heading > label {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Events and the website workspace share the same phone-sized content column. */
+.mobile-marketing-content :is(.show-create-page .show-create-layout, .show-detail-grid, .show-detail-aside, .show-event-overview, .show-event-layout, .auction-detail-hero, .auction-detail-grid, .auction-bidding-panel) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mobile-marketing-content :is(.show-create-page .show-create-header, .show-create-page .show-create-card, .show-create-page .show-create-preview-body, .show-event-property, .show-event-readiness, .show-event-next, .show-event-promote, .show-event-activity, .auction-detail-card, .auction-bidding-panel) {
+  padding: 16px;
+}
+
+.mobile-marketing-content .show-create-page .show-create-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mobile-marketing-content .show-create-page .show-create-steps button {
+  min-width: 0;
+  min-height: 64px;
+}
+
+.mobile-marketing-content .show-create-page .show-create-listing-options button {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+}
+
+.mobile-marketing-content .show-create-page .show-create-listing-options img {
+  width: 56px;
+  height: 56px;
+}
+
+.mobile-marketing-content .show-create-page .show-create-listing-options button > :last-child:not(div) {
+  grid-column: 2;
+}
+
+.mobile-marketing-content .show-create-page .show-create-footer > span {
+  display: block;
+  flex-basis: 100%;
+  margin-left: 0;
+}
+
+.mobile-marketing-content .show-event-banner {
+  min-height: 0;
+  padding: 20px 16px;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.mobile-marketing-content .show-event-banner-actions {
+  max-width: none;
+  justify-content: flex-start;
+  flex-shrink: 1;
+}
+
+.mobile-marketing-content .show-event-menu {
+  display: flex;
+  overflow-x: auto;
+}
+
+.mobile-marketing-content .show-event-menu button {
+  flex: 0 0 auto;
+  padding-inline: 12px;
+}
+
+.mobile-marketing-content .show-event-property-preview {
+  flex-wrap: wrap;
+}
+
+.mobile-marketing-content :is(.website-workspace, .website-editor, .wlo-blog-workspace, .wlo-blog-editor-canvas, .wlo-blog-settings, .wlo-blog-sidebar-panel) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.mobile-marketing-content :is(.ww-grid, .ww-preview-card, .ww-operation-grid, .ww-page-list, .ww-draft-content-preview, .ww-recovery-control, .ww-publication-history, .ww-campaign-builder, .wlo-lower, .wlo-performance-body, .wlo-quick > div, .wlo-blog-library-controls, .wlo-blog-card-grid, .wlo-blog-editor-page, .wlo-blog-settings, .ww-identity-logos, .ww-identity-colours, .ww-identity-contact, .ww-focused-fields, .ww-content-shell) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mobile-marketing-content :is(.wlo-tabs, .website-editor-shell nav, .ww-focused-page-tabs) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mobile-marketing-content :is(.wlo-header-actions, .wst-header-actions, .ww-editing-entry-actions, .ww-publish-actions, .ww-create-site, .ww-template-select, .ww-publishing-summary, .ww-editing-entry) {
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mobile-marketing-content :is(.ww-template-select label, .meta-workflow > div) {
+  min-width: 0;
+  flex-basis: 100%;
+}
+
+.mobile-marketing-content :is(.ww-publish-actions > button, .wst-header-actions > *, .ww-editing-entry-actions > *) {
+  flex: 1 1 140px;
+  white-space: normal;
+  justify-content: center;
+}
+
+.mobile-marketing-content .wlo-blog-topbar {
+  position: static;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px;
+  gap: 12px;
+}
+
+.mobile-marketing-content .wlo-blog-topbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.mobile-marketing-content .wlo-blog-topbar .ww-rollback {
+  display: inline-flex;
+}
+
+.mobile-marketing-content .wlo-blog-topbar select {
+  max-width: 100%;
+  width: 100%;
+}
+
+.mobile-marketing-content :is(.wlo-blog-editor-canvas, .wlo-title-section, .wlo-blog-editor-canvas .wlo-writing-canvas) {
+  min-height: 0;
+  padding: 14px;
+}
+
+.mobile-marketing-content :is(.ww-preview-card, .ww-content-editor, .ww-website-access-gate, .ww-brand-editor, .wlo-performance, .wlo-activity, .wlo-quick) {
+  padding: 16px;
+}
+
+.mobile-marketing-content .wlo-blog-editor-canvas .wlo-editor-block {
+  padding: 10px;
+}
+
+.mobile-marketing-content .wlo-editor-block > header {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-marketing-content .wlo-block-inserter {
+  flex-wrap: wrap;
+}
+
+.mobile-marketing-content .wlo-blog-full-preview {
+  padding-inline: 0;
+}
+
+.mobile-marketing-content .wlo-rendered-preview > header,
+.mobile-marketing-content .wlo-rendered-preview .content {
+  padding: 24px 16px;
+}
+
+/* These shared dialogs are portalled to body, outside the marketing wrapper.
+   Match only marketing dialog classes while that mobile page is mounted. */
+body:has(.mobile-marketing) .ui-modal-overlay:has(> :is(.ma-library-modal, .mc-enquiry-dialog, .mc-agent-copy-dialog, .mk-calendar-day-dialog)) {
+  padding: 8px;
+}
+
+body:has(.mobile-marketing) :is(.ma-library-modal, .mc-enquiry-dialog, .mc-agent-copy-dialog, .mk-calendar-day-dialog).ui-modal {
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  margin: auto;
+}
+
+body:has(.mobile-marketing) :is(.ma-library-modal, .mc-enquiry-dialog, .mc-agent-copy-dialog, .mk-calendar-day-dialog) :is(.ui-modal-head, .ui-modal-body, .ui-modal-footer) {
+  padding: 16px;
+}
+
+body:has(.mobile-marketing) :is(.ma-library-modal, .mc-enquiry-dialog, .mc-agent-copy-dialog, .mk-calendar-day-dialog) :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 16px;
+}
+
+body:has(.mobile-marketing) :is(.ma-library-modal, .mc-enquiry-dialog, .mc-agent-copy-dialog, .mk-calendar-day-dialog) :is(button, select, input:not([type='checkbox']):not([type='radio'])) {
+  min-height: 44px;
+}
+
+body:has(.mobile-marketing) .ma-library-modal :is(.ma-builder, .ma-rule) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body:has(.mobile-marketing) .ma-library-modal .ma-rule > :is(input, select, button) {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+body:has(.mobile-marketing) .ma-library-modal :is(.ma-row-actions, .ma-form-actions, .ma-paging) {
+  flex-wrap: wrap;
+  margin-left: 0;
+}
+
+body:has(.mobile-marketing) .ma-library-modal .ma-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+body:has(.mobile-marketing) .mk-calendar-day-dialog .mk-day-planner {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body:has(.mobile-marketing) .mc-agent-copy-dialog .mc-agent-copy-fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body:has(.mobile-marketing) :is(.mc-agent-copy-actions, .mc-enquiry-form-actions) {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 370px) {
+  .mobile-marketing-content :is(.mc-page-heading, .mc-detail-shell, .mc-panel, .ct-library, .ma-library) {
+    padding: 12px;
+  }
+
+  .mobile-marketing-content :is(.eb-block-library, .ma-starters, .mc-agent-summary, .wlo-tabs, .website-editor-shell nav) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-marketing-content :is(.mc-detail-title, .mc-campaign-row-identity, .mc-enquiries-header > div, .wa-builder-header-actions) {
+    flex-wrap: wrap;
+  }
+
+  .mobile-marketing-content .mc-wizard-review dl {
+    gap: 6px;
+  }
+
+  .mobile-marketing-content :is(.mc-wizard-review dd, .mc-enquiry-form-actions, .ma-form-actions) {
+    margin-bottom: 8px;
+  }
+}

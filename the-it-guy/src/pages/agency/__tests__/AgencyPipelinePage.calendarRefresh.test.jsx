@@ -17,16 +17,18 @@ const fixture = vi.hoisted(() => {
     org, profile, workspace, channel,
     context: { role: 'agent', profile, currentWorkspace: workspace, currentMembership: { organisationId: org, role: 'owner' }, workspace },
     crm: vi.fn(async () => ({ leads: [], contacts: [], leadActivities: [], tasks: [] })),
-    timeRead: vi.fn(), timeChange: vi.fn(), createLead: vi.fn(),
+    marketing: vi.fn(), timeRead: vi.fn(), timeChange: vi.fn(), createLead: vi.fn(), directory: vi.fn(async () => ({ clients: [] })),
     appointments: vi.fn(async () => []), listings: vi.fn(async () => []), inbound: vi.fn(async () => []),
     supabase: { from: () => query, rpc: async () => ({ data: [], error: null }), channel: () => channel, removeChannel: async () => {}, auth: { getUser: async () => ({ data: { user: { id: user } }, error: null }) } },
   }
 })
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => fixture.context }))
+vi.mock('../../../core/clients/agentClientDirectory', () => ({ loadAgentClientDirectory: fixture.directory }))
 vi.mock('../../../context/OrganisationContext', () => ({ useOrganisation: () => ({ branding: {}, organisation: fixture.workspace }) }))
 vi.mock('../../../lib/supabaseClient', async (actual) => ({ ...await actual(), isSupabaseConfigured: true, supabase: fixture.supabase }))
 vi.mock('../../../lib/agencyCrmRepository', async (actual) => ({ ...await actual(), listAgencyCrmLeadContacts: fixture.crm, createAgencyCrmLeadRecord: fixture.createLead }))
 vi.mock('../../../lib/agencyPipelineService', async (actual) => ({ ...await actual(), listAppointmentsAsync: fixture.appointments }))
+vi.mock('../../../services/workspaceCalendarService', () => ({ loadWorkspaceMarketingCalendar: fixture.marketing }))
 vi.mock('../../../services/calendarTimeChangeService', () => ({ readCalendarTimeChange: fixture.timeRead, changeCalendarTime: fixture.timeChange }))
 vi.mock('../../../services/privateListingService', async (actual) => ({ ...await actual(), getOrganisationPrivateListings: fixture.listings }))
 vi.mock('../../../services/leadEmailCaptureService', async (actual) => ({ ...await actual(), listInboundLeadEmails: fixture.inbound }))
@@ -38,7 +40,7 @@ vi.mock('../../../lib/settingsApi', async (actual) => ({
 vi.mock('../../../lib/canvassingRepository', async (actual) => ({ ...await actual(), listCanvassingWorkspace: async () => ({ prospects: [], activities: [] }) }))
 import AgencyPipelinePage from '../AgencyPipelinePage'
 
-beforeEach(() => { fixture.timeRead.mockImplementation(async appointmentId => ({verified:true,appointmentId,revision:1,supported:true,canManage:true,canRequest:true,selfParticipantId:'agent',active:null,history:[],events:[]})); fixture.timeChange.mockReset(); fixture.crm.mockResolvedValue({ leads: [], contacts: [], leadActivities: [], tasks: [] }); fixture.appointments.mockResolvedValue([]) })
+beforeEach(() => { fixture.marketing.mockReset().mockResolvedValue({ items: [], warnings: [] }); fixture.directory.mockResolvedValue({ clients: [] }); fixture.timeRead.mockImplementation(async appointmentId => ({verified:true,appointmentId,revision:1,supported:true,canManage:true,canRequest:true,selfParticipantId:'agent',active:null,history:[],events:[]})); fixture.timeChange.mockReset(); fixture.crm.mockResolvedValue({ leads: [], contacts: [], leadActivities: [], tasks: [] }); fixture.appointments.mockResolvedValue([]) })
 afterEach(async () => {
   cleanup()
   await act(async () => { await vi.dynamicImportSettled() })
@@ -59,6 +61,7 @@ describe('calendar refresh request volume', () => {
     expect(screen.queryByLabelText('Calendar health')).toBeNull()
     expect(fixture.crm).toHaveBeenCalled()
     expect(fixture.appointments).toHaveBeenCalled()
+    fixture.marketing.mockClear()
     fixture.crm.mockClear()
     fixture.listings.mockClear()
     fixture.inbound.mockClear()
@@ -69,6 +72,7 @@ describe('calendar refresh request volume', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(150) })
     }
     await act(async () => { await vi.advanceTimersByTimeAsync(65000) })
+    expect(fixture.marketing).not.toHaveBeenCalled()
     expect(fixture.crm).not.toHaveBeenCalled()
     expect(fixture.listings).not.toHaveBeenCalled()
     expect(fixture.inbound).not.toHaveBeenCalled()
@@ -228,6 +232,41 @@ it('reviews a request from the desktop card without restarting the full CRM load
  expect(fixture.crm).not.toHaveBeenCalled()
 },30000)
 
+it('loads the Clients directory only when booking and searches saved people without a lead', async () => {
+  vi.useFakeTimers()
+  fixture.crm.mockResolvedValue({ leads: [{ leadId: 'lead-one', contactId: 'contact-one', leadCategory: 'seller' }], contacts: [{ contactId: 'contact-one', firstName: 'Laetitia', lastName: 'Leach', email: 'laetitia@example.test' }], leadActivities: [], tasks: [] })
+  fixture.directory.mockResolvedValue({ clients: [{ id: 'saved-profile', name: 'Lien Saved', email: 'lien@example.test', typeLabel: 'Buyer', linkedLeadIds: [], sources: [] }] })
+  render(<MemoryRouter initialEntries={['/pipeline/calendar']}><AgencyPipelinePage initialViewMode="calendar" /></MemoryRouter>)
+  await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(10000) })
+  expect(fixture.directory).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Appointment', exact: true }))
+  await act(async () => { await vi.dynamicImportSettled() })
+  expect(fixture.directory).toHaveBeenCalledWith(expect.objectContaining({ workspace: { id: fixture.org }, deferActivity: true }))
+  const editor = within(screen.getByRole('dialog', { name: 'Create Appointment' }))
+  fireEvent.click(editor.getByRole('button', { name: 'Clients', exact: true }))
+  expect(editor.getByRole('button', { name: /Laetitia Leach laetitia@example.test/ })).toBeTruthy()
+  fireEvent.change(editor.getByRole('searchbox'), { target: { value: 'lien' } })
+  fireEvent.click(editor.getByRole('button', { name: /Lien Saved lien@example.test/ }))
+  expect(editor.getByRole('button', { name: 'Clients', exact: true }).textContent).toContain('Lien Saved')
+  expect(fixture.createLead).not.toHaveBeenCalled()
+}, 30000)
+
+it('keeps the booking open and retries a failed client directory read', async () => {
+  vi.useFakeTimers()
+  fixture.directory.mockRejectedValueOnce(new Error('Temporary network failure')).mockResolvedValue({ clients: [{ id: 'saved', name: 'Saved Seller', email: 'saved@example.test', linkedLeadIds: [], sources: [] }] })
+  render(<MemoryRouter initialEntries={['/pipeline/calendar']}><AgencyPipelinePage initialViewMode="calendar" /></MemoryRouter>)
+  await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(10000) })
+  fireEvent.click(screen.getByRole('button', { name: 'Appointment', exact: true }))
+  await act(async () => { await vi.dynamicImportSettled() })
+  const editor = within(screen.getByRole('dialog', { name: 'Create Appointment' }))
+  fireEvent.click(editor.getByRole('button', { name: 'Clients', exact: true }))
+  expect(editor.getByRole('alert').textContent).toContain('Some saved clients could not load')
+  fireEvent.click(editor.getByRole('button', { name: 'Retry clients' }))
+  await act(async () => { await vi.dynamicImportSettled() })
+  expect(editor.getByRole('button', { name: /Saved Seller saved@example.test/ })).toBeTruthy()
+  expect(fixture.directory).toHaveBeenCalledTimes(2)
+}, 30000)
+
 it('creates a client through the existing lead service and selects them without sending a lead notification', async () => {
   vi.useFakeTimers()
   fixture.createLead.mockResolvedValue({ leadId: 'new-lead', contactId: 'new-contact', leadCategory: 'buyer', firstName: 'Taylor', lastName: 'Jones', email: 'taylor@example.test' })
@@ -249,3 +288,19 @@ it('creates a client through the existing lead service and selects them without 
   }), expect.objectContaining({ notifyAgent: false }))
   expect(editor.getByRole('button', { name: 'Clients', exact: true }).textContent).toContain('Taylor Jones')
 }, 30000)
+
+it('shows the shared calendar tabs and workspace marketing on the actual calendar route', async () => {
+ vi.useFakeTimers()
+ const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+ fixture.marketing.mockResolvedValue({ items: [{ id: 'plan', type: 'campaign', campaignId: 'plan', title: 'Workspace campaign', status: 'active', startDate: date, endDate: date }], warnings: [] })
+ render(<MemoryRouter initialEntries={['/pipeline/calendar']}><AgencyPipelinePage initialViewMode="calendar" /></MemoryRouter>)
+ await act(async () => { await vi.dynamicImportSettled(); await vi.advanceTimersByTimeAsync(10000) })
+ expect(screen.getByRole('heading', { name: 'Calendar' })).toBeTruthy()
+ expect(screen.getByRole('button', { name: /Campaign plan · Workspace campaign/ })).toBeTruthy()
+ expect(fixture.marketing).toHaveBeenCalledWith(fixture.org, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+ fireEvent.click(screen.getByRole('tab', { name: 'Appointments', exact: true }))
+ expect(screen.queryByRole('button', { name: /Campaign plan · Workspace campaign/ })).toBeNull()
+ await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Marketing', exact: true })); await vi.advanceTimersByTimeAsync(1000) })
+ expect(screen.getByRole('button', { name: /Campaign plan · Workspace campaign/ })).toBeTruthy()
+ expect(screen.queryByRole('button', { name: 'Appointment', exact: true })).toBeNull()
+})

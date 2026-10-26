@@ -1,0 +1,321 @@
+.cs-formats {
+  margin-bottom: 26px;
+}
+.cs-format-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.cs-format {
+  --cs-accent: #406cad;
+  --cs-surface: #edf3fc;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 12px;
+  text-align: left;
+  min-width: 0;
+  min-height: 255px;
+  padding: 28px 28px 0;
+  border: 1px solid #dce5ed;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 100% 0%, var(--cs-surface), transparent 75%),
+    #fff;
+  box-shadow: 0 5px 20px #233d4c05;
+  color: #22352c;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    transform 0.18s,
+    box-shadow 0.18s,
+    border-color 0.18s;
+  font: inherit;
+}
+.cs-format:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px #263f5010;
+  border-color: var(--cs-accent);
+}
+.cs-format:focus-visible,
+.cs-campaign-format:focus-visible {
+  outline: 3px solid var(--cs-accent, #39795b);
+  outline-offset: 3px;
+}
+.cs-format-whatsapp {
+  --cs-accent: #308063;
+  --cs-surface: #e5f5ec;
+}
+.cs-format-meta {
+  --cs-accent: #6265b0;
+  --cs-surface: #eeedfd;
+}
+.cs-format-social {
+  --cs-accent: #a06080;
+  --cs-surface: #faecf4;
+}
+.cs-format-chatgpt {
+  --cs-accent: #247665;
+  --cs-surface: #e7f4ee;
+}
+.cs-format-copy {
+  position: relative;
+  z-index: 2;
+}
+.cs-format-icon {
+  display: grid;
+  place-items: center;
+  width: 49px;
+  height: 49px;
+  background: var(--cs-surface);
+  color: var(--cs-accent);
+  border: 1px solid #ffffffb0;
+  border-radius: 14px;
+  margin-bottom: 16px;
+}
+.mc-workspace .cs-format h3 {
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+  color: #20372b;
+}
+.cs-format p {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  max-width: 300px;
+  color: #6c7a72;
+  margin: 0 0 18px;
+}
+.cs-format-open {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cs-accent);
+  margin-bottom: 22px;
+}
+.cs-format-art {
+  align-self: center;
+  position: relative;
+  min-width: 0;
+  pointer-events: none;
+}
+.cs-art-sheet {
+  position: relative;
+  z-index: 1;
+  transform: rotate(-7deg);
+  border: 1px solid #ffffffed;
+  background: #ffffffdd;
+  border-radius: 12px;
+  padding: 18px 14px;
+  box-shadow: 0 15px 24px #29445112;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-height: 150px;
+}
+.cs-art-sheet strong {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--cs-accent);
+}
+.cs-art-topline {
+  width: 25px;
+  height: 6px;
+  background: var(--cs-accent);
+  opacity: 0.5;
+  border-radius: 4px;
+}
+.cs-art-line {
+  height: 4px;
+  border-radius: 3px;
+  width: 100%;
+  background: var(--cs-accent);
+  opacity: 0.15;
+}
+.cs-art-line-short {
+  width: 68%;
+  margin-top: -7px;
+}
+.cs-art-action {
+  width: 65px;
+  height: 17px;
+  border-radius: 4px;
+  background: var(--cs-surface);
+  border: 1px solid #ffffff70;
+}
+.cs-art-orbit {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  inset: -10px auto auto -10px;
+  border: 1px solid var(--cs-accent);
+  opacity: 0.12;
+  border-radius: 50%;
+}
+.cs-format-whatsapp .cs-art-sheet {
+  border-radius: 16px 16px 3px 16px;
+  transform: rotate(5deg);
+}
+.cs-format-meta .cs-art-topline {
+  width: 100%;
+  height: 45px;
+  background: linear-gradient(120deg, #c4c8ef, #969ed9);
+  opacity: 0.65;
+}
+.cs-format-social .cs-art-sheet {
+  transform: rotate(7deg);
+}
+.cs-format-social .cs-art-topline {
+  width: 100%;
+  height: 42px;
+  background: linear-gradient(120deg, #edccdd, #dba7c2);
+  opacity: 0.75;
+}
+.cs-format-kind {
+  grid-column: 1/-1;
+  display: block;
+  align-self: end;
+  padding: 13px 0 15px;
+  border-top: 1px solid #dfe5e97a;
+  color: #849088;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+}
+.cs-campaign-format {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  align-items: center;
+  gap: 20px;
+  margin-top: 20px;
+  padding: 25px 28px;
+  border: 1px solid #cfded3;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #edf5ee, #f6f8f3);
+  color: #355c42;
+  cursor: pointer;
+  font: inherit;
+  transition: box-shadow 0.18s;
+}
+.cs-campaign-format:hover {
+  box-shadow: 0 8px 24px #2847310c;
+}
+.cs-campaign-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 13px;
+  background: #ffffffb0;
+}
+.cs-campaign-format strong {
+  font-size: 1rem;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+.cs-campaign-format small {
+  font-size: 0.75rem;
+  color: #718176;
+  line-height: 1.5;
+  display: block;
+}
+.cs-campaign-format > svg {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.cs-library-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #60756a;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.cs-library-back:hover {
+  color: #225e3e;
+}
+@media (max-width: 1000px) {
+  .cs-format {
+    grid-template-columns: minmax(0, 1fr) 105px;
+    padding: 24px 22px 0;
+  }
+  .cs-art-sheet {
+    padding: 13px 10px;
+  }
+  .cs-art-orbit {
+    width: 130px;
+    height: 130px;
+  }
+  .cs-format-art {
+    opacity: 0.85;
+  }
+  .cs-format-kind {
+    font-size: 0.5625rem;
+  }
+}
+@media (max-width: 700px) {
+  .cs-format-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .cs-format {
+    grid-template-columns: minmax(0, 1fr) 120px;
+    min-height: 230px;
+  }
+  .cs-campaign-format {
+    padding: 20px;
+    gap: 14px;
+  }
+  .cs-campaign-format strong {
+    font-size: 0.875rem;
+  }
+}
+@media (max-width: 380px) {
+  .cs-format {
+    grid-template-columns: minmax(0, 1fr) 82px;
+    gap: 8px;
+    padding: 20px 18px 0;
+  }
+  .cs-art-sheet strong {
+    font-size: 0.6875rem;
+  }
+  .cs-format p {
+    font-size: 0.75rem;
+  }
+  .cs-campaign-icon {
+    width: 40px;
+    height: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-format,
+  .cs-campaign-format {
+    transition: none;
+  }
+  .cs-format:hover {
+    transform: none;
+  }
+}
+
+.cs-format-icon .mc-platform-logo,
+.cs-format-icon .mc-platform-logo img {
+  width: 27px;
+  height: 27px;
+}
+.cs-format-icon svg {
+  width: 27px;
+  height: 27px;
+}

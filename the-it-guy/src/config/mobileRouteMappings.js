@@ -66,6 +66,8 @@ export function isPortalOrPublicRoute(path = '') {
     pathname.startsWith('/commercial/landlord-onboarding') ||
     pathname.startsWith('/sign/') ||
     pathname.startsWith('/appointment-rsvp') ||
+    pathname.startsWith('/marketing/invite/') ||
+    pathname.startsWith('/marketing/rsvp/') ||
     pathname.startsWith('/offers') ||
     pathname.startsWith('/transaction-invite') ||
     pathname.startsWith('/snapshot/') ||
@@ -75,11 +77,17 @@ export function isPortalOrPublicRoute(path = '') {
 
 export function mapDesktopRouteToMobile(path = '') {
   const pathname = normalizePath(path)
-  if (pathname.startsWith('/mobile')) return pathname
+  // Marketing uses query parameters for every workspace, draft and template.
+  // Keep the whole handoff so opening a shared link resumes the same work.
+  const suffix = String(path || '').match(/[?#][\s\S]*$/)?.[0] || ''
+  if (pathname === '/marketing') return `/mobile/marketing${suffix}`
+  if (pathname.startsWith('/mobile')) return `${pathname}${suffix}`
   if (HOME_MAPPINGS.has(pathname)) return '/mobile/home'
   if (DIRECT_MAPPINGS[pathname]) return DIRECT_MAPPINGS[pathname]
   const listingEdit = pathname.match(/^\/listings\/([^/]+)\/edit$/)
   if (listingEdit) return `/mobile/listings/${encodeURIComponent(listingEdit[1])}/edit`
+  const agentListing = pathname.match(/^\/agent\/listings\/([^/]+)$/)
+  if (agentListing) return `/mobile/listings/${encodeURIComponent(agentListing[1])}${suffix}`
 
   const developmentMatch = pathname.match(/^\/(?:developer\/)?developments\/([^/]+)/)
   if (developmentMatch?.[1]) return `/mobile/development/${encodeURIComponent(developmentMatch[1])}`

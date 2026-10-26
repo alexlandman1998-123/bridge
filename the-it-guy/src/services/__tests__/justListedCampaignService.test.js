@@ -7,6 +7,7 @@ const runtime = vi.hoisted(() => ({
   listing: vi.fn(),
   setup: vi.fn(),
   card: vi.fn(),
+  events: vi.fn(),
   reads: [],
   data: {},
 }))
@@ -24,9 +25,11 @@ vi.mock('../campaignSetupService', () => ({
 vi.mock('../agencyPublicIntakeLinkService', () => ({
   loadAgencyAgentCardLink: runtime.card,
 }))
+vi.mock('../marketingEventRepository', () => ({ listMarketingEvents: runtime.events }))
 import {
   loadJustListedChoices,
   loadJustListedSource,
+  loadPropertyShowDays,
 } from '../justListedCampaignService'
 const agency = {
   agencyName: 'Oak',
@@ -70,6 +73,7 @@ beforeEach(() => {
     suburb: 'Gardens',
   })
   runtime.card.mockResolvedValue({ link: null })
+  runtime.events.mockResolvedValue([])
   runtime.from.mockImplementation((table) => {
     const q = {
       select: () => q,
@@ -81,6 +85,21 @@ beforeEach(() => {
     }
     return q
   })
+})
+it('prefills only valid public planning/upcoming show days using their saved South African times', async () => {
+  const event = { id: 'event', listingId: 'listing', title: 'Public show day', visibility: 'public', startsAt: '2099-11-20T08:00:00Z', endsAt: '2099-11-20T10:00:00Z' }
+  runtime.events.mockResolvedValue([
+    { ...event, id: 'planning', status: 'Planning' },
+    { ...event, id: 'upcoming', status: 'Upcoming' },
+    ...['Draft', 'Completed', 'Cancelled', 'Open'].map((status) => ({ ...event, status })),
+    { ...event, status: 'Upcoming', visibility: 'private' },
+    { ...event, status: 'Upcoming', startsAt: 'invalid' },
+    { ...event, status: 'Upcoming', endsAt: event.startsAt },
+  ])
+  const result = await loadPropertyShowDays('agency')
+  expect(runtime.events).toHaveBeenCalledWith('agency', 'showDays')
+  expect(result.map((row) => row.id)).toEqual(['planning', 'upcoming'])
+  expect(result[0]).toMatchObject({ date: '2099-11-20', startTime: '10:00', endTime: '12:00' })
 })
 it('uses server-checked permissions for the picker and projects safe summary fields', async () => {
   const result = await loadJustListedChoices('agency', 'me')

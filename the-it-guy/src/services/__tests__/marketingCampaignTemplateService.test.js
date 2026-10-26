@@ -23,6 +23,13 @@ const valid = {
   duration_days: 14,
   visibility: 'personal',
 }
+it('preserves Meta objective intent in reusable templates without carrying a live audience', () => {
+  const setup = { metaObjective: 'OUTCOME_LEADS', customGoal: '', target: '20 enquiries', audienceId: '00000000-0000-4000-8000-000000000001', placeId: 'region-id' }
+  const payload = campaignTemplatePayload({ ...valid, campaign_setup: setup })
+  expect(payload.campaign_setup).toMatchObject({ metaObjective: 'OUTCOME_LEADS', target: '20 enquiries', audienceId: '' })
+  expect(payload.objective).toBe('Leads')
+  expect(setup.audienceId).not.toBe('')
+})
 let calls, response
 beforeEach(() => {
   calls = []
@@ -136,9 +143,9 @@ it('includes a valid listing launch playbook with social, email and WhatsApp dra
   ])
 })
 
-it('offers 18 distinct launch campaigns that can each enter the existing draft/template workflow', () => {
-  expect(campaignShopTemplates).toHaveLength(18)
-  expect(new Set(campaignShopTemplates.map((item) => item.id)).size).toBe(18)
+it('offers 19 distinct launch campaigns that can each enter the existing draft/template workflow', () => {
+  expect(campaignShopTemplates).toHaveLength(19)
+  expect(new Set(campaignShopTemplates.map((item) => item.id)).size).toBe(19)
   expect(new Set(campaignShopTemplates.map((item) => item.category)).size).toBe(5)
   for (const template of campaignShopTemplates) {
     expect(CAMPAIGN_CATEGORIES.some((category) => category.id === template.category)).toBe(true)
@@ -153,4 +160,19 @@ it('offers 18 distinct launch campaigns that can each enter the existing draft/t
   }
   expect(campaignTemplates.some((item) => item.id === 'relationships')).toBe(true)
   expect(campaignTemplates.some((item) => item.id === 'milestones')).toBe(true)
+})
+
+it('copies a complete playbook into reusable templates without a personal response destination',async()=>{
+  const {createCampaignPlaybook}=await import('../campaignPlaybookModel')
+  const source={...valid,name:'Valuation sequence',planned_channels:['email'],start_date:'2026-10-25',end_date:'2026-11-08',channel_content:{email:{title:'Let’s talk',body:'A local valuation.'}}}
+  source.playbook=createCampaignPlaybook(source)
+  source.playbook.response={kind:'email',label:'Arrange a valuation',value:'agent@example.test'}
+  source.playbook.steps[0].body='Contact agent@example.test'
+  const template=templateFromCampaign(source)
+  const payload=campaignTemplatePayload({...template,visibility:'personal'})
+  expect(payload.playbook.steps).toHaveLength(2)
+  expect(payload.playbook.followUp).toHaveLength(2)
+  expect(payload.playbook.response).toEqual({kind:'reply',label:'Arrange a valuation',value:''})
+  expect(payload.playbook.steps[0].body).toBe('Contact {response}')
+  expect(payload).not.toHaveProperty('start_date')
 })

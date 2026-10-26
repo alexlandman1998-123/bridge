@@ -1,9 +1,11 @@
-import { Mail, Share2 } from 'lucide-react'
+import { Mail, MessageSquare, Share2 } from 'lucide-react'
 export default function CampaignPlatformLogo({ channel }) {
   return (
     <span className="mc-platform-logo">
       {channel === 'email' ? (
         <Mail size={19} aria-hidden="true" />
+      ) : channel === 'chatgpt' ? (
+        <MessageSquare size={19} aria-hidden="true" />
       ) : channel === 'social' ? (
         <Share2 size={19} aria-hidden="true" />
       ) : (

@@ -1,3 +1,4 @@
+import { createContactProvenance, GENERAL_CONTACT_FIELDS } from '../campaignContactProvenance'
 import { expect, it } from 'vitest'
 import {
   GENERAL_CAMPAIGNS,
@@ -51,6 +52,7 @@ const builder = (template) =>
     agentId,
     source,
     details: { area: 'Gardens', ...material },
+    contactProvenance: { ...createContactProvenance(source, GENERAL_CONTACT_FIELDS), confirmed: true },
     reviewed: true,
     permission: true,
   })
@@ -63,7 +65,7 @@ const plan = (b) => ({
   channel_content: generalCampaignCopy(b),
 })
 it('supports eight families with complete copy and the promised distinct pack sizes', () => {
-  expect(Object.keys(GENERAL_CAMPAIGNS)).toHaveLength(11)
+  expect(Object.keys(GENERAL_CAMPAIGNS)).toHaveLength(12)
   for (const [family, count] of Object.entries({
     sellers: 7,
     'thinking-of-selling': 7,
@@ -189,12 +191,11 @@ it('blocks changed agency and agent facts without rewriting saved channel wordin
       source,
     }),
   ).toThrow(/changed/)
-  const pack = checkedGeneralPack(campaign, {
+  expect(() => checkedGeneralPack(campaign, {
     agentId,
     source: { ...source, destination: '' },
-  })
-  expect(pack.content.social.body).toBe('My saved edits')
-  expect(pack.textFiles['social-caption.txt']).toBe('My saved edits')
+  })).toThrow(/removed/)
+  expect(campaign.channel_content.social.body).toBe('My saved edits')
 })
 it('uses a refreshed portrait URL for the same image and rejects portrait removal', () => {
   const b = builder('meet-your-agent'),
@@ -314,6 +315,7 @@ const relationshipBuilder = (template, details = {}) =>
       variant: 'buyer',
       ...details,
     },
+    contactProvenance: { ...createContactProvenance(source, GENERAL_CONTACT_FIELDS), confirmed: true },
     reviewed: true,
     permission: true,
   })
@@ -407,4 +409,15 @@ it('referrals need only reused public area/contact and include a permission-awar
     'person has agreed',
   )
   expect(pack.content.social.body).toContain('permission')
+})
+it('provides honest client nurture without inventing a milestone, statistics or recipient selection', () => {
+  const b = builder('client-check-in'), copy = generalCampaignCopy(b)
+  expect(generalCampaignPayload(b, copy).goal).toBe('reengage')
+  expect(copy.email.body).toContain('Checking in')
+  expect(copy.email.body).toContain('no pressure')
+  expect(copy.email.body).not.toMatch(/anniversary|birthday|sold|market grew|automatic/i)
+  expect(copy.email.body).toContain(source.destination)
+  const pack = checkedGeneralPack(plan(b), { agentId, source })
+  expect(pack.content.email).toEqual(copy.email)
+  expect(pack.campaign).not.toHaveProperty('recipients')
 })

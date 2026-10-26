@@ -3,6 +3,7 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EmailCampaignOverview } from '../EmailCampaigns'
+vi.mock('../MarketingAudiences', () => ({ default: () => <div>Shared CRM audience library</div> }))
 const mocks = vi.hoisted(() => ({ workspace: vi.fn(), audiences: vi.fn(), preview: vi.fn(), saveAudience: vi.fn(), archiveAudience: vi.fn() }))
 vi.mock('../EmailCampaignBuilder', () => ({ default: () => null }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: 'org' } } }) }))
@@ -16,6 +17,8 @@ describe('Email campaign homepage', () => {
     mocks.workspace.mockResolvedValue(workspace())
     render(<EmailCampaignOverview />)
     await screen.findByText('Spring listings')
+    expect([...screen.getByRole('navigation', { name: 'Email workspace' }).querySelectorAll('button')].map(button => button.textContent)).toEqual(['Overview', 'Past campaigns', 'Templates', 'Audiences', 'Settings'])
+    expect(screen.queryByText('Pick up a draft or see how your latest send performed.')).toBeNull()
     fireEvent.change(screen.getByLabelText('Search campaigns'), { target: { value: 'buyer' } })
     expect(screen.queryByText('Spring listings')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /^draft/i }))
@@ -120,6 +123,8 @@ describe('Email campaign homepage', () => {
     mocks.audiences.mockResolvedValue([{ id: 'aud', name: 'Local buyers', filter_json: { operator: 'AND', rules: [{ field: 'contact_type', operator: 'in', value: ['buyer'] }] } }])
     mocks.preview.mockResolvedValue({ count: 12, contacts: [{ id: 'contact', name: 'Buyer Example', contactType: 'buyer' }] })
     render(<EmailCampaignOverview selectedView="audiences" />)
+    expect(await screen.findByText('Shared CRM audience library')).toBeTruthy()
+    fireEvent.click(screen.getByText('Existing email-only audiences'))
     await screen.findByText('Local buyers')
     fireEvent.click(screen.getByRole('button', { name: 'Edit Local buyers' }))
     fireEvent.change(await screen.findByRole('textbox', { name: 'Audience name', exact: true }), { target: { value: 'Active buyers' } })

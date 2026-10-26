@@ -1,18 +1,1097 @@
 # bridge.
 
+## Business campaigns on Facebook
+
+Saved business campaigns can prepare a native Facebook Page text/link post from
+their exact Social wording and a saved public destination, review the immutable
+preview, then explicitly **Publish now**. Actual provider results remain linked to
+the campaign revision; uncertain submissions are never automatically retried.
+Photos and timed scheduling are not part of this publishing path.
+
+The additive `20261025210451_campaign_facebook_posts.sql` migration and Edge
+changes are local and **not applied/deployed**. No real Graph publication was
+performed. Meta App Review/Page permission approval remains separate. See the
+[source, permissions and focused checks](../docs/campaign-facebook-posts.md).
+
+## Campaign response links
+
+Saved business campaigns can prepare a dedicated valuation, seller, buyer or
+personal-introduction link through an existing public enquiry form. An accepted
+response atomically associates CRM work with the campaign and prepares an owned
+follow-up. Privacy consent and optional future Email marketing permission are
+separate; subscriptions and suppressions are not changed. Links are explicitly
+created, reviewed and revocable. The response API performs no direct channel
+dispatch or subscription change. Ordinary configured CRM acknowledgements and
+staff notifications can run when it creates a genuinely new lead; existing
+WhatsApp automations retain sender-specific consent and opt-out checks.
+
+This implementation is local. The additive
+`20261025205056_campaign_business_responses.sql` migration is **not applied
+remotely**, and the API/UI are not deployed. See the [source, activation boundaries
+and focused verification guide](../docs/campaign-business-responses.md).
+
+## ChatGPT Ads in Studio
+
+Studio includes **ChatGPT Ads** beside the existing channel formats, with property
+discovery and local valuation starters. Edit headline, ad text, call to action,
+destination and image references; save a personal/agency template or use a copy in
+a campaign draft. Campaigns and playbooks offer checked copy/download publishing
+briefs and a link to ChatGPT Ads Manager. This is draft preparation: it does not
+connect an advertiser account, publish ads, charge advertising spend or import results.
+Final ad appearance, advertiser eligibility and launch are reviewed in Ads Manager.
+
+The additive `20261025193016_chatgpt_ads_studio.sql` migration extends the existing
+channel allowlists for campaign plans, campaign templates and channel templates.
+It preserves permissions, ownership, revision checks and delivery boundaries.
+It is prepared locally and **not applied remotely**; saving the new channel needs
+this migration plus the earlier campaign/template library schema. Existing channel
+formats remain supported. No OpenAI advertising credentials are required for Studio
+draft preparation. See the [official Advertiser API overview](https://developers.openai.com/ads/api-overview)
+for the separate requirements of a future connected publishing integration.
+
+## AI email campaign assistant
+
+The primary workspace now has **Create with AI** in Email Campaigns and the listing
+Marketing snapshot. The guided English/Afrikaans workflow prepares ordinary email
+drafts, previews matching buyers, records separately limited AI usage, and requires
+version-bound principal/admin approval before sending. It reuses the existing email
+editor, branding, delivery service and reporting. The feature is prepared locally;
+the migration, provider configuration and deployments are not applied.
+
+See [architecture, configuration and focused checks](../docs/ai-campaign-assistant.md).
+
+## Principal campaign coaching and reuse
+
+**Campaigns → Agents** now combines the existing agent cards with open enquiry,
+untouched-response and overdue-follow-up counts. Coaching filters find owners with
+work to review, untouched enquiries, overdue tasks or no active campaigns. Opening
+an agent shows the specific enquiry/draft/delivery work and its existing action
+link. CRM work follows the current lead owner, including a separate Unassigned
+group; campaign plans follow their creator. Shared responders count once, using
+their latest response. Closed leads do not become outstanding coaching work.
+
+**Campaigns to reuse** compares recorded enquiries, Email click rate or WhatsApp
+read rate separately. Engagement comparisons require complete actual channel
+results, at least 20 delivered messages and recorded engagement. Demo metrics are
+not used. Source failures show unavailable counts rather than invented zeroes.
+The same batched enquiry reader as Overview is refreshed with the visible Agents
+page's existing 30-second workspace refresh and scoped CRM updates.
+
+Managers can **Make agency template**, which opens the existing editor with agency
+visibility selected for explicit review/save. **Copy to another agent** is a
+two-stage review: choose an active/accepted agency member, review their public
+agent-card name/contact/area (or enter them explicitly), choose fresh dates, and
+edit the adapted channel copy and playbook. Names, known source routing and area
+are replaced; the receiving agent's identity and response destination appear in
+the copy. Check property-specific facts/links in the review. Source artwork and
+specialised listing/event builders are omitted; prepare fresh artwork in Studio.
+The new campaign is owned by the receiving agent, who can edit it under the
+existing permissions. A source/revision/coordinator reference is retained.
+
+The invoker RPC atomically creates only a draft plan: no channel sends, audience
+associations, recipient selections, enquiries, results, budget or source artwork
+are copied. An interrupted response can retry the same request ID without
+duplicating the campaign or overwriting the agent's edits. Manager permission,
+same-agency active membership and source revision are checked in the database;
+existing campaign ownership and copy history stay immutable. The additive
+`20261025174202_campaign_principal_reuse.sql` migration is prepared locally and
+**not applied remotely**. It depends on the campaign/template, budget, builder and
+playbook schema. Live enquiry coaching also requires the earlier enquiry migration.
+
+Focused checks: `campaignAgentModel.test.js`, `campaignReuseService.test.js`,
+`CampaignAgents.test.jsx`, `CampaignCopyDialog.test.jsx`, existing campaign/template
+tests and `node --test scripts/campaign-principal-reuse.test.mjs` (isolated PGlite
+permissions, ownership, replay and atomicity checks). Run serially with one Vitest
+worker on the limited-memory machine.
+
+## Actionable campaign Overview
+
+The Campaigns Overview and each campaign's Overview now start with **Needs
+attention**: unanswered recorded enquiries, overdue/due-today CRM follow-ups,
+unassigned responders, missing next steps, linked channel drafts, campaign drafts,
+changed playbooks, failed sends and recorded WhatsApp recipient failures. Shared
+CRM follow-ups linked to several campaigns appear once in the agency queue.
+Enquiry actions open the selected responder with their existing CRM actions;
+unassigned people open ownership in CRM. Draft/send actions open the existing
+Email or WhatsApp editor/results. Nothing is retried, contacted or sent by opening
+the queue.
+
+**Upcoming** covers actual linked Email/WhatsApp schedules and separately labelled
+campaign plan starts over the next seven days, in SAST. A scheduled send more than
+15 minutes past its time asks for review; it is not declared failed. Draft creation
+dates, playbook relative days and sent communications are never treated as future
+sends. One-off communications remain in the combined marketing Calendar; this
+queue focuses on campaign work. Social/Meta publishing status is not inferred.
+
+The Overview batches enquiry associations across visible campaign IDs, then reads
+only their visible CRM leads under existing RLS. Tasks/contact logs are indexed by
+lead, and the initial display is limited to six rows. Filters and expansion reuse
+the loaded data. CRM changes refresh enquiry work; Refresh reloads channel records
+and enquiries. Switching agency/campaign discards stale responses. Unavailable
+sources retain the available work, show a partial count and never claim an
+all-clear. No new migration is required; enquiry work requires the Step 1 migration
+`20261025100749_campaign_enquiries_follow_up.sql`, still prepared locally and not
+applied remotely.
+
+Focused checks: `campaignAttentionModel.test.js`, `CampaignAttention.test.jsx`,
+`campaignEnquiryService.test.js`, `CampaignEnquiries.test.jsx` and
+`MarketingCampaigns.test.jsx`, run serially with one Vitest worker. No production
+build is needed for this local UI change on the limited-memory machine.
+
+## Complete campaign playbooks
+
+Each saved campaign has a **Playbook** section. New campaigns open it after
+creation (direct Email-template handoffs keep their existing Channel activity
+destination). Ready-made campaigns propose a sequence from their personalised
+channel copy; existing campaigns can review and save the same kind of starter.
+An unsaved suggestion is labelled and cannot create channel drafts. Saved campaign
+templates carry their playbook into new campaigns, using fresh campaign dates.
+
+Agents edit up to 12 communications, including repeated Email/WhatsApp steps,
+with relative days, independent titles/messages and a shared call to action.
+Response routes support channel replies, HTTPS pages/forms, email addresses and
+international WhatsApp numbers. `{response}` places the rendered call to action;
+otherwise it is appended. Public source destinations seed the initial plan where
+valid. This does not create a form, tracked link, inbound integration or automatic
+response attribution. The existing offer and live CRM audience stay visible in
+the workspace. Playbook days are planned dates, not booked sends or automation runs.
+
+Preparing a saved Email/WhatsApp step uses the existing checked source/branding,
+draft creation and activity linking flow. Different steps get different retry-safe
+draft identities; reopening preserves channel-editor changes. Saved campaign
+revisions get separate drafts, retaining earlier activity. Campaign-brief edits
+require the playbook to be reviewed and saved again before another step handoff;
+channel copy edited while personalising a template updates its opening step. The current step can
+open its visible linked draft directly. Sender, category, approved WhatsApp
+template, recipients and actual schedule remain explicit channel choices.
+Social/Meta steps export their own checked manual publishing briefs. No playbook
+action sends, publishes, spends budget or marks communications delivered.
+
+Up to five responder follow-up recipes are available in the existing Enquiries
+follow-up dialog. They fill the title and due date relative to the recorded response
+in the marketing calendar's SAST date context. Users review/edit before saving;
+the existing permission checks, retry-safe task action and current CRM lead owner
+remain authoritative. Saving a recipe alone creates no CRM tasks. Reusable
+templates exclude recipient selections and clear the personal response destination;
+users must review names, copy and routing when reusing them.
+
+Requires `20261025104933_campaign_playbooks.sql`, prepared locally and **not applied
+remotely**. It adds validated optional JSON fields to the existing campaign/template
+tables, retaining their RLS, immutable ownership and optimistic revisions. Existing
+campaigns remain compatible; a playbook save reports unavailable storage and retains
+edits until the migration is enabled. Enquiry task use also needs the separately
+prepared enquiries migration; shared CRM audience use needs its own migration.
+
+Focused checks: `CampaignPlaybook.test.jsx`, `campaignPlaybook.test.js`, the existing
+pack, template, creation and enquiry tests, and
+`node --test scripts/campaign-playbooks.test.mjs` (isolated PGlite with the actual
+campaign/template migrations, permissions, validation and atomic save checks).
+Run serially with one Vitest worker on this limited-RAM machine.
+
+## Shared CRM audiences
+
+Campaigns has a **CRM audiences** library; Email and WhatsApp use the same library
+in their Audiences tabs and recipient steps. Save personal definitions or, with
+the existing sending permission, share them with the agency. Rules support all/any
+matching across contact/lead type, stage, area, responsible agent, tags and CRM
+budget. Closed leads can be excluded. Preview counts and paged contacts reflect
+the current viewer's visible CRM records; an audience never expands CRM access.
+Suggested starters are editable definitions, not pre-populated customer data.
+
+Preview shows separate Email and WhatsApp eligibility, exclusion reasons, and
+recorded recent contact. Email needs the draft's subscription category, current
+subscription/permission and no suppression; WhatsApp needs recorded opt-in and an
+international phone number. An optional quiet period excludes recently contacted
+destinations, including duplicate CRM contacts sharing an address or phone. This
+uses visible recorded activity, not a guarantee that every interaction is captured.
+
+Campaign Audience & offer can attach a live audience definition. A channel draft
+uses an explicitly reviewed, deduplicated recipient snapshot, not an automatically
+expanding list. Membership/permission changes invalidate the review before it can
+be applied. Empty selections never become "all contacts"; selections above 500
+WhatsApp or 10,000 Email recipients require narrower filters. Existing final send
+checks and confirmations remain in the channel editors. Audience actions do not
+send messages. Existing email-only audiences and WhatsApp permission management
+remain accessible below the shared library. Meta/social paid targeting is separate.
+
+Requires `20261025102447_shared_crm_marketing_audiences.sql`, prepared locally and
+**not applied to any remote database**. Until applied, the UI reports that the
+shared library is not enabled. Definition revisions prevent conflicting edits;
+all new reads and writes retain source-table RLS and tenant scope.
+
+Focused checks: `MarketingAudiences.test.jsx`, `marketingAudienceService.test.js`,
+the Campaigns/Email/WhatsApp component tests, and
+`node --test scripts/marketing-audiences.test.mjs`. The last applies only this new
+migration in isolated PGlite, covering visibility, matching, consent, quiet periods,
+deduplication, review drift and selection limits. Run serially with one worker.
+
+## Campaign enquiries and follow-up
+
+Inside an individual campaign, Enquiries & follow-up links explicit responders to
+existing agency CRM leads. The Overview also links to this section. Users search
+for a saved CRM lead, record the response channel/time, see the current lead owner,
+last successfully logged CRM contact and next open CRM task, and can log contact,
+add a dated follow-up or complete an existing task. Task ownership is shown
+separately from lead ownership. Ownership is managed in the existing CRM workspace.
+Existing contacts before the response do not count as follow-up to that response.
+Clicks, reads and delivery totals never create enquiries automatically. Automatic
+reply/form attribution and revenue attribution are not part of this first version.
+
+The section loads only when opened. Reads are limited to this campaign and its
+visible CRM leads; task/contact source failures display Unavailable rather than
+zero or no follow-up. Principal/campaign-owner permissions and the lead's assigned
+agent determine who may act, with the existing CRM RLS remaining authoritative.
+The new invoker RPC records associations and performs task/contact/audit writes
+atomically. Stable request IDs prevent duplicate tasks/contact logs on retries.
+The same CRM tasks and activity records are used outside Campaigns; no second
+inbox or ownership record is created, and these actions do not send messages.
+
+Requires migration `20261025100749_campaign_enquiries_follow_up.sql`, which has
+been prepared locally and **has not been applied to any remote database**.
+The section reports that enquiries are not enabled until the migration is applied.
+Focused checks: `CampaignEnquiries.test.jsx`, `campaignEnquiryService.test.js`,
+`MarketingCampaigns.test.jsx`, and `node --test scripts/campaign-enquiries.test.mjs`
+(the last runs this migration in isolated PGlite with permission, retry and
+transaction rollback checks). Run serially and one Vitest worker; no full build
+is necessary for this focused feature.
+
+## Marketing calendar
+
+Calendar is the second Campaigns workspace tab, after Overview. It combines
+inclusive campaign plan date ranges with individual Email and WhatsApp activity
+and published Facebook listing posts. Scheduled timestamps and actual send or
+publication timestamps use Africa/Johannesburg (SAST); creation/update timestamps
+are never used as a delivery date. Drafts and records without usable timestamps
+stay in Not scheduled, separate from undated campaign plans. Links open the
+existing channel editor/results or listing workspace; campaign links preserve
+the selected calendar date. Linked communications appear once with their campaign
+label; standalone activity is labelled Once-off. An association whose campaign
+is unavailable is not misclassified as standalone or given a broken campaign link.
+
+Everything / Campaign-linked / Once-off, channel, campaign, status and search
+filters apply to the grid, agenda, summaries and undated lists. Create offers
+Campaign, Email, WhatsApp and Post links to the existing workspaces. Activating a
+day opens a dated popup with its filtered agenda and preparation options. Schedule
+mailer opens a new email with 09:00 SAST on that day prefilled (converted to the
+browser's local time); review the time and audience before scheduling. WhatsApp
+preparation and post management use the existing editors, with their lack of
+in-app timed scheduling stated in the popup. Escape, Close and the backdrop
+dismiss the popup and restore focus to the day. Compact layouts
+use coloured event dots and place the readable agenda below the grid. Month
+navigation, Today, Refresh and keyboard day navigation remain available. The UI
+uses existing CSS/icons without another calendar dependency.
+
+Facebook posts load only while Calendar is mounted through the read-only
+`calendar_posts` action in `meta-integrations`. It pages minimal post metadata and
+checks listing visibility through the caller's RLS client before returning a row;
+it does not return post copy, provider credentials or internal listing details.
+**Deploying the updated meta-integrations function is required for this feed and
+has not been done by this local change.** No database migration is required.
+A failed post/channel read leaves the other calendar sources usable. Instagram
+and social post scheduling and automation runs are not connected; the calendar
+does not infer those from a campaign plan or invent future runs.
+
+Focused checks: `marketingCalendarModel.test.js`, `MarketingCalendar.test.jsx`,
+`marketingCampaignService.test.js`, `MarketingCampaigns.test.jsx`, and the
+calendar/authorization cases in `scripts/meta-integrations.test.mjs`.
+Run checks serially with one worker on this limited-RAM machine.
+
+## Shared Inbox
+
+The reader uses the app’s normal header and page spacing. Desktop conversation,
+reader and contact panels have draggable dividers; arrow keys resize them,
+Shift + arrow makes a larger adjustment, and Home/double-click or Reset panel
+widths restores the defaults. Only panel proportions are saved in local browser
+preferences. Small screens use a list/reader flow and an optional contact drawer.
+
+Sample inbox switches to four fictional conversations (two Email, two WhatsApp).
+Drafts, notes, ownership and status can be tested in memory without database calls
+or sending. Back to live inbox restores the real list. Empty local development
+inboxes show samples initially; populated live inboxes remain unchanged until the
+sample button is selected. Sample edits disappear when leaving the page.
+
+Inbox is a workspace feature for all account navigation, directly below Dashboard,
+including assistant, rentals, bond, commercial and legal shells. `/inbox` and
+`/inbox/settings` reuse the existing shared inbox; `/revo/inbox` links remain
+compatible. Switching organisations remounts the reader and channel settings.
+Each organisation retains its own channels, conversations, notes and drafts.
+
+The local rollout includes migration
+`20261025063000_shared_inbox_all_workspaces.sql` and updates to the Microsoft,
+Google, connection-lifecycle and sync functions. Deploying those and applying the
+migration are separate, approval-required operations; neither is performed by a
+local UI change. Provider OAuth app configuration and each workspace’s mailbox
+authorisation are still required. The legacy Revo external-ingest endpoint and
+its key remain Revo-scoped. Existing sending behaviour is unchanged.
+
+Checks: `npm run test:shared-inbox-access` applies the historical Inbox migrations
+and rollout to an isolated PGlite database, then exercises member/admin/anonymous,
+suspended membership and cross-tenant denials. It does not use a remote database.
+Also run Inbox page/navigation tests with one worker, the existing Inbox service
+and connection-core checks, and
+`deno test --no-config ../supabase/functions/_shared/sharedInboxAccess.test.ts`.
+
+### Multiple-mailbox foundation
+
+Inbox channels remain the mailbox identity; each email mailbox retains its own
+provider connection, credential reference, scheduling lease and sync history.
+Migration `20261025181115_shared_inbox_mailbox_foundation.sql` adds owner-only
+(`private`), selected-member (`selected`), and whole-workspace (`workspace`)
+access. Existing channels keep whole-workspace sharing; new mailbox service
+calls default to private ownership. Viewer/responder/manager grants require an
+active or accepted member of the same organisation. Agency administrators do
+not automatically receive access to somebody else's private or selected mailbox.
+Owners and authorised mailbox managers control sharing. Scope/ownership changes
+clear previous explicit grants, and transferring ownership can intentionally
+remove the previous owner's access. Reassign ownership before deleting an owner.
+
+Database policies cover conversations, messages, notes/drafts, associations,
+activity, workflow requests, escalations, connector events and sync history.
+Provider-message uniqueness now includes the mailbox, while legacy inserts derive
+the mailbox from their conversation. Existing external-enquiry ingestion keeps
+its service-only scope and uses the updated conflict key. Mailbox and conversation
+identities cannot be moved to another mailbox. Provider credentials remain in
+Vault; per-connection/per-folder checkpoints live in server-only
+`private.shared_inbox_sync_state`. The checkpoint table is a foundation for the
+receiving worker, not an enabled scheduler.
+
+`src/modules/sharedInbox/mailboxService.js` supplies mailbox creation, access,
+membership and permission operations for the next settings UI. Shared mailbox
+creation requires an agency administrator; members can create a private mailbox
+in their own name. The `send` permission is preparatory: no send endpoint or
+signature editor is added here. Existing inbox screens keep their current queries.
+
+The migration is prepared locally, **not applied remotely**. It requires the
+historical Inbox migrations and `20261025063000_shared_inbox_all_workspaces.sql`.
+Apply those migrations before deploying the Microsoft/Google, lifecycle and sync
+functions, which now check the individual mailbox using a server-only permission
+RPC. The connectors fail closed if that RPC is missing or unavailable. Live
+provider authorisation and actual multi-mailbox delivery remain later acceptance
+checks requiring explicit approval.
+
+`npm run test:shared-inbox-access` now also verifies private/shared access, member
+roles, ownership transfer, revocation, mailbox-scoped deduplication, independent
+sync checkpoints and legacy enquiry ingestion in PGlite, including broad default
+grants. Run the existing inbox model/service/connection checks and the Deno access
+helper tests as well. No full build is required for this database/service-only
+foundation.
+
+### Mailbox settings and signatures
+
+Email settings now has **Sending domains & senders**, **Mailboxes** and
+**Signatures** sections. Inbox settings uses the same mailbox/signature components
+and keeps WhatsApp setup separate. Add several mailboxes, choose private/team/
+workspace access, change viewer/responder/manager grants, inspect connection and
+last-sync status in SAST, and connect/reconnect/check/disconnect Microsoft or
+Google mailboxes. Individual/delegated provider access is chosen independently
+from who in Arch9 can read the mailbox. Other email providers can be registered;
+IMAP/SMTP credentials and receiving workers remain later work. Only agency
+administrators can create shared mailboxes or change the agency-wide default.
+Owners and mailbox managers can change an existing mailbox's visibility.
+
+The signature editor saves one signature per mailbox: name, title, company,
+phone, email, website, an HTTPS logo URL, and a message with bold/italic text and
+links. Its sandboxed live preview uses the same structured renderer prepared for
+future delivery. New-message and reply defaults are independent. Content is
+stored as text runs, not arbitrary HTML; the renderer escapes text and validates
+URLs. Pasted/dropped content becomes plain text. A revision check rejects stale
+saves rather than silently overwriting another manager's signature. Failed loads
+and read-only access disable editing. Switching mailbox/user/workspace discards
+old responses and editor state. Campaign templates and the current private-draft
+composer do not insert these signatures yet; automatic insertion belongs with
+Inbox sending.
+
+Migration `20261025182409_shared_inbox_email_settings.sql` is prepared locally,
+**not applied remotely**, and depends on the mailbox foundation migration above.
+It adds the signature table, database-enforced read/manage rules, a scoped settings
+reader, a manager-only active-member roster, and a signature-save RPC. Apply the
+migration before releasing these screens. No live provider connection, delivery,
+or deployment is performed by this local change.
+
+Checks: `npm run test:shared-inbox-access` also verifies signature isolation,
+revision conflicts, defaults, invalid content, roster access and safe rendering.
+Run `EmailMailboxSettings.test.jsx`, `EmailCampaignSettings.test.jsx` and
+`RevoSharedInboxSettingsPage.test.jsx` with one Vitest worker for settings, sharing,
+provider commands, failed loads and late responses. Browser layout checks use
+local sample services; real provider authorisation remains a separate live check.
+
+### Receiving connected email
+
+The primary workspace now includes a queued receiver for Microsoft 365, Google
+and secure IMAP. Mailbox settings accept IMAP credentials, show queued/running
+sync state and allow a per-mailbox history window. Each mailbox resumes its own
+checkpoint after interruption, retries with backoff and keeps failures separate.
+The reader loads full bodies and older thread pages on demand, sanitizes formatted
+email without tracking resources, and downloads files after checking current
+mailbox access. Larger files and limited bodies are labelled clearly.
+
+The implementation adds migration
+`20261025185107_shared_inbox_mail_receiving.sql`, the IMAP/attachment Edge
+endpoints and a separate Node worker in [`server/inbox`](server/inbox/README.md).
+That README contains the exact local commands, runtime secrets, limits and release
+order. The receiving migration and worker are **local and not deployed**. Hosting
+the worker, applying migrations and connecting real test mailboxes require an
+approved release; local provider fixtures do not prove a live integration.
+
+Focused checks are `npm run test:shared-inbox-access`,
+`npm --prefix server/inbox test` (from this app directory), the Inbox settings/
+thread/reader Vitest tests with one worker, and Deno checks for the changed Edge
+functions. Sending/SMTP, POP and automatic signature insertion remain separate.
+
+### Sending from connected mailboxes
+
+Phase 4 adds **New email**, **Reply by email** and **Outgoing email** to the primary
+Inbox. Choose a permitted sender, edit To/Cc/Bcc, attach files and preview the
+mailbox signature. Replies keep their mailbox and load Reply-To/reply headers;
+internal notes are never copied into the external composer. Saved private drafts
+remain available. Signatures use their independent new/reply defaults and are
+rendered once on the server at queue time.
+
+Email settings now includes separate SMTP credentials for connected IMAP
+mailboxes: TLS 465 or required STARTTLS 587. Google and Microsoft use their OAuth
+connections. The Node worker sends queued email, records provider acceptance and
+keeps ambiguous outcomes for review rather than automatically resending. Queued
+jobs can be cancelled; definitively failed jobs can be retried. Provider acceptance
+is displayed separately from recipient delivery.
+
+Migration `20261025191848_shared_inbox_email_sending.sql`, the three new sending
+Edge Functions and the updated Node worker are prepared **locally, not deployed**.
+The [worker README](server/inbox/README.md#outgoing-email) describes release order,
+permissions, size limits, queue recovery and remaining live-provider checks.
+Focused verification uses the existing shared-inbox database/access check, worker
+Node tests, Deno handler tests and Inbox settings/composer/reader Vitest tests with
+one worker. No real email is sent by these tests. POP, remote folders and delivery
+webhooks are separate work.
+
+## Meta marketing workspace
+
+The Meta menu (`/settings/integrations/meta`) and `section=meta` open a shared
+Facebook & Instagram workspace. Overview separates paid advertising from organic
+content; Paid ads and Organic content each expose the matching template library,
+while Templates switches between both. Six bundled copy starters work without
+shared-template storage and use Studio’s existing editable campaign handoff.
+Connections preserves the existing Page, lead-form routing and import tools for
+administrators. Page counts and publishing readiness use the existing Meta
+workspace endpoint. Reach, link clicks and ad spend remain unavailable until
+reporting is integrated; there are no demo performance totals or automatic posts.
+Focused checks: `MetaMarketingWorkspace.test.jsx`, `MetaIntegrations.test.jsx`,
+`MarketingCampaigns.test.jsx` and shared template tests. Run one worker.
+
+## Channel template tabs
+
+Email and WhatsApp expose Templates between Past campaigns and Audiences.
+Direct links use `section=email&tab=templates` or
+`section=whatsapp&tab=templates`. Each reads the same channel-filtered library
+as Studio; create, edit, duplicate and use actions open Studio’s existing flows.
+Bundled Email starters remain available when saved-template storage is missing.
+WhatsApp library entries are draft copy, separate from Meta-approved sending
+messages. Header contrast and the five-item navigation are shared across both
+channels. Focused checks: `ChannelWorkspaceTemplates.test.jsx`,
+`EmailWorkspaceNavigation.test.jsx`, `EmailCampaignOverview.test.jsx` and
+`WhatsAppCampaigns.test.jsx` (one worker).
+
+## Studio format workspaces
+
+Studio opens with Email, WhatsApp, Meta ads and Organic social format tiles,
+plus a separate Campaign & Automation Templates library. A format opens its own
+filtered channel-template workspace. New templates default to that format and
+keep it selected; save and cancel return to the same workspace. All marketing
+formats returns to the Studio chooser. Direct links use `page=studio&format=email`
+(or `whatsapp`, `meta`, `social`); older collection and template links still work.
+These workspaces use the shared template library and its existing permissions.
+Email templates store reusable subject/message copy; visual email design remains
+in Email. Shared template storage still requires its pending database migration.
+Email also includes four bundled copy starters in a single scrolling row. Each
+opens an editable copy and can carry its wording into campaign creation without
+saving to the shared library. These are copy starters; visual email design is
+handled in Email. All marketing formats sits in the Studio header, and brand
+setup remains available through the dedicated setup flow.
+
+## Campaign channel handoffs
+
+Campaign activity can prepare Email and WhatsApp drafts from generic saved copy
+as well as existing campaign packs. WhatsApp-only plans do not require email
+copy or email branding. WhatsApp handoff snapshots the wording into a linked,
+retry-safe draft with no selected sender, approved template or recipients.
+Reopening a handoff preserves edits made in the channel editor; a new campaign
+revision creates a separate draft and keeps earlier activity linked. Choose the
+business sender, recipients with WhatsApp permission and a Meta-approved template
+in WhatsApp. Campaign wording is a suggestion for suitable template variables,
+not a replacement for the approved template. Existing readiness and explicit send
+confirmation remain in place. View campaign results saves editor changes first;
+failed saves keep the editor open. WhatsApp results also link back to the plan.
+
+Meta ads and Organic social use manual publishing handoffs in Campaign activity:
+copy checked saved wording, download a plain-text campaign brief, and open Ads
+Manager or Meta Business Suite. The brief includes headline, message, campaign
+objective, audience description, offer, area, dates, suggested timing, campaign
+planned budget and an HTTPS cover-image reference when available. It excludes
+recipient selections, internal builder snapshots and provider credentials. No
+artwork is fetched automatically. Existing campaign packs retain their artwork
+downloads. Each export checks the current actor, agency, campaign revision and
+edit permission before returning copy. Copy/export never creates a provider ad,
+publishes a post, spends budget or marks activity as sent; provider results are
+not imported. There is no new migration for these handoffs. The separate shared
+channel-template library migration is still pending approval/application.
+
+Focused checks: `campaignChannelBrief.test.js`, `campaignPackService.test.js`,
+`CampaignPublishingActions.test.jsx`, `MarketingCampaigns.test.jsx`,
+`WhatsAppCampaigns.test.jsx` and the existing `CampaignAssets.test.jsx`.
+
+## Staged campaign creation
+
+New generic campaigns start with Template or Start from scratch, followed by
+Goal & offer, Channels & copy, Timing, and Review. Template browsing reuses the
+existing Studio library and specialised pack builders. Each selected channel can
+apply a matching saved channel template, then personalise its independent copy.
+Applying a template explicitly replaces only that channel's copy. Back navigation
+and temporary channel deselection retain in-progress edits; deselected channels
+are omitted from the saved snapshot. Missing template storage leaves fresh copy
+available with an explicit retry message.
+
+Only the final Review action saves a draft. Dates and budgets describe a plan;
+they do not schedule sends or execute automations. Existing campaign and campaign
+template editing retain their current forms. No new database migration is needed
+for the staged creator. Focused checks: `CampaignCreateWizard.test.jsx` and
+`MarketingCampaigns.test.jsx`.
+
+## Email template to campaign workflow
+
+Use an Email channel template in Studio, personalise its subject and message,
+and save the campaign. New campaigns created from channel templates open Channel
+activity, where Prepare email draft creates an editable email and links it back
+to the plan. Draft links open the email editor directly. View campaign results
+in that editor saves pending edits before returning to the plan's Results tab;
+Refresh results reloads recorded delivery, open and click counts.
+
+Generic copy-based campaigns use the same retry-safe handoff as campaign packs:
+the signed-in actor, organisation, campaign revision and edit permission are
+checked, and retries reuse the draft for that revision without overwriting email
+editor changes. Agency branding uses the current agency name. No recipient,
+sender or permission category is preselected. Sending, scheduling and test sends
+remain explicit actions in the Email workspace. Existing artwork campaign checks
+remain in place. Applying a different email layout and using undo/redo preserves
+the current campaign reference and audience-review state; layout templates cannot
+attach an unrelated campaign reference. No additional database migration is needed for this handoff;
+the shared channel-template library still needs its separately approved migration.
+
+Focused checks: `campaignPackModel.test.js`, `campaignPackService.test.js`,
+`MarketingCampaigns.test.jsx` and `EmailCampaignBuilder.test.jsx`.
+
+## Campaign workspace navigation
+
+Studio has separate Campaign templates and Channel templates collections.
+Channel templates hold reusable Email subject/message copy, WhatsApp copy,
+Meta ad headlines/text and Organic social captions, with optional CTA, destination
+and image links. Personal templates are private to their owner; agency templates
+can be read by members and published/edited by existing agency managers.
+Members can duplicate an agency template into a personal copy. Preview, channel,
+collection and text filters are available. Use in campaign takes an independent
+snapshot into a new draft; later template edits do not change it. Publishing,
+WhatsApp provider approval and email HTML design stay in their channel workflows.
+
+The additive migration `20261024205843_marketing_channel_template_library.sql`
+has isolated database coverage and requires an approved database release before
+shared saves are available. Missing storage is reported explicitly. Focused checks:
+`ChannelTemplateLibrary.test.jsx`, `marketingChannelTemplateService.test.js`,
+`MarketingCampaigns.test.jsx` and `scripts/marketing-campaigns-database.test.mjs`.
+
+Campaigns has Overview, Studio, Analytics and Assets pages. Principals and agency
+administrators with the existing campaign-management permission also see Agents.
+Overview keeps the campaign snapshot, current plans and template shortcuts.
+Studio contains the full template library, campaign builders and expandable brand
+setup. Open Canva launches Canva separately; in-app Canva generation is not connected.
+Analytics contains recorded campaign performance. Assets indexes saved campaign
+packs and channel copy; artwork is prepared through the existing per-campaign pack
+builder and downloads to the device, rather than becoming a stored export history.
+
+Agents shows a card for each active agency member and each visible campaign owner,
+using the existing organisation directory for names and initials. Cards show total,
+active, scheduled, draft and completed campaign counts plus planned channels;
+members with no campaigns are included, while pending members without campaigns
+are omitted. Counts stay independent of search and status filters. Open a card for
+that person's campaign list, or filter by owner, status and text. All statuses are
+shown initially. Campaigns refresh every 30 seconds while Agents is visible, on window focus,
+and through Refresh campaigns. These are saved plan statuses, not proof that a
+message was delivered or an advert is live. No database migration is required.
+
+Focused checks: `MarketingCampaigns.test.jsx`, `CampaignTemplateLibrary.test.jsx`,
+`CampaignAnalytics.test.jsx` and `CampaignAssets.test.jsx`.
+
+## Buyer and seller onboarding review consistency
+
+Seller review and submission use the same normalized answers and required
+canonical checks, including property rates, bond bank, lease expiry and land
+size. A blocked submission saves the draft and names the missing details.
+Trust beneficiary classes appear in seller profile summaries, including when
+read from canonical facts without raw form answers.
+
+Buyer onboarding preserves every saved co-purchaser through draft saves,
+reopening, FICA signatures and review. Files with more than two purchasers
+cannot switch to a single-buyer route and silently discard people. Numeric
+zero remains a completed answer. Spouse contact is required for community
+of property or a spouse who is a co-purchaser; optional contact details are
+still checked when provided.
+
+Focused checks: `ClientOnboarding.test.jsx`, `SellerOnboardingCapture.test.jsx`,
+`node src/lib/__tests__/purchaserPersonasValidation.test.js` and
+`node --test src/services/listings/__tests__/listingSellerInformationModel.test.js`.
+These changes are local and have not been deployed.
+
+## Marketing campaign workspace
+
+`/marketing?section=campaigns` manages shared campaign plans: goal, objective,
+audience, offer, area, dates, cover image and planned channels. Plans start as
+drafts; the owner or an agency administrator can edit the plan and link existing
+email/WhatsApp activity. Active agency members can view plans. Each send can be
+linked to one plan, and unlinking it preserves the original send and results.
+Plan status is manual and never triggers delivery. Meta is planning only;
+lead attribution and AI creation are outside this first version.
+
+The objective-led landing page offers four editable plan templates and shows
+recorded channel activity in campaign cards. A time-bound plan has an end date;
+an ongoing plan has a start date and no end date. Existing undated plans remain
+“Dates to confirm”. Run-mode and status filters work together with search.
+Ongoing plans do not enable recurring delivery or birthday triggers; those and
+AI campaign planning are future capabilities. No sample results are
+inserted into an agency workspace.
+
+A four-card snapshot below the Campaigns header shows active and scheduled plan
+counts, delivered messages and recorded email clicks. It uses visible linked
+activity, preserves recorded zero values and shows a dash for unavailable results.
+
+Current campaigns appears before templates. It shows active/scheduled campaigns,
+with two snapping cards on desktop and one with a preview of the next on mobile.
+Cards keep their compact shape, with a contrasting campaign-name header. Drafts
+remain available in Your campaigns; carousel filters and the position count are omitted. Cards open the existing campaign workspace. Recorded results are
+scoped to each plan; missing metrics say “Not connected”. Planned budgets can be
+entered in ZAR on Create/Edit campaign, including zero. Spend, remaining budget,
+views, attributed leads and target tracking await integrations. Budgets are not
+copied into reusable templates. The additive migration
+`20261023121043_marketing_campaign_budgets.sql` is tested locally but has not been
+applied to the connected database; budget writes report this explicitly until
+an approved release enables the fields. Existing non-budget saves remain compatible.
+Focused carousel checks: `src/components/marketing/__tests__/CurrentCampaigns.test.jsx`;
+service budget validation and `scripts/marketing-campaigns-database.test.mjs` cover
+amount constraints, revision checks and existing organisation/creator permissions.
+
+Below Your campaigns, Campaign performance uses only visible linked activity,
+across all campaigns and all time. Email plans rank by clicks / delivered;
+WhatsApp plans rank by reads / delivered. Aggregated rates use summed counts,
+not an average of rates. Incomplete or inconsistent campaign results are excluded
+from rankings; missing totals display a dash, not zero. Meta and organic social
+results remain unconnected. Arch9 recommendations are rule-based, with a visible
+explanation and a link to the relevant campaign. Engagement-based recommendations
+require at least 20 deliveries and one engagement per campaign/channel; this is
+an eligibility rule, not a statistical significance claim. No AI provider or
+new database migration is required for this analytics section.
+
+Focused analytics checks: `src/services/__tests__/marketingCampaignAnalytics.test.js`
+and `src/components/marketing/__tests__/CampaignAnalytics.test.jsx`.
+
+The template library (`view=templates`) contains Ready-made, My templates and
+Agency templates. New listing launch includes social, email and WhatsApp draft
+copy; all ready-made starters can be customised. Create template and Save as
+template keep the objective, audience, offer, channels, relative duration and
+plain-text channel drafts, excluding dates, recipients, linked sends and results.
+Using a template creates a fresh draft with new dates. Only the owner can read
+personal templates; active members can read agency templates, which principals
+and administrators can publish/edit. Templates can be edited in the library.
+
+The ready-made campaign shop now contains 18 launch families across Promote a
+Property, Find Sellers, Find Buyers, Build Your Brand and Celebrate & Connect.
+Search includes occasions, audiences, overlap tags, suggested actions and pack
+checklists. Category filters also find campaigns with a secondary goal without
+duplicating their cards. Personal and agency templates retain their existing
+visibility and edit permissions; their category is inferred from the saved goal
+where possible. Older newsletter and milestone starter links remain supported.
+Sample designs are illustrative and do not become a campaign's cover photograph.
+All 18 launch families open a three-step personalised builder and provide
+downloadable packs after saving. These actions do not send, publish or schedule a campaign.
+
+Campaign setup is available in the template library and campaign builders, and
+expands in the template library when the agency
+preferences or the current agent's public confirmation are unfinished. Agency
+administrators confirm saved identity/services/areas, select language, tone,
+optional strengths/offers, and confirm enquiry routing. Agents inherit the last
+confirmed shared preferences and review only their own public profile/contact
+details. Source labels distinguish saved facts from suggestions; a phone number
+is not automatically treated as a confirmed WhatsApp number. Profile changes
+produce a targeted review notice without overwriting campaign overrides.
+Confirm and continue saves each completed step; Save and finish later persists a
+partial draft. Failed saves retain edits, and revision checks prevent concurrent
+overwrites. Editing a completed setup preserves its last confirmed preferences
+for the team until the administrator confirms the replacement. Setup changes do
+not update agency/account profiles, connect senders, send or publish content.
+
+`20261023121038_marketing_campaign_setup.sql` is prepared and tested locally,
+**not applied remotely**. It adds separate agency and per-agent preference tables
+with member/admin permissions and server-controlled confirmation snapshots. Until
+released, setup reports unavailable storage while existing campaign workflows
+remain usable. No browser-storage persistence fallback is used. Missing optional
+legacy source fields produce a notice while saved campaign preferences remain
+available. The setup sample remains illustrative.
+
+Just Listed (campaign phase 3) now opens **Choose listing → Confirm essentials →
+Preview & save**. Complete agency/listing/assigned-agent records need no typing.
+The picker uses existing listing permissions: administrators can choose agency
+stock; agents choose their own assigned sale listings. Rentals, sold/withdrawn
+stock and listings already under offer/in a transaction are excluded. The builder
+reuses the last confirmed agency preferences, the assigned agent's confirmed
+public preferences or active digital card, marketing copy, property facts and
+selected cover. It never substitutes the logged-in agent for another assigned
+agent. Only missing public name/contact fields are requested; missing property
+facts link to the listing editor. Enquiries follow the agency's buyer routing.
+
+Draft copy is deterministic in English/Afrikaans; other setup languages require
+an explicit choice of one of these for this draft. Copy uses existing listing
+facts without inventing offers or claims. The preview includes the agency name,
+available logo/colour, listing photo and editable social/email/WhatsApp wording.
+This is a draft preview, not finished artwork. Property descriptions remain
+agent-authored. Tone selects the email introduction and is retained as campaign
+context for later asset work.
+
+Save stores a versioned public marketing projection and channel copy on the
+existing campaign record, using its ownership/revision rules. Drafts reopen via
+Edit campaign with saved wording intact. Source updates are shown separately;
+**Refresh and rebuild wording** explicitly replaces wording, including edits.
+Public location and assignment changes require that refresh before preview/save.
+Permission and these details are checked again immediately before saving, with a
+database check on tenant and assignment as well. Private seller/document fields
+are excluded; existing public-address visibility rules are reused. Media IDs are
+stored for durable reference, while signed photo URLs are loaded afresh for the
+preview rather than persisted as the only reference. Removed images are not
+silently replaced in an existing draft. Planned budgets are preserved on edits.
+
+`20261023124339_marketing_campaign_listing_builder.sql` is prepared and tested
+locally, **not applied remotely**. It requires the earlier campaign/template/setup
+migrations for the complete flow. Until enabled, the builder reports unavailable
+storage and keeps edits in the form. There is no browser-storage fallback.
+No exports, sending, publication, scheduling or live database writes are part of
+this phase. Focused checks: the `JustListedCampaignBuilder` component tests,
+`justListedCampaignModel`/`justListedCampaignService` tests, existing campaign/setup/
+template suites, and `node scripts/marketing-campaigns-database.test.mjs` from root.
+
+Just Listed (campaign phase 4) adds **Assets & drafts** to a saved campaign.
+Prepare artwork renders the saved listing cover/gallery into one 1080×1080 photo
+post, five numbered carousel PNGs and two 1080×1920 stories. The pack also includes
+social captions, email copy, WhatsApp wording and an enquiry reply as text files.
+Each file can be previewed/downloaded, or downloaded together as a ZIP with a
+manifest. Rendering happens in the browser; no asset is published or uploaded.
+The agency logo/colour/name are reused. Name-only branding is available for
+unsupported/unavailable logos. Images must be readable JPG/PNG/WebP files up to
+12 MB with a host that permits browser CORS downloads. A missing saved cover
+blocks artwork rather than substituting another image. Fewer than five photos
+repeat, with a visible notice. Longer artwork text is fitted/shortened; full copy
+remains in the text files, and the enquiry contact is never silently truncated.
+
+Preparing and downloading recheck the authenticated account, campaign revision,
+listing access/assignment and current public facts/contact routing. Changed facts
+require editing, refreshing and saving the campaign. Only the campaign owner or
+an agency administrator can prepare packs/handoffs, within listing permissions.
+Draft handoff uses the existing email/WhatsApp services and activity links;
+identities are deterministic per agency, campaign, revision and channel. Retrying
+an interrupted link reuses the created draft, without overwriting channel edits.
+Newly linked activity refreshes the campaign workspace. No new schema migration
+is needed for phase 4; the unapplied earlier campaign/setup migrations are still
+required for the complete flow. No remote migration or live write was performed
+while implementing this phase.
+
+Email handoff creates an editable visual document from the saved subject/body,
+with no sender/category and an explicit nil contact selection (not an empty
+filter, which the existing resolver treats as everyone). The Audience step
+requires choosing contacts/filters or explicitly using all eligible contacts.
+Photos are not silently uploaded to public email hosting; a downloaded graphic
+can be added through the existing email image library. WhatsApp handoff creates
+a draft with no sender, recipients or selected template. Suggested wording stays
+visible through sender/template changes and can be placed into a chosen approved
+body variable with one click; it never replaces Meta-approved template text.
+Existing consent, sender, template, content and final-send checks remain in force.
+
+Focused phase 4 checks: `CampaignAssets`, `CampaignWhatsAppWording` integration
+in `WhatsAppCampaigns`, the handoff audience flow in `EmailCampaignBuilder`,
+`campaignPackModel`, `campaignPackService`, and `emailCampaignDraftIdentity` tests;
+existing campaign/setup/template tests; `node scripts/marketing-campaigns-database.test.mjs`;
+and `node --test the-it-guy/scripts/whatsapp-campaigns.test.mjs`. Browser QA uses an
+offline fixture of the actual renderer and component, inspecting exported PNGs
+and ZIP contents without a connected account.
+
+Campaign phase 5 extends the same three-step builder, saved-draft editing,
+artwork downloads and channel draft handoff to six more families:
+
+- **Show Day / Open House:** reuse a saved public listing event and its SAST
+  timing, or enter campaign timing. Includes a post, four carousel slides,
+  two stories and attendee follow-up wording. It does not create an event.
+- **Property Spotlight:** suggest a feature from saved property facts. Includes
+  a post, five carousel slides, two stories and a four-frame video storyboard
+  as text; no video file is generated.
+- **Price Reduced:** use the saved asking price after explicit confirmation.
+  Includes a post, three carousel slides and one story. No previous price or
+  discount is inferred.
+- **Coming Soon:** choose a prelaunch listing and confirm publication permission.
+  The default teaser contains only public area and agency/agent branding, with
+  one post and two stories. Title, price, facts and photos are separate opt-ins;
+  unselected facts/photos are excluded from the saved projection and pack.
+- **Property Collection:** select three to six permitted sale listings. Each gets
+  its own carousel slide and story with its own facts, photo and enquiry contact;
+  the email includes a complete roundup. Every member is rechecked before use.
+- **Just Sold Nearby:** select a sold-status listing and confirm permission.
+  Includes a post, four carousel slides, one story and a digital square
+  neighbourhood flyer. Uses seller enquiry routing and public area, excluding
+  asking/sale prices, private addresses and unverified result claims.
+
+These packs also include editable social, email, WhatsApp and enquiry-reply text.
+Coming Soon and Just Sold require a saved public suburb/city; missing area never
+falls back to the street address. Refreshing rebuilds wording and requires price
+or publication confirmation again. Saved public show-day changes block reuse
+until refreshed. Rentals and unavailable stock remain excluded; sold campaigns
+use permitted sold stock, and Coming Soon uses the prelaunch workflow statuses.
+
+`20261023132334_marketing_property_campaign_builders.sql` is prepared and tested
+locally, **not applied remotely**. It retains version-one drafts, adds a bounded
+version-two public projection, checks every collection member's tenant/assignment,
+and validates saved public events and campaign-specific permissions. The earlier
+campaign/setup migrations remain required. No remote writes or sending occurred.
+Focused checks include `ListingCampaignBuilder`, `listingCampaignModel`, the
+existing builder/pack/service/shop suites and the local database script above.
+
+Campaign phase 7 completes the shop with three relationship templates:
+
+- **Congratulations & Key Handover:** select a permitted completed transaction,
+  then confirm keys have actually been handed over and public sharing permission.
+  The public area is reused; an approved celebration name is optional and entered
+  manually. Client names, addresses and financial details are never imported.
+  Choose agency branding or a permitted sold listing photo. The pack includes
+  a post, story, buyer/seller celebration variants and private congratulations
+  and thank-you wording.
+- **Share Your Experience:** reuse the confirmed agency review link, asking only
+  when missing. Email and WhatsApp requests invite honest feedback; the pack adds
+  a gentle reminder, thank-you reply and optional review-link graphic. Recipient
+  selection happens in the existing channel tools. There is no public social post.
+- **Know Someone Making a Move?:** reuse agent contact and public service area.
+  The pack includes a post, story, email/WhatsApp wording and an introduction
+  thank-you that asks permission before sharing someone’s contact details.
+
+Saved drafts, pack preparation, downloads and channel handoffs refresh agency,
+agent, transaction and selected-photo access. Unavailable handovers or photos can
+be replaced in the builder; exporting stays blocked until details are valid.
+The append-only `20261023144949_marketing_relationship_campaign_builders.sql`
+migration extends the public metadata contract and adds a read-only transaction
+projection under existing RLS. It must be applied through the release process
+before use on a connected database. No new table policies or remote writes are
+introduced by local implementation. Focused checks cover the general builder,
+models/services, existing shop/assets/handoff suites and isolated database checks.
+
+Campaign phase 6 adds **Use saved details → Confirm essentials → Preview & save**
+for eight more shop families. Confirmed setup supplies agency branding, language,
+tone, service-area suggestions, the agent's public profile and enquiry routing.
+Buyer campaigns reuse buyer routing; seller campaigns reuse seller routing;
+brand campaigns use the agent contact. New campaigns use the current agent.
+An administrator reopening another agent's campaign must use that agent's active,
+agency-scoped public card; the administrator's identity is never substituted.
+Only missing contact/name fields and an unsupported draft language are requested.
+
+- **What Is Your Home Worth?** reuses a confirmed valuation offer where present;
+  otherwise asks for the offer and terms. Includes a post, four-slide carousel,
+  two stories and enquiry reply. Complimentary service is never inferred.
+- **Thinking of Selling?** supplies an editable five-item preparation checklist;
+  includes a post, five-slide checklist, story, channel copy and follow-up reply.
+- **Buyers Looking in Your Area** requires an approved public brief, permission
+  confirmation and future expiry date. Includes a post, story and digital square
+  neighbourhood flyer. The expiry is visible on artwork and blocks exports and
+  handoffs once expired. Private buyer profiles are not imported into the pack;
+  the agent confirms the current search, rather than claiming automatic CRM verification.
+- **Find Your Next Home** needs only the public-details review when setup is
+  complete. Includes a post, four-slide wishlist carousel, two stories and welcome reply.
+- **First-Time Buyer Starter** supplies an editable five-item starter checklist;
+  includes a post, five-slide guide, story, downloadable checklist **text file**,
+  delivery wording containing that checklist, and a follow-up invitation. No
+  checklist hosting or automatic delivery is claimed.
+- **Meet Your Agent** reuses the confirmed biography, professional title, portrait
+  and service areas. Includes a portrait post, four introduction slides, two
+  stories, channel copy and a biography text file. A missing portrait links back
+  to setup; no stock person is substituted.
+- **Client Success Story** requires the exact approved quote, public attribution,
+  verified context and publication permission. Includes a post, four story
+  slides, story graphic and channel copy. Quote artwork includes attribution.
+- **Your Local Market Update** requires the reviewed summary, reporting period,
+  report source and publication date. Includes a post, five explanatory slides,
+  two stories and channel copy. Every design carries a source/date note; full
+  material remains in the text files. No market statistics or results are invented.
+
+The public-details review is reset after edits; refresh explicitly rebuilds
+wording while retaining campaign-specific material. Failed saves retain edits,
+retries keep their draft identity, and saved copy/budgets survive reopening.
+Saved agency/agent changes require review and a new save before pack reuse.
+Branded designs render without property photos; agent introductions require the
+saved portrait. Existing PNG/ZIP downloads, sender/audience review, email/WhatsApp
+handoff and campaign owner/admin gates remain in use. Checklists are plain text;
+PDF export, external content feeds and automatic sending are outside this phase.
+
+`20261023140030_marketing_general_campaign_builders.sql` is prepared and tested
+locally, **not applied remotely**. It adds a bounded public `campaign_builder`
+snapshot on the existing campaign table, retaining its RLS and revision rules.
+It checks draft/objective compatibility, public-field allowlists, confirmations,
+buyer-brief expiry and report dates. Earlier campaign/setup migrations remain
+required. Focused checks include `GeneralCampaignBuilder`, `generalCampaignModel`,
+`generalCampaignService`, existing shop/pack/service suites and the isolated
+`node scripts/marketing-campaigns-database.test.mjs` script. No live writes or
+deployment were performed.
+
+`20261023111430_marketing_campaign_templates.sql` is prepared and tested locally,
+**not applied to the connected database**. It adds template storage, channel draft
+content and a planning-only organic social channel. Until approved and applied,
+ready-made templates can be browsed/customised, but template persistence and
+campaign draft-content storage need that migration. The UI reports unavailable
+storage and never silently falls back to browser storage. Draft placeholders
+must be replaced before using copy in existing channel tools. Social publishing,
+WhatsApp template approval and recurring delivery remain owned by those tools;
+creating a playbook never publishes, sends or schedules anything.
+
+The additive migration `20261022132550_marketing_campaign_initiatives.sql` must
+be applied through the normal release process before enabling the workspace in
+an environment. It has been prepared locally, not applied to production. There
+is no browser-storage fallback when the database tables are unavailable.
+Existing channel permissions still control access to send details and results.
+
+Focused local checks:
+
+```sh
+# From the repository root; uses isolated in-memory Postgres, never remote data.
+node scripts/marketing-campaigns-database.test.mjs
+# From this application directory.
+npx vitest run src/components/marketing/__tests__/CampaignTemplateLibrary.test.jsx src/components/marketing/__tests__/MarketingCampaigns.test.jsx src/services/__tests__/marketingCampaignService.test.js src/services/__tests__/marketingCampaignTemplateService.test.js src/pages/__tests__/EmailWorkspaceNavigation.test.jsx
+# First-use setup and its source/persistence rules.
+npx vitest run src/components/marketing/__tests__/CampaignSetup.test.jsx src/services/__tests__/campaignSetupModel.test.js src/services/__tests__/campaignSetupService.test.js
+```
+
+
 **Production update — 15 October 2026:** The approved all-local Arch9 release
 is live, including the four remaining landlord profile migrations. Current
 deployment details, verification and provider limitations are recorded in
 [the production release record](../docs/arch9-production-release-20261015.md).
 Earlier local-phase notes below retain their original verification boundaries.
 
+Calendar appointment booking includes saved Clients as well as buyer and seller
+leads. It loads the existing Clients directory when the appointment opens,
+keeps contact/lead/property links when combining duplicate entries, and prefers
+saved names over generic labels. People without a lead can be selected without
+creating one. A failed directory load offers a retry and preserves the booking.
+Focused checks: `AppointmentPeopleFields.test.jsx` and
+`AgencyPipelinePage.calendarRefresh.test.jsx`.
+
+The desktop workspace's 15-minute inactivity timeout shares activity across
+same-origin tabs for the signed-in account. Background tabs recheck shared
+activity before warning or signing out. Automatic inactivity logout ends only
+the current browser session and is recorded as inactivity in auth telemetry;
+manual logout retains its existing scope. If shared browser storage is blocked,
+automatic inactivity logout is skipped because activity in other tabs cannot
+be verified. Focused checks: `src/lib/__tests__/sessionInactivity.test.js` and
+`scripts/auth-session-resilience.test.mjs`.
+
 Local development and Vitest use separate Vite cache directories:
 `node_modules/.vite-dev` and `node_modules/.vite-vitest`. This keeps a test run
 from replacing dependencies referenced by an already running development server,
 which can otherwise cause lazy-loaded pages to fail to load.
 
+The app router uses `useTransitions={false}`, the supported setting in the
+pinned React Router version. The retired `unstable_useTransitions` prop is
+ignored by that version and can leave a lead workspace visible after Back to
+Leads or a menu click changes the address. Run
+`npm run verify:lead-workspace-loading-observability-phase1:browser` to check
+buyer and seller navigation from Table and Kanban, menu destinations, and
+browser Back/Forward without reloading. This uses local API fixtures, checks
+the installed router against the pinned version, and never writes live data.
+
 Primary app builds default to a 4 GB Node heap to keep builds responsive on
 8 GB development machines. Set `NODE_OPTIONS` explicitly to override this limit.
+
+The signed-in mobile shell owns one vertical scroll area. Home's dashboard,
+task and new-lead panels expand with their content; their horizontal rails use
+proximity snapping. Dialogs and notifications lock the shell behind them,
+including portalled dialogs, and closing the last overlay releases that lock.
+Back restores the previous list position after content loads; query-only changes
+keep the position, and new touch, pointer, wheel or scrolling-key input cancels
+pending restoration. Navigation dismisses the bottom navigation's open sheets.
+Focused checks: `npm run test:mobile-shell-routing` and the `MobileLayout`,
+`MobileBottomNav`, `AgentDashboard`, `MobileTodayLeadScroller`,
+`MobileLeadCreateFlow` and `MobileNotificationBell` Vitest suites. Real-phone
+Safari/Chrome checks remain necessary for keyboard and browser-toolbar behaviour.
+Local development enables the mobile shell and automatic phone redirects by
+default, including after restarting the dev server. Explicit
+`VITE_FEATURE_MOBILE_SHELL` and `VITE_FEATURE_MOBILE_LOGIN_REDIRECT` settings take
+precedence; production continues to require its configured feature flags.
+
+Agent mobile includes the existing marketing workspace at `/mobile/marketing`.
+Menu and More offer Marketing, Campaigns and Template shop; Add includes New
+campaign for agents with Sales access. The workspace selector reaches Email,
+WhatsApp, Meta, show days, launches and Website, with campaign calendar,
+audiences, analytics, assets and template editors provided by the shared tools.
+Campaign, channel, CRM lead and listing handoffs retain their mobile destination
+and draft/template parameters. New marketing views start at the top; Back
+restores the previous position. Existing ownership, sender, integration and
+database requirements still apply. This UI change does not enable missing
+storage, send communications or deploy a release. Focused coverage includes
+`MobileMarketingPage.test.jsx`, `MarketingNavigation.test.jsx`, the existing
+mobile routing/layout/navigation checks and campaign/template component suites.
+
+Agency mobile Home starts with four horizontally swipeable summary cards: New
+Leads, Appointments Today, Tasks Outstanding and Commission This Month. The task
+count includes all open follow-ups, including upcoming work, and opens the saved
+outstanding-task list. Monthly commission uses the existing personal share from
+OTPs signed this month, not paid commission; its breakdown remains below the
+daily panels. Unavailable figures show a dash, with retry where supported.
+The cards use native scrolling and proximity snapping, with a next-card peek,
+compact position counter and reduced-motion support. Focused coverage: `MobileHomeSummaryCards.test.jsx`,
+`AgentDashboard.test.jsx`, `mobileTodayModel.test.js` and `mobileAgentCommission.test.js`.
+
+Home’s **Add task** opens a dedicated task form with a title, due date, priority
+and optional notes. Tasks are assigned to the current user and saved in the
+existing workspace task table without a lead or transaction. The form stays open
+with its entries after a failed save and reuses the same task ID on retry. A
+successful save closes the form and refreshes Home; future tasks are included in
+Tasks Outstanding. On phones it fills the screen, keeps Back and Save reachable,
+fits the keyboard’s visible viewport and does not open the keyboard automatically.
+This replaces Home’s previous follow-up draft shortcut. No schema change is
+required. Focused checks: `agencyTask.test.js`, `MobileTaskCreateSheet.test.jsx`,
+`MobileTodayLeadScroller.test.jsx` and `mobileTodayModel.test.js`; browser checks
+use a local save fixture and do not create live tasks.
+
+## Self-service agency email (prepared locally)
+
+Email campaigns → Settings guides agency administrators through domain DNS,
+verification, sender/reply-to setup and a test to their signed-in inbox. The
+provider begins checking when the domain is added. Settings refreshes status
+at 30-second intervals while visible; signed domain webhooks also refresh from
+the provider's current state. Verified domains and senders automatically enable
+campaign sending and create the standard subscription categories, without
+subscribing contacts or requiring operator approval.
+
+New agencies have a 500-recipient daily cap and 50-recipient worker batches.
+Database reservations share the daily cap across concurrent campaigns and tests;
+tests are limited to five per user per agency per hour. Existing pauses and
+operator stops survive verification refreshes. Spam complaints pause sending;
+bounce rates above 5% pause sending after at least 20 sends in the last 30 days.
+Campaign/test dispatch checks the domain again before calling the provider.
+The default verified sender is preferred by shared client-email sender lookup.
+The chosen reply-to inbox is used for campaigns and setup tests.
+
+Release the `agency_self_service_email` migration together with the primary app,
+`email-sending-domain-create`, `email-sending-domain-verify`,
+`email-sender-verification`, `email-campaign-test`, `email-campaign-worker`,
+`resend-webhook` and `send-email` (including shared helpers). Enable `domain.updated`,
+`domain.created` and `domain.deleted` on the existing signed Resend webhook for
+background updates. Visible-page polling also works without those subscriptions.
+Agencies still publish their own DNS records once and keep their existing inboxes.
+This feature has not been applied remotely, deployed or tested with live mail.
+
+Focused verification: `EmailCampaignSettings.test.jsx`,
+`emailCampaignDelivery.test.js`, `emailSendingDomain.test.ts`,
+`emailBranding.test.ts` and `scripts/email-self-service-database.test.mjs`.
+The database test uses an isolated PGlite instance, never a remote database.
+Install `@electric-sql/pglite` in a temporary directory and set
+`ARCH9_TEST_PGLITE_PATH` to its `dist/index.js` absolute path when running it
+from the repository root.
 
 ## Buyer journey
 
@@ -2445,155 +3524,6 @@ The schema includes:
 1. `sql/schema.sql`
 2. `sql/seed.sql`
 
-## Instagram listing posts
-
-Listing → Marketing now includes Instagram beside Facebook. Staff who can access
-and publish the reviewed listing select a professional account linked to an agency
-Facebook Page, a saved gallery or public listing photo, and a caption. They review the exact
-account, photo and caption before publishing. Recent results retain the account,
-processing/published/failed/unconfirmed state and verified Instagram permalink.
-Drafts and previews clear on user, role, agency and listing changes.
-
-This first version publishes one JPEG photo to the feed. Photo bytes are fetched
-only from configured Supabase Storage without redirects, capped at 8 MB, checked
-for JPEG dimensions/aspect ratio, and fingerprinted. Existing public
-`listing-media` URLs remain supported. Gallery uploads in the private `documents`
-bucket use the saved object identity under `private-listings/<listing>/gallery/`;
-old viewing links are refreshed through the caller's storage permissions.
-One-hour signed links are returned for viewing and passed to Meta only after
-explicit Publish. Saved snapshots retain a canonical object URL without a signed
-token. The original photo stays private; no public copy, bucket-policy change or
-service-role storage signing is used. Missing or changed gallery photos and
-revoked storage access block publishing. Deploy this gallery handoff with the
-Meta integration function and frontend, then run a controlled live test. Captions are
-limited to 2,200 Unicode characters including any public listing link. Private
-addresses and notes are never used in generated captions. A changed listing,
-photo, connection or linked account requires a new reviewed preview. Reels,
-Stories, carousels and Instagram scheduling are outside this version.
-
-The existing encrypted Facebook Page connection is reused. At combined release,
-the Facebook Login for Business configuration and app review must include
-`instagram_basic`, `instagram_content_publish` and `pages_read_engagement`.
-Each agency links its professional Instagram account to its own Page and
-reconnects Meta to grant these permissions. Missing permissions, personal accounts
-and missing Page links show connection guidance; Arch9 never accepts a pasted
-Instagram account/token as publishing authority.
-
-The two provider writes (create media container, then publish it) each have a
-service-only PostgreSQL claim. Current membership, preview author, tenant and
-connection version are checked transactionally. Processing containers can be
-finished later after all listing/photo checks repeat. Status refreshes never
-publish. Lost responses or abandoned claims remain unconfirmed and never repeat
-provider writes. A `PUBLISHED` container can confirm a lost publish response
-without guessing a post from its caption; a missing permalink can be retrieved
-later without publishing again. Instagram and Facebook job IDs/history remain
-separate. Meta access tokens and connection ciphertext never appear in preview/history data.
-
-Release migration `20261018140502_instagram_listing_posts.sql`, the
-`meta-integrations` function and the primary frontend with the combined package.
-Run an approved real-account photo publication and permalink/status check after
-release, including the Meta review demonstration. The local build does not change
-Meta permissions, connect an account, or publish any live post.
-
-Focused checks extend `scripts/meta-integrations.test.mjs` and use
-`ListingInstagramPostPanel.test.jsx`. Provider behavior follows Meta's
-[content publishing guide](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/content-publishing)
-and [photo media reference](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media).
-
-## WhatsApp audiences and campaign routing (stage 5, built locally, unreleased)
-
-Marketing → WhatsApp → Audiences saves Buyer, Seller and Recruitment filters for
-areas, stages and agents. Areas match stored CRM values exactly, ignoring letter
-case: active Buyer requirements, seller listing locations and Recruitment areas.
-Closed records are excluded unless deliberately included. Previews show current
-matches, invalid/shared phones and existing WhatsApp campaign permission. No
-contact or permission is created by an audience. Email subscriptions, requirement
-matching consent and one-to-one permission do not supply campaign opt-in.
-
-The campaign builder previews a saved audience and reviews at most 500 selected
-phones. A shared phone needs a specific CRM record choice, including when search
-narrows the visible rows. Larger previews require narrowing rather than silently
-truncating. Saving freezes the reviewed record, phone, assignment and filter
-version. Readiness, transactional enqueue and final worker claims recheck them;
-changed CRM records, permission or archived/edited audience definitions block or
-skip unsent recipients. Audience edits never add recipients to an existing send.
-Management controls CRM audiences and campaign reply routes; Recruitment audiences,
-campaigns and recipient results retain its stricter management access. Browser
-clients cannot read the per-message CRM snapshots.
-
-Exact campaign replies use Meta's reply-to message ID, sending number, WABA and
-recipient phone. They can link the reviewed existing CRM record and route to its
-agent, a chosen active agent or the agency queue. Manual campaigns can route to
-an agent without inventing a CRM link. Existing manual handoffs and different CRM
-links are preserved. Changed or ambiguous routes show an agency-review notice in
-the inbox. Signed provider receipts reconcile replies arriving before their
-campaign's delivery callback. Duplicate callbacks never repeat routing. Bulk
-campaigns continue to require agency-owned numbers.
-
-Lead Capture settings keeps each form's default Buyer/Seller/Recruitment route.
-An exact Meta campaign ID can override its type and agent for that form; other
-campaigns use the default. Names are labels, not classifiers. The normal signed
-webhook and historical ingestion share the same resolver. Existing Meta lead IDs
-retain their first destination after routing edits. Historical imports retain
-suppression of new-lead messaging/notifications. Active imports must finish before
-route changes. Saving form choices is atomic and disables unchecked forms; an
-empty selection stops form intake while preserving the Page connection. The full
-Page form list is verified before saving, with bounded pagination and explicit
-failure rather than partial changes.
-
-Release `20261018133534_whatsapp_campaign_audiences_and_routing.sql`, then
-`meta-integrations`, `whatsapp-campaigns`, `whatsapp-campaign-worker`,
-`meta-lead-ads-admin`, `meta-lead-ads-webhook` and the primary frontend with the
-combined package. No live rules, provider settings or recipients were changed by
-this local implementation. Verify real campaign reply context, lead form routing
-and the worker on approved review data after the combined release.
-
-Focused checks use the existing `scripts/meta-integrations.test.mjs`,
-`scripts/whatsapp-campaigns.test.mjs`, `WhatsAppAudiences.test.jsx` and
-`supabase/functions/_shared/metaLeadAds.test.ts`.
-
-## WhatsApp lead automations (built locally, unreleased)
-
-Marketing → WhatsApp → Automations lets agency management configure new-lead
-acknowledgements and assignment, one delayed follow-up after a sent message, and
-stage-change messages or tasks. Buyer, Seller and Recruitment use their own rules;
-Recruitment configuration, activity and tasks retain its management restriction.
-New rules and edits save switched off. Enabling applies only to future events;
-historical Meta imports and WhatsApp history do not start new-lead outreach.
-Assignment fills an empty Buyer/Seller primary agent and unassigned contact at
-capture; it preserves existing assignments. Message/task delays and configurable
-weekdays, hours and IANA time zone apply to the queued action. The default window
-is Monday–Friday, 09:00–17:00 Africa/Johannesburg.
-
-Automated messages use a live approved text template with fixed text or contact
-name variables, plus recorded one-to-one permission for the selected sender.
-CRM capture and bulk permission do not supply that permission. Agent senders must
-belong to the lead's current agent. An agency queue is preserved. A sent message
-in an explicitly linked conversation can start one follow-up for the current
-stage/assignment/contact; follow-ups do not start another follow-up. Customer
-replies, opt-outs, CRM/phone/assignment changes, closing a conversation and
-switching off or editing a rule stop pending work. Imported history does not act
-as a new customer reply. Tasks use the existing task list, with Recruitment
-restricted to its managers. Actions waiting more than seven days beyond their
-initial due time expire.
-
-The latest 100 actions show the lead, outcome and skip reason. Sent means Meta
-accepted submission; inbox receipts report delivery. A durable claim permits one
-provider attempt. An uncertain send is never automatically repeated; a later
-signed delivery receipt reconciles it. Unsent worker leases can recover safely.
-
-Release `20261018131742_whatsapp_crm_automations.sql`, `meta-integrations`,
-`whatsapp-automation-worker` and the primary frontend with Stages 1–3. The private
-scheduler uses the existing Vault entries `arch9_project_url` and
-`arch9_service_role_key`, pg_net and a one-minute pg_cron job. All new tables have
-RLS and browser access revoked. Nothing in this local build enables a live rule
-or contacts Meta recipients. Verify the deployed worker, scheduler and a permitted
-review recipient during the combined release.
-
-Focused checks use the existing `scripts/meta-integrations.test.mjs` and
-`scripts/whatsapp-campaigns.test.mjs`, plus
-`src/components/marketing/__tests__/WhatsAppAutomations.test.jsx`.
-
 ## WhatsApp campaigns
 
 Agency administrators connect their own sender in Settings → Integrations →
@@ -2652,49 +3582,18 @@ message webhooks, and set `WHATSAPP_GRAPH_VERSION` if overriding the existing
 integration's v23.0 default. Production sender configuration remains in the
 existing administrative integration; the campaign UI never collects tokens.
 
-Campaigns now use a durable server queue. In the final Review step, choose
-**Send now** or **Schedule for later**; the date/time field states the browser's
-time zone and is stored as a UTC instant. Changing the time invalidates readiness
-and confirmation. Confirmation snapshots the audience and approved message and
-atomically creates a delivery job. Once confirmation succeeds, the browser can
-close. Results show scheduled, sending, paused and cancelled states, with pause,
-resume and cancel controls. Messages already in progress may finish after a pause
-or cancellation. Historical unfinished campaigns require an explicit **Resume**;
-the migration does not enqueue them automatically.
-
-The `whatsapp-campaign-worker` checks current sender identity and template approval
-on every invocation and consent/phone immediately before each recipient claim.
-It leases up to three campaigns, sends up to 50 recipients per campaign in groups
-of five within a bounded time budget, and leaves remaining recipients for another
-minute tick. Leases expire after three minutes if a worker stops. An interrupted
-or ambiguous recipient attempt is never returned to the queue; it appears as
-unconfirmed and must be investigated before sending another campaign. Delivery
-and read callbacks remain monotonic and correlated using message IDs or
-`biz_opaque_callback_data`. STOP, unsubscribe and opt-out replies revoke permission.
-Acceptance by Meta is not delivery, and read receipts may be unavailable.
-
-For an approved rollout, apply
-`20261018082522_whatsapp_campaign_background_delivery.sql`, deploy the
-`whatsapp-campaign-worker` and updated `whatsapp-campaigns` functions, and deploy
-the primary app. The worker authenticates server credentials itself; browser user
-JWTs and public keys cannot invoke it. Reuse Vault secrets `arch9_project_url`
-and `arch9_service_role_key`, with `pg_cron` and `pg_net` enabled. The migration
-registers `whatsapp-campaign-worker` once per minute when pg_cron is available;
-otherwise it emits a setup notice. Opaque service keys use the `apikey` header;
-legacy service JWTs also use Bearer. No secrets belong in a migration or browser.
-
-Release verification must confirm that the cron job exists and its runs reach the
-worker successfully, then check a consented test recipient in **Arch9 Meta Review**
-with the campaign page closed. Verify scheduled sending, opt-out suppression and
-actual provider callbacks. The local checks use isolated SQL and a fake Meta
-provider and do not prove live scheduler or delivery configuration. No real
-messages, migrations or deployments are performed by those checks.
-
-To halt delivery during recovery, unschedule `whatsapp-campaign-worker` and pause
-active campaigns using their results controls. Already claimed requests may
-finish. Keep recipient attempts and provider IDs intact; never reset processing,
-sent or unconfirmed recipients to queued. Restore the worker and browser endpoint
-as a compatible pair before allowing new confirmations.
+Sending runs in resumable batches of five while the campaign page remains open.
+Closing it leaves unclaimed recipients queued; use **Send remaining** in results.
+Each recipient is atomically claimed before the Meta request. An interrupted or
+ambiguous attempt is marked unconfirmed and is never automatically resent.
+Approval is rechecked before each batch and consent before each individual claim.
+Delivery/read callbacks are monotonic and correlated using message IDs or
+`biz_opaque_callback_data`; read counts include only actual read callbacks.
+Signed STOP, unsubscribe and opt-out replies revoke permission. Other replies
+are not presented as a shared inbox. Scheduling and shared reply handling are
+outside this version. Read receipts can be unavailable, and acceptance by Meta
+is not delivery. A real sender/template/recipient smoke test is still required
+after an explicitly approved deployment.
 
 Focused local verification:
 
@@ -3675,6 +4574,35 @@ a linked transaction remain data/acceptance gaps, rather than fabricated content
 
 ## Home Seekers standalone website hosting
 
+### Agent testimonial video (production, 23 October 2026)
+
+The Join page plays the supplied H.264/AAC video directly through native browser
+controls, with a frame from the video as its poster. Both files live under
+`public/assets/homeseekers/` with content hashes in their filenames, using the
+existing immutable `/assets/` hosting rule. The supplied 640 × 360 MP4 is about
+14.8 MB, already has its metadata before its media data for progressive playback,
+and is preserved without another lossy conversion. Playback starts from the
+beginning, waits for the visitor to press Play, and supports
+inline mobile playback. YouTube remains an external backup link.
+
+Failed media requests show the poster and a readable recovery message. When
+requested playback waits 15 seconds, a preview and recovery options appear while
+the download continues. Playback clears that notice automatically when ready;
+the loading notice never pauses or aborts the download. Retry resets the native
+media loader. An idle poster, paused playback and network stalls that do not
+interrupt playback do not trigger the notice. No Google player, iframe or
+measurement consent is required for direct playback.
+
+Verify with `HomeSeekersJoin.test.jsx`, the measurement/pixel suites and the
+existing Home Seekers frontend builder. The production release is
+`dpl_Awwi1o1MyH6hdRfTAihFWisumFWr`, with rollback to
+`dpl_GYU4FqyRw561RYUW2YLamDtDcevd`. All 30 focused tests, scoped ESLint and
+the isolated standalone build passed. Public-domain MP4 integrity, `video/mp4`
+and HTTP 206 range responses were checked. Chrome Incognito and Safari Private
+playback passed; an 18-second delayed download recovered without a Retry click.
+Evidence is under `output/playwright/homeseekers-direct-video-20261023/`.
+Physical iPhone/Android acceptance remains a manual check.
+
 ### Split calculator local review (21 October 2026, not released)
 
 `HomeSeekersSplitCalculator` sits immediately after `#maths` on the join page.
@@ -3702,35 +4630,58 @@ local draft fails closed for email capture outside localhost. Focused checks:
 existing next-steps, signup and pixel tests, scoped ESLint, standalone build and
 desktop/mobile browser verification.
 
-### Next steps local review (21 October 2026, not released)
+### Next steps booking repair (22 October 2026)
 
-The join page’s `HomeSeekersNextSteps` section replaces the earlier booking-card
-draft above the FAQ. It has the founder qualifier (valid FFC plus five sales OR
-R6 million sold), all three outcomes, eight sample founder slots per week, four
-sample Thursday 18:00 SAST sessions, registration, confirmation and an ICS file.
-The standalone localhost application uses the existing questionnaire in explicit
-preview mode, accepting any six-digit verification code without an account.
+Production now opens the founder qualifier instead of the former configuration
+placeholder. `homeSeekersQualifierSubmission.js` sends contact details and every
+answer through the existing `/api/home-seekers/leads` enquiry intake. The CRM
+enquiry message records `source: homeseeker_join_next_steps`,
+`type: founder_call_qualifier` and outcome A/B/C. Capture must be accepted before
+Calendly loads (A) or the browser redirects to Demio (B/C). A failed capture keeps
+the answers for retry. Qualification events fire after acceptance, subject to
+measurement consent; opening a calendar does not count as a confirmed booking.
 
-All new booking flows are local review fixtures. Their records, source, outcome
-and six distinct milestone names are stored only under
-`home-seekers-next-steps-review-v1` in this browser. The section includes an
-expandable records/events inspector and a reset action. No CRM write, reservation,
-email/SMS send or reminder job occurs. Non-local booking requests fail closed.
-The custom pixel helper respects the existing consent/domain restrictions and
-never emits test events from localhost; `application_completed` is separate from
-signup, verification and document completion.
+Production “Book a seat” links directly to Demio; the calculator session action
+uses the same destination. Demio owns attendee registration and confirmations.
+Provider booking callbacks, automatic session synchronization, reminder delivery
+and Calendly's eight-per-week limit still require provider/integration setup.
+Browser verification intercepts test enquiry submissions and provider pages to
+avoid creating fake CRM leads, sending notifications or making real bookings.
 
-Before release, configure the real founder calendar and global weekly cap, confirm
-the actual session schedule and webinar attendee privacy, implement tenant-scoped
-CRM persistence and durable confirmation/reminder delivery with the join link,
-and replace the sample availability. The current local preview must not be
-published as a working booking system. No schema change is included.
+### Next steps local review (21 October 2026)
 
-Focused checks: `HomeSeekersNextSteps.test.jsx`,
-`homeSeekersNextStepsModel.test.js`, `HomeSeekersJoin.test.jsx`,
-`homeSeekersPixel.test.js`, and `RecruitmentSignupModal.test.jsx`; standalone build
-and desktop/mobile browser review.
+`HomeSeekersNextSteps` owns the section above the FAQ. Its local qualifier requires
+valid FFC plus five registered sales OR R6 million sold, and retains all outcomes
+in browser-only review records. Only outcome A mounts the real Calendly iframe:
+`https://calendly.com/thomas-homeseekers/30min`. Outcomes B/C save the qualifier outcome locally, then redirect the same tab directly to Demio. A webinar link remains as a fallback if navigation is blocked. Failed capture retains the answers and does not redirect.
+The fallback Calendly link is also gated. No contact details enter its URL.
+The previous simulated founder slot picker has been replaced; enforce the maximum
+of eight calls weekly in the actual Calendly account before launch. Opening the
+calendar never fires `oneonone_booked`. CRM/webhook booking confirmation remains
+unimplemented, so a click is never presented as a completed booking.
 
+Session registration links to `https://my.demio.com/ref/ZvxISM3Y0S1q0ClZ`.
+`homeSeekersBookingLinks.js` holds the owner's supplied URLs and a verified public
+Demio snapshot: Tuesday 27 October 2026, 11:00 SAST. Only one future date was
+published when checked; do not invent the next four weekly dates. After that date
+passes, the page directs visitors to Demio without showing a stale date. Automatic
+provider schedule sync is not implemented. Demio currently requests first name
+and email; additional CRM fields and verified attendee privacy still require
+provider/integration configuration.
+
+Local intake, questionnaire submission, confirmation/email/calendar-file previews
+and event records remain browser-only under `home-seekers-next-steps-review-v1`.
+Saving the local intake does not reserve a seat; its confirmation directs the
+visitor to complete registration on Demio. Completing the live provider forms
+can make a real registration or booking. No provider registration was submitted
+or booking made during verification. No CRM write, email/SMS send or reminder job
+is implemented by this local draft. Real provider confirmation/CRM integration,
+reminders and the weekly cap must be finished and verified before production.
+The standalone localhost application still uses the existing questionnaire in
+explicit preview mode; any six-digit code opens its review without an account.
+
+Focused checks: next-steps UI/model, calculator-to-form links, join-page checks,
+scoped ESLint, standalone build and browser checks of the configured providers.
 
 The Home Seekers public website belongs to the primary Vite product. Its separate
 Vercel project is `home-seekers-website`
@@ -4765,24 +5716,37 @@ enquiries without sending historical introduction emails. The agency feed uses
 Property24’s `messages` response, follows all pages, and replays a recent window
 with duplicate protection. A failed agency does not stop other accounts.
 
-Private Property lead delivery uses the `private-property-webhook` Edge Function
-and migrations `20261005060708_portal_lead_intake_global_fix.sql` and
-`20261005064727_private_property_lead_channel_correction.sql`. An agency
-principal or group owner must register its HTTPS endpoint in the supplier admin
-portal and obtain the numeric agency ID and signing secret. The executive Admin
-Console’s Private Property section stores these separately from publishing
-credentials in Vault and shows last delivery and failures. Listing API access
-alone does not register a lead webhook. The receiver verifies HMAC SHA-256 over
-the exact body, checks agency ownership, resolves all three supplier listing
-references and retries failed deliveries. CRM writes and duplicate protection
-run in one transaction.
+Private Property leads are retrieved through the supplier's SOAP
+`ListingLeadDetailsFeed` operation using the existing production API credentials.
+No supplier portal login or webhook registration is required for this pull.
+The primary app's `/api/cron/private-property-leads` runs every two minutes,
+replays the latest 60 days, follows continuation pages, and routes each enquiry
+only to its approved branch. The supplier feed can contain several branches
+under shared credentials. Listing matches stay within the agency; unmatched
+enquiries are imported for agency review without guessing an assigned agent.
+Duplicate protection and CRM writes use the existing atomic ingestion RPC.
+Historical enquiries older than 24 hours suppress introduction emails using
+the established `arch9NotificationHistorical` flag. Supplier timestamps with
+no timezone are interpreted as South African local time.
+
+Run `npm run private-property:lead-check` for a read-only live preview. Use
+`-- --start-date=2026-09-15T00:00:00Z` for the initial recovery window. The script
+loads the primary package's production environment and verifies its target.
+Only add `-- --apply` after explicit approval to write production leads.
+`npm run test:private-property-lead-sync` checks paging, branch isolation,
+deduplication, rental classification, historical notification suppression,
+malformed responses, and authenticated scheduling using local fixtures.
+
+The separate `private-property-webhook` Edge Function remains available for
+signed push deliveries if separately arranged with the supplier. Its agency ID
+and signing-secret settings are independent of the SOAP pull.
 
 Run the existing Property24 phase 5, 7 and 9 checks,
 `node scripts/portal-lead-intake.test.mjs`, and from the repository root
 `deno test --config supabase/functions/private-property-webhook/deno.json
 supabase/functions/_shared/privatePropertyLeadWebhook.test.ts`. These checks
 use local fixtures and send no communications. Supplier registration and a real
-signed delivery remain required for Private Property acceptance.
+API pull and a verified CRM import remain required for Private Property acceptance.
 
 ## Recruitment workspace
 
@@ -4825,29 +5789,6 @@ Focused checks from this package: `npx vitest run src/pages/recruitment/__tests_
 The database tests execute the migration in an isolated in-memory PostgreSQL
 instance and check organisation isolation, management-only access, private file
 access, invalid stages and stale saves. They do not access a remote project.
-
-Meta forms can be classified as **Buyer**, **Seller** or **Recruitment** in
-**Settings → Facebook Pages & Meta Lead Ads**. Recruitment routes to the agency's
-management-only Recruitment pipeline at **Lead Received**; property-agent and
-branch assignment do not apply. The Overview retains the Meta form, campaign,
-ad, original submission date and form answers. An enquiry creates no applicant
-account, application, membership, invitation or automatic message. Email addresses
-from Meta are not marked verified or used to merge separate enquiries.
-
-Live webhooks and historical imports use the same server-only routed ingestion.
-Repeated Meta lead IDs recover the original destination even after a form is
-reclassified. Historical imports keep their original submission time in the Meta
-receipt; the Recruitment receipt time records when Arch9 received the import.
-Finish an active historical import before changing its form routing. Recruitment
-event payloads follow the same agency management roles as Recruitment records.
-
-Release order: apply `20261018092935_meta_lead_ads_recruitment_routing.sql`, deploy
-`meta-lead-ads-admin` and `meta-lead-ads-webhook`, then release the primary app.
-The existing property ingestion RPC deliberately rejects Recruitment mappings to
-prevent an older handler from creating a Buyer lead. Local validation also uses
-`src/components/marketing/__tests__/MetaLeadFormRouting.test.jsx`,
-`node --test scripts/meta-integrations.test.mjs`, and the Deno
-`supabase/functions/_shared/metaLeadAds.test.ts` tests from the repository root.
 
 Phase 1 captures staff and referral enquiries at **Lead Received**. Name and at
 least one contact method are required; source, preferred area, referrer and notes
@@ -6834,3 +7775,159 @@ never records contact, sends an invitation or completes a milestone.
 Focused checks: the MobileLeadActionProvider, MobileBuyerJourney,
 MobileLeadWorkspaceHeader, MobileLeadContextCards and mobileBuyerJourneyService
 Vitest suites, plus `npm run test:mobile-shell-routing`.
+
+The local development UI includes explicit Demo analytics for the two Kingdom
+mock campaign IDs. These sample budgets, spend, leads, views and messaging
+figures are a display-only overlay, restricted by agency and campaign ID, and
+excluded from production builds. Header result totals show a Demo label and
+aggregate only those visible mock campaigns. No database values, delivery
+records, real analytics or recommendations are changed by this preview.
+
+## Home Seekers Join page
+
+The standalone Home Seekers recruitment page uses ten sections, with a founder
+call first, a live session second, and the existing application third. The owner
+confirmed the existing 30-minute Calendly appointment on 24 October 2026.
+Detailed team seats, referrals and prices live at `/join/teams`,
+`/join/referrals` and `/join/pricing`. Agent rental details live at
+`/renting#agent-offering`; the guarantee still links to its existing terms.
+Prices and calculator formulas remain in `homeSeekersRecruitment.js` and
+`homeSeekersSplitCalculatorModel.js`.
+
+`/api/home-seekers/join-follow-up` uses the existing rate-limited enquiry intake,
+then sends context through Resend. Configure the server-only
+`HOME_SEEKERS_JOIN_OWNER_EMAIL`, `RESEND_API_KEY` and the existing
+`ARCH9_RESEND_FROM_EMAIL` (or `RESEND_FROM_EMAIL`). Call and application context can use the existing durable enquiry queue
+without these additional settings. Missing direct-email configuration stops only
+emailed breakdown requests explicitly. Results are recalculated on the server. A provider
+acceptance receipt is required before the UI reports an email as sent; inbox
+receipt still needs a controlled live test. Retrying identical requests uses
+the same Resend idempotency key, which Resend retains for 24 hours.
+
+All six Join conversion names are gated by the current campaign-measurement
+consent. They carry only event name, section and page path. Calendly completion
+messages are checked against the calendar iframe's origin and window.
+Demio completion still needs an owner-configured thank-you-page bridge: after a
+successful registration, its frame must post an object containing
+`event: 'homeseekers.session_registered'`, a stable `receipt`, `name` and `email`
+to the exact Home Seekers parent origin. The site checks the frame's origin and
+window, deduplicates the receipt, and forwards the operational context separately
+from advertising. Do not emit that message on a registration click or failed form.
+
+Before publishing, fill the highlighted founder name, photo, bio, testimonials
+and email-domain placeholders. Confirm whether agents choose when to offer the
+guarantee. Replace/verify the Demio inline embed and its privacy settings; the
+public registration page currently requires a marketing opt-in. Its next session
+was verified as 30 October 2026, 12:00 SAST; expired dates become a placeholder.
+Agent count, areas and Google rating remain omitted until substantiated.
+The owner approved production publication on 24 October 2026. Both public domains
+were verified against deployment `dpl_rA6iYQjWYdtXc2jiQrb47hPMgQB8`.
+The highlighted placeholders remain. No database change, live booking or test
+email accompanied this release.
+
+Focused verification: the Join, calculator, next-step, measurement and recruitment
+modal/questionnaire Vitest suites; `server/tests/homeSeekersJoinFollowUp.test.js`;
+`server/tests/homeSeekersWebsiteDeployment.test.js`; and
+`npm run build:home-seekers-website`.
+
+
+### Campaign setup objectives and shared audiences
+
+The campaign wizard and editor share business-goal, Google-region, objective,
+target, live-audience and optional-offer fields. `campaign_setup.metaObjective`
+stores the exact Meta `OUTCOME_*` identifier; Meta ad briefs require an explicit
+selection and export it alongside the target. This remains an external publishing
+handoff, not an ad-creation API. Templates retain objective intent without a live
+audience association; agent copies retain intent without the original region ID.
+
+Database prerequisite: apply the shared CRM audience migration
+`20261025102447_shared_crm_marketing_audiences.sql`, then the reviewed setup
+migration `20261025190045_campaign_setup_objectives.sql`. The latter adds
+validated setup storage and an invoker trigger that links audiences atomically
+under existing RLS. Neither is applied by frontend changes. Google region
+suggestions use the existing `VITE_GOOGLE_MAPS_API_KEY` configuration.
+
+Focused checks: `node scripts/campaign-setup.test.mjs`; the CampaignCreateWizard,
+MarketingCampaigns, marketingCampaignService, marketingCampaignTemplateService,
+marketingChannelTemplateService and campaignChannelBrief Vitest suites (one worker).
+
+### Shared Inbox release verification (Phase 5)
+
+Phase 5 extends the existing `test:shared-inbox-access` check with a combined
+multi-mailbox journey through the actual Inbox SQL/RLS: independent imports,
+reply identities/signatures, idempotent queues, disconnect/reconnect fencing,
+healthy-peer sending, replay without duplicates and immediate access revocation.
+The existing 26 worker, 14 Edge-handler and 63 UI/service tests also pass locally.
+No new schema migration or runtime behavior is introduced by this phase.
+
+The [Inbox worker release packet](server/inbox/README.md#phase-5-verification-and-release-approval-packet)
+records migration/function ordering, local evidence, the dedicated-mailbox hosted
+acceptance matrix and recovery steps. Local verification is complete; production
+sign-off still requires build/container verification, target/recovery guards,
+review of the exact pending migrations, explicit deployment approval and live
+provider checks. No remote changes or actual email sends were made.
+
+Sales and rental listing marketing photo cards use fixed 104px thumbnails and
+compact controls inside the bounded gallery, including saved publication editors.
+Rental capture uses the same grid, with wrapping controls and keyboard scrolling.
+The edit breadcrumb no longer repeats the advert headline, and sales capture
+keeps advertising receipts out of the header; channel results remain in Where
+to advertise. These are primary-app presentation changes and do not publish ads.
+
+### Campaigns workspace review (25 October 2026)
+
+Enable the opportunity-first home, property email recipes, source-readiness detail
+and redesigned AI Studio with `VITE_FEATURE_CAMPAIGN_WORKSPACE=true` at dev/build
+time. It defaults off; the existing Campaigns and legacy assistant remain the
+flag-off path. Runtime source freshness and save-concurrency protection apply
+independently of the presentation flag.
+
+The studio uses the existing canonical email renderer and genuine listing media.
+Selective AI proposals preserve other fields, have explicit apply/discard and
+undo, and reject late results after newer edits. Public saved show days retain
+their ID and SAST times through review and dispatch. Existing sender, permission,
+image, cost and explicit launch approval checks remain authoritative. Manual
+content drafting remains available before sender setup.
+
+The full [review, run instructions, evidence and release limits](../docs/campaign-workspace-review.md)
+include the offline synthetic-agency fixture, scoped checks, screenshots, existing
+migration/model/budget prerequisites, exact before copies and task-only patch.
+No hosted migration, deployment, paid model generation, advert or actual email
+send was performed. Legacy manual emails without authoritative listing provenance
+retain their existing source-check behavior.
+
+### Workspace calendar categories
+
+The main workspace Calendar (`/pipeline/calendar`, also reached through
+`/calendar`) has **All**, **Appointments** and **Marketing** tabs. All places both
+sources on the existing day, three-day, week, month and agenda grid. Appointments
+retain their booking/detail workflow. Marketing opens the original campaign,
+communication or listing; Plan marketing opens campaign creation.
+
+Dated campaign plans show across their date range as all-day context. Emails,
+WhatsApp and Facebook posts use the same recorded dates/statuses as the Marketing
+calendar; communications show their time without implying an appointment duration.
+Undated drafts are not assigned invented dates. Tabs keep the selected period and
+view. The appointment agent/history filters apply only to appointments; marketing
+continues to follow its existing workspace and channel permissions.
+
+Marketing loads scoped metadata for the visible dates, with bounded pagination,
+private-content/analytics fields excluded, and no new database grants or schema.
+It loads only in All/Marketing, refreshes on period or viewer changes, and has a
+manual Refresh marketing action. Routine appointment polling does not reload it.
+Each source can fail independently; warnings and unavailable totals distinguish
+partial data from a verified empty calendar. Old viewer/workspace responses are
+discarded and table reads abort when their scope closes.
+
+Focused checks: `WorkspaceCalendar.test.jsx`, `AgentCalendarBoard.test.jsx`,
+`workspaceCalendarService.test.js`, the existing Marketing calendar/model tests,
+and `AgencyPipelinePage.calendarRefresh.test.jsx` / `CalendarRequestBudget.test.jsx`.
+These are local checks; no calendars, campaigns, appointments or deliveries are
+created by this UI change. Deployment and live workspace checks remain separate.
+
+Local calendar-tab verification passed the focused component/model/service and
+request-budget tests and a synthetic desktop/390px browser journey (combined
+counts, tab filtering, marketing destinations and keyboard navigation). The
+separate full `AgencyPipelinePage.calendarRefresh` regression run was stopped
+after an unusually long local run and remains unverified. No full production
+build or hosted calendar/provider verification was performed for this change.

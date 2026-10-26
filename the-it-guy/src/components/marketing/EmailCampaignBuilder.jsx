@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { validCalendarDate } from '../../services/marketingCalendarModel';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -44,10 +45,16 @@ import EmailCampaignImages from "./EmailCampaignImages";
 import EmailCampaignImport from "./EmailCampaignImport";
 import { inspectCampaignEmail } from "../../../../supabase/functions/_shared/emailContent.js";
 import "./EmailCampaignBuilder.css";
+import AiCampaignAssistant from './AiCampaignAssistant';
+import { reviewAiCampaign, approveAiCampaign } from '../../services/aiCampaignService';
+import { ensureEmailCampaignPlan } from '../../services/emailCampaignPlanService';
 
+const MarketingAudiencePicker = lazy(() => import("./MarketingAudiences").then((module) => ({ default: module.MarketingAudiencePicker })));
 const STEPS = ["Details", "Audience", "Content", "Review"];
 const fromRow = (row, brand) => ({
   id: row.id,
+  clientId: row.id,
+  updatedAt: row.updated_at,
   developmentContext: row.content_json?.arch9_context || null,
   name: row.name,
   subject: row.subject,
@@ -66,6 +73,7 @@ const fromRow = (row, brand) => ({
         },
 });
 const blank = (brand) => ({
+  clientId: crypto.randomUUID(),
   name: "Untitled campaign",
   subject: "",
   previewText: "",
@@ -75,13 +83,25 @@ const blank = (brand) => ({
   replyToEmail: "",
   contentJson: createEmailDocument(brand),
 });
+const keepCampaignReference = (next, current) => {
+  const document = normalizeDocument(next);
+  delete document.arch9_campaign;
+  if (current.arch9_campaign) document.arch9_campaign = { ...current.arch9_campaign };
+  return document;
+};
 export default function EmailCampaignBuilder({
+  initialListingId,
+  initialObjective,
+  initialEventId,
+  openAiAssistant = false,
+  initialScheduleDate,
   workspace,
   AudienceStudio,
   onBack,
   campaignId,
   onDraftCreated,
   developmentContext,
+  onOpenMarketingCampaign,
 }) {
   const {
     organisationId,
@@ -110,6 +130,7 @@ export default function EmailCampaignBuilder({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiReview, setAiReview] = useState(null);
   const [audienceCount, setAudienceCount] = useState(null);
   const [listings, setListings] = useState([]);
   const [modal, setModal] = useState("");
@@ -121,14 +142,32 @@ export default function EmailCampaignBuilder({
   const [senderName, setSenderName] = useState(brand.name);
   const [senderEmail, setSenderEmail] = useState("");
   const [sendingDomainId, setSendingDomainId] = useState("");
-  const [scheduledFor, setScheduledFor] = useState("");
+  const [scheduledFor, setScheduledFor] = useState(() => {
+    if (campaignId || !validCalendarDate(initialScheduleDate)) return "";
+    // The existing datetime input uses the browser's local time. Convert 09:00 SAST
+    // to that timezone so scheduling preserves the selected South African day.
+    const instant = new Date(`${initialScheduleDate}T09:00:00+02:00`);
+    const local = new Date(instant.getTime() - instant.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  });
   const [revisions, setRevisions] = useState([]);
   const [history, setHistory] = useState({ past: [], future: [] });
   const dialogRef = useRef(null);
   const draftRef = useRef(draft);
   const persisted = useRef("");
   const saving = useRef(null);
+  const linkPending = useRef(false);
+  const pendingLinkSave = useRef(null);
   const lastId = useRef(campaignId || "");
+  const lifetime = useRef(0);
+  const invalidateLifetime = useCallback(() => { lifetime.current++ }, []);
+  useEffect(() => {
+    invalidateLifetime();
+    saving.current = null;
+    linkPending.current = false;
+    pendingLinkSave.current = null;
+    return invalidateLifetime;
+  }, [organisationId, userId, campaignId, invalidateLifetime]);
   const loadedId = useRef("");
   const nameInput = useRef(null);
   const sender = identities.find(
@@ -174,6 +213,7 @@ export default function EmailCampaignBuilder({
     senderIdentityId: !sender ? "Select a verified, active sender." : "",
   };
   const detailsReady = !Object.values(missing).some(Boolean);
+  const draftDetailsReady = !missing.name && !missing.subject && !missing.subscriptionTypeId;
   const localContentCheck = useMemo(() => inspectCampaignEmail({ contentJson: draft.contentJson }, {
     agencyName: brand.name || sender?.display_name,
     senderEmail: sender?.from_email,
@@ -183,7 +223,9 @@ export default function EmailCampaignBuilder({
   const contentKey = JSON.stringify([organisationId, draft.contentJson, draft.previewText, draft.senderIdentityId]);
   const serverContentCheck = checkedContent?.key === contentKey ? checkedContent.report : null;
   const compatibilityWarnings = [...new Set([...localContentCheck.warnings, ...(serverContentCheck?.warnings || [])])];
+  const completedSteps = [detailsReady, Number(audienceCount) > 0, !contentIssues.length, false];
   const update = (patch) => {
+    setAiReview(null);
     setDraft((d) => ({ ...d, ...patch }));
     setSaveState("Changes not saved");
   };
@@ -241,6 +283,7 @@ export default function EmailCampaignBuilder({
           persisted.current = JSON.stringify(value);
           setDraft(value);
           setSaveState("Saved");
+          setBusy(false);
           setReady(true);
         }
       })
@@ -322,9 +365,11 @@ export default function EmailCampaignBuilder({
       return persist();
     }
     const current = draftRef.current;
+    const scope = lifetime.current;
+    const assertScope = () => { if (scope !== lifetime.current) throw Object.assign(new Error('The draft was saved in your previous workspace or campaign. Reopen it there before continuing.'), { code: 'EMAIL_DRAFT_SCOPE_CHANGED' }) };
     if (!organisationId || !current.name.trim())
       throw new Error("Add an internal campaign name to save this draft.");
-    if (persisted.current === JSON.stringify(current) && lastId.current)
+    if (persisted.current === JSON.stringify(current) && lastId.current && !linkPending.current && !(current.contentJson.ai_campaign && !current.contentJson.arch9_campaign))
       return lastId.current;
     setSaveState("Saving…");
     const output =
@@ -334,19 +379,51 @@ export default function EmailCampaignBuilder({
             agencyName: brand.name,
             previewText: current.previewText,
           });
-    const operation = saveEmailCampaign({
-      organisationId,
-      userId,
-      campaign: { ...current, id: lastId.current || undefined, html: output },
-    });
+    const operation = (async () => {
+      let base = current;
+      if (pendingLinkSave.current) {
+        const recovered = await ensureEmailCampaignPlan(organisationId, userId, pendingLinkSave.current);
+        assertScope();
+        const reference = recovered.content_json?.arch9_campaign;
+        const mergeRecovered = (value) => ({ ...value, id: recovered.id, updatedAt: recovered.updated_at, contentJson: { ...value.contentJson, ...(reference ? { arch9_campaign: reference } : {}) } });
+        base = mergeRecovered(current);
+        draftRef.current = mergeRecovered(draftRef.current);
+        setDraft(mergeRecovered);
+        pendingLinkSave.current = null;
+        linkPending.current = false;
+      }
+      let saved = await saveEmailCampaign({
+        organisationId,
+        userId,
+        campaign: { ...base, id: lastId.current || undefined, html: output },
+      });
+      assertScope();
+      if (base.contentJson.ai_campaign && !base.contentJson.arch9_campaign) {
+        try {
+          saved = await ensureEmailCampaignPlan(organisationId, userId, saved);
+          linkPending.current = false;
+        } catch (linkError) {
+          assertScope();
+          linkPending.current = true;
+          if (linkError.code !== 'EMAIL_CAMPAIGN_LINK_SETUP') pendingLinkSave.current = saved;
+          setNotice(linkError.message);
+        }
+      }
+      return saved;
+    })();
     saving.current = operation;
     try {
       const saved = await operation;
+      assertScope();
       lastId.current = saved.id;
-      const snapshot = { ...current, id: saved.id };
+      const savedTimestamp = saved.updated_at || current.updatedAt;
+      const reference = saved.content_json?.arch9_campaign;
+      const savedMetadata = { id: saved.id, ...(savedTimestamp ? { updatedAt: savedTimestamp } : {}) };
+      const snapshot = { ...current, ...savedMetadata, ...(reference ? { contentJson: { ...current.contentJson, arch9_campaign: reference } } : {}) };
       persisted.current = JSON.stringify(snapshot);
-      setDraft((latest) => ({ ...latest, id: saved.id }));
-      draftRef.current = { ...draftRef.current, id: saved.id };
+      const mergeSaved = (latest) => ({ ...latest, ...savedMetadata, ...(reference ? { contentJson: { ...latest.contentJson, arch9_campaign: reference } } : {}) });
+      setDraft(mergeSaved);
+      draftRef.current = mergeSaved(draftRef.current);
       setSaveState(
         JSON.stringify(draftRef.current) === persisted.current
           ? "Saved just now"
@@ -355,10 +432,10 @@ export default function EmailCampaignBuilder({
       onDraftCreated?.(saved.id);
       return saved.id;
     } catch (e) {
-      setSaveState("Changes not saved");
+      if (scope === lifetime.current) setSaveState("Changes not saved");
       throw e;
     } finally {
-      saving.current = null;
+      if (saving.current === operation) saving.current = null;
     }
   }, [organisationId, userId, brand.name, onDraftCreated]);
   useEffect(() => {
@@ -370,9 +447,7 @@ export default function EmailCampaignBuilder({
     )
       return;
     const timer = setTimeout(() => {
-      void persist().catch((e) =>
-        setError(`Draft could not be saved: ${e.message}`),
-      );
+      void persist().catch((e) => { if (e.code !== 'EMAIL_DRAFT_SCOPE_CHANGED') setError(`Draft could not be saved: ${e.message}`) });
     }, 900);
     return () => clearTimeout(timer);
   }, [draft, organisationId, ready, persist]);
@@ -386,20 +461,21 @@ export default function EmailCampaignBuilder({
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [saveState]);
   const run = async (action) => {
+    const scope = lifetime.current;
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await action();
     } catch (e) {
-      setError(e.message || "Please try again.");
+      if (scope === lifetime.current) setError(e.message || "Please try again.");
     } finally {
-      setBusy(false);
+      if (scope === lifetime.current) setBusy(false);
     }
   };
   const go = async (next) => {
     if (next <= step) { setStep(next); setError(""); return; }
-    if (next > 0 && !detailsReady) {
+    if ((next === 3 && !detailsReady) || (next === 1 && !draftDetailsReady)) {
       setError("Complete the required campaign details before continuing.");
       setStep(0);
       return;
@@ -424,11 +500,11 @@ export default function EmailCampaignBuilder({
       past: [...h.past.slice(-49), draft.contentJson],
       future: [],
     }));
-    update({ contentJson: normalizeDocument(next) });
+    update({ contentJson: keepCampaignReference(next, draft.contentJson) });
   };
   const undo = () => {
     if (!history.past.length) return;
-    update({ contentJson: history.past.at(-1) });
+    update({ contentJson: keepCampaignReference(history.past.at(-1), draft.contentJson) });
     setHistory({
       past: history.past.slice(0, -1),
       future: [draft.contentJson, ...history.future],
@@ -436,7 +512,7 @@ export default function EmailCampaignBuilder({
   };
   const redo = () => {
     if (!history.future.length) return;
-    update({ contentJson: history.future[0] });
+    update({ contentJson: keepCampaignReference(history.future[0], draft.contentJson) });
     setHistory({
       past: [...history.past, draft.contentJson],
       future: history.future.slice(1),
@@ -550,7 +626,7 @@ export default function EmailCampaignBuilder({
             onClick={() =>
               void run(async () => {
                 await persist();
-                setNotice("Draft saved.");
+                if (!linkPending.current) setNotice("Draft saved.");
               })
             }
           >
@@ -597,22 +673,32 @@ export default function EmailCampaignBuilder({
           </details>
         </div>
       </header>
+      {ready && <AiCampaignAssistant key={`${organisationId}:${userId}`} organisationId={organisationId} draft={draft} listings={listings} persist={persist} onApply={(patch) => { update({ ...patch, ...(patch.contentJson ? { contentJson: keepCampaignReference(patch.contentJson, draft.contentJson) } : {}) }); if (patch.contentJson) setStep(2) }} initialListingId={initialListingId} initialObjective={initialObjective} initialEventId={initialEventId} initiallyOpen={openAiAssistant} agencyName={brand.name} subscriptionTypes={subscriptionTypes} onPermissionChange={(subscriptionTypeId) => update({ subscriptionTypeId })} onContinueManual={() => { setStep(2); setError('') }} />}
+      {draft.contentJson.arch9_campaign?.id && onOpenMarketingCampaign && (
+        <div className="eb-linked-campaign">
+          <p>This email is linked to your marketing campaign. Delivery and engagement results appear there.</p>
+          <button disabled={busy || !ready} onClick={() => void run(async () => {
+            await persist();
+            onOpenMarketingCampaign(draft.contentJson.arch9_campaign.id);
+          })}>View campaign results <ArrowRight size={16} /></button>
+        </div>
+      )}
       <nav aria-label="Campaign steps" className="eb-stepper">
         {STEPS.map((label, index) => (
           <button
             key={label}
             aria-current={step === index ? "step" : undefined}
-            className={step >= index ? "is-current" : ""}
+            className={step === index || (index < step && completedSteps[index]) ? "is-current" : ""}
             disabled={busy || !ready}
             onClick={() => void go(index)}
           >
             <span className="eb-step-number">
-              {index < step ? <Check size={17} /> : index + 1}
+              {index < step && completedSteps[index] ? <Check size={17} /> : index + 1}
             </span>
             <span>
               <strong>{label}</strong>
               <small>
-                {index < step
+                {index < step && completedSteps[index]
                   ? "Complete"
                   : index === step
                     ? "In progress"
@@ -803,9 +889,14 @@ export default function EmailCampaignBuilder({
                 Only eligible, consented contacts are included. Duplicates and
                 suppressed addresses are excluded.
               </p>
+              {draft.contentJson.arch9_campaign?.audience_pending && <div className="wa-info-panel"><h3>Choose an audience for this campaign</h3><p>No recipients are selected yet. Choose contacts or filters below.</p><button type="button" className="wa-secondary-button" onClick={() => update({ audienceFilter: {}, contentJson: { ...draft.contentJson, arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } })}>Use all eligible contacts</button></div>}
+              <Suspense fallback={<p role="status">Opening shared audiences…</p>}><MarketingAudiencePicker key={organisationId} organisationId={organisationId} channel="email" subscriptionId={draft.subscriptionTypeId} onApply={(ids, audience) => {
+                update({ audienceFilter: { contact_ids: ids }, contentJson: { ...draft.contentJson, ...(draft.contentJson.arch9_campaign ? { arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } : {}) } });
+                setNotice(`Applied ${ids.length} reviewed recipients from “${audience.name}”.`);
+              }} /></Suspense>
               <AudienceStudio
                 audienceFilter={draft.audienceFilter}
-                onChange={(audienceFilter) => update({ audienceFilter })}
+                onChange={(audienceFilter) => update({ audienceFilter: draft.contentJson.arch9_campaign?.audience_pending ? { ...audienceFilter, contact_ids: (audienceFilter.contact_ids || []).filter((id) => id !== "00000000-0000-0000-0000-000000000000") } : audienceFilter, contentJson: draft.contentJson.arch9_campaign?.audience_pending ? { ...draft.contentJson, arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } : draft.contentJson })}
                 contacts={contacts}
                 savedAudiences={savedAudiences}
                 organisationId={organisationId}
@@ -918,13 +1009,25 @@ export default function EmailCampaignBuilder({
                 <input
                   type="datetime-local"
                   value={scheduledFor}
-                  onChange={(e) => setScheduledFor(e.target.value)}
+                  onChange={(e) => { setScheduledFor(e.target.value); setAiReview(null); }}
                 />
                 <small>
                   Leave blank to queue immediately. Sender, consent, content and
                   audience are checked again before scheduling.
                 </small>
               </label>
+              {draft.contentJson.ai_campaign && <section aria-label="AI campaign sending approval">
+                <p>An agency principal or administrator must review this saved version before approving sending.</p>
+                <button disabled={busy} onClick={() => void run(async () => {
+                  const id = await persist();
+                  const snapshotKey = JSON.stringify(draftRef.current);
+                  const sendAt = scheduledFor ? new Date(scheduledFor).toISOString() : new Date(Date.now() + 60000).toISOString();
+                  const review = await reviewAiCampaign(id, sendAt);
+                  if (snapshotKey !== JSON.stringify(draftRef.current)) throw new Error('Campaign changed during review. Review the saved version again.');
+                  setAiReview({ ...review, key: snapshotKey });
+                })}>Review recipients, timing and charges</button>
+                {aiReview && <div role="status"><p>From: {aiReview.sender} · {aiReview.recipients} eligible recipients</p><p>Sending: {new Date(aiReview.send_at).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })} SAST</p><p>Estimated delivery charge: {aiReview.quote.currency} {Number(aiReview.quote.estimated_charge).toFixed(2)}. AI generation is recorded separately.</p><p>Preview the final email above before approving.</p></div>}
+              </section>}
               {contentIssues.map((issue) => (
                 <p className="eb-error" key={issue}>
                   {issue}
@@ -972,7 +1075,7 @@ export default function EmailCampaignBuilder({
                   onClick={() =>
                     void run(async () => {
                       await persist();
-                      setNotice("Draft saved.");
+                      if (!linkPending.current) setNotice("Draft saved.");
                     })
                   }
                 >
@@ -988,7 +1091,7 @@ export default function EmailCampaignBuilder({
               {step < 3 ? (
                 <button
                   className="eb-primary"
-                  disabled={busy || !detailsReady}
+                  disabled={busy || (step === 0 ? !draftDetailsReady : step === 2 ? !detailsReady : false)}
                   onClick={() => void go(step + 1)}
                 >
                   {step === 0 ? "Continue to audience" : "Continue"}
@@ -1002,6 +1105,7 @@ export default function EmailCampaignBuilder({
                     !detailsReady ||
                     !audienceCount ||
                     Boolean(contentIssues.length) ||
+                    (Boolean(draft.contentJson.ai_campaign) && (!aiReview || aiReview.key !== JSON.stringify(draft))) ||
                     serverContentCheck?.ready === false
                   }
                   onClick={() =>
@@ -1019,7 +1123,10 @@ export default function EmailCampaignBuilder({
                           preflight.contentCheck?.errors?.[0] ||
                           "Pre-send checks found an issue. Check sender, consent, sending policy and audience.",
                         );
-                      await scheduleEmailCampaign(
+                      if (draft.contentJson.ai_campaign) {
+                        if (!aiReview || aiReview.key !== JSON.stringify(draftRef.current)) throw new Error('Review this saved campaign version before approving.');
+                        await approveAiCampaign(id, aiReview);
+                      } else await scheduleEmailCampaign(
                         id,
                         scheduledFor
                           ? new Date(scheduledFor).toISOString()
@@ -1034,6 +1141,7 @@ export default function EmailCampaignBuilder({
                   <Send size={16} />
                   {busy
                     ? "Checking…"
+                    : draft.contentJson.ai_campaign ? 'Approve reviewed send'
                     : scheduledFor
                       ? "Preflight & schedule"
                       : "Preflight & send"}
@@ -1444,7 +1552,7 @@ export default function EmailCampaignBuilder({
                     onClick={() =>
                       void run(async () => {
                         await persist();
-                        const restored = fromRow(revision.snapshot, brand);
+                        const restored = { ...fromRow(revision.snapshot, brand), id: lastId.current, updatedAt: draftRef.current.updatedAt };
                         update(restored);
                         draftRef.current = restored;
                         await persist();

@@ -1,9 +1,8 @@
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient.js'
-import { REVO_ORGANISATION_ID } from '../revoExtensionRegistry.js'
 import { buildRevoInboxWorkflowRequest } from './workflowActions.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const TABLE_UNAVAILABLE_CODES = new Set(['42P01', '42703', 'PGRST204'])
+const TABLE_UNAVAILABLE_CODES = new Set(['42P01', '42703', 'PGRST204', 'PGRST205'])
 
 export const REVO_INBOX_CHANNEL_PROVIDERS = Object.freeze({
   email: Object.freeze([
@@ -26,10 +25,10 @@ function isUuid(value = '') {
   return UUID_PATTERN.test(text(value))
 }
 
-function requireRevoOrganisationId(organisationId = '') {
+function requireInboxOrganisationId(organisationId = '') {
   const normalized = text(organisationId)
-  if (normalized !== REVO_ORGANISATION_ID) {
-    throw new Error('The shared inbox is only available for the Revo workspace.')
+  if (!isUuid(normalized)) {
+    throw new Error('Choose a valid organisation workspace for Inbox.')
   }
   return normalized
 }
@@ -87,7 +86,7 @@ export function normalizeRevoInboxChannel(row = {}) {
 
 function requireChannelType(value) {
   const channel = text(value).toLowerCase()
-  if (!Object.hasOwn(REVO_INBOX_CHANNEL_PROVIDERS, channel)) throw new Error('Choose Email or WhatsApp for this Revo channel.')
+  if (!Object.hasOwn(REVO_INBOX_CHANNEL_PROVIDERS, channel)) throw new Error('Choose Email or WhatsApp for this inbox channel.')
   return channel
 }
 
@@ -103,9 +102,9 @@ export function buildRevoInboxChannel({ organisationId, actorUserId, channel, pr
   const normalizedChannel = requireChannelType(channel)
   const normalizedAddress = text(address)
   if (!normalizedAddress) throw new Error('Enter the inbox email address or WhatsApp number.')
-  if (!isUuid(actorUserId)) throw new Error('A signed-in Revo administrator is required.')
+  if (!isUuid(actorUserId)) throw new Error('A signed-in organisation administrator is required.')
   return {
-    organisation_id: requireRevoOrganisationId(organisationId),
+    organisation_id: requireInboxOrganisationId(organisationId),
     channel: normalizedChannel,
     provider_key: requireProviderKey(normalizedChannel, providerKey),
     address: normalizedAddress,
@@ -134,19 +133,8 @@ function mapMessage(row = {}) {
   }
 }
 
-function mapActivity(row = {}) {
-  return {
-    id: text(row.id),
-    conversationId: text(row.conversation_id),
-    actorUserId: text(row.actor_user_id),
-    action: text(row.action),
-    metadata: row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : {},
-    createdAt: row.created_at || null,
-  }
-}
-
 export function isSharedInboxSchemaUnavailable(error = null) {
-  return TABLE_UNAVAILABLE_CODES.has(text(error?.code)) || /revo_inbox_(activity|messages|conversations)/i.test(text(error?.message))
+  return TABLE_UNAVAILABLE_CODES.has(text(error?.code)) || /(?:does not exist|schema cache|could not find).*revo_inbox_|revo_inbox_.*(?:does not exist|schema cache)/i.test(text(error?.message))
 }
 
 export function buildPrivateInboxMessage({ organisationId, conversation, actorUserId, bodyText, type = 'note' } = {}) {
@@ -154,15 +142,15 @@ export function buildPrivateInboxMessage({ organisationId, conversation, actorUs
   const body = text(bodyText)
   if (!['note', 'draft'].includes(normalizedType)) throw new Error('Only a private note or draft can be saved before a channel is connected.')
   if (!body) throw new Error(`Write a ${normalizedType} before saving.`)
-  if (!isUuid(actorUserId)) throw new Error('A signed-in Revo user is required.')
+  if (!isUuid(actorUserId)) throw new Error('A signed-in workspace user is required.')
   if (!text(conversation?.id) || !text(conversation?.channel) || !text(conversation?.providerKey) || !text(conversation?.channelAddress)) {
     throw new Error('The conversation is missing its channel details.')
   }
   return {
-    organisation_id: requireRevoOrganisationId(organisationId),
+    organisation_id: requireInboxOrganisationId(organisationId),
     conversation_id: text(conversation.id),
     channel: text(conversation.channel),
-    direction: normalizedType === 'note' ? 'internal' : 'outbound',
+    direction: 'internal',
     message_type: normalizedType,
     provider_key: text(conversation.providerKey),
     sender_address: text(conversation.channelAddress),
@@ -174,47 +162,33 @@ export function buildPrivateInboxMessage({ organisationId, conversation, actorUs
   }
 }
 
-export async function loadRevoInbox(organisationId) {
-  const client = requireClient()
-  const resolvedOrganisationId = requireRevoOrganisationId(organisationId)
-  const [conversationsResult, messagesResult, activityResult, associationsResult] = await Promise.all([
-    client
-      .from('revo_inbox_conversations')
+// Bodies are fetched only for the open thread. PostgREST caps individual
+// responses, so each metadata request is explicitly bounded and paginated.
+export async function loadRevoInbox(organisationId, { conversationLimit = 100 } = {}) {
+  const client = requireClient(), org = requireInboxOrganisationId(organisationId)
+  const limit = Math.max(100, Math.floor(Number(conversationLimit) || 100))
+  const conversations = []
+  while (conversations.length <= limit) {
+    const offset = conversations.length, size = Math.min(100, limit + 1 - offset)
+    const rows = throwIfError(await client.from('revo_inbox_conversations')
       .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
-      .eq('organisation_id', resolvedOrganisationId)
-      .order('last_message_at', { ascending: false, nullsFirst: false }),
-    client
-      .from('revo_inbox_messages')
-      .select('id, conversation_id, channel, direction, message_type, sender_address, recipient_addresses, subject, body_text, delivery_status, occurred_at, created_by')
-      .eq('organisation_id', resolvedOrganisationId)
-      .order('occurred_at', { ascending: true }),
-    client
-      .from('revo_inbox_activity')
-      .select('id, conversation_id, actor_user_id, action, metadata_json, created_at')
-      .eq('organisation_id', resolvedOrganisationId)
-      .order('created_at', { ascending: true }),
-    client
-      .from('revo_inbox_associations')
-      .select('id, conversation_id, entity_type, entity_id, is_primary, created_at')
-      .eq('organisation_id', resolvedOrganisationId)
-      .order('created_at', { ascending: true }),
-  ])
-
-  const firstError = conversationsResult.error || messagesResult.error || activityResult.error || associationsResult.error
-  if (firstError) throw firstError
-  return {
-    conversations: (conversationsResult.data || []).map(mapConversation),
-    messages: (messagesResult.data || []).map(mapMessage),
-    activity: (activityResult.data || []).map(mapActivity),
-    associations: (associationsResult.data || []).map((row) => ({
-      id: text(row.id),
-      conversationId: text(row.conversation_id),
-      entityType: text(row.entity_type),
-      entityId: text(row.entity_id),
-      isPrimary: row.is_primary === true,
-      createdAt: row.created_at || null,
-    })),
+      .eq('organisation_id', org).order('last_message_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false }).range(offset,offset+size-1)) || []
+    conversations.push(...rows)
+    if (rows.length < size || conversations.length > limit) break
   }
+  const visible = conversations.slice(0,limit), ids = visible.map(row => row.id)
+  const associations = []
+  // Keep URL filters small for accounts with thousands of conversations.
+  for (let chunk = 0; chunk < ids.length; chunk += 100) {
+    for (let offset = 0; ; offset += 500) {
+      const rows = throwIfError(await client.from('revo_inbox_associations').select('id,conversation_id,entity_type,entity_id,is_primary,created_at')
+        .eq('organisation_id',org).in('conversation_id',ids.slice(chunk,chunk+100)).order('id').range(offset,offset+499)) || []
+      associations.push(...rows)
+      if (rows.length < 500) break
+    }
+  }
+  return { conversations: visible.map(mapConversation), hasMore: conversations.length > limit, messages: [], activity: [],
+    associations: associations.map(row => ({ id: text(row.id), conversationId: text(row.conversation_id), entityType: text(row.entity_type), entityId: text(row.entity_id), isPrimary: row.is_primary === true, createdAt: row.created_at || null })) }
 }
 
 export async function loadRevoInboxChannels(organisationId) {
@@ -222,7 +196,7 @@ export async function loadRevoInboxChannels(organisationId) {
   const data = throwIfError(await client
     .from('revo_inbox_channels')
     .select('id, organisation_id, channel, provider_key, address, display_name, connection_status, is_default, created_at, updated_at')
-    .eq('organisation_id', requireRevoOrganisationId(organisationId))
+    .eq('organisation_id', requireInboxOrganisationId(organisationId))
     .order('channel', { ascending: true })
     .order('created_at', { ascending: true }))
   return (data || []).map(normalizeRevoInboxChannel)
@@ -252,10 +226,10 @@ export async function updateRevoInboxChannel({ organisationId, channelId, displa
     .from('revo_inbox_channels')
     .update(patch)
     .eq('id', text(channelId))
-    .eq('organisation_id', requireRevoOrganisationId(organisationId))
+    .eq('organisation_id', requireInboxOrganisationId(organisationId))
     .select('id, organisation_id, channel, provider_key, address, display_name, connection_status, is_default, created_at, updated_at')
     .maybeSingle())
-  if (!data) throw new Error('The Revo channel could not be updated.')
+  if (!data) throw new Error('The inbox channel could not be updated.')
   return normalizeRevoInboxChannel(data)
 }
 
@@ -283,7 +257,7 @@ export async function updateRevoInboxConversation({ organisationId, conversation
     .from('revo_inbox_conversations')
     .update(patch)
     .eq('id', text(conversationId))
-    .eq('organisation_id', requireRevoOrganisationId(organisationId))
+    .eq('organisation_id', requireInboxOrganisationId(organisationId))
     .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
     .maybeSingle())
   if (!data) throw new Error('The conversation could not be updated. It may no longer be accessible.')
@@ -307,7 +281,7 @@ export async function markRevoInboxConversationRead({ organisationId, conversati
     .from('revo_inbox_conversations')
     .update({ unread_count: 0, last_read_at: new Date().toISOString() })
     .eq('id', text(conversationId))
-    .eq('organisation_id', requireRevoOrganisationId(organisationId))
+    .eq('organisation_id', requireInboxOrganisationId(organisationId))
     .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
     .maybeSingle())
   if (!data) throw new Error('The conversation could not be marked as read.')

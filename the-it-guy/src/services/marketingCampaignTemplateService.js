@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { reusablePlaybook } from './campaignPlaybookModel'
 import { campaignPayload } from './marketingCampaignService'
 import { validateChannelContent } from './marketingCampaignTemplates'
 
@@ -7,6 +8,7 @@ function scope(organisationId) {
     throw new Error('Choose a connected agency workspace first.')
 }
 function failure(error) {
+  if (error?.code === '23514' && /marketing_campaign_templates_planned_channels_check/.test(error.message || '')) return new Error('Campaign template storage needs its database update before ChatGPT Ads can be saved. Your draft is still here.')
   if (['42P01', 'PGRST205', 'PGRST204'].includes(error?.code))
     return new Error(
       'Saved templates are not enabled in this environment yet. Ready-made templates are available; an administrator needs to enable template storage.',
@@ -50,6 +52,8 @@ export function campaignTemplatePayload(input) {
     ['run_mode', mode],
     ['duration_days', duration],
     ['visibility', visibility],
+    ...(plan.campaign_setup ? [['campaign_setup', { ...plan.campaign_setup, audienceId: '' }]] : []),
+    ...(plan.playbook ? [['playbook', reusablePlaybook(plan.playbook, plan.planned_channels)]] : Object.hasOwn(plan, 'playbook') ? [['playbook', null]] : []),
     [
       'channel_content',
       validateChannelContent(

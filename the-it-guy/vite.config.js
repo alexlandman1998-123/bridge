@@ -24,6 +24,7 @@ import { createPublicListingsResponse } from './server/services/publicListingsAp
 import { createProperty24ApiResponse } from './server/property24/api.js'
 import { createPrivatePropertyApiResponse } from './server/private-property/api.js'
 import { createMobileWebPushResponse } from './server/services/mobileWebPushApi.js'
+import { handleAiCampaign } from './server/services/aiCampaignApi.js'
 
 function documentTitleFallbackPlugin() {
   const fallbackDocumentTitle = 'Arch9 | Platform'
@@ -308,6 +309,19 @@ function missionControlApiPlugin() {
         const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
         writeNodeJsonResponse(response, await createMobileWebPushResponse({ method: request.method, headers: request.headers, env }))
       })
+      server.middlewares.use('/api/marketing/ai-campaign', async (request, response) => {
+        response.setHeader('Content-Type', 'application/json; charset=utf-8');
+        response.setHeader('Cache-Control', 'no-store');
+        try {
+          const chunks = []; let size = 0;
+          for await (const chunk of request) { size += Buffer.byteLength(chunk); if (size > 18000) throw new Error('Request too large'); chunks.push(Buffer.from(chunk)); }
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+          const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env };
+          const target = env.SUPABASE_URL || env.VITE_SUPABASE_URL || '';
+          if (['generate', 'business_generate', 'crm_follow_up_generate'].includes(body.action) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/)/.test(target)) return writeNodeJsonResponse(response, { status: 503, body: { error: 'Local previews use mocked generation or a local Supabase database. Use an approved deployment for managed AI.' } });
+          writeNodeJsonResponse(response, await handleAiCampaign({ method: request.method, headers: request.headers, body, env }));
+        } catch { writeNodeJsonResponse(response, { status: 400, body: { error: 'Invalid campaign request.' } }); }
+      })
       server.middlewares.use('/api/public/listings', async (request, response) => {
         const payload = await createPublicListingsResponse({
           method: request.method,
@@ -399,12 +413,18 @@ function missionControlApiPlugin() {
 // https://vite.dev/config/
 export default defineConfig({
   // Test optimization must not replace dependencies used by a running dev server.
-  cacheDir: process.env.VITEST ? 'node_modules/.vite-vitest' : 'node_modules/.vite-dev',
+  cacheDir: process.env.VITEST || process.argv.some((arg) => /\.test\.[cm]?[jt]sx?$/.test(arg))
+    ? 'node_modules/.vite-vitest'
+    : 'node_modules/.vite-dev',
   // Shared Edge/editor code resolves the parser from this app's pinned package.
   resolve: { dedupe: ['parse5'] },
   plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
   // Saved HTML previews can reference disposable Vite cache files.
-  optimizeDeps: { entries: ['index.html', 'home-seekers.html'] },
+  optimizeDeps: {
+    entries: ['index.html', 'home-seekers.html'],
+    // Keep React's renderer ready before a lazy setup page first requests it.
+    include: ['react', 'react-dom', 'react-dom/client'],
+  },
   build: {
     chunkSizeWarningLimit: 1800,
     rollupOptions: {

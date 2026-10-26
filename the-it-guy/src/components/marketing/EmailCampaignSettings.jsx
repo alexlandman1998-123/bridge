@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import '../inbox/email-mailbox-settings.css'
 import { Copy, Globe, Mail, Plus, RefreshCw, Send } from 'lucide-react'
 import { createEmailSender, createEmailSendingDomain, getEmailSendingPolicy, refreshEmailSenderVerification, sendEmailCampaignTest, verifyEmailSendingDomain } from '../../services/emailCampaignService'
 
-export default function EmailCampaignSettings({ organisationId, userId, domains = [], identities = [], loading, error: loadError, onRefresh }) {
+function EmailSendingSettings({ organisationId, userId, domains = [], identities = [], loading, error: loadError, onRefresh }) {
   const [domainName, setDomainName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
@@ -94,7 +95,7 @@ export default function EmailCampaignSettings({ organisationId, userId, domains 
   }
   const controlsDisabled = unavailable || checking
   return <section className="email-settings-workspace" aria-label="Email settings">
-    <div className="email-section-heading"><div><h2>Connect your agency email</h2><p>Verify your domain and choose your sender. Sending activates automatically.</p></div><button className="wa-secondary-button" type="button" disabled={controlsDisabled} onClick={() => void run(async () => { const result = await refreshEmailSenderVerification(organisationId); return `${result.domainsVerified || 0} of ${result.domainsChecked || 0} sending domains verified.` })}><RefreshCw size={15} /> Recheck verification</button></div>
+    <div className="email-section-heading"><div><h2>Connect your agency email</h2></div><button className="wa-secondary-button" type="button" disabled={controlsDisabled} onClick={() => void run(async () => { const result = await refreshEmailSenderVerification(organisationId); return `${result.domainsVerified || 0} of ${result.domainsChecked || 0} sending domains verified.` })}><RefreshCw size={15} /> Recheck verification</button></div>
     <ol className="email-setup-steps" aria-label="Email setup progress">
       <li aria-current={!domains.length ? 'step' : undefined}>{domains.length ? '✓ ' : '1. '}Add your domain</li>
       <li aria-current={domains.length && !verifiedDomain ? 'step' : undefined}>{verifiedDomain ? '✓ ' : '2. '}Publish DNS records</li>
@@ -123,4 +124,15 @@ export default function EmailCampaignSettings({ organisationId, userId, domains 
       </article>
     </div>
   </section>
+}
+
+const EmailMailboxSettings = lazy(() => import('../inbox/EmailMailboxSettings.jsx'))
+export default function EmailCampaignSettings(props) {
+  const [section, setSection] = useState('sending')
+  return <div>
+    <div className="email-settings-nav" role="tablist" aria-label="Email settings sections">
+      {[['sending','Sending domains & senders'],['mailboxes','Mailboxes'],['signatures','Signatures']].map(([key,label]) => <button type="button" key={key} role="tab" aria-selected={section === key} onClick={() => setSection(key)}>{label}</button>)}
+    </div>
+    {section === 'sending' ? <EmailSendingSettings {...props} /> : <Suspense fallback={<p role="status">Opening mailbox settings…</p>}><EmailMailboxSettings key={`${props.organisationId}:${props.userId}`} organisationId={props.organisationId} userId={props.userId} tab={section} showTabs={false} /></Suspense>}
+  </div>
 }

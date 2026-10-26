@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EmailCampaignSettings from '../EmailCampaignSettings'
-const mocks = vi.hoisted(() => ({ createDomain: vi.fn(), createSender: vi.fn(), verify: vi.fn(), refresh: vi.fn() }))
-vi.mock('../../../services/emailCampaignService', () => ({ createEmailSendingDomain: mocks.createDomain, createEmailSender: mocks.createSender, verifyEmailSendingDomain: mocks.verify, refreshEmailSenderVerification: mocks.refresh }))
+const mocks = vi.hoisted(() => ({ createDomain: vi.fn(), createSender: vi.fn(), verify: vi.fn(), refresh: vi.fn(), policy: vi.fn(), test: vi.fn() }))
+vi.mock('../../../services/emailCampaignService', () => ({ createEmailSendingDomain: mocks.createDomain, createEmailSender: mocks.createSender, verifyEmailSendingDomain: mocks.verify, refreshEmailSenderVerification: mocks.refresh, getEmailSendingPolicy: mocks.policy, sendEmailCampaignTest: mocks.test }))
 const domain = { id: 'domain', domain_name: 'updates.agency.co.za', verification_status: 'pending', provider_domain_id: 'provider', dns_records: [{ name: 'mail.updates', type: 'TXT', value: 'public-dns-value' }] }
 const props = { organisationId: 'org', userId: 'user', domains: [domain], identities: [], onRefresh: vi.fn() }
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+beforeEach(() => { mocks.refresh.mockResolvedValue({ domainsVerified: 0, domainsChecked: 1 }); mocks.policy.mockResolvedValue(null) })
+const settled = () => waitFor(() => expect(screen.getByRole('button', { name: 'Recheck verification' }).disabled).toBe(false))
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 describe('Email settings', () => {
   it('rejects URLs and adds a normalized domain through the existing service', async () => {
     mocks.createDomain.mockResolvedValue({ created: true })
     render(<EmailCampaignSettings {...props} />)
+    await settled()
     fireEvent.change(screen.getByLabelText('Domain name'), { target: { value: 'https://agency.co.za/path' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add domain' }))
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('Enter a domain name'))
@@ -25,26 +28,77 @@ describe('Email settings', () => {
   it('checks DNS verification and prevents senders from using a different domain', async () => {
     mocks.verify.mockResolvedValue({ domain: { status: 'verified' } })
     render(<EmailCampaignSettings {...props} />)
+    await settled()
     fireEvent.click(screen.getByRole('button', { name: 'Check domain verification' }))
     await screen.findByText('updates.agency.co.za is verified.')
     expect(mocks.verify).toHaveBeenCalledWith({ organisationId: 'org', domainId: 'domain' })
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Agency' } })
     fireEvent.change(screen.getByLabelText('Sending domain'), { target: { value: 'domain' } })
+    fireEvent.change(screen.getByLabelText('Reply-to inbox'), { target: { value: 'office@agency.co.za' } })
     fireEvent.change(screen.getByLabelText('Sender email'), { target: { value: 'agent@other.co.za' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add sender' }))
     await screen.findByText('Use an address ending in @updates.agency.co.za.')
     expect(mocks.createSender).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText('Sender email'), { target: { value: 'Agent@Updates.Agency.co.za' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add sender' }))
-    await waitFor(() => expect(mocks.createSender).toHaveBeenCalledWith({ organisationId: 'org', userId: 'user', displayName: 'Agency', email: 'agent@updates.agency.co.za', sendingDomainId: 'domain' }))
+    await waitFor(() => expect(mocks.createSender).toHaveBeenCalledWith({ organisationId: 'org', userId: 'user', displayName: 'Agency', email: 'agent@updates.agency.co.za', sendingDomainId: 'domain', replyToEmail: 'office@agency.co.za', makeDefault: true, identityId: null }))
   })
   it('reports service errors and disables mutations when workspace data is unavailable', async () => {
     mocks.verify.mockRejectedValue(new Error('Admin access required'))
     const { rerender } = render(<EmailCampaignSettings {...props} />)
+    await settled()
     fireEvent.click(screen.getByRole('button', { name: 'Check domain verification' }))
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Admin access required')
     rerender(<EmailCampaignSettings {...props} error="Unable to load" />)
     expect(screen.getByRole('button', { name: 'Add domain' }).disabled).toBe(true)
     expect(screen.getByRole('button', { name: 'Recheck verification' }).disabled).toBe(true)
   })
+})
+
+
+it('shows automatic readiness and sends the selected identity test without a recipient override', async () => {
+  mocks.policy.mockResolvedValue({ approved_at: 'now', daily_recipient_limit: 500 })
+  mocks.test.mockResolvedValue({ deliveredTo: 'admin@agency.co.za' })
+  const identity = { id: 'sender', verification_status: 'verified', is_default: true, display_name: 'Agency', from_email: 'news@updates.agency.co.za', reply_to_email: 'office@agency.co.za', email_sending_domain_id: 'domain' }
+  render(<EmailCampaignSettings {...props} domains={[{ ...domain, verification_status: 'verified' }]} identities={[identity]} />)
+  await screen.findByText('Your agency is ready to send')
+  fireEvent.click(screen.getByRole('button', { name: 'Send me a test' }))
+  await screen.findByText(/Test accepted for sending to admin@agency.co.za/)
+  expect(mocks.test).toHaveBeenCalledWith({ organisationId: 'org', senderIdentityId: 'sender', setupTest: true })
+  fireEvent.click(screen.getByRole('button', { name: 'Edit sender' }))
+  expect(screen.getByLabelText('Reply-to inbox').value).toBe('office@agency.co.za')
+  fireEvent.change(screen.getByLabelText('Reply-to inbox'), { target: { value: 'replies@agency.co.za' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save sender' }))
+  await waitFor(() => expect(mocks.createSender).toHaveBeenCalledWith(expect.objectContaining({ identityId: 'sender', makeDefault: true, replyToEmail: 'replies@agency.co.za' })))
+})
+it('keeps test sending disabled for a safety pause', async () => {
+  mocks.policy.mockResolvedValue({ approved_at: 'now', paused_at: 'now', pause_reason: 'Sending paused after a spam complaint.' })
+  render(<EmailCampaignSettings {...props} domains={[{ ...domain, verification_status: 'verified' }]} identities={[{ id: 'sender', verification_status: 'verified' }]} />)
+  await screen.findByText('Sending is paused')
+  expect(screen.getByRole('button', { name: 'Send me a test' }).disabled).toBe(true)
+})
+it('polls verification and stops checking when settings is closed', async () => {
+  vi.useFakeTimers()
+  const { unmount } = render(<EmailCampaignSettings {...props} />)
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  expect(mocks.refresh).toHaveBeenCalledTimes(1)
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  expect(mocks.refresh).toHaveBeenCalledTimes(2)
+  unmount()
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  expect(mocks.refresh).toHaveBeenCalledTimes(2)
+})
+
+vi.mock('../../inbox/EmailMailboxSettings.jsx', () => ({ default: ({ organisationId, userId, tab }) => <p>Mailbox section: {tab} · {organisationId} · {userId}</p> }))
+it('opens mailbox and signature settings with the current workspace identity', async () => {
+  render(<EmailCampaignSettings {...props} />)
+  await settled()
+  fireEvent.click(screen.getByRole('tab', { name: 'Mailboxes' }))
+  await screen.findByText('Mailbox section: mailboxes · org · user')
+  fireEvent.click(screen.getByRole('tab', { name: 'Signatures' }))
+  await screen.findByText('Mailbox section: signatures · org · user')
+  expect(screen.queryByLabelText('Domain name')).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: 'Sending domains & senders' }))
+  await settled()
+  expect(screen.getByLabelText('Domain name')).toBeTruthy()
 })

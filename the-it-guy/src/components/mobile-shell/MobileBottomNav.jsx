@@ -5,20 +5,19 @@ import {
   Home,
   LayoutGrid,
   MessageCircle,
+  Megaphone,
   CalendarDays,
   ChevronRight,
   Plus,
   QrCode,
-  StickyNote,
-  Upload,
-  CalendarPlus,
+  Store,
   UserPlus,
   UsersRound,
   X,
 } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { getMobileNavItems, getMobilePageMenuItems, resolveMobileRoleCategory } from '../../config/mobileShell'
+import { canAccessMobileMarketing, getMobileNavItems, getMobilePageMenuItems, resolveMobileRoleCategory } from '../../config/mobileShell'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useMobileLeadCreate } from './mobileLeadCreateContext.js'
 import { useMobileAppointmentCreate } from './mobileAppointmentCreateContext.js'
@@ -39,6 +38,9 @@ const ICONS = {
   more: ArrowUpLeft,
   listings: Building2,
   calendar: CalendarDays,
+  marketing: Megaphone,
+  campaigns: Megaphone,
+  templateShop: Store,
   pipeline: LayoutGrid,
   deals: BriefcaseBusiness,
 }
@@ -60,16 +62,37 @@ export default function MobileBottomNav() {
   const location = useLocation()
   const items = getMobileNavItems(workspace)
   const menuItems = getMobilePageMenuItems(workspace)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [connectOpen, setConnectOpen] = useState(false)
+  const createActions = canAccessMobileMarketing(workspace)
+    ? [...CREATE_ACTIONS, { key: 'campaign', label: 'New campaign', icon: Megaphone, to: '/mobile/marketing?section=campaigns&view=create' }]
+    : CREATE_ACTIONS
+  const [createLocation, setCreateLocation] = useState(null)
+  const [connectLocation, setConnectLocation] = useState(null)
+  const createOpen = createLocation === location.key
+  const connectOpen = connectLocation === location.key
+  const setCreateOpen = (open) => setCreateLocation(open ? location.key : null)
+  const setConnectOpen = (open) => setConnectLocation(open ? location.key : null)
   const [contactLocation, setContactLocation] = useState(null)
   const supportsContactCard = ['agent', 'principal', 'default'].includes(resolveMobileRoleCategory(workspace))
   const [menuLocation, setMenuLocation] = useState(null)
   const menuOpen = menuLocation === location.key
   const menuRef = useRef(null)
+  const createRef = useRef(null)
   const activeCreateType = new URLSearchParams(location.search).get('create') || ''
   const createSheetOpen = isMobileCreateType(activeCreateType)
-  const matchesPage = (item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+  const matchesPage = (item) => {
+    const [pathname, search = ''] = item.to.split('?')
+    if (location.pathname !== pathname && !location.pathname.startsWith(`${pathname}/`)) return false
+    const current = new URLSearchParams(location.search)
+    const target = new URLSearchParams(search)
+    if (item.key === 'marketing') return current.get('section') !== 'campaigns'
+    if (item.key === 'campaigns' || item.key === 'templateShop') {
+      const view = current.get('view') || ''
+      const studio = current.get('page') === 'studio' || view === 'templates' || ['template-create', 'template-edit', 'channel-template-create', 'channel-template-edit'].includes(view) || current.has('channelTemplate')
+      return current.get('section') === 'campaigns' && (item.key === 'templateShop' ? studio : !studio)
+    }
+    if (![...target].every(([key, value]) => current.get(key) === value)) return false
+    return true
+  }
   const menuActive = menuOpen || (menuItems.some(matchesPage) && !items.some((item) => item.key !== 'more' && matchesPage(item)))
 
   useEffect(() => {
@@ -78,6 +101,13 @@ export default function MobileBottomNav() {
     dialog.showModal()
     return () => { if (dialog.open) dialog.close() }
   }, [menuOpen])
+
+  useEffect(() => {
+    if (!createOpen) return undefined
+    const dialog = createRef.current
+    dialog.showModal()
+    return () => { if (dialog.open) dialog.close() }
+  }, [createOpen])
 
   function openAction(action) {
     setCreateOpen(false)
@@ -110,10 +140,9 @@ export default function MobileBottomNav() {
       {connectOpen && <Suspense fallback={null}><MobileConnectSheet workspace={workspace} onClose={() => setConnectOpen(false)} /></Suspense>}
       {contactLocation === location.key && <Suspense fallback={null}><MobileContactCreateSheet onClose={() => setContactLocation(null)} /></Suspense>}
       {createOpen ? (
-        <div className="fixed inset-0 z-50 bg-[#10243a]/28 backdrop-blur-sm" onClick={() => setCreateOpen(false)}>
+        <dialog ref={createRef} className="fixed inset-0 z-50 m-0 h-[100dvh] max-h-none w-full max-w-none border-0 bg-[#10243a]/28 p-0 text-inherit backdrop-blur-sm" aria-label="Add new" onCancel={() => setCreateOpen(false)} onClick={() => setCreateOpen(false)}>
           <div
-            className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-[520px] rounded-t-[12px] border border-[#e2e7e3] bg-white px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_32px_rgba(15,23,42,0.12)]"
-            role="dialog" aria-modal="true" aria-label="Add new"
+            className="absolute inset-x-0 bottom-0 mx-auto max-h-full w-full max-w-[520px] overflow-y-auto overscroll-contain rounded-t-[12px] border border-[#e2e7e3] bg-white px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_32px_rgba(15,23,42,0.12)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mx-auto max-w-[520px]">
@@ -128,7 +157,7 @@ export default function MobileBottomNav() {
                 </button>
               </div>
               <div className="mobile-quick-create-actions">
-                {CREATE_ACTIONS.map((action) => {
+                {createActions.map((action) => {
                   const Icon = action.icon
                   return <button key={action.key} type="button" className="mobile-quick-create-action" onClick={() => openAction(action)} data-mobile-create-action={action.key} disabled={action.key === 'appointment' && Boolean(appointmentCreate) && !appointmentCreate.openAppointmentCreate}>
                     <Icon size={22} strokeWidth={1.7} aria-hidden="true" />
@@ -139,7 +168,7 @@ export default function MobileBottomNav() {
               </div>
             </div>
           </div>
-        </div>
+        </dialog>
       ) : null}
 
       {!createSheetOpen ? (

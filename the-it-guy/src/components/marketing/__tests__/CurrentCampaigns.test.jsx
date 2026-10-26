@@ -115,6 +115,7 @@ it('keeps mobile scrolling and hides controls when one campaign is visible', () 
     ],
   })
   expect(screen.getByText('ZAR 0.00')).toBeTruthy()
+  expect(screen.queryByRole('progressbar')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Next campaigns' })).toBeNull()
 })
 it('keeps incomplete metrics unknown and prioritises activity needing attention', () => {
@@ -150,6 +151,7 @@ it('renders preview budgets and results only on the labelled mock campaign', () 
     ],
   })
   expect(screen.getByText('Demo analytics')).toBeTruthy()
+  expect(screen.getByRole('progressbar', { name: 'Budget used' }).getAttribute('aria-valuenow')).toBe('41.7')
   expect(screen.getByText('ZAR 15,000.00')).toBeTruthy()
   expect(screen.getByText('ZAR 6,250.00')).toBeTruthy()
   expect(screen.getByText('ZAR 8,750.00')).toBeTruthy()

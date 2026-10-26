@@ -1,3 +1,6 @@
+import { assertFreshCampaignFacebookContacts } from '../_shared/campaignFacebookContacts.js';
+import { withApiCredentials } from "../_shared/apiCredentials.ts";
+import { supabaseServiceKey, supabasePublishableKey } from "../_shared/apiCredentials.ts";
 import { META_ADMIN_ROLES, META_STAFF_ROLES } from '../_shared/metaIntegrationCore.js';
 import { createClient } from 'supabase';
 import { createMetaIntegrationHandler } from './handler.js';
@@ -9,11 +12,11 @@ const env=(name:string)=>Deno.env.get(name)?.trim()||'';
 const ADMIN=new Set(META_ADMIN_ROLES);
 const STAFF=new Set(META_STAFF_ROLES);
 
-Deno.serve(async req=>{
+Deno.serve(withApiCredentials(async req=>{
   if(req.method==='OPTIONS') return new Response('ok',{headers});
   if(req.method!=='POST') return new Response(JSON.stringify({error:'Method not allowed.'}),{status:405,headers});
   try {
-    const url=env('SUPABASE_URL'),serviceKey=env('SUPABASE_SERVICE_ROLE_KEY'),anon=env('SUPABASE_ANON_KEY');
+    const url=env('SUPABASE_URL'),serviceKey=supabaseServiceKey({ get: env }),anon=supabasePublishableKey({ get: env });
     if(!url||!serviceKey||!anon) throw new Error('Meta integration storage is not configured.');
     const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
     const graphVersion=env('META_GRAPH_VERSION')||'v23.0';
@@ -63,6 +66,30 @@ Deno.serve(async req=>{
         const check=await actor.userDb.rpc('assert_seller_onboarding_draft_reviewed',{p_listing_id:id});
         if(check.error) throw new Error(check.error.message||'Review this listing before publishing.');
       },
+      loadCampaign:async(actor:any,org:string,id:string)=>{
+        // Resolve through the signed-in actor's RLS client, never a browser-sent
+        // campaign snapshot. Provider credentials remain on the service client.
+        const saved=await actor.userDb.from('marketing_campaigns').select('id,organisation_id,name,status,revision,created_by,updated_at,planned_channels,channel_content,campaign_builder,playbook').eq('organisation_id',org).eq('id',id).maybeSingle();
+        if(saved.error) throw new Error('Saved business campaign details could not be loaded.');
+        if(!saved.data) return null;
+        const permission=saved.data.created_by===actor.userId ? {data:true,error:null} : await actor.userDb.rpc('email_campaign_can_send',{p_organisation_id:org});
+        if(permission.error) throw new Error('Campaign publishing permission could not be checked.');
+        return {campaign:saved.data,canPublish:permission.data===true};
+      },
+      assertCampaignPublishable:async(actor:any,org:string,campaign:any)=>{
+        await assertFreshCampaignFacebookContacts(actor,org,campaign);
+        const agent=await db.from('organisation_users').select('user_id').eq('organisation_id',org).eq('user_id',campaign.campaign_builder?.agentId).eq('status','active').maybeSingle();
+        if(agent.error || !agent.data) throw new Error('The campaign agent is no longer active in this agency.');
+        if(campaign.campaign_builder?.template!=='key-handover') return;
+        let found:any=null;
+        for(let offset=0;offset<=10000;offset+=200){
+          const choices=await actor.userDb.rpc('marketing_handover_choices',{p_organisation_id:org,p_offset:offset});
+          if(choices.error) throw new Error('The permitted completed transaction could not be checked.');
+          found=(choices.data||[]).find((item:any)=>item.id===campaign.campaign_builder.details?.transactionId);
+          if(found || (choices.data||[]).length<200) break;
+        }
+        if(!found || (found.area && found.area!==campaign.campaign_builder.details?.area)) throw new Error('The completed handover transaction changed. Refresh, review and save the campaign before posting.');
+      },
       downloadMedia:async(token:string,id:string)=>{
         const asset=await graph(token,`${id}`);
         let mediaUrl=new URL(asset.url);
@@ -87,4 +114,4 @@ Deno.serve(async req=>{
     });
     return new Response(JSON.stringify(await handler(await readMetaIntegrationPayload(req),req.headers.get('authorization')||'')),{headers});
   } catch(error){return new Response(JSON.stringify({error:error instanceof Error?error.message:'Meta integration request failed.'}),{status:400,headers});}
-});
+}));

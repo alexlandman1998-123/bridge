@@ -427,3 +427,33 @@ enabled = true
 # Server-only credential check shared with the campaign worker.
 verify_jwt = false
 entrypoint = "./functions/whatsapp-automation-worker/index.ts"
+
+[functions.revo-imap-inbox]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-imap-inbox/deno.json"
+entrypoint = "./functions/revo-imap-inbox/index.ts"
+
+[functions.revo-inbox-attachment]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-inbox-attachment/deno.json"
+entrypoint = "./functions/revo-inbox-attachment/index.ts"
+
+[functions.shared-inbox-send]
+enabled = true
+verify_jwt = false
+import_map = "./functions/shared-inbox-send/deno.json"
+entrypoint = "./functions/shared-inbox-send/index.ts"
+
+[functions.shared-inbox-upload]
+enabled = true
+verify_jwt = false
+import_map = "./functions/shared-inbox-upload/deno.json"
+entrypoint = "./functions/shared-inbox-upload/index.ts"
+
+[functions.shared-inbox-smtp]
+enabled = true
+verify_jwt = false
+import_map = "./functions/shared-inbox-smtp/deno.json"
+entrypoint = "./functions/shared-inbox-smtp/index.ts"

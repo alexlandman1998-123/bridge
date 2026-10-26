@@ -20,9 +20,10 @@ assert.deepEqual(note.recipient_addresses, ['lead@example.test'])
 
 const draft = buildPrivateInboxMessage({ organisationId, conversation, actorUserId, bodyText: 'Thanks for your enquiry.', type: 'draft' })
 assert.equal(draft.message_type, 'draft')
+assert.equal(draft.direction, 'internal')
 assert.equal(draft.subject, 'Viewing request')
 assert.throws(() => buildPrivateInboxMessage({ organisationId, conversation, actorUserId, bodyText: '', type: 'note' }), /Write a note/)
-assert.throws(() => buildPrivateInboxMessage({ organisationId: 'other', conversation, actorUserId, bodyText: 'Nope', type: 'note' }), /only available for the Revo workspace/)
+assert.throws(() => buildPrivateInboxMessage({ organisationId: 'other', conversation, actorUserId, bodyText: 'Nope', type: 'note' }), /valid organisation workspace/)
 assert.equal(isSharedInboxSchemaUnavailable({ code: '42P01' }), true)
 assert.equal(isSharedInboxSchemaUnavailable({ message: 'permission denied' }), false)
 
@@ -40,3 +41,5 @@ assert.equal(configuredChannel.metadata_json.setupVersion, 1)
 assert.throws(() => buildRevoInboxChannel({ organisationId, actorUserId, channel: 'email', providerKey: 'meta_cloud_api', address: 'inbox@revo.example' }), /supported provider/)
 
 console.log('Revo shared inbox operations service checks passed.')
+
+assert.equal(buildRevoInboxChannel({ organisationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', actorUserId, channel: 'email', providerKey: 'google_workspace', address: 'inbox@otheragency.test' }).organisation_id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')

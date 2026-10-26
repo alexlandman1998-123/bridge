@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CalendarDays, Target } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import {
+  ArrowLeft,
+  ArrowRight,
+  CalendarDays,
+  Target,
+  UsersRound,
+  Eye,
+  MousePointerClick,
+  Send,
+  MessageCircle,
+} from 'lucide-react'
+import { MarketingLink as Link } from './MarketingNavigation.jsx'
 import {
   CAMPAIGN_CHANNELS,
   CAMPAIGN_STATUSES,
@@ -69,6 +79,40 @@ function CampaignCard({ campaign, workspace }) {
         Number.isFinite(Number(campaign.planned_budget))
       ? `${campaign.budget_currency || 'ZAR'} ${Number(campaign.planned_budget).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : missing
+  const results = [
+    {
+      label: 'Leads',
+      value: demo?.leads ?? null,
+      icon: <UsersRound size={16} aria-hidden="true" />,
+      tone: 'leads',
+    },
+    {
+      label: 'Views',
+      value: demo?.views ?? null,
+      icon: <Eye size={16} aria-hidden="true" />,
+      tone: 'views',
+    },
+    {
+      label: 'Email clicks',
+      value: clicks,
+      icon: <MousePointerClick size={16} aria-hidden="true" />,
+      tone: 'clicks',
+    },
+    {
+      label: 'Delivered',
+      value: delivered,
+      icon: <Send size={16} aria-hidden="true" />,
+      tone: 'delivered',
+    },
+    {
+      label: 'WhatsApp reads',
+      value: reads,
+      icon: <MessageCircle size={16} aria-hidden="true" />,
+      tone: 'reads',
+    },
+  ]
+  const budgetUsed =
+    demo && demo.budget > 0 ? (demo.spend / demo.budget) * 100 : null
   return (
     <Link
       className="mc-current-card"
@@ -101,78 +145,83 @@ function CampaignCard({ campaign, workspace }) {
         </span>
         <p>{campaign.objective}</p>
       </div>
-      <div className="mc-current-platforms" aria-label="Platform activity">
+      <div
+        className="mc-current-platforms"
+        aria-label="Platform activity"
+        style={{ '--mc-channel-count': Math.max(1, progress.length) }}
+      >
         {progress.map(({ channel, status }) => (
           <span key={channel}>
-            <CampaignPlatformLogo channel={channel} />
-            <span>
+            <span className="mc-current-platform-icon">
+              <CampaignPlatformLogo channel={channel} />
+            </span>
+            <span className="mc-current-platform-copy">
               {CAMPAIGN_CHANNELS[channel]}
               <small>{status}</small>
             </span>
           </span>
         ))}
       </div>
-      <dl className="mc-current-budget">
-        <div>
-          <dt>Planned budget</dt>
-          <dd
-            className={
-              budget === missing ? 'mc-current-unconnected' : undefined
-            }
-          >
-            {budget}
-          </dd>
-        </div>
-        <div>
-          <dt>Spend</dt>
-          <dd className={demo ? undefined : 'mc-current-unconnected'}>
-            {demo ? money(demo.spend) : missing}
-          </dd>
-        </div>
-        <div>
-          <dt>Remaining</dt>
-          <dd className={demo ? undefined : 'mc-current-unconnected'}>
-            {demo ? money(demo.remaining) : missing}
-          </dd>
-        </div>
-      </dl>
+      <div className="mc-current-finances">
+        <dl className="mc-current-budget">
+          <div>
+            <dt>Planned budget</dt>
+            <dd
+              className={
+                budget === missing ? 'mc-current-unconnected' : undefined
+              }
+            >
+              {budget}
+            </dd>
+          </div>
+          <div>
+            <dt>Spend</dt>
+            <dd className={demo ? undefined : 'mc-current-unconnected'}>
+              {demo ? money(demo.spend) : missing}
+            </dd>
+          </div>
+          <div>
+            <dt>Remaining</dt>
+            <dd className={demo ? undefined : 'mc-current-unconnected'}>
+              {demo ? money(demo.remaining) : missing}
+            </dd>
+          </div>
+        </dl>
+        {budgetUsed !== null && (
+          <div className="mc-current-budget-usage">
+            <div
+              className="mc-current-budget-track"
+              role="progressbar"
+              aria-label="Budget used"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.min(100, Math.round(budgetUsed * 10) / 10)}
+            >
+              <span
+                style={{ width: `${Math.min(100, Math.max(0, budgetUsed))}%` }}
+              />
+            </div>
+            <span>{budgetUsed.toFixed(1)}% of budget used</span>
+          </div>
+        )}
+      </div>
       <dl className="mc-current-results">
-        <div>
-          <dt>Leads</dt>
-          <dd className={demo ? undefined : 'mc-current-unconnected'}>
-            {demo ? count(demo.leads) : missing}
-          </dd>
-        </div>
-        <div>
-          <dt>Views</dt>
-          <dd className={demo ? undefined : 'mc-current-unconnected'}>
-            {demo ? count(demo.views) : missing}
-          </dd>
-        </div>
-        <div>
-          <dt>Email clicks</dt>
-          <dd
-            className={clicks === null ? 'mc-current-unconnected' : undefined}
+        {results.map(({ label, value, icon, tone }) => (
+          <div
+            className={`mc-current-metric mc-current-metric-${tone}`}
+            key={label}
           >
-            {count(clicks)}
-          </dd>
-        </div>
-        <div>
-          <dt>Delivered</dt>
-          <dd
-            className={
-              delivered === null ? 'mc-current-unconnected' : undefined
-            }
-          >
-            {count(delivered)}
-          </dd>
-        </div>
-        <div>
-          <dt>WhatsApp reads</dt>
-          <dd className={reads === null ? 'mc-current-unconnected' : undefined}>
-            {count(reads)}
-          </dd>
-        </div>
+            <dt>
+              <span className="mc-current-metric-icon">{icon}</span>
+              {label}
+            </dt>
+            <dd
+              className={value === null ? 'mc-current-unconnected' : undefined}
+            >
+              {count(value)}
+            </dd>
+          </div>
+        ))}
       </dl>
       <div className="mc-current-next">
         <span>

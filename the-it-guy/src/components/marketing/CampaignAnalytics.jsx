@@ -6,8 +6,11 @@ import {
   Layers3,
   Sparkles,
   Target,
+  Send,
+  MousePointer2,
+  MessageCircle,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { MarketingLink as Link } from './MarketingNavigation.jsx'
 import { buildCampaignAnalytics } from '../../services/marketingCampaignAnalytics'
 import CampaignPlatformLogo from './CampaignPlatformLogo'
 const number = (value) => (value === null ? '—' : value.toLocaleString())
@@ -29,24 +32,27 @@ export default function CampaignAnalytics({ workspace }) {
         <span className="mc-insights-heading-icon" aria-hidden="true">
           <ChartNoAxesCombined size={20} strokeWidth={1.7} />
         </span>
-        <h2 id="mc-insights-heading">Campaign performance</h2>
+        <div className="mc-insights-heading-copy">
+          <h2 id="mc-insights-heading">Campaign performance</h2>
+        </div>
+        <span className="mc-insights-period">All time</span>
       </header>
       <div
         className="mc-insights-summary"
         aria-label="Recorded linked campaign results"
       >
         <div>
-          <span>Delivered messages</span>
+          <span><Send size={17} aria-hidden="true" />Delivered messages</span>
           <strong>{number(analytics.delivered)}</strong>
           <small>Across linked email and WhatsApp sends</small>
         </div>
         <div>
-          <span>Email clicks</span>
+          <span><MousePointer2 size={17} aria-hidden="true" />Email clicks</span>
           <strong>{number(analytics.channels[0].engaged)}</strong>
           <small>Recorded recipient clicks</small>
         </div>
         <div>
-          <span>WhatsApp reads</span>
+          <span><MessageCircle size={17} aria-hidden="true" />WhatsApp reads</span>
           <strong>{number(analytics.channels[1].engaged)}</strong>
           <small>Recorded message reads</small>
         </div>
@@ -59,7 +65,6 @@ export default function CampaignAnalytics({ workspace }) {
             </span>
             <div>
               <h3>Top campaigns</h3>
-              <p>Ranked within each channel</p>
             </div>
           </header>
           <nav
@@ -97,6 +102,9 @@ export default function CampaignAnalytics({ workspace }) {
                           {number(item.delivered)} delivered
                           {item.delivered < 20 ? ' · Small sample' : ''}
                         </small>
+                        <span className="mc-rank-track" aria-hidden="true">
+                          <span style={{ width: `${item.rate}%` }} />
+                        </span>
                       </span>
                       <strong className="mc-rank-rate">
                         {percentage(item.rate)}
@@ -139,12 +147,11 @@ export default function CampaignAnalytics({ workspace }) {
             </span>
             <div>
               <h3>Channel performance</h3>
-              <p>Two channels. Different signals.</p>
             </div>
           </header>
           <div className="mc-channel-insight-list">
             {analytics.channels.map((item) => (
-              <div className="mc-channel-insight" key={item.key}>
+              <div className={`mc-channel-insight mc-channel-insight-${item.key}`} key={item.key}>
                 <div className="mc-channel-insight-title">
                   <span>
                     <CampaignPlatformLogo channel={item.key} />
@@ -163,7 +170,7 @@ export default function CampaignAnalytics({ workspace }) {
                   <span>{item.metricLabel.toLowerCase()}</span>
                   <small>{number(item.delivered)} delivered</small>
                 </div>
-                <div className="mc-channel-insight-bar" aria-hidden="true">
+                <div className={`mc-channel-insight-bar${item.rate === null ? ' mc-channel-insight-bar-empty' : ''}`} aria-hidden="true">
                   <span style={{ width: `${item.rate ?? 0}%` }} />
                 </div>
               </div>
@@ -194,7 +201,6 @@ export default function CampaignAnalytics({ workspace }) {
             </span>
             <div>
               <h3>Arch9 recommends</h3>
-              <p>A useful next move, with a reason.</p>
             </div>
           </header>
           <span className="mc-recommendation-signal">
@@ -228,10 +234,6 @@ export default function CampaignAnalytics({ workspace }) {
           </footer>
         </article>
       </div>
-      <p className="mc-insights-coverage">
-        All-time results from linked activity visible to you. Missing results
-        appear as —; lead attribution and Meta/social results are not connected.
-      </p>
     </section>
   )
 }

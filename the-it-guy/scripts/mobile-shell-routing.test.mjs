@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { resolveMobileAwareRedirect } from '../src/lib/resolveMobileAwareRedirect.js'
-import { getMobileNavItems } from '../src/config/mobileShell.js'
+import { canAccessMobileMarketing, getMobileNavItems, getMobilePageMenuItems } from '../src/config/mobileShell.js'
+import { mapDesktopRouteToMobile } from '../src/config/mobileRouteMappings.js'
 import {
   MOBILE_DESKTOP_PREFERENCE_KEY,
   setPreferDesktopOnMobile,
@@ -57,6 +58,28 @@ assert.equal(resolve('/buyer-portal/example', { user: developer }), '/buyer-port
 assert.deepEqual(getMobileNavItems(developer).map((item) => item.key), ['home', 'transactions', 'create', 'leads', 'more'])
 assert.equal(getMobileNavItems(developer).find((item) => item.key === 'leads').to, '/mobile/developer/leads')
 assert.equal(resolve('/transactions/tx-123'), '/mobile/transaction/tx-123', 'transaction deep links should map to mobile transaction workspaces')
+const marketingLink = '/marketing?section=campaigns&page=studio&view=channel-template-edit&id=draft-123&template=template-456&source=source-789&channelTemplate=channel-123&collection=channels&channel=email&listingId=listing-123&eventId=event-123&scheduleDate=2026-10-26&ai=1#preview'
+assert.equal(resolve(marketingLink), marketingLink.replace('/marketing', '/mobile/marketing'), 'marketing drafts, templates and channel handoffs must retain their complete query and fragment')
+assert.equal(resolve('/marketing'), '/mobile/marketing', 'mobile agents should be able to open the complete marketing workspace')
+assert.equal(resolve('/marketing?section=email&view=create&id=email-1'), '/mobile/marketing?section=email&view=create&id=email-1')
+assert.equal(resolve('/marketing?section=whatsapp&view=detail&id=message-1'), '/mobile/marketing?section=whatsapp&view=detail&id=message-1')
+assert.equal(resolve('/marketing/invite/public-token?source=invite#review'), '/marketing/invite/public-token?source=invite#review', 'public marketing invitations must remain public')
+assert.equal(resolve('/marketing/rsvp/public-token?guests=2'), '/marketing/rsvp/public-token?guests=2', 'public marketing RSVPs must remain public')
+assert.equal(resolve('/agent/listings/listing-1?tab=marketing#campaign'), '/mobile/listings/listing-1?tab=marketing#campaign', 'marketing listing links should open their mobile listing workspace')
+assert.equal(mapDesktopRouteToMobile('/mobile/marketing?section=campaigns&page=studio#preview'), '/mobile/marketing?section=campaigns&page=studio#preview')
+assert.equal(resolve(marketingLink, { deviceType: 'desktop' }), marketingLink, 'desktop marketing links must remain unchanged')
+assert.equal(resolve(marketingLink, { userPreference: { preferDesktopOnMobile: true } }), marketingLink)
+assert.equal(resolve(marketingLink, { featureFlags: { enableMobileShell: false, enableMobileLoginRedirect: true } }), marketingLink)
+const agentMarketingPages = getMobilePageMenuItems({ role: 'agent' }).filter(item => item.to.startsWith('/mobile/marketing'))
+assert.deepEqual(agentMarketingPages.map(item => item.to), ['/mobile/marketing', '/mobile/marketing?section=campaigns', '/mobile/marketing?section=campaigns&page=studio'])
+assert.equal(canAccessMobileMarketing({ role: 'agent', workspaceRole: 'principal' }), true, 'agency principals should have the agent marketing menu')
+for (const role of ['developer', 'attorney', 'bond_originator', 'commercial', 'client']) {
+  assert.equal(getMobilePageMenuItems({ role }).some(item => item.to.startsWith('/mobile/marketing')), false, `${role} should keep its existing mobile menu`)
+}
+assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceId: 'rentals' }), false, 'rental workspaces should not advertise sales marketing')
+assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceId: 'short_term_rentals' }), false)
+assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceSplitEnabled: true, businessWorkspaceId: 'sales', availableBusinessWorkspaceIds: ['rentals'] }), false, 'marketing menu needs sales access when the workspace split is enabled')
+assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceSplitEnabled: true, businessWorkspaceId: 'sales', availableBusinessWorkspaceIds: ['sales', 'rentals'] }), true)
 assert.equal(resolve('/auth'), '/auth', 'public auth routes should not be forced into mobile shell')
 assert.equal(
   resolve('/dashboard', { deviceType: 'desktop' }),
@@ -96,7 +119,7 @@ assert.match(mobileLayoutSource, /h-\[100dvh\]/, 'mobile shell should be constra
 assert.match(mobileLayoutSource, /overflow-hidden/, 'mobile shell should prevent document-level overflow duplication')
 assert.match(mobileLayoutSource, /overflow-y-auto/, 'mobile content should scroll inside the shell')
 assert.match(mobileLayoutSource, /overscroll-contain/, 'mobile content should contain overscroll on iOS Safari')
-assert.match(mobileLayoutSource, /scrollRootRef\.current\?\.scrollTo/, 'mobile route changes should reset the shell scroll root')
+assert.match(mobileLayoutSource, /useNavigationType/, 'mobile history navigation should restore the shell scroll position')
 assert.match(mobileHeaderSource, /data-mobile-header/, 'mobile header should expose a stable marker')
 assert.match(mobileBottomNavSource, /data-mobile-bottom-nav/, 'mobile bottom nav should expose a stable marker')
 assert.match(mobileHomeSource, /data-mobile-home/, 'mobile home should expose a stable marker')

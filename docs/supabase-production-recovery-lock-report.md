@@ -1,13 +1,13 @@
 # Supabase Production Recovery Lock Report
 
-Generated: 2026-10-12T19:27:49.938Z
+Generated: 2026-10-26T08:21:30.139Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
 
-**Status: RECOVERY_LOCKED**
+**Status: RECOVERY_LOCK_BLOCKED**
 
-Production promotion remains blocked until this report says `RECOVERY_LOCKED`. This report does not enable PITR, restore data, apply SQL, repair ledgers, or modify production.
+Production promotion remains blocked until this report says `RECOVERY_LOCKED`. This is a database-only recovery gate: Supabase database backups do not include Storage file bytes. A locked database gate does not prove full application recovery. This report does not enable PITR, restore data, apply SQL, repair ledgers, or modify production.
 
 ## Summary
 
@@ -18,19 +18,20 @@ Production promotion remains blocked until this report says `RECOVERY_LOCKED`. T
 | Recovery method | `equivalent_managed_backup` |
 | Recorded PITR enabled | No |
 | Recorded physical backups | 8 |
-| Recovery tested | Yes |
-| Live check performed | Yes |
-| Live PITR enabled | No |
-| Live physical backups | 8 |
-| Recovery locked | Yes |
+| Recovery tested | No |
+| Live check performed | No |
+| Live PITR enabled | Not available |
+| Live physical backups | Not available |
+| Recovery locked | No |
 
 ## Blockers
 
-- None
+- `recovery_test_not_recorded`
+- `backup_restore_not_proven`
 
 ## Evidence Rule
 
-The lock requires a matching production project, a recorded recoverable mechanism, a completed restore/recovery test, a named tester, a named approver, a restore target, and a durable evidence reference. The evidence file must not contain secrets or exported production data.
+The lock requires a matching production project, a recorded recoverable mechanism, a completed restore from an identified backup into an isolated target, successful smoke checks, a named tester, a named approver, and a durable evidence reference. A live database clone is insufficient. If live verification is requested, a failed provider check blocks the lock. The evidence file must not contain secrets or exported production data.
 
 ## Recovery Test Packet
 

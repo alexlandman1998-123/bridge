@@ -5,6 +5,7 @@ import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
 import { createRentalCrmLeadMetadata } from '../../src/services/rentals/rentalCrmLeadModel.js'
 import { normalizeAttributionTouch, normalizeUtmAttribution } from '../../src/core/clients/utmAttribution.js'
 import { writeNodeJsonResponse } from './hqMissionControlApi.js'
+import { acceptCampaignPublicResponse, campaignResponseToken, resolveCampaignPublicResponse } from './campaignPublicResponse.js'
 
 let cachedRuntimeEnv = null
 
@@ -1787,6 +1788,8 @@ async function submitAgencyPublicIntake(client, { link = {}, payload = {}, heade
   }
 
   const ipHash = hashIpAddress(getRequestIp(headers))
+  const responseToken = campaignResponseToken(payload)
+  if (responseToken) return acceptCampaignPublicResponse(client, { token: responseToken, link, normalized, payload, ipHash })
   await assertRateLimit(client, { intakeLinkId: link.id, ipHash })
 
   const row = {
@@ -1916,12 +1919,20 @@ export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '
       })
     }
 
+    const responseToken = campaignResponseToken(payload, requestUrl.searchParams)
+    if (responseToken && normalizedMethod !== 'POST') {
+      const response = await resolveCampaignPublicResponse(client, responseToken, resolved.link)
+      resolved.publicIntake.campaignResponse = response.public
+      if (response.public.intent) resolved.publicIntake.intake.enabledIntents = [response.public.intent]
+    }
+
     if (normalizedMethod === 'POST') {
       const result = await submitAgencyPublicIntake(client, {
         link: resolved.link,
         payload: {
           ...payload,
           slug,
+          ...(responseToken ? { campaignResponseToken: responseToken } : {}),
         },
         headers,
       })

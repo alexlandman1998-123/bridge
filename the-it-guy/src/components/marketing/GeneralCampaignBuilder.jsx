@@ -9,8 +9,16 @@ import {
   UsersRound,
   RefreshCw,
   Save,
+  Sparkles,
+  Target,
 } from 'lucide-react'
 import { loadGeneralCampaignContext } from '../../services/generalCampaignService'
+import { saveMarketingCampaign } from '../../services/marketingCampaignService'
+import { SHOW_CAMPAIGN_WORKSPACE } from '../../lib/featureFlags'
+import AiBusinessCampaignAssistant from './AiBusinessCampaignAssistant'
+import CampaignContactReview from './CampaignContactReview'
+import { createContactProvenance, confirmCampaignContacts, GENERAL_CONTACT_FIELDS, withContactOverride } from '../../services/campaignContactProvenance'
+import { businessGoalForTemplate } from './campaignBusinessGoals'
 import {
   GENERAL_CAMPAIGNS,
   checkedGeneralPack,
@@ -23,9 +31,11 @@ import {
   generalChannels,
 } from '../../services/generalCampaignModel'
 import './JustListedCampaignBuilder.css'
+import './GeneralCampaignBuilder.css'
 
 export default function GeneralCampaignBuilder({
   template,
+  businessGoalId,
   campaign,
   organisationId,
   userId,
@@ -43,6 +53,11 @@ export default function GeneralCampaignBuilder({
       'referral-request': UsersRound,
     }[family] || Megaphone
   const [draftId] = useState(() => crypto.randomUUID())
+  const savedCampaign = useRef(campaign || null)
+  const saving = useRef(null)
+  const [savedNotice, setSavedNotice] = useState('')
+  const [audienceDescription, setAudienceDescription] = useState(campaign?.audience || meta?.audience || '')
+  const businessGoal = businessGoalForTemplate(family, businessGoalId)
   const [context, setContext] = useState(null),
     [builder, setBuilder] = useState(null),
     [content, setContent] = useState({})
@@ -73,12 +88,15 @@ export default function GeneralCampaignBuilder({
               template: family,
               agentId: current.agentId,
               source: current.source,
+              contactProvenance: createContactProvenance(current.source, GENERAL_CONTACT_FIELDS),
               details: current.defaults,
               reviewed: false,
               permission: false,
             }
         setBuilder(saved)
         setContent(campaign?.channel_content || generalCampaignCopy(saved))
+        savedCampaign.current = campaign || null
+        setAudienceDescription(campaign?.audience || meta?.audience || '')
         setStep(campaign ? 2 : 1)
       } catch (err) {
         if (request.current === token) setError(err.message)
@@ -90,9 +108,10 @@ export default function GeneralCampaignBuilder({
     return () => {
       request.current += 1
     }
-  }, [organisationId, userId, family, campaign])
+  }, [organisationId, userId, family, campaign, meta?.audience])
   function change(patch) {
     const next = { ...builder, ...patch, reviewed: false }
+    if (next.contactProvenance) next.contactProvenance = { ...next.contactProvenance, confirmed: false }
     if (config.permission && patch.details) next.permission = false
     if (
       patch.source &&
@@ -113,6 +132,7 @@ export default function GeneralCampaignBuilder({
     }
     setBuilder(next)
     setContent(generalCampaignCopy(next))
+    setSavedNotice('')
     setError('')
   }
   async function refresh() {
@@ -131,6 +151,7 @@ export default function GeneralCampaignBuilder({
       const next = {
         ...builder,
         source: current.source,
+        contactProvenance: createContactProvenance(current.source, GENERAL_CONTACT_FIELDS),
         details: {
           ...builder.details,
           ...(family === 'review-request' &&
@@ -147,6 +168,7 @@ export default function GeneralCampaignBuilder({
       setContext(current)
       setBuilder(next)
       setContent(generalCampaignCopy(next))
+      setSavedNotice('')
       setStep(2)
     } catch (err) {
       if (request.current === token) setError(err.message)
@@ -197,38 +219,52 @@ export default function GeneralCampaignBuilder({
       setError(err.message)
     }
   }
-  async function save() {
+  function payload() {
+    const value = generalCampaignPayload(builder, content)
+    const retained = savedCampaign.current || campaign
+    return {
+      ...value,
+      id: retained?.id || draftId,
+      audience: audienceDescription.trim(),
+      ...(retained?.planned_budget !== undefined ? { planned_budget: retained.planned_budget, budget_currency: retained.budget_currency } : {}),
+    }
+  }
+  async function checkedPayload(token) {
+    const current = await loadGeneralCampaignContext(
+      organisationId,
+      userId,
+      family,
+      builder.agentId,
+      ...(family === 'key-handover' ? [builder.details] : []),
+    )
+    if (request.current !== token) throw new Error('Your workspace changed. Reopen the campaign before continuing.')
+    checkedGeneralPack({ status: 'draft', campaign_builder: builder, channel_content: content }, current)
+    return payload()
+  }
+  async function persistForAssistant() {
+    if (saving.current) return saving.current
+    const token = ++request.current
+    setBusy(true); setError('')
+    const operation = (async () => {
+      const form = await checkedPayload(token)
+      const row = await saveMarketingCampaign(organisationId, form, savedCampaign.current)
+      if (request.current !== token) throw new Error('The campaign was saved in your previous workspace. Reopen it before continuing.')
+      savedCampaign.current = row
+      setSavedNotice('Campaign draft saved. AI works from this reviewed version; nothing has been sent.')
+      return row
+    })()
+    saving.current = operation
+    try { return await operation } finally { saving.current = null; if (request.current === token) setBusy(false) }
+  }
+  async function save(tab) {
     const token = ++request.current
     setBusy(true)
     setError('')
     try {
-      const current = await loadGeneralCampaignContext(
-        organisationId,
-        userId,
-        family,
-        builder.agentId,
-        ...(family === 'key-handover' ? [builder.details] : []),
-      )
-      if (request.current !== token) return
-      checkedGeneralPack(
-        {
-          status: 'draft',
-          campaign_builder: builder,
-          channel_content: content,
-        },
-        current,
-      )
-      const payload = generalCampaignPayload(builder, content)
-      await onSave({
-        ...payload,
-        ...(!campaign ? { id: draftId } : {}),
-        ...(campaign?.planned_budget !== undefined
-          ? {
-              planned_budget: campaign.planned_budget,
-              budget_currency: campaign.budget_currency,
-            }
-          : {}),
-      })
+      const form = await checkedPayload(token)
+      const options = { ...(tab === 'audience' ? { tab } : {}), ...(savedCampaign.current ? { persistedCampaign: savedCampaign.current } : {}) }
+      if (Object.keys(options).length) await onSave(form, options)
+      else await onSave(form)
     } catch (err) {
       if (request.current === token) setError(err.message)
     } finally {
@@ -246,17 +282,15 @@ export default function GeneralCampaignBuilder({
       <fieldset className="jl-fields" disabled={busy}>
         <header className="jl-heading">
           <span className="jl-icon">
-            <CampaignIcon size={28} />
+            {builder?.source.logoUrl ? <img className="gc-brand-logo" src={builder.source.logoUrl} alt={`${builder.source.agencyName} logo`} onError={(event) => { event.currentTarget.hidden = true }} /> : <CampaignIcon size={28} aria-hidden="true" />}
           </span>
           <div>
-            <p className="mc-eyebrow">PERSONALISED CAMPAIGNS</p>
+            <p className="gc-eyebrow">{businessGoal?.shortTitle || 'Promote your business'} · Business campaign</p>
             <h1>{meta.title}</h1>
-            <p>
-              Saved agency and agent details, with only campaign-specific facts
-              to confirm.
-            </p>
+            <p>{businessGoal?.outcome || meta.description}</p>
           </div>
         </header>
+        <div className="gc-business-path" aria-label="Campaign workflow">{['Brand & offer', 'Content pack', 'CRM audience', 'Review & delivery', 'Enquiries & follow-up'].map((label, index) => <span key={label} className={index < 2 ? 'gc-path-current' : ''}><span>{index + 1}</span>{label}</span>)}</div>
         <ol className="jl-steps" aria-label="Campaign steps">
           {['Use saved details', 'Confirm essentials', 'Preview & save'].map(
             (label, index) => (
@@ -283,6 +317,8 @@ export default function GeneralCampaignBuilder({
         )}
         {builder && (
           <>
+            <section className="gc-brief-summary" aria-label="Your campaign brief"><div><span className="gc-eyebrow"><Target size={13} aria-hidden="true" />Business goal</span><strong>{meta.objective}</strong></div><div><span className="gc-eyebrow">Your identity</span><strong>{builder.source.agentName || 'Confirm your agent name'} · {builder.source.agencyName || 'Confirm your agency'}</strong><small>{builder.details.area || 'Choose your campaign area'} · {builder.source.language === 'af-ZA' ? 'Afrikaans' : 'English'}</small></div><div><span className="gc-eyebrow">Prepared together</span><strong>{generalChannels(family).map((key) => key === 'social' ? 'Social' : key === 'email' ? 'Email' : 'WhatsApp').join(' · ')}</strong><small>{meta.plannedAssets?.length || 'Branded'} campaign outputs · reviewed before use</small></div></section>
+            {savedNotice && <p className="gc-saved-notice" role="status">{savedNotice}</p>}
             {step === 1 && (
               <>
                 <h2>Your campaign starts with what’s already saved</h2>
@@ -454,40 +490,7 @@ export default function GeneralCampaignBuilder({
                     ? 'Uses the completed transaction’s public area. Add only a public area if it is missing.'
                     : 'Suggested from your saved service areas; editable for this campaign.'}
                 </p>
-                {!context.source.agentName && (
-                  <label>
-                    Public agent name
-                    <input
-                      maxLength={120}
-                      value={builder.source.agentName}
-                      onChange={(e) =>
-                        change({
-                          source: {
-                            ...builder.source,
-                            agentName: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                )}
-                {!context.source.destination && (
-                  <label>
-                    Public enquiry contact
-                    <input
-                      maxLength={240}
-                      value={builder.source.destination}
-                      onChange={(e) =>
-                        change({
-                          source: {
-                            ...builder.source,
-                            destination: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                )}
+                <CampaignContactReview builder={builder} content={content} general onRefresh={refresh} onOverride={(key, value, enabled) => { const next = withContactOverride(builder, key, value, GENERAL_CONTACT_FIELDS, enabled); change({ source: next.source, contactProvenance: next.contactProvenance }) }} />
                 {!['en-ZA', 'af-ZA'].includes(context.source.language) && (
                   <label>
                     Campaign language
@@ -625,7 +628,7 @@ export default function GeneralCampaignBuilder({
                     type="checkbox"
                     checked={builder.reviewed}
                     onChange={(e) =>
-                      setBuilder({ ...builder, reviewed: e.target.checked })
+                      setBuilder({ ...(builder.contactProvenance ? confirmCampaignContacts(builder, GENERAL_CONTACT_FIELDS, e.target.checked) : builder), reviewed: e.target.checked })
                     }
                   />
                   I have reviewed these public details and campaign-specific
@@ -648,6 +651,8 @@ export default function GeneralCampaignBuilder({
             {step === 3 && (
               <>
                 <h2>Your campaign preview</h2>
+                <section className="gc-audience-review" aria-labelledby="gc-audience-heading"><div><UsersRound size={21} aria-hidden="true" /><h3 id="gc-audience-heading">Who should this campaign reach?</h3></div><label>Intended audience<textarea rows={2} maxLength={600} value={audienceDescription} onChange={(event) => { setAudienceDescription(event.target.value); setSavedNotice('') }} /></label><p>This is your audience brief. After saving, choose a live CRM audience and review channel eligibility. No recipients are selected by this description.</p><dl><div><dt>Response destination</dt><dd>{family === 'review-request' ? builder.details.reviewUrl : builder.source.destination}</dd></div><div><dt>Next step</dt><dd>Choose your audience, prepare the channel draft, then review before sending or publishing.</dd></div></dl></section>
+                {SHOW_CAMPAIGN_WORKSPACE && <AiBusinessCampaignAssistant organisationId={organisationId} builder={builder} content={content} persist={persistForAssistant} onApply={(nextContent) => { setContent(nextContent); setSavedNotice('AI wording applied. Review your channel copy and save the updated campaign.') }} />}
                 <article className="jl-mini-preview">
                   {config.portrait && (
                     <img
@@ -688,7 +693,8 @@ export default function GeneralCampaignBuilder({
                   <input
                     maxLength={240}
                     value={content[channel]?.title || ''}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setSavedNotice('')
                       setContent({
                         ...content,
                         [channel]: {
@@ -696,7 +702,7 @@ export default function GeneralCampaignBuilder({
                           title: e.target.value,
                         },
                       })
-                    }
+                    }}
                   />
                 </label>
                 <label>
@@ -705,7 +711,8 @@ export default function GeneralCampaignBuilder({
                     rows={12}
                     maxLength={12000}
                     value={content[channel]?.body || ''}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setSavedNotice('')
                       setContent({
                         ...content,
                         [channel]: {
@@ -713,14 +720,13 @@ export default function GeneralCampaignBuilder({
                           body: e.target.value,
                         },
                       })
-                    }
+                    }}
                   />
                 </label>
                 <p className="jl-note">
-                  Saving creates a draft. Prepare branded PNGs, stories, copy
-                  and channel drafts in Assets & drafts after saving. No
-                  recipients, sender or sending schedule are selected.
+                  Your saved campaign keeps this brief and its channel copy together. Prepare branded PNGs, stories and channel drafts in Assets & drafts. Choose a live CRM audience, then review the sender, permissions and actual send time in each channel.
                 </p>
+                <div className="gc-after-save"><h3>Your campaign continues from here</h3><div><span><UsersRound size={18} aria-hidden="true" /><strong>Choose your audience</strong><small>Review matching contacts and channel permission.</small></span><span><Sparkles size={18} aria-hidden="true" /><strong>Prepare your assets & drafts</strong><small>Download branded artwork or open the Email / WhatsApp editor.</small></span><span><CheckCircle2 size={18} aria-hidden="true" /><strong>Review, publish & follow up</strong><small>Use the supported channel flow and keep recorded enquiries with the campaign.</small></span></div><p>Publish a reviewed Facebook text or link post from Channel activity, or download artwork for manual sharing. A planned date does not schedule a send.</p></div>
               </>
             )}
           </>
@@ -728,7 +734,7 @@ export default function GeneralCampaignBuilder({
         <footer className="jl-actions">
           <button
             className="mc-button"
-            onClick={() => (step > 1 ? setStep(step - 1) : onCancel())}
+            onClick={() => (step > 1 ? setStep(step - 1) : onCancel({ persistedCampaign: savedCampaign.current }))}
           >
             <ArrowLeft size={16} />
             {step > 1 ? 'Back' : 'Cancel'}
@@ -750,10 +756,7 @@ export default function GeneralCampaignBuilder({
                 Confirm and preview <ArrowRight size={16} />
               </button>
             ) : (
-              <button className="mc-button mc-primary" onClick={save}>
-                <Save size={16} />
-                Save campaign draft
-              </button>
+              <div className="gc-save-actions"><button className="mc-button" onClick={() => save()}><Save size={16} />Save campaign draft</button><button className="mc-button mc-primary" onClick={() => save('audience')}>Save & choose audience<ArrowRight size={16} /></button></div>
             ))}
         </footer>
       </fieldset>

@@ -1,14 +1,19 @@
+import { refreshSendingDomain } from "../_shared/emailSendingDomain.ts";
+import { supabaseServiceKey } from "../_shared/apiCredentials.ts";
 import { escapeHtml } from "../_shared/emailDocument.js";
 import { inspectEmailHtml, renderCampaignDelivery } from "../_shared/emailContent.js";
 import { checkCampaignContent } from "../_shared/emailCampaignContentCheck.ts";
+import { checkCampaignSourceFreshness } from "../_shared/emailCampaignSourceFreshness.js";
 
 const text = (value: unknown) => String(value || "").trim();
 const json = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 async function failQueuedCampaign(db: any, campaign: any, job: any, reason: string) {
   await db.from("email_campaign_recipients").update({ status: "failed", error_reason: reason }).eq("campaign_id", campaign.id).eq("status", "queued");
-  const { count: alreadySent } = await db.from("email_campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("status", "sent");
-  await db.from("email_campaigns").update({ status: alreadySent ? "partially_failed" : "failed" }).eq("id", campaign.id);
+  // Preserve evidence already accepted by the provider, including recipients
+  // advanced by webhooks and an in-flight send whose outcome is still uncertain.
+  const { count: alreadySent, error: countError } = await db.from("email_campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).in("status", ["sending", "sent", "delivered", "opened", "clicked", "bounced", "complained", "unsubscribed"]);
+  await db.from("email_campaigns").update({ status: alreadySent || countError ? "partially_failed" : "failed" }).eq("id", campaign.id);
   await db.from("email_campaign_dispatch_jobs").update({ status: "failed", last_error: reason }).eq("id", job.id);
 }
 
@@ -35,7 +40,7 @@ export function createWorkerHandler({ createClient, env, fetcher = fetch }: { cr
 return async (req: Request) => {
   if (req.method !== "POST") return json(405, { error: "Method not allowed." });
   const workerSecret = text(env("EMAIL_CAMPAIGN_WORKER_SECRET"));
-  const serviceKey = text(env("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = text(supabaseServiceKey({ get: env } as typeof Deno.env));
   const hasWorkerSecret = Boolean(workerSecret) && text(req.headers.get("x-arch9-email-worker-secret")) === workerSecret;
   const hasServiceAuthorization = Boolean(serviceKey) && text(req.headers.get("authorization")) === `Bearer ${serviceKey}`;
   const cronKey = text(req.headers.get("x-arch9-email-cron-key"));
@@ -44,7 +49,7 @@ return async (req: Request) => {
   const hasCronAuthorization = Boolean(expectedCronDigest) && Boolean(cronDigest) && cronDigest === expectedCronDigest;
   if (!hasWorkerSecret && !hasServiceAuthorization && !hasCronAuthorization) return json(401, { error: "Worker authentication failed." });
   const url = text(env("SUPABASE_URL"));
-  const key = text(env("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = text(supabaseServiceKey({ get: env } as typeof Deno.env));
   const resendKey = text(env("RESEND_API_KEY"));
   if (!url || !key || !resendKey) return json(500, { error: "Email worker is not configured." });
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -55,14 +60,14 @@ return async (req: Request) => {
   const campaignIds = (jobs || []).map((job: any) => job.campaign_id);
   if (!campaignIds.length) return json(200, { processed: 0 });
   const { data: campaigns, error } = await db.from("email_campaigns")
-    .select("id,organisation_id,subject,preview_text,html,content_json,sender_identity_id,status,email_sender_identities(display_name,from_email,reply_to_email,verification_status,sending_paused_at)")
+    .select("id,organisation_id,subject,preview_text,html,content_json,sender_identity_id,subscription_type_id,status,email_sender_identities(display_name,from_email,reply_to_email,verification_status,sending_paused_at,email_sending_domain_id)")
     .in("id", campaignIds).in("status", ["sending", "scheduled"]);
   if (error) return json(500, { error: error.message });
   let processed = 0;
   for (const campaign of campaigns || []) {
     const job = (jobs || []).find((item: any) => item.campaign_id === campaign.id);
     if (!job) continue;
-    const { data: claimedJob, error: claimError } = await db.from("email_campaign_dispatch_jobs").update({ status: "running", locked_at: now, attempts: 1 }).eq("id", job.id).eq("status", "queued").select("id").maybeSingle();
+    const { data: claimedJob, error: claimError } = await db.from("email_campaign_dispatch_jobs").update({ status: "running", locked_at: now, attempts: 1, last_error: null }).eq("id", job.id).eq("status", "queued").select("id").maybeSingle();
     if (claimError || !claimedJob) continue;
     if (campaign.status === "scheduled") await db.from("email_campaigns").update({ status: "sending", sending_started_at: now }).eq("id", campaign.id).eq("status", "scheduled");
     const { data: policy } = await db.from("email_sending_policies")
@@ -76,9 +81,24 @@ return async (req: Request) => {
       await failQueuedCampaign(db, campaign, job, "The campaign sender is no longer verified and active.");
       continue;
     }
+    const { data: domain } = await db.from("email_sending_domains").select("id,domain_name,provider_domain_id,verification_status")
+      .eq("id", identity.email_sending_domain_id).eq("organisation_id", campaign.organisation_id).maybeSingle();
+    try {
+      if (!domain || await refreshSendingDomain({ db, domain, resendKey, fetcher }) !== "verified") {
+        await failQueuedCampaign(db, campaign, job, "The sending domain needs DNS verification.");
+        continue;
+      }
+    } catch {
+      await db.from("email_campaign_dispatch_jobs").update({ status: "queued", locked_at: null, last_error: "Domain verification is temporarily unavailable." }).eq("id", job.id);
+      continue;
+    }
     const context = { agencyName: identity?.display_name, senderEmail: identity?.from_email, previewText: campaign.preview_text };
     const contentCheck = await checkCampaignContent({ db, campaign, supabaseUrl: url, fetcher, context });
     if (!contentCheck.ready) {
+      if ('sourceFreshness' in contentCheck && contentCheck.sourceFreshness?.retryable) {
+        await db.from("email_campaign_dispatch_jobs").update({ status: "queued", locked_at: null, last_error: contentCheck.sourceFreshness.reason }).eq("id", job.id);
+        continue;
+      }
       await failQueuedCampaign(db, campaign, job, contentCheck.errors[0]);
       continue;
     }
@@ -93,15 +113,39 @@ return async (req: Request) => {
     }
     const { data: recipients } = await db.from("email_campaign_recipients")
       .select("id,email,recipient_snapshot,send_attempts,tracking_token").eq("campaign_id", campaign.id).eq("status", "queued").order("created_at").limit(batchLimit);
+    let sourceStopped = false;
     for (const recipient of recipients || []) {
       // Recheck suppressions immediately before the provider call. This closes
       // the race between audience snapshot and a one-click unsubscribe.
-      const { data: suppression } = await db.from("email_suppressions").select("id").eq("organisation_id", campaign.organisation_id).eq("email", recipient.email).maybeSingle();
-      const { data: preference } = await db.from("contact_marketing_preferences").select("unsubscribe_token,marketing_consent_status").eq("organisation_id", campaign.organisation_id).eq("email", recipient.email).maybeSingle();
+      const { data: suppression, error: suppressionError } = await db.from("email_suppressions").select("id").eq("organisation_id", campaign.organisation_id).eq("email", recipient.email).maybeSingle();
+      const { data: preference, error: preferenceError } = await db.from("contact_marketing_preferences").select("unsubscribe_token,marketing_consent_status").eq("organisation_id", campaign.organisation_id).eq("email", recipient.email).maybeSingle();
+      const { data: subscription, error: subscriptionError } = await db.from("contact_email_subscriptions").select("status").eq("organisation_id", campaign.organisation_id).eq("email", recipient.email).eq("subscription_type_id", campaign.subscription_type_id).maybeSingle();
+      const { data: contact, error: contactError } = await db.from("email_marketing_contacts").select("is_valid_email").eq("organisation_id", campaign.organisation_id).eq("email", recipient.email).maybeSingle();
+      // Leave queued on a read failure; never interpret unknown eligibility as consent.
+      if (suppressionError || preferenceError || subscriptionError || contactError) continue;
+      if (subscription?.status !== "subscribed" || !contact?.is_valid_email) {
+        await db.from("email_campaign_recipients").update({ status: "suppressed", error_reason: "category subscription or address eligibility withdrawn before dispatch" }).eq("id", recipient.id);
+        continue;
+      }
       if (suppression || preference?.marketing_consent_status !== "opted_in") {
         await db.from("email_campaign_recipients").update({ status: "suppressed", error_reason: "suppressed before dispatch" }).eq("id", recipient.id);
         continue;
       }
+      // Recheck the single referenced listing immediately before reserving and
+      // claiming each recipient. A changed source stops the remainder of a batch;
+      // accepted or uncertain provider outcomes are never reset for another send.
+      const sourceFreshness = await checkCampaignSourceFreshness({ db, campaign });
+      if (!sourceFreshness.ready) {
+        if (sourceFreshness.retryable) await db.from("email_campaign_dispatch_jobs").update({ status: "queued", locked_at: null, last_error: sourceFreshness.reason }).eq("id", job.id);
+        else await failQueuedCampaign(db, campaign, job, sourceFreshness.reason);
+        sourceStopped = true;
+        break;
+      }
+      // The database locks one organisation policy across simultaneous jobs;
+      // a browser or another worker cannot race the daily cap or a safety pause.
+      const reservation = await db.rpc("email_reserve_send", { p_organisation_id: campaign.organisation_id,
+        p_identity_id: campaign.sender_identity_id, p_key: `recipient:${recipient.id}`, p_test: false });
+      if (reservation.error || !reservation.data) break;
       const { data: claimedRecipient, error: recipientClaimError } = await db.from("email_campaign_recipients").update({ status: "sending", send_attempts: Number(recipient.send_attempts || 0) + 1 }).eq("id", recipient.id).eq("status", "queued").select("id").maybeSingle();
       if (recipientClaimError || !claimedRecipient) continue;
       const unsubscribeUrl = `${url.replace(/\/$/, "")}/functions/v1/email-unsubscribe?token=${encodeURIComponent(text(preference?.unsubscribe_token))}`;
@@ -122,6 +166,7 @@ return async (req: Request) => {
       }
       processed += 1;
     }
+    if (sourceStopped) continue;
     const { count: queued } = await db.from("email_campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).in("status", ["queued", "sending"]);
     if (!queued) {
       const { count: failed } = await db.from("email_campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("status", "failed");

@@ -1,3 +1,4 @@
+import { supabasePublishableKey } from "../_shared/apiCredentials.ts";
 import { checkCampaignContent } from '../_shared/emailCampaignContentCheck.ts';
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } });
@@ -7,7 +8,7 @@ export function createContentCheckHandler({ createClient, env, fetcher = fetch }
     if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
     if (req.method !== 'POST') return json(405, { error: 'Method not allowed.' });
     try {
-      const url = env('SUPABASE_URL'), key = env('SUPABASE_ANON_KEY');
+      const url = env('SUPABASE_URL'), key = supabasePublishableKey({ get: env });
       if (!url || !key) return json(503, { error: 'Campaign content checking is not configured.' });
       const db = createClient(url, key, { global: { headers: { Authorization: req.headers.get('authorization') || '' } }, auth: { persistSession: false } });
       const { data: userData, error: userError } = await db.auth.getUser();

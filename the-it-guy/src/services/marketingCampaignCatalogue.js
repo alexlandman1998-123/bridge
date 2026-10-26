@@ -1,4 +1,4 @@
-// The 18 launch families share personalised builders and downloadable packs.
+// The 19 launch families share personalised builders and downloadable packs.
 export const CAMPAIGN_CATEGORIES = [
   { id: 'property', label: 'Promote a Property', icon: 'house' },
   { id: 'sellers', label: 'Find Sellers', icon: 'key' },
@@ -204,6 +204,16 @@ export const campaignShopTemplates = [
     headline: 'Your story means the world to us.', cta: 'Leave a review', setupHint: 'Review your saved review link; choose recipients in channel tools',
     plannedAssets: ['Personal WhatsApp request', 'Email request', 'Gentle reminder', 'Thank-you reply', 'Optional review-link graphic'],
     body: 'Thank you for choosing us, [first name]. We would appreciate hearing about your experience.\n\nYou can leave an honest review here: [confirmed review link]. Thank you for your time.',
+  }),
+  defineTemplate({
+    id: 'client-check-in', title: 'A Personal Check-in', category: 'relationships',
+    description: 'Stay useful to past clients without inventing a milestone or market news.',
+    objective: 'Invite existing clients to share changed property plans or questions',
+    audience: 'Existing clients with permission to hear from the agency', offer: 'An optional conversation with their agent',
+    tags: ['Client nurture', 'Past clients', 'Personal check-in'], headline: 'How are your property plans taking shape?',
+    cta: 'Talk to your agent', setupHint: 'Confirm your public agent details and choose eligible contacts',
+    plannedAssets: ['Personal email', 'WhatsApp message', 'Social post', 'Story', 'Enquiry reply'],
+    body: 'Checking in to ask whether your property plans or questions have changed. Reply when it suits you: [agent contact].',
   }),
   defineTemplate({
     id: 'referral-request', title: 'Know Someone Making a Move?', category: 'relationships',

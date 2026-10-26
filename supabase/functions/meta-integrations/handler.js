@@ -1,3 +1,4 @@
+import { campaignFacebookSource, publicCampaignFacebookPost } from '../_shared/campaignFacebookPost.js'
 import { finishWhatsAppAuthorization, startBusinessAppSync } from './businessAppOnboarding.js'
 import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
 import { handleCrmLink } from './crmLinks.js'
@@ -12,8 +13,10 @@ const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,p
 const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tasks,last_error_message'
 const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
+const safeCampaignPosts = 'id,campaign_id,campaign_revision,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,submitted_at,published_at'
+const sameCampaignSnapshot = (left,right) => left && right && Object.keys(left).length===Object.keys(right).length && Object.keys(left).every(key=>left[key]===right[key])
 
-export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,downloadMedia,uploadMedia,inspectPhoto=null,photoLinks=null,now=()=>new Date()}) {
+export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt,exchangeCode,hash,config,loadListing,assertPublishable,loadCampaign,assertCampaignPublishable,downloadMedia,uploadMedia,inspectPhoto=null,photoLinks=null,now=()=>new Date()}) {
   async function channel(org,id) {
     if(!isUuid(id)) throw new Error('Choose a WhatsApp sender.')
     const row=await result(db.from('organisation_communication_channels').select('*').eq('organisation_id',org).eq('id',id).eq('provider','meta').eq('channel_type','whatsapp').maybeSingle())
@@ -73,6 +76,28 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       ])
       const assignees=(members||[]).filter(m=>META_STAFF_ROLES.includes(m.role)).map(m=>({id:m.user_id,name:[m.first_name,m.last_name].filter(Boolean).join(' ')||m.email||'Team member'}))
       return {senders:senders||[],pages:(pages||[]).map(p=>({...p,canPost:canPublishPage(p)})),canManage:actor.isAdmin,canConnectOwn:Boolean(actor.canConnectOwn),currentUserId:actor.userId,assignees}
+    }
+    // Calendar's post type is explicitly Facebook and routes to a listing.
+    // Business posts keep their own Campaigns history; Instagram is not relabelled.
+    if(action==='calendar_posts') {
+      if(!actor.userDb) throw new Error('Sign in again to load calendar posts.')
+      const posts=[],pageSize=200
+      for(let offset=0;;offset+=pageSize) {
+        const batch=await result(db.from('meta_listing_posts')
+          .select('id,listing_id,status,published_at').eq('organisation_id',org).eq('platform','facebook')
+          .order('id').range(offset,offset+pageSize-1)) || []
+        if(!batch.length) break
+        const ids=[...new Set(batch.map(post=>post.listing_id))]
+        const listings=await result(actor.userDb.from('private_listings')
+          .select('id,title').eq('organisation_id',org).in('id',ids)) || []
+        const visible=new Map(listings.map(listing=>[listing.id,listing]))
+        for(const post of batch) {
+          const listing=visible.get(post.listing_id)
+          if(listing) posts.push({id:post.id,listing_id:post.listing_id,status:post.status,published_at:post.published_at,title:listing.title ? `${listing.title} · Facebook post` : 'Facebook listing post'})
+        }
+        if(batch.length<pageSize) break
+      }
+      return {posts}
     }
     if(action==='set_sender_owner') {
       if(!isUuid(payload.senderId)||!(payload.ownerUserId==null||payload.ownerUserId===''||isUuid(payload.ownerUserId))) throw new Error('Choose a number and an active agent.')
@@ -173,6 +198,64 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       if(!message||!isMetaId(message.media_json?.id)) throw new Error('Attachment not found in this workspace.')
       const sender=await channel(org,message.channel_id)
       return await downloadMedia(await senderToken(sender),message.media_json.id)
+    }
+    if(['campaign_posts','preview_campaign_post','publish_campaign_post'].includes(action)) {
+      let job
+      if(action==='publish_campaign_post') {
+        if(payload.confirmPublishNow!==true || !isUuid(payload.postId)) throw new Error('Review the Facebook preview and explicitly confirm Publish now.')
+        job=await result(db.from('meta_campaign_posts').select('*').eq('id',payload.postId).eq('organisation_id',org).eq('created_by',actor.userId).maybeSingle())
+        if(!job) throw new Error('Campaign post preview not found. Prepare a new preview.')
+      }
+      const campaignId=job?.campaign_id||payload.campaignId
+      if(!isUuid(campaignId) || !loadCampaign) throw new Error('Choose a saved business campaign.')
+      const loaded=await loadCampaign(actor,org,campaignId)
+      if(!loaded?.campaign) throw new Error('You do not have access to this campaign.')
+      const campaign=loaded.campaign
+      if(action==='campaign_posts') {
+        let source=null,sourceError=''
+        try { source=campaignFacebookSource(campaign,now().getTime()) } catch(error) { sourceError=error.message }
+        return {posts:await result(db.from('meta_campaign_posts').select(safeCampaignPosts).eq('organisation_id',org).eq('campaign_id',campaignId).order('created_at',{ascending:false}).limit(20)),source,sourceError,canPublish:loaded.canPublish===true}
+      }
+      // A repeated request only reports the existing submission, even if the
+      // source or connection subsequently changed. It never repeats Graph.
+      if(job && job.status!=='draft') return {post:Object.fromEntries(safeCampaignPosts.split(',').map(key=>[key,job[key]]))}
+      if(loaded.canPublish!==true) throw new Error('Only the campaign owner or an agency manager can publish this campaign.')
+      if(!Number.isSafeInteger(payload.expectedRevision) || payload.expectedRevision!==campaign.revision || (job && job.campaign_revision!==campaign.revision))
+        throw new Error('The saved campaign changed. Reload it and prepare a new Facebook preview.')
+      await assertCampaignPublishable?.(actor,org,campaign)
+      const connection=await page(org,job?.connection_id||payload.connectionId)
+      if(!isMetaId(connection.page_id) || !canPublishPage(connection)) throw new Error('Reconnect this Facebook Page with Page posting permission and a profile that can create Page content.')
+      const snapshot={...publicCampaignFacebookPost(campaign,job ? {mode:job.snapshot_json.mode,destination:job.snapshot_json.destination} : payload,now().getTime()),pageId:text(connection.page_id),pageName:text(connection.page_name)}
+      if(action==='preview_campaign_post') {
+        if(!isUuid(payload.requestId)) throw new Error('Start a new campaign post preview.')
+        const existing=()=>result(db.from('meta_campaign_posts').select('*').eq('organisation_id',org).eq('created_by',actor.userId).eq('request_id',payload.requestId).maybeSingle())
+        const check=row=>{
+          if(row.campaign_id!==campaignId || row.connection_id!==connection.id || !sameCampaignSnapshot(row.snapshot_json,snapshot))
+            throw new Error('This preview request belongs to different content. Start a new preview.')
+          return {post:Object.fromEntries(safeCampaignPosts.split(',').map(key=>[key,row[key]])),pageName:connection.page_name}
+        }
+        const prior=await existing()
+        if(prior) return check(prior)
+        const inserted=await db.from('meta_campaign_posts').insert({organisation_id:org,campaign_id:campaignId,campaign_revision:campaign.revision,connection_id:connection.id,request_id:payload.requestId,snapshot_json:snapshot,created_by:actor.userId}).select(safeCampaignPosts).single()
+        if(inserted.error) {
+          const recovered=await existing()
+          if(recovered) return check(recovered)
+          throw new Error(inserted.error.message)
+        }
+        return {post:inserted.data,pageName:connection.page_name}
+      }
+      if(!sameCampaignSnapshot(snapshot,job.snapshot_json)) throw new Error('The saved campaign changed after this preview. Prepare and review a new preview.')
+      const claimed=await result(db.rpc('meta_campaign_claim_post',{p_org:org,p_post:job.id,p_actor:actor.userId,p_revision:campaign.revision}))
+      if(claimed!==true) return {post:await result(db.from('meta_campaign_posts').select(safeCampaignPosts).eq('id',job.id).eq('organisation_id',org).single())}
+      try {
+        const response=await graph(await decrypt(connection.token_ciphertext),`${connection.page_id}/feed`,{message:snapshot.caption,...(snapshot.link?{link:snapshot.link}:{}),published:true})
+        const postId=text(response.post_id||response.id)
+        if(!/^[0-9_]+$/.test(postId)) throw new Error('Meta did not confirm the post. Check the Page before posting again.')
+        await result(db.from('meta_campaign_posts').update({status:'published',provider_post_id:postId,public_url:`https://www.facebook.com/${postId}`,published_at:now().toISOString(),error_message:null}).eq('id',job.id).eq('organisation_id',org).eq('status','publishing'))
+      } catch(error) {
+        await db.from('meta_campaign_posts').update({status:error.definitive?'failed':'unknown',error_message:error.definitive?text(error.message).slice(0,500):'The publish result is unconfirmed. Check the Facebook Page before creating another post.'}).eq('id',job.id).eq('organisation_id',org).eq('status','publishing')
+      }
+      return {post:await result(db.from('meta_campaign_posts').select(safeCampaignPosts).eq('id',job.id).eq('organisation_id',org).single())}
     }
     if(['listing_posts','preview_post','publish_post'].includes(action)) {
       let job

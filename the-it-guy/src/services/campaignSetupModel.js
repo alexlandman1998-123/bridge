@@ -192,3 +192,33 @@ export function setupCaption(preferences, agent = {}) {
       : ''
   return opening ? `${opening}\n${name} · ${preferences.agencyName || 'Your agency'}\n${preferences.language === 'af-ZA' ? 'Kontak ons om jou planne te bespreek.' : 'Get in touch to discuss your plans.'}` : 'A branded example will use your selected language when campaign content generation is connected.'
 }
+
+// Stable provider identifiers; labels can change without changing ad intent.
+export const CAMPAIGN_OBJECTIVES = {
+  OUTCOME_AWARENESS: { label: 'Awareness', description: 'Introduce your brand or property to more people.' },
+  OUTCOME_TRAFFIC: { label: 'Traffic', description: 'Bring people to a listing, website or landing page.' },
+  OUTCOME_ENGAGEMENT: { label: 'Engagement', description: 'Encourage conversations, replies and interactions.' },
+  OUTCOME_LEADS: { label: 'Leads', description: 'Collect enquiries, valuation requests and viewing bookings.' },
+  OUTCOME_SALES: { label: 'Sales', description: 'Encourage measurable conversions on your website.' },
+  OUTCOME_APP_PROMOTION: { label: 'App promotion', description: 'Promote app installs or activity where supported.' },
+}
+
+export function cleanCampaignSetup(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Review your campaign setup.')
+  const text = (key, limit) => {
+    const result = String(value[key] || '').trim()
+    if (result.length > limit) throw new Error('Shorten your campaign setup details.')
+    return result
+  }
+  const metaObjective = text('metaObjective', 40)
+  if (metaObjective && !Object.hasOwn(CAMPAIGN_OBJECTIVES, metaObjective)) throw new Error('Choose a supported campaign objective.')
+  const audienceId = text('audienceId', 36)
+  if (audienceId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(audienceId)) throw new Error('Choose a saved audience.')
+  return { metaObjective, customGoal: text('customGoal', 120), target: text('target', 240), audienceId, placeId: text('placeId', 300) }
+}
+
+export function metaCampaignObjective(campaign) {
+  const code = campaign?.campaign_setup?.metaObjective
+  if (!Object.hasOwn(CAMPAIGN_OBJECTIVES, code)) throw new Error('Choose and save a Meta-compatible objective before preparing ads.')
+  return code
+}

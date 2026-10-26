@@ -1,0 +1,11 @@
+.mc-goal-field { display: flex; flex-direction: column; gap: 9px; min-width: 0; font-size: 14px; font-weight: 550; }
+.mc-goal-label { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.mc-goal-label button { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 0; color: #2d7050; font: inherit; font-size: 12px; cursor: pointer; }
+.mc-goal-field small { color: #65776c; font-size: 12px; font-weight: 400; line-height: 1.5; }
+.mc-goal-optional { color: #7c8981; font-size: 11px; font-weight: 400; }
+.mc-goal-audience { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 12px 14px; border: 1px solid #dfe6e2; border-radius: 10px; background: #f8fbf9; color: #315d43; text-align: left; font: inherit; cursor: pointer; }
+.mc-goal-audience svg { flex-shrink: 0; }
+.mc-goal-clear { align-self: flex-start; border: 0; background: none; color: #536e5c; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+.mc-goal-area .arch9-address-input__box input { padding-left: 40px !important; padding-right: 36px !important; }
+.mc-goal-field select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2365776c' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E") !important; background-repeat: no-repeat !important; background-position: right 14px center !important; padding-right: 38px !important; }
+.mc-goal-area .address-input-shell { width: 100%; }

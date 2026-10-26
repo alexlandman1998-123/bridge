@@ -16,8 +16,6 @@ import {
   XCircle,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import MetaCampaignRoutes from '../../components/marketing/MetaCampaignRoutes'
-import MetaLeadFormRouting from '../../components/marketing/MetaLeadFormRouting'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
@@ -395,9 +393,7 @@ function AgentCardEditorDialog({ editor, listingOptions = [], listingLoading = f
   )
 }
 
-const metaLeadTypeLabel = (kind) => ({ buyer: 'Buyer', seller: 'Seller', recruitment: 'Recruitment' }[kind] || 'Buyer')
-
-export default function SettingsLeadCapturePage({ section = 'meta' }) {
+export default function SettingsLeadCapturePage({ section = 'meta', embedded = false }) {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const [context, setContext] = useState(null)
   const [users, setUsers] = useState([])
@@ -414,7 +410,6 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const [metaConnections, setMetaConnections] = useState([])
   const [metaPages, setMetaPages] = useState([])
   const [metaForms, setMetaForms] = useState([])
-  const [metaRouteRevision,setMetaRouteRevision] = useState(0)
   const [metaConnectionId, setMetaConnectionId] = useState('')
   const [metaImports, setMetaImports] = useState([])
   const [metaImportFormId, setMetaImportFormId] = useState('')
@@ -525,7 +520,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
     setSaving(true); setError('')
     try {
       await selectMetaLeadAdsForms(organisationId,metaConnectionId,metaForms.filter((form)=>form.selected).map((form)=>({id:form.id,name:form.name,branchId:form.branchId||null,assignedAgentId:form.assignedAgentId||null,leadType:form.leadType||'buyer'})))
-      setNotice('Facebook lead form routes saved. Unchecked forms no longer import leads.'); setMetaRouteRevision(old=>old+1); await load()
+      setNotice('Facebook Lead Ads forms connected and subscribed to leadgen.'); await load()
     } catch(metaError) { setError(metaError.message||'Meta forms could not be enabled.') } finally { setSaving(false) }
   }
   async function refreshMetaImports() {
@@ -882,11 +877,10 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
 
   return (
     <div className={settingsPageClass}>
-      {!showDigitalCards ? <header className="flex flex-wrap items-center justify-between gap-4">
+      {!showDigitalCards && !embedded ? <header className="flex flex-wrap items-center justify-between gap-4">
         <div><h1 className="text-2xl font-semibold tracking-tight text-[#162334]">Facebook &amp; Instagram</h1><p className="mt-1 text-sm leading-6 text-[#6b7d93]">Connect your Facebook Page to share listings and capture enquiries.</p></div>
         <Button variant="secondary" onClick={load} disabled={saving}><RefreshCw size={16} />Refresh</Button>
       </header> : null}
-
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
@@ -899,14 +893,12 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
               <div className={`flex gap-3 ${metaConnections.length ? 'items-center' : 'flex-col items-center'}`}>
                 <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#edf7f3] text-[#17634d]"><Radio size={26} /></span>
                 <div><h3 className="text-base font-semibold text-[#162334]">{metaConnections.length ? 'Manage your Page connection' : 'Connect your Facebook Page'}</h3><p className="mt-2 max-w-md text-sm leading-6 text-[#6b7d93]">{metaConnections.length ? 'Choose lead forms and assign enquiries below.' : 'Link your Page through Meta to post listings and receive Facebook and Instagram lead form enquiries.'}</p></div>
-
               </div>
               <Button onClick={authorizeMeta} disabled={saving || !organisationId}><Radio size={16} />{metaConnections.length ? 'Manage connection' : 'Connect Facebook Page'}</Button>
             </div>
             {metaConnections.map((connection) => <div key={connection.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><strong className="text-sm text-[#162334]">{connection.page_name}</strong><p className="mt-1 text-xs capitalize text-[#6b7d93]">{String(connection.connection_status || 'Unknown').replace(/_/g, ' ')}</p>{connection.last_error_message ? <p className="mt-2 text-sm text-red-700">{connection.last_error_message}</p> : null}</div>)}
             {metaPages.length ? <div className="grid gap-2 border-t border-[#e8eef5] pt-4"><h3 className="text-sm font-semibold text-[#162334]">Choose a Page</h3>{metaPages.map((page) => <SecondaryButton key={page.id} onClick={() => chooseMetaPage(page.id)} disabled={saving}>Use {page.name}</SecondaryButton>)}</div> : null}
             {metaForms.length ? <div className="grid gap-3 border-t border-[#e8eef5] pt-4"><div><h3 className="text-sm font-semibold text-[#162334]">Lead forms</h3><p className="mt-1 text-sm text-[#6b7d93]">Select the forms to capture and who should receive each enquiry.</p></div>{metaForms.map((form,index) => <div key={form.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><label><input type="checkbox" className="h-4 w-4 rounded accent-[#17634d]" checked={Boolean(form.selected)} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,selected:event.target.checked}:item))} /> <span className="ml-2 font-semibold">{form.name}</span></label><div className="mt-3 flex flex-wrap gap-3"><label className="text-sm font-medium text-[#52677e]">Lead type <select className="ml-2 min-h-10 max-w-full rounded-lg border border-[#d7e2ee] bg-white px-3 text-sm" value={form.leadType||'buyer'} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,leadType:event.target.value}:item))}><option value="buyer">Buyer</option><option value="seller">Seller</option></select></label><label className="text-sm font-medium text-[#52677e]">Route to <select className="ml-2 min-h-10 max-w-full rounded-lg border border-[#d7e2ee] bg-white px-3 text-sm" value={form.assignedAgentId||''} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,assignedAgentId:event.target.value}:item))}><option value="">Agency queue</option>{users.filter(isActiveAgentUser).map((user)=><option key={getUserId(user)} value={getUserId(user)}>{getUserDisplayName(user)}</option>)}</select></label></div></div>)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
-
             {metaForms.some((form) => form.selected) ? (
               <div className="mt-2 grid gap-4 rounded-[16px] border border-[#c9ddf3] bg-[#f7fbff] p-4">
                 <div>
@@ -914,7 +906,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
                   <p className="mt-1 text-sm text-[#5f7288]">Preview a form before importing. Historical leads keep their original Meta submission date and do not trigger new-lead notifications or SLA timers.</p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
-                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">Form<select className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFormId} onChange={(event) => { setMetaImportFormId(event.target.value); setMetaImportPreview(null) }}><option value="">Choose form</option>{metaForms.filter((form) => form.selected).map((form) => <option key={form.id} value={form.id}>{form.name} · {metaLeadTypeLabel(form.leadType)}</option>)}</select></label>
+                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">Form<select className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFormId} onChange={(event) => { setMetaImportFormId(event.target.value); setMetaImportPreview(null) }}><option value="">Choose form</option>{metaForms.filter((form) => form.selected).map((form) => <option key={form.id} value={form.id}>{form.name} · {form.leadType === 'seller' ? 'Seller' : 'Buyer'}</option>)}</select></label>
                   <label className="grid gap-1 text-sm font-medium text-[#52677e]">From (optional)<input type="date" className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFrom} onChange={(event) => { setMetaImportFrom(event.target.value); setMetaImportPreview(null) }} /></label>
                   <label className="grid gap-1 text-sm font-medium text-[#52677e]">To (optional)<input type="date" className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportTo} onChange={(event) => { setMetaImportTo(event.target.value); setMetaImportPreview(null) }} /></label>
                 </div>
@@ -926,7 +918,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
           </div>
         </section>
       ) : null}
-      {showMeta ? <>
+      {showMeta && !embedded ? <>
         <div className="grid gap-4 md:grid-cols-2">
           <section className="rounded-2xl border border-[#e1e8ef] bg-white p-5"><h2 className="text-sm font-semibold text-[#162334]">Listing posts</h2><p className="mt-2 text-sm leading-6 text-[#6b7d93]">Connect your Page, then prepare and review Facebook posts from a listing.</p></section>
           <section className="rounded-2xl border border-[#e1e8ef] bg-white p-5"><h2 className="text-sm font-semibold text-[#162334]">Lead enquiries</h2><p className="mt-2 text-sm leading-6 text-[#6b7d93]">Choose Facebook and Instagram lead forms, then route enquiries to an agent or your agency queue.</p></section>

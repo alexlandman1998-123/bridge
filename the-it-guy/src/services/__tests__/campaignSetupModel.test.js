@@ -1,5 +1,13 @@
 import { expect, it } from 'vitest'
-import { buildCampaignSetupSources, changedSetupSources, cleanSetupPreferences, validateCampaignSetup, prefillCampaignSetup } from '../campaignSetupModel'
+import { CAMPAIGN_SETUP_VERSION, CAMPAIGN_OBJECTIVES, buildCampaignSetupSources, changedSetupSources, cleanSetupPreferences, validateCampaignSetup, prefillCampaignSetup, cleanCampaignSetup, metaCampaignObjective } from '../campaignSetupModel'
+
+it('exports both agency setup preferences and campaign objectives for their existing consumers', () => {
+  expect(CAMPAIGN_SETUP_VERSION).toBe(1)
+  expect(cleanSetupPreferences({ agencyName: 'Agency' }).agencyName).toBe('Agency')
+  const campaign_setup = cleanCampaignSetup({ metaObjective: 'OUTCOME_LEADS' })
+  expect(metaCampaignObjective({ campaign_setup })).toBe('OUTCOME_LEADS')
+  expect(CAMPAIGN_OBJECTIVES.OUTCOME_LEADS.label).toBe('Leads')
+})
 
 const context = {
   organisation: { id: 'agency', name: 'Oak & Stone', companyEmail: 'hello@example.com', companyPhone: '0211234567' },

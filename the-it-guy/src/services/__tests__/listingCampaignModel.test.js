@@ -1,13 +1,14 @@
+import { createContactProvenance } from '../campaignContactProvenance'
 import { expect, it } from 'vitest'
-import { cleanListingBuilder, justListedSource } from '../justListedCampaignModel'
+import { cleanListingBuilder } from '../justListedCampaignModel'
 import { cleanPropertyBuilder, PROPERTY_CAMPAIGNS } from '../listingCampaignContract'
 import { projectPropertySource, propertyCampaignCopy, propertyCampaignGaps, propertyCampaignPayload } from '../listingCampaignModel'
 import { checkedPropertyPack, propertyPackText } from '../propertyCampaignPackModel'
 const id = n => `${String(n).padStart(8,'0')}-1111-4111-8111-111111111111`
-const source = { title:'Private property headline',price:'R 1 250 000',location:'99 Exact Road, Gardens',facts:'3 bedrooms',description:'Private marketing description',agencyName:'Oak',agentName:'Sarah',destination:'sarah@example.test',language:'en-ZA',imageId:'cover' }
+const source = { title:'Private property headline',price:'R 1 250 000',location:'99 Exact Road, Gardens',facts:'3 bedrooms',description:'Private marketing description',agencyName:'Oak',agentName:'Sarah',agentEmail:'sarah@example.test',agentPhone:'+27820000000',destination:'sarah@example.test',language:'en-ZA',imageId:'cover' }
 const current = { source,publicArea:'Gardens',agentId:'',listingId:id(1),images:[{id:'cover',url:'https://example.test/cover.jpg'}] }
 const settings = { publicationConfirmed:true,priceConfirmed:true,date:'2099-11-20',startTime:'10:00',endTime:'12:00',feature:'3 bedrooms' }
-const build = (template, additional=[]) => cleanPropertyBuilder({version:2,template,listingId:id(1),agentId:'',source:projectPropertySource(template,current,settings),settings,additionalListings:additional})
+const build = (template, additional=[]) => cleanPropertyBuilder({version:2,template,listingId:id(1),agentId:'',source:projectPropertySource(template,current,settings),contactProvenance:{...createContactProvenance(source),confirmed:true},settings,additionalListings:additional.map(item=>({...item,contactProvenance:{...createContactProvenance(item.source),confirmed:true}}))})
 const campaign = builder => ({id:'plan',status:'draft',revision:1,name:'Property campaign',listing_builder:builder,channel_content:propertyCampaignCopy(builder)})
 it('supports six new template families and preserves version-one cleaning', () => {
  expect(Object.keys(PROPERTY_CAMPAIGNS)).toHaveLength(6)
@@ -41,6 +42,18 @@ it('requires price confirmation and never invents old prices or discounts', () =
  expect(propertyCampaignGaps({...builder,settings:{...builder.settings,priceConfirmed:false}}).join(' ')).toContain('Confirm the reduced')
  expect(propertyCampaignCopy(builder).social.body).not.toMatch(/was|save \d|%/i)
  expect(propertyCampaignGaps({...builder,source:{...source,price:'Price on application'}}).length).toBeGreaterThan(0)
+})
+it('rechecks email and phone changes and removals for every recipe member', () => {
+ const builder=build('property-spotlight')
+ for (const key of ['agentEmail','agentPhone']) {
+  expect(()=>checkedPropertyPack(campaign(builder),[{...current,source:{...source,[key]:'Changed'}}])).toThrow(/contact details changed/)
+  expect(()=>checkedPropertyPack(campaign(builder),[{...current,source:{...source,[key]:''}}])).toThrow(/removed/)
+ }
+ const additional=[2,3].map(n=>({listingId:id(n),agentId:'',source:{...source,title:`Property ${n}`}}))
+ const collection=build('property-collection',additional)
+ const currents=[current,...additional.map(item=>({...current,listingId:item.listingId,source:item.source}))]
+ expect(()=>checkedPropertyPack(campaign(collection),[...currents.slice(0,2),{...currents[2],source:{...currents[2].source,agentEmail:'changed@example.test'}}])).toThrow(/contact details changed/)
+ expect(collection.additionalListings[1].source.destination).toBe(source.destination)
 })
 it('checks real dates, future South African event times, and saved event changes', () => {
  const builder=build('show-day')

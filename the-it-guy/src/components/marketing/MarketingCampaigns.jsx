@@ -1,3 +1,6 @@
+import { personalisePlaybookChannel, playbookForChannels } from '../../services/campaignPlaybookModel'
+import Modal from '../ui/Modal'
+import { CHANNEL_TEMPLATE_STARTERS } from './channelTemplateStarters'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   ArrowLeft,
@@ -5,7 +8,6 @@ import {
   CalendarDays,
   Clock3,
   Infinity as InfinityIcon,
-  LayoutGrid,
   Mail,
   MapPin,
   Megaphone,
@@ -18,7 +20,8 @@ import {
   Target,
   UsersRound,
 } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { MarketingLink as Link } from './MarketingNavigation.jsx'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   CAMPAIGN_CHANNELS,
@@ -42,15 +45,28 @@ import {
   saveCampaignTemplate,
 } from '../../services/marketingCampaignTemplateService'
 import CampaignTemplateLibrary from './CampaignTemplateLibrary'
+import CampaignCreateWizard from './CampaignCreateWizard'
+import CampaignGoalFields from './CampaignGoalFields'
+import CampaignStudioFormats from './CampaignStudioFormats'
+import CampaignPublishingActions from './CampaignPublishingActions'
 import { campaignShopTemplates } from '../../services/marketingCampaignCatalogue'
 import PlatformLogo from './CampaignPlatformLogo'
 import CampaignTemplatePreview from './CampaignTemplatePreview'
 import CampaignAnalytics from './CampaignAnalytics'
+import MarketingCalendar from './MarketingCalendar'
 import CampaignSetup from './CampaignSetup'
 import CurrentCampaigns from './CurrentCampaigns'
 import CampaignSummaryCards from './CampaignSummaryCards'
+import CampaignAttention from './CampaignAttention'
+import ChannelTemplateLibrary, { ChannelTemplateEditor } from './ChannelTemplateLibrary'
+import { CHANNEL_TEMPLATE_CHANNELS, loadChannelTemplates, saveChannelTemplate, campaignFromChannelTemplate } from '../../services/marketingChannelTemplateService'
+import { handoffCampaignDraft, loadCampaignChannelBrief } from '../../services/campaignPackService'
+import { CampaignWorkspaceNavigation, CampaignStudioIntro, CampaignAssetLibrary, CampaignAgents } from './CampaignWorkspacePanels'
 import { PROPERTY_CAMPAIGNS } from '../../services/listingCampaignContract'
 import { GENERAL_CAMPAIGNS } from '../../services/generalCampaignModel'
+import { SHOW_CAMPAIGN_WORKSPACE } from '../../lib/featureFlags'
+import CampaignLaunchpad from './CampaignLaunchpad'
+import CampaignReadiness from './CampaignReadiness'
 const GeneralCampaignBuilder = lazy(() => import('./GeneralCampaignBuilder'))
 const ListingCampaignBuilder = lazy(() => import('./ListingCampaignBuilder'))
 const CampaignAssets = lazy(() => import('./CampaignAssets'))
@@ -62,6 +78,7 @@ const icons = {
   email: Mail,
   whatsapp: MessageCircle,
   meta: Network,
+  chatgpt: MessageCircle,
   social: Share2,
 }
 const runMode = (campaign) =>
@@ -76,10 +93,19 @@ function dateAfter(days, from) {
   value.setDate(value.getDate() + days)
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 }
+const MarketingAudiences = lazy(() => import('./MarketingAudiences'))
+const CampaignAudience = lazy(() => import('./MarketingAudiences').then((module) => ({ default: module.CampaignAudience })))
+const CampaignPlaybook = lazy(() => import('./CampaignPlaybook'))
+const CampaignEnquiries = lazy(() => import('./CampaignEnquiries'))
+const CampaignResponseLink = lazy(() => import('./CampaignResponseLink'))
+const CampaignOutcomes = lazy(() => import('./CampaignOutcomes'))
+const CampaignFacebookPostPanel = lazy(() => import('./CampaignFacebookPostPanel'))
 const tabs = {
   overview: 'Overview',
+  playbook: 'Playbook',
   audience: 'Audience & offer',
   activity: 'Channel activity',
+  enquiries: 'Enquiries & follow-up',
   assets: 'Assets & drafts',
   results: 'Results',
 }
@@ -97,8 +123,8 @@ const period = (campaign) =>
     : campaign.end_date
       ? `Until ${date(campaign.end_date)}`
       : 'Dates to be confirmed'
-const channelUrl = (channel, id) =>
-  `/marketing?section=${channel}&view=detail&id=${encodeURIComponent(id)}`
+const channelUrl = (channel, id, status) =>
+  `/marketing?section=${channel}&view=${['email', 'whatsapp'].includes(channel) && status === 'draft' ? 'create' : 'detail'}&id=${encodeURIComponent(id)}`
 function Status({ value }) {
   return (
     <span className={`mc-status mc-status-${value}`}>
@@ -147,6 +173,7 @@ function Empty({ title, children }) {
 function CampaignForm({
   campaign,
   template,
+  organisationId,
   templateMode = false,
   canShare = false,
   visibilityLocked = false,
@@ -160,9 +187,11 @@ function CampaignForm({
     () =>
       campaign || {
         id: crypto.randomUUID(),
+        ...(template?.playbook ? { playbook: structuredClone(template.playbook) } : {}),
+        ...(template?.campaign_setup ? { campaign_setup: structuredClone(template.campaign_setup) } : {}),
         name: template?.name || '',
         goal: template?.goal || 'seller_leads',
-        objective: template?.objective || CAMPAIGN_GOALS.seller_leads,
+        objective: template?.objective ?? CAMPAIGN_GOALS.seller_leads,
         audience: template?.audience || '',
         offer: template?.offer || '',
         area: template?.area || '',
@@ -193,7 +222,8 @@ function CampaignForm({
     setBusy(true)
     setError('')
     try {
-      await onSave(templateMode ? { ...form, mode } : form)
+      const prepared = { ...form, ...(form.playbook ? { playbook: playbookForChannels(form.playbook, form.planned_channels) } : {}) }
+      await onSave(templateMode ? { ...prepared, mode } : prepared)
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -209,13 +239,11 @@ function CampaignForm({
               ? 'Design your campaign template'
               : campaign
                 ? 'Edit campaign'
-                : 'Start with a clear goal'}
+                : 'Create campaign'}
           </h2>
-          <p>
-            Bring your audience, offer and channels together in one campaign.
-          </p>
         </div>
       </div>
+      {templateMode && form.playbook && <p className="mc-note">Includes {playbookForChannels(form.playbook, form.planned_channels)?.steps.length || 0} communication steps and {form.playbook.followUp.length} follow-up actions. Removed channels are omitted; replacing every channel starts a fresh playbook. Review routing and personalise the sequence in Playbook after creating the campaign.</p>}
       <fieldset disabled={busy}>
         <div className="mc-fields">
           <label className="mc-span">
@@ -258,65 +286,7 @@ function CampaignForm({
               {...field('name')}
             />
           </label>
-          <label>
-            Goal
-            <select
-              value={form.goal}
-              onChange={(event) => {
-                const goal = event.target.value
-                setForm((previous) => ({
-                  ...previous,
-                  goal,
-                  objective: Object.values(CAMPAIGN_GOALS).includes(
-                    previous.objective,
-                  )
-                    ? CAMPAIGN_GOALS[goal]
-                    : previous.objective,
-                }))
-              }}
-            >
-              {Object.entries(CAMPAIGN_GOALS).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Area
-            <input
-              maxLength={120}
-              placeholder="e.g. Southern Suburbs"
-              {...field('area')}
-            />
-          </label>
-          <label className="mc-span">
-            Objective
-            <input
-              required
-              maxLength={240}
-              placeholder="What do you want this campaign to achieve?"
-              {...field('objective')}
-            />
-          </label>
-          <label>
-            Audience
-            <textarea
-              rows={3}
-              maxLength={600}
-              placeholder="Who are you trying to reach?"
-              {...field('audience')}
-            />
-          </label>
-          <label>
-            Offer
-            <textarea
-              rows={3}
-              maxLength={600}
-              placeholder="What will encourage them to respond?"
-              {...field('offer')}
-            />
-          </label>
+          <CampaignGoalFields form={form} setForm={setForm} organisationId={organisationId || campaign?.organisation_id} />
           {!templateMode && (
             <label className="mc-span">
               Planned budget (ZAR)
@@ -445,7 +415,7 @@ function CampaignForm({
                   />
                   <Icon size={18} />
                   {label}
-                  {['meta', 'social'].includes(key) && (
+                  {['meta', 'social', 'chatgpt'].includes(key) && (
                     <small>Planning only</small>
                   )}
                 </label>
@@ -486,6 +456,7 @@ function CampaignForm({
                         onChange={(event) =>
                           setForm((previous) => ({
                             ...previous,
+                            ...(previous.playbook ? { playbook: personalisePlaybookChannel(previous.playbook, channel, { [key]: event.target.value }) } : {}),
                             channel_content: {
                               ...previous.channel_content,
                               [channel]: {
@@ -503,6 +474,7 @@ function CampaignForm({
                         onChange={(event) =>
                           setForm((previous) => ({
                             ...previous,
+                            ...(previous.playbook ? { playbook: personalisePlaybookChannel(previous.playbook, channel, { [key]: event.target.value }) } : {}),
                             channel_content: {
                               ...previous.channel_content,
                               [channel]: {
@@ -550,13 +522,15 @@ function CampaignForm({
   )
 }
 
-function ActivityPanel({ campaign, workspace, canEdit, onLink, onUnlink }) {
+function ActivityPanel({ campaign, workspace, canEdit, onLink, onUnlink, onPrepareDraft, onLoadBrief }) {
   const [selected, setSelected] = useState({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [preparedDraft, setPreparedDraft] = useState(null)
   async function act(callback) {
     setBusy(true)
     setError('')
+    setPreparedDraft(null)
     try {
       await callback()
     } catch (err) {
@@ -611,12 +585,23 @@ function ActivityPanel({ campaign, workspace, canEdit, onLink, onUnlink }) {
                 </p>
               </div>
             )}
-            {['meta', 'social'].includes(channel) ? (
-              <p className="mc-note">
-                {channel === 'social'
-                  ? 'Organic social is included in this plan. Use the draft content in your social publishing tool; posting is not connected yet.'
-                  : 'Meta is included in this campaign plan. Publishing and linking Meta ads will be added later.'}
-              </p>
+            {['email', 'whatsapp'].includes(channel) && canEdit && campaign.channel_content?.[channel] && (
+              <div className="mc-prepare-email">
+                <p>{channel === 'email' ? 'Prepare an editable email draft from your saved subject and message. Review the sender and audience in Email.' : 'Prepare a WhatsApp draft with this wording. Choose a business sender, recipients and an approved template in WhatsApp.'}</p>
+                <button className="mc-button mc-primary" disabled={busy || !campaign.channel_content[channel].body?.trim() || (channel === 'email' && !campaign.channel_content.email.title?.trim())} onClick={() => act(async () => {
+                  const result = await onPrepareDraft(channel)
+                  setPreparedDraft({ ...result, channel })
+                })}>{busy ? 'Working…' : `Prepare ${channel === 'email' ? 'email' : 'WhatsApp'} draft`} <ArrowRight size={16} /></button>
+              </div>
+            )}
+            {preparedDraft?.channel === channel && (
+              <div className="mc-email-prepared" role="status">
+                <p>{preparedDraft.status === 'draft' ? `${CAMPAIGN_CHANNELS[channel]} draft saved and linked to this campaign. Nothing has been sent or scheduled.` : `Existing ${CAMPAIGN_CHANNELS[channel]} activity linked to this campaign.`}</p>
+                <Link className="mc-button" to={channelUrl(channel, preparedDraft.id, preparedDraft.status)}>{preparedDraft.status === 'draft' ? `Open ${channel === 'email' ? 'email' : 'WhatsApp'} draft` : `View ${CAMPAIGN_CHANNELS[channel]} activity`} <ArrowRight size={16} /></Link>
+              </div>
+            )}
+            {['meta', 'social', 'chatgpt'].includes(channel) ? (
+              canEdit ? <CampaignPublishingActions key={`${campaign.id}:${campaign.revision}:${channel}`} channel={channel} campaign={campaign} onLoadBrief={onLoadBrief}/> : <p className="mc-note">Publishing and results are managed in the channel tool.</p>
             ) : (
               <>
                 {workspace.channels[channel]?.error && (
@@ -648,7 +633,7 @@ function ActivityPanel({ campaign, workspace, canEdit, onLink, onUnlink }) {
                       {activity && (
                         <Link
                           className="mc-button"
-                          to={channelUrl(channel, activity.id)}
+                          to={channelUrl(channel, activity.id, activity.status)}
                         >
                           Open <ArrowRight size={14} />
                         </Link>
@@ -733,16 +718,21 @@ function ActivityPanel({ campaign, workspace, canEdit, onLink, onUnlink }) {
     </div>
   )
 }
-function Results({ workspace, campaign }) {
+function Results({ workspace, campaign, onRefresh }) {
+  const [refreshing, setRefreshing] = useState(false)
+  async function refreshResults() {
+    setRefreshing(true)
+    try { await onRefresh() } finally { setRefreshing(false) }
+  }
   return (
     <div className="mc-panel">
-      <h2>Channel results</h2>
+      <div className="mc-panel-heading"><h2>Channel results</h2><button className="mc-button" disabled={refreshing} onClick={() => void refreshResults()}>{refreshing ? 'Refreshing…' : 'Refresh results'}</button></div>
       <p className="mc-note">
         Recorded message activity from linked sends. Campaign lead attribution
-        is not available yet.
+        appears in Enquiries & follow-up when a person submits a tracked response form or an agent records an enquiry.
       </p>
       {campaign.planned_channels
-        .filter((channel) => !['meta', 'social'].includes(channel))
+        .filter((channel) => !['meta', 'social', 'chatgpt'].includes(channel))
         .map((channel) => {
           const links = linkedActivities(workspace, campaign, channel)
           const unavailable =
@@ -786,11 +776,10 @@ function Results({ workspace, campaign }) {
           )
         })}
       {campaign.planned_channels.some((channel) =>
-        ['meta', 'social'].includes(channel),
+        ['meta', 'social', 'chatgpt'].includes(channel),
       ) && (
         <p className="mc-note">
-          Meta and organic social results will appear once those tools can be
-          connected.
+          Facebook publication records are in Channel activity. Social engagement and advertising results require their own reporting connection.
         </p>
       )}
     </div>
@@ -807,42 +796,48 @@ function Detail({
   canEdit,
   onSaveTemplate,
   onRefresh,
+  onPrepareDraft,
+  onLoadBrief,
+  focusLeadId,
+  refreshing,
 }) {
   return (
     <>
-      <header className="mc-detail-heading">
-        <div className="mc-detail-title">
-          <Cover key={campaign.cover_url} url={campaign.cover_url} />
-          <div>
-            <div className="mc-eyebrow">{CAMPAIGN_GOALS[campaign.goal]}</div>
-            <h1>{campaign.name}</h1>
-            <Status value={campaign.status} />
+      <div className="mc-detail-shell">
+        <header className="mc-detail-heading">
+          <div className="mc-detail-title">
+            <Cover key={campaign.cover_url} url={campaign.cover_url} />
+            <div>
+              <h1>{campaign.name}</h1>
+              <Status value={campaign.status} />
+            </div>
           </div>
-        </div>
-        <div className="mc-heading-actions">
-          <button className="mc-button" onClick={onSaveTemplate}>
-            <Copy size={16} /> Save as template
-          </button>
-          {canEdit && (
-            <button className="mc-button" onClick={onEdit}>
-              Edit campaign
+          <div className="mc-heading-actions">
+            <button className="mc-button" onClick={onSaveTemplate}>
+              <Copy size={16} /> Save as template
             </button>
-          )}
-        </div>
-      </header>
-      <nav className="mc-tabs" aria-label="Campaign sections">
-        {Object.entries(tabs)
-          .filter(([key]) => key !== 'assets' || campaign.listing_builder || campaign.campaign_builder)
-          .map(([key, label]) => (
-            <button
-              key={key}
-              aria-current={tab === key ? 'page' : undefined}
-              onClick={() => onTab(key)}
-            >
-              {label}
-            </button>
-          ))}
-      </nav>
+            {canEdit && (
+              <button className="mc-button" onClick={onEdit}>
+                Edit campaign
+              </button>
+            )}
+          </div>
+        </header>
+        {campaign.copied_from_id && <p className="mc-note">Copied from <Link to={`?section=campaigns&page=agents&view=detail&id=${encodeURIComponent(campaign.copied_from_id)}`}>{workspace.campaigns.find((row) => row.id === campaign.copied_from_id)?.name || 'source campaign'}</Link> · Source revision {campaign.copied_from_revision}. Review the playbook and choose a fresh audience before preparing channel activity.</p>}
+        <nav className="mc-tabs" aria-label="Campaign sections">
+          {Object.entries(tabs)
+            .filter(([key]) => key !== 'assets' || campaign.listing_builder || campaign.campaign_builder)
+            .map(([key, label]) => (
+              <button
+                key={key}
+                aria-current={tab === key ? 'page' : undefined}
+                onClick={() => onTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+        </nav>
+      </div>
       {tab === 'overview' && (
         <div className="mc-overview-grid">
           <section className="mc-panel">
@@ -851,6 +846,8 @@ function Detail({
               <h2>Campaign objective</h2>
             </div>
             <p className="mc-objective">{campaign.objective}</p>
+            {campaign.campaign_setup?.target && <p className="mc-note">Target: {campaign.campaign_setup.target}</p>}
+            <button type="button" className="mc-text-button" onClick={() => onTab('playbook')}>Open campaign playbook <ArrowRight size={15} /></button>
             <dl className="mc-facts">
               <div>
                 <dt>
@@ -882,7 +879,7 @@ function Detail({
                 <Channel
                   key={channel}
                   channel={channel}
-                  progress={channelProgress(workspace, campaign, channel)}
+                  progress={channel === 'social' && campaign.campaign_builder ? 'Review post history' : channelProgress(workspace, campaign, channel)}
                 />
               ))}
             </div>
@@ -898,15 +895,17 @@ function Detail({
           </section>
         </div>
       )}
+      {tab === 'overview' && SHOW_CAMPAIGN_WORKSPACE && campaign.listing_builder && <CampaignReadiness key={`${campaign.organisation_id}:${workspace.userId}:${campaign.id}:${campaign.revision}`} campaign={campaign} userId={workspace.userId} canEdit={canEdit} onEdit={onEdit} />}
+      {tab === 'overview' && <CampaignAttention organisationId={campaign.organisation_id} campaignId={campaign.id} workspace={workspace} onRefresh={onRefresh} refreshing={refreshing} />}
+      {tab === 'playbook' && <Suspense fallback={<p role="status">Opening campaign playbook…</p>}><CampaignPlaybook key={`${campaign.organisation_id}:${campaign.id}:${campaign.revision}`} campaign={campaign} workspace={workspace} userId={workspace.userId} canEdit={canEdit} onSaved={onRefresh} onEdit={onEdit} onTab={onTab} /></Suspense>}
+      {tab === 'enquiries' && (
+        <Suspense fallback={<p role="status">Opening campaign enquiries…</p>}>
+          <CampaignEnquiries key={`${campaign.organisation_id}:${campaign.id}:${focusLeadId || ''}`} campaign={campaign} userId={workspace.userId} canEdit={canEdit} focusLeadId={focusLeadId} />
+        </Suspense>
+      )}
       {tab === 'audience' && (
         <div className="mc-overview-grid">
-          <section className="mc-panel">
-            <h2>Audience</h2>
-            <p className="mc-objective">
-              {campaign.audience || 'Describe who this campaign should reach.'}
-            </p>
-            <p className="mc-note">{campaign.area || 'No area specified'}</p>
-          </section>
+          <Suspense fallback={<p role="status">Opening campaign audience…</p>}><CampaignAudience key={`${campaign.organisation_id}:${campaign.id}`} campaign={campaign} canEdit={canEdit} /></Suspense>
           <section className="mc-panel">
             <h2>Offer</h2>
             <p className="mc-objective">
@@ -916,6 +915,7 @@ function Detail({
           </section>
         </div>
       )}
+      {tab === 'audience' && <Suspense fallback={<p role="status">Opening response links…</p>}><CampaignResponseLink key={`${campaign.organisation_id}:${campaign.id}:${campaign.revision}`} campaign={campaign} userId={workspace.userId} canEdit={canEdit} onSaved={onRefresh} onPlaybook={() => onTab('playbook')} /></Suspense>}
       {tab === 'activity' && (
         <ActivityPanel
           key={campaign.id}
@@ -924,8 +924,11 @@ function Detail({
           canEdit={canEdit}
           onLink={onLink}
           onUnlink={onUnlink}
+          onPrepareDraft={onPrepareDraft}
+          onLoadBrief={onLoadBrief}
         />
       )}
+      {tab === 'activity' && campaign.campaign_builder && campaign.planned_channels.includes('social') && <Suspense fallback={<p role="status">Opening Facebook publishing…</p>}><CampaignFacebookPostPanel key={`${campaign.organisation_id}:${workspace.userId}:${campaign.id}:${campaign.revision}`} organisationId={campaign.organisation_id} userId={workspace.userId} campaign={campaign} canEdit={canEdit} /></Suspense>}
       {tab === 'assets' && (campaign.listing_builder || campaign.campaign_builder) && (
         <Suspense fallback={<p role="status">Opening campaign assets…</p>}>
           <CampaignAssets
@@ -941,13 +944,13 @@ function Detail({
         </Suspense>
       )}
       {tab === 'results' && (
-        <Results workspace={workspace} campaign={campaign} />
+        <><Suspense fallback={<p role="status">Loading recorded enquiry outcomes…</p>}><CampaignOutcomes key={`${campaign.organisation_id}:${workspace.userId}:${Boolean(workspace.canManage)}:${campaign.id}`} campaign={campaign} userId={workspace.userId} canManage={workspace.canManage} onEnquiries={() => onTab('enquiries')} /></Suspense><Results workspace={workspace} campaign={campaign} onRefresh={onRefresh} /></>
       )}
     </>
   )
 }
 
-function CampaignDashboardCard({ campaign, workspace, filter }) {
+function CampaignListRow({ campaign, workspace, filter = 'all', page = 'overview' }) {
   const mode = runMode(campaign)
   const activity = campaign.planned_channels.flatMap((channel) =>
     linkedActivities(workspace, campaign, channel),
@@ -963,10 +966,22 @@ function CampaignDashboardCard({ campaign, workspace, filter }) {
       channelProgress(workspace, campaign, channel),
     ),
   )
-  const target = `?section=campaigns&view=detail&id=${campaign.id}${filter !== 'all' ? `&filter=${filter}` : ''}`
+  const target = `?section=campaigns&page=${page}&view=detail&id=${encodeURIComponent(campaign.id)}${filter !== 'all' ? `&filter=${filter}` : ''}`
   return (
-    <article className="mc-campaign-card">
-      <div className="mc-card-top">
+    <article className={`mc-campaign-row mc-campaign-row-${campaign.status}`}>
+      <div className="mc-campaign-row-main">
+        <div className="mc-campaign-row-identity">
+          <Cover key={campaign.cover_url} url={campaign.cover_url} />
+          <div>
+            <p className="mc-campaign-row-category">
+              {CAMPAIGN_GOALS[campaign.goal]}
+              {campaign.area ? ` · ${campaign.area}` : ''}
+            </p>
+            <h2><Link to={target}>{campaign.name}</Link></h2>
+            <p className="mc-campaign-row-objective">{campaign.objective}</p>
+          </div>
+        </div>
+        <div className="mc-campaign-row-schedule">
         <div className="mc-card-badges">
           <Status value={campaign.status} />
           <span className="mc-pill">
@@ -978,61 +993,42 @@ function CampaignDashboardCard({ campaign, workspace, filter }) {
             {runLabels[mode]}
           </span>
         </div>
+          <p><CalendarDays size={14} aria-hidden="true" />{period(campaign)}</p>
+        </div>
+        <div className="mc-campaign-row-activity">
+          <strong>{available.length}</strong><span>Linked activities</span>
+        </div>
+        <Link className="mc-campaign-row-open" to={target}>
+          Open campaign <ArrowRight size={17} aria-hidden="true" />
+        </Link>
       </div>
-      <div className="mc-dashboard-title">
-        <Cover key={campaign.cover_url} url={campaign.cover_url} />
-        <div>
-          <h2>
-            <Link to={target}>{campaign.name}</Link>
-          </h2>
-          <p>
-            {CAMPAIGN_GOALS[campaign.goal]}
-            {campaign.area ? ` · ${campaign.area}` : ''}
-          </p>
-        </div>
-      </div>
-      <p className="mc-card-objective">{campaign.objective}</p>
-      <div className="mc-dashboard-metrics">
-        <div>
-          <strong>{available.length}</strong>
-          <span>Linked activities</span>
-        </div>
-        <div>
-          <strong>{campaign.planned_channels.length}</strong>
-          <span>Planned channels</span>
-        </div>
-        <div className="mc-dashboard-period">
-          <CalendarDays size={16} />
-          <span>{period(campaign)}</span>
-        </div>
-      </div>
-      <div className="mc-dashboard-channels">
+      <div className="mc-campaign-row-footer">
+      <div className="mc-campaign-row-channels" aria-label="Planned channels">
         {campaign.planned_channels.map((channel) => {
           const links = linkedActivities(workspace, campaign, channel)
           return (
             <Link
               key={channel}
               to={`${target}&tab=activity`}
-              className="mc-dashboard-channel"
+              className="mc-campaign-row-channel"
             >
               <PlatformLogo channel={channel} />
               <strong>{CAMPAIGN_CHANNELS[channel]}</strong>
-              <span>
-                {['meta', 'social'].includes(channel)
-                  ? 'Planning only'
+              <span className="mc-campaign-row-channel-detail">
+                {['meta', 'social', 'chatgpt'].includes(channel)
+                  ? channel === 'social' && campaign.campaign_builder ? 'Facebook & manual sharing' : 'Planning only'
                   : links.length
                     ? `${links.length} linked ${links.length === 1 ? 'activity' : 'activities'}`
                     : 'No activity linked'}
               </span>
-              <span className="mc-pill">
-                {channelProgress(workspace, campaign, channel)}
+              <span className="mc-campaign-row-channel-status">
+                {channel === 'social' && campaign.campaign_builder ? 'Review post history' : channelProgress(workspace, campaign, channel)}
               </span>
-              <ArrowRight size={14} aria-hidden="true" />
             </Link>
           )
         })}
       </div>
-      <div className="mc-dashboard-next">
+      <div className={`mc-campaign-row-next${attention ? ' mc-campaign-row-attention' : ''}`}>
         <Clock3 size={16} aria-hidden="true" />
         <span>
           {attention
@@ -1044,9 +1040,7 @@ function CampaignDashboardCard({ campaign, workspace, filter }) {
                 : 'Link channel activity to put your plan in motion'}
         </span>
       </div>
-      <Link className="mc-card-open" to={target}>
-        Open campaign <ArrowRight size={17} />
-      </Link>
+      </div>
     </article>
   )
 }
@@ -1071,6 +1065,9 @@ function CampaignWorkspace({ organisationId }) {
   const [state, setState] = useState({ loading: true, data: null, error: '' })
   const [search, setSearch] = useState('')
   const [modeFilter, setModeFilter] = useState('all')
+  const [audiencesOpen, setAudiencesOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastRefreshed, setLastRefreshed] = useState(null)
   const templatesRef = useRef(null)
   const templateGeneration = useRef(0)
   const [templateState, setTemplateState] = useState({
@@ -1079,6 +1076,9 @@ function CampaignWorkspace({ organisationId }) {
     error: '',
   })
   const [templateNotice, setTemplateNotice] = useState('')
+  const [editedStarter, setEditedStarter] = useState(null)
+  const [channelTemplateState, setChannelTemplateState] = useState({ loading: true, data: [], error: '' })
+  const channelTemplateGeneration = useRef(0)
   const generation = useRef(0)
   const mounted = useRef(true)
   useEffect(() => {
@@ -1103,15 +1103,28 @@ function CampaignWorkspace({ organisationId }) {
         }))
     }
   }
+  async function refreshChannelTemplates() {
+    const request = ++channelTemplateGeneration.current
+    setChannelTemplateState((previous) => ({ ...previous, loading: true }))
+    try {
+      const data = await loadChannelTemplates(organisationId)
+      if (mounted.current && request === channelTemplateGeneration.current) setChannelTemplateState({ loading: false, data, error: '' })
+    } catch (error) {
+      if (mounted.current && request === channelTemplateGeneration.current) setChannelTemplateState((previous) => ({ ...previous, loading: false, error: error.message }))
+    }
+  }
   useEffect(() => {
     if (organisationId) refreshTemplates()
   }, [organisationId]) // eslint-disable-line react-hooks/exhaustive-deps
   async function refresh() {
     const request = ++generation.current
+    setRefreshing(true)
     try {
       const data = await loadMarketingCampaigns(organisationId)
-      if (mounted.current && request === generation.current)
+      if (mounted.current && request === generation.current) {
         setState({ loading: false, data, error: '' })
+        setLastRefreshed(new Date())
+      }
     } catch (error) {
       if (mounted.current && request === generation.current)
         setState((previous) => ({
@@ -1119,6 +1132,8 @@ function CampaignWorkspace({ organisationId }) {
           loading: false,
           error: error.message,
         }))
+    } finally {
+      if (mounted.current && request === generation.current) setRefreshing(false)
     }
   }
   useEffect(() => {
@@ -1135,6 +1150,34 @@ function CampaignWorkspace({ organisationId }) {
     ? params.get('tab')
     : 'overview'
   const workspace = state.data
+  const activePage = params.has('channelTemplate') || view === 'templates' || ['template-create', 'template-edit', 'channel-template-create', 'channel-template-edit'].includes(view)
+    ? 'studio'
+    : ['overview', 'calendar', 'studio', 'analytics', 'assets', 'agents'].includes(params.get('page')) ? params.get('page') : 'overview'
+  const selectedFormat = Object.hasOwn(CHANNEL_TEMPLATE_CHANNELS, params.get('format')) ? params.get('format') : null
+  const channelCollection = Boolean(selectedFormat) || params.get('collection') === 'channels' || view?.startsWith('channel-template-') || params.has('channelTemplate')
+  const studioLanding = !view && activePage === 'studio' && !params.has('collection') && !selectedFormat
+  const needsChannelTemplates = Boolean((channelCollection && activePage === 'studio') || view === 'create')
+  useEffect(() => {
+    if (organisationId && needsChannelTemplates) void refreshChannelTemplates()
+  }, [organisationId, needsChannelTemplates]) // eslint-disable-line react-hooks/exhaustive-deps
+  const selectedChannelTemplate = channelTemplateState.data.find((item) => item.id === (params.get('channelTemplate') || params.get('id') || params.get('source')))
+  const bundledStarter = CHANNEL_TEMPLATE_STARTERS.find((item) => item.id === params.get('starter'))
+  const editorTemplate = bundledStarter || selectedChannelTemplate
+  let channelStarter = bundledStarter ? campaignFromChannelTemplate(editedStarter?.id === bundledStarter.id && editedStarter.organisationId === organisationId ? editedStarter : bundledStarter) : null
+  let channelStarterError = ''
+  if (params.has('channelTemplate') && selectedChannelTemplate) {
+    try { channelStarter = campaignFromChannelTemplate(selectedChannelTemplate) } catch (error) { channelStarterError = error.message }
+  }
+  useEffect(() => {
+    if (activePage !== 'agents' || view || !workspace?.canManage) return
+    const update = () => { if (!document.hidden) void refresh() }
+    const timer = window.setInterval(update, 30000)
+    window.addEventListener('focus', update)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', update)
+    }
+  }, [activePage, view, workspace?.canManage, organisationId]) // eslint-disable-line react-hooks/exhaustive-deps
   const campaign = workspace?.campaigns.find(
     (row) => row.id === params.get('id'),
   )
@@ -1171,6 +1214,14 @@ function CampaignWorkspace({ organisationId }) {
     )
     navigate({ view: 'templates', library: saved.visibility })
   }
+  async function saveChannelLibraryTemplate(form) {
+    const saved = await saveChannelTemplate(organisationId, form, view === 'channel-template-edit' ? selectedChannelTemplate : null)
+    if (!mounted.current) return
+    ++channelTemplateGeneration.current
+    setChannelTemplateState((previous) => ({ loading: false, error: '', data: [saved, ...previous.data.filter((item) => item.id !== saved.id)] }))
+    setTemplateNotice('Channel template saved.')
+    navigate({ page: 'studio', collection: 'channels' })
+  }
   const canEdit =
     campaign &&
     (workspace.canManage || campaign.created_by === workspace.userId)
@@ -1178,15 +1229,22 @@ function CampaignWorkspace({ organisationId }) {
     if (mounted.current)
       setParams({
         section: 'campaigns',
+        page: activePage,
+        ...(channelCollection ? { collection: 'channels' } : {}),
+        ...(selectedFormat && fields.collection !== 'campaigns' ? { format: selectedFormat } : {}),
+        ...(activePage === 'calendar' && params.has('date') ? { date: params.get('date') } : {}),
         ...(filter !== 'all' ? { filter } : {}),
         ...fields,
       })
   }
-  async function save(form) {
+  async function save(form, options = {}) {
+    const persisted = options.persistedCampaign;
+    if (persisted && (persisted.organisation_id !== organisationId || persisted.id !== form.id))
+      throw new Error('Your saved campaign changed. Reopen it before continuing.');
     const saved = await saveMarketingCampaign(
       organisationId,
       form,
-      view === 'edit' ? campaign : null,
+      persisted || (view === 'edit' ? campaign : null),
     )
     if (!mounted.current) return
     // Keep the saved record available even if the subsequent refresh fails.
@@ -1200,7 +1258,8 @@ function CampaignWorkspace({ organisationId }) {
         ],
       },
     }))
-    navigate({ view: 'detail', id: saved.id })
+    const requestedTab = Object.hasOwn(tabs, options.tab || '') ? options.tab : null;
+    navigate({ view: 'detail', id: saved.id, ...(requestedTab ? { tab: requestedTab } : params.has('channelTemplate') && saved.planned_channels?.includes('email') ? { tab: 'activity' } : view === 'create' ? { tab: 'playbook' } : {}) })
     await refresh()
   }
   async function changeLink(action) {
@@ -1241,7 +1300,7 @@ function CampaignWorkspace({ organisationId }) {
         .includes(search.toLowerCase()),
   )
   return (
-    <main className="mc-workspace">
+    <main className={`mc-workspace${SHOW_CAMPAIGN_WORKSPACE ? ' mc-flagship' : ''}`}>
       {state.error && (
         <div role="alert" className="mc-error">
           {state.error}{' '}
@@ -1250,24 +1309,60 @@ function CampaignWorkspace({ organisationId }) {
           </button>
         </div>
       )}
-      {view && (
+      <header className="mc-page-heading">
+        <div><h1>Campaigns</h1></div>
+        {(!view || view === 'templates') && <div className="mc-heading-actions"><button className="mc-button" onClick={() => setAudiencesOpen(true)}><UsersRound size={17} />CRM audiences</button><button className="mc-button mc-primary" onClick={() => navigate({ view: 'create' })}><Plus size={19} /> Create campaign</button></div>}
+      </header>
+      <Modal open={audiencesOpen} title="CRM audiences" onClose={() => setAudiencesOpen(false)} className="ma-library-modal">{audiencesOpen && <Suspense fallback={<p role="status">Opening shared audiences…</p>}><MarketingAudiences key={organisationId} organisationId={organisationId} /></Suspense>}</Modal>
+      <CampaignWorkspaceNavigation active={activePage} canManage={workspace.canManage} onNavigate={(fields) => {
+        setSearch('')
+        setModeFilter('all')
+        setParams({ section: 'campaigns', ...fields })
+      }} />
+      {view && view !== 'create' && (
         <button
           className="mc-back"
           onClick={() =>
             navigate(
               ['template-create', 'template-edit'].includes(view)
-                ? { view: 'templates' }
-                : {},
+                ? { page: 'studio' }
+                : { page: activePage },
             )
           }
         >
           <ArrowLeft size={16} />
-          {['template-create', 'template-edit'].includes(view)
-            ? 'All templates'
-            : 'All campaigns'}
+          {activePage === 'calendar' ? 'Back to Calendar' : activePage === 'studio' ? 'Back to Studio' : activePage === 'assets' ? 'Back to Assets' : activePage === 'agents' ? 'Back to Agents' : 'All campaigns'}
         </button>
       )}
-      {view === 'setup' ? (
+      {!view && activePage === 'calendar' ? (
+        <MarketingCalendar organisationId={organisationId} workspace={workspace} onRefresh={refresh} refreshing={refreshing} date={params.get('date')} onDateChange={(date) => navigate({ page: 'calendar', date })} />
+      ) : !view && activePage === 'analytics' ? (
+        <CampaignAnalytics workspace={workspace} />
+      ) : !view && activePage === 'assets' ? (
+        <CampaignAssetLibrary workspace={workspace} />
+      ) : !view && activePage === 'agents' ? (
+        <CampaignAgents
+          key={organisationId}
+          organisationId={organisationId}
+          workspace={workspace}
+          refreshing={refreshing}
+          lastRefreshed={lastRefreshed}
+          onRefresh={refresh}
+          onMakeTemplate={(row) => navigate({ view: 'template-create', source: row.id, share: 'agency' })}
+          onCopied={(saved) => {
+            setState((previous) => ({ ...previous, data: { ...previous.data, campaigns: [saved, ...previous.data.campaigns.filter((row) => row.id !== saved.id)] } }))
+            navigate({ page: 'agents', view: 'detail', id: saved.id, tab: 'playbook' })
+          }}
+          renderCampaign={(row) => <CampaignListRow key={row.id} campaign={row} workspace={workspace} page="agents" />}
+        />
+      ) : ['channel-template-create', 'channel-template-edit'].includes(view) ? (
+        (view === 'channel-template-edit' || params.has('source')) && channelTemplateState.loading ? <p role="status">Loading channel template…</p>
+        : (view === 'channel-template-edit' || params.has('source')) && (!selectedChannelTemplate || (view === 'channel-template-edit' && !(selectedChannelTemplate.visibility === 'agency' ? workspace.canManage : selectedChannelTemplate.created_by === workspace.userId))) ? (
+          <Empty title="Channel template unavailable"><p>{channelTemplateState.error || 'Choose an available template from the channel library.'}</p><button className="mc-button" onClick={() => navigate({ page: 'studio', collection: 'channels' })}>Back to channel templates</button></Empty>
+        ) : <ChannelTemplateEditor key={`${view}:${params.get('id') || params.get('source') || params.get('starter') || 'new'}:${selectedFormat || 'all'}`} template={editorTemplate} onUse={bundledStarter ? (form) => { setEditedStarter({ ...form, id: bundledStarter.id, organisationId }); navigate({ view: 'create', starter: bundledStarter.id }) } : undefined} duplicate={view === 'channel-template-create' && params.has('source')} canShare={workspace.canManage} userId={workspace.userId} initialChannel={selectedFormat ? selectedChannelTemplate?.channel || selectedFormat : undefined} onSave={saveChannelLibraryTemplate} onCancel={() => navigate({ page: 'studio', collection: 'channels' })} />
+      ) : view === 'create' && params.has('channelTemplate') && (!channelStarter || channelStarterError) ? (
+        channelTemplateState.loading ? <p role="status">Loading channel template…</p> : <Empty title="Channel template unavailable"><p>{channelTemplateState.error || channelStarterError || 'This template is no longer available to you.'}</p><button className="mc-button" onClick={() => navigate({ page: 'studio', collection: 'channels' })}>Back to channel templates</button></Empty>
+      ) : view === 'setup' ? (
         <CampaignSetup
           key={`${organisationId}:${workspace.userId}`}
           organisationId={organisationId}
@@ -1280,11 +1375,12 @@ function CampaignWorkspace({ organisationId }) {
           <GeneralCampaignBuilder
             key={`${organisationId}:${workspace.userId}:${view}:${campaign?.id || params.get('template')}:${campaign?.revision || 0}`}
             template={params.get('template')}
+            businessGoalId={params.get('goal') || ''}
             campaign={view === 'edit' ? campaign : undefined}
             organisationId={organisationId}
             userId={workspace.userId}
             onSave={save}
-            onCancel={() => navigate(view === 'edit' ? { view: 'detail', id: campaign.id } : {})}
+            onCancel={(options) => { navigate(view === 'edit' ? { view: 'detail', id: campaign.id } : {}); if (options?.persistedCampaign) void refresh() }}
             onSetup={() => navigate({ view: 'setup' })}
           />
         </Suspense>
@@ -1328,14 +1424,19 @@ function CampaignWorkspace({ organisationId }) {
             onSetup={() => navigate({ view: 'setup' })}
           />
         </Suspense>
-      ) : view === 'templates' ? (
+      ) : view === 'templates' || (!view && activePage === 'studio') ? (
         <>
+          <CampaignStudioIntro onCreate={() => navigate({ view: 'create' })} onAllFormats={!studioLanding ? () => setParams({ section: 'campaigns', page: 'studio' }) : undefined} />
+          {studioLanding && <CampaignStudioFormats
+            onOpenFormat={(format) => navigate({ page: 'studio', collection: 'channels', format })}
+            onOpenCampaigns={() => navigate({ page: 'studio', collection: 'campaigns' })}
+          />}
           {templateNotice && (
             <p className="mc-template-notice" role="status">
               {templateNotice}
             </p>
           )}
-          <CampaignTemplateLibrary
+          {!studioLanding && (channelCollection ? <ChannelTemplateLibrary key={selectedFormat || 'all'} fixedChannel={selectedFormat} templates={channelTemplateState.data} loading={channelTemplateState.loading} error={channelTemplateState.error} onRetry={refreshChannelTemplates} userId={workspace.userId} canShare={workspace.canManage} onStart={(template) => { setEditedStarter(null); navigate({ view: 'channel-template-create', starter: template.id }) }} onCreate={() => navigate({ view: 'channel-template-create' })} onEdit={(id) => navigate({ view: 'channel-template-edit', id })} onDuplicate={(template) => navigate({ view: 'channel-template-create', source: template.id })} onUse={(template) => navigate({ view: 'create', channelTemplate: template.id })} /> : <CampaignTemplateLibrary
             key={params.get('library') || 'ready'}
             initialFilter={params.get('library') || 'ready'}
             saved={templateState.data}
@@ -1357,13 +1458,8 @@ function CampaignWorkspace({ organisationId }) {
               })
             }
             onEdit={(id) => navigate({ view: 'template-edit', id })}
-          />
-          <CampaignSetup
-            key={`${organisationId}:${workspace.userId}`}
-            organisationId={organisationId}
-            userId={workspace.userId}
-            canManage={workspace.canManage}
-          />
+          />)}
+
         </>
       ) : ['template-create', 'template-edit'].includes(view) ? (
         view === 'template-edit' && templateState.loading ? (
@@ -1378,6 +1474,7 @@ function CampaignWorkspace({ organisationId }) {
           </Empty>
         ) : (
           <CampaignForm
+            organisationId={organisationId}
             key={`${view}:${existingTemplate?.id || templateSource?.id || starter?.id || 'blank'}`}
             templateMode
             canShare={workspace.canManage}
@@ -1389,7 +1486,7 @@ function CampaignWorkspace({ organisationId }) {
               view === 'template-edit'
                 ? displayTemplate(existingTemplate)
                 : templateSource
-                  ? templateFromCampaign(templateSource)
+                  ? { ...templateFromCampaign(templateSource), ...(params.get('share') === 'agency' && workspace.canManage ? { visibility: 'agency' } : {}) }
                   : starter
             }
             onSave={saveTemplate}
@@ -1416,9 +1513,15 @@ function CampaignWorkspace({ organisationId }) {
           </Empty>
         )
       ) : view === 'create' ? (
-        <CampaignForm
-          key={`create:${params.get('template') || 'blank'}`}
-          template={starter}
+        <CampaignCreateWizard
+          organisationId={organisationId}
+          key={`create:${params.get('template') || params.get('channelTemplate') || params.get('starter') || 'blank'}`}
+          template={channelStarter || starter}
+          templates={channelTemplateState.data}
+          templatesLoading={channelTemplateState.loading}
+          templatesError={channelTemplateState.error}
+          onRetryTemplates={refreshChannelTemplates}
+          onBrowseTemplates={() => navigate({ view: 'templates', collection: 'campaigns' })}
           onSave={save}
           onCancel={() => navigate()}
         />
@@ -1430,6 +1533,7 @@ function CampaignWorkspace({ organisationId }) {
         ) : view === 'edit' ? (
           canEdit ? (
             <CampaignForm
+            organisationId={organisationId}
               key={`${campaign.id}:${campaign.revision}`}
               campaign={campaign}
               onSave={save}
@@ -1448,6 +1552,8 @@ function CampaignWorkspace({ organisationId }) {
             campaign={campaign}
             workspace={workspace}
             tab={tab}
+            focusLeadId={params.get('enquiry')}
+            refreshing={refreshing}
             canEdit={canEdit}
             onSaveTemplate={() =>
               navigate({ view: 'template-create', source: campaign.id })
@@ -1457,6 +1563,12 @@ function CampaignWorkspace({ organisationId }) {
             }
             onEdit={() => navigate({ view: 'edit', id: campaign.id })}
             onRefresh={refresh}
+            onLoadBrief={(channel) => loadCampaignChannelBrief(organisationId, workspace.userId, campaign, channel)}
+            onPrepareDraft={async (channel) => {
+              const prepared = await handoffCampaignDraft(organisationId, workspace.userId, campaign, channel)
+              if (mounted.current) await refresh()
+              return prepared
+            }}
             onLink={(channel, id) =>
               changeLink(() =>
                 linkMarketingActivity(organisationId, campaign.id, channel, id),
@@ -1471,42 +1583,20 @@ function CampaignWorkspace({ organisationId }) {
         )
       ) : (
         <>
-          <header className="mc-page-heading">
-            <div>
-              <h1>Campaigns</h1>
-            </div>
-            <div className="mc-heading-actions">
-              <button
-                className="mc-button mc-primary"
-                onClick={() => navigate({ view: 'create' })}
-              >
-                <Plus size={19} /> Create campaign
-              </button>
-            </div>
-          </header>
-          <CampaignSummaryCards workspace={workspace} />
-          <CurrentCampaigns
+          {SHOW_CAMPAIGN_WORKSPACE && <><CampaignLaunchpad key={`${organisationId}:${workspace.userId}`} organisationId={organisationId} workspace={workspace} refreshedAt={lastRefreshed} onBrowseStudio={() => navigate({ page: 'studio' })} /><CampaignAttention organisationId={organisationId} workspace={workspace} onRefresh={refresh} refreshing={refreshing} /></>}
+          {(!SHOW_CAMPAIGN_WORKSPACE || Object.values(workspace.channels || {}).some((channel) => channel.data?.some((row) => row.delivered != null || row.clicked != null))) && <CampaignSummaryCards workspace={workspace} />}
+          {!SHOW_CAMPAIGN_WORKSPACE && <CurrentCampaigns
             workspace={workspace}
             onCreate={() => navigate({ view: 'create' })}
-          />
-          <CampaignSetup
-            key={`${organisationId}:${workspace.userId}`}
-            organisationId={organisationId}
-            userId={workspace.userId}
-            canManage={workspace.canManage}
-          />
-          <section
+          />}
+          {!SHOW_CAMPAIGN_WORKSPACE && <section
             className="mc-template-section"
             aria-labelledby="mc-template-heading"
             ref={templatesRef}
           >
             <header className="mc-template-heading">
               <div className="mc-template-intro">
-                <span className="mc-template-eyebrow">
-                  <LayoutGrid size={14} aria-hidden="true" /> THE PLAYBOOK
-                  COLLECTION
-                </span>
-                <h2 id="mc-template-heading">Campaign templates</h2>
+                <h2 id="mc-template-heading">Campaign &amp; Automation Templates</h2>
               </div>
               <div className="mc-template-actions">
                 <button
@@ -1533,28 +1623,30 @@ function CampaignWorkspace({ organisationId }) {
                 return (
                   <article className="mc-template" key={template.id}>
                     <div className="mc-template-creative">
+                      <span className="mc-template-sample-badge">Sample preview</span>
                       <CampaignTemplatePreview type={template.id} />
                     </div>
                     <div className="mc-template-body">
-                      <div className="mc-template-meta">
-                        <span>{runLabels[template.mode]}</span>
-                        <span>{template.channels.length} channels</span>
-                      </div>
                       <h3>{template.title}</h3>
                       <p>{template.description}</p>
+                    </div>
+                    <div className="mc-template-details">
+                      <span className="mc-template-mode">{runLabels[template.mode]}</span>
                       <div
                         className="mc-template-tools"
                         aria-label="Suggested channels"
                       >
                         {template.channels.map((channel) => (
-                          <span key={channel} className="mc-platform-badge">
+                          <span key={channel} className="mc-platform-badge" title={CAMPAIGN_CHANNELS[channel]}>
                             <PlatformLogo channel={channel} />
-                            {CAMPAIGN_CHANNELS[channel]}
+                            <span className="mc-template-channel-name">{CAMPAIGN_CHANNELS[channel]}</span>
                           </span>
                         ))}
                       </div>
+                    </div>
+                    <div className="mc-template-footer">
                       <button
-                        className="mc-text-button"
+                        className="mc-button mc-template-use"
                         aria-label={`Use template: ${template.title}`}
                         onClick={() =>
                           navigate({ view: 'create', template: template.id })
@@ -1567,7 +1659,7 @@ function CampaignWorkspace({ organisationId }) {
                 )
               })}
             </div>
-          </section>
+          </section>}
           <section
             className="mc-your-campaigns"
             aria-labelledby="mc-campaigns-heading"
@@ -1651,9 +1743,9 @@ function CampaignWorkspace({ organisationId }) {
                 )}
               </Empty>
             ) : (
-              <div className="mc-campaign-grid">
+              <div className="mc-campaign-list">
                 {filtered.map((row) => (
-                  <CampaignDashboardCard
+                  <CampaignListRow
                     key={row.id}
                     campaign={row}
                     workspace={workspace}
@@ -1663,7 +1755,7 @@ function CampaignWorkspace({ organisationId }) {
               </div>
             )}
           </section>
-          <CampaignAnalytics workspace={workspace} />
+          {!SHOW_CAMPAIGN_WORKSPACE && <CampaignAttention organisationId={organisationId} workspace={workspace} onRefresh={refresh} refreshing={refreshing} />}
         </>
       )}
     </main>

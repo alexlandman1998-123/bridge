@@ -15,7 +15,6 @@ export default function CampaignTemplatePreview({ type }) {
           alt=""
           loading="lazy"
         />
-        <span className="mc-creative-example">Sample advert</span>
         <div className="mc-creative-ad-copy">
           <span>YOUR NEXT MOVE STARTS HERE</span>
           <strong>
@@ -42,7 +41,6 @@ export default function CampaignTemplatePreview({ type }) {
             alt=""
             loading="lazy"
           />
-          <span className="mc-creative-example">Sample property email</span>
         </div>
         <div className="mc-creative-listing-copy">
           <span>FIND A PLACE TO CALL HOME</span>
@@ -63,7 +61,6 @@ export default function CampaignTemplatePreview({ type }) {
         <div className="mc-creative-mailbar">
           <Mail size={13} />
           <span>Your local property update</span>
-          <small>Sample email</small>
         </div>
         <div className="mc-creative-newsletter-copy">
           <span>THE NEIGHBOURHOOD EDIT</span>
@@ -94,7 +91,6 @@ export default function CampaignTemplatePreview({ type }) {
       <div className="mc-creative-chatbar">
         <img src="/lead-sources/whatsapp.svg" alt="" width="16" height="16" />
         <span>A personal touch</span>
-        <small>Sample message</small>
       </div>
       <div className="mc-creative-greeting">
         <Gift size={27} strokeWidth={1.3} />

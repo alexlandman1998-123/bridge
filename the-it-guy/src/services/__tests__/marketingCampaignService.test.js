@@ -15,7 +15,7 @@ import {
   saveMarketingCampaign,
   unlinkMarketingActivity,
 } from '../marketingCampaignService'
-let reads, result, calls
+let reads, result, calls, selections
 const valid = {
   name: 'Seller leads',
   goal: 'seller_leads',
@@ -26,13 +26,14 @@ const valid = {
 beforeEach(() => {
   vi.clearAllMocks()
   reads = []
+  selections = []
   calls = []
   result = null
   runtime.auth.getUser.mockResolvedValue({ data: { user: { id: 'owner' } } })
   runtime.rpc.mockResolvedValue({ data: true })
   runtime.from.mockImplementation((table) => {
     const query = {
-      select: vi.fn(() => query),
+      select: vi.fn((columns) => { selections.push({ table, columns }); return query }),
       order: vi.fn(() => query),
       eq: vi.fn((key, value) => {
         reads.push({ table, key, value })
@@ -91,6 +92,12 @@ it('scopes every read and requests email metrics only for visible send IDs', asy
   const tableCalls = runtime.from.mock.calls.map(([table]) => table)
   expect(tableCalls).toContain('marketing_campaign_activities')
   expect(tableCalls).toContain('email_campaign_performance')
+  const emailSummary = selections.find((selection) => selection.table === 'email_campaigns').columns
+  expect(emailSummary).toContain('updated_at')
+  expect(emailSummary).toContain('ai_listing_id:content_json->ai_campaign->>listing_id')
+  expect(emailSummary).toContain('ai_objective:content_json->ai_campaign->>objective')
+  expect(emailSummary).toContain('ai_event_id:content_json->ai_campaign->event->>id')
+  expect(emailSummary.split(',')).not.toContain('content_json')
 })
 it('uses revisions to reject concurrent edits and never invokes a sending workflow', async () => {
   result = { data: null }
@@ -205,7 +212,9 @@ it('keeps nullable builder columns compatible with older campaign rows',()=>{
 })
 it('saves cleaned general snapshots only as drafts with matching goals',async()=>{
  const {cleanGeneralBuilder,generalCampaignCopy,generalCampaignPayload}=await import('../generalCampaignModel')
- const builder=cleanGeneralBuilder({version:1,template:'buyers',agentId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',source:{agencyName:'Oak',agentName:'Sarah',destination:'sarah@example.test',language:'en-ZA'},details:{area:'Gardens'},reviewed:true})
+ const {createContactProvenance,GENERAL_CONTACT_FIELDS}=await import('../campaignContactProvenance')
+ const source={agencyName:'Oak',agentName:'Sarah',destination:'sarah@example.test',language:'en-ZA'}
+ const builder=cleanGeneralBuilder({version:1,template:'buyers',agentId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',source,contactProvenance:{...createContactProvenance(source,GENERAL_CONTACT_FIELDS),confirmed:true},details:{area:'Gardens'},reviewed:true})
  const input=generalCampaignPayload(builder,generalCampaignCopy(builder))
  expect(campaignPayload(input).campaign_builder).toEqual(builder)
  expect(()=>campaignPayload({...input,status:'active'})).toThrow(/draft/)

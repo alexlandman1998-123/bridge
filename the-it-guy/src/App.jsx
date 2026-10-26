@@ -30,7 +30,6 @@ import {
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
-import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from './modules/revo/revoExtensionRegistry'
 import {
   RentalTenantPortalPage,
   RentalLandlordPortalPage,
@@ -97,7 +96,7 @@ import {
 } from './modules/rentals/shell/rentalRouteLoaders'
 import { RENTAL_MODULES, resolveRentalModuleAvailability } from './services/rentals/rentalModuleAvailability'
 import { getRentalOperatingModeHomeRoute, RENTAL_OPERATING_MODES } from './services/rentals/shortTermRentalFoundation'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react'
 import LeadsRouteShell from './components/leads/LeadsRouteShell'
 import LeadWorkspaceRouteLoadingShell from './components/leads/LeadWorkspaceRouteLoadingShell'
 import TransactionDetailRouteShell from './components/transactions/TransactionDetailRouteShell'
@@ -365,6 +364,7 @@ const MobileDeveloperPortfolioPage = lazy(() => import('./pages/mobile/MobileDev
 const MobileDeveloperTransactionPage = lazy(() => import('./pages/mobile/MobileDeveloperTransactionPage'))
 const MobileDeveloperLeadsPage = lazy(() => import('./pages/mobile/MobileDeveloperLeadsPage'))
 const MobileMore = lazy(() => import('./pages/mobile/MobileMore'))
+const MobileMarketingPage = lazy(() => import('./pages/mobile/MobileMarketingPage'))
 const MobileCalendarPage = lazy(() => import('./pages/mobile/MobileCalendarPage'))
 const MobileListingsPage = lazy(() => import('./pages/mobile/MobileListingsPage'))
 const MobileActivityPage = lazy(() => import('./pages/mobile/MobileActivityPage'))
@@ -413,6 +413,7 @@ const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDev
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
+const MetaMarketingWorkspace = lazy(() => import('./components/marketing/MetaMarketingWorkspace'))
 const SettingsWhatsAppPage = lazy(() => import('./pages/settings/SettingsWhatsAppPage'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
 const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
@@ -1312,13 +1313,11 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   return children
 }
 
-function RevoSharedInboxRoute({ children }) {
-  const { loading, organisation, organisationSettings } = useOrganisation()
-  if (loading) return <PageSkeleton label="Loading Revo shared inbox" />
-  if (!isWorkspaceExtensionFeatureEnabled(REVO_EXTENSION_KEY, 'shared_inbox', { organisation, organisationSettings })) {
-    return <AccessDenied message="The Revo shared inbox is not enabled for this workspace." />
-  }
-  return children
+function SharedInboxRoute({ children }) {
+  const { loading, organisation } = useOrganisation()
+  if (loading) return <PageSkeleton label="Loading shared inbox" />
+  if (!organisation?.id) return <AccessDenied message="Choose an organisation workspace to open Inbox." />
+  return <Fragment key={organisation.id}>{children}</Fragment>
 }
 
 function RentalWorkspaceGuard({ children }) {
@@ -1372,6 +1371,8 @@ function SalesWorkspaceGuard({ children }) {
     businessWorkspaceId,
     businessWorkspaceSplitEnabled,
     role,
+    workspaceReady,
+    profileLoading,
     setBusinessWorkspace,
   } = useWorkspace()
   const location = useLocation()
@@ -1389,6 +1390,10 @@ function SalesWorkspaceGuard({ children }) {
   }
 
   if (!hasSalesAccess) {
+    if (location.pathname === '/mobile/marketing') {
+      if (!workspaceReady || profileLoading) return <PageSkeleton label="Preparing marketing access" />
+      return <AccessDenied message="Your Arch9 access is not enabled for Sales marketing." />
+    }
     if (rentalLine) {
       return (
         <Navigate
@@ -1929,6 +1934,7 @@ function AppRoutes() {
                   <Route path="/mobile/listings/:listingId" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-overview" title="Listing workspace failed to load"><AgentListingDetail mobile /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
                   <Route path="/mobile/rentals/listings/:listingId/:detailTab?" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.listings}><AppErrorBoundary scope="mobile-rental-listing-overview" title="Rental listing workspace failed to load"><RentalListingDetailPage mobile /></AppErrorBoundary></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
                   <Route path="/mobile/calendar" element={<AppErrorBoundary scope="mobile-calendar" title="Mobile calendar failed to load"><MobileCalendarPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/marketing" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent']}><AppErrorBoundary scope="mobile-marketing" title="Mobile marketing failed to load"><MobileMarketingPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
                   <Route path="/mobile/deals" element={<AppErrorBoundary scope="mobile-deals" title="Mobile deals failed to load"><MobileModulePage moduleKey="deals" /></AppErrorBoundary>} />
                   <Route path="/mobile/tasks" element={<AppErrorBoundary scope="mobile-tasks" title="Mobile tasks failed to load"><MobileTasksPage /></AppErrorBoundary>} />
                   <Route path="/mobile/activity" element={<AppErrorBoundary scope="mobile-activity" title="Mobile activity failed to load"><MobileActivityPage /></AppErrorBoundary>} />
@@ -1951,8 +1957,10 @@ function AppRoutes() {
 
               <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/dashboard" element={<SalesWorkspaceGuard><AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary></SalesWorkspaceGuard>} />
-              <Route path="/revo/inbox" element={<RevoSharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox" title="Revo shared inbox failed to load"><RevoSharedInboxPage /></AppErrorBoundary></RevoSharedInboxRoute>} />
-              <Route path="/revo/inbox/settings" element={<RevoSharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox-settings" title="Revo inbox channel setup failed to load"><RevoSharedInboxSettingsPage /></AppErrorBoundary></RevoSharedInboxRoute>} />
+              <Route path="/inbox" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox" title="Shared inbox failed to load"><RevoSharedInboxPage /></AppErrorBoundary></SharedInboxRoute>} />
+              <Route path="/inbox/settings" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox-settings" title="Inbox channel setup failed to load"><RevoSharedInboxSettingsPage /></AppErrorBoundary></SharedInboxRoute>} />
+              <Route path="/revo/inbox" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox" title="Revo shared inbox failed to load"><RevoSharedInboxPage /></AppErrorBoundary></SharedInboxRoute>} />
+              <Route path="/revo/inbox/settings" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox-settings" title="Revo inbox channel setup failed to load"><RevoSharedInboxSettingsPage /></AppErrorBoundary></SharedInboxRoute>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<CommercialDashboard />} />
@@ -3881,7 +3889,7 @@ function AppRoutes() {
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent', 'developer']}>
-                        <SettingsLeadCapturePage section="meta" />
+                        <MetaMarketingWorkspace />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }

@@ -14,6 +14,9 @@ const MOBILE_NAV_ITEMS = Object.freeze({
   pipeline: { key: 'pipeline', label: 'Pipeline', to: '/mobile/pipeline' },
   listings: { key: 'listings', label: 'Listings', to: '/mobile/listings' },
   calendar: { key: 'calendar', label: 'Calendar', to: '/mobile/calendar' },
+  marketing: { key: 'marketing', label: 'Marketing', to: '/mobile/marketing' },
+  campaigns: { key: 'campaigns', label: 'Campaigns', to: '/mobile/marketing?section=campaigns' },
+  templateShop: { key: 'templateShop', label: 'Template shop', to: '/mobile/marketing?section=campaigns&page=studio' },
   deals: { key: 'deals', label: 'Deals', to: '/mobile/deals' },
 })
 
@@ -122,7 +125,16 @@ export function getMobilePageMenuItems(workspace = {}) {
     ...(resolveMobileRoleCategory(workspace) === 'developer' ? [MOBILE_NAV_ITEMS.developments] : []),
     MOBILE_NAV_ITEMS.listings,
     MOBILE_NAV_ITEMS.calendar,
+    ...(canAccessMobileMarketing(workspace) ? [MOBILE_NAV_ITEMS.marketing, MOBILE_NAV_ITEMS.campaigns, MOBILE_NAV_ITEMS.templateShop] : []),
   ]
+}
+
+export function canAccessMobileMarketing(workspace = {}) {
+  if (!['agent', 'principal'].includes(resolveMobileRoleCategory(workspace))) return false
+  const businessWorkspace = normalize(workspace.businessWorkspaceId)
+  if (businessWorkspace && businessWorkspace !== 'sales') return false
+  if (!workspace.businessWorkspaceSplitEnabled) return true
+  return businessWorkspace === 'sales' && (workspace.availableBusinessWorkspaceIds || []).includes('sales')
 }
 
 export function getMobileWorkLabel(workspace = {}) {
