@@ -6,7 +6,7 @@
 - `apps/websites/` is the separate public, multi-tenant property website: Next.js + TypeScript. Its deployment and build are independent of the primary app.
 - `apps/admin/` is the separate Vite internal Operating Console.
 - `supabase/` contains shared database migrations and Edge Functions. `scripts/` contains shared database, staging, and release utilities.
-- Root `src/` and `package.json` support the root Vite application and platform-level commands.
+- Root `package.json` provides platform-level commands. Its `dev`, `build`, and `preview` shortcuts delegate to the primary app; root `src/` contains legacy scaffolding.
 
 Before making a change, identify the one product or shared layer that owns it. Do not make cross-product changes unless the task explicitly requires them.
 
@@ -33,12 +33,21 @@ The requester is not expected to know the codebase, file names, test names, or t
 
 Run commands from the package that owns the change, or use `npm --prefix <path> run <script>` from the repository root.
 
+### Limited-memory machine
+
+- The requester’s machine has very limited RAM. Keeping it responsive takes priority over running a full local build or verification suite. These limits qualify the verification recommendations below.
+- Prefer focused tests, scoped lint and lightweight component/dev-server checks. Do not automatically run a full production build for small UI changes.
+- Run heavy checks serially, with one test worker where supported. Never overlap builds, broad lint/test suites or other memory-intensive checks.
+- Before a necessary full build, check memory headroom. Use a conservative Node heap cap (initially at most 1536 MB) and disable compressed-size reporting where supported. A heap cap does not limit total process memory; monitor pressure and stop the task-owned build if it threatens machine responsiveness.
+- After a memory-related failure or system kill, do not increase the heap cap or repeatedly retry locally. Report which focused checks passed and that the full build remains unverified; use another build environment only when available and authorized.
+- Do not close the user’s apps or terminate unrelated processes to make room for a build.
+
 | Area | Develop | Normal verification |
 | --- | --- | --- |
 | Primary workspace (`the-it-guy/`) | `npm --prefix the-it-guy run dev` | Run the narrow relevant `test:*` script. Use `npm run check:app` before handing over a broad app change. |
 | Public websites (`apps/websites/`) | `npm --prefix apps/websites run dev` | Use `npm run check:website` for meaningful website changes. |
 | Admin console (`apps/admin/`) | `npm --prefix apps/admin run dev` | Use `npm run check:admin`. |
-| Root Vite app | `npm run dev` | `npm run build` |
+| Root shortcuts (primary app) | `npm run dev` | `npm run build` |
 
 ### Verification menu
 

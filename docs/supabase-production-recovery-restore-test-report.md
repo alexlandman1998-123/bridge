@@ -53,3 +53,9 @@ The smoke checks used the restored branch API with service credentials returned 
 ## Outcome
 
 Recovery test passed for the platform-managed isolated restore target. The production recovery evidence can be considered locked for migration promotion gating.
+
+## Coverage correction — 21 October 2026
+
+The historical exercise above used a branch created from the current live database with `--with-data`. It proved an isolated database copy could start and return aggregate counts. It did **not** identify and restore one of the physical backups, so it is insufficient proof of backup recovery. The corresponding evidence now records `recoveryTested: false` and `recordedExerciseType: live_database_clone` until an actual identified-backup restore passes. Production and the active staging project must not be used as restore targets.
+
+Live review found eight completed daily physical backups, latest `2024466958` from `2026-10-21T03:10:55.758Z`, with PITR disabled. Storage contains 5,514 objects totaling 5,877,106,235 bytes; these file bytes are excluded from database backups. The full app recovery gap and proposed encrypted off-site file-backup setup are recorded in [the coverage review](security/api-key-and-backup-coverage.md). No backup restore, paid recovery service, or copied production file archive was created during this review.

@@ -8314,7 +8314,6 @@ function AgentListings({ mobileEditor = false } = {}) {
     const canPublishSavedDraft = isEditListingWorkspace && finalSubmissionStatus !== form.listingStatus
     const editorTitle = editorRelistChannel ? 'Update and relist' : isListingPublicationEditor ? 'Edit Listing Publication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
     const editorHeading = isEditListingWorkspace ? 'Edit Listing' : 'New listing'
-    const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
     const cancelEditor = () => navigate(mobileEditor ? '/mobile/listings' : isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
     if (draftRecoveryBlocked) return <p role="alert">{error || 'Unable to read your recovery copy. Reload before editing.'}</p>
@@ -8335,8 +8334,6 @@ function AgentListings({ mobileEditor = false } = {}) {
             <div>
               <div className="text-sm font-semibold text-[#607387]">
                 <button type="button" className="transition hover:text-[#142132]" onClick={() => navigate('/listings')}>Listings</button>
-                <span className="mx-2 text-[#9aa9ba]">→</span>
-                <span>{editorCrumbTitle}</span>
                 <span className="mx-2 text-[#9aa9ba]">→</span>
                 <span className="text-[#142132]">{editorTitle}</span>
                 <span className="ml-2 rounded-full border border-[#cfe9dc] bg-[#edf9f2] px-2 py-0.5 text-xs font-bold text-[#1f7d44]">Editing</span>
@@ -8374,7 +8371,7 @@ function AgentListings({ mobileEditor = false } = {}) {
         {missingDraftPhotoCount > 0 ? <p className="rounded-[8px] border border-[#f3d7a8] bg-[#fff8ea] px-4 py-3 text-sm font-semibold text-[#88531a]">Your listing draft and current step have been restored. Select the {missingDraftPhotoCount} photo{missingDraftPhotoCount === 1 ? '' : 's'} again; files that had not uploaded cannot be restored after a refresh.</p> : null}
         <ListingSaveStatus hideSavedNotice={isEditListingWorkspace} hideDeviceNotice={streamlinedSales || isEditListingWorkspace} cloud={isListingSaving ? { status: 'saving', message: photoSaveProgress || (form.listingImages.some(image => image.file) ? `Preparing ${form.listingImages.length} photos…` : 'Saving to Listings…') } : cloudSave} recovery={recoveryProtection.status} dirty={isEditListingWorkspace ? JSON.stringify(form) !== savedEditorFormRef.current : JSON.stringify(form) !== initialEditorFormRef.current} saveLabel={isEditListingWorkspace ? 'Save changes' : 'Save draft'} />
         {workflowMessage && !(createListingStep === 'syndication' && initialChannelResults.length && /^Listing saved[.]/.test(workflowMessage)) ? <p className="rounded-[8px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">{workflowMessage}</p> : null}
-        {createListingStep !== 'syndication' ? <ListingPublicationProgress results={initialChannelResults} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
+        {createListingStep !== 'syndication' && form.listingType === 'rental' ? <ListingPublicationProgress results={initialChannelResults} title={form.listingTitle || form.propertyAddress} listingStatus={form.listingStatus} channels={form.selectedSyndicationChannels}
           unsavedChanges={isEditListingWorkspace && JSON.stringify(form) !== savedEditorFormRef.current} changesNotSent={savedChangesNotSent} retrySavesChanges
           busy={publicationStatusBusy || isListingSaving}
           onRetry={isEditListingWorkspace && !editorRelistChannel ? () => void retryListingPublication() : undefined}
@@ -8689,13 +8686,13 @@ function AgentListings({ mobileEditor = false } = {}) {
                     </label>
                   </div>
                   {form.listingImages.length ? (
-                    <div className={streamlinedSales ? "sales-capture-gallery" : "mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"} tabIndex={streamlinedSales ? 0 : undefined} role={streamlinedSales ? "region" : undefined} aria-label={streamlinedSales ? "Listing photos" : undefined}>
+                    <div className="sales-capture-gallery" tabIndex={0} role="region" aria-label="Listing photos">
                       {form.listingImages.map((image, index) => {
                         const isCover = normalizeText(form.coverImageId) === normalizeText(image.id)
                         return (
                           <article key={image.id} className="overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white">
                             <div className="relative aspect-[4/3] bg-[#eef4fa]">
-                              <img src={image.url} alt={image.name} className="h-full w-full object-cover" />
+                              <img src={image.url} alt={image.name} loading="lazy" className="h-full w-full object-cover" />
                               {isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#1f7d44] px-2 py-1 text-xs font-bold text-white">Cover</span> : null}
                             </div>
                             <div className="grid gap-2 p-3">

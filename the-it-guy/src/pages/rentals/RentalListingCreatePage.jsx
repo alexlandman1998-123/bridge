@@ -1109,7 +1109,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338] focus-within:ring-2 focus-within:ring-[#286b43] focus-within:ring-offset-2"><ImagePlus size={16} aria-hidden="true" />Upload photos<input name="galleryImages" type="file" accept="image/*" multiple className="sr-only" onChange={handleGalleryUpload} aria-label="Upload listing photos" /></label>
               </div>
-              {form.galleryImages.length ? <div aria-label="Listing photos" role="region" className="sales-capture-gallery mt-5">
+              {form.galleryImages.length ? <div aria-label="Listing photos" role="region" tabIndex={0} className="sales-capture-gallery mt-5">
                 {form.galleryImages.map((image, index) => {
                   const isCover = String(form.coverImageId) === String(image.id)
                   return <article key={image.id} className={`min-w-0 overflow-hidden rounded-xl border ${isCover ? 'border-[#91abc0]' : 'border-[#dbe6f2]'} bg-white`}>
@@ -1120,7 +1120,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
                     </div>
                     <div className="min-w-0 p-3">
                       <p className="truncate text-xs font-medium text-[#526f88]" title={image.name}>{image.name}</p>
-                      <div className="mt-3 flex items-center justify-between gap-2">
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                         <button type="button" data-rental-control="photo-cover" onClick={() => setCoverImage(image.id)} disabled={isCover} className={`min-h-8 rounded-lg border px-2.5 text-xs font-semibold ${isCover ? 'border-[#dbe6f2] bg-[#eef4fa] text-[#315f80]' : 'border-[#dbe6f2] bg-white text-[#42617f] hover:bg-[#f4f8fc]'}`}>{isCover ? 'Cover photo' : 'Set cover'}</button>
                         <div className="flex items-center gap-1">
                           <button type="button" data-rental-control="photo-order" aria-label={`Move ${image.name} earlier`} title="Move earlier" disabled={index === 0} onClick={() => moveGalleryImage(image.id, -1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dbe6f2] text-[#526f88] hover:bg-[#f4f8fc] disabled:opacity-30"><ChevronLeft size={14} aria-hidden="true" /></button>

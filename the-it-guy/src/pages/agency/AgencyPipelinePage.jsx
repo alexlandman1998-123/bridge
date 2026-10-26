@@ -1,7 +1,7 @@
 import { getBuyerNextActionCompletion, checkBuyerNextActionEvidence, buildBuyerNextBestActionButtons } from '../../services/buyerNextActionCompletionService.js'
 import { AppointmentOrganisers, AppointmentClients } from '../../components/appointments/AppointmentPeopleFields'
 import { toggleAppointmentClient } from '../../components/appointments/appointmentPeopleModel'
-import AgentCalendarBoard from '../../components/appointments/AgentCalendarBoard'
+import WorkspaceCalendar from '../../components/appointments/WorkspaceCalendar'
 import AddressInput from '../../components/location/AddressInput'
 import { getSellerDocumentDisplayGroupKey } from '../../lib/sellerDocumentExperienceModel.js'
 import { createSellerLeadDraftListing, hasSellerLeadDraftAddress } from '../../services/sellerLeadDraftListingService'
@@ -33303,9 +33303,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
 
       {isCalendarMode ? (
         <section className="space-y-4" data-testid="agent-calendar-ready" aria-busy={calendarAppointmentLoad.status === 'loading'}>
-          {calendarAppointmentLoad.status === 'loading' ? <p role="status">{calendarAppointmentLoad.hasSnapshot ? 'Refreshing appointments…' : 'Loading appointments…'}</p> : null}
-          {calendarAppointmentLoad.error ? <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">{calendarAppointmentLoad.error} {calendarAppointmentLoad.hasSnapshot ? 'Showing the last verified schedule.' : 'Appointment counts are unavailable.'} <button type="button" className="underline" onClick={calendarAppointmentLoad.reload}>Retry appointments</button></div> : null}
-          <AgentCalendarBoard
+          <WorkspaceCalendar
+            key={`${organisationId}:${profile?.id || currentAgent.id}`}
+            organisationId={organisationId} viewerKey={profile?.id || currentAgent.id}
+            appointmentLoad={calendarAppointmentLoad}
             appointments={calendarDisplayAppointments}
             days={visibleCalendarDays} cursorDate={calendarCursorDate}
             view={calendarView} onViewChange={setCalendarView} periodLabel={calendarPeriodLabel}
