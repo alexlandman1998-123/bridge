@@ -9,7 +9,7 @@ import { DEMO_ADDITIONAL_COVER, DEMO_HOME_COVER_INTRODUCTION, DEMO_INSURANCE_BUN
 const coverIcons = { car: Car, life: Heart, gap: HeartPulse }
 const categoryIcons = { building: House, contents: Armchair, combined: Layers3 }
 
-export default function DemoInsuranceWorkspace({ theme, propertyAddress = '' }) {
+export default function DemoInsuranceWorkspace({ theme, propertyAddress = '', compact = false }) {
   const id = useId()
   const tabRefs = useRef([])
   const [categoryId, setCategoryId] = useState('combined')
@@ -42,7 +42,7 @@ export default function DemoInsuranceWorkspace({ theme, propertyAddress = '' }) 
 
   return <section className="demo-insurance demo-insurance-workspace" style={demoInsuranceBrandStyle(theme)} data-insurance-source="demo">
     <DemoInsurancePromotion theme={theme} content={DEMO_HOME_COVER_INTRODUCTION} showAction={false} propertyAddress={propertyAddress} />
-    <DemoHomeSupport theme={theme} propertyAddress={propertyAddress} includeClaim />
+    <DemoHomeSupport theme={theme} propertyAddress={propertyAddress} includeClaim showHeading={!compact} includeAssist={!compact} />
 
     <div className="demo-insurance-home-quotes">
       <div className="demo-insurance-cover-tabs" role="tablist" aria-label="Home insurance cover">
@@ -52,9 +52,10 @@ export default function DemoInsuranceWorkspace({ theme, propertyAddress = '' }) 
         })}
       </div>
       <div role="tabpanel" id={`${id}-quotes`} aria-labelledby={`${id}-${categoryId}`} tabIndex={0} className="demo-insurance-quote-panel">
-        <div className="demo-insurance-quote-grid">
+        <div className="demo-insurance-quote-grid" id={compact ? 'mobile-home-insurance-quotes' : undefined} role={compact ? 'region' : undefined} tabIndex={compact ? 0 : undefined} aria-label={compact ? 'Insurance quotes — swipe to browse' : undefined}>
           {DEMO_INSURANCE_QUOTES.filter(quote => quote.category === categoryId).map(quote => <DemoInsuranceQuoteCard key={quote.id} theme={theme} quote={quote} onViewQuote={setSelectedQuote} />)}
         </div>
+        {compact ? <p className="demo-insurance-carousel-hint">Swipe to compare quotes →</p> : null}
       </div>
     </div>
 

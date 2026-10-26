@@ -23,24 +23,21 @@ assert.match(
   /const targetMainStage = originatorManagedFinance \? 'FIN' : 'ATT'/,
   'only originator-managed finance should route to the finance main stage after signed OTP',
 )
+assert.match(apiSource, /if \(originatorManagedFinance && !durableDispatch\)/, 'only unmanaged legacy dispatches may notify the originator directly')
+assert.match(apiSource, /readTransactionHandoffDispatchMode/, 'signed OTP handoff should have durable recipient-aware dispatch')
 assert.match(
   apiSource,
-  /roleTypes: originatorManagedFinance \? \['bond_originator', 'developer', 'agent', 'attorney'\] : \['attorney', 'developer', 'agent'\]/,
-  'client-managed finance should not notify the bond originator role on signed OTP handoff',
-)
-assert.match(
-  apiSource,
-  /if \(originatorManagedFinance\) \{[\s\S]*?await checkAndNotifyBondOtpReady/,
+  /if \(originatorManagedFinance && !durableDispatch\) \{[\s\S]*?await checkAndNotifyBondOtpReady/,
   'bond OTP-ready notification should only fire for originator-managed finance',
 )
 assert.match(
   apiSource,
-  /reason: isBondFinanceType\(financeType \|\| transaction\?\.finance_type\) \? 'finance_not_originator_managed' : 'not_bond_finance'/,
+  /reason: isBondFinanceType\(financeType \|\| transaction\?\.finance_type\)[\s\S]{0,40}\? 'finance_not_originator_managed'[\s\S]{0,40}: 'not_bond_finance'/,
   'originator activation should explicitly skip client-managed bond finance',
 )
 assert.match(
   apiSource,
-  /isBondFinanceType\(financeSnapshot\.financeType \|\| transaction\.finance_type\) && financeManagedBy === 'bond_originator'/,
+  /isBondFinanceType\(financeSnapshot\.financeType \|\| transaction\.finance_type\)\s*&&\s*financeManagedBy === 'bond_originator'/,
   'client portal bond application notifications should be owner-gated',
 )
 

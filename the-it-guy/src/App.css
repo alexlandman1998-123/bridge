@@ -9323,6 +9323,10 @@
     grid-template-columns: minmax(0, 1fr) !important;
   }
 
+  .conveyancing-workspace-fit .archline-matter-header-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
   .conveyancing-workspace-fit :where([class*="justify-between"]) {
     flex-wrap: wrap;
   }

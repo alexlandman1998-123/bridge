@@ -9,7 +9,7 @@ import { HOME_SERVICES_NOTICE, MAINTENANCE_CATEGORIES } from './demoHomeServices
 const categoryIcons = { plumbing: Droplets, electrical: Zap, painting: PaintRoller, cleaning: Sparkles, garden: Leaf }
 const money = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
 
-export default function DemoMaintenanceWorkspace({ theme, propertyAddress = '' }) {
+export default function DemoMaintenanceWorkspace({ theme, propertyAddress = '', compact = false }) {
   const id = useId()
   const tabs = useRef([])
   const [categoryId, setCategoryId] = useState('plumbing')
@@ -35,9 +35,9 @@ export default function DemoMaintenanceWorkspace({ theme, propertyAddress = '' }
     tabs.current[next]?.focus()
   }
 
-  return <section className="home-services-workspace" style={demoInsuranceBrandStyle(theme)} data-home-services-source="demo">
+  return <section className={`home-services-workspace ${compact ? 'demo-maintenance-mobile' : ''}`} style={demoInsuranceBrandStyle(theme)} data-home-services-source="demo">
     <DemoHomeServicesHero theme={theme} kind="maintenance" propertyAddress={propertyAddress} />
-    <DemoHomeSupport theme={theme} propertyAddress={propertyAddress} />
+    <DemoHomeSupport theme={theme} propertyAddress={propertyAddress} showHeading={!compact} />
     <div className="home-services-category-tabs" role="tablist" aria-label="Maintenance categories">
       {MAINTENANCE_CATEGORIES.map((item, index) => {
         const CategoryIcon = categoryIcons[item.id]
@@ -45,7 +45,8 @@ export default function DemoMaintenanceWorkspace({ theme, propertyAddress = '' }
       })}
     </div>
     <div role="tabpanel" id={`${id}-providers`} aria-labelledby={`${id}-${categoryId}`} tabIndex={0}>
-      <div className="home-services-provider-grid">
+      {compact ? <div className="maintenance-provider-heading"><h3>{category.label}</h3><span>{category.providers.length} sample providers</span></div> : null}
+      <div className="home-services-provider-grid" id={compact ? 'mobile-maintenance-providers' : undefined} role={compact ? 'region' : undefined} tabIndex={compact ? 0 : undefined} aria-label={compact ? `${category.label} providers — swipe to browse` : undefined}>
         {category.providers.map((item, index) => {
           const from = Math.min(...category.services.map(entry => entry.labour + entry.materials)) + item.callout
           return <button type="button" key={item.id} className={`home-services-provider home-services-category-${categoryId}`} onClick={() => { setProviderId(item.id); setServiceId('') }} aria-label={`View ${item.name} services`}>
@@ -54,10 +55,11 @@ export default function DemoMaintenanceWorkspace({ theme, propertyAddress = '' }
           </button>
         })}
       </div>
+      {compact ? <p className="maintenance-provider-hint">Swipe to compare providers →</p> : null}
     </div>
     <p className="home-services-footnote">{HOME_SERVICES_NOTICE}</p>
 
-    <Modal open={Boolean(provider)} onClose={() => setProviderId('')} title={provider?.name || 'Maintenance services'} subtitle="Choose a service to explore a sample estimate." className="home-services-dialog">
+    <Modal open={Boolean(provider)} onClose={() => setProviderId('')} title={provider?.name || 'Maintenance services'} subtitle="Choose a service to explore a sample estimate." className={`home-services-dialog ${compact ? 'maintenance-mobile-dialog' : ''}`}>
       {provider ? <div className="home-services-dialog-content" style={demoInsuranceBrandStyle(theme)}>
         <div className="home-services-provider-intro"><span className={`home-services-category-icon home-services-category-${categoryId}`}><Icon size={28} strokeWidth={1.5} aria-hidden="true" /></span><div><strong>{category.label}, made simple.</strong><p>{provider.description}</p></div></div>
         <div className="home-services-estimate-layout">

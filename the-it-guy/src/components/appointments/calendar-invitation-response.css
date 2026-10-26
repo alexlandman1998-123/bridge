@@ -1,0 +1,28 @@
+.cir-page { min-height: 100vh; padding: 36px 16px; background: #f3f7f5; color: #233c32; }
+.cir-card { max-width: 640px; margin: 0 auto; padding: 30px; border: 1px solid #e0e8e3; border-radius: 22px; background: #fff; box-shadow: 0 16px 50px #233c320a; }
+.cir-eyebrow { color: #687c73; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+.cir-card h1 { margin-top: 8px; color: #172c23; font-size: 24px; font-weight: 600; letter-spacing: -.5px; }
+.cir-card h2 { margin-top: 22px; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.cir-card p { line-height: 1.65; }
+.cir-booking { display: flex; gap: 12px; padding: 16px; margin-top: 12px; border-radius: 12px; background: #f3f8f5; }
+.cir-booking > svg,.cir-original > svg,.cir-notice > svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 3px; color: #176d50; }
+.cir-booking span { font-size: 11px; color: #687c73; }
+.cir-booking p { margin-top: 4px; font-size: 14px; font-weight: 600; }
+.cir-original { display: flex; gap: 10px; margin-top: 14px; font-size: 12px; color: #687c73; }
+.cir-location { margin-top: 14px; font-size: 13px; overflow-wrap: anywhere; }
+.cir-notice { display: flex; gap: 10px; padding: 14px; margin-top: 20px; background: #fff8e9; border: 1px solid #efe4c9; border-radius: 12px; font-size: 13px; }
+.cir-notice h3 { font-weight: 600; }.cir-notice button { margin-top: 8px; color: #176d50; text-decoration: underline; }
+.cir-success { padding: 14px; background: #edf7f0; border-radius: 10px; margin-top: 18px; font-size: 13px; }
+.cir-card form { display: grid; gap: 14px; margin-top: 22px; }
+.cir-choices,.cir-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.cir-choices button { border: 1px solid #dce6df; border-radius: 10px; padding: 12px; font-size: 13px; }
+.cir-choices button[aria-pressed=true] { color: #176d50; background: #edf7f0; border-color: #176d50; }
+.cir-card fieldset { min-width: 0; display: grid; gap: 14px; border: 1px solid #e0e8e3; border-radius: 12px; padding: 16px; }
+.cir-card legend { padding: 0 5px; font-size: 14px; font-weight: 600; }.cir-card fieldset p { font-size: 12px; color: #687c73; }
+.cir-card label { display: grid; gap: 6px; font-size: 12px; }.cir-card input,.cir-card textarea { width: 100%; min-width: 0; border: 1px solid #dce6df; border-radius: 8px; padding: 10px; background: #fff; font-size: 14px; }
+.cir-primary { justify-self: start; background: #176d50; color: #fff; border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 600; }
+.cir-link,.cir-footer a { color: #176d50; font-size: 12px; text-decoration: underline; justify-self: start; }
+.cir-card button { cursor: pointer; }.cir-card button:disabled { opacity: .5; cursor: wait; }
+.cir-card button:focus-visible,.cir-card input:focus-visible,.cir-card textarea:focus-visible { outline: 2px solid #176d50; outline-offset: 3px; }
+.cir-error { margin-top: 16px; color: #9f3028; font-size: 13px; }.cir-footer { display: grid; gap: 12px; margin-top: 24px; padding-top: 18px; border-top: 1px solid #edf2ef; }.cir-footer small { color: #687c73; font-size: 11px; }
+@media(max-width:480px) { .cir-page { padding: 16px 10px; }.cir-card { padding: 22px 18px; border-radius: 16px; }.cir-card h1 { font-size: 22px; }.cir-fields { grid-template-columns: minmax(0,1fr); } }

@@ -1943,6 +1943,7 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
   const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
   const required = isDocumentRequirementRequired(requirement)
 
+
   return {
     id: `required_${key}`,
     sourceId: key,
@@ -3466,6 +3467,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       required,
       requirementLevel,
       requiredDocumentStatus: status,
+      waitingForTeam: Array.isArray(requirement.uploadable_by_roles) && !uploadable && !terminal && !linkedDocument,
       rejectionReason: String(requirement?.rejection_reason || '').trim(),
       linkedDocument,
       hasUploadedDocument: Boolean(linkedDocument),
@@ -3509,6 +3511,7 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     if (item.required === false) return result
     const status = normalizeDocumentStatus(item.status)
     result.total += 1
+    if (item.waitingForTeam) return result
     if (status === 'rejected') result.rejected += 1
     else if (['required', 'requested'].includes(status)) result.outstanding += 1
     else if (status === 'uploaded') result.uploaded += 1
@@ -3578,7 +3581,15 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     }
   }
   if (workspaceMode === 'buying' && portalData?.canonicalDocumentProjection) {
-    return buildCanonicalBuyerDocumentCenter(portalData.canonicalDocumentProjection)
+    const projection = portalData.canonicalDocumentProjection
+    const outstandingSavedRows = (portalData.requiredDocuments || []).some(row =>
+      row.enabled !== false && row.isRequired !== false && row.is_required !== false &&
+      !['not_required', 'not_applicable', 'cancelled'].includes(String(row.status || '').toLowerCase()))
+    if (!projection.requirements?.length && outstandingSavedRows) {
+      return { ...buildCanonicalBuyerDocumentCenter(null, 'requirements_not_prepared'),
+        loadError: 'Your document checklist is still being prepared. Please contact your transaction team before uploading documents.' }
+    }
+    return buildCanonicalBuyerDocumentCenter(projection)
   }
   if (workspaceMode === 'buying' && portalData?.canonicalDocumentProjectionError) {
     return buildCanonicalBuyerDocumentCenter(null, portalData.canonicalDocumentProjectionError)

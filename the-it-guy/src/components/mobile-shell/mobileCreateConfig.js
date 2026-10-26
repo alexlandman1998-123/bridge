@@ -62,9 +62,9 @@ const CREATE_CONFIG = {
     icon: MessageCircle,
   },
   'follow-up': {
-    eyebrow: 'Task Capture',
+    eyebrow: '',
     title: 'Schedule follow-up',
-    body: 'Queue a reminder for yourself or the next owner.',
+    body: '',
     module: 'task',
     draftType: 'Follow-up',
     primaryLabel: 'Follow-up title',

@@ -6,7 +6,7 @@ import { EmailCampaignOverview } from '../EmailCampaigns'
 const mocks = vi.hoisted(() => ({ workspace: vi.fn(), audiences: vi.fn(), preview: vi.fn(), saveAudience: vi.fn(), archiveAudience: vi.fn() }))
 vi.mock('../EmailCampaignBuilder', () => ({ default: () => null }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: 'org' } } }) }))
-vi.mock('../../../services/emailCampaignService', () => ({ getEmailCampaignWorkspace: mocks.workspace, getSavedAudiences: async (...args) => (await mocks.audiences(...args)) || [], previewSavedAudience: async (...args) => (await mocks.preview(...args)) || { count: 0, contacts: [] }, saveEmailAudience: mocks.saveAudience, archiveEmailAudience: mocks.archiveAudience }))
+vi.mock('../../../services/emailCampaignService', () => ({ getEmailCampaignWorkspace: mocks.workspace, getAudienceFilterOptions: async () => ({ contact_type: ['buyer', 'seller'] }), getSavedAudiences: async (...args) => (await mocks.audiences(...args)) || [], previewSavedAudience: async (...args) => (await mocks.preview(...args)) || { count: 0, contacts: [] }, saveEmailAudience: mocks.saveAudience, archiveEmailAudience: mocks.archiveAudience }))
 const draft = { id: 'draft', name: 'Spring listings', status: 'draft', updated_at: '2026-10-01T12:00:00Z' }
 const sent = { id: 'sent', name: 'Buyer update', status: 'sent', sent_at: '2026-09-29T12:00:00Z' }
 const workspace = (overrides = {}) => ({ campaigns: [draft, sent], performance: [], identities: [], usage: [], billingProfile: null, dailyPerformance: [], ...overrides })
@@ -122,7 +122,7 @@ describe('Email campaign homepage', () => {
     render(<EmailCampaignOverview selectedView="audiences" />)
     await screen.findByText('Local buyers')
     fireEvent.click(screen.getByRole('button', { name: 'Edit Local buyers' }))
-    fireEvent.change(screen.getByPlaceholderText('Name this audience'), { target: { value: 'Active buyers' } })
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Audience name', exact: true }), { target: { value: 'Active buyers' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save audience' }))
     await waitFor(() => expect(mocks.saveAudience).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'org', audience: expect.objectContaining({ id: 'aud', name: 'Active buyers', filterJson: expect.objectContaining({ rules: [expect.objectContaining({ field: 'contact_type' })] }) }) })))
     await screen.findByText('Local buyers')

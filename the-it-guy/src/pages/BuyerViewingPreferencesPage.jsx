@@ -150,9 +150,11 @@ function BuyerViewingPreferencesPage() {
 
   const properties = useMemo(() => (Array.isArray(session?.properties) ? session.properties : []), [session?.properties])
   const isClosed = ['submitted', 'expired', 'revoked'].includes(normalizeText(session?.status).toLowerCase())
-  const qualificationAnsweredCount = useMemo(() => (
-    BUYER_INTAKE_QUALIFICATION_FIELDS.filter(({ key }) => normalizeText(qualificationForm[key])).length
-  ), [qualificationForm])
+  const showBondQuestions = normalizeText(qualificationForm.financeType).toLowerCase() !== 'cash'
+  const applicableQualificationFields = BUYER_INTAKE_QUALIFICATION_FIELDS.filter(({ key }) => (
+    showBondQuestions || !['subjectToFinance', 'preApprovalStatus'].includes(key)
+  ))
+  const qualificationAnsweredCount = applicableQualificationFields.filter(({ key }) => normalizeText(qualificationForm[key])).length
   const selectedTimeCount = useMemo(() => (
     availabilityWindows.filter(isAvailabilityWindowComplete).length
   ), [availabilityWindows])
@@ -183,7 +185,8 @@ function BuyerViewingPreferencesPage() {
       }))
       .filter((item) => item.propertyId)
 
-    if (!responses.some((item) => item.wantsToView)) {
+    const isUnmatchedBuyerIntro = session?.enquiryKind === 'sale' && session?.response?.enquiryKind === 'sale' && properties.length === 0
+    if (!responses.some((item) => item.wantsToView) && !isUnmatchedBuyerIntro) {
       setErrorMessage('Choose at least one property you would like to view.')
       return
     }
@@ -305,7 +308,7 @@ function BuyerViewingPreferencesPage() {
                     If you have five minutes, answer as much as you can. These questions help us qualify the lead before we lock in the viewing.
                   </p>
                   <p className="mt-3 inline-flex rounded-full bg-[#EDF4F1] px-3 py-1 text-xs font-bold text-[#0F7A5A]">
-                    Optional but helpful · {qualificationAnsweredCount}/{BUYER_INTAKE_QUALIFICATION_FIELDS.length} captured
+                    Optional but helpful · {qualificationAnsweredCount}/{applicableQualificationFields.length} captured
                   </p>
                 </div>
                 <div className="grid gap-4 p-5 md:grid-cols-2">
@@ -351,18 +354,20 @@ function BuyerViewingPreferencesPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="grid gap-2">
-                    <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Subject to finance</span>
-                    <select
-                      value={qualificationForm.subjectToFinance}
-                      onChange={(event) => updateQualificationField('subjectToFinance', event.target.value)}
-                      className="min-h-11 rounded-[8px] border border-[#DDE7DF] bg-white px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
-                    >
-                      {BUYER_SUBJECT_TO_FINANCE_OPTIONS.map((option) => (
-                        <option key={option || 'empty-subject'} value={option}>{option || 'Select answer'}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {showBondQuestions && (
+                    <label className="grid gap-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Subject to finance</span>
+                      <select
+                        value={qualificationForm.subjectToFinance}
+                        onChange={(event) => updateQualificationField('subjectToFinance', event.target.value)}
+                        className="min-h-11 rounded-[8px] border border-[#DDE7DF] bg-white px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+                      >
+                        {BUYER_SUBJECT_TO_FINANCE_OPTIONS.map((option) => (
+                          <option key={option || 'empty-subject'} value={option}>{option || 'Select answer'}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="grid gap-2">
                     <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Deposit available</span>
                     <input
@@ -372,18 +377,20 @@ function BuyerViewingPreferencesPage() {
                       className="min-h-11 rounded-[8px] border border-[#DDE7DF] px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
                     />
                   </label>
-                  <label className="grid gap-2">
-                    <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Pre-approval status</span>
-                    <select
-                      value={qualificationForm.preApprovalStatus}
-                      onChange={(event) => updateQualificationField('preApprovalStatus', event.target.value)}
-                      className="min-h-11 rounded-[8px] border border-[#DDE7DF] bg-white px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
-                    >
-                      {BUYER_PRE_APPROVAL_OPTIONS.map((option) => (
-                        <option key={option || 'empty-preapproval'} value={option}>{option || 'Select status'}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {showBondQuestions && (
+                    <label className="grid gap-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Pre-approval status</span>
+                      <select
+                        value={qualificationForm.preApprovalStatus}
+                        onChange={(event) => updateQualificationField('preApprovalStatus', event.target.value)}
+                        className="min-h-11 rounded-[8px] border border-[#DDE7DF] bg-white px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+                      >
+                        {BUYER_PRE_APPROVAL_OPTIONS.map((option) => (
+                          <option key={option || 'empty-preapproval'} value={option}>{option || 'Select status'}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="grid gap-2">
                     <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Need to sell first</span>
                     <select

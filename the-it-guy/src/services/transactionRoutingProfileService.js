@@ -130,9 +130,9 @@ function buildMatterProfileMetadata(baseProfile, existingProfile = {}, requested
       : '',
     ...(baseProfile.scenarioIssues || []),
   ].filter(Boolean)
-  const confirmed = requested.status === 'confirmed'
+  const confirmed = !missingFactKeys.length && (requested.status === 'confirmed'
     ? true
-    : existingMetadata.status === 'confirmed' && existingMetadata.factFingerprint === fingerprint
+    : existingMetadata.status === 'confirmed' && existingMetadata.factFingerprint === fingerprint)
   const confirmedAt = confirmed
     ? requested.confirmedAt || existingMetadata.confirmedAt || null
     : null
@@ -641,13 +641,18 @@ export function resolveTransactionRoutingProfile(input = {}) {
     rawFacts: facts,
     rawFieldSources: facts.rawFieldsUsed || {},
   }
-  baseProfile.scenarioProfile = prepopulateMatterScenarioProfile({
-    saved: existingProfile.scenarioProfile,
-    legacy: baseProfile,
-    transaction: context.transaction,
-    participants: input.transactionParticipants || input.participants || [],
-  })
-  baseProfile.scenarioIssues = existingProfile.scenarioProfile ? scenarioIssues(baseProfile.scenarioProfile) : []
+  // Scenario defaults belong to the editor until explicitly saved. Persisting
+  // generated placeholders here turns an unchanged legacy route into incomplete
+  // attorney-reviewed facts on its next read.
+  if (existingProfile.scenarioProfile) {
+    baseProfile.scenarioProfile = prepopulateMatterScenarioProfile({
+      saved: existingProfile.scenarioProfile,
+      legacy: baseProfile,
+      transaction: context.transaction,
+      participants: input.transactionParticipants || input.participants || [],
+    })
+  }
+  baseProfile.scenarioIssues = baseProfile.scenarioProfile ? scenarioIssues(baseProfile.scenarioProfile) : []
   // Keep legacy consumers visible until the central requirements engine migrates.
   // Never silently reduce mixed parties to a single entity type.
   if (existingProfile.scenarioProfile) {

@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabaseClient'
 const clean = (value) => String(value || '').trim()
 const normalizeEmail = (value) => clean(value).toLowerCase()
 
+async function emailSetupError(error) {
+  // Function HTTP failures carry the actionable message in their response body.
+  // Keep it visible so an agency can resolve DNS, ownership or limit errors.
+  try {
+    const payload = await error.context?.clone().json()
+    if (typeof payload?.error === 'string') return new Error(payload.error)
+  } catch { /* Fall back to the original network error. */ }
+  return error
+}
+
 function normalizeTags(tags = []) {
   return [...new Set((Array.isArray(tags) ? tags : String(tags).split(','))
     .map((tag) => clean(tag).toLowerCase())
@@ -219,14 +229,14 @@ export async function quoteEmailCampaignUsage(campaignId, recipientCount) {
 
 export async function sendEmailCampaignTest(payload) {
   const { data, error } = await supabase.functions.invoke('email-campaign-test', { body: payload })
-  if (error) throw error
+  if (error) throw await emailSetupError(error)
   if (data?.error) throw new Error(data.error)
   return data
 }
 
 export async function refreshEmailSenderVerification(organisationId) {
   const { data, error } = await supabase.functions.invoke('email-sender-verification', { body: { organisationId } })
-  if (error) throw error
+  if (error) throw await emailSetupError(error)
   if (data?.error) throw new Error(data.error)
   return data
 }
@@ -299,20 +309,32 @@ export async function getEmailRevisions(organisationId, id) {
 }
 export async function createEmailSendingDomain({ organisationId, domain }) {
   const { data, error } = await supabase.functions.invoke('email-sending-domain-create', { body: { organisationId, domain } })
-  if (error) throw error
+  if (error) throw await emailSetupError(error)
   if (data?.error) throw new Error(data.error)
   return data
 }
 
 export async function verifyEmailSendingDomain({ organisationId, domainId }) {
   const { data, error } = await supabase.functions.invoke('email-sending-domain-verify', { body: { organisationId, domainId } })
-  if (error) throw error
+  if (error) throw await emailSetupError(error)
   if (data?.error) throw new Error(data.error)
   return data
 }
 
-export async function createEmailSender({ organisationId, userId, displayName, email, sendingDomainId }) {
-  const { data, error } = await supabase.from('email_sender_identities').insert({ organisation_id: organisationId, created_by: userId, display_name: clean(displayName), from_email: normalizeEmail(email), reply_to_email: normalizeEmail(email), email_sending_domain_id: sendingDomainId, verification_status: 'pending' }).select().single()
+export async function getEmailSendingPolicy(organisationId) {
+  const { data, error } = await supabase.from('email_sending_policies')
+    .select('approved_at,paused_at,pause_reason,daily_recipient_limit,self_service_blocked')
+    .eq('organisation_id', organisationId).maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function createEmailSender({ organisationId, displayName, email, sendingDomainId, replyToEmail, makeDefault = true, identityId = null }) {
+  const { data, error } = await supabase.rpc('email_save_sender', {
+    p_organisation_id: organisationId, p_domain_id: sendingDomainId,
+    p_display_name: clean(displayName), p_email: normalizeEmail(email),
+    p_reply_to: normalizeEmail(replyToEmail || email), p_default: makeDefault, p_identity_id: identityId,
+  })
   if (error) throw error
   return data
 }

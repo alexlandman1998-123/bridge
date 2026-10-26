@@ -1,0 +1,164 @@
+/* Keep the demo's mobile surfaces consistent without changing shared portals. */
+.prospect-buyer-mobile :is(section, article, header, nav, [class*="rounded-["]),
+.prospect-buyer-mobile .demo-insurance-promotion {
+  border-radius: 12px;
+}
+
+.prospect-buyer-mobile .demo-insurance-promotion .demo-insurance-button {
+  border-radius: 8px;
+}
+
+.buyer-demo-bottom-menu {
+  transform-origin: bottom right;
+  animation: buyer-demo-menu-open 160ms ease-out;
+}
+
+.buyer-document-carousel {
+  scroll-padding-inline: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: #dbe3ec transparent;
+}
+
+.buyer-finance-mobile .demo-insurance-product-grid {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: #dbe3ec transparent;
+  padding: 6px 4px 16px;
+}
+
+.buyer-finance-mobile .demo-insurance-product-grid > .demo-insurance-product {
+  flex: 0 0 86%;
+  min-width: 0;
+  scroll-snap-align: start;
+  padding: 20px;
+}
+
+.buyer-finance-mobile .demo-insurance-product-brand { margin-bottom: 12px; }
+.buyer-finance-mobile .demo-insurance-product h3 { font-size: 1.5rem; }
+.buyer-finance-mobile .demo-insurance-product > p { font-size: 0.82rem; line-height: 1.6; }
+.buyer-finance-mobile .demo-insurance-product .demo-insurance-benefits { gap: 10px; margin: 16px 0 20px; font-size: 0.76rem; }
+.buyer-finance-mobile .demo-insurance-product-footer { gap: 12px; padding-top: 16px; }
+.buyer-finance-mobile .demo-insurance-product-footer .demo-insurance-price { font-size: 1.8rem; }
+.buyer-finance-mobile .demo-insurance-product-footer .demo-insurance-button { border-radius: 8px; }
+
+.prospect-buyer-mobile .demo-insurance-quote-grid {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: #dbe3ec transparent;
+  padding: 4px 2px 16px;
+}
+
+.prospect-buyer-mobile .demo-insurance-quote-grid > .demo-insurance-quote {
+  flex: 0 0 86%;
+  min-width: 0;
+  padding: 20px;
+  scroll-snap-align: start;
+}
+
+.prospect-buyer-mobile .demo-insurance-quote .demo-insurance-button { border-radius: 8px; }
+.prospect-buyer-mobile .demo-insurance-carousel-hint { text-align: center; font-size: 0.68rem; color: #7b8491; }
+
+.demo-maintenance-mobile .demo-insurance-promotion-layout { padding: 24px 20px; }
+.demo-maintenance-mobile .home-services-hero h2 { margin-top: 14px; font-size: 1.8rem; }
+.demo-maintenance-mobile .home-services-hero h2 + p { margin-top: 12px; font-size: .85rem; line-height: 1.6; }
+.demo-maintenance-mobile .demo-insurance-promotion-property { margin-top: 16px; padding-top: 14px; font-size: .7rem; }
+.demo-maintenance-mobile .demo-home-support-panel { margin-top: 12px; }
+.demo-maintenance-mobile .demo-home-support-action { min-height: 88px; padding: 16px; border-radius: 12px; gap: 12px; }
+.demo-maintenance-mobile .demo-home-support-action-icon { width: 40px; height: 40px; border-radius: 10px; }
+.demo-maintenance-mobile .demo-home-support-action-icon svg { width: 22px; height: 22px; }
+.demo-maintenance-mobile .demo-home-support-action strong { font-size: .9rem; font-weight: 600; }
+.demo-maintenance-mobile .demo-home-support-action > span > span { margin-top: 4px; font-size: .72rem; }
+.demo-maintenance-mobile .home-services-category-tabs { display: flex; gap: 8px; margin: 16px 0; padding: 2px 0 8px; scrollbar-width: thin; }
+.demo-maintenance-mobile .home-services-category-tabs button { flex-direction: row; min-height: 44px; min-width: auto; padding: 10px 14px; border-radius: 8px; gap: 7px; font-size: .75rem; }
+.demo-maintenance-mobile .home-services-category-tabs button svg { width: 17px; height: 17px; flex-shrink: 0; }
+.demo-maintenance-mobile .maintenance-provider-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.demo-maintenance-mobile .maintenance-provider-heading h3 { font-size: .95rem; font-weight: 600; }
+.demo-maintenance-mobile .maintenance-provider-heading > span { font-size: .65rem; color: #7b8491; }
+.demo-maintenance-mobile .home-services-provider-grid { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: #dbe3ec transparent; padding: 4px 2px 14px; }
+.demo-maintenance-mobile .home-services-provider { flex: 0 0 86%; min-width: 0; border-radius: 12px; scroll-snap-align: start; }
+.demo-maintenance-mobile .home-services-provider:hover { transform: none; }
+.demo-maintenance-mobile .home-services-provider-cover { height: 104px; }
+.demo-maintenance-mobile .home-services-provider-cover > svg { width: 48px; height: 48px; }
+.demo-maintenance-mobile .home-services-provider-monogram { top: 12px; left: 14px; width: 28px; height: 28px; border-radius: 8px; font-size: .6rem; }
+.demo-maintenance-mobile .home-services-provider-cover-label { bottom: 12px; right: 14px; font-size: .6rem; }
+.demo-maintenance-mobile .home-services-provider-body { padding: 16px; }
+.demo-maintenance-mobile .home-services-provider-name { font-size: 1.05rem; font-weight: 600; letter-spacing: -.02em; }
+.demo-maintenance-mobile .home-services-provider-description { margin-top: 8px; font-size: .76rem; line-height: 1.6; }
+.demo-maintenance-mobile .home-services-provider-area { margin-top: 12px; font-size: .65rem; }
+.demo-maintenance-mobile .home-services-provider-price { padding-top: 16px; }
+.demo-maintenance-mobile .home-services-provider-price strong { font-size: 1.3rem; }
+.demo-maintenance-mobile .home-services-card-action { min-height: 44px; margin-top: 14px; padding-top: 12px; font-size: .76rem; }
+.demo-maintenance-mobile .maintenance-provider-hint { margin-top: 4px; text-align: center; font-size: .65rem; color: #7b8491; }
+.demo-maintenance-mobile .home-services-footnote { margin-top: 16px !important; font-size: .65rem; }
+.maintenance-mobile-dialog { border-radius: 12px; }
+.maintenance-mobile-dialog .ui-modal-head { padding: 16px; }
+.maintenance-mobile-dialog .ui-modal-body { padding: 16px; }
+.maintenance-mobile-dialog .ui-icon-button,
+.maintenance-mobile-dialog .home-services-service-option,
+.maintenance-mobile-dialog .home-services-estimate { border-radius: 8px; }
+
+.demo-move-mobile .demo-insurance-promotion-layout { padding: 24px 20px; }
+.demo-move-mobile .home-services-hero h2 { margin-top: 14px; font-size: 1.8rem; }
+.demo-move-mobile .home-services-hero h2 + p { margin-top: 12px; font-size: .85rem; line-height: 1.6; }
+.demo-move-mobile .home-services-steps { gap: 8px; margin: 16px 0; }
+.demo-move-mobile .home-services-steps li { flex-direction: row; gap: 6px; padding: 8px 5px; font-size: .65rem; }
+.demo-move-mobile .home-services-steps li::after { display: none; }
+.demo-move-mobile .home-services-steps li > span { width: 24px; height: 24px; font-size: .6rem; }
+.demo-move-mobile .home-services-steps li[aria-current="step"] { border-radius: 8px; background: #edf1f8; }
+.demo-move-mobile .home-services-move-panel { padding: 16px; border-radius: 12px; }
+.demo-move-mobile .home-services-panel-heading { margin-bottom: 16px; gap: 10px; }
+.demo-move-mobile .home-services-panel-heading h3 { margin-top: 6px; font-size: 1.2rem; font-weight: 600; letter-spacing: -.025em; }
+.demo-move-mobile .home-services-panel-heading p { margin-top: 8px; font-size: .76rem; line-height: 1.6; }
+.demo-move-mobile .home-services-route-inputs { gap: 10px; }
+.demo-move-mobile .home-services-address { padding: 12px; border-radius: 10px; }
+.demo-move-mobile .home-services-address-caption { display: none; }
+.demo-move-mobile .home-services-address .arch9-address-input { margin-top: 8px; }
+.demo-move-mobile .home-services-address input { min-height: 48px; margin-top: 0; padding: 10px 40px !important; border: 1px solid #dfe6ee; border-radius: 8px; background: #fff; box-shadow: none; font-size: 16px; }
+.demo-move-mobile .home-services-address .arch9-address-input__search { left: 12px; }
+.demo-move-mobile .home-services-swap { position: static; justify-self: end; width: 36px; height: 36px; margin: -7px 8px; transform: rotate(90deg); }
+.demo-move-mobile .home-services-next-row { margin-top: 16px; gap: 12px; }
+.demo-move-mobile .home-services-next-row > span { font-size: .68rem; }
+.demo-move-mobile .home-services-button { min-height: 44px; padding: 12px 16px; border-radius: 8px; }
+.demo-move-mobile .home-services-route-summary { padding: 12px; gap: 8px; border-radius: 10px; }
+.demo-move-mobile .home-services-route-summary strong { font-size: .75rem; }
+.demo-move-mobile .home-services-truck-choices { margin-top: 16px; }
+.demo-move-mobile .home-services-truck-grid,
+.demo-move-mobile .home-services-moving-quotes { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: thin; scrollbar-color: #dbe3ec transparent; padding: 4px 2px 14px; }
+.demo-move-mobile .home-services-truck-option,
+.demo-move-mobile .home-services-moving-quote { flex: 0 0 88%; min-width: 0; padding: 16px; border-radius: 12px; scroll-snap-align: start; }
+.demo-move-mobile .home-services-truck-art { height: 88px; }
+.demo-move-mobile .home-services-truck-option > strong { font-size: 1rem; font-weight: 600; }
+.demo-move-mobile .home-services-truck-home,
+.demo-move-mobile .home-services-truck-description { font-size: .72rem; }
+.demo-move-mobile .home-services-truck-description { margin-top: 8px; }
+.demo-move-mobile .home-services-truck-crew { padding-top: 12px; font-size: .68rem; }
+.demo-move-mobile .home-services-moving-brand { gap: 12px; margin-bottom: 14px; }
+.demo-move-mobile .home-services-moving-monogram { width: 44px; height: 44px; border-radius: 10px; font-size: .9rem; }
+.demo-move-mobile .home-services-moving-quote h4 { font-size: 1.05rem; font-weight: 600; }
+.demo-move-mobile .home-services-moving-price { padding-top: 18px; }
+.demo-move-mobile .home-services-moving-price strong { font-size: 1.8rem; }
+.demo-move-mobile .home-services-moving-quote ul { margin-top: 16px; padding: 16px 0; gap: 10px; }
+.demo-move-mobile .home-services-footnote { margin-top: 16px !important; font-size: .65rem; }
+.move-mobile-dialog { border-radius: 12px; }
+.move-mobile-dialog .ui-modal-head,
+.move-mobile-dialog .ui-modal-body { padding: 16px; }
+.move-mobile-dialog .ui-icon-button,
+.move-mobile-dialog .home-services-route-summary,
+.move-mobile-dialog .home-services-moving-detail-price { border-radius: 8px; }
+
+@keyframes buyer-demo-menu-open {
+  from { opacity: 0; transform: translateX(12px) scale(0.98); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buyer-demo-bottom-menu { animation: none; }
+}

@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { Activity, FileText, ListChecks, MessageSquarePlus, Workflow } from 'lucide-react'
+import { Activity, FileText, MessageSquarePlus, Workflow } from 'lucide-react'
 import Button from '../../../components/ui/Button'
 
 const FALLBACK_META = {
@@ -73,8 +73,7 @@ export default function ActivityWorkspaceTab({ entries = [], groupedEntries = []
           <div className="grid gap-2">
             {[
               ['Documents', FileText, 'documents'],
-              ['Transfer', Workflow, 'transfer'],
-              ['Tasks', ListChecks, 'tasks'],
+              ['Conveyancing', Workflow, 'transfer'],
             ].map(([label, Icon, target]) => (
               <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onOpenWorkspace?.(target)}>{createElement(Icon, { size: 14 })}{label}</Button>
             ))}

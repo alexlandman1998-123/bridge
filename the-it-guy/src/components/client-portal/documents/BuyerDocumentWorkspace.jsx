@@ -176,6 +176,7 @@ export default function BuyerDocumentWorkspace({
             <div className="mt-5 grid gap-3">
               <UploadAction item={selectedDocument} uploadingDocumentKey={uploadingDocumentKey} onUpload={onUpload} label={selectedDocument.hasUploadedDocument || selectedDocument.linkedDocument ? 'Replace document' : 'Upload document'} className="min-h-11 rounded-[12px] !border-[#111827] !bg-[#111827] px-4 !text-white hover:!bg-black" />
               {canOpen ? <button type="button" disabled={openingDocumentPath === openKey} onClick={() => onOpenDocument(selectedDocument.linkedDocument)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] disabled:opacity-60"><FileText size={15} />{openingDocumentPath === openKey ? 'Opening...' : 'View document'}</button> : null}
+              {selectedDocument.waitingForTeam ? <p className="rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#52657b]">Your transaction team will provide this document. You do not need to upload it.</p> : null}
               {selectedDocument.isActionRequired && !selectedDocument.uploadSpec && !canOpen ? <p className="rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#52657b]">Your team is preparing the secure upload step for this request. It will appear here automatically.</p> : null}
             </div>
           </> : <p className="text-sm leading-6 text-[#52657b]">Select a document to see its details.</p>}

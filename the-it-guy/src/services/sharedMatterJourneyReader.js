@@ -1,8 +1,16 @@
 import { buildSharedMatterJourney, presentSharedMatterJourney } from '../core/transactions/sharedMatterJourneyContract.js'
 import { getAttorneyPhaseStatus } from '../core/transactions/attorneyTaskOutcomes.js'
+import { normaliseHistoricalMilestones } from '../core/transactions/historicalJourney.js'
 
 export function projectSharedMatterJourneyRead(source, { audience = 'buyer' } = {}) {
   if (source?.schemaVersion !== 1) throw new Error('Unsupported shared journey')
+  let historicalJourney = null
+  if (source.historicalJourney?.version === 1 && source.historicalJourney.revision === source.revision &&
+    Number.isSafeInteger(source.historicalJourney.recordRevision) && source.historicalJourney.recordRevision > 0) {
+    try { historicalJourney = { version: 1, revision: source.revision,
+      recordRevision: source.historicalJourney.recordRevision,
+      milestones: normaliseHistoricalMilestones(source.historicalJourney.milestones) } } catch { /* Ignore malformed history. */ }
+  }
   // Evidence readiness is deliberately not part of this recipient-safe endpoint.
   // Supply a neutral internal value, then strip it via the phase 1 allowlist.
   const journey = buildSharedMatterJourney({
@@ -21,6 +29,7 @@ export function projectSharedMatterJourneyRead(source, { audience = 'buyer' } = 
   // Only the explicit persisted active-plan manifest establishes applicability.
   // Old readers and legacy task lists remain visible but cannot prove milestones.
   return { ...presentSharedMatterJourney(journey, audience),
+    historicalJourney,
     ...(['buyer', 'seller'].includes(audience) && Array.isArray(source.clientTransferMilestones)
       ? { clientTransferMilestones: source.clientTransferMilestones.filter(item =>
         ['instruction', 'fica', 'rates', 'funding', 'signing', 'clearances', 'lodgement', 'registration'].includes(item?.key) &&

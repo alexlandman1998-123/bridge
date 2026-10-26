@@ -8,8 +8,6 @@ export function buildDevelopmentBuyerJourneyModel({ lead = {}, ...options } = {}
   const selectionStage = persistedStageKey === DEVELOPMENT_SELECTION_STAGE
   const model = buildBuyerJourneyAlignmentModel({
     ...options,
-    // Development buyers use onboarding before the signed OTP handoff.
-    inPersonOtpFlow: false,
     persistedStage: selectionStage ? 'Transaction Setup' : persistedStageKey,
   })
   const unitSelected = Boolean(context.preferredUnitId || lead.preferredUnitId || lead.preferred_unit_id)
@@ -24,19 +22,17 @@ export function buildDevelopmentBuyerJourneyModel({ lead = {}, ...options } = {}
     state: reserved ? 'completed' : 'upcoming',
   }
   const stages = model.stages.flatMap((stage) => {
-    const label = stage.key === 'viewing' ? 'Viewing / Presentation' : stage.key === 'transaction_setup' ? 'Buyer Onboarding' : stage.key === 'offer' ? 'OTP' : stage.label
-    return stage.key === 'transaction_setup' ? [selection, { ...stage, label }] : [{ ...stage, label }]
+    const label = stage.key === 'viewing' ? 'Viewing / Presentation' : stage.label
+    return stage.key === 'buyer_onboarding_sent' ? [selection, { ...stage, label }] : [{ ...stage, label }]
   })
-  const currentIndex = options.evidence?.transactionCreated
-    ? stages.findIndex((stage) => stage.key === 'transaction')
-    : stages.findIndex((stage) => !stage.done && stage.state !== 'completed')
+  const currentIndex = stages.findIndex((stage) => !stage.done && stage.state !== 'completed')
   const resolvedIndex = currentIndex < 0 ? stages.length - 1 : currentIndex
   const journeyStages = stages.map((stage, index) => ({ ...stage, current: index === resolvedIndex, state: index === resolvedIndex ? 'current' : stage.done ? 'completed' : 'upcoming' }))
   const currentStage = journeyStages[resolvedIndex]
   const nextAction = currentStage.key === DEVELOPMENT_SELECTION_STAGE
     ? { key: 'open_development', title: unitSelected ? 'Confirm unit reservation' : 'Select a development unit', description: 'Use the development workspace to choose the unit and confirm the actual reservation.' }
-    : currentStage.key === 'transaction_setup'
-      ? { ...model.nextAction, key: 'complete_transaction_setup', title: 'Complete buyer onboarding', description: 'Capture the purchaser, finance route and parties for this development purchase.' }
+    : currentStage.key === 'buyer_onboarding_submitted'
+      ? { ...model.nextAction, key: 'complete_buyer_onboarding', title: 'Complete buyer onboarding', description: 'Capture the purchaser, finance route and parties for this development purchase.' }
       : model.nextAction
   return { ...model, stages: journeyStages, currentStage, currentStageKey: currentStage.key, nextAction, stageOrder: journeyStages.map((stage) => stage.key) }
 }

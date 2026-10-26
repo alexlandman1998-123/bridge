@@ -11,6 +11,7 @@ import {
 } from "../core/developments/developmentVisualMap.js";
 import { normaliseDevelopmentVisualEvent } from "../core/developments/developmentVisualAnalytics.js";
 
+const DEMO_RESERVATION_KEY = "arch9:development-reservation-demo:v1";
 const text = (value) => String(value || "").trim();
 const list = (value) =>
   Array.isArray(value)
@@ -116,6 +117,22 @@ function PublicDevelopmentMetadata({ title, description, imageUrl }) {
 export default function PublicDevelopmentResponsiveRoute() {
   const { slug = "" } = useParams();
   const [state, setState] = useState({ loading: true, data: null, error: "" });
+  const [demoReservations, setDemoReservations] = useState(() => {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(DEMO_RESERVATION_KEY) || "{}");
+      if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+      return Object.fromEntries(Object.entries(saved).filter(([, ids]) => Array.isArray(ids) && ids.every((id) => typeof id === "string")));
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(DEMO_RESERVATION_KEY, JSON.stringify(demoReservations));
+    } catch {
+      // The demo still works in memory when session storage is unavailable.
+    }
+  }, [demoReservations]);
   const [freshness, setFreshness] = useState({
     status: "connecting",
     updatedAt: null,
@@ -407,7 +424,17 @@ export default function PublicDevelopmentResponsiveRoute() {
       text(mediaLibrary.sitePlanUrl) ||
       assetSitePlan,
   };
-  const inventory = Array.isArray(data.inventory) ? data.inventory : [];
+  const estatePresentation = slug === "madison-place-abcf1b8a";
+  const inventory = (Array.isArray(data.inventory) ? data.inventory : []).map((unit) =>
+    estatePresentation && demoReservations[slug]?.includes(String(unit.id)) && keyFor(unit.status) === "available"
+      ? { ...unit, status: "reserved", demoReserved: true }
+      : unit,
+  );
+  const simulateReservation = (unitId) => {
+    if (!estatePresentation || !inventory.some((unit) => String(unit.id) === String(unitId) && keyFor(unit.status) === "available")) return false;
+    setDemoReservations((current) => ({ ...current, [slug]: [...new Set([...(current[slug] || []), String(unitId)])] }));
+    return true;
+  };
   const available = inventory.filter(
     (unit) => keyFor(unit.status) === "available",
   );
@@ -462,6 +489,8 @@ export default function PublicDevelopmentResponsiveRoute() {
   const socialPreviewImage = hero || images[0] || "";
 
   const sharedProps = {
+    estatePresentation,
+    onSimulateReservation: estatePresentation ? simulateReservation : undefined,
     data,
     marketing,
     media,
@@ -482,12 +511,13 @@ export default function PublicDevelopmentResponsiveRoute() {
         description={seoDescription}
         imageUrl={socialPreviewImage}
       />
+      {inventory.some((unit) => unit.demoReserved) ? <aside aria-label="Reservation demo" className="flex flex-wrap items-center justify-center gap-3 bg-[#f1eee5] px-5 py-3 text-center text-xs text-[#173b32]">Demo reservations apply only to this browser session. Live availability is unchanged.<button type="button" className="min-h-9 rounded border border-[#173b32] px-3 font-semibold" onClick={() => setDemoReservations((current) => ({ ...current, [slug]: [] }))}>Reset demo</button></aside> : null}
       {mobileViewport ? (
-        <div className="public-development-mobile" style={brandStyle}>
+        <div className={`public-development-mobile${estatePresentation ? " public-development-estate" : ""}`} style={brandStyle}>
           <MobilePublicDevelopmentExperience {...sharedProps} />
         </div>
       ) : (
-        <div className="public-development-desktop" style={brandStyle}>
+        <div className={`public-development-desktop${estatePresentation ? " public-development-estate" : ""}`} style={brandStyle}>
           <PublicDevelopmentLandingPage {...sharedProps} />
         </div>
       )}

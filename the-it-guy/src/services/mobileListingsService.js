@@ -1,12 +1,14 @@
 import { getPropertyTypeLabel } from '../lib/propertyTaxonomy.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient.js'
 import { getAgentPrivateListingSummaries, getPrivateListingCoverImageUrls } from './privateListingService.js'
+import { buildRentalListingIndexRow } from './rentals/rentalListingIndexModel.js'
+import { resolveRentalWorkspaceScope, buildRentalListingQueryOptions, isRentalListingInWorkspace } from './rentals/rentalWorkspaceScope.js'
 import { resolveMobileRoleCategory } from '../config/mobileShell.js'
 import { getPrivateListingStatusLabel, mapLegacyListingStatusToCanonicalStatus } from '../lib/privateListingLifecycle.js'
 
 export function mobileListingGroup(row) {
   const rawStatus = String(row.listingStatus || row.status || '').toLowerCase()
-  if (['archived', 'deleted', 'expired'].includes(rawStatus)) return 'closed'
+  if (['archived', 'deleted', 'expired', 'let', 'rented', 'leased'].includes(rawStatus)) return 'closed'
   const status = mapLegacyListingStatusToCanonicalStatus(rawStatus)
   if (['active', 'under_offer'].includes(status)) return 'active'
   if (['sold', 'transaction_created', 'withdrawn', 'archived', 'deleted', 'expired'].includes(status)) return 'closed'
@@ -15,7 +17,9 @@ export function mobileListingGroup(row) {
 
 export function toMobileListing(row, coverUrl = '') {
   const status = mapLegacyListingStatusToCanonicalStatus(row.listingStatus || row.status)
-  return { ...row, propertyType: row.propertyType ? getPropertyTypeLabel(String(row.propertyType).toLowerCase()) : '', title: row.listingTitle || row.title || row.propertyAddress || 'Untitled listing', address: [row.addressLine1 || row.propertyAddress, row.addressLine2, row.suburb, row.city].filter(Boolean).join(', '), group: mobileListingGroup(row), statusLabel: status === 'seller_lead' ? 'Draft' : getPrivateListingStatusLabel(status), status, price: row.askingPrice || row.estimatedValue || 0, coverUrl }
+  const kind = String(row.listingCategory || row.listing_category || '').toLowerCase() === 'rental' ? 'rentals' : 'sales'
+  const rental = kind === 'rentals' ? buildRentalListingIndexRow(row) : null
+  return { ...row, kind, rentalPriceFrequency: rental?.rentalPriceFrequency || '', propertyType: row.propertyType ? getPropertyTypeLabel(String(row.propertyType).toLowerCase()) : '', title: row.listingTitle || row.title || row.propertyAddress || 'Untitled listing', address: [row.addressLine1 || row.propertyAddress, row.addressLine2, row.suburb, row.city].filter(Boolean).join(', '), group: mobileListingGroup(row), statusLabel: status === 'seller_lead' ? 'Draft' : getPrivateListingStatusLabel(status), status, price: rental ? rental.monthlyRent || 0 : row.askingPrice || row.estimatedValue || 0, coverUrl }
 }
 
 export async function getMobileListingsAsync({ workspace = {}, organisation = null } = {}) {
@@ -29,7 +33,9 @@ export async function getMobileListingsAsync({ workspace = {}, organisation = nu
   const membership = workspace.currentMembership || {}
   const assignmentAliases = [...new Set([membership.userId, membership.user_id, membership.organisationUserId, membership.organisation_user_id, membership.id, membership.raw?.id].filter((id) => id && id !== userId))]
   const rows = await getAgentPrivateListingSummaries(userId, { organisationId, includeAllOrganisationListings, ...(!includeAllOrganisationListings && assignmentAliases.length ? { assignedAgentIds: assignmentAliases } : {}), fetchAll: true, includePublicationDetails: true, requireAvailable: true })
-  const sales = rows.filter((row) => row.listingCategory !== 'rental' && mobileListingGroup(row) !== 'closed')
-  const covers = await getPrivateListingCoverImageUrls(sales.map((row) => row.id))
-  return sales.map((row) => toMobileListing(row, covers[row.id]))
+  const rentalScope = resolveRentalWorkspaceScope(workspace)
+  const rentalOptions = { ...buildRentalListingQueryOptions(rentalScope), organisationId, assignedAgentIds: assignmentAliases }
+  const listings = rows.filter(row => mobileListingGroup(row) !== 'closed' && (String(row.listingCategory || row.listing_category || '').toLowerCase() !== 'rental' || isRentalListingInWorkspace(row, userId, rentalOptions)))
+  const covers = await getPrivateListingCoverImageUrls(listings.map((row) => row.id))
+  return listings.map((row) => toMobileListing(row, covers[row.id]))
 }

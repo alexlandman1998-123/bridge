@@ -365,3 +365,15 @@ test('uncertain row removal retains its command and retries without a new intent
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
   expect(executeDocumentRequirementCommand.mock.calls[1][1]).toEqual(retained)
 })
+
+
+test('buyer controls show legacy client-owned requirements from the linked transaction room', async () => {
+  readDocumentRequirementContext.mockResolvedValue({ requirements: [{ ...row, requested_from_role: 'client', custom_label: 'Buyer ID' }], documents: [] })
+  render(<DocumentRequirementManager client={client} contextType="transaction" contextId="transaction" party="buyer" />)
+  fireEvent.click(screen.getByText('Manage document requirements'))
+  const select = await screen.findByLabelText('Existing requirement')
+  await waitFor(() => expect(select.textContent).toContain('Buyer ID'))
+  fireEvent.change(select, { target: { value: row.id } })
+  expect(screen.getByLabelText('Upload file')).toBeTruthy()
+})
+

@@ -1,5 +1,5 @@
 // Fictional policy/contact fixtures. These flows never submit or dispatch anything.
-export const DEMO_SUPPORT_CONTACT = { name: 'Alex Morgan', phone: '082 555 0106' }
+export const DEMO_SUPPORT_CONTACT = { name: 'Mia Khumalo', phone: '082 555 0194' }
 export const DEMO_SUPPORT_POLICIES = [
   { id: 'home', insurer: 'Santam', cover: 'Building & household contents', reference: 'DEMO-HOME-1042', logo: '/brand/insurance/santam.svg' },
   { id: 'contents', insurer: 'King Price', cover: 'Household contents', reference: 'DEMO-CONTENTS-2081', logo: '/brand/insurance/king-price.png' },

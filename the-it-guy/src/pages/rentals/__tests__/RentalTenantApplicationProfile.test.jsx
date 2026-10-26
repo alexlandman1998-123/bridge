@@ -23,7 +23,7 @@ it.each(['individual', 'joint_individuals', 'company', 'close_corporation', 'tru
   expect(screen.getByText('Confirmed rental home')).toBeTruthy()
   expect(screen.getByLabelText('Intended move date').value).toBe(data.household.intendedOccupationDate)
   fireEvent.click(screen.getByRole('button', { name: /Affordability/ }))
-  expect(screen.getByLabelText('Monthly income').value).toBe('25000')
+  expect(screen.getByLabelText(['company', 'close_corporation', 'trust'].includes(type) ? 'Monthly income' : 'Net monthly income (take-home)').value).toBe('25000')
   expect(screen.getByLabelText('Other monthly income').value).toBe('0')
   fireEvent.click(screen.getByRole('button', { name: /Rental history & references/ }))
   expect(screen.getByLabelText('Current address').value).toBe(data.rentalHistory.currentAddress)

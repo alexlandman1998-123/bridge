@@ -44,3 +44,14 @@ test('exposes unresolved submissions even without a saved portal reference and r
  const live=buildRentalPortalChannels(listing,{private_property:{submissionAttempt:unresolved,monitor:{externalStatus:'active'}}})[1]
  assert.equal(live.requiresReconciliation,true);assert.equal(live.live,true);assert.equal(live.statusLabel,'Outcome unconfirmed')
 })
+
+
+test('retains a saved Private Property feed identity without inventing an advert number', () => {
+ const monitor={externalStatus:'active',propertyId:'PRV-rental',branchGuid:'kingdom-branch',statusProbe:{privatePropertyRef:''}}
+ const channel=buildRentalPortalChannels(listing,{private_property:{monitor}})[1]
+ assert.equal(channel.hasAdvertIdentity,true);assert.equal(channel.reference,'');assert.equal(channel.live,true)
+ for (const incomplete of [{...monitor,propertyId:''},{...monitor,branchGuid:''},{}]) {
+  assert.equal(buildRentalPortalChannels({...listing,listingReference:'unsent-draft'},{private_property:{monitor:incomplete}})[1].hasAdvertIdentity,false)
+ }
+ assert.equal(buildRentalPortalChannels(listing)[0].hasAdvertIdentity,false)
+})

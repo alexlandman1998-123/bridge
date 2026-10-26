@@ -1,4 +1,5 @@
 import { evaluateHighLevelJourney } from './highLevelJourneyRules.js'
+import { applyHistoricalJourney } from './historicalJourney.js'
 
 // Recipient-safe projection. Commercial outcomes are supplied by the authorised
 // rollup; legal outcomes are recomputed from the same reader used by detail.
@@ -24,13 +25,16 @@ export function buildSharedHighLevelJourney(snapshot = {}) {
     legalJourney: valid ? legal : null,
     requiredLaneKeys: valid ? source.requiredLaneKeys : null })
   const commercial = snapshot.highLevelJourney?.ruleVersion === 1 ? snapshot.highLevelJourney.milestones : []
-  return { ...evaluated, milestones: evaluated.milestones.map((m, index) => {
+  const result = { ...evaluated, milestones: evaluated.milestones.map((m, index) => {
     const matches = commercial.filter(item => item.id === m.id)
     if (facts || index > 1 || matches.length !== 1) return m
     const status = matches[0].status
     return ['unknown', 'pending', 'in_progress', 'waiting', 'blocked', 'complete'].includes(status)
       ? { ...m, status, isComplete: status === 'complete' } : m
   }) }
+  return applyHistoricalJourney(result, source?.transactionId === snapshot.transactionId &&
+    Number.isSafeInteger(source?.revision) && source?.historicalJourney?.revision === source.revision
+    ? source.historicalJourney : null)
 }
 
 // One read-only adapter for both developer surfaces. Never fall back to the
@@ -67,7 +71,7 @@ export function buildDeveloperJourneySnapshot({ transaction, rollup, plan, finan
     const revisionsMatch = snapshot.lanes.every(l => (l.phases || []).every(p => (p.tasks || []).every(t => t.revision === snapshot.revision)))
     if (revisionsMatch && new Set(expected).size === expected.length && new Set(actual).size === actual.length && JSON.stringify(expected) === JSON.stringify(actual)) legalJourney = source
   }
-  const highLevelJourney = snapshot?.commercialFacts ? buildSharedHighLevelJourney({
+  const highLevelJourney = snapshot?.commercialFacts || snapshot?.historicalJourney ? buildSharedHighLevelJourney({
     transactionId: id, legalJourney: legalJourney.status === 'ready' ? legalJourney : { ...source,
       snapshot: { ...snapshot, requiredLaneKeys: null } },
   }) : evaluateHighLevelJourney({

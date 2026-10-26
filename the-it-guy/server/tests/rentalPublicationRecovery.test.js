@@ -198,3 +198,19 @@ it('keeps a response without a usable listing number uncertain and recovers by e
  expect((await reconcileRentalProperty24Publication({client,property24:portal,config})).status).toBe('RECONCILED')
  expect(portal.saveListing).toHaveBeenCalledTimes(1)
 })
+
+
+it('withdraws a rental by saved feed identity when the public advert number is missing',async()=>{
+ await db.exec(`create table private_property_listing_syncs(private_listing_id uuid,environment text,property_id text,branch_guid text,listing_type text,private_property_ref text);
+ insert into private_property_listing_syncs values('${listingId}','sandbox','property','branch','Rental',null)`)
+ const portal=pp()
+ portal.listingStatusUpdate=vi.fn(async()=>({status:200,data:'<ListingStatusUpdateResult>Successful</ListingStatusUpdateResult>'}))
+ portal.getListingStatus.mockResolvedValue({data:'<GetListingStatusResult>Inactive</GetListingStatusResult>'})
+ const buildReadiness=vi.fn(()=>{throw new Error('Withdrawal must not require publishing readiness')})
+ const result=await updatePrivatePropertyListingStatus({client,listingId,environment:'sandbox',propertyStatus:'Inactive',privateProperty:portal,buildReadiness})
+ expect(result.confirmed).toBe(true)
+ expect(result.externalStatus).toBe('inactive')
+ expect(portal.listingStatusUpdate).toHaveBeenCalledExactlyOnceWith({branchGuid:'branch',propertyId:'property',listingType:'Rental',propertyStatus:'Inactive'})
+ expect(buildReadiness).not.toHaveBeenCalled()
+ expect((await db.query("select state,identity from rental_publication_attempts")).rows[0]).toMatchObject({state:'accepted',identity:{propertyId:'property',branchGuid:'branch',status:'Inactive'}})
+})

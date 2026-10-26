@@ -8,11 +8,12 @@ export default function useAppointmentReconciliation({ enabled = true, scopeKey 
     if (!enabled) return undefined
     let pending
     const refresh = () => {
+      if (document.visibilityState === 'hidden' || navigator.onLine === false) return
       clearTimeout(pending)
       pending = setTimeout(reload, 100)
     }
     const visibleRefresh = () => { if (document.visibilityState !== 'hidden') refresh() }
-    const timer = setInterval(visibleRefresh, intervalMs)
+    const timer = intervalMs > 0 ? setInterval(visibleRefresh, intervalMs) : null
     window.addEventListener('itg:agency-crm-updated', refresh)
     window.addEventListener('focus', visibleRefresh)
     window.addEventListener('online', visibleRefresh)

@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { getNotificationLeadIdentity } from './notificationLeadPresentation.js'
 
 const SELECT = 'id, transaction_id, user_id, role_type, notification_type, title, message, is_read, read_at, dedupe_key, event_type, event_data, created_at, updated_at'
 const CACHE_TTL_MS = 15_000
@@ -130,6 +131,32 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
       .filter(isHeaderNotification)
       .map(normalize)
       .slice(0, displayLimit)
+    // Older alerts store only a lead ID. Resolve visible lead details with the
+    // signed-in client's RLS permissions; unavailable/deleted leads keep their
+    // original notification text. One bounded lookup serves the whole inbox.
+    const leadIds = [...new Set(notifications
+      .filter((item) => { const identity = getNotificationLeadIdentity(item); return !identity.name || !identity.source })
+      .map((item) => item.eventData.leadId || item.eventData.lead_id)
+      .filter((id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))]
+    let leadDetails = {}
+    if (leadIds.length) {
+      try {
+        const leads = await supabase.from('leads')
+          .select('lead_id, lead_source, contacts!leads_contact_id_fkey(first_name,last_name)')
+          .in('lead_id', leadIds)
+        if (!leads.error) leadDetails = Object.fromEntries((leads.data || []).map((lead) => [lead.lead_id, lead]))
+      } catch {
+        // Optional enrichment must not hide the underlying inbox.
+      }
+    }
+    const enrichedNotifications = notifications.map((item) => {
+      const lead = leadDetails[item.eventData.leadId || item.eventData.lead_id]
+      if (!lead) return item
+      const identity = getNotificationLeadIdentity(item)
+      const contact = Array.isArray(lead.contacts) ? lead.contacts[0] : lead.contacts
+      const name = [contact?.first_name, contact?.last_name].filter(Boolean).join(' ').trim()
+      return { ...item, eventData: { ...item.eventData, leadName: identity.name || name, leadSource: identity.source || lead.lead_source || '' } }
+    })
     const transactionIds = [...new Set(notifications.map((item) => item.transactionId).filter(Boolean))]
     let unitIds = {}
     if (transactionIds.length) {
@@ -137,7 +164,7 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
       if (!units.error) unitIds = Object.fromEntries((units.data || []).map((row) => [row.id, row.unit_id || null]))
     }
     return {
-      notifications: notifications.map((item) => ({ ...item, unitId: unitIds[item.transactionId] || item.eventData?.unitId || null })),
+      notifications: enrichedNotifications.map((item) => ({ ...item, unitId: unitIds[item.transactionId] || item.eventData?.unitId || null })),
       unreadCount: notifications.filter((item) => !item.isRead).length,
     }
   }

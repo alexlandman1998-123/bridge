@@ -128,7 +128,7 @@ export function parsePrivatePropertyListingEvents(xml = '') {
   ]
   return blocks.map((block) => {
     const eventDescription = extractPrivatePropertyXmlTag(block, 'EventDescription') || extractPrivatePropertyXmlTag(block, 'Description')
-    const referenceFromDescription = /^T\d+/i.test(eventDescription) ? eventDescription : ''
+    const referenceFromDescription = /^(?:T|RR)\d+$/i.test(eventDescription) ? eventDescription : ''
     return {
       listingFeedEventType: extractPrivatePropertyXmlTag(block, 'ListingFeedEventType'),
       eventType: extractPrivatePropertyXmlTag(block, 'EventType'),

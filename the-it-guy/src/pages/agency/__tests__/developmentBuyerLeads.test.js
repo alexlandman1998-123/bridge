@@ -87,7 +87,7 @@ describe('shared development buyer journey', () => {
   const ready = { leadCaptured: true, contacted: true, qualified: true, viewingCompleted: true }
   it('retains the buyer stages and adds unit selection before onboarding', () => {
     const model = buildDevelopmentBuyerJourneyModel({ lead: { ...buyer, developmentId }, evidence: ready })
-    expect(model.stages.map((stage) => stage.label)).toEqual(['Captured', 'Contacted', 'Qualified', 'Viewing / Presentation', 'Unit Selection & Reservation', 'Buyer Onboarding', 'OTP', 'Transaction'])
+    expect(model.stages.map((stage) => stage.label)).toEqual(['Captured', 'Contacted', 'Qualified', 'Viewing / Presentation', 'Unit Selection & Reservation', 'Buyer onboarding sent', 'Buyer onboarding submitted', 'Offer to purchase signed', 'Transaction created', 'Buyer documents uploaded'])
     expect(model.currentStageKey).toBe('development_selection')
     expect(model.nextAction.key).toBe('open_development')
   })
@@ -108,9 +108,9 @@ describe('shared development buyer journey', () => {
   it('continues through the existing onboarding and OTP actions once reservation is confirmed', () => {
     const lead = { ...buyer, developmentLeadContext: { preferredUnitId: 'unit', reservationState: 'reserved' } }
     const onboarding = buildDevelopmentBuyerJourneyModel({ lead, evidence: ready })
-    expect(onboarding.currentStageKey).toBe('transaction_setup')
-    expect(onboarding.nextAction.key).toBe('complete_transaction_setup')
-    const otp = buildDevelopmentBuyerJourneyModel({ lead, evidence: { ...ready, transactionSetupComplete: true } })
+    expect(onboarding.currentStageKey).toBe('buyer_onboarding_sent')
+    expect(onboarding.nextAction.key).toBe('send_buyer_onboarding')
+    const otp = buildDevelopmentBuyerJourneyModel({ lead, evidence: { ...ready, buyerOnboardingSubmitted: true } })
     expect(otp.currentStageKey).toBe('offer')
     expect(otp.nextAction.key).toBe('upload_signed_otp')
     const expired = buildDevelopmentBuyerJourneyModel({ lead: { ...lead, developmentLeadContext: { preferredUnitId: 'unit', reservationState: 'expired' } }, evidence: ready })
@@ -118,10 +118,10 @@ describe('shared development buyer journey', () => {
     expect(expired.currentStage.detail).toBe('Reservation expired')
   })
 
-  it('keeps an existing transaction accessible without inventing missing reservation history', () => {
+  it('keeps missing evidence visible even when a transaction already exists', () => {
     const model = buildDevelopmentBuyerJourneyModel({ lead: buyer, evidence: { transactionCreated: true } })
-    expect(model.currentStageKey).toBe('transaction')
-    expect(model.nextAction.key).toBe('open_transaction')
+    expect(model.currentStageKey).toBe('contacted')
+    expect(model.nextAction.key).toBe('mark_contacted')
     expect(model.stages.find((stage) => stage.key === 'development_selection').done).toBe(false)
   })
 })

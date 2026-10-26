@@ -40,11 +40,13 @@ export function resolveBuyerDocumentCategory(item = {}) {
 
 export function resolveBuyerDocumentStatus(item = {}) {
   const rawStatus = normalizeKey(item.status || item.requiredDocumentStatus || item.required_document_status)
+  if (item.waitingForTeam) return 'upcoming'
   if (!isDocumentRequirementRequired(item)) {
     if (REVIEW_STATUSES.has(rawStatus)) return 'review'
     if (item.satisfied || APPROVED_STATUSES.has(rawStatus)) return 'approved'
     return 'optional'
   }
+
   if (item.actionRequired || ACTION_STATUSES.has(rawStatus)) return 'action'
   if (item.reviewRequired || REVIEW_STATUSES.has(rawStatus)) return 'review'
   if (item.satisfied || APPROVED_STATUSES.has(rawStatus)) return 'approved'
@@ -58,7 +60,7 @@ function statusLabel(status, item = {}) {
   if (status === 'action') return normalizeKey(item.status) === 'rejected' ? 'Rejected' : 'Action required'
   if (status === 'review') return 'In review'
   if (status === 'approved') return 'Approved'
-  return 'Upcoming'
+  return item.waitingForTeam ? 'Awaiting your team' : 'Upcoming'
 }
 
 function dueDateSortValue(item = {}) {

@@ -145,7 +145,7 @@
     "test:portal-non-production-pilot-phase6": "node scripts/portal-non-production-pilot-phase6.test.mjs",
     "test:development-current-transactions": "node src/core/developments/__tests__/developmentTransactionVisibility.test.js",
     "dev": "vite",
-    "build": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" vite build && node scripts/knowledge-factory-login-probe.mjs",
+    "build": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=4096}\" vite build && node scripts/knowledge-factory-login-probe.mjs",
     "build:home-seekers-website": "NODE_OPTIONS=--max-old-space-size=8192 node scripts/build-home-seekers-website.mjs",
     "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/lib/__tests__/partnersRepository.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
     "test:transfer-tax-phase7": "node --test src/services/__tests__/transferTaxCrossRoleAssurance.test.js",
@@ -580,6 +580,7 @@
     "private-property:listing-status": "node scripts/private-property-listing-status.mjs",
     "private-property:active-listings": "node scripts/private-property-active-listings.mjs",
     "private-property:event-feed": "node scripts/private-property-event-feed.mjs",
+    "private-property:lead-check": "node scripts/private-property-pull-leads.mjs",
     "private-property:status-update": "node scripts/private-property-status-update.mjs",
     "private-property:showday-update": "node scripts/private-property-showday-update.mjs",
     "private-property:auction-update": "node scripts/private-property-auction-update.mjs",
@@ -633,6 +634,7 @@
     "test:property24-listing-agent-reassignment": "node scripts/property24-listing-agent-reassignment.test.mjs",
     "test:property24-agent-lifecycle-offboarding": "node scripts/property24-agent-lifecycle-offboarding.test.mjs",
     "test:private-property-phase1": "node scripts/private-property-phase1-smoke.test.mjs",
+    "test:private-property-lead-sync": "node --test scripts/private-property-lead-sync.test.mjs",
     "test:private-property-create-agent": "node scripts/private-property-create-agent.test.mjs",
     "test:private-property-preview-listing": "node scripts/private-property-listing-preview.test.mjs",
     "test:private-property-publish-listing": "node scripts/private-property-publish-listing.test.mjs",
@@ -1938,15 +1940,15 @@
     "lucide-react": "^0.577.0",
     "motion": "^12.38.0",
     "parse5": "7.3.0",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "6.4.299",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.1",
-    "sharp": "^0.35.4",
+    "react-router-dom": "7.18.4",
+    "sharp": "0.35.5",
     "tailwind-merge": "^3.5.0",
     "web-push": "3.6.7",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.14",
@@ -1963,9 +1965,16 @@
     "globals": "^16.5.0",
     "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
-    "postcss": "^8.5.8",
+    "postcss": "8.5.31",
     "tailwindcss": "^3.4.17",
-    "vite": "^7.3.1",
+    "vite": "7.3.7",
     "vitest": "^3.2.7"
+  },
+  "overrides": {
+    "ws": "8.22.0",
+    "source-map-js": "1.2.2",
+    "nanoid": "3.3.20",
+    "browserslist": "4.29.4",
+    "dompurify": "3.4.17"
   }
 }

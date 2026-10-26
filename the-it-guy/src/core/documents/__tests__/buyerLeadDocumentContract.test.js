@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   BUYER_LEAD_DOCUMENT_TYPES,
+  isBuyerLeadDocumentApplicable,
   resolveBuyerLeadDocumentTarget,
 } from '../buyerLeadDocumentContract.js'
 
@@ -78,4 +79,13 @@ test('dynamic roleplayer and legal documents remain exact-party or exact-transac
   assert.equal(otp.subjectScope, 'transaction')
   assert.equal(otp.mappingStatus, 'mapped')
   assert.equal(resolveBuyerLeadDocumentTarget('unknown_document').mappingStatus, 'review_required')
+})
+
+test('lead requirements follow captured finance without losing the upload choices', () => {
+ const financeKeys = finance => BUYER_LEAD_DOCUMENT_TYPES.filter(item => isBuyerLeadDocumentApplicable(item.key, finance)).map(item => item.key).filter(key => ['proof_of_funds','bank_statements','bond_pre_approval'].includes(key))
+ assert.deepEqual(financeKeys('cash'), ['proof_of_funds'])
+ assert.deepEqual(financeKeys('bond'), ['bank_statements','bond_pre_approval'])
+ assert.deepEqual(financeKeys('hybrid'), ['proof_of_funds','bank_statements','bond_pre_approval'])
+ assert.deepEqual(financeKeys(''), [])
+ assert.equal(BUYER_LEAD_DOCUMENT_TYPES.length,6, 'all upload choices remain available for historical evidence')
 })

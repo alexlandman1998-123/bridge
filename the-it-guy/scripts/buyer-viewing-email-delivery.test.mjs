@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
+const cardSource = await fs.readFile(new URL('../src/pages/agency/BuyerViewingRequestCard.jsx', import.meta.url), 'utf8')
 const pageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 const sendEmailIndexSource = await fs.readFile(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
 const sendEmailTypesSource = await fs.readFile(new URL('../../supabase/functions/send-email/types.ts', import.meta.url), 'utf8')
@@ -37,8 +38,8 @@ assert.match(pageSource, /Delivery suppressed/, 'planner should label suppressed
 assert.match(pageSource, /Email failed/, 'planner should label failed delivery')
 assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simple Back button for property selection')
 assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
-assert.match(pageSource, /data-testid="buyer-viewing-request-status"[\s\S]*data-testid="simplified-viewing-planner"/, 'overview should show the viewing request status above Viewing Planner')
-assert.match(pageSource, /viewingRequestSummary\.proposedTimes\.map/, 'overview should surface the buyer-submitted preferred viewing options')
+assert.match(pageSource, /<BuyerViewingRequestCard[\s\S]*data-testid="simplified-viewing-planner"/, 'overview should show the viewing request status above Viewing Planner')
+assert.match(cardSource, /summary\.proposedTimes\.map/, 'overview should surface the buyer-submitted preferred viewing options')
 assert.match(pageSource, /const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 300000/, 'planner should keep suggested listings within R300k of the enquiry price')
 assert.match(pageSource, /raw\.match\(\/\\d\[\\d\\s\.,\]\*\//, 'price matching should parse formatted currency values with thousands separators')
 assert.match(pageSource, /priceAmount >= priceFloor && priceAmount <= priceCeiling/, 'planner suggestions should filter active listings to the enquiry price band')

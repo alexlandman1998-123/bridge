@@ -38,7 +38,7 @@ for (const laneKey of Object.keys(ATTORNEY_WORKFLOW_LANES)) {
 }
 // Transfer now uses consolidated, outcome-led tasks. Keep the count explicit so
 // workflow-plan changes must update this shared-progress contract deliberately.
-assert.equal(definitionCount, 57)
+assert.equal(definitionCount, 89)
 
 let operationalDefinitionCount = 0
 for (const [laneKey, definitions] of Object.entries(OPERATIONAL_STEP_DEFINITIONS)) {

@@ -7,28 +7,12 @@ const files = {
   wizard: await readFile(new URL('../src/components/NewTransactionWizard.jsx', import.meta.url), 'utf8'),
 }
 
-assert(files.modal.includes('Commercial Inputs') && files.modal.includes('Optional'), 'Commercial Inputs should be clearly marked optional.')
-
-for (const removedSetupToken of [
-  'reservationDepositTreatment',
-  'defaultAlterationChargeTreatment',
-  'Deposit Treatment',
-  'Alteration Cost Treatment',
-]) {
-  assert(!files.modal.includes(removedSetupToken), `AddDevelopmentModal should not include ${removedSetupToken}.`)
+// Optional commercial inputs now live with the sales team and reservation setup.
+for (const token of ['Reservation deposit', 'Sales team', 'Optional', 'Developer selling directly', 'reservationDepositEnabled', 'reservationDepositAmount', 'pointer-events-none absolute left-4', 'DevelopmentPartnerSetupCard']) {
+  assert(files.modal.includes(token), `Development sales setup should include ${token}.`)
 }
-
-for (const requiredModalToken of [
-  'Deposit treatment and alteration cost treatment are set on each transaction',
-  'pointer-events-none absolute left-4',
-  'Default Agent',
-  'Developer selling directly',
-  'Multiple agents allowed',
-  'defaultAgentSource',
-  'multipleAgentsAllowed',
-  'developerSellingDirectly',
-]) {
-  assert(files.modal.includes(requiredModalToken), `AddDevelopmentModal should include ${requiredModalToken}.`)
+for (const token of ['Deposit Treatment', 'Alteration Cost Treatment']) {
+  assert(!files.modal.includes(token), `Development setup must leave ${token} to the transaction.`)
 }
 
 for (const requiredApiToken of [

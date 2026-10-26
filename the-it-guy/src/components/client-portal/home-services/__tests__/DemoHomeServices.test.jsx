@@ -60,23 +60,23 @@ it('closes maintenance details with Escape and restores the provider card focus'
 })
 
 function enterRoute() {
-  fireEvent.change(screen.getByRole('textbox', { name: 'From address' }), { target: { value: '18 Oak Road' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'From address' }), { target: { value: '18 Oak Road' } })
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
 }
 
 it('prefills the destination, validates both addresses and focuses the missing field', () => {
   render(<DemoMoveWorkspace propertyAddress="2 Pine Avenue" />)
-  expect(screen.getByRole('textbox', { name: 'To address' }).value).toBe('2 Pine Avenue')
+  expect(screen.getByRole('combobox', { name: 'To address' }).value).toBe('2 Pine Avenue')
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
   expect(screen.getByRole('alert').textContent).toBe('Add both addresses to plan your move.')
-  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'From address' }))
-  fireEvent.change(screen.getByRole('textbox', { name: 'From address' }), { target: { value: '  2 pine avenue  ' } })
+  expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'From address' }))
+  fireEvent.change(screen.getByRole('combobox', { name: 'From address' }), { target: { value: '  2 pine avenue  ' } })
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
   expect(screen.getByRole('alert').textContent).toBe('Choose a different destination for your move.')
   expect(screen.queryByRole('button', { name: 'See quotes' })).toBeNull()
-  fireEvent.change(screen.getByRole('textbox', { name: 'To address' }), { target: { value: '' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'To address' }), { target: { value: '' } })
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
-  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'To address' }))
+  expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'To address' }))
 })
 
 it('compares three quotes for each truck size and preserves the route when going back', () => {
@@ -101,17 +101,17 @@ it('compares three quotes for each truck size and preserves the route when going
     expect(screen.getByRole('radio', { name: new RegExp(`${label} truck`) }).checked).toBe(true)
   }
   fireEvent.click(screen.getByRole('button', { name: 'Back', exact: true }))
-  expect(screen.getByRole('textbox', { name: 'From address' }).value).toBe('18 Oak Road')
-  expect(screen.getByRole('textbox', { name: 'To address' }).value).toBe('2 Pine Avenue')
+  expect(screen.getByRole('combobox', { name: 'From address' }).value).toBe('18 Oak Road')
+  expect(screen.getByRole('combobox', { name: 'To address' }).value).toBe('2 Pine Avenue')
   expect(fetch).not.toHaveBeenCalled()
 })
 
 it('prefills the current home, allows corrections and retains them in the moving quote', () => {
   render(<DemoMoveWorkspace currentAddress="14 Ocean View Drive" propertyAddress="2 Pine Avenue" />)
-  expect(screen.getByRole('textbox', { name: 'From address' }).value).toBe('14 Ocean View Drive')
-  expect(screen.getByRole('textbox', { name: 'To address' }).value).toBe('2 Pine Avenue')
+  expect(screen.getByRole('combobox', { name: 'From address' }).value).toBe('14 Ocean View Drive')
+  expect(screen.getByRole('combobox', { name: 'To address' }).value).toBe('2 Pine Avenue')
   expect(screen.getByText(/Your current and new home are already filled in/)).toBeTruthy()
-  fireEvent.change(screen.getByRole('textbox', { name: 'From address' }), { target: { value: '16 Ocean View Drive' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'From address' }), { target: { value: '16 Ocean View Drive' } })
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
   fireEvent.click(screen.getByRole('button', { name: 'See quotes' }))
   fireEvent.click(screen.getByRole('button', { name: 'View Easy Street Movers quote' }))
@@ -121,15 +121,15 @@ it('prefills the current home, allows corrections and retains them in the moving
 
 it('swaps the route and updates the quote summary after an edit', () => {
   render(<DemoMoveWorkspace propertyAddress="2 Pine Avenue" />)
-  fireEvent.change(screen.getByRole('textbox', { name: 'From address' }), { target: { value: '18 Oak Road' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'From address' }), { target: { value: '18 Oak Road' } })
   fireEvent.click(screen.getByRole('button', { name: 'Swap from and to addresses' }))
-  expect(screen.getByRole('textbox', { name: 'From address' }).value).toBe('2 Pine Avenue')
-  expect(screen.getByRole('textbox', { name: 'To address' }).value).toBe('18 Oak Road')
+  expect(screen.getByRole('combobox', { name: 'From address' }).value).toBe('2 Pine Avenue')
+  expect(screen.getByRole('combobox', { name: 'To address' }).value).toBe('18 Oak Road')
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
   fireEvent.click(screen.getByRole('button', { name: 'See quotes' }))
   fireEvent.click(screen.getByRole('button', { name: 'Edit route' }))
   expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Where are we taking you?' }))
-  fireEvent.change(screen.getByRole('textbox', { name: 'To address' }), { target: { value: '20 Maple Lane' } })
+  fireEvent.change(screen.getByRole('combobox', { name: 'To address' }), { target: { value: '20 Maple Lane' } })
   fireEvent.click(screen.getByRole('button', { name: 'Next: truck size' }))
   fireEvent.click(screen.getByRole('button', { name: 'See quotes' }))
   expect(screen.getByText('20 Maple Lane')).toBeTruthy()

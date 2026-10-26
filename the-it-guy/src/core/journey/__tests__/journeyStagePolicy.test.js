@@ -36,9 +36,10 @@ test('allows buyer catch-up through low-risk stages and stops before signed OTP 
     entityType: JOURNEY_ENTITY_TYPES.buyerLead,
     targetStageKey: 'offer',
   })
-  assert.equal(plan.canJump, true)
-  assert.deepEqual(plan.catchUpStageKeys, ['contacted', 'qualification', 'viewing'])
-  assert.equal(plan.targetPolicy.type, JOURNEY_STAGE_POLICY_TYPES.evidenceRequired)
+  assert.equal(plan.canJump, false)
+  assert.deepEqual(plan.catchUpStageKeys, ['contacted', 'qualified', 'viewing'])
+  assert.equal(plan.blockedStageKey, 'buyer_onboarding_sent')
+  assert.equal(plan.blockedPolicy.type, JOURNEY_STAGE_POLICY_TYPES.evidenceRequired)
 })
 
 test('rejects direct catch-up completion of signed OTP and transaction record stages', () => {

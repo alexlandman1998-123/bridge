@@ -14,16 +14,18 @@ export function BuyerMobileHeader({
   title = '',
   actions = null,
   menu = null,
+  appearance = 'brand',
 }) {
+  const isLight = appearance === 'light'
   return (
-    <header className="relative mb-4 flex min-h-[52px] items-center justify-between gap-3 rounded-[18px] px-3 text-white shadow-[0_12px_28px_rgba(15,23,42,0.12)]" style={{ background: buyerMobileGradient(brand) }} data-buyer-mobile-chrome="header">
+    <header className={`relative mb-4 flex ${isLight ? 'min-h-[60px]' : 'min-h-[52px]'} items-center justify-between gap-3 rounded-[18px] px-3 ${isLight ? 'border border-[#e2e8ef] text-[#142132] shadow-[0_4px_16px_rgba(15,23,42,0.03)]' : 'text-white shadow-[0_12px_28px_rgba(15,23,42,0.12)]'}`} style={{ background: isLight ? '#ffffff' : buyerMobileGradient(brand) }} data-buyer-mobile-chrome="header">
       <Link to={homePath} className="inline-flex min-h-11 min-w-0 items-center" aria-label={`${brandName} home`}>
         {title ? (
-          <h1 className="truncate text-[1.2rem] font-semibold tracking-[-0.04em] text-white">{title}</h1>
+          <h1 className={`truncate text-[1.2rem] font-semibold tracking-[-0.04em] ${isLight ? 'text-[#142132]' : 'text-white'}`}>{title}</h1>
         ) : logoUrl ? (
           <img src={logoUrl} alt={`${brandName} logo`} className="max-h-9 max-w-[168px] object-contain object-left" />
         ) : (
-          <span className="truncate text-base font-semibold tracking-[-0.03em] text-white">{brandName}</span>
+          <span className={`truncate text-base font-semibold tracking-[-0.03em] ${isLight ? 'text-[#142132]' : 'text-white'}`}>{brandName}</span>
         )}
       </Link>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
@@ -109,24 +111,34 @@ export function BuyerMobileActionSheet({ isOpen = false, onClose, eyebrow = '', 
   )
 }
 
-export function BuyerMobileBottomNavigation({ items = [], activeKey = '', getPath, activeStyle }) {
+export function BuyerMobileBottomNavigation({ items = [], activeKey = '', getPath, activeStyle, menu = null, onNavigate }) {
   return (
     <nav className="fixed inset-x-3 bottom-2 z-40 mx-auto max-w-[430px] rounded-[22px] border border-[#dfe7ee] bg-white/95 px-1.5 py-0.5 shadow-[0_18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden" aria-label="Buyer portal mobile navigation" data-buyer-mobile-chrome="navigation">
+      {menu}
       <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` }}>
         {items.map((item) => {
           const Icon = item.icon
+          const Item = item.onClick ? 'button' : Link
           const active = item.key === activeKey || Boolean(item.isActive?.(activeKey))
           return (
-            <Link
+            <Item
               key={item.key}
-              to={typeof getPath === 'function' ? getPath(item) : item.to || '#'}
-              aria-current={active ? 'page' : undefined}
+              {...(item.onClick ? {
+                type: 'button',
+                onClick: item.onClick,
+                'aria-expanded': item.expanded,
+                'aria-controls': item.controls,
+              } : {
+                to: typeof getPath === 'function' ? getPath(item) : item.to || '#',
+                'aria-current': active ? 'page' : undefined,
+                onClick: onNavigate,
+              })}
               className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-[16px] text-[0.64rem] font-semibold transition motion-safe:duration-200 motion-reduce:transition-none ${active ? 'text-[#063f34]' : 'text-[#667085] hover:bg-[#f7f8fa] hover:text-[#344054]'}`}
               style={active ? activeStyle : undefined}
             >
               {Icon ? <Icon size={18} strokeWidth={active ? 2.4 : 2} /> : null}
               <span className="truncate">{item.mobileLabel || item.label}</span>
-            </Link>
+            </Item>
           )
         })}
       </div>

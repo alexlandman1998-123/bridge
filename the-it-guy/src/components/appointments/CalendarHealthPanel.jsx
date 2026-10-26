@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { calendarSupportDeadline, readCalendarHealth } from '../../services/calendarSupportService'
-import useAppointmentReconciliation from '../../hooks/useAppointmentReconciliation'
+import { useState } from 'react'
+import { readCalendarHealth } from '../../services/calendarSupportService'
+import useCalendarRead from '../../hooks/useCalendarRead'
 import AppointmentSupportPanel from './AppointmentSupportPanel'
 import Modal from '../ui/Modal'
 
@@ -17,15 +17,11 @@ export default function CalendarHealthPanel(props) {
   return <HealthBody key={`${props.organisationId}:${props.viewerKey}`} {...props} />
 }
 function HealthBody({ organisationId, viewerKey }) {
-  const [snapshot, setSnapshot] = useState(null), [error, setError] = useState(''), [selected, setSelected] = useState(null)
-  const { revision: refresh, reload } = useAppointmentReconciliation({ scopeKey: `${organisationId}:${viewerKey}`, intervalMs: 60000 })
-  useEffect(() => {
-    let current = true
-    calendarSupportDeadline(readCalendarHealth(organisationId)).then(data => {
-      if (current) { setSnapshot(data); setError('') }
-    }).catch(failure => { if (current) setError(failure.message) })
-    return () => { current = false }
-  }, [organisationId, refresh])
+  const [selected, setSelected] = useState(null)
+  const { data: snapshot, error, reload } = useCalendarRead({
+    scopeKey: `${organisationId}:${viewerKey}`, intervalMs: 60000,
+    read: signal => readCalendarHealth(organisationId, { signal }),
+  })
   const monitor = snapshot?.monitor
   return <details className="rounded border p-3 text-sm" aria-label="Calendar health">
     <summary>Calendar health · {snapshot ? `${snapshot.issues.length}${snapshot.truncated ? '+' : ''} issue(s)` : 'checking'}</summary>

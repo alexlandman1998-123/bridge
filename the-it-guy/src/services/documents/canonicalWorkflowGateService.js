@@ -101,6 +101,7 @@ export const DEFAULT_STAGE_GATE_MAPPING = Object.freeze({
   mandate_signed: 'mandate_ready',
   otp: 'otp_ready',
   offer: 'otp_ready',
+  offer_to_purchase_signed: 'otp_ready',
   offer_draft: 'otp_ready',
   offer_submitted: 'otp_ready',
   offer_accepted: 'otp_ready',

@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Building2,
   Check,
-  CheckCircle2,
   Circle,
   Eye,
   EyeOff,
@@ -17,6 +16,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Arch9AccessLayout from '../components/auth/Arch9AccessLayout'
+import SignupEmailVerification from '../components/auth/SignupEmailVerification'
+import { clearPendingSignupVerification, readPendingSignupVerification, rememberSignupVerification } from '../lib/signupVerification'
 import { homeSeekersLoginTarget } from './recruitment/homeSeekersLoginTarget'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
@@ -360,10 +361,14 @@ const ROLE_ICONS = {
   [SIGNUP_BUSINESS_TYPES.client]: UserRound,
 }
 const POSITION_ICON = Landmark
+const AGENCY_POSITION_COPY = {
+  agency_owner: { label: 'Principal', description: 'Create and manage your agency.', icon: Building2 },
+  agency_operational: { label: 'Agent', description: 'Join your agency workspace.', icon: UserRound },
+}
 const ROLE_DISPLAY_COPY = {
   [SIGNUP_BUSINESS_TYPES.agency]: {
-    label: 'Residential Estate Agency',
-    description: 'Residential sales, rentals and transactions',
+    label: 'Agency',
+    description: 'Sales and rentals',
   },
   [SIGNUP_BUSINESS_TYPES.commercialBrokerage]: {
     label: 'Commercial Real Estate Brokerage',
@@ -374,16 +379,16 @@ const ROLE_DISPLAY_COPY = {
     description: 'One agency across both property lines',
   },
   [SIGNUP_BUSINESS_TYPES.attorney]: {
-    label: 'Attorney Firm',
-    description: 'Handle transfers, bonds and documents',
+    label: 'Attorney',
+    description: 'Transfers and bonds',
   },
   [SIGNUP_BUSINESS_TYPES.developer]: {
     label: 'Developer',
-    description: 'Develop projects and manage sales',
+    description: 'Projects and sales',
   },
   [SIGNUP_BUSINESS_TYPES.bondOriginator]: {
     label: 'Bond Originator',
-    description: 'Source bonds and manage applications',
+    description: 'Bond applications',
   },
   [SIGNUP_BUSINESS_TYPES.client]: {
     label: 'Buyer / Seller',
@@ -392,18 +397,9 @@ const ROLE_DISPLAY_COPY = {
 }
 const ROLE_DISPLAY_ORDER = [
   SIGNUP_BUSINESS_TYPES.agency,
-  SIGNUP_BUSINESS_TYPES.commercialBrokerage,
-  SIGNUP_BUSINESS_TYPES.mixedAgency,
   SIGNUP_BUSINESS_TYPES.attorney,
   SIGNUP_BUSINESS_TYPES.developer,
   SIGNUP_BUSINESS_TYPES.bondOriginator,
-  SIGNUP_BUSINESS_TYPES.client,
-]
-const WORKSPACE_CHECKLIST = [
-  'Configuring role permissions',
-  'Preparing transaction workflows',
-  'Creating your dashboard',
-  'Securing workspace',
 ]
 
 function getOrderedBusinessTypeOptions() {
@@ -414,10 +410,11 @@ function getOrderedBusinessTypeOptions() {
 
 function getBusinessSetupCopy(businessTypeLabel = 'workspace') {
   const normalized = businessTypeLabel || 'workspace'
+  if (normalized === 'Agency') return 'Tell us about your agency'
   if (normalized === 'Residential Estate Agency') return 'Tell us about your residential agency'
   if (normalized === 'Commercial Real Estate Brokerage') return 'Tell us about your commercial brokerage'
   if (normalized === 'Mixed Residential + Commercial Agency') return 'Tell us about your mixed agency'
-  if (normalized === 'Attorney Firm') return 'Tell us about your firm'
+  if (normalized === 'Attorney' || normalized === 'Attorney Firm') return 'Tell us about your firm'
   if (normalized === 'Developer') return 'Tell us about your development company'
   if (normalized === 'Bond Originator') return 'Tell us about your bond business'
   if (normalized === 'Buyer / Seller') return 'Tell us about your transaction'
@@ -465,13 +462,17 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
     () => resolveInviteSignupPosition({ moduleContext: inviteModuleContext, role: inviteRole }),
     [inviteModuleContext, inviteRole],
   )
-  const [mode, setMode] = useState(() => (!homeSeekers && new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'login'))
+  const [mode, setMode] = useState(() => {
+    if (homeSeekers) return 'login'
+    if (readPendingSignupVerification()) return 'verify_email'
+    return new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'login'
+  })
   const [signupStep, setSignupStep] = useState(0)
   const [businessType, setBusinessType] = useState('')
   const [position, setPosition] = useState('')
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState(() => initialInvitedEmail)
+  const [email, setEmail] = useState(() => initialInvitedEmail || (!homeSeekers && readPendingSignupVerification()?.email) || '')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -479,7 +480,7 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
   const [resendLoading, setResendLoading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => initialInvitedEmail)
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => initialInvitedEmail || (!homeSeekers && readPendingSignupVerification()?.email) || '')
   const authFormRef = useRef(null)
 
   const redirectTo = useMemo(() => homeSeekers ? '/dashboard' : getRedirectPath(location), [homeSeekers, location])
@@ -502,7 +503,9 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
       overrides: partnerHandoffToken ? { invite_token: partnerHandoffToken } : {},
     })
   }, [inviteDrivenSignup, inviteSignupPosition, inviteToken, partnerHandoffToken, position])
-  const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
+  const positionOptions = (POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || [])
+    .filter((option) => businessType !== SIGNUP_BUSINESS_TYPES.agency || Object.hasOwn(AGENCY_POSITION_COPY, option.value))
+    .map((option) => businessType === SIGNUP_BUSINESS_TYPES.agency ? { ...option, ...AGENCY_POSITION_COPY[option.value] } : option)
   const selectedBusinessTypeLabel = ROLE_DISPLAY_COPY[businessType]?.label || BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
   const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
 
@@ -703,6 +706,10 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
         )
 
         if (signInError) {
+          if (!homeSeekers && signInError.code === 'email_not_confirmed') {
+            setPendingVerificationEmail(email.trim())
+            setMessage('Verify your email before signing in. Request a new code below.')
+          }
           throw signInError
         }
 
@@ -731,11 +738,14 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
           password,
           options: {
             emailRedirectTo,
-            data: createSignupUserMetadata({
-              intent: intentWithEmail,
-              fullName,
-              phone,
-            }),
+            data: {
+              ...createSignupUserMetadata({
+                intent: intentWithEmail,
+                fullName,
+                phone,
+              }),
+              ...(!homeSeekers ? { email_verification_method: 'code' } : {}),
+            },
           },
         }),
         { label: 'Account creation request' },
@@ -795,10 +805,15 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
       if (receivedObfuscatedUser) {
         setMessage('If this email is already registered, use Login. If it is unconfirmed, check your inbox or resend verification below.')
       } else {
-        setMessage('Account created. Check your email to confirm before signing in.')
+        setMessage(homeSeekers ? 'Account created. Check your email to confirm before signing in.' : '')
       }
       setPendingVerificationEmail(email.trim())
-      setMode('login')
+      if (!homeSeekers && !receivedObfuscatedUser) {
+        rememberSignupVerification(email, resolveSignupContinuationPath({ redirectTo, currentIntent: intentWithEmail, inviteDrivenSignup, inviteVerificationRedirectTo }))
+        setMode('verify_email')
+      } else {
+        setMode('login')
+      }
       setSignupStep(0)
       setPassword('')
       setConfirmPassword('')
@@ -843,6 +858,10 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
       }
       setPendingVerificationEmail(targetEmail)
       setMessage('Verification email resent. Check inbox/spam and allow a few minutes for delivery.')
+      if (!homeSeekers) {
+        rememberSignupVerification(targetEmail, resolvePendingInvitePath(location) || resolveSignupContinuationPath({ redirectTo, currentIntent }))
+        setMode('verify_email')
+      }
     } catch (resendError) {
       if (isAuthRateLimitError(resendError)) {
         setError('Supabase Auth is still rejecting verification emails because the project email limit is reached. Raise the Supabase Auth email limit, then retry.')
@@ -858,16 +877,43 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
     setStoredDevAuthRole(role)
     onDevBypass?.(role)
     clearPostLoginRedirect()
-    navigate('/dashboard', { replace: true })
+    navigate(redirectTo, { replace: true })
   }
 
   const securityLogoutMessage = new URLSearchParams(location.search).get('security') === '1'
   const orderedBusinessTypeOptions = getOrderedBusinessTypeOptions()
   const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading && !inviteDrivenSignup
   const showingAuthFields = mode === 'login' || mode === 'forgot_password' || signupStep === 2
+  const submitButton = <button type="submit" form="auth-form" className="auth-submit" disabled={loading}>
+    {loading ? 'Processing...' : mode === 'forgot_password' ? 'Send reset link' : mode === 'login' ? homeSeekers ? 'Log in' : 'Sign in' : 'Create Account'}
+    {!loading ? <ArrowRight size={15} /> : null}
+  </button>
+
+  if (mode === 'verify_email') {
+    return (
+      <Arch9AccessLayout mode="verify_email" audience="">
+        <SignupEmailVerification
+          email={pendingVerificationEmail || email}
+          client={supabase}
+          withTimeout={withAuthRequestTimeout}
+          redirectTo={resolveEmailVerificationRedirectTo(resolvePendingInvitePath(location) || resolveSignupContinuationPath({ redirectTo, currentIntent }))}
+          onVerified={(savedNextPath) => {
+            const target = resolvePendingInvitePath(location) || savedNextPath || resolveSignupContinuationPath({ redirectTo, currentIntent })
+            navigate(`/auth/callback?next=${encodeURIComponent(target)}`, { replace: true })
+          }}
+          onBack={() => {
+            clearPendingSignupVerification()
+            setMode('login')
+            setError('')
+            setMessage('')
+          }}
+        />
+      </Arch9AccessLayout>
+    )
+  }
 
   return (
-    <Arch9AccessLayout mode={mode} audience={homeSeekers ? 'Home Seekers' : mode === 'login' ? '' : undefined} homeSeekers={homeSeekers}>
+    <Arch9AccessLayout mode={mode} audience={homeSeekers ? 'Home Seekers' : ''} homeSeekers={homeSeekers}>
         <section className={`auth-card ${mode === 'signup' ? 'auth-card-signup' : 'auth-card-login'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
           {mode === 'login' && securityLogoutMessage ? (
             <div className="auth-security-notice" role="status">
@@ -907,12 +953,7 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                 {!inviteDrivenSignup && signupStep === 0 ? (
                   <section className="signup-choice-stack signup-step-panel">
                     <div className="auth-card-head compact">
-                      <span className="auth-card-eyebrow">STEP 1 OF 3</span>
                       <h2>Create your workspace.</h2>
-                      <p>Let&apos;s build your workspace.</p>
-                    </div>
-                    <div className="signup-section-heading">
-                      <strong>What best describes you?</strong>
                     </div>
                     <div className="signup-role-grid-wrap">
                       <div className="signup-role-grid">
@@ -967,13 +1008,12 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                 {!inviteDrivenSignup && signupStep === 1 ? (
                   <section className="signup-choice-stack signup-step-panel">
                     <div className="auth-card-head compact">
-                      <span className="auth-card-eyebrow">STEP 2 OF 3</span>
                       <h2>{getBusinessSetupCopy(selectedBusinessTypeLabel)}</h2>
-                      <p>Choose the role or access type that best matches how you will use Arch9.</p>
                     </div>
                     <div className="signup-position-grid">
                     {positionOptions.map((option) => {
                       const active = position === option.value
+                      const PositionIcon = option.icon || POSITION_ICON
                       const selectPosition = () => {
                         setPosition(option.value)
                         setError('')
@@ -988,7 +1028,7 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                           onKeyDown={(event) => handleKeyboardSelect(event, selectPosition)}
                         >
                           <span className="signup-position-icon">
-                            <POSITION_ICON size={18} />
+                            <PositionIcon size={20} />
                           </span>
                           <span>
                             <strong>{option.label}</strong>
@@ -1039,24 +1079,13 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                 ) : null}
 
                 {showingWorkspaceBuild ? (
-                  <section className="auth-workspace-build" aria-live="polite">
-                    <div className="auth-workspace-orbit" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
+                  <section className="auth-account-creation" role="status" aria-live="polite">
+                    <div className="auth-card-head compact">
+                      <h2>Creating your account…</h2>
+                      <p>This will only take a moment.</p>
                     </div>
-                    <div>
-                      <span className="auth-card-eyebrow">Workspace Creation</span>
-                      <h3>Building your workspace</h3>
-                      <p>Preparing your Arch9 account using the selected role contract.</p>
-                    </div>
-                    <div className="auth-build-checklist">
-                      {WORKSPACE_CHECKLIST.map((item, index) => (
-                        <span key={item} style={{ '--build-index': index }}>
-                          <CheckCircle2 size={16} />
-                          {item}
-                        </span>
-                      ))}
+                    <div className="auth-creation-track" role="progressbar" aria-label="Creating your account">
+                      <span />
                     </div>
                   </section>
                 ) : null}
@@ -1064,15 +1093,8 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                 {mode === 'signup' && !showingWorkspaceBuild ? (
                   <>
                     <div className="auth-card-head compact">
-                      <span className="auth-card-eyebrow">STEP 3 OF 3</span>
                       <h2>{inviteDrivenSignup ? 'Create your account' : 'Create your secure account'}</h2>
-                      <p>
-                        {inviteDrivenSignup
-                          ? 'Complete these details and Arch9 will take you straight into the invited workspace.'
-                          : selectedBusinessTypeLabel
-                            ? `${selectedBusinessTypeLabel} workspace setup will continue after verification.`
-                            : 'Workspace setup will continue after verification.'}
-                      </p>
+                      {inviteDrivenSignup && <p>Complete these details and Arch9 will take you straight into the invited workspace.</p>}
                     </div>
                     <div className="auth-field-grid">
                       <label>
@@ -1183,23 +1205,6 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                         />
                       </label>
                     </div>
-                    {currentIntent && !inviteDrivenSignup ? (
-                      <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
-                        {currentIntent.workspace_action === 'create_workspace'
-                          ? 'After verification, Arch9 will continue with workspace setup for your business.'
-                          : currentIntent.workspace_action === 'accept_invite'
-                            ? 'After verification, Arch9 will return you to this invitation.'
-                            : 'After verification, Arch9 will guide you to join or request access to the right workspace.'}
-                      </p>
-                    ) : null}
-                    {!inviteDrivenSignup ? (
-                      <div className="auth-action-row">
-                        <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
-                          <ArrowLeft size={14} />
-                          Back to role
-                        </button>
-                      </div>
-                    ) : null}
                   </>
                 ) : null}
               </>
@@ -1209,12 +1214,14 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
             {message ? <p className="auth-feedback success">{message}</p> : null}
           </form>
 
-          {showingAuthFields ? (
-            <button type="submit" form="auth-form" className="auth-submit" disabled={loading}>
-              {loading ? 'Processing...' : mode === 'forgot_password' ? 'Send reset link' : mode === 'login' ? homeSeekers ? 'Log in' : 'Sign in' : 'Create Account'}
-              {!loading ? <ArrowRight size={15} /> : null}
-            </button>
-          ) : null}
+          {showingAuthFields && !showingWorkspaceBuild ? mode === 'signup' && !inviteDrivenSignup ? (
+            <div className="auth-action-row">
+              <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
+                <ArrowLeft size={14} />Back to role
+              </button>
+              {submitButton}
+            </div>
+          ) : submitButton : null}
 
           {mode === 'login' && (pendingVerificationEmail || message) ? (
             <div className="auth-footer auth-verification-action">
@@ -1229,7 +1236,7 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
             </div>
           ) : null}
 
-          {!homeSeekers && !inviteDrivenSignup ? (
+          {!homeSeekers && !inviteDrivenSignup && !showingWorkspaceBuild ? (
             <div className="auth-footer">
             <span>
               {mode === 'login' ? "Don't have an account?" : mode === 'forgot_password' ? 'Remembered your password?' : 'Already have an account?'}
@@ -1250,7 +1257,6 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
           ) : null}
 
           {homeSeekers && <p className="auth-footer">{mode === 'forgot_password' ? <button type="button" onClick={() => { setMode('login'); setError(''); setMessage('') }}>Back to log in</button> : <>Haven’t applied yet? <a href="https://homeseeker.co.za/join">Join Home Seekers</a></>}</p>}
-          {!homeSeekers && mode === 'login' && !inviteDrivenSignup && <p className="auth-footer"><a href="/applicant/my-profile">Applied to join Home Seekers? Open My Profile</a></p>}
 
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">

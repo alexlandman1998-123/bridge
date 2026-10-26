@@ -73,3 +73,42 @@
   .demo-home-support-success { flex-direction: column; gap: 18px; }.demo-home-support-success h4 { font-size: 1.4rem; }.demo-home-support-reference { padding: 22px; }.demo-home-support-reference > strong { font-size: 1.45rem; }
 }
 @media (prefers-reduced-motion: reduce) { .demo-home-support-action { transition: none; }.demo-home-support-action:hover { transform: none; } }
+
+/* The claim form uses a compact hierarchy while keeping comfortable tap targets. */
+.demo-claim-dialog { max-width: 600px; border-radius: 16px; }
+.demo-claim-dialog .ui-modal-head { position: sticky; top: 0; z-index: 2; align-items: center; padding: 16px 20px; background: #fff; }
+.demo-claim-dialog .ui-modal-head h3 { font-size: 1rem; }
+.demo-claim-dialog .ui-icon-button { width: 44px; height: 44px; border-radius: 8px; border: 0; background: #f5f7fa; }
+.demo-claim-dialog .ui-icon-button:focus-visible { outline-width: 2px; outline-offset: 2px; }
+.demo-claim-dialog .ui-modal-body { padding: 16px 20px 20px; }
+.demo-claim-dialog .demo-home-support-notice { border: 0; border-radius: 8px; padding: 8px 10px; font-size: .65rem; line-height: 1.5; }
+.demo-claim-dialog .demo-home-support-steps { gap: 8px; margin-top: 16px !important; }
+.demo-claim-dialog .demo-home-support-steps li { flex-direction: row; align-items: center; gap: 6px; min-width: 0; padding: 7px 5px; font-size: .68rem; }
+.demo-claim-dialog .demo-home-support-steps li > span { width: 22px; height: 22px; font-size: .6rem; }
+.demo-claim-dialog .demo-home-support-steps li[aria-current="step"] { border-radius: 8px; background: #f2f5fa; }
+.demo-claim-dialog .demo-home-support-heading { margin: 20px 0 16px; }
+.demo-claim-dialog .demo-home-support-heading h4 { margin-top: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -.025em; }
+.demo-claim-dialog .demo-home-support-heading > p:last-child { margin-top: 6px; font-size: .78rem; line-height: 1.6; }
+.demo-claim-dialog .demo-home-support-policy { flex-direction: row; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; }
+.demo-claim-dialog .demo-home-support-policy img { width: 76px; height: 34px; }
+.demo-claim-dialog .demo-home-support-policy strong { font-size: .76rem; line-height: 1.5; }
+.demo-claim-dialog .demo-home-support-policy span { margin-top: 3px; font-size: .65rem; line-height: 1.5; overflow-wrap: anywhere; }
+.demo-claim-dialog .demo-home-support-property { margin: 10px 0 18px; font-size: .7rem; }
+.demo-claim-dialog .demo-home-support-fields { gap: 16px; }
+.demo-claim-dialog .demo-home-support-field-row { gap: 16px; }
+.demo-claim-dialog .demo-home-support-fields input,
+.demo-claim-dialog .demo-home-support-fields select,
+.demo-claim-dialog .demo-home-support-fields textarea { margin-top: 6px; border-radius: 8px; padding: 11px 12px; }
+.demo-claim-dialog .demo-home-support-fields textarea { min-height: 96px; }
+.demo-claim-dialog .demo-home-support-footer { position: sticky; bottom: 0; z-index: 1; margin-top: 20px; padding: 12px 0 0; background: #fff; }
+.demo-claim-dialog .demo-home-support-button { border-radius: 8px; }
+.demo-claim-dialog .demo-home-support-photo-picker,
+.demo-claim-dialog .demo-home-support-summary,
+.demo-claim-dialog .demo-home-support-reference { border-radius: 12px; }
+
+@media (max-width: 640px) {
+  .ui-modal-overlay:has(> .demo-claim-dialog) { padding: 8px; }
+  .demo-claim-dialog { max-height: calc(100dvh - 16px); border-radius: 16px; }
+  .demo-claim-dialog .ui-modal-head { padding: 12px 16px; }
+  .demo-claim-dialog .ui-modal-body { padding: 14px 16px 16px; }
+}

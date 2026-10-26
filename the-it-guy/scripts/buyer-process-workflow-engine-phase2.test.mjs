@@ -25,9 +25,11 @@ try {
     'Contacted',
     'Qualified',
     'Viewing',
-    'Transaction Setup',
-    'Offer',
-    'Transaction',
+    'Buyer onboarding sent',
+    'Buyer onboarding submitted',
+    'Offer to purchase signed',
+    'Transaction created',
+    'Buyer documents uploaded',
     'On hold',
     'Lost',
     'Closed won',
@@ -41,12 +43,12 @@ try {
   assert.equal(workflow.normalizeBuyerWorkflowStage('Qualified'), 'Qualified')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Qualification'), 'Qualified')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Viewing Completed'), 'Viewing')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Offer + Onboarding Link Sent'), 'Transaction Setup')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Submitted'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Ready for OTP generation'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('OTP Generated'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Signed by All Parties'), 'Offer')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Finance'), 'Transaction')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Offer + Onboarding Link Sent'), 'Buyer onboarding sent')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Submitted'), 'Offer to purchase signed')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Ready for OTP generation'), 'Offer to purchase signed')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('OTP Generated'), 'Offer to purchase signed')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Signed by All Parties'), 'Offer to purchase signed')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Finance'), 'Transaction created')
 
   assert.equal(workflow.isBuyerWorkflowStage('Offer Submitted'), true)
   assert.equal(workflow.isBuyerWorkflowStage('Ready to Generate OTP'), true)
@@ -101,18 +103,18 @@ try {
     actor,
   })
   assert.equal(transactionSetup.allowed, true)
-  assert.equal(transactionSetup.toStage, 'Transaction Setup')
-  assert.equal(transactionSetup.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.transactionSetup)
+  assert.equal(transactionSetup.toStage, 'Buyer onboarding sent')
+  assert.equal(transactionSetup.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent)
 
   const offerReceived = await workflow.validateBuyerStageTransition({
-    lead: { ...lead, stage: 'Transaction Setup' },
+    lead: { ...lead, stage: 'Buyer onboarding submitted' },
     leadId: lead.leadId,
-    fromStage: 'Transaction Setup',
+    fromStage: 'Buyer onboarding submitted',
     toStage: 'Ready to Generate OTP',
     actor,
   })
   assert.equal(offerReceived.allowed, true)
-  assert.equal(offerReceived.toStage, 'Offer')
+  assert.equal(offerReceived.toStage, 'Offer to purchase signed')
   assert.equal(offerReceived.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(offerReceived.requirements[0].requirement.key, 'otp_document_uploaded')
   assert.equal(offerReceived.requirements[0].skipped, true)

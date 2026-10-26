@@ -119,7 +119,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     : withdrawn
       ? 'Withdrawn'
     : effectivelyLive
-      ? stale ? 'Changes not published' : 'Live on website'
+      ? stale ? 'Changes not published' : variant === 'channel' ? 'Live' : 'Live on website'
       : published ? 'Not visible on website' : 'Not on website'
   const statusClass = withdrawn
     ? 'text-[#526a82]'

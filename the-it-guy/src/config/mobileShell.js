@@ -119,7 +119,7 @@ export function getMobileNavItems(workspace = {}) {
 
 export function getMobilePageMenuItems(workspace = {}) {
   return [
-    resolveMobileRoleCategory(workspace) === 'developer' ? MOBILE_NAV_ITEMS.developments : MOBILE_NAV_ITEMS.leads,
+    ...(resolveMobileRoleCategory(workspace) === 'developer' ? [MOBILE_NAV_ITEMS.developments] : []),
     MOBILE_NAV_ITEMS.listings,
     MOBILE_NAV_ITEMS.calendar,
   ]

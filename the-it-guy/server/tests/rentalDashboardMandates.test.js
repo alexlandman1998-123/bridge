@@ -50,12 +50,22 @@ beforeAll(async () => {
       assigned_agent_id uuid, assigned_user_id uuid, created_by uuid, created_at timestamptz);
   `)
   await db.exec(await readFile(new URL('../../../supabase/migrations/20261007154210_rental_dashboard_listing_mandate_count.sql', import.meta.url), 'utf8'))
+  await db.exec(`
+    alter table rental_vacancies add unit_id uuid, add available_from date, add created_at timestamptz default now();
+    alter table rental_tenancies add source_application_id uuid, add intended_occupation_date date, add created_at timestamptz default now();
+    alter table rental_leases add status text;
+    alter table rental_lease_versions add occupation_date date;
+    create table rental_renewals (tenancy_id uuid, status text, decided_at timestamptz);
+    create table rental_maintenance_requests (id uuid, property_id uuid, status text, reported_at timestamptz);
+    create table rental_notices (tenancy_id uuid, status text, submitted_at timestamptz);
+  `)
+  await db.exec(await readFile(new URL('../../../supabase/migrations/20261019152345_rental_dashboard_active_portfolio.sql', import.meta.url), 'utf8'))
 })
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
   await db.exec(`reset role;
     truncate private_listings, rental_properties, rental_property_mandates, rental_units,
-      rental_tenancies, rental_vacancies, rental_applications, rental_leases, rental_lease_versions, leads;
+      rental_tenancies, rental_vacancies, rental_applications, rental_leases, rental_lease_versions, leads, rental_renewals, rental_maintenance_requests, rental_notices;
     select set_config('test.actor', '${actor}', false), set_config('test.admin', 'true', false);
   `)
 })
@@ -132,9 +142,9 @@ it('does not add the separate management mandate to the listing total or change 
     insert into rental_properties values ('${org}', '${org}', '${branch}', '${actor}', 'active', 'Test house');
     insert into rental_property_mandates values ('${org}', '${org}', 'active', 'confirmed', null, null);
     insert into rental_units values ('${org}', '${org}', 'occupied', 'MAIN', 12000);
-    insert into rental_tenancies values ('${org}', '${org}', '${org}', 'active');
-    insert into rental_leases values ('${org}', '${org}');
-    insert into rental_lease_versions values ('${org}', true, 12000, current_date + 60);
+    insert into rental_tenancies (id, property_id, unit_id, status) values ('${org}', '${org}', '${org}', 'active');
+    insert into rental_leases (id, tenancy_id) values ('${org}', '${org}');
+    insert into rental_lease_versions (lease_id, is_current, monthly_rent, effective_end_date) values ('${org}', true, 12000, current_date + 60);
   `)
   const result = await dashboard()
   expect(result.metrics.active_mandates).toBe(1)
@@ -151,4 +161,46 @@ it('retains authenticated execution and rejects anonymous or missing-identity ca
   await expect(dashboard()).rejects.toThrow('Not authorized')
   await db.exec('set role anon')
   await expect(dashboard()).rejects.toThrow('permission denied')
+})
+
+async function portfolioDashboard(options = {}) {
+  return (await db.query('select rental_get_management_dashboard_bottom_half($1, $2, $3, 30) as snapshot',
+    [options.organisationId || org, options.branchId || null, options.scope || 'company'])).rows[0].snapshot
+}
+
+it('loads both dashboard halves from active portfolio units without management mandates', async () => {
+  await db.exec(`
+    insert into rental_properties values ('${org}', '${org}', '${branch}', '${actor}', 'active', 'Test portfolio');
+    insert into rental_units values ('${org}', '${org}', 'occupied', 'MAIN', 12000),
+      ('${branch}', '${org}', 'notice_given', 'SECOND', 8000), ('${otherBranch}', '${org}', 'vacant', 'THIRD', 9000);
+    insert into rental_tenancies (id, property_id, unit_id, status) values ('${org}', '${org}', '${org}', 'active');
+    insert into rental_leases (id, tenancy_id) values ('${org}', '${org}');
+    insert into rental_lease_versions (lease_id, is_current, monthly_rent, effective_end_date) values ('${org}', true, 12000, current_date + 60);
+  `)
+  expect((await dashboard()).metrics).toMatchObject({ total_units: 3, occupied_units: 2, vacant_units: 1, occupancy_rate: 66.7, monthly_rent_roll: 12000 })
+  expect((await portfolioDashboard()).portfolio_health).toMatchObject({ managed_units: 3, occupied_units: 2, vacant_units: 1, occupancy_rate: 66.7, monthly_rent_roll: 12000 })
+  await db.exec(`insert into rental_property_mandates values ('${org}', '${org}', 'active', 'confirmed', null, null), ('${branch}', '${org}', 'active', 'confirmed', null, null)`)
+  expect((await dashboard()).metrics.total_units).toBe(3)
+  expect((await portfolioDashboard()).portfolio_health.managed_units).toBe(3)
+  await db.exec("update rental_properties set status = 'archived'")
+  expect((await dashboard()).metrics.total_units).toBe(0)
+  expect((await portfolioDashboard()).portfolio_health.occupancy_rate).toBeNull()
+})
+
+it('preserves organisation, branch and agent restrictions for portfolio figures', async () => {
+  await db.exec(`
+    insert into rental_properties values
+      ('${org}', '${org}', '${branch}', '${actor}', 'active', 'Assigned'),
+      ('${branch}', '${org}', '${otherBranch}', '${otherAgent}', 'active', 'Other branch'),
+      ('${otherOrg}', '${otherOrg}', '${branch}', '${actor}', 'active', 'Other agency');
+    insert into rental_units values ('${org}', '${org}', 'occupied', 'MAIN', 0),
+      ('${branch}', '${branch}', 'vacant', 'MAIN', 0), ('${otherOrg}', '${otherOrg}', 'occupied', 'MAIN', 0);
+  `)
+  for (const [options, total] of [[{}, 2], [{ branchId: branch }, 1], [{ scope: 'agent' }, 1], [{ organisationId: otherOrg }, 0]]) {
+    expect((await dashboard(options)).metrics.total_units).toBe(total)
+    expect((await portfolioDashboard(options)).portfolio_health.managed_units).toBe(total)
+  }
+  await db.exec("select set_config('test.admin', 'false', false)")
+  expect((await dashboard()).metrics.total_units).toBe(1)
+  expect((await portfolioDashboard()).portfolio_health.managed_units).toBe(1)
 })

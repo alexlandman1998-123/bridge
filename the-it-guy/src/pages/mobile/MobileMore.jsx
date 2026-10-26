@@ -1,4 +1,6 @@
-import { Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle, UsersRound } from 'lucide-react'
+import { QrCode, Building2, CalendarDays, CircleHelp, FileText, Inbox, LogOut, Search, Settings, TrendingUp, UserCircle, UsersRound } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
+import { resolveMobileRoleCategory } from '../../config/mobileShell'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { MobileFieldModePanel } from '../../components/mobile-shell/MobileProductivity'
@@ -7,7 +9,10 @@ import { FEATURE_FLAGS } from '../../lib/featureFlags'
 import { getDeviceType } from '../../lib/deviceDetection'
 import { getDesktopLandingRoute } from '../../lib/mobileAccess'
 import { setPreferDesktopOnMobile, userPrefersDesktopOnMobile } from '../../lib/mobilePreferences'
+import '../../components/mobile-shell/mobile-connect-sheet.css'
 import { trackMobileMetric } from '../../services/observability/monitoring'
+
+const MobileConnectSheet = lazy(() => import('../../components/mobile-shell/MobileConnectSheet.jsx'))
 
 const MORE_ITEMS = [
   { key: 'profile', label: 'Profile', icon: UserCircle, meta: 'Account and mobile preferences' },
@@ -23,6 +28,7 @@ const MORE_ITEMS = [
 
 export default function MobileMore() {
   const workspace = useWorkspace()
+  const [connectOpen, setConnectOpen] = useState(false)
   const navigate = useNavigate()
   const { onLogout } = useOutletContext() || {}
   const profileName = workspace.profile?.fullName || [workspace.profile?.firstName, workspace.profile?.lastName].filter(Boolean).join(' ') || 'Arch9 user'
@@ -79,6 +85,8 @@ export default function MobileMore() {
         </div>
       </MobileCard>
 
+      {['agent', 'principal', 'default'].includes(resolveMobileRoleCategory(workspace)) && <button type="button" className="mobile-connect-more-button" onClick={() => setConnectOpen(true)}><QrCode size={26} aria-hidden="true" /><span><strong>Connect with me</strong><small>Scan to save my contact</small></span></button>}
+      {connectOpen && <Suspense fallback={null}><MobileConnectSheet workspace={workspace} onClose={() => setConnectOpen(false)} /></Suspense>}
       <MobileFieldModePanel
         workspace={{ module: 'more' }}
         tasks={[]}

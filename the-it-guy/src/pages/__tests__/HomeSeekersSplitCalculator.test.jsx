@@ -1,0 +1,60 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import HomeSeekersSplitCalculator from '../HomeSeekersSplitCalculator'
+import HomeSeekersJoin from '../HomeSeekersJoin'
+import { readNextStepsReview } from '../homeSeekersNextStepsModel'
+afterEach(cleanup)
+beforeEach(() => { localStorage.clear(); vi.stubGlobal('requestAnimationFrame', undefined) })
+afterEach(() => vi.unstubAllGlobals())
+it('shows the full result with no email or submit, records completed once and recalculates live', () => {
+  render(<HomeSeekersSplitCalculator />)
+  expect(screen.getByText('R900 000')).toBeTruthy()
+  expect(screen.getAllByText('R147 000')).toHaveLength(2)
+  expect(screen.getByLabelText('Email for this breakdown').value).toBe('')
+  fireEvent.change(screen.getByLabelText('Registered sales in the last 12 months'), { target: { value: '1' } })
+  expect(screen.getByText('On these numbers, you’re better off where you are.')).toBeTruthy()
+  expect(readNextStepsReview().events.map(item => item.event)).toEqual(['calculator_completed'])
+})
+it('keeps sliders and typed inputs in sync and shows conditional brokerage fields', () => {
+  render(<HomeSeekersSplitCalculator />)
+  fireEvent.change(screen.getByLabelText('Average selling price slider'), { target: { value: '2000000' } })
+  expect(screen.getByLabelText('Average selling price').value.replace(/ /g, '')).toBe('2000000')
+  fireEvent.change(screen.getByLabelText('Your commission rate'), { target: { value: '5' } })
+  expect(screen.getByLabelText('Your commission rate slider').value).toBe('5')
+  fireEvent.change(screen.getByLabelText('What are you on at the moment?'), { target: { value: 'cap' } })
+  expect(screen.getByLabelText('Cap amount').value.replace(/ /g, '')).toBe('200000')
+  fireEvent.change(screen.getByLabelText('What are you on at the moment?'), { target: { value: 'fixedFee' } })
+  expect(screen.queryByLabelText('Cap amount')).toBeNull()
+  expect(screen.getByLabelText('Per-deal fee')).toBeTruthy()
+  expect(screen.getByText('On these numbers, the costs are the same.')).toBeTruthy()
+})
+it('does not fabricate a zero result for blank inputs and handles no sales without Infinity', () => {
+  render(<HomeSeekersSplitCalculator />)
+  fireEvent.change(screen.getByLabelText('Registered sales in the last 12 months'), { target: { value: '' } })
+  expect(screen.getByText('Check your numbers.')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Send it to me' }).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('Registered sales in the last 12 months'), { target: { value: '0' } })
+  expect(screen.getByText(/not applicable with no sales/)).toBeTruthy()
+  expect(document.body.textContent).not.toMatch(/NaN|Infinity/)
+})
+it('captures an optional local email snapshot only after submission without sending requests', () => {
+  const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher)
+  render(<HomeSeekersSplitCalculator />)
+  fireEvent.change(screen.getByLabelText('Email for this breakdown'), { target: { value: 'review@example.test' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Send it to me' }))
+  expect(screen.getByText(/Preview breakdown saved for review@example.test/)).toBeTruthy()
+  expect(readNextStepsReview().records[0].details.result.difference).toBe(147000)
+  expect(readNextStepsReview().events.map(item => item.event)).toEqual(['calculator_completed', 'calculator_email_submitted'])
+  expect(fetcher).not.toHaveBeenCalled()
+})
+it('sits directly after the ten-sales section and opens both existing next-step forms', () => {
+  render(<HomeSeekersJoin />)
+  const calculator = screen.getByRole('region', { name: 'What did your split cost you last year?' })
+  expect(calculator.previousElementSibling.id).toBe('maths')
+  fireEvent.click(screen.getByRole('button', { name: 'Book a seat on the next session' }))
+  expect(screen.getByRole('form', { name: 'Information session registration' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
+  fireEvent.click(screen.getByRole('button', { name: 'See if you qualify for a one on one' }))
+  expect(screen.getByRole('form', { name: 'Founder call qualifier' })).toBeTruthy()
+})

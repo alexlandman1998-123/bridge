@@ -12,16 +12,17 @@ const clientWorkspaceService = await readFile('src/services/clientPortalWorkspac
 
 assert.match(hook, /table: 'transaction_refresh_signals'/)
 assert.match(hook, /transaction_version_changed/)
-assert.match(hook, /transaction_version_reconciled/)
-assert.match(hook, /lastVersionRef/)
-assert.match(hook, /filter: `transaction_id=eq\.\$\{normalizedTransactionId\}`/)
+assert.match(hook, /transaction_reconciled/)
+assert.match(hook, /queue.acknowledged/)
+assert.match(hook, /filter: `transaction_id=eq\.\$\{id\}`/)
 assert.match(hook, /table: 'notification_events'/)
-assert.match(hook, /const handleFocus = \(\) => void reconcileVersion\(\)/)
-assert.match(hook, /document\.visibilityState === 'visible'\) void reconcileVersion\(\)/)
+assert.match(hook, /const recover = \(\) => \{ if \(canRead\(\)\) void reconcile\(true\) \}/)
+assert.match(hook, /visibilityState !== 'hidden'/)
+assert.match(hook, /document.addEventListener\('visibilitychange', recover\)/)
 assert.doesNotMatch(hook, /scheduleRefresh\('poll_interval'/)
 assert.doesNotMatch(hook, /scheduleRefresh\('visibility_restored'/)
 assert.match(hook, /removeChannel\(channel\)/)
-assert.match(hook, /state\.active = false/)
+assert.match(hook, /active = false/)
 
 for (const page of [attorneyPage, unitPage, clientPage]) {
   assert.match(page, /useTransactionLiveRefresh/)

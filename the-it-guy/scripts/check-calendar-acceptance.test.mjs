@@ -50,3 +50,14 @@ test('rejects empty or skipped operator and Edge runs even when their process ex
   assert.equal(assessExternal(edge.replace('0 failed', '0 failed | 1 ignored'), 'edge', ['worker/index.test.ts']).passed, false)
   assert.equal(assessExternal('', 'edge', ['worker/index.test.ts']).passed, false)
 })
+
+test('includes time-change journey, access, reminder and provider regressions in complete acceptance',async()=>{
+ const {readFile}=await import('node:fs/promises')
+ const manifest=JSON.parse(await readFile(new URL('../config/calendar-acceptance.json',import.meta.url),'utf8'))
+ for(const file of ['supabase-tests/calendarTimeChange.test.js','supabase-tests/calendarTimeChangeNotifications.test.js','supabase-tests/calendarTimeChangeAlignment.test.js','supabase-tests/calendarTimeChangeEmail.test.js','supabase-tests/calendarJourney.test.jsx','src/components/appointments/__tests__/AppointmentTimeChange.test.jsx'])assert.ok(manifest.calendarTests.includes(file),file)
+ assert.ok(manifest.edgeTests.includes('send-email/handlers/appointment.test.ts'))
+ for(const scenario of ['A12','A19','A24','A25','A27','A29','A40','A42'])assert.ok(manifest.scenarios.find(s=>s.id===scenario).evidence.some(e=>/TimeChange|calendarReservationsConcurrent|calendarJourney/.test(e.file)),scenario)
+ const guards=manifest.release.migrations.filter(m=>m.path.includes('20261019'))
+ assert.equal(guards.length,4)
+ assert.ok(guards.at(-1).path.endsWith('calendar_time_change_access_guards.sql'))
+})

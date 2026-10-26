@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildBuyerLeadDocumentReadModel, fetchBuyerLeadCanonicalDocumentRows } from '../buyerLeadDocumentReadService.js'
+import { buyerLeadDocumentContext, buildBuyerLeadDocumentReadModel, fetchBuyerLeadCanonicalDocumentRows } from '../buyerLeadDocumentReadService.js'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const transactionId = '22222222-2222-4222-8222-222222222222'
@@ -79,4 +79,21 @@ test('shared custom uploads use current requirement review state and suppress re
   assert.equal(model.uploads[0].label, 'Divorce papers')
   assert.equal(model.uploads[0].status, 'under_review')
   assert.equal(buildBuyerLeadDocumentReadModel({ snapshot: { ...snapshot, documents: [{ ...current, applicability_override: 'removed' }] } }).uploads.length, 0)
+})
+
+
+test('onboarding files retain their buyer audience and actual Storage bucket in the lead read model', () => {
+  const model = buildBuyerLeadDocumentReadModel({ canonicalRows: [{ ...sharedBuyer,
+    source: 'buyer_onboarding_upload', file_bucket: 'private-documents', canonical_requirement_instance_id: 'buyer-id',
+  }] })
+  assert.equal(model.canonicalCount, 1)
+  assert.equal(model.uploads[0].storageBucket, 'private-documents')
+  assert.equal(model.uploads[0].status, 'under_review')
+  assert.equal(buildBuyerLeadDocumentReadModel({ canonicalRows: [{ ...sharedBuyer, source: 'buyer_onboarding_upload', is_client_visible: false }] }).uploads.length, 0)
+})
+
+
+test('converted buyer lead reads and uploads in the same document room as its portal and transaction', () => {
+  assert.deepEqual(buyerLeadDocumentContext({ leadId, transactionId }), { contextType: 'transaction', contextId: transactionId })
+  assert.deepEqual(buyerLeadDocumentContext({ leadId }), { contextType: 'buyer_lead', contextId: leadId })
 })

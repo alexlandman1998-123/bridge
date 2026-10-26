@@ -1,5 +1,8 @@
-import { BriefcaseBusiness, ChevronRight, Upload } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMobileLeadCreate } from '../../components/mobile-shell/mobileLeadCreateContext.js'
+import LeadSourceLogo from '../../components/mobile-shell/LeadSourceLogo.jsx'
+import './mobile-lead-list.css'
+import { BriefcaseBusiness, ChevronRight, Plus, Upload } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import MobileCreateSheet, { MobileDraftCard } from '../../components/mobile-shell/MobileCreateSheet'
 import MobileTransactionCard from '../../components/mobile-shell/MobileTransactionCard'
@@ -12,6 +15,15 @@ import { getOfflineDrafts } from '../../services/mobileProductivityService'
 import { resolveMobileRoleCategory } from '../../config/mobileShell.js'
 import { listAgentLeadWorkspaceRows } from '../../services/agentLeadWorkspaceService'
 import { isLeadAssignedToActor, isNewAgentLead } from '../../services/mobileTodayModel.js'
+
+const MobileLeadCreateFlow = lazy(() => import('../../components/mobile-shell/MobileLeadCreateFlow.jsx'))
+
+const LEAD_TYPES = [
+  { key: 'buyer', label: 'Buyer', description: 'Looking to buy a property' },
+  { key: 'seller', label: 'Seller', description: 'Wants to sell a property' },
+  { key: 'tenant', label: 'Tenant', description: 'Looking for a property to rent' },
+  { key: 'landlord', label: 'Landlord', description: 'Wants to let a property' },
+]
 
 const MODULE_COPY = {
   transactions: {
@@ -134,17 +146,6 @@ function formatLeadAge(value) {
   return `${days} days`
 }
 
-function getPlatformLogo(source = '') {
-  const normalized = normalizeText(source).toLowerCase().replace(/[^a-z0-9]+/g, '')
-  if (normalized.includes('property24') || normalized === 'p24') {
-    return { src: '/lead-sources/property24.png', alt: 'Property24' }
-  }
-  if (normalized.includes('privateproperty')) {
-    return { src: '/lead-sources/private-property.jpeg', alt: 'Private Property' }
-  }
-  return null
-}
-
 function getLeadDisplay(row = {}) {
   const contact = row.contact || {}
   const title = normalizeText(
@@ -165,7 +166,7 @@ function getLeadDisplay(row = {}) {
   const stage = normalizeText(row.stage || row.status) || 'New'
   const source = normalizeText(row.source || row.leadSource || row.lead_source) || 'Platform'
   const assignedAgent = normalizeText(row.assignedAgent || row.assignedAgentName || row.assignedAgentEmail) || 'Unassigned'
-  const nextAction = normalizeText(row.nextTask?.title || row.latestActivity?.title || row.recommendations?.[0]?.title) || 'Open buyer journey'
+  const nextAction = normalizeText(row.nextTask?.title || row.latestActivity?.title || row.recommendations?.[0]?.title) || 'Open journey'
   const slaStatus = normalizeText(row.slaStatus || row.ownershipStatus).toLowerCase()
   return {
     title,
@@ -182,47 +183,20 @@ function getLeadDisplay(row = {}) {
 
 function MobileLeadCard({ item, onOpen }) {
   const display = getLeadDisplay(item)
-  const platformLogo = getPlatformLogo(display.source)
-  return (
-    <button
-      type="button"
-      className="w-full overflow-hidden rounded-[28px] border border-white/80 bg-white text-left shadow-[0_14px_34px_rgba(15,23,42,0.07)]"
-      onClick={() => onOpen(item)}
-    >
-      <span className="block bg-[linear-gradient(135deg,#fff6e5_0%,#f8fafc_45%,#e8f6ef_100%)] px-4 py-3">
-        <span className="flex min-h-10 items-center gap-3">
-          <span className="min-w-0 truncate text-[18px] font-semibold text-[#10243a]">{display.title}</span>
-          {platformLogo ? (
-            <img src={platformLogo.src} alt={platformLogo.alt} className="h-5 w-16 shrink-0 object-contain" loading="lazy" />
-          ) : (
-            <span className="shrink-0 text-[11px] font-bold uppercase text-[#1f7a5a]">{display.source.slice(0, 2) || 'PL'}</span>
-          )}
-        </span>
-      </span>
-      <span className="block p-4">
-        <span className="block truncate text-[14px] font-semibold text-[#10243a]">{display.property}</span>
-        <span className="mt-1 block text-[13px] text-[#60758d]">{display.nextAction}</span>
-        <span className="mt-4 grid grid-cols-3 gap-2">
-          <span className="rounded-2xl bg-[#f8fafc] p-3">
-            <span className="block text-[10px] font-semibold uppercase text-[#60758d]">Agent</span>
-            <span className="mt-1 block truncate text-[12px] font-bold text-[#10243a]">{display.assignedAgent}</span>
-          </span>
-          <span className="rounded-2xl bg-[#f8fafc] p-3">
-            <span className="block text-[10px] font-semibold uppercase text-[#60758d]">Age</span>
-            <span className="mt-1 block truncate text-[12px] font-bold text-[#10243a]">{display.age}</span>
-          </span>
-          <span className="rounded-2xl bg-[#f8fafc] p-3">
-            <span className="block text-[10px] font-semibold uppercase text-[#60758d]">Value</span>
-            <span className="mt-1 block truncate text-[12px] font-bold text-[#10243a]">{display.value || 'Pending'}</span>
-          </span>
-        </span>
-        <span className="mt-4 flex items-center justify-between rounded-2xl bg-[#10243a] px-4 py-3 text-white">
-          <span className="text-[13px] font-semibold">Open buyer journey</span>
-          <ChevronRight className="h-4 w-4" />
-        </span>
-      </span>
-    </button>
-  )
+  return <button type="button" className="mobile-lead-list-card" onClick={() => onOpen(item)}>
+    <span className="mobile-lead-list-identity">
+      <strong>{display.title}</strong>
+      <LeadSourceLogo source={display.source} className="mobile-lead-list-source" />
+    </span>
+    <span className="mobile-lead-list-property">{display.property}</span>
+    <span className="mobile-lead-list-next">{display.nextAction}</span>
+    <span className="mobile-lead-list-facts">
+      <span><span>Agent</span><strong>{display.assignedAgent}</strong></span>
+      <span><span>Received</span><strong>{display.age}</strong></span>
+      <span><span>Value</span><strong>{display.value || 'Pending'}</strong></span>
+    </span>
+    <span className="mobile-lead-list-open"><span>Open journey</span><ChevronRight size={16} aria-hidden="true" /></span>
+  </button>
 }
 
 function GenericModuleCard({ copy }) {
@@ -242,6 +216,7 @@ export default function MobileModulePage({ moduleKey }) {
   const developer = resolveMobileRoleCategory(workspace) === 'developer'
   const organisationContext = useOptionalOrganisation()
   const navigate = useNavigate()
+  const leadCreate = useMobileLeadCreate()
   const [searchParams, setSearchParams] = useSearchParams()
   const copy = MODULE_COPY[moduleKey] || MODULE_COPY.transactions
   const ActionIcon = copy.actionIcon
@@ -257,6 +232,7 @@ export default function MobileModulePage({ moduleKey }) {
     }
   })
   const createType = searchParams.get('create') || ''
+  const selectedLeadType = LEAD_TYPES.find(item => item.key === searchParams.get('leadType'))
   const createOpen = isMobileCreateType(createType) && (
     (moduleKey === 'transactions' && createType === 'transaction') ||
     (moduleKey === 'leads' && (createType === 'lead' || createType === 'prospect'))
@@ -338,6 +314,7 @@ export default function MobileModulePage({ moduleKey }) {
   function clearCreateIntent() {
     const nextParams = new URLSearchParams(searchParams)
     nextParams.delete('create')
+    nextParams.delete('leadType')
     setSearchParams(nextParams, { replace: true })
   }
 
@@ -391,16 +368,20 @@ export default function MobileModulePage({ moduleKey }) {
 
   if (moduleKey === 'leads') {
     return (
-      <div className="space-y-6">
-        <section className="pt-2">
-          <h1 className="text-[34px] font-bold leading-tight text-[#10243a]">{searchParams.get('stage') === 'new' ? 'New leads' : 'Leads'}</h1>
-          {searchParams.get('stage') === 'new' && <button type="button" className="min-h-11 text-sm text-[#166b50]" onClick={() => {
+      <div className="mobile-lead-list-page">
+        <header className="mobile-lead-list-header"><h1>{searchParams.get('stage') === 'new' ? 'New leads' : 'Leads'}</h1><button type="button" aria-label="Add lead" onClick={() => {
+          if (leadCreate) { leadCreate.openLeadCreate(); return }
+          const next = new URLSearchParams(searchParams)
+          next.set('create', 'lead'); next.delete('leadType'); setSearchParams(next)
+        }}><Plus size={20} aria-hidden="true" /></button></header>
+        {searchParams.get('stage') === 'new' && <section>
+          <button type="button" className="min-h-11 text-sm text-[#166b50]" onClick={() => {
             const next = new URLSearchParams(searchParams)
             next.delete('stage'); next.delete('scope'); setSearchParams(next)
-          }}>View all leads</button>}
-        </section>
+          }}>View all leads</button>
+        </section>}
 
-        <section className="space-y-3">
+        <section className="mobile-lead-list" aria-label="Leads">
           {pendingDrafts.map((draft) => <MobileDraftCard key={draft.id} draft={draft} />)}
           {leadRows.length ? (
             leadRows.map((item) => <MobileLeadCard key={item.id || item.leadId || item.lead_id} item={item} onOpen={openLead} />)
@@ -413,6 +394,8 @@ export default function MobileModulePage({ moduleKey }) {
             )
           )}
         </section>
+        {createOpen && createType === 'lead' && <Suspense fallback={null}><MobileLeadCreateFlow initialType={selectedLeadType?.key || ''} onClose={clearCreateIntent} /></Suspense>}
+        <MobileCreateSheet open={createOpen && createType !== 'lead'} type={createType} route="/mobile/leads" onClose={clearCreateIntent} onSaved={handleDraftSaved} />
       </div>
     )
   }

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { reportEnvironment } from "../../server/services/knowledgeFactoryReportRuntime.js";
 import { estimateSupplierCostCents as supplierCreditValue } from "./supplier-costs.js";
 import { hasRecordedContractEvidence } from "./contract-evidence-policy.js";
 import { packageReportQueryFingerprint, PACKAGE_COST_RECIPE_IDS } from "./package-report-recipes.js";
@@ -133,9 +134,9 @@ function normalizeRole(value) {
   if (role === "principal / owner") return "principal";
   return role;
 }
-function runtime() {
-  const url = text(process.env.SUPABASE_URL, 2_000);
-  const key = text(process.env.SUPABASE_SERVICE_ROLE_KEY, 10_000);
+function runtime(env = process.env) {
+  const url = text(env.SUPABASE_URL, 2_000);
+  const key = text(env.SUPABASE_SERVICE_ROLE_KEY, 10_000);
   if (!url || !key) {
     const error = new Error(
       "Missing private server configuration for report packages.",
@@ -235,7 +236,7 @@ export function completeCostEvidence(item) {
       (value) => Number.isFinite(Number(value)) && Number(value) >= 0,
     );
 }
-function mergeProducts(rows, validations, commercialPolicy = null, contractChecks = []) {
+export function mergeProducts(rows, validations, commercialPolicy = null, contractChecks = [], approvals = [], environment = reportEnvironment()) {
   const saved = new Map((rows || []).map((row) => [row.product_id, row]));
   const latestCost = new Map();
   for (const item of validations || []) {
@@ -253,7 +254,10 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
     const validationRecipeId =
       row?.cost_validation_recipe_id || template.costValidationRecipeId;
     const evidence = [latestCost.get(validationRecipeId)].filter(Boolean);
-    const validatedSupplierCredits = evidence.length
+    const approval = approvals.find(item => item.product_id === productId &&
+      item.supplier_environment === environment && item.supplier_query_sha256 === packageReportQueryFingerprint(productId) &&
+      item.schedule_version === 'kf-v1-2026-09-22' && !item.revoked_at && Date.parse(item.expires_at) > Date.now());
+    const validatedSupplierCredits = approval ? Number(approval.maximum_credits) : evidence.length
       ? Number(evidence[0].credits_consumed)
       : null;
     const validatedSupplierCostCents = estimateSupplierCostCents(
@@ -263,7 +267,7 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
     const customerPriceCents = row?.customer_price_cents ?? template.priceCents;
     const requiredContractOperations =
       row?.required_contract_operations || template.requiredContractOperations;
-    const missingContractOperations = requiredContractOperations.filter(
+    const missingContractOperations = approval ? [] : requiredContractOperations.filter(
       (operation) => !passedContractOperations.has(operation),
     );
     return {
@@ -283,7 +287,9 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
       customerPriceCents,
       status: row?.status || "draft",
       saved: Boolean(row),
-      validationCount: evidence.length,
+      validationCount: approval ? 1 : evidence.length,
+      costApprovalId: approval?.id || null,
+      costApprovalKind: approval ? "reviewed_maximum" : "supplier_validated",
       validationRequired: 1,
       validatedSupplierCredits,
       validatedSupplierCostCents,
@@ -293,7 +299,7 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
           : customerPriceCents - validatedSupplierCostCents,
       commercialPolicyConfigured: Boolean(commercialPolicy),
       canMarkUatValidated:
-        evidence.length === 1 &&
+        Boolean(approval) &&
         missingContractOperations.length === 0 &&
         validatedSupplierCostCents !== null &&
         customerPriceCents > validatedSupplierCostCents,
@@ -302,7 +308,7 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
   });
 }
 
-export default async function handler(request, response) {
+export default async function handler(request, response, { authorize = administrator, createDb = createClient, env = process.env } = {}) {
   if (request.method !== "POST")
     return json(response, 405, { error: "Method not allowed." });
   try {
@@ -313,16 +319,17 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "A valid organisation and action are required.",
       });
-    const config = runtime();
-    const db = createClient(config.url, config.key, {
+    const config = runtime(env);
+    const db = createDb(config.url, config.key, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const actorId = await administrator(request, db, organisationId);
+    const actorId = await authorize(request, db, organisationId);
     const [
       { data: products, error: productError },
       { data: validations, error: validationError },
       { data: commercialPolicy, error: commercialPolicyError },
       { data: contractChecks, error: contractCheckError },
+      { data: approvals, error: approvalError },
     ] = await Promise.all([
       db
         .from("knowledge_factory_report_products")
@@ -346,12 +353,13 @@ export default async function handler(request, response) {
         .from("knowledge_factory_uat_contract_checks")
         .select("operation_key, status, observed_field_manifest, cost_evidence")
         .eq("organisation_id", organisationId),
+      db.from("knowledge_factory_report_cost_approvals").select("id, product_id, supplier_environment, supplier_query_sha256, schedule_version, maximum_credits, expires_at, revoked_at").eq("organisation_id", organisationId).order("created_at", { ascending: false }).limit(100),
     ]);
-    if (productError || validationError || commercialPolicyError || contractCheckError)
+    if (productError || validationError || commercialPolicyError || contractCheckError || approvalError)
       throw new Error("The Phase 1 report-package workspace is unavailable.");
     if (action === "list")
       return json(response, 200, {
-        products: mergeProducts(products, validations, commercialPolicy, contractChecks),
+        products: mergeProducts(products, validations, commercialPolicy, contractChecks, approvals, reportEnvironment(env)),
       });
     const productId = text(input.productId, 80);
     const template = PRODUCTS[productId];
@@ -359,7 +367,7 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "Choose a supported report package.",
       });
-    const allProducts = mergeProducts(products, validations, commercialPolicy, contractChecks);
+    const allProducts = mergeProducts(products, validations, commercialPolicy, contractChecks, approvals, reportEnvironment(env));
     const current = allProducts.find((item) => item.productId === productId);
     const selectedPriceCents = priceCents(input.customerPriceCents);
     const status =
@@ -369,10 +377,10 @@ export default async function handler(request, response) {
       selectedPriceCents > current.validatedSupplierCostCents
         ? "uat_validated"
         : "draft";
-    if (input.markUatValidated === true && current?.validationCount !== 1)
+    if (input.markUatValidated === true && !current?.costApprovalId)
       return json(response, 400, {
         error:
-          "Validate this package's complete query in UAT before marking it ready.",
+          "Save current supplier billing, field and reviewed maximum-cost approval before marking this package ready.",
       });
     if (
       input.markUatValidated === true &&
@@ -430,7 +438,7 @@ export default async function handler(request, response) {
     if (reloadError)
       throw new Error("The saved report package could not be reloaded.");
     return json(response, 200, {
-      products: mergeProducts(nextProducts, validations, commercialPolicy, contractChecks),
+      products: mergeProducts(nextProducts, validations, commercialPolicy, contractChecks, approvals, reportEnvironment(env)),
     });
   } catch (error) {
     json(response, Number(error?.status || 502), {

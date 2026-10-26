@@ -60,8 +60,8 @@ export default function LeadDocumentWorkspace({
       <header className="border-b border-[#e6eef7] bg-[#fbfdff] px-5 py-5 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#148a58]">{partyLabel} Profile <span className="px-1 text-[#9aabba]">/</span> Documents</p>
-            <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-[#102033]">Documents</h4>
+            {partyType !== 'buyer' ? <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#148a58]">{partyLabel} Profile <span className="px-1 text-[#9aabba]">/</span> Documents</p> : null}
+            <h4 className={`${partyType !== 'buyer' ? 'mt-2 ' : ''}text-2xl font-semibold tracking-[-0.04em] text-[#102033]`}>Documents</h4>
             <p className="mt-1 truncate text-sm font-medium text-[#60758b]" title={partyName}>{partyName}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

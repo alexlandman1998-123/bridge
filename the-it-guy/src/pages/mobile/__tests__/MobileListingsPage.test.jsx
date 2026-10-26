@@ -27,11 +27,11 @@ it('shows every saved active listing, searches beyond the home preview, and sepa
   expect(screen.getByRole('link', { name: 'Create new listing' }).getAttribute('href')).toBe('/mobile/listings/new')
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Property 7' } })
   expect(screen.getAllByRole('article')).toHaveLength(1)
-  expect(screen.getByRole('link', { name: 'Edit listing: Property 7' }).getAttribute('href')).toBe('/mobile/listings/7/edit')
+  expect(screen.getByRole('link', { name: 'Open listing: Property 7' }).getAttribute('href')).toBe('/mobile/listings/7?tab=overview')
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
-  fireEvent.click(screen.getByRole('button', { name: /Drafts/ }))
+  fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'drafts' } })
   expect(screen.getAllByRole('article')).toHaveLength(1)
-  expect(screen.getByRole('link', { name: 'Continue draft: Property draft' }).getAttribute('href')).toBe('/mobile/listings/draft/edit')
+  expect(screen.getByRole('link', { name: 'Open listing: Property draft' }).getAttribute('href')).toBe('/mobile/listings/draft?tab=overview')
 })
 
 it('shows developer unit numbers, recorded specifications and filters/sorts the saved inventory', async () => {
@@ -70,4 +70,31 @@ it('replaces a failed photo with a truthful placeholder without an image retry l
   fireEvent.error(screen.getByRole('img'))
   expect(screen.queryByRole('img')).toBeNull()
   expect(screen.getByText('No photo yet')).toBeTruthy()
+})
+
+it('separates Sales and Rentals and filters drafts inside either collection', async () => {
+  mocks.read.mockResolvedValue([
+    listing('sale'), listing('sale-draft', { group: 'drafts', statusLabel: 'Draft' }),
+    listing('rental', { kind: 'rentals', price: 13500, rentalPriceFrequency: 'monthly' }),
+    listing('rental-draft', { kind: 'rentals', group: 'drafts', statusLabel: 'Draft' }),
+  ])
+  render(page()); await act(async () => {})
+  expect(screen.getByRole('button', { name: 'Sales' }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getAllByRole('article')).toHaveLength(1)
+  expect(screen.getByRole('heading', { name: 'Property sale' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Rentals' }))
+  expect(screen.getByRole('heading', { name: 'Property rental' })).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'Property sale' })).toBeNull()
+  expect(screen.getByRole('article').textContent).toContain('/ month')
+  expect(screen.getByRole('link', { name: 'Open listing: Property rental' }).getAttribute('href')).toBe('/mobile/rentals/listings/rental')
+  expect(screen.getByRole('link', { name: 'Create new listing' }).getAttribute('href')).toBe('/agent/rentals/listings/new')
+  fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'drafts' } })
+  expect(screen.getByRole('link', { name: 'Open listing: Property rental-draft' }).getAttribute('href')).toBe('/mobile/rentals/listings/rental-draft')
+  fireEvent.click(screen.getByRole('button', { name: 'Sales' }))
+  expect(screen.getByRole('heading', { name: 'Property sale-draft' })).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'all' } })
+  expect(screen.getAllByRole('article')).toHaveLength(2)
+  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
+  expect(screen.getByLabelText('Status').value).toBe('active')
+  expect(screen.getAllByRole('article')).toHaveLength(1)
 })

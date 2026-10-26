@@ -12,7 +12,7 @@ test('seller sale progress consumes the canonical transaction snapshot', async (
   assert.match(source, /snapshot: effectiveWorkspace === 'seller' \? workspaceData\?\.transactionJourneySnapshot/)
   assert.match(source, /fallbackSource: 'seller-legacy'/)
   assert.match(source, /sellerTransactionJourneyModel=\{sellerTransactionJourneyModel\}/)
-  assert.match(source, /journeyModel=\{workspaceData\?\.transactionJourneySnapshot \? sellerTransactionJourneyModel : null\}/)
+  assert.match(source, /transactionJourney=\{sellerTransactionJourneyModel\}/)
 })
 
 test('listing progress remains distinct while sale progress uses the shared renderer', async () => {
@@ -32,9 +32,10 @@ test('seller detail page replaces its local rail when the canonical model is ava
   assert.match(source, /The same transaction milestones shared with your agent and transaction team/)
 })
 
-test('seller educational stage is seeded from the canonical milestone before legacy fields', async () => {
-  const source = await read('src/pages/ClientPortal.jsx')
-
-  assert.match(source, /sellerTransactionStageKey = resolveSellerTransactionStageKey\(\s*workspaceData\?\.transactionJourneySnapshot\?\.currentMilestoneKey,/)
-  assert.match(source, /key=\{sellerTransactionStageKey\}[\s\S]*?currentStageKey=\{sellerTransactionStageKey\}/)
+test('seller progress page uses canonical milestones and keeps unavailable progress unknown', async () => {
+  const source = await read('src/components/client-portal/seller/SellerProgressPage.jsx')
+  assert.match(source, /canonicalTransaction/)
+  assert.match(source, /<TransactionJourneyTracker model=\{transactionJourney\}/)
+  assert.match(source, /shared milestones are temporarily unavailable/)
+  assert.match(source, /transferJourney\?\.status === 'ready'/)
 })

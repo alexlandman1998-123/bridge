@@ -398,6 +398,8 @@ function missionControlApiPlugin() {
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Test optimization must not replace dependencies used by a running dev server.
+  cacheDir: process.env.VITEST ? 'node_modules/.vite-vitest' : 'node_modules/.vite-dev',
   // Shared Edge/editor code resolves the parser from this app's pinned package.
   resolve: { dedupe: ['parse5'] },
   plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],

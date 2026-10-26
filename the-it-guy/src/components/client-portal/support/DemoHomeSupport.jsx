@@ -19,7 +19,7 @@ export function DemoHomeSupportProvider({ children }) {
   return <DemoHomeSupportContext.Provider value={{ records, createRecord }}>{children}</DemoHomeSupportContext.Provider>
 }
 
-export default function DemoHomeSupport({ theme, propertyAddress = '', includeClaim = false }) {
+export default function DemoHomeSupport({ theme, propertyAddress = '', includeClaim = false, includeAssist = true, showHeading = true }) {
   const id = useId()
   const shared = useContext(DemoHomeSupportContext)
   // The standalone component previews and focused tests can run without a provider.
@@ -35,13 +35,13 @@ export default function DemoHomeSupport({ theme, propertyAddress = '', includeCl
     return record
   }
 
-  return <section className="demo-home-support demo-home-support-panel" style={demoInsuranceBrandStyle(theme)} aria-labelledby={`${id}-heading`} data-home-support-source="demo">
-    <div className="demo-home-support-panel-heading"><h3 id={`${id}-heading`}>Here when you need us.</h3><span>Explore with sample details</span></div>
-    <div className="demo-home-support-actions" data-single={!includeClaim}>
+  return <section className="demo-home-support demo-home-support-panel" style={demoInsuranceBrandStyle(theme)} aria-labelledby={showHeading ? `${id}-heading` : undefined} aria-label={showHeading ? undefined : 'Home support'} data-home-support-source="demo">
+    {showHeading ? <div className="demo-home-support-panel-heading"><h3 id={`${id}-heading`}>Here when you need us.</h3><span>Explore with sample details</span></div> : null}
+    <div className="demo-home-support-actions" data-single={Number(includeClaim) + Number(includeAssist) === 1}>
       {includeClaim ? <button type="button" className="demo-home-support-action" onClick={() => setDialog({ kind: 'claim', receipt: false })}><span className="demo-home-support-action-icon"><FileHeart size={28} strokeWidth={1.4} aria-hidden="true" /></span><span><strong>Submit a claim</strong><span>Something happened? Take the next step.</span></span><ArrowRight size={20} aria-hidden="true" /></button> : null}
-      <button type="button" className="demo-home-support-action demo-home-support-action-assist" onClick={() => setDialog({ kind: 'assist', receipt: false })}><span className="demo-home-support-action-icon"><LifeBuoy size={30} strokeWidth={1.4} aria-hidden="true" /></span><span><strong>Emergency assist</strong><span>Plumbing, electrical or a lockout. Help starts here.</span></span><ArrowRight size={20} aria-hidden="true" /></button>
+      {includeAssist ? <button type="button" className="demo-home-support-action demo-home-support-action-assist" onClick={() => setDialog({ kind: 'assist', receipt: false })}><span className="demo-home-support-action-icon"><LifeBuoy size={30} strokeWidth={1.4} aria-hidden="true" /></span><span><strong>Emergency assist</strong><span>Plumbing, electrical or a lockout. Help starts here.</span></span><ArrowRight size={20} aria-hidden="true" /></button> : null}
     </div>
-    {(includeClaim && records.claim) || records.assist ? <div className="demo-home-support-recent" aria-label="Your demo requests">{['claim', 'assist'].filter(kind => records[kind] && (kind !== 'claim' || includeClaim)).map(kind => <button key={kind} type="button" onClick={() => setDialog({ kind, receipt: true })}><span><strong>{kind === 'claim' ? 'Demo claim' : `${records[kind].service.label} · demo assistance`}</strong><span>{records[kind].reference} · Created locally</span></span><span>View {kind === 'claim' ? 'claim' : 'request'}<ArrowRight size={16} aria-hidden="true" /></span></button>)}</div> : null}
+    {(includeClaim && records.claim) || (includeAssist && records.assist) ? <div className="demo-home-support-recent" aria-label="Your demo requests">{['claim', 'assist'].filter(kind => records[kind] && (kind === 'claim' ? includeClaim : includeAssist)).map(kind => <button key={kind} type="button" onClick={() => setDialog({ kind, receipt: true })}><span><strong>{kind === 'claim' ? 'Demo claim' : `${records[kind].service.label} · demo assistance`}</strong><span>{records[kind].reference} · Created locally</span></span><span>View {kind === 'claim' ? 'claim' : 'request'}<ArrowRight size={16} aria-hidden="true" /></span></button>)}</div> : null}
     {dialog?.kind === 'claim' ? <DemoClaimFlow theme={theme} propertyAddress={propertyAddress} existingRecord={dialog.receipt ? records.claim : null} onCreate={createRecord} onClose={() => setDialog(null)} /> : null}
     {dialog?.kind === 'assist' ? <DemoEmergencyFlow theme={theme} propertyAddress={propertyAddress} existingRecord={dialog.receipt ? records.assist : null} onCreate={createRecord} onClose={() => setDialog(null)} /> : null}
   </section>

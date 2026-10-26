@@ -15,7 +15,7 @@ describe('shared application fields', () => {
       return [group.key, group.collection ? [fields] : fields]
     }))
     const reopened = JSON.parse(JSON.stringify(mergeRentalApplicationData({}, data)))
-    expect(reopened).toEqual(data)
+    expect(reopened).toEqual({ ...data, income: { ...data.income, incomeBasis: 'net' } })
     const cleared = mergeRentalApplicationData(reopened, { identity: { phone: '' }, income: { otherIncome: 0 }, household: { guarantorRequired: false }, people: [] })
     expect(cleared.identity.firstName).toBe(data.identity.firstName)
     expect(cleared.identity.phone).toBe('')

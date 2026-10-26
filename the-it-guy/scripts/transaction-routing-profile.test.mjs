@@ -58,6 +58,13 @@ function assertIncludes(values, expected, message) {
     },
   })
 
+  const roundTripTransaction = { id: 'confirmed-profile', finance_type: 'bond', transaction_type: 'resale', property_type: 'freehold house', purchaser_type: 'company', seller_type: 'individual', seller_has_existing_bond: false, vat_treatment: 'transfer_duty' }
+  const roundTrip = resolveTransactionRoutingProfile({ transaction: { ...roundTripTransaction, routing_profile_json: confirmed } })
+  assert.deepEqual(roundTrip.matterProfile, confirmed.matterProfile, 'unchanged profile persistence must preserve confirmation')
+  assert.deepEqual(roundTrip.missingFields, confirmed.missingFields)
+  const explicitIncompleteScenario = resolveTransactionRoutingProfile({ transaction: { ...roundTripTransaction, routing_profile_json: { ...confirmed, scenarioProfile: { parties: [{ id: 'buyer', role: 'buyer', entityType: 'company', name: '' }] } } }, matterProfile: { status: 'confirmed', confirmedAt: '2026-09-08' } })
+  assert.equal(explicitIncompleteScenario.matterProfile.status, 'needs_facts', 'explicit scenario facts retain their completeness checks')
+  assert.equal(explicitIncompleteScenario.matterProfile.confirmedAt, null, 'incomplete facts cannot carry a confirmation')
   assert.equal(confirmed.matterProfile.status, 'confirmed')
   assert.equal(confirmed.matterProfile.revision, 1)
   assert.equal(confirmed.matterProfile.confirmedByRole, 'attorney')

@@ -192,3 +192,28 @@ test('seller optional uploads retain their persisted request identity after prof
     required: false, status: 'uploaded', linkedDocument: { id: document.id },
   })
 })
+
+
+test('an empty canonical room cannot claim a buyer is caught up while saved checklist rows await setup', () => {
+  const centre = buildDocumentCenter({
+    canonicalDocumentProjection: { requirements: [], documents: [] },
+    requiredDocuments: [{ key: 'id_document', status: 'missing', isRequired: true }],
+  }, 'buying')
+  expect(centre.loadError).toContain('checklist is still being prepared')
+  expect(centre.canonicalOnly).toBe(true)
+  expect(centre.requiredDocuments).toEqual([])
+  const legitimatelyEmpty = buildDocumentCenter({ canonicalDocumentProjection: { requirements: [], documents: [] },
+    requiredDocuments: [{ key: 'retired', status: 'not_required', enabled: false }] }, 'buying')
+  expect(legitimatelyEmpty.loadError).toBeFalsy()
+})
+
+
+test('a buyer-visible document supplied by the team remains visible without blocking buyer actions', () => {
+  const centre = buildCanonicalBuyerDocumentCenter({ requirements: [{ id: 'rules', document_definition_key: 'body_corporate_rules',
+    status: 'pending', pack_key: 'property', uploadable_by_roles: ['agent','seller'], document_definitions: { display_label: 'Body corporate rules' } }], documents: [] })
+  expect(centre.requiredDocuments[0]).toMatchObject({ waitingForTeam: true, uploadSpec: null })
+  expect(centre.summary.total).toBe(1)
+  expect(centre.summary.blocking).toBe(0)
+  expect(centre.summary.outstanding).toBe(0)
+
+})

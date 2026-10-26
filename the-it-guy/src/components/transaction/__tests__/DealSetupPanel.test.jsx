@@ -3,14 +3,15 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), buyerProps: vi.fn(), sellerLoad: vi.fn() }))
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), buyerProps: vi.fn(), sellerLoad: vi.fn(), captureProps: vi.fn() }))
 vi.mock('../../../services/transactionSellerSaveService.js', async (importOriginal) => ({ ...await importOriginal(), loadTransactionSellerEditContext: mocks.sellerLoad }))
 vi.mock('../../../services/dealSetupService.js', () => ({
   loadCanonicalDealSetup: mocks.load,
   saveCanonicalDealTerms: mocks.save,
 }))
+vi.mock('../TransactionSellerOnboardingPanel.jsx', () => ({ default: props => { mocks.captureProps(props); return <div>Seller onboarding options</div> } }))
 vi.mock('../TransactionSellerProfile.jsx', () => ({ default: () => <div>Current seller profile</div> }))
-vi.mock('../TransactionBuyerPartiesPanel.jsx', () => ({ default: (props) => { mocks.buyerProps(props); return <div>Buyer profiles <button type="button" onClick={() => void props.onUpdated()}>Refresh buyer</button></div> } }))
+vi.mock('../TransactionBuyerOnboardingPanel.jsx', () => ({ default: (props) => { mocks.buyerProps(props); return <div>Buyer profiles <button type="button" onClick={() => void props.onUpdated()}>Refresh buyer</button></div> } }))
 vi.mock('../TransactionDetailReviewPanel.jsx', () => ({ default: () => <div>Imported review screen</div> }))
 vi.mock('../DealSetupReadinessPanel.jsx', () => ({ default: () => <div>Deal readiness</div> }))
 
@@ -31,6 +32,28 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('agent deal setup', () => {
+  it('opens Overview with basic buyer and seller details and three navigation buttons', async () => {
+    mocks.load.mockResolvedValue({ setup: { ...setup, buyers: [
+      { id: 'buyer-1', participant_name: 'Saved Buyer', participant_email: 'buyer@example.test', participant_phone: '0825550101' },
+      { id: 'buyer-2', participant_name: 'Second Buyer', participant_email: 'second@example.test' },
+    ] } })
+    render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} buyerDetails={{ name: 'Fallback Buyer' }} />)
+    const overviewTab = await screen.findByRole('tab', { name: 'Overview' })
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Overview', 'Buyer', 'Seller'])
+    expect(overviewTab.getAttribute('aria-selected')).toBe('true')
+    const overview = screen.getByRole('tabpanel', { name: 'Buyer and seller overview' })
+    expect(within(overview).getByRole('region', { name: 'Buyer summary' })).toBeTruthy()
+    expect(within(overview).getByRole('region', { name: 'Seller summary' })).toBeTruthy()
+    expect(within(overview).getByText('Saved Buyer')).toBeTruthy()
+    expect(within(overview).getByText('Second Buyer')).toBeTruthy()
+    expect(within(overview).queryByText('Fallback Buyer')).toBeNull()
+    expect(await within(overview).findByText('Existing Seller')).toBeTruthy()
+    expect(within(overview).getByText('seller@example.com')).toBeTruthy()
+    expect(within(overview).queryByRole('textbox')).toBeNull()
+    fireEvent.click(within(overview).getByRole('button', { name: 'Buyer details' }))
+    expect(screen.getByRole('tab', { name: 'Buyer' }).getAttribute('aria-selected')).toBe('true')
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('opens the review for a known bulk import, with no automatic save', async () => {
     mocks.load.mockResolvedValue({ setup, transaction: { transaction_origin_source: 'bulk_upload' } })
     render(<DealSetupPanel transactionId="imported" canEdit />)
@@ -46,18 +69,20 @@ describe('agent deal setup', () => {
     expect(button.disabled).toBe(true)
   })
 
-  it('shows captured-buyer link gaps without linking or saving automatically', async () => {
+  it('does not show captured buyer warnings before choosing an onboarding route', async () => {
     mocks.load.mockResolvedValueOnce({ setup: { ...setup, buyerLinkIssues: [{ code: 'unlinked_captured_buyer', message: 'Check the captured buyer before linking a profile.' }] } })
     render(<DealSetupPanel transactionId="imported" canEdit />)
-    expect(await screen.findByText('Buyer details need checking')).toBeTruthy()
-    expect(screen.getByText('Check the captured buyer before linking a profile.')).toBeTruthy()
+    await screen.findByText('Buyer profiles')
+    expect(screen.queryByText('Buyer details need checking')).toBeNull()
+    expect(screen.queryByText('Check the captured buyer before linking a profile.')).toBeNull()
     expect(mocks.save).not.toHaveBeenCalled()
   })
   it('keeps buyer fields when switching tabs and saves the buyer terms and funding', async () => {
     const onSaved = vi.fn()
     render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaved={onSaved} onSaveSellerDetails={vi.fn()} />)
     const buyerTab = await screen.findByRole('tab', { name: 'Buyer' })
-    expect(buyerTab.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(buyerTab)
     fireEvent.change(screen.getByLabelText('Purchaser type'), { target: { value: 'trust' } })
     fireEvent.change(screen.getByLabelText('Purchase price'), { target: { value: '1350000' } })
     fireEvent.change(screen.getByLabelText('Deposit'), { target: { value: '0' } })
@@ -80,30 +105,11 @@ describe('agent deal setup', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
   })
 
-  it('saves seller contact fields separately and opens seller profile editing', async () => {
-    const onSaveSellerDetails = vi.fn().mockResolvedValue({ ...sellerContext, details: { name: 'Updated Seller', email: 'updated@example.com', phone: '0837654321' } })
-    const onEditSellerProfile = vi.fn()
-    render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={onSaveSellerDetails} onEditSellerProfile={onEditSellerProfile} />)
-    fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-    const panel = screen.getByRole('tabpanel', { name: 'Seller details' })
-    expect(within(panel).getByText('Current seller profile')).toBeTruthy()
-    expect(within(panel).queryByText('Individual')).toBeNull()
-    fireEvent.change(within(panel).getByLabelText('Seller name'), { target: { value: 'Updated Seller' } })
-    fireEvent.change(within(panel).getByLabelText('Email'), { target: { value: 'updated@example.com' } })
-    fireEvent.change(within(panel).getByLabelText('Phone'), { target: { value: '0837654321' } })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Edit seller type and bond' }))
-    expect(onEditSellerProfile).toHaveBeenCalledOnce()
-    fireEvent.click(within(panel).getByRole('button', { name: 'Save seller details' }))
-    await waitFor(() => expect(onSaveSellerDetails).toHaveBeenCalledWith({
-      name: 'Updated Seller', email: 'updated@example.com', phone: '0837654321',
-    }, { context: sellerContext, mutationId: expect.any(String) }))
-    expect(mocks.save).not.toHaveBeenCalled()
-    expect(await within(panel).findByRole('status')).toHaveProperty('textContent', 'Seller details saved.')
-  })
+
 
   it('preserves unsaved commercial fields when buyer parties refresh', async () => {
     render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={vi.fn()} />)
-    await screen.findByRole('tab', { name: 'Buyer' })
+    fireEvent.click(await screen.findByRole('tab', { name: 'Buyer' }))
     fireEvent.change(screen.getByLabelText('Purchase price'), { target: { value: '1450000' } })
     fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '1350000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Refresh buyer' }))
@@ -121,19 +127,7 @@ describe('agent deal setup', () => {
     expect(await screen.findByLabelText('Purchase price')).toHaveProperty('value', '1200000')
   })
 
-  it('keeps seller edits after a failed save so the user can retry', async () => {
-    const onSaveSellerDetails = vi.fn().mockRejectedValueOnce(new Error('Could not save seller')).mockResolvedValueOnce({ ...sellerContext, details: { ...sellerContext.details, name: 'Corrected Seller' } })
-    render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={onSaveSellerDetails} />)
-    fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-    const panel = screen.getByRole('tabpanel', { name: 'Seller details' })
-    fireEvent.change(within(panel).getByLabelText('Seller name'), { target: { value: 'Corrected Seller' } })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Save seller details' }))
-    expect(await within(panel).findByRole('alert')).toHaveProperty('textContent', 'Could not save seller')
-    expect(within(panel).getByLabelText('Seller name')).toHaveProperty('value', 'Corrected Seller')
-    fireEvent.click(within(panel).getByRole('button', { name: 'Save seller details' }))
-    await waitFor(() => expect(onSaveSellerDetails).toHaveBeenCalledTimes(2))
-    expect(await within(panel).findByRole('status')).toHaveProperty('textContent', 'Seller details saved.')
-  })
+
 
   it('does not add buyer and seller tabs to other deal setup contexts', async () => {
     render(<DealSetupPanel transactionId="matter-1" canEdit />)
@@ -152,98 +146,60 @@ it('makes an unknown imported finance type explicit until the user resolves it',
   mocks.load.mockResolvedValue({setup:{...setup,finance:{type:'check scanned terms',cashAmount:300000,bondAmount:700000,managedBy:'client',bank:'Captured bank'}}})
   render(<DealSetupPanel transactionId="unknown" canEdit />)
   expect(await screen.findByRole('option',{name:'Unresolved: check scanned terms'})).toBeTruthy()
-  expect(screen.getByText(/No finance route has been assumed/)).toBeTruthy();expect(mocks.save).not.toHaveBeenCalled()
+  expect(screen.queryByText(/No finance route has been assumed/)).toBeNull();expect(mocks.save).not.toHaveBeenCalled()
   fireEvent.change(screen.getByLabelText('Finance type'),{target:{value:'hybrid'}})
   expect(screen.queryByText(/No finance route has been assumed/)).toBeNull();expect(screen.getByLabelText('Cash amount')).toHaveProperty('value','300000');expect(screen.getByLabelText('Bond amount')).toHaveProperty('value','700000')
 })
 
-it('preserves the losing draft and original revision through a background seller refresh', async () => {
-  const saveSeller = vi.fn().mockRejectedValue(Object.assign(new Error('Someone else saved first.'), { code: 'PT409' }))
-  const view = render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={saveSeller} />)
-  fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-  await waitFor(() => expect(screen.getByLabelText('Phone').disabled).toBe(false))
-  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: 'my-unsaved-phone' } })
-  view.rerender(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={{ ...seller, phone: 'background-phone' }} onSaveSellerDetails={saveSeller} />)
-  expect(screen.getByLabelText('Phone').value).toBe('my-unsaved-phone')
-  fireEvent.click(screen.getByRole('button', { name: 'Save seller details' }))
-  await screen.findByText('Someone else saved first.')
-  expect(saveSeller.mock.calls[0][1].context.revision).toEqual(sellerContext.revision)
-  expect(screen.getByLabelText('Phone').value).toBe('my-unsaved-phone')
-  expect(mocks.sellerLoad).toHaveBeenCalledTimes(1)
-  const unload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(unload)
-  expect(unload.defaultPrevented).toBe(true)
-  mocks.sellerLoad.mockResolvedValueOnce({ ...sellerContext, details: { ...sellerContext.details, phone: 'latest-phone' }, revision: { transactionUpdatedAt: 'latest' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Use latest saved details (discard my entries)' }))
-  await waitFor(() => expect(screen.getByLabelText('Phone').value).toBe('latest-phone'))
+
+
+
+
+
+
+
+
+
+
+
+it('keeps document requirements outside Buyer and uses inline capture', async () => {
+  render(<DealSetupPanel transactionId="matter-1" canEdit />)
+  await screen.findByText('Deal basics')
+  expect(screen.queryByText('Document requirements')).toBeNull()
+  expect(screen.queryByText('Deal readiness')).toBeNull()
+  expect(mocks.buyerProps.mock.calls.at(-1)[0].canEdit).toBe(true)
 })
 
-it('reuses an uncertain save reference, blocks duplicate clicks and advances only from its receipt', async () => {
-  let rejectSave
-  const saveSeller = vi.fn().mockImplementationOnce(() => new Promise((resolve, reject) => { rejectSave = reject }))
-  render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={saveSeller} />)
+it('uses full manual capture for an explicitly unlinked seller without invoking contact saves', async () => {
+  mocks.sellerLoad.mockResolvedValue({ ...sellerContext, revision: { ...sellerContext.revision, listingId: null } })
+  const contactSave = vi.fn()
+  render(<DealSetupPanel transactionId="backfill" canEdit sellerDetails={seller} onSaveSellerDetails={contactSave} />)
   fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-  await waitFor(() => expect(screen.getByLabelText('Phone').disabled).toBe(false))
-  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: 'saved-phone' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Save seller details' }))
-  fireEvent.submit(screen.getByLabelText('Phone').closest('form'))
-  expect(saveSeller).toHaveBeenCalledTimes(1)
-  rejectSave(new Error('Save response timed out.'))
-  await screen.findByText('Save response timed out.')
-  const receipt = { ...sellerContext, details: { ...sellerContext.details, phone: 'saved-phone' }, revision: { transactionUpdatedAt: 'confirmed' } }
-  saveSeller.mockResolvedValueOnce(receipt)
-  fireEvent.click(screen.getByRole('button', { name: 'Save seller details' }))
-  await screen.findByText('Seller details saved.')
-  expect(saveSeller.mock.calls[1][1].mutationId).toBe(saveSeller.mock.calls[0][1].mutationId)
-  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: 'second-phone' } })
-  saveSeller.mockResolvedValueOnce({ ...receipt, details: { ...receipt.details, phone: 'second-phone' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Save seller details' }))
-  await waitFor(() => expect(saveSeller).toHaveBeenCalledTimes(3))
-  expect(saveSeller.mock.calls[2][1].context.revision).toEqual(receipt.revision)
-  expect(saveSeller.mock.calls[2][1].mutationId).not.toBe(saveSeller.mock.calls[0][1].mutationId)
+  expect(await screen.findByText('Seller onboarding options')).toBeTruthy()
+  expect(screen.queryByLabelText('Seller name')).toBeNull()
+  expect(contactSave).not.toHaveBeenCalled()
+  expect(mocks.captureProps.mock.calls.at(-1)[0]).toMatchObject({ transactionId: 'backfill', canEdit: true })
 })
 
-it('does not claim success without a confirmed receipt or enable an ambiguous seller link', async () => {
-  const saveSeller = vi.fn().mockResolvedValue(undefined)
-  const view = render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={saveSeller} />)
-  fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-  await waitFor(() => expect(screen.getByLabelText('Phone').disabled).toBe(false))
-  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: 'unsaved' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Save seller details' }))
-  await screen.findByText(/save could not be confirmed/)
-  expect(screen.queryByText('Seller details saved.')).toBeNull()
-  mocks.sellerLoad.mockResolvedValueOnce({ ...sellerContext, nameEditable: false, blockedReason: 'The person link needs review.' })
-  view.rerender(<DealSetupPanel transactionId="matter-2" canEdit sellerDetails={seller} onSaveSellerDetails={saveSeller} />)
-  await screen.findByText('The person link needs review.')
-  expect(screen.getByLabelText('Phone').disabled).toBe(true)
-  expect(screen.getByRole('button', { name: 'Save seller details' }).disabled).toBe(true)
+it('waits for a save attempt before showing incomplete backfill funding validation', async()=>{
+ mocks.load.mockResolvedValue({setup:{...setup,terms:{...setup.terms,depositAmount:null},finance:{...setup.finance,cashAmount:null}}})
+ render(<DealSetupPanel transactionId="backfill" canEdit />)
+ await screen.findByLabelText('Deposit')
+ expect(screen.queryByText('Funding needs checking')).toBeNull()
+ fireEvent.change(screen.getByLabelText('Purchase price'),{target:{value:'1300000'}})
+ expect(screen.queryByText('Funding needs checking')).toBeNull()
+ fireEvent.click(screen.getAllByRole('button',{name:'Save Deal Setup'})[0])
+ expect(await screen.findByText('Funding needs checking')).toBeTruthy()
 })
 
-it('ignores an earlier transaction save receipt after the editor changes transactions', async () => {
-  let finishSave
-  const saveSeller = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve }))
-  const view = render(<DealSetupPanel transactionId="matter-1" canEdit sellerDetails={seller} onSaveSellerDetails={saveSeller} />)
-  fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-  await waitFor(() => expect(screen.getByLabelText('Phone').disabled).toBe(false))
-  fireEvent.change(screen.getByLabelText('Phone'), { target: { value: 'first-transaction-draft' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Save seller details' }))
-  const second = { ...sellerContext, details: { ...sellerContext.details, phone: 'second-transaction' }, revision: { transactionUpdatedAt: 'second-transaction' } }
-  mocks.sellerLoad.mockResolvedValueOnce(second)
-  view.rerender(<DealSetupPanel transactionId="matter-2" canEdit sellerDetails={seller} onSaveSellerDetails={saveSeller} />)
-  await waitFor(() => expect(screen.getByLabelText('Phone').value).toBe('second-transaction'))
-  finishSave({ ...sellerContext, details: { ...sellerContext.details, phone: 'first-transaction-draft' } })
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Save seller details' }).disabled).toBe(false))
-  expect(screen.getByLabelText('Phone').value).toBe('second-transaction')
-  expect(screen.queryByText('Seller details saved.')).toBeNull()
-})
-
-
-it('linked legal corrections open the displayed listing instead of independently changing the transaction seller type', async () => {
-  mocks.sellerLoad.mockResolvedValue({ ...sellerContext, nameEditable: false, revision: { ...sellerContext.revision, listingId: 'displayed-listing' } })
-  const onOpenLinkedSellerProfile = vi.fn(), onEditSellerProfile = vi.fn()
-  render(<DealSetupPanel transactionId="linked" sellerDetails={seller} canEdit onOpenLinkedSellerProfile={onOpenLinkedSellerProfile} onEditSellerProfile={onEditSellerProfile} />)
-  fireEvent.click(await screen.findByRole('tab', { name: 'Seller' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Open linked seller profile' }))
-  expect(onOpenLinkedSellerProfile).toHaveBeenCalledWith('displayed-listing')
-  expect(screen.queryByRole('button', { name: 'Edit seller type and bond' })).toBeNull()
-  expect(onEditSellerProfile).not.toHaveBeenCalled()
+it('offers the shared seller workflow for a linked listing without duplicating a contact form', async()=>{
+ mocks.sellerLoad.mockResolvedValue({...sellerContext,revision:{...sellerContext.revision,listingId:'listing'}})
+ const send=vi.fn()
+ render(<DealSetupPanel transactionId="linked" canEdit sellerDetails={seller} onSendSellerLink={send}/>)
+ fireEvent.click(await screen.findByRole('tab',{name:'Seller'}))
+ await screen.findByText('Seller onboarding options')
+ expect(mocks.captureProps.mock.lastCall[0]).toMatchObject({transactionId:'linked',canEdit:true,onSendLink:send})
+ expect(screen.queryByLabelText('Seller name')).toBeNull()
+ expect(screen.queryByText('Current seller profile')).toBeNull()
+ expect(send).not.toHaveBeenCalled()
 })

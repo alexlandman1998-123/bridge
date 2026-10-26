@@ -39,3 +39,14 @@ it('bases rental fees on collected rent in the page and rental book popup', () =
   expect(within(popup).getByText(/R21[,\s]000/, { selector: 'dd' })).toBeTruthy()
   expect(within(popup).getByText(/remaining each month, R468[,\s]000 a year/).parentElement.textContent).toMatch(/R39[,\s]000/)
 })
+
+it('calculates the requested growth illustration using 6% commission', () => {
+  render(<HomeSeekersJoin />)
+  const growth = screen.getByRole('region', { name: /The better you get,.*the cheaper we get\./i })
+  for (const [sales, percentage] of [[5, 26], [8, 17], [10, 14], [15, 10], [20, 8]]) {
+    const row = within(growth).getByText(`${sales} sales a year`).parentElement
+    expect(row.querySelector('strong').textContent).toBe(`${percentage}%`)
+  }
+  expect(within(growth).getByText(/R123[,\s]000 for the year/)).toBeTruthy()
+  expect(within(growth).getByText('Rounded percentages using option 2, an average R1.5 million sale price and 6% commission, excluding VAT.')).toBeTruthy()
+})

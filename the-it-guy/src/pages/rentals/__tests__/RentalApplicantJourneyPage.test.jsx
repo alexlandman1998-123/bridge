@@ -40,7 +40,7 @@ it('uses the organisation logo and all three CI colours on the landing page', as
   expect(landing.style.getPropertyValue('--landing-secondary')).toBe('#224466')
   expect(landing.style.getPropertyValue('--landing-accent')).toBe('#ffcc00')
   await startApplication()
-  expect(screen.getByRole('img', { name: 'Tenant Agency logo' }).getAttribute('src')).toBe('https://example.test/light.svg')
+  expect(screen.getAllByRole('img', { name: 'Tenant Agency logo' })[0].getAttribute('src')).toBe('https://example.test/light.svg')
   expect(screen.getByRole('main').style.getPropertyValue('--buyer-brand-action')).toBe('#ffcc00')
 })
 it('tailors the guided steps to entity applicants without an empty employment step', async () => {
@@ -50,7 +50,7 @@ it('tailors the guided steps to entity applicants without an empty employment st
   expect(screen.getByRole('progressbar').getAttribute('aria-valuemax')).toBe('7')
   expect(screen.queryByRole('button', { name: /Employment/ })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: /Affordability/ }))
-  expect(screen.getByRole('heading', { name: 'Your monthly finances' })).toBeTruthy()
+  expect(screen.getAllByRole('heading', { name: 'Your monthly finances' })[0]).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: /Tenant entity/ }))
   fireEvent.click(screen.getByRole('radio', { name: /^Individual/ }))
   expect(screen.getByRole('progressbar').getAttribute('aria-valuemax')).toBe('8')

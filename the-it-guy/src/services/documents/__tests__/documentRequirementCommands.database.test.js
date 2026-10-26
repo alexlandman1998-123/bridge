@@ -233,3 +233,56 @@ test('upload validation rejects changed digest and stale replacement, with no pa
   assert.equal((await row(r.id)).latest_upload_id, current.latest_upload_id)
   assert.equal((await db.query('select count(*) from documents where canonical_requirement_instance_id=$1', [r.id])).rows[0].count, 1)
 })
+
+test('legacy client-owned uploads respect the real buyer/seller audience constraint, including later handoff', async () => {
+  // Include the production constraint that the original fixture omitted.
+  await db.exec("alter table documents add constraint documents_client_recipient_role_check check(client_recipient_role is null or client_recipient_role in ('buyer','seller'))")
+  const source = (await command({ payload: { party: 'buyer', label: 'Legacy buyer address' } })).requirement
+  const legacy = { ...source, id: randomUUID(), requested_from_role: 'client', custom_label: null, requirement_origin: 'matrix', document_definition_key: 'buyer_proof_of_address' }
+  await db.query('insert into document_requirement_instances select * from jsonb_populate_record(null::document_requirement_instances,$1)', [legacy])
+  await assert.rejects(upload(await row(legacy.id)), /documents_client_recipient_role_check/)
+  assert.equal((await row(legacy.id)).latest_upload_id, null)
+  await db.exec(await sql('20261019212951_buyer_document_requirement_audience'))
+  const saved = await upload(await row(legacy.id))
+  const doc = (await db.query('select * from documents where id=$1', [saved.result.uploadId])).rows[0]
+  assert.equal(doc.client_recipient_role, 'buyer')
+  assert.equal(saved.result.requirement.status, 'under_review')
+  assert.deepEqual(await command(saved.args), saved.result, 'retry reuses the exact saved receipt')
+  await db.query("update document_requirement_instances set visible_to_roles=array['buyer','seller'] where id=$1", [legacy.id])
+  const shared = await upload(await row(legacy.id))
+  assert.equal((await db.query('select client_recipient_role from documents where id=$1', [shared.result.uploadId])).rows[0].client_recipient_role, null, 'shared buyer/seller evidence keeps its shared audience')
+
+
+  const staged = { ...source, id: randomUUID(), requested_from_role: 'client', context_type: 'buyer_lead', context_id: lead,
+    transaction_id: null, custom_label: null, requirement_origin: 'matrix', document_definition_key: 'buyer_id_document' }
+  await db.query('insert into document_requirement_instances select * from jsonb_populate_record(null::document_requirement_instances,$1)', [staged])
+  const pre = await upload(await row(staged.id))
+  assert.equal((await db.query('select count(*)::int n from documents where id=$1', [pre.result.uploadId])).rows[0].n, 0)
+  await db.query("update document_requirement_instances set context_type='transaction',context_id=$1,transaction_id=$1 where id=$2", [transaction, staged.id])
+  const promoted = (await db.query('select * from documents where id=$1', [pre.result.uploadId])).rows[0]
+  assert.equal(promoted.client_recipient_role, 'buyer')
+  assert.equal(promoted.file_path, pre.args.payload.filePath)
+  assert.equal(promoted.transaction_id, transaction)
+  await db.exec(await sql('20261019212951_buyer_document_requirement_audience'))
+})
+
+test('seller lead upload hands off the same file to the listing transaction and replacements retain history', async () => {
+  const sellerLead = randomUUID()
+  await db.query("insert into leads values($1,$2,'seller')", [sellerLead, org])
+  await db.query('update private_listings set seller_lead_id=$1 where id=$2', [sellerLead, listing])
+  const initial = (await command({ type: 'seller_lead', context: sellerLead, payload: { party: 'seller', label: 'QA seller address' } })).requirement
+  const before = await upload(initial)
+  assert.equal(before.result.requirement.transaction_id, null)
+  await db.query('select bridge_handoff_manual_document_requirements($1)', [transaction])
+  const linked = await row(initial.id)
+  const first = (await db.query('select * from documents where id=$1', [before.result.uploadId])).rows[0]
+  assert.equal(first.transaction_id, transaction)
+  assert.equal(first.file_path, before.args.payload.filePath)
+  assert.equal(first.client_recipient_role, 'seller')
+  assert.equal(linked.satisfied_by_document_id, first.id)
+  await db.query("update document_requirement_instances set status='approved' where id=$1", [initial.id])
+  const replacement = await upload(await row(initial.id))
+  assert.equal(replacement.result.requirement.status, 'under_review')
+  assert.equal((await db.query('select count(*)::int n from documents where canonical_requirement_instance_id=$1', [initial.id])).rows[0].n, 2)
+  assert.equal((await db.query('select file_path from documents where id=$1', [first.id])).rows[0].file_path, first.file_path)
+})

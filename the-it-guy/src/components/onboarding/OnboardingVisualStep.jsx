@@ -505,6 +505,9 @@ export function OnboardingOptionCard({
   onSelect,
   name,
   value,
+  disabled = false,
+  ariaLabel,
+  control,
 }) {
   const Icon = OPTION_ICONS[icon] || UserRound
 
@@ -512,11 +515,14 @@ export function OnboardingOptionCard({
     <button
       type="button"
       role="radio"
+      disabled={disabled}
+      aria-label={ariaLabel}
+      data-rental-control={control}
       aria-checked={selected}
       name={name}
       value={value}
       onClick={onSelect}
-      className={`group flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-brand-action-border)] ${
+      className={`group flex w-full items-center disabled:cursor-not-allowed disabled:opacity-60 gap-3 rounded-[18px] border px-3.5 py-3.5 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-brand-action-border)] ${
         selected
           ? 'border-[var(--buyer-brand-action)] bg-[var(--buyer-brand-action-softer)] shadow-[0_14px_30px_rgba(15,23,42,0.08)] ring-1 ring-[var(--buyer-brand-action-border)]'
           : 'border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] hover:border-[#b9cadd] hover:bg-[#fbfdff]'
@@ -608,6 +614,7 @@ export function StickyOnboardingActions({
   saving = false,
   showBackButton = false,
   primaryActionLabel = 'Continue',
+  primaryDisabled = false,
   onSaveDraft,
   onBack,
   onPrimary,
@@ -629,7 +636,7 @@ export function StickyOnboardingActions({
           <Button
             type="button"
             onClick={onPrimary}
-            disabled={saving}
+            disabled={saving || primaryDisabled}
             className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--buyer-brand-action-border)] md:mt-0 md:min-h-[54px] md:w-auto md:min-w-[220px] md:px-8"
             style={{
               backgroundColor: 'var(--buyer-brand-action)',

@@ -1,6 +1,8 @@
+import MarketingCampaigns from '../components/marketing/MarketingCampaigns'
 import { Link, useSearchParams } from 'react-router-dom'
 import WhatsAppInbox from '../components/marketing/WhatsAppInbox'
 import WhatsAppAutomations from '../components/marketing/WhatsAppAutomations'
+
 import { CreateEmailCampaign, EmailCampaignDetail, EmailCampaignOverview } from '../components/marketing/EmailCampaigns'
 import { LaunchesOverview } from '../components/marketing/LaunchesAuctions'
 import MarketingDashboard from '../components/marketing/MarketingDashboard'
@@ -19,6 +21,8 @@ export default function MarketingComingSoonPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const section = searchParams.get('section')
   const campaignView = searchParams.get('view')
+
+  if (section === 'campaigns') return <MarketingCampaigns />
 
   if (section === 'launches') return <LaunchesOverview />
 
@@ -51,6 +55,7 @@ export default function MarketingComingSoonPage() {
   if (section === 'whatsapp') {
     if (campaignView === 'inbox') return <WhatsAppInbox />
     if (campaignView === 'automations') return <WhatsAppAutomations />
+
     const whatsappTab = ['overview', 'past', 'audiences', 'settings'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'overview'
     const whatsappParams = { section: 'whatsapp', ...(whatsappTab === 'overview' ? {} : { tab: whatsappTab }) }
     const openWhatsAppTab = (tab) => setSearchParams({ section: 'whatsapp', ...(tab === 'overview' ? {} : { tab }) })

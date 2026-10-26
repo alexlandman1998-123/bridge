@@ -2,6 +2,9 @@ import AddressInput from '../components/location/AddressInput'
 import ListingFacebookPostPanel from '../components/listings/ListingFacebookPostPanel'
 import ListingInstagramPostPanel from '../components/listings/ListingInstagramPostPanel'
 import { hasListingPhotoLoadError } from '../services/listings/listingPhotoStorage.js'
+import useCalendarRead from '../hooks/useCalendarRead'
+
+import './mobile/mobile-listing-workspace.css'
 import { getSellerDocumentDisplayGroupKey } from '../lib/sellerDocumentExperienceModel.js'
 import { listingRelistEditorPath, relistChannelFromSearch } from '../services/listings/listingRelistNavigation'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
@@ -20,7 +23,7 @@ import SellerMandateDetailsEditor from '../components/documents/SellerMandateDet
 import PrintableMandateTerms from '../components/documents/PrintableMandateTerms.jsx'
 import { buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, isMandateCalendarDate, readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import SellerPortalAccessControls from '../components/client-portal/SellerPortalAccessControls.jsx'
-import SellerPropertyGallery from '../components/client-portal/seller/SellerPropertyGallery.jsx'
+import ListingMarketingGallery from '../components/listings/ListingMarketingGallery.jsx'
 import '../components/listings/property24-manage.css'
 import ListingChannelLastUpdate from '../components/listings/ListingChannelLastUpdate'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
@@ -494,6 +497,9 @@ const SELLER_WORKSPACE_TABS = [
   { key: 'commission', label: 'Commission' },
   { key: 'activity', label: 'Activity' },
 ]
+
+const MOBILE_SELLER_WORKSPACE_TABS = ['overview', 'marketing', 'seller', 'leads', 'documents', 'commission', 'activity']
+  .map(key => SELLER_WORKSPACE_TABS.find(tab => tab.key === key))
 
 const SELLER_PROFILE_SECTION_FIELDS = [
   {
@@ -3593,8 +3599,12 @@ function ListingPostCreateProgressCard({ progress = null, onRetrySellerPortal = 
   )
 }
 
-function AgentListingDetail() {
-  const navigate = useNavigate()
+function AgentListingDetail({ mobile = false } = {}) {
+  const routerNavigate = useNavigate()
+  const navigate = useCallback((to, options) => {
+    const destination = mobile && typeof to === 'string' && (to === '/listings' || to.startsWith('/listings/')) ? `/mobile${to}` : to
+    return routerNavigate(destination, options)
+  }, [mobile, routerNavigate])
   const location = useLocation()
   const { listingId: encodedListingId } = useParams()
   const { profile, currentWorkspace } = useWorkspace()
@@ -3870,9 +3880,6 @@ function AgentListingDetail() {
     attorney: 'Arch9 Conveyancing',
     bondOriginator: 'Arch9 Finance',
   })
-  const [viewings, setViewings] = useState([])
-  const [viewingsLoading, setViewingsLoading] = useState(false)
-  const [viewingsError, setViewingsError] = useState('')
 
   const markMarketingDraftDirty = useCallback((dirty = true) => {
     marketingDraftDirtyRef.current = Boolean(dirty)
@@ -4579,17 +4586,17 @@ function AgentListingDetail() {
     }
   }
 
-  const refreshListingViewings = useCallback(async () => {
-    if (!listingId) return
-    const localRows = isUnsafeFallbackAllowed() ? getViewingRequestsForListing(listingId) : []
-    let appointmentRows = []
-    setViewingsLoading(true)
-    setViewingsError('')
-    if (listingOrganisationId && isSupabaseConfigured) {
-      try {
+  const viewingSource = useCalendarRead({
+    intervalMs: 0,
+    scopeKey: JSON.stringify([listingId, listingOrganisationId, profile?.id, currentWorkspace?.id]),
+    enabled: Boolean(listingId),
+    read: async signal => {
+      const localRows = isUnsafeFallbackAllowed() ? getViewingRequestsForListing(listingId) : []
+      let appointmentRows = []
+      if (listingOrganisationId && isSupabaseConfigured) {
         const appointments = await listAppointmentsAsync(listingOrganisationId, {
           includeAll: true,
-          listingId,
+          listingId, signal,
         })
         appointmentRows = (Array.isArray(appointments) ? appointments : [])
           .filter((appointment) => String(appointment?.listingId || appointment?.listing_id || '') === String(listingId) &&
@@ -4597,10 +4604,11 @@ function AgentListingDetail() {
           .map(mapAppointmentToViewingRecord)
         if (appointmentRows.length) {
           const appointmentIds = appointmentRows.map((row) => row.appointment_id).filter(Boolean)
+          signal.throwIfAborted()
           const { data: rounds, error: roundsError } = await supabase.from('listing_viewing_rounds')
             .select('appointment_id,round_number,booking_source,status')
             .eq('organisation_id', listingOrganisationId)
-            .in('appointment_id', appointmentIds)
+            .in('appointment_id', appointmentIds).abortSignal(signal)
           if (roundsError) console.warn('[AgentListingDetail] viewing round details unavailable.', roundsError)
           const latestRounds = new Map()
           for (const round of rounds || []) {
@@ -4613,16 +4621,16 @@ function AgentListingDetail() {
             booking_source: latestRounds.get(row.appointment_id)?.booking_source || '',
           }))
         }
-      } catch (error) {
-        console.warn('[AgentListingDetail] listing appointments load failed.', error)
-        setViewingsError(error?.message || 'Viewing appointments could not be loaded.')
-        setViewingsLoading(false)
-        return
       }
-    }
-    setViewings(mergeAppointmentAndLocalViewings(appointmentRows, localRows))
-    setViewingsLoading(false)
-  }, [listingId, listingOrganisationId])
+      signal.throwIfAborted()
+      return mergeAppointmentAndLocalViewings(appointmentRows, localRows)
+    },
+  })
+  const viewings = viewingSource.data || []
+  const viewingsLoading = viewingSource.status === 'loading'
+  const viewingsError = viewingSource.error
+  const refreshListingViewings = viewingSource.reload
+  const refreshViewingsAutomatically = viewingSource.refresh
 
   const refreshListingOverview = useCallback(async () => {
     await Promise.allSettled([
@@ -4636,17 +4644,10 @@ function AgentListingDetail() {
 
   useEffect(() => {
     if (!listingId) return undefined
-    void refreshListingViewings()
-    const refreshViewings = () => {
-      void refreshListingViewings()
-    }
+    const refreshViewings = () => { void refreshViewingsAutomatically() }
     window.addEventListener('itg:viewings-updated', refreshViewings)
-    window.addEventListener('itg:agency-crm-updated', refreshViewings)
-    return () => {
-      window.removeEventListener('itg:viewings-updated', refreshViewings)
-      window.removeEventListener('itg:agency-crm-updated', refreshViewings)
-    }
-  }, [listingId, refreshListingViewings])
+    return () => window.removeEventListener('itg:viewings-updated', refreshViewings)
+  }, [listingId, refreshViewingsAutomatically])
 
   const listingAnalyticsSummary = useMemo(() => buildListingWorkspaceAnalyticsSummary({
     interests: interestedLeadRows,
@@ -5513,6 +5514,7 @@ function AgentListingDetail() {
         if (expiryError) throw new Error(expiryError)
       }
       const relistProperty24Reference = String(draft.property24Reference || sourceListing.property24Reference || sourceListing.property24_reference || '').trim()
+
       let restored = !['withdrawn', 'expired', 'archived'].includes(normalizeKey(draft.listingStatus))
       const snapshot = { ...buildListingPublicationSnapshot({ ...draft, listingStatus: 'active' }), property24ExpiryDate: draft.property24ExpiryDate }
       const history = await getPrivateListingActivity(listingRecord.id, { requireAvailable: true })
@@ -5523,6 +5525,7 @@ function AgentListingDetail() {
         if (!restore?.ok || restore.localOnly || !restore.draft || !restore.listing?.id) throw restore?.error || new Error('Arch9 could not restore the saved listing. No portal send was started.')
         draft = restore.draft
         sourceListing = restore.listing
+
         restored = true
       }
       const results = await relistListingChannels({
@@ -5539,6 +5542,7 @@ function AgentListingDetail() {
           beforeSend: restoreSavedListing, recordCheckpoint, recordPublication,
           ...createListingRelistPortalActions({
             listingId: listingRecord.id, channel, property24Reference: relistProperty24Reference, property24Context,
+
             callProperty24: callProperty24ListingAction, callPrivateProperty: callPrivatePropertyListingAction,
             property24Message: getProperty24ApiMessage, privatePropertyReference: getPrivatePropertyReferenceFromResponse,
             onPrivatePropertyStatus: setPrivatePropertyStatusCheck,
@@ -13021,21 +13025,29 @@ function AgentListingDetail() {
     return (
       <section className="space-y-5">
         <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-          <div className="grid sm:grid-cols-2">
-            <MarketingSummaryItem icon={ExternalLink} value={channelCountLabel} label="Channels live" actionLabel="View channels" onAction={() => document.getElementById('listing-distribution-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} tone={marketingLiveChannelCount ? 'success' : 'default'} />
+          <div className={`grid sm:grid-cols-2${mobile ? ' mobile-marketing-summary grid-cols-2' : ''}`}>
+            <MarketingSummaryItem icon={ExternalLink} value={channelCountLabel} label="Channels live" actionLabel={mobile ? '' : 'View channels'} onAction={() => document.getElementById('listing-distribution-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} tone={marketingLiveChannelCount ? 'success' : 'default'} />
             <MarketingSummaryItem icon={RefreshCw} value={formatRelativeTime(marketingLastSyncedAt)} label="Last synced" tone="default" />
           </div>
         </section>
 
         <section>
-          <div className="grid items-stretch gap-5 lg:grid-cols-2">
-            <article className="min-w-0 space-y-5 rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-semibold text-[#607387]">Headline</h4>
-                  <p className="mt-2 break-words text-lg font-semibold text-[#243d56]">{marketingDraft.headline || 'No headline added'}</p>
-                </div>
-                <Button type="button" size="sm" className="shrink-0" onClick={openPropertyDetailsFromMarketing}>Edit property details<ChevronRight size={15} /></Button>
+          <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]">
+            <article className={`min-w-0 space-y-5 border border-[#dde4ee] bg-white p-5 ${mobile ? 'order-2 rounded-xl shadow-none' : 'rounded-[22px] shadow-[0_12px_28px_rgba(15,23,42,0.055)]'}`}>
+              <div className={mobile ? 'flex items-start gap-3' : 'flex flex-wrap items-start justify-between gap-3'}>
+                {mobile ? (
+                  <>
+                    <h3 className="min-w-0 flex-1 break-words text-base font-semibold leading-6 text-[#142132]">{marketingDraft.headline || 'No headline added'}</h3>
+                  </>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-semibold text-[#607387]">Headline</h4>
+                      <p className="mt-2 break-words text-lg font-semibold text-[#243d56]">{marketingDraft.headline || 'No headline added'}</p>
+                    </div>
+                    <Button type="button" size="sm" className="shrink-0" onClick={openPropertyDetailsFromMarketing}>Edit property details<ChevronRight size={15} /></Button>
+                  </>
+                )}
               </div>
               <div className="border-t border-[#edf2f7] pt-5">
                 <h4 className="text-sm font-semibold text-[#243d56]">Description</h4>
@@ -13044,25 +13056,36 @@ function AgentListingDetail() {
               <div className="border-t border-[#edf2f7] pt-5">
                 <h4 className="text-sm font-semibold text-[#243d56]">Features</h4>
                 {marketingSellingPoints.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">{marketingSellingPoints.map(point => <span key={point} className="rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs text-[#2d445e]">{point}</span>)}</div>
+                  <div className={mobile ? 'mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-2' : 'mt-3 flex flex-wrap gap-2'} tabIndex={mobile ? 0 : undefined} role={mobile ? 'region' : undefined} aria-label={mobile ? 'Listing features' : undefined}>{marketingSellingPoints.map(point => <span key={point} className={`rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs text-[#2d445e]${mobile ? ' shrink-0 whitespace-nowrap' : ''}`}>{point}</span>)}</div>
                 ) : <p className="mt-3 text-sm text-[#607387]">No features added.</p>}
               </div>
+              {mobile && (
+                <div className="border-t border-[#edf2f7] pt-5">
+                  <button type="button" onClick={openPropertyDetailsFromMarketing} className="flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-3 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">
+                    <Pencil size={16} aria-hidden="true" />Edit listing
+                  </button>
+                </div>
+              )}
             </article>
-            <article className="flex min-w-0 flex-col overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-              <div className="relative min-h-[320px] flex-1 border-b border-[#edf2f7] bg-[#eef4fa] sm:min-h-[400px]">
-                <SellerPropertyGallery
-                  key={listingRecord?.id}
-                  images={[coverImage?.url, ...marketingDraft.galleryImages.map(image => image.url)].filter((url, index, urls) => url && urls.indexOf(url) === index)}
-                  propertyTitle={marketingDraft.headline || listingRecord?.listingTitle || 'Property listing'}
-                  loading={listingSupportingDataLoading}
-                  loadError={!listingSupportingDataLoading && (!listingSupportingDataReady || hasListingPhotoLoadError(listingRecord?.listingMedia))}
-                  onRetry={() => loadListingData({ showLoading: false })}
-                  showThumbnails
-                />
-              </div>
-              <div className="shrink-0 p-5">
-                <p className="text-xs text-[#607387]">{marketingDraft.floorplans.length} floor plans{marketingDraft.videoLink ? ' · Video added' : ''}{marketingDraft.virtualTourLink ? ' · Virtual tour added' : ''}</p>
-              </div>
+            <article className={`min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]${mobile ? ' order-1' : ''}`}>
+              <ListingMarketingGallery
+                key={listingRecord?.id}
+                images={marketingDraft.galleryImages}
+                coverImageId={marketingDraft.coverImageId}
+                title={marketingDraft.headline || listingRecord?.listingTitle || 'Property listing'}
+                saving={gallerySaving}
+                loading={listingSupportingDataLoading}
+                loadError={!listingSupportingDataLoading && (!listingSupportingDataReady || hasListingPhotoLoadError(listingRecord?.listingMedia))}
+                onRetry={() => loadListingData({ showLoading: false })}
+                onEdit={openPropertyDetailsFromMarketing}
+                onUpload={handleGalleryUpload}
+                onCover={setCoverImage}
+                onMove={moveGalleryImage}
+                onRemove={removeGalleryImage}
+                floorPlanCount={marketingDraft.floorplans.length}
+                hasVideo={Boolean(marketingDraft.videoLink)}
+                hasVirtualTour={Boolean(marketingDraft.virtualTourLink)}
+              />
             </article>
           </div>
         </section>
@@ -13124,6 +13147,7 @@ function AgentListingDetail() {
             savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
           />
           <ListingChannelActions
+            mobile={mobile}
             status={normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.listing_status || 'active')}
             isSale={normalizeKey(marketingDraft.listingType || listingRecord?.listingType || listingRecord?.listing_type || 'sale') !== 'rental'}
             busy={quickListingBusy || channelManageBusy || publicationSaving || Boolean(property24Action) || Boolean(privatePropertyAction)}
@@ -13133,21 +13157,24 @@ function AgentListingDetail() {
           />
         </article>
 
-        <ListingFacebookPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
-        <ListingInstagramPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
-
-        <ListingShowDaysPanel
-          key={`${listingOrganisationId}:${listingShowDaySnapshot.id}`}
-          organisationId={listingOrganisationId}
-          listing={listingShowDaySnapshot}
-          publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive || kingdomWebsiteLive)}
-        />
+        {!mobile && (
+          <>
+            <ListingFacebookPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
+            <ListingInstagramPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
+            <ListingShowDaysPanel
+              key={`${listingOrganisationId}:${listingShowDaySnapshot.id}`}
+              organisationId={listingOrganisationId}
+              listing={listingShowDaySnapshot}
+              publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive || kingdomWebsiteLive)}
+            />
+          </>
+        )}
 
 
         {renderProperty24ManagePanel()}
         {renderPrivatePropertyManagePanel()}
         {relistChannel !== null ? <ListingRelistDialog
-          channels={[...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
+          channels={relistChannel ? [relistChannel] : [...(property24Reference ? ['Property24'] : []), ...(privatePropertyHasChannel ? ['Private Property'] : [])]}
           initialChannel={relistChannel}
           expiryDate={getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate) ? addDaysToDateInput('', 90) : formatDateInputValue(marketingDraft.property24ExpiryDate)}
           minExpiryDate={addDaysToDateInput('', 1)}
@@ -13187,7 +13214,10 @@ function AgentListingDetail() {
   }
 
   return (
-    <section className="space-y-5">
+    <section className={`space-y-5${mobile ? ' mobile-listing-workspace' : ''}`}>
+      {mobile && <div className="flex items-center justify-between gap-3" role="group" aria-label="Listing workspace actions">
+        <button type="button" onClick={() => navigateFromListing('/listings')} className="inline-flex min-h-11 items-center gap-2 text-sm text-[#627068]"><ArrowLeft size={17} aria-hidden="true" />Listings</button>
+      </div>}
       {!listingSupportingDataLoading && !listingSupportingDataReady ? <div role="alert" className="rounded-xl border border-[#f3d7a8] p-4 text-sm">
         <p>Related listing details could not be loaded. Retry before editing marketing, documents or offers.</p>
         <Button type="button" variant="secondary" onClick={() => void loadListingData({ showLoading: false })}>Retry loading</Button>
@@ -13208,7 +13238,7 @@ function AgentListingDetail() {
           </div>
         )}
       >
-        <iframe title="Signed seller document preview" srcDoc={sellerPortalSignedPreview?.html || ''} onLoad={event => prepareSellerMandateReviewPreview(event.currentTarget).catch(() => setDetailError('The complete mandate could not be displayed. Reload the preview.'))} sandbox="allow-same-origin" referrerPolicy="no-referrer" className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white" />
+        <iframe  title="Signed seller document preview" srcDoc={sellerPortalSignedPreview?.html || ''} onLoad={event => prepareSellerMandateReviewPreview(event.currentTarget).catch(() => setDetailError('The complete mandate could not be displayed. Reload the preview.'))} sandbox="allow-same-origin" referrerPolicy="no-referrer" className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white" />
       </Modal>
       <Modal
         open={sellerOnboardingSendOpen}
@@ -15844,17 +15874,17 @@ function AgentListingDetail() {
 
       {activeTab === 'seller' ? (
         <section className="mx-auto w-full max-w-[1600px] space-y-5 px-0">
-          <section className="relative min-h-[240px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] sm:min-h-[300px]">
+          <section className="listing-workspace-hero relative min-h-[240px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] sm:min-h-[300px]">
             <div className="absolute inset-0">
               {getImageBlock(coverImage?.url || '', listingIdentity.title)}
             </div>
             <div className="absolute inset-0 bg-gradient-to-r from-[#081e32]/85 via-[#0d304b]/48 to-[#0d304b]/10" />
-            <div className="relative flex min-h-[240px] items-end p-6 sm:min-h-[300px] sm:p-8">
+            <div className="listing-workspace-hero-content relative flex min-h-[240px] items-end p-6 sm:min-h-[300px] sm:p-8">
               <div className="max-w-4xl">
-                <h1 className="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{listingIdentity.title}</h1>
-                <p className="mt-2 text-lg font-semibold text-white/90">{listingIdentity.location}</p>
-                <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 text-sm font-semibold text-white/90">
-                  {listingIdentity.facts.map((fact, index) => (
+                <h1 className="listing-workspace-hero-title text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{listingIdentity.title}</h1>
+                <p className="listing-workspace-hero-location mt-2 text-lg font-semibold text-white/90">{listingIdentity.location}</p>
+                <div className="listing-workspace-hero-facts mt-4 flex flex-wrap gap-x-3 gap-y-2 text-sm font-semibold text-white/90">
+                  {listingIdentity.facts.filter(fact => !mobile || (fact !== 'Private Listing' && !/^vacant[_\s-]?land$/i.test(fact) && !/^0(?:\.0+)?\s/.test(fact))).map((fact, index) => (
                     <span key={`${fact}-${index}`} className="inline-flex items-center gap-3">
                       {index > 0 ? <span className="h-1 w-1 rounded-full bg-white/65" /> : null}
                       {fact}
@@ -15865,10 +15895,10 @@ function AgentListingDetail() {
             </div>
           </section>
 
-          <nav className="rounded-[22px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" aria-label="Seller mandate workspace tabs">
+          <nav className="listing-workspace-tabs rounded-[22px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" aria-label="Seller mandate workspace tabs">
             <div className="overflow-x-auto">
               <div className="grid min-w-[880px] grid-cols-7 gap-1">
-                {SELLER_WORKSPACE_TABS.map((tab) => {
+                {(mobile ? MOBILE_SELLER_WORKSPACE_TABS : SELLER_WORKSPACE_TABS).map((tab) => {
                   const active = sellerWorkspaceTab === tab.key
                   return (
                     <button
@@ -15901,7 +15931,7 @@ function AgentListingDetail() {
                 onRetrySellerPortal={handleRetryPostCreateSellerPortal}
                 retryingSellerPortal={retryingPostCreateSellerPortal}
               />
-              <article className="rounded-[22px] border border-[#e1e7ec] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.035)] sm:p-6">
+              <article className="listing-workspace-statistics rounded-[22px] border border-[#e1e7ec] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.035)] sm:p-6">
                 <ListingChannelStatistics
                   organisationId={listingOrganisationId}
                   listingId={listingId}
@@ -15942,6 +15972,7 @@ function AgentListingDetail() {
                 </div>
               </article>
 
+              {!mobile && (
               <section className="grid items-stretch gap-5 xl:grid-cols-2">
                 <article className="flex min-h-[315px] flex-col rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
                   <div className="flex items-center justify-between gap-3">
@@ -16019,6 +16050,7 @@ function AgentListingDetail() {
                   </Button>
                 </article>
               </section>
+              )}
 
               <section className="grid items-start gap-5 lg:grid-cols-2" data-testid="listing-overview-three-columns">
 
@@ -16082,6 +16114,8 @@ function AgentListingDetail() {
                 </div>
 
                 <div className="grid content-start gap-5">
+                  {!mobile && (
+                    <>
                   <article className="min-h-[210px] rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-document-progress">
                     <div className="flex items-center justify-between gap-3">
                       <h2 className="text-base font-semibold text-[#142132]">Document Progress</h2>
@@ -16135,6 +16169,8 @@ function AgentListingDetail() {
                       ) : <p className="mt-2 text-xs text-[#607387]">No recorded price changes.</p>}
                     </div>
                   </article>
+                    </>
+                  )}
 
                   <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-published">
                     <div className="flex items-center justify-between gap-3">
@@ -16581,17 +16617,19 @@ function AgentListingDetail() {
                   revision={listingRecord?.updatedAt || listingRecord?.updated_at || listingRecord?.sellerCanonicalFactsUpdatedAt || ''}
                   onReview={() => openSellerProfileBuilder('Review the historical seller record and confirm the legal owner before requirements change.')}
                 />
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <article className={`border border-[#dde4ee] bg-white p-5 ${mobile ? 'mobile-seller-profile rounded-xl shadow-none' : 'rounded-[24px] shadow-[0_12px_28px_rgba(15,23,42,0.055)]'}`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-start gap-4">
-                      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] bg-[#073f30] text-lg font-semibold text-white">
-                        {sellerProfile.initials}
-                      </div>
+                      {!mobile && (
+                        <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] bg-[#073f30] text-lg font-semibold text-white">
+                          {sellerProfile.initials}
+                        </div>
+                      )}
                       <div className="min-w-0">
-                        <button type="button" onClick={() => navigateFromListing('/listings')} className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#5f7894] hover:text-[#1f4f78]"><ArrowLeft size={13} />Back to Listings</button>
+                        {!mobile && (<button type="button" onClick={() => navigateFromListing('/listings')} className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#5f7894] hover:text-[#1f4f78]"><ArrowLeft size={13} />Back to Listings</button>)}
                         <h2 className="break-words text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{presentSellerWorkspaceValue(sellerProfile.name, 'Seller not provided')}</h2>
                         <p className="mt-1 text-sm font-semibold text-[#607387]">{presentSellerWorkspaceValue(sellerProfile.type)}</p>
-                        <p className="mt-2 break-words text-sm leading-5 text-[#425970]">{presentSellerWorkspaceValue(sellerProfile.propertyAddress)}</p>
+                        {!mobile && (<p className="mt-2 break-words text-sm leading-5 text-[#425970]">{presentSellerWorkspaceValue(sellerProfile.propertyAddress)}</p>)}
                       </div>
                     </div>
                     <div className="shrink-0">
@@ -16607,22 +16645,23 @@ function AgentListingDetail() {
                       </ListingDocumentActions>
                     </div>
                   </div>
-                  <div className="mt-5 grid gap-4 border-t border-[#e5edf6] pt-4 sm:grid-cols-3">
+                  {mobile && (<p className="mt-3 w-full break-words text-sm leading-5 text-[#425970]">{presentSellerWorkspaceValue(sellerProfile.propertyAddress)}</p>)}
+                  <div className={`mt-5 grid gap-4 border-t border-[#e5edf6] pt-4 ${mobile ? 'grid-cols-2' : 'sm:grid-cols-3'}`}>
                     {[
                       { label: 'Mandate type', value: sellerProfile.mandateType },
                       { label: 'Asking price', value: sellerProfile.askingPrice },
                       { label: 'Seller onboarding', value: `${sellerProfile.completionPercent}% complete` },
                     ].map(item => (
-                      <div key={item.label} className="min-w-0">
+                      <div key={item.label} className={`min-w-0${mobile && item.label === 'Asking price' ? ' border-l border-[#e5edf6] pl-4' : ''}${mobile && item.label === 'Seller onboarding' ? ' col-span-2' : ''}`}>
                         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8294aa]">{item.label}</p>
                         <p className="mt-1 break-words text-base font-semibold leading-6 text-[#142132]">{presentSellerWorkspaceValue(item.value)}</p>
-                        {item.label === 'Seller onboarding' ? <div role="progressbar" aria-label="Seller onboarding completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, Number(sellerProfile.completionPercent) || 0))} className="mt-2 h-1.5 max-w-64 overflow-hidden rounded-full bg-[#e5edf6]"><div className="h-full rounded-full bg-[#168452] transition-all" style={{ width: `${Math.min(100, Math.max(0, Number(sellerProfile.completionPercent) || 0))}%` }} /></div> : null}
+                        {item.label === 'Seller onboarding' ? <div role="progressbar" aria-label="Seller onboarding completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, Number(sellerProfile.completionPercent) || 0))} className={`mt-2 h-1.5 overflow-hidden rounded-full bg-[#e5edf6] ${mobile ? 'w-full' : 'max-w-64'}`}><div className="h-full rounded-full bg-[#168452] transition-all" style={{ width: `${Math.min(100, Math.max(0, Number(sellerProfile.completionPercent) || 0))}%` }} /></div> : null}
                       </div>
                     ))}
                   </div>
                 </article>
 
-                <SellerPortalAccessControls token={resolveSellerPortalTokenFromListing(listingRecord)} accessState={sellerPortalAccessState} onStateChange={setSellerPortalAccessState} />
+                {!mobile && <SellerPortalAccessControls token={resolveSellerPortalTokenFromListing(listingRecord)} accessState={sellerPortalAccessState} onStateChange={setSellerPortalAccessState} />}
 
                 {!ONLINE_SIGNING_DISABLED && portalSignerRows.length ? (
                   <article className="rounded-[24px] border border-[#d8e6f2] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
@@ -16725,7 +16764,7 @@ function AgentListingDetail() {
                     </div>
                   </article>
 
-                  <div className="grid min-h-0 grid-rows-2 gap-5">
+                  <div className={`grid min-h-0 gap-5${mobile ? '' : ' grid-rows-2'}`}>
                   <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
@@ -16815,6 +16854,7 @@ function AgentListingDetail() {
                     ) : null}
                   </article>
 
+                  {!mobile && (
                   <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
@@ -16844,8 +16884,10 @@ function AgentListingDetail() {
                       Continue Onboarding
                     </Button>
                   </article>
+                  )}
                   </div>
 
+                  {!mobile && (
                   <div className="grid min-h-0 grid-rows-2 gap-5">
                   <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start justify-between gap-3">
@@ -16914,12 +16956,13 @@ function AgentListingDetail() {
                     <p className="mt-4 rounded-[14px] border border-[#d8e7f7] bg-[#f7fbff] px-3 py-2 text-xs leading-5 text-[#315879]">Special conditions and saved seller notes are included in the next generated mandate. Editing them after signature starts the mandate replacement workflow.</p>
                   </article>
                   </div>
+                  )}
                 </section>
               </section>
             )
           })() : null}
 
-          {sellerWorkspaceTab === 'seller' ? <ListingSellerLeadLinkPanel
+          {!mobile && sellerWorkspaceTab === 'seller' ? <ListingSellerLeadLinkPanel
             key={listingRecord?.id}
             listing={listingRecord}
             onLinked={receipt => setPrivateListings(rows => upsertListingRecord(rows, mergeListingRecord(rows.find(row => row.id === receipt.listingId) || listingRecord, {
@@ -16929,7 +16972,7 @@ function AgentListingDetail() {
             onOpenLead={leadId => navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)}
           /> : null}
 
-          {sellerWorkspaceTab === 'seller' && !sellerOwnershipUnidentified ? <ListingSellerCollaborationPanel listing={listingRecord} onChanged={() => loadListingData({ showLoading: false })} /> : null}
+          {!mobile && sellerWorkspaceTab === 'seller' && !sellerOwnershipUnidentified ? <ListingSellerCollaborationPanel listing={listingRecord} onChanged={() => loadListingData({ showLoading: false })} /> : null}
 
           {sellerWorkspaceTab === 'marketing' && listingSupportingDataLoading ? <p role="status" className="p-5 text-sm text-[#607387]">Loading marketing details…</p> : null}
           {sellerWorkspaceTab === 'marketing' && listingSupportingDataReady ? renderMarketingConsole() : null}

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 const money = (value) =>
-  Number.isFinite(Number(value))
+  value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))
     ? new Intl.NumberFormat("en-ZA", {
         style: "currency",
         currency: "ZAR",
@@ -65,6 +65,37 @@ function Metric({ title, value, detail, tone = "normal" }) {
   );
 }
 
+export function LandlordOverviewMetrics({ portfolio = {} }) {
+  return <section aria-label="Rental overview totals" className="space-y-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          title="Expected rent"
+          value={money(portfolio.expectedRent)}
+          detail={`Across ${portfolio.activeLeases ?? "—"} active leases`}
+        />
+        <Metric
+          title="Collected this month"
+          value={money(portfolio.collectedRent)}
+          detail={portfolio.collectionRate == null ? "Collection rate unavailable" : `${portfolio.collectionRate}% of expected rent`}
+          tone="success"
+        />
+        <Metric
+          title="Outstanding"
+          value={money(portfolio.outstanding)}
+          detail={portfolio.attentionCount == null ? "Account balances unavailable" : `${portfolio.attentionCount} ${portfolio.attentionCount === 1 ? "account needs" : "accounts need"} attention`}
+          tone="attention"
+        />
+        <Metric
+          title="Occupancy"
+          value={portfolio.totalUnits == null ? "—" : `${portfolio.occupied ?? "—"} of ${portfolio.totalUnits} homes`}
+          detail={portfolio.occupancyRate == null ? "Occupancy unavailable" : `${portfolio.occupancyRate}% occupied`}
+        />
+      </div>
+    {portfolio.asOf ? <p className="text-xs text-[#67736b]">Saved records as of {portfolio.asOf}. Expected rent is the monthly total for active tenancies; collections are payments allocated to rent this month. Outstanding includes posted charges due and account adjustments.</p> : null}
+    {portfolio.financialAvailable === false ? <p role="status" className="text-sm text-[#67736b]">Financial records are unavailable. Collected rent and outstanding balances cannot be confirmed.</p> : null}
+  </section>
+}
+
 export default function LandlordOverview({
   data = {},
   branding = {},
@@ -84,30 +115,7 @@ export default function LandlordOverview({
       style={themeStyle}
       className="mx-auto max-w-[1440px] space-y-4 pb-3 sm:space-y-5"
     >
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
-          title="Expected rent"
-          value={money(portfolio.expectedRent)}
-          detail={`Across ${portfolio.activeLeases || 0} active leases`}
-        />
-        <Metric
-          title="Collected this month"
-          value={money(portfolio.collectedRent)}
-          detail={`${portfolio.collectionRate || 0}% collected`}
-          tone="success"
-        />
-        <Metric
-          title="Outstanding"
-          value={money(portfolio.outstanding)}
-          detail={`${portfolio.attentionCount || 0} payments need attention`}
-          tone="attention"
-        />
-        <Metric
-          title="Occupancy"
-          value={`${portfolio.occupied || 0} of ${portfolio.totalUnits || 0} homes`}
-          detail={`${portfolio.occupancyRate || 0}% occupied`}
-        />
-      </div>
+      <LandlordOverviewMetrics portfolio={portfolio} />
       <Card>
         <Heading
           icon={Building2}

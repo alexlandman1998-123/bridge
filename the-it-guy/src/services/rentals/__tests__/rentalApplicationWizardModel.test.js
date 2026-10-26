@@ -45,3 +45,52 @@ it('shows financial questions for a guarantor and supports student sponsorship w
   expect(validateRentalApplicationFields(data)).toContain('Intended move date must be a valid date.')
   expect(validateRentalApplicationFields(data)).toContain('Email must be a valid email address.')
 })
+
+it('uses explicit take-home income and replaces legacy commitments without double counting', async () => {
+  const { rentalAffordabilitySummary, updateRentalApplicationGroup } = await import('../rentalApplicationWizardModel.js')
+  const old = { income: { monthlyIncome: 40000, monthlyObligations: 9000 }, property: { monthlyRent: 10000 } }
+  expect(rentalAffordabilitySummary(old).netKnown).toBe(false)
+  const next = updateRentalApplicationGroup(old, 'income', 'netMonthlyIncome', '25000')
+  expect(next.income).toMatchObject({ monthlyIncome: '25000', incomeBasis: 'net' })
+  expect(rentalAffordabilitySummary({ ...next, income: { ...next.income, debtRepayments: 2000, livingExpenses: 5000, otherObligations: 0 } })).toMatchObject({ net: 25000, expenses: 7000, available: 18000, rentPercent: 40 })
+  expect(old.income.monthlyIncome).toBe(40000)
+})
+it('supports a sponsored first-time renter without personal income and keeps sponsor evidence separate', () => {
+  const data = complete()
+  data.employment = { employmentType: 'student', incomeSource: 'Parent sponsorship' }
+  data.income = { netMonthlyIncome: 0, rentPayer: 'sponsor', depositPayer: 'sponsor' }
+  data.rentalHistory = { currentAddress: 'Family home', reasonForMoving: 'Study', housingSituation: 'living_with_family', firstTimeRenter: true }
+  data.people = [{ id: 's', role: 'sponsor', firstName: 'Sam', lastName: 'Support', identityNumber: 'SUPPORT-ID', phone: '0821234567', monthlyIncome: 35000, rentContribution: 11000 }]
+  expect(validateRentalApplicationFields(data)).toEqual([])
+  expect(rentalApplicationVisibleFields(group('rentalHistory'), data).map(field => field.key)).not.toContain('landlordName')
+  expect(rentalApplicationDocumentSlots(data).filter(slot => slot.required).map(slot => slot.key)).toEqual(['primary:identity', 's:identity', 's:signed_consent', 's:proof_of_income'])
+})
+it('fills missing qualification answers without replacing edits or copying screening consent', async () => {
+  const { prefillRentalApplicationFromQualification } = await import('../rentalApplicationWizardModel.js')
+  const existing = { household: { occupantCount: 1, pets: 'yes' }, income: { depositAvailable: false } }
+  const result = prefillRentalApplicationFromQualification(existing, { occupationDate: '2026-12-01', occupants: 3, pets: 'No pets', employmentStatus: 'Employed', depositAvailable: 'Yes', screeningConsent: 'Yes', additionalNotes: 'Internal' })
+  expect(result).toEqual({ household: { occupantCount: 1, pets: 'yes', intendedOccupationDate: '2026-12-01' }, income: { depositAvailable: false }, employment: { employmentType: 'employed' } })
+  expect(existing.household).toEqual({ occupantCount: 1, pets: 'yes' })
+})
+it('does not treat an occupant who signs as an applicant with completed screening', () => {
+  const data = complete()
+  data.occupants = [{ id: 'adult', firstName: 'Sam', lastName: 'Resident', signsLease: true }]
+  expect(validateRentalApplicationFields(data)).toContain('Add each adult occupant who will sign the lease as a co-tenant under People & contacts.')
+  data.people = [{ id: 'co-tenant', role: 'co_tenant', firstName: 'Sam', lastName: 'Resident', identityNumber: 'ID', phone: '082' }]
+  expect(validateRentalApplicationFields(data)).toEqual([])
+})
+it('keeps entity income editable when earlier individual net figures remain in history', async () => {
+  const { updateRentalApplicationGroup, rentalAffordabilitySummary } = await import('../rentalApplicationWizardModel.js')
+  const data = { entity: { type: 'company' }, income: { monthlyIncome: 25000, netMonthlyIncome: 25000 } }
+  const next = updateRentalApplicationGroup(data, 'income', 'monthlyIncome', 50000)
+  expect(next.income.monthlyIncome).toBe(50000)
+  expect(rentalAffordabilitySummary(next).netKnown).toBe(false)
+})
+it('recognises an entity representative who also lives at the property without making them a co-tenant', () => {
+  const data = complete()
+  data.entity = { type: 'company', legalName: 'Example Ltd', registrationNumber: 'REG-1' }
+  data.income.incomeSource = 'Business operations'
+  data.occupants = [{ id: 'adult', firstName: 'Sam', lastName: 'Resident', signsLease: true }]
+  data.people = [{ id: 'signer', role: 'authorised_signatory', firstName: 'Sam', lastName: 'Resident', identityNumber: 'ID', phone: '082' }]
+  expect(validateRentalApplicationFields(data)).toEqual([])
+})

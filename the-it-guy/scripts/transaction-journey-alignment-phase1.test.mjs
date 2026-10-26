@@ -96,7 +96,7 @@ test('keeps the agent transaction shell visible while secondary data hydrates', 
 
   assert.match(source, /const foregroundLoadTransactionRef = useRef\(''\)/)
   assert.match(source, /foregroundLoadTransactionRef\.current === transactionId/)
-  assert.match(source, /const \w+ = await fetchTransactionCoreById\(transactionId\)/)
+  assert.match(source, /const \w+ = await fetchTransactionRouteCoreById\(transactionId\)/)
   assert.match(source, /if \(!background\) \{\s*setLoading\(false\)\s*\}/)
   assert.match(source, /finally \{[\s\S]*?setHydratingDetail\(false\)[\s\S]*?setLoading\(false\)/)
 })

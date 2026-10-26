@@ -91,6 +91,11 @@ test('maths includes fees in savings and break-even', () => {
   assert.equal(recruitmentExample(0).cost, 108000)
   assert.equal(recruitmentExample(0).effectivePercent, null)
   assert.deepEqual([5,8,10,15,20].map(n=>Math.round(recruitmentExample(n).effectivePercent)), [31,20,16,12,9])
+  // The requested growth illustration uses 6%, with the same subscription and sale fee.
+  assert.deepEqual([5,8,10,15,20].map(n=>Math.round(recruitmentExample(n, 'monthly', 0.06).effectivePercent)), [26,17,14,10,8])
+  const growth = recruitmentExample(10, 'monthly', 0.06)
+  assert.equal(growth.commission, 900000); assert.equal(growth.cost, 123000)
+  assert.equal(growth.breakEvenSales, 108000 / (90000 * 0.3 - 1500))
 })
 
 test('all three options include the same registered-sale fee and upfront saves R8000', () => {

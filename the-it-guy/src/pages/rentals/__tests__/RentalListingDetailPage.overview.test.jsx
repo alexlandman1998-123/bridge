@@ -521,3 +521,113 @@ it('keeps a rental update unsent when its automatic check finds missing details'
   expect(mocks.publishPP).not.toHaveBeenCalled()
   expect(mocks.status).not.toHaveBeenCalled()
 })
+
+
+it('lets Kingdom withdraw Private Property using its saved feed identity without an advert number',async()=>{
+ const listing={...mediaListing(),privatePropertyStatus:'published'}
+ mocks.channels.mockResolvedValue({activity:[],errors:{},private_property:{monitor:{externalStatus:'active',propertyId:'PRV-rental',branchGuid:'kingdom-branch',statusProbe:{privatePropertyRef:''}}}})
+ mocks.withdrawPP.mockResolvedValue({})
+ vi.spyOn(window,'confirm').mockReturnValue(true)
+ renderMedia(listing)
+ await screen.findByRole('heading',{name:'Listing Channels'})
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Withdraw listing',hidden:true}).disabled).toBe(false))
+ fireEvent.click(screen.getByRole('button',{name:'Withdraw listing',hidden:true}))
+ await waitFor(()=>expect(mocks.withdrawPP).toHaveBeenCalledWith('listing-1'))
+ expect(mocks.withdrawP24).not.toHaveBeenCalled()
+ await screen.findByText('Rental withdrawn from Private Property.')
+})
+
+for (const channel of ['property24','private_property']) {
+ const name=channel==='property24' ? 'Property24' : 'Private Property'
+ const prefix=channel==='property24' ? 'property24' : 'privateProperty'
+ for (const entry of ['menu','manage']) {
+  it(`checks and updates ${name} from ${entry} without a separate Check click`,async()=>{
+   const preview=channel==='property24' ? mocks.previewP24 : mocks.previewPP
+   const publish=channel==='property24' ? mocks.publishP24 : mocks.publishPP
+   preview.mockResolvedValue(channel==='property24' ? {canSubmit:true} : {ready:true,readiness:{ready:true,blockers:[]}})
+   publish.mockResolvedValue({status:'SUBMITTED'})
+   mocks.status.mockResolvedValue(channel==='property24' ? {lifecycle:{state:'active'}} : {monitor:{externalStatus:'active'}})
+   const confirm=vi.spyOn(window,'confirm')
+   renderMedia({...mediaListing(),[`${prefix}Reference`]:'1234',[`${prefix}Status`]:'active'})
+   await screen.findByRole('heading',{name:'Listing Channels'})
+   if(entry==='manage') {
+    const {dialog}=await openPortalRequirements(name)
+    fireEvent.click(within(dialog).getByRole('button',{name:`Save and update ${name}`}))
+   } else {
+    const update=screen.getByRole('button',{name:'Update listing',hidden:true})
+    await waitFor(()=>expect(update.disabled).toBe(false));fireEvent.click(update)
+   }
+   await waitFor(()=>expect(publish).toHaveBeenCalledExactlyOnceWith('listing-1'))
+   expect(preview).toHaveBeenCalledOnce()
+   expect(preview.mock.invocationCallOrder[0]).toBeLessThan(publish.mock.invocationCallOrder[0])
+   expect(channel==='property24' ? mocks.publishPP : mocks.publishP24).not.toHaveBeenCalled()
+   expect(confirm).not.toHaveBeenCalled()
+  })
+ }
+ it.each(['blocked','failed'])(`keeps ${name} updates unsent when the automatic check is %s`,async failure=>{
+  const preview=channel==='property24' ? mocks.previewP24 : mocks.previewPP
+  const publish=channel==='property24' ? mocks.publishP24 : mocks.publishPP
+  if(failure==='failed')preview.mockRejectedValue(new Error('Portal check unavailable.'))
+  else preview.mockResolvedValue(channel==='property24' ? {canSubmit:false,dataBlockers:['missing_description']} : {ready:false,readiness:{ready:false,blockers:['missing_description']}})
+  renderMedia({...mediaListing(),[`${prefix}Reference`]:'1234',[`${prefix}Status`]:'active'})
+  await screen.findByRole('heading',{name:'Listing Channels'})
+  const update=screen.getByRole('button',{name:'Update listing',hidden:true})
+  await waitFor(()=>expect(update.disabled).toBe(false));fireEvent.click(update)
+  await screen.findAllByText(failure==='failed' ? /Portal check unavailable/ : new RegExp(`${name} needs attention`))
+  expect(preview).toHaveBeenCalledOnce();expect(publish).not.toHaveBeenCalled()
+ })
+ it(`rechecks ${name} instead of trusting a previously successful check`,async()=>{
+  const preview=channel==='property24' ? mocks.previewP24 : mocks.previewPP
+  const publish=channel==='property24' ? mocks.publishP24 : mocks.publishPP
+  preview.mockResolvedValueOnce(channel==='property24' ? {canSubmit:true} : {ready:true,readiness:{ready:true,blockers:[]}})
+   .mockResolvedValueOnce(channel==='property24' ? {canSubmit:false,dataBlockers:['missing_description']} : {ready:false,readiness:{ready:false,blockers:['missing_description']}})
+  renderMedia({...mediaListing(),[`${prefix}Reference`]:'1234',[`${prefix}Status`]:'active'})
+  const {dialog}=await openPortalRequirements(name)
+  fireEvent.click(within(dialog).getByRole('button',{name:'Check requirements'}))
+  await within(dialog).findByText('Ready to submit')
+  fireEvent.click(within(dialog).getByRole('button',{name:`Save and update ${name}`}))
+  await within(dialog).findByText(new RegExp(`${name} needs attention`))
+  expect(preview).toHaveBeenCalledTimes(2);expect(publish).not.toHaveBeenCalled()
+ })
+ it(`keeps ${name} busy throughout the automatic check and prevents a duplicate send`,async()=>{
+  const preview=channel==='property24' ? mocks.previewP24 : mocks.previewPP
+  const publish=channel==='property24' ? mocks.publishP24 : mocks.publishPP
+  let finish;preview.mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+  publish.mockResolvedValue({status:'SUBMITTED'})
+  renderMedia({...mediaListing(),[`${prefix}Reference`]:'1234',[`${prefix}Status`]:'active'})
+  await screen.findByRole('heading',{name:'Listing Channels'})
+  const update=screen.getByRole('button',{name:'Update listing',hidden:true})
+  await waitFor(()=>expect(update.disabled).toBe(false));fireEvent.click(update);fireEvent.click(update)
+  expect(preview).toHaveBeenCalledOnce();expect(publish).not.toHaveBeenCalled()
+  expect(screen.getByRole('button',{name:'Update listing',hidden:true}).disabled).toBe(true)
+  finish(channel==='property24' ? {canSubmit:true} : {ready:true,readiness:{ready:true,blockers:[]}})
+  await waitFor(()=>expect(publish).toHaveBeenCalledOnce())
+ })
+}
+
+it('opens mobile rental Overview first and keeps its tabs and back link in the mobile workspace', async () => {
+  const listing = { id: 'listing-1', listingType: 'rental', listingTitle: 'Mobile Rental', organisationId: 'org-1', assignedAgentId: 'agent-1' }
+  mocks.load.mockResolvedValue(listing)
+  mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
+  render(<MemoryRouter initialEntries={['/mobile/rentals/listings/listing-1']}><Routes><Route path="/mobile/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage mobile />} /><Route path="/mobile/listings" element={<h1>Mobile listing collection</h1>} /></Routes></MemoryRouter>)
+  await screen.findByText('Overview up to date')
+  expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true')
+  expect(screen.queryByRole('heading', { name: /Edit rental/ })).toBeNull()
+  fireEvent.click(screen.getByRole('tab', { name: 'Leads' }))
+  await screen.findByRole('heading', { name: 'Leads for this listing' })
+  fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+  await screen.findByText('Overview up to date')
+  fireEvent.click(screen.getByRole('button', { name: 'Back to listings' }))
+  expect(await screen.findByRole('heading', { name: 'Mobile listing collection' })).toBeTruthy()
+})
+
+it('opens the rental editor only after an explicit overview edit action', async () => {
+  const listing = { id: 'listing-1', listingType: 'rental', listingTitle: 'Mobile Rental', organisationId: 'org-1', assignedAgentId: 'agent-1' }
+  mocks.load.mockResolvedValue(listing)
+  mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
+  render(<MemoryRouter initialEntries={['/mobile/rentals/listings/listing-1']}><Routes><Route path="/mobile/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage mobile />} /><Route path="/agent/rentals/listings/:listingId/edit" element={<h1>Rental editor</h1>} /></Routes></MemoryRouter>)
+  await screen.findByText('Overview up to date')
+  expect(screen.queryByRole('heading', { name: 'Rental editor' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Edit pricing' }))
+  expect(await screen.findByRole('heading', { name: 'Rental editor' })).toBeTruthy()
+})

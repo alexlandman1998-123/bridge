@@ -139,7 +139,7 @@ test('v1 pricing is bound to version and exact query, while the migration preser
   assert.equal(completeCostEvidence({ ...evidence, supplier_query_sha256: null }), false);
   for (const path of ['report-products.js', 'report-purchase-intents.js']) {
     const source = await readFile(new URL('../api/knowledge-factory/' + path, import.meta.url), 'utf8');
-    assert.match(source, /supplier_api_version/);
+    assert.match(source, /supplier_api_version|currentReportApproval/);
     assert.match(source, /supplier_query_sha256/);
     assert.match(source, /packageReportQueryFingerprint/);
   }

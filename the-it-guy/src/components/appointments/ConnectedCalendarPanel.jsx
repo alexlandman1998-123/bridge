@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import useAppointmentReconciliation from '../../hooks/useAppointmentReconciliation'
+import useCalendarRead from '../../hooks/useCalendarRead'
 import { readCalendarProviderStatus, startCalendarProviderConnection, disconnectCalendarProvider, actOnCalendarProviderEvent } from '../../services/calendarProviderService'
 
 const labels = { google: 'Google', outlook: 'Outlook' }
@@ -12,24 +12,18 @@ async function deadline(promise) {
 const button = 'min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-50'
 
 function ScopedPanel({ organisationId, appointmentId, viewerKey }) {
-  const [data, setData] = useState(null)
-  const [readError, setReadError] = useState('')
   const [actionError, setActionError] = useState('')
-  const error = [actionError, readError].filter(Boolean).join(' ')
   const [busy, setBusy] = useState(false)
   const [disconnecting, setDisconnecting] = useState(null)
   const active = useRef(false)
   const pending = useRef(false)
-  const { revision, reload } = useAppointmentReconciliation({ scopeKey: `${organisationId}:${viewerKey}:${appointmentId}` })
+  const { data, error: readError, reload } = useCalendarRead({
+    scopeKey: `${organisationId}:${viewerKey}:${appointmentId}`,
+    read: signal => readCalendarProviderStatus(organisationId, appointmentId, { signal }),
+  })
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
-  useEffect(() => {
-    let current = true, timer
-    Promise.race([readCalendarProviderStatus(organisationId, appointmentId), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Calendar status is taking too long. Retry.')), 15000) })])
-      .then(result => { if (current) { setData(result); setReadError('') } })
-      .catch(failure => { if (current) setReadError(failure.message || 'Calendar status could not be verified.') })
-      .finally(() => clearTimeout(timer))
-    return () => { current = false; clearTimeout(timer) }
-  }, [organisationId, appointmentId, revision])
+
+  const error = [actionError, readError].filter(Boolean).join(' ')
 
   async function run(operation) {
     if (pending.current) return

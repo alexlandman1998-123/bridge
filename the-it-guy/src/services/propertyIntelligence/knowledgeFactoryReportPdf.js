@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { buildFullPropertyReportPdf } from './knowledgeFactoryFullReportPdf.js';
 import { reportMoney as money, suppliedNumber, ownerDetails, financeIndicator, transferScope } from './knowledgeFactoryReportDisplay.js';
 
 const PAGE = { left: 16, right: 194, top: 19, bottom: 278 };
@@ -26,6 +27,7 @@ function filenamePart(value) {
 }
 
 export function buildKnowledgeFactoryReportPdf(report = {}) {
+  if (report.product_id === 'full_canvassing_report') return buildFullPropertyReportPdf(report);
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const property = report.report_data?.property || {};
   const definition = report.report_definition_snapshot || {};

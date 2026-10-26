@@ -30,3 +30,10 @@ export function appointmentWorkflowActions(appointment = {}, actor = {}, now = D
     canRespond: Boolean(id && self) && issued && ['held','confirmed'].includes(state.reservation),
   }
 }
+
+// Match the database classifier, including managed legacy rows with false delivery flags.
+export function usesCalendarTimeChangeWorkflow(appointment = {}) {
+  return appointment.reservationManaged === true || appointment.reservation_managed === true
+    || ((appointment.attorneyDeliveryEnabled ?? appointment.attorney_delivery_enabled) == null
+      && (appointment.listingViewingRoundNumber ?? appointment.listing_viewing_round_number) == null)
+}

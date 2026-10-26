@@ -163,6 +163,7 @@ export default function RentalTenantLeadWorkspace({
   applicationContent,
   documentsContent,
   parentError = '',
+  actionOnly = false,
 }) {
   const [params, setParams] = useSearchParams()
   const tab = TENANT_WORKSPACE_TABS.includes(params.get('tab'))
@@ -930,6 +931,37 @@ export default function RentalTenantLeadWorkspace({
       </div>
     </section>
   )
+  const NextAction = (<section data-mobile-next-best-action className="tenant-next tenant-card flex flex-col">
+                  {!actionOnly && <p className="tenant-eyebrow">What’s next</p>}
+                  <h2 className="mt-2 text-lg font-semibold text-white">
+                    {next[0]}
+                  </h2>
+                  <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">{next[1]}</p>
+                  <button
+                    data-rental-control="tenant-next-action"
+                    type="button"
+                    disabled={Boolean(busy)}
+                    className="mt-5 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#102033]"
+                    onClick={nextAction}
+                  >
+                    {next[2]}
+                  </button>
+                </section>)
+  if (actionOnly) {
+    const overview = tab === 'Overview'
+    return <div className="mobile-tenant-action-content">
+      <p className="mobile-tenant-action-name">{lead.name}</p>
+      {parentError || error ? <p role="alert">{error || parentError}</p> : null}
+      {notice ? <p role="status">{notice}</p> : null}
+      {extra.errors.length ? <p role="alert">{extra.errors.join(' · ')}</p> : null}
+      {NextAction}
+      {(tab === 'Activity') && Logger}
+      {(tab === 'Tenant profile' || (overview && lead.stage === 'contacted')) && renderQualification()}
+      {(tab === 'Appointments' || (overview && lead.stage === 'qualified')) && <>{Planner}{Appointments}</>}
+      {(tab === 'Application' || (overview && ['application_pending', 'application_submitted', 'screening_pending', 'placement_ready', 'converted'].includes(lead.stage))) && applicationContent}
+      {(tab === 'Documents' || (overview && ['fica_pending', 'fica_complete'].includes(lead.stage))) && documentsContent}
+    </div>
+  }
   return (
     <main className="rental-tenant-workspace mx-auto w-full max-w-[1600px] py-2">
       <MobileDashboardShell>
@@ -1120,22 +1152,7 @@ export default function RentalTenantLeadWorkspace({
             <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
               {renderQualification()}
               <div className="grid content-start gap-5">
-                <section className="tenant-next tenant-card flex flex-col">
-                  <p className="tenant-eyebrow">What’s next</p>
-                  <h2 className="mt-2 text-lg font-semibold text-white">
-                    {next[0]}
-                  </h2>
-                  <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">{next[1]}</p>
-                  <button
-                    data-rental-control="tenant-next-action"
-                    type="button"
-                    disabled={Boolean(busy)}
-                    className="mt-5 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#102033]"
-                    onClick={nextAction}
-                  >
-                    {next[2]}
-                  </button>
-                </section>
+                {NextAction}
                 <section className="tenant-card">
                   <p className="tenant-eyebrow">Lead assigned to</p>
                   <div className="mt-4 flex items-center gap-3 rounded-xl bg-[#f7fafc] p-3">

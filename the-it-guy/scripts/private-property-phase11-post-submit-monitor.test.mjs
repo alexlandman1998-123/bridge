@@ -242,6 +242,20 @@ assert.equal(parsedEvents[0].propertyId, propertyId)
 assert.equal(parsedEvents[0].privatePropertyRef, 'T2870287')
 assert.equal(parsedEvents[0].eventStatus, 'Active')
 
+// Rental activation feeds put their RR reference in the description, without a dedicated reference field.
+for (const tag of ['LisitngEventFeedData', 'ListingEventFeedData']) {
+ for (const [description, expected] of [['rr4801768', 'rr4801768'], ['T2870287', 'T2870287'], ['RR4801768 failed', ''], ['T2870287oops', ''], ['Downloading photos', '']]) {
+  const [event] = parsePrivatePropertyPostSubmitEvents(`<${tag}><PropertyId>${propertyId}</PropertyId><EventDescription>${description}</EventDescription></${tag}>`)
+  assert.equal(event.privatePropertyRef, expected)
+ }
+}
+const cachedWithoutReference = await readPrivatePropertyStoredStatus({ client: createFakeClient({ private_property_listing_syncs: [{ private_listing_id: listingId, environment: 'production', property_id: propertyId, branch_guid: branchGuid, listing_type: 'Rental', external_status: 'active', private_property_ref: null }] }), listingId })
+assert.equal(cachedWithoutReference.propertyId, propertyId)
+assert.equal(cachedWithoutReference.branchGuid, branchGuid)
+assert.equal(cachedWithoutReference.listingType, 'Rental')
+assert.equal(cachedWithoutReference.statusProbe.privatePropertyRef, '')
+assert.equal(cachedWithoutReference.safety.privatePropertyApiCalled, false)
+
 const secrets = {
   PRIVATE_PROPERTY_SANDBOX_USERNAME: 'Arch9User',
   PRIVATE_PROPERTY_SANDBOX_PASSWORD: 'private-property-password',
@@ -435,7 +449,7 @@ assert.equal(pendingWithdrawalClient.operations.find((o) => o.table === 'private
 const cronTables = {
   ...createTables(),
   private_property_agency_configs: [{ ...agencyConfig, environment: 'production', status: 'active', go_live_approved_at: '2026-08-01' }],
-  private_property_listing_syncs: [{ private_listing_id: listingId, environment: 'production', property_id: propertyId, branch_guid: branchGuid, external_status: 'inactive', last_checked_at: '2026-08-27T00:00:00Z' }],
+  private_property_listing_syncs: [{ private_listing_id: listingId, environment: 'production', property_id: propertyId, branch_guid: branchGuid, external_status: 'inactive', private_property_ref: 'T2870287', last_checked_at: '2026-08-27T00:00:00Z' }],
 }
 const replayClient = createFakeClient(cronTables)
 const replay = await runPrivatePropertyEventReconciliation({ client: replayClient, secrets, createPrivateProperty: () => createPortal({ active: true }) })
@@ -447,6 +461,28 @@ const newEventClient = createFakeClient({ ...cronTables, private_property_listin
 const newEvent = await runPrivatePropertyEventReconciliation({ client: newEventClient, secrets, createPrivateProperty: () => createPortal({ active: true }) })
 assert.equal(newEvent.processedEventCount, 1, 'a genuinely newer activation must still reconcile')
 assert.equal(Object.hasOwn(newEventClient.operations.find((o) => o.table === 'private_property_listing_syncs').payload, 'last_payload_summary'), false)
+
+const rentalEventClient = createFakeClient({ ...cronTables, private_property_listing_syncs: [{ ...cronTables.private_property_listing_syncs[0], listing_type: 'Rental', last_checked_at: '2026-08-25T00:00:00Z' }] })
+const rentalEventPortal = createPortal({ active: true })
+rentalEventPortal.getListingEventFeedByBranch = async () => response(`<GetListingEventFeedByBranchResult><LisitngEventFeedData><ListingFeedRef>${propertyId}</ListingFeedRef><ListingFeedEventType>Activated</ListingFeedEventType><EventDescription>rr4801768</EventDescription><ListingFeedEventStatus>Active</ListingFeedEventStatus><TimeStamp>2026-08-26T09:00:00Z</TimeStamp></LisitngEventFeedData></GetListingEventFeedByBranchResult>`, 'GetListingEventFeedByBranch')
+const rentalEvent = await runPrivatePropertyEventReconciliation({ client: rentalEventClient, secrets, createPrivateProperty: () => rentalEventPortal })
+assert.equal(rentalEvent.processedEventCount, 1)
+assert.equal(rentalEventClient.operations.find(o => o.table === 'private_property_listing_syncs').payload.private_property_ref, 'rr4801768')
+assert.equal(rentalEventClient.operations.find(o => o.table === 'private_listings').payload.private_property_reference, 'rr4801768', 'the recovered rental advert number must reach the listing, not only its sync row')
+
+const staleRentalClient = createFakeClient({ ...cronTables, private_property_listing_syncs: [{ ...cronTables.private_property_listing_syncs[0], listing_type: 'Rental', private_property_ref: null }] })
+const staleRentalEvent = await runPrivatePropertyEventReconciliation({ client: staleRentalClient, secrets, createPrivateProperty: () => rentalEventPortal })
+assert.equal(staleRentalEvent.processedEventCount, 0, 'stale activation cannot restore a withdrawn advert')
+assert.equal(staleRentalEvent.reports[0].repairedReferenceCount, 1)
+assert.deepEqual(staleRentalClient.operations.filter(o => ['private_listings', 'private_property_listing_syncs'].includes(o.table)).map(o => o.payload), [{ private_property_reference: 'rr4801768' }, { private_property_ref: 'rr4801768' }], 'late reference recovery must leave status, errors and probe timestamps untouched')
+
+const laterStatusClient = createFakeClient({ ...cronTables, private_property_listing_syncs: [{ ...cronTables.private_property_listing_syncs[0], private_property_ref: null, last_checked_at: '2026-08-25T00:00:00Z' }] })
+const laterStatusPortal = createPortal()
+laterStatusPortal.getListingEventFeedByBranch = async () => response(`<GetListingEventFeedByBranchResult><ListingEventFeedData><PropertyId>${propertyId}</PropertyId><EventDescription>rr4801768</EventDescription><EventDate>2026-08-26T09:00:00Z</EventDate></ListingEventFeedData><ListingEventFeedData><PropertyId>${propertyId}</PropertyId><ListingFeedEventType>Deactivated</ListingFeedEventType><EventDate>2026-08-26T10:00:00Z</EventDate></ListingEventFeedData></GetListingEventFeedByBranchResult>`, 'GetListingEventFeedByBranch')
+await runPrivatePropertyEventReconciliation({ client: laterStatusClient, secrets, createPrivateProperty: () => laterStatusPortal })
+const latestStatusWrite = laterStatusClient.operations.find(o => o.table === 'private_property_listing_syncs').payload
+assert.equal(latestStatusWrite.external_status, 'inactive')
+assert.equal(latestStatusWrite.private_property_ref, 'rr4801768', 'a later event without a number must not hide an earlier reference in the same batch')
 
 const serviceSource = read('server/services/privatePropertyPostSubmitMonitorService.js')
 assert.match(serviceSource, /buildPrivatePropertyGoLiveReadinessReport/)

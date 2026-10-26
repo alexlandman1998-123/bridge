@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { HOME_SEEKERS_META_PIXEL_ID, homeSeekersMeasurementConsent, pauseHomeSeekersPixel, setHomeSeekersMeasurementConsent, trackHomeSeekersPage, trackHomeSeekersRecruitmentSuccess } from '../homeSeekersPixel'
+import { HOME_SEEKERS_META_PIXEL_ID, homeSeekersMeasurementConsent, pauseHomeSeekersPixel, trackHomeSeekersNextStep, trackHomeSeekersCalculator, setHomeSeekersMeasurementConsent, trackHomeSeekersPage, trackHomeSeekersRecruitmentSuccess } from '../homeSeekersPixel'
 import { recruitmentSignupRequest } from '../../services/recruitmentSignupService'
 import { homeSeekersRecruitmentOrganisationId as organisationId } from '../recruitment/recruitmentDocumentsModel'
 
@@ -169,4 +169,46 @@ it('pauses the pixel on leaving the applicant portal and restores the saved choi
   expect(homeSeekersMeasurementConsent()).toBe('granted')
   setHomeSeekersMeasurementConsent(true)
   expect(browser.fbq).toHaveBeenLastCalledWith('consent', 'grant')
+})
+
+
+it('keeps all six custom milestones distinct, deduplicated and free of personal details', () => {
+  const names = ['qualifier_started', 'qualifier_passed', 'qualifier_failed', 'oneonone_booked', 'session_rsvp', 'application_completed']
+  for (const name of names) expect(trackHomeSeekersNextStep(name, receipt)).toBe(false)
+  setHomeSeekersMeasurementConsent(true)
+  for (const name of names) { expect(trackHomeSeekersNextStep(name, receipt)).toBe(true); expect(trackHomeSeekersNextStep(name, receipt)).toBe(false) }
+  const custom = browser.fbq.mock.calls.filter(args => args[0] === 'trackSingleCustom')
+  expect(custom).toEqual(names.map(name => ['trackSingleCustom', HOME_SEEKERS_META_PIXEL_ID, name]))
+  expect(JSON.stringify(custom)).not.toContain(receipt)
+  browser.location = new URL('http://localhost:4321/join')
+  expect(trackHomeSeekersNextStep('session_rsvp', owner)).toBe(false)
+})
+
+it('fires application_completed only for confirmed application submission, not signup or document upload', () => {
+  setHomeSeekersMeasurementConsent(true)
+  const applicant = { emailVerification: 'verified', applicationSubmitted: true }
+  trackHomeSeekersRecruitmentSuccess('submit_profile', { accepted: true, applicant, preview: true }, { endpoint, submissionKey: receipt })
+  expect(browser.fbq.mock.calls.filter(args => args[0] === 'trackSingleCustom')).toHaveLength(0)
+  trackHomeSeekersRecruitmentSuccess('submit_profile', { accepted: true, applicant }, { endpoint, submissionKey: receipt })
+  trackHomeSeekersRecruitmentSuccess('submit_profile', { accepted: true, applicant }, { endpoint, submissionKey: receipt })
+  expect(browser.fbq.mock.calls.filter(args => args[0] === 'trackSingleCustom')).toEqual([['trackSingleCustom', HOME_SEEKERS_META_PIXEL_ID, 'application_completed']])
+})
+
+
+it('sends calculator milestones separately to Meta and configured Google, without inputs or email', () => {
+  vi.stubEnv('VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID', 'G-CALCULATOR1')
+  browser.gtag = vi.fn()
+  setHomeSeekersMeasurementConsent(true)
+  expect(trackHomeSeekersCalculator('calculator_completed', receipt)).toBe(true)
+  expect(trackHomeSeekersCalculator('calculator_completed', receipt)).toBe(false)
+  expect(trackHomeSeekersCalculator('calculator_email_submitted', owner)).toBe(true)
+  expect(browser.fbq.mock.calls.filter(args => args[0] === 'trackSingleCustom')).toEqual([
+    ['trackSingleCustom', HOME_SEEKERS_META_PIXEL_ID, 'calculator_completed'],
+    ['trackSingleCustom', HOME_SEEKERS_META_PIXEL_ID, 'calculator_email_submitted'],
+  ])
+  expect(browser.gtag.mock.calls).toEqual([
+    ['event', 'calculator_completed', { send_to: 'G-CALCULATOR1' }],
+    ['event', 'calculator_email_submitted', { send_to: 'G-CALCULATOR1' }],
+  ])
+  vi.unstubAllEnvs()
 })

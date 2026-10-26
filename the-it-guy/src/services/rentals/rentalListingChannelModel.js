@@ -34,6 +34,7 @@ export function buildRentalPortalChannels(listing, { property24 = null, private_
       externalStatus: p24.externalStatus, isOnPortal: p24.isOnPortal, lastSyncedAt: p24.lastSyncedAt, lastCheckedAt: p24.lastCheckedAt, error: p24.lastError },
     { key: 'private_property', label: 'Private Property', prefix: 'privateProperty', observed: monitor.externalStatus,
       submissionAttempt:pp?.submissionAttempt,
+      hasFeedIdentity: Boolean(monitor.propertyId && monitor.branchGuid),
       reference: monitor.statusProbe?.privatePropertyRef, url: monitor.statusProbe?.activeListing?.listingUrl,
       lastSyncedAt: monitor.publication?.lastSyncedAt, lastCheckedAt: monitor.generatedAt,
       submittedAt: monitor.publication?.submittedAt, error: monitor.publication?.lastError },
@@ -67,10 +68,12 @@ export function buildRentalPortalChannels(listing, { property24 = null, private_
     else if (channel.isOnPortal === true && (withdrawn || ['withdrawn','expired'].includes(status.toLowerCase()))) statusLabel = 'Still reported live'
     else if (confirmedLive) statusLabel = 'Public page verified'
     else if (channel.isOnPortal === false && channel.live) statusLabel = 'Not currently reported live'
+    const reference = channel.reference || normalizeListingChannelReference(state.reference)
+    const hasAdvertIdentity = Boolean(reference || channel.hasFeedIdentity)
     const requiresReconciliation = channel.submissionAttempt?.requiresReconciliation === true
     if (requiresReconciliation) statusLabel = 'Outcome unconfirmed'
     return { ...channel, live, status, statusLabel,requiresReconciliation, publicUrl: live ? getListingChannelViewUrl(channel.key,state.publicUrl) || channel.publicUrl : '',
-      reference: channel.reference || normalizeListingChannelReference(state.reference), publicationState: state,
+      reference, hasAdvertIdentity, publicationState: state,
       statusDetail: state.changeCount ? `${state.changeCount} saved change${state.changeCount === 1 ? '' : 's'} not sent to this channel` : '',
       activity: [
         ['Unconfirmed request', requiresReconciliation ? channel.submissionAttempt.startedAt : ''],

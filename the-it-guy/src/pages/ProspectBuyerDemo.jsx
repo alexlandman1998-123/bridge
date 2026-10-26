@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowUpLeft,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
   Home,
   Info,
   Lock,
+  LogOut,
   Mail,
   MessageCircle,
   PhoneCall,
@@ -62,6 +64,7 @@ import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFi
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
+import './ProspectBuyerDemo.css'
 
 const DEMO_CURRENT_HOME_ADDRESS = '14 Ocean View Drive, Sea Point'
 
@@ -107,7 +110,7 @@ const DEMO_JOURNEY_STAGES = [
     id: 'finance',
     label: 'Finance',
     status: 'current',
-    description: 'Your bond application is being prepared and submitted to the banks for approval.',
+    description: 'Your bond application has been submitted to four banks. Priya will update you as they respond.',
     expectedDuration: '5 - 10 business days',
     nextMilestone: 'Finance approved & guarantees issued',
   },
@@ -149,7 +152,7 @@ const DEMO_BUYER_JOURNEY_MODEL = buildBuyerJourneyPresentationModel({
   steps: DEMO_JOURNEY_STAGES,
   currentStepId: 'finance',
   currentStageLabel: 'Finance',
-  nextStageLabel: 'Transfer preparation',
+  nextStageLabel: 'Guarantees',
   source: 'demo',
 })
 
@@ -161,31 +164,31 @@ const DEMO_DOCUMENTS = [
   { title: 'Rates Clearance Information', group: 'Property documents', status: 'Requested', tone: 'action', description: 'Property supporting document requested from the seller side.' },
   { title: 'Sectional Title Conduct Rules', group: 'Property documents', status: 'Shared', tone: 'info', description: 'Scheme conduct rules for the purchased unit.' },
   { title: 'Bank Statements', group: 'Bond documents', status: 'Received', tone: 'complete', description: 'Latest three months bank statements received.' },
-  { title: 'Latest Payslip', group: 'Bond documents', status: 'Action needed', tone: 'action', description: 'Required before the bond application pack goes to banks.' },
+  { title: 'Latest Payslip', group: 'Bond documents', status: 'Received', tone: 'complete', description: 'Included in the submitted bond application.' },
 ]
 
 const DEMO_TEAM_UPDATES = [
   {
-    person: 'Sarah Williams',
+    person: 'Daniel Jacobs',
     role: 'Transfer Attorney',
-    time: 'Today, 10:42',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
+    time: '28 Aug, 10:42',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
     message:
       "We've requested the rates clearance figures from the City of Cape Town. We're currently waiting for the municipality to issue them. There's nothing needed from you at this stage.",
   },
   {
-    person: 'James Meyer',
+    person: 'Priya Naidoo',
     role: 'Bond Originator',
-    time: 'Yesterday, 14:15',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
-    message: "Your application pack is almost complete. We're waiting for your updated payslip before submitting it to the banks.",
+    time: '26 Aug, 14:15',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=120&q=80',
+    message: "Your completed application, including your latest payslip, has been submitted to ABSA, FNB, Nedbank and Standard Bank. We’re waiting for their responses; nothing is needed from you right now.",
   },
   {
-    person: 'Mia Khumalo',
+    person: 'Sarah Williams',
     role: 'Buyer Agent',
-    time: '22 Aug',
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=120&q=80',
-    message: 'Your signed Offer to Purchase has been sent to the transfer attorneys and your file has officially been opened.',
+    time: '13 Aug',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
+    message: 'Your signed Offer to Purchase has been sent to Daniel at Tuckers Attorneys and your transfer file has been opened.',
   },
 ]
 
@@ -193,34 +196,34 @@ const DOCUMENT_CATEGORY_SUMMARY = [
   { label: 'FICA Documents', count: '2 of 2', status: 'Complete', tone: 'complete', icon: FileSignature },
   { label: 'Sale Documents', count: '1 of 2', status: 'In progress', tone: 'info', icon: FileText },
   { label: 'Property Documents', count: '1 of 2', status: 'Requested', tone: 'action', icon: Home },
-  { label: 'Finance Documents', count: '1 of 2', status: 'In progress', tone: 'info', icon: HandCoins },
+  { label: 'Finance Documents', count: '2 of 2', status: 'Complete', tone: 'complete', icon: HandCoins },
   { label: 'Additional Documents', count: '0 of 2', status: 'Pending', tone: 'neutral', icon: Folder },
 ]
 
 const BUYER_DOCUMENTS = [
   {
     id: 'latest-payslip',
-    group: 'Required from you',
+    group: 'Your finance documents',
     title: 'Latest Payslip',
-    description: 'Required before the bond application goes to the banks.',
-    status: 'Required',
-    statusDetail: 'Updated payslip needed',
-    tone: 'action',
-    action: 'Upload',
+    description: 'Received and included in your submitted bond application.',
+    status: 'Received',
+    statusDetail: 'Included in bank submission · 26 Aug 2026',
+    tone: 'complete',
+    action: 'View',
     responsible: 'You',
     icon: FileText,
     detailTitle: 'Latest Payslip',
-    detailDescription: 'Your bond originator needs your most recent payslip before the bond application can be submitted to the banks.',
+    detailDescription: 'Priya received your latest payslip and included it in the application submitted to the banks.',
     whatIsThis:
       'This helps the banks confirm your current income so they can assess the bond application accurately.',
     facts: [
-      ['Status', 'Required from you'],
+      ['Status', 'Received and included in bank submission'],
       ['Needed for', 'Bond application'],
-      ['Requested by', 'James Meyer, Bond Originator'],
+      ['Requested by', 'Priya Naidoo, Bond Originator'],
     ],
     activity: [
-      ['Requested by bond originator', 'Today, 09:20'],
-      ['Reminder added to your document list', 'Today, 09:22'],
+      ['Payslip received', '25 Aug 2026'],
+      ['Submitted to banks', '26 Aug 2026'],
     ],
   },
   {
@@ -232,7 +235,7 @@ const BUYER_DOCUMENTS = [
     statusDetail: 'Signed 12 Aug 2026',
     tone: 'complete',
     action: 'View',
-    responsible: 'Mia Khumalo',
+    responsible: 'Sarah Williams',
     icon: FileSignature,
     detailTitle: 'Signed Offer to Purchase',
     detailDescription: 'The offer signed by you and the seller setting out the terms of your purchase.',
@@ -241,7 +244,7 @@ const BUYER_DOCUMENTS = [
     facts: [
       ['Status', 'Signed by all parties'],
       ['Signed', '12 Aug 2026'],
-      ['Provided by', 'Mia Khumalo, Vanguard Properties'],
+      ['Provided by', 'Sarah Williams, Vanguard Properties'],
       ['Shared with', 'Tuckers Attorneys'],
     ],
     activity: [
@@ -267,9 +270,9 @@ const BUYER_DOCUMENTS = [
       'An addendum records agreed changes or extra terms without replacing the original Offer to Purchase.',
     facts: [
       ['Status', 'Being prepared'],
-      ['Responsible party', 'Sarah Williams, Transfer Attorney'],
+      ['Responsible party', 'Daniel Jacobs, Transfer Attorney'],
     ],
-    activity: [['Attorney started preparing addendum', 'Today, 11:05']],
+    activity: [['Attorney started preparing addendum', '28 Aug, 11:05']],
   },
   {
     id: 'rates-clearance',
@@ -340,9 +343,9 @@ const BUYER_DOCUMENTS = [
   },
 ]
 
-function buildDemoBuyerDocumentItems(uploadComplete = false) {
+function buildDemoBuyerDocumentItems() {
   const statusById = {
-    'latest-payslip': uploadComplete ? 'under_review' : 'required',
+    'latest-payslip': 'approved',
     'signed-otp': 'approved',
     'sale-addendum': 'under_review',
     'rates-clearance': 'under_review',
@@ -363,33 +366,28 @@ function buildDemoBuyerDocumentItems(uploadComplete = false) {
 }
 
 const FINANCE_APPLICATION = {
-  applicationStatus: 'Application being prepared',
-  statusHelper: 'Almost ready to submit',
+  applicationStatus: 'Submitted to banks',
+  statusHelper: 'Your application is with four banks for assessment. Nothing is needed from you right now.',
   requestedAmount: 'R 2 280 000',
   purchasePrice: 'R 2 850 000',
   loanToValue: '80%',
   originator: {
-    name: 'James Meyer',
+    name: 'Priya Naidoo',
     company: 'BetterBond',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
+    email: 'priya.demo@arch9.co.za',
+    phone: '+27215550102',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=120&q=80',
   },
-  currentStage: 'application',
+  currentStage: 'submitted',
   nextStep: {
-    title: 'Submit to banks',
-    helper: 'Once required documents are received',
+    title: 'Bank responses',
+    helper: 'We’ll update you as the banks respond.',
   },
-  requiredActions: [
-    {
-      id: 'latest-payslip',
-      title: 'Upload latest payslip',
-      description:
-        'Your bond originator needs your latest payslip before the application can be submitted to the banks.',
-    },
-  ],
+  requiredActions: [],
   applicationDetails: {
     applicant: 'Mia Khumalo',
-    income: 'R82 000 gross monthly',
-    expenses: 'R24 500 monthly',
+    income: 'R85 000 gross monthly',
+    expenses: 'R30 700 monthly commitments',
     requestedBond: 'R2 280 000',
     loanToValue: '80%',
     employment: 'Full-time employed',
@@ -419,35 +417,21 @@ const FINANCE_APPLICATION = {
       bankId: 'nedbank',
       bankName: 'Nedbank',
       logo: '/brand/banks/nedbank.png',
-      status: 'Conditional approval',
-      statusTone: 'complete',
-      responseDate: '27 Aug',
+      status: 'Awaiting response',
+      statusTone: 'info',
+      submittedDate: '26 Aug',
       requestedAmount: 'R2 280 000',
-      approvedAmount: 'R2 280 000',
-      interestRate: '10.65%',
-      term: '30 years',
-      estimatedRepayment: 'R22 935 / month',
-      conditions: 'Provide additional information as requested.',
-      action: 'View offer',
-      latestUpdate: 'Conditional approval received. James will help you work through the remaining conditions.',
+      latestUpdate: 'Application submitted. Priya will update you as soon as Nedbank responds.',
     },
     {
       bankId: 'standard-bank',
       bankName: 'Standard Bank',
       logo: '/brand/banks/standard-bank.png',
-      status: 'Approved',
-      statusTone: 'complete',
-      responseDate: '27 Aug',
+      status: 'Awaiting response',
+      statusTone: 'info',
+      submittedDate: '26 Aug',
       requestedAmount: 'R2 280 000',
-      approvedAmount: 'R2 280 000',
-      interestRate: '10.40%',
-      term: '30 years',
-      estimatedRepayment: 'R22 412 / month',
-      action: 'View offer',
-      isRecommended: true,
-      highlightTitle: 'Our best offer',
-      highlightDetail: 'Lower rate, lower repayment',
-      latestUpdate: 'Approved offer received from Standard Bank.',
+      latestUpdate: 'Application submitted. Priya will update you as soon as Standard Bank responds.',
     },
   ],
 }
@@ -458,13 +442,13 @@ function buildDemoBuyerFinanceModel(demoUploadComplete = false) {
   return buildBuyerFinancePresentationModel({
     source: 'demo',
     financeType: 'bond',
-    status: demoUploadComplete ? 'Ready to submit to banks' : FINANCE_APPLICATION.applicationStatus,
-    statusHelper: demoUploadComplete ? 'All requested documents have been received' : FINANCE_APPLICATION.statusHelper,
+    status: FINANCE_APPLICATION.applicationStatus,
+    statusHelper: FINANCE_APPLICATION.statusHelper,
     currentStage: FINANCE_APPLICATION.currentStage,
     purchasePrice: FINANCE_APPLICATION.purchasePrice,
     requestedAmount: FINANCE_APPLICATION.requestedAmount,
     loanToValue: FINANCE_APPLICATION.loanToValue,
-    progressPercent: demoUploadComplete ? 100 : 88,
+    progressPercent: 100,
     manager: FINANCE_APPLICATION.originator,
     nextStep: FINANCE_APPLICATION.nextStep,
     requiredActions,
@@ -477,11 +461,11 @@ const DEMO_BOND_APPLICATION_SECTIONS = [
   { key: 'personal_details', label: 'Personal details', status: 'Complete', tone: 'complete' },
   { key: 'contact_address', label: 'Contact & address', status: 'Complete', tone: 'complete' },
   { key: 'employment', label: 'Employment', status: 'Complete', tone: 'complete' },
-  { key: 'income_deductions_expenses', label: 'Income & expenses', status: '2 details needed', tone: 'action' },
-  { key: 'banking_liabilities', label: 'Banking & liabilities', status: 'Not completed', tone: 'neutral' },
+  { key: 'income_deductions_expenses', label: 'Income & expenses', status: 'Complete', tone: 'complete' },
+  { key: 'banking_liabilities', label: 'Banking & liabilities', status: 'Complete', tone: 'complete' },
   { key: 'loan_details', label: 'Loan details', status: 'Complete', tone: 'complete' },
-  { key: 'documents', label: 'Documents', status: '1 missing', tone: 'action' },
-  { key: 'declarations_consents', label: 'Declaration', status: 'Final step', tone: 'neutral' },
+  { key: 'documents', label: 'Documents', status: 'Complete', tone: 'complete' },
+  { key: 'declarations_consents', label: 'Declaration', status: 'Complete', tone: 'complete' },
 ]
 
 const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
@@ -546,9 +530,9 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
       helper: '',
       fields: [
         { key: 'bond_rent', label: 'Bond / rent', value: 'R 18 000', inputMode: 'decimal', required: true },
-        { key: 'vehicle_finance', label: 'Vehicle finance', value: 'R 8 500', inputMode: 'decimal', reviewRequired: true, reviewMessage: 'Confirm this amount before continuing' },
+        { key: 'vehicle_finance', label: 'Vehicle finance', value: 'R 8 500', inputMode: 'decimal' },
         { key: 'credit_repayments', label: 'Credit repayments', value: 'R 4 200', inputMode: 'decimal' },
-        { key: 'other_commitments', label: 'Other commitments', value: 'R 0', inputMode: 'decimal', reviewRequired: true, reviewMessage: 'Confirm this amount before continuing' },
+        { key: 'other_commitments', label: 'Other commitments', value: 'R 0', inputMode: 'decimal' },
       ],
     },
   ],
@@ -591,7 +575,7 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
         { key: 'loan_processing_consent', label: 'I consent to loan processing and affordability assessment.', value: true, type: 'checkbox', required: true },
         { key: 'credit_bureau_consent', label: 'I consent to credit bureau, fraud and bank-data retrieval checks.', value: true, type: 'checkbox', required: true },
         { key: 'third_party_communication_consent', label: 'I consent to related third-party communication where required.', value: true, type: 'checkbox' },
-        { key: 'declaration_accepted', label: 'I confirm that all information submitted is true and complete.', value: false, type: 'checkbox', required: true },
+        { key: 'declaration_accepted', label: 'I confirm that all information submitted is true and complete.', value: true, type: 'checkbox', required: true },
         { key: 'digital_signature_name', label: 'Digital signature name', value: 'Mia Khumalo', required: true },
         { key: 'digital_signature_date', label: 'Digital signature date', value: '2026-08-26', type: 'date', required: true },
       ],
@@ -602,13 +586,13 @@ const DEMO_BOND_APPLICATION_FIELD_GROUPS = {
 const DEMO_BOND_APPLICATION_DOCUMENTS = [
   { label: 'Buyer ID document', type: 'FICA', status: 'Uploaded', tone: 'complete' },
   { label: 'Three months bank statements', type: 'Income', status: 'Uploaded', tone: 'complete' },
-  { label: 'Latest payslip', type: 'Income', status: 'Needed', tone: 'action' },
+  { label: 'Latest payslip', type: 'Income', status: 'Uploaded', tone: 'complete' },
   { label: 'Signed Offer to Purchase', type: 'Sale document', status: 'Linked', tone: 'complete' },
 ]
 
 const BOND_JOURNEY_STAGES = [
-  { id: 'application', label: 'Application', helper: 'We are here', icon: FileSignature },
-  { id: 'submitted', label: 'Submitted to Banks', helper: 'Coming next', icon: Building2 },
+  { id: 'application', label: 'Application', helper: 'Completed', icon: FileSignature },
+  { id: 'submitted', label: 'Submitted to Banks', helper: 'With four banks', icon: Building2 },
   { id: 'responses', label: 'Bank Responses', helper: 'Waiting for responses', icon: MessageCircle },
   { id: 'approval', label: 'Approval', helper: 'Offer received', icon: CheckCircle2 },
   { id: 'guarantees', label: 'Guarantees', helper: 'Before registration', icon: Scale },
@@ -657,7 +641,7 @@ const TRANSACTION_TEAM = [
     role: 'Bond Originator',
     organisation: 'BetterBond',
     description: 'Priya manages your bond application and communicates with the banks on your behalf.',
-    currentActivity: 'Preparing application for bank submission',
+    currentActivity: 'Awaiting responses from four banks',
     email: 'priya.demo@arch9.co.za',
     phone: '+27215550102',
     messagingAvailable: true,
@@ -682,6 +666,36 @@ const TRANSACTION_TEAM = [
     isActive: false,
     responsibilities: ['Document requests', 'Signing appointments', 'Missing documents', 'Administrative transfer questions'],
     relatedTransactionStages: ['documents', 'signing'],
+  },
+  {
+    id: 'home-insurance-team',
+    name: 'Home insurance team',
+    initials: 'HI',
+    role: 'Home Insurance Advisor',
+    organisation: 'Demo insurance partner',
+    description: 'Your home insurance team helps you compare building and household contents cover, understand your policy and get help with claims.',
+    currentActivity: 'Building cover, contents and claims',
+    email: 'home-insurance.demo@arch9.co.za',
+    messagingAvailable: true,
+    isMainContact: false,
+    isActive: false,
+    responsibilities: ['Building insurance', 'Household contents', 'Policy questions', 'Claims guidance'],
+    relatedTransactionStages: ['insurance'],
+  },
+  {
+    id: 'bond-life-team',
+    name: 'Bond Life team',
+    initials: 'BL',
+    role: 'Life Cover Specialist',
+    organisation: 'Vermillion',
+    description: 'Your life cover team helps you explore Bond Life and Bond Life Plus and understand the cover options for your bond.',
+    currentActivity: 'Bond Life and Bond Life Plus',
+    email: 'bond-life.demo@arch9.co.za',
+    messagingAvailable: true,
+    isMainContact: false,
+    isActive: false,
+    responsibilities: ['Bond Life', 'Bond Life Plus', 'Life cover questions'],
+    relatedTransactionStages: ['insurance', 'finance'],
   },
 ]
 
@@ -719,10 +733,10 @@ const CONVEYANCING_STAGES = [
     buyerAction: 'Nothing right now',
     buyerActionDetail: "We'll let you know if anything is needed.",
     latestUpdate: {
-      person: 'Sarah Williams',
+      person: 'Daniel Jacobs',
       role: 'Transfer Attorney',
-      time: 'Today, 10:42',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
+      time: '28 Aug, 10:42',
+      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
       message: 'Rates figures were requested on 21 August. We are currently waiting for the City of Cape Town to issue them.',
     },
     educationalDescription:
@@ -977,7 +991,7 @@ export default function ProspectBuyerDemo() {
 }
 
 function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoUploadComplete, financeModel, teamModel, demoUploadNotice, onCompleteUpload }) {
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [demoClosed, setDemoClosed] = useState(false)
   const [demoUploadSheetOpen, setDemoUploadSheetOpen] = useState(false)
   const mobileSection = activeSection
   const openDemoUploadSheet = () => setDemoUploadSheetOpen(true)
@@ -988,27 +1002,37 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
   const pageTitles = {
     overview: '',
     progress: 'Transfer Journey',
-    documents: 'Documents',
-    finance: 'Finance',
-    insurance: 'Insurance',
-    maintenance: 'Maintenance',
-    move: 'Move',
+    documents: '',
+    finance: '',
+    insurance: '',
+    maintenance: '',
+    move: '',
     'bond-application': 'Bond application',
-    messages: 'Messages & updates',
+    messages: '',
     team: 'Your team',
   }
 
+  if (demoClosed) return (
+    <div className="prospect-buyer-mobile flex min-h-screen items-center justify-center bg-[#f7f9fc] p-6">
+      <section className="w-full max-w-[360px] rounded-[12px] border border-[#dbe5ef] bg-white p-6 text-center">
+        <img src={config.logoLightUrl || config.logoDarkUrl} alt={`${config.agencyName} logo`} className="mx-auto mb-6 max-h-12 max-w-[180px] object-contain" />
+        <h1 className="text-xl font-semibold text-[#142132]">You’ve left the demo</h1>
+        <p className="mt-2 text-sm leading-6 text-[#667085]">You can reopen the buyer portal whenever you’re ready.</p>
+        <button type="button" onClick={() => setDemoClosed(false)} className="mt-6 min-h-11 w-full rounded-[8px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>Reopen demo</button>
+      </section>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-[#f7f9fc] pb-[calc(88px+env(safe-area-inset-bottom))] text-[#142132]">
+    <div className="prospect-buyer-mobile min-h-screen bg-[#f7f9fc] pb-[calc(88px+env(safe-area-inset-bottom))] text-[#142132]">
       <div className="mx-auto max-w-[430px] px-4 pt-4">
         <MobileHeader
           activeSection={mobileSection}
           agencyName={config.agencyName}
-          logoUrl={config.logoDarkUrl || config.logoLightUrl}
+          logoUrl={config.logoLightUrl || config.logoDarkUrl}
           brand={brand}
           title={pageTitles[mobileSection]}
-          menuOpen={menuOpen}
-          onToggleMenu={() => setMenuOpen((open) => !open)}
+          onLogout={() => setDemoClosed(true)}
           token={token}
         />
 
@@ -1024,7 +1048,7 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
             token={token}
           />
         ) : null}
-        {mobileSection === 'progress' ? <MobileTransferJourney brand={brand} /> : null}
+        {mobileSection === 'progress' ? <MobileTransferJourney brand={brand} token={token} demoUploadComplete={demoUploadComplete} onCompleteUpload={openDemoUploadSheet} /> : null}
         {mobileSection === 'documents' ? (
           <MobileDocuments
             brand={brand}
@@ -1034,9 +1058,9 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
           />
         ) : null}
         {mobileSection === 'finance' ? <MobileFinance brand={brand} model={financeModel} onCompleteUpload={openDemoUploadSheet} token={token} /> : null}
-        {mobileSection === 'insurance' ? <DemoInsuranceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} /> : null}
-        {mobileSection === 'maintenance' ? <DemoMaintenanceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} /> : null}
-        {mobileSection === 'move' ? <DemoMoveWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} currentAddress={`${DEMO_CURRENT_HOME_ADDRESS}, Cape Town`} /> : null}
+        {mobileSection === 'insurance' ? <DemoInsuranceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} compact /> : null}
+        {mobileSection === 'maintenance' ? <DemoMaintenanceWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} compact /> : null}
+        {mobileSection === 'move' ? <DemoMoveWorkspace theme={brand} propertyAddress={config.samplePropertyAddress} currentAddress={`${DEMO_CURRENT_HOME_ADDRESS}, Cape Town`} compact /> : null}
         {mobileSection === 'bond-application' ? <MobileBondApplication brand={brand} demoUploadComplete={demoUploadComplete} token={token} /> : null}
         {mobileSection === 'messages' ? <MobileMessages brand={brand} token={token} /> : null}
         {mobileSection === 'team' ? <MobileTeam brand={brand} model={teamModel} /> : null}
@@ -1070,35 +1094,57 @@ function MobileBuyerPortal({ activeSection, brand, config, token, loading, demoU
   )
 }
 
-function MobileHeader({ activeSection, agencyName, logoUrl, brand, title, menuOpen, onToggleMenu, token }) {
-  const isOverview = activeSection === 'overview'
+function MobileHeader({ agencyName, logoUrl, brand, title, onLogout, token }) {
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef(null)
+  const triggerRef = useRef(null)
+
+  useEffect(() => {
+    if (!profileOpen) return undefined
+    profileRef.current?.querySelector('button')?.focus()
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setProfileOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    const onPointerDown = (event) => {
+      if (!profileRef.current?.contains(event.target) && !triggerRef.current?.contains(event.target)) setProfileOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [profileOpen])
 
   return (
-    <BuyerMobileHeader
-      brand={brand}
-      brandName={agencyName}
-      logoUrl={isOverview ? logoUrl : ''}
-      title={isOverview ? '' : title}
-      homePath={getDemoPath(token, 'overview')}
-      actions={(
-        <button type="button" onClick={onToggleMenu} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white backdrop-blur" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>
-          <span className="text-xl leading-none">≡</span>
-        </button>
-      )}
-      menu={menuOpen ? (
-        <nav aria-label="Buyer portal menu" className="absolute left-0 right-0 top-[60px] z-50 overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-2 text-[#142132] shadow-[0_18px_42px_rgba(15,23,42,0.18)]">
-          {DEMO_NAV.map((item) => {
-            const Icon = item.icon
-            const active = item.key === activeSection
-            return (
-              <Link key={item.key} to={getDemoPath(token, item.key)} onClick={onToggleMenu} className="flex min-h-11 items-center gap-3 rounded-[12px] px-3 text-sm font-semibold" style={active ? { backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary } : { color: '#344054' }}>
-                <Icon size={17} />{item.label}
-              </Link>
-            )
-          })}
-        </nav>
-      ) : null}
-    />
+    <>
+      <BuyerMobileHeader
+        brand={brand}
+        brandName={agencyName}
+        logoUrl={logoUrl}
+        appearance="light"
+        homePath={getDemoPath(token, 'overview')}
+        actions={(
+          <button ref={triggerRef} type="button" onClick={() => setProfileOpen((open) => !open)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e2e8ef] bg-[#f7f9fc] text-[#344054]" aria-label="Your profile" aria-expanded={profileOpen} aria-controls="buyer-demo-profile-menu">
+            <UserRound size={21} strokeWidth={1.7} aria-hidden="true" />
+          </button>
+        )}
+        menu={profileOpen ? (
+          <div id="buyer-demo-profile-menu" ref={profileRef} className="absolute right-0 top-[calc(100%+8px)] z-50 w-[228px] rounded-[12px] border border-[#dbe5ef] bg-white p-2 text-[#142132] shadow-[0_12px_36px_rgba(15,23,42,0.14)]" aria-label="Your profile">
+            <div className="border-b border-[#edf0f3] px-3 py-3">
+              <p className="text-sm font-semibold">Mia Khumalo</p>
+              <p className="mt-0.5 text-xs text-[#667085]">Buyer · {agencyName}</p>
+            </div>
+            <button type="button" onClick={() => { setProfileOpen(false); onLogout() }} className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-[8px] px-3 text-sm font-medium text-[#344054] hover:bg-[#f7f9fc]"><LogOut size={17} aria-hidden="true" />Log out</button>
+          </div>
+        ) : null}
+      />
+      {title ? <h1 className="mb-4 text-xl font-semibold tracking-[-0.025em] text-[#142132]">{title}</h1> : null}
+    </>
   )
 }
 
@@ -1112,218 +1158,284 @@ function DemoModeNotice() {
 
 function MobileMessages({ brand, token }) {
   return (
-    <div className="space-y-4">
-      <p className="-mt-2 text-sm leading-5 text-[#52657b]">Updates from your transaction team, with a clear route to the right person.</p>
-      <TransactionUpdatesSection brand={brand} standalone />
-      <Link to={getDemoPath(token, 'team')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
-        Contact your team
+    <section id="mobile-transaction-updates" aria-label="Updates from your transaction team" className="space-y-4">
+      <p className="text-xs leading-5 text-[#7b8491]">Your transaction updates, in one place.</p>
+      <ol className="space-y-5">
+        {DEMO_TEAM_UPDATES.map((update) => {
+          const [day, time] = update.time.split(', ')
+          return (
+            <li key={`${update.person}-${update.time}`}>
+              <div className="mb-2 flex items-center gap-3">
+                <h2 className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8491]">{day}</h2>
+                <span className="h-px flex-1 bg-[#e4e9ef]" aria-hidden="true" />
+              </div>
+              <article className="rounded-[12px] border border-[#dbe5ef] bg-white p-4">
+                <div className="flex items-start gap-3">
+                  <img src={update.avatar} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" loading="lazy" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold leading-5 text-[#142132]">{update.person}</h3>
+                    <p className="mt-0.5 text-xs leading-4 text-[#7b8491]">{update.role}</p>
+                  </div>
+                  {time ? <time className="shrink-0 pt-0.5 text-[0.65rem] text-[#98a2b3]">{time}</time> : null}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-[#52657b]">{update.message}</p>
+                {update.role === 'Bond Originator' ? <Link to={getDemoPath(token, 'finance')} className="mt-3 inline-flex min-h-11 items-center gap-2 border-t border-[#edf0f3] pt-2 text-xs font-semibold" style={{ color: brand.primary }}><Building2 size={15} aria-hidden="true" />View bank applications<ChevronRight size={14} aria-hidden="true" /></Link> : null}
+              </article>
+            </li>
+          )
+        })}
+      </ol>
+      <Link to={getDemoPath(token, 'team')} className="flex min-h-[72px] items-center gap-3 rounded-[12px] border border-[#dbe5ef] bg-white p-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px]" style={{ color: brand.primary, backgroundColor: hexToRgba(brand.primary, 0.06) }}><Users size={18} aria-hidden="true" /></span>
+        <span className="flex-1"><span className="block text-sm font-semibold text-[#142132]">Need a hand?</span><span className="mt-0.5 block text-xs text-[#667085]">Contact your team</span></span>
+        <ChevronRight size={17} className="shrink-0" style={{ color: brand.primary }} aria-hidden="true" />
       </Link>
-    </div>
+    </section>
   )
 }
 
 function MobileBottomNav({ activeSection, brand, token }) {
-  const items = MOBILE_DEMO_NAV.map((item) => ({
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+  const triggerRef = useRef(null)
+  const menuItems = DEMO_NAV.filter((item) => !['overview', 'progress', 'documents', 'finance'].includes(item.key))
+  const closeMenu = () => {
+    setMenuOpen(false)
+    triggerRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!menuOpen) return undefined
+    menuRef.current?.querySelector('a')?.focus()
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMenuOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [menuOpen])
+
+  const items = [...MOBILE_DEMO_NAV.filter((item) => item.key !== 'team').map((item) => ({
     ...item,
     mobileLabel: item.key === 'progress' ? 'Journey' : item.key === 'documents' ? 'Docs' : item.key === 'team' ? 'Team' : item.label,
     isActive: (currentKey) => item.key === 'finance' && currentKey === 'bond-application',
-  }))
-  return <BuyerMobileBottomNavigation items={items} activeKey={activeSection} getPath={(item) => getDemoPath(token, item.key)} activeStyle={{ backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary }} />
+  })), {
+    key: 'menu',
+    label: 'Menu',
+    icon: ArrowUpLeft,
+    expanded: menuOpen,
+    controls: 'buyer-demo-bottom-menu',
+    isActive: (currentKey) => menuOpen || (currentKey !== 'bond-application' && menuItems.some((item) => item.key === currentKey)),
+    onClick: (event) => {
+      triggerRef.current = event.currentTarget
+      setMenuOpen((open) => !open)
+    },
+  }]
+
+  return (
+    <>
+      {menuOpen ? <button type="button" className="fixed inset-0 z-30 bg-black/10 lg:hidden" aria-label="Close navigation menu" onClick={closeMenu} /> : null}
+      <BuyerMobileBottomNavigation
+        items={items}
+        activeKey={activeSection}
+        onNavigate={() => setMenuOpen(false)}
+        getPath={(item) => getDemoPath(token, item.key)}
+        activeStyle={{ backgroundColor: hexToRgba(brand.primary, 0.1), color: brand.primary }}
+        menu={menuOpen ? (
+          <div id="buyer-demo-bottom-menu" ref={menuRef} className="buyer-demo-bottom-menu absolute bottom-[calc(100%+10px)] right-0 w-[260px] max-w-[calc(100vw-24px)] rounded-[12px] border border-[#dbe5ef] bg-white p-2 shadow-[0_12px_40px_rgba(15,23,42,0.16)]" aria-label="More buyer portal pages">
+            <p className="px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[#667085]">Explore</p>
+            {menuItems.map((item) => {
+              const Icon = item.icon
+              const active = item.key === activeSection
+              return <Link key={item.key} to={getDemoPath(token, item.key)} onClick={closeMenu} aria-current={active ? 'page' : undefined} className="flex min-h-11 items-center gap-3 rounded-[8px] px-3 text-sm font-medium text-[#344054] hover:bg-[#f7f9fc] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]" style={active ? { backgroundColor: hexToRgba(brand.primary, 0.08), color: brand.primary } : undefined}><Icon size={18} aria-hidden="true" />{item.label}</Link>
+            })}
+          </div>
+        ) : null}
+      />
+    </>
+  )
 }
 
-function MobileOverview({ brand, config, loading, demoUploadComplete, onCompleteUpload, token }) {
+function MobileOverview({ brand, config, demoUploadComplete, onCompleteUpload, token }) {
   const addressParts = config.samplePropertyAddress.split(',')
   const primaryAddress = addressParts.slice(0, 2).join(',').trim()
   const areaAddress = addressParts.slice(2).join(',').trim() || 'Sea Point, Cape Town'
 
   return (
     <div className="space-y-3">
-      <BuyerMobilePropertyHero imageUrl={config.samplePropertyImageUrl} imageAlt={config.samplePropertyAddress} theme={brand}>
-        <div className="flex min-h-[270px] flex-col justify-end p-5">
-          <p className="mb-auto text-xs font-semibold uppercase tracking-[0.16em] text-white/75">{loading ? 'Loading demo' : 'Your purchase'}</p>
-          <h1 className="text-[1.65rem] font-semibold leading-[1.02] tracking-[-0.055em] text-white">{primaryAddress}</h1>
-          <p className="mt-1 text-base font-semibold text-white/90">{areaAddress}</p>
-          <div className="mt-4 w-fit rounded-[16px] border border-white/20 bg-black/45 px-4 py-3 backdrop-blur">
-            <strong className="block text-base font-semibold">50% complete</strong>
-            <span className="text-xs text-white/80">On track</span>
+      <section className="overflow-hidden rounded-[22px] border border-[#dbe5ef] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)]" aria-label="Your purchase">
+        <BuyerMobilePropertyHero imageUrl={config.samplePropertyImageUrl} imageAlt={config.samplePropertyAddress} theme={brand} className="!rounded-none !shadow-none">
+          <div className="flex min-h-[200px] flex-col justify-end p-4">
+            <h1 className="text-[1.35rem] font-semibold leading-[1.3] tracking-[-0.025em] text-white [overflow-wrap:anywhere]">{primaryAddress}</h1>
+            <p className="mt-1 text-sm leading-5 text-white/90">{areaAddress}</p>
+          </div>
+        </BuyerMobilePropertyHero>
+        <div className="p-4">
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs leading-5">
+              <strong className="font-semibold text-[#344054]">{DEMO_BUYER_JOURNEY_MODEL.progressPercent}% complete</strong>
+              <span className="inline-flex items-center gap-1.5 text-[#52657b]"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />On track</span>
+            </div>
+            <div role="progressbar" aria-label="Purchase progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={DEMO_BUYER_JOURNEY_MODEL.progressPercent} className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf0f3]">
+              <div className="h-full rounded-full" style={{ backgroundColor: brand.primary, width: `${DEMO_BUYER_JOURNEY_MODEL.progressPercent}%` }} />
+            </div>
           </div>
         </div>
-      </BuyerMobilePropertyHero>
+      </section>
 
       <MobilePurchaseJourneyStrip brand={brand} token={token} />
 
       <DemoInsurancePromotion theme={brand} to={getDemoPath(token, 'insurance')} />
 
-      <MobilePriorityCard
-        icon={FileSignature}
-        label="Current stage"
-        title="Finance"
-        description="Your bond application is being prepared for submission."
-        to={getDemoPath(token, 'finance')}
-        brand={brand}
-      />
-      <MobilePriorityCard
-        icon={AlertCircle}
-        label={demoUploadComplete ? 'Nothing needed from you' : 'Next up'}
-        title={demoUploadComplete ? "You're all caught up" : 'Upload latest payslip'}
-        description={demoUploadComplete ? "We'll let you know when we need anything." : 'Needed before we can submit your application to the banks.'}
-        to={getDemoPath(token, 'documents')}
-        brand={brand}
-        tone={demoUploadComplete ? 'complete' : 'action'}
-        onClick={demoUploadComplete ? undefined : onCompleteUpload}
-      />
+      <MobileDocumentTracker brand={brand} token={token} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} />
 
-      <section className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[#142132]">Latest updates</h2>
-          <span className="flex items-center gap-1 text-[0.7rem] font-semibold text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Live
-          </span>
-        </div>
-        <div className="-mx-4 mt-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-          {[
-            ['Today, 09:15', 'Rates clearance requested', 'Your transfer attorney requested rates clearance figures from the City of Cape Town.'],
-            ['Yesterday, 15:42', 'Payslip reminder', 'Your bond originator is ready to submit as soon as your latest payslip is received.'],
-            ['28 Aug, 10:10', 'Offer accepted', 'Your signed Offer to Purchase has been shared with the finance and transfer teams.'],
-          ].map(([date, title, description]) => (
-            <article key={title} className="w-[260px] shrink-0 snap-start rounded-[16px] border border-[#e5ebf1] bg-[#fbfcfd] p-3">
-              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7b8491]">{date}</p>
-              <h3 className="mt-2 text-sm font-semibold text-[#142132]">{title}</h3>
-              <p className="mt-1 text-xs leading-5 text-[#52657b]">{description}</p>
-            </article>
-          ))}
-        </div>
-        <Link to={getDemoPath(token, 'progress')} className="mt-3 inline-flex min-h-9 items-center text-sm font-semibold" style={{ color: brand.primary }}>
-          View all updates
-        </Link>
-      </section>
     </div>
   )
 }
 
 function MobilePurchaseJourneyStrip({ brand, token }) {
-  const stages = [
-    ['Offer', 'complete'],
-    ['Finance', 'current'],
-    ['Transfer', 'upcoming'],
-    ['Registration', 'upcoming'],
-  ]
+  const currentIndex = DEMO_JOURNEY_STAGES.findIndex((stage) => stage.status === 'current')
+  const nearbyStages = DEMO_JOURNEY_STAGES.slice(Math.max(0, currentIndex - 1), currentIndex + 2)
+
   return (
-    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-[#142132]">Your journey</h2>
-        <Link to={getDemoPath(token, 'progress')} className="text-xs font-semibold" style={{ color: brand.primary }}>View journey</Link>
-      </div>
-      <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-        {stages.map(([label, status], index) => (
-          <div key={label} className="flex min-w-[86px] flex-col gap-2">
-            <span className={`flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold ${status === 'complete' ? 'border-emerald-500 bg-emerald-500 text-white' : status === 'current' ? 'border-[#142132] bg-[#142132] text-white' : 'border-[#d9e1ea] bg-white text-[#98a2b3]'}`} style={status === 'current' ? { borderColor: brand.primary, backgroundColor: brand.primary } : undefined}>
-              {status === 'complete' ? <CheckCircle2 size={17} /> : index + 1}
-            </span>
-            <span className={`text-xs font-semibold ${status === 'current' ? 'text-[#142132]' : 'text-[#667085]'}`}>{label}</span>
-            {status === 'current' ? <span className="-mt-1 text-[0.62rem] font-semibold" style={{ color: brand.primary }}>You are here</span> : <span className="h-[15px]" />}
-          </div>
-        ))}
-      </div>
+    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4">
+      <h2 className="mb-3 text-sm font-semibold text-[#142132]">Your journey</h2>
+      <ol aria-label="Previous, current and next purchase stages">
+        {nearbyStages.map((stage, index) => {
+          const isCurrent = stage.status === 'current'
+          const isComplete = stage.status === 'complete'
+          return (
+            <li key={stage.id} className={`relative grid grid-cols-[24px_minmax(0,1fr)] gap-3 ${index < nearbyStages.length - 1 ? 'pb-3' : ''}`} aria-current={isCurrent ? 'step' : undefined}>
+              {index < nearbyStages.length - 1 ? <span className="absolute bottom-0 left-[11px] top-6 w-px bg-[#e4e9ef]" aria-hidden="true" /> : null}
+              <span className="relative z-10 mt-2 flex h-6 w-6 items-center justify-center bg-white" aria-hidden="true">
+                {isComplete ? <CheckCircle2 size={17} className="text-emerald-600" /> : isCurrent ? <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(brand.primary, 0.1) }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: brand.primary }} /></span> : <span className="h-2 w-2 rounded-full bg-[#c7d1dc]" />}
+              </span>
+              <div className={isCurrent ? 'rounded-[12px] p-3' : 'py-2'} style={isCurrent ? { backgroundColor: hexToRgba(brand.primary, 0.04) } : undefined}>
+                <p className="text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-[#667085]">{isCurrent ? 'Current stage' : isComplete ? 'Completed' : 'Up next'}</p>
+                <h3 className={`mt-1 font-semibold ${isCurrent ? 'text-base text-[#142132]' : 'text-sm text-[#667085]'}`}>{stage.label}</h3>
+                {isCurrent ? <p className="mt-1 text-sm leading-5 text-[#52657b]">{stage.description}</p> : null}
+                {isComplete && stage.completionDate ? <p className="mt-0.5 text-xs text-[#98a2b3]">{stage.completionDate}</p> : null}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      <Link to={getDemoPath(token, 'progress')} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-1 border-t border-[#edf0f3] pt-3 text-sm font-semibold" style={{ color: brand.primary }}>
+        View full journey<ChevronRight size={16} aria-hidden="true" />
+      </Link>
     </section>
   )
 }
 
-function MobilePriorityCard({ icon: Icon, label, title, description, to, brand, tone = 'info', onClick }) {
-  const content = (
-    <>
-      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${statusClasses(tone)}`}>
-        <Icon size={21} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#667085]">{label}</p>
-        <h2 className="mt-1 text-base font-semibold text-[#142132]">{title}</h2>
-        <p className="mt-1 text-sm leading-5 text-[#52657b]">{description}</p>
-      </div>
-      <ChevronRight size={18} className="shrink-0" style={{ color: brand.primary }} />
-    </>
-  )
-
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} className="flex min-h-[98px] w-full items-center gap-3 rounded-[18px] border border-[#dbe5ef] bg-white p-4 text-left shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-        {content}
-      </button>
-    )
-  }
+function MobileDocumentTracker({ brand, token, demoUploadComplete, onCompleteUpload }) {
+  const documents = buildDemoBuyerDocumentItems(demoUploadComplete)
+  const readyCount = documents.filter((document) => document.status === 'approved').length
+  const neededCount = documents.filter((document) => document.status === 'required').length
+  const preparingCount = documents.filter((document) => document.status === 'under_review').length
+  const upcomingCount = documents.filter((document) => document.status === 'upcoming').length
 
   return (
-    <Link to={to} className="flex min-h-[98px] items-center gap-3 rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-      {content}
-    </Link>
-  )
-}
-
-function MobileTransferJourney({ brand }) {
-  const mobileStages = [
-    { title: 'Offer Accepted', date: '12 Aug 2026', description: 'You and the seller accepted the offer.', status: 'completed' },
-    { title: 'Rates & Clearance', description: 'Your attorney is obtaining rates and levy clearance figures.', status: 'current', statusText: 'In progress', detail: 'Waiting for municipality response' },
-    { title: 'Documents & Guarantees', description: 'Your attorney will prepare the transfer documents and request guarantees.', status: 'upcoming' },
-    { title: 'Signing', description: "You'll sign the transfer documents.", status: 'upcoming' },
-    { title: 'Lodgement', description: 'The documents will be lodged with the Deeds Office.', status: 'upcoming' },
-    { title: 'Registration', description: 'Once registered, the property is officially in your name.', status: 'upcoming' },
-  ]
-
-  return (
-    <div className="space-y-3">
-      <section className="relative space-y-3 rounded-[20px] border border-[#dbe5ef] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-        <span className="absolute left-[31px] top-5 h-[calc(100%-40px)] w-px bg-[#dbe5ef]" />
-        {mobileStages.map((stage) => (
-          <MobileTimelineStage key={stage.title} brand={brand} stage={stage} />
-        ))}
-      </section>
-    </div>
-  )
-}
-
-function MobileTimelineStage({ brand, stage }) {
-  const [expanded, setExpanded] = useState(stage.status === 'current')
-  const isCurrent = stage.status === 'current'
-  const isComplete = stage.status === 'completed'
-
-  return (
-    <article className="relative grid grid-cols-[44px_minmax(0,1fr)] gap-3">
-      <span
-        className="relative z-10 mt-4 flex h-9 w-9 items-center justify-center rounded-full border-4 border-[#f7f9fc] text-sm font-semibold text-white"
-        style={{ backgroundColor: isComplete || isCurrent ? brand.primary : '#c7d1dc' }}
-      >
-        {isComplete ? <CheckCircle2 size={18} /> : isCurrent ? '2' : <Clock3 size={16} />}
-      </span>
-      <button type="button" onClick={() => setExpanded((value) => !value)} className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-[#142132]">{stage.title}</h2>
-            {stage.date ? <p className="mt-1 text-xs text-[#667085]">{stage.date}</p> : null}
-            {stage.statusText ? <p className="mt-1 text-xs font-semibold" style={{ color: brand.primary }}>{stage.statusText}</p> : null}
-          </div>
-          <ChevronRight size={18} className={expanded ? 'rotate-90' : ''} style={{ color: brand.primary }} />
+    <section className="overflow-hidden rounded-[12px] border border-[#dbe5ef] bg-white" aria-labelledby="mobile-document-tracker-title">
+      <div className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="mobile-document-tracker-title" className="text-sm font-semibold text-[#142132]">Your documents</h2>
+          <span className="text-xs font-medium text-[#667085]">{readyCount} of {documents.length} ready</span>
         </div>
-        <p className="mt-2 text-sm leading-5 text-[#52657b]">{stage.description}</p>
-        {expanded && isCurrent ? (
-          <div className="mt-4 space-y-3">
-            <div className="rounded-[14px] border p-3" style={{ borderColor: hexToRgba(brand.primary, 0.22), backgroundColor: hexToRgba(brand.primary, 0.06), color: brand.primary }}>
-              <p className="text-sm font-semibold">{stage.detail}</p>
+        <div role="progressbar" aria-label="Documents ready" aria-valuemin={0} aria-valuemax={documents.length} aria-valuenow={readyCount} aria-valuetext={`${readyCount} of ${documents.length} documents ready`} className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-[#edf0f3]">
+          <span className="h-full rounded-full bg-emerald-500" style={{ width: `${readyCount / documents.length * 100}%` }} />
+        </div>
+        <p className="mt-2 text-xs leading-5 text-[#667085]" aria-live="polite">{neededCount} needed · {preparingCount} in progress · {upcomingCount} upcoming</p>
+      </div>
+      <ul className="buyer-document-carousel flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-4 pb-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px]" tabIndex={0} aria-label="Document cards — swipe to browse">
+        {documents.map((document) => {
+          const isReady = document.status === 'approved'
+          const isNeeded = document.status === 'required'
+          const isUpcoming = document.status === 'upcoming'
+          const statusLabel = isReady ? 'Ready' : isNeeded ? 'Upload needed' : isUpcoming ? 'Upcoming' : 'In progress'
+          const DocumentIcon = document.icon
+          const toneClass = isReady ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : isNeeded ? 'border-amber-100 bg-amber-50 text-amber-800' : isUpcoming ? 'border-slate-200 bg-slate-100 text-slate-500' : 'border-sky-100 bg-sky-50 text-sky-700'
+          return (
+            <li key={document.id} className={`flex w-[82%] max-w-[280px] shrink-0 snap-start flex-col rounded-[12px] border p-4 ${isNeeded ? 'border-amber-200 bg-[#fffdf7]' : 'border-[#e2e8ef] bg-[#fbfcfe]'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-white bg-white shadow-sm" style={{ color: brand.primary }}><DocumentIcon size={21} strokeWidth={1.6} aria-hidden="true" /></span>
+                <span className={`rounded-full border px-2 py-1 text-[0.6rem] font-semibold ${toneClass}`}>{statusLabel}</span>
+              </div>
+              <p className="mt-4 text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-[#7b8491]">{document.group}</p>
+              <h3 className="mt-1 min-h-12 text-base font-semibold leading-6 tracking-[-0.02em] text-[#142132]">{document.title}</h3>
+              <p className="mt-2 flex-1 text-xs leading-5 text-[#667085]">{document.id === 'latest-payslip' && demoUploadComplete ? 'Your payslip has been received for review.' : document.description}</p>
+              {isNeeded ? (
+                <button type="button" onClick={onCompleteUpload} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-[8px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }} aria-label={`Upload ${document.title}`}><UploadCloud size={16} aria-hidden="true" />Upload document</button>
+              ) : (
+                <Link to={getDemoPath(token, 'documents')} className="mt-4 flex min-h-11 items-center justify-center gap-1 rounded-[8px] border border-[#dbe3ec] bg-white text-sm font-semibold" style={{ color: brand.primary }} aria-label={`${isReady ? 'View document' : 'View status'}: ${document.title}`}>{isReady ? 'View document' : 'View status'}<ChevronRight size={16} aria-hidden="true" /></Link>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="flex items-center justify-center gap-1.5 px-4 pb-3 text-[0.65rem] text-[#7b8491]">Swipe to browse all {documents.length} documents<ChevronRight size={12} aria-hidden="true" /></p>
+      <Link to={getDemoPath(token, 'documents')} className="flex min-h-12 items-center justify-center gap-1 border-t border-[#edf0f3] text-sm font-semibold" style={{ color: brand.primary }}>View all documents<ChevronRight size={16} aria-hidden="true" /></Link>
+    </section>
+  )
+}
+
+function MobileTransferJourney({ brand, token, demoUploadComplete, onCompleteUpload }) {
+  const completedCount = DEMO_JOURNEY_STAGES.filter((stage) => stage.status === 'complete').length
+  const progressPercent = Math.round(completedCount / DEMO_JOURNEY_STAGES.length * 100)
+
+  return (
+    <section className="rounded-[12px] border border-[#dbe5ef] bg-white p-4">
+      <div className="mb-6">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-[#142132]">Your progress</h2>
+          <span className="text-xs text-[#667085]">{completedCount} of {DEMO_JOURNEY_STAGES.length} steps complete</span>
+        </div>
+        <div role="progressbar" aria-label="Purchase journey progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent} className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#edf0f3]">
+          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progressPercent}%` }} />
+        </div>
+      </div>
+      <ol aria-label="Your purchase journey">
+        {DEMO_JOURNEY_STAGES.map((stage, index) => (
+          <MobileTimelineStage key={stage.id} brand={brand} stage={stage} isLast={index === DEMO_JOURNEY_STAGES.length - 1} token={token} demoUploadComplete={demoUploadComplete} onCompleteUpload={onCompleteUpload} />
+        ))}
+      </ol>
+      <p className="mt-5 border-t border-[#edf0f3] pt-4 text-xs leading-5 text-[#7b8491]">Your team will keep you updated as each step moves forward.</p>
+    </section>
+  )
+}
+
+function MobileTimelineStage({ brand, stage, isLast, token }) {
+  const isCurrent = stage.status === 'current'
+  const isComplete = stage.status === 'complete'
+
+  return (
+    <li className={`relative grid grid-cols-[28px_minmax(0,1fr)] gap-3 ${isLast ? '' : 'pb-5'}`} aria-current={isCurrent ? 'step' : undefined}>
+      {!isLast ? <span className={`absolute bottom-0 left-[13px] top-7 w-px ${isComplete ? 'bg-emerald-200' : 'bg-[#e4e9ef]'}`} aria-hidden="true" /> : null}
+      <span className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full ${isCurrent ? 'mt-7 bg-white' : isComplete ? 'bg-emerald-50 text-emerald-600' : 'bg-white'}`} aria-hidden="true">
+        {isComplete ? <CheckCircle2 size={18} /> : isCurrent ? <span className="flex h-7 w-7 items-center justify-center rounded-full" style={{ backgroundColor: hexToRgba(brand.primary, 0.09) }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: brand.primary }} /></span> : <span className="h-2 w-2 rounded-full bg-[#c7d1dc]" />}
+      </span>
+      <div className={isCurrent ? 'min-w-0 rounded-[12px] border p-4' : 'min-w-0 pt-0.5'} style={isCurrent ? { backgroundColor: hexToRgba(brand.primary, 0.025), borderColor: hexToRgba(brand.primary, 0.07) } : undefined}>
+        {isCurrent ? <p className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-[#667085]">Current stage</p> : null}
+        <h2 className={`${isCurrent ? 'mt-1 text-lg tracking-[-0.025em]' : 'text-sm'} font-semibold ${isCurrent || isComplete ? 'text-[#142132]' : 'text-[#667085]'}`}>{stage.label}</h2>
+        {isComplete ? <p className="mt-1 text-xs text-[#98a2b3]">Completed · {stage.completionDate}</p> : null}
+        {!isComplete && !isCurrent ? <p className="mt-1 text-xs text-[#98a2b3]">{stage.expectedDuration === 'Final step' ? 'Keys and handover' : `Usually ${stage.expectedDuration.toLowerCase()}`}</p> : null}
+        {isCurrent ? (
+          <div className="mt-2">
+            <p className="text-sm leading-6 text-[#52657b]">Your completed application is with four banks for assessment.</p>
+            <div className="mt-4 flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#e2e8ef] bg-white text-[#667085]"><UserRound size={16} aria-hidden="true" /></span>
+              <p className="text-xs leading-5 text-[#52657b]">Priya Naidoo<span className="block text-[#7b8491]">Bond originator</span></p>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-[14px] bg-[#f7f9fc] p-3">
-                <p className="text-xs text-[#667085]">Usually takes</p>
-                <strong className="mt-1 block text-[#142132]">5 - 10 days</strong>
-              </div>
-              <div className="rounded-[14px] bg-[#f7f9fc] p-3">
-                <p className="text-xs text-[#667085]">You need to do</p>
-                <strong className="mt-1 block text-[#142132]">Nothing right now</strong>
-              </div>
+            <div className="mt-4 border-t border-black/5 pt-3">
+              <p className="text-xs leading-5 text-[#52657b]">Nothing needed from you. Priya will update you as the banks respond.</p>
+              <Link to={getDemoPath(token, 'finance')} className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-[8px] border border-[#dbe5ef] bg-white text-sm font-semibold" style={{ color: brand.primary }}>View bank applications<ChevronRight size={16} aria-hidden="true" /></Link>
             </div>
           </div>
         ) : null}
-      </button>
-    </article>
+      </div>
+    </li>
   )
 }
 
@@ -1339,12 +1451,12 @@ function MobileDocuments({ brand, config, demoUploadComplete, onCompleteUpload }
 
   return (
     <div className="space-y-4">
-      <DocumentStatusSummary readyCount={5} actionCount={actionDocument ? 1 : 0} preparingCount={2} unavailableCount={0} />
+      <DocumentStatusSummary totalCount={documents.length} readyCount={documents.filter((document) => document.tone === 'complete').length} actionCount={documents.filter((document) => document.tone === 'action').length} preparingCount={documents.filter((document) => document.tone === 'info').length} unavailableCount={documents.filter((document) => document.tone === 'neutral').length} />
       {actionDocument ? (
         <BuyerMobilePriorityAction
           eyebrow="1 document needs your attention"
           title={actionDocument.title}
-          description="We need your updated payslip before we can submit your application."
+          description={actionDocument.description}
           icon={UploadCloud}
           action={<button type="button" onClick={onCompleteUpload} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white">
             <UploadCloud size={16} />
@@ -1352,6 +1464,7 @@ function MobileDocuments({ brand, config, demoUploadComplete, onCompleteUpload }
           </button>}
         />
       ) : null}
+      {!actionDocument ? <section className="rounded-[12px] border border-[#dbe5ef] bg-white p-4"><h2 className="text-sm font-semibold text-[#142132]">Nothing needed from you</h2><p className="mt-1 text-sm leading-5 text-[#52657b]">Your finance documents are with the banks. The team is preparing the remaining transfer documents.</p></section> : null}
       {Object.entries(groupedDocuments).map(([group, rows]) => (
         <section key={group}>
           <h2 className="mb-2 text-sm font-semibold text-[#142132]">{group}</h2>
@@ -1391,9 +1504,9 @@ function MobileDocumentRow({ brand, config, document, onCompleteUpload }) {
   )
 }
 
-function MobileFinance({ brand, model, onCompleteUpload, token }) {
+function MobileFinance({ brand, model, token }) {
   return (
-    <div className="space-y-4">
+    <div className="buyer-finance-mobile space-y-4">
       <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <div className="flex items-start gap-3">
           <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${statusClasses('info')}`}>
@@ -1407,20 +1520,7 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
           </div>
         </div>
       </section>
-      <BondJourneyTracker brand={brand} currentStageIndex={model.currentStageIndex} />
-      {model.firstAction ? (
-        <BuyerMobilePriorityAction
-          title={model.firstAction.title}
-          description={model.firstAction.description}
-          icon={UploadCloud}
-          action={<button type="button" onClick={onCompleteUpload} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-[#05080c] text-sm font-semibold text-white"><UploadCloud size={16} />Upload payslip</button>}
-        />
-      ) : (
-        <section className="rounded-[18px] border border-emerald-200 bg-emerald-50/80 p-4"><p className="text-sm font-semibold text-emerald-700">Finance documents received</p><p className="mt-1 text-sm leading-5 text-[#52657b]">Your application is ready for its next review.</p></section>
-      )}
-      <Link to={getDemoPath(token, 'bond-application')} className="flex min-h-11 items-center justify-center rounded-[12px] text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>
-        Open bond application
-      </Link>
+      <MobileBondJourneyTracker brand={brand} currentStageIndex={model.currentStageIndex} />
       <section>
         <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank applications</h2>
         <div className="overflow-hidden rounded-[18px] border border-[#dbe5ef] bg-white">
@@ -1429,7 +1529,6 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
           ))}
         </div>
       </section>
-      {model.isBondFinance ? <DemoBondLifeSection theme={brand} /> : null}
       {model.offers.length ? (
         <section>
           <h2 className="mb-2 text-base font-semibold text-[#142132]">Your bank offers</h2>
@@ -1439,11 +1538,61 @@ function MobileFinance({ brand, model, onCompleteUpload, token }) {
             ))}
           </div>
         </section>
-      ) : null}
+      ) : <section className="rounded-[12px] border border-[#dbe5ef] bg-white p-4"><h2 className="text-sm font-semibold text-[#142132]">Your bank offers</h2><p className="mt-1 text-sm leading-5 text-[#52657b]">No offers yet. They’ll appear here as the banks respond.</p></section>}
+      {model.isBondFinance ? <div id="mobile-bond-life-options"><DemoBondLifeSection theme={brand} /></div> : null}
       <Link to={getDemoPath(token, 'documents')} className="flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-sm font-semibold" style={{ color: brand.primary }}>
-        View all required documents
+        View your documents
       </Link>
     </div>
+  )
+}
+
+function MobileBondJourneyTracker({ brand, currentStageIndex = 0 }) {
+  const currentIndex = Math.max(0, Math.min(BOND_JOURNEY_STAGES.length - 1, currentStageIndex))
+  const [focusedIndex, setFocusedIndex] = useState(currentIndex)
+  const trackRef = useRef(null)
+
+  useEffect(() => {
+    const track = trackRef.current
+    if (track) track.scrollTo({ left: currentIndex * track.clientWidth / 3, behavior: 'instant' })
+  }, [currentIndex])
+
+  const focusStage = (index) => {
+    const track = trackRef.current
+    if (!track) return
+    track.scrollTo({ left: index * track.clientWidth / 3, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[12px] border border-[#dbe5ef] bg-white py-4" aria-label="Your bond journey">
+      <ol ref={trackRef} className="flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none]" aria-label="Finance stages — swipe to browse" onScroll={(event) => {
+        const track = event.currentTarget
+        setFocusedIndex(Math.max(0, Math.min(BOND_JOURNEY_STAGES.length - 1, Math.round(track.scrollLeft / (track.clientWidth / 3)))))
+      }}>
+        <li className="basis-1/3 shrink-0" aria-hidden="true" />
+        {BOND_JOURNEY_STAGES.map((stage, index) => {
+          const StageIcon = stage.icon
+          const focused = index === focusedIndex
+          const current = index === currentIndex
+          const completed = index < currentIndex
+          return <li key={stage.id} className="relative min-w-0 basis-1/3 shrink-0 snap-center">
+            {index > 0 ? <span className="absolute left-0 top-8 h-px w-1/2 bg-[#dbe5ef]" aria-hidden="true" /> : null}
+            {index < BOND_JOURNEY_STAGES.length - 1 ? <span className="absolute right-0 top-8 h-px w-1/2 bg-[#dbe5ef]" aria-hidden="true" /> : null}
+            <button type="button" onClick={() => focusStage(index)} aria-current={current ? 'step' : undefined} className="relative flex min-h-[128px] w-full flex-col items-center px-1.5 text-center">
+              <span className="relative z-10 flex h-16 items-center justify-center">
+                <span className={`flex items-center justify-center rounded-full border transition-[width,height,background-color] motion-reduce:transition-none ${focused ? 'h-14 w-14 shadow-sm' : 'h-10 w-10'}`} style={{ backgroundColor: current ? brand.primary : '#ffffff', borderColor: current ? brand.primary : '#dbe5ef', color: current ? '#ffffff' : focused ? brand.primary : '#98a2b3' }}>
+                  {completed ? <CheckCircle2 size={focused ? 23 : 18} aria-hidden="true" /> : <StageIcon size={focused ? 23 : 18} aria-hidden="true" />}
+                </span>
+              </span>
+              <span className={`mt-2 font-semibold leading-4 ${focused ? 'text-sm text-[#142132]' : 'text-[0.65rem] text-[#7b8491]'}`}>{stage.label}</span>
+              <span className="mt-1 text-[0.6rem] leading-4 text-[#98a2b3]">{current ? 'Current stage' : completed ? 'Completed' : 'Upcoming'}</span>
+            </button>
+          </li>
+        })}
+        <li className="basis-1/3 shrink-0" aria-hidden="true" />
+      </ol>
+      <p className="px-4 text-center text-[0.65rem] text-[#7b8491]">Swipe to explore each stage</p>
+    </section>
   )
 }
 
@@ -1489,6 +1638,8 @@ function MobileTeam({ brand, model }) {
     ['My bond application or bank offers', 'Speak to Priya · Bond Originator', specialists.find((member) => member.role === 'Bond Originator'), Building2, 'complete'],
     ['Transfer, signing or registration', `Speak to ${activeMember.name.split(' ')[0]} · Transfer Attorney`, activeMember, FileSignature, 'info'],
     ['Documents or signing arrangements', 'Speak to Lerato · Conveyancing Secretary', specialists.find((member) => member.role === 'Conveyancing Secretary'), FileText, 'action'],
+    ['Building cover, contents or claims', 'Speak to your home insurance team', specialists.find((member) => member.id === 'home-insurance-team'), ShieldCheck, 'info'],
+    ['Bond Life or Bond Life Plus', 'Speak to your life cover team', specialists.find((member) => member.id === 'bond-life-team'), ShieldCheck, 'info'],
   ].filter(([, , member]) => member)
 
   return (
@@ -1683,13 +1834,13 @@ function DemoContent({ activeSection, brand, config, token, heroOverlayStyle, lo
         </div>
       </section>
 
-      {activeSection === 'progress' ? <ConveyancingJourneySection brand={brand} /> : null}
+      {activeSection === 'progress' ? <><DemoBuyerJourney brand={brand} token={token} detailed /><ConveyancingJourneySection brand={brand} /></> : null}
       {activeSection === 'messages' ? <TransactionUpdatesSection brand={brand} standalone /> : null}
     </div>
   )
 }
 
-function DemoBuyerOverview({ brand, config, token, demoUploadComplete, documentModel, onCompleteUpload }) {
+function DemoBuyerOverview({ brand, config, token, documentModel }) {
   return (
     <BuyerPortalOverviewShell
       hero={(
@@ -1697,38 +1848,17 @@ function DemoBuyerOverview({ brand, config, token, demoUploadComplete, documentM
           welcomeName="Mia"
           propertyName={config.samplePropertyAddress}
           purchasePriceLabel="R 2 850 000"
-          statusLabel={demoUploadComplete ? 'On track' : 'Action needed'}
-          statusClassName={demoUploadComplete ? 'border-emerald-200/40 bg-emerald-400/15 text-white' : 'border-amber-200/40 bg-amber-300/15 text-white'}
+          statusLabel="On track"
+          statusClassName="border-emerald-200/40 bg-emerald-400/15 text-white"
           currentStageLabel={DEMO_BUYER_JOURNEY_MODEL.currentStageLabel}
           nextStageLabel={DEMO_BUYER_JOURNEY_MODEL.nextStageLabel}
           progressPercent={DEMO_BUYER_JOURNEY_MODEL.progressPercent}
-          timeInStageLabel="5 days"
-          stageUpdatedDateLabel="Today"
-          attentionTitle={demoUploadComplete ? "You're all caught up" : 'Upload your latest payslip'}
-          attentionDescription={demoUploadComplete
-            ? 'Your latest payslip is with the bond originator for review.'
-            : 'Your bond originator needs an updated payslip before submitting the application pack.'}
-          attentionRequired={!demoUploadComplete}
-          attentionActions={(
-            <>
-              <button
-                type="button"
-                onClick={onCompleteUpload}
-                className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] px-3.5 py-2 text-sm font-semibold text-white transition"
-                style={{ backgroundColor: brand.primary }}
-              >
-                <UploadCloud size={14} />
-                {demoUploadComplete ? 'Uploaded for review' : 'Upload payslip'}
-              </button>
-              <Link
-                to={getDemoPath(token, 'documents')}
-                className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-2 rounded-[11px] border border-[#d7e2ea] bg-white px-3.5 py-2 text-sm font-semibold text-[#274158] transition hover:bg-[#f7fafc]"
-              >
-                <FileText size={14} />
-                Documents
-              </Link>
-            </>
-          )}
+          timeInStageLabel="2 days"
+          stageUpdatedDateLabel="26 Aug"
+          attentionTitle="Nothing needed from you"
+          attentionDescription="Your completed application is with four banks. Priya will update you as they respond."
+          attentionRequired={false}
+          attentionActions={<Link to={getDemoPath(token, 'finance')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[11px] px-4 text-sm font-semibold text-white" style={{ backgroundColor: brand.primary }}>View bank applications<ChevronRight size={16} /></Link>}
           theme={brand}
           propertyImageUrl={config.samplePropertyImageUrl}
           propertyImageAlt={config.samplePropertyAddress}
@@ -1822,7 +1952,7 @@ function ConveyancingJourneySection({ brand }) {
 function TransferStatusStrip({ brand, currentStage }) {
   const items = [
     { label: 'Transfer status', value: 'Rates & clearances', helper: 'In progress', icon: Scale, helperTone: brand.primary },
-    { label: 'Transfer attorney', value: 'Sarah Williams', helper: 'Tuckers Attorneys', icon: UserRound },
+    { label: 'Transfer attorney', value: 'Daniel Jacobs', helper: 'Tuckers Attorneys', icon: UserRound },
     { label: 'Currently waiting on', value: currentStage.waitingOn || 'City of Cape Town', helper: '', icon: Building2 },
     { label: 'Estimated registration', value: '8 - 10 weeks*', helper: '', icon: CalendarDays },
   ]
@@ -2081,7 +2211,7 @@ function LegacyDocumentsSection({ brand, config, demoUploadComplete, onCompleteU
           facts: [
             ['Status', 'Uploaded for review'],
             ['Provided by', 'Mia Khumalo'],
-            ['Shared with', 'James Meyer, Bond Originator'],
+            ['Shared with', 'Priya Naidoo, Bond Originator'],
           ],
           activity: [
             ['Uploaded by buyer', 'Just now'],
@@ -2168,10 +2298,10 @@ function LegacyDocumentsSection({ brand, config, demoUploadComplete, onCompleteU
   )
 }
 
-function DocumentStatusSummary({ readyCount, actionCount, preparingCount, unavailableCount }) {
+function DocumentStatusSummary({ readyCount, actionCount, preparingCount, unavailableCount, totalCount = 8 }) {
   const items = [
-    { value: `${readyCount} of 8`, label: 'Documents ready', helper: 'Complete', tone: 'complete', icon: CheckCircle2 },
-    { value: actionCount, label: 'Needs your attention', helper: 'Action required', tone: 'action', icon: AlertCircle },
+    { value: `${readyCount} of ${totalCount}`, label: 'Documents ready', helper: 'Complete', tone: 'complete', icon: CheckCircle2 },
+    { value: actionCount, label: 'Needs your attention', helper: actionCount ? 'Action required' : 'All caught up', tone: actionCount ? 'action' : 'complete', icon: AlertCircle },
     { value: preparingCount, label: 'Being prepared', helper: 'In progress', tone: 'info', icon: Clock3 },
     { value: unavailableCount, label: 'Not available yet', helper: 'Upcoming', tone: 'neutral', icon: FileText },
   ]
@@ -2465,8 +2595,8 @@ function CurrentFinanceStatus({ brand, application, demoUploadComplete, onComple
             </h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[#344054]">
               {needsAction
-                ? 'Your bond originator is preparing your application for submission to the banks. We just need your latest payslip before it can be sent.'
-                : 'Your bond originator is preparing your application for submission.'}
+                ? 'Your completed application is with four banks for assessment. Nothing is needed from you right now.'
+                : 'Your application has been submitted to four banks.'}
             </p>
             {needsAction ? (
               <span className="mt-4 inline-flex rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-700">
@@ -2487,7 +2617,7 @@ function CurrentFinanceStatus({ brand, application, demoUploadComplete, onComple
             </button>
           ) : null}
           <Link to="../documents" relative="path" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] px-5 text-sm font-semibold" style={{ color: brand.primary }}>
-            View all required documents
+            View your documents
             <ChevronRight size={16} />
           </Link>
         </div>
@@ -2509,9 +2639,8 @@ function createDemoBondApplicationValues() {
 }
 
 function DemoBondApplicationForm({ brand, application, compact = false }) {
-  const [activeSection, setActiveSection] = useState('income_deductions_expenses')
+  const [activeSection, setActiveSection] = useState('personal_details')
   const [values, setValues] = useState(() => createDemoBondApplicationValues())
-  const [saved, setSaved] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const documentNeededCount = application.requiredActions.length
   const sections = DEMO_BOND_APPLICATION_SECTIONS.map((section) => {
@@ -2524,20 +2653,18 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
   const activeGroups = DEMO_BOND_APPLICATION_FIELD_GROUPS[activeSection] || []
   const activeIndex = sections.findIndex((section) => section.key === activeSection)
   const selectedBanksCount = application.bankApplications.length
-  const totalDetails = 30
-  const completedDetails = documentNeededCount > 0 ? 24 : 26
+  const totalDetails = Object.values(DEMO_BOND_APPLICATION_FIELD_GROUPS).reduce((count, groups) => count + groups.reduce((total, group) => total + group.fields.length, 0), 0)
+  const completedDetails = totalDetails
   const completionPercent = Math.round((completedDetails / totalDetails) * 100)
   const actionColour = brand.accent || brand.primary
   const isFirstSection = activeIndex <= 0
   const isFinalSection = activeSection === 'declarations_consents'
 
   function updateField(key, value) {
-    setSaved(false)
     setValues((current) => ({ ...current, [key]: value }))
   }
 
   function handleSaveDemoProgress() {
-    setSaved(true)
     if (isFinalSection) {
       setSubmitted(true)
       return
@@ -2558,7 +2685,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
           <div>
             <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#53677d]">Your application</span>
             <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132] lg:text-4xl">Your bond application</h1>
-            <p className="mt-2 text-base leading-6 text-[#52657b]">Your application has been completed and is ready for bank submission.</p>
+            <p className="mt-2 text-base leading-6 text-[#52657b]">Your completed application was submitted to four banks on 26 Aug. Priya will update you as they respond.</p>
           </div>
           <span className="inline-flex w-fit items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 py-2 text-sm font-semibold text-[#142132]">
             <CheckCircle2 size={16} style={{ color: brand.primary }} />
@@ -2568,8 +2695,8 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
         <div className="mt-6 rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,0.06)]">
           <div className="grid gap-4 md:grid-cols-4">
             {[
-              ['Application completed', 'Ready'],
-              ['Submitted to banks', 'Next'],
+              ['Application completed', 'Complete'],
+              ['Submitted to banks', 'Current'],
               ['Offers received', 'Pending'],
               ['Offer accepted', 'Pending'],
             ].map(([label, status], index) => (
@@ -2596,7 +2723,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
   return (
     <section className={`${compact ? 'space-y-4 overflow-hidden' : 'mx-auto max-w-[1320px]'}`}>
       <div className={`grid min-w-0 gap-5 ${compact ? '' : 'xl:grid-cols-[270px_minmax(0,1fr)]'}`}>
-        <aside className={`${compact ? 'order-2 min-w-0' : 'xl:sticky xl:top-8 xl:self-start'}`}>
+        {!compact ? <aside className="xl:sticky xl:top-8 xl:self-start">
           <DemoBondApplicationJourney
             brand={brand}
             sections={sections}
@@ -2604,19 +2731,16 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
             onSelect={setActiveSection}
             compact={compact}
           />
-        </aside>
+        </aside> : null}
 
         <div className={`${compact ? 'order-1 min-w-0 overflow-hidden' : ''}`}>
           <header className="rounded-[22px] border border-[#e3eaf2] bg-white px-5 py-5 shadow-[0_18px_40px_rgba(15,23,42,0.045)] lg:rounded-[24px] lg:px-7 lg:py-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h1 className="text-3xl font-semibold tracking-[-0.06em] text-[#142132] lg:text-4xl">Your bond application</h1>
-                <p className="mt-2 text-base leading-6 text-[#52657b]">Most of your application is already complete.</p>
+                <p className="mt-2 text-base leading-6 text-[#52657b]">Submitted to four banks on 26 Aug. Review your completed application below.</p>
               </div>
-              <button type="button" className="inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-                <Lock size={15} />
-                Save & exit
-              </button>
+              <span className="inline-flex min-h-11 w-fit items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132]"><CheckCircle2 size={15} />Submitted to banks</span>
             </div>
 
             <div className={`mt-6 ${compact ? 'space-y-2' : 'flex items-center gap-5'}`}>
@@ -2667,7 +2791,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
                           {group.fields.map((field) => (
                             <DemoBondApplicationField
                               key={field.key}
-                              field={field}
+                              field={{ ...field, readOnly: true, reviewRequired: false }}
                               value={values[field.key]}
                               brand={brand}
                               onChange={(nextValue) => updateField(field.key, nextValue)}
@@ -2697,7 +2821,7 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[12px] px-6 text-sm font-semibold text-white shadow-[0_14px_24px_rgba(15,23,42,0.14)]"
                 style={{ backgroundColor: actionColour }}
               >
-                {isFinalSection ? 'Review & submit' : saved ? 'Saved, continue' : 'Save & continue'}
+                {isFinalSection ? 'Finish review' : 'Next section'}
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -2710,12 +2834,12 @@ function DemoBondApplicationForm({ brand, application, compact = false }) {
 }
 
 function getDemoBondApplicationSectionHelper(sectionKey) {
-  if (sectionKey === 'income_deductions_expenses') return 'Complete the two outstanding fields below so we can calculate your affordability.'
-  if (sectionKey === 'documents') return 'We only show what is required for your application right now.'
-  if (sectionKey === 'declarations_consents') return 'Review the final declarations before your application is submitted.'
-  if (sectionKey === 'banking_liabilities') return 'Confirm your banking details and current financial commitments.'
-  if (sectionKey === 'loan_details') return 'Confirm the property, loan amount, deposit and selected banks.'
-  return 'Most of this information has already been completed from your profile.'
+  if (sectionKey === 'income_deductions_expenses') return 'Your income and monthly commitments included in the bank submission.'
+  if (sectionKey === 'documents') return 'All required documents were included in your submitted application.'
+  if (sectionKey === 'declarations_consents') return 'The declarations included in your submitted application.'
+  if (sectionKey === 'banking_liabilities') return 'Your banking details and financial commitments included in the bank submission.'
+  if (sectionKey === 'loan_details') return 'The property, loan amount and lenders included in your submitted application.'
+  return 'Your completed details included in the bank submission.'
 }
 
 function DemoBondApplicationStatusCard({ brand, completedDetails, documentNeededCount, selectedBanksCount }) {
@@ -2733,8 +2857,8 @@ function DemoBondApplicationStatusCard({ brand, completedDetails, documentNeeded
       tone: documentNeededCount > 0 ? 'action' : 'complete',
     },
     {
-      label: `${selectedBanksCount} banks selected`,
-      helper: "We'll submit your application to your chosen banks",
+      label: `${selectedBanksCount} bank submissions`,
+      helper: 'Submitted on 26 Aug · Awaiting responses',
       icon: Building2,
       tone: 'complete',
     },
@@ -2837,6 +2961,7 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
         <input
           type="checkbox"
           checked={Boolean(value)}
+          disabled={field.readOnly}
           onChange={(event) => onChange(event.target.checked)}
           className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
           style={{ accentColor: actionColour }}
@@ -2862,7 +2987,7 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
         {field.required ? <span className="ml-1 text-[#142132]">*</span> : null}
       </span>
       {field.type === 'select' ? (
-        <select value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={inputClassName}>
+        <select disabled={field.readOnly} value={value ?? ''} onChange={(event) => onChange(event.target.value)} className={inputClassName}>
           {(field.options || []).map((option) => (
             <option key={option} value={option}>{option}</option>
           ))}
@@ -2891,7 +3016,7 @@ function DemoBondApplicationField({ field, value, brand, onChange }) {
       ) : null}
       {needsRequiredValue ? <p className="mt-2 text-sm font-medium text-amber-700">Required to continue</p> : null}
       {!needsRequiredValue && needsReview ? <p className="mt-2 text-sm font-medium text-amber-700">{field.reviewMessage || 'Confirm before continuing'}</p> : null}
-      {field.readOnly ? <p className="mt-2 text-sm text-[#6b7d93]">Calculated from your application values.</p> : null}
+      {field.readOnly ? <p className="mt-2 text-sm text-[#6b7d93]">Included in your submitted application.</p> : null}
     </label>
   )
 }

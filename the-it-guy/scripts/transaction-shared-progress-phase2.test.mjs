@@ -24,9 +24,9 @@ assert.match(service, /buildTransactionProgressSnapshot/)
 assert.match(service, /bridge_publish_transaction_shared_progress_phase2/)
 assert.match(service, /presentTransactionProgress/)
 
-assert.match(attorneyService, /publishAttorneySharedProgress/)
-assert.match(attorneyService, /sourceType: 'attorney_workflow_step'/)
-assert.match(attorneyService, /sourceType: 'attorney_workflow_lane'/)
+assert.match(attorneyService, /commitSharedJourneyTask/)
+assert.match(attorneyService, /commitSharedJourneyLaneUpdate/)
+assert.match(attorneyService, /p_command_id:/)
 assert.doesNotMatch(attorneyService, /safeExplanation:\s*normalizedNote/)
 
 assert.match(checklistService, /reconcileLinkedSubprocessStatus/)

@@ -19,9 +19,11 @@ const canonicalBuyerStages = [
   'Contacted',
   'Qualified',
   'Viewing',
-  'Transaction Setup',
-  'Offer',
-  'Transaction',
+  'Buyer onboarding sent',
+  'Buyer onboarding submitted',
+  'Offer to purchase signed',
+  'Transaction created',
+  'Buyer documents uploaded',
   'On hold',
   'Lost',
   'Closed won',
@@ -36,7 +38,9 @@ const buyerKanbanBlock = agencyPipelinePageSource.slice(
 assert.match(buyerKanbanBlock, /getBuyerProcessDefinition\(\)\.stages\.map/)
 assert.match(buyerKanbanBlock, /contacted/)
 assert.match(buyerKanbanBlock, /qualified/)
-assert.match(buyerKanbanBlock, /transaction_setup/)
+assert.match(buyerKanbanBlock, /buyer_onboarding_sent/)
+assert.match(buyerKanbanBlock, /buyer_onboarding_submitted/)
+assert.match(buyerKanbanBlock, /buyer_documents_uploaded/)
 assert.match(buyerKanbanBlock, /offer/)
 assert.match(buyerKanbanBlock, /transaction/)
 assert.doesNotMatch(buyerKanbanBlock, /qualification:/)
@@ -70,16 +74,16 @@ try {
     leadCategory: 'buyer',
     stage: 'Offer + Onboarding Link Sent',
   })
-  assert.equal(onboardingPresentation.key, 'transaction_setup')
-  assert.equal(onboardingPresentation.label, 'Transaction Setup')
-  assert.equal(onboardingPresentation.columnId, 'transaction_setup')
+  assert.equal(onboardingPresentation.key, 'buyer_onboarding_sent')
+  assert.equal(onboardingPresentation.label, 'Buyer onboarding sent')
+  assert.equal(onboardingPresentation.columnId, 'buyer_onboarding_sent')
 
   const legacyOtpPresentation = lifecycleService.resolveLeadLifecyclePresentation({
     leadCategory: 'buyer',
     stage: 'Ready to Generate OTP',
   })
   assert.equal(legacyOtpPresentation.key, 'offer')
-  assert.equal(legacyOtpPresentation.label, 'Offer')
+  assert.equal(legacyOtpPresentation.label, 'Offer to purchase signed')
   assert.equal(legacyOtpPresentation.columnId, 'offer')
 
   const legacyFinancePresentation = lifecycleService.resolveLeadLifecyclePresentation({
@@ -87,9 +91,14 @@ try {
     stage: 'Finance',
   })
   assert.equal(legacyFinancePresentation.key, 'transaction')
-  assert.equal(legacyFinancePresentation.label, 'Transaction')
+  assert.equal(legacyFinancePresentation.label, 'Transaction created')
   assert.equal(legacyFinancePresentation.columnId, 'transaction')
 
+  for (const [stage, key] of [['Buyer onboarding submitted', 'buyer_onboarding_submitted'], ['Buyer documents uploaded', 'buyer_documents_uploaded']]) {
+    const presentation = lifecycleService.resolveLeadLifecyclePresentation({ leadCategory: 'buyer', stage })
+    assert.equal(presentation.key, key)
+    assert.equal(presentation.columnId, key)
+  }
   const reporting = agencyPipelineService.buildPrincipalReporting({
     leads: [
       { leadId: 'lead_1', leadCategory: 'buyer', stage: 'Captured', leadSource: 'Website' },

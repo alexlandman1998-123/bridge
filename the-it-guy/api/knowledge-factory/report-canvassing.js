@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { fileKnowledgeFactorySellerReport } from '../../server/services/knowledgeFactorySellerFiling.js';
 
 const ADMIN_ROLES = new Set([
   "principal",
@@ -175,7 +176,7 @@ export default async function handler(request, response) {
     const action = text(input.action, 40);
     if (
       !validUuid(organisationId) ||
-      !["list", "convert", "download"].includes(action)
+      !["list", "convert", "download", "file_seller", "seller_options"].includes(action)
     )
       return json(response, 400, {
         error: "A valid organisation and action are required.",
@@ -185,6 +186,13 @@ export default async function handler(request, response) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const currentActor = await actor(request, db, organisationId);
+    if (action === 'seller_options') {
+      const property = Number(input.propertyId);
+      if (!Number.isSafeInteger(property) || property <= 0) return json(response,400,{error:'Select a valid property.'});
+      const result = await db.rpc('knowledge_factory_seller_lead_options',{p_org:organisationId,p_actor:currentActor.userId,p_property:property,p_search:text(input.search,120)});
+      if (result.error) throw new Error('Existing seller leads could not be loaded.');
+      return json(response,200,result.data);
+    }
     if (action === "list") {
       const { data: results, error } = await db
         .from("knowledge_factory_report_results")
@@ -210,10 +218,17 @@ export default async function handler(request, response) {
       const byResult = new Map(
         (conversions.data || []).map((item) => [item.report_result_id, item]),
       );
+      const filings = ids.length ? await db.from('knowledge_factory_report_seller_filings')
+        .select('report_result_id,lead_id,private_listing_id,document_id,status')
+        .eq('organisation_id', organisationId).in('report_result_id', ids) : { data: [] };
+      const filedByResult = new Map((filings.data || []).map(item => [item.report_result_id, item]));
       return json(response, 200, {
         items: visible.map((item) => ({
           ...item,
           conversion: byResult.get(item.id) || null,
+          sellerFiling: item.request_context_snapshot?.supplierEnvironment !== 'live'
+            ? { status: 'test_report' }
+            : filings.error ? { status: 'unavailable' } : filedByResult.get(item.id) || { status: 'pending' },
         })),
       });
     }
@@ -258,6 +273,10 @@ export default async function handler(request, response) {
       return json(response, 403, {
         error: "You may only access your own completed reports.",
       });
+    if (action === 'file_seller') {
+      const sellerFiling = await fileKnowledgeFactorySellerReport({ db, report, actorId: currentActor.userId });
+      return json(response, 200, { sellerFiling });
+    }
     if (action === "download") {
       if (report.report_snapshot_version !== "canvassing-report-v1")
         return json(response, 409, {

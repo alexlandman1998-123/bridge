@@ -89,7 +89,7 @@ it('explains the screenshot state and prepares a hidden listing with one publish
   fireEvent.click(screen.getByRole('button', { name: 'Publish to website' }))
   await waitFor(() => expect(mocks.set).toHaveBeenCalledWith('listing-1', 'update'))
   expect(onPrepare).toHaveBeenCalledTimes(1)
-  await screen.findByText('Live on website')
+  await screen.findByText('Live')
 })
 
 it('keeps real website setup blockers visible and disables publishing', async () => {

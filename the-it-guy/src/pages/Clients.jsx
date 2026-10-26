@@ -710,12 +710,15 @@ function getEmptyAddClientForm(copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
   }
 }
 
-function AddClientModal({
+export function AddClientModal({
   open,
   onClose,
   onSaved,
   copy = DEFAULT_CLIENT_DIRECTORY_COPY,
   mode = 'client',
+  title,
+  subtitle,
+  className = '',
   matterOptions = [],
   organisationId = null,
 }) {
@@ -778,8 +781,9 @@ function AddClientModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={copy.modalTitle}
-      subtitle={copy.modalSubtitle}
+      title={title || copy.modalTitle}
+      subtitle={subtitle !== undefined ? subtitle : copy.modalSubtitle}
+      className={className}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
@@ -1413,7 +1417,7 @@ function Clients() {
       data-performance-settled={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
     >
       {showRentalImport && isRentalClientsDirectory ? <RentalClientImportModal key={activeOrganisationId} organisationId={activeOrganisationId} actorId={profile?.id} existingClients={clients} onClose={() => setShowRentalImport(false)} onImported={() => loadData({ forceRefresh: true })} /> : null}
-      <section className="grid gap-4 xl:grid-cols-4">
+      {!isAgentClientDirectory || directoryTab === 'clients' ? <section className="grid gap-4 xl:grid-cols-4">
         {[
           isAttorneyClientDirectory
             ? { label: 'Total Parties', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Matter party directory' : `${filteredClients.length} currently shown` }
@@ -1444,10 +1448,10 @@ function Clients() {
             </article>
           )
         })}
-      </section>
+      </section> : null}
 
       <section className="overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-white/92 shadow-[0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-xl">
-        {isAgentClientDirectory ? <div className="flex gap-2 border-b border-[#e6edf5] bg-[#fbfdff] px-4 pt-3"><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'clients' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('clients')}>Clients</button><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'audiences' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('audiences')}>Audiences</button></div> : null}
+        {isAgentClientDirectory ? <nav aria-label="Client workspace" className="grid grid-cols-2 border-b border-[#e6edf5] bg-[#fbfdff]">{[{ key: 'clients', label: 'Clients' }, { key: 'audiences', label: 'Audiences' }].map(tab => <button key={tab.key} type="button" aria-pressed={directoryTab === tab.key} className={`border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${directoryTab === tab.key ? 'border-[#248568] bg-white text-[#17634d]' : 'border-transparent text-[#62778e] hover:bg-white'}`} onClick={() => setDirectoryTab(tab.key)}>{tab.label}</button>)}</nav> : null}
         {isAgentClientDirectory && directoryTab === 'audiences' ? <ClientAudiences organisationId={activeOrganisationId} userId={profile?.id} /> : null}
         <div className={isAgentClientDirectory && directoryTab !== 'clients' ? 'hidden' : ''}>
         <div className={`flex ${isRentalClientsDirectory ? 'flex-wrap' : ''} items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3`}>

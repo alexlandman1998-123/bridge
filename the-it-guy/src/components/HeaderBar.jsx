@@ -1,5 +1,6 @@
-import { AlertTriangle, AtSign, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, CreditCard, FileText, LayoutGrid, Mail, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, AtSign, Bell, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, CreditCard, FileText, LayoutGrid, Mail, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, X, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessHQ } from '../auth/hqAccess'
@@ -8,6 +9,10 @@ import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import useDismissableMenu from '../hooks/useDismissableMenu'
 import LazyQuickCreateDropdown from './LazyQuickCreateDropdown'
 import WhatsAppUnread from './marketing/WhatsAppUnread'
+import NotificationLoading from './NotificationLoading.jsx'
+import { getNotificationLeadIdentity } from '../lib/notificationLeadPresentation.js'
+import { NotificationLeadAvatar, NotificationLeadSource } from './NotificationLeadIdentity.jsx'
+import './notification-inbox.css'
 
 function getPageTitle(pathname, stateTitle, role) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
@@ -371,18 +376,11 @@ function getNotificationMessage(notification = {}) {
   const source = toNotificationText(data.source || data.trigger || data.type).toLowerCase()
   const message = toNotificationText(notification.message)
 
-  const leadSource = findFirstNotificationText(
-    data.leadSource,
-    data.lead_source,
-    data.leadSourceLabel,
-    data.lead_source_label,
-    data.sourceChannel,
-    data.source_channel,
-    data.origin,
-  )
   const leadHaystack = `${type} ${source} ${notification.title || ''} ${notification.message || ''} ${data.automationKey || data.automation_key || ''}`.toLowerCase()
   if ((data.leadId || data.lead_id || leadHaystack.includes('lead')) && /\b(new|created|incoming|received)\b/.test(leadHaystack)) {
-    return leadSource ? `New lead from ${titleCaseNotificationText(leadSource)}` : 'New lead received'
+    const category = toNotificationText(data.leadCategory || data.lead_category).toLowerCase()
+    const label = ['buyer', 'seller', 'tenant', 'landlord'].includes(category) ? `${category} ` : ''
+    return `New ${label}lead received`
   }
 
   if (source === 'client_onboarding_submitted') {
@@ -612,6 +610,7 @@ function getNotificationGroupKey(notification = {}) {
 
 function mapNotificationDisplayItem(notification = {}) {
   const presentation = getNotificationPresentation(notification)
+  const leadIdentity = getNotificationLeadIdentity(notification)
   const createdAt = notification.createdAt || notification.created_at || null
   const destinationHref = getNotificationDestination(notification)
   const requiresAction = notificationRequiresAction(notification)
@@ -622,9 +621,14 @@ function mapNotificationDisplayItem(notification = {}) {
     id: notification.id,
     notification,
     sourceNotifications: [notification],
-    title: getNotificationSubject(notification),
+    title: leadIdentity.name || getNotificationSubject(notification),
+    leadName: leadIdentity.name,
+    leadSource: leadIdentity.source,
     message: getNotificationMessage(notification),
-    contextLabel: getNotificationContextLabel(notification),
+    contextLabel: (leadIdentity.name && findFirstNotificationText(
+      getNotificationData(notification).propertyAddress, getNotificationData(notification).property_address,
+      getNotificationData(notification).listingAddress, getNotificationData(notification).listing_address,
+    )) || getNotificationContextLabel(notification),
     relativeTime: formatNotificationRelativeTime(createdAt),
     absoluteTime: formatNotificationAbsoluteTime(createdAt),
     createdAt,
@@ -697,10 +701,11 @@ function groupDisplayNotifications(items = []) {
 function getNotificationFilterOptions(items = []) {
   const counts = items.reduce((accumulator, item) => {
     accumulator.all += 1
+    if (item.isUnread) accumulator.unread += 1
     if (item.requiresAction) accumulator.action_required += 1
     accumulator[item.category] = (accumulator[item.category] || 0) + 1
     return accumulator
-  }, { all: 0, action_required: 0 })
+  }, { all: 0, unread: 0, action_required: 0 })
 
   const availableCategories = [
     { key: 'mentions', label: 'Mentions' },
@@ -712,6 +717,7 @@ function getNotificationFilterOptions(items = []) {
 
   return [
     { key: 'all', label: 'All', count: counts.all },
+    { key: 'unread', label: 'Unread', count: counts.unread },
     ...(counts.action_required > 0 ? [{ key: 'action_required', label: 'Action required', count: counts.action_required }] : []),
     ...availableCategories.map((option) => ({ ...option, count: counts[option.key] || 0 })),
   ]
@@ -719,6 +725,7 @@ function getNotificationFilterOptions(items = []) {
 
 function filterNotificationItems(items = [], activeFilter = 'all') {
   if (activeFilter === 'all') return items
+  if (activeFilter === 'unread') return items.filter((item) => item.isUnread)
   if (activeFilter === 'action_required') return items.filter((item) => item.requiresAction)
   return items.filter((item) => item.category === activeFilter)
 }
@@ -746,9 +753,11 @@ function groupDisplayItemsBySection(items = []) {
   ]
 }
 
-function NotificationMeta({ contextLabel, relativeTime, absoluteTime, createdAt, updateCount }) {
+function NotificationMeta({ contextLabel, relativeTime, absoluteTime, createdAt, updateCount, leadSource }) {
   return (
     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-[#5d6f86]">
+      <NotificationLeadSource source={leadSource} />
+      {leadSource && contextLabel ? <span aria-hidden="true">&middot;</span> : null}
       {contextLabel ? <span>{contextLabel}</span> : null}
       {contextLabel && relativeTime ? <span aria-hidden="true">&middot;</span> : null}
       {relativeTime ? (
@@ -772,15 +781,15 @@ function NotificationItem({ item, onSelect }) {
   return (
     <button
       type="button"
-      className={`group relative w-full px-4 py-4 text-left transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0f7a4f] ${
-        item.isUnread ? 'bg-[#f6fbff] hover:bg-[#f2f8ff]' : 'bg-white hover:bg-[#f8fafc]'
+      className={`notification-inbox-row group relative w-full px-4 py-4 text-left transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0f7a4f] ${
+        item.isUnread ? 'notification-inbox-row-unread bg-[#f0f8f3] hover:bg-[#e8f4ee]' : 'bg-white hover:bg-[#f8fafc]'
       }`}
       onClick={() => onSelect(item)}
     >
       <div className="flex items-start gap-4">
-        <span className={`grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[14px] ${item.badgeClassName}`}>
+        {item.leadName ? <NotificationLeadAvatar name={item.leadName} /> : <span className={`grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[14px] ${item.badgeClassName}`}>
           <Icon size={18} />
-        </span>
+        </span>}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
@@ -788,7 +797,7 @@ function NotificationItem({ item, onSelect }) {
               {item.title}
             </p>
             <span className="mt-1 flex shrink-0 items-center gap-3">
-              {item.isUnread ? <span className="h-2.5 w-2.5 rounded-full bg-[#1769d1]" aria-label="Unread notification" /> : null}
+              {item.isUnread ? <span className="h-2.5 w-2.5 rounded-full bg-[#16835d]" aria-label="Unread notification" /> : null}
               <ChevronRight size={17} className="text-[#60738a] transition group-hover:translate-x-0.5" aria-hidden="true" />
             </span>
           </div>
@@ -796,6 +805,7 @@ function NotificationItem({ item, onSelect }) {
             {item.message}
           </p>
           <NotificationMeta
+            leadSource={item.leadSource}
             contextLabel={item.contextLabel}
             relativeTime={item.relativeTime}
             absoluteTime={item.absoluteTime}
@@ -812,8 +822,8 @@ function ActionNotificationItem({ item, onSelect }) {
   const Icon = item.icon || AlertTriangle
 
   return (
-    <div className="rounded-[18px] border border-rose-100 bg-[#fff7f7] px-4 py-4 shadow-[0_10px_24px_rgba(190,18,60,0.05)]">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+    <div className={`notification-inbox-action ${item.priority === 'critical' ? 'notification-inbox-action-critical' : ''}`}>
+      <div className="flex flex-col items-start gap-3">
         <button type="button" className="flex min-w-0 flex-1 items-start gap-4 text-left" onClick={() => onSelect(item)}>
           <span className={`grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[14px] ${item.priority === 'critical' ? 'bg-rose-100 text-rose-700 ring-1 ring-inset ring-rose-200' : item.badgeClassName}`}>
             <Icon size={18} />
@@ -821,10 +831,11 @@ function ActionNotificationItem({ item, onSelect }) {
           <span className="min-w-0 flex-1">
             <span className="flex items-start justify-between gap-3">
               <span className="text-sm font-semibold leading-5 text-[#101828]" title={item.title}>{item.title}</span>
-              {item.isUnread ? <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[#1769d1]" aria-label="Unread notification" /> : null}
+              {item.isUnread ? <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-[#16835d]" aria-label="Unread notification" /> : null}
             </span>
             <span className="mt-1 block text-sm leading-5 text-[#40546b]" title={item.message}>{item.message}</span>
             <NotificationMeta
+              leadSource={item.leadSource}
               contextLabel={item.contextLabel}
               relativeTime={item.relativeTime}
               absoluteTime={item.absoluteTime}
@@ -836,7 +847,7 @@ function ActionNotificationItem({ item, onSelect }) {
         {item.actionLabel ? (
           <button
             type="button"
-            className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-[12px] border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+            className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-[12px] border border-[#cce1d5] bg-white px-4 text-sm font-semibold text-[#116344] transition hover:bg-[#edf6f0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
             onClick={() => onSelect(item)}
           >
             {item.actionLabel}
@@ -870,15 +881,14 @@ function NotificationSection({ section, onSelect }) {
 
 function NotificationFilters({ options, activeFilter, onChange }) {
   return (
-    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Notification filters">
+    <div className="notification-inbox-filters -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Notification filters">
       {options.map((option) => {
         const active = activeFilter === option.key
         return (
           <button
             key={option.key}
             type="button"
-            role="tab"
-            aria-selected={active}
+            aria-pressed={active}
             className={`inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f7a4f] ${
               active
                 ? 'border-[#0f7a4f] bg-[#effaf4] text-[#075f3f]'
@@ -905,7 +915,7 @@ function NotificationToast({ message }) {
   if (!message) return null
   return (
     <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex justify-center">
-      <p className="rounded-full bg-[#101828] px-4 py-2 text-xs font-semibold text-white shadow-lg">
+      <p role="status" className="rounded-full bg-[#101828] px-4 py-2 text-xs font-semibold text-white shadow-lg">
         {message}
       </p>
     </div>
@@ -933,8 +943,11 @@ function HeaderBar({ onLogout, user }) {
   const dropdownRef = useRef(null)
   const notificationsRef = useRef(null)
   const notificationBellRef = useRef(null)
+  const notificationCloseRef = useRef(null)
+  const notificationPanelRef = useRef(null)
+  const notificationPanelId = useId()
   const avatarDismissRefs = useMemo(() => [dropdownRef], [])
-  const notificationDismissRefs = useMemo(() => [notificationsRef], [])
+  const notificationDismissRefs = useMemo(() => [notificationsRef, notificationPanelRef], [])
   const closeAvatarMenu = useCallback(() => setOpen(false), [])
   const closeNotifications = useCallback(() => setNotificationsOpen(false), [])
 
@@ -997,6 +1010,8 @@ function HeaderBar({ onLogout, user }) {
 
   useEffect(() => {
     if (!notificationsOpen) return undefined
+    const notificationContainer = notificationPanelRef.current
+    const notificationTrigger = notificationBellRef.current
 
     function onKeyDown(event) {
       if (event.key === 'Escape') {
@@ -1005,12 +1020,14 @@ function HeaderBar({ onLogout, user }) {
       }
     }
 
+    notificationCloseRef.current?.focus()
     document.addEventListener('keydown', onKeyDown)
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = previousOverflow
+      if (notificationContainer?.contains(document.activeElement) || document.activeElement === document.body) notificationTrigger?.focus()
     }
   }, [notificationsOpen])
 
@@ -1290,9 +1307,10 @@ function HeaderBar({ onLogout, user }) {
       <button
         ref={notificationBellRef}
         type="button"
-        className="ui-icon-button relative h-[44px] w-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f7a4f]"
+        className="notification-inbox-bell ui-icon-button relative h-[44px] w-[44px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f7a4f]"
         aria-label={`Notifications${notificationState.unreadCount > 0 ? `, ${notificationState.unreadCount} unread` : ''}`}
         aria-expanded={notificationsOpen}
+        aria-controls={notificationPanelId}
         aria-haspopup="dialog"
         onClick={() => {
           const nextOpen = !notificationsOpen
@@ -1302,34 +1320,38 @@ function HeaderBar({ onLogout, user }) {
           }
         }}
       >
-        <Bell size={16} />
+        <Bell size={21} strokeWidth={1.7} aria-hidden="true" />
         {notificationState.unreadCount > 0 ? (
-          <span className="absolute -right-1 -top-1 inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#0f7a4f] px-1.5 text-[0.72rem] font-semibold leading-none text-white shadow-sm">
+          <span key={notificationState.unreadCount} className="notification-inbox-badge absolute -right-1 -top-1 inline-flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#0f7a4f] px-1.5 text-[0.72rem] font-semibold leading-none text-white shadow-sm">
             {unreadDisplay}
           </span>
         ) : null}
       </button>
 
-      {notificationsOpen ? (
+      {notificationsOpen ? createPortal(
         <div
-          className="ui-surface-floating fixed inset-x-3 bottom-4 top-[72px] z-40 flex flex-col overflow-hidden rounded-t-[20px] border border-[#d9e3ef] bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.18)] sm:absolute sm:inset-auto sm:right-0 sm:top-[calc(100%+12px)] sm:rounded-[20px]"
-          style={{ width: 'min(760px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 120px)' }}
+          ref={notificationPanelRef}
+          style={{ '--notification-right': `${Math.max(16, window.innerWidth - (notificationBellRef.current?.getBoundingClientRect().right || window.innerWidth - 16))}px`, '--notification-top': `${(notificationBellRef.current?.getBoundingClientRect().bottom || 58) + 14}px` }}
+          id={notificationPanelId}
+          className="notification-inbox-panel"
           role="dialog"
           aria-label="Notifications"
         >
           <NotificationToast message={notificationToast} />
-          <div className="shrink-0 border-b border-[#e6edf4] px-6 pb-4 pt-5">
+          <div className="notification-inbox-header">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <strong className="block text-[1.2rem] font-semibold leading-7 text-[#101828]">Notifications</strong>
+                <strong className="notification-inbox-title">Notifications</strong>
                 <p className="mt-0.5 text-sm font-semibold text-[#0f7a4f]">
-                  {notificationState.unreadCount === 1 ? '1 unread' : `${notificationState.unreadCount} unread`}
+                  {notificationState.unreadCount > 0 ? `${notificationState.unreadCount} unread · Stay one step ahead` : 'You’re up to date'}
                 </p>
               </div>
+              <div className="notification-inbox-header-actions">
               {notificationState.unreadCount > 0 ? (
                 <button
                   type="button"
                   className="min-h-[44px] shrink-0 rounded-[12px] px-3 text-sm font-semibold text-[#0f7a4f] transition hover:bg-[#effaf4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f7a4f]"
+                  title="Mark all as read"
                   onClick={async () => {
                     setNotificationState((previous) => ({
                       ...previous,
@@ -1346,9 +1368,12 @@ function HeaderBar({ onLogout, user }) {
                     }
                   }}
                 >
-                  Mark all as read
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <span className="sr-only">Mark all as read</span>
                 </button>
               ) : null}
+              <button ref={notificationCloseRef} type="button" className="notification-inbox-tool" aria-label="Close notifications" onClick={closeNotifications}><X size={19} aria-hidden="true" /></button>
+              </div>
             </div>
             {notificationFilterOptions.length > 1 ? (
               <div className="mt-4">
@@ -1362,16 +1387,18 @@ function HeaderBar({ onLogout, user }) {
           </div>
 
           <div
-            className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-[#fbfcfe] px-6 py-5"
+            className="notification-inbox-content min-h-0 flex-1 space-y-5 overflow-y-auto"
+            aria-busy={notificationState.loading}
             style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(132, 146, 166, 0.34) transparent' }}
           >
-            {notificationState.loading && !notificationSections.length ? <p className="rounded-[16px] bg-white px-4 py-3 text-sm text-[#667085] ring-1 ring-[#e6edf4]">Loading notifications...</p> : null}
+            {notificationState.loading && !notificationSections.length ? <NotificationLoading /> : null}
             {notificationState.error ? <p className="rounded-[16px] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318] ring-1 ring-rose-100">{notificationState.error}</p> : null}
             {!notificationState.error &&
             !notificationSections.length &&
             !notificationState.loading ? (
-              <div className="rounded-[18px] border border-dashed border-[#d8e0ea] bg-white px-4 py-8 text-center">
-                <p className="text-sm font-semibold text-[#101828]">No notifications yet</p>
+              <div className="notification-inbox-empty">
+                <span className="notification-inbox-empty-icon"><CheckCircle2 size={26} strokeWidth={1.4} aria-hidden="true" /></span>
+                <p className="text-sm font-semibold text-[#101828]">{activeNotificationFilter === 'all' || activeNotificationFilter === 'unread' ? 'You’re all caught up' : 'Nothing here right now'}</p>
                 <p className="mt-1 text-sm text-[#667085]">
                   {activeNotificationFilter === 'all' ? 'New leads and submitted documents will appear here.' : 'No notifications match this filter.'}
                 </p>
@@ -1391,11 +1418,11 @@ function HeaderBar({ onLogout, user }) {
             ) : null}
           </div>
 
-          <div className="shrink-0 border-t border-[#e6edf4] bg-white px-6 py-3 text-center">
+          <div className="notification-inbox-footer">
             <span className="sr-only">{filteredNotificationCount} notifications shown</span>
-            <span className="text-xs text-[#667085]">Recent notifications</span>
+            <span className="text-xs text-[#667085]">Your latest workspace activity</span>
           </div>
-        </div>
+        </div>, document.body
       ) : null}
     </div>
   )

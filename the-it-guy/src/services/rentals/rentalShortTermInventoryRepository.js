@@ -6,11 +6,11 @@ const text = (value) => String(value ?? '').trim()
 const clientRequired = (client = supabase) => { if (!isSupabaseConfigured || !client) throw new Error('Short-Term inventory requires Supabase configuration.'); return client }
 const failure = (error = {}) => new Error(['42P01', 'PGRST204', 'PGRST205'].includes(String(error.code || '').toUpperCase()) ? 'Short-Term inventory foundation is not yet applied to this environment.' : (error.message || 'Short-Term inventory request failed.'))
 
-export async function listShortTermUnitInventory({ organisationId = '', branchId = '' } = {}, { client = supabase } = {}) {
+export async function listShortTermUnitInventory({ organisationId = '', branchId = '' } = {}, { client = supabase, signal } = {}) {
   if (!text(organisationId)) return []
   let query = clientRequired(client).from('rental_units').select(SELECT_FIELDS).eq('organisation_id', text(organisationId)).order('unit_label').limit(250)
   if (text(branchId)) query = query.eq('branch_id', text(branchId))
-  const result = await query
+  const result = await (signal ? query.abortSignal(signal) : query)
   if (result.error) throw failure(result.error)
   return (result.data || []).map(mapShortTermUnitInventory)
 }

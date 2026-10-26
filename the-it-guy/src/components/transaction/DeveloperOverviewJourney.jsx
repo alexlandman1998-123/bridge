@@ -34,11 +34,11 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
           {MILESTONES.map(milestone => {
             const Item = onOpenWorkspace ? 'button' : 'div'
             const step = steps.find(item => (item.id || item.key) === milestone.id || (milestone.alternate && (item.id || item.key) === milestone.alternate))
-            const complete = !loading && Boolean(step?.isComplete) && !(legalCurrent === 'transfer' && milestone.id === 'transfer')
-            const current = !loading && !complete && (currentMilestone
+            const complete = !loading && Boolean(step?.isComplete) && (step?.historical || !(legalCurrent === 'transfer' && milestone.id === 'transfer'))
+            const current = !loading && !complete && step?.status !== 'unknown' && (currentMilestone
               ? milestone.id === currentMilestone
               : ['in_progress', 'waiting', 'blocked'].includes(step?.status) || milestone.id === model?.currentStepId)
-            const status = loading ? 'Loading…' : !complete && ((currentMilestone === 'finance' && ['transfer', 'lodgement', 'registration'].includes(milestone.id)) || (legalCurrent === 'transfer' && ['lodgement', 'registration'].includes(milestone.id))) ? 'Pending' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
+            const status = loading ? 'Loading…' : step?.historical ? 'Confirmed' : step?.status === 'unknown' ? 'Unknown' : !complete && ((currentMilestone === 'finance' && ['transfer', 'lodgement', 'registration'].includes(milestone.id)) || (legalCurrent === 'transfer' && ['lodgement', 'registration'].includes(milestone.id))) ? 'Pending' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
               ? 'In progress'
               : ({ complete: 'Completed', blocked: 'Needs attention', waiting: 'Waiting', in_progress: 'In progress', pending: 'Pending' }[step?.status] || 'Not available')
             return <li key={milestone.id} className="relative" data-complete={complete ? 'true' : undefined}>
@@ -48,6 +48,7 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
                 </span>
                 <span className="mt-3 text-sm font-semibold text-textStrong">{milestone.label}</span>
                 <span className="mt-1 text-xs text-textMuted">{status}</span>
+                {step?.historical ? <span className="mt-1 text-[11px] text-textMuted">{step.completedOn ? new Date(`${step.completedOn}T12:00:00`).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date unknown'}</span> : null}
               </Item>
             </li>
           })}

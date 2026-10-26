@@ -34,8 +34,8 @@ function PeopleEditor({ title, rows = [], ownerFields = false, onAdd, onUpdate, 
           <label className="grid gap-1 text-xs font-semibold text-[#607387]">Nationality<Field value={person.nationality || ''} onChange={(event) => onUpdate(index, 'nationality', event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-semibold text-[#607387] sm:col-span-2">Residential address<AddressInput value={person.residentialAddress || ''} onChange={(event) => onUpdate(index, 'residentialAddress', event.target.value)} /></label>
           <label className="grid gap-1 text-xs font-semibold text-[#607387]">Email<Field type="email" value={person.email || ''} onChange={(event) => onUpdate(index, 'email', event.target.value)} /></label>
+          <label className="grid gap-1 text-xs font-semibold text-[#607387]">Phone number<Field type="tel" value={person.phone || ''} onChange={(event) => onUpdate(index, 'phone', event.target.value)} /></label>
           {ownerFields ? <>
-            <label className="grid gap-1 text-xs font-semibold text-[#607387]">Phone number<Field type="tel" value={person.phone || ''} onChange={(event) => onUpdate(index, 'phone', event.target.value)} /></label>
             <label className="grid gap-1 text-xs font-semibold text-[#607387]">Ownership share (if known)<Field value={person.ownershipShare || ''} onChange={(event) => onUpdate(index, 'ownershipShare', event.target.value)} /></label>
             <label className="flex items-center gap-2 text-xs font-semibold text-[#607387] sm:col-span-2"><input type="checkbox" checked={Boolean(person.consentToSell)} onChange={(event) => onUpdate(index, 'consentToSell', event.target.checked)} />Owner has confirmed consent to sell</label>
           </> : null}
@@ -50,6 +50,8 @@ export default function ListingSellerInformationEditor({
   draft = {},
   saving = false,
   showConsent = true,
+  showPropertyAndMandate = true,
+  emailLabel = 'Email (optional for manual capture)',
   onChange,
   onAddPerson,
   onUpdatePerson,
@@ -64,7 +66,7 @@ export default function ListingSellerInformationEditor({
 
   return (
     <form id="listing-seller-information-editor-form" className="space-y-4" noValidate onSubmit={onSubmit}>
-      <p className="text-sm text-[#607387]">Save the details you have and complete the rest later. Document preparation checks the required details when you need them.</p>
+      {showPropertyAndMandate ? <p className="text-sm text-[#607387]">Save the details you have and complete the rest later. Document preparation checks the required details when you need them.</p> : null}
       <fieldset disabled={saving} className="min-w-0 space-y-4">
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
@@ -126,14 +128,14 @@ export default function ListingSellerInformationEditor({
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Primary contact details</h4></div>
         {!individual ? <Input label="Contact person full name" field="primaryContactName" draft={draft} onChange={onChange} /> : null}
-        <Input label="Email (optional for manual capture)" field="email" type="email" draft={draft} onChange={onChange} />
+        <Input label={emailLabel} field="email" type="email" draft={draft} onChange={onChange} />
         <Input label="Phone" field="phone" type="tel" draft={draft} onChange={onChange} />
         <Input label="Alternative contact" field="alternativeContact" draft={draft} onChange={onChange} />
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Preferred contact<Field as="select" value={draft.preferredContactMethod || ''} onChange={(event) => onChange('preferredContactMethod', event.target.value)}><option value="">Not captured</option><option value="email">Email</option><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option></Field></label>
       </section>
 
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
-        <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Seller identity and consent</h4></div>
+        <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Seller identity{showConsent ? ' and consent' : ''}</h4></div>
         <Input label="Residential address" field="residentialAddress" draft={draft} onChange={onChange} className="sm:col-span-2" />
         {individual ? <><Input label="Date of birth" field="dateOfBirth" type="date" draft={draft} onChange={onChange} /><Input label="Nationality" field="nationality" draft={draft} onChange={onChange} /></> : null}
         <Input label="Income tax number" field="incomeTaxNumber" draft={draft} onChange={onChange} />
@@ -146,6 +148,7 @@ export default function ListingSellerInformationEditor({
 
       <SellerFicaQuestions form={draft} onChange={onChange} onAddPerson={onAddPerson} onUpdatePerson={onUpdatePerson} onRemovePerson={onRemovePerson} />
 
+      {showPropertyAndMandate ? <>
       <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
         <div className="sm:col-span-2"><h4 className="text-sm font-semibold text-[#243d56]">Property and ownership details</h4></div>
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Property category<Field as="select" value={draft.propertyCategory || 'residential'} onChange={(event) => onChange('propertyCategory', event.target.value)}>{PROPERTY_CATEGORIES.map((category) => <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>)}</Field><span className="text-xs font-normal text-[#607387]">Listing use; the building type and zoning may differ.</span></label>
@@ -178,7 +181,8 @@ export default function ListingSellerInformationEditor({
         const fields = { startDate: 'mandateStartDate', endDate: 'expiryDate', specialConditions: 'mandateTerms' }
         for (const [key, value] of Object.entries(next)) onChange(fields[key] || key, value)
       }} />
-      <button type="submit" className="sr-only" disabled={saving}>Save ownership and update requests</button>
+      </> : null}
+      <button type="submit" className="sr-only" disabled={saving}>{showPropertyAndMandate ? 'Save ownership and update requests' : 'Save seller capture'}</button>
       </fieldset>
     </form>
   )

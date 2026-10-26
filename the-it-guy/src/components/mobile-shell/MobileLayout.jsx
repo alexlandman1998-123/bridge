@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import MobileAppointmentCreateProvider from './MobileAppointmentCreateProvider.jsx'
+import MobileLeadCreateProvider from './MobileLeadCreateProvider.jsx'
 import MobileBottomNav from './MobileBottomNav'
 import MobileHeader from './MobileHeader'
 import './mobile-shell.css'
@@ -13,7 +15,7 @@ export default function MobileLayout({ onLogout = null }) {
   }, [location.pathname, location.search])
 
   return (
-    <div className="mobile-shell flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-white text-[#10243a]" data-mobile-shell>
+    <MobileLeadCreateProvider><MobileAppointmentCreateProvider><div className="mobile-shell flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-white text-[#10243a]" data-mobile-shell>
       <MobileHeader />
       <main
         ref={scrollRootRef}
@@ -23,6 +25,6 @@ export default function MobileLayout({ onLogout = null }) {
         <Outlet context={{ onLogout }} />
       </main>
       <MobileBottomNav />
-    </div>
+    </div></MobileAppointmentCreateProvider></MobileLeadCreateProvider>
   )
 }

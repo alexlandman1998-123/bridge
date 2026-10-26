@@ -51,20 +51,30 @@ export function getSellerFicaOnboardingMissing(form = {}) {
   }
   const requiredPeople = (people, label) => {
     if (!people.length) {
-      missing.push(label)
+      missing.push(`${label}: add at least one person`)
       return
     }
-    if (people.some((person) => !text(person.name || person.firstName || person.first_name) || !text(person.surname || person.lastName || person.last_name) || !text(person.idNumber || person.id_number) || !text(person.nationality) || !text(person.residentialAddress || person.residential_address))) {
-      missing.push(`${label}: full name, ID / passport, nationality and residential address`)
-    }
+    people.forEach((person, index) => {
+      const fields = [
+        !text(person.name || person.firstName || person.first_name) && 'first name',
+        !text(person.surname || person.lastName || person.last_name) && 'surname',
+        !text(person.idNumber || person.id_number) && 'ID / passport number',
+        !text(person.nationality) && 'nationality',
+        !text(person.residentialAddress || person.residential_address) && 'residential address',
+      ].filter(Boolean)
+      if (fields.length) missing.push(`${label}, person ${index + 1}: add ${fields.join(', ')}`)
+    })
   }
   if (branch === 'company') {
     const people = form.companyBeneficialOwners ?? form.company_beneficial_owners
     const owners = Array.isArray(people) ? people : []
     requiredPeople(owners, 'Beneficial owners / controllers')
-    if (owners.some((person) => !text(person.ownershipShare ?? person.ownership_share) && !text(person.controlBasis ?? person.control_basis))) {
-      missing.push('Beneficial ownership share or control basis')
-    }
+    owners.forEach((person, index) => {
+      if (!text(person.ownershipShare ?? person.ownership_share) && !text(person.controlBasis ?? person.control_basis)) {
+        missing.push(`Beneficial owners / controllers, person ${index + 1}: add an ownership share or explain how this person controls the company`)
+      }
+    })
+
   }
   if (branch === 'trust') {
     const founders = form.trustFounders ?? form.trust_founders

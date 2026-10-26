@@ -2214,12 +2214,14 @@ export function buildPrivateListingDocumentUploadPreparation(listing, requiremen
   // Use the same saved-profile model as the seller document workspace. Its
   // checklist can be ready before the older lifecycle/capture marker catches up.
   const generated = getExpectedSellerDocumentRequirements(listing, {}, { includeOptional: true })
+
   const key = normalizeCompatibilityKey(requirementKey)
   const aliases = getPrivateListingDocumentMatchAliases(key)
   const hasTarget = requirements.some((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key)))
   return {
     currentOptionalRequirementKeys: generated.filter((row) => row.is_required === false).map((row) => row.requirement_key),
     missingRows: hasTarget ? [] : generated.filter((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key))),
+
   }
 }
 
@@ -6571,6 +6573,7 @@ export async function getAgentPrivateListings(
     includeArchivedListings = false,
     includeWithdrawnListings = false,
     requireAvailable = false,
+    signal,
   } = {},
 ) {
   const client = requireClient()
@@ -6597,7 +6600,8 @@ export async function getAgentPrivateListings(
       }
     }
 
-    return queryBuilder.order('updated_at', { ascending: false })
+    const ordered = queryBuilder.order('updated_at', { ascending: false })
+    return signal ? ordered.abortSignal(signal) : ordered
   }
 
   let query = await buildQuery({ includeBranchFilter: true })
@@ -6613,6 +6617,7 @@ export async function getAgentPrivateListings(
   if (requireAvailable && (typeof query.count !== 'number' || query.count > (query.data || []).length)) {
     throw new Error('The stock review could not read all accessible records. Narrow the workspace scope before reviewing again.')
   }
+  signal?.throwIfAborted()
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports, includeArchivedListings, includeWithdrawnListings }))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap, mediaMap] = await Promise.all([
@@ -6625,6 +6630,7 @@ export async function getAgentPrivateListings(
     fetchAssignedAgentProfilesForListings(client, rows),
     includeMedia ? fetchMediaRowsForListings(client, listingIds, { strict: requireAvailable }) : Promise.resolve(new Map()),
   ])
+  signal?.throwIfAborted()
   return rows
     .map((row) => {
       const listing = mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap)
@@ -6821,8 +6827,9 @@ export async function createPrivateListingActivity(payload = {}) {
   return insert.data
 }
 
-export async function getPrivateListingActivity(listingId, { requireAvailable = false } = {}) {
+export async function getPrivateListingActivity(listingId, { requireAvailable = false, signal } = {}) {
   const client = requireClient()
+  signal?.throwIfAborted()
   if (hasMissingTableCache('private_listing_activity')) {
     if (requireAvailable) throw new Error('Listing activity history is unavailable.')
     return []
@@ -6833,21 +6840,23 @@ export async function getPrivateListingActivity(listingId, { requireAvailable = 
     const rows = []
     const pageSize = 500
     for (let offset = 0; offset < 10000; offset += pageSize) {
-      const page = await client.from('private_listing_activity')
+      let pageQuery = client.from('private_listing_activity')
         .select('id, private_listing_id, activity_type, activity_title, activity_description, performed_by, visibility, metadata, created_at')
         .eq('private_listing_id', normalizedId).order('created_at', { ascending: false }).order('id', { ascending: false })
         .range(offset, offset + pageSize - 1)
+      const page = await (signal ? pageQuery.abortSignal(signal) : pageQuery)
       if (page.error) throw page.error
       rows.push(...(page.data || []))
       if ((page.data || []).length < pageSize) return rows
     }
     throw new Error('This rental has more history than can be reviewed at once. The review is incomplete.')
   }
-  const query = await client
+  const activityQuery = client
     .from('private_listing_activity')
     .select('id, private_listing_id, activity_type, activity_title, activity_description, performed_by, visibility, metadata, created_at')
     .eq('private_listing_id', normalizedId)
     .order('created_at', { ascending: false })
+  const query = await (signal ? activityQuery.abortSignal(signal) : activityQuery)
   if (query.error) {
     if (isMissingTableError(query.error, 'private_listing_activity')) {
       rememberMissingTable('private_listing_activity')

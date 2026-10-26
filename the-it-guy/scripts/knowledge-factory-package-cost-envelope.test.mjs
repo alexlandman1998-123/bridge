@@ -16,12 +16,18 @@ test('Basic reserves all selected owner occurrences, without fabricating supplie
   assert.equal(estimate.supplierBilling.amountDeducted, null);
   assert.equal(estimate.supplierConfirmedTotal, false);
   assert.equal(estimate.canApproveProduct, false);
+  assert.deepEqual(estimate.ownerFieldFees, {
+    creditsPerOwner: 535, maximumOwners: 20, maximumCredits: 10700,
+    phoneIncluded: false, supplierConfirmedTotal: false,
+  });
   assert.equal(estimate.fields.find((f) => f.field === 'Buyer.BuyerName').maximumOccurrences, 20);
 });
 test('Full multiplies fees for five historic transfers and five current bond indicators', () => {
   const result = packageCostEnvelope({ ...args('full_canvassing_report'), payload: { extensions: { operationCost: { fieldCost: 101, typeCost: 42 } } } });
   assert.equal(result.maximumSurcharge, 17575);
   assert.equal(result.maximumCredits, 17718);
+  assert.equal(result.ownerFieldFees.creditsPerOwner, 535);
+  assert.equal(result.ownerFieldFees.maximumCredits, 10700);
 });
 test('version, query, pagination and unknown products fail closed', () => {
   for (const changed of [
@@ -78,7 +84,7 @@ test('estimates do not become readiness evidence; execution checks immutable quo
   assert.match(costSource, /if \(result.estimate\) return json[\s\S]*let write =/);
   assert.match(source, /lacks current v1 maximum-cost provenance/);
   assert.match(source, /assertEnvelopeFitsQuote\(freshQuote.estimate[\s\S]*quoteFitsCommercialLimits\(freshQuote.costs.credits[\s\S]*await assertPilotAccess[\s\S]*await supplierReport/);
-  assert.match(source, /eq\("outcome", "validated"\)[\s\S]*eq\("supplier_api_version", "v1"\)/);
+  assert.match(source, /currentReportApproval[\s\S]*reserve_report_credits/);
 });
 test('internal handler returns the estimate without any database write or report execution', async () => {
   const env = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-server-key',

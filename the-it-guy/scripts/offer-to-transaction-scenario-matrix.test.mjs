@@ -29,7 +29,7 @@ for (const signal of [
   'Signed by all parties',
   'Arch9 terms included',
   'Complete Transaction Setup before moving the buyer to Transaction.',
-  'Upload the signed OTP before moving the buyer to Transaction.',
+  'Upload the signed OTP to move this buyer into the transaction workflow.',
   'Move to Transaction',
 ]) {
   assert.ok(agencyPipelinePageSource.includes(signal), `Agency pipeline lead workspace should include "${signal}".`)

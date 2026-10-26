@@ -257,8 +257,8 @@ assert.match(
 );
 assert.match(
   purchasePanel,
-  /No supplier report data has been requested or charged in\s+this step/,
-  "The purchase confirmation must clearly state its no-charge scope.",
+  /No supplier report data has been requested in\s+this step/,
+  "The purchase confirmation must distinguish cost quoting from requesting supplier report data.",
 );
 assert.match(
   executionMigration,
@@ -287,7 +287,7 @@ assert.match(
 );
 assert.match(
   purchasePanel,
-  /Running this UAT report will now request the package’s fixed[\s\S]*consume supplier credits/,
+  /Running this report will now request the package’s fixed[\s\S]*consume supplier credits/,
   "The UI must make the billable execution step explicit.",
 );
 assert.match(
@@ -357,8 +357,8 @@ assert.match(
 );
 assert.match(
   purchaseApi,
-  /complete-query UAT cost validation/,
-  "Execution must use validated UAT evidence for its commercial preflight.",
+  /currentReportApproval/,
+  "Execution must use an explicit current cost approval for its commercial preflight.",
 );
 assert.match(
   purchaseApi,

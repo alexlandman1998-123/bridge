@@ -1,3 +1,8 @@
+import { useTransactionPartnerOptions } from '../hooks/useTransactionPartnerOptions.js'
+import { prepareSellerWorkspaceDelivery } from '../services/transactionSellerDeliveryService.js'
+import { transactionSellerDirectoryPeople } from '../core/transactions/transactionSellerDirectory.js'
+import { hasBuyerCaptureDetails } from '../core/transactions/buyerCaptureDetails.js'
+import TransactionRoleAllocationDialog from '../components/transaction/TransactionRoleAllocationDialog.jsx'
 import DocumentUploadProgress from '../components/documents/DocumentUploadProgress.jsx'
 import DocumentRequirementManager from '../components/documents/DocumentRequirementManager.jsx'
 import DocumentRequirementRemoveButton from '../components/documents/DocumentRequirementRemoveButton.jsx'
@@ -56,6 +61,10 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import TransactionOverviewProgress from '../components/transaction/TransactionOverviewProgress'
+import { buildOverviewWorkflowProgress, getExistingBondLabel } from '../core/transactions/overviewWorkflowProgress.js'
+import TransactionHistoricalJourneyDialog from '../components/transaction/TransactionHistoricalJourneyDialog'
+import { saveTransactionHistoricalJourney } from '../services/transactionHistoricalJourneyService.js'
 import DeveloperOverviewJourney from '../components/transaction/DeveloperOverviewJourney'
 import DeveloperConveyancingJourney from '../components/transaction/DeveloperConveyancingJourney'
 import AgentConveyancingJourney from '../components/transaction/AgentConveyancingJourney'
@@ -217,8 +226,7 @@ import {
 import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
-import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
-import { listUserPreferredPartnerRoutingRules } from '../lib/transactionWorkspaceSecondaryApi'
+import { getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { resendTransactionProgressNotification } from '../services/transactionSharedProgressService'
 import { trackBondApplicationFinanceWorkspaceState } from '../services/bondApplicationFinanceTelemetryService.js'
@@ -342,8 +350,7 @@ function mergeRouteCoreSnapshot(previous, routeCore) {
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'parties', label: 'Parties' },
-  { id: 'stakeholders', label: 'Roleplayers' },
+  { id: 'stakeholders', label: 'Parties' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
   { id: 'transfer', label: 'Work' },
@@ -358,8 +365,7 @@ const AGENT_WORKSPACE_TABS = [
   { id: 'finance', label: 'Finance' },
   { id: 'transfer', label: 'Conveyancing' },
   { id: 'activity', label: 'Activity' },
-  { id: 'parties', label: 'Parties' },
-  { id: 'stakeholders', label: 'Roleplayers' },
+  { id: 'stakeholders', label: 'Parties' },
 ]
 
 const BOND_ORIGINATOR_WORKSPACE_TABS = [
@@ -5150,7 +5156,7 @@ function buildBuyerProcessHandoffModel({
   const transferAttorneyAction = getDetailAction(setupActions, 'transferAttorney', 'transfer_attorney')
   const buyerPortalAction = getDetailAction(setupActions, 'buyerPortal', 'buyer_portal')
   const transactionAction = getDetailAction(setupActions, 'transaction')
-  const formDataCaptured = Object.keys(formData).length > 0
+  const formDataCaptured = hasBuyerCaptureDetails(formData)
   const capturedFinanceType = firstPresent(
     formData.purchase_finance_type,
     formData.finance_type,
@@ -6839,8 +6845,6 @@ function ArchlinePanel({ title, action = null, children, className = '' }) {
 function ArchlineMatterHeader({
   backPath,
   backLabel,
-  reference,
-  statusLabel,
   property,
   propertyType,
   sectionalTitleIdentity = null,
@@ -6851,27 +6855,18 @@ function ArchlineMatterHeader({
   bankName = '',
   daysOpenLabel,
   instructionDate,
-  matterChips = [],
   workflow = null,
   sharedLegalJourney = null,
   sharedLegalJourneyLoading = false,
   tabs = [],
   activeTab,
   workspaceLabel = 'Legal Matter Workspace',
-  saleRouteBadge = null,
-  shareLabel = 'Share Portal',
-  moreActionsLabel = 'More Actions',
   showWorkflowProgress = true,
   workflowKey: selectedWorkflowKey = 'transfer',
   workflowDocuments = [],
   onSelectWorkflowPhase,
   onTabChange,
   onTabIntent,
-  onSharePortal,
-  onCall,
-  onEmail,
-  onMoreActions,
-  onViewProperty,
 }) {
   const propertyDisplay = property || 'Property pending'
   const propertyParts = String(propertyDisplay).split(',').map((item) => item.trim()).filter(Boolean)
@@ -6910,15 +6905,6 @@ function ArchlineMatterHeader({
     { key: 'days-open', label: 'Days Open', value: cleanMetricValue(daysOpenLabel), icon: Clock3 },
     { key: 'instruction-date', label: 'Instruction Date', value: cleanMetricValue(instructionDate), icon: CalendarDays },
   ].filter((item) => item.value !== '—')
-  const chips = matterChips.filter((item) => item?.label)
-  const normalizedStatus = String(statusLabel || '').toLowerCase()
-  const statusTone = /blocked|overdue|declined/.test(normalizedStatus)
-    ? 'border-amber-400/70 bg-amber-950/35 text-amber-300'
-    : /cancelled/.test(normalizedStatus)
-      ? 'border-slate-300/40 bg-slate-950/30 text-slate-200'
-      : /awaiting|pending|action needed|at risk/.test(normalizedStatus)
-        ? 'border-amber-300/70 bg-amber-950/30 text-amber-200'
-        : 'border-emerald-300/70 bg-emerald-950/30 text-emerald-200'
   const workflowKey = selectedWorkflowKey || (workflow?.detailKey === 'bond-cancellation'
     ? 'cancellation'
     : workflow?.detailKey === 'bond-registration'
@@ -6927,9 +6913,9 @@ function ArchlineMatterHeader({
   const visibleWorkflowSteps = sharedJourneyHeaderPhases(sharedLegalJourney, workflowKey)
 
   return (
-    <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
-      <div className="mx-auto max-w-[1680px] space-y-5">
-        <section className="relative isolate min-h-[385px] overflow-hidden rounded-[24px] border border-black/10 bg-[linear-gradient(135deg,#092f29,#142132_58%,#38574e)] px-4 py-4 text-white shadow-[0_20px_48px_rgba(15,23,42,0.15)] md:min-h-[405px] md:px-6 md:py-5">
+    <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-4 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
+      <div className="mx-auto max-w-[1680px] space-y-4">
+        <section className="relative isolate overflow-hidden rounded-[24px] border border-black/10 bg-[linear-gradient(135deg,#092f29,#142132_58%,#38574e)] px-5 py-5 text-white shadow-[0_20px_48px_rgba(15,23,42,0.15)] md:px-6 md:py-6">
           {propertyImageUrl ? <img src={propertyImageUrl} alt="" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover object-[68%_center]" /> : null}
           <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(90deg,rgba(3,8,9,0.88)_0%,rgba(6,13,14,0.68)_46%,rgba(8,16,16,0.45)_100%)]" />
           <div className="archline-matter-header-topbar relative z-10 flex flex-wrap items-start justify-between gap-3">
@@ -6943,57 +6929,18 @@ function ArchlineMatterHeader({
               </Link>
               {workspaceLabel ? <span className="min-w-0 text-xs font-semibold uppercase leading-5 tracking-[0.12em] text-[#7b8ca2]">{workspaceLabel}</span> : null}
             </div>
-            <div className="archline-matter-header-actions flex min-w-0 flex-wrap items-center justify-end gap-2">
-              <button type="button" className="inline-flex h-11 min-w-0 items-center gap-2 rounded-[13px] border border-white/25 bg-black/20 px-3.5 py-2 text-sm font-semibold leading-5 text-white backdrop-blur-sm transition hover:bg-white/15" onClick={onSharePortal}>
-                <Link2 size={15} className="shrink-0" />
-                <span className="min-w-0">{shareLabel}</span>
-              </button>
-              <button type="button" className="inline-flex size-11 items-center justify-center rounded-[13px] border border-white/25 bg-black/20 text-white backdrop-blur-sm transition hover:bg-white/15" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
-                <Phone size={16} />
-              </button>
-              <button type="button" className="inline-flex size-11 items-center justify-center rounded-[13px] border border-white/25 bg-black/20 text-white backdrop-blur-sm transition hover:bg-white/15" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
-                <Mail size={16} />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-[13px] border border-white/25 bg-black/20 px-4 py-2 text-sm font-semibold leading-5 text-white backdrop-blur-sm transition hover:bg-white/15"
-                onClick={onMoreActions}
-              >
-                <span className="min-w-0">{moreActionsLabel}</span>
-                <MoreHorizontal size={16} className="shrink-0" />
-              </button>
-            </div>
+
           </div>
 
-          <div className="relative z-10 mt-10 grid min-h-[280px] gap-7 md:absolute md:inset-x-6 md:bottom-5 md:mt-0 md:min-h-0 xl:grid-cols-1 xl:items-stretch">
-            <div className="archline-matter-header-media hidden min-h-[230px] overflow-hidden rounded-[20px] border border-[rgba(7,30,26,0.07)] bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] shadow-[0_18px_42px_rgba(7,30,26,0.07)] xl:min-h-[300px]">
-              {propertyImageUrl ? (
-                <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
-              ) : (
-                <div className="grid h-full min-h-[230px] place-items-center bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] p-6 text-center xl:min-h-[300px]">
-                  <div>
-                    <span className="mx-auto inline-flex size-14 items-center justify-center rounded-[18px] bg-white/70 text-emerald-800 shadow-[0_10px_22px_rgba(7,30,26,0.06)]">
-                      <Building2 size={32} />
-                    </span>
-                    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-[#71839a]">Property image pending</p>
-                    <p className="mt-1 text-sm font-medium leading-5 text-[#8a9aab]">Upload a property image to display it here</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex min-w-0 flex-col justify-between gap-6 pb-8 pt-3 md:pb-0 md:pt-0">
+          <div className="relative z-10 mt-6 md:mt-7">
+            <div className="min-w-0">
               <div className="min-w-0">
-                <span className="block min-w-0 text-[0.72rem] font-semibold uppercase leading-5 tracking-[0.14em] text-white/70">{reference || 'Matter reference pending'}</span>
-                <div className="mt-3 flex min-w-0 items-start gap-4">
+                <div className="flex min-w-0 items-start gap-4">
                   <div className="min-w-0">
                     <div className="flex min-w-0 flex-wrap items-start gap-2.5">
-                      <h1 className="archline-matter-property-title text-balance text-[2rem] font-bold leading-[1.05] tracking-[-0.04em] text-white md:text-[3rem]">
+                      <h1 className="archline-matter-property-title text-balance text-[1.75rem] font-bold leading-[1.12] tracking-[-0.035em] text-white md:text-[2.5rem]">
                         {propertyPrimary}
                       </h1>
-                      <button type="button" className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-full text-amber-300 transition hover:bg-white/10" aria-label="Favourite matter" title="Favourite matter">
-                        <Star size={21} />
-                      </button>
                     </div>
                     {propertySecondary ? <p className="mt-2 text-base font-medium leading-6 text-white/80">{propertySecondary}</p> : null}
                     {propertyTertiary ? <p className="mt-1 text-sm leading-5 text-white/65">{propertyTertiary}</p> : null}
@@ -7005,24 +6952,18 @@ function ArchlineMatterHeader({
                   </div>
                 </div>
 
-                <div className="mt-5 flex min-w-0 flex-wrap items-center gap-2.5">
-                  <span className={`inline-flex min-h-8 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] ${statusTone}`}><span className="size-1.5 rounded-full bg-current" />{statusLabel || 'Active'}</span>
-                  {saleRouteBadge?.label ? <span className="inline-flex min-h-8 items-center rounded-full border border-emerald-300/60 bg-emerald-950/30 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-100">{saleRouteBadge.label}</span> : null}
-                  {chips.slice(0, 1).map((chip) => <span key={chip.key || chip.label} className="inline-flex min-h-8 items-center rounded-full border border-white/25 bg-black/20 px-3 py-1.5 text-xs font-semibold text-white/90">{chip.label}</span>)}
-                </div>
-
-                <div className="mt-6 grid min-w-0 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="archline-matter-header-metrics mt-5 grid min-w-0 grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
                   {metricRows.map((item) => {
                     const Icon = item.icon
                     return (
-                      <article key={item.key} className="min-w-0 border-white/20 px-3 first:pl-0 sm:border-r sm:last:border-r-0">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
+                      <article key={item.key} className="min-w-0 border-white/20 lg:border-r lg:px-3 lg:first:pl-0 lg:last:border-r-0">
+                        <div className="flex min-w-0 items-center gap-2 md:gap-3">
+                          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white md:size-10">
                             <Icon size={17} />
                           </span>
                           <div className="min-w-0">
                             <span className="block text-[0.66rem] font-semibold uppercase leading-4 tracking-[0.1em] text-white/65">{item.label}</span>
-                            <strong className={`mt-1 block leading-5 text-white ${item.key === 'price' ? 'text-[1.05rem] font-bold' : 'text-[0.96rem] font-semibold'}`} title={item.value}>{item.value}</strong>
+                            <strong className={`mt-1 block leading-5 text-white ${item.key === 'price' ? 'text-sm font-bold md:text-[1.05rem]' : 'text-sm font-semibold md:text-[0.96rem]'}`} title={item.value}>{item.value}</strong>
                           </div>
                         </div>
                       </article>
@@ -7125,16 +7066,6 @@ function ArchlineMatterHeader({
   )
 }
 
-function getPartyProfilePath(party = {}) {
-  const email = cleanDetailEmail(party.email)
-  if (email) return `/clients/${encodeURIComponent(`email:${email}`)}`
-  const phone = String(party.phone || '').replace(/\D/g, '')
-  if (phone.length >= 6) return `/clients/${encodeURIComponent(`phone:${phone}`)}`
-  const name = cleanDetailText(party.name)
-  if (name && !isPlaceholderPartyName(name)) return `/clients/${encodeURIComponent(`name:${name.toLowerCase()}`)}`
-  return ''
-}
-
 function buildTransactionPartyList({
   side = 'buyer',
   participants = [],
@@ -7180,341 +7111,6 @@ function buildTransactionPartyList({
     seen.add(key)
     return true
   })
-}
-
-function getPartiesStatusMeta(status = '') {
-  const key = normalizeDetailKey(status)
-  if (['complete', 'completed', 'approved', 'verified', 'clear'].includes(key)) {
-    return { label: key === 'verified' ? 'Verified' : 'Complete', pill: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 }
-  }
-  if (['in_progress', 'pending_review', 'pending', 'submitted', 'sent'].includes(key)) {
-    return { label: key === 'pending_review' ? 'Pending review' : 'In Progress', pill: 'bg-blue-50 text-blue-700', icon: Clock3 }
-  }
-  if (['attention', 'missing', 'outstanding', 'rejected', 'expired', 'partial'].includes(key)) {
-    return { label: key === 'partial' ? 'Attention' : toTitle(key), pill: 'bg-amber-50 text-amber-700', icon: AlertTriangle }
-  }
-  return { label: 'Not Started', pill: 'bg-slate-100 text-slate-600', icon: Clock3 }
-}
-
-function summarizePartyDocuments(categories = [], label = 'Documents') {
-  const tracked = categories.filter((category) => category.requiredCount > 0)
-  if (!tracked.length) {
-    return { label, description: 'No document requirements currently tracked', status: 'not_started', icon: FileText }
-  }
-  const requiredCount = tracked.reduce((total, category) => total + category.requiredCount, 0)
-  const receivedCount = tracked.reduce((total, category) => total + category.receivedCount, 0)
-  const missingCount = tracked.reduce((total, category) => total + category.missingCount, 0)
-  const pendingReviewCount = tracked.reduce((total, category) => total + category.pendingReviewCount, 0)
-  if (receivedCount >= requiredCount && !missingCount && !pendingReviewCount) {
-    return { label, description: 'All required documents received', status: 'complete', icon: FileCheck2 }
-  }
-  if (missingCount) {
-    return {
-      label,
-      description: `${missingCount} document${missingCount === 1 ? '' : 's'} outstanding`,
-      status: 'attention',
-      icon: FileText,
-    }
-  }
-  return {
-    label,
-    description: pendingReviewCount ? 'Documents awaiting verification' : `${receivedCount} of ${requiredCount} documents received`,
-    status: 'in_progress',
-    icon: FileText,
-  }
-}
-
-function PartyStatusRow({ row = {}, isLast = false }) {
-  const status = getPartiesStatusMeta(row.status)
-  const Icon = row.icon || status.icon
-  const StatusIcon = status.icon
-  return (
-    <div className={`flex min-w-0 items-center gap-3 px-3 py-3 ${isLast ? '' : 'border-b border-slate-100'}`}>
-      <span className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[#eef8f3] text-emerald-700">
-        <Icon size={14} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <strong className="block text-[0.78rem] font-semibold leading-4 text-slate-950">{row.label}</strong>
-        <span className="mt-0.5 block text-[0.72rem] leading-4 text-slate-500">{row.description}</span>
-      </span>
-      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${status.pill}`}>
-        {status.label}
-        <StatusIcon size={12} />
-      </span>
-    </div>
-  )
-}
-
-function TransactionPartyCard({
-  side = 'buyer',
-  roleName = '',
-  parties = [],
-  statusRows = [],
-  portalLabel = '',
-  portalBusy = false,
-  portalDisabled = false,
-  onPortal,
-}) {
-  const isBuyer = side === 'buyer'
-  const singularRoleLabel = roleName || (isBuyer ? 'Buyer' : 'Seller')
-  const roleLabel = parties.length > 1 ? `${singularRoleLabel}s` : singularRoleLabel
-  const primaryParty = parties[0] || null
-  const profilePath = primaryParty ? getPartyProfilePath(primaryParty) : ''
-
-  return (
-    <article className="flex min-w-0 flex-col rounded-[16px] border border-[rgba(15,23,42,0.08)] bg-white p-4">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-[14px] bg-[#eef8f3] text-emerald-700">
-            <UserRound size={20} />
-          </span>
-          <div className="min-w-0">
-            <span className="block text-[0.66rem] font-semibold uppercase leading-4 text-emerald-700">{roleLabel}</span>
-            {parties.length ? (
-              <div className="mt-1 space-y-2">
-                {parties.map((party, index) => {
-                  const typeLabel = cleanDetailText(party.type) && normalizeDetailKey(party.type) !== 'unknown' ? toTitle(party.type) : ''
-                  return (
-                    <div key={party.id || party.email || party.phone || `${side}-${index}`}>
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <strong className="min-w-0 text-[1.05rem] font-semibold leading-5 text-slate-950">{party.name || `${singularRoleLabel} not yet added`}</strong>
-                        {typeLabel ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[0.66rem] font-semibold text-emerald-700">{typeLabel}</span> : null}
-                      </div>
-                      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.74rem] leading-4 text-slate-500">
-                        {party.phone ? (
-                          <a href={`tel:${party.phone}`} className="inline-flex min-w-0 items-center gap-1.5 hover:text-emerald-700">
-                            <Phone size={12} className="shrink-0" />
-                            <span className="break-all">{party.phone}</span>
-                          </a>
-                        ) : null}
-                        {party.phone && party.email ? <span aria-hidden="true">•</span> : null}
-                        {party.email ? (
-                          <a href={`mailto:${party.email}`} className="inline-flex min-w-0 items-center gap-1.5 hover:text-emerald-700">
-                            <Mail size={12} className="shrink-0" />
-                            <span className="break-all">{party.email}</span>
-                          </a>
-                        ) : null}
-                        {!party.phone && !party.email ? <span>No contact details available</span> : null}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="mt-1">
-                <strong className="block text-[1.05rem] font-semibold text-slate-950">{singularRoleLabel} not yet added</strong>
-                <span className="mt-1 block text-[0.74rem] text-slate-500">No contact details available</span>
-              </div>
-            )}
-          </div>
-        </div>
-        {profilePath ? (
-          <Link
-            to={profilePath}
-            className="inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50/40 hover:text-emerald-800"
-          >
-            View {singularRoleLabel} Profile
-            <ExternalLink size={13} />
-          </Link>
-        ) : null}
-      </div>
-
-      <div className="mt-4 overflow-hidden rounded-[12px] border border-[rgba(15,23,42,0.08)] bg-white">
-        {statusRows.map((row, index) => (
-          <PartyStatusRow key={`${side}-${row.label}`} row={row} isLast={index === statusRows.length - 1} />
-        ))}
-      </div>
-
-      <div className="mt-auto pt-3">
-        <button
-          type="button"
-          className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50/40 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={onPortal}
-          disabled={portalDisabled || portalBusy}
-        >
-          {portalBusy ? 'Opening portal...' : portalLabel}
-          <ExternalLink size={13} />
-        </button>
-      </div>
-    </article>
-  )
-}
-
-function ArchlinePartiesWorkspace({
-  transaction = {},
-  buyerDisplayName = '',
-  buyerEmail = '',
-  buyerPhone = '',
-  sellerDisplayName = '',
-  sellerEmail = '',
-  sellerPhone = '',
-  participants = [],
-  onboardingCompleted = false,
-  lifecycleProgressState = {},
-  financeType = 'unknown',
-  financeTypeLabel = '',
-  transactionFinanceWorkflow = null,
-  documentHealthSummary = {},
-  ficaSummary = {},
-  requiredRows = [],
-  libraryRows = [],
-  missingRows = [],
-  sellerPartyLabels = {},
-  transactionTypeLabel = '',
-  buyerPortalBusy = false,
-  sellerPortalBusy = false,
-  onBuyerPortal,
-  onSellerPortal,
-}) {
-  const buyerParties = buildTransactionPartyList({
-    side: 'buyer',
-    participants,
-    fallbackName: buyerDisplayName,
-    fallbackEmail: buyerEmail,
-    fallbackPhone: buyerPhone,
-    fallbackType: transaction?.purchaser_type || transaction?.purchaserType,
-  })
-  const sellerParties = buildTransactionPartyList({
-    side: 'seller',
-    participants,
-    fallbackName: sellerDisplayName,
-    fallbackEmail: sellerEmail,
-    fallbackPhone: sellerPhone,
-    fallbackType: transaction?.seller_type || transaction?.sellerType,
-  })
-  const documentsModel = buildAttorneyDocumentsDashboardModel({
-    documentHealthSummary,
-    ficaSummary,
-    requiredRows,
-    libraryRows,
-    missingRows,
-    sellerPartyLabels,
-  })
-  const buyerDocumentCategories = documentsModel.parties.find((party) => party.key === 'buyer')?.categories || []
-  const sellerDocumentCategories = documentsModel.parties.find((party) => party.key === 'seller')?.categories || []
-  const sellerFica = sellerDocumentCategories.find((category) => category.key.includes('fica'))
-  const sellerGeneralDocuments = sellerDocumentCategories.filter((category) => !category.key.includes('fica'))
-  const sellerOnboardingComplete = Boolean(lifecycleProgressState?.flags?.sellerOnboardingComplete)
-  const sellerOnboardingSent = Boolean(lifecycleProgressState?.flags?.sellerOnboardingSent)
-  const normalizedFinance = normalizeFinanceType(financeType, { allowUnknown: true })
-  const hasFinanceApplication = Boolean(
-    transactionFinanceWorkflow?.applications?.length ||
-    transactionFinanceWorkflow?.application ||
-    lifecycleProgressState?.flags?.bondOriginatorAssigned ||
-    !['', 'not_started', 'unknown'].includes(normalizeDetailKey(transaction?.finance_status)),
-  )
-  const financeRow = normalizedFinance === 'cash'
-    ? {
-        label: 'Finance',
-        description: lifecycleProgressState?.flags?.proofOfFundsVerified ? 'Proof of funds received' : 'Proof of funds outstanding',
-        status: lifecycleProgressState?.flags?.proofOfFundsVerified ? 'complete' : 'attention',
-        icon: CircleDollarSign,
-      }
-    : ['bond', 'combination'].includes(normalizedFinance)
-      ? {
-          label: 'Finance',
-          description: lifecycleProgressState?.flags?.bondGrantUploaded
-            ? 'Bond grant received'
-            : hasFinanceApplication
-              ? 'Bond application in progress'
-              : 'Bond finance not started',
-          status: lifecycleProgressState?.flags?.bondGrantUploaded ? 'complete' : hasFinanceApplication ? 'in_progress' : 'not_started',
-          icon: CircleDollarSign,
-        }
-      : {
-          label: 'Finance',
-          description: 'Finance type not captured',
-          status: 'not_started',
-          icon: CircleDollarSign,
-        }
-  const buyerRows = [
-    {
-      label: 'Onboarding',
-      description: onboardingCompleted ? 'Buyer onboarding completed' : buyerEmail ? 'Buyer onboarding in progress' : 'Buyer onboarding not started',
-      status: onboardingCompleted ? 'complete' : buyerEmail ? 'in_progress' : 'not_started',
-      icon: UserCircle,
-    },
-    financeRow,
-    summarizePartyDocuments(buyerDocumentCategories),
-  ]
-  const sellerRows = [
-    {
-      label: 'Onboarding',
-      description: sellerOnboardingComplete ? 'Seller onboarding completed' : sellerOnboardingSent ? 'Seller onboarding in progress' : 'Seller onboarding not started',
-      status: sellerOnboardingComplete ? 'complete' : sellerOnboardingSent ? 'in_progress' : 'not_started',
-      icon: UserCircle,
-    },
-    summarizePartyDocuments(sellerGeneralDocuments),
-    sellerFica?.requiredCount
-      ? {
-          label: 'FICA',
-          description: sellerFica.status === 'complete'
-            ? 'Verification complete'
-            : sellerFica.pendingReviewCount
-              ? 'Verification in progress'
-              : `${sellerFica.missingCount || sellerFica.requiredCount - sellerFica.receivedCount} item${(sellerFica.missingCount || sellerFica.requiredCount - sellerFica.receivedCount) === 1 ? '' : 's'} outstanding`,
-          status: sellerFica.status,
-          icon: FileCheck2,
-        }
-      : {
-          label: 'FICA',
-          description: transaction?.seller_fica_status ? toTitle(transaction.seller_fica_status) : 'No FICA requirements currently tracked',
-          status: transaction?.seller_fica_status || 'not_started',
-          icon: FileCheck2,
-        },
-  ]
-  const mandateEndDate = firstPresent(transaction?.mandate_end_date, transaction?.mandate_expiry_date, transaction?.mandate_valid_until)
-  const summaryItems = [
-    transactionTypeLabel ? ['Transaction Type', transactionTypeLabel] : null,
-    buyerParties[0]?.type && normalizeDetailKey(buyerParties[0].type) !== 'unknown' ? ['Purchaser Type', toTitle(buyerParties[0].type)] : null,
-    sellerParties[0]?.type && normalizeDetailKey(sellerParties[0].type) !== 'unknown' ? ['Seller Type', toTitle(sellerParties[0].type)] : null,
-    financeTypeLabel && financeTypeLabel !== 'Not captured' ? ['Finance Type', financeTypeLabel] : null,
-    mandateEndDate ? ['Mandate', `Valid until ${formatDate(mandateEndDate, '')}`] : null,
-  ].filter(Boolean)
-
-  return (
-    <section className="archline-parties-workspace space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Parties</h2>
-      </div>
-
-      <div className="grid gap-[18px] xl:grid-cols-2">
-        <TransactionPartyCard
-          side="buyer"
-          parties={buyerParties}
-          statusRows={buyerRows}
-          portalLabel="View Buyer Portal"
-          portalBusy={buyerPortalBusy}
-          portalDisabled={!buyerEmail}
-          onPortal={onBuyerPortal}
-        />
-        <TransactionPartyCard
-          side="seller"
-          roleName={sellerPartyLabels.party || 'Seller'}
-          parties={sellerParties}
-          statusRows={sellerRows}
-          portalLabel={sellerPartyLabels.isDeveloperSale ? sellerPartyLabels.portalAction : 'View Seller Portal'}
-          portalBusy={sellerPortalBusy}
-          portalDisabled={!sellerPartyLabels.isDeveloperSale && !sellerEmail}
-          onPortal={onSellerPortal}
-        />
-      </div>
-
-      {summaryItems.length ? (
-        <section className="rounded-[14px] border border-[rgba(15,23,42,0.08)] bg-white px-4 py-3.5">
-          <h3 className="text-sm font-semibold text-slate-950">Party Summary</h3>
-          <div className="mt-3 grid gap-y-3 sm:grid-cols-2 xl:grid-cols-5">
-            {summaryItems.map(([label, value], index) => (
-              <div key={label} className={`min-w-0 px-1 sm:px-3 ${index ? 'xl:border-l xl:border-slate-200' : ''}`}>
-                <span className="block text-[0.66rem] font-semibold uppercase leading-4 text-slate-500">{label}</span>
-                <strong className="mt-1 block text-[0.78rem] font-semibold leading-5 text-slate-950">{value}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </section>
-  )
 }
 
 function AttorneyMatterTeamCard({ transactionId }) {
@@ -9799,7 +9395,7 @@ function getAttorneyDocumentDashboardStatusTone(status = '') {
 }
 
 function getAttorneyDocumentDashboardCategoryStatus({ requiredCount = 0, receivedCount = 0, pendingReviewCount = 0, missingCount = 0 } = {}) {
-  if (!requiredCount) return { status: 'not_applicable', label: 'Not applicable' }
+  if (!requiredCount) return { status: 'unconfigured', label: 'No requirements set' }
   if (missingCount >= requiredCount && !receivedCount) return { status: 'missing', label: 'Missing' }
   if (pendingReviewCount) return { status: 'pending_review', label: 'Pending review' }
   if (receivedCount >= requiredCount && !missingCount) return { status: 'complete', label: 'Complete' }
@@ -14398,6 +13994,7 @@ function buildAgentDealSummary({ transaction = {}, displayPurchasePriceValue = 0
   return {
     purchasePrice,
     purchasePriceLabel: formatCurrencyValue(purchasePrice, 'Not captured'),
+    existingBondLabel: getExistingBondLabel(transaction),
     depositValue: hasDeposit ? depositValue : null,
     bondValue: hasBond ? bondValue : null,
     financeTypeLabel: financeTypeLabel && financeTypeLabel !== 'Not captured' ? financeTypeLabel : '',
@@ -14732,147 +14329,47 @@ function AgentTransactionOverview({
 function AgentTransactionCommandCenter({
   developerOverview = false,
   onOpenWorkspace,
+  onRecordHistoricalProgress,
   journeyModel = null,
   journeyLoading = false,
-  outstandingItems = [],
-  nextAction = null,
-  activityEntries = [],
-  discussionBody = '',
-  onDiscussionBodyChange,
-  onPublishDiscussion,
-  discussionSubmitDisabled = false,
-  publishing = false,
   documentRows = [],
   documentAttentionCount = 0,
   partyRows = [],
   dealSummary = null,
+  workflowProgress = [],
   onOpenDocuments,
-  onOpenFinance,
-  onOpenTransfer,
   onOpenTimeline,
   onOpenStakeholders,
   onOpenParties,
 }) {
-  const nextContact = nextAction?.contact || null
-  const NextActionIcon = nextAction?.Icon || FileText
-  const callHref = getAgentContactHref('phone', nextContact?.phone)
-  const whatsappHref = getAgentContactHref('whatsapp', nextContact?.phone)
-  const recommendationReasons = nextAction?.source === 'shared-legal-journey' ? [] : outstandingItems
-    .map((item) => item.description || item.title)
-    .filter(Boolean)
-    .filter((value, index, values) => values.indexOf(value) === index)
-    .slice(0, 3)
   const visibleParties = ['buyer', 'seller', 'transfer_attorney']
     .map((key) => partyRows.find((row) => row.key === key))
     .filter(Boolean)
 
-  const openActionTarget = (target = nextAction?.target) => {
-    if (target === 'finance') return onOpenFinance?.()
-    if (target === 'stakeholders') return onOpenStakeholders?.()
-    if (target === 'transfer') return onOpenTransfer?.()
-    if (target === 'activity') return onOpenTimeline?.()
-    return onOpenDocuments?.()
-  }
   const runContactAction = (type, href) => {
     if (!href) return onOpenStakeholders?.()
     if (type === 'whatsapp') window.open(href, '_blank', 'noopener,noreferrer')
-    else window.location.href = href
+    else window.location.assign(href)
   }
+  const journeyActions = <div className="flex flex-wrap items-center gap-2">
+    <Button type="button" variant="secondary" size="sm" disabled={journeyLoading} onClick={onRecordHistoricalProgress}>Record historical progress</Button>
+    <Button type="button" variant="secondary" size="sm" onClick={developerOverview ? () => onOpenWorkspace?.('transfer') : onOpenTimeline}>View full journey<ChevronRight size={14} /></Button>
+  </div>
 
   return (
     <section className="space-y-4">
-      {developerOverview ? <DeveloperOverviewJourney model={journeyModel} loading={journeyLoading} onOpenWorkspace={onOpenWorkspace} /> : <TransactionJourneyTracker
+      {developerOverview ? <DeveloperOverviewJourney model={journeyModel} loading={journeyLoading} onOpenWorkspace={onOpenWorkspace} action={journeyActions} /> : <TransactionJourneyTracker
         model={journeyModel}
         loading={journeyLoading}
+        onOpenWorkspace={onOpenWorkspace}
         title="Transaction Journey"
         subtitle="The same milestone view shared with every party in this transaction."
-        action={<Button type="button" variant="secondary" size="sm" onClick={onOpenTimeline}>View full journey<ChevronRight size={14} /></Button>}
+        action={journeyActions}
         audience="agent"
       />}
-      <section className="grid gap-4 xl:grid-cols-2">
-        <article className="flex min-h-[430px] flex-col rounded-[16px] border border-borderDefault bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Next Best Action</p>
-            {outstandingItems.length ? <span className="rounded-[8px] bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">{outstandingItems.length} watching</span> : null}
-          </div>
-          <div className="mt-4 flex flex-1 flex-col rounded-[14px] border border-emerald-100 bg-[linear-gradient(135deg,rgba(239,250,245,0.95),rgba(250,253,252,0.95))] p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-[12px] border border-emerald-200 bg-white/70 text-emerald-700 shadow-sm">
-                <NextActionIcon size={24} />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-xl font-semibold text-textStrong">{nextAction?.title || 'No action needed'}</h2>
-                <p className="mt-2 text-sm leading-6 text-textMuted">{nextAction?.description || 'Everything looks good right now.'}</p>
-              </div>
-            </div>
+      <TransactionOverviewProgress workflows={workflowProgress} dealSummary={dealSummary} loading={journeyLoading} onOpenWorkspace={onOpenWorkspace} />
 
-            {recommendationReasons.length ? (
-              <div className="mt-5 border-t border-emerald-100 pt-4">
-                <p className="text-xs font-medium text-textMuted">Recommended because:</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  {recommendationReasons.map((reason) => (
-                    <div key={reason} className="flex items-start gap-2 text-xs leading-5 text-textBody">
-                      <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
-                      <span>{reason}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-auto flex flex-wrap gap-2 pt-5">
-              <Button type="button" size="sm" onClick={() => openActionTarget()}>
-                <NextActionIcon size={14} />
-                {nextAction?.primaryLabel || 'Review Action'}
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => openActionTarget(nextAction?.secondaryLabel === 'View Roleplayers' ? 'stakeholders' : 'documents')}>
-                <FileText size={14} />
-                {nextAction?.secondaryLabel || 'View Documents'}
-              </Button>
-              {callHref ? <Button type="button" variant="secondary" size="sm" onClick={() => runContactAction('phone', callHref)}><Phone size={14} />Call</Button> : null}
-              {whatsappHref ? <Button type="button" variant="secondary" size="sm" onClick={() => runContactAction('whatsapp', whatsappHref)}><MessageCircle size={14} />WhatsApp</Button> : null}
-            </div>
-          </div>
-        </article>
-
-        <article className="flex h-[430px] min-h-0 flex-col overflow-hidden rounded-[16px] border border-borderDefault bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <div className="flex shrink-0 items-center justify-between gap-3 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Recent Activity</p>
-            <Button type="button" variant="ghost" size="sm" onClick={onOpenTimeline}>View all</Button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto border-y border-borderSoft px-5">
-            {activityEntries.slice(0, 6).map((entry) => {
-              const ActivityIcon = entry.meta?.Icon || Activity
-              const isSystem = entry.kind === 'system' || entry.authorName === 'Arch9'
-              const initial = String(entry.authorName || 'M').trim().charAt(0).toUpperCase()
-              return (
-                <article key={entry.id} className="flex gap-3 border-b border-borderSoft py-3 last:border-b-0">
-                  <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isSystem ? entry.meta?.icon || 'bg-slate-50 text-slate-600' : 'bg-slate-100 text-slate-700'}`}>
-                    {isSystem ? <ActivityIcon size={16} /> : initial}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                      <p className="min-w-0 text-sm font-semibold text-textStrong">{entry.authorName || 'Matter team'} <span className="font-normal text-textMuted">· {entry.roleLabel || entry.categoryLabel || 'Update'}</span></p>
-                      <time className="shrink-0 text-xs text-textMuted">{formatDateTime(entry.createdAt, '')}</time>
-                    </div>
-                    <p className="mt-1 text-sm leading-5 text-textBody">{entry.body || entry.title}</p>
-                  </div>
-                </article>
-              )
-            })}
-            {!activityEntries.length ? <p className="py-10 text-center text-sm text-textMuted">No activity yet.</p> : null}
-          </div>
-          {developerOverview ? <div className="p-3"><Button type="button" variant="secondary" size="sm" onClick={onOpenTimeline}>Open updates &amp; conversation</Button></div> : <form onSubmit={onPublishDiscussion} className="grid shrink-0 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <Field as="textarea" rows={2} value={discussionBody} onChange={(event) => onDiscussionBodyChange?.(event.target.value)} placeholder="Publish an update to everyone involved..." />
-            <Button type="submit" size="sm" className="self-stretch justify-center sm:self-end" disabled={discussionSubmitDisabled}>
-              {publishing ? 'Publishing...' : 'Publish'}
-              <Send size={14} />
-            </Button>
-          </form>}
-        </article>
-      </section>
-
-      <section className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section className="grid items-stretch gap-4 md:grid-cols-2">
         <article className="flex min-h-[330px] flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Parties</p>
@@ -14905,32 +14402,6 @@ function AgentTransactionCommandCenter({
         </article>
 
         <article className="flex min-h-[330px] flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Deal Summary</p>
-            <Button type="button" variant="ghost" size="sm" onClick={onOpenFinance}>View finance</Button>
-          </div>
-          <strong className="mt-4 block text-2xl font-semibold text-emerald-700">{dealSummary?.purchasePriceLabel || 'Not captured'}</strong>
-          <span className="mt-1 text-xs text-textMuted">Purchase price</span>
-          <div className="mt-3 divide-y divide-borderSoft">
-            {dealSummary?.depositValue ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">Deposit</span><strong>{formatCurrencyValue(dealSummary.depositValue)}</strong></div> : null}
-            {dealSummary?.bondValue ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">Bond</span><strong>{formatCurrencyValue(dealSummary.bondValue)}</strong></div> : null}
-            {dealSummary?.financeTypeLabel ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">Finance Type</span><strong>{dealSummary.financeTypeLabel}</strong></div> : null}
-            {dealSummary?.ltv !== null && dealSummary?.ltv !== undefined ? <div className="flex justify-between gap-4 py-2.5 text-sm"><span className="text-textMuted">LTV</span><strong>{dealSummary.ltv}%</strong></div> : null}
-          </div>
-          {dealSummary?.funding ? (
-            <div className="mt-auto pt-4">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Purchase Funding</p>
-              <div className="mt-2 flex h-5 overflow-hidden rounded-full bg-slate-100 text-[0.64rem] font-bold">
-                <span className="flex items-center justify-center bg-emerald-200 text-emerald-900" style={{ width: `${dealSummary.funding.depositPercent}%` }}>{dealSummary.funding.depositPercent}%</span>
-                <span className="flex items-center justify-center bg-emerald-700 text-white" style={{ width: `${dealSummary.funding.bondPercent}%` }}>{dealSummary.funding.bondPercent}%</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-textMuted"><span>Deposit ({dealSummary.funding.depositPercent}%)</span><span>Bond ({dealSummary.funding.bondPercent}%)</span></div>
-            </div>
-          ) : null}
-          {!dealSummary?.purchasePrice && !dealSummary?.depositValue && !dealSummary?.bondValue ? <p className="mt-5 text-sm text-textMuted">Finance details have not been captured.</p> : null}
-        </article>
-
-        <article className="flex min-h-[330px] flex-col rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)] md:col-span-2 xl:col-span-1">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textStrong">Documents</p>
             <Button type="button" variant="ghost" size="sm" onClick={onOpenDocuments}>View documents</Button>
@@ -16554,6 +16025,7 @@ function AttorneyTransactionDetail() {
   const [transactionFeeControlSaving, setTransactionFeeControlSaving] = useState(false)
   const [transactionFeeControlError, setTransactionFeeControlError] = useState('')
   const [journeyStageOverrides, setJourneyStageOverrides] = useState([])
+  const [historicalJourneyOpen, setHistoricalJourneyOpen] = useState(false)
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [matterAccessKey, setMatterAccessKey] = useState(() => (workspaceRole !== 'attorney' ? currentMatterAccessKey : ''))
@@ -16692,6 +16164,7 @@ function AttorneyTransactionDetail() {
   const [sellerPortalBusy, setSellerPortalBusy] = useState(false)
   const [roleplayerConfirmOpen, setRoleplayerConfirmOpen] = useState(() => Boolean(location.state?.openBuyerOnboardingRoleplayers))
   const [roleplayerConfirmError, setRoleplayerConfirmError] = useState('')
+  const [allocationRoleType, setAllocationRoleType] = useState('')
   const [buyerDeliveryTarget, setBuyerDeliveryTarget] = useState(null)
   const [roleplayerConfirmDraft, setRoleplayerConfirmDraft] = useState({
     transferAttorney: '',
@@ -16700,9 +16173,6 @@ function AttorneyTransactionDetail() {
     bondAttorney: '',
     cancellationAttorney: '',
   })
-  const [partnerSnapshot, setPartnerSnapshot] = useState(null)
-  const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
-  const [partnerOptionsLoading, setPartnerOptionsLoading] = useState(false)
   const [mandateTransferAttorney, setMandateTransferAttorney] = useState(null)
   const [transferInstructionLifecycle, setTransferInstructionLifecycle] = useState(null)
   const [transferReassignmentOpen, setTransferReassignmentOpen] = useState(false)
@@ -17931,17 +17401,23 @@ function AttorneyTransactionDetail() {
   useEffect(() => {
     void loadJourneyStageOverrides()
   }, [loadJourneyStageOverrides])
-  const partnerAccessContext = useMemo(
+  const partnerFetchAccessContext = useMemo(
     () => ({
       organisationId: workspaceOrganisationId,
       role: workspaceRole,
       profile,
       currentMembership,
       userId: profile?.id || '',
-      preferredPartnerRoutingRules: preferredRoutingRules,
     }),
-    [currentMembership, preferredRoutingRules, profile, workspaceOrganisationId, workspaceRole],
+    [currentMembership, profile, workspaceOrganisationId, workspaceRole],
   )
+  const { snapshot: partnerSnapshot, routingRules: preferredRoutingRules, loading: partnerOptionsLoading, error: partnerOptionsError, retry: retryPartnerOptions } = useTransactionPartnerOptions({
+    enabled: isTransactionOperatorView && Boolean(workspaceOrganisationId),
+    organisationId: workspaceOrganisationId,
+    workspaceType: workspaceType || workspaceRole,
+    accessContext: partnerFetchAccessContext,
+  })
+  const partnerAccessContext = useMemo(() => ({ ...partnerFetchAccessContext, preferredPartnerRoutingRules: preferredRoutingRules }), [partnerFetchAccessContext, preferredRoutingRules])
   const routeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
   const activeLegalWorkflowDetailKey = routeLegalWorkflowDetailKey || localLegalWorkflowDetailKey
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
@@ -17949,6 +17425,7 @@ function AttorneyTransactionDetail() {
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
+    if (workspaceMenu === 'parties' && (isTransactionOperatorView || workspaceRole === 'attorney')) return 'stakeholders'
     if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes', 'workflow'].includes(workspaceMenu)) return 'quotes_grant'
     if (workspaceRole === 'bond_originator' && ['tasks', 'stakeholders'].includes(workspaceMenu)) return 'overview'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
@@ -18197,39 +17674,6 @@ function AttorneyTransactionDetail() {
     if (availableDiscussionVisibilityOptions.some((item) => item.key === discussionVisibility)) return
     setDiscussionVisibility(availableDiscussionVisibilityOptions[0].key)
   }, [availableDiscussionVisibilityOptions, discussionVisibility])
-
-  useEffect(() => {
-    if (!isTransactionOperatorView || !workspaceOrganisationId) {
-      setPartnerSnapshot(null)
-      return
-    }
-
-    let active = true
-    async function loadPartnerDefaults() {
-      try {
-        setPartnerOptionsLoading(true)
-        const [snapshot, routingRules] = await Promise.all([
-          fetchPartnersSnapshot({
-            organisationId: workspaceOrganisationId,
-            workspaceType: workspaceType || workspaceRole,
-            accessContext: partnerAccessContext,
-          }),
-          listUserPreferredPartnerRoutingRules().catch(() => []),
-        ])
-        if (active) setPartnerSnapshot(snapshot)
-        if (active) setPreferredRoutingRules(Array.isArray(routingRules) ? routingRules : [])
-      } catch (partnerLoadError) {
-        console.warn('[AttorneyTransactionDetail] scoped partner defaults unavailable', partnerLoadError)
-      } finally {
-        if (active) setPartnerOptionsLoading(false)
-      }
-    }
-
-    void loadPartnerDefaults()
-    return () => {
-      active = false
-    }
-  }, [isTransactionOperatorView, partnerAccessContext, workspaceOrganisationId, workspaceRole, workspaceType])
 
   const mainStage = useMemo(
     () => data?.mainStage || getMainStageFromDetailedStage(transaction?.stage || 'Available'),
@@ -21004,6 +20448,14 @@ function AttorneyTransactionDetail() {
       actionLabel: cancellationAttorney ? 'Change Assignment' : 'Assign Cancellation Attorney',
     },
   ].filter((item) => item.visible)
+  const allocationRoles = transactionTeamCards
+    .filter((card) => card.key !== 'transfer_attorney' || !transferAttorneyReassignmentRequired)
+    .map((card) => ({ ...card, options: {
+      transfer_attorney: transferAttorneyOptions,
+      bond_originator: bondOriginatorOptions,
+      bond_attorney: bondAttorneyOptions,
+      cancellation_attorney: cancellationAttorneyOptions,
+    }[card.key] || [] }))
   const transferWorkflowLane = useMemo(
     () => workflowLanes.find((lane) => String(lane?.laneKey || '').trim().toLowerCase() === 'transfer') || null,
     [workflowLanes],
@@ -21593,11 +21045,11 @@ function AttorneyTransactionDetail() {
     {
       key: 'buyer',
       role: transactionSalePartyModel.buyer.label,
-      contact: roleplayerForm.buyerName || buyer?.name || 'Not assigned',
+      contact: buyerDisplayName || 'Not assigned',
       company: 'Client',
-      email: roleplayerForm.buyerEmail || buyer?.email || 'Not captured',
-      phone: roleplayerForm.buyerPhone || buyer?.phone || 'Not captured',
-      status: roleplayerForm.buyerEmail || buyer?.email ? 'Active' : 'Pending',
+      email: buyerEmail || 'Not captured',
+      phone: roleplayerForm.buyerPhone || buyer?.phone || transaction?.buyer_phone || 'Not captured',
+      status: buyerEmail ? 'Active' : 'Pending',
     },
     {
       key: 'seller',
@@ -21669,6 +21121,30 @@ function AttorneyTransactionDetail() {
       visible: requiresCancellationAttorneyCard,
     },
   ].filter((item) => item.visible !== false)
+  const transactionDirectoryContacts = transactionContactRows.flatMap(row => {
+    if (!['buyer', 'seller'].includes(row.key)) return [row]
+    const isBuyer = row.key === 'buyer'
+    const participantParties = buildTransactionPartyList({
+      side: row.key,
+      participants: transactionParticipants,
+      fallbackName: isBuyer ? buyerDisplayName : sellerDisplayName,
+      fallbackEmail: isBuyer ? buyerEmail : sellerEmail,
+      fallbackPhone: row.phone === 'Not captured' ? '' : row.phone,
+      fallbackType: isBuyer ? transaction?.purchaser_type : transaction?.seller_type,
+    })
+    const capturedSellers = isBuyer ? null : transactionSellerDirectoryPeople({ formData: data?.onboardingFormData || {}, listingId: transaction?.listing_id })
+    const parties = capturedSellers?.length ? [...capturedSellers, ...participantParties.filter(party => party.id && !capturedSellers.some(saved => saved.id === party.id))] : participantParties
+    return parties.length ? parties.map((party, index) => ({
+      ...row,
+      key: `${row.key}-${party.id || index}`,
+      contact: party.name || row.contact,
+      company: party.company || (party.type ? toTitle(party.type) : row.company),
+      role: !isBuyer && party.partyRole ? `Seller · ${toTitle(party.partyRole)}` : row.role,
+      email: party.email || (parties.length === 1 ? row.email : 'Not captured'),
+      phone: party.phone || (parties.length === 1 ? row.phone : 'Not captured'),
+      side: row.key,
+    })) : [{ ...row, side: row.key }]
+  })
   const bondApplicationTypeLabel = bondWorkspaceIsPreApprovalOnly
     ? 'Pre-approval'
     : financeTypeLabel && financeTypeLabel !== 'Not captured'
@@ -21888,6 +21364,7 @@ function AttorneyTransactionDetail() {
       }),
     [onboardingCompleted, sellerPartyLabels, transactionContactRows],
   )
+  const overviewWorkflowProgress = useMemo(() => buildOverviewWorkflowProgress({ transactionId: transaction?.id, rollup: transactionRollup }), [transaction?.id, transactionRollup])
   const agentOverviewDealSummary = useMemo(
     () =>
       buildAgentDealSummary({
@@ -21903,42 +21380,6 @@ function AttorneyTransactionDetail() {
       transaction,
     ],
   )
-  const archlineMatterChips = useMemo(() => [
-    archlineTransferWorkflow ? { key: 'transfer', label: 'Transfer', icon: Workflow } : null,
-    isBondOrHybridFinance ? { key: 'bond', label: 'Bond', icon: Landmark } : null,
-    requiresCancellationWorkflow ? { key: 'cancellation', label: 'Cancellation', icon: X } : null,
-    displayPurchasePriceValue >= 10_000_000 ? { key: 'high-value', label: 'High Value', icon: Star } : null,
-  ].filter(Boolean), [
-    archlineTransferWorkflow,
-    displayPurchasePriceValue,
-    isBondOrHybridFinance,
-    requiresCancellationWorkflow,
-  ])
-  const archlinePrimaryContact = useMemo(() => {
-    const rows = transactionContactRows.filter((row) => row?.contact && row.contact !== 'Not assigned')
-    return (
-      rows.find((row) => /buyer/i.test(row.role) && (row.phone !== 'Not captured' || row.email !== 'Not captured')) ||
-      rows.find((row) => row.phone && row.phone !== 'Not captured') ||
-      rows.find((row) => row.email && row.email !== 'Not captured') ||
-      null
-    )
-  }, [transactionContactRows])
-  const handleArchlineCallPrimaryContact = useCallback(() => {
-    const phone = String(archlinePrimaryContact?.phone || '').trim()
-    if (!phone || phone === 'Not captured') {
-      openWorkspaceMenu('stakeholders')
-      return
-    }
-    window.location.href = `tel:${phone.replace(/\s+/g, '')}`
-  }, [archlinePrimaryContact?.phone, openWorkspaceMenu])
-  const handleArchlineEmailPrimaryContact = useCallback(() => {
-    const email = String(archlinePrimaryContact?.email || '').trim()
-    if (!email || email === 'Not captured') {
-      openWorkspaceMenu('stakeholders')
-      return
-    }
-    window.location.href = `mailto:${email}`
-  }, [archlinePrimaryContact?.email, openWorkspaceMenu])
   const filteredActivityFeed = useMemo(
     () =>
       activityFeed.filter((entry) => {
@@ -22409,6 +21850,48 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  function openRoleplayerAllocation(roleType = null) {
+    if (!canManageTransactionRoleplayers) {
+      setError('You do not have permission to manage transaction roleplayers.')
+      return
+    }
+    if (roleType === 'transfer_attorney' && transferAttorneyReassignmentRequired) {
+      openTransferAttorneyReassignment()
+      return
+    }
+    const selectedRole = allocationRoles.find((role) => role.key === roleType) || allocationRoles[0]
+    if (selectedRole) setAllocationRoleType(selectedRole.key)
+    else if (transferAttorneyReassignmentRequired) openTransferAttorneyReassignment()
+  }
+
+  async function allocateTransactionProfessional(roleType, option, source = 'transaction_workspace_allocation') {
+    if (!canManageTransactionRoleplayers || !transaction?.id) throw new Error('You do not have permission to allocate transaction professionals.')
+    if (!allocationRoles.some((role) => role.key === roleType && role.options.some((item) => item.id === option?.id || (item.organisationId && item.organisationId === option?.organisationId)))) {
+      throw new Error('Choose an available firm for this transaction role.')
+    }
+    const selection = buildRoleplayerSelection(roleType, option)
+    if (roleType === 'transfer_attorney') {
+      selection.firmFirstAllocation = true
+      selection.userId = null
+      selection.preferredAttorneyUserId = option.userId || null
+      selection.activationTrigger = 'appointed_firm_staff_assignment'
+      selection.snapshot = { firmFirstAllocation: true, preferredAttorneyUserId: option.userId || null, allocationState: 'awaiting_firm_acceptance' }
+    }
+    const refreshed = await saveTransactionRoleplayerSelections({
+      transactionId: transaction.id,
+      roleplayers: [selection],
+      actorRole: workspaceRole,
+      preserveUnspecifiedRoleplayers: true,
+      allocationOnly: true,
+      source,
+    })
+    if (refreshed) setData(refreshed)
+    setStakeholderMessage(`${allocationRoles.find((role) => role.key === roleType)?.label || 'Professional'} allocation saved.`)
+    try { await loadData({ background: true }) }
+    catch { setError('The allocation was saved, but the latest transaction view could not be refreshed. Refresh the page.') }
+    window.dispatchEvent(new Event('itg:transaction-updated'))
+  }
+
   function openRoleplayerConfirmation(target = null) {
     if (!canManageTransactionRoleplayers) {
       setError('You do not have permission to manage transaction roleplayers.')
@@ -22765,27 +22248,7 @@ function AttorneyTransactionDetail() {
   }
 
   async function assignImportedTransferPartner(option) {
-    if (!canManageTransactionRoleplayers || !transaction?.id) throw new Error('You do not have permission to allocate a transfer partner.')
-    const transferSelection = {
-      ...buildRoleplayerSelection('transfer_attorney', option),
-      firmFirstAllocation: true,
-      userId: null,
-      preferredAttorneyUserId: option.userId || null,
-      assignmentStatus: 'selected',
-      activationTrigger: 'appointed_firm_staff_assignment',
-      snapshot: { firmFirstAllocation: true, preferredAttorneyUserId: option.userId || null, allocationState: 'awaiting_firm_acceptance' },
-    }
-    const refreshed = await saveTransactionRoleplayerSelections({
-      transactionId: transaction.id,
-      roleplayers: [transferSelection],
-      actorRole: workspaceRole,
-      preserveUnspecifiedRoleplayers: true,
-      source: 'imported_transaction_conveyancing',
-    })
-    if (refreshed) setData(refreshed)
-    try { await loadData({ background: true }) }
-    catch { setError('Transfer firm was nominated, but the latest transaction view could not be refreshed. Refresh the page.') }
-    window.dispatchEvent(new Event('itg:transaction-updated'))
+    await allocateTransactionProfessional('transfer_attorney', option, 'imported_transaction_conveyancing')
   }
 
   async function handleSendRoleplayerIntro() {
@@ -23682,8 +23145,6 @@ function AttorneyTransactionDetail() {
           <ArchlineMatterHeader
             backPath={workspaceBackPath}
             backLabel={workspaceBackLabel}
-            reference={workspaceReference}
-            statusLabel={displayedLifecycleLabel}
             property={matterHeroAddress || matterHeadline}
             propertyType={matterHeroPropertyType ? toTitle(matterHeroPropertyType) : '—'}
             sectionalTitleIdentity={sectionalTitleIdentity}
@@ -23694,7 +23155,6 @@ function AttorneyTransactionDetail() {
             bankName={transaction?.current_bond_bank || transaction?.bank_name || transaction?.bond_bank || ''}
             daysOpenLabel={daysBetween(transaction?.instruction_date || transaction?.created_at)}
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, '—')}
-            matterChips={archlineMatterChips}
             workflow={archlineActiveLegalTaskWorkflow}
             sharedLegalJourney={archlineSharedLegalJourney}
             sharedLegalJourneyLoading={sharedLegalJourneyLoading}
@@ -23709,17 +23169,9 @@ function AttorneyTransactionDetail() {
               : archlineWorkspaceTabs}
             activeTab={isTransactionOperatorView ? activeWorkspaceMenu : archlineActiveWorkspaceTab}
             workspaceLabel=""
-            saleRouteBadge={transactionSaleRouteBadge}
-            shareLabel={isTransactionOperatorView ? 'Share Portal' : 'Share Portal'}
-            moreActionsLabel={isTransactionOperatorView ? 'Activity' : 'More Actions'}
             showWorkflowProgress={!isTransactionOperatorView}
             onTabChange={isTransactionOperatorView ? openWorkspaceMenu : handleArchlineTabChange}
             onTabIntent={preloadTransactionWorkspaceTab}
-            onSharePortal={() => handleOverviewActionTarget('buyer_portal')}
-            onCall={handleArchlineCallPrimaryContact}
-            onEmail={handleArchlineEmailPrimaryContact}
-            onMoreActions={() => openWorkspaceMenu(isTransactionOperatorView ? 'activity' : 'tasks')}
-            onViewProperty={() => openWorkspaceMenu('overview')}
           />
           {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
             <MatterOverviewQuickFacts
@@ -23897,6 +23349,9 @@ function AttorneyTransactionDetail() {
             canAssignPartner={canManageTransactionRoleplayers && !transferAttorneyReassignmentRequired && !transferFirmNominated}
             partnerPending={transferFirmNominated}
             partnerOptions={attorneyPartnerOptions}
+            partnerOptionsLoading={partnerOptionsLoading}
+            partnerOptionsError={partnerOptionsError}
+            onReloadPartners={retryPartnerOptions}
             assignedPartner={transferAttorney?.organisationName || transaction?.attorney || ''}
             onAssignPartner={assignImportedTransferPartner}
           />
@@ -24320,56 +23775,13 @@ function AttorneyTransactionDetail() {
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'stakeholders' ? (
           <section className="space-y-5">
-            <BuyerProcessHandoffPanel
-              handoff={buyerProcessHandoff}
-              compact
-              onOpenBuyer={() => openWorkspaceMenu('buyer')}
-              onOpenDocuments={() => openWorkspaceMenu('documents')}
-              onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
-            />
             <ArchlineRolePlayersWorkspace
-              contacts={transactionContactRows}
+              contacts={transactionDirectoryContacts}
               teamCards={transactionTeamCards}
-              onOpenAssignments={openRoleplayerConfirmation}
+              onOpenAssignments={openRoleplayerAllocation} onAssignRole={openRoleplayerAllocation} canManageAssignments={canManageTransactionRoleplayers}
               onOpenActivity={openRoleplayerActivityFeed}
             />
           </section>
-        ) : null}
-
-        {isTransactionOperatorView && activeWorkspaceMenu === 'parties' ? (
-          <>
-          <ArchlinePartiesWorkspace
-            transaction={transaction}
-            buyerDisplayName={buyerDisplayName}
-            buyerEmail={buyerEmail}
-            buyerPhone={roleplayerForm.buyerPhone || buyer?.phone || transaction?.buyer_phone || ''}
-            sellerDisplayName={sellerDisplayName}
-            sellerEmail={sellerEmail}
-            sellerPhone={roleplayerForm.sellerPhone || transaction?.seller_phone || ''}
-            participants={transactionParticipants}
-            onboardingCompleted={onboardingCompleted}
-            lifecycleProgressState={lifecycleProgressState}
-            financeType={normalizedFinanceType}
-            financeTypeLabel={financeTypeLabel}
-            transactionFinanceWorkflow={transactionFinanceWorkflow}
-            documentHealthSummary={documentHealthSummary}
-            ficaSummary={matterDocumentWorkspaceModel.ficaSummary}
-            requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
-            libraryRows={allDocumentLibraryRows.length ? allDocumentLibraryRows : documentLibraryRows}
-            missingRows={documentReadiness.missingDocuments || []}
-            sellerPartyLabels={sellerPartyLabels}
-            transactionTypeLabel={transactionSaleRouteBadge?.label || matterTypeLabel}
-            buyerPortalBusy={onboardingActionBusy}
-            sellerPortalBusy={sellerPortalBusy || documentRequestSaving}
-            onBuyerPortal={() => handleOverviewActionTarget('buyer_portal')}
-            onSellerPortal={sellerPartyLabels.isDeveloperSale ? handleRequestDeveloperDocuments : () => handleOverviewActionTarget('seller_portal')}
-          />
-          <TransactionBuyerPartiesPanel
-            transactionId={transaction?.id}
-            organisationId={transaction?.organisation_id || workspaceOrganisationId}
-            canEdit={isTransactionOperatorView || workspaceRole === 'attorney'}
-          />
-          </>
         ) : null}
 
         {isTransactionOperatorView && activeWorkspaceMenu === 'deal_setup' ? (
@@ -24378,6 +23790,21 @@ function AttorneyTransactionDetail() {
             organisationId={transaction?.organisation_id || workspaceOrganisationId}
             canEdit
             onSaved={() => refreshCanonicalTransactionSnapshot()}
+            onSendSellerLink={async ({context,mutationId}) => {
+              const delivery = await prepareSellerWorkspaceDelivery({transactionId:transaction.id,context,mutationId})
+              const response = await invokeEdgeFunction('send-email', {body:{...delivery,organisationId:workspaceOrganisationId,propertyTitle:cleanDetailText(propertyAddress || matterHeadline || 'your property'),agentName:cleanDetailText(transaction?.assigned_agent || profile?.fullName || profile?.name || 'Arch9')}})
+              if (response?.error || response?.data?.error) throw new Error(response.error ? await parseEdgeFunctionError(response.error,'Seller onboarding could not be sent.') : response.data.error?.message || response.data.error)
+              await loadData({background:true})
+              window.dispatchEvent(new Event('itg:transaction-updated'))
+            }}
+            onSendBuyerLink={async target => {
+              if (!target?.participantId || !target.email?.trim()) throw new Error('Choose a saved buyer and email before sending onboarding.')
+              await sendBuyerOnboardingViaResend({ target, source: 'transaction_deal_setup_buyer', action: target.completed ? TRANSACTION_BUYER_DELIVERY_ACTIONS.sendPortalLink : TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding })
+              await loadData({ background: true })
+              window.dispatchEvent(new Event('itg:transaction-updated'))
+            }}
+            onboardingDetails={data?.onboardingFormData || {}}
+            buyerDetails={{ name: buyerDisplayName, email: buyerEmail, phone: roleplayerForm.buyerPhone || buyer?.phone || transaction?.buyer_phone || '' }}
             sellerDetails={isAgentTransactionView ? {
               name: roleplayerForm.sellerName,
               email: roleplayerForm.sellerEmail,
@@ -24409,26 +23836,18 @@ function AttorneyTransactionDetail() {
                     <AgentTransactionCommandCenter
                       developerOverview={isDeveloperTransactionView}
                       onOpenWorkspace={openWorkspaceMenu}
+                      onRecordHistoricalProgress={() => setHistoricalJourneyOpen(true)}
                       journeyModel={agentOverviewJourneyModel}
                       journeyLoading={agentOverviewJourneyLoading}
-                      outstandingItems={agentOverviewOutstandingItems}
-                      nextAction={agentOverviewNextAction}
-                      activityEntries={overviewConversationEntries}
-                      discussionBody={discussionBody}
-                      onDiscussionBodyChange={setDiscussionBody}
-                      onPublishDiscussion={handleAddDiscussion}
-                      discussionSubmitDisabled={discussionSubmitDisabled}
-                      publishing={saving}
                       documentRows={agentOverviewDocumentRows}
                       documentAttentionCount={agentOverviewOutstandingItems.filter((item) => item.target === 'documents').length}
                       partyRows={agentOverviewPartyRows}
                       dealSummary={agentOverviewDealSummary}
+                      workflowProgress={overviewWorkflowProgress}
                       onOpenDocuments={() => openWorkspaceMenu('documents')}
-                      onOpenFinance={() => openWorkspaceMenu('finance')}
-                      onOpenTransfer={() => openWorkspaceMenu('transfer')}
                       onOpenTimeline={() => openWorkspaceMenu('activity')}
                       onOpenStakeholders={() => openWorkspaceMenu('stakeholders')}
-                      onOpenParties={() => openWorkspaceMenu('parties')}
+                      onOpenParties={() => openWorkspaceMenu('stakeholders')}
                     />
                   ) : (
                     <AttorneyMatterCommandCenter
@@ -26223,7 +25642,7 @@ function AttorneyTransactionDetail() {
                           className="mt-3 w-full justify-center whitespace-normal text-center leading-5"
                           onClick={card.key === 'transfer_attorney' && transferAttorneyReassignmentRequired
                             ? openTransferAttorneyReassignment
-                            : openRoleplayerConfirmation}
+                            : () => openRoleplayerAllocation(card.key)}
                           disabled={!canManageTransactionRoleplayers || partnerOptionsLoading}
                         >
                           {card.actionLabel}
@@ -26599,6 +26018,17 @@ function AttorneyTransactionDetail() {
           ) : null}
         </div>
       </Modal>
+
+      {allocationRoleType ? <TransactionRoleAllocationDialog
+        key={allocationRoleType}
+        initialRoleType={allocationRoleType}
+        roles={allocationRoles}
+        loading={partnerOptionsLoading}
+        loadError={partnerOptionsError}
+        onRetry={retryPartnerOptions}
+        onAllocate={allocateTransactionProfessional}
+        onClose={() => setAllocationRoleType('')}
+      /> : null}
 
       <Modal
         open={roleplayerConfirmOpen}
@@ -27335,6 +26765,15 @@ function AttorneyTransactionDetail() {
         </label>
       </Modal>
 
+      {historicalJourneyOpen && isTransactionOperatorView ? <TransactionHistoricalJourneyDialog
+        history={agentOverviewJourneyModel.highLevelJourney?.historicalJourney}
+        onClose={() => setHistoricalJourneyOpen(false)}
+        onSave={async (milestones, expectedRevision) => {
+          await saveTransactionHistoricalJourney({ transactionId: transaction.id, milestones, expectedRevision })
+          void refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id })
+            .catch(error => console.warn('[historical-journey] Saved progress; refresh deferred', error))
+        }}
+      /> : null}
       <Modal
         open={reasonDialog.open}
         onClose={saving ? undefined : () => setReasonDialog((previous) => ({ ...previous, open: false }))}

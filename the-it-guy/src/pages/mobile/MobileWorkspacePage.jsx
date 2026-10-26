@@ -30,6 +30,8 @@ import { MobileOfflineDraftPanel, MobileUploadSheet } from '../../components/mob
 import { MobileCard, MobileEmptyState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useOptionalOrganisation } from '../../context/OrganisationContext'
+import MobileLeadWorkspaceOverview from '../../components/mobile-shell/MobileLeadWorkspaceOverview'
 import {
   addOfflineDraft,
   getMobileInboxThreads,
@@ -442,6 +444,9 @@ export default function MobileWorkspacePage({ workspaceType }) {
   const params = useParams()
   const location = useLocation()
   const workspaceContext = useWorkspace()
+  const organisationContext = useOptionalOrganisation()
+  const organisationId = organisationContext?.organisation?.id || organisationContext?.organisation?.organisationId || organisationContext?.organisation?.workspaceId || workspaceContext.currentWorkspace?.organisationId || workspaceContext.currentWorkspace?.organisation_id || workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id
+  const useLiveLeadHeader = workspaceType === 'lead' && !location.pathname.startsWith('/mobile-demo/')
   const workspaceId = params.workspaceId || params.id || ''
   const loader = useMemo(() => LOADERS[workspaceType] || getMobileTransactionWorkspace, [workspaceType])
   const rawWorkspace = useMemo(() => loader(workspaceId), [loader, workspaceId])
@@ -585,6 +590,7 @@ export default function MobileWorkspacePage({ workspaceType }) {
 
   return (
     <div className="space-y-5" data-mobile-workspace={workspace.module} data-workspace-reference={workspace.reference}>
+      {useLiveLeadHeader ? <MobileLeadWorkspaceOverview organisationId={organisationId} leadId={workspaceId} onContactAction={handleContactAction} actor={workspaceContext.profile} includeAll={['principal', 'agency_principal', 'admin', 'owner'].includes(String(workspaceContext.role || '').toLowerCase())} /> : <>
       <section className="overflow-hidden rounded-[30px] bg-[#10243a] p-5 text-white shadow-[0_20px_46px_rgba(15,23,42,0.20)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -615,21 +621,23 @@ export default function MobileWorkspacePage({ workspaceType }) {
         onContactAction={handleContactAction}
       />
 
-      <MobileVisualContextCards
+      </>}
+
+      {!useLiveLeadHeader && <MobileVisualContextCards
         workspace={workspace}
         displayStatus={displayStatus}
         progressPercent={progressPercent}
         documents={documents}
         accent={accent}
-      />
+      />}
 
-      <MobileCard>
+      {!useLiveLeadHeader && <MobileCard className={workspace.module === 'lead' ? 'mobile-buyer-journey' : ''}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[18px] font-semibold text-[#10243a]">{workspace.module === 'lead' ? 'Buyer Journey' : 'Progress Tracker'}</h2>
             <p className="mt-1 text-[13px] leading-5 text-[#60758d]">{displayStatus} is the active stage.</p>
           </div>
-          <span className="rounded-full px-3 py-1 text-[12px] font-semibold" style={{ backgroundColor: accent.soft, color: accent.color }}>{completedStages + 1}/{workspace.stages.length}</span>
+          <span className="mobile-journey-count rounded-full px-3 py-1 text-[12px] font-semibold" style={{ backgroundColor: accent.soft, color: accent.color }}>{completedStages + 1}/{workspace.stages.length}</span>
         </div>
         <div className="mt-5 space-y-0">
           {workspace.stages.map((stage, index) => {
@@ -638,13 +646,13 @@ export default function MobileWorkspacePage({ workspaceType }) {
             return (
               <div key={stage} className="grid grid-cols-[42px_1fr] gap-3">
                 <span className="relative flex justify-center">
-                  <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${state === 'complete' ? 'bg-[#1f7a5a] text-white' : state === 'current' ? 'bg-[#10243a] text-white shadow-[0_8px_18px_rgba(16,36,58,0.18)]' : 'bg-[#edf3f8] text-[#94a3b8]'}`}>
+                  <span className={`mobile-journey-marker z-10 flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${state === 'complete' ? 'bg-[#1f7a5a] text-white' : state === 'current' ? 'bg-[#10243a] text-white shadow-[0_8px_18px_rgba(16,36,58,0.18)]' : 'bg-[#edf3f8] text-[#94a3b8]'}`}>
                     {state === 'complete' ? <Check className="h-4 w-4" /> : index + 1}
                   </span>
                   {!isLast ? <span className={`absolute bottom-0 top-10 w-0.5 ${state === 'complete' ? 'bg-[#1f7a5a]' : 'bg-[#d7e0ea]'}`} /> : null}
                 </span>
                 <span className={`pb-5 ${isLast ? 'pb-0' : ''}`}>
-                  <span className={`block rounded-[20px] border p-3 ${state === 'current' ? 'border-[#10243a] bg-[#f8fafc]' : state === 'complete' ? 'border-[#d9eadf] bg-[#f5fbf7]' : 'border-[#e4ebf2] bg-white'}`}>
+                  <span className={`mobile-journey-stage block rounded-[20px] border p-3 ${state === 'current' ? 'border-[#10243a] bg-[#f8fafc]' : state === 'complete' ? 'border-[#d9eadf] bg-[#f5fbf7]' : 'border-[#e4ebf2] bg-white'}`}>
                     <span className={`block text-[14px] font-semibold ${state === 'future' ? 'text-[#94a3b8]' : 'text-[#10243a]'}`}>{stage}</span>
                     <span className="mt-1 block text-[12px] leading-5 text-[#60758d]">
                       {state === 'complete' ? 'Completed' : state === 'current' ? 'Active now' : 'Upcoming'}
@@ -655,8 +663,9 @@ export default function MobileWorkspacePage({ workspaceType }) {
             )
           })}
         </div>
-      </MobileCard>
+      </MobileCard>}
 
+      {!useLiveLeadHeader && <>
       <section>
         <SectionHeader title="Role Players" action="Tap for details" />
         <div className="space-y-2">
@@ -824,6 +833,7 @@ export default function MobileWorkspacePage({ workspaceType }) {
         onClose={() => setUploadOpen(false)}
         onUploaded={handleUploaded}
       />
+      </>}
     </div>
   )
 }

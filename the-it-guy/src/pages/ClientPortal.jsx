@@ -10222,7 +10222,7 @@ function ClientPortal() {
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
     .sort(([left], [right]) => left.localeCompare(right))
   const groupedOnboardingFields = groupOnboardingFieldEntries(onboardingFieldEntries)
-  const onboardingStatus = portal?.onboardingFormData?.status || 'In Progress'
+  const onboardingStatus = portal?.onboarding?.status || portal?.transaction?.onboarding_status || portal?.onboardingFormData?.status || 'In Progress'
   const purchasePriceValue = Number(portal?.transaction?.purchase_price || portal?.transaction?.sales_price || portal?.unit?.price || 0)
   const purchasePriceLabel = purchasePriceValue
     ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(purchasePriceValue)

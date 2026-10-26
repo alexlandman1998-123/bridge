@@ -24,5 +24,5 @@ export default function MobileListingsPage() {
     return () => { active = false; window.removeEventListener('itg:listings-updated', refresh) }
   }, [workspace, organisation, loadingOrganisation, retry])
   const ready = !loadingOrganisation && result?.workspace === workspace && result?.organisation === organisation
-  return <MobileListingsView message={location.state?.message} rows={ready && !result.error ? result.rows : []} loading={!ready} error={ready ? result.error : null} onRetry={() => { setResult(null); setRetry((value) => value + 1) }} />
+  return <MobileListingsView initialKind={new URLSearchParams(location.search).get('type')} message={location.state?.message} rows={ready && !result.error ? result.rows : []} loading={!ready} error={ready ? result.error : null} onRetry={() => { setResult(null); setRetry((value) => value + 1) }} />
 }

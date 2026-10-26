@@ -1,0 +1,37 @@
+.estate-enquiry { align-items: center; justify-content: center; padding: 28px; background: #091e19a3; backdrop-filter: blur(8px); }
+.estate-enquiry .estate-enquiry__panel { width: 100%; max-width: 640px; max-height: min(92svh, 820px) !important; padding: 0 !important; border: 1px solid #d8d4c9; border-top: 4px solid #cdb574; border-radius: 8px; background: #faf8f3 !important; box-shadow: 0 30px 100px #0004; }
+.estate-enquiry__header { position: relative; max-width: none; margin: 0; padding: 36px 40px 27px; border-bottom: 1px solid #173b321a; }
+.estate-enquiry__header > div { padding-right: 35px; }
+.estate-enquiry__header > div > p:first-child { font-size: 9px; letter-spacing: .2em; font-weight: 500; text-transform: uppercase; color: #8e743c; margin: 0 0 15px; }
+.estate-enquiry__header h2 { font: 400 42px/1.08 Georgia, serif; letter-spacing: -.045em; color: #173b32; margin: 0; }
+.estate-enquiry__intro { font-size: 12px; line-height: 1.8; color: #617166; max-width: 430px; margin: 16px 0 0; }
+.estate-enquiry__header > button { position: absolute; top: 27px; right: 28px; width: 38px; height: 38px; min-width: 38px; border-color: #173b3226; color: #173b32; background: transparent; }
+.estate-enquiry__body { max-width: none; padding: 28px 40px 32px; }
+.estate-enquiry .estate-enquiry-form { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.estate-enquiry-form__fields { margin-top: 0; gap: 19px 18px; }
+.estate-enquiry-form--reservation .estate-enquiry-form__fields > label:first-child { grid-column: 1 / -1; }
+.estate-enquiry-form label { font-size: 11px; color: #3b5146; font-weight: 500; gap: 8px; }
+.estate-enquiry-form input, .estate-enquiry-form select, .estate-enquiry-form textarea { border: 1px solid #d8dacf; border-radius: 4px; background: #fffefa; color: #173b32; font-size: 13px; padding-inline: 14px; }
+.estate-enquiry-form input, .estate-enquiry-form select { height: 46px; }
+.estate-enquiry-form textarea { padding-top: 12px; line-height: 1.6; min-height: 88px; }
+.estate-enquiry-form input::placeholder, .estate-enquiry-form textarea::placeholder { color: #89948a; }
+.estate-enquiry-form input:focus, .estate-enquiry-form select:focus, .estate-enquiry-form textarea:focus { border-color: #9a8145; box-shadow: 0 0 0 2px #cdb57428; }
+.estate-enquiry-form > label { margin-top: 19px; }
+.estate-enquiry-form > button[type="submit"] { min-height: 52px; margin-top: 24px; padding: 15px 20px; display: flex; justify-content: space-between; border-radius: 4px; background: #173b32; color: #faf8f3; font-size: 12px; font-weight: 500; }
+.estate-enquiry-form > button[type="submit"]:hover { background: #235145; }
+.estate-enquiry-form > p:last-child { font-size: 10px; line-height: 1.7; color: #718074; margin-top: 14px; }
+.estate-enquiry button:focus-visible { outline: 2px solid #a48643; outline-offset: 3px; }
+.estate-reservation-demo__notice { margin-top: 20px; padding: 12px 14px; border: 1px solid #d8dacf; border-radius: 4px; background: #f1eee5; color: #617166; font-size: 12px; line-height: 1.7; }
+.estate-reservation-demo__success { color: #173b32; }
+.estate-reservation-demo__success svg { color: #277154; }
+.estate-reservation-demo__amount { margin: 16px 0 4px; font: 400 38px/1.2 Georgia, serif; }
+.estate-reservation-demo__success > button { width: 100%; min-height: 52px; margin-top: 24px; border-radius: 4px; background: #173b32; color: #faf8f3; font-size: 12px; }
+@media (max-width: 767px) {
+  .estate-enquiry { padding: 14px; }
+  .estate-enquiry .estate-enquiry__panel { max-height: 94svh !important; border-radius: 6px; }
+  .estate-enquiry__header { padding: 28px 24px 23px; }
+  .estate-enquiry__header h2 { font-size: clamp(28px, 8.7vw, 34px); }
+  .estate-enquiry__header > button { top: 20px; right: 20px; width: 34px; height: 34px; min-width: 34px; }
+  .estate-enquiry__body { padding: 24px; }
+  .estate-enquiry-form__fields { gap: 17px; }
+}

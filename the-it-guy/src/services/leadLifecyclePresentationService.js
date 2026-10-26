@@ -135,6 +135,8 @@ function resolveColumnId(lead = {}, { linkedDeal = null } = {}) {
     if (buyerStageKey) {
       if (
         linkedDeal &&
+        !['buyer onboarding pending', 'transaction setup', 'onboarding', 'onboarding pending'].includes(normalizeKey(linkedDeal?.transaction?.stage || linkedDeal?.stage)) &&
+        buyerStageKey !== BUYER_PROCESS_STAGE_KEYS.buyerDocumentsUploaded &&
         ![
           BUYER_PROCESS_STAGE_KEYS.lost,
           BUYER_PROCESS_STAGE_KEYS.closedWon,
@@ -243,6 +245,8 @@ function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
       BUYER_PROCESS_STAGE_KEYS.qualified,
       BUYER_PROCESS_STAGE_KEYS.viewing,
       BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+      BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSubmitted,
+      BUYER_PROCESS_STAGE_KEYS.buyerDocumentsUploaded,
       BUYER_PROCESS_STAGE_KEYS.offerReceived,
       BUYER_PROCESS_STAGE_KEYS.transaction,
       BUYER_PROCESS_STAGE_KEYS.onHold,
@@ -253,6 +257,8 @@ function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
       BUYER_PROCESS_STAGE_KEYS.qualified,
       BUYER_PROCESS_STAGE_KEYS.viewing,
       BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+      BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSubmitted,
+      BUYER_PROCESS_STAGE_KEYS.buyerDocumentsUploaded,
       BUYER_PROCESS_STAGE_KEYS.offerReceived,
       BUYER_PROCESS_STAGE_KEYS.transaction,
       BUYER_PROCESS_STAGE_KEYS.closedWon,
@@ -261,12 +267,15 @@ function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
     const appointmentStages = new Set([
       BUYER_PROCESS_STAGE_KEYS.viewing,
       BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+      BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSubmitted,
+      BUYER_PROCESS_STAGE_KEYS.buyerDocumentsUploaded,
       BUYER_PROCESS_STAGE_KEYS.offerReceived,
       BUYER_PROCESS_STAGE_KEYS.transaction,
       BUYER_PROCESS_STAGE_KEYS.closedWon,
       BUYER_PROCESS_STAGE_KEYS.closedLost,
     ])
     const dealStages = new Set([
+      BUYER_PROCESS_STAGE_KEYS.buyerDocumentsUploaded,
       BUYER_PROCESS_STAGE_KEYS.transaction,
       BUYER_PROCESS_STAGE_KEYS.closedWon,
       BUYER_PROCESS_STAGE_KEYS.closedLost,

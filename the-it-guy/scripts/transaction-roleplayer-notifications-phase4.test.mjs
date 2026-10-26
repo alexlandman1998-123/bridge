@@ -70,7 +70,7 @@ for (const expectedSql of [
 for (const expectedHandler of [
   'renderBridgeEmailLayout',
   'resolveEmailBranding',
-  'formatEmailSender',
+  'resolveAudienceEmailSender',
   'bridge_queue_transaction_stalled_notifications_phase4',
   'bridge_claim_transaction_operations_notifications_phase4',
   'transaction_operations_dispatch',

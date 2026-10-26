@@ -1,0 +1,44 @@
+.mobile-connect-sheet.ui-modal { width: min(100%, 420px); border: 1px solid #e2e7e3; border-radius: 18px; background: #fff; }
+.mobile-connect-sheet .ui-modal-head { align-items: center; padding: 10px 20px; border-bottom: 0; }
+.mobile-connect-sheet .ui-modal-head h3 { margin: 0; color: #65756b; font-size: 12px; font-weight: 500; }
+.mobile-connect-sheet .ui-modal-head button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; }
+.mobile-connect-sheet .ui-modal-body { padding: 0; }
+.mobile-connect-identity { padding: 22px 24px 20px; color: #fff; background: radial-gradient(ellipse at top right, #315b47 0, transparent 65%), #142820; }
+.mobile-connect-agency { margin: 0 0 18px; color: #cbdfd1; font-size: 11px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; }
+.mobile-connect-person { display: flex; align-items: center; gap: 14px; }
+.mobile-connect-avatar { display: grid; place-items: center; flex: 0 0 62px; height: 62px; overflow: hidden; border: 1px solid #ffffff40; border-radius: 14px; background: #ffffff12; color: #ecf4ee; font-size: 22px; font-weight: 500; }
+.mobile-connect-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.mobile-connect-person > div:last-child { min-width: 0; }
+.mobile-connect-person h2 { margin: 0; color: #fff; font-size: 23px; line-height: 1.2; font-weight: 550; letter-spacing: -.5px; overflow-wrap: anywhere; }
+.mobile-connect-person p { margin: 6px 0 0; color: #c5d8cc; font-size: 12px; line-height: 1.5; }
+.mobile-connect-content { padding: 20px 24px 18px; text-align: center; }
+.mobile-connect-qr { width: min(100%, 232px); margin: 0 auto 10px; background: #fff; }
+.mobile-connect-qr img { display: block; width: 100%; height: auto; aspect-ratio: 1; }
+.mobile-connect-content h3 { margin: 0; color: #19251f; font-size: 17px; font-weight: 600; letter-spacing: -.25px; }
+.mobile-connect-content > p { margin: 7px 0 0; color: #718077; font-size: 11px; line-height: 1.6; }
+.mobile-connect-content p strong { font-weight: 500; color: #3d5948; }
+.mobile-connect-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
+.mobile-connect-actions button, .mobile-connect-state button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 10px; border: 1px solid #dce5de; border-radius: 8px; background: #fff; color: #315d41; font-size: 12px; font-weight: 500; cursor: pointer; }
+.mobile-connect-actions button:first-child, .mobile-connect-state button { border-color: #218158; background: #218158; color: #fff; }
+.mobile-connect-feedback:empty { display: none; }
+.mobile-connect-link { width: 100%; margin-top: 12px; padding: 10px; border: 1px solid #dce5de; border-radius: 6px; color: #315d41; font-size: 12px; }
+.mobile-connect-sheet button:focus-visible { outline: 2px solid #218158; outline-offset: 2px; }
+.mobile-connect-state { display: grid; justify-items: center; gap: 16px; padding: 32px 24px; text-align: center; color: #65756b; }
+.mobile-connect-state > svg { color: #218158; }
+.mobile-connect-state h2 { margin: 0; color: #19251f; font-size: 20px; }
+.mobile-connect-state p { margin: 0; font-size: 13px; line-height: 1.6; }
+.mobile-connect-state button { width: 100%; }
+.mobile-connect-state .mobile-connect-refresh { color: #315d41; border-color: #dce5de; background: #fff; }
+.mobile-connect-qr-disabled { padding: 24px 0; color: #65756b; font-size: 12px; }
+.mobile-page-menu .mobile-connect-menu-button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; margin: 12px 0 4px; border: 1px solid #d8e5dc; border-radius: 10px; background: #f2f7f3; color: #254e37; text-align: left; cursor: pointer; }
+.mobile-connect-menu-button > span { flex: 1; text-align: left; }
+.mobile-connect-menu-button strong, .mobile-connect-menu-button small { display: block; }
+.mobile-connect-menu-button strong { font-size: 14px; font-weight: 600; }
+.mobile-connect-menu-button small { margin-top: 3px; color: #718077; font-size: 11px; }
+@media (max-width: 600px) { .ui-modal-overlay:has(> .mobile-connect-sheet) { align-items: end; padding: 12px; } .mobile-connect-sheet.ui-modal { margin: 0; max-height: calc(100dvh - 24px); } }
+@media (max-height: 700px) { .mobile-connect-identity { padding: 16px 20px; } .mobile-connect-agency { margin-bottom: 10px; } .mobile-connect-content { padding: 14px 20px; } .mobile-connect-qr { max-width: 180px; } .mobile-connect-actions { margin-top: 14px; } }
+
+.mobile-connect-more-button { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 76px; padding: 16px 20px; border: 1px solid #d8e5dc; border-radius: 12px; background: #f2f7f3; color: #254e37; text-align: left; }
+.mobile-connect-more-button strong, .mobile-connect-more-button small { display: block; }
+.mobile-connect-more-button strong { font-size: 15px; font-weight: 600; }
+.mobile-connect-more-button small { margin-top: 4px; color: #718077; font-size: 12px; }

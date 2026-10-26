@@ -127,16 +127,66 @@ body .arch9-access.auth-page .arch9-access-main .arch9-access-secondary { displa
 body .arch9-access.auth-page .arch9-access-main .auth-feedback { margin: 0; border-radius: 10px; font-size: 13px; line-height: 1.6; }
 body .arch9-access.auth-page .arch9-access-main .auth-security-notice { margin: 0; font-size: 13px; }
 body .arch9-access.auth-page .arch9-access-main .signup-stepper { width: 100%; margin: 0 0 12px; }
+body .arch9-access.auth-page .arch9-access-main .signup-stepper-item.active,
+body .arch9-access.auth-page .arch9-access-main .signup-stepper-item.complete { color: var(--access-accent); }
+body .arch9-access.auth-page .arch9-access-main .signup-stepper-item.active .signup-stepper-node { border-color: var(--access-accent); background: var(--access-accent); color: #fff; box-shadow: none; }
+body .arch9-access.auth-page .arch9-access-main .signup-stepper-item.complete .signup-stepper-node { border-color: #b6d6c3; background: #f0f6f0; color: var(--access-accent); box-shadow: none; }
+body .arch9-access.auth-page .arch9-access-main .signup-stepper-line::after { background: var(--access-accent); }
 body .arch9-access.auth-page .arch9-access-main .signup-role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 body .arch9-access.auth-page .arch9-access-main .signup-role-grid-wrap { max-height: none; overflow: visible; }
 body .arch9-access.auth-page .arch9-access-main .signup-role-card { min-height: 88px; padding: 16px; border-color: #dce3dc; border-radius: 12px; background: #fff; box-shadow: 0 2px 3px #15262103; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-card { min-height: 104px; padding: 16px; border-color: #dce3dc; border-radius: 12px; background: #fff; box-shadow: 0 2px 3px #15262103; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-check { color: var(--access-accent); }
 body .arch9-access.auth-page .arch9-access-main .signup-role-card.active,
 body .arch9-access.auth-page .arch9-access-main .signup-position-card.active { border-color: #166b50; background: #f0f6f0; box-shadow: none; }
 body .arch9-access.auth-page .arch9-access-main .signup-role-card-icon,
 body .arch9-access.auth-page .arch9-access-main .signup-position-icon { color: #166b50; background: #edf4ed; box-shadow: none; }
 body .arch9-access.auth-page .arch9-access-main .auth-action-row { flex-wrap: wrap; }
 body .arch9-access.auth-page .arch9-access-main .auth-action-row .auth-submit { min-width: 0; flex: 1; }
-.arch9-access.auth-page.auth-page-signup .arch9-access-content { max-width: 540px; }
+.arch9-access.auth-page.auth-page-signup .arch9-access-content { max-width: 600px; }
+
+/* Keep desktop signup comfortably inside the viewport without hiding content. */
+@media (min-width: 768px) {
+  .arch9-access.auth-page-signup .arch9-access-story { min-height: 0; }
+  .arch9-access.auth-page-signup .arch9-access-story-copy { padding-block: clamp(24px, 6vh, 70px); }
+  .arch9-access.auth-page-signup .arch9-access-content { padding-block: 20px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card { gap: 24px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card .auth-form { gap: 28px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-stepper { margin-bottom: 16px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-field-grid { gap: 24px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-role-grid,
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-position-grid { gap: 20px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-choice-stack { gap: 24px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-action-row { gap: 16px; }
+}
+
+@media (min-width: 768px) and (max-height: 760px) {
+  .arch9-access.auth-page-signup .arch9-access-main { padding-block: 16px 12px; }
+  .arch9-access.auth-page-signup .arch9-access-content { padding-block: 8px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card { gap: 18px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card .auth-form { gap: 22px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card-head h2 { font-size: 32px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-form input { min-height: 50px; padding-block: 12px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-stepper { margin-bottom: 12px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-choice-stack { gap: 20px; }
+}
+
+@media (min-width: 768px) and (max-height: 680px) {
+  .arch9-access.auth-page-signup .arch9-access-main { padding-block: 12px 8px; }
+  .arch9-access.auth-page-signup .arch9-access-content { padding-block: 4px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card { gap: 12px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card .auth-form { gap: 12px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card-head.compact { gap: 6px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-card-head h2 { font-size: 28px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-position-card { min-height: 96px; padding: 12px; gap: 10px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-form label { gap: 8px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-form input { min-height: 44px; padding-block: 10px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-submit { min-height: 48px; padding-block: 12px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-footer button { min-height: 36px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-stepper { margin-bottom: 8px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .auth-field-grid { gap: 16px; }
+  body .arch9-access.auth-page-signup .arch9-access-main .signup-choice-stack { gap: 16px; }
+}
 
 @media (max-width: 980px) {
   body .arch9-access.auth-page { grid-template-columns: minmax(0, 42fr) minmax(0, 58fr); }
@@ -157,6 +207,14 @@ body .arch9-access.auth-page .arch9-access-main .auth-action-row .auth-submit { 
   body .arch9-access.auth-page .arch9-access-main .arch9-access-heading h1 { font-size: 36px; }
   .arch9-access-footer { font-size: 10px; }
   body .arch9-access.auth-page .arch9-access-main .signup-role-grid { grid-template-columns: 1fr; }
+  .arch9-access.auth-page-signup .arch9-access-content { padding-block: 32px; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 0; padding: 0; margin: 0 0 8px; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper-item-wrap { display: block; position: relative; min-width: 0; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper-item { display: grid; justify-items: center; width: 100%; min-width: 0; gap: 8px; transform: none; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper-node { position: relative; z-index: 1; width: 28px; height: 28px; font-size: 12px; box-shadow: none; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper-copy { line-height: 16px; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper-copy strong { font-size: 12px; line-height: 16px; }
+  body .arch9-access.auth-page .arch9-access-main .signup-stepper-line { display: block; position: absolute; top: 13px; left: calc(50% + 20px); width: calc(100% - 40px); min-width: 0; height: 2px; margin: 0; background: #dce3dc; }
 }
 
 @media (max-width: 360px) {
@@ -170,6 +228,61 @@ body .arch9-access.auth-page .arch9-access-main .auth-action-row .auth-submit { 
   .arch9-access-content { padding-block: 36px; }
 }
 
+/* Use spare height for spacing so the session notice fits with the login form. */
+.arch9-access.auth-page-login .arch9-access-content:has(.auth-security-notice) {
+  padding-block: clamp(0px, calc((100dvh - 720px) / 2), 64px);
+}
+
+@media (max-height: 760px) {
+  .arch9-access.auth-page-login:has(.auth-security-notice) .arch9-access-story { min-height: 0; }
+  .arch9-access.auth-page-login:has(.auth-security-notice) .arch9-access-main {
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  body .arch9-access.auth-page-login .arch9-access-main .auth-card:has(.auth-security-notice) { gap: 12px; }
+  body .arch9-access.auth-page-login .arch9-access-main .auth-card:has(.auth-security-notice) .auth-form { gap: 18px; }
+  body .arch9-access.auth-page-login .arch9-access-main .auth-card:has(.auth-security-notice) .auth-field-stack { gap: 16px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   body .arch9-access.auth-page .arch9-access-main input, body .arch9-access.auth-page .arch9-access-main button { transition: none; }
+}
+/* Email confirmation uses one accessible field for typing, pasting and autofill. */
+body .arch9-access.auth-page .auth-code-card { max-width: 460px; gap: 24px; }
+body .arch9-access.auth-page .auth-code-email { display: block; margin-top: 4px; color: #182b24; font-weight: 600; overflow-wrap: anywhere; }
+body .arch9-access.auth-page .arch9-access-main .auth-code-card .auth-form { gap: 12px; }
+body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form .auth-code-input { width: 100%; min-width: 0; height: 76px; padding: 14px 12px 14px 26px; border: 1px solid #bfcec4; border-radius: 12px; background: #fff; color: #102b21; text-align: center; font: 600 32px/1.2 ui-monospace, monospace; letter-spacing: .45em; }
+body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form .auth-code-input:focus { outline: 3px solid #166b5026; border-color: #166b50; }
+body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form .auth-code-input::placeholder { color: #c1ccc5; }
+body .arch9-access.auth-page .arch9-access-main .auth-code-resend { flex-direction: column; gap: 0; }
+body .arch9-access.auth-page .arch9-access-main .auth-code-resend button:disabled { cursor: default; color: #6d7d73; }
+body .arch9-access.auth-page .auth-code-security { display: flex; align-items: flex-start; justify-content: center; gap: 7px; margin: 0; color: #69766d; font-size: 11px; line-height: 1.5; }
+body .arch9-access.auth-page .auth-code-security svg { flex-shrink: 0; }
+body .arch9-access.auth-page .auth-code-back { display: flex; align-items: center; align-self: center; justify-content: center; gap: 8px; min-height: 44px; color: #166b50; font-size: 12px; font-weight: 600; }
+
+body .arch9-access.auth-page .arch9-access-main .auth-account-creation { display: grid; gap: 26px; padding: 24px 0; }
+body .arch9-access.auth-page .arch9-access-main .auth-creation-track { height: 4px; overflow: hidden; border-radius: 4px; background: #e1e9e2; }
+body .arch9-access.auth-page .arch9-access-main .auth-creation-track > span { display: block; width: 38%; height: 100%; border-radius: inherit; background: #166b50; animation: arch9-account-loading 1.6s ease-in-out infinite; }
+@keyframes arch9-account-loading {
+  from { transform: translateX(-105%); }
+  to { transform: translateX(365%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body .arch9-access.auth-page .arch9-access-main .auth-creation-track > span { width: 100%; animation: none; opacity: .65; }
+}
+
+/* Keep email verification within the viewport, with compact spacing on short screens. */
+body .arch9-access.auth-page-verify_email { height: 100dvh; min-height: 0; overflow: hidden; }
+body .arch9-access.auth-page-verify_email .arch9-access-story { min-height: 0; }
+body .arch9-access.auth-page-verify_email .arch9-access-main { height: 100%; min-height: 0; }
+body .arch9-access.auth-page-verify_email .arch9-access-content { min-height: 0; padding-block: clamp(0px, calc((100dvh - 650px) / 2), 32px); overflow-y: auto; }
+body .arch9-access.auth-page-verify_email .arch9-access-main .auth-code-card { gap: 16px; }
+body .arch9-access.auth-page-verify_email .arch9-access-main .auth-code-card .auth-form > div:empty { display: none; }
+@media (max-height: 700px) {
+  body .arch9-access.auth-page-verify_email .arch9-access-main { padding-block: 16px; }
+  body .arch9-access.auth-page-verify_email .arch9-access-main .auth-code-card { gap: 10px; }
+  body .arch9-access.auth-page-verify_email .arch9-access-main .auth-card-head h2 { font-size: 30px; }
+  body .arch9-access.auth-page-verify_email .arch9-access-main .auth-code-card .auth-form { gap: 8px; }
+  body .arch9-access.auth-page-verify_email .arch9-access-main .auth-card .auth-form .auth-code-input { height: 60px; }
+  body .arch9-access.auth-page-verify_email .arch9-access-main .auth-submit { min-height: 48px; padding-block: 10px; }
 }

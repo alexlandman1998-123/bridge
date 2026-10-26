@@ -159,3 +159,21 @@ test('submitted bond application is informational, not blocking', () => {
 })
 
 console.log('client portal next actions phase 3 tests passed')
+
+
+test('core buyer portal uses persisted transaction onboarding state while the form is still loading', () => {
+  for (const status of ['awaiting_signed_otp', 'signed_otp_received']) {
+    const actions = generateClientPortalNextActions({ workspaceMode: 'buying', onboarding: null,
+      transaction: { onboarding_status: status, finance_type: 'cash' }, documentCenter: { requiredDocuments: [] } })
+    assert.equal(actions.some(action => action.id === 'buyer_onboarding_required'), false)
+  }
+  const pending = generateClientPortalNextActions({ workspaceMode: 'buying', transaction: { onboarding_status: 'awaiting_client_onboarding' } })
+  assert.equal(pending.some(action => action.id === 'buyer_onboarding_required'), true)
+})
+
+
+test('team-provided shared documents never produce a buyer upload action', () => {
+  const actions = generateClientPortalNextActions({ workspaceMode: 'buying', transaction: { onboarding_status: 'awaiting_signed_otp' },
+    documentCenter: { requiredDocuments: [{ key: 'body_corporate_rules', status: 'required', waitingForTeam: true }] } })
+  assert.equal(actions.some(action => action.id === 'doc_upload_body_corporate_rules'), false)
+})

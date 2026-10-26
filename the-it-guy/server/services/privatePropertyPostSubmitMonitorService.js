@@ -48,7 +48,7 @@ export function parsePrivatePropertyPostSubmitEvents(xml = '') {
   ]
   return blocks.map((block) => {
     const eventDescription = extractPrivatePropertyXmlTag(block, 'EventDescription') || extractPrivatePropertyXmlTag(block, 'Description')
-    const referenceFromDescription = /^T\d+/i.test(eventDescription) ? eventDescription : ''
+    const referenceFromDescription = /^(?:T|RR)\d+$/i.test(eventDescription) ? eventDescription : ''
     return {
       listingFeedEventType: extractPrivatePropertyXmlTag(block, 'ListingFeedEventType'),
       eventType: extractPrivatePropertyXmlTag(block, 'EventType'),
@@ -308,12 +308,14 @@ export async function runPrivatePropertyPostSubmitMonitor({
 
 export async function readPrivatePropertyStoredStatus({ client, listingId, environment = 'production' } = {}) {
   const { data, error } = await client.from('private_property_listing_syncs')
-    .select('external_status,is_on_portal,private_property_ref,last_checked_at,submitted_at,last_successful_sync_at,last_error')
+    .select('property_id,branch_guid,listing_type,external_status,is_on_portal,private_property_ref,last_checked_at,submitted_at,last_successful_sync_at,last_error')
     .eq('private_listing_id', listingId).eq('environment', normalizeEnvironment(environment)).maybeSingle()
   if (error) throw error
   const externalStatus = data?.external_status || ''
   return {
     cached: true, generatedAt: data?.last_checked_at || '', externalStatus,
+    propertyId: data?.property_id || '', branchGuid: data?.branch_guid || '', listingType: data?.listing_type || '',
+
     status: data?.last_error || ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING',
     statusProbe: { privatePropertyRef: data?.private_property_ref || '' },
     publication: { submittedAt: data?.submitted_at || '', lastSyncedAt: data?.last_successful_sync_at || '', lastError: data?.last_error || '' },

@@ -4,6 +4,13 @@ import { createServer } from 'vite'
 const server = await createServer({
   root: process.cwd(),
   logLevel: 'silent',
+  plugins: [{
+    name: 'isolated-document-lifecycle-client',
+    enforce: 'pre',
+    load(id) {
+      if (id.endsWith('/src/lib/supabaseClient.js')) return 'export const isSupabaseConfigured = true; export const supabase = null;'
+    },
+  }],
   server: { middlewareMode: true },
 })
 

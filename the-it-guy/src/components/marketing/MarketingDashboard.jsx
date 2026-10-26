@@ -62,7 +62,7 @@ export default function MarketingDashboard({ onNavigate }) {
   }, [organisationId, range, customRange.end, customRange.start, reloadKey])
   const sourceTotal = useMemo(() => (data?.leadSources || []).reduce((sum, row) => sum + row.count, 0), [data])
   const metrics = data?.summary || {}
-  const createCampaign = () => onNavigate('email')
+  const createCampaign = () => onNavigate('campaigns')
   return <div className="wa-page marketing-dashboard mo-dashboard">
     <header className="mo-header"><div className="mo-header-actions"><label className="mo-period"><CalendarDays size={15} /><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value)}>{MARKETING_DATE_RANGES.map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</select><ChevronDown size={14} /></label>{range === 'custom' ? <div className="mo-custom-range"><label>From<input type="date" value={customRange.start} max={customRange.end} onChange={(event) => setCustomRange((value) => ({ ...value, start: event.target.value }))} /></label><label>To<input type="date" value={customRange.end} min={customRange.start} max={inputDate(new Date())} onChange={(event) => setCustomRange((value) => ({ ...value, end: event.target.value }))} /></label></div> : null}<button className="mo-create" type="button" onClick={createCampaign}><Plus size={17} />Create campaign</button></div></header>
     {error ? <section className="mo-error">{error}<button type="button" onClick={() => setReloadKey((value) => value + 1)}>Retry</button></section> : null}

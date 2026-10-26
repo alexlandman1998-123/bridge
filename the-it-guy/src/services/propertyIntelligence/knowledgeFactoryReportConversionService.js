@@ -28,8 +28,16 @@ async function call(body) {
   return payload || {};
 }
 
+export function listKnowledgeFactorySellerLeadOptions({organisationId,propertyId,search} = {}) {
+  return call({action:'seller_options',organisationId:text(organisationId),propertyId:text(propertyId),search:text(search)});
+}
+
 export function listKnowledgeFactoryCompletedReports({ organisationId } = {}) {
   return call({ action: "list", organisationId: text(organisationId) });
+}
+
+export function fileKnowledgeFactoryReportToSellerLead({ organisationId, reportResultId } = {}) {
+  return call({ action: 'file_seller', organisationId: text(organisationId), reportResultId: text(reportResultId) });
 }
 
 export function downloadKnowledgeFactoryCompletedReport({

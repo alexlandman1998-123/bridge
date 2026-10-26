@@ -314,6 +314,14 @@ export function createPrivatePropertyClient({
     callSoap,
     createToken: (options = {}) => tokenFactory({ username: user, password: pass, ...options }),
     getCountries: () => callSoap('GetCountries', tokenXml()),
+    getListingLeadDetailsFeed: ({ startDate, continuationKey = '0' } = {}) => {
+      if (!startDate || !Number.isFinite(Date.parse(startDate))) throw new Error('Private Property lead start date is required.')
+      return callSoap('ListingLeadDetailsFeed', [
+        `<StartDate>${escapePrivatePropertyXml(new Date(startDate).toISOString())}</StartDate>`,
+        `<ContinuationKey>${escapePrivatePropertyXml(continuationKey || '0')}</ContinuationKey>`,
+        tokenXml(),
+      ].join(''))
+    },
     getListingPerformanceStats: ({ propertyRefs, date } = {}) => {
       if (!Array.isArray(propertyRefs) || !propertyRefs.length || propertyRefs.length > 25) throw new Error('Supply 1–25 Private Property references.')
       const refs = propertyRefs.map(normalizePrivatePropertyText)

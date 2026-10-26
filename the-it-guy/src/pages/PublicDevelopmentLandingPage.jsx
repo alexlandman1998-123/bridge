@@ -1,23 +1,12 @@
-import { ArrowLeft, ArrowRight, ChevronRight } from "lucide-react";
-import { useRef, useState } from "react";
+import PublicEstateFeatures from "../components/developments/PublicEstateFeatures.jsx";
+import PublicEstateHero, { PublicEstateLocation } from "../components/developments/PublicEstateHero.jsx";
+import { ArrowRight } from "lucide-react";
+import { useState } from "react";
 import PublicDevelopmentVisualExplorer from "../components/developments/PublicDevelopmentVisualExplorer.jsx";
+import PublicDevelopmentGallery from "../components/developments/PublicDevelopmentGallery.jsx";
 import PublicDevelopmentEnquiryDrawer from "../components/developments/PublicDevelopmentEnquiryDrawer.jsx";
 
-const STATUS = {
-  available: ["Available", "bg-[#e7f4eb] text-[#286647]", "bg-[#38a467]"],
-  reserved: ["Reserved", "bg-[#faf0df] text-[#99621b]", "bg-[#e5a13d]"],
-  sold: ["Sold", "bg-[#edf0f3] text-[#607080]", "bg-[#8391a0]"],
-  unreleased: ["Not released", "bg-[#edf0f3] text-[#607080]", "bg-[#8391a0]"],
-};
 const text = (value) => String(value || "").trim();
-const keyFor = (status) => {
-  const value = text(status).toLowerCase();
-  if (value.includes("reserve") || value.includes("offer")) return "reserved";
-  if (value.includes("sold") || value.includes("complete")) return "sold";
-  if (value.includes("unreleased") || value.includes("draft"))
-    return "unreleased";
-  return "available";
-};
 const money = (value, compact = false) => {
   const amount = Number(value);
   if (!amount) return "Price on request";
@@ -73,11 +62,12 @@ export default function PublicDevelopmentLandingPage({
   enquiry,
   freshness,
   renderVisualMap,
+  estatePresentation = false,
+  onSimulateReservation,
 }) {
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [availableOnly, setAvailableOnly] = useState(false);
   const [enquiryOpen, setEnquiryOpen] = useState(false);
-  const gallery = useRef(null);
+  const [reservationUnit, setReservationUnit] = useState(null);
+
   const overview = marketing.listingOverview || {};
   const developmentLogoLight = text(media.developmentLogoLightUrl || media.developmentLogoUrl);
   const developmentLogoDark = text(media.developmentLogoDarkUrl || developmentLogoLight);
@@ -94,22 +84,21 @@ export default function PublicDevelopmentLandingPage({
   const types = groups.map((items) => items[0].unitType || "Residence");
   const bedroomLabels = types.map(beds).filter(Boolean);
   const bedroomSummary = bedroomLabels.length === 1 ? bedroomLabels[0].replace(/ Bedroom(s)?$/i, "") : bedroomLabels.length ? bedroomLabels.join(" · ").replaceAll(" Bedroom", "") : "—";
-  const live = inventory.filter(
-    (unit) =>
-      (typeFilter === "all" || unit.unitType === typeFilter) &&
-      (!availableOnly || keyFor(unit.status) === "available"),
-  );
   const location =
     data.location ||
     overview.locationLabel ||
     [data.suburb, data.city].filter(Boolean).join(", ");
   const scrollToEnquiry = (event) => {
     event?.preventDefault();
+    setReservationUnit(null);
     setEnquiryOpen(true);
   };
+  const reserveUnit = (unit) => { setReservationUnit(unit); setEnquiryOpen(true); };
   return (
     <main className="min-h-screen bg-[#f5f2eb] text-[#153d33]">
-      <section
+      {estatePresentation ? (
+        <PublicEstateHero name={data.name} logo={developmentLogoLight} hero={hero} location={location} fromPrice={fromPrice} inventory={inventory} available={available} onEnquire={scrollToEnquiry} />
+      ) : <section
         id="overview"
         className="relative min-h-[86vh] overflow-hidden bg-[#14352c] text-white"
       >
@@ -182,15 +171,18 @@ export default function PublicDevelopmentLandingPage({
             </div>
           </div>
         </div>
-      </section>
+      </section>}
       <PublicDevelopmentVisualExplorer
+        initialResidentialFocus={estatePresentation}
+        estatePresentation={estatePresentation}
+        onReserveUnit={reserveUnit}
         inventory={inventory}
         media={media}
         enquiry={enquiry}
         freshness={freshness}
         visualMapOverride={renderVisualMap}
       />
-      <section className="border-y border-[#e1dacd] bg-[#ece7dc]">
+      {!estatePresentation ? <section className="border-y border-[#e1dacd] bg-[#ece7dc]">
         <div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-y divide-[#dcd3c3] px-5 md:grid-cols-4 md:divide-y-0 md:px-8">
           {[
             [inventory.length || data.totalUnitsExpected, "Residences"],
@@ -206,104 +198,10 @@ export default function PublicDevelopmentLandingPage({
             </div>
           ))}
         </div>
-      </section>
-      <section id="gallery" className="py-8">
-        <div className="mx-auto flex max-w-[1280px] items-end justify-between px-5 md:px-8">
-          <div>
-            <Eyebrow>Gallery</Eyebrow>
-            <h2 className="mt-3 font-serif text-4xl md:text-5xl">
-              A glimpse of life at {data.name}.
-            </h2>
-          </div>
-          <div className="hidden gap-2 md:flex">
-            <button
-              onClick={() =>
-                gallery.current?.scrollBy({ left: -360, behavior: "smooth" })
-              }
-              className="border border-[#cab999] p-2.5"
-            >
-              <ArrowLeft size={16} />
-            </button>
-            <button
-              onClick={() =>
-                gallery.current?.scrollBy({ left: 360, behavior: "smooth" })
-              }
-              className="border border-[#cab999] p-2.5"
-            >
-              <ArrowRight size={16} />
-            </button>
-          </div>
-        </div>
-        <div
-          ref={gallery}
-          className="mt-7 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-3 md:gap-6 md:px-8"
-          style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
-        >
-          {galleryImages.map((url, index) => (
-              <img
-                key={`${url}-${index}`}
-                src={url}
-                alt={`${data.name} gallery`}
-                className="h-56 w-[280px] shrink-0 snap-center rounded-[18px] object-cover md:h-96 md:w-2/3"
-              />
-            ))}
-        </div>
-      </section>
-      <section
-        id="live-availability"
-        className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"
-      >
-        <Eyebrow>Live availability</Eyebrow>
-        <h2 className="mt-3 font-serif text-4xl text-[#111111] md:text-5xl">
-          Choose your residence.
-        </h2>
-        <div className="mt-7 flex flex-wrap gap-2">
-          {["all", ...types].map((item) => (
-            <button
-              key={item}
-              onClick={() => setTypeFilter(item)}
-              className={`rounded-full px-4 py-2 text-xs font-semibold ${typeFilter === item ? "bg-[#143d33] text-white" : "bg-[#e9e4da] text-[#55685e]"}`}
-            >
-              {item === "all" ? "All" : beds(item)}
-            </button>
-          ))}
-          <label className="ml-2 flex items-center gap-2 py-2 text-xs text-[#63766c]">
-            <input
-              type="checkbox"
-              checked={availableOnly}
-              onChange={(event) => setAvailableOnly(event.target.checked)}
-            />{" "}
-            Available only
-          </label>
-        </div>
-        <div className="mt-7 overflow-x-auto border-y border-[#e1d9cd]">
-          <div className="min-w-[700px]">
-            {live.map((unit) => {
-              const [label, chip] = STATUS[keyFor(unit.status)];
-              return (
-                <a
-                  key={unit.id}
-                  href="#enquire"
-                  onClick={scrollToEnquiry}
-                  className="grid grid-cols-[.75fr_1.2fr_.65fr_.6fr_.85fr_.75fr_18px] items-center gap-3 border-b border-[#e9e2d7] px-3 py-4 text-sm last:border-0 hover:bg-[#faf8f3]"
-                >
-                  <strong>{unit.unitNumber}</strong>
-                  <span>{unit.unitType || "Residence"}</span>
-                  <span>{unit.block || "—"}</span>
-                  <span>{unit.sizeSqm ? `${unit.sizeSqm} m²` : "—"}</span>
-                  <strong>{money(unit.price)}</strong>
-                  <span
-                    className={`w-fit rounded-full px-2 py-1 text-[.64rem] font-semibold ${chip}`}
-                  >
-                    {label}
-                  </span>
-                  <ChevronRight size={16} className="text-[#8b988f]" />
-                </a>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      </section> : null}
+      <PublicDevelopmentGallery showLabel={!estatePresentation} name={data.name} images={galleryImages} />
+      {estatePresentation ? <PublicEstateFeatures /> : null}
+      {estatePresentation ? <PublicEstateLocation location={location} onEnquire={scrollToEnquiry} /> : null}
       <footer id="enquire" className="bg-[#063a31] text-[#f7f0e3]">
         <div className="mx-auto flex max-w-[1280px] flex-col gap-8 px-5 py-12 md:flex-row md:items-end md:justify-between md:px-8 md:py-14">
           <div className="space-y-4">
@@ -319,6 +217,9 @@ export default function PublicDevelopmentLandingPage({
         </div>
       </footer>
       <PublicDevelopmentEnquiryDrawer
+        estatePresentation={estatePresentation}
+        reservationUnit={reservationUnit ? inventory.find((unit) => String(unit.id) === String(reservationUnit.id)) || reservationUnit : null}
+        onSimulateReservation={onSimulateReservation}
         open={enquiryOpen}
         onClose={() => setEnquiryOpen(false)}
         developmentName={data.name}

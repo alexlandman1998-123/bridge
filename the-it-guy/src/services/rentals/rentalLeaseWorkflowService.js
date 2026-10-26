@@ -19,9 +19,13 @@ function isRentalLeaseWorkflowActivity(activity = {}) {
 
 export async function listRentalLeaseWorkflowsForAgent(agentId, options = {}) {
   const rentalListings = await listRentalListingsForAgent(agentId, options)
+  options.signal?.throwIfAborted()
   const leaseGroups = await Promise.all(
     rentalListings.map(async (listing) => {
-      const activities = await getPrivateListingActivity(listing.id).catch(() => [])
+      const activities = await (options.readActivity ? options.readActivity(listing.id) : getPrivateListingActivity(listing.id, options.signal ? { signal: options.signal } : undefined)).catch(() => {
+        options.signal?.throwIfAborted()
+        return []
+      })
       return activities
         .filter(isRentalLeaseWorkflowActivity)
         .map((activity) => mapRentalLeaseWorkflowActivity(activity, listing))

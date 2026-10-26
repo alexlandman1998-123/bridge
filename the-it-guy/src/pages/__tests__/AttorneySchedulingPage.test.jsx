@@ -39,7 +39,7 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 beforeEach(() => {
   mocks.load.mockReset().mockResolvedValue(data)
   mocks.resources.mockReset().mockResolvedValue([])
@@ -47,13 +47,35 @@ beforeEach(() => {
 })
 
 describe('Attorney calendar background reconciliation', () => {
+  it('keeps automatic refresh bursts behind outstanding boardroom reads', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    render(<MemoryRouter><AttorneySchedulingPage /></MemoryRouter>)
+    await act(async () => {})
+    const resources = deferred()
+    mocks.resources.mockReturnValue(resources.promise)
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    const refresh = () => mocks.liveRefresh.mock.calls.at(-1)[0].onRefresh()
+    act(() => { void refresh() })
+    await act(async () => {})
+    expect(mocks.load).toHaveBeenCalledTimes(2)
+    for (let n = 0; n < 20; n++) {
+      act(() => { void refresh() })
+      await act(async () => vi.advanceTimersByTimeAsync(150))
+    }
+    expect(mocks.load).toHaveBeenCalledTimes(2)
+    await act(async () => resources.resolve([]))
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(mocks.load).toHaveBeenCalledTimes(3)
+  })
+
   it('shows the confirmed save immediately and retains calendar state when refresh fails', async () => {
     const refresh = deferred()
     mocks.load.mockResolvedValueOnce(data).mockReturnValueOnce(refresh.promise)
     render(<MemoryRouter><AttorneySchedulingPage /></MemoryRouter>)
     await screen.findByRole('button', { name: 'Week' })
-    expect(mocks.resources).toHaveBeenCalledWith('agency-1', { includeInactive: false })
-    expect(mocks.resources).toHaveBeenCalledWith('firm-org-1', { includeInactive: false })
+    expect(mocks.resources).toHaveBeenCalledWith('agency-1', expect.objectContaining({ includeInactive: false, signal: expect.any(AbortSignal) }))
+    expect(mocks.resources).toHaveBeenCalledWith('firm-org-1', expect.objectContaining({ includeInactive: false, signal: expect.any(AbortSignal) }))
     expect(mocks.resources).not.toHaveBeenCalledWith('firm-1', expect.anything())
     expect(mocks.liveRefresh).toHaveBeenLastCalledWith(expect.objectContaining({ firmId: 'firm-1', enabled: true }))
     fireEvent.click(screen.getByRole('button', { name: 'Week' }))
@@ -67,16 +89,20 @@ describe('Attorney calendar background reconciliation', () => {
     expect(screen.getByRole('button', { name: 'Month' })).toBeTruthy()
   })
 
-  it('ignores an older refresh that resolves after a newer snapshot', async () => {
+  it('queues a second refresh behind the complete active workspace read', async () => {
     const older = deferred()
     const newer = deferred()
     mocks.load.mockResolvedValueOnce(data).mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise)
     render(<MemoryRouter><AttorneySchedulingPage /></MemoryRouter>)
     await screen.findByRole('button', { name: 'Week' })
     fireEvent.click(screen.getByRole('button', { name: 'Refresh fixture' }))
+    await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'Refresh fixture' }))
-    await act(async () => { newer.resolve({ ...data, appointmentQueue: [{ id: 'saved-1', status: 'Confirmed', assignedAttorneyName: 'Attorney A' }] }) })
+    await act(async () => {})
+    expect(mocks.load).toHaveBeenCalledTimes(2)
     await act(async () => { older.resolve(data) })
+    expect(mocks.load).toHaveBeenCalledTimes(3)
+    await act(async () => { newer.resolve({ ...data, appointmentQueue: [{ id: 'saved-1', status: 'Confirmed', assignedAttorneyName: 'Attorney A' }] }) })
     expect(screen.getByText('saved-1:Confirmed:Attorney A')).toBeTruthy()
   })
 })

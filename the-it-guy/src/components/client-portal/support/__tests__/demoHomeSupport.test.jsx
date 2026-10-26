@@ -118,7 +118,7 @@ it('validates assistance details and keeps the same request across both pages', 
   fireEvent.click(screen.getByRole('radio', { name: /^Electrical/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Next: your details' }))
   expect(screen.getByLabelText('Assistance address').value).toBe('2 Pine Avenue')
-  expect(screen.getByLabelText('Contact name').value).toBe('Alex Morgan')
+  expect(screen.getByLabelText('Contact name').value).toBe('Mia Khumalo')
   fireEvent.change(screen.getByLabelText('Phone number'), { target: { value: '123' } })
   fireEvent.click(screen.getByRole('button', { name: 'Create demo request' }))
   expect(screen.getByRole('alert').textContent).toContain('7 to 15 digits')

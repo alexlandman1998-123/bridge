@@ -2218,7 +2218,7 @@ function PdfSigningFieldCanvas({ pdfUrl = '', fields = [], onFieldChange = null,
   useEffect(() => {
     if (!pdfUrl) return undefined
     let cancelled = false
-    const task = pdfjsLib.getDocument({ url: pdfUrl, withCredentials: false })
+    const task = pdfjsLib.getDocument({ url: pdfUrl, withCredentials: false , isEvalSupported: false })
     task.promise.then((document) => {
       if (cancelled) return
       setPdfDocument(document)
@@ -9403,7 +9403,7 @@ export default function LegalDocumentWorkspace({
                             {signedPreviewUrl ? 'Signed copy' : generatedPreviewUrl ? 'PDF ready' : 'Live preview'}
                           </span>
                         </div>
-                        <iframe
+                        <iframe sandbox="allow-same-origin allow-modals"
                           title={`${documentLabel} preview`}
                           src={signedPreviewUrl || generatedPreviewUrl || undefined}
                           srcDoc={!signedPreviewUrl && !generatedPreviewUrl ? editablePreviewHtml : undefined}

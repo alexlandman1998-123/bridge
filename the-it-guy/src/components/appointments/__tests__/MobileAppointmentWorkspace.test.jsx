@@ -30,11 +30,14 @@ it('waits for verified draft save and retries an unchanged payload with the same
  fireEvent.click(screen.getByRole('button',{name:'Save draft'}));await waitFor(()=>expect(api.create).toHaveBeenCalledTimes(2))
  expect(api.create.mock.calls[0][1]).toEqual(api.create.mock.calls[1][1]);expect(api.create.mock.calls[0][1].status).toBe('draft')
 })
-it('recalculates saved UTC after a wall-clock edit and uses the revision captured on opening',async()=>{
+it('keeps the issued schedule read-only while saving other details with the opening revision',async()=>{
  render(<MobileAppointmentWorkspace appointment={row} organisationId="org" actor={actor} />)
- fireEvent.click(screen.getByRole('button',{name:'Edit appointment'}));change('Start time','13:00');change('End time','14:00')
+ fireEvent.click(screen.getByRole('button',{name:'Edit appointment'}));change('Notes','Updated note')
+ expect(screen.getByLabelText('Start time').matches(':disabled')).toBe(true)
+ expect(screen.getByLabelText('Date').matches(':disabled')).toBe(true)
  fireEvent.click(screen.getByRole('button',{name:'Save appointment'}));await waitFor(()=>expect(api.update).toHaveBeenCalled())
- expect(api.update.mock.calls[0][2]).toMatchObject({startTime:'13:00',endTime:'14:00',dateTime:null,endDateTime:null,expectedRevision:2,reminderRules:row.reminderRules})
+ expect(api.update.mock.calls[0][2]).toMatchObject({notes:'Updated note',startTime:'11:00',endTime:'12:00',expectedRevision:2,reminderRules:row.reminderRules})
+ expect(api.propose).not.toHaveBeenCalled()
 })
 it('blocks a save when a refresh advances the booking revision',async()=>{
  const view=render(<MobileAppointmentWorkspace appointment={row} organisationId="org" actor={actor} />)
@@ -42,13 +45,14 @@ it('blocks a save when a refresh advances the booking revision',async()=>{
  view.rerender(<MobileAppointmentWorkspace appointment={{...row,calendarRevision:3}} organisationId="org" actor={actor} />)
  expect(screen.getByRole('button',{name:'Save appointment'}).matches(':disabled')).toBe(true);expect(api.update).not.toHaveBeenCalled()
 })
-it('proposes a confirmed move without saving other form edits or claiming the move completed',async()=>{
- api.propose.mockResolvedValue({verified:true});const saved=vi.fn()
- render(<MobileAppointmentWorkspace appointment={{...row,status:'confirmed',hasConfirmedReservation:true}} organisationId="org" actor={actor} onSaved={saved} />)
- fireEvent.click(screen.getByRole('button',{name:'Edit appointment'}));change('Start time','13:00');change('End time','14:00');change('Title','Unsaved other change')
- fireEvent.click(screen.getByRole('button',{name:'Save appointment'}));await waitFor(()=>expect(saved).toHaveBeenCalled())
- expect(api.update).not.toHaveBeenCalled();expect(api.propose.mock.calls[0][1]).toMatchObject({preferredStart:'2027-10-01T11:00:00.000Z',preferredEnd:'2027-10-01T12:00:00.000Z',expectedRevision:2})
- expect(saved.mock.calls[0][1]).toMatch(/other form edits have not been saved/)
+it('directs confirmed time changes to the separate workflow and preserves unsaved other edits',async()=>{
+ render(<MobileAppointmentWorkspace appointment={{...row,status:'confirmed',hasConfirmedReservation:true}} organisationId="org" actor={actor} />)
+ fireEvent.click(screen.getByRole('button',{name:'Edit appointment'}));change('Title','Updated title')
+ expect(screen.getByText(/To move this booking, return to its details/)).toBeTruthy()
+ expect(screen.getByLabelText('End time').matches(':disabled')).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Save appointment'}));await waitFor(()=>expect(api.update).toHaveBeenCalled())
+ expect(api.update.mock.calls[0][2]).toMatchObject({title:'Updated title',startTime:'11:00',endTime:'12:00'})
+ expect(api.propose).not.toHaveBeenCalled()
 })
 
 it('adds a co-agent with their profile identity rather than an external-only email',async()=>{

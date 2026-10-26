@@ -59,10 +59,10 @@ export default function DemoClaimFlow({ theme, propertyAddress, existingRecord =
   }
 
   const summary = receipt || { policy, incidentType, date, description, attachments, propertyAddress, name: DEMO_SUPPORT_CONTACT.name }
-  return <DemoSupportDialog theme={theme} title={existingRecord ? 'Your demo claim' : 'Submit a claim'} steps={['Incident', 'Photos', 'Review']} stage={stage} onClose={onClose}>
-    {stage < 3 ? <div className="demo-home-support-heading"><p className="demo-home-support-eyebrow">Sample policy · {policy.reference}</p><h4 ref={heading} tabIndex={-1}>{stage === 0 ? 'Let’s take it one step at a time.' : stage === 1 ? 'A little more context helps.' : 'Everything look right?'}</h4><p>{stage === 0 ? 'Your home and sample policyholder details are already here.' : stage === 1 ? 'Add photos to illustrate what happened, or continue without them.' : 'Review the details before creating your demo claim.'}</p></div> : null}
+  return <DemoSupportDialog theme={theme} title={existingRecord ? 'Your demo claim' : 'Submit a claim'} steps={['Incident', 'Photos', 'Review']} stage={stage} onClose={onClose} className="demo-claim-dialog" subtitle="">
+    {stage < 3 ? <div className="demo-home-support-heading"><h4 ref={heading} tabIndex={-1}>{stage === 0 ? 'Incident details' : stage === 1 ? 'Add photos' : 'Review your claim'}</h4><p>{stage === 0 ? 'Tell us when it happened and what was damaged.' : stage === 1 ? 'Add photos of the damage, or continue without them.' : 'Check your details before creating the demo claim.'}</p></div> : null}
     {stage === 0 ? <form onSubmit={continueDetails} noValidate>
-      <div className="demo-home-support-policy"><img src={policy.logo} alt={`${policy.insurer} logo`} /><div><strong>{policy.cover}</strong><span>Sample policyholder: {DEMO_SUPPORT_CONTACT.name}</span></div></div>
+      <div className="demo-home-support-policy"><img src={policy.logo} alt={`${policy.insurer} logo`} /><div><strong>{policy.cover}</strong><span>{DEMO_SUPPORT_CONTACT.name} · {policy.reference}</span></div></div>
       <p className="demo-home-support-property"><MapPin size={16} aria-hidden="true" />{propertyAddress || 'Your sample home'}</p>
       <div className="demo-home-support-fields">
         <label>Sample policy<select value={policyId} onChange={event => setPolicyId(event.target.value)}>{DEMO_SUPPORT_POLICIES.map(item => <option key={item.id} value={item.id}>{item.insurer} · {item.cover}</option>)}</select></label>

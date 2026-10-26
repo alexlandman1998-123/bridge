@@ -1,5 +1,6 @@
 import { getAppointmentTypeTemplate } from '../services/appointmentTemplateService.js'
 import { APPOINTMENT_TYPE_TEMPLATES } from './appointmentTypeTemplates.js'
+import { normalizeWorkspaceType } from '../constants/workspaceTypes.js'
 
 const TEMPLATE_KEYS = Object.keys(APPOINTMENT_TYPE_TEMPLATES)
 
@@ -44,8 +45,16 @@ export function getAppointmentTypeLabel(value = '') {
   return getAppointmentTypeTemplate(value).label
 }
 
-export function getAppointmentTypeOptions() {
-  return TEMPLATE_KEYS.map((key) => {
+const WORKSPACE_APPOINTMENT_TYPES = {
+  agency: ['viewing', 'seller_consultation', 'seller_valuation', 'valuation_presentation', 'buyer_consultation', 'mandate_signing', 'otp_signing', 'handover', 'internal_meeting', 'client_meeting', 'other'],
+  developer_company: ['viewing', 'buyer_consultation', 'otp_signing', 'handover', 'snag_inspection', 'internal_meeting', 'client_meeting', 'other'],
+  attorney_firm: ['otp_signing', 'transfer_signing', 'bond_signing', 'attorney_consultation', 'internal_meeting', 'client_meeting', 'other'],
+  bond_originator: ['finance_consultation', 'bond_signing', 'internal_meeting', 'client_meeting', 'other'],
+}
+
+export function getAppointmentTypeOptions(workspaceType) {
+  const allowed = workspaceType ? WORKSPACE_APPOINTMENT_TYPES[normalizeWorkspaceType(workspaceType, 'agency')] : null
+  return TEMPLATE_KEYS.filter(key => !allowed || allowed.includes(key)).map((key) => {
     const template = getAppointmentTypeTemplate(key)
     return {
       value: template.type,

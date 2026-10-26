@@ -256,6 +256,7 @@ export function getDocumentRequirementActions(context = {}) {
   const actions = []
 
   for (const requirement of requirements) {
+    if (requirement.waitingForTeam) continue
     const key = parseRequirementKey(requirement)
     const label = parseRequirementLabel(requirement)
     const status = normalizeDocumentStatus(requirement?.requiredDocumentStatus || requirement?.status)
@@ -936,7 +937,7 @@ function getOnboardingAction(context = {}, workspace = 'buying') {
       ? context?.portalData?.activeSellingContext?.sellerOnboardingStatus ||
         context?.portalData?.activeSellingContext?.onboarding_status ||
         context?.onboarding?.status
-      : context?.onboarding?.status
+      : context?.onboarding?.status || context?.transaction?.onboarding_status || context?.portalData?.transaction?.onboarding_status
 
   if (isOnboardingComplete(onboardingStatus)) return null
   return createAction({

@@ -2,6 +2,7 @@
 .hs-join{--ink:#1c1c1c;--ink-deep:#121212;--orange:#ff6319;--orange-hover:#ff864a;--white:#fff;--muted:#9a9a9a;--line:#333;--surface:var(--ink);--heading:var(--white);--copy:#d0d0d0;--accent:var(--orange);--card:var(--ink-deep);--highlight:var(--ink);background:var(--ink);color:var(--white);font-family:Asap,Arial,sans-serif;font-size:18px;line-height:1.65}
 .hs-join *{box-sizing:border-box}
 .hs-join a{color:inherit}
+.hs-join__video iframe{display:block;width:100%;aspect-ratio:16/9;border:0;background:#000}
 .hs-join h1,.hs-join h2,.hs-join h3{color:var(--heading);font-family:Montserrat,Arial,sans-serif;font-weight:800;letter-spacing:-.025em;line-height:.95;text-wrap:balance}
 .hs-join h1{margin:0 auto;font-size:72px;max-width:1120px;line-height:1.04}
 .hs-join h1>span,.hs-join h1>em{display:block}
@@ -282,3 +283,8 @@
 
 /* Modal content is portalled to body; scope its brand to the Home Seekers page. */
 body:has(.hs-join) .recruitment-signup{--recruitment-accent:#ff6319;--recruitment-accent-hover:#ff864a;--recruitment-accent-text:#ff6319;--recruitment-on-accent:#171717;--recruitment-accent-soft:#fff2eb}
+
+/* Keep the team-to-testimonial transition compact and visually distinct. */
+.hs-join__section.hs-join__team{padding-bottom:32px}
+.hs-join__team>p:last-child{margin-bottom:0}
+.hs-join__section.hs-join__video{padding-block:40px 48px}

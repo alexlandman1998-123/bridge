@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import { buildBuyerJourneyAlignmentModel } from '../src/services/buyerJourneyAlignmentService.js'
 import { buildBuyerViewingRequestSummary } from '../src/pages/agency/buyerViewingRequestSummary.js'
 
+const cardSource = await fs.readFile(new URL('../src/pages/agency/BuyerViewingRequestCard.jsx', import.meta.url), 'utf8')
 const pageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 const summaryInput = { now: '2026-09-27T12:00:00.000Z' }
 assert.equal(buildBuyerViewingRequestSummary(summaryInput).status, 'not_requested')
@@ -21,9 +22,9 @@ const resentSummary = buildBuyerViewingRequestSummary({ ...summaryInput, plan: {
 assert.equal(resentSummary.status, 'awaiting_response', 'a newer request must take priority over an earlier response')
 assert.equal(resentSummary.hasEarlierResponse, true)
 assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { requestedAt: '2026-09-27T08:05:00.000Z', buyerEmailDeliveryStatus: 'sent' }, links: [{ id: 'link-2', status: 'pending', createdAt: '2026-09-27T10:00:00.000Z' }] }).status, 'requested', 'an older sent request must not verify delivery of a newly prepared link')
-assert.match(pageSource, /data-testid="buyer-viewing-request-status"/, 'viewing request status should always appear below the overview columns')
-assert.match(pageSource, /viewingRequestSummary\.proposedTimes\.map/, 'the overview should display the saved buyer options')
-assert.match(pageSource, /Internal CRM record\. Logging a call, WhatsApp or email does not send a message\./, 'the Activity Logger should explain its internal-only effect')
+assert.match(pageSource, /<BuyerViewingRequestCard/, 'viewing preferences should appear in the overview')
+assert.match(cardSource, /summary\.proposedTimes\.map/, 'the overview should display the saved buyer options')
+assert.doesNotMatch(pageSource, /data-testid="buyer-activity-logger"/, 'the overview should not contain the Activity Logger')
 assert.match(pageSource, /catch \(activityError\) \{\s*setError\(activityError\?\.message/, 'Activity Logger save failures should remain visible to the agent')
 const reportingServiceSource = await fs.readFile(new URL('../src/modules/agency/agents/principalAgentCommandCentreService.js', import.meta.url), 'utf8')
 const reportingTestSource = await fs.readFile(new URL('./principal-agent-command-centre.test.mjs', import.meta.url), 'utf8')
@@ -117,7 +118,7 @@ for (const tab of ["'overview'", "'properties'", "'appointments'", "'activity'",
 for (const contract of [
   /const qualificationStarted = selectedLeadBuyerQualificationEvidence\.answeredCount > 0/,
   /const qualified = selectedLeadBuyerQualificationEvidence\.complete/,
-  /return buildBuyerJourneyAlignmentModel\(\{/,
+  /return buildJourney\(\{/,
   /qualificationStarted,/,
   /qualified,/,
 ]) {

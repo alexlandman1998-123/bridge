@@ -26,3 +26,23 @@
 .mobile-notification-empty h3 { margin: 14px 0 6px; font-size: 16px; font-weight: 550; }
 .mobile-notification-empty p { margin: 0; color: #627068; font-size: 12px; }
 .mobile-notification-bell:focus-visible, .mobile-notification-dropdown button:focus-visible, .mobile-notification-dropdown a:focus-visible { outline: 2px solid #5eaf86; outline-offset: -2px; }
+
+/* The mobile sheet shares the desktop inbox's surfaces and visual rhythm. */
+.mobile-notification-dropdown.notification-inbox-panel { position: fixed; inset: 76px 12px 12px; width: auto; max-height: none; border-radius: 24px; }
+.mobile-notification-dropdown > header { padding: 22px 18px 18px; align-items: flex-start; background: linear-gradient(125deg, #f3f9f5, #fff 75%); }
+.mobile-notification-dropdown h2 { color: #18382a; font-size: 23px; font-weight: 650; letter-spacing: -.035em; }
+.mobile-notification-content { flex: 1; max-height: none; background: #fafcfb; }
+.mobile-notification-content ul { padding: 14px 12px; }
+.mobile-notification-content li { overflow: hidden; background: #f0f8f3; border-left: 3px solid #3e9b70; }
+.mobile-notification-content li:first-child { border-radius: 16px 16px 0 0; }
+.mobile-notification-content li:last-child { border-radius: 0 0 16px 16px; }
+.mobile-notification-content li:only-child { border-radius: 16px; }
+.mobile-notification-content a { gap: 12px; padding: 18px 12px; }
+.mobile-notification-avatar { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border: 1px solid #d9e7de; border-radius: 13px; background: #fff; color: #347353; font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.mobile-notification-empty { padding: 56px 24px; }
+.mobile-notification-empty > span { width: 64px; height: 64px; border: 1px solid #dcebe0; border-radius: 22px; background: linear-gradient(145deg, #f4faf6, #e8f3ec); box-shadow: 0 0 0 8px #f4f8f5; }
+.mobile-notification-empty h3 { margin-top: 24px; }
+.mobile-notification-content > .notification-inbox-loading { padding: 16px; }
+@media (min-width: 640px) {
+  .mobile-notification-dropdown.notification-inbox-panel { inset: 84px max(16px, calc((100vw - 520px) / 2)) auto auto; width: 420px; max-height: calc(100dvh - 120px); }
+}

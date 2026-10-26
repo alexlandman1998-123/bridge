@@ -1,3 +1,5 @@
+import { boundaryFromWkt } from '../../src/services/propertyIntelligence/knowledgeFactoryBoundary.js';
+import { issueBoundaryReceipt } from '../../server/services/knowledgeFactoryBoundaryReceipt.js';
 import { createClient } from '@supabase/supabase-js'
 import { KNOWLEDGE_FACTORY_UAT_V1_ENDPOINT } from './supplier-endpoint.js'
 import { supplierCosts } from './supplier-costs.js'
@@ -272,7 +274,7 @@ async function searchMap(config, bounds) {
     const latitude = number(node?.y)
     const polygon = supplierPolygon.length >= 3 ? supplierPolygon : pointPolygon(latitude, longitude)
     if (!propertyId || polygon.length < 3) return []
-    return [{ id: propertyId, propertyId, erf: number(node.erf), portion: number(node.portion), suburbId: text(String(node?.suburb?.suburbId || ''), 100) || null, latitude, longitude, geometry: supplierPolygon.length >= 3 ? 'boundary' : 'location', polygon }]
+    return [{ id: propertyId, propertyId, erf: number(node.erf), portion: number(node.portion), suburbId: text(String(node?.suburb?.suburbId || ''), 100) || null, latitude, longitude, geometry: supplierPolygon.length >= 3 ? 'boundary' : 'location', polygon, reportBoundary: boundaryFromWkt(node?.wkt) }]
   })
   return { items, costs: costs(body), vendorRequestId: text(response.headers.get('x-request-id'), 200) || null }
 }
@@ -304,7 +306,7 @@ export default async function handler(request, response) {
     try {
       const result = await searchMap(config, bounds)
       await writeAudit(db, { organisation_id: organisationId, actor_id: actor.userId, operation: 'map_properties', request_purpose: purpose, request_metadata: { mode: 'map', bounds, page_size: MAP_PAGE_SIZE, returned_count: result.items.length }, outcome: 'completed', vendor_request_id: result.vendorRequestId, field_cost: result.costs.fieldCost, type_cost: result.costs.typeCost, price_surcharge: result.costs.surcharge, credits_consumed: result.costs.credits })
-      return json(response, 200, { items: result.items, count: result.items.length, pageSize: MAP_PAGE_SIZE, costs: result.costs })
+      return json(response, 200, { items: result.items.map(({ reportBoundary, ...item }) => ({ ...item, boundaryReceipt: issueBoundaryReceipt({ geometry: reportBoundary, organisationId, actorId: actor.userId, propertyId: item.propertyId, environment: 'uat', key: config.serviceRoleKey }) })), count: result.items.length, pageSize: MAP_PAGE_SIZE, costs: result.costs })
     } catch (error) {
       await writeAudit(db, { organisation_id: organisationId, actor_id: actor.userId, operation: 'map_properties', request_purpose: purpose, request_metadata: { mode: 'map', bounds, page_size: MAP_PAGE_SIZE, failure_reason: text(error?.message, 300) }, outcome: 'failed', error_code: 'supplier_map_query_failed' })
       throw error

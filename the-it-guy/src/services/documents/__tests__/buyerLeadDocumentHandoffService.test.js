@@ -160,3 +160,20 @@ test('conflicting historical types for one stored file require manual review', (
   assert.equal(plan.summary.manualReview, 1)
   assert.equal(plan.rows[0].reason, 'conflicting_lead_metadata')
 })
+
+
+test('direct conversion handoff refuses missing bytes before inserting a document mirror', async () => {
+  const client = clientFor({ rows: [{ key: 'buyer_id_document', storageBucket: 'documents', storagePath }], storageError: new Error('Object not found') })
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /could not be verified in storage/)
+  assert.equal(client.documents.length, 0)
+})
+
+test('direct conversion preflights every file so a missing later object cannot produce a partial handoff', async () => {
+  const client = clientFor({ rows: [
+    { key: 'buyer_id_document', storageBucket: 'documents', storagePath },
+    { key: 'buyer_proof_of_address', storageBucket: 'documents', storagePath: storagePath.replace('id.pdf', 'address.pdf') },
+  ] })
+  client.storage.from = () => ({ info: async path => path.endsWith('address.pdf') ? { error: new Error('Missing') } : { data: { size: 12 } } })
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /No files were handed off/)
+  assert.equal(client.documents.length, 0)
+})

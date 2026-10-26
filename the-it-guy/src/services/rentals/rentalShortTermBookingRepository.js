@@ -6,12 +6,12 @@ const text = (value) => String(value ?? '').trim()
 const required = (client = supabase) => { if (!isSupabaseConfigured || !client) throw new Error('Short-Term bookings require Supabase configuration.'); return client }
 const failure = (error = {}) => new Error(['42P01', 'PGRST204', 'PGRST205'].includes(String(error.code || '').toUpperCase()) ? 'Short-Term bookings are not yet applied to this environment.' : (error.message || 'Short-Term booking request failed.'))
 
-export async function listShortTermBookings({ organisationId = '', branchId = '', from = '' } = {}, { client = supabase } = {}) {
+export async function listShortTermBookings({ organisationId = '', branchId = '', from = '' } = {}, { client = supabase, signal } = {}) {
   if (!text(organisationId)) return []
   let query = required(client).from('rental_short_term_bookings').select(SELECT_FIELDS).eq('organisation_id', text(organisationId)).order('check_in_at').limit(200)
   if (text(branchId)) query = query.eq('branch_id', text(branchId))
   if (text(from)) query = query.gte('check_out_at', text(from))
-  const result = await query
+  const result = await (signal ? query.abortSignal(signal) : query)
   if (result.error) throw failure(result.error)
   return (result.data || []).map(mapShortTermBooking)
 }

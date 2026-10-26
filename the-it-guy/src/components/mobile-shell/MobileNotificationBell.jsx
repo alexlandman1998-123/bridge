@@ -1,5 +1,6 @@
-import { Bell, ChevronRight, RefreshCw, X } from 'lucide-react'
+import { Bell, CheckCircle2, ChevronRight, RefreshCw, X } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useOptionalOrganisation } from '../../context/OrganisationContext'
@@ -7,6 +8,10 @@ import { fetchMyNotifications } from '../../lib/headerNotificationsApi.js'
 import { mapDesktopRouteToMobile } from '../../config/mobileRouteMappings.js'
 import { resolveMobileRoleCategory } from '../../config/mobileShell.js'
 import useDismissableMenu from '../../hooks/useDismissableMenu.js'
+import NotificationLoading from '../NotificationLoading.jsx'
+import { getNotificationLeadIdentity } from '../../lib/notificationLeadPresentation.js'
+import { NotificationLeadAvatar, NotificationLeadSource } from '../NotificationLeadIdentity.jsx'
+import '../notification-inbox.css'
 import './mobile-notifications.css'
 
 function notificationDestination(item, developer) {
@@ -50,7 +55,10 @@ export default function MobileNotificationBell() {
     const panel = panelRef.current
     const bell = bellRef.current
     closeRef.current?.focus()
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     return () => {
+      document.body.style.overflow = previousOverflow
       if (panel?.contains(document.activeElement) || document.activeElement === document.body) bell?.focus()
     }
   }, [open])
@@ -72,7 +80,7 @@ export default function MobileNotificationBell() {
   function refresh() { setResult(null); setRetry((value) => value + 1) }
 
   return <>
-    <button ref={bellRef} type="button" className="mobile-notification-bell" aria-label="Notifications" aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={() => {
+    <button ref={bellRef} type="button" className="mobile-notification-bell notification-inbox-bell" aria-label="Notifications" aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={() => {
       if (open) dismiss()
       else {
         setOpenAt({ location: location.key, scope: scopeKey })
@@ -80,14 +88,14 @@ export default function MobileNotificationBell() {
       }
     }}>
       <Bell size={22} strokeWidth={1.8} aria-hidden="true" />
-      {unreadCount > 0 && <span className="mobile-notification-badge" aria-label={`${unreadCount} unread notifications`}>{unreadCount > 99 ? '99+' : unreadCount}</span>}
+      {unreadCount > 0 && <span key={unreadCount} className="mobile-notification-badge notification-inbox-badge" aria-label={`${unreadCount} unread notifications`}>{unreadCount > 99 ? '99+' : unreadCount}</span>}
     </button>
-    {open && <section ref={panelRef} id={panelId} className="mobile-notification-dropdown" role="dialog" aria-label="Notifications">
-      <header><div><h2>Notifications</h2><p>Unread lead updates</p></div><div className="mobile-notification-tools"><button type="button" aria-label="Refresh notifications" onClick={refresh}><RefreshCw size={16} aria-hidden="true" /></button><button ref={closeRef} type="button" aria-label="Close notifications" onClick={dismiss}><X size={18} aria-hidden="true" /></button></div></header>
+    {open && createPortal(<section ref={panelRef} id={panelId} className="mobile-notification-dropdown notification-inbox-panel" role="dialog" aria-label="Notifications">
+      <header><div><h2>Notifications</h2><p>{unreadCount ? `${unreadCount} unread · Lead updates` : 'You’re up to date'}</p></div><div className="mobile-notification-tools"><button type="button" aria-label="Refresh notifications" onClick={refresh}><RefreshCw size={16} aria-hidden="true" /></button><button ref={closeRef} type="button" aria-label="Close notifications" onClick={dismiss}><X size={18} aria-hidden="true" /></button></div></header>
       <div className="mobile-notification-content" aria-busy={!ready && Boolean(userId)}>
-        {!userId ? <p className="mobile-notification-state">Select your workspace to view notifications.</p> : !ready ? <p className="mobile-notification-state" role="status">Loading notifications…</p> : result.error ? <div className="mobile-notification-state" role="alert"><p>{result.error}</p><button type="button" onClick={refresh}>Try again</button></div> : notifications.length ? <ul>{notifications.map((item) => <li key={item.id}><Link to={notificationDestination(item, developer)} onClick={dismiss}><span className="mobile-notification-dot" aria-hidden="true" /><span className="mobile-notification-copy"><strong>{item.title || 'New lead received'}</strong>{item.message && <span>{item.message}</span>}{formatTime(item.createdAt) && <time dateTime={item.createdAt}>{formatTime(item.createdAt)} · SAST</time>}</span><ChevronRight size={16} aria-hidden="true" /></Link></li>)}</ul> : <div className="mobile-notification-empty"><span><Bell size={22} strokeWidth={1.5} aria-hidden="true" /></span><h3>You’re all caught up</h3><p>No unread lead notifications.</p></div>}
+        {!userId ? <p className="mobile-notification-state">Select your workspace to view notifications.</p> : !ready ? <NotificationLoading /> : result.error ? <div className="mobile-notification-state" role="alert"><p>{result.error}</p><button type="button" onClick={refresh}>Try again</button></div> : notifications.length ? <ul>{notifications.map((item) => { const identity = getNotificationLeadIdentity(item); return <li key={item.id}><Link to={notificationDestination(item, developer)} onClick={dismiss}><NotificationLeadAvatar name={identity.name} /><span className="mobile-notification-copy"><strong>{identity.name || item.title || 'New lead received'}</strong>{item.message && <span>{item.message}</span>}<NotificationLeadSource source={identity.source} />{formatTime(item.createdAt) && <time dateTime={item.createdAt}>{formatTime(item.createdAt)} · SAST</time>}</span><ChevronRight size={16} aria-hidden="true" /></Link></li>})}</ul> : <div className="mobile-notification-empty"><span><CheckCircle2 size={26} strokeWidth={1.4} aria-hidden="true" /></span><h3>You’re all caught up</h3><p>No unread lead notifications.</p></div>}
       </div>
       <Link to="/mobile/inbox" onClick={dismiss} className="flex min-h-11 items-center justify-between border-t border-[#e4ebf2] px-[18px] py-3 text-sm font-semibold text-[#166b50]">Push notification settings<ChevronRight size={17} aria-hidden="true" /></Link>
-    </section>}
+    </section>, document.body)}
   </>
 }

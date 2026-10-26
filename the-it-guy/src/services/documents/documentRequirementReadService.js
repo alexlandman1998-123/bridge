@@ -1,5 +1,5 @@
 import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
-import { documentRequirementLabel, documentRequirementTypeKey } from '../../core/documents/documentRequirementIdentity.js'
+import { documentRequirementLabel, documentRequirementTypeKey, documentRequirementParty } from '../../core/documents/documentRequirementIdentity.js'
 
 export async function readDocumentRequirementContext(client, { contextType, contextId }) {
   if (!client || !contextType || !contextId) throw new Error('Document workspace context is required.')
@@ -20,7 +20,7 @@ export function requirementDisplayRow(requirement, documents = []) {
   const label = documentRequirementLabel(requirement, requirement.document_definitions || {})
   const complete = ['approved', 'completed', 'waived'].includes(requirement.status)
   const pack = requirement.pack_key || ''
-  const category = /identity|fica/.test(pack) ? requirement.requested_from_role : /bond|finance|fund/.test(pack) ? 'finance' : /authority|legal|transfer|signature/.test(pack) ? 'legal' : 'property'
+  const category = /identity|fica/.test(pack) ? documentRequirementParty(requirement) : /bond|finance|fund/.test(pack) ? 'finance' : /authority|legal|transfer|signature/.test(pack) ? 'legal' : 'property'
   const statusBucket = complete ? 'approved' : requirement.status === 'uploaded' ? 'ready_for_review' : ['under_review', 'rejected'].includes(requirement.status) ? requirement.status : 'outstanding'
   return {
     ...requirement,
@@ -51,9 +51,9 @@ export function requirementDisplayRow(requirement, documents = []) {
 
 // Override only explicit links, never a matching label or a broad document type.
 // Removed rows are tombstones: discard their old projection before filtering.
-export function mergeDocumentRequirementRows(legacyRows = [], snapshot, { party = null } = {}) {
+export function mergeDocumentRequirementRows(legacyRows = [], snapshot, { party = null, canonicalOnly = false } = {}) {
   if (!snapshot) return legacyRows
-  const requirements = snapshot.requirements.filter(row => !party || row.requested_from_role === party)
+  const requirements = snapshot.requirements.filter(row => !party || documentRequirementParty(row) === party)
   const owned = new Set(requirements.map(row => row.id))
   const hasCanonicalOwner = row => {
     if (requirementLinkId(row)) return owned.has(requirementLinkId(row))
@@ -68,7 +68,7 @@ export function mergeDocumentRequirementRows(legacyRows = [], snapshot, { party 
       (requirement.requested_from_contact_id || null) === contact).length === 1
   }
   return [
-    ...legacyRows.filter(row => !hasCanonicalOwner(row)),
+    ...(canonicalOnly ? [] : legacyRows.filter(row => !hasCanonicalOwner(row))),
     ...requirements.filter(activeRequirement).map(row => requirementDisplayRow(row, snapshot.documents)),
   ]
 }

@@ -343,27 +343,40 @@ export async function setTransactionPrimaryBuyerParty({ transactionId, participa
   return primary.data
 }
 
-export async function linkReusableBuyerProfileToTransaction({ transactionId, buyerId, isPrimary = false, partyRole = 'co_purchaser', ownershipPercentage = null, signingRequired = true, client = supabase } = {}) {
+export async function linkReusableBuyerProfileToTransaction({ transactionId, buyerId, participantId = null, isPrimary = false, partyRole = 'co_purchaser', ownershipPercentage = null, signingRequired = true, client = supabase } = {}) {
   const db = requireClient(client)
   const transaction = text(transactionId)
   const buyer = text(buyerId)
   if (!transaction || !buyer) throw new Error('Transaction and buyer profile are required.')
   const profile = await db.from('buyers').select('id, name, email, phone').eq('id', buyer).single()
   if (profile.error) throw profile.error
-  if (isPrimary) {
-    const reset = await db.from('transaction_participants').update({ is_primary_buyer: false, buyer_party_role: 'additional_buyer' }).eq('transaction_id', transaction).eq('transaction_role', 'buyer').eq('is_primary_buyer', true)
-    if (reset.error) throw reset.error
+  let captured = null
+  if (text(participantId)) {
+    const current = await db.from('transaction_participants').select('*').eq('transaction_id', transaction)
+      .eq('id', text(participantId)).eq('transaction_role', 'buyer').is('removed_at', null).single()
+    if (current.error) throw current.error
+    if (current.data.buyer_party_id && current.data.buyer_party_id !== buyer) throw new Error('This buyer already has a linked profile. Reload the buyer details.')
+    captured = current.data
   }
   const existing = await db.from('transaction_participants').select('id').eq('transaction_id', transaction).eq('buyer_party_id', buyer).maybeSingle()
   if (existing.error) throw existing.error
+  if (captured && existing.data?.id && existing.data.id !== captured.id) throw new Error('This profile is already linked to another buyer on this transaction.')
+  if (isPrimary && !captured?.is_primary_buyer) {
+    const reset = await db.from('transaction_participants').update({ is_primary_buyer: false, buyer_party_role: 'additional_buyer' }).eq('transaction_id', transaction).eq('transaction_role', 'buyer').eq('is_primary_buyer', true)
+    if (reset.error) throw reset.error
+  }
   const payload = {
     transaction_id: transaction, buyer_party_id: buyer, participant_name: profile.data.name, participant_email: profile.data.email, participant_phone: profile.data.phone,
     role_type: 'buyer', legal_role: 'none', transaction_role: 'buyer', status: 'active',
     buyer_party_role: isPrimary ? 'primary_buyer' : 'additional_buyer', is_primary_buyer: Boolean(isPrimary), buyer_source: 'reusable_buyer_profile',
-    ownership_percentage: ownershipPercentage === '' || ownershipPercentage === null ? null : Number(ownershipPercentage), signing_required: Boolean(signingRequired),
-    buyer_metadata: { modelVersion: 'transaction_buyers_phase4_v1', partyRole: text(partyRole) || null, reusedBuyerProfile: true }, updated_at: new Date().toISOString(),
+    ownership_percentage: captured ? captured.ownership_percentage : ownershipPercentage === '' || ownershipPercentage === null ? null : Number(ownershipPercentage), signing_required: captured ? captured.signing_required !== false : Boolean(signingRequired),
+    buyer_metadata: { ...(captured?.buyer_metadata || {}), modelVersion: 'transaction_buyers_phase4_v1', partyRole: text(partyRole) || null, reusedBuyerProfile: true }, updated_at: new Date().toISOString(),
   }
-  const saved = existing.data?.id ? await db.from('transaction_participants').update(payload).eq('id', existing.data.id).select().single() : await db.from('transaction_participants').insert(payload).select().single()
+  const targetId = captured?.id || existing.data?.id
+  let saveQuery = targetId ? db.from('transaction_participants').update(payload).eq('transaction_id', transaction).eq('id', targetId) : db.from('transaction_participants').insert(payload)
+  if (captured && !captured.buyer_party_id) saveQuery = saveQuery.is('buyer_party_id', null)
+  if (captured?.updated_at) saveQuery = saveQuery.eq('updated_at', captured.updated_at)
+  const saved = await saveQuery.select().single()
   if (saved.error) throw saved.error
   if (isPrimary) {
     const transactionUpdate = await db.from('transactions').update({ buyer_id: buyer, primary_buyer_participant_id: saved.data.id, buyer_parties_model_version: 'transaction_buyers_phase4_v1' }).eq('id', transaction)

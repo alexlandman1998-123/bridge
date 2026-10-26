@@ -49,9 +49,10 @@ function decodeJwtPayload(token = '') {
 }
 
 function resolveSupabaseFrontendKey() {
+  const publishableCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_PUBLISHABLE_KEY || processEnv.VITE_SUPABASE_PUBLISHABLE_KEY)
   const anonCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_ANON_KEY || processEnv.VITE_SUPABASE_ANON_KEY)
   const legacyCandidate = normalizeConfigValue(viteEnv.VITE_SUPABASE_KEY || processEnv.VITE_SUPABASE_KEY)
-  const selectedCandidate = anonCandidate || legacyCandidate
+  const selectedCandidate = publishableCandidate || anonCandidate || legacyCandidate
 
   if (!selectedCandidate) {
     return ''
@@ -68,7 +69,7 @@ function resolveSupabaseFrontendKey() {
 
   if (!isJwtLikeKey(selectedCandidate)) {
     console.error(
-      '[supabase] Invalid frontend key format. Expected a publishable key or JWT anon key in VITE_SUPABASE_ANON_KEY (or legacy VITE_SUPABASE_KEY).',
+      '[supabase] Invalid frontend key format. Expected VITE_SUPABASE_PUBLISHABLE_KEY or a compatible key in VITE_SUPABASE_ANON_KEY (or legacy VITE_SUPABASE_KEY).',
     )
     return ''
   }

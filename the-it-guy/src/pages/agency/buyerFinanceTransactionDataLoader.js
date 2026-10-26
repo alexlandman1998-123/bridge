@@ -1,5 +1,5 @@
 const DEFAULT_CACHE_TTL_MS = 3000
-const BUYER_FINANCE_TRANSACTION_TABS = new Set(['buyer_profile', 'onboarding_otp'])
+const BUYER_FINANCE_TRANSACTION_TABS = new Set(['buyer_profile', 'documents'])
 const pendingLoads = new Map()
 const completedLoads = new Map()
 
@@ -32,8 +32,9 @@ async function fetchBuyerFinanceTransactionFromRepository(payload) {
   return getBuyerLeadLifecycleDiagnostic(payload)
 }
 
-export function shouldLoadBuyerFinanceTransactionTab(tabKey = '') {
-  return BUYER_FINANCE_TRANSACTION_TABS.has(normalizeText(tabKey).toLowerCase())
+export function shouldLoadBuyerFinanceTransactionTab(tabKey = '', { hasLinkedTransaction = false } = {}) {
+  const tab = normalizeText(tabKey).toLowerCase()
+  return BUYER_FINANCE_TRANSACTION_TABS.has(tab) || (tab === 'overview' && hasLinkedTransaction)
 }
 
 export function clearBuyerFinanceTransactionDataLoaderCache() {

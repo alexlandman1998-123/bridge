@@ -3,8 +3,8 @@ import Modal from '../../ui/Modal'
 import { demoInsuranceBrandStyle } from '../insurance/demoInsuranceTheme'
 import './demo-home-support.css'
 
-export function DemoSupportDialog({ theme, title, steps, stage, onClose, children }) {
-  return <Modal open onClose={onClose} title={title} subtitle="Here when you need us." className="demo-home-support-dialog">
+export function DemoSupportDialog({ theme, title, steps, stage, onClose, children, className = '', subtitle = 'Here when you need us.' }) {
+  return <Modal open onClose={onClose} title={title} subtitle={subtitle} className={`demo-home-support-dialog ${className}`.trim()}>
     <div className="demo-home-support" style={demoInsuranceBrandStyle(theme)}>
       <p className="demo-home-support-notice">Demo only. No claim is sent and no assistance is dispatched.</p>
       {stage < steps.length ? <ol className="demo-home-support-steps" aria-label={`${title} steps`}>{steps.map((label, index) => <li key={label} aria-current={stage === index ? 'step' : undefined} data-complete={stage > index}><span>{stage > index ? <Check size={14} aria-hidden="true" /> : index + 1}</span>{label}</li>)}</ol> : null}

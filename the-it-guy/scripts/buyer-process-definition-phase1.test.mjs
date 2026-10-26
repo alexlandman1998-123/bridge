@@ -35,24 +35,10 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 
 const defaultActiveStageKeys = [
-  'captured',
-  'contacted',
-  'qualified',
-  'viewing',
-  'transaction_setup',
-  'offer',
-  'transaction',
+  'captured', 'contacted', 'qualified', 'viewing', 'buyer_onboarding_sent',
+  'buyer_onboarding_submitted', 'offer', 'transaction', 'buyer_documents_uploaded',
 ]
-
-const kingstonsActiveStageKeys = [
-  'captured',
-  'contacted',
-  'qualified',
-  'viewing',
-  'offer',
-  'transaction_setup',
-  'transaction',
-]
+const kingstonsActiveStageKeys = [...defaultActiveStageKeys]
 
 const outcomeStageKeys = [
   'on_hold',
@@ -68,6 +54,8 @@ const evidenceKeys = [
   'viewing_recorded',
   'buyer_onboarding_link_sent',
   'buyer_profile_captured',
+  'buyer_onboarding_submitted',
+  'buyer_documents_uploaded',
   'otp_document_uploaded',
   'transaction_created',
   'hold_reason_captured',
@@ -190,9 +178,9 @@ const evidenceKeys = [
   assert.equal(normalizeBuyerProcessStageKey('Finance'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Transfer'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Lost'), BUYER_PROCESS_STAGE_KEYS.lost)
-  assert.equal(getBuyerProcessStageLabel('buyer_onboarding_sent'), 'Transaction Setup')
-  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Offer')
-  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'Offer')
+  assert.equal(getBuyerProcessStageLabel('buyer_onboarding_sent'), 'Buyer onboarding sent')
+  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Offer to purchase signed')
+  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'Offer to purchase signed')
 }
 
 {
@@ -206,11 +194,11 @@ const evidenceKeys = [
   assert.equal(canTransitionBuyerProcessStage('Contacted', 'Qualified'), true)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Transaction Setup'), true)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), false)
-  assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Offer'), true)
+  assert.equal(canTransitionBuyerProcessStage('Buyer onboarding submitted', 'Offer'), true)
   assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction'), true)
-  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
-  assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction Setup', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
-  assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Transaction', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), false)
+  assert.equal(canTransitionBuyerProcessStage('Buyer onboarding sent', 'Buyer onboarding submitted', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
+  assert.equal(canTransitionBuyerProcessStage('Transaction', 'Buyer documents uploaded', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Lost', 'Captured'), false)
 }
 

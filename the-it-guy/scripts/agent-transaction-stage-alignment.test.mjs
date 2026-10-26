@@ -36,7 +36,7 @@ assert.equal(normalizeTransactionStage('not-a-real-stage'), null)
 assert.equal(normalizeTransactionStage('not-a-real-stage', 'also-not-real'), null)
 
 const migrationUrl = new URL(
-  '../../supabase/migrations/20260831105623_align_agent_transaction_stages.sql',
+  '../../supabase/migrations/20260831125357_align_agent_transaction_stages.sql',
   import.meta.url,
 )
 const migration = await readFile(fileURLToPath(migrationUrl), 'utf8')

@@ -1,9 +1,6 @@
 import {
   ArrowLeft,
-  BedDouble,
-  Car,
   Check,
-  Columns3,
   Compass,
   Expand,
   Grid2X2,
@@ -11,7 +8,6 @@ import {
   GitCompareArrows,
   Layers3,
   List,
-  Maximize2,
   Minus,
   Plus,
   Search,
@@ -52,6 +48,9 @@ import {
   getVisualSceneImageCandidates,
   getVisualScenePrompt,
 } from "../../core/developments/developmentVisualExperience.js";
+
+import PublicDevelopmentUnitDialog from "./PublicDevelopmentUnitDialog.jsx";
+import { getResidentialPlanViewport } from "../../core/developments/developmentResidentialViewport.js";
 
 const STATUS = {
   available: {
@@ -192,138 +191,6 @@ function SelectFilter({ label, value, options, onChange }) {
   );
 }
 
-function UnitDrawer({
-  unit,
-  media,
-  enquiry,
-  shortlisted,
-  compared,
-  floorPlanFallback,
-  onToggleShortlist,
-  onToggleCompare,
-  onClose,
-}) {
-  if (!unit) return null;
-  const status = STATUS[visualUnitStatus(unit.status)];
-  const plan =
-    unit.floorplanUrl ||
-    unit.floorPlanUrl ||
-    unit.floorplanImageUrl ||
-    floorPlanFallback?.url;
-  const capture = () => {
-    try {
-      window.sessionStorage.setItem(
-        "arch9:development-enquiry-unit",
-        JSON.stringify({
-          id: unit.id,
-          unitNumber: unit.unitNumber,
-          price: unit.price,
-        }),
-      );
-    } catch {
-      // Storage can be unavailable in privacy-restricted browsers; the link still works.
-    }
-  };
-  return (
-    <aside className="fixed inset-x-0 bottom-0 z-[80] max-h-[90svh] overflow-y-auto rounded-t-[26px] bg-[#fffdf9] shadow-[0_-20px_60px_rgba(9,35,29,.25)] md:inset-y-0 md:left-auto md:w-[440px] md:rounded-none">
-      <button
-        onClick={onClose}
-        aria-label="Close residence details"
-        className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full bg-white shadow"
-      >
-        <X size={18} />
-      </button>
-      <img
-        src={unitImage(unit, media)}
-        alt=""
-        className="h-52 w-full object-cover md:h-64"
-      />
-      <div className="p-6 md:p-8">
-        <span
-          className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${status.chip}`}
-        >
-          {status.label}
-        </span>
-        <div className="mt-4 flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.16em] text-[#a47d31]">
-              Residence
-            </p>
-            <h3 className="mt-1 font-serif text-4xl text-[#143d33]">
-              {unit.unitNumber}
-            </h3>
-            <p className="mt-2 text-[#61746a]">
-              {unit.unitType || "Residence"}
-              {unit.block ? ` · ${unit.block}` : ""}
-            </p>
-          </div>
-          <strong className="text-right text-xl text-[#143d33]">
-            {money(unit.price)}
-          </strong>
-        </div>
-        <div className="mt-6 grid grid-cols-4 divide-x border-y border-[#e6dfd3] py-4 text-center text-xs text-[#61746a]">
-          <span>
-            <BedDouble size={18} className="mx-auto mb-1" />
-            {unit.bedrooms ?? "—"} beds
-          </span>
-          <span>
-            <Columns3 size={18} className="mx-auto mb-1" />
-            {unit.bathrooms ?? "—"} baths
-          </span>
-          <span>
-            <Car size={18} className="mx-auto mb-1" />
-            {unit.parkingCount ?? "—"} bays
-          </span>
-          <span>
-            <Maximize2 size={18} className="mx-auto mb-1" />
-            {unit.sizeSqm ? `${unit.sizeSqm}m²` : "—"}
-          </span>
-        </div>
-        {plan ? (
-          <div className="mt-6 rounded-xl border border-[#e4ddd1] bg-white p-4">
-            <p className="text-xs font-bold uppercase tracking-[.14em] text-[#a47d31]">
-              Floor plan
-            </p>
-            {floorPlanFallback?.source === "unit_type" ? (
-              <p className="mt-1 text-[10px] text-[#718078]">
-                Representative plan · {floorPlanFallback.reason}
-              </p>
-            ) : null}
-            <img
-              src={plan}
-              alt={`${unit.unitNumber} floor plan`}
-              className="mt-3 h-48 w-full object-contain"
-            />
-          </div>
-        ) : null}
-        <div className="mt-6 grid grid-cols-2 gap-2">
-          <button
-            onClick={onToggleShortlist}
-            className={`flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-semibold ${shortlisted ? "border-[#b78c39] bg-[#fff8e8] text-[#7b5919]" : "border-[#dcd6ca]"}`}
-          >
-            <Heart size={16} fill={shortlisted ? "currentColor" : "none"} />
-            {shortlisted ? "Shortlisted" : "Shortlist"}
-          </button>
-          <button
-            onClick={onToggleCompare}
-            className={`flex h-11 items-center justify-center gap-2 rounded-md border text-sm font-semibold ${compared ? "border-[#0c5a49] bg-[#edf7f3] text-[#0c5a49]" : "border-[#dcd6ca]"}`}
-          >
-            <GitCompareArrows size={16} />
-            {compared ? "Comparing" : "Compare"}
-          </button>
-        </div>
-        <a
-          href={enquiry}
-          onClick={capture}
-          className="mt-3 flex h-14 items-center justify-center bg-[#073e32] font-semibold text-white"
-        >
-          Enquire about {unit.unitNumber}
-        </a>
-      </div>
-    </aside>
-  );
-}
-
 function ComparisonDialog({ units, media, enquiry, onRemove, onClose }) {
   if (!units.length) return null;
   const rows = [
@@ -433,6 +300,9 @@ export default function PublicDevelopmentVisualExplorer({
   initialSceneId = "",
   simulatedFailedSceneIds = [],
   embedded = false,
+  initialResidentialFocus = false,
+  estatePresentation = false,
+  onReserveUnit,
 }) {
   const visualMap = useMemo(
     () =>
@@ -464,6 +334,9 @@ export default function PublicDevelopmentVisualExplorer({
   const [view, setView] = useState("map");
   const [layout, setLayout] = useState("list");
   const [fullscreen, setFullscreen] = useState(false);
+  const [homesFocused, setHomesFocused] = useState(true);
+  const [planPaneWidth, setPlanPaneWidth] = useState(0);
+  const planPaneRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [favourites, setFavourites] = useState(
@@ -487,6 +360,7 @@ export default function PublicDevelopmentVisualExplorer({
   const touchPoints = useRef(new Map());
   const emittedSceneStates = useRef(new Set());
   const cardRefs = useRef(new Map());
+  const unitListRef = useRef(null);
   const options = useMemo(
     () => publicVisualFilterOptions(inventory),
     [inventory],
@@ -542,6 +416,15 @@ export default function PublicDevelopmentVisualExplorer({
     [visualMap, sceneId],
   );
   const orientation = getVisualOrientation(scene);
+  useEffect(() => {
+    if (!initialResidentialFocus || !planPaneRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width;
+      if (width > 0) setPlanPaneWidth(width);
+    });
+    observer.observe(planPaneRef.current);
+    return () => observer.disconnect();
+  }, [initialResidentialFocus]);
   const visibleIds = useMemo(
     () => new Set(units.map((unit) => String(unit.id))),
     [units],
@@ -618,10 +501,26 @@ export default function PublicDevelopmentVisualExplorer({
     comparison,
   ]);
   useEffect(() => {
-    cardRefs.current
-      .get(String(selectedId))
-      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [selectedId]);
+    const list = unitListRef.current;
+    const card = cardRefs.current.get(String(selectedId));
+    if (!list || !card || (mobile && view === "map")) return;
+    const listBounds = list.getBoundingClientRect();
+    const cardBounds = card.getBoundingClientRect();
+    if (!listBounds.height) return;
+    const top = cardBounds.top < listBounds.top
+      ? cardBounds.top - listBounds.top
+      : cardBounds.bottom > listBounds.bottom
+        ? cardBounds.bottom - listBounds.bottom
+        : 0;
+    // Only reveal the card inside its list. scrollIntoView also moves the
+    // document (and any outer scroll containers), making the map jump away.
+    if (top) list.scrollBy({
+      top,
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+        ? "auto"
+        : "smooth",
+    });
+  }, [selectedId, layout, mobile, view]);
   useEffect(() => {
     const validIds = inventory.map((unit) => unit.id);
     queueMicrotask(() => {
@@ -886,6 +785,12 @@ export default function PublicDevelopmentVisualExplorer({
       // The user can cancel the native share sheet without affecting their selections.
     }
   };
+  const residentialViewport = initialResidentialFocus && sceneId === visualMap.defaultSceneId
+    ? getResidentialPlanViewport(scene)
+    : null;
+  const activeFocus = residentialViewport
+    ? homesFocused ? residentialViewport : { x: -5, y: 0, width: 110, height: 100 }
+    : null;
   const sceneViewport = normaliseSitePlanViewport(scene?.viewport);
   const sourceAspectRatio =
     sceneImageAspectRatio ||
@@ -893,15 +798,26 @@ export default function PublicDevelopmentVisualExplorer({
       ? Number(scene.background.width) / Number(scene.background.height)
       : 1);
   const sceneAspectRatio =
-    sourceAspectRatio * (sceneViewport.width / sceneViewport.height);
+    sourceAspectRatio * (sceneViewport.width / sceneViewport.height) *
+    (activeFocus ? activeFocus.width / activeFocus.height : 1);
+  const basePanelHeight = mobile ? "68svh" : "clamp(440px, 72svh, 800px)";
+  const fittedPlanHeight = initialResidentialFocus && planPaneWidth > 0
+    ? Math.max(mobile ? 320 : 360, planPaneWidth / sceneAspectRatio)
+    : null;
+  const panelHeight = fullscreen
+    ? "calc(100svh - 100px)"
+    : fittedPlanHeight ? `min(${basePanelHeight}, ${fittedPlanHeight}px)` : basePanelHeight;
   const transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
   const canvas = (
     <div
       role="application"
       aria-label={`Interactive ${scene?.name || "development"} plan. Use plus and minus to zoom and drag to pan.`}
       tabIndex={0}
-      className={`relative touch-none overflow-hidden bg-[#d8ded8] select-none ${mobile ? "h-full min-h-[430px] w-full" : fullscreen ? "h-full max-w-full w-auto" : "w-full"}`}
-      style={mobile ? undefined : { aspectRatio: sceneAspectRatio }}
+      className={`relative touch-none overflow-hidden bg-[#d8ded8] select-none ${mobile && !initialResidentialFocus ? "h-full w-full" : "shrink-0"}`}
+      style={mobile && !initialResidentialFocus ? undefined : {
+        aspectRatio: sceneAspectRatio,
+        width: `min(100%, calc(var(--visual-explorer-height) * ${sceneAspectRatio}))`,
+      }}
       onKeyDown={(event) => {
         if (event.key === "+" || event.key === "=")
           setZoom((value) => Math.min(2.5, value + 0.2));
@@ -986,6 +902,16 @@ export default function PublicDevelopmentVisualExplorer({
         className="absolute inset-0 origin-center motion-safe:transition-transform motion-safe:duration-200"
         style={{ transform }}
       >
+        <div
+          data-residential-plan-layer
+          className="absolute"
+          style={activeFocus ? {
+            left: `${-activeFocus.x / activeFocus.width * 100}%`,
+            top: `${-activeFocus.y / activeFocus.height * 100}%`,
+            width: `${10000 / activeFocus.width}%`,
+            height: `${10000 / activeFocus.height}%`,
+          } : { inset: 0 }}
+        >
         {sceneImageStatus === "loading" && previousSceneStyle ? (
           <div
             className="absolute inset-0 scale-[1.01] opacity-70 blur-[1px] motion-safe:transition-opacity motion-safe:duration-300"
@@ -1054,6 +980,7 @@ export default function PublicDevelopmentVisualExplorer({
           const [x, y] =
             hotspot.label?.position || visualHotspotCentre(hotspot);
           const unit = unitsById.get(String(hotspot.target.id));
+          const unitStatus = unit ? STATUS[visualUnitStatus(unit.status)] : null;
           const childSceneId = getVisualHotspotSceneId(hotspot);
           const destination = resolveVisualHotspotDestination(
             visualMap,
@@ -1069,12 +996,16 @@ export default function PublicDevelopmentVisualExplorer({
               key={`${hotspot.id}:label`}
               data-hotspot
               data-hotspot-button
+              title={unit ? `Unit ${unit.unitNumber} · ${unitStatus.label}` : undefined}
+              aria-description={unitStatus?.label}
               aria-label={`${hotspot.label?.text || unit?.unitNumber || hotspot.target.id}. ${destination.type === "scene" ? "Explore this view" : "Open details"}`}
               onClick={() => activateHotspot(hotspot)}
               style={{
                 left: `${x}%`,
                 top: `${y}%`,
                 transform: `translate(-50%,-50%) scale(${1 / zoom})`,
+                backgroundColor: unitStatus?.fill,
+                color: unitStatus ? "#10251f" : undefined,
               }}
               className={`absolute rounded-md border border-white/80 px-2 py-1 text-[10px] font-bold shadow-md outline-none motion-safe:transition motion-safe:hover:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-[#f4d99b]/80 ${String(hotspot.target.id) === String(selectedId) ? "bg-[#062f28] text-white ring-2 ring-[#f4d99b]" : "bg-white/95 text-[#133d32]"}`}
             >
@@ -1083,6 +1014,7 @@ export default function PublicDevelopmentVisualExplorer({
             </button>
           );
         })}
+        </div>
       </div>
       {sceneImageStatus !== "ready" ? (
         <div
@@ -1311,6 +1243,16 @@ export default function PublicDevelopmentVisualExplorer({
           </div>
         ) : null}
         <div className="flex items-center gap-2 overflow-x-auto border-b border-[#e5dfd4] p-3 md:flex-wrap md:p-4">
+          {residentialViewport ? (
+            <button
+              type="button"
+              aria-pressed={!homesFocused}
+              onClick={() => { setHomesFocused((value) => !value); setZoom(1); setPan({ x: 0, y: 0 }); setView("map"); }}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md border border-[#c8b889] bg-[#f5f0e4] px-4 text-xs font-semibold text-[#173d33] hover:bg-[#eae1cd] focus-visible:ring-2 focus-visible:ring-[#a58037]"
+            >
+              <Expand size={15} />{homesFocused ? "View full estate" : "Focus on homes"}
+            </button>
+          ) : null}
           {mobile ? (
             <button
               onClick={() => setFilterOpen(true)}
@@ -1379,24 +1321,25 @@ export default function PublicDevelopmentVisualExplorer({
           </div>
         ) : null}
         <div
-          className={`${mobile ? "" : "lg:grid lg:grid-cols-[minmax(0,1fr)_380px]"}`}
+          data-visual-explorer-panels
+          className={`${mobile ? "" : "grid"} min-h-0 overflow-hidden`}
           style={{
-            height: fullscreen
-              ? "calc(100vh - 100px)"
-              : mobile
-                ? "68svh"
-                : undefined,
+            "--visual-explorer-height": panelHeight,
+            height: "var(--visual-explorer-height)",
+            gridTemplateColumns: mobile ? undefined : "minmax(0,1fr) clamp(260px, 30%, 380px)",
+            overflowAnchor: "none",
           }}
         >
           <div
-            className={`${mobile && view !== "map" ? "hidden" : ""} min-h-0 ${mobile ? "" : "flex items-center justify-center bg-[#d8ded8]"}`}
+            ref={planPaneRef}
+            className={`${mobile && view !== "map" ? "hidden" : ""} h-full min-h-0 min-w-0 overflow-hidden ${mobile && !initialResidentialFocus ? "" : "flex items-center justify-center bg-[#d8ded8]"}`}
           >
             {canvas}
           </div>
           <aside
-            className={`${mobile && view === "map" ? "hidden" : ""} min-h-0 overflow-y-auto border-l border-[#e5dfd4] bg-[#f8f6f1]`}
+            className={`${mobile && view === "map" ? "hidden" : "flex"} h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#e5dfd4] bg-[#f8f6f1]`}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-[#fffdf9]/95 px-4 py-3 backdrop-blur">
+            <div className="z-10 flex shrink-0 items-center justify-between border-b bg-[#fffdf9]/95 px-4 py-3 backdrop-blur">
               <span>
                 <b className="text-lg text-[#143d33]" aria-live="polite">
                   {units.length}
@@ -1411,7 +1354,11 @@ export default function PublicDevelopmentVisualExplorer({
               </button>
             </div>
             <div
-              className={layout === "grid" ? "grid grid-cols-2 gap-2 p-2" : ""}
+              ref={unitListRef}
+              role="region"
+              aria-label="Residence list"
+              tabIndex={0}
+              className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${layout === "grid" ? "grid auto-rows-max grid-cols-2 content-start gap-2 p-2" : ""}`}
             >
               {units.map((unit) => {
                 const status = STATUS[visualUnitStatus(unit.status)];
@@ -1532,7 +1479,7 @@ export default function PublicDevelopmentVisualExplorer({
             <h2 className="font-serif text-4xl leading-none text-[#143d33] md:text-5xl">
               Find your place.
             </h2>
-            <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold uppercase tracking-[.1em] text-[#61736a]">
+            <div role="group" aria-label="Availability legend" className="flex flex-wrap items-center gap-3 text-[10px] font-semibold uppercase tracking-[.1em] text-[#61736a]">
               {Object.entries(STATUS).map(([key, status]) => (
                 <span key={key} className="flex items-center gap-1.5">
                   <i
@@ -1617,7 +1564,10 @@ export default function PublicDevelopmentVisualExplorer({
           </div>
         </div>
       ) : null}
-      <UnitDrawer
+      {selected ? <PublicDevelopmentUnitDialog
+        estatePresentation={estatePresentation}
+        onReserve={onReserveUnit}
+        key={String(selected.id)}
         unit={selected}
         media={media}
         enquiry={enquiry}
@@ -1630,7 +1580,7 @@ export default function PublicDevelopmentVisualExplorer({
         onToggleShortlist={() => toggleShortlist(String(selected?.id))}
         onToggleCompare={() => toggleCompare(String(selected?.id))}
         onClose={() => setSelectedId("")}
-      />
+      /> : null}
       {comparisonOpen ? (
         <ComparisonDialog
           units={[...comparison]

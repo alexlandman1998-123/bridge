@@ -46,6 +46,7 @@ import {
   resolveOnboardingBranding,
 } from '../lib/onboardingBranding'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { buildSellerSubject } from '../lib/sellerSubjectModel.js'
 import { getSellerFicaOnboardingMissing } from '../lib/sellerFicaOnboardingFields'
 import {
   CANONICAL_SELLER_FACTS_FLAG,
@@ -2283,7 +2284,7 @@ function DrawnSignaturePad({ value = '', onChange, signerName = '' }) {
   )
 }
 
-function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, defaultOpen = false }) {
+function ReviewCard({ title, items, onEdit, missing = [], showMissingDetails = false, collapsible = false, defaultOpen = false }) {
   const header = (
     <div className="flex items-start justify-between gap-3">
       <div>
@@ -2315,6 +2316,8 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
   )
 
   const body = (
+    <>
+    {showMissingDetails && missing.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[#8a5a18]">{missing.map((item) => <li key={item}>{item}</li>)}</ul> : null}
     <dl className="mt-4 grid gap-3">
       {items.map((item) => (
         <div key={item.label} className="grid gap-1.5 border-t border-[#eef3f8] pt-3.5 first:border-t-0 first:pt-0">
@@ -2323,6 +2326,7 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
         </div>
       ))}
     </dl>
+    </>
   )
 
   if (collapsible) {
@@ -2344,12 +2348,54 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
   )
 }
 
-function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddress = '', onSubmit = null, submitting = false, agentAssisted = false }) {
+function getSellerOnboardingRequiredMissing(form = {}) {
+  const submissionOwnershipBranch = getOwnershipBranch(form.ownershipType)
+  const submissionIsForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
+  const submissionIsNaturalPersonSeller =
+    form.ownerStructureType === 'foreign_individual' ||
+    submissionOwnershipBranch === 'individual' ||
+    submissionOwnershipBranch === 'married'
+  const submissionCompanyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
+  const submissionTrustees = Array.isArray(form.trustees) ? form.trustees : []
+  return [
+    !form.ownershipType && 'Legal ownership structure',
+    !form.sellerFirstName && 'Contact first name',
+    !form.sellerSurname && 'Contact surname',
+    !form.email && 'Email',
+    !form.phone && 'Phone',
+    !String(form.sellerTaxNumber || form.incomeTaxNumber || form.income_tax_number || form.taxNumber || form.tax_number || '').trim() && 'Tax number',
+    !String(form.saResident || form.sa_resident || '').trim() && 'SA resident status',
+    submissionIsNaturalPersonSeller && !String(form.dateOfBirth || form.date_of_birth || form.birthDate || '').trim() && 'Date of birth',
+    submissionIsNaturalPersonSeller && !String(form.nationality || '').trim() && 'Nationality',
+    submissionIsNaturalPersonSeller && !String(form.idNumber || form.id_number || form.foreignPassportNumber || form.foreign_passport_number || form.passportNumber || form.passport_number || '').trim() && 'ID number / passport',
+    (submissionOwnershipBranch === 'individual' || submissionOwnershipBranch === 'married') && !resolveSellerResidentialAddress(form) && 'Residential address',
+    submissionIsForeignOwner && !String(form.foreignOwnerCountry || form.foreign_owner_country || '').trim() && 'Foreign country / jurisdiction',
+    submissionOwnershipBranch === 'company' && !form.companyName && 'Company name',
+    submissionOwnershipBranch === 'company' && !form.companyRegistrationNumber && 'Company registration number',
+    submissionOwnershipBranch === 'company' && !form.companyRegisteredAddress && 'Company registered address',
+    ...(submissionOwnershipBranch === 'company' ? (!submissionCompanyDirectors.length ? ['Add at least one company director'] : submissionCompanyDirectors.flatMap((person, index) => [!person.name && `Company director ${index + 1}: first name`, !person.surname && `Company director ${index + 1}: surname`].filter(Boolean))) : []),
+    submissionOwnershipBranch === 'company' && !form.authorisedSignatoryName && 'Authorised signatory',
+    submissionOwnershipBranch === 'company' && !form.authorisedSignatoryCapacity && 'Authorised signatory capacity',
+    submissionOwnershipBranch === 'company' && !form.companyResolutionDate && 'Company resolution date',
+    submissionOwnershipBranch === 'company' && !form.companyAuthorityBasis && 'Company signing authority basis',
+    submissionOwnershipBranch === 'trust' && !form.trustName && 'Trust name',
+    submissionOwnershipBranch === 'trust' && !form.trustRegistrationNumber && 'Trust registration number',
+    submissionOwnershipBranch === 'trust' && !form.trustRegisteredAddress && 'Trust registered address',
+    ...(submissionOwnershipBranch === 'trust' ? (!submissionTrustees.length ? ['Add at least one trustee'] : submissionTrustees.flatMap((person, index) => [!person.name && `Trustee ${index + 1}: first name`, !person.surname && `Trustee ${index + 1}: surname`].filter(Boolean))) : []),
+    submissionOwnershipBranch === 'trust' && !form.authorisedTrusteeName && 'Authorised trustee',
+    submissionOwnershipBranch === 'trust' && !form.authorisedTrusteeCapacity && 'Authorised trustee capacity',
+    submissionOwnershipBranch === 'trust' && !form.trustAuthorityBasis && 'Trust signing authority basis',
+    ...getSellerFicaOnboardingMissing(form),
+    !areSellerOnboardingConsentsComplete(form) && 'Onboarding permissions and declaration',
+  ].filter(Boolean)
+}
+
+export function ReviewReadinessPanel({ issueGroups = [], legalOwnerName = '', contactName = '', ownershipLabel = '', ownerKind = '', propertyAddress = '', onSubmit = null, submitting = false, saving = false, agentAssisted = false }) {
   const issueCount = issueGroups.reduce((total, group) => total + (group.missing?.length || 0), 0)
   const ready = issueCount === 0
 
   return (
-    <section className={`rounded-[22px] border p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:p-5 ${
+    <section aria-label="Onboarding readiness" className={`rounded-[22px] border p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:p-5 ${
       ready
         ? 'border-[#cfe8da] bg-[#f2fbf5]'
         : 'border-[#f2dcc0] bg-[#fff9ef]'
@@ -2362,26 +2408,34 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
         </span>
         <div className="min-w-0">
           <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[#14532d]' : 'text-[#7a4b10]'}`}>
-            {ready ? agentAssisted ? 'Ready to save seller details' : 'Ready to send to your agent' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
+            {ready ? agentAssisted ? 'Ready to submit seller details' : 'Ready to submit to your agent' : `${issueCount} ${issueCount === 1 ? 'detail needs' : 'details need'} attention`}
           </p>
           <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
             {ready
-              ? agentAssisted ? 'Check the summary and save the information you have.' : 'Everything required for onboarding has been captured. Send it to your agent when the summary looks correct.'
-              : 'You can save what you have now and add these details later. Signing and listing steps will check what they need.'}
+              ? agentAssisted ? 'The required details are filled in. Submit them to record onboarding as completed by the agency.' : 'The required details are filled in. Submit them to your agent for review.'
+              : 'Complete the details listed below before submitting. You can save a draft now and return to this link later.'}
+
           </p>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 rounded-[18px] border border-white/70 bg-white/75 p-3 text-sm sm:grid-cols-2">
+      <div className="mt-4 grid gap-2 rounded-[18px] border border-white/70 bg-white/75 p-3 text-sm sm:grid-cols-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Seller</p>
-          <p className="mt-1 break-words font-semibold text-[#172334]">{sellerName || 'Not provided'}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Legal owner</p>
+          <p className="mt-1 break-words font-semibold text-[#172334]">{legalOwnerName || 'Not provided'}</p>
+          <p className="mt-1 text-xs text-[#6b7d93]">{ownershipLabel}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Contact</p>
+          <p className="mt-1 break-words font-semibold text-[#172334]">{contactName || 'Not provided'}</p>
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7a8da3]">Property</p>
           <p className="mt-1 break-words font-semibold text-[#172334]">{propertyAddress || 'Not provided'}</p>
         </div>
       </div>
+
+      {['company', 'foreign_company'].includes(ownerKind) ? <p className="mt-3 text-sm text-[#516981]">The legal owner is a company. Beneficial owners are the people who ultimately own or control it; the contact or signing representative may be a different person.</p> : null}
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {issueGroups.map((group) => {
@@ -2396,7 +2450,7 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-[#172334]">{group.label}</span>
                 <span className="mt-0.5 block text-xs leading-4 text-[#6b7d93]">
-                  {hasMissing ? group.missing.join(', ') : 'Complete'}
+                  {hasMissing ? <span className="grid gap-1">{group.missing.map((item) => <span key={item}>{item}</span>)}</span> : 'Required details filled in'}
                 </span>
               </span>
             </>
@@ -2428,16 +2482,18 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
           type="button"
           variant="ghost"
           onClick={onSubmit}
-          disabled={submitting}
+          disabled={submitting || saving}
           className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
         >
-          {submitting ? 'Submitting...' : ready ? agentAssisted ? 'Save seller details' : 'Send onboarding to agent' : 'Save available details'}
+          {saving ? 'Saving draft...' : submitting ? 'Submitting...' : ready ? agentAssisted ? 'Submit seller details' : 'Submit to agent for review' : 'Save draft and finish later'}
+
           <CheckCircle2 size={16} />
         </Button>
         <p className={`mt-2 text-center text-xs leading-5 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
           {ready
-            ? 'This sends your information for review. It does not sign a mandate.'
-            : 'Missing details stay unanswered. Saving does not sign documents or publish a listing.'}
+            ? 'Submitting completes this information step. Your agent must still review the details and supporting documents. It does not sign documents or publish the property.'
+            : 'Save draft keeps your answers without submitting them. Return later, complete the missing details, then submit to your agent.'}
+
         </p>
       </div>
     </section>
@@ -4299,44 +4355,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     let submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
     const submissionAddress = getPropertyAddressDetails(listing || {}, submissionForm)
     const submissionPropertyMissing = getPropertyAddressMissingItems(submissionAddress)
-    const submissionOwnershipBranch = getOwnershipBranch(submissionForm.ownershipType)
-    const submissionIsForeignOwner = isForeignOwnerModel(submissionForm.ownerEntityType, submissionForm.ownerStructureType)
-    const submissionIsNaturalPersonSeller =
-      submissionForm.ownerStructureType === 'foreign_individual' ||
-      submissionOwnershipBranch === 'individual' ||
-      submissionOwnershipBranch === 'married'
-    const submissionCompanyDirectors = Array.isArray(submissionForm.companyDirectors) ? submissionForm.companyDirectors : []
-    const submissionTrustees = Array.isArray(submissionForm.trustees) ? submissionForm.trustees : []
-    const submissionSellerMissing = [
-      !submissionForm.ownershipType && 'Legal ownership structure',
-      !submissionForm.sellerFirstName && 'Seller name',
-      !submissionForm.sellerSurname && 'Seller surname',
-      !submissionForm.email && 'Email',
-      !submissionForm.phone && 'Phone',
-      !String(submissionForm.sellerTaxNumber || submissionForm.incomeTaxNumber || submissionForm.income_tax_number || submissionForm.taxNumber || submissionForm.tax_number || '').trim() && 'Tax number',
-      !String(submissionForm.saResident || submissionForm.sa_resident || '').trim() && 'SA resident status',
-      submissionIsNaturalPersonSeller && !String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim() && 'Date of birth',
-      submissionIsNaturalPersonSeller && !String(submissionForm.nationality || '').trim() && 'Nationality',
-      submissionIsNaturalPersonSeller && !String(submissionForm.idNumber || submissionForm.id_number || submissionForm.foreignPassportNumber || submissionForm.foreign_passport_number || submissionForm.passportNumber || submissionForm.passport_number || '').trim() && 'ID number / passport',
-      (submissionOwnershipBranch === 'individual' || submissionOwnershipBranch === 'married') && !resolveSellerResidentialAddress(submissionForm) && 'Residential address',
-      submissionIsForeignOwner && !String(submissionForm.foreignOwnerCountry || submissionForm.foreign_owner_country || '').trim() && 'Foreign country / jurisdiction',
-      submissionOwnershipBranch === 'company' && (!submissionForm.companyName || !submissionForm.companyRegistrationNumber || !submissionForm.companyRegisteredAddress) && 'Company name, registration number, and registered address',
-      submissionOwnershipBranch === 'company' && (!submissionCompanyDirectors.length || submissionCompanyDirectors.some((director) => !director.name || !director.surname)) && 'At least one company director',
-      submissionOwnershipBranch === 'company' && !submissionForm.authorisedSignatoryName && 'Authorised signatory',
-      submissionOwnershipBranch === 'company' && (!submissionForm.authorisedSignatoryCapacity || !submissionForm.companyResolutionDate || !submissionForm.companyAuthorityBasis) && 'Company signing authority',
-      submissionOwnershipBranch === 'trust' && (!submissionForm.trustName || !submissionForm.trustRegistrationNumber || !submissionForm.trustRegisteredAddress) && 'Trust name, registration number, and registered address',
-      submissionOwnershipBranch === 'trust' && (!submissionTrustees.length || submissionTrustees.some((trustee) => !trustee.name || !trustee.surname)) && 'At least one trustee',
-      submissionOwnershipBranch === 'trust' && !submissionForm.authorisedTrusteeName && 'Authorised trustee',
-      submissionOwnershipBranch === 'trust' && (!submissionForm.authorisedTrusteeCapacity || !submissionForm.trustAuthorityBasis) && 'Trust signing authority',
-      !areSellerOnboardingConsentsComplete(submissionForm) && 'Onboarding permissions and declaration',
-    ].filter(Boolean)
+    const submissionSellerMissing = getSellerOnboardingRequiredMissing(submissionForm)
     const finalRequiredMissing = [
       ...submissionSellerMissing.map((item) => `Seller: ${item}`),
-      ...getSellerFicaOnboardingMissing(submissionForm).map((item) => `FICA: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
     ]
     if (finalRequiredMissing.length) {
-      if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Your details have been saved. Some information is still missing. You can return to this link to add it later.')
+      if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Draft saved. Your information has not been submitted. Return to this link, complete the missing details, then submit to your agent.')
+
       return
     }
 
@@ -4689,20 +4715,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     description: 'Capture the details needed for this ownership structure.',
   }
   const selectedSpecialMandateConditionLabels = getSpecialMandateConditionLabels(form.specialMandateConditions)
-  const sellerMissing = [
-    !form.ownershipType && 'Legal ownership structure',
-    !form.sellerFirstName && 'Seller name',
-    !form.sellerSurname && 'Seller surname',
-    !form.email && 'Email',
-    !form.phone && 'Phone',
-    isNaturalPersonSeller && !form.dateOfBirth && 'Date of birth',
-    isNaturalPersonSeller && !form.nationality && 'Nationality',
-    !form.sellerTaxNumber && 'Tax number',
-    !form.saResident && 'SA resident status',
-    ...getSellerFicaOnboardingMissing(form),
-    !areSellerOnboardingConsentsComplete(form) && 'Onboarding permissions',
-    requiresSellerResidentialAddress && !sellerResidentialAddress && 'Residential address',
-  ].filter(Boolean)
+  const sellerMissing = getSellerOnboardingRequiredMissing(form)
+  const reviewSubject = buildSellerSubject({ formData: form, listing })
   const propertyMissing = getPropertyAddressMissingItems(resolveProgressionPropertyAddress(listing || {}, form || {}))
   const sectionSummaryValue = [form.schemeName, form.sectionNumber || form.unitNumber].filter(Boolean).join(' / ')
   const estateSummaryValue = [form.estateName || form.estateComplexName, form.hoaContactName].filter(Boolean).join(' / ')
@@ -4786,9 +4800,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
             <ChevronRight size={14} />
           </Button>
         ) : null}
-        {currentStep === FINAL_STEP_INDEX ? (
+        {currentStep === FINAL_STEP_INDEX && captureDraft ? (
           <Button type="button" variant="ghost" onClick={handleSubmit} disabled={saving || submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-            {submitting ? 'Saving...' : captureDraft ? 'Save and finish' : isAgentAssistedCompletion ? 'Save seller details' : 'Send details to agent'}
+            {submitting ? 'Saving...' : 'Save and finish'}
+
             <CheckCircle2 size={14} />
           </Button>
         ) : null}
@@ -4819,9 +4834,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
               <ChevronRight size={14} />
             </Button>
           ) : null}
-          {currentStep === FINAL_STEP_INDEX ? (
+          {currentStep === FINAL_STEP_INDEX && captureDraft ? (
             <Button type="button" variant="ghost" onClick={handleSubmit} disabled={saving || submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-              {submitting ? 'Saving...' : captureDraft ? 'Save and finish' : isAgentAssistedCompletion ? 'Save seller details' : 'Send details to agent'}
+              {submitting ? 'Saving...' : 'Save and finish'}
+
               <CheckCircle2 size={14} />
             </Button>
           ) : null}
@@ -6444,7 +6460,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
           }) : null}
           {currentStep === FINAL_STEP_INDEX && !hasRequestedComplianceSigner && !tabbedCapture ? (
             <StepShell
-              eyebrow="Review & Send"
+              eyebrow="Review & Submit"
               title="Check your seller file"
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
             >
@@ -6455,20 +6471,26 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                 ) : null}
                 {!captureDraft ? <ReviewReadinessPanel
                   issueGroups={submitIssueGroups}
-                  sellerName={getSellerDisplayName(listing, form)}
+                  legalOwnerName={reviewSubject.legalOwner.name}
+                  contactName={getSellerDisplayName(listing, form)}
+                  ownershipLabel={getOwnershipSummaryLabel(form)}
+                  ownerKind={reviewSubject.kind}
                   propertyAddress={getPropertyDisplayAddress(listing, form)}
                   onSubmit={handleSubmit}
                   submitting={submitting}
+                  saving={saving}
                   agentAssisted={isAgentAssistedCompletion}
                 /> : null}
                 <ReviewCard
                   title="Seller Summary"
                   missing={sellerMissing}
+                  showMissingDetails={Boolean(captureDraft)}
                   onEdit={() => setCurrentStep(0)}
                   collapsible
                   defaultOpen
                   items={[
-                    { label: 'Seller', value: `${form.sellerFirstName} ${form.sellerSurname}`.trim() },
+                    { label: 'Legal owner', value: reviewSubject.legalOwner.name },
+                    { label: 'Contact', value: `${form.sellerFirstName} ${form.sellerSurname}`.trim() },
                     { label: 'Email', value: form.email },
                     { label: 'Phone', value: form.phone },
                     ...(requiresSellerResidentialAddress ? [{ label: 'Residential Address', value: sellerResidentialAddress }] : []),
@@ -6479,6 +6501,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
                 <ReviewCard
                   title="Property Summary"
                   missing={propertyMissing}
+                  showMissingDetails={Boolean(captureDraft)}
                   onEdit={() => setCurrentStep(1)}
                   collapsible
                   items={[

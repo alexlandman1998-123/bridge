@@ -100,9 +100,27 @@ export function trackHomeSeekersPage(pageKey) {
   if (window.location.pathname.replace(/\/$/, '') === '/join') track('ViewContent', { content_name: 'Agent Join Page' })
 }
 
+// Custom acquisition milestones have distinct names and never include contact fields.
+export function trackHomeSeekersNextStep(event, receipt) {
+  if (!['qualifier_started', 'qualifier_passed', 'qualifier_failed', 'oneonone_booked', 'session_rsvp', 'application_completed', 'calculator_completed', 'calculator_email_submitted'].includes(event)) return false
+  if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(receipt || '')) return false
+  const current = state(), key = `${event}:${receipt}`
+  if (!current || current.fired.has(key)) return false
+  try {
+    if (!initialize()) return false
+    window.fbq('trackSingleCustom', HOME_SEEKERS_META_PIXEL_ID, event)
+    current.fired.add(key)
+    try { window.localStorage.setItem(eventsKey, JSON.stringify([...current.fired].slice(-200))) } catch { /* Keep in-memory deduplication. */ }
+    return true
+  } catch { return false }
+}
+
 export function trackHomeSeekersRecruitmentSuccess(action, result, { endpoint, submissionKey } = {}) {
   if (!['/api/home-seekers/recruitment', '/api/recruitment/applicant-profile'].includes(endpoint) || result?.preview || result?.applicant?.submissionPreview) return
   const applicant = result?.applicant
+  if (action === 'submit_profile' && result?.accepted === true && applicant?.applicationSubmitted === true && applicant?.emailVerification === 'verified') {
+    trackHomeSeekersNextStep('application_completed', submissionKey)
+  }
   // Confirmed upload responses already include tenant-scoped document paths.
   // Their owner UUID is stable across files and avoids exposing any new API data.
   const documentOwner = applicant?.documents?.map(file => String(file.path || '').split('/'))
@@ -119,4 +137,14 @@ export function trackHomeSeekersRecruitmentSuccess(action, result, { endpoint, s
   if (!current || current.fired.has(key) || !track(event, { content_name: contentName })) return
   current.fired.add(key)
   try { window.localStorage.setItem(eventsKey, JSON.stringify([...current.fired].slice(-200))) } catch { /* Retain in-memory deduplication. */ }
+}
+
+export function trackHomeSeekersCalculator(event, receipt) {
+  if (!['calculator_completed', 'calculator_email_submitted'].includes(event)) return false
+  if (!trackHomeSeekersNextStep(event, receipt)) return false
+  const gaId = import.meta.env?.VITE_HOME_SEEKERS_GOOGLE_ANALYTICS_ID
+  try {
+    if (/^G-[A-Z0-9]+$/.test(gaId || '')) window.gtag?.('event', event, { send_to: gaId })
+  } catch { /* Advertising tools must never affect the result or capture. */ }
+  return true
 }

@@ -14,10 +14,14 @@ const migrations = await Promise.all(
 
 function getFunctionDefinitions(source = '') {
   const starts = [...source.matchAll(/create\s+or\s+replace\s+function\s+public\.([a-z0-9_]+)\s*\(/gi)]
-  return starts.map((match, index) => ({
-    name: match[1],
-    source: source.slice(match.index, starts[index + 1]?.index),
-  }))
+  return starts.map((match, index) => {
+    const candidate = source.slice(match.index, starts[index + 1]?.index)
+    const delimiter = /\bas\s+(\$[a-z0-9_]*\$)/i.exec(candidate)
+    assert.ok(delimiter, `expected a dollar-quoted body for ${match[1]}`)
+    const end = candidate.indexOf(delimiter[1], delimiter.index + delimiter[0].length)
+    assert.notEqual(end, -1, `expected the end of ${match[1]}`)
+    return { name: match[1], source: candidate.slice(0, end + delimiter[1].length) }
+  })
 }
 
 const functions = migrations.flatMap(({ file, source }) =>
@@ -40,7 +44,9 @@ function findEffectiveRpc(label, predicate) {
   // the same signature are historical revisions, not concurrently callable
   // functions; PostgreSQL retains only the final definition. Migrations are
   // sorted above, so the final matching entry is the effective RPC contract.
-  return matches.at(-1)
+  const effective = functions.filter(item => item.name === matches[0].name).at(-1)
+  assert.ok(predicate(effective), `${label} must still satisfy its contract in the latest definition`)
+  return effective
 }
 
 function functionBody(source, name) {
@@ -81,6 +87,20 @@ assert.ok(
   'the token-response fence must recreate the public snapshot RPC with its existing signature',
 )
 
+// The fence renamed this exact implementation before creating a public
+// facade. Later public wrappers retain that internal implementation; requiring
+// its INSERT statements to appear in the wrapper misidentifies that design.
+const snapshotImplementation = functions.filter(({ name }) =>
+  name === 'bridge_save_buyer_onboarding_snapshot_internal',
+).at(-1) || functions.filter(({ name, file }) =>
+  name === snapshotRpc.name && file < snapshotTokenFenceMigration.file,
+).at(-1)
+assert.ok(snapshotImplementation, 'the snapshot fence must retain its prior implementation')
+assert.match(snapshotRpc.source, /bridge_save_buyer_onboarding_snapshot_internal\s*\(/i,
+  'the effective snapshot wrapper must delegate to the protected implementation')
+assert.match(snapshotRpc.source, /#-\s*'\{onboarding,token\}'/i,
+  'the effective wrapper must strip the onboarding credential from its result')
+
 assert.match(
   portalRpc.source,
   /from\s+public\.transaction_onboarding/i,
@@ -118,17 +138,17 @@ assert.match(
   'snapshot save must validate the onboarding bearer token server-side',
 )
 assert.match(
-  snapshotRpc.source,
+  snapshotImplementation.source,
   /insert\s+into\s+public\.onboarding_form_data/i,
   'snapshot save must persist onboarding form data through the token-bound RPC',
 )
 assert.match(
-  snapshotRpc.source,
+  snapshotImplementation.source,
   /public\.transactions/i,
   'snapshot save must own the linked transaction snapshot update instead of relying on bearer-token table updates',
 )
 assert.match(
-  snapshotRpc.source,
+  snapshotImplementation.source,
   /public\.transaction_funding_sources/i,
   'snapshot save must own funding-source persistence inside the token boundary',
 )
@@ -164,19 +184,24 @@ assert.doesNotMatch(
   'the public snapshot facade must not reconstruct or echo an onboarding token',
 )
 
-for (const rpc of [portalRpc, snapshotRpc]) {
-  const migration = migrations.find((item) => item.file === rpc.file)
-  assert.ok(migration, `missing migration source for ${rpc.name}`)
-  assert.match(
-    migration.source,
-    new RegExp(`revoke\\s+all\\s+on\\s+function\\s+public\\.${rpc.name}\\s*\\(`, 'i'),
-    `${rpc.name} must start from no public execute grant`,
-  )
-  assert.match(
-    migration.source,
-    new RegExp(`grant\\s+execute\\s+on\\s+function\\s+public\\.${rpc.name}\\s*\\([\\s\\S]*?\\)\\s+to\\s+anon,\\s*authenticated`, 'i'),
-    `${rpc.name} must be callable by the scoped onboarding client only`,
-  )
+for (const rpc of [portalRpc, snapshotRpc, { name: 'bridge_save_buyer_onboarding_snapshot_internal', internal: true }]) {
+  // CREATE OR REPLACE retains grants. Replay the explicit ACL changes instead
+  // of requiring every later wrapper migration to repeat historical grants.
+  const grants = new Set(['public'])
+  const acl = new RegExp(`(revoke\\s+all|grant\\s+execute)\\s+on\\s+function\\s+public\\.${rpc.name}\\s*\\([^)]*\\)\\s+(?:from|to)\\s+([^;]+);`, 'gi')
+  let changes = 0
+  for (const { source } of migrations) {
+    for (const match of source.matchAll(acl)) {
+      changes += 1
+      for (const role of match[2].split(',').map(value => value.trim().toLowerCase())) {
+        if (/^revoke/i.test(match[1])) grants.delete(role)
+        else grants.add(role)
+      }
+    }
+  }
+  assert.ok(changes, `missing explicit access control for ${rpc.name}`)
+  assert.deepEqual([...grants].sort(), rpc.internal ? [] : ['anon', 'authenticated'],
+    `${rpc.name} must retain its public-facade or private-implementation access boundary`)
 }
 
 const onboardingTransactionSelectPolicy = migrations.find(({ source }) =>
@@ -359,7 +384,7 @@ assert.doesNotMatch(
   /\.from\(\s*['\"]transaction_funding_sources['\"]\s*\)/,
   'onboarding save must not write funding sources directly with a bearer token',
 )
-assert.match(onboardingPageSource, /fetchClientOnboardingByToken\(token\)/, 'the onboarding page must load through the guarded API path')
+assert.match(onboardingPageSource, /fetchClientOnboardingByToken\(\s*token\s*(?:,|\))/, 'the onboarding page must load through the guarded API path, including targeted buyer links')
 assert.match(onboardingPageSource, /saveClientOnboardingDraft\(/, 'the onboarding page must save through the guarded API path')
 assert.match(onboardingPageSource, /submitClientOnboarding\(/, 'the onboarding page must submit through the guarded API path')
 

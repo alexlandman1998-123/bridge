@@ -1,22 +1,26 @@
 import { homeSeekersPath } from './homeSeekersRoutes.js'
 import { homeSeekersPixelSurface, setHomeSeekersMeasurementConsent } from './homeSeekersPixel.js'
 // Agent overview supplied on 8 October 2026. All fees and examples exclude VAT.
-export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, ffcTransferFee: 950, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
+// FFC transfer breakdown confirmed by the requester on 18 October 2026.
+const ffcRunnerFee = 700
+const ffcPpraFee = 640
+export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, ffcRunnerFee, ffcPpraFee, ffcTransferFee: ffcRunnerFee + ffcPpraFee, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
+
 export const recruitmentPaymentOptions = Object.freeze([
   Object.freeze({ id: 'deals', title: 'Post Paid', amount: recruitmentPricing.dealFundedMonthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.dealFundedMonthlyFee, copy: 'Your monthly fee builds up as a balance and is deducted when your deals register. A maximum of 50% of any one deal goes towards that balance, so you retain at least half of each cheque.', note: 'Solo agents only.' }),
   Object.freeze({ id: 'monthly', title: 'Prepaid', amount: recruitmentPricing.monthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.monthlyFee, copy: 'Your R9,000 monthly subscription is collected by debit order on the 1st of every month, in advance. Your subscription is settled separately from your deals, with no brokerage commission split.', note: 'The standard option. Pay monthly, in advance.' }),
   Object.freeze({ id: 'upfront', title: 'Upfront', amount: recruitmentPricing.upfrontAnnualFee, period: '/ year', annualFee: recruitmentPricing.upfrontAnnualFee, copy: 'Pay R100,000 upfront for your subscription for the year. Save R8,000 compared with twelve Prepaid payments of R9,000.', note: 'Your subscription is settled for the year. The R1,500 fee still applies to each registered sale.' }),
 ])
-export function recruitmentExample(sales = 10, optionId = 'monthly') {
+export function recruitmentExample(sales = 10, optionId = 'monthly', commissionRate = recruitmentPricing.commissionRate) {
   const p = recruitmentPricing
   const option = recruitmentPaymentOptions.find((item) => item.id === optionId)
   if (!option) throw new RangeError('Unknown recruitment payment option')
-  const commission = sales * p.averageSalePrice * p.commissionRate
+  const commission = sales * p.averageSalePrice * commissionRate
   const cost = option.annualFee + sales * p.transactionFee
   const traditionalCost = commission * p.traditionalSplit
   const balloonCost = p.balloonMonthlyFee * 12 + sales * p.averageSalePrice * p.balloonCommissionRate * p.balloonSplit
   const capCost = p.capMonthlyFee * 12 + Math.min(commission * p.capSplit, p.annualCap) + commission * p.capRoyalty
-  return { commission, cost, traditionalCost, balloonCost, capCost, youKeep: commission - cost, effectivePercent: commission ? cost / commission * 100 : null, breakEvenSales: option.annualFee / (p.averageSalePrice * p.commissionRate * p.traditionalSplit - p.transactionFee) }
+  return { commission, cost, traditionalCost, balloonCost, capCost, youKeep: commission - cost, effectivePercent: commission ? cost / commission * 100 : null, breakEvenSales: option.annualFee / (p.averageSalePrice * commissionRate * p.traditionalSplit - p.transactionFee) }
 }
 
 export async function submitRecruitmentApplication(details, { fetcher = fetch, pageUrl = window.location.href, timeoutMs = 20000 } = {}) {

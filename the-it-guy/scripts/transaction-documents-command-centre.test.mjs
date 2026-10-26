@@ -13,14 +13,14 @@ assert.equal(
   'package script should expose the transaction Documents command centre regression',
 )
 
-const documentsStart = source.indexOf("(workspaceRole === 'attorney' || isAgentTransactionView) && activeWorkspaceMenu === 'documents'")
+const documentsStart = source.indexOf("(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents'")
 const tasksStart = source.indexOf("workspaceRole === 'attorney' && activeWorkspaceMenu === 'tasks'", documentsStart)
 assert.notEqual(documentsStart, -1, 'Documents workspace tab should render explicitly')
 assert.notEqual(tasksStart, -1, 'Tasks workspace tab should follow Documents tab for block extraction')
 
 const documentsBlock = source.slice(documentsStart, tasksStart)
 const archlineDocumentsStart = source.indexOf('function ArchlineDocumentsWorkspace(')
-const archlineDocumentsEnd = source.indexOf('function ArchlineTasksWorkspace(', archlineDocumentsStart)
+const archlineDocumentsEnd = source.indexOf('\nfunction ', archlineDocumentsStart + 1)
 assert.notEqual(archlineDocumentsStart, -1, 'Archline documents workspace component should exist')
 assert.notEqual(archlineDocumentsEnd, -1, 'Archline documents workspace block should be extractable')
 const archlineDocumentsBlock = source.slice(archlineDocumentsStart, archlineDocumentsEnd)
@@ -39,12 +39,12 @@ assert.match(source, /documentRequestId: uploadDraft\.documentRequestId \|\| nul
 assert.match(source, /canonicalRequirementInstanceId: linkedRequirement/, 'uploads from a requirement should link canonical requirement instances')
 
 assert.match(documentsBlock, /ArchlineDocumentsWorkspace/, 'Documents tab should render the Archline documents workspace')
-assert.match(documentsBlock, /workspaceRole === 'attorney' \|\| isAgentTransactionView/, 'Agent transaction documents should use the same Archline buyer and seller document workspace')
-assert.match(source, /activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' && !isAgentTransactionView/, 'Legacy non-attorney documents command centre should not catch the agent transaction portal')
+assert.match(documentsBlock, /workspaceRole === 'attorney' \|\| isTransactionOperatorView/, 'Agent transaction documents should use the same Archline buyer and seller document workspace')
+assert.match(source, /activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' && !isTransactionOperatorView/, 'Legacy non-attorney documents command centre should not catch the agent transaction portal')
 assert.match(source, /ATTORNEY_DOCUMENT_DASHBOARD_PARTIES/, 'Documents workspace should derive buyer and seller document parties')
 assert.match(source, /Buyer Documents/, 'Documents workspace should expose buyer document categories')
 assert.match(source, /Seller Documents/, 'Documents workspace should expose seller document categories')
-for (const sharedLabel of ['Property Documents', 'Sales Documents', 'FICA Documents', 'Finance Documents', 'Additional Requests']) {
+for (const sharedLabel of ['Property Documents', 'Sale Documents', 'Buyer FICA & ID Documents', 'Seller FICA & ID Documents', 'Finance Documents', 'Additional Requests']) {
   assert.match(source, new RegExp(sharedLabel), `Documents workspace should expose the shared ${sharedLabel} category`)
 }
 assert.match(source, /<h3 className="text-sm font-semibold text-slate-950">Required Documents<\/h3>/, 'Documents workspace category modal should render required documents')
@@ -53,7 +53,7 @@ assert.doesNotMatch(archlineDocumentsBlock, /ArchlinePanel title="Document Healt
 assert.doesNotMatch(archlineDocumentsBlock, /ArchlinePanel title="Quick Actions"/, 'Documents workspace should not render the right-sidebar quick actions')
 assert.doesNotMatch(archlineDocumentsBlock, /Document Activity/, 'Documents workspace should not render the bottom document activity panel')
 assert.doesNotMatch(archlineDocumentsBlock, /<strong className="block text-sm text-blue-950">Tip<\/strong>/, 'Documents workspace should not render the old right-sidebar tip')
-assert.match(archlineDocumentsBlock, /<h2 className="text-xl font-semibold tracking-\[-0\.02em\] text-slate-950">Documents<\/h2>[\s\S]*Request Document[\s\S]*Upload Document/, 'Documents workspace actions should sit in the page heading row')
+assert.match(archlineDocumentsBlock, /Request Document[\s\S]*Upload Document/, 'Documents workspace exposes request and upload actions')
 assert.doesNotMatch(archlineDocumentsBlock, /Search documents\.\.\./, 'Documents workspace should not render the clipped in-card search bar')
 assert.match(documentsBlock, /open=\{uploadDocumentModalOpen\}/, 'Upload should be modal-driven')
 assert.match(documentsBlock, /Satisfies required document\?/, 'Upload modal should support linking to required documents')
@@ -62,7 +62,7 @@ assert.match(matterModelSource, /row\.category === normalizedFilter \|\| row\.ca
 assert.match(source, /routeLegalWorkflowDetailKey \|\| localLegalWorkflowDetailKey/, 'workflow details should support route-backed and state-backed activation')
 assert.match(workflowDetailBlock, /setLocalLegalWorkflowDetailKey\(normalized\)/, 'opening a workflow detail from the workspace should not require a route change')
 assert.doesNotMatch(workflowDetailBlock, /navigate\(`\$\{transactionWorkspaceBasePath\}\/transfer\/\$\{normalized\}`\)/, 'opening a workflow detail should not remount the matter workspace via nested route navigation')
-assert.match(workflowDetailBlock, /if \(routeLegalWorkflowDetailKey\) \{\s*navigate\(transactionWorkspaceBasePath\)/, 'direct workflow-detail URLs should still be able to return to the base matter route')
+assert.match(workflowDetailBlock, /routeLegalWorkflowDetailKey && nextMenu !== 'transfer'\) \{[\s\S]*navigate\(transactionWorkspaceBasePath\)/, 'direct workflow-detail URLs should still be able to return to the base matter route')
 
 assert.doesNotMatch(documentsBlock, /Transfer \/ Attorney Documents/, 'Documents tab should not render a Transfer / Attorney Documents panel')
 assert.doesNotMatch(documentsBlock, /Upload shared or internal legal documents/, 'Documents tab should not retain the old permanent upload-form header')

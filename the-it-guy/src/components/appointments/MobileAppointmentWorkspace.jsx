@@ -3,12 +3,13 @@ import AddressInput from '../location/AddressInput'
 import { useEffect, useRef, useState } from 'react'
 import Modal from '../ui/Modal'
 import AppointmentWorkActions from './AppointmentWorkActions'
+import AppointmentTimeChange from './AppointmentTimeChange'
 import AppointmentDeliveryStatus from './AppointmentDeliveryStatus'
 import AppointmentCalendarActions from './AppointmentCalendarActions'
 import { createAppointmentAsync, updateAppointmentAsync, updateAppointmentParticipantRsvpAsync } from '../../lib/agencyPipelineService'
 import { listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
 import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
-import { appointmentWorkflowActions } from '../../core/appointments/appointmentWorkflow'
+import { appointmentWorkflowActions, usesCalendarTimeChangeWorkflow } from '../../core/appointments/appointmentWorkflow'
 import { appointmentLocalParts, resolveAppointmentSchedule, mergeAppointmentSchedule } from '../../core/appointments/appointmentTime'
 import { applyAppointmentTemplate, getAppointmentTypeTemplate } from '../../services/appointmentTemplateService'
 import { getAppointmentTypeOptions } from '../../lib/appointmentTypeDefinitions'
@@ -23,7 +24,7 @@ function initialDraft(appointment, actor, selectedDate) {
     timezone:'Africa/Johannesburg', allDay:false, assignedAgentId:actor.id, status:'requested', participants:[], notes:'', location:'',
     relatedEntityType:'none', relatedEntityId:'', sendInviteEmails:true, remindersEnabled:true, attachCalendarInvite:true }
 }
-export default function MobileAppointmentWorkspace({ appointment = null, organisationId, actor, selectedDate, onClose, onSaved }) {
+export default function MobileAppointmentWorkspace({ appointment = null, organisationId, actor, selectedDate, onClose, onSaved, onTimeChanged }) {
   const [editing, setEditing] = useState(!appointment)
   const [draft, setDraft] = useState(() => initialDraft(appointment, actor, selectedDate))
   const [options, setOptions] = useState({ agents:[], leads:[], contacts:[] })
@@ -38,6 +39,8 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
   const command = useRef(null)
   const active = useRef(true)
   const actions = appointmentWorkflowActions(appointment || {}, actor)
+  const usesTimeChange = Boolean(appointment && usesCalendarTimeChangeWorkflow(appointment))
+  const scheduleLocked = usesTimeChange && appointment.status !== 'draft'
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
   useEffect(() => {
     if (!editing) return
@@ -130,7 +133,8 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
       <p>{appointment.notes}</p>
       <ul aria-label="Appointment attendees">{(appointment.participants || []).map(person => <li key={person.participantId}>{person.name || person.email} · {person.participantRole} · {person.rsvpStatus}</li>)}</ul>
       {actions.canEdit ? <button type="button" onClick={() => { setDraft(initialDraft(appointment,actor,selectedDate));setEditing(true) }}>Edit appointment</button> : null}
-      <AppointmentWorkActions key={`${organisationId}:${actor.id}:${appointment.appointmentId}`} appointment={appointment} organisationId={organisationId} actor={actor} onSaved={saved => onSaved?.(saved,'Appointment action saved.')} />
+      {usesTimeChange ? <AppointmentTimeChange appointment={{...appointment,organisationId}} actor={actor} onChanged={onTimeChanged} /> : null}
+      <AppointmentWorkActions timeChangesHandled={usesTimeChange} key={`${organisationId}:${actor.id}:${appointment.appointmentId}`} appointment={appointment} organisationId={organisationId} actor={actor} onSaved={saved => onSaved?.(saved,'Appointment action saved.')} />
       <ConnectedCalendarPanel organisationId={organisationId} viewerKey={actor.id} appointmentId={appointment.appointmentId} />
       <AppointmentDeliveryStatus appointment={appointment} viewerKey={`${organisationId}:${actor.id}`} />
       <AppointmentCalendarActions appointment={appointment} preferServerGeneration compact onError={failure => setError(failure.message)} />
@@ -138,7 +142,7 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
       {stale ? <p role="alert">This appointment changed while you were editing. Close and reopen it before saving.</p> : null}
       {lookupError ? <p role="alert">{lookupError} <button type="button" onClick={() => setLookupRetry(value => value+1)}>Retry scheduling options</button></p> : null}
       <fieldset disabled={busy || Boolean(stale)} className="grid gap-3">
-        <label>Appointment type<select value={draft.appointmentType} disabled={special} onChange={event => setDraft(previous => ({...applyAppointmentTemplate(event.target.value,{...previous,appointmentType:event.target.value,reminderRules:undefined,linkedWorkflow:undefined,linkedWorkflowStage:undefined,completionBehavior:undefined,instructions:undefined,internalInstructions:undefined,workflowCompletionEffect:undefined,requiredDocuments:undefined}),appointmentType:event.target.value,title:getAppointmentTypeTemplate(event.target.value).label}))}>
+        <label>Appointment type<select value={draft.appointmentType} disabled={special} onChange={event => setDraft(previous => ({...applyAppointmentTemplate(event.target.value,{...previous,appointmentType:event.target.value,reminderRules:undefined,linkedWorkflow:undefined,linkedWorkflowStage:undefined,completionBehavior:undefined,instructions:undefined,internalInstructions:undefined,workflowCompletionEffect:undefined,requiredDocuments:undefined}),appointmentType:event.target.value,title:getAppointmentTypeTemplate(event.target.value).label,...(scheduleLocked ? {date:previous.date,startTime:previous.startTime,endTime:previous.endTime,durationMinutes:previous.durationMinutes,timezone:previous.timezone,allDay:previous.allDay} : {})}))}>
           <option value="">Choose type</option>{typeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
         <label>Title<input value={draft.title || ''} onChange={event => field('title',event.target.value)} /></label>
@@ -152,10 +156,14 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
           const lead = options.leads.find(row => row.leadId === event.target.value)
           setDraft(previous => ({...previous,relatedEntityType:lead ? 'lead' : 'none',relatedEntityId:lead?.leadId || '',leadId:lead?.leadId || null,contactId:lead?.contactId || null,listingId:lead?.listingId || null}))
         }}><option value="">Standalone appointment</option>{options.leads.map(lead => <option key={lead.leadId} value={lead.leadId}>{lead.name || lead.title || lead.email || 'Lead'}</option>)}</select></label> : null}
+        {scheduleLocked ? <p>To move this booking, return to its details and choose Request a new time. Save other edits here.</p> : null}
+        <fieldset disabled={scheduleLocked} className="grid min-w-0 gap-3 border-0 p-0">
         <label>Date<input type="date" required value={draft.date} onChange={event => field('date',event.target.value)} /></label>
         <label><input type="checkbox" checked={draft.allDay === true} onChange={event => field('allDay',event.target.checked)} /> All-day appointment</label>
         {!draft.allDay ? <div className="grid grid-cols-2 gap-2"><label>Start time<input type="time" required value={draft.startTime} onChange={event => setDraft(previous => ({...previous,startTime:event.target.value,endTime:''}))} /></label><label>End time<input type="time" value={draft.endTime || ''} onChange={event => field('endTime',event.target.value)} /></label></div> : null}
         <label>Timezone<input required value={draft.timezone} onChange={event => field('timezone',event.target.value)} /></label>
+        </fieldset>
+
         <label>Location<LocationInput value={draft.location || ''} onChange={event => field('location',event.target.value)} /></label>
         <label>Meeting URL<input type="url" value={draft.meetingUrl || ''} onChange={event => field('meetingUrl',event.target.value)} /></label>
         <label>Notes<textarea value={draft.notes || ''} onChange={event => field('notes',event.target.value)} /></label>

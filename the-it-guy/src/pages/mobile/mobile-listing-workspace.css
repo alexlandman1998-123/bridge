@@ -1,0 +1,162 @@
+.mobile-listing-workspace .listing-workspace-hero { min-height: 200px; border-radius: 12px; box-shadow: none; }
+.mobile-listing-workspace .listing-workspace-hero-content { min-height: 200px; padding: 18px; }
+.mobile-listing-workspace .listing-workspace-hero-title { font-size: 22px; line-height: 1.25; letter-spacing: -.035em; }
+.mobile-listing-workspace .listing-workspace-hero-location { margin-top: 8px; font-size: 13px; line-height: 1.5; font-weight: 500; }
+.mobile-listing-workspace .listing-workspace-hero-facts { margin-top: 12px; gap: 6px 10px; font-size: 11px; line-height: 1.5; font-weight: 500; }
+.mobile-listing-workspace .listing-workspace-hero-facts:empty { display: none; }
+.mobile-listing-workspace .listing-workspace-tabs { border-radius: 10px; padding: 6px; box-shadow: none; }
+.mobile-listing-workspace .listing-workspace-tabs button { border-radius: 8px; font-size: 12px; box-shadow: none; }
+.mobile-listing-workspace .listing-workspace-statistics { border-radius: 12px; padding: 14px; box-shadow: none; }
+.mobile-listing-workspace [aria-label="Listing performance summary"] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mobile-listing-workspace [aria-label="Listing performance summary"] > div { min-height: 122px; border-radius: 10px; padding: 14px; }
+.mobile-listing-workspace [aria-label="Listing performance summary"] > div > div > p { font-size: 11px; }
+.mobile-listing-workspace [aria-label="Listing performance summary"] > div > p:first-of-type { margin-top: 16px; font-size: 28px; }
+.mobile-listing-workspace [aria-label="Listing performance summary"] > div > p:last-of-type { margin-top: 10px; font-size: 11px; line-height: 1.5; }
+
+.mobile-listing-workspace [aria-label="Listing channel statistics"] fieldset { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; min-width: 0; }
+.mobile-listing-workspace [aria-label="Listing channel statistics"] fieldset > label { min-width: 0; }
+.mobile-listing-workspace [aria-label="Listing channel statistics"] fieldset > label > span { display: flex; width: 100%; padding-inline: 8px; white-space: nowrap; }
+
+.mobile-marketing-summary > div {
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 12px;
+  border-bottom: 0;
+}
+
+.mobile-marketing-summary > div:first-child {
+  border-right: 1px solid #e5edf6;
+}
+
+.mobile-marketing-summary > div > span {
+  width: 28px;
+  height: 28px;
+}
+
+.mobile-marketing-summary > div > span > svg {
+  width: 15px;
+  height: 15px;
+}
+
+.mobile-marketing-summary > div > div > p:first-child {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-heading {
+  display: none;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns:not(.listing-channel-heading) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'identity status' 'reference reference' 'updated actions';
+  align-items: center;
+  gap: 14px 12px;
+  padding: 20px 16px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(1) {
+  grid-area: identity;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(1) > span {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(1) p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(2) {
+  grid-area: reference;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(2) > p.uppercase {
+  display: none;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(2) > p {
+  font-size: 12px;
+  min-width: 0;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(2) > * {
+  margin-top: 0;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(2) > a {
+  margin-left: auto;
+  min-height: 32px;
+  align-items: center;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(3) {
+  grid-area: status;
+  justify-self: end;
+  max-width: 100px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(3) > p {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(4) {
+  grid-area: updated;
+  font-size: 11px;
+}
+
+.mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(5) {
+  grid-area: actions;
+  justify-content: flex-end;
+}
+
+@media (max-width: 360px) {
+  .mobile-listing-workspace #listing-distribution-channels .listing-channel-columns:not(.listing-channel-heading) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'identity' 'status' 'reference' 'updated' 'actions';
+    gap: 10px;
+  }
+
+  .mobile-listing-workspace #listing-distribution-channels .listing-channel-columns > :nth-child(3) {
+    justify-self: start;
+    max-width: none;
+  }
+}
+
+.mobile-seller-profile h2 {
+  font-size: 20px;
+  line-height: 26px;
+  letter-spacing: -0.025em;
+}
+
+.mobile-seller-profile p.text-sm {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.mobile-seller-profile p.text-base {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.mobile-seller-profile p.uppercase {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}

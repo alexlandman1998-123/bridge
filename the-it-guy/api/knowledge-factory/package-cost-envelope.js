@@ -1,6 +1,7 @@
 import { supplierCosts, supplierBilling, supplierMetric } from './supplier-costs.js';
 import { supplierQueryFingerprint } from './supplier-contract.js';
 import { isKnowledgeFactoryV1UatEndpoint } from './supplier-endpoint.js';
+import { isReportEndpoint } from '../../server/services/knowledgeFactoryReportRuntime.js';
 
 // Cost Specification revised 22 September 2026, pp. 1–5: v1 charges each
 // returned occurrence. Reserve every selected field at the query's list limits.
@@ -10,9 +11,9 @@ const CONTRACTS = Object.freeze({
   full_canvassing_report: Object.freeze({ sha: 'f9971f118b5793791cc1cd6cb10e60e23eefee3c3581b3cb62e0c0786bfe2e32', full: true }),
 });
 const SCHEDULE = 'kf-v1-2026-09-22';
-export function packageCostEnvelope({ endpoint, productId, query, payload }) {
+export function packageCostEnvelope({ endpoint, productId, query, payload, environment = 'uat' }) {
   const contract = CONTRACTS[productId];
-  if (!isKnowledgeFactoryV1UatEndpoint(endpoint) || !contract || supplierQueryFingerprint(query) !== contract.sha)
+  if (!(environment === 'uat' ? isKnowledgeFactoryV1UatEndpoint(endpoint) : isReportEndpoint(endpoint, environment)) || !contract || supplierQueryFingerprint(query) !== contract.sha)
     throw new Error('No reviewed v1 UAT fee envelope exists for this exact report query.');
   if (payload?.errors?.length) throw new Error('Supplier complexity validation failed.');
   const costs = supplierCosts(payload);
@@ -36,6 +37,7 @@ export function packageCostEnvelope({ endpoint, productId, query, payload }) {
     ['Transfer.IsCurrentOwner (history)', 50, 5], ['Transfer.PurchaseAmount (history)', 600, 5],
   );
   const surcharge = fields.reduce((sum, [, fee, count]) => sum + fee * count, 0);
+  const ownerFields = fields.filter(([field]) => field.startsWith('Buyer.'));
   const complexity = costs.fieldCost + costs.typeCost;
   const maximumCredits = complexity + surcharge;
   if (!Number.isSafeInteger(maximumCredits) ||
@@ -44,9 +46,16 @@ export function packageCostEnvelope({ endpoint, productId, query, payload }) {
       (costs.credits !== null && costs.credits > maximumCredits))
     throw new Error('Supplier costs exceed or contradict the reviewed fee envelope.');
   return {
-    kind: 'conservative_maximum', supplierApiVersion: 'v1', scheduleVersion: SCHEDULE,
+    kind: 'conservative_maximum', supplierApiVersion: 'v1', supplierEnvironment: environment, scheduleVersion: SCHEDULE,
     supplierQuerySha256: contract.sha, productId, fieldCost: costs.fieldCost, typeCost: costs.typeCost,
     complexity, maximumSurcharge: surcharge, maximumCredits,
+    ownerFieldFees: {
+      creditsPerOwner: ownerFields.reduce((sum, [, fee]) => sum + fee, 0),
+      maximumOwners: 20,
+      maximumCredits: ownerFields.reduce((sum, [, fee, count]) => sum + fee * count, 0),
+      phoneIncluded: false,
+      supplierConfirmedTotal: false,
+    },
     fields: fields.map(([field, creditsPerOccurrence, maximumOccurrences]) => ({ field, creditsPerOccurrence, maximumOccurrences })),
     supplierBilling: billing, supplierReportedCosts: costs,
     supplierConfirmedTotal: false, canApproveProduct: false,

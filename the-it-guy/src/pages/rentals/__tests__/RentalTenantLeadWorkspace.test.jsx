@@ -435,3 +435,20 @@ it("refreshes matches when saved tenant requirements change", async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Matches', exact: true }));
   await screen.findByText('No rental listings match this budget in the current workspace.');
 });
+
+it('shows only the tenant next action in the mobile module and keeps the saved workflow handler', async () => {
+  const current = { ...lead, stage: 'new' };
+  show({ actionOnly: true, lead: current });
+  expect(screen.queryByRole('progressbar', { name: 'Tenant readiness' })).toBeNull();
+  expect(screen.queryByRole('navigation', { name: 'Tenant lead workspace' })).toBeNull();
+  expect(screen.queryByText('Tenant lead', { exact: true })).toBeNull();
+  expect(screen.queryByText('Lead assigned to', { exact: true })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Mark contacted', exact: true }));
+  await waitFor(() => expect(advanceRentalLead).toHaveBeenCalledWith(current, expect.objectContaining({ toStage: 'contacted' })));
+});
+
+it('keeps the relevant booking form in the focused mobile action module', () => {
+  show({ actionOnly: true });
+  expect(screen.getByRole('button', { name: 'Book viewing', exact: true })).toBeTruthy();
+  expect(screen.queryByRole('progressbar', { name: 'Tenant readiness' })).toBeNull();
+});

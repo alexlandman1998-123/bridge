@@ -1,0 +1,83 @@
+// @vitest-environment jsdom
+import { afterEach,beforeEach,expect,it,vi } from 'vitest'
+import { cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react'
+import ListingCampaignBuilder from '../ListingCampaignBuilder'
+const runtime=vi.hoisted(()=>({choices:vi.fn(),source:vi.fn(),events:vi.fn()}))
+vi.mock('../../../services/justListedCampaignService',()=>({loadJustListedChoices:runtime.choices,loadJustListedSource:runtime.source,loadPropertyShowDays:runtime.events}))
+const id=n=>`${String(n).padStart(8,'0')}-1111-4111-8111-111111111111`
+const source={title:'Sunny family home',price:'R 1 250 000',location:'99 Secret Road, Gardens',facts:'3 bedrooms',description:'A bright home',agencyName:'Oak',agentName:'Sarah',destination:'sarah@example.test',language:'en-ZA',imageId:'cover'}
+const props=template=>({template,organisationId:'agency',userId:'owner',onSave:vi.fn().mockResolvedValue(),onCancel:vi.fn(),onSetup:vi.fn()})
+beforeEach(()=>{
+ vi.clearAllMocks();runtime.choices.mockResolvedValue({agency:{agencyName:'Oak'},listings:[1,2,3].map(n=>({id:id(n),title:`Listing ${n}`,area:'Gardens'}))})
+ runtime.source.mockImplementation(async(org,user,listingId)=>({listingId,agentId:'',source:{...source,title:listingId===id(1)?source.title:`Home ${listingId.slice(0,8)}`},publicArea:'Gardens',images:[{id:'cover',url:'https://example.test/house.jpg'}]}))
+ runtime.events.mockResolvedValue([{id:id(9),listingId:id(1),title:'Saved public show day',date:'2099-11-20',startTime:'10:00',endTime:'12:00'}])
+})
+afterEach(cleanup)
+const choose=async()=>fireEvent.click(await screen.findByRole('button',{name:/Listing 1/}))
+it('uses saved show-day timing without asking the user to type it again',async()=>{
+ const input=props('show-day');render(<ListingCampaignBuilder {...input}/>);await choose()
+ expect((await screen.findByLabelText('Show day date')).value).toBe('2099-11-20')
+ expect(screen.getByLabelText('Start time').value).toBe('10:00')
+ fireEvent.click(screen.getByRole('button',{name:/Confirm and preview/}))
+ fireEvent.click(screen.getByRole('button',{name:'Save campaign draft'}))
+ await waitFor(()=>expect(input.onSave).toHaveBeenCalledWith(expect.objectContaining({listing_builder:expect.objectContaining({version:2,template:'show-day',settings:expect.objectContaining({eventId:id(9)})})})))
+})
+it('starts Coming Soon with an area-only teaser and saves none of the unchecked listing details',async()=>{
+ const input=props('coming-soon');render(<ListingCampaignBuilder {...input}/>);await choose()
+ await screen.findByText('Area-only teaser — no listing photos')
+ expect(screen.queryByText('99 Secret Road, Gardens')).toBeNull()
+ expect(screen.queryByRole('img')).toBeNull()
+ fireEvent.click(screen.getByRole('checkbox',{name:'I confirm permission to use the selected teaser details and photos.'}))
+ fireEvent.click(screen.getByRole('button',{name:/Confirm and preview/}))
+ fireEvent.click(screen.getByRole('button',{name:'Save campaign draft'}))
+ await waitFor(()=>expect(input.onSave).toHaveBeenCalled())
+ const payload=input.onSave.mock.calls[0][0]
+ expect(JSON.stringify(payload)).not.toMatch(/99 Secret Road|Sunny family home|3 bedrooms|1 250 000|"imageId":"cover"/)
+})
+it('confirms the current reduced price and restores confirmations after a refresh',async()=>{
+ render(<ListingCampaignBuilder {...props('price-reduced')}/>);await choose()
+ const checkbox=await screen.findByRole('checkbox',{name:/current listing asking price is a confirmed reduced price/})
+ expect(screen.getByRole('button',{name:/Confirm and preview/}).disabled).toBe(true)
+ fireEvent.click(checkbox)
+ expect(screen.getByRole('button',{name:/Confirm and preview/}).disabled).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:'Refresh listing details and rebuild wording'}))
+ await waitFor(()=>expect(screen.getByRole('button',{name:/Confirm and preview/}).disabled).toBe(true))
+})
+it('builds a three-property collection with distinct saved listing references',async()=>{
+ const input=props('property-collection');render(<ListingCampaignBuilder {...input}/>)
+ for(const n of [1,2,3])fireEvent.click(await screen.findByRole('checkbox',{name:new RegExp(`Listing ${n}`)}))
+ fireEvent.click(screen.getByRole('button',{name:'Continue with 3 properties'}))
+ fireEvent.click(await screen.findByRole('button',{name:/Confirm and preview/}))
+ fireEvent.click(screen.getByRole('button',{name:'Save campaign draft'}))
+ await waitFor(()=>expect(input.onSave).toHaveBeenCalled())
+ expect(input.onSave.mock.calls[0][0].listing_builder.additionalListings).toHaveLength(2)
+})
+it('keeps edited wording when a listing changes during a save',async()=>{
+ const input=props('property-spotlight');render(<ListingCampaignBuilder {...input}/>);await choose()
+ fireEvent.click(await screen.findByRole('button',{name:/Confirm and preview/}))
+ fireEvent.click(screen.getByText('Edit wording'))
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'My edited wording'}})
+ runtime.source.mockResolvedValue({listingId:id(1),agentId:'',source:{...source,price:'R 2 000 000'},images:[]})
+ fireEvent.click(screen.getByRole('button',{name:'Save campaign draft'}))
+ await screen.findByRole('alert')
+ expect(screen.getByLabelText('Message').value).toBe('My edited wording')
+ expect(input.onSave).not.toHaveBeenCalled()
+})
+it('creates a sold-result draft without disclosing the asking price or a full address',async()=>{
+ const input=props('just-sold');render(<ListingCampaignBuilder {...input}/>);await choose()
+ fireEvent.click(await screen.findByRole('checkbox',{name:/approved for a sold campaign/}))
+ fireEvent.click(screen.getByRole('button',{name:/Confirm and preview/}))
+ fireEvent.click(screen.getByRole('button',{name:'Save campaign draft'}))
+ await waitFor(()=>expect(input.onSave).toHaveBeenCalled())
+ expect(input.onSave.mock.calls[0][0].goal).toBe('seller_leads')
+ expect(JSON.stringify(input.onSave.mock.calls[0][0])).not.toMatch(/1 250 000|99 Secret Road/)
+})
+it('keeps missing contact details entered in the teaser when reveal choices change',async()=>{
+ runtime.source.mockImplementation(async(org,user,listingId)=>({listingId,agentId:'',source:{...source,agentName:'',destination:''},publicArea:'Gardens',images:[{id:'cover',url:'https://example.test/house.jpg'}]}))
+ render(<ListingCampaignBuilder {...props('coming-soon')}/>);await choose()
+ fireEvent.change(await screen.findByLabelText('Public agent name'),{target:{value:'Sarah'}})
+ fireEvent.change(screen.getByLabelText('Public enquiry contact'),{target:{value:'sarah@example.test'}})
+ fireEvent.click(screen.getByRole('checkbox',{name:'Reveal the asking price'}))
+ expect(screen.getByLabelText('Public agent name').value).toBe('Sarah')
+ expect(screen.getByLabelText('Public enquiry contact').value).toBe('sarah@example.test')
+})

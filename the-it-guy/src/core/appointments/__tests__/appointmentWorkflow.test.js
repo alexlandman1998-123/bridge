@@ -1,5 +1,5 @@
 import { describe,it,expect } from 'vitest'
-import { appointmentWorkflowActions as actions,resolveAppointmentCreationContext as context } from '../appointmentWorkflow'
+import { appointmentWorkflowActions as actions,resolveAppointmentCreationContext as context,usesCalendarTimeChangeWorkflow } from '../appointmentWorkflow'
 const now=Date.parse('2027-10-01T06:00:00Z')
 const owner={id:'owner',email:'owner@example.test'}
 const booking={appointmentId:'id',assignedAgentId:'owner',status:'requested',dateTime:'2027-10-01T09:00:00Z',endDateTime:'2027-10-01T10:00:00Z',timezone:'Africa/Johannesburg',reservationManaged:true,holdExpiresAt:'2027-10-01T09:00:00Z',participants:[{participantId:'self',userId:'owner',rsvpStatus:'Accepted',isRequired:true}]}
@@ -27,4 +27,11 @@ describe('Agent calendar workflow',()=>{
   expect(actions({...booking,holdExpiresAt:'2027-10-01T05:00:00Z'},owner,now)).toMatchObject({canReissue:true,canRespond:false})
   expect(actions({...booking,status:'confirmed',hasConfirmedReservation:true},owner,Date.parse('2027-10-01T09:01:00Z')).canComplete).toBe(true)
  })
+})
+
+it('matches the managed ordinary and dedicated specialist workflow boundary',()=>{
+ expect(usesCalendarTimeChangeWorkflow({...booking,attorneyDeliveryEnabled:false})).toBe(true)
+ expect(usesCalendarTimeChangeWorkflow({attorneyDeliveryEnabled:false,reservationManaged:false})).toBe(false)
+ expect(usesCalendarTimeChangeWorkflow({listingViewingRoundNumber:1})).toBe(false)
+ expect(usesCalendarTimeChangeWorkflow({})).toBe(true)
 })

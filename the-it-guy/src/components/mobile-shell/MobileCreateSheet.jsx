@@ -106,9 +106,9 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved, draftCon
       >
         <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">{config.eyebrow}</p>
+            {config.eyebrow && <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#1f7a5a]">{config.eyebrow}</p>}
             <h2 className="mt-1 text-[24px] font-semibold text-[#10243a]">{config.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-[#60758d]">{config.body}</p>
+            {config.body && <p className="mt-2 text-sm leading-6 text-[#60758d]">{config.body}</p>}
           </div>
           <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#f1f5f9] text-[#60758d]" onClick={onClose} aria-label="Close create sheet">
             <X className="h-5 w-5" />
@@ -158,8 +158,8 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved, draftCon
         </div>
 
         <div className="shrink-0 border-t border-[#e6edf3] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-          <button type="submit" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#10243a] px-4 text-sm font-semibold text-white">
-            <Icon className="h-4 w-4 text-[#9fe0bd]" />
+          <button type="submit" className={`flex min-h-12 w-full items-center justify-center gap-2 ${type === 'follow-up' ? 'rounded-none bg-black' : 'rounded-2xl bg-[#10243a]'} px-4 text-sm font-semibold text-white`}>
+            <Icon className={`h-4 w-4 ${type === 'follow-up' ? 'text-white' : 'text-[#9fe0bd]'}`} />
             {config.submitLabel}
           </button>
         </div>

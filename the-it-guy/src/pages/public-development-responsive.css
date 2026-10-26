@@ -66,8 +66,7 @@
 }
 
 .public-development-desktop #availability,
-.public-development-desktop #residences,
-.public-development-desktop #live-availability {
+.public-development-desktop #residences {
   padding-top: 3.75rem !important;
   padding-bottom: 3.75rem !important;
 }
@@ -75,12 +74,6 @@
 .public-development-desktop #gallery {
   padding-top: 2.5rem !important;
   padding-bottom: 2.5rem !important;
-}
-
-.public-development-desktop #live-availability > div:last-child {
-  max-height: 460px;
-  overflow-y: auto;
-  border-bottom: 1px solid #e1d9cd;
 }
 
 .public-development-desktop #enquire {

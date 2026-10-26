@@ -354,6 +354,8 @@ const Financials = lazy(() => import('./pages/Financials'))
 const RetiredDocumentGeneratorPage = lazy(() => import('./pages/RetiredDocumentGeneratorPage'))
 const MobileDemoLayout = lazy(() => import('./components/mobile-shell/MobileDemoLayout'))
 const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
+const MobileLeadActionProvider = lazy(() => import('./components/mobile-shell/MobileLeadActionProvider'))
+const MobileAgencyActionWorkspace = lazy(() => import('./pages/agency/AgencyPipelinePage'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
 const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopmentsPage'))
 const MobileDemoHomePage = lazy(() => import('./pages/mobile/MobileDemoHomePage'))
@@ -402,6 +404,7 @@ const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
+const TransactionSellerOnboarding = lazy(() => import('./pages/TransactionSellerOnboarding.jsx'))
 const SellerDocumentSigning = lazy(() => import('./pages/SellerDocumentSigning'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
@@ -1654,11 +1657,15 @@ function SetupProtectedLayout({ session }) {
 }
 
 function MobileProtectedLayout({ onLogout, session }) {
+  const { pathname } = useLocation()
   if (isSupabaseConfigured && !session) {
     return <Navigate to="/auth" replace />
   }
 
-  return <MobileLayout onLogout={onLogout} />
+  return <MobileLeadActionProvider key={pathname} renderWorkspace={({ leadId, rental }) => rental
+    ? <RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadWorkspacePage embeddedLeadId={leadId} actionOnly /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>
+    : <SalesWorkspaceGuard><RoleRoute allowedRoles={['agent', 'developer']}><MobileAgencyActionWorkspace initialViewMode="leads" embeddedLeadId={leadId} /></RoleRoute></SalesWorkspaceGuard>
+  }><MobileLayout onLogout={onLogout} /></MobileLeadActionProvider>
 }
 
 function MobileTransactionWorkspacePage() {
@@ -1919,6 +1926,8 @@ function AppRoutes() {
                   <Route path="/mobile/listings" element={<AppErrorBoundary scope="mobile-listings" title="Mobile listings failed to load"><MobileListingsPage /></AppErrorBoundary>} />
                   <Route path="/mobile/listings/new" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-create" title="Listing form failed to load"><MobileListingEditorPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
                   <Route path="/mobile/listings/:listingId/edit" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-edit" title="Listing form failed to load"><MobileListingEditorPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
+                  <Route path="/mobile/listings/:listingId" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-overview" title="Listing workspace failed to load"><AgentListingDetail mobile /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
+                  <Route path="/mobile/rentals/listings/:listingId/:detailTab?" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.listings}><AppErrorBoundary scope="mobile-rental-listing-overview" title="Rental listing workspace failed to load"><RentalListingDetailPage mobile /></AppErrorBoundary></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
                   <Route path="/mobile/calendar" element={<AppErrorBoundary scope="mobile-calendar" title="Mobile calendar failed to load"><MobileCalendarPage /></AppErrorBoundary>} />
                   <Route path="/mobile/deals" element={<AppErrorBoundary scope="mobile-deals" title="Mobile deals failed to load"><MobileModulePage moduleKey="deals" /></AppErrorBoundary>} />
                   <Route path="/mobile/tasks" element={<AppErrorBoundary scope="mobile-tasks" title="Mobile tasks failed to load"><MobileTasksPage /></AppErrorBoundary>} />
@@ -3880,9 +3889,11 @@ function AppRoutes() {
                 <Route
                   path="integrations/whatsapp"
                   element={
-                    <RoleRoute allowedRoles={['agent', 'developer']}>
-                      <SettingsWhatsAppPage />
-                    </RoleRoute>
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
+                        <SettingsWhatsAppPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route
@@ -4055,6 +4066,7 @@ function AppRoutes() {
           <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="bond-application-portal-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/bond-application/:accessToken" element={<TokenRouteGate paramKey="accessToken" title="Invalid bond application access link"><AppErrorBoundary scope="bond-application-access-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
+          <Route path="/seller/transaction/:token" element={<TokenRouteGate><AppErrorBoundary scope="transaction-seller-onboarding" title="Seller details failed to load"><TransactionSellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/sign/:token" element={<TokenRouteGate><AppErrorBoundary scope="seller-document-signing" title="Seller document signing failed to load"><SellerDocumentSigning /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/collaboration/invite/:invitationToken" element={<AppErrorBoundary scope="seller-collaboration-portal" title="Seller collaboration failed to load"><SellerCollaborationPortal /></AppErrorBoundary>} />

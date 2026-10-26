@@ -6,26 +6,29 @@ const [pipeline, workspaceRoute] = await Promise.all([
   readFile('src/pages/agency/AgencyLeadWorkspaceRoutePage.jsx', 'utf8'),
 ])
 
-for (const label of ['Buyer Qualification', 'What’s next', 'Lead Assigned To', 'Property enquiry', 'Activity Logger', 'Viewing Planner']) {
+for (const label of ['Qualification Questions', 'What’s next', 'Lead Assigned To', 'Property enquiry', 'BuyerViewingRequestCard', 'Viewing Planner']) {
   assert.match(pipeline, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
 
-assert.match(pipeline, /xl:grid-cols-\[minmax\(0,2fr\)_minmax\(320px,1fr\)\]/)
+assert.match(pipeline, /xl:grid-cols-\[minmax\(0,2fr\)_minmax\(0,1fr\)\]/)
 assert.match(pipeline, /data-testid="buyer-qualification-summary-grid"/)
 assert.match(pipeline, /data-testid="buyer-overview-right-column"/)
-assert.match(pipeline, /xl:grid-rows-\[minmax\(0,1\.1fr\)_minmax\(0,0\.9fr\)\]/)
+assert.match(pipeline, /grid min-w-0 gap-4 xl:grid-rows-\[1fr_auto\].*data-testid="buyer-overview-right-column"/)
+assert.doesNotMatch(pipeline, />Buyer Qualification<|Phone qualification questions/)
 assert.match(pipeline, /<Lightbulb className="h-4 w-4"/)
 assert.match(pipeline, /Next action tip/)
 assert.match(pipeline, /A quick call now increases your chances of converting this lead\./)
 assert.match(pipeline, /data-testid="buyer-property-enquiry"/)
-assert.match(pipeline, /data-testid="buyer-activity-logger"/)
-assert.match(pipeline, /data-testid="simplified-viewing-planner"/)
+assert.doesNotMatch(pipeline, /data-testid="buyer-activity-logger"/)
+assert.match(pipeline, /data-testid="buyer-property-enquiry"[\s\S]*<BuyerViewingRequestCard[\s\S]*data-testid="simplified-viewing-planner"/)
+assert.match(pipeline, /const showBuyerOverviewViewingPlanner = false/)
+assert.match(pipeline, /showBuyerOverviewViewingPlanner \? \([\s\S]*data-testid="simplified-viewing-planner"/)
 assert.match(pipeline, /filteredOptions\.length/)
 assert.match(pipeline, /canAccessWorkspaceRecord\(\s*PERMISSIONS\.assignLeads/)
 assert.match(pipeline, /await reassignLead\(/)
 assert.match(pipeline, /activityType: 'Lead Reassigned'/)
 assert.match(pipeline, /resolveListingImageUrl\(context\.linkedListing\)/)
-assert.match(pipeline, /min-w-\[430px\].*activityQuickTypes/s)
+assert.doesNotMatch(pipeline, /Activity Logger/)
 
 assert.doesNotMatch(workspaceRoute, /if \(activeTab === 'overview'\) return/)
 assert.match(workspaceRoute, /Suspense[\s\S]*fallback=\{<LeadWorkspaceRouteLoadingShell loadStage="workspace_chunk_loading" \/>\}/)

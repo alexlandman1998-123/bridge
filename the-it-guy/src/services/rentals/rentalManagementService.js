@@ -10,9 +10,19 @@ function isRentalManagementEvent(activity = {}) {
 }
 
 export async function listRentalManagementWorkspace(agentId, options = {}) {
-  const leases = await listRentalLeaseWorkflowsForAgent(agentId, options)
+  const activityReads = new Map()
+  const readActivity = listingId => {
+    options.signal?.throwIfAborted()
+    if (!activityReads.has(listingId)) activityReads.set(listingId, getPrivateListingActivity(listingId, options.signal ? { signal: options.signal } : undefined))
+    return activityReads.get(listingId)
+  }
+  const leases = await listRentalLeaseWorkflowsForAgent(agentId, { ...options, readActivity })
+  options.signal?.throwIfAborted()
   const eventGroups = await Promise.all(leases.map(async (lease) => {
-    const activities = await getPrivateListingActivity(lease.listingId).catch(() => [])
+    const activities = await readActivity(lease.listingId).catch(() => {
+      options.signal?.throwIfAborted()
+      return []
+    })
     return activities.filter(isRentalManagementEvent).map(mapRentalManagementEvent).filter((event) => event.leaseReference === lease.reference)
   }))
   return { leases, events: eventGroups.flat().sort((left, right) => (Date.parse(right.createdAt || '') || 0) - (Date.parse(left.createdAt || '') || 0)) }

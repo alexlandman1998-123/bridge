@@ -30,3 +30,30 @@ it('allows reconciliation without a reference and blocks another portal mutation
  const reconcile=screen.getByRole('button',{name:'Reconcile previous request'})
  expect(reconcile.disabled).toBe(false);fireEvent.click(reconcile);expect(refresh).toHaveBeenCalledOnce()
 })
+
+
+it('withdraws an existing feed advert without its public number or publishing readiness',async()=>{
+ const onWithdraw=vi.fn(),onRefresh=vi.fn(),onChangeStatus=vi.fn()
+ render(<RentalPortalManagementPanel channel={{...channel,reference:'',hasAdvertIdentity:true}} onWithdraw={onWithdraw} onRefresh={onRefresh} onChangeStatus={onChangeStatus} onPublish={vi.fn()} onClose={()=>{}} preview={{ready:false}} />)
+ const withdraw=screen.getByRole('button',{name:'Withdraw advert'})
+ expect(withdraw.disabled).toBe(false)
+ expect(screen.queryByRole('button',{name:'Publish advert'})).toBeNull()
+ expect(screen.getByRole('button',{name:'Save and update Private Property'}).disabled).toBe(false)
+ fireEvent.click(screen.getByRole('button',{name:'Check latest status'}));await waitFor(()=>expect(onRefresh).toHaveBeenCalledOnce())
+ fireEvent.click(withdraw)
+ expect(onWithdraw).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button',{name:'Confirm withdrawal'}));await waitFor(()=>expect(onWithdraw).toHaveBeenCalledOnce())
+})
+
+it.each([
+ {status:'inactive'}, {status:'removed'}, {loading:true}, {loadError:'Unavailable'}, {requiresReconciliation:true},
+])('keeps withdrawal blocked for unsafe channel state %j',patch=>{
+ render(<RentalPortalManagementPanel channel={{...channel,reference:'',hasAdvertIdentity:true,...patch}} onWithdraw={vi.fn()} onClose={()=>{}} />)
+ expect(screen.getByRole('button',{name:'Withdraw advert'}).disabled).toBe(true)
+})
+
+
+it('keeps an unsent rental without either portal identity unable to withdraw',()=>{
+ render(<RentalPortalManagementPanel channel={{...channel,reference:'',hasAdvertIdentity:false}} onWithdraw={vi.fn()} onClose={()=>{}} />)
+ expect(screen.getByRole('button',{name:'Withdraw advert'}).disabled).toBe(true)
+})

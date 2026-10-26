@@ -2,7 +2,7 @@ import SharedLegalJourney from './SharedLegalJourney'
 import { useState } from 'react'
 
 // Observe the persisted journey; never reconstruct tasks from a fallback template.
-export default function AgentConveyancingJourney({ result, loading = false, partnerOptions = [], canAssignPartner = false, partnerPending = false, assignedPartner = '', onAssignPartner }) {
+export default function AgentConveyancingJourney({ result, loading = false, partnerOptions = [], partnerOptionsLoading = false, partnerOptionsError = '', onReloadPartners, canAssignPartner = false, partnerPending = false, assignedPartner = '', onAssignPartner }) {
   const [partnerId, setPartnerId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -27,10 +27,11 @@ export default function AgentConveyancingJourney({ result, loading = false, part
       <p className="text-sm text-textMuted">Use this when the transaction was imported partway through the process. The partner can be allocated before buyer onboarding.</p>
       {assignedPartner ? <p className="text-sm text-textMuted">Current partner: <strong className="text-textStrong">{assignedPartner}</strong></p> : null}
       <div className="flex flex-wrap gap-2">
-        <label className="min-w-[16rem] flex-1 text-sm font-medium text-textMuted">Transfer partner<select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} disabled={saving} className="mt-1 w-full rounded-control border border-borderDefault bg-white p-2"><option value="">Select a partner…</option>{partnerOptions.map((option) => <option key={option.id} value={option.id}>{option.companyName || option.contactPerson || option.email}</option>)}</select></label>
-        <button type="submit" disabled={!partnerId || saving} className="self-end rounded-control bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Allocating…' : 'Allocate partner'}</button>
+        <label className="min-w-[16rem] flex-1 text-sm font-medium text-textMuted">Transfer partner<select value={partnerId} onChange={(event) => setPartnerId(event.target.value)} disabled={saving || partnerOptionsLoading} className="mt-1 w-full rounded-control border border-borderDefault bg-white p-2"><option value="">{partnerOptionsLoading ? 'Loading partners…' : 'Select a partner…'}</option>{partnerOptions.map((option) => <option key={option.id} value={option.id}>{option.companyName || option.contactPerson || option.email}</option>)}</select></label>
+        <button type="submit" disabled={!partnerId || saving || partnerOptionsLoading || Boolean(partnerOptionsError)} className="self-end rounded-control bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Allocating…' : 'Allocate partner'}</button>
       </div>
-      {!partnerOptions.length ? <p className="text-sm text-textMuted">No transfer partners are available. Add one in Partners, then return here.</p> : null}
+      {partnerOptionsError ? <div role="alert" className="text-sm text-red-700"><p>{partnerOptionsError}</p><button type="button" disabled={saving || partnerOptionsLoading} onClick={onReloadPartners} className="mt-2 font-semibold underline">Reload partners</button></div> : null}
+      {!partnerOptionsLoading && !partnerOptionsError && !partnerOptions.length ? <p className="text-sm text-textMuted">No transfer partners are available. Add one in Partners, then return here.</p> : null}
       {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
       {message ? <p role="status" className="text-sm text-success">{message}</p> : null}
     </form> : null}

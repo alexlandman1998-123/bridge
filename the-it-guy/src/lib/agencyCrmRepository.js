@@ -1243,13 +1243,23 @@ export async function fetchAgencyCrmLeadJourneyEnrichment(organisationId, { lead
     .eq('lead_id', resolvedLeadId)
     .order('activity_date', { ascending: false })
 
-  const [contactResult, activityResult] = await Promise.all([contactPromise, activityPromise])
+  // A session snapshot can predate manual onboarding context creation. Refresh
+  // only its canonical transaction link so saved buyer answers can be loaded.
+  const linkagePromise = supabase.from('leads')
+    .select('lead_id, converted_transaction_id')
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', resolvedLeadId)
+    .maybeSingle()
+  const [contactResult, activityResult, linkageResult] = await Promise.all([contactPromise, activityPromise, linkagePromise])
   const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
   const activityBlocked = activityResult.error && (isPermissionDeniedError(activityResult.error) || isMissingSchemaOrTableError(activityResult.error))
   if (contactResult.error && !contactBlocked) throw contactResult.error
   if (activityResult.error && !activityBlocked) throw activityResult.error
 
+  if (linkageResult.error) throw linkageResult.error
+
   return {
+    leadLinkage: linkageResult.data || null,
     contacts: contactResult.data && !contactBlocked ? [mapSupabaseContact(contactResult.data)] : [],
     leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
     source: 'remote',

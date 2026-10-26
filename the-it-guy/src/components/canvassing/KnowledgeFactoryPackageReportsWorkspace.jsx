@@ -1,3 +1,4 @@
+import KnowledgeFactoryReportInvoices from './KnowledgeFactoryReportInvoices';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,11 +11,13 @@ import {
   UserPlus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from 'react-router-dom';
 import { useWorkspace } from "../../context/WorkspaceContext";
 import {
   convertKnowledgeFactoryReportToProspect,
   downloadKnowledgeFactoryCompletedReport,
   listKnowledgeFactoryCompletedReports,
+  fileKnowledgeFactoryReportToSellerLead,
 } from "../../services/propertyIntelligence/knowledgeFactoryReportConversionService";
 import Field from "../ui/Field";
 import Modal from "../ui/Modal";
@@ -348,6 +351,18 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
   });
   const [downloadingReportId, setDownloadingReportId] = useState("");
   const [reviewingReport, setReviewingReport] = useState(null);
+  const [filingReportId, setFilingReportId] = useState('');
+
+  async function retrySellerFiling(report) {
+    if (filingReportId) return;
+    setFilingReportId(report.id);
+    try {
+      await fileKnowledgeFactoryReportToSellerLead({ organisationId, reportResultId: report.id });
+      await load();
+    } catch (error) {
+      setState(previous => ({ ...previous, error: error?.message || 'The report is saved. Seller lead filing needs another retry.' }));
+    } finally { setFilingReportId(''); }
+  }
 
   async function load() {
     if (!organisationId) return;
@@ -424,14 +439,14 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
       className="rounded-2xl border border-slate-200 bg-white shadow-sm"
       data-canvassing-workspace="knowledge-factory-package-reports"
     >
+      <KnowledgeFactoryReportInvoices organisationId={organisationId} refreshKey={state.items.length} />
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">
             Completed reports
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Review a completed package, then explicitly create one seller
-            prospect from it.
+            Live reports automatically file the property details, all owners and PDF under one seller lead per property.
           </p>
         </div>
         <button
@@ -502,6 +517,22 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
                     </dd>
                   </div>
                 </dl>
+                <div className="mt-4 text-sm">
+                  {report.sellerFiling?.status === 'test_report' ? (
+                    <p className="text-slate-500">Test report — no seller lead created.</p>
+                  ) : report.sellerFiling?.status === 'filed' ? (
+                    <Link className="font-semibold text-emerald-700 underline" to={`/pipeline/leads/${report.sellerFiling.lead_id}`}>
+                      Open seller lead · report filed in Documents
+                    </Link>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-amber-800">Report saved. Seller lead or document filing is pending.</p>
+                      <button type="button" disabled={Boolean(filingReportId)} onClick={() => void retrySellerFiling(report)} className="min-h-10 rounded-lg border border-slate-200 px-3 font-semibold disabled:opacity-50">
+                        {filingReportId === report.id ? 'Filing…' : 'Retry seller filing'}
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -533,7 +564,7 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
                       ? "Preparing PDF..."
                       : "Download PDF"}
                   </button>
-                  <button
+                  {report.request_context_snapshot?.supplierEnvironment !== 'live' ? <button
                     type="button"
                     disabled={Boolean(report.conversion) || converted}
                     onClick={() =>
@@ -549,7 +580,7 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
                     {converted
                       ? "Added to Canvassing"
                       : "Create canvassing prospect"}
-                  </button>
+                  </button> : null}
                 </div>
               </article>
             );

@@ -68,7 +68,7 @@ assert.equal(completeCostEvidence({ outcome: "validated", field_cost: null, type
 assert.equal(completeCostEvidence({ outcome: "validated", field_cost: 12, type_cost: 4, credits_consumed: 16 }), false);
 assert.equal(completeCostEvidence({ outcome: "validated", field_cost: 12, type_cost: 4, price_surcharge: 0, credits_consumed: 16, supplier_api_version: "v1", supplier_query_sha256: packageReportQueryFingerprint("basic_owner_lookup") }), true);
 assert.match(packageReportQuery("full_canvassing_report"), /propertyReports\(first: 1/);
-assert.match(execution, /estimatedCredits = metric\(validation\.credits_consumed\)[\s\S]*estimatedCredits === null/, "Paid preflight must reject missing credit evidence.");
+assert.match(execution, /currentReportApproval[\s\S]*Number\(approval.maximum_credits\)/, "Paid preflight requires a reviewed maximum bound to the exact query.");
 assert.match(
   execution,
   /packageReportQuery\(productId, "CanvassingReport"\)/,

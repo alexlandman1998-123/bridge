@@ -8,6 +8,44 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.resetA
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { promise, resolve } }
 const base = { organisationId: 'agency', agentId: 'agent' }
 describe('independent appointment loading', () => {
+  it('keeps repeated refresh events behind one slow request and one follow-up', async () => {
+    vi.useFakeTimers()
+    const first = deferred()
+    const second = deferred()
+    listAppointmentsAsync.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const { result } = renderHook(() => usePipelineAppointments(base))
+    await act(async () => {})
+    for (let event = 0; event < 20; event += 1) {
+      act(() => window.dispatchEvent(new Event('itg:agency-crm-updated')))
+      await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    }
+    expect(listAppointmentsAsync).toHaveBeenCalledTimes(1)
+    await act(async () => first.resolve([{ appointmentId: 'first' }]))
+    expect(result.current.rows).toEqual([{ appointmentId: 'first' }])
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(listAppointmentsAsync).toHaveBeenCalledTimes(2)
+    await act(async () => second.resolve([{ appointmentId: 'latest' }]))
+    expect(result.current.rows).toEqual([{ appointmentId: 'latest' }])
+  })
+  it('aborts the actual read on timeout, scope change and unmount', async () => {
+    vi.useFakeTimers()
+    listAppointmentsAsync.mockImplementation(() => new Promise(() => {}))
+    const { result, rerender, unmount } = renderHook((props) => usePipelineAppointments(props), { initialProps: { ...base, timeoutMs: 1000 } })
+    await act(async () => {})
+    const firstSignal = listAppointmentsAsync.mock.calls[0][1].signal
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(result.current.status).toBe('error')
+    expect(firstSignal?.aborted).toBe(true)
+    rerender({ ...base, organisationId: 'other', timeoutMs: 1000 })
+    await act(async () => {})
+    const secondSignal = listAppointmentsAsync.mock.calls[1][1].signal
+    rerender({ ...base, organisationId: 'third', timeoutMs: 1000 })
+    await act(async () => {})
+    expect(secondSignal?.aborted).toBe(true)
+    const thirdSignal = listAppointmentsAsync.mock.calls[2][1].signal
+    unmount()
+    expect(thirdSignal?.aborted).toBe(true)
+  })
   it('loads full lead history without a date bound', async () => {
     const rows = [{ appointmentId: 'future', dateTime: '2027-10-01T09:40:00Z' }]
     listAppointmentsAsync.mockResolvedValue(rows)
@@ -31,10 +69,10 @@ describe('independent appointment loading', () => {
     listAppointmentsAsync.mockResolvedValueOnce([{ appointmentId: 'saved' }]).mockRejectedValueOnce(new Error('Network failed')).mockResolvedValueOnce([])
     const { result } = renderHook(() => usePipelineAppointments(base))
     await waitFor(() => expect(result.current.status).toBe('ready'))
-    act(() => result.current.reload())
+    await act(async () => { await result.current.reload() })
     await waitFor(() => expect(result.current.error).toBe('Network failed'))
     expect(result.current.rows).toEqual([{ appointmentId: 'saved' }])
-    act(() => result.current.reload())
+    await act(async () => { await result.current.reload() })
     await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(result.current.rows).toEqual([])
   })
@@ -70,7 +108,7 @@ describe('independent appointment loading', () => {
     const { unmount } = renderHook(() => usePipelineAppointments(base))
     await act(async () => {})
     act(() => { window.dispatchEvent(new Event('itg:agency-crm-updated')); window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('online')) })
-    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
     expect(listAppointmentsAsync).toHaveBeenCalledTimes(2)
     visible.mockReturnValue('hidden')
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })

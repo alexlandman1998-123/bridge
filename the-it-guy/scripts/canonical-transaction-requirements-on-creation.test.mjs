@@ -23,7 +23,7 @@ assert.match(creationSource, /canonicalSourceRequired:\s*true/)
 assert.match(ensureSource, /if \(canonicalSourceRequired\)/)
 assert.match(ensureSource, /resolveTransactionDocumentRequirements\(/)
 assert.match(ensureSource, /TRANSACTION_CANONICAL_PERSISTENCE_MODES\.creationRpc/)
-assert.match(ensureSource, /writeLegacyProjection:\s*true/)
+assert.match(ensureSource, /writeLegacyProjection:\s*false/)
 assert.match(ensureSource, /CANONICAL_REQUIREMENT_SETUP_INCOMPLETE/)
 
 assert.match(resolverSource, /export async function syncTransactionRequirementInstancesForCreation/)
