@@ -1,6 +1,4 @@
-import { buildDeveloperLeadTransactionHandoff } from '../core/developerLeads/developerLeadTransactionHandoff.js'
 import {
-  createTransactionFromWizard,
   getOrCreateTransactionOnboarding,
   recordBuyerOnboardingSent,
 } from '../lib/api.js'
@@ -147,21 +145,14 @@ export async function convertDeveloperLeadToTransactionAndSendOnboarding({
   const existingTransactionId = normalizeUuid(lead.convertedTransactionId)
   const manualDelivery = Boolean(manualBuyerOnboardingDelivery)
 
+  if (!existingTransactionId) throw new Error('Complete buyer onboarding and the signed OTP in the linked buyer workspace before creating a transaction.')
+
   if (!sendBuyerOnboarding && existingTransactionId) {
     const onboarding = await ensureOnboardingLink({
       transactionId: existingTransactionId,
       purchaserType: lead.purchaserType || 'individual',
     })
-    const convertedLead = manualDelivery
-      ? await markLeadBuyerOnboardingSent(client, {
-        developerOrgId: orgId,
-        developerLeadId: leadId,
-        transactionId: existingTransactionId,
-        sourceAgencyOrgId: lead.sourceAgencyOrgId,
-        sendBuyerOnboarding: false,
-        manualBuyerOnboardingDelivery: true,
-      })
-      : lead
+    const convertedLead = lead
 
     return {
       contract: DEVELOPER_LEAD_PHASE18_CONTRACT,
@@ -180,38 +171,12 @@ export async function convertDeveloperLeadToTransactionAndSendOnboarding({
     }
   }
 
-  const handoff = buildDeveloperLeadTransactionHandoff(lead, {
-    allowEarlyLeadStatus: manualDelivery && !sendBuyerOnboarding,
-  })
-
-  if (!handoff.eligible) {
-    const reason = handoff.blockers.map((blocker) => blocker.message).filter(Boolean).join(' ')
-    throw new Error(reason || 'This developer lead is not ready to convert.')
-  }
-
-  const transaction = await createTransactionFromWizard({
-    setup: handoff.handoff.setup,
-    finance: handoff.handoff.finance,
-    status: handoff.handoff.status,
-    options: {
-      ...handoff.handoff.options,
-      creationOrigin: 'developer_lead_phase18',
-      sourceContext: {
-        ...handoff.handoff.options.sourceContext,
-        organisationId: orgId,
-        workspaceId: orgId,
-      },
-    },
-  })
-
-  const transactionId = normalizeText(transaction?.transactionId)
-  if (!transactionId) {
-    throw new Error('Developer lead conversion did not return a transaction id.')
-  }
+  const transaction = { transactionId: existingTransactionId }
+  const transactionId = existingTransactionId
 
   const onboarding = await ensureOnboardingLink({
     transactionId,
-    purchaserType: handoff.handoff.setup.purchaserType,
+    purchaserType: lead.purchaserType || 'individual',
     fallbackToken: transaction?.onboardingToken,
   })
 

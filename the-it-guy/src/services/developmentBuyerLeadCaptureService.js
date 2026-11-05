@@ -7,7 +7,7 @@ const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{
 
 // The CRM record owns the buyer identity. The developer record links that same
 // buyer into development intake; stable capture IDs let partial saves resume.
-export async function createDevelopmentBuyerLead({ organisationId, developerOrgId, developmentId, developmentName, form, actor, identity, savedCrmLead = null, onCrmLeadSaved }, dependencies = {}) {
+export async function createDevelopmentBuyerLead({ organisationId, developerOrgId, developmentId, developmentName, form, actor, assignedAgent = actor, identity, savedCrmLead = null, onCrmLeadSaved }, dependencies = {}) {
   const createCrm = dependencies.createCrm || createAgencyCrmLeadRecord
   const createDirect = dependencies.createDirect || createDeveloperFedLead
   const createIntroduced = dependencies.createIntroduced || createAgencyIntroducedDeveloperLead
@@ -21,7 +21,7 @@ export async function createDevelopmentBuyerLead({ organisationId, developerOrgI
   const crmLead = savedCrmLead || await createCrm(organisationId, {
     leadId: identity.leadId,
     contact: { contactId: identity.contactId, firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, notes: form.notes, contactType: 'buyer' },
-    assignedAgent: actor, assignedUserId: actor.id, createdBy: actor.id,
+    assignedAgent, assignedUserId: assignedAgent?.id || actor.id, createdBy: actor.id,
     leadCategory: 'buyer', leadDirection: 'Inbound', leadSource: form.source || 'Other',
     stage: 'New Lead', priority: 'Medium', propertyInterest: text(form.property) || text(developmentName),
     rawEnquiryPayload: { development_id: developmentId, source: 'development_leads_capture' }, notes: form.notes,
@@ -31,7 +31,9 @@ export async function createDevelopmentBuyerLead({ organisationId, developerOrgI
   invalidate(organisationId)
   const input = {
     developerOrgId, primaryDevelopmentId: developmentId, sourceLeadId: crmLead.leadId,
-    developerLeadId: identity.developerLeadId, assignedAgentId: actor.id, sourceAgentUserId: actor.id,
+    developerLeadId: identity.developerLeadId, assignedAgentId: Object.prototype.hasOwnProperty.call(form, 'assignedAgentId') ? form.assignedAgentId : assignedAgent?.id || actor.id, sourceAgentUserId: assignedAgent?.id || actor.id,
+    preferredUnitId: form.preferredUnitId, interestedDevelopmentIds: form.interestedDevelopmentIds,
+    unitTypeInterest: form.unitTypeInterest, budgetMin: form.budgetMin, budgetMax: form.budgetMax,
     buyerFullName: `${text(form.firstName)} ${text(form.lastName)}`,
     buyerEmail: form.email, buyerPhone: form.phone, privateNotes: form.notes,
     leadSource: form.source || 'Other', leadStatus: 'new',

@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 npm run lint && npm test && npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
   "regions": [
     "cpt1"
   ],

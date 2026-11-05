@@ -46,6 +46,8 @@ import { invalidateDevelopmentOptionsCache, invalidateTransactionWorkspaceCoreCa
 import { createAgencyIntroducedDeveloperLead, createDeveloperFedLead, listDeveloperLeadIntake, updateDeveloperLeadWorkspaceSetup } from '../services/developerLeadService'
 import { DEVELOPMENT_LEAD_BOARD_STAGES, getDevelopmentLeadBoardStage, resolveDevelopmentLeadBoardMove, resolveDevelopmentLeadWorkspaceUrl, isActiveDevelopmentLeadReservation } from '../core/developments/developmentLeadBoard.js'
 import { saveDevelopmentLeadBoardStage } from '../services/developmentLeadBoardService.js'
+import { setDevelopmentLeadReservation } from '../services/developmentLeadReservationService.js'
+import DevelopmentLeadReservationDialog from '../components/developments/DevelopmentLeadReservationDialog.jsx'
 import { enrichDevelopmentLeadBuyerContacts } from '../services/developmentBuyerLeadService.js'
 
 const DevelopmentAttorneyCommercialSetup = lazy(() => import('../components/DevelopmentAttorneyCommercialSetup'))
@@ -1679,7 +1681,7 @@ function isAvailableDevelopmentUnitStatus(status) {
 // workspace so purchaser, finance, documents and handover data have a home.
 function requiresDevelopmentTransaction(status) {
   const value = getDevelopmentUnitStatusOption(status).value
-  return ['Reserved', 'OTP Signed', 'Finance Pending', 'Proceed to Attorneys', 'Transfer in Progress', 'Sold', 'Registered', 'Complete', 'Completed'].includes(value)
+  return ['OTP Signed', 'Finance Pending', 'Proceed to Attorneys', 'Transfer in Progress', 'Sold', 'Registered', 'Complete', 'Completed'].includes(value)
 }
 
 function getDevelopmentTrackerProgressPercent(stageKey) {
@@ -2116,6 +2118,9 @@ function DevelopmentDetail() {
   const [developmentLeadCreateOpen, setDevelopmentLeadCreateOpen] = useState(false)
   const [developmentLeadCreateSaving, setDevelopmentLeadCreateSaving] = useState(false)
   const [developmentLeadCreateError, setDevelopmentLeadCreateError] = useState('')
+  const [unitReservationDraft, setUnitReservationDraft] = useState(null)
+  const [unitReservationSaving, setUnitReservationSaving] = useState(false)
+  const [unitReservationError, setUnitReservationError] = useState('')
   const [developmentLeadDraft, setDevelopmentLeadDraft] = useState(null)
   const [developmentLeadSavedCrm, setDevelopmentLeadSavedCrm] = useState(null)
   const developmentLeadCaptureIdentity = useRef(null)
@@ -5594,6 +5599,25 @@ function DevelopmentDetail() {
     }
   }
 
+  async function handleDevelopmentReservation(input) {
+    if (unitReservationSaving) return
+    setUnitReservationSaving(true)
+    setUnitReservationError('')
+    setError('')
+    try {
+      await setDevelopmentLeadReservation(input)
+      await loadData()
+      await refreshUnitStatusViews()
+      setUnitReservationDraft(null)
+      setFeedback(input.reserved === false ? 'Unit reservation released.' : 'Unit reserved for the buyer.')
+    } catch (reservationError) {
+      setUnitReservationError(reservationError.message || 'The reservation could not be saved.')
+      if (!unitReservationDraft) setError(reservationError.message || 'The reservation could not be saved.')
+    } finally {
+      setUnitReservationSaving(false)
+    }
+  }
+
   async function handleUnitStatusQuickChange(unit, nextStatus) {
     if (!canManageDevelopment || unitStatusChangeLock.current) return
     const statusOption = getDevelopmentUnitStatusOption(nextStatus)
@@ -5603,36 +5627,16 @@ function DevelopmentDetail() {
       setError('Release or cancel the linked transaction before returning this unit to available or unreleased stock.')
       return
     }
-    unitStatusChangeLock.current = true
-
-    if (!unit.currentTransactionId && requiresDevelopmentTransaction(nextStatusValue)) {
-      try {
-        setUnitSaving(true)
-        setUnitStatusSavingId(unit.id)
-        setUnitQuickSavingKey(`${unit.id}:status`)
-        setFeedback('')
-        setError('')
-        const created = await createTransactionForUnitStatus(unit, nextStatusValue, { notify: false })
-        applyUnitQuickUpdate(unit.id, {
-          unitPatch: {
-            status: nextStatusValue,
-            currentTransactionId: created.transactionId
-          },
-          transactionPatch: { id: created.transactionId, stage: created.stage }
-        })
-        await refreshUnitStatusViews(created.transactionId)
-        setFeedback(`Transaction created for Unit ${unit.unitNumber} at ${created.stage}.`)
-      } catch (saveError) {
-        await loadData()
-        setError(saveError.message)
-      } finally {
-        setUnitSaving(false)
-        setUnitStatusSavingId('')
-        setUnitQuickSavingKey('')
-        unitStatusChangeLock.current = false
-      }
+    if (!unit.currentTransactionId && nextStatusValue === 'Reserved') {
+      setUnitReservationError('')
+      setUnitReservationDraft({ unitId: unit.id, leadId: '' })
       return
     }
+    if (!unit.currentTransactionId && requiresDevelopmentTransaction(nextStatusValue)) {
+      setError('Create the transaction from the signed OTP before moving this unit into the transaction journey.')
+      return
+    }
+    unitStatusChangeLock.current = true
 
     try {
       setUnitSaving(true)
@@ -5640,6 +5644,10 @@ function DevelopmentDetail() {
       setUnitQuickSavingKey(`${unit.id}:status`)
       setFeedback('')
       setError('')
+      const holdingLead = developmentLeads.find(lead => lead.preferredUnitId === unit.id && ['reserved', 'expired'].includes(lead.reservationState))
+      if (!unit.currentTransactionId && holdingLead && ['Available', 'Not Released'].includes(nextStatusValue)) {
+        await setDevelopmentLeadReservation({ developerLeadId: holdingLead.developerLeadId, unitId: unit.id, reserved: false })
+      }
       const savedUnit = await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))
 
       if (unit.currentTransactionId && statusOption.lifecycleStage) {
@@ -9573,6 +9581,12 @@ function DevelopmentDetail() {
                                       Open lead
                                       <ArrowUpRight size={12} />
                                     </button>
+                                    {canManageDevelopment && !lead.convertedTransactionId && lead.leadStatus !== 'lost' ? <button type="button" disabled={unitReservationSaving} onClick={event => {
+                                      event.stopPropagation()
+                                      setUnitReservationError('')
+                                      if (['reserved', 'expired'].includes(lead.reservationState)) void handleDevelopmentReservation({ developerLeadId: lead.developerLeadId, unitId: lead.preferredUnitId, reserved: false })
+                                      else setUnitReservationDraft({ leadId: lead.developerLeadId, unitId: lead.preferredUnitId || '' })
+                                    }} className="text-xs font-semibold text-[#176c50]">{['reserved', 'expired'].includes(lead.reservationState) ? 'Release reservation' : 'Reserve unit'}</button> : null}
                                     <DevelopmentLeadContactDemo />
                                   </div>
                                 ) : (
@@ -9811,6 +9825,7 @@ function DevelopmentDetail() {
 
         {activeTab === 'bond_originators' ? renderBondOriginatorConfiguration() : null}
 
+        {unitReservationDraft ? <DevelopmentLeadReservationDialog key={`${unitReservationDraft.leadId}:${unitReservationDraft.unitId}`} leads={developmentLeads} units={rows.map(row => row.unit || row)} initialLeadId={unitReservationDraft.leadId} initialUnitId={unitReservationDraft.unitId} saving={unitReservationSaving} error={unitReservationError} onClose={() => setUnitReservationDraft(null)} onReserve={input => void handleDevelopmentReservation(input)} onCreateLead={() => { setUnitReservationDraft(null); openDevelopmentLeadCapture() }} /> : null}
         <Modal open={emailComposeOpen} onClose={emailSending ? undefined : closeDocumentEmailComposer} title="Send Document via Email" subtitle="Compose an email for the selected development document. Arch9 will prefill the document context and file link." className="max-w-[640px]">
           <form className="space-y-4" onSubmit={handleSendDocumentEmail}>
             <div className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">

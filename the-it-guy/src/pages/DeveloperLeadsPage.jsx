@@ -29,6 +29,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { setDevelopmentLeadReservation } from '../services/developmentLeadReservationService.js'
+import { resolveDevelopmentLeadWorkspaceUrl } from '../core/developments/developmentLeadBoard.js'
 import JourneyStageOverrideActions from '../components/journey/JourneyStageOverrideActions'
 import {
   DEVELOPER_LEAD_PHASE16_CONTRACT,
@@ -77,7 +79,6 @@ import {
   DEVELOPER_LEAD_PHASE12_CONTRACT,
   DEVELOPER_LEAD_SOURCE_FILTER_OPTIONS,
   DEVELOPER_LEAD_STATUS_OPTIONS,
-  createDeveloperFedLead,
   findDeveloperLeadDuplicateWarnings,
   fetchDeveloperLeadIntake,
   listDeveloperLeadIntake,
@@ -1811,11 +1812,14 @@ function DeveloperLeadWorkspacePanel({
         </Button>
       )
     }
+    if (primaryAction.key === 'send_onboarding' && !lead.convertedTransactionId && lead.reservationState !== 'reserved') {
+      return <Button type="button" variant="secondary" onClick={() => setActiveTab('development')}>Reserve unit</Button>
+    }
     if (primaryAction.key === 'send_onboarding') {
       return (
         <Button type="button" size={compact ? 'sm' : undefined} disabled={converting} onClick={() => onConvertLead(lead)}>
           <ExternalLink size={16} />
-          {converting ? 'Sending...' : 'Send Buyer Onboarding'}
+          {converting ? 'Sending...' : lead.convertedTransactionId ? 'Send Buyer Onboarding' : 'Open buyer onboarding'}
         </Button>
       )
     }
@@ -1838,6 +1842,7 @@ function DeveloperLeadWorkspacePanel({
   }
 
   function renderCopyOnboardingAction({ compact = false } = {}) {
+    if (!lead.convertedTransactionId) return null
     if (handoverRequired) return null
     return (
       <Button type="button" size={compact ? 'sm' : undefined} variant="secondary" disabled={copying} onClick={() => onCopyLeadOnboarding(lead)}>
@@ -2377,7 +2382,7 @@ function DeveloperLeadWorkspacePanel({
                     className="mt-2 h-11 w-full rounded-[12px] border border-[#d9e5f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#2f7b9e] focus:ring-2 focus:ring-[#d9eaf3]"
                     value={selectedPreferredUnitId}
                     onChange={(event) => setSelectedPreferredUnitId(event.target.value)}
-                    disabled={leadUnitsLoading || !lead.primaryDevelopmentId || setupUpdating}
+                    disabled={leadUnitsLoading || !lead.primaryDevelopmentId || setupUpdating || lead.reservationState === 'reserved'}
                   >
                     <option value="">{leadUnitsLoading ? 'Loading units...' : 'Select a unit'}</option>
                     {leadUnits.map((unit) => (
@@ -2387,7 +2392,7 @@ function DeveloperLeadWorkspacePanel({
                     ))}
                   </select>
                   <p className="mt-2 text-xs leading-5 text-[#60758b]">
-                    Buyer onboarding for a development sale needs a preferred unit before the link can be sent.
+                    Reserve the selected unit before sending buyer onboarding.
                   </p>
                 </div>
                 <Button
@@ -2399,6 +2404,7 @@ function DeveloperLeadWorkspacePanel({
                   <CheckCircle2 size={16} />
                   {setupUpdating ? 'Saving...' : 'Save Unit'}
                 </Button>
+                {!lead.convertedTransactionId ? <Button type="button" disabled={setupUpdating || leadUnitsLoading || !selectedPreferredUnitId} onClick={() => onUpdateLeadSetup(lead, { preferredUnitId: lead.reservationState === 'reserved' ? lead.preferredUnitId : selectedPreferredUnitId, reservationAction: lead.reservationState === 'reserved' ? 'release' : 'reserve' })}>{lead.reservationState === 'reserved' ? 'Release reservation' : 'Confirm reservation'}</Button> : null}
               </div>
             </div>
           </div>
@@ -2436,7 +2442,7 @@ export default function DeveloperLeadsPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { developerLeadId: routeDeveloperLeadId = '' } = useParams()
-  const { currentWorkspace } = useWorkspace()
+  const { currentWorkspace, profile } = useWorkspace()
   const workspaceOrgId = normalizeText(currentWorkspace?.id)
   const loadRequestId = useRef(0)
   const [loading, setLoading] = useState(true)
@@ -2454,6 +2460,8 @@ export default function DeveloperLeadsPage() {
   const [sourceFilter, setSourceFilter] = useState('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
+  const createLeadIdentity = useRef(null)
+  const [capturedCrmLead, setCapturedCrmLead] = useState(null)
   const [formUnits, setFormUnits] = useState([])
   const [formUnitsLoading, setFormUnitsLoading] = useState(false)
   const [duplicateWarnings, setDuplicateWarnings] = useState([])
@@ -2629,7 +2637,19 @@ export default function DeveloperLeadsPage() {
       setError('')
       setMessage('')
       setConvertedOnboardingUrl('')
-      await createDeveloperFedLead({ ...form, developerOrgId })
+      const { createDevelopmentBuyerLead } = await import('../services/developmentBuyerLeadCaptureService.js')
+      if (!createLeadIdentity.current) createLeadIdentity.current = { leadId: crypto.randomUUID(), contactId: crypto.randomUUID(), developerLeadId: crypto.randomUUID() }
+      const nameParts = normalizeText(form.buyerFullName).split(/\s+/)
+      const actor = { id: profile?.id || profile?.userId, userId: profile?.id || profile?.userId, name: profile?.fullName || profile?.full_name || profile?.email, email: profile?.email, role: 'developer' }
+      const assigned = agents.find(agent => (agent.userId || agent.id) === form.assignedAgentId)
+      await createDevelopmentBuyerLead({ organisationId: workspaceOrgId, developerOrgId, developmentId: form.primaryDevelopmentId,
+        developmentName: developments.find(item => item.id === form.primaryDevelopmentId)?.name,
+        actor, assignedAgent: assigned ? { ...assigned, id: assigned.userId || assigned.id } : actor,
+        identity: createLeadIdentity.current, savedCrmLead: capturedCrmLead, onCrmLeadSaved: setCapturedCrmLead,
+        form: { ...form, firstName: nameParts[0], lastName: nameParts.slice(1).join(' '), email: form.buyerEmail, phone: form.buyerPhone, source: form.leadSource, notes: form.privateNotes },
+      })
+      createLeadIdentity.current = null
+      setCapturedCrmLead(null)
       setMessage('Developer lead created.')
       setForm(EMPTY_FORM)
       setShowCreateModal(false)
@@ -2645,7 +2665,7 @@ export default function DeveloperLeadsPage() {
   function handleOpenLead(lead) {
     const leadId = normalizeText(lead?.developerLeadId)
     if (!leadId) return
-    navigate(`/developer/leads/${leadId}`)
+    navigate(resolveDevelopmentLeadWorkspaceUrl(lead, workspaceOrgId) || `/developer/leads/${leadId}`)
   }
 
   function handleCloseLeadWorkspace() {
@@ -2684,14 +2704,16 @@ export default function DeveloperLeadsPage() {
       setError('')
       setMessage('')
       setConvertedOnboardingUrl('')
-      await updateDeveloperLeadWorkspaceSetup({
-        developerOrgId,
-        developerLeadId: lead.developerLeadId,
-        ...updates,
-      })
+      if (updates.reservationAction) {
+        await setDevelopmentLeadReservation({ developerLeadId: lead.developerLeadId, unitId: updates.preferredUnitId, reserved: updates.reservationAction === 'reserve' })
+      } else {
+        await updateDeveloperLeadWorkspaceSetup({ developerOrgId, developerLeadId: lead.developerLeadId, ...updates })
+      }
 
       const nextStatus = normalizeText(updates.leadStatus)
-      if (nextStatus === 'otp') {
+      if (updates.reservationAction) {
+        setMessage(updates.reservationAction === 'reserve' ? 'Unit reserved for this buyer.' : 'Unit reservation released.')
+      } else if (nextStatus === 'otp') {
         setMessage('Signed OTP marked uploaded. The transaction workflow is ready to open.')
       } else if (nextStatus) {
         setMessage(`Lead moved to ${getLeadStagePresentation(nextStatus).label}.`)
@@ -2711,6 +2733,11 @@ export default function DeveloperLeadsPage() {
 
   async function handleConvertLead(lead) {
     if (!developerOrgId || !lead?.developerLeadId) return
+    if (!lead.convertedTransactionId) {
+      if (lead.sourceLeadId && (lead.sourceAgencyOrgId || lead.developerOrgId) === workspaceOrgId) navigate(`/pipeline/leads/${encodeURIComponent(lead.sourceLeadId)}?tab=buyer_profile`)
+      else setError('Buyer onboarding must be completed in the buyer’s owning workspace before the signed OTP creates a transaction.')
+      return
+    }
     try {
       setConvertingLeadId(lead.developerLeadId)
       setError('')
@@ -2745,6 +2772,11 @@ export default function DeveloperLeadsPage() {
 
   async function handleCopyLeadOnboarding(lead) {
     if (!developerOrgId || !lead?.developerLeadId) return
+    if (!lead.convertedTransactionId) {
+      if (lead.sourceLeadId && (lead.sourceAgencyOrgId || lead.developerOrgId) === workspaceOrgId) navigate(`/pipeline/leads/${encodeURIComponent(lead.sourceLeadId)}?tab=buyer_profile`)
+      else setError('Buyer onboarding must be completed in the buyer’s owning workspace before the signed OTP creates a transaction.')
+      return
+    }
     try {
       setCopyingLeadId(lead.developerLeadId)
       setError('')
@@ -2883,7 +2915,7 @@ export default function DeveloperLeadsPage() {
         unitsLoading={formUnitsLoading}
         agents={agents}
         onClose={() => setShowCreateModal(false)}
-        onChange={setForm}
+        onChange={next => { if (!capturedCrmLead) setForm(next) }}
         onSubmit={handleCreateLead}
       />
     </main>
