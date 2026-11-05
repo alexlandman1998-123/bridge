@@ -43,7 +43,7 @@ export async function fetchDeveloperLeadDocuments({ developerOrgId, developerLea
   if (transactionRead.data?.id !== transactionId) throw accessError('The linked transaction is no longer available in your workspace.')
   const transaction = transactionRead.data
   const originLeadIds = [transaction.originating_buyer_lead_id, transaction.originating_lead_id].filter(Boolean)
-  if (lead.source_lead_id && originLeadIds.length && !originLeadIds.includes(lead.source_lead_id)) throw accessError('The linked transaction belongs to a different buyer lead.')
+  if (lead.source_lead_id && !originLeadIds.includes(lead.source_lead_id)) throw accessError('The linked transaction does not have a verified link to this buyer lead. Repair that link before opening or uploading documents.')
   if (transaction.development_id && lead.primary_development_id && transaction.development_id !== lead.primary_development_id) throw accessError('The linked transaction belongs to a different development.')
   if (transaction.unit_id && lead.preferred_unit_id && transaction.unit_id !== lead.preferred_unit_id) throw accessError('The linked transaction belongs to a different unit.')
   if (transaction.organisation_id && ![developerOrgId, lead.source_agency_org_id].includes(transaction.organisation_id)) throw accessError('The linked transaction belongs to another organisation.')

@@ -159,6 +159,7 @@ it('includes legacy client-owned custom buyer slots while explicit seller owners
 
 it.each([
   ['buyer', { source_lead_id: 'buyer-one' }, { originating_buyer_lead_id: 'buyer-two' }],
+  ['missing buyer origin', { source_lead_id: 'buyer-one' }, {}],
   ['development', { primary_development_id: 'dev-one' }, { development_id: 'dev-two' }],
   ['unit', { preferred_unit_id: 'unit-one' }, { unit_id: 'unit-two' }],
   ['organisation', {}, { organisation_id: 'foreign-org' }],
