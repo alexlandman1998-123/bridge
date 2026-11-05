@@ -236,7 +236,7 @@ import {
   normalizeBuyerProcessStageKey,
 } from '../../services/buyerProcessDefinitionService'
 import { buildBuyerJourneyAlignmentModel, hasBuyerOnboardingSentEvidence, hasBuyerOnboardingSubmittedEvidence, hasBuyerSignedOtpEvidence, hasBuyerTransactionCreatedEvidence, summarizeBuyerJourneyDocuments, summarizeBuyerJourneyReadiness } from '../../services/buyerJourneyAlignmentService'
-import { buildDevelopmentBuyerJourneyModel } from '../../services/developmentBuyerJourneyService.js'
+import { assertDevelopmentBuyerTransactionReady, buildDevelopmentBuyerJourneyModel } from '../../services/developmentBuyerJourneyService.js'
 import { enrichDevelopmentBuyerLeads } from '../../services/developmentBuyerLeadService.js'
 import { DEVELOPMENT_SELECTION_STAGE, getLeadDevelopmentId, isDevelopmentBuyerLead, getDevelopmentBuyerReservationEvidence } from '../../core/leads/developmentBuyerLead.js'
 import {
@@ -30741,6 +30741,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
 	      }
       return { transactionId: existingTransactionId, existing: true, onboardingUrl: '' }
     }
+
+    assertDevelopmentBuyerTransactionReady({
+      lead: selectedLeadForDevelopmentJourney,
+      onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+      signedOtpComplete: selectedLeadBuyerJourneyStages.some(stage => stage.key === 'offer' && stage.done),
+    })
 
     const listingContext = resolveBuyerOnboardingListingContext(listingId)
 	    if (!listingContext.listingId) {

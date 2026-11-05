@@ -1,6 +1,12 @@
 import { buildBuyerJourneyAlignmentModel } from './buyerJourneyAlignmentService.js'
 import { normalizeBuyerProcessStageKey } from './buyerProcessDefinitionService.js'
-import { DEVELOPMENT_SELECTION_STAGE, getDevelopmentLeadStage, getDevelopmentBuyerReservationEvidence } from '../core/leads/developmentBuyerLead.js'
+import { DEVELOPMENT_SELECTION_STAGE, getDevelopmentLeadStage, getDevelopmentBuyerReservationEvidence, isDevelopmentBuyerLead } from '../core/leads/developmentBuyerLead.js'
+
+export function assertDevelopmentBuyerTransactionReady({ lead, onboardingSubmitted, signedOtpComplete } = {}) {
+  if (!isDevelopmentBuyerLead(lead || {})) return
+  if (!getDevelopmentBuyerReservationEvidence(lead).reserved) throw new Error('Confirm the buyer’s unit reservation before creating the development transaction.')
+  if (!onboardingSubmitted || !signedOtpComplete) throw new Error('Complete buyer onboarding and the signed OTP before creating the development transaction.')
+}
 
 // Keep shared evidence and document handling, but own development sales guidance
 // here so changes to this flow do not alter the open-market buyer journey.
