@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
+import process from 'node:process'
 import vm from 'node:vm'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
