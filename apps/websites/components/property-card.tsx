@@ -16,7 +16,7 @@ function FeatureIcon({ kind }: { kind: 'bed' | 'bath' | 'parking' }) {
 export function PropertyCard({ property, variant = 'default' }: { property: PublicProperty; variant?: 'default' | 'results' | 'similar' }) {
   const image = property.media.find((media) => media.type === 'image' && media.url)
   if (variant === 'similar') return <article className="similar-property-card">
-    <Link className="similar-property-link" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
+    <Link prefetch={false} className="similar-property-link" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
       <div className="similar-property-image">
         {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 640px) calc(100vw - 40px), (max-width: 960px) 50vw, 390px" /> : <div className="image-placeholder" />}
         <span className="similar-property-status">{property.isShowcase ? 'Preview listing' : listingStatusLabel(property)}</span>
@@ -36,13 +36,13 @@ export function PropertyCard({ property, variant = 'default' }: { property: Publ
     </Link>
   </article>
   if (variant === 'results') return <article className="property-result-card">
-    <Link className="property-result-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
+    <Link prefetch={false} className="property-result-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
       {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 760px) 100vw, 33vw" /> : <div className="image-placeholder" />}
     </Link>
     <div className="property-result-copy">
       <p className="property-result-type">{property.propertyType} · {listingStatusLabel(property)}</p>
       <strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>
-      <h2 className="property-result-suburb"><Link href={`/properties/${propertySlug(property)}`}>{property.suburb || property.title}</Link></h2>
+      <h2 className="property-result-suburb"><Link prefetch={false} href={`/properties/${propertySlug(property)}`}>{property.suburb || property.title}</Link></h2>
       <p className="property-result-region">{property.title}{property.province ? ` · ${property.province}` : ''}</p>
       <div className="property-result-divider" />
       <div className="property-result-features">
@@ -53,9 +53,9 @@ export function PropertyCard({ property, variant = 'default' }: { property: Publ
     </div>
   </article>
   return <article className="property-card">
-    <Link className="property-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
+    <Link prefetch={false} className="property-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
       {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 760px) 100vw, 33vw" /> : <div className="image-placeholder" />}
       <span className="property-status">{property.isShowcase ? 'Preview listing' : listingStatusLabel(property)}</span>
     </Link>
-    <div className="property-copy"><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong><p>{property.suburb}{property.province ? `, ${property.province}` : ''}</p><h3><Link href={`/properties/${propertySlug(property)}`}>{property.title}</Link></h3><dl><div><dt>Bedrooms</dt><dd>{property.bedrooms || '—'} beds</dd></div><div><dt>Bathrooms</dt><dd>{property.bathrooms || '—'} baths</dd></div><div><dt>Parking</dt><dd>{property.parkingBays || '—'} parking</dd></div></dl></div></article>
+    <div className="property-copy"><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong><p>{property.suburb}{property.province ? `, ${property.province}` : ''}</p><h3><Link prefetch={false} href={`/properties/${propertySlug(property)}`}>{property.title}</Link></h3><dl><div><dt>Bedrooms</dt><dd>{property.bedrooms || '—'} beds</dd></div><div><dt>Bathrooms</dt><dd>{property.bathrooms || '—'} baths</dd></div><div><dt>Parking</dt><dd>{property.parkingBays || '—'} parking</dd></div></dl></div></article>
 }

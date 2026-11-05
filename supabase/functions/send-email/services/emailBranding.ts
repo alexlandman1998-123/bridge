@@ -281,13 +281,18 @@ export async function resolveAudienceEmailSender({
   let verifiedAgencyAddress = "";
   if (supabase && organisationId) {
     try {
-      for (const address of preferredAddress ? [preferredAddress, ""] : [""]) {
+      const candidates = [{ defaultOnly: true, address: "" },
+        ...(preferredAddress ? [{ defaultOnly: false, address: preferredAddress }] : []),
+        { defaultOnly: false, address: "" }];
+      for (const { defaultOnly, address } of candidates) {
         let query = supabase.from("email_sender_identities")
           .select("from_email")
           .eq("organisation_id", organisationId)
           .eq("provider", "resend")
           .eq("verification_status", "verified")
-          .is("sending_paused_at", null);
+          .is("sending_paused_at", null)
+          .order("is_default", { ascending: false }).order("created_at", { ascending: true });
+        if (defaultOnly) query = query.eq("is_default", true);
         if (address) query = query.eq("from_email", address);
         const result = await query.limit(1);
         if (!result.error) {

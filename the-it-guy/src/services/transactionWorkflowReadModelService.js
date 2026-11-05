@@ -1,3 +1,4 @@
+import { transactionBootstrapBlockers } from '../core/transactions/transactionBootstrapHealth.js'
 import {
   getMainStageFromDetailedStage,
   normalizeStageLabel,
@@ -134,6 +135,7 @@ function mapTransactionRow(row = {}) {
     currentMainStage: mainStage,
     currentSubStageSummary: row.current_sub_stage_summary || null,
     financeType: row.finance_type || null,
+    dealSetupSyncStatus: row.deal_setup_sync_status || null,
     financeManagedBy: row.finance_managed_by || null,
     purchaserType: row.purchaser_type || null,
     transactionType: row.transaction_type || null,
@@ -632,7 +634,7 @@ function buildNextActions({ blockers = [] }) {
 async function fetchTransaction(client, transactionId, warnings) {
   const primary = await client
     .from('transactions')
-    .select('id, transaction_reference, arch9_listing_reference, accepted_offer_id, creation_idempotency_key, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
+    .select('id, transaction_reference, arch9_listing_reference, accepted_offer_id, creation_idempotency_key, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, deal_setup_sync_status, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
     .eq('id', transactionId)
     .maybeSingle()
 
@@ -989,6 +991,7 @@ async function fetchSharedProgress(client, transactionId, warnings = [], viewer 
 
 export async function getTransactionWorkflowReadModel(transactionId, options = {}) {
   const client = options.client || requireClient()
+  const clientViewer = ['buyer', 'seller'].includes(String(options.viewerRole || '').trim().toLowerCase())
   const warnings = []
   const normalizedTransactionId = String(transactionId || '').trim()
 
@@ -1014,10 +1017,10 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     fetchDocumentRequests(client, normalizedTransactionId, warnings),
     fetchTransactionRequiredDocuments(client, normalizedTransactionId, warnings),
     fetchParticipants(client, normalizedTransactionId, warnings),
-    fetchParticipantRequirements(client, normalizedTransactionId, warnings),
+    clientViewer ? Promise.resolve([]) : fetchParticipantRequirements(client, normalizedTransactionId, warnings),
     fetchEvents(client, normalizedTransactionId, warnings),
     fetchAttorneyAssignments(client, normalizedTransactionId, warnings),
-    fetchNotificationOutbox(client, transaction.organisationId, normalizedTransactionId, warnings),
+    clientViewer ? Promise.resolve([]) : fetchNotificationOutbox(client, transaction.organisationId, normalizedTransactionId, warnings),
     fetchSharedProgress(client, normalizedTransactionId, warnings, options),
   ])
 
@@ -1061,7 +1064,8 @@ export async function getTransactionWorkflowReadModel(transactionId, options = {
     relatedEntityId: blocker.documentKey,
   }))
 
-  const blockers = [...laneBlockers, ...assignmentBlockers, ...participantCreationBlockers, ...documentRequirementBlockers]
+  const bootstrapBlockers = transactionBootstrapBlockers({transaction,workflowLanes:lanes,documentRequirements:documentRoster.requirements}).map(item=>({id:item.key,type:item.type,title:item.reason,description:item.reason,blockingRole:item.ownerRole,visibility:'internal'}))
+  const blockers = [...bootstrapBlockers, ...laneBlockers, ...assignmentBlockers, ...participantCreationBlockers, ...documentRequirementBlockers]
 
   const milestones = buildClientVisibleMilestones({
     transaction,

@@ -11,7 +11,7 @@ export const HOME_SEEKERS_VERCEL_PROJECT = {
   orgId: 'team_ezJ5RCE7qwTf14fw215IhPs5',
   projectName: 'home-seekers-website',
 }
-export const HOME_SEEKERS_FUNCTIONS = ['site', 'leads', 'analytics', 'applications', 'recruitment']
+export const HOME_SEEKERS_FUNCTIONS = ['site', 'leads', 'analytics', 'applications', 'recruitment', 'join-follow-up']
 
 export async function buildHomeSeekersFrontend(frontendDirectory) {
   // Isolated releases need the same CSS pipeline as the full checkout. Vite
@@ -45,11 +45,11 @@ export const HOME_SEEKERS_OUTPUT_CONFIG = {
   version: 3,
   routes: [
     { src: '^/assets/.*$', headers: { 'Cache-Control': 'public, max-age=31536000, immutable' }, continue: true },
-    { src: '^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$)', headers: { 'Cache-Control': 'no-store' }, continue: true },
+    { src: '^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$|join/(?:teams|referrals|pricing)/?$)', headers: { 'Cache-Control': 'no-store' }, continue: true },
     { src: '^/demo/homeseekers(?:/.*)?$', headers: { 'Cache-Control': 'no-store' }, continue: true },
     { handle: 'filesystem' },
     { src: '^/api(?:/.*)?$', dest: '/api-not-found.json', status: 404 },
-    { src: '^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$)', dest: '/index.html' },
+    { src: '^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$|join/(?:teams|referrals|pricing)/?$)', dest: '/index.html' },
     { src: '^/demo/homeseekers(?:/.*)?$', dest: '/index.html' },
     { src: '^/.*$', dest: '/not-found.html', status: 404 },
   ],
@@ -108,5 +108,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   await buildHomeSeekersFrontend(frontendDirectory)
   const outputRoot = await packageHomeSeekersWebsite({ frontendDirectory })
   console.log(`Home Seekers website prepared at ${outputRoot}`)
-  console.log('Includes site, leads, analytics, applications and recruitment signup APIs. No deployment was performed.')
+  console.log('Includes site, leads, analytics, applications, recruitment signup and Join follow-up APIs. No deployment was performed.')
 }

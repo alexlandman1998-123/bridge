@@ -1,7 +1,7 @@
 const SALE_STATUSES = new Set(['active', 'under_offer', 'sold'])
 
 // A sale-status change belongs to the property. Other edits belong to one advert.
-export async function saveListingChannelManagement({ channel, draft, listingStatus, expiryDate, activeChannels = [], retryResults = [] }, { saveDraft, recordStarted, recordStage, sendUpdate, recordFinished }) {
+export async function saveListingChannelManagement({ channel, draft, listingStatus, expiryDate, activeChannels = [], retryResults = [] }, { saveDraft, recordStarted, recordStage, sendUpdate, recordFinished, checkPublication }) {
   const retry = retryResults.length > 0
   const statusChanged = listingStatus !== draft.listingStatus
   if (statusChanged && (!SALE_STATUSES.has(listingStatus) || listingStatus === 'active' || ['sold', 'withdrawn'].includes(draft.listingStatus) || String(draft.listingType).toLowerCase() === 'rental')) {
@@ -17,17 +17,32 @@ export async function saveListingChannelManagement({ channel, draft, listingStat
       ? [...new Set(activeChannels)].map((name) => ({ channel: name, action: name === 'Property24' && expiryChanged ? 'expiry' : listingStatus }))
       : [{ channel: 'Property24', action: 'expiry' }]
   if (targets.some((target) => !['sold', 'under_offer'].includes(target.action) && !(target.channel === 'Property24' && target.action === 'expiry'))) throw new Error('Publish listing content and retry failed publications from listing setup.')
+  const readyTargets = []
+  const unsettledResults = []
+  for (const target of targets) {
+    try {
+      await checkPublication?.(target)
+      readyTargets.push(target)
+    } catch (error) {
+      // A previous advert's unknown outcome must not block the property's sale
+      // status or be turned into a failure that can be blindly retried.
+      if (!statusChanged || error?.code !== 'LISTING_PUBLICATION_UNSETTLED') throw error
+      unsettledResults.push({ ...target, status: 'uncertain', retryable: false,
+        detail: `${error.message} No new request was sent to this channel.` })
+    }
+  }
   const results = []
   let historyIssue = false
   const saved = await saveDraft(nextDraft)
   if (!saved?.ok || saved.localOnly) throw saved?.error || new Error('The listing could not be saved. Try again.')
   results.push({ channel: 'Arch9', status: 'saved', detail: 'Saved.' })
+  results.push(...unsettledResults)
   try {
-    if (targets.length) await recordStarted(targets)
+    if (readyTargets.length) await recordStarted(readyTargets)
   } catch (error) {
-    return { ok: false, results: [...results, ...targets.map((target) => ({ ...target, status: 'failed', detail: error?.message || 'The update could not be started. Try again.' }))] }
+    return { ok: false, results: [...results, ...readyTargets.map((target) => ({ ...target, status: 'failed', detail: error?.message || 'The update could not be started. Try again.' }))] }
   }
-  for (const target of targets) {
+  for (const target of readyTargets) {
     let accepted = false
     try {
       await recordStage(target, 'submitted', nextDraft)
@@ -51,5 +66,5 @@ export async function saveListingChannelManagement({ channel, draft, listingStat
     historyIssue = true
   }
   if (historyIssue) results.push({ channel: 'Activity', status: 'failed', detail: 'Updates were sent, but their history could not be saved. Check the channels before trying again.' })
-  return { ok: !results.some((result) => result.status === 'failed'), results }
+  return { ok: !results.some((result) => ['failed', 'uncertain'].includes(result.status)), results }
 }

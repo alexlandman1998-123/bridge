@@ -267,7 +267,8 @@ try {
     assert.equal(await download.failure(), null)
     assert.equal(await page.locator('[data-seller-download-test-pdf-stage], [data-seller-download-test-pdf-style], .html2pdf__overlay').count(), 0, `${fixture.id}: temporary rendering elements must be removed`)
     const data = await fs.readFile(pdfPath)
-    const pdf = await getDocument({ data: new Uint8Array(data), useSystemFonts: true }).promise
+    const loadingTask = getDocument({ data: new Uint8Array(data), useSystemFonts: true })
+    const pdf = await loadingTask.promise
     try {
       assert.equal(pdf.numPages, fixture.expectedPages, `${fixture.id}: downloaded page count must match the prepared document`)
       const pages = []
@@ -311,7 +312,7 @@ try {
       report.push({ id: fixture.id, viewport: fixture.viewport, pages: pdf.numPages, expectedPages: fixture.expectedPages, bytes: data.length, pageChecks: pages })
       console.log(`${fixture.id}: ${pdf.numPages} visible PDF pages, ${fixture.expectedLogo === false ? 'agency-name branding' : 'logo present'}, rendering elements cleaned up`)
     } finally {
-      await pdf.destroy()
+      await loadingTask.destroy()
     }
   }
   assert.deepEqual(pageErrors, [], 'PDF downloads must not raise browser errors')

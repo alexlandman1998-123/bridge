@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+import { Paperclip, Send, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import { metaIntegrationRequest } from '../../services/metaIntegrationService'
@@ -25,13 +27,20 @@ function MessagePermission({ organisationId, conversation, permission, onSaved }
   </fieldset>
 }
 
-export default function WhatsAppMessageComposer({ organisationId, conversation, onSent }) {
-  const [kind,setKind]=useState(conversation.canReply?'text':'template'),[body,setBody]=useState(''),[upload,setUpload]=useState(null)
+export default function WhatsAppMessageComposer({ organisationId, conversation, onSent, initialBody = '', onDraftChange, compact = false }) {
+  const [kind,setKind]=useState(compact?'text':conversation.canReply?'text':'template'),[body,setBody]=useState(initialBody),[upload,setUpload]=useState(null)
+  const [expanded,setExpanded]=useState(false)
   const [templates,setTemplates]=useState([]),[selected,setSelected]=useState(''),[values,setValues]=useState({}),[permission,setPermission]=useState(null),[editingPermission,setEditingPermission]=useState(false)
   const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[confirmed,setConfirmed]=useState(false)
   const [attempt,setAttempt]=useState(null),[missing,setMissing]=useState(false),[reload,setReload]=useState(0),[draftRequestId,setDraftRequestId]=useState(null)
-  const alive=useRef(true),lock=useRef(false)
+  const alive=useRef(true),lock=useRef(false),editorPanel=useRef(null)
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
+  useEffect(()=>{
+    if(!expanded)return undefined
+    const previous=document.activeElement
+    editorPanel.current?.querySelector('button')?.focus()
+    return()=>{if(previous?.isConnected)previous.focus()}
+  },[expanded])
   useEffect(()=>{
     if(kind!=='template')return undefined
     let cancelled=false;setLoading(true);setError('')
@@ -58,7 +67,8 @@ export default function WhatsAppMessageComposer({ organisationId, conversation, 
     } catch(failure){if(alive.current)setError(failure.message)}finally{lock.current=false;if(alive.current)setBusy(false)}
   }
   function finish(message) {
-    setAttempt(null);setDraftRequestId(null);setMissing(false);setBody('');setUpload(null);setConfirmed(false)
+    if(compact&&!expanded)setKind('text')
+    setAttempt(null);setDraftRequestId(null);setMissing(false);setBody('');onDraftChange?.('');setUpload(null);setConfirmed(false)
     if(['unknown','sending'].includes(message.delivery_status))setError('The send result is unconfirmed. Check the conversation before sending a new message.')
     else if(message.delivery_status==='failed')setError(message.error_message||'Meta did not send this message.')
     else setNotice('Message sent.')
@@ -80,7 +90,7 @@ export default function WhatsAppMessageComposer({ organisationId, conversation, 
     catch(failure){if(alive.current)setError(failure.message)}finally{lock.current=false;if(alive.current)setBusy(false)}
   }
   const ready=kind==='template'?template&&template.status==='APPROVED'&&!definition.unsupported.length&&permission?.status==='opted_in'&&!editingPermission&&confirmed&&(!mediaField||upload):conversation.canReply&&(kind==='text'?body.trim():upload)
-  return <div className="space-y-3 border-t p-4">
+  const editor = <div className="space-y-3 border-t p-4">
     {error&&<p role="alert" className="text-sm text-red-800">{error}</p>}{notice&&<p role="status" className="text-sm">{notice}</p>}
     <label className="grid gap-1 text-sm font-semibold">Message format<select className="rounded-lg border p-2 font-normal" disabled={busy||Boolean(attempt)} value={kind==='image'||kind==='document'?'attachment':kind} onChange={event=>changeKind(event.target.value)}><option value="text">Text reply</option><option value="attachment">Photo or PDF</option><option value="template">Approved template</option></select></label>
     {!conversation.canReply&&kind!=='template'&&<p className="text-sm">The 24-hour reply window has closed. Choose an approved template.</p>}
@@ -91,9 +101,17 @@ export default function WhatsAppMessageComposer({ organisationId, conversation, 
       {template&&<div className="whitespace-pre-wrap rounded-xl border bg-green-50 p-3 text-sm" aria-label="Template preview">{previewTemplate(template,values,{full_name:conversation.contact_name})}</div>}
       {!permission||permission.status!=='opted_in'||editingPermission?<MessagePermission key={permission?.version||0} organisationId={organisationId} conversation={conversation} permission={permission} onSaved={value=>{setPermission(value);setEditingPermission(false);setConfirmed(false)}}/>:<div className="space-y-1"><p className="text-xs text-slate-600">WhatsApp message permission recorded · {new Date(permission.consent_at).toLocaleString()}</p><Button size="sm" variant="ghost" disabled={busy||Boolean(attempt)} onClick={()=>{setEditingPermission(true);setConfirmed(false)}}>Update message permission</Button></div>}
       <label className="flex gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={busy||Boolean(attempt)} onChange={event=>setConfirmed(event.target.checked)}/>I reviewed this template and recipient and want to send it. Meta charges may apply.</label>
-    </>:<label className="grid gap-2 text-sm font-semibold">{kind==='text'?'Reply':'Attachment caption'}<textarea className="min-h-24 rounded-xl border p-3 font-normal" maxLength={kind==='text'?4096:1024} disabled={busy||Boolean(attempt)} value={body} onChange={event=>setBody(event.target.value)}/></label>}
+    </>:<label className="grid gap-2 text-sm font-semibold">{kind==='text'?'Reply':'Attachment caption'}<textarea className="min-h-24 rounded-xl border p-3 font-normal" maxLength={kind==='text'?4096:1024} disabled={busy||Boolean(attempt)} value={body} onChange={event=>{setBody(event.target.value);onDraftChange?.(event.target.value)}}/></label>}
     {(kind==='attachment'||kind==='image'||kind==='document'||(kind==='template'&&mediaField))&&<label className="grid gap-1 text-sm font-semibold">{mediaField?'Template header attachment':'Photo or PDF'}<input aria-label="Upload photo or PDF" type="file" accept={mediaField?.kind==='image'?'image/jpeg,image/png':mediaField?.kind==='document'?'application/pdf':'image/jpeg,image/png,application/pdf'} disabled={busy||Boolean(attempt)} onChange={event=>{void chooseFile(event.target.files?.[0]);event.target.value=''}}/><small className="font-normal text-slate-600">JPEG/PNG: 5 MB · PDF: 8 MB</small></label>}
     {upload&&<p className="text-sm">Ready: {upload.filename}</p>}
     {attempt?<div className="flex flex-wrap gap-2"><Button disabled={busy} onClick={()=>void check()}>Check message</Button>{missing&&<><Button disabled={busy} onClick={()=>void send(true)}>Retry same message</Button><Button variant="secondary" disabled={busy} onClick={()=>{setAttempt(null);setMissing(false);setError('')}}>Edit this attempt</Button></>}</div>:<Button disabled={busy||loading||!ready} onClick={()=>void send()}>Send message</Button>}
+  </div>
+  if (!compact) return editor
+  function closeEditor() { if (busy) return; setExpanded(false); if (!attempt) changeKind('text') }
+  return <div className="wa-compact-composer">
+    {error && !expanded && <p role="alert">{error}</p>}{notice && !expanded && <p role="status">{notice}</p>}
+    {attempt && !expanded ? <div className="wa-reply-actions"><span>Message awaiting confirmation</span><Button disabled={busy} onClick={()=>void check()}>Check message</Button>{missing&&<Button disabled={busy} onClick={()=>void send(true)}>Retry same message</Button>}</div> : <div className="wa-reply-row"><button type="button" className="revo-icon" aria-label="Attach photo or PDF" disabled={busy||Boolean(attempt)||!conversation.canReply} onClick={()=>{changeKind('attachment');setExpanded(true)}}><Paperclip size={18}/></button><textarea aria-label="Reply" placeholder={conversation.canReply ? "Write a message…" : "Write a reply draft…"} rows={1} value={body} maxLength={4096} disabled={busy||Boolean(attempt)} onChange={event=>{setBody(event.target.value);onDraftChange?.(event.target.value)}}/><button type="button" className="wa-send" aria-label="Send message" title={conversation.canReply ? "Send message" : "Meta requires a new customer message or an approved template before this reply can be sent."} disabled={!conversation.canReply||busy||Boolean(attempt)||kind!=='text'||!body.trim()} onClick={()=>void send()}><Send size={18}/></button></div>}
+    {conversation.canReply && !attempt && <button type="button" className="wa-template-link" onClick={()=>{changeKind('template');setExpanded(true)}}>Use a template</button>}
+    {expanded && createPortal(<div className="wa-compose-overlay"><section ref={editorPanel} className="wa-compose-panel" role="dialog" aria-modal="true" aria-label="Compose WhatsApp message" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();closeEditor()}if(event.key==='Tab'){const fields=[...event.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')];if(!fields.length){event.preventDefault();return}if(event.shiftKey&&document.activeElement===fields[0]){event.preventDefault();fields.at(-1).focus()}else if(!event.shiftKey&&document.activeElement===fields.at(-1)){event.preventDefault();fields[0].focus()}}}}><header><div><h2>{kind==='template'?'Send a template':'Send an attachment'}</h2><p>Review the recipient and message before sending.</p></div><button type="button" className="revo-icon" aria-label="Close message editor" disabled={busy} onClick={closeEditor}><X size={18}/></button></header>{editor}</section></div>,document.body)}
   </div>
 }

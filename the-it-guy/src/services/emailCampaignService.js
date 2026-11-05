@@ -1,3 +1,4 @@
+import { archiveMarketingAudience, saveMarketingAudience } from './marketingAudienceService'
 import { supabase } from '../lib/supabaseClient'
 
 const clean = (value) => String(value || '').trim()
@@ -19,30 +20,38 @@ function normalizeTags(tags = []) {
     .filter(Boolean))]
 }
 
-function getClientRoleType(client = {}) {
-  const candidates = [client.primaryRole, client.typeKeys?.[0], client.typeKey, client.role]
-  const role = candidates.map((value) => clean(value).toLowerCase()).find(Boolean)
-  return ['buyer', 'seller', 'investor', 'landlord', 'tenant', 'lead'].includes(role) ? role : 'lead'
-}
-
-export async function getClientMarketingWorkspace({ organisationId, email = '' }) {
-  if (!organisationId) return { marketingContact: null, savedAudiences: [] }
-  const normalizedEmail = normalizeEmail(email)
-  const [contactResult, audiencesResult] = await Promise.all([
-    normalizedEmail
-      ? supabase.from('email_marketing_contacts').select('*').eq('organisation_id', organisationId).eq('email', normalizedEmail).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).is('archived_at', null).order('updated_at', { ascending: false }),
-  ])
-  if (contactResult.error) throw contactResult.error
-  if (audiencesResult.error) throw audiencesResult.error
-  return { marketingContact: contactResult.data || null, savedAudiences: audiencesResult.data || [] }
+export async function getClientMarketingWorkspace({ organisationId, email = '', clientId = '' }) {
+  if (!organisationId) return { marketingContact: null, marketingContacts: [], savedAudiences: [] }
+  let snapshot = null
+  if (clientId) {
+    const { data, error } = await supabase.rpc('client_tag_workspace', { p_organisation_id: organisationId, p_client_id: clientId })
+    if (error) throw error
+    snapshot = data
+  }
+  const emails = snapshot?.emails || [normalizeEmail(email)].filter(Boolean)
+  const contacts = []
+  // Bound the REST URL even when years of source edits retain many aliases.
+  for (let first = 0; first < emails.length; first += 100) {
+    const aliases = emails.slice(first, first + 100)
+    const { data, error } = await supabase.from('email_marketing_contacts').select('*').eq('organisation_id', organisationId).in('email', aliases).order('id').limit(100)
+    if (error) throw error
+    contacts.push(...(data || []))
+  }
+  const { data: savedAudiences, error } = await supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).is('archived_at', null).order('updated_at', { ascending: false })
+  if (error) throw error
+  const marketingContacts = contacts.map(contact => snapshot ? { ...contact, tags: snapshot.tags } : contact)
+  return { ...snapshot, marketingContact: marketingContacts.find(contact => contact.email === normalizeEmail(email)) || marketingContacts[0] || null, marketingContacts, savedAudiences: savedAudiences || [] }
 }
 
 export async function getClientAudienceMemberships({ organisationId, marketingContact, savedAudiences = [] }) {
-  if (!organisationId || !marketingContact || marketingContact.organisation_id !== organisationId) return []
+  if (!organisationId || !marketingContact || marketingContact.is_valid_email === false || marketingContact.organisation_id !== organisationId) return []
   const audiences = savedAudiences.filter(audience => audience.organisation_id === organisationId && !audience.archived_at)
   const matches = await Promise.all(audiences.map(async audience => {
+    if (audience.definition || audience.filter_json?.shared_audience_id) {
+      const { data, error } = await supabase.rpc('marketing_audience_has_email_contact', { p_org: organisationId, p_audience: audience.id, p_contact: marketingContact.id })
+      if (error) throw error
+      return data === true
+    }
     const filter = audience.filter_json || {}
     // Delivery applies these legacy constraints alongside structured rules.
     for (const field of ['role_type', 'branch_id', 'assigned_user_id', 'lead_stage', 'area']) {
@@ -107,33 +116,29 @@ export async function getAudienceFilterOptions(organisationId) {
   return options
 }
 
-export async function saveClientMarketingTags({ organisationId, client, tags }) {
-  const email = normalizeEmail(client?.email)
+export async function saveClientMarketingTags({ organisationId, client, tags, tagVersion }) {
   if (!organisationId) throw new Error('Select an organisation before updating client tags.')
-  if (!email) throw new Error('Add an email address before assigning marketing tags.')
+  if (!client?.identityId) throw new Error('Refresh this client to load its shared profile before assigning tags.')
+  if (tagVersion == null) throw new Error('Refresh client tags before saving.')
   const nextTags = normalizeTags(tags)
-  const { data: existing, error: lookupError } = await supabase
-    .from('email_marketing_contacts')
-    .select('id')
-    .eq('organisation_id', organisationId)
-    .eq('email', email)
-    .maybeSingle()
-  if (lookupError) throw lookupError
-
-  const query = existing?.id
-    ? supabase.from('email_marketing_contacts').update({ tags: nextTags }).eq('id', existing.id).select().single()
-    : supabase.from('email_marketing_contacts').insert({
-      organisation_id: organisationId,
-      source_type: 'crm',
-      email,
-      full_name: clean(client?.name) || null,
-      role_type: getClientRoleType(client),
-      tags: nextTags,
-      is_valid_email: true,
-    }).select().single()
-  const { data, error } = await query
+  if (nextTags.length > 100 || nextTags.some(tag => tag.length > 60)) throw new Error('Use up to 100 tags, each 1–60 characters.')
+  const { data, error } = await supabase.rpc('client_tags_save', {
+    p_organisation_id: organisationId, p_client_id: client.identityId,
+    p_expected_version: tagVersion, p_tags: nextTags,
+  })
   if (error) throw error
   return data
+}
+
+export async function loadEmailContactChoices(organisationId) {
+  const contacts=[]
+  if(!organisationId)return {data:contacts,error:null}
+  for(let offset=0;;offset+=500){
+    const result=await supabase.from('email_marketing_contacts').select('*').eq('organisation_id',organisationId).eq('is_valid_email',true).order('id').range(offset,offset+499)
+    if(result.error)return {data:null,error:result.error}
+    contacts.push(...(result.data||[]))
+    if((result.data||[]).length<500)return {data:contacts,error:null}
+  }
 }
 
 export async function getEmailCampaignWorkspace(organisationId) {
@@ -143,7 +148,7 @@ export async function getEmailCampaignWorkspace(organisationId) {
     supabase.from('email_campaign_performance').select('*').eq('organisation_id', organisationId),
     supabase.from('email_sender_identities').select('*').eq('organisation_id', organisationId).order('verification_status'),
     supabase.from('email_sending_domains').select('*').eq('organisation_id', organisationId).order('created_at', { ascending: false }),
-    supabase.from('email_marketing_contacts').select('*').eq('organisation_id', organisationId).eq('is_valid_email', true).order('created_at', { ascending: false }).limit(250),
+    loadEmailContactChoices(organisationId),
     supabase.from('email_subscription_types').select('*').eq('organisation_id', organisationId).eq('is_active', true).order('display_order'),
     supabase.from('email_deliverability_health').select('*').eq('organisation_id', organisationId),
     supabase.from('email_templates').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
@@ -154,14 +159,16 @@ export async function getEmailCampaignWorkspace(organisationId) {
     supabase.from('email_campaign_category_performance').select('*').eq('organisation_id', organisationId).order('recipients', { ascending: false }),
   ])
   for (const result of [campaigns, performance, identities, domains, contacts, subscriptionTypes, deliverability, templates, savedAudiences, usage, billingProfile, dailyPerformance, categoryPerformance]) if (result.error) throw result.error
-  // Structured audiences are referenced by ID, so campaign delivery resolves
-  // their latest membership at schedule time instead of flattening their rules.
+  const platformStatus = await supabase.rpc('email_campaign_platform_sender_status', { p_organisation_id: organisationId })
+  const platformSender = platformStatus.error ? { ready: false, available: false } : { ...platformStatus.data, available: true }
+  // Saved selections keep their common ID and reviewed criteria revision.
+  // Membership stays live; a criteria change requires choosing the audience again.
   const campaignAudiences = (savedAudiences.data || []).map((audience) => (
-    Array.isArray(audience?.filter_json?.rules)
-      ? { ...audience, filter_json: { saved_audience_id: audience.id } }
+    audience.id
+      ? { ...audience, filter_json: { saved_audience_id: audience.id, ...(Number.isInteger(audience.revision) ? { audience_revision: audience.revision } : {}) } }
       : audience
   ))
-  return { campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: campaignAudiences, usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
+  return { platformSender, campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: campaignAudiences, usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
 }
 
 const canonicalEmailIntent = (value) => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry) ? Object.fromEntries(Object.keys(entry).sort().map((key) => [key, entry[key]])) : entry)
@@ -248,10 +255,32 @@ export async function quoteEmailCampaignUsage(campaignId, recipientCount) {
   return data
 }
 
+function canonicalTestIntent(value) {
+  if (Array.isArray(value)) return value.map(canonicalTestIntent)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().filter(key => value[key] !== undefined).map(key => [key, canonicalTestIntent(value[key])]))
+  return value
+}
+
 export async function sendEmailCampaignTest(payload) {
-  const { data, error } = await supabase.functions.invoke('email-campaign-test', { body: payload })
-  if (error) throw await emailSetupError(error)
-  if (data?.error) throw new Error(data.error)
+  const { testGeneration = 'initial', ...intent } = payload
+  // Keys contain no contact details or message text.
+  const bytes = new TextEncoder().encode(JSON.stringify(canonicalTestIntent({ ...intent, testGeneration })))
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const requestId = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  let result
+  try { result = await supabase.functions.invoke('email-campaign-test', { body: { ...intent, requestId } }) }
+  catch { throw Object.assign(new Error('Test acceptance could not be confirmed. Check the recipient inbox before starting another test.'), { deliveryUncertain: true }) }
+  const { data, error } = result || {}
+  if (error) {
+    const failure = await emailSetupError(error)
+    const status = error.context?.status
+    let details = null
+    try { details = await error.context?.clone?.().json() } catch { /* Some SDK/network responses have already consumed their body. */ }
+    failure.deliveryUncertain = details?.deliveryUncertain === true || !(status >= 400 && status < 500 && status !== 408)
+    throw failure
+  }
+  if (data?.error) throw Object.assign(new Error(data.error), { deliveryUncertain: true })
+  if (typeof data?.providerMessageId !== 'string' || !data.providerMessageId.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data?.deliveredTo || '') || (payload.recipientEmail && normalizeEmail(data.deliveredTo) !== normalizeEmail(payload.recipientEmail))) throw Object.assign(new Error('Test acceptance could not be confirmed. Check the recipient inbox before starting another test.'), { deliveryUncertain: true })
   return data
 }
 
@@ -274,7 +303,7 @@ export async function saveEmailTemplate({ organisationId, userId, template }) {
   if (!payload.name) throw new Error('Name this template before saving it.')
   if (!payload.html.trim()) throw new Error('Add HTML before saving this template.')
   const query = template.id
-    ? supabase.from('email_templates').update(payload).eq('id', template.id).select().single()
+    ? supabase.from('email_templates').update(payload).eq('organisation_id', organisationId).eq('id', template.id).select().single()
     : supabase.from('email_templates').insert(payload).select().single()
   const { data, error } = await query
   if (error) throw error
@@ -289,21 +318,32 @@ export async function previewEmailAudience({ organisationId, subscriptionTypeId,
 }
 
 export async function saveEmailAudience({ organisationId, userId, audience }) {
-  const payload = { organisation_id: organisationId, name: clean(audience.name), description: clean(audience.description), filter_json: audience.filterJson || {}, created_by: userId || null }
-  if (!payload.name) throw new Error('Name this audience before saving it.')
-  const query = audience.id ? supabase.from('email_saved_audiences').update(payload).eq('id', audience.id).select().single() : supabase.from('email_saved_audiences').insert(payload).select().single()
-  const { data, error } = await query
+  if (!organisationId || !clean(audience.name)) throw new Error('Choose an organisation and name this audience.')
+  const capability = await supabase.rpc('marketing_audience_validate', { p_definition: { emailFilter: {} } })
+  if (capability.error && !['PGRST202', '42883'].includes(capability.error.code)) throw capability.error
+  if (capability.data === true) {
+    if (audience.id && !Number.isInteger(audience.revision)) throw new Error('Refresh this audience before saving.')
+    return saveMarketingAudience(organisationId, { ...audience, visibility: audience.visibility || 'personal', definition: { emailFilter: audience.filterJson || {} } })
+  }
+  // A read-only capability probe selects the legacy path before any write.
+  // Never fall back after a save failure, which might have committed remotely.
+  const payload = {organisation_id: organisationId, name: clean(audience.name), description: clean(audience.description), filter_json: audience.filterJson || {}, created_by: userId || null}
+  const query = audience.id ? supabase.from('email_saved_audiences').update(payload).eq('organisation_id', organisationId).eq('id', audience.id).select().single() : supabase.from('email_saved_audiences').insert(payload).select().single()
+  const {data,error} = await query
   if (error) throw error
   return data
 }
 
-export async function archiveEmailAudience({ organisationId, audienceId }) {
-  const { error } = await supabase
-    .from('email_saved_audiences')
-    .update({ archived_at: new Date().toISOString() })
-    .eq('organisation_id', organisationId)
-    .eq('id', audienceId)
+export async function archiveEmailAudience({ organisationId, audienceId, revision }) {
+  if (!Number.isInteger(revision)) throw new Error('Refresh this audience before archiving.')
+  return archiveMarketingAudience(organisationId, { id: audienceId, revision })
+}
+
+export async function getClientSharedAudienceMemberships({ organisationId, clientId }) {
+  if (!organisationId || !clientId) return []
+  const { data, error } = await supabase.rpc('client_audience_memberships', { p_org: organisationId, p_client: clientId })
   if (error) throw error
+  return data || []
 }
 
 export async function getEmailCampaignAnalytics(campaignId) {
@@ -344,13 +384,32 @@ export async function verifyEmailSendingDomain({ organisationId, domainId }) {
 
 export async function getEmailSendingPolicy(organisationId) {
   const { data, error } = await supabase.from('email_sending_policies')
-    .select('approved_at,paused_at,pause_reason,daily_recipient_limit,self_service_blocked')
+    .select('approved_at,paused_at,pause_reason,daily_recipient_limit,self_service_blocked,organisation_daily_limit,manual_paused_at')
     .eq('organisation_id', organisationId).maybeSingle()
   if (error) throw error
-  return data
+  if (!data) return null
+  const status = await supabase.rpc('email_campaign_controls_status', { p_organisation_id: organisationId })
+  if (status.error) throw status.error
+  return { ...data, ...status.data }
 }
 
-export async function createEmailSender({ organisationId, displayName, email, sendingDomainId, replyToEmail, makeDefault = true, identityId = null }) {
+export async function setEmailSendingControls({ organisationId, paused, dailyLimit }) {
+  const { error } = await supabase.rpc('email_campaign_set_controls', {
+    p_organisation_id: organisationId, p_paused: paused, p_daily_limit: Number(dailyLimit),
+  })
+  if (error) throw error
+}
+
+export async function createEmailSender({ organisationId, displayName, email, sendingDomainId, replyToEmail, makeDefault = true, identityId = null, senderMode = 'custom' }) {
+  if (senderMode === 'arch9') {
+    const { data, error } = await supabase.rpc('email_save_platform_sender', {
+      p_organisation_id: organisationId, p_display_name: clean(displayName), p_reply_to: normalizeEmail(replyToEmail),
+      p_default: makeDefault, p_identity_id: identityId,
+    })
+    if (error) throw error
+    return data
+  }
+  if (senderMode !== 'custom') throw new Error('Choose a valid sending option.')
   const { data, error } = await supabase.rpc('email_save_sender', {
     p_organisation_id: organisationId, p_domain_id: sendingDomainId,
     p_display_name: clean(displayName), p_email: normalizeEmail(email),

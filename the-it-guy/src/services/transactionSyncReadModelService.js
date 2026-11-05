@@ -177,7 +177,7 @@ export async function getTransactionSyncReadModel(transactionId, options = {}) {
         }
         throw error
       }),
-    readRefreshSignal(client, normalizedTransactionId).catch((error) => {
+    (CLIENT_ROLES.has(normalizeRole(options.viewerRole)) ? Promise.resolve(null) : readRefreshSignal(client, normalizedTransactionId)).catch((error) => {
       if (isMissingTableError(error, 'transaction_refresh_signals')) {
         warnings.push('Phase 2 refresh watermark is not deployed.')
         return null

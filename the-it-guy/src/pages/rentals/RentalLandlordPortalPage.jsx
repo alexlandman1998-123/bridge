@@ -820,7 +820,6 @@ function RentalLandlordPortalContent({
   const liveRent = <div className="space-y-4"><p className="text-sm text-slate-600">Saved lease and move-in payment progress appears below. Your rental team supplies the ongoing rent statement separately.</p>{liveProgress}</div>;
   const liveSettings = <Card icon={Building2} eyebrow="Portal access" title="Your property relationship"><p className="mt-4 text-sm text-slate-600">This portal is connected to {property.name || 'your rental property'}. Contact your rental team to change access or property details.</p><button type="button" className="mt-4 underline" onClick={() => navigateSection('messages')}>Message your rental team</button></Card>;
   const content = demo ? demoContent : activeKey === 'properties' ? selectedPropertyId ? liveProgress : <div className="space-y-4">{properties}{liveProgress}</div> : activeKey === 'rent' ? liveRent : activeKey === 'maintenance' ? liveMaintenance : activeKey === 'documents' ? liveDocuments : activeKey === 'settings' ? liveSettings : ['messages', 'support', 'approvals'].includes(activeKey) ? approvals : <div className="space-y-4"><LandlordOverviewMetrics portfolio={data?.portfolio || {}} />{liveProgress}{support}</div>;
-
   return (
     <RentalClientPortalShell
       role="landlord"

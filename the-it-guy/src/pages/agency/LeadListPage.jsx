@@ -1,6 +1,8 @@
 import {
   ArrowUpRight,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Columns3,
   Filter,
@@ -15,7 +17,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { createElement, useState } from 'react'
+import { createElement, useEffect, useId, useRef, useState } from 'react'
 
 function MetricCard({ label, value, detail, compare, icon, tone, neutral = false }) {
   return (
@@ -213,7 +215,40 @@ export default function LeadListPage({
   const [openMenuId, setOpenMenuId] = useState('')
   const [draggingId, setDraggingId] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const kanbanRef = useRef(null)
+  const kanbanColumnsRef = useRef(null)
+  const kanbanId = useId()
+  const [kanbanScroll, setKanbanScroll] = useState({ left: 0, max: 0 })
   const isKanban = viewMode === 'kanban'
+
+  function syncKanbanScroll() {
+    const board = kanbanRef.current
+    if (!board) return
+    const max = Math.max(0, board.scrollWidth - board.clientWidth)
+    const left = Math.max(0, Math.min(max, board.scrollLeft))
+    setKanbanScroll((previous) => previous.left === left && previous.max === max ? previous : { left, max })
+  }
+
+  useEffect(() => {
+    if (!isKanban) return undefined
+    syncKanbanScroll()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncKanbanScroll)
+    if (kanbanRef.current) observer?.observe(kanbanRef.current)
+    if (kanbanColumnsRef.current) observer?.observe(kanbanColumnsRef.current)
+    window.addEventListener('resize', syncKanbanScroll)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', syncKanbanScroll)
+    }
+  }, [isKanban, kanbanColumns.length])
+
+  function scrollKanban(direction) {
+    const board = kanbanRef.current
+    board?.scrollBy({
+      left: direction * board.clientWidth * 0.8,
+      behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth',
+    })
+  }
   const activeFilterCount = ['source', 'stage', ...(isPrincipal ? ['agent'] : [])]
     .filter((key) => filters[key] && filters[key] !== 'all').length
   const metricCards = [
@@ -251,6 +286,7 @@ export default function LeadListPage({
           </div>
         </header>
 
+        {category === 'development' ? <p className="border-b border-[#edf2f7] px-4 py-3 text-sm text-[#60758b] sm:px-5" data-testid="development-sales-flow">Development sales follow their own journey: enquiry, qualification, viewing / presentation, unit selection and reservation, buyer onboarding, signed OTP and transaction.</p> : null}
         <div className="flex shrink-0 flex-col gap-3 border-b border-[rgba(15,23,42,0.06)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[0.78rem] text-[#73879c]">{category === 'seller' ? `${sellerJourneyMetrics.sellerLeads || 0} seller leads · ${sellerJourneyMetrics.mandatesSigned || 0} mandates signed · ${sellerJourneyMetrics.listingsLive || 0} listings live` : `${operationalSummary.total || 0} leads · ${operationalSummary.needAttention || 0} need attention · ${operationalSummary.overdue || 0} overdue`}</p>
           <div className="flex w-full items-center gap-2 sm:w-auto">
@@ -287,15 +323,22 @@ export default function LeadListPage({
         ) : null}
 
         {viewMode === 'kanban' ? (
-          <div className="min-h-0 max-w-full flex-1 snap-x snap-proximity overflow-x-auto rounded-b-[18px] bg-white p-3">
+          <>
+          <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-3 py-2.5" role="group" aria-label="Kanban board controls">
             {category !== 'archived' ? (
-              <div className="sticky left-0 mb-3 flex w-fit items-center">
                 <button type="button" className="inline-flex min-h-[38px] items-center gap-2 rounded-[12px] border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50" onClick={() => onAddLead(category)}>
                   <Plus size={15} /> Create {categoryLabel} Lead
                 </button>
-              </div>
             ) : null}
-            <div className="flex min-h-[560px] gap-3">
+            <div className="ml-auto flex min-w-0 basis-full flex-1 items-center justify-end gap-2 sm:basis-[240px] sm:max-w-md">
+              <label htmlFor={`${kanbanId}-scroll`} className="shrink-0 text-xs font-medium text-zinc-500">Scroll board</label>
+              <button type="button" aria-label="Scroll Kanban left" aria-controls={kanbanId} disabled={kanbanScroll.left <= 1} onClick={() => scrollKanban(-1)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-700 hover:bg-zinc-50 disabled:opacity-35"><ChevronLeft size={17} aria-hidden="true" /></button>
+              <input id={`${kanbanId}-scroll`} type="range" min="0" max={Math.max(1, kanbanScroll.max)} value={kanbanScroll.left} disabled={!kanbanScroll.max} aria-label="Scroll Kanban columns" aria-controls={kanbanId} className="h-10 min-w-16 flex-1 cursor-pointer accent-[#315f8f] disabled:cursor-default disabled:opacity-35" onChange={(event) => { kanbanRef.current.scrollLeft = Number(event.target.value); syncKanbanScroll() }} />
+              <button type="button" aria-label="Scroll Kanban right" aria-controls={kanbanId} disabled={kanbanScroll.left >= kanbanScroll.max - 1} onClick={() => scrollKanban(1)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-700 hover:bg-zinc-50 disabled:opacity-35"><ChevronRight size={17} aria-hidden="true" /></button>
+            </div>
+          </div>
+          <div id={kanbanId} ref={kanbanRef} onScroll={syncKanbanScroll} className="min-h-0 max-w-full flex-1 overflow-x-auto rounded-b-[18px] bg-white p-3">
+            <div ref={kanbanColumnsRef} className="flex min-h-[560px] w-max min-w-full gap-3">
               {kanbanColumns.map((column) => (
                 <section key={column.id} aria-label={column.label} className="flex w-[310px] shrink-0 snap-start flex-col rounded-[14px] border border-zinc-200 bg-[#f6f6f5]" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData('text/plain') || draggingId; if (id) onMoveLead(id, column.id) }}>
                   <div className="flex min-h-[52px] items-center justify-between gap-3 border-b border-zinc-200 px-3.5 py-3"><h4 className="text-[0.8rem] font-semibold leading-5 text-zinc-700">{column.label}</h4><span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white px-1.5 text-[0.68rem] font-medium tabular-nums text-zinc-500">{column.cards.length}</span></div>
@@ -306,6 +349,7 @@ export default function LeadListPage({
               ))}
             </div>
           </div>
+          </>
         ) : (
           <>
             <div className="hidden overflow-visible lg:block">

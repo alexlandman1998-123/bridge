@@ -19,7 +19,7 @@ export async function loadClientIdentities(organisationId) {
     readAllRows(() => supabase.from('agency_client_profiles').select('*').eq('organisation_id', organisationId).order('id')),
     readAllRows(() => supabase.from('agency_client_identifiers').select('client_id,kind,value').eq('organisation_id', organisationId).order('id')),
     readAllRows(() => supabase.from('agency_client_links').select('client_id,source_kind,source_id').eq('organisation_id', organisationId).order('id')),
-    supabase.rpc('bridge_agency_open_operations', { p_organisation_id: organisationId }),
+    supabase.rpc('client_identity_can_manage', { p_organisation_id: organisationId }),
   ])
   if (results.slice(0, 3).some((result) => missingIdentitySchema(result.error))) return { available: false, profiles: [], identifiers: [], links: [], canManage: false }
   for (const result of results) if (result.error) throw result.error

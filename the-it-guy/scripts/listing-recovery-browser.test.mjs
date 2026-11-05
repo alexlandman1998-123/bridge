@@ -417,6 +417,25 @@ try {
    assert.equal((await seeded.json()).error, null)
    const read = async () => (await (await page.request.post(fixture.origin + '/fixture/read', { data: { id } })).json()).data
    const before = await read()
+   if (process.argv[5] === 'edit-receipt' && kind === 'sale') {
+    const eventOffset = fixture.events.length
+    for (const state of ['accepted', 'failed', 'uncertain']) {
+     await page.request.post(fixture.origin + '/fixture/seed-jobs', { data: { id, jobs: ['agency_website', 'private_property', 'property24'].map(channel => ({ id: randomUUID(), listing_id: id, channel, state, message: 'Previous advertising request' })) } })
+     // Match the Edit Listing Publication URL, including its final review step.
+     await page.goto(fixture.origin + `/listings/${id}/edit?step=review&scope=listing-publication`, { waitUntil: 'domcontentloaded' })
+     await page.getByRole('heading', { name: 'Check your listing', exact: true }).waitFor()
+     await page.reload({ waitUntil: 'domcontentloaded' })
+     await page.getByRole('heading', { name: 'Check your listing', exact: true }).waitFor()
+     assert.equal(await page.getByRole('region', { name: 'Saved listing and advertising' }).count(), 0)
+     assert.equal(await page.getByText('Advertising results', { exact: true }).count(), 0)
+     assert.equal(await page.getByRole('button', { name: 'Check status', exact: true }).count(), 0)
+    }
+    assert.equal(fixture.events.slice(eventOffset).filter(event => event.kind === 'queue').length, 0)
+    assert.deepEqual(errors, [])
+    await page.screenshot({ path: resolve(out, category + '-edit-review-no-receipt.png'), fullPage: true })
+    results.push({ category, kind, check: 'edit review hides previous accepted, failed and uncertain advertising receipts after reload without publishing', passed: true })
+    continue
+   }
    if (process.argv[5] === 'extras' && kind === 'sale') {
     const eventOffset = fixture.events.length
     await page.goto(fixture.origin + `/listings/${id}/edit?scope=property&step=features`, { waitUntil: 'domcontentloaded' })

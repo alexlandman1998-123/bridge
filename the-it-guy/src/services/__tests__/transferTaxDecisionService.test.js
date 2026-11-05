@@ -8,6 +8,16 @@ import { resolveTransactionRoutingProfile } from '../transactionRoutingProfileSe
 import { buildMatterWorkflowPlan } from '../attorneyWorkflow/matterWorkflowPlanService.js'
 import { phase4DecisionIssues } from '../attorneyWorkflow/transferPhase4Policy.js'
 
+test('preserves an explicitly new SARS query response when selecting a route and clears only stale inherited proof', () => {
+  const actor={userId:'controlled-attorney',role:'attorney'}
+  const first=applyTransferTaxDecisionUpdate({}, {route:'transfer_duty',sarsEvidenceRequest:'yes',sarsQueryResponseReference:'NEW-QUERY-RESPONSE'},actor)
+  assert.equal(first.sarsQueryResponseReference,'NEW-QUERY-RESPONSE')
+  const prior={route:'vat',status:'confirmed',sarsQueryResponseReference:'OLD-QUERY-RESPONSE'}
+  assert.equal(applyTransferTaxDecisionUpdate(prior,{route:'transfer_duty'},actor).sarsQueryResponseReference,'')
+  assert.equal(applyTransferTaxDecisionUpdate(prior,{route:'transfer_duty',sarsQueryResponseReference:'OLD-QUERY-RESPONSE'},actor).sarsQueryResponseReference,'')
+  assert.equal(applyTransferTaxDecisionUpdate(prior,{route:'transfer_duty',sarsQueryResponseReference:'NEW-QUERY-RESPONSE'},actor).sarsQueryResponseReference,'NEW-QUERY-RESPONSE')
+})
+
 test('does not infer a tax route from seller entity type', () => {
   const profile = resolveTransactionRoutingProfile({
     transaction: {

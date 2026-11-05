@@ -23,8 +23,8 @@ test('demo and live buyer portals consume the shared mobile chrome contract', ()
 
 test('mobile branding is contrast-aware and the persistent navigation stays focused', () => {
   assert.match(clientPortalSource, /const buyerPortalLogoLightUrl = pickFirstText\(/)
-  assert.match(clientPortalSource, /brandLogoUrl=\{buyerPortalLogoLightUrl\}/)
-  assert.match(demoPortalSource, /logoUrl=\{config\.logoDarkUrl \|\| config\.logoLightUrl\}/)
+  assert.match(clientPortalSource, /brandLogoUrl=\{buyerPortalLogoDarkUrl \|\| buyerPortalLogoLightUrl\}/)
+  assert.match(demoPortalSource, /logoUrl=\{config\.logoLightUrl \|\| config\.logoDarkUrl\}/)
   assert.match(demoPortalSource, /\['overview', 'progress', 'documents', 'finance', 'team'\]/)
   assert.match(mobileChromeSource, /min-h-\[48px\]/)
   assert.match(mobileChromeSource, /safe-area-inset-bottom/)
@@ -40,11 +40,11 @@ test('phase 3 upload interactions retain accessibility and live upload safety', 
 })
 
 test('live routes keep intent-first composition while the demo keeps its compact gradient headers', () => {
-  for (const label of ['Journey', 'Documents', 'Finance']) {
-    assert.match(clientPortalSource, new RegExp(`BuyerMobilePageIntro\\s+eyebrow="${label}"`))
-  }
+  assert.match(clientPortalSource, /BuyerMobilePageIntro\s+eyebrow="Documents"/)
+  assert.match(clientPortalSource, /progress=\{\(<BuyerProgressJourney/)
+  assert.match(clientPortalSource, /financeWorkspacePage=\{financeWorkspacePage\}/)
   assert.match(demoPortalSource, /function MobilePurchaseJourneyStrip/)
-  assert.match(demoPortalSource, /Latest updates/)
+  assert.match(demoPortalSource, /Updates from your transaction team/)
   assert.doesNotMatch(demoPortalSource, /BuyerMobilePageIntro eyebrow="Journey"/)
   assert.match(demoPortalSource, /<BuyerMobilePriorityAction/)
 })

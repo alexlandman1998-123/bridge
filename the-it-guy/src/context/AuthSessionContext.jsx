@@ -10,6 +10,7 @@ import {
   persistLastGoodBridgeAuthState,
 } from '../lib/authBoot'
 import { isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
+import { flushTransactionBackgroundWork } from '../lib/transactionBackgroundWork.js'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
@@ -995,6 +996,9 @@ export function AuthSessionProvider({ children }) {
       workspaceId,
       metadata: { authFlowId: getAuthFlowId(), source: 'user_initiated' },
     })
+    // Let accepted transaction saves finish reporting before revoking their
+    // session. A network outage must still allow logout after a short limit.
+    await flushTransactionBackgroundWork({ timeoutMs: 5000 })
     clearStoredDevAuthRole()
     clearWorkspaceScopedRuntimeCaches()
     setDevAuthRoleState(null)
@@ -1005,7 +1009,7 @@ export function AuthSessionProvider({ children }) {
     })
 
     if (supabase) {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'global' })
     }
   }, [authState.currentWorkspace?.id, authState.user?.id, session?.user?.id])
 

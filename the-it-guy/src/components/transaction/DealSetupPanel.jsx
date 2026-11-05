@@ -1,10 +1,10 @@
 import useImportedDealReviewStatuses from '../../hooks/useImportedDealReviewStatuses.js'
 import { importedDealReviewStatus } from '../../core/transactions/importedDealReviewStatus.js'
 import ImportedDealReviewBadge from './ImportedDealReviewBadge.jsx'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { loadTransactionSellerEditContext } from '../../services/transactionSellerSaveService.js'
 import Button from '../ui/Button'
-import { loadCanonicalDealSetup, saveCanonicalDealTerms } from '../../services/dealSetupService'
+import { loadCanonicalDealSetup, saveCanonicalDealTerms, retryDealSetupReconciliation } from '../../services/dealSetupService'
 import TransactionBuyerOnboardingPanel from './TransactionBuyerOnboardingPanel.jsx'
 import DealSetupPartyOverview from './DealSetupPartyOverview.jsx'
 
@@ -20,6 +20,11 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   const [draft, setDraft] = useState(null)
   const [activeParty, setActiveParty] = useState(() => sellerDetails ? 'overview' : 'buyer')
   const sellerEnabled = Boolean(sellerDetails)
+  const activeTransaction = useRef(transactionId); activeTransaction.current = transactionId
+  const saveLock = useRef(false)
+  const [sellerError, setSellerError] = useState('')
+  const [sellerRetry, setSellerRetry] = useState(0)
+  const [syncReceipt, setSyncReceipt] = useState(null)
   const [sellerContext, setSellerContext] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -34,7 +39,7 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
     const result = await loadCanonicalDealSetup({ transactionId })
     setReviewTransaction(result.transaction || null)
     setDraft((current) => isDirty && current
-      ? { ...result.setup, terms: current.terms, finance: current.finance }
+      ? current
       : result.setup)
     setRefreshToken((value) => value + 1)
     return result
@@ -43,20 +48,23 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   useEffect(() => {
     if (!transactionId) return undefined
     let active = true
+    setDraft(null); setError(''); setIsDirty(false); setSyncReceipt(null); setBusy(false)
     loadCanonicalDealSetup({ transactionId })
       .then((result) => { if (active) { setDraft(result.setup); setReviewTransaction(result.transaction || null) } })
       .catch((loadError) => active && setError(loadError.message || 'Deal Setup could not be loaded.'))
     return () => { active = false }
   }, [transactionId])
 
+  useEffect(() => { setSellerContext(null); setSellerError('') }, [transactionId])
+
   useEffect(() => {
     if (!sellerEnabled) return undefined
     let active = true
-    setSellerContext(null)
+    setSellerError('')
     loadTransactionSellerEditContext({transactionId}).then(context => { if (active) setSellerContext(context) })
-      .catch(() => { if (active) setSellerContext(null) })
+      .catch(cause => { if (active) setSellerError(cause.message || 'Seller details could not be loaded.') })
     return () => { active = false }
-  }, [transactionId, sellerEnabled])
+  }, [transactionId, sellerEnabled, sellerRetry])
 
   function update(section, key, value) {
     setDraft((current) => ({ ...current, [section]: { ...current[section], [key]: value } }))
@@ -64,16 +72,24 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   }
 
   async function save() {
+    if (saveLock.current === transactionId) return
+    saveLock.current = transactionId
+    const savingId = transactionId
+    let committed = false
     setSaveAttempted(true)
     setBusy(true); setError('')
     try {
-      const result = await saveCanonicalDealTerms({ transactionId, terms: draft.terms, finance: draft.finance })
+      const result = await saveCanonicalDealTerms({ transactionId, terms: draft.terms, finance: draft.finance, expectedUpdatedAt: draft.revision })
+      if (activeTransaction.current !== savingId) return
+      committed = true
+      setSyncReceipt(result)
+      setReviewTransaction(result.transaction)
       setDraft(result.setup)
       setIsDirty(false)
       setRefreshToken((value) => value + 1)
       window.dispatchEvent(new CustomEvent('deal-setup:updated', { detail: { transactionId } }))
       await onSaved?.(result)
-    } catch (saveError) { setError(saveError.message || 'Deal Setup could not be saved.') } finally { setBusy(false) }
+    } catch (saveError) { if (activeTransaction.current === savingId) setError(committed ? 'Deal terms were saved, but the screen could not refresh. Reload before making further changes.' : saveError.message || 'Deal Setup could not be saved.') } finally { if (saveLock.current === savingId) saveLock.current = false; if (activeTransaction.current === savingId) setBusy(false) }
   }
 
   if (!draft) return <section className="rounded-[18px] border border-borderDefault bg-surface p-5 text-sm text-textMuted">
@@ -93,6 +109,8 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
 
   return <section className="space-y-5">
     {canEdit && reviewTransaction && (reviewStatus || identifyDealImport(reviewTransaction).status !== 'not_identified') ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-warning/20 bg-warningSoft p-5"><div><h3 className="font-semibold text-textStrong">Review imported details</h3><div className="mt-2"><ImportedDealReviewBadge status={reviewStatus} /></div><p className="mt-1 text-sm text-textMuted">Check buyers, sellers, the property, captured attorney details and funding against the original document.</p>{reviewStatuses.error ? <p role="status" className="mt-1 text-xs text-warning">{reviewStatuses.error}</p> : null}{isDirty ? <p className="mt-1 text-xs text-warning">Save Deal Setup changes before reviewing details.</p> : null}</div><Button type="button" variant="secondary" disabled={busy || isDirty} onClick={() => setReviewOpen(true)}>Review details</Button></div> : null}
+    {sellerError&&<div role="alert" className="p-3 text-sm text-danger">{sellerError}<Button variant="ghost" onClick={()=>setSellerRetry(value=>value+1)}>Retry seller details</Button></div>}
+    {(syncReceipt?.reconciliation?.status === 'pending' || syncReceipt?.reconciliation?.status === 'failed' || ['pending','failed'].includes(reviewTransaction?.deal_setup_sync_status))&&<div role="status" className="p-3 text-sm">Deal terms are saved. Related workflow updates still need attention.<Button disabled={!canEdit||busy||isDirty} onClick={async()=>{const id=transactionId;setBusy(true);try{const result=await retryDealSetupReconciliation({transactionId:id,termsVersion:reviewTransaction?.deal_setup_terms_version||syncReceipt?.persistence?.termsVersion});if(activeTransaction.current===id){setSyncReceipt(result);setReviewTransaction(result.transaction);setDraft(result.setup)}}catch(cause){if(activeTransaction.current===id)setError(cause.message)}finally{if(activeTransaction.current===id)setBusy(false)}}}>Retry workflow updates</Button></div>}
     {sellerDetails ? <div role="tablist" aria-label="Deal setup party" className="flex gap-2 rounded-[14px] border border-borderDefault bg-surface p-2">
       {['overview', 'buyer', 'seller'].map((party) => <button key={party} type="button" role="tab" aria-selected={activeParty === party} aria-controls={`deal-setup-${party}`} onClick={() => setActiveParty(party)} className={`flex-1 rounded-control px-4 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 ${activeParty === party ? 'bg-primary text-white' : 'text-textMuted hover:bg-surfaceAlt'}`}>{({ overview: 'Overview', buyer: 'Buyer', seller: 'Seller' })[party]}</button>)}
     </div> : null}

@@ -375,7 +375,33 @@ const statusTables = { ...createTables(), private_property_listing_syncs: [{
 }] }
 const activationClient = createFakeClient(statusTables)
 const recoveryAddress = { streetName: 'Monitor Road', streetNumber: '12', suburbId: 12345, suburb: 'Sandton', town: 'Johannesburg', province: 'Gauteng' }
+for (const [afterStatus, expectedStatus, confirmed] of [['PendingOffer', 'under_offer', true], ['For Sale', 'active', false], ['', 'unknown', false]]) {
+  const statusClient = createFakeClient(statusTables)
+  const result = await updatePrivatePropertyListingStatus({
+    client: statusClient, listingId, environment: 'sandbox', propertyStatus: 'PendingOffer', secrets,
+    privateProperty: createRecoveryPortal({ propertyId, address: recoveryAddress, afterStatus }),
+  })
+  assert.equal(result.externalStatus, expectedStatus)
+  assert.equal(result.confirmed, confirmed, 'acknowledgement alone must not confirm Under Offer')
+  const write = statusClient.operations.find(operation => operation.table === 'private_property_listing_syncs').payload
+  assert.equal(write.external_status, expectedStatus)
+  assert.equal(write.is_on_portal, expectedStatus !== 'unknown')
+}
 const reactivationPortal = createRecoveryPortal({ propertyId, address: recoveryAddress })
+for (const [afterStatus, expectedStatus, confirmed] of [['Sold', 'sold', true], ['For Sale', 'active', false], ['PendingOffer', 'under_offer', false], ['Inactive', 'inactive', false], ['', 'unknown', false]]) {
+  const statusClient = createFakeClient(statusTables)
+  const result = await updatePrivatePropertyListingStatus({
+    client: statusClient, listingId, environment: 'sandbox', propertyStatus: 'Sold', secrets,
+    privateProperty: createRecoveryPortal({ propertyId, address: recoveryAddress, afterStatus }),
+  })
+  assert.equal(result.externalStatus, expectedStatus)
+  assert.equal(result.confirmed, confirmed, 'Sold requires an explicit Sold readback')
+  assert.equal(result.status, confirmed ? 'UPDATED' : 'NOT_CONFIRMED')
+  assert.match(result.message, confirmed ? /confirms.*sold/ : /Refresh status/)
+  const write = statusClient.operations.find(operation => operation.table === 'private_property_listing_syncs').payload
+  assert.equal(write.external_status, expectedStatus)
+  if (confirmed) assert.equal(write.is_on_portal, false)
+}
 const activation = await updatePrivatePropertyListingStatus({
   client: activationClient, listingId, environment: 'sandbox', propertyStatus: 'ForSale', secrets,
   privateProperty: reactivationPortal,
@@ -395,6 +421,12 @@ const confirmedActivation = await updatePrivatePropertyListingStatus({
 })
 assert.equal(confirmedActivation.confirmed, true)
 assert.equal(confirmedActivation.externalStatus, 'active')
+const unavailableSoldProbe = createRecoveryPortal({ propertyId, address: recoveryAddress })
+unavailableSoldProbe.getListingStatus = async () => { throw new Error('Status unavailable') }
+const unconfirmedSold = await updatePrivatePropertyListingStatus({ client: createFakeClient(statusTables), listingId, environment: 'sandbox', propertyStatus: 'Sold', secrets, privateProperty: unavailableSoldProbe })
+assert.equal(unconfirmedSold.confirmed, false)
+assert.equal(unconfirmedSold.externalStatus, 'unknown')
+assert.equal(unconfirmedSold.status, 'NOT_CONFIRMED')
 const failedProbePortal = createRecoveryPortal({ propertyId, address: recoveryAddress })
 const probeStatus = failedProbePortal.getListingStatus
 failedProbePortal.getListingStatus = async (args) => {

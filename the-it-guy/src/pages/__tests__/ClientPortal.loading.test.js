@@ -16,7 +16,7 @@ function fixture({ load, section = 'overview', full = async () => { throw new Er
   const scope = {
     token: 'synthetic-buyer-link', isSellerPortalToken: false, isDemoRoute: false,
     sellerPortalAccessToken: '', portalDataWorkspace: 'buyer', requestedSection: section,
-    portalLoadRequestRef: { current: 0 }, portalLoadScopeRef: { current: 'synthetic-buyer-link:buyer' }, portalContextsRef: { current: {} },
+    portalLoadRequestRef: { current: 0 }, portalLoadScopeRef: { current: 'synthetic-buyer-link:buyer:' }, portalContextsRef: { current: {} },
     getClientPortalWorkspaceData: (_token, _workspace, options) => read(options),
     recoverBuyerPortalLoad, isTransientBuyerPortalReadError,
     setBuyerPortalLoadRecoveryScope: value => states.push(['recoveryScope', value]),
@@ -100,6 +100,28 @@ it('persistent connection failure enables automatic reconnect for only the curre
   await vi.runAllTimersAsync()
   await pending
   expect(load).toHaveBeenCalledTimes(2)
-  expect(f.states).toContainEqual(['recoveryScope', 'synthetic-buyer-link:buyer'])
+  expect(f.states).toContainEqual(['recoveryScope', 'synthetic-buyer-link:buyer:'])
   expect(f.states).toContainEqual(['loading', false])
+})
+
+it('a stale loader closure cannot fetch or commit another portal after navigation', async () => {
+  const f = fixture({ load: core => core })
+  f.scope.portalLoadScopeRef.current = 'another-link:buyer:'
+  await f.action()
+  expect(f.read).not.toHaveBeenCalled()
+  expect(f.states).toEqual([])
+})
+
+it('background document reconciliation requests the full workspace', async () => {
+  const full = vi.fn(core => core)
+  const f = fixture({ load: core => core, section: 'documents', full })
+  await f.action({ background: true })
+  expect(f.read).toHaveBeenCalledWith(expect.objectContaining({ mode: 'full' }))
+  expect(full).toHaveBeenCalledOnce()
+})
+
+it('overview background refresh retains the lightweight entry path', async () => {
+  const f = fixture({ load: core => core })
+  await f.action({ background: true })
+  expect(f.read).toHaveBeenCalledWith(expect.objectContaining({ mode: 'core' }))
 })

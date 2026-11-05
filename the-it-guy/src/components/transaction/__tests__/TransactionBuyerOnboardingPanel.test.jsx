@@ -1,18 +1,40 @@
 // @vitest-environment jsdom
 import React from 'react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), send: vi.fn(), updated: vi.fn() }))
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), send: vi.fn(), updated: vi.fn(), onboarding: vi.fn() }))
 vi.mock('../../../services/transactionBuyerCaptureService.js', () => ({ loadTransactionBuyerCapture: mocks.load, saveTransactionBuyerCapture: mocks.save }))
+vi.mock('../../../lib/transactionWorkspaceApi.js', () => ({ getOrCreateTransactionOnboarding: mocks.onboarding }))
 import TransactionBuyerOnboardingPanel from '../TransactionBuyerOnboardingPanel.jsx'
 const context = {
   participantId: 'person', buyerId: 'profile', buyer: { name: 'Jamie Buyer', email: 'buyer@example.test', phone: '0801' },
   profile: { purchaser_type: 'individual', first_name: 'Jamie', last_name: 'Buyer', identity_number: 'saved-id' },
   roster: [{ id: 'person', buyer_party_id: 'profile' }], revision: { formUpdatedAt: 'first' },
 }
-const mount = props => render(<TransactionBuyerOnboardingPanel transactionId="tx" canEdit onSendLink={mocks.send} onUpdated={mocks.updated} {...props} />)
+const Location = () => <output data-testid="route">{useLocation().pathname}</output>
+const Router = ({ children }) => <MemoryRouter>{children}<Location /></MemoryRouter>
+const mount = props => render(<TransactionBuyerOnboardingPanel transactionId="tx" canEdit onSendLink={mocks.send} onUpdated={mocks.updated} {...props} />, { wrapper: Router })
 beforeEach(() => { vi.resetAllMocks(); mocks.load.mockResolvedValue(structuredClone(context)); mocks.updated.mockResolvedValue(); mocks.send.mockResolvedValue() })
 afterEach(cleanup)
+it('opens the shared submission route after manual capture without sending an email', async () => {
+  mocks.onboarding.mockResolvedValue({ token: 'shared-token' })
+  mount()
+  fireEvent.click(screen.getByRole('button', { name: /Capture manually/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Open shared form to submit' }))
+  await waitFor(() => expect(screen.getByTestId('route').textContent).toBe('/client/onboarding/shared-token'))
+  expect(mocks.onboarding).toHaveBeenCalledWith({ transactionId: 'tx', purchaserType: 'individual' })
+  expect(mocks.send).not.toHaveBeenCalled()
+})
+it('leaves manual capture usable after opening the shared form fails', async () => {
+  mocks.onboarding.mockRejectedValue(new Error('Form preparation failed'))
+  mount()
+  fireEvent.click(screen.getByRole('button', { name: /Capture manually/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Open shared form to submit' }))
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Form preparation failed')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Open shared form to submit' }).disabled).toBe(false))
+  expect(screen.getByTestId('route').textContent).toBe('/')
+})
 it('offers two routes without loading or validating incomplete details on entry', () => {
   mount()
   expect(screen.getByRole('button', { name: /Capture manually/ })).toBeTruthy()

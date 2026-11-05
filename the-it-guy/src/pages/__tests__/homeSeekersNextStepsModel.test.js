@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest'
+import { upcomingHomeSeekersSessions } from '../homeSeekersBookingLinks'
 import { nextStepsCalendarFile, nextStepsErrors, previewFounderSlots, previewSessions, qualifierOutcome, readNextStepsReview, saveNextStepsReview } from '../homeSeekersNextStepsModel'
 const now = new Date('2026-10-21T10:00:00Z')
 const contact = { firstName: 'Local', surname: 'Reviewer', email: 'review@example.test', mobile: '+27821234567', area: 'Sandton', consent: true }
@@ -43,7 +44,7 @@ it('offers four future Thursdays in SAST and rolls past a session that has start
   expect(previewSessions(new Date('2026-10-22T16:00:00Z'))[0].start).toBe('2026-10-29T16:00:00.000Z')
 })
 it('records session RSVP distinctly and rejects expired session selections', () => {
-  const session = { ...contact, salesBand: '0 to 4', session: previewSessions(now)[0].id, question: 'Fees?' }
+  const session = { ...contact, salesBand: '0 to 4', session: upcomingHomeSeekersSessions(now)[0].id, question: 'Fees?' }
   saveNextStepsReview('session', session, { now })
   expect(readNextStepsReview().records[0]).toMatchObject({ outcome: 'registered', details: session })
   expect(readNextStepsReview().events[0].event).toBe('session_rsvp')

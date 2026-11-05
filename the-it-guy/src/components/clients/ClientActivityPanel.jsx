@@ -1,11 +1,11 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, ArrowRight, ChevronDown, ChevronRight, Search, RefreshCw, Phone, MessageSquare, StickyNote, Users, Megaphone, FileText, CalendarDays, CheckSquare, BriefcaseBusiness, CircleDot, Link2 } from 'lucide-react'
-import { ACTIVITY_VIEWS, activityDirection, filterActivity, groupActivity, isCampaignActivity, matchesActivityView } from '../../core/clients/clientActivityTimeline'
+import { ACTIVITY_VIEWS, activityDirection, filterActivity, groupActivity, matchesActivityView } from '../../core/clients/clientActivityTimeline'
 import './clientActivityTimeline.css'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
-import { CLIENT_ACTIVITY_CATEGORIES, CLIENT_INTERACTION_TYPES, clientActivityRecordPath, loadClientActivity, logClientInteraction } from '../../services/clientActivityService'
+import { CLIENT_ACTIVITY_CATEGORIES, CLIENT_INTERACTION_TYPES, clientActivityRecordPath, loadClientActivity, loadClientEngagementSummary, logClientInteraction } from '../../services/clientActivityService'
 
 const formatTime = (value) => new Date(value).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
 const actorLabels = { staff: 'Staff action', client: 'Client action', system: 'System', historical: 'Earlier record' }
@@ -28,6 +28,9 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
   const [loading, setLoading] = useState(Boolean(client.identityId))
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
+  const [summary, setSummary] = useState(null)
+  const [summaryError, setSummaryError] = useState('')
+  const [outcome, setOutcome] = useState('completed')
   const [type, setType] = useState('call')
   const [detail, setDetail] = useState('')
   const [occurredAt, setOccurredAt] = useState(localTime)
@@ -46,15 +49,18 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
     const request = ++generation.current
     if (!quiet) setLoading(true)
     setError('')
+    setSummary(null); setSummaryError('')
+    const summaryRequest = previewData ? Promise.resolve(previewData.engagementSummary || { available: false }) : loadClientEngagementSummary({ identityId, organisationId })
+    void summaryRequest.then(result => { if (request === generation.current) setSummary(result) }, cause => { if (request === generation.current) setSummaryError(cause.message || 'Unable to load team engagements.') })
     try {
       const result = previewData
         ? { ...previewData, events: previewData.events.filter(event => category === 'all' || event.category === category) }
         : await loadClientActivity({ identityId, organisationId }, { category, cursor: nextCursor })
       if (request !== generation.current) return
       setAvailable(result.available)
-      setEvents((previous) => nextCursor || quiet ? [...new Map([...previous, ...result.events].map((event) => [event.id, event])).values()].sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at)) : result.events)
-      setCursor(previous => quiet ? previous || result.nextCursor : result.nextCursor)
-    } catch (cause) { if (request === generation.current) setError(cause.message || 'Unable to load client activity.') }
+      setEvents((previous) => nextCursor ? [...new Map([...previous, ...result.events].map((event) => [event.id, event])).values()].sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at)) : result.events)
+      setCursor(result.nextCursor)
+    } catch (cause) { if (request === generation.current) { setEvents([]); setCursor(null); setSummary(null); setError(cause.message || 'Unable to load client activity.') } }
     finally { if (request === generation.current && !quiet) setLoading(false) }
   }, [identityId, organisationId, category, previewData])
 
@@ -85,9 +91,10 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
 
   const visible = useMemo(() => filterActivity(events, { view, search, from, to }), [events, view, search, from, to])
   const groups = useMemo(() => groupActivity(visible), [visible])
-  const lastContact = events.find(event => event.category === 'interaction' && !isCampaignActivity(event) && ['manual', 'lead_activities'].includes(event.origin_table))
+  const lastContact = summary?.lastContact
+  const latestActivity = events.find(event => Date.parse(event.occurred_at) <= Date.now())
   function openComposer(nextType = 'call') {
-    setType(nextType); setEditing(true); setOccurredAt(localTime()); setSaveError('')
+    setType(nextType); setOutcome(nextType === 'note' ? 'recorded' : 'completed'); setEditing(true); setOccurredAt(localTime()); setSaveError('')
   }
   function toggleEntry(id) {
     setExpanded(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next })
@@ -97,7 +104,7 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
     if (previewData) return
     const time = new Date(occurredAt)
     if (!Number.isFinite(time.getTime())) { setSaveError('Enter a valid interaction time.'); return }
-    const entry = { type, detail, occurredAt: time.toISOString() }
+    const entry = { type, detail, occurredAt: time.toISOString(), outcome }
     const fingerprint = JSON.stringify(entry)
     if (command.current?.fingerprint !== fingerprint) command.current = { fingerprint, requestId: crypto.randomUUID() }
     const scope = currentScope.current
@@ -125,10 +132,18 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
       </div>
     </header>
     {available && !error ? <div className="activity-summary">
-      <div><span>Latest activity</span><strong>{events[0] ? formatTime(events[0].occurred_at) : 'No activity yet'}</strong><small>{events[0] ? 'Most recent recorded touchpoint' : 'New activity will appear here'}</small></div>
-      <div><span>Last logged interaction</span><strong>{lastContact ? formatTime(lastContact.occurred_at) : 'Not recorded'}</strong><small>{lastContact?.actor_name || 'Calls, notes and meetings'}</small></div>
+      <div><span>Latest activity</span><strong>{latestActivity ? formatTime(latestActivity.occurred_at) : 'No activity yet'}</strong><small>{latestActivity ? 'Most recent recorded touchpoint' : 'New activity will appear here'}</small></div>
+      <div><span>Last successful contact</span><strong>{lastContact ? formatTime(lastContact.at) : summary?.available ? 'Not recorded' : 'Unavailable'}</strong><small>{lastContact?.actorName || 'Visible successful interactions'}</small></div>
       <div><span>History loaded</span><strong>{events.length} events</strong><small>{cursor ? 'Older activity is available below' : 'All available events in this category'}</small></div>
     </div> : null}
+    {summaryError ? <p role="status">Team engagement information is unavailable: {summaryError}</p> : null}
+    {summary?.available && !error ? <section aria-label="Team engagements" className="rounded-xl border p-3 text-sm">
+      <h5>Team engagements</h5><p>Up to 20 recent conversations you can access. Other conversations may be hidden by permissions.</p>
+      <p>{summary.pendingFollowUps || 0} open follow-ups visible to you.</p>
+      {summary.conversations?.length ? <ul>{summary.conversations.map(thread => <li key={`${thread.channel}:${thread.id}`}>
+        <strong>{thread.channel === 'email' ? 'Email' : 'WhatsApp'}</strong>{' · '}{thread.assignedName || 'Unassigned'}{' · '}{thread.status?.replaceAll('_', ' ')}{' · '}{formatTime(thread.lastActivityAt)}{' · '}{previewData ? <span>Preview conversation</span> : <Link to={thread.channel === 'email' ? '/inbox' : '/inbox/whatsapp'}>Open Inbox</Link>}
+      </li>)}</ul> : <p>No visible conversations recorded.</p>}
+    </section> : null}
     {available ? <div className="activity-toolbar">
       <div className="activity-view-tabs" role="group" aria-label="Activity views">{ACTIVITY_VIEWS.map(([key, label]) => <button key={key} type="button" aria-pressed={view === key} onClick={() => setView(key)}>{label}<span>{events.filter(event => matchesActivityView(event, key)).length}</span></button>)}</div>
       <div className="activity-filter-row">
@@ -142,8 +157,9 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
     {notice ? <p role="status" className="rounded-xl bg-[#edfdf3] p-3 text-sm text-[#1c7d45]">{notice}</p> : null}
     {saveError ? <p role="alert" className="rounded-xl bg-[#fff5f5] p-3 text-sm text-[#b42318]">{saveError}</p> : null}
     {editing && !previewData ? <form ref={composer} className="activity-composer grid gap-3" onSubmit={(event) => { event.preventDefault(); void save() }}>
-      <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm">Interaction type<Field as="select" value={type} disabled={saving} onChange={(event) => setType(event.target.value)}>{CLIENT_INTERACTION_TYPES.map((key) => <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>)}</Field></label>
+      <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm">Interaction type<Field as="select" value={type} disabled={saving} onChange={(event) => { setType(event.target.value); setOutcome(event.target.value === 'note' ? 'recorded' : 'completed') }}>{CLIENT_INTERACTION_TYPES.map((key) => <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>)}</Field></label>
         <label className="grid gap-1 text-sm">When it happened<Field type="datetime-local" value={occurredAt} disabled={saving} onChange={(event) => setOccurredAt(event.target.value)} required /></label></div>
+      {type === 'call' ? <label className="grid gap-1 text-sm">Call outcome<Field as="select" value={outcome} disabled={saving} onChange={event => setOutcome(event.target.value)}><option value="completed">Connected</option><option value="no_answer">No answer</option></Field></label> : null}
       <label className="grid gap-1 text-sm">Interaction details<Field as="textarea" rows={3} maxLength={4000} value={detail} disabled={saving} onChange={(event) => setDetail(event.target.value)} required /></label>
       <p className="text-xs leading-5 text-[#637890]">Record a call, meeting or message that took place. Entries remain in the history. Logging an email or message does not send it.</p>
       <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={() => setEditing(false)}>Cancel</Button><Button type="submit" disabled={saving || !detail.trim()}>{saving ? 'Saving…' : 'Save interaction'}</Button></div>
@@ -170,7 +186,7 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
             <button type="button" className="activity-entry-toggle" aria-expanded={isOpen} aria-controls={`activity-details-${group.id}`} onClick={() => toggleEntry(group.id)}><h5>{title}</h5>{isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
             {event.detail && !(group.campaign && group.events.length > 1) ? <p className="activity-entry-preview">{event.detail}</p> : null}
             {group.campaign ? <div className="activity-campaign-milestones" aria-label="Recorded campaign milestones">{[...group.events].reverse().map(item => <span key={item.id}>{item.title.replace(/^Campaign /, '')}</span>)}</div> : null}
-            <div className="activity-entry-footer"><span className="activity-avatar" aria-hidden="true">{event.actor_name ? event.actor_name.split(' ').map(word => word[0]).slice(0, 2).join('') : event.actor_kind === 'client' ? 'C' : 'S'}</span><span>{event.actor_name ? `Recorded by ${event.actor_name}` : actorLabels[event.actor_kind] || 'Recorded action'}</span>{event.historical ? <span>Historical record</span> : null}{path ? <Link to={path} className="activity-record-link">Open linked record<ArrowRight size={13} /></Link> : null}</div>
+            <div className="activity-entry-footer"><span className="activity-avatar" aria-hidden="true">{event.actor_name ? event.actor_name.split(' ').map(word => word[0]).slice(0, 2).join('') : event.actor_kind === 'client' ? 'C' : 'S'}</span><span>{event.actor_name ? `Recorded by ${event.actor_name}` : actorLabels[event.actor_kind] || 'Recorded action'}</span>{event.historical ? <span>Historical record</span> : null}{event.engagement_status === 'no_answer' ? <span>No answer</span> : null}{Date.parse(event.occurred_at) > Date.now() ? <span>Future dated record</span> : null}{path ? <Link to={path} className="activity-record-link">{event.conversation_id ? 'Open Inbox' : 'Open linked record'}<ArrowRight size={13} /></Link> : null}</div>
             {isOpen ? <div id={`activity-details-${group.id}`} className="activity-expanded-details">
               <span className="client-activity-eyebrow">RECORDED DETAILS</span>
               {group.events.map(item => <div key={item.id}><strong>{item.title}</strong><time dateTime={item.occurred_at}>{formatTime(item.occurred_at)}</time>{item.detail ? <p>{item.detail}</p> : null}<small>{actorLabels[item.actor_kind] || 'Recorded action'}{item.actor_name ? ` · ${item.actor_name}` : ''}</small></div>)}

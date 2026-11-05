@@ -24,7 +24,7 @@ const money = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const [{ slug }, requestHeaders] = await Promise.all([params, headers()])
-  const site = await resolveSite(requestHeaders.get('host'))
+  const site = await resolveSite(requestHeaders.get('host'), false)
   const property = site ? await getPublicProperty(site, slug) : null
   if (!site || !property) return { title: 'Property not found' }
   return { title: `${property.title} | ${site.name}`, description: property.description || `${property.propertyType} in ${property.suburb}.`, alternates: { canonical: `/properties/${propertySlug(property)}` } }
@@ -53,7 +53,7 @@ function FeatureIcon({ icon }: { icon: string }) {
 
 export default async function PropertyPage({ params }: Props) {
   const [{ slug }, requestHeaders] = await Promise.all([params, headers()])
-  const site = await resolveSite(requestHeaders.get('host'))
+  const site = await resolveSite(requestHeaders.get('host'), false)
   if (!site) notFound()
   const property = await getPublicProperty(site, slug)
   if (!property) notFound()

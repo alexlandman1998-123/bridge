@@ -5,6 +5,14 @@ vi.mock('../../privateListingService',() => ({createPrivateListingActivity:mocks
 import { getRentalPortalStatus, updateRentalPortalStatus, loadRentalListingChannels, reconcileRentalPortalPublication, runRentalPublicationAction } from '../rentalListingChannelService'
 beforeEach(() => { vi.clearAllMocks(); mocks.session.mockResolvedValue({data:{session:{access_token:'test'}}}); mocks.activity.mockResolvedValue({id:'event'}); mocks.history.mockResolvedValue([]); vi.stubGlobal('fetch',vi.fn(async () => ({ok:true,json:async()=>({})}))) })
 afterEach(() => vi.unstubAllGlobals())
+it('reads the correct sales and rental status routes without recording a new sync for edit eligibility', async () => {
+ await getRentalPortalStatus('id','property24',{listingType:'sale',recordSync:false})
+ expect(fetch.mock.calls[0][0]).toBe('/api/property24/listings/id/status?environment=production&refresh=false')
+ await getRentalPortalStatus('id','property24',{listingType:'rental',recordSync:false})
+ expect(fetch.mock.calls[1][0]).toContain('/api/property24/rentals/id/status')
+ await getRentalPortalStatus('id','private_property',{recordSync:false})
+ expect(fetch.mock.calls[2][0]).toContain('cached=true&recordSync=false')
+})
 it('loads only stored portal status until refresh is explicitly requested',async () => {
  await getRentalPortalStatus('id','property24'); expect(fetch.mock.calls[0][0]).toContain('refresh=false')
  await getRentalPortalStatus('id','private_property'); expect(fetch.mock.calls[1][0]).toContain('cached=true')

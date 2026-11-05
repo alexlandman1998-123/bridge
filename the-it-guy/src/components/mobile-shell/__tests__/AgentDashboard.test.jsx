@@ -23,7 +23,7 @@ it('omits the greeting from the home header', () => {
   expect(screen.queryByText(/Good afternoon,/)).toBeNull()
 })
 
-it('shows two agent header counters before commission and opens only today’s appointments or assigned new leads', () => {
+it('shows the four summary cards in order and opens the assigned leads and calendar', () => {
   const today = buildMobileToday({ now, profile, appointments: [
     { id: 'one', dateTime: '2026-10-06T10:30:00Z', typeLabel: 'Viewing today', statusKey: 'confirmed' },
     { id: 'later', dateTime: '2026-10-07T10:30:00Z', typeLabel: 'Tomorrow viewing', statusKey: 'confirmed' },
@@ -31,18 +31,18 @@ it('shows two agent header counters before commission and opens only today’s a
   const onOpen = vi.fn()
   render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, newLeads: [{ leadId: 'one' }, { leadId: 'two' }], newLeadsAvailable: true }} onOpen={onOpen} />)
   const summary = screen.getByLabelText('Today summary')
-  expect(within(summary).getAllByRole('button')).toHaveLength(2)
+  expect([...summary.querySelectorAll('.mobile-home-summary-title')].map(item => item.textContent)).toEqual(['New Leads', 'Appointments Today', 'Tasks Outstanding', 'Commission This Month'])
   expect(summary.compareDocumentPosition(screen.getByRole('region', { name: 'Your commission' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(within(summary).queryByText('Follow-ups due')).toBeNull()
   expect(within(summary).queryByText('Deals to move')).toBeNull()
-  fireEvent.click(within(summary).getByRole('button', { name: '2 New leads' }))
+  fireEvent.click(within(summary).getByRole('button', { name: /^New Leads: Buyer:/ }))
   expect(onOpen).toHaveBeenCalledWith('/mobile/leads?stage=new&scope=assigned')
-  fireEvent.click(within(summary).getByRole('button', { name: '1 Appointments today' }))
-  expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
+  fireEvent.click(within(summary).getByRole('button', { name: /^Appointments Today: 1\./ }))
+  expect(onOpen).toHaveBeenLastCalledWith('/mobile/calendar')
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-it('places personal commission before today-only appointments and opens their saved details', () => {
+it('keeps commission details below appointments and opens them from the summary', () => {
   const today = buildMobileToday({ now, profile, appointments: [
     { id: 'today', dateTime: '2026-10-06T10:30:00Z', typeLabel: 'Property Viewing', statusKey: 'confirmed', clientName: 'Sarah', propertyAddress: '18 Oak Avenue' },
     { id: 'tomorrow', dateTime: '2026-10-07T10:30:00Z', typeLabel: 'Tomorrow Viewing', statusKey: 'confirmed' },
@@ -50,7 +50,9 @@ it('places personal commission before today-only appointments and opens their sa
   render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, commission: { signedThisMonth: 25000, pipeline: 75000 } }} onOpen={vi.fn()} />)
   const commission = screen.getByRole('region', { name: 'Your commission' })
   const appointments = screen.getByRole('region', { name: 'Appointments today' })
-  expect(commission.compareDocumentPosition(appointments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(appointments.compareDocumentPosition(commission) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Commission This Month:/ }))
+  expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
   expect(within(appointments).getByText('12:30')).toBeTruthy()
   expect(within(appointments).queryByText(/Tomorrow/)).toBeNull()
   fireEvent.click(within(appointments).getByRole('button', { name: /Sarah/ }))
@@ -59,6 +61,18 @@ it('places personal commission before today-only appointments and opens their sa
   fireEvent.click(screen.getByRole('button', { name: 'Show total pipeline commission' }))
   expect(screen.getByRole('button', { name: 'Show total pipeline commission' }).getAttribute('aria-pressed')).toBe('true')
   expect(HTMLElement.prototype.scrollTo).toHaveBeenCalled()
+})
+
+it('opens the saved outstanding task list including future tasks from the summary', () => {
+  const today = buildMobileToday({ now, profile, tasks: [
+    { taskId: 'late', title: 'Call Sarah', dueDate: '2026-10-05', assignedAgentId: 'me' },
+    { taskId: 'future', title: 'Prepare the pack', dueDate: '2026-10-09', assignedAgentId: 'me' },
+  ] })
+  const onOpen = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, newLeads: [] }} onOpen={onOpen} />)
+  fireEvent.click(screen.getByRole('button', { name: /^Tasks Outstanding: 2\./ }))
+  expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Prepare the pack/ })).toBeTruthy()
+  expect(onOpen).not.toHaveBeenCalled()
 })
 
 it('distinguishes empty and unavailable appointments below the commission card', () => {
@@ -111,7 +125,7 @@ it('offers a retry for unavailable work instead of displaying a false clear day'
   render(<AgentDashboard snapshot={{ ...base, today }} onOpen={vi.fn()} onAction={vi.fn()} onRefresh={onRefresh} />)
   expect(screen.queryByText('No actions due today.')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '— Follow-ups due' }))
-  expect(within(screen.getByRole('dialog')).getByText('We couldn’t load follow-ups.')).toBeTruthy()
+  expect(within(screen.getByRole('dialog')).getByText('We couldn’t load tasks.')).toBeTruthy()
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Try again' }))
   expect(onRefresh).toHaveBeenCalledOnce()
 })

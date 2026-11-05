@@ -6,11 +6,11 @@ import ClientActivityPanel from './ClientActivityPanel'
 import ClientAttributionPanel from './ClientAttributionPanel'
 import ClientCampaignPanel from './ClientCampaignPanel'
 import { getLocalClientPreview } from '../../core/clients/localClientPreview'
-import { loadClientActivity, logClientInteraction } from '../../services/clientActivityService'
+import { loadClientActivity, loadClientEngagementSummary, logClientInteraction } from '../../services/clientActivityService'
 import { loadClientAttribution } from '../../services/clientAttributionService'
 import { loadClientCampaigns, logClientCampaignResponse } from '../../services/clientCampaignService'
 
-vi.mock('../../services/clientActivityService', async original => ({ ...await original(), loadClientActivity: vi.fn(), logClientInteraction: vi.fn() }))
+vi.mock('../../services/clientActivityService', async original => ({ ...await original(), loadClientActivity: vi.fn(), loadClientEngagementSummary: vi.fn(), logClientInteraction: vi.fn() }))
 vi.mock('../../services/clientAttributionService', async original => ({ ...await original(), loadClientAttribution: vi.fn() }))
 vi.mock('../../services/clientCampaignService', async original => ({ ...await original(), loadClientCampaigns: vi.fn(), logClientCampaignResponse: vi.fn() }))
 const { client, preview } = getLocalClientPreview({ client: { organisationId: '322c3853-2d82-4413-97e6-b4cd8bc32a7c', email: 'alexlandman1998@gmail.com', name: 'Alexander Landman' } }, { development: true, hostname: 'localhost' })
@@ -24,6 +24,10 @@ test('preview activity filters locally and cannot log real interactions', async 
   await screen.findByText('Property viewing completed')
   expect(screen.queryByText('Bond approval received')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  expect(await screen.findByRole('region', { name: 'Team engagements' })).toBeTruthy()
+  expect(screen.getByText('2 open follow-ups visible to you.')).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Open Inbox' })).toBeNull()
+  expect(loadClientEngagementSummary).not.toHaveBeenCalled()
   expect(loadClientActivity).not.toHaveBeenCalled()
   expect(logClientInteraction).not.toHaveBeenCalled()
 })

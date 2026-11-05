@@ -1926,8 +1926,8 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
   const hasCommercialModule = isCommercialAgencyType(agencyType)
   const principalName = normalizeText(principal.principalFullName || context.profile?.fullName)
   const principalParts = principalName.split(/\s+/).filter(Boolean)
-  const principalFirstName = principalParts[0] || context.profile?.firstName || ''
-  const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
+  const principalFirstName = normalizeText(principal.firstName) || principalParts[0] || context.profile?.firstName || ''
+  const principalLastName = normalizeText(principal.lastName) || principalParts.slice(1).join(' ') || context.profile?.lastName || ''
   const agencyName = normalizeText(info.agencyName || context.profile?.companyName) || 'Arch9 Agency'
   const settings = {
     ...DEFAULT_ORGANISATION_SETTINGS,

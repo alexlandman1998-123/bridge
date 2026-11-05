@@ -28,7 +28,7 @@ export function getWebsiteListingReadiness(blockers = []) {
 
 export function getListingLiveChannels(listing = {}, websitePublication = null) {
   const source = listing?.listingRecord || listing || {}
-  const isLive = (value) => ['active', 'live', 'published', 'on_portal'].includes(text(value).toLowerCase())
+  const isLive = (value) => ['active', 'live', 'published', 'on_portal', 'pendingoffer', 'pending_offer', 'under_offer'].includes(text(value).toLowerCase().replace(/[\s-]+/g, '_'))
   const channels = []
   if (isLive(source.property24Status || source.property24_status)) channels.push({ key: 'property24', label: 'Property24', logoSrc: '/lead-sources/property24.png', canExpire: Boolean(source.property24Reference || source.property24_reference) })
   if (isLive(source.privatePropertyStatus || source.private_property_status)) channels.push({ key: 'private_property', label: 'Private Property', logoSrc: '/lead-sources/private-property.jpeg', canExpire: true })
@@ -134,7 +134,7 @@ export function buildListingChannelPublicationDisplay({
   const stage = lifecycleOnly && publicationState?.stage !== 'withdrawn' ? '' : text(publicationState?.stage).toLowerCase()
   const updateStatus = lifecycleOnly ? '' : text(updateState?.status).toLowerCase()
   const observedStatus = text(externalStatus).toLowerCase()
-  const inactive = ['inactive', 'removed', 'paused', 'failed', 'expired', 'withdrawn'].includes(observedStatus)
+  const inactive = ['inactive', 'removed', 'sold', 'paused', 'failed', 'expired', 'withdrawn'].includes(observedStatus)
   if (inactive) live = false
   const tracked = Boolean(live || reference || publicUrl || (stage && stage !== 'not_published'))
   let status = 'not_published'
@@ -146,8 +146,11 @@ export function buildListingChannelPublicationDisplay({
     status = 'syncing'; statusLabel = 'Syncing'
   } else if (inactive) {
     status = lifecycleOnly ? 'not_published' : 'needs_attention'
-    statusLabel = { inactive: 'Inactive', removed: 'Removed', paused: 'Paused', failed: 'Failed', expired: 'Expired', withdrawn: 'Withdrawn' }[observedStatus]
+    statusLabel = { inactive: 'Inactive', removed: 'Removed', sold: 'Sold', paused: 'Paused', failed: 'Failed', expired: 'Expired', withdrawn: 'Withdrawn' }[observedStatus]
     if (lifecycleOnly && observedStatus === 'failed') statusLabel = 'Not published'
+  } else if (['under_offer', 'pending_offer', 'pendingoffer', 'offer_accepted'].includes(observedStatus)) {
+    status = live ? 'live' : 'needs_attention'
+    statusLabel = live ? 'Under Offer' : 'Under Offer · check portal'
   } else if (!lifecycleOnly && (stage === 'failed' || stage === 'withdrawal_failed' || Number(publicationState?.changeCount || 0) > 0 || updateStatus === 'needs_attention' || (!activityAvailable && tracked))) {
     status = 'needs_attention'
     statusLabel = Number(publicationState?.changeCount || 0) > 0 ? 'Changes not published' : 'Needs attention'

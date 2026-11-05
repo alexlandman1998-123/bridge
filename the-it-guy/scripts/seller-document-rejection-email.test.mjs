@@ -62,7 +62,7 @@ await db.exec(migration)
 const originalDeno = globalThis.Deno, originalFetch = globalThis.fetch
 const sent = [], deliveries = []
 let providerFails = false
-globalThis.Deno = { env: { get: (key) => ({ SUPABASE_URL: 'https://synthetic.example.test', SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service', RESEND_API_KEY: 'synthetic-email', PUBLIC_APP_URL: 'https://app.example.test' })[key] } }
+globalThis.Deno = { env: { get: (key) => ({ SUPABASE_URL: 'https://synthetic.example.test', SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_synthetic-service', RESEND_API_KEY: 'synthetic-email', PUBLIC_APP_URL: 'https://app.example.test' })[key] } }
 globalThis.fetch = () => { throw new Error('Remote calls are forbidden in this test') }
 const emailClient = {
   async rpc(name, values) {
@@ -112,7 +112,7 @@ const bundle = await build({
   } }],
 })
 const emailHandler = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`)
-const request = () => new Request('https://functions.example.test/send-email', { headers: { authorization: 'Bearer synthetic-service' } })
+const request = () => new Request('https://functions.example.test/send-email', { headers: { authorization: 'Bearer sb_secret_synthetic-service' } })
 const sendEvent = async (eventId) => {
   const response = await emailHandler.handleClientSellerPortalNotificationEmail(request(), { type: 'client_seller_portal_dispatch', queueDue: false, eventId })
   assert.equal(response.status, 200)

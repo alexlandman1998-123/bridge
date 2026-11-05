@@ -114,7 +114,7 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
       listingType: sync.listing_type,
       privatePropertyRef: reference,
       externalStatus,
-      isOnPortal: externalStatus === 'active',
+      isOnPortal: ['active', 'under_offer'].includes(externalStatus),
       eventType: event.listingFeedEventType || event.eventType || '',
       eventStatus: event.eventStatus || '',
       eventDescription: event.eventDescription || '',

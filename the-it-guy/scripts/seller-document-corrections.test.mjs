@@ -60,7 +60,7 @@ const previousDeno = globalThis.Deno
 let handler
 globalThis.__sellerCorrectionAdmin = admin
 globalThis.Deno = {
-  env: { get: key => ({ SUPABASE_URL: 'https://synthetic.example.test', SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service-key', SUPABASE_ANON_KEY: 'synthetic-anon-key', SELLER_PORTAL_SIGNING_ENABLED: 'true' })[key] },
+  env: { get: key => ({ SUPABASE_URL: 'https://synthetic.example.test', SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_synthetic-service-key', SUPABASE_ANON_KEY: 'sb_publishable_synthetic-anon-key', SELLER_PORTAL_SIGNING_ENABLED: 'true' })[key] },
   serve: callback => { handler = callback },
 }
 

@@ -1,6 +1,6 @@
 import EmailRichText from "./EmailRichText";
 import EmailCampaignImages from "./EmailCampaignImages";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   AlignLeft,
   ArrowDown,
@@ -13,6 +13,7 @@ import {
   Minus,
   Monitor,
   MousePointerClick,
+  PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
   PanelBottom,
   PanelTop,
   Plus,
@@ -58,16 +59,20 @@ export default function EmailVisualEditor({
   const [query, setQuery] = useState("");
   const [recipient, setRecipient] = useState("");
   const [dropTarget, setDropTarget] = useState("");
+  const [templateError,setTemplateError]=useState('');
+  const [libraryCollapsed,setLibraryCollapsed]=useState(false),[inspectorCollapsed,setInspectorCollapsed]=useState(false);
+  const libraryId=useId(),inspectorId=useId();
   const textInput = useRef(null);
-  const block = document.blocks.find((b) => b.id === selected);
+  const selectedId = document.blocks.some(b=>b.id===selected)?selected:document.blocks[0]?.id;
+  const block = document.blocks.find((b) => b.id === selectedId);
   const update = (patch) =>
     onChange({
       ...document,
       blocks: document.blocks.map((b) =>
-        b.id === selected ? { ...b, ...patch } : b,
+        b.id === selectedId ? { ...b, ...patch } : b,
       ),
     });
-  const add = (type, target = selected) => {
+  const add = (type, target = selectedId) => {
     if (type === "footer") {
       setSelected(document.blocks.find((b) => b.type === "footer").id);
       return;
@@ -111,7 +116,7 @@ export default function EmailVisualEditor({
       {label}
       <input
         type={type}
-        value={block?.[key] || ""}
+        value={block?.[key] || (type === "color" ? key === "background" ? "#ffffff" : key === "colour" ? document.globalStyles.primaryColour || "#18765b" : block?.type === "button" ? block.variant === "outline" ? block.colour || document.globalStyles.primaryColour || "#18765b" : "#ffffff" : block?.type === "social" ? document.globalStyles.primaryColour || "#18765b" : "#13223b" : "")}
         onChange={(e) => update({ [key]: e.target.value })}
       />
     </label>
@@ -141,9 +146,10 @@ export default function EmailVisualEditor({
     });
   };
   return (
-    <div className="eb-workspace">
-      <aside className="eb-library">
-        <h2>Content</h2>
+    <div className={`eb-workspace${libraryCollapsed?' is-library-collapsed':''}${inspectorCollapsed?' is-inspector-collapsed':''}`}>
+      <aside className={`eb-library${libraryCollapsed?' is-collapsed':''}`} aria-label="Content panel">
+        <div className="eb-side-heading"><h2>Content</h2><button type="button" aria-label={libraryCollapsed?'Expand Content panel':'Collapse Content panel'} title={libraryCollapsed?'Expand Content panel':'Collapse Content panel'} aria-expanded={!libraryCollapsed} aria-controls={libraryId} onClick={()=>setLibraryCollapsed(value=>!value)}>{libraryCollapsed?<PanelLeftOpen size={17}/>:<PanelLeftClose size={17}/>}</button></div>
+        <div id={libraryId} className="eb-library-content" hidden={libraryCollapsed}>
         <div className="eb-tabs">
           {["blocks", "saved"].map((value) => (
             <button
@@ -186,6 +192,7 @@ export default function EmailVisualEditor({
             >
               Buyer update · Starter layout
             </button>
+            {templateError&&<p role="alert">{templateError}</p>}
             {templates.map((template) => (
               <article key={template.id}>
                 <iframe
@@ -207,14 +214,13 @@ export default function EmailVisualEditor({
                           "Replace the current content with this template? Unsaved changes will be replaced.",
                         )
                       ) {
-                        if (template.design_json?.version === 1)
-                          onChange(normalizeDocument(template.design_json));
-                        else
-                          onChange({
-                            ...document,
-                            mode: "advanced",
-                            advancedHtml: template.html,
-                          });
+                        try{
+                          if (template.design_json?.version === 1)onChange(normalizeDocument(template.design_json));
+                          else if(typeof template.html==='string'&&template.html.trim())onChange({...document,mode:"advanced",advancedHtml:template.html});
+                          else throw Error('No supported content');
+                          setTemplateError('');
+                        }catch{setTemplateError('This saved template could not be opened. Your current content is unchanged. Choose another template.')}
+
                       }
                     }}
                   >
@@ -264,6 +270,7 @@ export default function EmailVisualEditor({
           <button onClick={onManageBrand}>Manage brand</button>
           <small>Individual block colours are preserved.</small>
         </section>
+        </div>
       </aside>
       <section className="eb-canvas-panel">
         <div className="eb-canvas-heading">
@@ -298,7 +305,7 @@ export default function EmailVisualEditor({
             {document.blocks.map((item) => (
               <div
                 key={item.id}
-                className={`eb-canvas-block ${selected === item.id ? "is-selected" : ""} ${dropTarget === item.id ? "is-drop-target" : ""}`}
+                className={`eb-canvas-block ${selectedId === item.id ? "is-selected" : ""} ${dropTarget === item.id ? "is-drop-target" : ""}`}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDropTarget(item.id);
@@ -306,7 +313,7 @@ export default function EmailVisualEditor({
                 onDragLeave={() => setDropTarget("")}
                 onDrop={(e) => drop(e, item.id)}
               >
-                {selected === item.id && item.type !== "footer" && (
+                {selectedId === item.id && item.type !== "footer" && (
                   <div className="eb-block-toolbar">
                     <button
                       aria-label="Drag block"
@@ -318,12 +325,14 @@ export default function EmailVisualEditor({
                       <GripVertical size={15} />
                     </button>
                     <button
+                      disabled={document.blocks.findIndex(b=>b.id===item.id)===0}
                       aria-label="Move block up"
                       onClick={() => move(item.id, -1)}
                     >
                       <ArrowUp size={15} />
                     </button>
                     <button
+                      disabled={document.blocks.findIndex(b=>b.id===item.id)>=document.blocks.length-2}
                       aria-label="Move block down"
                       onClick={() => move(item.id, 1)}
                     >
@@ -393,8 +402,9 @@ export default function EmailVisualEditor({
           </div>
         </div>
       </section>
-      <aside className="eb-inspector">
-        <h2>Edit content</h2>
+      <aside className={`eb-inspector${inspectorCollapsed?' is-collapsed':''}`} aria-label="Edit content panel">
+        <div className="eb-side-heading"><h2>Edit content</h2><button type="button" aria-label={inspectorCollapsed?'Expand Edit content panel':'Collapse Edit content panel'} title={inspectorCollapsed?'Expand Edit content panel':'Collapse Edit content panel'} aria-expanded={!inspectorCollapsed} aria-controls={inspectorId} onClick={()=>setInspectorCollapsed(value=>!value)}>{inspectorCollapsed?<PanelRightOpen size={17}/>:<PanelRightClose size={17}/>}</button></div>
+        <div id={inspectorId} className="eb-inspector-content" hidden={inspectorCollapsed}>
         {!block ? (
           <p>Select a block to edit its content.</p>
         ) : (
@@ -431,7 +441,7 @@ export default function EmailVisualEditor({
             )}
             {block.type === "text" && (
               <>
-                <EmailRichText block={block} onChange={update} />
+                <EmailRichText key={block.id} block={block} onChange={update} />
                 <label className="eb-field">
                   Text style
                   <select
@@ -444,12 +454,14 @@ export default function EmailVisualEditor({
                 </label>
                 <div className="eb-tabs">
                   <button
+                    aria-label="Bold entire block"
                     aria-pressed={Boolean(block.bold)}
                     onClick={() => update({ bold: !block.bold })}
                   >
                     <b>Bold</b>
                   </button>
                   <button
+                    aria-label="Italic entire block"
                     aria-pressed={Boolean(block.italic)}
                     onClick={() => update({ italic: !block.italic })}
                   >
@@ -577,8 +589,8 @@ export default function EmailVisualEditor({
                         <Plus size={14} />
                       </button>
                     ))}
-                  {!listings.length && (
-                    <p>No available listings in this workspace.</p>
+                  {!listings.filter(l=>`${l.address} ${l.suburb}`.toLowerCase().includes(query.toLowerCase())).length && (
+                    <p>{listings.length?'No listings match your search.':'No available listings in this workspace.'}</p>
                   )}
                 </div>
                 {block.listings.map((l, index) => (
@@ -693,7 +705,7 @@ export default function EmailVisualEditor({
                       ))}
                     </select>
                   </label>
-                  {field("Text colour", "textColour", "color")}
+                  {["header","text","button","property","social"].includes(block.type)&&field("Text colour", "textColour", "color")}
                 </details>
                 <details>
                   <summary>Spacing</summary>
@@ -718,6 +730,7 @@ export default function EmailVisualEditor({
             )}
           </>
         )}
+        </div>
       </aside>
     </div>
   );

@@ -40,7 +40,7 @@ it('keeps a signed-file receipt for retry and records the correct person without
  uploads.uploadRentalLeaseDocument.mockResolvedValueOnce({id:'file',signer_id:'b',kind:'signed_agreement',file_name:'signed.pdf',leaseStatus:'signed'})
  next.lease.status='signed';next.signers[1].status='signed';next.uploads.push({id:'file',kind:'signed_agreement',signer_id:'b',file_name:'signed.pdf'})
  fireEvent.click(screen.getByRole('button',{name:'Retry signed agreement link'}))
- await waitFor(()=>expect(uploads.uploadRentalLeaseDocument).toHaveBeenLastCalledWith(expect.objectContaining({receipt,signerId:'b',kind:'signed_agreement',confirmSigned:true})))
+ await waitFor(()=>expect(uploads.uploadRentalLeaseDocument).toHaveBeenLastCalledWith(expect.objectContaining({receipt,signerId:'b',kind:'signed_agreement',confirmSigned:true}),expect.objectContaining({onProgress:expect.any(Function)})))
  await screen.findByRole('button',{name:'Open signed copy: signed.pdf'})
 })
 it('keeps the confirmed upload when refreshing its lease fails after the save',async()=>{

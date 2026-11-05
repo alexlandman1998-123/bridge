@@ -112,3 +112,17 @@ it('reports missing storage and preserves campaign audience notes without invent
   expect((await screen.findByRole('alert')).textContent).toContain('not enabled')
   expect(screen.getByText('Audience notes: First-time buyers')).toBeTruthy()
 })
+
+it('does not offer WhatsApp recipients from preserved email-only targeting', async () => {
+  const emailAudience = { ...audience, definition: { emailFilter: { branch_id: id(40), contact_ids: [id(41)] } } }
+  mocks.load.mockResolvedValue({ ...library, audiences: [emailAudience] })
+  mocks.preview.mockResolvedValue({ ...preview, audience: emailAudience, whatsappEligible: 0, rows: [{ ...preview.rows[0], whatsapp_reason: 'Email targeting only. Create a CRM audience to use WhatsApp.' }] })
+  const apply = vi.fn()
+  render(<MarketingAudiences organisationId={org} channel="whatsapp" onApply={apply} />)
+  await screen.findByText(/Email targeting only/)
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+  await screen.findByText('Email targeting only. Create a CRM audience to use WhatsApp.')
+  expect(screen.getByRole('checkbox').disabled).toBe(true)
+  expect(screen.getByRole('button', { name: 'Use 0 recipients' }).disabled).toBe(true)
+  expect(apply).not.toHaveBeenCalled()
+})

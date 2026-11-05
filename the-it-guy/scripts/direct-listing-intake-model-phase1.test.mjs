@@ -138,7 +138,26 @@ test('captures sectional-title fields alongside global property facts', () => {
   assert.equal(property.property_structure_type, 'sectional_title')
   assert.equal(property.unitNumber, '12')
   assert.equal(property.complexName, 'Ocean View')
+  assert.equal(property.schemeName, 'Ocean View')
+  assert.equal(property.scheme_name, 'Ocean View')
   assert.equal(property.sectionalTitleNumber, 'SS 455/2019')
+})
+
+test('the edited complex name replaces a stale scheme alias in the saved form', () => {
+  const saved = buildDirectListingOnboardingFormData({
+    propertyStructureType: 'sectional_title', complexName: 'New Gardens', schemeName: 'Old Gardens',
+  })
+  assert.equal(saved.complexName, 'New Gardens')
+  assert.equal(saved.schemeName, 'New Gardens')
+  assert.equal(saved.scheme_name, 'New Gardens')
+})
+
+test('seller capture that already uses schemeName keeps its existing value', () => {
+  const saved = buildDirectListingOnboardingFormData({
+    propertyStructureType: 'sectional_title', schemeName: 'Existing Gardens',
+  })
+  assert.equal(saved.complexName, 'Existing Gardens')
+  assert.equal(saved.schemeName, 'Existing Gardens')
 })
 
 test('keeps commercial use and a house building type as separate listing facts', () => {

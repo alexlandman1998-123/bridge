@@ -125,6 +125,28 @@ export const APP_NAV_BY_ROLE = {
       activeMatch: ['/listings', '/agent/listings'],
     },
     { key: 'developments', label: 'Developments', to: '/developer/developments', activeMatch: ['/developer/developments'] },
+    {
+      key: 'marketing_workspace',
+      label: 'Marketing',
+      to: '/marketing',
+      activeMatch: ['/marketing'],
+      children: [
+        { key: 'marketing_campaigns', label: 'Campaigns', to: '/marketing?section=campaigns' },
+        { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
+        { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
+        { key: 'marketing_meta', label: 'Meta', to: '/settings/integrations/meta' },
+        {
+          key: 'marketing_events',
+          label: 'Events',
+          to: '/marketing?section=show-days',
+          children: [
+            { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
+            { key: 'marketing_launches', label: 'Launches', to: '/marketing?section=launches' },
+          ],
+        },
+        { key: 'marketing_website', label: 'Website', to: '/marketing?section=website' },
+      ],
+    },
     { key: 'developer_snags', label: 'Handover & Snags', to: '/developer/handover-snags', activeMatch: ['/developer/handover-snags', '/snags'] },
     {
       key: 'developer_organisation',
@@ -157,19 +179,14 @@ export const APP_NAV_BY_ROLE = {
       to: '/marketing',
       activeMatch: ['/marketing'],
       children: [
-        {
-          key: 'marketing_campaigns',
-          label: 'Campaigns',
-          to: '/marketing?section=campaigns',
-          children: [
-            { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
-            { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
-          ],
-        },
+        { key: 'marketing_campaigns', label: 'Campaigns', to: '/marketing?section=campaigns' },
+        { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
+        { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
+        { key: 'marketing_meta', label: 'Meta', to: '/settings/integrations/meta' },
         {
           key: 'marketing_events',
           label: 'Events',
-          to: '/marketing?section=events',
+          to: '/marketing?section=show-days',
           children: [
             { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
             { key: 'marketing_launches', label: 'Launches', to: '/marketing?section=launches' },
@@ -589,19 +606,14 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       to: '/marketing',
       activeMatch: ['/marketing'],
       children: [
-        {
-          key: 'marketing_campaigns',
-          label: 'Campaigns',
-          to: '/marketing?section=campaigns',
-          children: [
-            { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
-            { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
-          ],
-        },
+        { key: 'marketing_campaigns', label: 'Campaigns', to: '/marketing?section=campaigns' },
+        { key: 'marketing_email', label: 'Email', to: '/marketing?section=email' },
+        { key: 'marketing_whatsapp', label: 'WhatsApp', to: '/marketing?section=whatsapp' },
+        { key: 'marketing_meta', label: 'Meta', to: '/settings/integrations/meta' },
         {
           key: 'marketing_events',
           label: 'Events',
-          to: '/marketing?section=events',
+          to: '/marketing?section=show-days',
           children: [
             { key: 'marketing_show_days', label: 'Show Days', to: '/marketing?section=show-days' },
             { key: 'marketing_launches', label: 'Launches', to: '/marketing?section=launches' },

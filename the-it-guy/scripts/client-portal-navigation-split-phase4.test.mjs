@@ -81,7 +81,7 @@ test('overview actions and metric cards use profile labels and disabled-section 
 
 test('mobile buyer navigation receives the same profile labels as desktop', () => {
   assert.match(clientPortalSource, /portalNavigationLabels = \{\}/)
-  assert.match(clientPortalSource, /label: portalNavigationLabels\.documents \|\| 'Documents'/)
-  assert.match(clientPortalSource, /label: portalNavigationLabels\.team \|\| 'Team'/)
+  assert.match(clientPortalSource, /label: BUYER_PORTAL_CORE_NAVIGATION_LABELS\.documents/)
+  assert.match(clientPortalSource, /label: BUYER_PORTAL_CORE_NAVIGATION_LABELS\.team/)
   assert.match(clientPortalSource, /portalNavigationLabels=\{buyerPortalNavigationLabels\}/)
 })

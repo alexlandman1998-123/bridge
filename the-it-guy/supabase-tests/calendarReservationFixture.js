@@ -1,7 +1,9 @@
 import { readFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 export const id = n => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 export const org=id(1), otherOrg=id(2), actor=id(3), second=id(4), outsider=id(5), booking=id(6), room=id(7), task=id(8), transaction=id(9)
-const sql = name => readFile(new URL(`../../supabase/migrations/${name}`, import.meta.url), 'utf8')
+const sql = name => readFile(resolve(dirname(fileURLToPath(import.meta.url)), '../../supabase/migrations', name), 'utf8')
 export const input = changes => ({ appointment_date:'2099-07-20',start_time:'10:00',end_time:'11:00',date_time:'2099-07-20T08:00:00Z',
   end_date_time:'2099-07-20T09:00:00Z',timezone:'Africa/Johannesburg',all_day:false,agent_id:actor,status:'requested',title:'Viewing', ...changes })
 export const people = changes => [{ user_id:actor,name:'Agent',email:'agent@example.test',participant_role:'Agent',is_required:true }, ...changes]

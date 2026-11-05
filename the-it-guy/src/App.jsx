@@ -105,13 +105,6 @@ import TransactionsRouteShell from './components/transactions/TransactionsRouteS
 import { loadAgencyLeadListRouteModule, loadAgencyLeadWorkspaceRouteModule } from './routes/leadsRouteLoader'
 import { loadTransactionsRouteModule } from './routes/transactionsRouteLoader'
 
-const INACTIVITY_TIMEOUT_MINUTES = 15
-const WARNING_BEFORE_LOGOUT_MINUTES = 1
-const INACTIVITY_TIMEOUT_MS = INACTIVITY_TIMEOUT_MINUTES * 60 * 1000
-const WARNING_BEFORE_LOGOUT_MS = WARNING_BEFORE_LOGOUT_MINUTES * 60 * 1000
-const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_MS, 0)
-const ACTIVITY_TIMER_RESET_THROTTLE_MS = 1000
-
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 const PermissionGate = lazy(() => import('./components/PermissionGate'))
 const TokenRouteGate = lazy(() => import('./components/routing/TokenRouteGate'))
@@ -153,6 +146,9 @@ function isPublicWebsiteHost() {
 }
 
 function PublicAwareRootRoute() {
+  if (typeof window !== 'undefined' && ['madisonplace.co.za', 'www.madisonplace.co.za'].includes(normalizeRouteText(window.location.hostname))) {
+    return <AppErrorBoundary scope="public-development-landing" title="Development page failed to load"><PublicDevelopmentLandingPage developmentSlug="madison-place-abcf1b8a" /></AppErrorBoundary>
+  }
   return isPublicWebsiteHost() ? <BridgeLanding /> : <Navigate to="/dashboard" replace />
 }
 
@@ -264,6 +260,7 @@ const HomeSeekersBuying = lazy(() => import('./pages/HomeSeekersBuying'))
 const HomeSeekersProperty = lazy(() => import('./pages/HomeSeekersProperty'))
 const HomeSeekersRenting = lazy(() => import('./pages/HomeSeekersRenting'))
 const HomeSeekersJoin = lazy(() => import('./pages/HomeSeekersJoin'))
+const HomeSeekersJoinDetails = lazy(() => import('./pages/HomeSeekersJoinDetails'))
 const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentResponsiveRoute'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
@@ -546,7 +543,7 @@ function TransactionDetailRoute() {
   )
 }
 
-function AppLayout({ onLogout, session = null, user }) {
+function AppLayout({ onLogout, user }) {
   const {
     workspace,
     role,
@@ -556,16 +553,7 @@ function AppLayout({ onLogout, session = null, user }) {
     workspaceDegradedMessage,
   } = useWorkspace()
   const location = useLocation()
-  const navigate = useNavigate()
   const mainScrollRef = useRef(null)
-  const inactivityTimerRef = useRef(null)
-  const warningTimerRef = useRef(null)
-  const lastActivityAtRef = useRef(0)
-  const lastTimerResetAtRef = useRef(0)
-  const resetInactivityTimerRef = useRef(null)
-  const securityLogoutInProgressRef = useRef(false)
-  const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
-  const sessionWarningOpenRef = useRef(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [wizardInitialListingId, setWizardInitialListingId] = useState('')
@@ -597,109 +585,6 @@ function AppLayout({ onLogout, session = null, user }) {
       documentElement.classList.remove('ui-shell-scroll-locked')
     }
   }, [])
-
-  useEffect(() => {
-    function clearSessionTimers() {
-      if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
-      if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
-      inactivityTimerRef.current = null
-      warningTimerRef.current = null
-    }
-
-    async function performSecurityLogout() {
-      if (securityLogoutInProgressRef.current) return
-      securityLogoutInProgressRef.current = true
-      clearSessionTimers()
-      sessionWarningOpenRef.current = false
-      setSessionWarningOpen(false)
-      try {
-        await Promise.resolve(onLogout?.())
-      } catch (logoutError) {
-        console.error('[SESSION] security logout failed', logoutError)
-      } finally {
-        navigate('/auth?security=1', { replace: true })
-      }
-    }
-
-    function scheduleInactivityTimers() {
-      if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
-      if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
-      const now = Date.now()
-      const inactiveForMs = now - lastActivityAtRef.current
-      const nextWarningDelayMs = Math.max(WARNING_DELAY_MS - inactiveForMs, 0)
-      const nextLogoutDelayMs = Math.max(INACTIVITY_TIMEOUT_MS - inactiveForMs, 0)
-      warningTimerRef.current = window.setTimeout(() => {
-        const latestInactiveForMs = Date.now() - lastActivityAtRef.current
-        if (latestInactiveForMs < WARNING_DELAY_MS) {
-          scheduleInactivityTimers()
-          return
-        }
-        sessionWarningOpenRef.current = true
-        setSessionWarningOpen(true)
-      }, nextWarningDelayMs)
-      inactivityTimerRef.current = window.setTimeout(() => {
-        const latestInactiveForMs = Date.now() - lastActivityAtRef.current
-        if (latestInactiveForMs < INACTIVITY_TIMEOUT_MS) {
-          scheduleInactivityTimers()
-          return
-        }
-        void performSecurityLogout()
-      }, nextLogoutDelayMs)
-    }
-
-    function resetInactivityTimer() {
-      if (securityLogoutInProgressRef.current) return
-      const now = Date.now()
-      lastActivityAtRef.current = now
-      if (now - lastTimerResetAtRef.current < ACTIVITY_TIMER_RESET_THROTTLE_MS && !sessionWarningOpenRef.current) return
-      lastTimerResetAtRef.current = now
-      sessionWarningOpenRef.current = false
-      setSessionWarningOpen(false)
-      scheduleInactivityTimers()
-    }
-    resetInactivityTimerRef.current = resetInactivityTimer
-
-    clearSessionTimers()
-    securityLogoutInProgressRef.current = false
-    sessionWarningOpenRef.current = false
-    lastActivityAtRef.current = Date.now()
-    lastTimerResetAtRef.current = 0
-    scheduleInactivityTimers()
-
-    const activityEvents = [
-      'pointermove',
-      'pointerdown',
-      'mousemove',
-      'mousedown',
-      'click',
-      'keydown',
-      'wheel',
-      'scroll',
-      'touchstart',
-      'touchmove',
-      'input',
-      'change',
-      'dragstart',
-      'drop',
-    ]
-    activityEvents.forEach((eventName) => {
-      window.addEventListener(eventName, resetInactivityTimer, { passive: true })
-    })
-    document.addEventListener('scroll', resetInactivityTimer, { passive: true, capture: true })
-
-    return () => {
-      clearSessionTimers()
-      resetInactivityTimerRef.current = null
-      activityEvents.forEach((eventName) => {
-        window.removeEventListener(eventName, resetInactivityTimer)
-      })
-      document.removeEventListener('scroll', resetInactivityTimer, true)
-    }
-  }, [navigate, onLogout, session?.access_token])
-
-  function handleStaySignedIn() {
-    resetInactivityTimerRef.current?.()
-  }
 
   useEffect(() => {
     function openNewTransaction(event) {
@@ -792,21 +677,6 @@ function AppLayout({ onLogout, session = null, user }) {
     setWizardInitialPropertyMode('')
   }
 
-  const sessionTimeoutWarning = sessionWarningOpen ? (
-    <div className="fixed bottom-5 right-5 z-[1000] w-[min(360px,calc(100vw-32px))] rounded-2xl border border-[#d8e2ef] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
-      <p className="text-sm font-semibold text-[#10243a]">You’ve been inactive for a while.</p>
-      <p className="mt-1.5 text-sm leading-6 text-[#60758d]">For your security, you’ll be signed out soon.</p>
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#173a5e]"
-          onClick={handleStaySignedIn}
-        >
-          Stay signed in
-        </button>
-      </div>
-    </div>
-  ) : null
   const degradedWorkspaceBanner = workspaceAccessDegraded ? (
     <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2">
@@ -827,7 +697,6 @@ function AppLayout({ onLogout, session = null, user }) {
   if (isCommercialRoute) {
     return (
       <div className="h-screen overflow-hidden bg-[#f6f8fb] text-textStrong">
-        {sessionTimeoutWarning}
         {degradedWorkspaceBanner}
         <Suspense fallback={<PageSkeleton />}>
           <Outlet />
@@ -838,7 +707,6 @@ function AppLayout({ onLogout, session = null, user }) {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-app text-textStrong lg:h-screen lg:overflow-hidden">
-      {sessionTimeoutWarning}
       <Suspense fallback={<SidebarSkeleton />}>
         <Sidebar />
       </Suspense>
@@ -1644,7 +1512,7 @@ function ProtectedLayout({ onLogout, session }) {
     return <Navigate to="/auth" replace />
   }
 
-  return <AppLayout onLogout={onLogout} session={session} user={session?.user || null} />
+  return <AppLayout onLogout={onLogout} user={session?.user || null} />
 }
 
 function SetupProtectedLayout({ session }) {
@@ -1867,6 +1735,7 @@ function AppRoutes() {
           <Route path="/demo/homeseekers/properties/:propertyId" element={<AppErrorBoundary scope="homeseekers-property" title="HomeSeekers property page failed to load"><HomeSeekersProperty /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/renting" element={<AppErrorBoundary scope="homeseekers-renting" title="HomeSeekers renting page failed to load"><HomeSeekersRenting /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/areas" element={<Navigate to="/demo/homeseekers" replace />} />
+          {['teams', 'referrals', 'pricing'].map(page => <Route key={page} path={`/demo/homeseekers/join/${page}`} element={<HomeSeekersJoinDetails page={page} />} />)}
           <Route path="/demo/homeseekers/join" element={<AppErrorBoundary scope="homeseekers-join" title="HomeSeekers join page failed to load"><HomeSeekersJoin /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/valuation" element={<Navigate to="/demo/homeseekers/selling" replace />} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
@@ -1934,7 +1803,7 @@ function AppRoutes() {
                   <Route path="/mobile/listings/:listingId" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['developer', 'agent']}><AppErrorBoundary scope="mobile-listing-overview" title="Listing workspace failed to load"><AgentListingDetail mobile /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
                   <Route path="/mobile/rentals/listings/:listingId/:detailTab?" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.listings}><AppErrorBoundary scope="mobile-rental-listing-overview" title="Rental listing workspace failed to load"><RentalListingDetailPage mobile /></AppErrorBoundary></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
                   <Route path="/mobile/calendar" element={<AppErrorBoundary scope="mobile-calendar" title="Mobile calendar failed to load"><MobileCalendarPage /></AppErrorBoundary>} />
-                  <Route path="/mobile/marketing" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent']}><AppErrorBoundary scope="mobile-marketing" title="Mobile marketing failed to load"><MobileMarketingPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
+                  <Route path="/mobile/marketing" element={<SalesWorkspaceGuard><RoleRoute allowedRoles={['agent', 'developer']}><AppErrorBoundary scope="mobile-marketing" title="Mobile marketing failed to load"><MobileMarketingPage /></AppErrorBoundary></RoleRoute></SalesWorkspaceGuard>} />
                   <Route path="/mobile/deals" element={<AppErrorBoundary scope="mobile-deals" title="Mobile deals failed to load"><MobileModulePage moduleKey="deals" /></AppErrorBoundary>} />
                   <Route path="/mobile/tasks" element={<AppErrorBoundary scope="mobile-tasks" title="Mobile tasks failed to load"><MobileTasksPage /></AppErrorBoundary>} />
                   <Route path="/mobile/activity" element={<AppErrorBoundary scope="mobile-activity" title="Mobile activity failed to load"><MobileActivityPage /></AppErrorBoundary>} />
@@ -1958,6 +1827,7 @@ function AppRoutes() {
               <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/dashboard" element={<SalesWorkspaceGuard><AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary></SalesWorkspaceGuard>} />
               <Route path="/inbox" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox" title="Shared inbox failed to load"><RevoSharedInboxPage /></AppErrorBoundary></SharedInboxRoute>} />
+              <Route path="/inbox/whatsapp" element={<SharedInboxRoute><AppErrorBoundary scope="whatsapp-inbox" title="WhatsApp inbox failed to load"><Navigate to="/inbox?channel=whatsapp" replace /></AppErrorBoundary></SharedInboxRoute>} />
               <Route path="/inbox/settings" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox-settings" title="Inbox channel setup failed to load"><RevoSharedInboxSettingsPage /></AppErrorBoundary></SharedInboxRoute>} />
               <Route path="/revo/inbox" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox" title="Revo shared inbox failed to load"><RevoSharedInboxPage /></AppErrorBoundary></SharedInboxRoute>} />
               <Route path="/revo/inbox/settings" element={<SharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox-settings" title="Revo inbox channel setup failed to load"><RevoSharedInboxSettingsPage /></AppErrorBoundary></SharedInboxRoute>} />
@@ -3460,7 +3330,7 @@ function AppRoutes() {
                 path="/marketing"
                 element={
                   <SalesWorkspaceGuard>
-                    <RoleRoute allowedRoles={['agent']}>
+                    <RoleRoute allowedRoles={['agent', 'developer']}>
                       <MarketingComingSoonPage />
                     </RoleRoute>
                   </SalesWorkspaceGuard>
@@ -4137,7 +4007,7 @@ function AppRoutes() {
 function App() {
   useEffect(() => { window.__arch9MarkBootstrapReady?.() }, [])
   return (
-    <BrowserRouter unstable_useTransitions={false}>
+    <BrowserRouter useTransitions={false}>
       <Suspense fallback={null}><ReleaseFreshnessGuard /></Suspense>
       <AuthSessionProvider>
         <AppRoutes />

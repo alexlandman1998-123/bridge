@@ -72,7 +72,6 @@ import {
 } from './documents/sellerOnboardingFactTransformer'
 import {
   buildSellerDocumentRequirementReconciliationReport,
-  getExpectedSellerDocumentRequirements,
   summarizeSellerDocumentRequirementReconciliationReport,
 } from './sellerDocumentRequirementsService.js'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
@@ -83,6 +82,7 @@ import {
   assertSellerUploadTarget,
   buildSellerDocumentAssuranceReport,
   documentExactlyMatchesSellerRequirement,
+  resolveExactSellerRequirement,
   prepareSellerPortalOptionalUploadTarget,
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
@@ -2211,17 +2211,13 @@ export function resolvePrivateListingDocumentRequirement(requirements = [], {
 // Optional is not retired. Only the saved seller/property model can establish
 // that an optional request still applies; the upload button cannot opt it in.
 export function buildPrivateListingDocumentUploadPreparation(listing, requirements, requirementKey) {
-  // Use the same saved-profile model as the seller document workspace. Its
-  // checklist can be ready before the older lifecycle/capture marker catches up.
-  const generated = getExpectedSellerDocumentRequirements(listing, {}, { includeOptional: true })
-
+  const generated = syncSellerDocumentRequirementsFromEngine(listing, requirements).generatedRequirements || []
   const key = normalizeCompatibilityKey(requirementKey)
   const aliases = getPrivateListingDocumentMatchAliases(key)
   const hasTarget = requirements.some((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key)))
   return {
     currentOptionalRequirementKeys: generated.filter((row) => row.is_required === false).map((row) => row.requirement_key),
-    missingRows: hasTarget ? [] : generated.filter((row) => aliases.includes(normalizeCompatibilityKey(row.requirement_key || row.key))),
-
+    missingRows: hasTarget ? [] : generated.filter((row) => normalizeCompatibilityKey(row.requirement_key) === key),
   }
 }
 
@@ -8019,12 +8015,10 @@ async function canManageSellerOnboardingProjections(client, listingId) {
 
 export async function getSellerOnboardingByToken(token, options = {}) {
   const normalizedToken = normalizeText(token)
-  if (!normalizedToken) throw new Error('Onboarding token is required.')
-  // Public seller reads use their own capability/session and must not wait on
-  // an unrelated agent Auth refresh or storage lock in the same browser.
   const client = options?.requirePortalAccess === true
-    ? requireSellerPortalStorageClient(normalizedToken, options?.sellerPortalAccessToken)
+    ? requireSellerPortalStorageClient(normalizedToken, options?.sellerPortalAccessToken || getStoredSellerPortalAccessToken(normalizedToken))
     : requireClient()
+  if (!normalizedToken) throw new Error('Onboarding token is required.')
 
   const corePayload = options?.corePayload === true
   const portalPayload = corePayload
@@ -8178,9 +8172,10 @@ function enqueueSellerOnboardingProgressProjection(client, {
 }
 
 export async function submitSellerOnboarding(token, payload = {}) {
-  const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  const accessToken=payload.sellerPortalAccessToken || payload.accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+  const client=accessToken ? requireSellerPortalStorageClient(normalizedToken,accessToken) : requireClient()
   const completionMode = normalizeSellerOnboardingCompletionMode(payload.completionMode || payload.completion_mode)
   let completedBy = normalizeText(payload.completedBy || payload.completed_by)
   if (completionMode === 'agent_assisted' && !completedBy) {
@@ -8291,9 +8286,10 @@ export async function submitSellerOnboarding(token, payload = {}) {
 }
 
 async function updateSellerOnboardingProgressInternal(token, payload = {}) {
-  const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  const accessToken=payload.sellerPortalAccessToken || payload.accessToken || getStoredSellerPortalAccessToken(normalizedToken)
+  const client=accessToken ? requireSellerPortalStorageClient(normalizedToken,accessToken) : requireClient()
   const formData = {
     ...stripSellerOnboardingTransferAttorneyFields(payload.formData),
     ...(payload.currentStep !== undefined ? { currentStep: Number(payload.currentStep || 0) } : {}),
@@ -8637,7 +8633,6 @@ export async function uploadSellerClientPortalDocument({
   if (!file) throw new Error('A file is required.')
 
   const resolvedAccessToken = accessToken || getStoredSellerPortalAccessToken(normalizedToken)
-  const client = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
 
   const context = await getSellerOnboardingByToken(normalizedToken, {
     includeRequirementsAndDocuments: true,
@@ -8653,19 +8648,24 @@ export async function uploadSellerClientPortalDocument({
     (currentSignedCopy && (currentSignedCopy.reviewedSigningVersionId !== reviewedSigningVersionId || currentSignedCopy.reviewedSigningVersionDigest !== reviewedSigningVersionDigest))) {
     throw new Error('Reopen the current signing copy before uploading its signed file. The reviewed version changed or is missing.')
   }
-  const storageClient = client
+  const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
+  const client = storageClient
   const filePolicy = validateDocumentUploadFile(file, { surface: 'seller_portal', listingId: listing.id })
 
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
   const requiredDocuments = Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []
-  const matchedRequirement = await prepareSellerPortalOptionalUploadTarget({
-    client, token: normalizedToken, accessToken: resolvedAccessToken, listingId: listing.id,
-    requirements: requiredDocuments, requirementKey: normalizedRequirementKey,
-    currentOptionalKeys: getExpectedSellerDocumentRequirements(listing, {}, { includeOptional: true })
-      .filter(row => row.is_required === false || row.required === false)
-      .map(row => row.requirement_key || row.key),
+  let matchedRequirement = resolveExactSellerRequirement({
+    requirements: requiredDocuments,
+    requirementKey: normalizedRequirementKey,
   })
+  if (!matchedRequirement && !canonicalRequirementInstanceId && !reviewedSigningVersionId) {
+    const preparation = buildPrivateListingDocumentUploadPreparation(listing, requiredDocuments, normalizedRequirementKey)
+    matchedRequirement = await prepareSellerPortalOptionalUploadTarget({ client: storageClient,
+      token: normalizedToken, accessToken: resolvedAccessToken, listingId: listing.id,
+      requirementKey: normalizedRequirementKey, requirements: requiredDocuments,
+      currentOptionalKeys: preparation.currentOptionalRequirementKeys })
+  }
   if (matchedRequirement?.canonical_shared_requirement) {
     if (canonicalRequirementInstanceId && canonicalRequirementInstanceId !== matchedRequirement.canonical_requirement_instance_id) throw new Error('This upload does not match the selected request.')
     const { result, command } = await uploadSellerRequirementFile({ client: storageClient, token: normalizedToken, accessToken: resolvedAccessToken,
@@ -9167,15 +9167,17 @@ export async function createSellerClientPortalDocumentSignedUrl({
     sellerPortalAccessToken: resolvedAccessToken,
   })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
-  // The authenticated portal payload proves the seller's visible files. An
-  // agent-only listing lookup cannot authorize a seller's anonymous session.
-  const linkedDocument = context.listing.documents?.find(document => privateListingDocumentPathMatches(document, normalizedFilePath))
-  if (!linkedDocument || (normalizedFilePath.startsWith('document-requirements/') && !linkedDocument.canonical_requirement_instance_id)) {
-    throw new Error('This document is not available in this client portal.')
-  }
-  if (linkedDocument.canonicalFinalArtifact === true || getPrivateListingMandateArtifactMatch(context.listing, normalizedFilePath)) {
+  // Authorize from the secure seller payload; an agent-only listing query
+  // cannot establish an anonymous seller's file access.
+  const document = context.listing.documents?.find(row => privateListingDocumentPathMatches(row, normalizedFilePath))
+  if (!document) throw new Error('This document is not available in this client portal.')
+  if (document.canonicalFinalArtifact || getPrivateListingMandateArtifactMatch(context.listing, normalizedFilePath)) {
     throw new Error('The final signed mandate must be opened through its secure completion record.')
   }
+  if (normalizedFilePath.startsWith('document-requirements/') && !document.canonical_requirement_instance_id) {
+    throw new Error('This document is not available in this client portal.')
+  }
+  const bucket = getPrivateListingDocumentStorageBucket(document) || (normalizedFilePath.startsWith('document-requirements/') ? 'documents' : '')
 
   const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
 
@@ -9183,7 +9185,7 @@ export async function createSellerClientPortalDocumentSignedUrl({
     storageClient,
     normalizedFilePath,
     expiresInSeconds,
-    getPrivateListingDocumentStorageBucket(linkedDocument),
+    bucket,
   )
   if (!signedUrl) throw new Error('Unable to open this document right now.')
   return signedUrl

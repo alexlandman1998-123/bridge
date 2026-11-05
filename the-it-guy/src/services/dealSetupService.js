@@ -21,7 +21,7 @@ export async function loadCanonicalDealSetup({ transactionId, client = supabase 
   if (!text(transactionId)) throw new Error('Transaction is required.')
   if (!client) throw new Error('Supabase is not configured.')
   const [transactionResult, buyerParties] = await Promise.all([
-    client.from('transactions').select('id, transaction_reference, transaction_origin_source, comment, seller_type, buyer_id, primary_buyer_participant_id, buyer_parties_model_version, development_id, unit_id, transaction_type, property_address_line_1, seller_name, purchaser_type, purchase_price, sales_price, deposit_amount, reservation_required, reservation_amount, finance_type, finance_managed_by, cash_amount, bond_amount, bank, bond_originator, updated_at').eq('id', text(transactionId)).single(),
+    client.from('transactions').select('id, transaction_reference, transaction_origin_source, comment, seller_type, buyer_id, primary_buyer_participant_id, buyer_parties_model_version, development_id, unit_id, transaction_type, property_address_line_1, seller_name, purchaser_type, purchase_price, sales_price, deposit_amount, reservation_required, reservation_amount, finance_type, finance_managed_by, cash_amount, bond_amount, bank, bond_originator, deal_setup_terms_version, deal_setup_sync_status, deal_setup_sync_error, updated_at').eq('id', text(transactionId)).single(),
     listTransactionBuyerParties({ transactionId, client }),
   ])
   if (transactionResult.error) throw transactionResult.error
@@ -107,19 +107,40 @@ export async function auditDealSetupCompatibility({ transactionId, client = supa
   return auditDealSetupCompatibilityModel({ transaction: deal.transaction, buyerParties: deal.buyerParties })
 }
 
-export async function saveCanonicalDealTerms({ transactionId, terms = {}, finance = {}, client = supabase } = {}) {
+// Retry never rewrites commercial terms. The durable pending marker survives refresh.
+export async function retryDealSetupReconciliation({ transactionId, termsVersion, client = supabase } = {}) {
+  const current = await loadCanonicalDealSetup({ transactionId, client })
+  if (!termsVersion || current.transaction.deal_setup_terms_version !== termsVersion) throw new Error('Deal Setup changed. Reload before retrying its updates.')
+  const failures = []
+  for (const [name, sync] of [['attorney', syncDealSetupAttorneyHandoff], ['documents', syncDealSetupDownstream]]) {
+    try { await sync({ transactionId, client }) } catch (error) { failures.push({ section: name, message: error.message || 'Update unavailable' }) }
+  }
+  const status = failures.length ? 'failed' : 'complete'
+  const receipt = await client.from('transactions').update({ deal_setup_sync_status: status, deal_setup_sync_error: failures.map(item => `${item.section}: ${item.message}`).join('; ').slice(0,2000) || null })
+    .eq('id', text(transactionId)).eq('deal_setup_terms_version', termsVersion).select('updated_at').maybeSingle()
+  if (receipt.error) failures.push({ section: 'receipt', message: 'Updates could not be confirmed. Retry from the saved Deal Setup.' })
+  const deal = await loadCanonicalDealSetup({ transactionId, client })
+  return { ...deal, persistence: { saved: true, termsVersion }, reconciliation: { status: failures.length ? 'failed' : receipt.data ? status : 'superseded', failures } }
+}
+
+export async function saveCanonicalDealTerms({ transactionId, terms = {}, finance = {}, expectedUpdatedAt, client = supabase } = {}) {
   if (!text(transactionId)) throw new Error('Transaction is required.')
   if (!client) throw new Error('Supabase is not configured.')
-  const current = await client.from('transactions').select('development_id, unit_id, transaction_type').eq('id', text(transactionId)).single()
-  if (current.error) throw current.error
+  if (!text(expectedUpdatedAt)) throw new Error('Reload Deal Setup before saving: its version is missing.')
+  const current = await loadCanonicalDealSetup({ transactionId, client })
+  if (current.setup.revision !== expectedUpdatedAt) throw new Error('Someone changed this transaction. Reload and review their changes before saving.')
+  const termsVersion = crypto.randomUUID()
   const payload = {
     ...buildDealSetupCommercialPayload({ terms, finance }),
-    transaction_type: resolveCanonicalTransactionType(current.data),
+    transaction_type: resolveCanonicalTransactionType(current.transaction),
+    deal_setup_terms_version: termsVersion, deal_setup_sync_status: 'pending', deal_setup_sync_error: null,
     updated_at: new Date().toISOString(),
   }
-  const result = await client.from('transactions').update(payload).eq('id', text(transactionId)).select('id').single()
+  const result = await client.from('transactions').update(payload).eq('id', text(transactionId)).eq('updated_at', expectedUpdatedAt).select('id,updated_at').maybeSingle()
   if (result.error) throw result.error
-  const attorneyHandoff = await syncDealSetupAttorneyHandoff({ transactionId, client })
-  const downstream = await syncDealSetupDownstream({ transactionId, client })
-  return { ...downstream.deal, downstream: { ...downstream, attorneyHandoff } }
+  if (!result.data) throw new Error('Someone changed this transaction. Reload and review their changes before saving.')
+  const saved = { ...current.transaction, ...payload, updated_at: result.data.updated_at }
+  const fallback = { ...current, transaction: saved, setup: buildDealSetup({ transaction: saved, buyerParties: current.buyerParties }), persistence: { saved: true, termsVersion }, reconciliation: { status: 'pending', failures: [] } }
+  try { return await retryDealSetupReconciliation({ transactionId, termsVersion, client }) }
+  catch (error) { return { ...fallback, reconciliation: { status: 'pending', failures: [{ section: 'updates', message: error.message }] } } }
 }

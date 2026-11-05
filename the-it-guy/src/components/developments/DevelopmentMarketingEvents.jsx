@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { ArrowUpRight, CalendarDays, Clock3, MapPin, PartyPopper, UserRound } from 'lucide-react'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
@@ -22,6 +22,9 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
   const [openedAt] = useState(Date.now)
   const [draft, setDraft] = useState(null)
   const [saveError, setSaveError] = useState('')
+  const submitting = useRef(false)
+  const [submittingNow, setSubmittingNow] = useState(false)
+  const busy = saving || submittingNow
   const past = event => ['completed', 'past', 'cancelled', 'ended'].includes(String(event.status).toLowerCase()) || (validDate(event.endsAt || event.startsAt)?.getTime() ?? Infinity) < (now ?? openedAt)
   const upcoming = events.filter(event => !past(event)).sort((a, b) => (validDate(a.startsAt)?.getTime() ?? Infinity) - (validDate(b.startsAt)?.getTime() ?? Infinity))
   const history = events.filter(past).sort((a, b) => (validDate(b.startsAt || b.createdAt)?.getTime() ?? 0) - (validDate(a.startsAt || a.createdAt)?.getTime() ?? 0))
@@ -29,12 +32,15 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
   function update(key, value) { setDraft(current => ({ ...current, [key]: value })) }
   async function submit(event) {
     event.preventDefault()
-    if (saving) return
+    if (saving || submitting.current) return
+    submitting.current = true
+    setSubmittingNow(true)
     setSaveError('')
     try {
       if (await onCreate(draft) !== false) setDraft(null)
       else setSaveError('The event could not be saved. Your details are still here; try again.')
     } catch (error) { setSaveError(error.message || 'The event could not be saved. Try again.') }
+    finally { submitting.current = false; setSubmittingNow(false) }
   }
   function eventList(items, empty) {
     return items.length ? <div className="development-event-list">{items.map(item => {
@@ -51,21 +57,20 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
     })}</div> : <div className="development-event-empty"><CalendarDays size={25} aria-hidden="true" /><p>{empty}</p></div>
   }
   return <section className="development-marketing-events" aria-label="Development events">
-    <header className="development-events-heading"><span className="development-events-eyebrow">Bring buyers closer</span><h3>Make it an occasion.</h3><p>Plan a show day or celebrate a launch, and keep every event in one place.</p></header>
     {canManage ? <div className="development-event-actions">
       <button type="button" className="development-event-action is-show-day" onClick={() => open('show_day')}><span className="development-event-action-icon"><CalendarDays size={28} aria-hidden="true" /></span><span><strong>Create show day</strong><small>Invite buyers to experience the development.</small></span><ArrowUpRight size={22} aria-hidden="true" /></button>
       <button type="button" className="development-event-action is-launch" onClick={() => open('launch')}><span className="development-event-action-icon"><PartyPopper size={28} aria-hidden="true" /></span><span><strong>Create launch</strong><small>Give your next milestone a memorable debut.</small></span><ArrowUpRight size={22} aria-hidden="true" /></button>
     </div> : null}
     <section className="development-events-panel" aria-label="Upcoming events"><div className="development-events-section-heading"><div><span className="development-events-eyebrow">On the calendar</span><h4>Upcoming events</h4></div><span className="development-event-count">{upcoming.length}</span></div>{eventList(upcoming, 'No upcoming events. Your next show day or launch will appear here.')}</section>
     <section className="development-events-panel" aria-label="Past events"><div className="development-events-section-heading"><div><span className="development-events-eyebrow">Event history</span><h4>Past events</h4></div><span className="development-event-count">{history.length}</span></div>{eventList(history, 'No past events yet. Completed and cancelled events will be kept here.')}</section>
-    <Modal open={Boolean(draft)} onClose={saving ? undefined : () => setDraft(null)} title={draft?.eventType === 'launch' ? 'Create launch' : 'Create show day'} subtitle="Add the details for this development event. You will be recorded as the organiser." className="development-event-modal">
-      {draft ? <form id={formId} onSubmit={submit} className="development-event-form" aria-busy={saving}>
-        <label>Event title<Field value={draft.title} onChange={event => update('title', event.target.value)} placeholder={draft.eventType === 'launch' ? 'e.g. Harbour Heights launch evening' : 'e.g. Sunday at Harbour Heights'} required disabled={saving} /></label>
-        <label>Date and time<Field type="datetime-local" value={draft.startsAt} onChange={event => update('startsAt', event.target.value)} required disabled={saving} /></label>
-        <label>Location<Field addressSearch value={draft.location} onChange={event => update('location', event.target.value)} placeholder="Venue or meeting point" disabled={saving} /></label>
-        <label>Notes <span>(optional)</span><Field as="textarea" value={draft.description} onChange={event => update('description', event.target.value)} placeholder="Arrival details, parking or anything guests should know" rows={3} disabled={saving} /></label>
+    <Modal open={Boolean(draft)} onClose={busy ? undefined : () => setDraft(null)} title={draft?.eventType === 'launch' ? 'Create launch' : 'Create show day'} subtitle="Add the details for this development event. You will be recorded as the organiser." className="development-event-modal">
+      {draft ? <form id={formId} onSubmit={submit} className="development-event-form" aria-busy={busy}>
+        <label>Event title<Field value={draft.title} onChange={event => update('title', event.target.value)} placeholder={draft.eventType === 'launch' ? 'e.g. Harbour Heights launch evening' : 'e.g. Sunday at Harbour Heights'} required disabled={busy} /></label>
+        <label>Date and time<Field type="datetime-local" value={draft.startsAt} onChange={event => update('startsAt', event.target.value)} required disabled={busy} /></label>
+        <label>Location<Field addressSearch value={draft.location} onChange={event => update('location', event.target.value)} placeholder="Venue or meeting point" disabled={busy} /></label>
+        <label>Notes <span>(optional)</span><Field as="textarea" value={draft.description} onChange={event => update('description', event.target.value)} placeholder="Arrival details, parking or anything guests should know" rows={3} disabled={busy} /></label>
         {saveError ? <p role="alert" className="development-event-error">{saveError}</p> : null}
-        <div className="development-event-form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={() => setDraft(null)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Creating…' : draft.eventType === 'launch' ? 'Create launch' : 'Create show day'}</Button></div>
+        <div className="development-event-form-actions"><Button type="button" variant="secondary" disabled={busy} onClick={() => setDraft(null)}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? 'Creating…' : draft.eventType === 'launch' ? 'Create launch' : 'Create show day'}</Button></div>
       </form> : null}
     </Modal>
   </section>

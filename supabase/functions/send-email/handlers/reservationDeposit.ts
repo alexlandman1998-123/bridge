@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   buildReservationDepositEmailHtml,
@@ -151,7 +152,7 @@ export async function handleReservationDepositEmail(
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
 

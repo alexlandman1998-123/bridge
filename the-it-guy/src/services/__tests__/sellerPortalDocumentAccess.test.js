@@ -77,7 +77,7 @@ test('a final artifact descriptor cannot use the generic download route', async 
   assert.equal(f.calls.some(call => call[0] === 'sign'), false)
 })
 
-const { prepareSellerPortalOptionalUploadTarget } = await import('../sellerDocumentSatisfactionAssuranceService.js')
+const { prepareSellerPortalOptionalUploadTarget, assertSellerUploadTarget } = await import('../sellerDocumentSatisfactionAssuranceService.js')
 for (const key of ['title_deed_copy', 'seller_bank_account_confirmation']) {
   test(`prepares missing optional ${key} before transferring bytes and reuses its exact identity`, async () => {
     const row = { id: 'request', private_listing_id: 'own-listing', requirement_key: key, is_required: false, status: 'required', document_visibility: 'seller_visible' }
@@ -126,4 +126,33 @@ test('secure seller preflight reads do not wait on an unrelated agent Auth clien
   const read = Function('scope', `with(scope) { return (${current.slice(begin, finish).replace(/^export /, '')}) }`)(scope)
   await assert.rejects(read('seller-link', { corePayload: true, requirePortalAccess: true, sellerPortalAccessToken: 'seller-session' }), { code: 'seller_auth_required' })
   assert.deepEqual(calls, [['seller-link', 'seller-session']])
+})
+
+
+test('the real public seller upload prepares its exact optional target using only the seller-scoped client', async () => {
+  const begin = source.indexOf('export async function uploadSellerClientPortalDocument(')
+  const finish = source.indexOf('\nexport const __privateListingServiceTestUtils', begin + 1)
+  const row = { id: 'request', private_listing_id: 'own-listing', requirement_key: 'title_deed_copy', is_required: false, status: 'required', document_visibility: 'seller_visible' }
+  let prepared = 0
+  const scoped = { rpc: async (name, args) => {
+    assert.equal(name, 'bridge_prepare_seller_optional_document_upload')
+    assert.equal(args.p_token, 'own-token'); assert.equal(args.p_access_token, 'own-session')
+    prepared++; return { data: row }
+  } }
+  const scope = {
+    requireClient: () => { throw new Error('Agent client must not be used') },
+    normalizeText: value => String(value || '').trim(), normalizeUuid: value => value || '',
+    getSellerOnboardingByToken: async () => ({ listing: { id: 'own-listing', documentRequirements: [] } }),
+    getSellerPortalSignedUploadReference: async () => null,
+    requireSellerPortalStorageClient: () => scoped,
+    validateDocumentUploadFile: file => ({ safeName: file.name }),
+    resolveExactSellerRequirement: () => null,
+    buildPrivateListingDocumentUploadPreparation: () => ({ currentOptionalRequirementKeys: ['title_deed_copy'] }),
+    prepareSellerPortalOptionalUploadTarget, assertSellerUploadTarget,
+    sanitizeDocumentFileName: value => value, DOCUMENTS_BUCKET_CANDIDATES: ['documents'],
+    runRecoverableDocumentUpload: options => { assert.equal(options.client, scoped); return { prepared: true } },
+  }
+  const action = Function('scope', `with(scope) { return (${source.slice(begin, finish).replace(/^export /, '')}) }`)(scope)
+  const result = await action({ token: 'own-token', accessToken: 'own-session', requirementKey: 'title_deed_copy', file: new File(['fixture'], 'deed.pdf') })
+  assert.deepEqual(result, { prepared: true }); assert.equal(prepared, 1)
 })

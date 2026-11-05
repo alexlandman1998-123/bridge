@@ -1,10 +1,11 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import { handleLeadAgentEmailDispatcher } from "../_shared/leadAgentEmailDispatch.ts";
 
-Deno.serve((request) => {
+Deno.serve(withApiCredentials((request) => {
   const url = Deno.env.get("SUPABASE_URL") || "";
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const key = supabaseServiceKey() || "";
   return handleLeadAgentEmailDispatcher(request, {
     serviceRoleKey: key,
     apiKey: Deno.env.get("RESEND_API_KEY") || "",
@@ -22,4 +23,4 @@ Deno.serve((request) => {
       })
       : null,
   });
-});
+}));

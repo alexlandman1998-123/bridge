@@ -7,6 +7,13 @@ import LeadCreateDialog from '../../../components/leads/LeadCreateDialog'
 import { buildAgencyLeadListModel } from '../agencyLeadListModel'
 
 afterEach(cleanup)
+it('shows development sales guidance only in the development flow', () => {
+  const { rerender } = render(<LeadListPage category="development" viewMode="kanban" />)
+  expect(screen.getByTestId('development-sales-flow').textContent).toContain('unit selection and reservation')
+  rerender(<LeadListPage category="buyer" viewMode="kanban" />)
+  expect(screen.queryByTestId('development-sales-flow')).toBeNull()
+})
+
 it.each(['buyer', 'seller'])('opens the canonical %s capture form from an empty Kanban board and submits it', async (category) => {
   const save = vi.fn()
   function Board() {

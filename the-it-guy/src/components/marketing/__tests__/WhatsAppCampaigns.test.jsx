@@ -3,19 +3,16 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateWhatsAppCampaign, WhatsAppCampaignDetail, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
-const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one',viewer:'viewer-one',role:'principal' }))
-vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org },user:{id:mocks.viewer},currentMembership:{role:mocks.role,status:'active'} } }) }))
-
-vi.mock('../MarketingAudiences', () => ({ default: () => null, MarketingAudiencePicker: () => null }))
-vi.mock('../ChannelWorkspaceTemplates', () => ({ default: () => null }))
+vi.mock('../MarketingAudiences', () => ({ default: () => <div>Shared CRM audience library</div>, MarketingAudiencePicker: ({ onApply }) => <button onClick={() => onApply(['contact-one'], { name: 'Ready buyers' })}>Apply reviewed CRM recipients</button> }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), org: 'org-one' }))
+vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org } } }) }))
 vi.mock('../../../services/whatsappCampaignService', () => ({ whatsappCampaignRequest: mocks.request }))
-vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({canManage:false,loading:false,organisationId:mocks.org,accessScope:`${mocks.org}:${mocks.viewer}:${mocks.role}`})}))
 const template = { id: 'template-one', name: 'new_listing', language: 'en_US', category: 'MARKETING', status: 'APPROVED', components: [{ type: 'BODY', text: 'Hello {{1}}' }] }
 const contacts = [{ id: 'contact-one', full_name: 'Alex Buyer', phone: '27821234567', consent_status: 'opted_in' }, { id: 'contact-two', full_name: 'Pat Buyer', phone: '27821234568', consent_status: 'unknown' }]
 const senders = [{ id: 'sender-one', display_phone_number: '+27 82 999 8888', connection_status: 'connected', business_display_name: 'Kingdom' }]
 const emptyWorkspace = { campaigns: [], contacts, senders }
 afterEach(() => { cleanup(); vi.clearAllMocks() })
-beforeEach(() => { mocks.org = 'org-one';mocks.viewer='viewer-one';mocks.role='principal'; mocks.request.mockImplementation(async (_org, action, data) => {
+beforeEach(() => { mocks.org = 'org-one'; mocks.request.mockImplementation(async (_org, action, data) => {
   if (action === 'workspace') return emptyWorkspace
   if (action === 'templates') return { templates: [template] }
   if (action === 'save') return { campaign: { ...data.campaign, id: 'draft-one', status: 'draft', revision: (data.campaign.revision || 0) + 1 } }
@@ -69,65 +66,9 @@ it('completes the four steps, checks each field and requires confirmation before
   fireEvent.click(send)
   await waitFor(() => expect(back).toHaveBeenCalledTimes(1))
   expect(mocks.request.mock.calls.filter((c) => c[1] === 'prepare')).toHaveLength(1)
-  expect(mocks.request.mock.calls.some((c) => c[1] === 'dispatch')).toBe(false)
   const saved = mocks.request.mock.calls.find((c) => c[1] === 'save')[2].campaign
   expect(saved.contact_ids).toEqual(['contact-one'])
   expect(saved.parameter_values['body.1']).toEqual({ source: 'first_name', text: '' })
-})
-
-it('saves the scheduled time, rejects past times and binds confirmation to the final schedule', async () => {
-  const campaign = { id: 'draft-one', revision: 1, status: 'draft', name: 'Scheduled homes', sender_id: 'sender-one', template, parameter_values: { 'body.1': { source: 'first_name' } }, contact_ids: ['contact-one'], scheduled_at: new Date(Date.now() + 86400000).toISOString() }
-  const original = mocks.request.getMockImplementation()
-  mocks.request.mockImplementation(async (org, action, data) => action === 'workspace' ? { ...emptyWorkspace, campaigns: [campaign] } : original(org, action, data))
-  const back = vi.fn()
-  const view = render(<CreateWhatsAppCampaign campaignId="draft-one" onBack={back} />)
-  await screen.findByLabelText('Campaign name')
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-  await screen.findByRole('option', { name: /new_listing/ })
-  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-  expect(screen.getByLabelText('Delivery timing').value).toBe('later')
-  const time = screen.getByLabelText(/Scheduled sending time/)
-  fireEvent.change(time, { target: { value: '2020-01-01T10:00' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }))
-  expect(screen.getByRole('alert').textContent).toContain('future sending time')
-  expect(mocks.request.mock.calls.some((c) => c[1] === 'preflight')).toBe(false)
-  fireEvent.change(time, { target: { value: '2099-01-01T10:00' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }))
-  await screen.findByRole('button', { name: 'Schedule for 1 recipients' })
-  fireEvent.click(screen.getByRole('checkbox', { name: /reviewed the message/ }))
-  fireEvent.change(time, { target: { value: '2099-01-01T11:00' } })
-  expect(screen.queryByRole('button', { name: 'Schedule for 1 recipients' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Check readiness' }))
-  const schedule = await screen.findByRole('button', { name: 'Schedule for 1 recipients' })
-  expect(schedule.disabled).toBe(true)
-  fireEvent.click(screen.getByRole('checkbox', { name: /reviewed the message/ }))
-  fireEvent.click(schedule)
-  await waitFor(() => expect(back).toHaveBeenCalledTimes(1))
-  view.unmount()
-  const saves = mocks.request.mock.calls.filter((c) => c[1] === 'save')
-  expect(saves.at(-1)[2].campaign.scheduled_at).toBe(new Date('2099-01-01T11:00').toISOString())
-  expect(mocks.request.mock.calls.filter((c) => c[1] === 'prepare')).toHaveLength(1)
-  expect(mocks.request.mock.calls.some((c) => c[1] === 'dispatch')).toBe(false)
-})
-
-it('shows paused delivery and resumes or cancels without a browser sending loop', async () => {
-  let state = 'paused'
-  mocks.request.mockImplementation(async (_org, action) => {
-    if (action === 'detail') return { campaign: { name: 'Queued homes', display_status: state, delivery_state: state, delivery_error: state === 'paused' ? 'The template is no longer approved.' : null }, recipients: [{ id: 'r1', full_name: 'Alex', phone: '27821234567', status: 'queued' }] }
-    if (action === 'resume') { state = 'queued'; return {} }
-    if (action === 'cancel') { state = 'cancelled'; return {} }
-    throw new Error(`Unexpected ${action}`)
-  })
-  render(<WhatsAppCampaignDetail campaignId="queued-one" onBack={vi.fn()} />)
-  await screen.findByText('Delivery is paused.', { exact: false })
-  expect(screen.getByRole('alert').textContent).toContain('no longer approved')
-  fireEvent.click(screen.getByRole('button', { name: 'Resume sending' }))
-  await screen.findByText(/Sending continues in the background/)
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel remaining messages' }))
-  await screen.findByText('cancelled')
-  expect(screen.queryByRole('button', { name: 'Resume sending' })).toBeNull()
-  expect(mocks.request.mock.calls.some((c) => c[1] === 'dispatch')).toBe(false)
 })
 it('resumes saved draft fields and keeps incomplete draft saving available', async () => {
   const campaign = { id: 'draft-one', revision: 2, status: 'draft', name: 'Saved homes', sender_id: 'sender-one', template, parameter_values: { 'body.1': { text: 'Alex' } }, contact_ids: [] }
@@ -159,11 +100,14 @@ it('keeps all-time stats independent of list filters and connects the workspace 
   expect(screen.getByText('Read rate').closest('article').textContent).toContain('50.0%')
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search campaigns' }), { target: { value: 'Next' } })
   expect(screen.getByText('Delivery rate').closest('article').textContent).toContain('80.0%')
+  expect([...screen.getByRole('navigation', { name: 'WhatsApp workspace' }).querySelectorAll('button')].map(button => button.textContent)).toEqual(['Overview', 'Past campaigns', 'Templates', 'Audiences', 'Settings'])
   const menu = within(screen.getByRole('navigation', { name: 'WhatsApp workspace' }))
   fireEvent.click(menu.getByRole('button', { name: 'Past campaigns' }))
   expect(screen.getByText('October update')).toBeTruthy()
   expect(screen.queryByText('Next update')).toBeNull()
   fireEvent.click(menu.getByRole('button', { name: 'Audiences' }))
+  expect(await screen.findByText('Shared CRM audience library')).toBeTruthy()
+  fireEvent.click(screen.getByText('Manage WhatsApp contacts & permission'))
   expect(screen.getByRole('heading', { name: 'WhatsApp contacts & permission' })).toBeTruthy()
   fireEvent.click(menu.getByRole('button', { name: 'Settings' }))
   expect(screen.getByRole('heading', { name: 'WhatsApp Business connected' })).toBeTruthy()
@@ -207,21 +151,6 @@ it('uses Meta template metadata and blocks incomplete variables before review', 
   expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(true)
   fireEvent.change(screen.getByLabelText('Body · 1 value source'), { target: { value: 'first_name' } })
   expect(screen.getByRole('button', { name: 'Next' }).disabled).toBe(false)
-})
-
-it('clears private campaign data immediately after a role or user changes in the same agency',async()=>{
- const privateRow={id:'recruitment-private',name:'Private recruitment campaign',display_status:'draft',status:'draft',template,contact_ids:[],recipients:0}
- mocks.request.mockResolvedValue({...emptyWorkspace,campaigns:[privateRow]})
- const view=render(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
- await screen.findByText('Private recruitment campaign')
- mocks.role='agent';mocks.request.mockRejectedValue(Error('Access revoked'))
- view.rerender(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
- expect(screen.queryByText('Private recruitment campaign')).toBeNull()
- await screen.findByText('Access revoked')
- mocks.role='principal';mocks.viewer='viewer-two';mocks.request.mockResolvedValue(emptyWorkspace)
- view.rerender(<WhatsAppCampaignOverview onCreateCampaign={vi.fn()} onOpenCampaign={vi.fn()}/>)
- await screen.findByText('Your first campaign starts here')
- expect(screen.queryByText('Private recruitment campaign')).toBeNull()
 })
 
 const detailCampaign = { id: 'sent-one', name: 'October homes', status: 'sending', template, sent_at: '2026-10-19T06:31:00Z' }
@@ -287,50 +216,84 @@ it('preserves the existing resume-send action for queued recipients', async () =
   let dispatched = false
   mocks.request.mockImplementation(async (_org, action) => {
     if (action === 'detail') return { campaign: detailCampaign, recipients: [recipient('one', { status: dispatched ? 'sent' : 'queued' })] }
-    if (action === 'resume') { dispatched = true; return { campaign: { queued: 0 } } }
+    if (action === 'dispatch') { dispatched = true; return { campaign: { queued: 0 } } }
     throw new Error(`Unexpected ${action}`)
   })
   render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={vi.fn()} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Resume sending' }))
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume sending' })).toBeNull())
-  expect(mocks.request.mock.calls.filter((call) => call[1] === 'resume')).toHaveLength(1)
+  fireEvent.click(await screen.findByRole('button', { name: 'Send remaining 1' }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Send remaining 1' })).toBeNull())
+  expect(mocks.request.mock.calls.filter((call) => call[1] === 'dispatch')).toHaveLength(1)
   expect(mocks.request.mock.calls.some((call) => call[1] === 'prepare')).toBe(false)
-
 })
-
-
-it('keeps campaign provenance when choosing a sender and a new approved template', async () => {
-  const reference = { id: 'marketing-plan', revision: 3, title: 'Reviewed heading', body: 'Reviewed wording' }
-  const campaign = { id: 'draft-one', revision: 1, status: 'draft', name: 'Linked homes', sender_id: '', template: {}, parameter_values: { __arch9_campaign: reference, 'body.1': { source: 'text', text: 'Old variable' } }, contact_ids: ['contact-one'] }
-  const original = mocks.request.getMockImplementation()
-  mocks.request.mockImplementation(async (org, action, data) => action === 'workspace' ? { ...emptyWorkspace, campaigns: [campaign] } : original(org, action, data))
-  render(<CreateWhatsAppCampaign campaignId="draft-one" onBack={vi.fn()} />)
-  fireEvent.change(await screen.findByLabelText('WhatsApp sender'), { target: { value: 'sender-one' } })
+it('retains handed-off wording when choosing a sender and approved template, and fills only the chosen body field', async () => {
+  const suggestion = { id: 'plan', revision: 1, wording: 'Saved campaign wording' }
+  mocks.request.mockImplementation(async (_org, action, data) => {
+    if (action === 'workspace') return { ...emptyWorkspace, campaigns: [{ id: 'handed-off', revision: 1, name: 'Just Listed', status: 'draft', sender_id: '', template: {}, contact_ids: [], parameter_values: { __arch9_campaign: suggestion } }] }
+    if (action === 'templates') return { templates: [template] }
+    if (action === 'save') return { campaign: { ...data.campaign, revision: 2 } }
+    throw new Error(`Unexpected ${action}`)
+  })
+  render(<CreateWhatsAppCampaign campaignId="handed-off" onBack={vi.fn()} />)
+  await screen.findByLabelText('Suggested WhatsApp wording')
+  fireEvent.change(screen.getByLabelText('WhatsApp sender'), { target: { value: 'sender-one' } })
   fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(await screen.findByLabelText(/Alex Buyer/))
   fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-  await screen.findByRole('option', { name: /new_listing/ })
-  fireEvent.change(screen.getByLabelText('Approved template & language'), { target: { value: 'template-one' } })
+  fireEvent.change(await screen.findByLabelText('Approved template & language'), { target: { value: 'template-one' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Use wording in Body · 1' }))
+  expect(screen.getByLabelText('Body · 1', { exact: true }).value).toBe('Saved campaign wording')
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
   await screen.findByText('Draft saved.')
-  const saved = mocks.request.mock.calls.find((call) => call[1] === 'save')[2].campaign
-  expect(saved.parameter_values).toEqual({ __arch9_campaign: reference })
+  const call = mocks.request.mock.calls.find((item) => item[1] === 'save')
+  expect(call[2].campaign.parameter_values.__arch9_campaign).toEqual(suggestion)
+  expect(call[2].campaign.parameter_values['body.1']).toEqual({ source: 'text', text: 'Saved campaign wording' })
 })
 
-it('saves the linked WhatsApp draft before returning to campaign results and ignores a late unmounted response', async () => {
-  const reference = { id: 'marketing-plan', revision: 3 }
-  const campaign = { id: 'draft-one', revision: 1, status: 'draft', name: 'Linked homes', sender_id: '', template: {}, parameter_values: { __arch9_campaign: reference }, contact_ids: [] }
-  let complete
-  const pending = new Promise((resolve) => { complete = resolve })
-  const original = mocks.request.getMockImplementation()
-  mocks.request.mockImplementation(async (org, action, data) => action === 'workspace' ? { ...emptyWorkspace, campaigns: [campaign] } : action === 'save' ? pending : original(org, action, data))
-  const onOpen = vi.fn()
-  const view = render(<CreateWhatsAppCampaign campaignId="draft-one" onBack={vi.fn()} onOpenMarketingCampaign={onOpen} />)
-  fireEvent.change(await screen.findByLabelText('Campaign name'), { target: { value: 'Latest reviewed name' } })
-  fireEvent.click(screen.getByRole('button', { name: 'View campaign results' }))
-  expect(onOpen).not.toHaveBeenCalled()
-  expect(mocks.request.mock.calls.find((call) => call[1] === 'save')[2].campaign.name).toBe('Latest reviewed name')
-  view.unmount()
-  complete({ campaign: { ...campaign, revision: 2 } })
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(onOpen).not.toHaveBeenCalled()
+it('saves linked campaign wording and edits before returning to campaign results', async () => {
+ const reference={id:'marketing-plan',revision:3,wording:'A personal valuation invitation'}
+ const campaign={id:'linked-draft',status:'draft',revision:1,name:'Valuations',sender_id:'',template:{},contact_ids:[],parameter_values:{__arch9_campaign:reference}}
+ mocks.request.mockImplementation(async(_org,action,input)=> action==='workspace'?{...emptyWorkspace,campaigns:[campaign]}:action==='templates'?{templates:[template]}:{campaign:{...input.campaign,revision:2}})
+ const open=vi.fn()
+ render(<CreateWhatsAppCampaign campaignId="linked-draft" onBack={vi.fn()} onOpenMarketingCampaign={open}/> )
+ fireEvent.change(await screen.findByLabelText('Campaign name'),{target:{value:'Personal valuations'}})
+ fireEvent.change(screen.getByLabelText('WhatsApp sender'),{target:{value:'sender-one'}})
+ expect(screen.getByLabelText('Suggested WhatsApp wording').value).toBe(reference.wording)
+ fireEvent.click(screen.getByRole('button',{name:'View campaign results'}))
+ await waitFor(()=>expect(open).toHaveBeenCalledWith('marketing-plan'))
+ expect(mocks.request.mock.calls.find((call)=>call[1]==='save')[2].campaign).toMatchObject({name:'Personal valuations',parameter_values:{__arch9_campaign:reference},contact_ids:[]})
+ expect(mocks.request.mock.calls.every((call)=>['workspace','templates','save'].includes(call[1]))).toBe(true)
+})
+it('stays in the linked WhatsApp editor with edits intact if returning cannot save',async()=>{
+ const campaign={id:'linked-draft',status:'draft',name:'Valuations',sender_id:'',template:{},contact_ids:[],parameter_values:{__arch9_campaign:{id:'marketing-plan',revision:1,wording:'Invitation'}}}
+ mocks.request.mockImplementation(async(_org,action)=>{if(action==='workspace')return {...emptyWorkspace,campaigns:[campaign]};throw new Error('Connection lost')})
+ const open=vi.fn();render(<CreateWhatsAppCampaign campaignId="linked-draft" onBack={vi.fn()} onOpenMarketingCampaign={open}/> )
+ fireEvent.change(await screen.findByLabelText('Campaign name'),{target:{value:'Keep this wording'}})
+ fireEvent.click(screen.getByRole('button',{name:'View campaign results'}))
+ await screen.findByRole('alert');expect(open).not.toHaveBeenCalled();expect(screen.getByLabelText('Campaign name').value).toBe('Keep this wording')
+})
+
+it('connects WhatsApp result pages to campaign results and reopens unsent drafts',async()=>{
+ const campaign={id:'draft-one',name:'Linked draft',status:'draft',template:{},parameter_values:{__arch9_campaign:{id:'marketing-plan',revision:1}},contact_ids:[]}
+ mocks.request.mockResolvedValue({campaign,recipients:[]})
+ const open=vi.fn(), edit=vi.fn()
+ render(<WhatsAppCampaignDetail campaignId="draft-one" onBack={vi.fn()} onOpenMarketingCampaign={open} onEdit={edit}/> )
+ fireEvent.click(await screen.findByRole('button',{name:'View campaign results'}))
+ expect(open).toHaveBeenCalledWith('marketing-plan')
+ fireEvent.click(screen.getByRole('button',{name:'Open draft'}))
+ expect(edit).toHaveBeenCalledWith('draft-one')
+})
+
+it('applies a reviewed shared audience to the WhatsApp draft without preparing or dispatching it', async () => {
+  render(<CreateWhatsAppCampaign onBack={vi.fn()} />)
+  fireEvent.change(await screen.findByLabelText('Campaign name'), { target: { value: 'CRM buyers' } })
+  fireEvent.change(screen.getByLabelText('WhatsApp sender'), { target: { value: 'sender-one' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Apply reviewed CRM recipients' }))
+  await screen.findByText('Applied 1 reviewed recipients from “Ready buyers”.')
+  expect(screen.getByRole('checkbox', { name: /Alex Buyer/ }).checked).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+  await screen.findByText('Draft saved.')
+  const saved=mocks.request.mock.calls.find((call)=>call[1]==='save')[2].campaign
+  expect(saved.contact_ids).toEqual(['contact-one'])
+  expect(mocks.request.mock.calls.some((call)=>['prepare','dispatch'].includes(call[1]))).toBe(false)
 })

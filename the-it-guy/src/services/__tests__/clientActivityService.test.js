@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
-import { clientActivityRecordPath, loadClientActivity, loadLatestClientActivity, logClientInteraction, recordClientPortalVisit } from '../clientActivityService'
+import { clientActivityRecordPath, loadClientActivity, loadClientEngagementSummary, loadLatestClientActivity, logClientInteraction, recordClientPortalVisit } from '../clientActivityService'
 const transport = vi.hoisted(() => ({ rpc: vi.fn() }))
 const scoped = vi.hoisted(() => ({ rpc: vi.fn() }))
 const scopedFactory = vi.hoisted(() => vi.fn(() => scoped))
@@ -60,4 +60,27 @@ test('record links follow the existing agency workspace routes', () => {
   expect(clientActivityRecordPath({ source_kind: 'listing_seller', source_id: 'listing' })).toBe('/agent/listings/listing')
   expect(clientActivityRecordPath({ source_kind: 'transaction_buyer', source_id: 'matter' })).toBe('/transactions/matter')
   expect(clientActivityRecordPath({ source_kind: null })).toBeNull()
+})
+
+
+test('team summary uses the selected workspace and reports unavailable or denied reads explicitly', async () => {
+  transport.rpc.mockResolvedValue({ data: { conversations: [], pendingFollowUps: 3, lastContact: null }, error: null })
+  expect(await loadClientEngagementSummary(client)).toMatchObject({ available: true, pendingFollowUps: 3 })
+  expect(transport.rpc).toHaveBeenCalledWith('client_engagement_summary', { p_org: 'agency-a', p_client: 'client-a' })
+  transport.rpc.mockResolvedValue({ error: { code: 'PGRST202' } })
+  expect(await loadClientEngagementSummary(client)).toEqual({ available: false })
+  transport.rpc.mockResolvedValue({ error: { code: '42501' } })
+  await expect(loadClientEngagementSummary(client)).rejects.toMatchObject({ code: '42501' })
+})
+
+test('structured call outcomes use the checked engagement command', async () => {
+  transport.rpc.mockResolvedValue({ data: 'saved', error: null })
+  const entry = { type: 'call', detail: 'Tried calling', occurredAt: '2026-10-09T12:00:00Z', requestId: 'command', outcome: 'no_answer' }
+  await logClientInteraction(client, entry)
+  expect(transport.rpc).toHaveBeenCalledWith('client_log_engagement', expect.objectContaining({ p_outcome: 'no_answer' }))
+  transport.rpc.mockClear()
+  await expect(logClientInteraction(client, { ...entry, type: 'note' })).rejects.toThrow('valid interaction outcome')
+  expect(transport.rpc).not.toHaveBeenCalled()
+  expect(clientActivityRecordPath({ origin_table: 'revo_inbox_messages' })).toBe('/inbox')
+  expect(clientActivityRecordPath({ origin_table: 'whatsapp_inbox_messages' })).toBe('/inbox/whatsapp')
 })

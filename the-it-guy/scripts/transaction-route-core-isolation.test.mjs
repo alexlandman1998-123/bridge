@@ -17,6 +17,9 @@ const shell = await build({from:forbidden}, {id:'matter',buyer_id:'buyer',develo
 assert.equal(shell.transaction.id, 'matter')
 assert.equal(shell.buyer,null)
 assert.equal(shell.development,null)
+const identified=await build({from:forbidden},{id:'matter',buyer:{id:'buyer',name:'Controlled buyer'},onboarding_completed_at:'2026-11-04'},{routeOnly:true})
+assert.equal(identified.buyer.name,'Controlled buyer')
+assert.ok(identified.transaction.onboarding_completed_at)
 assert.ok(source.includes('buildTransactionWorkspaceShellFromTransaction(client, query.data, { routeOnly: true })'))
 const page=readFileSync('src/pages/AttorneyTransactionDetail.jsx','utf8')
 assert.ok(page.includes('Retry matter'))
@@ -75,3 +78,19 @@ const queryCount = queries.length
 assert.equal(await loadProperty('missing'), null)
 assert.equal(queries.length, queryCount, 'Unverified routes must not load property records')
 console.log('PASS: core remains independent of optional queries; Junoah Unit 004 resolves through targeted reads, compatibility fallback and embedded property data')
+
+const {getExistingBondLabel} = await import('../src/core/transactions/overviewWorkflowProgress.js')
+const projection = source.match(/const TRANSACTION_ROUTE_CORE_SELECT\s*=\s*'([^']+)'/)[1]
+const columns = projection.split(',').map(value=>value.trim())
+for(const key of ['seller_has_existing_bond','existing_bond','cancellation_required','routing_profile_version','routing_profile_json']) {
+ assert.ok(columns.includes(key),`Route core must retain saved routing field ${key}`)
+}
+for(const existingBond of [true,false]) {
+ const row={id:'saved-bond-matter',seller_has_existing_bond:existingBond,existing_bond:existingBond,cancellation_required:existingBond,routing_profile_json:{}}
+ const projected=Object.fromEntries(Object.entries(row).filter(([key])=>columns.includes(key)))
+ const core=await build({from:forbidden},projected,{routeOnly:true})
+ assert.equal(getExistingBondLabel(core.transaction),existingBond?'Yes':'No','First paint must not manufacture a false seller bond answer')
+ const hydrated=await loadProperty('matter-004')
+ assert.ok(hydrated)
+}
+console.log('Route core and actual shell preserve canonical existing-bond answers without optional hydration')

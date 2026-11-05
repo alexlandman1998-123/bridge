@@ -6,7 +6,7 @@ import DevelopmentWebsiteAnalyticsDashboard from './DevelopmentWebsiteAnalyticsD
 export default function DevelopmentWebsiteAnalytics({ development, loadAnalytics = fetchDevelopmentVisualAnalytics }) {
   const hasDemo = isHarbourHeightsAnalyticsDemo(development)
   const [source, setSource] = useState(hasDemo ? 'demo' : 'tracked')
-  const [days, setDays] = useState(30)
+  const days = 30
   const [refresh, setRefresh] = useState(0)
   const key = `${development.id}:${days}:${refresh}`
   const [request, setRequest] = useState({ key: '', data: null, loading: true, error: '' })
@@ -17,7 +17,7 @@ export default function DevelopmentWebsiteAnalytics({ development, loadAnalytics
     Promise.resolve().then(() => loadAnalytics(development.id, { days })).then(data => {
       if (!cancelled) setRequest({ key, data, loading: false, error: '' })
     }).catch(() => {
-      if (!cancelled) setRequest({ key, data: null, loading: false, error: 'Website activity could not be loaded. Try refreshing.' })
+      if (!cancelled) setRequest({ key, data: null, loading: false, error: 'Website activity could not be loaded.' })
     })
     return () => { cancelled = true }
   }, [development.id, days, refresh, key, source, loadAnalytics])
@@ -26,7 +26,7 @@ export default function DevelopmentWebsiteAnalytics({ development, loadAnalytics
   const current = request.key === key ? request : { data: null, loading: true, error: '' }
   return <DevelopmentWebsiteAnalyticsDashboard
     analytics={isDemo ? buildHarbourHeightsWebsiteAnalyticsDemo(days) : current.data}
-    days={days} onDaysChange={setDays} onRefresh={() => setRefresh(value => value + 1)}
+    days={days} onRefresh={() => setRefresh(value => value + 1)}
     loading={!isDemo && current.loading} error={!isDemo ? current.error : ''}
     isDemo={isDemo} hasDemo={hasDemo} onSourceChange={next => { setSource(next); setRefresh(value => value + 1) }}
   />

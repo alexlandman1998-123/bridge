@@ -22,8 +22,12 @@ function summary(steps, fallbackStatus) {
     owner: ROLE[step.ownerRole] || '' }
 }
 
-export function buildOverviewWorkflowProgress({ transactionId, rollup } = {}) {
+export function buildOverviewWorkflowProgress({ transactionId, rollup, transaction = null } = {}) {
   const sameMatter = Boolean(transactionId && rollup?.transactionId === transactionId)
+  if(transaction?.id===transactionId && ['completed','archived'].includes(transaction.lifecycle_state) && transaction.registered_at && transaction.completed_at){
+    return [{key:'complete',label:'Transaction',detail:'Transaction completed',status:'complete',owner:''}]
+  }
+
   const workflows = sameMatter && rollup.usedLegacyFallback === false ? rollup.workflows || {} : {}
   const financeCandidates = Object.entries(workflows).filter(([key, item]) => key.startsWith('finance_') && item?.required !== false)
   const finance = financeCandidates.length === 1 ? financeCandidates[0][1] : null
@@ -52,7 +56,7 @@ export function buildOverviewWorkflowProgress({ transactionId, rollup } = {}) {
 
 export function selectImmediateWorkflow(workflows = []) {
   const outstanding = workflows.filter(row => row.status !== 'complete')
-  return outstanding.find(row => row.isActive) || outstanding[0] || (workflows.length
+  return outstanding.find(row => row.isActive) || outstanding[0] || workflows.find(row => row.key === 'complete' && row.status === 'complete') || (workflows.length
     ? { key: 'complete', label: 'Workflows', detail: 'All applicable steps complete', status: 'complete' }
     : { key: 'unknown', label: 'Transaction', detail: 'Saved progress not available', status: 'unknown' })
 }

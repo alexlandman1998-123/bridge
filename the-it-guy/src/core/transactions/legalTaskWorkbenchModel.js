@@ -525,7 +525,7 @@ export function buildLegalTaskWorkbenchModel({
               { id: 'cancellation_lane_required', label: 'Cancellation lane is required or explicitly not required.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
             ]
           : transferFicaReviewTask && stageTwoParties.length
-            ? stageTwoParties.map(party => ({ id: `rmcp_review:${party.partyId}`, label: `${party.partyName || party.partyId}: firm RMCP risk, sanctions and prominent-person screening reviewed; enhanced review recorded where required. Use an internal evidence reference.`, answers: ['yes', 'no'], allowNote: true }))
+            ? stageTwoParties.map(party => ({ id: `rmcp_review:${party.partyId || party.id}`, label: `${party.partyName || party.name || party.partyId || party.id}: firm RMCP risk, sanctions and prominent-person screening reviewed; enhanced review recorded where required. Use an internal evidence reference.`, answers: ['yes', 'no'], allowNote: true }))
           : transferFicaReviewTask
             ? [{
                 id: `${task.key}_documents_checked`,

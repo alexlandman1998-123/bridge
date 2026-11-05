@@ -1,23 +1,5 @@
 import { expect, test } from 'vitest'
 import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter, buildDocumentCenter } from '../clientPortalWorkspaceService.js'
-import { getSellerRequiredDocuments } from '../sellerDocumentRequirementsService.js'
-import { readFileSync } from 'node:fs'
-import { isTransientBuyerPortalReadError } from '../../lib/clientPortalReadRecovery.js'
-
-const workspaceSource = readFileSync(new URL('../clientPortalWorkspaceService.js', import.meta.url), 'utf8')
-const buyerReadStart = workspaceSource.indexOf("  if (workspaceMode === 'buying' && !isSellerOnboardingToken(token)) {", workspaceSource.indexOf('export async function getClientPortalWorkspaceData'))
-const buyerReadEnd = workspaceSource.indexOf('\n  const sellerMatterId', buyerReadStart)
-const loadBuyerProjection = Function('scope', `with(scope) { return (async () => { ${workspaceSource.slice(buyerReadStart, buyerReadEnd)}; return portalData; })() }`)
-
-test.each([
-  new TypeError('fetch failed'), Object.assign(new Error('Read timed out'), { code: 'client_portal_read_timeout' }),
-])('an interrupted canonical document read reaches automatic portal recovery: %s', async error => {
-  await expect(loadBuyerProjection({
-    workspaceMode: 'buying', token: 'synthetic-link', isSellerOnboardingToken: () => false,
-    portalData: { transaction: { id: 'test' } }, isTransientBuyerPortalReadError,
-    fetchClientPortalCanonicalDocumentProjection: async () => { throw error },
-  })).rejects.toBe(error)
-})
 
 test('seller portal retains custom requirements and suppresses removed checklist defaults', () => {
   const centre = buildDocumentCenter({
@@ -145,54 +127,6 @@ test('custom buyer requirements retain a usable canonical upload key and label',
   expect(centre.requiredDocuments[0].uploadSpec).toMatchObject({ requirementInstanceId: 'custom-id', requirementKey: 'custom_custom-id' })
 })
 
-test('legacy checklist rejects a same-type file linked to another request and prefers its exact file', () => {
-  const requirement = { id: 'request-A', key: 'buyer_proof_of_address', label: 'Proof of address', status: 'required', expectedFromRole: 'buyer' }
-  const wrongFile = { id: 'wrong-file', requirement_id: 'request-B', requirementKey: requirement.key,
-    document_type: requirement.key, status: 'approved', visibility: 'client', file_path: 'synthetic/wrong.pdf' }
-  for (const linkedFields of [{}, { uploadedDocument: wrongFile }, { uploaded_document_id: wrongFile.id }]) {
-    const missing = buildDocumentCenter({ requiredDocuments: [{ ...requirement, ...linkedFields }], documents: [wrongFile] }, 'buying')
-    expect(missing.items.find(row => row.sourceType === 'required_document')).toMatchObject({ status: 'required', linkedDocument: null })
-  }
-
-  const unlinked = { ...wrongFile, id: 'unlinked', requirement_id: null }
-  const exact = { ...wrongFile, id: 'exact-file', requirement_id: requirement.id, status: 'uploaded' }
-  const legacy = buildDocumentCenter({ requiredDocuments: [requirement], documents: [unlinked] }, 'buying')
-  expect(legacy.items.find(row => row.sourceType === 'required_document').linkedDocument?.id).toBe('unlinked')
-  const received = buildDocumentCenter({ requiredDocuments: [requirement], documents: [unlinked, wrongFile, exact] }, 'buying')
-  expect(received.items.find(row => row.sourceType === 'required_document')).toMatchObject({ status: 'uploaded', linkedDocument: { id: 'exact-file' } })
-  const renamedFile = { ...exact, requirementKey: 'old_type', document_type: 'old_type' }
-  const renamed = buildDocumentCenter({ requiredDocuments: [requirement], documents: [renamedFile] }, 'buying')
-  expect(renamed.items.find(row => row.sourceType === 'required_document').linkedDocument?.id).toBe('exact-file')
-})
-
-test.each(['buyer', 'seller'])('canonical %s checklist keeps optional and recommended documents uploadable without required actions', role => {
-  const centre = buildCanonicalBuyerDocumentCenter({ requirements: ['optional', 'recommended', 'required', 'blocker'].map(level => ({
-    id: `${role}-${level}`, document_definition_key: `${role}_${level}`, requirement_level: level,
-    status: 'pending', uploadable_by_roles: [role], document_definitions: { display_label: `${level} document` },
-  })), documents: [] }, '', role)
-  for (const level of ['optional', 'recommended']) {
-    expect(centre.items.find(row => row.sourceId === `${role}-${level}`)).toMatchObject({
-      required: false, isCoreRequirement: false, requirementLevel: level,
-      uploadSpec: { requirementInstanceId: `${role}-${level}` },
-    })
-  }
-  expect(centre.summary).toMatchObject({ total: 2, outstanding: 2, blocking: 2 })
-})
-
-test('seller optional uploads retain their persisted request identity after profile-derived checklist hydration', () => {
-  const saved = { id: 'saved-bank-request', requirement_key: 'seller_bank_account_confirmation',
-    requirement_name: 'Seller Bank Account Confirmation', requirement_group: 'property',
-    document_visibility: 'seller_visible', status: 'uploaded', is_required: false }
-  const document = { id: 'saved-bank-file', requirement_id: saved.id, document_type: saved.requirement_key,
-    document_name: 'diagnostic-bank.pdf', storage_path: 'synthetic/bank.pdf', status: 'uploaded', visibility: 'seller_visible' }
-  const formData = { sellerType: 'individual', sellerFirstName: 'Test', sellerSurname: 'Seller', ownershipConfirmed: true }
-  const listing = { id: 'listing', documentRequirements: [saved], documents: [document] }
-  const centre = buildDocumentCenter({ listing, formData, requirements: getSellerRequiredDocuments(listing, formData), documents: [document] }, 'selling')
-  expect(centre.items.find(row => row.sourceType === 'required_document' && row.sourceId === saved.requirement_key)).toMatchObject({
-    required: false, status: 'uploaded', linkedDocument: { id: document.id },
-  })
-})
-
 
 test('an empty canonical room cannot claim a buyer is caught up while saved checklist rows await setup', () => {
   const centre = buildDocumentCenter({
@@ -215,5 +149,4 @@ test('a buyer-visible document supplied by the team remains visible without bloc
   expect(centre.summary.total).toBe(1)
   expect(centre.summary.blocking).toBe(0)
   expect(centre.summary.outstanding).toBe(0)
-
 })

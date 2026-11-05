@@ -30,7 +30,6 @@ import {
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ListingWorkspaceTabs } from '../../components/listings/ListingWorkspaceShell'
 import ListingAgentReassignmentPanel from '../../components/listings/ListingAgentReassignmentPanel'
-import ListingPublicationProgress from '../../components/listings/ListingPublicationProgress'
 import WebsiteListingPublicationPanel from '../../components/listings/WebsiteListingPublicationPanel'
 import KingdomWebsitePublicationChannel from '../../components/listings/KingdomWebsitePublicationChannel'
 import RentalPortalManagementPanel from './RentalPortalManagementPanel'
@@ -996,6 +995,10 @@ function RentalTabContent({
   onManagePortal,
   onRefreshPortal,
   portalBusy,
+  publicationResults = [],
+  publicationBusy = false,
+  onCheckAdvertising,
+  onRetryAdvertising,
   landlordPanel,
 }) {
   const row = detail.row
@@ -1070,8 +1073,14 @@ function RentalTabContent({
       <section className="space-y-5">
         <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="grid sm:grid-cols-3"><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{readinessPercent}%</p><p className="text-sm font-semibold text-[#607387]">Listing checklist progress</p><button type="button" onClick={onOpenEdit} className="mt-1 text-xs font-semibold text-[#1f4f78]">Open multi-step editor</button></div><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{detail.liveChannelCount} / {detail.channelCount}</p><p className="text-sm font-semibold text-[#607387]">Channels live</p><button type="button" onClick={() => document.getElementById('listing-distribution-channels')?.scrollIntoView?.({ behavior: 'smooth' })} className="mt-1 text-xs font-semibold text-[#1f4f78]">View channels</button></div><div className="p-5"><p className="text-xl font-semibold text-[#142132]">{formatDateTime(detail.lastUpdatedAt)}</p><p className="text-sm font-semibold text-[#607387]">Last listing update</p></div></div></section>
         <RentalMarketingOverview detail={detail} row={row} galleryImages={galleryImages} onOpenEdit={() => onOpenEdit('marketing')} onPhotoAction={onPhotoAction} savingMedia={savingMedia} mediaError={mediaError} />
-        <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-          <div className="border-b border-[#edf2f7] p-5"><h3 id="rental-listing-advertising" tabIndex={-1} className="text-base font-semibold text-[#142132]">Listing Channels</h3></div>
+        <article id="listing-distribution-channels" aria-label="Listing channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] p-5">
+            <h3 id="rental-listing-advertising" tabIndex={-1} className="text-base font-semibold text-[#142132]">Listing Channels</h3>
+            {publicationResults.length > 0 ? <div className="flex flex-wrap gap-2">
+              <button type="button" className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-sm font-semibold text-[#243d56] disabled:opacity-50" disabled={publicationBusy} onClick={onCheckAdvertising}>{publicationBusy ? 'Checking…' : 'Check status'}</button>
+              {publicationResults.some(result => result.retryable) ? <button type="button" className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-sm font-semibold text-[#243d56] disabled:opacity-50" disabled={publicationBusy || publicationResults.some(result => result.status === 'publishing')} onClick={onRetryAdvertising}>Retry failed channels</button> : null}
+            </div> : null}
+          </div>
           <ListingChannelTableHeader />
           <RentalDistributionChannel
             channelKey="property24"
@@ -1921,13 +1930,6 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
           />
         </section>
 
-        {activeTab === 'marketing' && initialChannelResults.length > 0 ? (
-          <ListingPublicationProgress results={initialChannelResults} listingStatus={listing.listingStatus}
-            changesNotSent={Boolean(location.state?.rentalListingChangesNotSent) || portalChannels.some(channel => channel.publicationState?.changeCount > 0) || Object.values(websitePublicationStates).some(state => state.changeCount > 0)}
-            busy={publicationStatusBusy || Boolean(portalAction) || savingMedia || publishing || publishingPrivateProperty}
-            onCheckStatus={() => void checkAdvertisingStatus()} onRetry={() => void checkAdvertisingStatus(true)} />
-        ) : null}
-
         <RentalTabContent
           snapshot={overviewSnapshot}
           agentPanel={<ListingAgentReassignmentPanel
@@ -1985,6 +1987,10 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
           onManagePortal={channel => { setPublishError(''); setSuccessMessage(''); setManagePortal(channel) }}
           onRefreshPortal={handleRefreshPortal}
           portalBusy={Boolean(portalAction) || publishing || publishingPrivateProperty}
+          publicationResults={initialChannelResults}
+          publicationBusy={publicationStatusBusy || Boolean(portalAction) || savingMedia || publishing || publishingPrivateProperty}
+          onCheckAdvertising={() => void checkAdvertisingStatus()}
+          onRetryAdvertising={() => void checkAdvertisingStatus(true)}
           landlordPanel={<RentalListingLandlordPanel key={`${organisationId}:${listingId}`} listing={listing} scope={rentalScope} onSaved={(saved) => { if (!mountedRef.current) return; loadRequestRef.current += 1; setLoading(false); setListing(saved); setEditForm(buildRentalListingEditForm(saved)) }} />}
         />
         {managePortal && portalChannels.find(channel => channel.key === managePortal) ? <RentalPortalManagementPanel

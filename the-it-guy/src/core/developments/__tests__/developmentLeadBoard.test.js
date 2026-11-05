@@ -4,11 +4,11 @@ import { DEVELOPMENT_LEAD_BOARD_STAGES, getDevelopmentLeadBoardStage, resolveDev
 
 describe('Revo development board stages', () => {
   it('uses the shared sales workflow in order with Lost as the final lead outcome', () => {
-    expect(DEVELOPMENT_LEAD_BOARD_STAGES.map(({ key, label }) => [key, label])).toEqual([...DEVELOPMENT_LEAD_STAGES.slice(0, 8).map(([key, label]) => [key, label]), ['lost', 'Lost']])
+    expect(DEVELOPMENT_LEAD_BOARD_STAGES.map(({ key, label }) => [key, label])).toEqual([...DEVELOPMENT_LEAD_STAGES.slice(0, 9).map(([key, label]) => [key, label]), ['lost', 'Lost']])
   })
   it.each([
     ['new', 'captured'], ['contacted', 'contacted'], ['qualified', 'qualified'], ['viewing', 'viewing'],
-    ['reserved', 'development_selection'], ['onboarding_sent', 'transaction_setup'], ['onboarding_submitted', 'transaction_setup'], ['otp', 'offer'], ['converted', 'transaction'], ['lost', 'lost'],
+    ['reserved', 'development_selection'], ['onboarding_sent', 'buyer_onboarding_sent'], ['onboarding_submitted', 'buyer_onboarding_submitted'], ['otp', 'offer'], ['converted', 'transaction'], ['lost', 'lost'],
   ])('maps saved %s leads to %s without merging workflow steps', (leadStatus, key) => {
     expect(getDevelopmentLeadBoardStage({ leadStatus }).key).toBe(key)
   })
@@ -19,7 +19,7 @@ describe('Revo development board stages', () => {
   })
   it('opens reservation and onboarding actions instead of recording uncompleted workflow', () => {
     expect(resolveDevelopmentLeadBoardMove({ leadStatus: 'qualified' }, 'development_selection')).toMatchObject({ kind: 'workflow', tab: 'development' })
-    for (const target of ['transaction_setup', 'offer', 'transaction']) expect(resolveDevelopmentLeadBoardMove({ leadStatus: 'viewing' }, target)).toMatchObject({ kind: 'workflow', tab: 'onboarding_otp' })
+    for (const target of ['buyer_onboarding_sent', 'buyer_onboarding_submitted', 'transaction_setup', 'offer', 'transaction']) expect(resolveDevelopmentLeadBoardMove({ leadStatus: 'viewing' }, target)).toMatchObject({ kind: 'workflow', tab: 'onboarding_otp' })
     expect(resolveDevelopmentLeadBoardMove({ leadStatus: 'viewing', reservationState: 'reserved' }, 'development_selection')).toMatchObject({ kind: 'status', status: 'reserved' })
   })
   it('keeps an existing converted transaction connected when its card is moved', () => {

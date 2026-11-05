@@ -442,6 +442,7 @@ function buildAgentCardPayload(input = {}, defaults = {}) {
   const agentName = normalizeText(input.agentName || input.agent_name || metadataJson.agentDigitalCard?.agent?.name)
   return buildPayload({
     ...input,
+    enabledIntents: input.enabledIntents ?? input.enabled_intents ?? defaults.enabledIntents ?? defaults.enabled_intents ?? ['buy', 'sell', 'rent'],
     slug: input.slug || defaults.slug || suggestAgencyAgentCardSlug({
       organisationName,
       agentName,

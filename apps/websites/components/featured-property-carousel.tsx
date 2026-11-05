@@ -26,10 +26,10 @@ function CompactCard({ property, showConsultant }: { property: PublicProperty; s
   ]
 
   return <article className="featured-property-card">
-    <Link className="featured-property-image" href={href} aria-label={`View ${property.title}`}>
+    <Link prefetch={false} className="featured-property-image" href={href} aria-label={`View ${property.title}`}>
       {image ? <Image src={image.url} alt={image.caption || property.title} fill quality={88} sizes="(max-width: 760px) 85vw, (max-width: 1120px) 46vw, 28vw" /> : <div className="featured-property-placeholder" />}
     </Link>
-    <Link className="featured-property-details" href={href} aria-label={`View ${property.title}`}>
+    <Link prefetch={false} className="featured-property-details" href={href} aria-label={`View ${property.title}`}>
       <strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price ? <small>{rentalPriceSuffix(property)}</small> : null}</strong>
       <span className="featured-property-suburb">{property.suburb || 'Location on request'}</span>
       {property.province ? <span className="featured-property-region">{property.province}</span> : null}
@@ -86,7 +86,7 @@ export function FeaturedPropertyCarousel({ heading = 'Featured properties', prop
         <h2 id="featured-properties-heading">{heading}</h2>
         <div className="featured-properties-actions">
           {hasBoth ? <div className="featured-property-toggle" aria-label="Listing type"><button aria-pressed={type === 'sale'} className={type === 'sale' ? 'is-active' : ''} onClick={() => changeType('sale')} type="button">For sale</button><button aria-pressed={type === 'rental'} className={type === 'rental' ? 'is-active' : ''} onClick={() => changeType('rental')} type="button">To rent</button></div> : null}
-          <Link className="featured-view-all" href={`/properties?type=${type}`}>View all properties <span aria-hidden="true">→</span></Link>
+          <Link prefetch={false} className="featured-view-all" href={`/properties?type=${type}`}>View all properties <span aria-hidden="true">→</span></Link>
         </div>
       </header>
       {visibleProperties.length ? <>

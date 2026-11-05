@@ -9,6 +9,8 @@ export function isCampaignActivity(event) {
 
 // Direction comes from recorded event semantics, never from an assumed sender.
 export function activityDirection(event) {
+  if (event.communication_direction === 'inbound') return 'incoming'
+  if (event.communication_direction === 'outbound') return 'outgoing'
   if (event.event_type === 'campaign.response') return 'incoming'
   if (isCampaignActivity(event)) return 'outgoing'
   if (event.actor_kind === 'client' || (event.category === 'enquiry' && /received|recorded|created/i.test(event.title))) return 'incoming'

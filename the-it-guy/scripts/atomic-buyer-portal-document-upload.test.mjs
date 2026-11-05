@@ -50,14 +50,13 @@ assert.match(uploadFunction, /cleanup: \(\) => removeUploadedDocumentObject\(cli
 assert.match(uploadFunction, /readSavedUploadByPath\(client/)
 assert.doesNotMatch(uploadFunction, /\.from\('documents'\)\s*\n\s*\.insert/)
 assert.doesNotMatch(uploadFunction, /eventType: 'DocumentUploaded'/)
-assert.match(uploadFunction, /post-upload automation failed after the atomic upload completed/)
-assert.match(uploadFunction, /request projection failed after the atomic upload completed/)
-assert.match(uploadFunction, /const postUploadContextPromise = \(async \(\) =>/)
-assert.match(uploadFunction, /void \(async \(\) =>/)
-assert.ok(
-  uploadFunction.indexOf('void (async () =>') < uploadFunction.search(/return \{\s*\.\.\.result\.data/),
-  'post-upload projections, automation and notifications must run outside the buyer-facing response path',
-)
+// The atomic RPC now owns request linkage and in-app notifications. The
+// browser must await the durable receipt, not run the retired follow-up chain.
+assert.match(uploadFunction, /runRecoverableDocumentUpload/)
+assert.match(uploadFunction, /if \(rpcResult.error\) throw rpcResult.error/)
+assert.match(uploadFunction, /if \(!rpcResult.data\?\.id\)/)
+assert.ok(uploadFunction.indexOf('attempt.persist(') < uploadFunction.search(/return \{\s*\.\.\.result\.data/), 'the browser returns only after the atomic persistence receipt')
+assert.doesNotMatch(uploadFunction, /postUploadContextPromise|post-upload automation failed|request projection failed/)
 
 assert.match(portal, /requiredDocumentKey: 'grant_letter',\s*documentType: 'grant_letter'/)
 assert.match(portal, /canonicalRequirementInstanceId: options\.requirementInstanceId \|\| null/)

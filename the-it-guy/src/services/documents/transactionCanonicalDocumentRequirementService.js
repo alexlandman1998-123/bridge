@@ -522,6 +522,18 @@ function requirementLevelFromFlags({ required = true, blocking = false } = {}) {
   return blocking ? REQUIREMENT_LEVELS.blocker : REQUIREMENT_LEVELS.required
 }
 
+function canonicalBuyerRequirementLevel(template = {}, { preCollectionAllowed = false } = {}) {
+  const level = normalizeKey(template.requirementLevel)
+  // Pending-policy prompts are intentionally visible for review, but the
+  // canonical transaction requirement store does not accept these policy-only
+  // levels and they must not become active required documents before sign-off.
+  if (level.startsWith('pending_policy_')) return REQUIREMENT_LEVELS.optional
+  return level || requirementLevelFromFlags({
+    required: template.required !== false,
+    blocking: normalizeKey(template.groupKey) === 'finance' && !preCollectionAllowed,
+  })
+}
+
 function workflowMetaFromPack(packKey = '', definitionKey = '') {
   const normalizedPackKey = normalizeKey(packKey)
   const normalizedDefinitionKey = normalizeKey(definitionKey)
@@ -553,7 +565,7 @@ function workflowMetaFromPack(packKey = '', definitionKey = '') {
   return packMeta
 }
 
-function buildProjectionRow({
+export function buildProjectionRow({
   generated = {},
   instance = null,
   definition = {},
@@ -670,10 +682,7 @@ function buildBuyerAdapterCandidates({
     const generated = buildRequirementInstance({
       document_definition_key: definitionKey,
       pack_key: packKey,
-      requirement_level: template.requirementLevel || requirementLevelFromFlags({
-        required: template.required !== false,
-        blocking: normalizeKey(template.groupKey) === 'finance' && !preCollectionAllowed,
-      }),
+      requirement_level: canonicalBuyerRequirementLevel(template, { preCollectionAllowed }),
       stage_gates: normalizeKey(template.groupKey) === 'finance' ? ['finance_ready'] : ['otp_ready'],
       requested_from_role: template.expectedFromRole || 'buyer',
       reviewer_role: 'agent',
@@ -737,7 +746,7 @@ function buildAttorneyAdapterCandidates({
           : REQUIREMENT_LEVELS.required,
       stage_gates: stageGates,
       requested_from_role: requirement.requiredFrom || baseRequestedFromRole(packKey),
-      reviewer_role: laneKey === 'bond' ? 'bond_originator' : 'transferring_attorney',
+      reviewer_role: laneKey === 'bond' ? 'bond_originator' : laneKey === 'cancellation' ? 'cancellation_attorney' : 'transferring_attorney',
       visible_to_roles: definition.default_visibility,
       uploadable_by_roles: definition.default_upload_roles,
     }, {
@@ -1003,7 +1012,9 @@ async function syncProjectionRows({
   if (toUpsert.length) {
     const upsert = await db
       .from(TRANSACTION_DOCUMENT_REQUIREMENT_TABLE)
-      .upsert(toUpsert, { onConflict: 'id' })
+      // A routing change can mix existing rows with newly required documents.
+      // Let new rows use their generated IDs rather than bulk-inserting null.
+      .upsert(toUpsert, { onConflict: 'id', defaultToNull: false })
     if (upsert.error) throw upsert.error
   }
 

@@ -838,9 +838,19 @@ export async function syncTransactionRequirementInstancesForCreation({
     throw error
   }
 
+  // Policy-only levels belong to the request policy model, not the canonical
+  // transaction instance constraint. Keep those prompts non-blocking when
+  // translating any generated source into the creation RPC payload.
+  const persistedInstances = generatedInstances.map((instance) => {
+    const level = normalizeText(instance?.requirement_level).toLowerCase()
+    return level.startsWith('pending_policy_')
+      ? { ...instance, requirement_level: REQUIREMENT_LEVELS.optional }
+      : instance
+  })
+
   const result = await db.rpc('bridge_sync_transaction_document_requirement_instances', {
     p_transaction_id: transactionId,
-    p_generated_instances: generatedInstances,
+    p_generated_instances: persistedInstances,
   })
   if (result.error) throw result.error
 

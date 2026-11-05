@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import test from 'node:test'
+import test, { mock } from 'node:test'
 import ts from 'typescript'
 
 const source = readFileSync(new URL('./kingdom-recently-sold.ts', import.meta.url), 'utf8')
@@ -10,6 +10,7 @@ new Function('require', 'exports', javascript)(() => ({ getServerSupabase() { th
 const { getKingdomRecentlySold, KINGDOM_SOLD_SITE_ID, KINGDOM_SOLD_ORGANISATION_ID } = exported
 const isell = '6cb5b65b-51cb-4fba-aef4-75b6201f9c21'
 process.env.SUPABASE_URL = 'https://project.supabase.co'
+const mediaHead = mock.method(globalThis, 'fetch', async () => ({ ok: true, headers: new Headers({ 'content-type': 'image/jpeg' }) }))
 const site = { id: KINGDOM_SOLD_SITE_ID, organisationId: KINGDOM_SOLD_ORGANISATION_ID }
 const listing = (id, organisation_id, extra = {}) => ({ id, organisation_id, listing_status: 'sold', listing_category: 'private_sale', is_demo_data: false, updated_at: '2026-10-12', title: 'Family home', suburb: 'Pretoria', asking_price: 2000000, ...extra })
 const imageUrl = (id, org) => `https://project.supabase.co/storage/v1/object/public/listing-media/organisations/${org}/websites/${site.id}/listings/${id}/photo.jpg`
@@ -147,4 +148,32 @@ test('partner CRM cover requires the enabled source grant', async () => {
     assert.equal(result.length, grant ? 1 : 0)
     assert.equal(db.signedPaths.length, grant ? 1 : 0)
   }
+})
+
+
+test('missing retained website covers fall back to a scoped CRM gallery image', async () => {
+  const db = database({ rows: [listing('own', site.organisationId)] })
+  db.tables.listing_media.push({ listing_id: 'own', media_type: 'image', storage_bucket: 'documents', storage_path: 'private-listings/own/gallery/cover.jpg', is_cover: true, sort_order: 0 })
+  mediaHead.mock.mockImplementationOnce(async () => ({ ok: false, status: 400, headers: new Headers() }))
+  const result = await getKingdomRecentlySold(site, () => db)
+  assert.equal(result.length, 1)
+  assert.match(result[0].media[0].url, /private-listings\/own\/gallery\/cover.jpg/)
+  assert.equal(db.signedPaths.length, 1)
+})
+
+test('missing retained photos without an eligible CRM image produce a placeholder, not a broken URL', async () => {
+  const db = database({ rows: [listing('own', site.organisationId)] })
+  mediaHead.mock.mockImplementationOnce(async () => ({ ok: false, status: 400, headers: new Headers() }))
+  const result = await getKingdomRecentlySold(site, () => db)
+  assert.deepEqual(result[0].media, [])
+})
+
+test('retained photos on another origin are never fetched or signed', async () => {
+  const db = database({ rows: [listing('own', site.organisationId)] })
+  db.tables.website_listing_publications[0].media_json[0].file_url = imageUrl('own', site.organisationId).replace('project.supabase.co', 'attacker.test')
+  const calls = mediaHead.mock.callCount()
+  const result = await getKingdomRecentlySold(site, () => db)
+  assert.deepEqual(result[0].media, [])
+  assert.equal(mediaHead.mock.callCount(), calls)
+  assert.equal(db.signedPaths.length, 0)
 })

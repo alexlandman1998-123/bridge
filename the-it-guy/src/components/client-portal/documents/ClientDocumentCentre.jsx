@@ -2,7 +2,6 @@
 import { useState } from 'react'
 import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus'
 import { buildSellerDocumentExperienceModel } from '../../../lib/sellerDocumentExperienceModel'
-import { isDocumentRequirementRequired, matchDocumentRequirementLink } from '../../../core/documents/documentRequirementIdentity.js'
 import {
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   getSellerBasePackAliases,
@@ -110,16 +109,11 @@ function getRequirementMatchSignals(item = {}) {
 }
 
 function getKingstonsSellerPortalPackRequirement(item = {}) {
-  // Canonical rows already identify the exact document type. A FICA folder or
-  // description must not turn ordinary evidence into a managed signing pack.
-  const canonical = item.authoritativeSource === 'canonical_projection'
-  const signals = canonical
-    ? [item.key, item.uploadSpec?.documentDefinitionKey].map(normalizeDocumentMatchKey).filter(Boolean)
-    : getRequirementMatchSignals(item)
+  const signals = getRequirementMatchSignals(item)
   return KINGSTONS_SELLER_PORTAL_PACK_REQUIREMENTS.find((requirement) => {
     const aliases = [requirement.key, ...requirement.aliases].map(normalizeDocumentMatchKey)
     return aliases.some((alias) =>
-      signals.some((signal) => canonical ? signal === alias : normalizedDocumentKeyContainsAlias(signal, alias)),
+      signals.some((signal) => normalizedDocumentKeyContainsAlias(signal, alias)),
     )
   }) || null
 }
@@ -312,8 +306,9 @@ function getDocumentLookupKeys(document = {}) {
 }
 
 function documentMatchesRequirement(document = {}, requirement = {}) {
-  const explicitMatch = matchDocumentRequirementLink(document, requirement)
-  if (explicitMatch !== null) return explicitMatch
+  const requirementId = toText(requirement?.id || requirement?.requirement_id)
+  const documentRequirementId = toText(document?.requirementId || document?.requirement_id)
+  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
@@ -333,8 +328,7 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
-  return uploadedDocuments.find(document => matchDocumentRequirementLink(document, requirement) === true) ||
-    uploadedDocuments.find(document => documentMatchesRequirement(document, requirement)) || null
+  return uploadedDocuments.find((document) => documentMatchesRequirement(document, requirement)) || null
 }
 
 function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new Map(), uploadedDocuments = []) {
@@ -347,13 +341,11 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
       : requirement?.uploaded_document && typeof requirement.uploaded_document === 'object'
         ? requirement.uploaded_document
         : null
-  const suppliedDocument = embeddedLinkedDocument || (
+  const linkedDocument = embeddedLinkedDocument || (
     uploadedDocumentId
       ? uploadedDocumentsById.get(uploadedDocumentId) || null
-      : null
+      : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
   )
-  const linkedDocument = suppliedDocument && matchDocumentRequirementLink(suppliedDocument, requirement) !== false
-    ? suppliedDocument : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
   const linkedStatus = linkedDocument ? normalizeDocumentStatus(linkedDocument?.status || 'uploaded') : ''
   const status = linkedDocument && ['required', 'requested'].includes(requirementStatus)
     ? linkedStatus
@@ -366,7 +358,7 @@ function normalizeRequiredDocument(requirement = {}, uploadedDocumentsById = new
     description: toText(requirement?.description || requirement?.requirement_description, 'This document is needed before your transaction can move forward.'),
     group: toText(requirement?.requirement_group || requirement?.group || requirement?.groupKey),
     status,
-    required: isDocumentRequirementRequired(requirement),
+    required: requirement?.required !== false && requirement?.is_required !== false && requirement?.isRequired !== false,
     rejectionReason: toText(requirement?.rejectionReason || requirement?.rejection_reason),
     linkedDocument,
     hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
@@ -482,7 +474,7 @@ function normalizeDocumentCentreItem(item = {}) {
     description: toText(item?.description || item?.notes, 'Supporting document required for your transaction.'),
     group: toText(item?.group || item?.requirement_group || item?.category),
     status: normalizeDocumentStatus(item?.status || 'required'),
-    required: isDocumentRequirementRequired(item),
+    required: item?.required !== false && item?.is_required !== false && item?.isRequired !== false,
     rejectionReason: toText(item?.rejectionReason || item?.rejection_reason),
     linkedDocument,
     hasUploadedDocument: Boolean(item?.hasUploadedDocument || item?.has_uploaded_document || linkedDocument),

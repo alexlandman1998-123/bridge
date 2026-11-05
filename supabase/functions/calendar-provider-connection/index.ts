@@ -1,11 +1,12 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 // Pinned dependency follows the existing Edge Function entrypoint pattern.
 // deno-lint-ignore no-import-prefix
 import { createClient } from "npm:@supabase/supabase-js@2.49.9";
 import { handleCalendarProviderConnection } from "../_shared/calendarProviderRuntime.ts";
 import { calendarProviderConfig } from "../_shared/calendarProviderConfig.ts";
-Deno.serve((request) => {
+Deno.serve(withApiCredentials((request) => {
   const config = calendarProviderConfig(),
-    secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    secret = supabaseServiceKey() || "";
   if (!config.supabaseUrl || !secret) {
     return new Response("Calendar connections are not configured.", {
       status: 503,
@@ -22,4 +23,4 @@ Deno.serve((request) => {
       return error ? null : data.user;
     },
   });
-});
+}));

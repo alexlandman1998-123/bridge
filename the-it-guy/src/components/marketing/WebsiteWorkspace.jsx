@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMarketingNavigate as useNavigate } from './MarketingNavigation.jsx'
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpRight, CalendarDays, ChevronRight, FileText, Globe2, GripVertical, ImagePlus, Lightbulb, LockKeyhole, MessageCircle, Pencil, Plus, UserPlus, Users } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
 import { createWebsiteBlogPost, createWebsiteDraft, createWebsiteSite, discardWebsiteDraft, getWebsiteWorkspaceOverview, manageWebsiteBlogPost, manageWebsiteDomain, publishWebsiteDraft, resetWebsiteDraftBrand, saveWebsiteDraftBrand, saveWebsiteDraftPage, setWebsiteDraftTemplate, updateWebsiteBlogMedia, updateWebsiteBlogPost, uploadWebsiteBlogMedia } from '../../services/websiteWorkspaceService'

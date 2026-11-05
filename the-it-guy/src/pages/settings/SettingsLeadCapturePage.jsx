@@ -663,7 +663,7 @@ export default function SettingsLeadCapturePage({ section = 'meta', embedded = f
     const features = card?.agentDigitalCard?.features || {}
     const profile = card?.agentDigitalCard?.profile || {}
     const rollout = card?.agentDigitalCard?.rollout || {}
-    const enabledIntents = card?.enabledIntents || ['buy', 'sell']
+    const enabledIntents = card?.enabledIntents || ['buy', 'sell', 'rent']
     return {
       name: normalizeText(cardAgent.name) || getUserDisplayName(user),
       email: normalizeText(cardAgent.email) || getUserEmail(user),
@@ -725,7 +725,7 @@ export default function SettingsLeadCapturePage({ section = 'meta', embedded = f
         buyerCtaLabel: overrides.buyerCtaLabel ?? card?.buyerCtaLabel ?? 'I am looking to buy',
         sellerCtaLabel: overrides.sellerCtaLabel ?? card?.sellerCtaLabel ?? 'I am looking to sell',
         rentalCtaLabel: overrides.rentalCtaLabel ?? card?.rentalCtaLabel ?? 'I am looking to rent',
-        enabledIntents: overrides.enabledIntents ?? card?.enabledIntents ?? ['buy', 'sell'],
+        enabledIntents: overrides.enabledIntents ?? card?.enabledIntents ?? ['buy', 'sell', 'rent'],
         defaultBranchId: card?.defaultBranchId || user.branchId || user.branch_id,
         agentUserId: userId,
         agentName: value('agentName', cardAgent.name, getUserDisplayName(user)),
@@ -819,7 +819,7 @@ export default function SettingsLeadCapturePage({ section = 'meta', embedded = f
           organisationId,
           organisationName,
           status: 'active',
-          enabledIntents: ['buy', 'sell'],
+          enabledIntents: ['buy', 'sell', 'rent'],
           defaultBranchId: user.branchId || user.branch_id,
           agentUserId: getUserId(user),
           agentName: getUserDisplayName(user),

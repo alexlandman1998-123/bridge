@@ -121,7 +121,8 @@ function runPersistenceAndSubmissionContract() {
 
   assertContains(persistSource, 'buildLegacyBondApplicationPersistencePayload({')
   assertContains(persistenceSource, 'bond_application: cloneBondApplicationValue(legacyBondApplication) || {}')
-  assertContains(persistSource, 'saveClientPortalOnboardingDraft({')
+  assertContains(persistSource, 'saveBuyerBondApplicationRuntimeDraft({')
+  assertContains(persistSource, 'expectedRevision: bondRuntimeRevision.current')
   assertContains(persistenceSource, 'submitted_at: submitted ? timestamp : legacyBondApplication?.submitted_at || \'\'')
   assert.equal(persistSource.includes('transaction_bond_applications'), false)
 
@@ -144,8 +145,9 @@ function runPersistenceAndSubmissionContract() {
   assertContains(validationSource, 'Please complete the declarations, consents, and digital signature')
   assertContains(validationSource, 'selected_banks')
   assertContains(validationSource, 'Select at least one bank before submitting your bond application.')
-  assertContains(submitSource, 'status: \'Submitted\'')
-  assertContains(submitSource, '{ submitted: true }')
+  assertContains(submitSource, 'persistBondApplicationDraft(bondApplicationDraft)')
+  assertContains(submitSource, 'navigate(`/client/${encodeURIComponent(token)}/bond-application`)')
+  assert.equal(submitSource.includes("status: 'Submitted'"), false, 'The legacy form must not invent a submitted receipt before the signing workflow')
 }
 
 function runViewModelContract() {
@@ -204,9 +206,9 @@ function runUnitDetailOffersGrantAndWorkflowContract() {
   assertContains(unitDetailSource, 'coBondApplicant')
   assertContains(unitDetailSource, 'selectedBondBanks')
 
-  assertContains(clientPortalSource, "{ key: 'application', label: 'Application' }")
-  assertContains(clientPortalSource, "{ key: 'offers', label: 'Offers' }")
-  assertContains(clientPortalSource, "{ key: 'grant', label: 'Grant' }")
+  assertContains(clientPortalSource, "activeBondApplicationTab === 'application'")
+  assertContains(clientPortalSource, 'handleAcceptBondOffer(offer)')
+  assertContains(clientPortalSource, 'handleUploadSignedBondOffer(file, displayedAcceptedBondOffer)')
   assertContains(clientPortalSource, "activeBondApplicationTab === 'offers'")
   assertContains(clientPortalSource, "activeBondApplicationTab === 'grant'")
 

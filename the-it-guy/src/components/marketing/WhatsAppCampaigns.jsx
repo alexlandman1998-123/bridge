@@ -1,11 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import CampaignWhatsAppWording from './CampaignWhatsAppWording'
 import ChannelWorkspaceTemplates from './ChannelWorkspaceTemplates'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CircleAlert, Plus, Check, CheckCircle2, ChevronRight, Eye, MessageCircle, RefreshCw, Search, Send, UsersRound, Circle, Save, ShieldCheck, Smartphone } from 'lucide-react'
-import { CampaignAudiencePicker } from './WhatsAppAudiences'
 import { useAuthSession } from '../../context/AuthSessionContext'
 import { whatsappCampaignRequest } from '../../services/whatsappCampaignService'
 import { buildTemplateMessage, MAX_CAMPAIGN_RECIPIENTS, previewTemplate, resolveValue, templateFields, templateIdentity } from '../../../../supabase/functions/_shared/whatsappCampaign.js'
+
+import CampaignWhatsAppWording from './CampaignWhatsAppWording'
 
 import './WhatsAppCampaignLanding.css'
 import './WhatsAppCampaignBuilder.css'
@@ -17,40 +17,27 @@ const STEPS = ['Campaign', 'Audience', 'Message', 'Review']
 const EMPTY = { campaigns: [], contacts: [], senders: [] }
 const fmt = (value) => Number(value || 0).toLocaleString()
 const date = (value) => value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'
-const localDateInput = (value) => { const d = new Date(value); return Number.isFinite(d.getTime()) ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '' }
-const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 const statusLabel = (value) => ({ needs_attention: 'Needs attention', partial: 'Partially sent', processing: 'Sending', unknown: 'Unconfirmed' }[value] || value)
 function useOrg() {
   const { authState } = useAuthSession()
   return String(authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '')
 }
-function useCampaignScope(org) {
-  const { authState } = useAuthSession()
-  const member = authState?.currentMembership || {}
-  const roles = [member.role, member.workspaceRole, member.workspace_role, member.organisationRole, member.organisation_role, member.status, member.membershipStatus].filter(Boolean).join('|')
-  return `${org}:${authState?.user?.id || ''}:${roles}`
-}
 function useWorkspace(org) {
-  const scope = useCampaignScope(org)
-  const [state, setState] = useState({ ...EMPTY, scope: '', loading: true, error: '' })
+  const [state, setState] = useState({ ...EMPTY, org: '', loading: true, error: '' })
   const generation = useRef(0)
   const refresh = useCallback(async () => {
     const request = ++generation.current
-    if (!org) { setState({ ...EMPTY, scope, loading: false, error: 'Choose an organisation workspace to use WhatsApp campaigns.' }); return }
-    setState((s) => ({ ...(s.scope === scope ? s : EMPTY), scope, loading: true, error: '' }))
+    if (!org) { setState({ ...EMPTY, org, loading: false, error: 'Choose an organisation workspace to use WhatsApp campaigns.' }); return }
+    setState((s) => ({ ...(s.org === org ? s : { ...EMPTY, org }), loading: true, error: '' }))
     try {
       const data = await whatsappCampaignRequest(org, 'workspace')
-      if (generation.current === request) setState({ ...data, scope, loading: false, error: '' })
+      if (generation.current === request) setState({ ...data, org, loading: false, error: '' })
     } catch (error) {
-      if (generation.current === request) setState({ ...EMPTY, scope, loading: false, error: error.message })
+      if (generation.current === request) setState((s) => ({ ...s, org, loading: false, error: error.message }))
     }
-  }, [org, scope])
-  const invalidate = useCallback(() => { generation.current++ }, [])
-  useEffect(() => {
-    const timer = window.setTimeout(() => { void refresh() }, 0)
-    return () => { window.clearTimeout(timer); invalidate() }
-  }, [refresh, invalidate])
-  return { ...(state.scope === scope ? state : { ...EMPTY, loading: true, error: '' }), accessScope: scope, refresh }
+  }, [org])
+  useEffect(() => { void refresh(); return () => { generation.current++ } }, [refresh])
+  return { ...(state.org === org ? state : { ...EMPTY, loading: true, error: '' }), refresh }
 }
 function Status({ value }) { return <span className={`wa-status wa-status-${value} wa-status-${value === 'sent' || value === 'read' || value === 'delivered' ? 'sent' : 'draft'}`}>{statusLabel(value)}</span> }
 function ErrorNotice({ children }) { return children ? <p className="wa-error" role="alert">{children}</p> : null }
@@ -127,16 +114,16 @@ export function WhatsAppCampaignOverview({ onCreateCampaign, onOpenCampaign, sel
   const filtered = listed.filter((c) => String(c.name || '').toLowerCase().includes(search.trim().toLowerCase()) && (status === 'all' || c.display_status === status) && (days === 'all' || new Date(c.sent_at || c.created_at).getTime() >= Date.now() - Number(days) * 86400000))
   const pages = Math.max(1, Math.ceil(filtered.length / 10))
   const currentPage = Math.min(page, pages)
-  const statuses = view === 'past' ? ['all', ...terminal] : ['all', 'draft', 'scheduled', 'sending', 'paused', 'sent', 'partial', 'failed', 'needs_attention', 'cancelled']
+  const statuses = view === 'past' ? ['all', ...terminal] : ['all', 'draft', 'sending', 'sent', 'partial', 'failed', 'needs_attention']
   const unavailable = loading || error
   return <div className="wa-page wa-live email-page email-landing whatsapp-landing">
     <header className="email-landing-heading"><h1>WhatsApp campaigns</h1><button type="button" className="wa-primary-button" disabled={!org} onClick={() => onCreateCampaign()}><Plus size={17} />Create campaign</button></header>
     <LandingStats campaigns={campaigns} loading={loading} error={error} />
-    <nav className="email-workspace-nav" aria-label="WhatsApp workspace">{[['overview', 'Overview'], ['past', 'Past campaigns'], ['audiences', 'Audiences'], ['settings', 'Settings']].map(([value, label]) => <button type="button" key={value} aria-current={view === value ? 'page' : undefined} onClick={() => selectView(value)}>{label}</button>)}</nav>
+    <nav className="email-workspace-nav" aria-label="WhatsApp workspace">{[['overview', 'Overview'], ['past', 'Past campaigns'], ['templates', 'Templates'], ['audiences', 'Audiences'], ['settings', 'Settings']].map(([value, label]) => <button type="button" key={value} aria-current={view === value ? 'page' : undefined} onClick={() => selectView(value)}>{label}</button>)}</nav>
     <ErrorNotice>{error}</ErrorNotice>
     {view === 'templates' ? <ChannelWorkspaceTemplates key={org} channel="whatsapp" organisationId={org} /> : view === 'audiences' ? <><Suspense fallback={<p role="status">Opening shared audiences…</p>}><MarketingAudiences key={org} organisationId={org} channel="whatsapp" /></Suspense><details className="ma-legacy"><summary>Manage WhatsApp contacts & permission</summary>{loading ? <p role="status">Loading contacts…</p> : !error && <ContactManager key={org} org={org} contacts={contacts} onSaved={refresh} />}</details></> : view === 'settings' ? <div className="email-support-grid"><WhatsAppSendingSetup senders={senders} loading={loading} error={error} /><section className="email-usage-panel"><span className="email-eyebrow">MESSAGE TEMPLATES</span><h3>Approved messages, ready to send</h3><p>Manage your templates in WhatsApp Manager, then choose an approved template and language when creating a campaign.</p><p>Your sender, template, recipient permission and message values are checked before sending.</p></section></div> : <>
       <section className="email-campaigns-panel" aria-label="Campaigns">
-        <div className="email-list-heading"><div><h2>{view === 'past' ? 'Past campaigns' : 'Your campaigns'} <span>{unavailable ? '—' : fmt(listed.length)}</span></h2><p>{view === 'past' ? 'Review completed campaigns and sends that need attention.' : 'Pick up a draft or see how your latest message performed.'}</p></div><button className="wa-refresh" type="button" disabled={loading} onClick={refresh}><RefreshCw size={14} />{loading ? 'Refreshing…' : 'Refresh results'}</button></div>
+        <div className="email-list-heading"><div><h2>{view === 'past' ? 'Past campaigns' : 'Your campaigns'} <span>{unavailable ? '—' : fmt(listed.length)}</span></h2>{view === 'past' && <p>Review completed campaigns and sends that need attention.</p>}</div><button className="wa-refresh" type="button" disabled={loading} onClick={refresh}><RefreshCw size={14} />{loading ? 'Refreshing…' : 'Refresh results'}</button></div>
         <div className="wa-tabs email-campaign-tabs" aria-label="Campaign status">{statuses.map((value) => <button type="button" className={status === value ? 'wa-tab-active' : ''} aria-pressed={status === value} onClick={() => { setStatus(value); setPage(1) }} key={value}>{value === 'all' ? 'All campaigns' : statusLabel(value)}<span aria-hidden="true">{unavailable ? '—' : listed.filter((c) => value === 'all' || c.display_status === value).length}</span></button>)}</div>
         <div className="email-list-toolbar"><label className="email-campaign-search"><Search size={16} /><input aria-label="Search campaigns" type="search" placeholder="Search campaigns…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></label><select className="wa-filter-control" aria-label="Campaign period" value={days} onChange={(event) => { setDays(event.target.value); setPage(1) }}><option value="all">All time</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></div>
         <div className="email-campaign-table-wrap">
@@ -148,7 +135,7 @@ export function WhatsAppCampaignOverview({ onCreateCampaign, onOpenCampaign, sel
               <span className="email-campaign-name"><span className="email-campaign-cover wa-landing-cover">{header?.format === 'IMAGE' && /^https:\/\//i.test(preview || '') ? <img src={preview} alt="" loading="lazy" /> : <MessageCircle size={28} />}<span className="wa-landing-cover-label">WhatsApp</span></span><span><strong>{campaign.name || 'Untitled campaign'}</strong><small>{campaign.template?.name || 'Choose an approved template'}</small><small className="email-resume-draft">{draft ? 'Continue editing' : 'View results'} <ChevronRight size={12} /></small></span></span>
               <span className="email-table-audience"><strong>{fmt(draft ? campaign.contact_ids?.length : campaign.recipients)} recipients</strong><small>{campaign.template?.language || 'Language not selected'}</small></span>
               <Status value={campaign.display_status} />
-              <span className="email-table-activity"><small>{draft ? 'Draft updated' : campaign.display_status === 'scheduled' ? 'Scheduled for' : 'Sending started'}</small><strong>{date(draft ? campaign.updated_at || campaign.created_at : campaign.display_status === 'scheduled' ? campaign.scheduled_at : campaign.sent_at)}</strong></span>
+              <span className="email-table-activity"><small>{draft ? 'Draft updated' : 'Sending started'}</small><strong>{date(draft ? campaign.updated_at || campaign.created_at : campaign.sent_at)}</strong></span>
               <span className="email-table-results">{draft ? <small>Not sent yet</small> : <><strong>{fmt(campaign.delivered)} delivered</strong><small>{fmt(campaign.read)} read · {fmt(campaign.failed)} failed</small><small>{fmt(campaign.skipped)} skipped{campaign.uncertain > 0 ? ` · ${fmt(campaign.uncertain)} unconfirmed` : ''}</small></>}</span><ChevronRight size={17} />
             </button>
           })}</div> : <div className="email-compact-empty"><span className="email-empty-icon"><MessageCircle size={24} /></span><div><strong>{search || status !== 'all' || days !== 'all' ? 'No matching campaigns' : view === 'past' ? 'No past campaigns yet' : 'Your first campaign starts here'}</strong><p>{search || status !== 'all' || days !== 'all' ? 'Try another search or filter.' : view === 'past' ? 'Completed campaigns and sends needing attention will appear here.' : 'Add your contacts, choose an approved template and save your first draft.'}</p></div></div>}
@@ -191,7 +178,7 @@ export function CreateWhatsAppCampaign({ campaignId, onBack, onDraftCreated, dev
   if (!org || (workspace.loading && !workspace.campaigns.length && !workspace.senders.length && !workspace.contacts.length)) return <div className="wa-page wa-live"><ErrorNotice>{workspace.error}</ErrorNotice><p>{org ? 'Loading campaign workspace…' : 'Choose an organisation workspace.'}</p><button onClick={onBack}>Back</button></div>
   if (workspace.error || (campaignId && !initial)) return <div className="wa-page wa-live"><ErrorNotice>{workspace.error || 'Campaign not found in this organisation.'}</ErrorNotice><button onClick={workspace.refresh}>Try again</button><button onClick={onBack}>Back</button></div>
   if (initial && initial.status !== 'draft') return <div className="wa-page wa-live"><p>This campaign has already started and can no longer be edited.</p><button onClick={onBack}>Back to campaigns</button></div>
-  return <CampaignEditor key={`${workspace.accessScope}:${campaignId || 'new'}`} org={org} initial={initial} workspace={workspace} onBack={onBack} onDraftCreated={onDraftCreated} developmentContext={developmentContext} onOpenMarketingCampaign={onOpenMarketingCampaign} />
+  return <CampaignEditor key={`${org}:${campaignId || 'new'}`} org={org} initial={initial} workspace={workspace} onBack={onBack} onDraftCreated={onDraftCreated} developmentContext={developmentContext} onOpenMarketingCampaign={onOpenMarketingCampaign} />
 }
 function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, developmentContext, onOpenMarketingCampaign }) {
   const [draft, setDraft] = useState(() => initial || { client_id: crypto.randomUUID(), name: developmentContext ? `${developmentContext.development_name} campaign` : '', sender_id: '', template: {}, parameter_values: developmentContext ? { __arch9_context: developmentContext } : {}, contact_ids: [] })
@@ -206,7 +193,6 @@ function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, devel
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [confirmed, setConfirmed] = useState(false)
-  const [sendLater, setSendLater] = useState(Boolean(initial?.scheduled_at))
   const [preflight, setPreflight] = useState(null)
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
@@ -224,7 +210,6 @@ function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, devel
   const { fields, unsupported } = templateFields(draft.template)
   const validation = () => {
     if (!draft.name.trim()) return 'Add a campaign name.'
-    if (sendLater && (!draft.scheduled_at || new Date(draft.scheduled_at).getTime() <= Date.now())) return 'Choose a future sending time.'
     if (!draft.sender_id) return 'Choose a connected sender.'
     if (!selected.length || selected.length !== draft.contact_ids.length) return 'Choose your recipients.'
     if (selected.some((c) => c.consent_status !== 'opted_in' || c.opted_out_at)) return 'Remove recipients without current WhatsApp permission.'
@@ -236,7 +221,7 @@ function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, devel
     return campaign
   }
   const saveOnly = async () => {
-    setBusy(true); setError(''); setPreflight(null); setConfirmed(false)
+    setBusy(true); setError('')
     try { const row = await save(); setNotice('Draft saved.'); onDraftCreated?.(row.id) } catch (err) { setError(err.message) } finally { if (alive.current) setBusy(false) }
   }
   const check = async () => {
@@ -249,10 +234,17 @@ function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, devel
     setBusy(true); setError('')
     try {
       await whatsappCampaignRequest(org, 'prepare', { campaignId: draft.id, revision: preflight.revision })
-      if (alive.current) { setPreflight(null); onBack() }
-    } catch (err) { if (alive.current) { setError(`${err.message} Reopen campaign results to check whether it was queued.`); setPreflight(null) } } finally { if (alive.current) setBusy(false) }
+      setPreflight(null)
+      let more = true
+      while (more && alive.current) {
+        const { campaign } = await whatsappCampaignRequest(org, 'dispatch', { campaignId: draft.id })
+        more = campaign.queued > 0
+        if (alive.current) setNotice(`${campaign.recipients - campaign.queued} of ${campaign.recipients} recipients processed. ${campaign.accepted} accepted by Meta.`)
+      }
+      if (alive.current) onBack()
+    } catch (err) { if (alive.current) { setError(`${err.message} If sending has started, open the campaign results to resume remaining recipients.`); setPreflight(null) } } finally { if (alive.current) setBusy(false) }
   }
-  const toggle = (id) => { const ids=draft.contact_ids.includes(id)?draft.contact_ids.filter(c=>c!==id):[...draft.contact_ids,id]; const plan=draft.audience_plan;update({contact_ids:ids,...(plan?.audienceId?{audience_plan:plan.targets.some(row=>row.contactId===id)?{...plan,targets:plan.targets.filter(row=>ids.includes(row.contactId))}:null}:{})}) }
+  const toggle = (id) => update({ contact_ids: draft.contact_ids.includes(id) ? draft.contact_ids.filter((c) => c !== id) : [...draft.contact_ids, id] })
   const sender = workspace.senders.find((item) => item.id === draft.sender_id)
   const connected = sender?.connection_status === 'connected'
   const permissionReady = selected.length > 0 && selected.length === draft.contact_ids.length && selected.every((contact) => contact.consent_status === 'opted_in' && !contact.opted_out_at)
@@ -281,10 +273,10 @@ function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, devel
     <div key={step} className="wa-builder-content" role="region" aria-label="Campaign form" tabIndex={0}>
     <nav className="wa-builder-steps" aria-label="Campaign steps"><ol className="wa-step-header">{STEPS.map((label, i) => <li key={label} className={step === i + 1 ? 'wa-step-active' : ''}><button type="button" disabled={busy || i + 1 > step} aria-current={step === i + 1 ? 'step' : undefined} onClick={() => { setStep(i + 1); setError(''); setPreflight(null); setConfirmed(false) }}><span className="wa-step-number">{i + 1}</span><span className="wa-step-copy"><strong>{label}</strong><small>{stepDescriptions[i]}</small></span></button></li>)}</ol></nav><ErrorNotice>{error}</ErrorNotice>
     <div className="wa-create-grid"><section className="wa-form-card"><div className="wa-card-heading"><span>Step {step} of 4</span><h2>{stepTitles[step - 1]}</h2><p>{stepNotes[step - 1]}</p></div><fieldset disabled={busy} className="wa-editor-fields">
-      {step === 1 && <><label className="wa-field-label"><span>Campaign name</span><input maxLength={100} value={draft.name} onChange={(e) => update({ name: e.target.value })} placeholder="e.g. New listings in Pretoria East" /></label><label className="wa-field-label"><span>WhatsApp sender</span><select value={draft.sender_id || ''} onChange={(e) => update({ sender_id: e.target.value, template: {}, parameter_values: retainedContext(draft.parameter_values) })}><option value="">Select a sender</option>{workspace.senders.map((s) => <option key={s.id} value={s.id} disabled={s.connection_status !== 'connected'}>{s.business_display_name || 'WhatsApp Business'} · {s.display_phone_number || s.phone_number_id} ({s.connection_status})</option>)}</select></label><p>Category and language come from your approved template. Choose immediate or scheduled delivery in the final review step. Nothing is sent until you confirm.</p><SenderNotice senders={workspace.senders} /></>}
-      {step === 2 && <><Suspense fallback={<p role="status">Opening shared audiences…</p>}><MarketingAudiencePicker key={workspace.accessScope} organisationId={org} channel="whatsapp" onApply={async (ids, audience) => { await workspace.refresh(); if (alive.current) { update({ contact_ids: ids, audience_plan: null }); setNotice(`Applied ${ids.length} reviewed recipients from “${audience.name}”.`); } }} /></Suspense><details><summary>Other saved WhatsApp audiences</summary><CampaignAudiencePicker value={draft.audience_plan} onApply={update}/></details><p>Select up to {MAX_CAMPAIGN_RECIPIENTS} recipients with recorded WhatsApp permission. Each phone number receives one message.</p><div className="wa-inline-actions"><strong>{draft.contact_ids.length} selected</strong><button type="button" className="wa-secondary-button" onClick={() => setManage(!manage)}>{manage ? 'Close contact form' : 'Add / manage contacts'}</button><button className="wa-secondary-button" onClick={() => update({ contact_ids: [] })}>Clear selection</button></div><input aria-label="Find recipients" placeholder="Search by name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} /><div className="wa-contact-list">{workspace.contacts.filter((c) => `${c.full_name} ${c.phone}`.toLowerCase().includes(search.toLowerCase())).map((c) => { const allowed = eligible.some((x) => x.id === c.id); const checked = draft.contact_ids.includes(c.id); return <label className="wa-contact-row" key={c.id}><input type="checkbox" checked={checked} disabled={!checked && (!allowed || draft.contact_ids.length >= MAX_CAMPAIGN_RECIPIENTS)} onChange={() => toggle(c.id)} /><span><strong>{c.full_name}</strong><small>+{c.phone} · {allowed ? 'Opted in' : 'No current permission'}</small></span></label> })}</div>{!workspace.contacts.length && <p>No contacts yet. Add a contact and record their permission to get started.</p>}</>}
+      {step === 1 && <><label className="wa-field-label"><span>Campaign name</span><input maxLength={100} value={draft.name} onChange={(e) => update({ name: e.target.value })} placeholder="e.g. New listings in Pretoria East" /></label><label className="wa-field-label"><span>WhatsApp sender</span><select value={draft.sender_id || ''} onChange={(e) => update({ sender_id: e.target.value, template: {}, parameter_values: retainedContext(draft.parameter_values) })}><option value="">Select a sender</option>{workspace.senders.map((s) => <option key={s.id} value={s.id} disabled={s.connection_status !== 'connected'}>{s.business_display_name || 'WhatsApp Business'} · {s.display_phone_number || s.phone_number_id} ({s.connection_status})</option>)}</select></label><p>Category and language come from your approved template. Delivery starts only after your final confirmation; scheduling is not available yet.</p><SenderNotice senders={workspace.senders} /></>}
+      {step === 2 && <><Suspense fallback={<p role="status">Opening shared audiences…</p>}><MarketingAudiencePicker key={org} organisationId={org} channel="whatsapp" onApply={async (ids, audience) => { await workspace.refresh(); update({ contact_ids: ids }); setNotice(`Applied ${ids.length} reviewed recipients from “${audience.name}”.`) }} /></Suspense><p>Select up to {MAX_CAMPAIGN_RECIPIENTS} recipients with recorded WhatsApp permission. Each phone number receives one message.</p><div className="wa-inline-actions"><strong>{draft.contact_ids.length} selected</strong><button type="button" className="wa-secondary-button" onClick={() => setManage(!manage)}>{manage ? 'Close contact form' : 'Add / manage contacts'}</button><button className="wa-secondary-button" onClick={() => update({ contact_ids: [] })}>Clear selection</button></div><input aria-label="Find recipients" placeholder="Search by name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} /><div className="wa-contact-list">{workspace.contacts.filter((c) => `${c.full_name} ${c.phone}`.toLowerCase().includes(search.toLowerCase())).map((c) => { const allowed = eligible.some((x) => x.id === c.id); const checked = draft.contact_ids.includes(c.id); return <label className="wa-contact-row" key={c.id}><input type="checkbox" checked={checked} disabled={!checked && (!allowed || draft.contact_ids.length >= MAX_CAMPAIGN_RECIPIENTS)} onChange={() => toggle(c.id)} /><span><strong>{c.full_name}</strong><small>+{c.phone} · {allowed ? 'Opted in' : 'No current permission'}</small></span></label> })}</div>{!workspace.contacts.length && <p>No contacts yet. Add a contact and record their permission to get started.</p>}</>}
       {step === 3 && <><p>Templates are loaded from your sender’s WhatsApp Business Account. Create or edit templates in <a href="https://business.facebook.com/wa/manage/" target="_blank" rel="noreferrer">WhatsApp Manager</a>, then refresh here.</p><div className="wa-inline-actions"><button className="wa-secondary-button" disabled={templateLoading || !draft.sender_id} onClick={() => setTemplateRefresh((n) => n + 1)}><RefreshCw size={15} /> Refresh templates</button>{templateLoading && <span role="status">Loading from Meta…</span>}</div><ErrorNotice>{templateError}</ErrorNotice><label className="wa-field-label"><span>Approved template & language</span><select value={draft.template?.id || ''} onChange={(e) => update({ template: templates.find((t) => t.id === e.target.value) || {}, parameter_values: retainedContext(draft.parameter_values) })}><option value="">Choose a template</option>{draft.template?.id && !templates.some((t) => t.id === draft.template.id) && <option value={draft.template.id}>{draft.template.name} · saved selection (refresh to verify)</option>}{templates.map((t) => <option key={t.id} value={t.id} disabled={t.status !== 'APPROVED' || templateFields(t).unsupported.length > 0}>{t.name} · {t.language} · {t.category} · {t.status}{templateFields(t).unsupported.length ? ' · unsupported format' : ''}</option>)}</select></label>{!templateLoading && !templateError && draft.sender_id && !templates.length && <p>No templates found. Create a marketing or utility template in WhatsApp Manager and wait for approval.</p>}{draft.template?.id && <><dl className="wa-builder-template-meta">{[['Template name', draft.template.name], ['Category', draft.template.category], ['Language', draft.template.language], ['Meta status', draft.template.status]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{unsupported.length > 0 && <ErrorNotice>{unsupported.join(' ')}</ErrorNotice>}{fields.map((field) => <div className="wa-field-label" key={field.key}><label htmlFor={`wa-${field.key}`}>{field.label}</label>{field.kind === 'text' && field.section !== 'button' && <select aria-label={`${field.label} value source`} value={draft.parameter_values[field.key]?.source || 'text'} onChange={(e) => update({ parameter_values: { ...draft.parameter_values, [field.key]: { source: e.target.value, text: draft.parameter_values[field.key]?.text || '' } } })}><option value="text">Same value for everyone</option><option value="first_name">Recipient first name</option><option value="full_name">Recipient full name</option></select>}{(!draft.parameter_values[field.key]?.source || draft.parameter_values[field.key]?.source === 'text') && <input id={`wa-${field.key}`} type={field.kind === 'text' ? 'text' : 'url'} maxLength={1024} placeholder={field.kind === 'text' ? 'Enter value' : 'https://…'} value={draft.parameter_values[field.key]?.text || ''} onChange={(e) => update({ parameter_values: { ...draft.parameter_values, [field.key]: { source: 'text', text: e.target.value } } })} />}{field.kind !== 'text' && <small>Use a public HTTPS {field.kind} link that Meta can download. The media must match this template’s header format.</small>}</div>)}</>}</>}
-      {step === 4 && <><dl className="wa-review"><dt>Campaign</dt><dd>{draft.name}</dd><dt>Sender</dt><dd>{workspace.senders.find((s) => s.id === draft.sender_id)?.display_phone_number || 'Not selected'}</dd><dt>Audience</dt><dd>{selected.length} recipients</dd><dt>Template</dt><dd>{draft.template?.name || 'Not selected'} · {draft.template?.language}</dd></dl><p>Check readiness to verify current Meta approval, recipient permission and every personalised value. Sending may incur Meta charges. Delivery and read results update from WhatsApp callbacks. Arch9 sends in the background, even after you close this page. Scheduled campaigns begin on or shortly after the chosen time; large campaigns send in batches.</p><label className="wa-field-label"><span>Delivery timing</span><select value={sendLater ? 'later' : 'now'} onChange={(e) => { const later = e.target.value === 'later'; setSendLater(later); update({ scheduled_at: later ? new Date(Date.now() + 3600000).toISOString() : null }) }}><option value="now">Send now</option><option value="later">Schedule for later</option></select></label>{sendLater && <label className="wa-field-label"><span>Scheduled sending time</span><input type="datetime-local" value={draft.scheduled_at ? localDateInput(draft.scheduled_at) : ''} onChange={(e) => { const selectedTime = new Date(e.target.value); update({ scheduled_at: Number.isFinite(selectedTime.getTime()) ? selectedTime.toISOString() : null }) }} /><small>Time zone: {localTimeZone}. Permission and Meta approval are checked again when sending begins.</small></label>}<button className="wa-secondary-button" onClick={check}>Check readiness</button>{preflight && <><p className="wa-notice" role="status">Ready to send to {preflight.recipients} recipients{sendLater ? ` on ${date(draft.scheduled_at)} (${localTimeZone})` : ''}.</p><label className="wa-checkbox"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />I have reviewed the message, audience and {sendLater ? 'scheduled time' : 'sending time'}, and want to {sendLater ? 'schedule' : 'send'} this campaign.</label><button className="wa-primary-button" disabled={!confirmed} onClick={send}><Send size={16} /> {sendLater ? 'Schedule for' : 'Send to'} {preflight.recipients} recipients</button></>}</>}
+      {step === 4 && <><dl className="wa-review"><dt>Campaign</dt><dd>{draft.name}</dd><dt>Sender</dt><dd>{workspace.senders.find((s) => s.id === draft.sender_id)?.display_phone_number || 'Not selected'}</dd><dt>Audience</dt><dd>{selected.length} recipients</dd><dt>Template</dt><dd>{draft.template?.name || 'Not selected'} · {draft.template?.language}</dd></dl><p>Check readiness to verify current Meta approval, recipient permission and every personalised value. Sending may incur Meta charges. Delivery and read results update from WhatsApp callbacks. Keep this page open while sending; if you leave, resume unsent recipients from campaign results.</p><button className="wa-secondary-button" onClick={check}>Check readiness</button>{preflight && <><p className="wa-notice" role="status">Ready to send to {preflight.recipients} recipients.</p><label className="wa-checkbox"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />I have reviewed the message and audience, and want to send this campaign now.</label><button className="wa-primary-button" disabled={!confirmed} onClick={send}><Send size={16} /> Send to {preflight.recipients} recipients</button></>}</>}
     </fieldset></section>
       <div className="wa-builder-sidebar"><section className="wa-builder-readiness"><div className="wa-info-heading"><ShieldCheck size={18} /><h2>Campaign readiness</h2></div><p>Ready when all five checks are complete.</p><ul>{requirements.map(([label, ready]) => <li key={label} className={ready ? 'is-ready' : ''}>{ready ? <CheckCircle2 size={17} /> : <Circle size={17} />}<span>{label}</span><small>{ready ? 'Ready' : 'Pending'}</small></li>)}</ul></section><aside className="wa-info-panel"><div className="wa-info-heading"><MessageCircle size={18} /><strong>Message preview</strong></div><p>{selected[0] ? `Preview for ${selected[0].full_name}` : 'Choose a recipient to preview personalisation.'}</p>{draft.template?.components?.some((c) => c.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(c.format)) && <div className="wa-media-preview">{draft.template.components.find((c) => c.type === 'HEADER')?.format} header<br /><small>{resolveValue(draft.parameter_values['header.media'], selected[0]) || 'Add a media URL'}</small></div>}<div className="wa-builder-phone-heading"><Smartphone size={16} /><span>{sender?.business_display_name || 'Your business'}</span><small>WhatsApp</small></div><div className="wa-message-preview">{previewTemplate(draft.template, draft.parameter_values, selected[0]) || 'Your approved template will appear here.'}</div>{draft.template?.components?.find((c) => c.type === 'BUTTONS')?.buttons?.map((b, i) => <div className="wa-preview-button" key={i}>{b.text}{b.type === 'URL' && <small>{String(b.url).replace(/\{\{.*?\}\}/g, resolveValue(draft.parameter_values[`button.${i}`], selected[0]) || '{{value}}')}</small>}</div>)}<small>Preview uses the first selected recipient. Readiness checks every recipient.</small></aside></div>
     </div>{step === 2 && manage && <ContactManager org={org} contacts={workspace.contacts} onSaved={workspace.refresh} />}
@@ -295,8 +287,7 @@ function CampaignEditor({ org, initial, workspace, onBack, onDraftCreated, devel
 
 export function WhatsAppCampaignDetail({ campaignId, onBack, onOpenMarketingCampaign, onEdit }) {
   const org = useOrg()
-  const scope = useCampaignScope(org)
-  return <CampaignDetail key={`${scope}:${campaignId}`} org={org} campaignId={campaignId} onBack={onBack} onOpenMarketingCampaign={onOpenMarketingCampaign} onEdit={onEdit} />
+  return <CampaignDetail key={`${org}:${campaignId}`} org={org} campaignId={campaignId} onBack={onBack} onOpenMarketingCampaign={onOpenMarketingCampaign} onEdit={onEdit} />
 }
 function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEdit }) {
   const [detail, setDetail] = useState(null)
@@ -316,9 +307,9 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
     finally { refreshInFlight.current = false; if (alive.current) setRefreshing(false) }
   }, [org, campaignId])
   useEffect(() => { alive.current = true; void refresh(); const timer = setInterval(() => { void refresh() }, 10000); return () => { alive.current = false; clearInterval(timer) } }, [refresh])
-  const control = async (action) => {
+  const resume = async () => {
     setBusy(true); setError('')
-    try { await whatsappCampaignRequest(org, action, { campaignId }); await refresh() } catch (err) { if (alive.current) setError(err.message) } finally { if (alive.current) setBusy(false) }
+    try { let more = true; while (more && alive.current) { const { campaign } = await whatsappCampaignRequest(org, 'dispatch', { campaignId }); more = campaign.queued > 0; await refresh() } } catch (err) { if (alive.current) setError(err.message) } finally { if (alive.current) setBusy(false) }
   }
   const recipients = (detail?.recipients || []).map((recipient) => ({
     ...recipient,
@@ -332,7 +323,7 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
   const delivered = recipients.filter((recipient) => recipient.delivered_at || recipient.read_at).length
   const read = recipients.filter((recipient) => recipient.read_at).length
   // Use the same receipt-based status as the campaign overview.
-  const campaignStatus = ['scheduled', 'paused', 'cancelled'].includes(detail?.campaign.display_status) ? detail.campaign.display_status : detail?.campaign.status === 'draft' ? 'draft'
+  const campaignStatus = detail?.campaign.status === 'draft' ? 'draft'
     : pending || !recipients.length ? 'sending'
       : uncertain ? 'needs_attention'
         : failed + skipped === recipients.length ? 'failed'
@@ -357,14 +348,14 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
         <div><dt>Sending started</dt><dd>{detail.campaign.sent_at ? date(detail.campaign.sent_at) : 'Not started'}</dd></div>
       </dl> : null}
     </header>
-    <ErrorNotice>{error}</ErrorNotice>
     {detail?.campaign.parameter_values?.__arch9_campaign?.id && onOpenMarketingCampaign && <aside className="wa-info-panel wa-campaign-return"><p>Results are linked to your marketing campaign.</p><button type="button" className="wa-secondary-button" onClick={() => onOpenMarketingCampaign(detail.campaign.parameter_values.__arch9_campaign.id)}>View campaign results</button></aside>}
+    <ErrorNotice>{error}</ErrorNotice>
     {!detail && !error ? <p className="wa-detail-empty" role="status">Loading campaign results…</p> : null}
     {detail ? <>
       <section className="wa-detail-summary" aria-label="Campaign results summary">
         {summary.map(([icon, label, value, note]) => <article key={label}><div><span>{label}</span>{icon}</div><strong>{fmt(value)}</strong><small>{note}</small></article>)}
       </section>
-      {detail.campaign.display_status === 'scheduled' ? <aside className="wa-notice wa-detail-pending"><p>Scheduled for {date(detail.campaign.scheduled_at)} ({localTimeZone}). Arch9 will send in the background.</p></aside> : detail.campaign.delivery_state === 'cancelled' ? <aside className="wa-notice wa-detail-pending"><p>Remaining messages were cancelled.</p></aside> : queued > 0 ? <aside className="wa-notice wa-detail-pending"><div><strong>{queued} {queued === 1 ? 'recipient is' : 'recipients are'} waiting</strong><p>{detail.campaign.delivery_state === 'paused' ? 'Delivery is paused.' : detail.campaign.delivery_state ? 'Sending continues in the background. You can close this page.' : 'Resume to send the remaining recipients in the background.'}</p>{detail.campaign.delivery_error ? <p role="alert">{detail.campaign.delivery_error}</p> : null}</div>{!['cancelled', 'completed'].includes(detail.campaign.delivery_state) ? <div className="wa-inline-actions"><button type="button" className="wa-primary-button" disabled={busy} onClick={() => void control(!detail.campaign.delivery_state || detail.campaign.delivery_state === 'paused' ? 'resume' : 'pause')}>{!detail.campaign.delivery_state || detail.campaign.delivery_state === 'paused' ? 'Resume sending' : 'Pause sending'}</button>{detail.campaign.delivery_state ? <button type="button" className="wa-secondary-button" disabled={busy} onClick={() => void control('cancel')}>Cancel remaining messages</button> : null}</div> : null}{detail.campaign.delivery_state ? <small>Messages already in progress may finish after pausing or cancelling.</small> : null}</aside> : null}
+      {queued > 0 ? <aside className="wa-notice wa-detail-pending"><div><strong>{queued} {queued === 1 ? 'recipient is' : 'recipients are'} waiting</strong><p>Resume sending to the remaining recipients.</p></div><button type="button" className="wa-primary-button" disabled={busy} onClick={() => void resume()}>{busy ? 'Sending…' : `Send remaining ${queued}`}</button></aside> : null}
       <section className="wa-campaigns-panel wa-results wa-detail-results" aria-labelledby="wa-recipient-results-title">
         <div className="wa-detail-results-heading"><h2 id="wa-recipient-results-title">Recipient results</h2><span>{fmt(recipients.length)} {recipients.length === 1 ? 'recipient' : 'recipients'}</span></div>
         {recipients.length ? <div className="wa-table-scroll"><table aria-label="Recipient results"><thead><tr><th scope="col">Recipient</th><th scope="col">Status</th><th scope="col">Delivered</th><th scope="col">Read</th><th scope="col">Details</th></tr></thead><tbody>{recipients.map((recipient) => <tr key={recipient.id}>
@@ -378,5 +369,4 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
       </section>
     </> : null}
   </div>
-
 }

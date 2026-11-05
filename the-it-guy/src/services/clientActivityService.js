@@ -23,6 +23,14 @@ export async function loadClientActivity(client, { category = 'all', cursor = nu
   return { available: true, events, nextCursor: data?.length > size ? { occurred_at: last.occurred_at, id: last.id } : null }
 }
 
+export async function loadClientEngagementSummary(client) {
+  if (!client?.identityId || !client?.organisationId || !isSupabaseConfigured || !supabase) return { available: false }
+  const { data, error } = await supabase.rpc('client_engagement_summary', { p_org: client.organisationId, p_client: client.identityId })
+  if (error) { if (unavailable(error)) return { available: false }; throw error }
+  if (!data) throw new Error('Unable to confirm team engagement information.')
+  return { ...data, available: true }
+}
+
 export async function loadLatestClientActivity(organisationId) {
   if (!isSupabaseConfigured || !supabase || !organisationId) return new Map()
   const latest = new Map()
@@ -34,15 +42,16 @@ export async function loadLatestClientActivity(organisationId) {
   }
 }
 
-export async function logClientInteraction(client, { type, detail, occurredAt, requestId } = {}) {
+export async function logClientInteraction(client, { type, detail, occurredAt, requestId, outcome } = {}) {
   if (!client?.identityId) throw new Error('A permanent client profile is required.')
   const text = String(detail || '').trim()
   if (!CLIENT_INTERACTION_TYPES.includes(type) || !text || text.length > 4000 || !requestId || !Number.isFinite(Date.parse(occurredAt))) {
     throw new Error('Choose an interaction type and enter details and a valid time.')
   }
-  const { data, error } = await supabase.rpc('agency_client_log_interaction', {
+  if (outcome !== undefined && !(type === 'note' ? outcome === 'recorded' : type === 'call' ? ['completed', 'no_answer'].includes(outcome) : outcome === 'completed')) throw new Error('Choose a valid interaction outcome.')
+  const { data, error } = await supabase.rpc(outcome === undefined ? 'agency_client_log_interaction' : 'client_log_engagement', {
     p_client_id: client.identityId, p_request_id: requestId, p_type: type,
-    p_detail: text, p_occurred_at: occurredAt,
+    p_detail: text, p_occurred_at: occurredAt, ...(outcome === undefined ? {} : { p_outcome: outcome }),
   })
   if (error) throw error
   if (!data) throw new Error('The interaction save could not be confirmed. Retry the same entry.')
@@ -64,6 +73,8 @@ export async function recordClientPortalVisit({ token, sellerAccessToken = '', s
 }
 
 export function clientActivityRecordPath(event) {
+  if (event.origin_table === 'revo_inbox_messages') return '/inbox'
+  if (event.origin_table === 'whatsapp_inbox_messages') return '/inbox/whatsapp'
   if (event.source_kind === 'lead') return `/pipeline/leads/${event.source_id}`
   if (event.source_kind === 'listing_seller') return `/agent/listings/${event.source_id}`
   if (['transaction_buyer', 'transaction_seller'].includes(event.source_kind)) return `/transactions/${event.source_id}`

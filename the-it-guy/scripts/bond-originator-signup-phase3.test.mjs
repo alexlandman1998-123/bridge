@@ -3,23 +3,23 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const setupSource = readFileSync(resolve(root, 'src/pages/PostDashboardSetup.jsx'), 'utf8')
+const read = (file) => readFileSync(resolve(root, file), 'utf8')
+const setup = read('src/pages/PostDashboardSetup.jsx')
+const form = read('src/components/onboarding/BondOnboardingForm.jsx')
+const shared = read('src/components/onboarding/CompanyOnboardingForm.jsx')
+const model = read('src/components/onboarding/bondQuickStart.js')
 
-function assertIncludes(source, token, label = token) {
-  assert(source.includes(token), `Expected ${label}`)
-}
-
-assertIncludes(setupSource, "value: WORKSPACE_KINDS.personalOriginator", 'independent originator option')
-assertIncludes(setupSource, "value: WORKSPACE_KINDS.bondCompany", 'bond company option')
-assertIncludes(setupSource, "{ key: 'type', label: 'Type' }", 'originator type setup step')
-assertIncludes(setupSource, 'updateBondWorkspaceKind', 'workspace kind selection handler')
-assertIncludes(setupSource, "operatingModel: isPersonalOriginator ? 'independent' : 'company'", 'operating model in submission')
-assertIncludes(setupSource, 'workspaceKind,', 'workspace kind submitted to onboarding')
-assertIncludes(setupSource, 'if (isPersonalOriginator) return', 'solo originator team validation relaxation')
-assertIncludes(setupSource, "isPersonalBondOriginator ? 'Originator profile' : 'Business profile'", 'independent business copy')
-assertIncludes(setupSource, "isPersonalBondOriginator ? 'Create independent workspace' : 'Create bond business workspace'", 'workspace-kind-specific CTA')
-assertIncludes(setupSource, "title: 'I operate as an individual originator'", 'independent choice label')
-assertIncludes(setupSource, "title: 'I represent a bond originator company'", 'company choice label')
-
+assert.match(setup, /if \(isBondOwnerSetup && !canOpenActiveWorkspace\)/)
+assert.match(setup, /return <BondOnboardingForm/)
+assert.doesNotMatch(setup, /renderBondStep|BOND_SETUP_STEPS/)
+assert.match(form, /businessTypes: BOND_BUSINESS_TYPES/)
+assert.match(form, /workspaceType: WORKSPACE_TYPES.bondOriginator/)
+assert.match(model, /value: WORKSPACE_KINDS.personalOriginator/)
+assert.match(model, /value: WORKSPACE_KINDS.bondCompany/)
+assert.match(model, /workspaceKind: kind/)
+assert.match(model, /operatingModel: independent \? 'independent' : 'company'/)
+assert.match(model, /ownerHandlesConsulting: true/)
+assert.match(model, /ownerHandlesProcessing: true/)
+assert.match(shared, /createWorkspaceFromIntent\(intent, authState.user, buildSubmission/)
+assert.match(shared, /SIGNUP_WORKSPACE_ACTIONS.createWorkspace/)
 console.log('bond originator signup phase 3 tests passed')
-

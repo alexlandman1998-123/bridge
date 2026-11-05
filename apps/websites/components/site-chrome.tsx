@@ -19,7 +19,7 @@ function resourceLinks(hasBlogPosts: boolean) {
 function SiteLogo({ site, dark = false }: { site: ResolvedSite; dark?: boolean }) {
   const logoUrl = selectWebsiteLogo(site, dark)
   if (!logoUrl) return <span className="wordmark-text">{site.name}</span>
-  return <Image className="site-logo-image" src={logoUrl} alt={`${site.name} logo`} width={220} height={72} sizes="(max-width: 760px) 150px, 190px" unoptimized />
+  return <Image className="site-logo-image" src={logoUrl} alt={`${site.name} logo`} width={220} height={72} sizes="(max-width: 760px) 150px, 190px" />
 }
 
 export async function SiteHeader({ site, enquiryHref = '/valuation', homepage = false, currentHref }: { site: ResolvedSite; enquiryHref?: string; homepage?: boolean; currentHref?: string }) {
@@ -41,9 +41,9 @@ export async function SiteFooter({ site }: { site: ResolvedSite }) {
   const social = Object.entries(site.socialLinks || {}) as Array<[string, string]>
 
   return <footer className="site-footer-dark"><div className="footer-top">
-    <div className="footer-identity"><Link className="footer-brand" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} dark /></Link>{site.tagline ? <p>{site.tagline}</p> : null}{social.length ? <div className="footer-socials">{social.map(([network, href]) => <a aria-label={network} href={href} key={network} rel="noreferrer" target="_blank">{network.slice(0, 1).toUpperCase()}</a>)}</div> : null}</div>
-    <nav className="footer-column" aria-label="Explore"><p>Explore</p>{explore.map((item) => <Link href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav>
-    <nav className="footer-column" aria-label="Agency"><p>{site.name}</p>{agency.map((item) => <Link href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav>
-    <div className="footer-cta"><h2>Find your next chapter.</h2><Link href="/properties">Browse properties <span aria-hidden="true">↗</span></Link></div>
+    <div className="footer-identity"><Link prefetch={false} className="footer-brand" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} dark /></Link>{site.tagline ? <p>{site.tagline}</p> : null}{social.length ? <div className="footer-socials">{social.map(([network, href]) => <a aria-label={network} href={href} key={network} rel="noreferrer" target="_blank">{network.slice(0, 1).toUpperCase()}</a>)}</div> : null}</div>
+    <nav className="footer-column" aria-label="Explore"><p>Explore</p>{explore.map((item) => <Link prefetch={false} href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav>
+    <nav className="footer-column" aria-label="Agency"><p>{site.name}</p>{agency.map((item) => <Link prefetch={false} href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav>
+    <div className="footer-cta"><h2>Find your next chapter.</h2><Link prefetch={false} href="/properties">Browse properties <span aria-hidden="true">↗</span></Link></div>
   </div><div className="footer-bottom"><span>© {new Date().getFullYear()} {site.name}. All rights reserved.</span><span className="footer-legal">{site.privacyPolicyUrl ? <a href={site.privacyPolicyUrl}>Privacy Policy</a> : null}{site.termsUrl ? <a href={site.termsUrl}>Terms of Use</a> : null}</span><span>Powered by Arch9</span></div></footer>
 }

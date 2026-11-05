@@ -1,0 +1,37 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
+import DevelopmentAvailabilityWorkspace from '../DevelopmentAvailabilityWorkspace.jsx'
+
+vi.mock('../DevelopmentVisualMappingStudio', () => ({ default: () => null }))
+afterEach(cleanup)
+const unit = { id: 'unit-1', unitNumber: '101', unitType: 'Studio', status: 'Available', currentPrice: 1500000 }
+const options = ['Available', 'Reserved', 'Finance Pending', 'Sold', 'Not Released'].map(value => ({ value, label: value }))
+
+it('defaults to cards and saves list statuses without opening the unit workspace', () => {
+  const save = vi.fn()
+  const { rerender } = render(<DevelopmentAvailabilityWorkspace units={[unit]} canManageInventory unitStatusOptions={options} onChangeUnitStatus={save} />)
+  expect(screen.getByRole('button', { name: 'Cards', exact: true }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByTestId('availability-unit-cards').className).toContain('xl:grid-cols-4')
+  fireEvent.click(screen.getByRole('button', { name: 'List', exact: true }))
+  const select = screen.getByRole('combobox', { name: 'Update status for unit 101' })
+  fireEvent.click(select)
+  fireEvent.change(select, { target: { value: 'Finance Pending' } })
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: unit.id }), 'Finance Pending')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  // Only the persisted parent data changes the displayed value and stock totals.
+  expect(select.value).toBe('Available')
+  rerender(<DevelopmentAvailabilityWorkspace units={[{ ...unit, status: 'Finance Pending' }]} canManageInventory unitStatusOptions={options} onChangeUnitStatus={save} />)
+  expect(screen.getByRole('combobox', { name: 'Update status for unit 101' }).value).toBe('Finance Pending')
+  expect(within(screen.getByText('Reserved', { selector: 'span' }).closest('article')).getByText('1')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Cards', exact: true }))
+  expect(within(screen.getByTestId('availability-unit-cards')).getByText('Reserved')).toBeTruthy()
+})
+
+it('keeps status controls read-only for viewers and disables edits during a save', () => {
+  const { rerender } = render(<DevelopmentAvailabilityWorkspace units={[unit]} onChangeUnitStatus={vi.fn()} unitStatusOptions={options} />)
+  fireEvent.click(screen.getByRole('button', { name: 'List', exact: true }))
+  expect(screen.queryByRole('combobox', { name: 'Update status for unit 101' })).toBeNull()
+  rerender(<DevelopmentAvailabilityWorkspace units={[unit]} canManageInventory unitStatusSaving onChangeUnitStatus={vi.fn()} unitStatusOptions={options} />)
+  expect(screen.getByRole('combobox', { name: 'Update status for unit 101' }).disabled).toBe(true)
+})

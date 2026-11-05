@@ -8,7 +8,9 @@ import RentalListingCreatePage from '../RentalListingCreatePage'
 
 window.scrollTo = vi.fn()
 
-const mocks = vi.hoisted(() => ({ params: {}, leads: vi.fn(async () => []), mandates: vi.fn(async () => []), handoff: vi.fn(async () => null), create: vi.fn(), progress: vi.fn(async () => { throw new Error('Cloud saving unavailable in this recovery fixture') }), activate: vi.fn(async () => {}), update: vi.fn(), navigate: vi.fn(), loadMaps: vi.fn(), load: vi.fn(async () => null), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' } }))
+const mocks = vi.hoisted(() => ({ params: {}, adverts: vi.fn(async () => []), settled: vi.fn(async () => []), leads: vi.fn(async () => []), mandates: vi.fn(async () => []), handoff: vi.fn(async () => null), create: vi.fn(), progress: vi.fn(async () => { throw new Error('Cloud saving unavailable in this recovery fixture') }), activate: vi.fn(async () => {}), update: vi.fn(), navigate: vi.fn(), loadMaps: vi.fn(), load: vi.fn(async () => null), scope: { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' } }))
+vi.mock('../../../services/listings/listingAdvertUpdates', () => ({ updateExistingListingAdverts: mocks.adverts }))
+vi.mock('../../../services/listings/listingInitialPublicationService', () => ({ INITIAL_LISTING_PUBLICATION_EVENT: 'test-publication', watchInitialListingPublication: () => () => {}, refreshListingPublicationResults: vi.fn(async () => []), requireSettledListingPublication: mocks.settled }))
 vi.mock('../../../hooks/useListingCaptureSession', () => ({ default: () => 'test-session' }))
 vi.mock('react-router-dom', async (original) => ({ ...await original(), useNavigate: () => mocks.navigate, useParams: () => mocks.params }))
 vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => ({}) }))
@@ -21,6 +23,61 @@ vi.mock('../../../services/rentals/rentalLandlordListingHandoffService', () => (
 vi.mock('../../../services/rentals/rentalLandlordMandateRepository', () => ({ listRentalPropertyMandates: mocks.mandates }))
 const BASE_DRAFT_KEY = buildRentalListingDraftStorageKey({ organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' })
 const DRAFT_KEY = BASE_DRAFT_KEY + ':capture:test-session'
+function existingAdvertRental() {
+  mocks.loadMaps.mockResolvedValue(null)
+  return { id: 'listing-1', listingCategory: 'rental', listingStatus: 'active', propertyAddress: '12 Example Road', askingPrice: 11000,
+    updatedAt: '2026-10-28T10:00:00Z', listingPublicationData: { selectedSyndicationChannels: ['property24', 'private_property'] } }
+}
+
+it('saves and updates rental adverts from the property step in one click, then shows channel results', async () => {
+  mocks.params = { listingId: 'listing-1' }
+  const listing = existingAdvertRental()
+  mocks.load.mockResolvedValue(listing)
+  mocks.update.mockResolvedValue({ listing: { ...listing, updatedAt: '2026-10-28T10:01:00Z' } })
+  mocks.adverts.mockImplementationOnce(async ({ onResult }) => {
+    const results = [{ key: 'property24', label: 'Property24', status: 'publishing' }, { key: 'private_property', label: 'Private Property', status: 'needs_attention', retryable: true, message: 'Fix the suburb.' }]
+    results.forEach(onResult)
+    return results
+  })
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  const address = await screen.findByRole('combobox', { name: /Property address/i })
+  fireEvent.change(address, { target: { value: '14 Example Road' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & update adverts' }))
+  await waitFor(() => expect(mocks.adverts).toHaveBeenCalledTimes(1))
+  expect(mocks.update.mock.invocationCallOrder[0]).toBeLessThan(mocks.adverts.mock.invocationCallOrder[0])
+  expect(mocks.adverts).toHaveBeenCalledWith(expect.objectContaining({ listingId: 'listing-1', channels: ['property24', 'private_property'], requestKey: expect.any(String) }))
+  expect(await screen.findByRole('button', { name: 'Retry Private Property' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Check Property24 status' })).toBeTruthy()
+  expect(mocks.activate).not.toHaveBeenCalled()
+  expect(mocks.navigate).not.toHaveBeenCalled()
+})
+
+it('keeps rental Save only separate from all advertising calls', async () => {
+  mocks.params = { listingId: 'listing-1' }
+  const listing = existingAdvertRental()
+  mocks.load.mockResolvedValue(listing)
+  mocks.update.mockResolvedValue({ listing })
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  await screen.findByRole('combobox', { name: /Property address/i })
+  fireEvent.click(screen.getByRole('button', { name: 'Save only' }))
+  await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1))
+  expect(mocks.adverts).not.toHaveBeenCalled()
+  expect(mocks.activate).not.toHaveBeenCalled()
+})
+
+it('keeps rental edits available and sends nothing while an old request is unconfirmed', async () => {
+  mocks.params = { listingId: 'listing-1' }
+  mocks.load.mockResolvedValue(existingAdvertRental())
+  mocks.settled.mockRejectedValueOnce(new Error('Previous advertising request is unconfirmed. Check status.'))
+  render(<MemoryRouter><RentalListingCreatePage /></MemoryRouter>)
+  const address = await screen.findByRole('combobox', { name: /Property address/i })
+  fireEvent.change(address, { target: { value: '14 Example Road' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & update adverts' }))
+  expect(await screen.findByText('Previous advertising request is unconfirmed. Check status.')).toBeTruthy()
+  expect(mocks.update).not.toHaveBeenCalled()
+  expect(mocks.adverts).not.toHaveBeenCalled()
+  expect(address.value).toBe('14 Example Road')
+})
 afterEach(() => { mocks.params = {}; mocks.scope = { organisationId: 'org-1', assignedAgentId: 'agent-1', branchId: '' }; cleanup(); vi.clearAllMocks(); mocks.leads.mockReset().mockResolvedValue([]); mocks.mandates.mockReset().mockResolvedValue([]); mocks.load.mockReset().mockResolvedValue(null); mocks.progress.mockReset().mockRejectedValue(new Error('Cloud saving unavailable in this recovery fixture')); window.localStorage.clear() })
 
 it('opens blank instead of resurrecting a deleted rental from the previous shared browser draft', async () => {
@@ -195,25 +252,16 @@ it('clears saved address components and location when the address search is clea
   expect(JSON.parse(window.localStorage.getItem(DRAFT_KEY)).form).toMatchObject({ propertyAddress: '', streetNumber: '', streetName: '', suburb: '', city: '', province: '', postalCode: '', latitude: '', longitude: '', googlePlaceId: '' })
 })
 
-it('keeps landlord and mandate capture available when editing a saved rental', async () => {
+it('keeps landlord and mandate capture available with Save only on an existing rental', async () => {
   mocks.params = { listingId: 'listing-1' }; mocks.load.mockResolvedValue({ id: 'listing-1', listingCategory: 'rental', propertyAddress: '12 Example Road', askingPrice: 11000 }); mocks.update.mockResolvedValue({ listing: { id: 'listing-1' } })
-  const view = render(<MemoryRouter initialEntries={['/rentals/listing-1/edit?step=landlord']}><RentalListingCreatePage /></MemoryRouter>)
+  render(<MemoryRouter initialEntries={['/rentals/listing-1/edit?step=landlord']}><RentalListingCreatePage /></MemoryRouter>)
   fireEvent.click(await screen.findByRole('button', { name: /Trust A trust owns/ }))
   const values = { landlordType: 'trust', landlordName: 'Family Property Trust', landlordPhone: '+27 82 123 4567', landlordEmail: 'trust@example.com', mandateStatus: 'signed_uploaded', marketingApprovalStatus: 'approved', mandateStartDate: '2026-10-02', mandateEndDate: '2027-10-01' }
   const labels = { landlordName: 'Trust name (optional)', landlordPhone: 'Mobile', landlordEmail: 'Email', mandateStatus: 'Rental mandate', marketingApprovalStatus: 'Marketing approval', mandateStartDate: 'Mandate start date', mandateEndDate: 'Mandate end / expiry date' }
   for (const [name, value] of Object.entries(values)) {
     if (name !== 'landlordType') fireEvent.change(screen.getByLabelText(labels[name]), { target: { value } })
   }
-  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
-  expect(JSON.parse(window.localStorage.getItem(BASE_DRAFT_KEY + ':edit:listing-1')).form).toMatchObject(values)
-  view.unmount()
-  render(<MemoryRouter initialEntries={['/rentals/listing-1/edit?step=landlord']}><RentalListingCreatePage /></MemoryRouter>)
-  await screen.findByRole('button', { name: /Trust A trust owns/ })
-  for (const [name, value] of Object.entries(values)) {
-    if (name !== 'landlordType') expect(screen.getByLabelText(labels[name]).value).toBe(value)
-  }
-  fireEvent.click(screen.getByRole('button', { name: /Step.*Check & (publish|save)/ }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Save rental changes' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Save only' }))
   await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1))
   expect(mocks.update.mock.calls[0][1]).toMatchObject(values)
   expect(mocks.activate).not.toHaveBeenCalled()
@@ -549,7 +597,7 @@ it('reopens an unfinished cloud draft without device storage and publishes only 
  expect(await screen.findByRole('heading', { name: 'Continue rental draft' })).toBeTruthy()
  const rent = await screen.findByLabelText(/Rental amount/)
  expect(rent.value).toBe('')
- expect(screen.queryByRole('button', { name: 'Save rental changes' })).toBeNull()
+ expect(screen.queryByRole('button', { name: 'Save only' })).toBeNull()
  expect(mocks.activate).not.toHaveBeenCalled()
  fireEvent.change(rent, { target: { value: '14000' } })
  fireEvent.click(screen.getByRole('button', { name: /Step.*Check & publish/ }))

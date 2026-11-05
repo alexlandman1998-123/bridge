@@ -1,7 +1,9 @@
+import { documentRequirementParty } from '../../core/documents/documentRequirementIdentity.js'
 import { mergeDocumentEvidence } from './documentRequirementReadService.js'
 import { BUYER_LEAD_DOCUMENT_TYPES, resolveBuyerLeadDocumentTarget } from '../../core/documents/buyerLeadDocumentContract.js'
 
 const buyerSources = new Set([
+  'agent_otp_upload',
   'document_requirement_command',
   'agent_buyer_document_upload',
   'developer_buyer_document_upload',
@@ -18,11 +20,28 @@ const labelBySourceKey = new Map(BUYER_LEAD_DOCUMENT_TYPES.map((entry) => [entry
 
 function value(input) { return String(input || '').trim() }
 
+// The standard upload slots already cover the primary purchaser's ID/address.
+// Match only explicit FICA kinds and that role; other people's slots stay separate.
+export function mergeBuyerLeadFicaChecklistRows(configuredRows = [], roleplayerGroups = []) {
+  const rows = [...configuredRows]
+  const configuredKeys = new Set(configuredRows.map(row => row.key))
+  for (const group of roleplayerGroups) {
+    for (const row of group.items || []) {
+      const target = group.role === 'primary_purchaser' && row.ficaDocumentKind
+        ? resolveBuyerLeadDocumentTarget(row.key, { ficaDocumentKind: row.ficaDocumentKind }).documentDefinitionKey
+        : ''
+      if (configuredKeys.has(row.key) || (target && configuredKeys.has(target))) continue
+      rows.push(row)
+    }
+  }
+  return rows
+}
+
 function isBuyerVisibleDocument(row) {
   if (!row || !buyerSources.has(value(row.source))) return false
   if (row.is_client_visible !== true || !['shared', 'client', 'client_visible'].includes(value(row.visibility_scope).toLowerCase())) return false
   const recipient = value(row.client_recipient_role).toLowerCase()
-  return recipient === 'buyer' || (!recipient && value(row.uploaded_by_party).toLowerCase() === 'buyer')
+  return documentRequirementParty({ requested_from_role: recipient }) === 'buyer' || (!recipient && documentRequirementParty({ requested_from_role: value(row.uploaded_by_party).toLowerCase() }) === 'buyer')
 }
 
 function canonicalUpload(row) {
@@ -99,7 +118,7 @@ export function buyerLeadDocumentContext({ leadId, transactionId = '' } = {}) {
     : { contextType: 'buyer_lead', contextId: leadId }
 }
 
-export async function fetchBuyerLeadCanonicalDocumentRows(client, { transactionId, organisationId, leadId } = {}) {
+export async function assertBuyerLeadTransactionDocumentContext(client, { transactionId, organisationId, leadId } = {}) {
   if (!client || !transactionId || !organisationId || !leadId) throw new Error('Buyer lead document context is incomplete.')
   const transactionResult = await client.from('transactions')
     .select('id, organisation_id, originating_lead_id, originating_buyer_lead_id')
@@ -109,6 +128,12 @@ export async function fetchBuyerLeadCanonicalDocumentRows(client, { transactionI
   if (!transaction || ![transaction.originating_lead_id, transaction.originating_buyer_lead_id].includes(leadId)) {
     throw new Error('This buyer lead is not linked to the selected transaction.')
   }
+  return transaction
+}
+
+export async function fetchBuyerLeadCanonicalDocumentRows(client, context = {}) {
+  const { transactionId } = context
+  await assertBuyerLeadTransactionDocumentContext(client, context)
   const documentsResult = await client.from('documents')
     .select('id, name, file_name, file_path, file_bucket, category, document_type, status, review_status, source, uploaded_at, created_at, canonical_requirement_instance_id, client_recipient_role, uploaded_by_party, visibility_scope, is_client_visible')
     .eq('transaction_id', transactionId)

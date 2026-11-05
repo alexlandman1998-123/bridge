@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import AddressInput from '../location/AddressInput'
-import { Link } from 'react-router-dom'
+import { MarketingLink as Link } from './MarketingNavigation.jsx'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { ArrowLeft, BadgeCheck, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileCheck2, Gavel, Landmark, MapPin, MoreHorizontal, Search, TicketCheck, UserCheck, UsersRound, X } from 'lucide-react'
 import { auctionTabs, launchTabs, launches as seededLaunches } from '../../data/launchesAuctions'

@@ -45,8 +45,9 @@ beforeEach(() => {
   mocks.scope = { organisationId: 'org-a', assignedAgentId: 'agent-a', scopeLevel: 'organisation' }
   vi.resetAllMocks()
   window.sessionStorage.clear()
+  window.localStorage.clear()
 })
-afterEach(() => { cleanup(); window.sessionStorage.clear(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); window.sessionStorage.clear(); window.localStorage.clear(); vi.restoreAllMocks() })
 
 it('renders all eleven tenant stages and eight landlord stages with every normal card', async () => {
   const tenant = getRentalLeadPipelineStages('tenant').map((stage, i) => lead(`tenant-${i}`, 'tenant', stage))
@@ -108,6 +109,32 @@ it('preserves Kanban and the selected landlord tab after opening a lead and retu
   await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' }).disabled).toBe(false))
   expect(screen.getByRole('button', { name: 'Kanban', exact: true }).getAttribute('aria-pressed')).toBe('true')
   expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Landlord Leads')
+})
+
+it('remembers the rental view, tab and filters after the browser session ends', async () => {
+  const view = await openBoard([lead('owner', 'landlord')])
+  fireEvent.click(screen.getByRole('button', { name: /Landlord Leads/ }))
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort leads' }), { target: { value: 'oldest' } })
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search rental leads' }), { target: { value: 'owner' } })
+  view.unmount()
+  window.sessionStorage.clear()
+  render(<Harness />)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' }).disabled).toBe(false))
+  expect(screen.getByRole('button', { name: 'Kanban', exact: true }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Landlord Leads')
+  expect(screen.getByRole('combobox', { name: 'Sort leads' }).value).toBe('oldest')
+  expect(screen.getByRole('searchbox', { name: 'Search rental leads' }).value).toBe('owner')
+  expect(boardCards()).toHaveLength(1)
+})
+
+it('retains the current session choice when upgrading to persistent settings', async () => {
+  const key = `arch9:rentals:lead-view:v1:${encodeURIComponent(JSON.stringify(mocks.scope))}`
+  window.sessionStorage.setItem(key, JSON.stringify({ viewMode: 'kanban', role: 'landlord' }))
+  mocks.list.mockResolvedValue([lead('owner', 'landlord')])
+  render(<Harness />)
+  await waitFor(() => expect(boardCards()).toHaveLength(1))
+  expect(screen.getByRole('button', { name: 'Kanban', exact: true }).getAttribute('aria-pressed')).toBe('true')
+  expect(JSON.parse(window.localStorage.getItem(key))).toMatchObject({ viewMode: 'kanban', role: 'landlord' })
 })
 
 it('explains that the closed Kanban board has no records', async () => {

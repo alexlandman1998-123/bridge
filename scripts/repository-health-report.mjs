@@ -16,7 +16,9 @@ function git(args) {
 }
 
 function isGeneratedPath(filePath) {
-  return filePath.split('/').some((part) => generatedDirectoryNames.has(part)) || filePath.endsWith('/.DS_Store') || filePath === '.DS_Store'
+  const name = path.posix.basename(filePath)
+  const privateEnvironment = /^\.env(?:$|\.)/.test(name) && name !== '.env.example'
+  return privateEnvironment || filePath.split('/').some((part) => generatedDirectoryNames.has(part)) || filePath.endsWith('/.DS_Store') || filePath === '.DS_Store'
 }
 
 function statusPaths() {
@@ -118,7 +120,7 @@ function main() {
   const quickCheck = runQuickCheck(skipQuickCheck)
   const warnings = []
 
-  if (trackedGenerated.length) warnings.push(`${trackedGenerated.length} generated files are tracked by Git: ${trackedGenerated.slice(0, 3).join(', ')}${trackedGenerated.length > 3 ? ', …' : ''}`)
+  if (trackedGenerated.length) warnings.push(`${trackedGenerated.length} generated or private configuration files are tracked by Git: ${trackedGenerated.slice(0, 3).join(', ')}${trackedGenerated.length > 3 ? ', …' : ''}`)
   if (dirtySourcePaths.length > largeChangeFileCount || sourceBytes > largeChangeBytes) {
     warnings.push(`Large uncommitted source change: ${dirtySourcePaths.length} files and ${sourceBytes.toLocaleString()} changed lines.`)
   }

@@ -51,8 +51,9 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes("navigate(`/developer/leads/${encodeURIComponent(lead.developerLeadId)}`)"),
-  'development lead rows should click through to the developer lead module workspace',
+  detailSource.includes('resolveDevelopmentLeadWorkspaceUrl(lead, organisationId, tab)') &&
+    detailSource.includes('navigate(target, {'),
+  'development lead rows should use the workspace resolver for the correct buyer and organisation',
 )
 
 assert.ok(
@@ -72,7 +73,7 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes('Open developer lead') && detailSource.includes('Protected'),
+  detailSource.includes('Open lead') && detailSource.includes('Protected'),
   'lead rows should clearly distinguish openable leads from protected leads',
 )
 

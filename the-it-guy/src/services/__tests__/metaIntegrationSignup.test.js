@@ -3,31 +3,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { launchWhatsAppSignup } from '../metaIntegrationService'
 const invoke=vi.hoisted(()=>vi.fn())
 vi.mock('../../lib/supabaseClient',()=>({invokeEdgeFunction:invoke}))
-afterEach(()=>{vi.clearAllMocks();vi.restoreAllMocks()})
-it('uses the regular callback type required by the real Meta SDK',async()=>{
-  let callback
-  const controller=new AbortController()
-  const promise=launchWhatsAppSignup({sdk:{login:cb=>{
-    if(Object.prototype.toString.call(cb)!=='[object Function]') throw new TypeError('Expression is of type asyncfunction, not function')
-    callback=cb
-  }},intent:{state:'intent',configurationId:'config'},organisationId:'org',signal:controller.signal})
-  const rejected=expect(promise).rejects.toThrow('Meta did not authorize')
-  try { callback?.({});await rejected }
-  finally { controller.abort() }
-  expect(invoke).not.toHaveBeenCalled()
-})
-it('removes the signup listener and timeout when the SDK throws while opening login',async()=>{
-  const remove=vi.spyOn(window,'removeEventListener'),clear=vi.spyOn(window,'clearTimeout'),schedule=vi.spyOn(window,'setTimeout')
-  await expect(launchWhatsAppSignup({sdk:{login:()=>{throw new Error('Meta login could not open.')}},intent:{state:'intent'},organisationId:'org'})).rejects.toThrow('could not open')
-  expect(remove).toHaveBeenCalledWith('message',expect.any(Function))
-  expect(clear).toHaveBeenCalledWith(schedule.mock.results[0].value)
-  expect(invoke).not.toHaveBeenCalled()
-})
+afterEach(()=>vi.clearAllMocks())
 it('exchanges the short-lived code immediately and only trusts exact Facebook origins',async()=>{
   let callback
   invoke.mockResolvedValue({data:{exchanged:true}})
   const promise=launchWhatsAppSignup({sdk:{login:cb=>{callback=cb}},intent:{state:'intent',configurationId:'config'},organisationId:'org'})
-  await callback({authResponse:{code:'temporary-code'}})
+  callback({authResponse:{code:'temporary-code'}}); await Promise.resolve(); await Promise.resolve()
   expect(invoke.mock.calls[0][1].body.action).toBe('exchange_whatsapp_code')
   expect(invoke).toHaveBeenCalledTimes(1)
   const data={type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'100',phone_number_id:'200'}}
@@ -45,25 +26,48 @@ it('cancels an unfinished signup without connecting assets later',async()=>{
   window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'100',phone_number_id:'200'}}}))
   expect(invoke).not.toHaveBeenCalled()
 })
-it('accepts WABA-only phone app completion in either callback order and uses the prepared onboarding mode',async()=>{
-  let callback,options
-  const promise=launchWhatsAppSignup({sdk:{login:(cb,config)=>{callback=cb;options=config}},intent:{state:'intent',configurationId:'v4-config',coexistence:true},organisationId:'org'})
-  expect(options.extras).toEqual({featureType:'whatsapp_business_app_onboarding'})
-  const selection={requiresPhoneSelection:true,wabaId:'100',phones:[{id:'200',displayPhoneNumber:'+27 82 000 0000'}]}
-  invoke.mockImplementation(async(_name,{body})=>({data:body.action==='exchange_whatsapp_code'?{exchanged:true}:selection}))
-  window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'100'}}}))
-  expect(invoke).not.toHaveBeenCalled()
-  await callback({authResponse:{code:'fake-code'}})
-  await expect(promise).resolves.toEqual(selection)
-  expect(invoke.mock.calls[1][1].body).toEqual({organisationId:'org',action:'finish_whatsapp',state:'intent',wabaId:'100',phoneNumberId:''})
+
+it('passes a regular callback to the Meta SDK and exchanges duplicate callbacks only once',async()=>{
+ let callback;invoke.mockResolvedValue({data:{exchanged:true}})
+ const controller=new AbortController()
+ const promise=launchWhatsAppSignup({sdk:{login:cb=>{callback=cb;if(cb.constructor.name!=='Function')throw Error('Expression is of type asyncfunction, not function')}},intent:{state:'intent'},organisationId:'org',signal:controller.signal})
+ expect(callback.constructor.name).toBe('Function')
+ callback({authResponse:{code:'code'}});callback({authResponse:{code:'code'}})
+ await Promise.resolve();expect(invoke).toHaveBeenCalledTimes(1)
+ controller.abort();await expect(promise).rejects.toThrow('closed')
 })
-it('does not change a prepared cloud flow to phone-app onboarding through client flags',async()=>{
-  let options
-  const control=new AbortController()
-  const promise=launchWhatsAppSignup({sdk:{login:(_cb,value)=>{options=value}},intent:{state:'intent',coexistence:false},coexistence:true,organisationId:'org',signal:control.signal})
-  expect(options.extras).toEqual({})
-  const failure=expect(promise).rejects.toThrow('phone app option')
-  window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',data:{waba_id:'100'}}}))
-  await failure
-  expect(invoke).not.toHaveBeenCalled()
+it('cleans up listeners and timers if the SDK throws synchronously',async()=>{
+ const remove=vi.spyOn(window,'removeEventListener')
+ const promise=launchWhatsAppSignup({sdk:{login:()=>{throw Error('SDK failed')}},intent:{state:'intent'},organisationId:'org'})
+ await expect(promise).rejects.toThrow('SDK failed');expect(remove).toHaveBeenCalledWith('message',expect.any(Function));remove.mockRestore()
+})
+it('handles cancelled login without exchanging or completing a number',async()=>{
+ const promise=launchWhatsAppSignup({sdk:{login:cb=>cb(null)},intent:{state:'intent'},organisationId:'org'})
+ await expect(promise).rejects.toThrow('did not authorize');expect(invoke).not.toHaveBeenCalled()
+})
+it('handles a Meta finish event before the login callback and finishes only once',async()=>{
+ let callback;invoke.mockResolvedValue({data:{sender:{id:'sender'}}})
+ const promise=launchWhatsAppSignup({sdk:{login:cb=>{callback=cb}},intent:{state:'intent'},organisationId:'org'})
+ const event=()=>window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'100',phone_number_id:'200'}}}))
+ event();expect(invoke).not.toHaveBeenCalled();callback({authResponse:{code:'code'}});event()
+ await expect(promise).resolves.toEqual({sender:{id:'sender'}})
+ expect(invoke.mock.calls.filter(call=>call[1].body.action==='finish_whatsapp')).toHaveLength(1)
+})
+it('fails a stuck SDK load promptly and allows a clean retry',async()=>{
+ vi.useFakeTimers();delete window.FB
+ const {prepareFacebookSdk}=await import('../metaIntegrationService')
+ const loading=prepareFacebookSdk('test-app','v23.0')
+ const rejection=expect(loading).rejects.toThrow('too long')
+ await vi.advanceTimersByTimeAsync(20000);await rejection
+ expect(document.querySelector('script[src="https://connect.facebook.net/en_US/sdk.js"]')).toBeNull()
+ window.FB={init:vi.fn(),login:vi.fn()}
+ await expect(prepareFacebookSdk('test-app','v23.0')).resolves.toBe(window.FB)
+ delete window.FB;delete window.fbAsyncInit;vi.useRealTimers()
+})
+it('does not continue after the code exchange fails',async()=>{
+ invoke.mockResolvedValue({error:{message:'Code expired'}})
+ const promise=launchWhatsAppSignup({sdk:{login:cb=>cb({authResponse:{code:'code'}})},intent:{state:'intent'},organisationId:'org'})
+ await expect(promise).rejects.toThrow('Code expired')
+ window.dispatchEvent(new MessageEvent('message',{origin:'https://www.facebook.com',data:{type:'WA_EMBEDDED_SIGNUP',event:'FINISH',data:{waba_id:'100',phone_number_id:'200'}}}))
+ expect(invoke).toHaveBeenCalledTimes(1)
 })

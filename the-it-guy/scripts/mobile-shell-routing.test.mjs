@@ -73,9 +73,11 @@ assert.equal(resolve(marketingLink, { featureFlags: { enableMobileShell: false, 
 const agentMarketingPages = getMobilePageMenuItems({ role: 'agent' }).filter(item => item.to.startsWith('/mobile/marketing'))
 assert.deepEqual(agentMarketingPages.map(item => item.to), ['/mobile/marketing', '/mobile/marketing?section=campaigns', '/mobile/marketing?section=campaigns&page=studio'])
 assert.equal(canAccessMobileMarketing({ role: 'agent', workspaceRole: 'principal' }), true, 'agency principals should have the agent marketing menu')
-for (const role of ['developer', 'attorney', 'bond_originator', 'commercial', 'client']) {
+for (const role of ['attorney', 'bond_originator', 'commercial', 'client']) {
   assert.equal(getMobilePageMenuItems({ role }).some(item => item.to.startsWith('/mobile/marketing')), false, `${role} should keep its existing mobile menu`)
 }
+assert.equal(canAccessMobileMarketing({ role: 'developer' }), true, 'developers have the complete marketing suite')
+assert.deepEqual(getMobilePageMenuItems({ role: 'developer' }).filter(item => item.to.startsWith('/mobile/marketing')).map(item => item.to), agentMarketingPages.map(item => item.to))
 assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceId: 'rentals' }), false, 'rental workspaces should not advertise sales marketing')
 assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceId: 'short_term_rentals' }), false)
 assert.equal(canAccessMobileMarketing({ role: 'agent', businessWorkspaceSplitEnabled: true, businessWorkspaceId: 'sales', availableBusinessWorkspaceIds: ['rentals'] }), false, 'marketing menu needs sales access when the workspace split is enabled')

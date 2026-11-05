@@ -2,6 +2,7 @@ import {
   TRANSACTION_ROUTING_PROFILE_VERSION,
   resolveTransactionRoutingProfile,
 } from './transactionRoutingProfileService.js'
+import { normalizeStoredTransactionType } from '../core/transactions/transactionSaleProfile.js'
 
 const PROFILE_COMPARISON_FIELDS = [
   'version',
@@ -68,7 +69,7 @@ function buildUpdatePayload(profile = {}) {
   const financeType = profile.financeType === 'hybrid' ? 'hybrid' : profile.financeType
   return {
     finance_type: financeType && financeType !== 'unknown' ? financeType : null,
-    transaction_type: profile.transactionType && profile.transactionType !== 'unknown' ? profile.transactionType : null,
+    transaction_type: normalizeStoredTransactionType(profile.transactionType, '') || null,
     property_tenure: profile.propertyTenure && profile.propertyTenure !== 'unknown' ? profile.propertyTenure : null,
     purchaser_type: profile.buyerEntityType && profile.buyerEntityType !== 'unknown' ? profile.buyerEntityType : null,
     seller_type: profile.sellerEntityType && profile.sellerEntityType !== 'unknown' ? profile.sellerEntityType : null,

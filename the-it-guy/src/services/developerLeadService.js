@@ -660,6 +660,8 @@ export async function findDeveloperLeadDuplicateWarnings({ developerOrgId = '', 
 export async function createDeveloperFedLead(input = {}) {
   const developerOrgId = requireDeveloperOrgId(input.developerOrgId)
   const client = requireClient()
+  const captureId = normalizeUuid(input.developerLeadId)
+  const sourceLeadId = normalizeUuid(input.sourceLeadId)
   const primaryDevelopmentId = normalizeUuid(input.primaryDevelopmentId)
   const interestedDevelopmentIds = [
     primaryDevelopmentId,
@@ -673,6 +675,8 @@ export async function createDeveloperFedLead(input = {}) {
   const now = new Date().toISOString()
 
   const leadPayload = {
+    ...(captureId ? { developer_lead_id: captureId } : {}),
+    ...(sourceLeadId ? { source_lead_id: sourceLeadId } : {}),
     developer_org_id: developerOrgId,
     assigned_agent_id: assignedAgentId,
     primary_development_id: primaryDevelopmentId,
@@ -691,14 +695,22 @@ export async function createDeveloperFedLead(input = {}) {
     protected_summary: buildProtectedSummary(input),
   }
 
-  const { data: leadRow, error: leadError } = await client
-    .from('developer_leads')
-    .insert(leadPayload)
-    .select(DEVELOPER_LEAD_SELECT)
-    .single()
-
-  if (leadError) throw leadError
-
+  const leadWrite = client.from('developer_leads')
+  const leadResult = captureId
+    ? await leadWrite.upsert(leadPayload, { onConflict: 'developer_lead_id', ignoreDuplicates: true }).select(DEVELOPER_LEAD_SELECT).maybeSingle()
+    : await leadWrite.insert(leadPayload).select(DEVELOPER_LEAD_SELECT).single()
+  if (leadResult.error) throw leadResult.error
+  let leadRow = leadResult.data
+  const resumingCapture = captureId && !leadRow
+  if (resumingCapture) {
+    const existing = await client.from('developer_leads').select(DEVELOPER_LEAD_SELECT)
+      .eq('developer_lead_id', captureId).eq('developer_org_id', developerOrgId).maybeSingle()
+    if (existing.error) throw existing.error
+    leadRow = existing.data
+    if (!leadRow || leadRow.source_lead_id !== sourceLeadId || leadRow.primary_development_id !== primaryDevelopmentId) {
+      throw new Error('This lead capture no longer matches the saved buyer and development. Refresh before continuing.')
+    }
+  }
   const leadId = leadRow.developer_lead_id
   const privatePayload = {
     developer_lead_id: leadId,
@@ -712,15 +724,15 @@ export async function createDeveloperFedLead(input = {}) {
     },
   }
 
-  const privateInsert = await client
-    .from('developer_lead_private_details')
-    .insert(privatePayload)
+  const privateWrite = client.from('developer_lead_private_details')
+  const privateInsert = await (captureId ? privateWrite.upsert(privatePayload, { onConflict: 'developer_lead_id' }) : privateWrite.insert(privatePayload))
     .select(PRIVATE_DETAIL_SELECT)
     .single()
 
   if (privateInsert.error) throw privateInsert.error
 
   if (uniqueDevelopmentIds.length) {
+    const existingInterests = resumingCapture ? (await fetchInterestsByLeadIds(client, [leadId])).get(leadId) || [] : []
     const interestPayload = uniqueDevelopmentIds.map((developmentId, index) => ({
       developer_lead_id: leadId,
       developer_org_id: developerOrgId,
@@ -732,17 +744,17 @@ export async function createDeveloperFedLead(input = {}) {
       budget_max: budgetMax,
       unit_type_interest: normalizeText(input.unitTypeInterest) || null,
       is_primary: developmentId === primaryDevelopmentId || (!primaryDevelopmentId && index === 0),
-    }))
+    })).filter(interest => !existingInterests.some(existing => existing.developmentId === interest.development_id && normalizeUuid(existing.unitId) === normalizeUuid(interest.unit_id)))
 
-    const interestInsert = await client
+    const interestInsert = interestPayload.length ? await client
       .from('developer_lead_development_interests')
       .insert(interestPayload)
-      .select(INTEREST_SELECT)
+      .select(INTEREST_SELECT) : { error: null }
 
     if (interestInsert.error) throw interestInsert.error
   }
 
-  const activityInsert = await client
+  const activityInsert = resumingCapture ? { error: null } : await client
     .from('developer_lead_activity')
     .insert({
       developer_lead_id: leadId,

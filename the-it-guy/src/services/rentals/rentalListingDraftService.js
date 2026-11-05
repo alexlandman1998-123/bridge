@@ -380,7 +380,7 @@ export async function createRentalListingDraft(form = {}, context = {}) {
 }
 
 export async function updateRentalListingDraft(listingId, form = {}, context = {}) {
-  const validationErrors = validateRentalListingEditForm(form, context)
+  const validationErrors = validateRentalListingEditForm(context.deferChannelChecks ? { ...form, selectedSyndicationChannels: [] } : form, context)
   if (validationErrors.length) {
     const error = new Error(validationErrors.join(' '))
     error.validationErrors = validationErrors

@@ -1,3 +1,4 @@
+import { submitJoinFollowUp } from '../homeSeekersJoinJourney'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import RecruitmentProfileQuestionnaire from './RecruitmentProfileQuestionnaire'
@@ -11,9 +12,11 @@ import { isNextStepsLocalReview, saveNextStepsReview } from '../homeSeekersNextS
 import './RecruitmentSignupModal.css'
 
 const emptyContact = { firstName: '', lastName: '', email: '', phone: '', privacyAccepted: false }
-export default function RecruitmentSignupModal({ open, onClose, organisationName, endpoint, token, onCaptured, returningApplicant = false, localReview: requestedLocalReview = false }) {
+export default function RecruitmentSignupModal({ open, onClose, organisationName, endpoint, token, onCaptured, returningApplicant = false, localReview: requestedLocalReview = false, calculatorContext = null, leadSource = 'next steps', onApplicationComplete }) {
   const localReview = requestedLocalReview && isNextStepsLocalReview()
   const localApplicationId = useRef(null)
+  const notifiedApplication = useRef(null)
+  const [contextDelivery, setContextDelivery] = useState('')
   const [contact, setContact] = useState(emptyContact)
   const [password, setPassword] = useState('')
   const [visiblePassword, setVisiblePassword] = useState(false)
@@ -71,6 +74,11 @@ export default function RecruitmentSignupModal({ open, onClose, organisationName
       setComplete(true); setPassword(''); setVisiblePassword(false)
       setContactSaved(true)
       onCaptured?.(result)
+      if (endpoint === '/api/home-seekers/recruitment') {
+        const person = attempt.current.contact
+        submitJoinFollowUp('application_contact', { name: `${person.firstName} ${person.lastName}`, email: person.email, mobile: person.phone, source: leadSource, calculator: calculatorContext, consent: true }, `contact:${attempt.current.key}`)
+          .catch(() => setContextDelivery('Your contact details are saved. Delivery of the extra calculator context is unconfirmed.'))
+      }
       setAccessMode('email'); setDelivery(null)
       try {
         const sent = await recruitmentSignupRequest('send_verification', { email: attempt.current.contact.email, submissionKey: attempt.current.key }, options)
@@ -85,6 +93,17 @@ export default function RecruitmentSignupModal({ open, onClose, organisationName
     } finally { inFlight.current = false; setBusy(false) }
   }
   function saveApplicant(next) {
+    if (next.applicationSubmitted && !next.submissionPreview && !localReview) {
+      const receipt = next.contactSubmissionKey || attempt.current?.key
+      if (receipt) onApplicationComplete?.(receipt)
+      if (receipt && notifiedApplication.current !== receipt) {
+        notifiedApplication.current = receipt
+        const person = next.contact || contact
+        submitJoinFollowUp('application', { name: `${person.firstName || ''} ${person.lastName || ''}`.trim(), email: person.email, mobile: person.phone, source: leadSource, calculator: calculatorContext, consent: true }, `application:${receipt}`)
+          .then(() => setContextDelivery(''))
+          .catch(() => { notifiedApplication.current = null; setContextDelivery('Your application is submitted. Delivery of the extra calculator context is unconfirmed.') })
+      }
+    }
     if (localReview && next.applicationSubmitted && next.submissionPreview) {
       localApplicationId.current ||= crypto.randomUUID()
       saveNextStepsReview('application', { ...next.contact, answers: next.submittedApplication?.answers, consent: true }, { id: localApplicationId.current })
@@ -121,6 +140,7 @@ export default function RecruitmentSignupModal({ open, onClose, organisationName
     <ol className="recruitment-signup__steps" aria-label="Application progress">{(codeOnly ? ['Contact', 'Verify email', 'Application', 'Review'] : ['Create account', 'Verify email', 'Your application', 'Review']).map((label, index) => <li key={label} aria-current={index === activeStep ? 'step' : undefined}><span>{index < activeStep ? <Check size={14} aria-hidden="true" /> : index + 1}</span>{label}</li>)}</ol>
     {!context && !contextError && <p role="status">Preparing your application…</p>}
     {contextError && <div role="alert"><p>{contextError}</p><button type="button" className="recruitment-signup__secondary" onClick={() => setReload((value) => value + 1)}>Try again</button></div>}
+    {contextDelivery && <p role="status">{contextDelivery}</p>}
     {context && <>
       {applicant ? <>
         {applicant.applicationSubmitted ? <div className="recruitment-profile__complete" role="status">
@@ -141,7 +161,7 @@ export default function RecruitmentSignupModal({ open, onClose, organisationName
             <RecruitmentApplicantDocuments applicant={applicant} endpoint={endpoint} token={token} preview={context.preview || applicant.submissionPreview} onSaved={setApplicant} onBusy={accessBusy} onSessionExpired={() => { setContact(current => ({ ...current, email: applicant.contact?.email || current.email })); setApplicant(null); setAccessMode('email'); setMessage('Verify your email again to continue with your saved document pack.') }} />
           </>}
           <button className={codeOnly ? 'recruitment-signup__secondary' : 'recruitment-signup__submit'} disabled={busy} type="button" onClick={close}>Close</button>
-        </div> : <RecruitmentProfileQuestionnaire applicant={applicant} endpoint={endpoint} token={token} preview={context.preview} enhanced={codeOnly} homeSeekers={codeOnly || context.packagePreferenceRequired===true} submissionKey={applicant.contactSubmissionKey || attempt.current?.key} onSaved={saveApplicant} onBusy={accessBusy} onClose={onClose} closeRequestRef={profileClose} onReviewChange={setReviewing} />}
+        </div> : <RecruitmentProfileQuestionnaire applicant={applicant} endpoint={endpoint} token={token} preview={context.preview} enhanced={codeOnly} homeSeekers={codeOnly || context.packagePreferenceRequired===true} submissionKey={applicant.contactSubmissionKey || attempt.current?.key} onSaved={saveApplicant} onBusy={accessBusy} onClose={onClose} closeRequestRef={profileClose} onReviewChange={setReviewing} calculatorContext={calculatorContext} />}
         {message && <p role="alert">{message}</p>}
         <button className="recruitment-signup__account-action" type="button" disabled={busy} onClick={signOut}>{context.preview ? 'Restart preview' : 'Sign out of applicant account'}</button>
       </>
@@ -155,6 +175,8 @@ export default function RecruitmentSignupModal({ open, onClose, organisationName
         : <form onSubmit={submit} noValidate aria-label={codeOnly ? 'Start recruitment enquiry' : 'Create applicant account'} aria-busy={busy}>
           <h4>{codeOnly ? 'Your contact details' : 'Create your applicant account'}</h4>{!codeOnly && <p className="recruitment-signup__intro">Start with your contact details. You’ll complete your personal and professional information after verifying your email.</p>}
           {correctingEmail && <p className="recruitment-signup__note" role="status">Correct your email address, re-enter your password and confirm consent to continue. We’ll send a verification code to the corrected address.</p>}
+          <input type="hidden" name="calculator" value={JSON.stringify(calculatorContext)} />
+          <input type="hidden" name="source" value={leadSource} />
           <fieldset disabled={busy}>
             <div className="recruitment-signup__fields">{[['firstName','First name','text','given-name',60],['lastName','Surname','text','family-name',60],['email','Email address','email','email',254],['phone','Mobile number','tel','tel',50]].map(([key,label,type,autoComplete,maxLength]) => <label key={key}>{label} <span aria-hidden="true">*</span><input ref={key === 'email' ? contactEmailInput : undefined} name={key} type={type} required autoComplete={autoComplete} maxLength={maxLength} value={contact[key]} readOnly={locked} onChange={(event) => change(key, event.target.value)} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `signup-${key}-error` : undefined} />{errors[key] && <small id={`signup-${key}-error`} className="recruitment-signup__error">{errors[key]}</small>}</label>)}</div>
             <label>Password <span aria-hidden="true">*</span><div className="recruitment-signup__password"><input name="password" type={visiblePassword ? 'text' : 'password'} autoComplete="new-password" required minLength={8} maxLength={72} value={password} onChange={(event) => { setPassword(event.target.value); setErrors((current) => ({ ...current, password: undefined })) }} aria-invalid={!!errors.password} aria-describedby="signup-password-help" /><button type="button" aria-label={visiblePassword ? 'Hide password' : 'Show password'} onClick={() => setVisiblePassword((value) => !value)}>{visiblePassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><small id="signup-password-help" className={errors.password ? 'recruitment-signup__error' : ''}>{errors.password || (codeOnly ? 'At least 8 characters. Use this password to log in and upload your documents. Already have an account? Use your existing password.' : 'At least 8 characters. Use a password unique to your account.')}</small></label>

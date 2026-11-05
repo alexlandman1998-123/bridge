@@ -52,6 +52,22 @@ test('identifies managed workflow actions without excluding normal seller upload
   assert.equal(isSellerTeamManagedDocument({ title: 'Upload identity document', metadata: { requirementKey: 'identity' } }), false)
 })
 
+test('FICA supporting evidence remains in the seller checklist alongside bank details', () => {
+  const items = [
+    { id: 'marriage', key: 'seller_marriage_certificate', group: 'seller_identity_fica', sourceType: 'required_document', status: 'required' },
+    { id: 'address', key: 'seller_proof_of_address', group: 'seller_identity_fica', description: 'Supporting evidence for FICA verification.', sourceType: 'required_document', status: 'required' },
+    { id: 'bank', key: 'bond_bank_details', group: 'property_finance_existing_bond', sourceType: 'required_document', status: 'required' },
+    { id: 'pack', key: 'signed_fica_declaration', group: 'seller_identity_fica', sourceType: 'required_document', status: 'approved' },
+  ]
+  assert.equal(isSellerTeamManagedDocument(items[0]), false)
+  assert.equal(isSellerTeamManagedDocument(items[1]), false)
+  assert.equal(isSellerTeamManagedDocument(items[3]), true)
+  const summary = buildSellerPortalDocumentSummary({ items, summary: { total: 4, approved: 1, blocking: 3 } })
+  assert.equal(summary.actionRequired, 3)
+  assert.equal(summary.total, 3)
+  assert.deepEqual(summary.actionItems.map(item => item.id), ['marriage', 'address', 'bank'])
+})
+
 test('optional uploads do not become seller checklist actions or review blockers', () => {
   const summary = buildSellerPortalDocumentSummary({
     summary: { total: 4, outstanding: 2, underReview: 1, approved: 1, blocking: 2 },

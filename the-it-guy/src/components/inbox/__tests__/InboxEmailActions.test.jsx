@@ -58,8 +58,8 @@ it('offers retry only for failed requests and cancellation only before submissio
  expect(screen.getAllByRole('button',{name:'Retry unchanged email'})).toHaveLength(1);expect(screen.getAllByRole('button',{name:'Cancel queued email'})).toHaveLength(1);expect(screen.getByText(/Automatic resend is blocked/)).toBeTruthy()
  fireEvent.click(screen.getByRole('button',{name:'Retry unchanged email'}));await waitFor(()=>expect(api.action).toHaveBeenCalledWith({organisationId:org,jobId:'failed',action:'retry'}))
 })
-it('escapes signature and message previews and traps modal focus',async()=>{
- await open();compose();const frame=screen.getByTitle('Outgoing email preview');expect(frame.getAttribute('sandbox')).toBe('');expect(frame.srcdoc).toContain('Body &lt;safe&gt;');expect(frame.srcdoc).toContain('Signature One');const dialog=screen.getByRole('dialog');const buttons=within(dialog).getAllByRole('button');buttons.at(-1).focus();fireEvent.keyDown(buttons.at(-1),{key:'Tab'});expect(document.activeElement).toBe(buttons[0])
+it('removes previews and traps modal focus',async()=>{
+ await open();compose();expect(screen.queryByTitle('Outgoing email preview')).toBeNull();expect(screen.queryByText('Preview email and signature')).toBeNull();const dialog=screen.getByRole('dialog');const buttons=within(dialog).getAllByRole('button');buttons.at(-1).focus();fireEvent.keyDown(buttons.at(-1),{key:'Tab'});expect(document.activeElement).toBe(buttons[0])
 })
 
 it('uses the original message Reply-To address and snapshots its identity',async()=>{
@@ -74,7 +74,25 @@ it('uses the original message Reply-To address and snapshots its identity',async
 
 it('refreshes signature and connection settings whenever the composer opens',async()=>{
  api.mailboxes.mockResolvedValueOnce([one]).mockResolvedValueOnce([{...one,signatureRevision:4,signature:{name:'Updated signature',body:[]}}])
- await open();compose();expect(screen.getByTitle('Outgoing email preview').srcdoc).toContain('Updated signature')
+ await open();compose()
  fireEvent.click(screen.getByRole('button',{name:'Send email'}));await waitFor(()=>expect(api.queue).toHaveBeenCalled())
  expect(api.queue.mock.calls[0][0].email.signatureRevision).toBe(4)
+})
+
+it('offers channel cards before composing and opens the selected WhatsApp conversation',async()=>{
+ const onWhatsApp=vi.fn();render(<InboxEmailActions {...props} createOnly whatsAppConversations={[{id:'wa-chat',name:'Pat Smith',address:'27821234567'}]} onWhatsApp={onWhatsApp}/>);
+ fireEvent.click(screen.getByRole('button',{name:'New message'}));await screen.findByRole('dialog',{name:'New message'});
+ expect(screen.queryByLabelText('To')).toBeNull();fireEvent.click(screen.getByRole('button',{name:/WhatsApp Message a contact/}));
+ await screen.findByRole('dialog',{name:'WhatsApp message'});fireEvent.change(screen.getByRole('textbox',{name:'Find WhatsApp conversation'}),{target:{value:'Pat'}});
+ fireEvent.click(screen.getByRole('button',{name:/Pat Smith/}));expect(onWhatsApp).toHaveBeenCalledWith('wa-chat');expect(screen.queryByRole('dialog')).toBeNull();expect(api.queue).not.toHaveBeenCalled();
+})
+it('opens the email composer from the channel picker without sending',async()=>{
+ render(<InboxEmailActions {...props} createOnly/>);fireEvent.click(screen.getByRole('button',{name:'New message'}));const email=await screen.findByRole('button',{name:/Email Write an email/});await waitFor(()=>expect(email.disabled).toBe(false));fireEvent.click(email);await screen.findByRole('dialog',{name:'New email'});expect(screen.getByLabelText('To')).toBeTruthy();expect(api.queue).not.toHaveBeenCalled();
+})
+
+it('adds dropped files, supports removal and rejects oversized drops without uploading',async()=>{
+ await open();const drop=screen.getByRole('group',{name:'Attachment drop zone'});const file=new File(['offer'],'offer.pdf',{type:'application/pdf'});
+ fireEvent.dragEnter(drop,{dataTransfer:{files:[file]}});expect(screen.getByText('Drop files to attach')).toBeTruthy();fireEvent.drop(drop,{dataTransfer:{files:[file]}});
+ expect(screen.getByRole('button',{name:'Remove offer.pdf'})).toBeTruthy();expect(screen.getByText('Drag files here')).toBeTruthy();expect(api.upload).not.toHaveBeenCalled();
+ const large=new File(['large'],'oversized.pdf');Object.defineProperty(large,'size',{value:11*1024*1024});fireEvent.drop(drop,{dataTransfer:{files:[large]}});expect(await screen.findByRole('alert')).toBeTruthy();expect(screen.queryByRole('button',{name:'Remove oversized.pdf'})).toBeNull();expect(screen.getByRole('button',{name:'Remove offer.pdf'})).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Remove offer.pdf'}));expect(screen.queryByRole('list',{name:'Selected attachments'})).toBeNull();
 })

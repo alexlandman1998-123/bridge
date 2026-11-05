@@ -175,7 +175,10 @@ export function extractNewTransactionSetupHealthFromEvents(events = []) {
 
   const auditEvent = events.find((event) => {
     const eventType = text(event?.eventType || event?.event_type).toLowerCase()
-    return eventType === 'transaction_setup_audit'
+    const data = event?.eventData || event?.event_data || {}
+    // The legacy event writer stores unrecognised audit types as TransactionUpdated.
+    return eventType === 'transaction_setup_audit' ||
+      (eventType === 'transactionupdated' && data.setupHealth?.version === NEW_TRANSACTION_SETUP_HEALTH_VERSION)
   })
   const eventData =
     auditEvent?.eventData && typeof auditEvent.eventData === 'object'

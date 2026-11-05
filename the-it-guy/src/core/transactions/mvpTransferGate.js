@@ -1,21 +1,20 @@
+import { activeCapturedRequirement } from './participantRequirementActivity.js'
 import { evaluateMvpFinanceGate } from './mvpFinanceGate.js'
 import { normalizeFinanceType } from './financeType.js'
 
 export const MVP_TRANSFER_GATE_VERSION = 'arch9_mvp_transfer_gate_v1'
 const COMPLETE = new Set(['complete', 'completed', 'verified', 'approved', 'satisfied', 'waived', 'not_applicable'])
 const key = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-const CAPTURED_REQUIREMENT_STATUSES = new Set(['captured', 'assigned', 'complete', 'completed', 'verified', 'satisfied'])
 
-function hasCapturedRequirement(participantRequirements = [], roleKey = '') {
+function hasCapturedRequirement(participantRequirements = [], roleKey = '', participants = []) {
   return (Array.isArray(participantRequirements) ? participantRequirements : []).some((requirement) => {
     if (key(requirement.roleKey || requirement.role_key) !== roleKey) return false
-    return CAPTURED_REQUIREMENT_STATUSES.has(key(requirement.status)) ||
-      Boolean(requirement.participantId || requirement.participant_id)
+    return activeCapturedRequirement(requirement, participants)
   })
 }
 
 function hasTransferAttorney(participants = [], participantRequirements = []) {
-  return hasCapturedRequirement(participantRequirements, 'transfer_attorney') || participants.some((participant) => {
+  return hasCapturedRequirement(participantRequirements, 'transfer_attorney', participants) || participants.some((participant) => {
     if (['removed', 'inactive', 'declined', 'expired'].includes(key(participant.status || 'active'))) return false
     return key(participant.transactionRole || participant.transaction_role) === 'transfer_attorney' ||
       (key(participant.roleType || participant.role_type) === 'attorney' && key(participant.legalRole || participant.legal_role) === 'transfer')
@@ -23,7 +22,7 @@ function hasTransferAttorney(participants = [], participantRequirements = []) {
 }
 
 function hasActiveRole(participants = [], roleKey = '', participantRequirements = []) {
-  return hasCapturedRequirement(participantRequirements, roleKey) || participants.some((participant) => {
+  return hasCapturedRequirement(participantRequirements, roleKey, participants) || participants.some((participant) => {
     if (['removed', 'inactive', 'declined', 'expired'].includes(key(participant.status || 'active'))) return false
     const metadata = participant.metadata || participant.metadata_json || {}
     const roleKeys = [
@@ -55,7 +54,7 @@ export function evaluateMvpTransferGate({ routingProfile = {}, participants = []
   }
   blockers.push(...finance.blockers)
   const incomplete = (documentRequirements || []).filter((item) => {
-    if (item.isRequired === false) return false
+    if ((item.isRequired ?? item.is_required ?? item.required) === false) return false
     if (item.complete === false || item.uploadMissing === true || item.upload_missing === true) return true
     if (item.complete === true) return false
     return !COMPLETE.has(key(item.status))

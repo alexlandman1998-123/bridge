@@ -3,12 +3,12 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import ClientActivityPanel from './ClientActivityPanel'
-import { loadClientActivity, logClientInteraction } from '../../services/clientActivityService'
-vi.mock('../../services/clientActivityService', async (original) => ({ ...await original(), loadClientActivity: vi.fn(), logClientInteraction: vi.fn() }))
+import { loadClientActivity, loadClientEngagementSummary, logClientInteraction } from '../../services/clientActivityService'
+vi.mock('../../services/clientActivityService', async (original) => ({ ...await original(), loadClientActivity: vi.fn(), loadClientEngagementSummary: vi.fn(), logClientInteraction: vi.fn() }))
 const client = { id: 'client:a', identityId: 'a', identityVersion: 3, organisationId: 'agency', name: 'Taylor Smith' }
 const event = { id: 'event-a', title: 'Call logged', detail: 'Confirmed viewing', actor_kind: 'staff', actor_name: 'Alex Agent', source_kind: 'lead', source_id: 'lead-a', occurred_at: '2026-10-09T10:00:00Z' }
 const show = (props = {}) => render(<MemoryRouter><ClientActivityPanel client={client} {...props} /></MemoryRouter>)
-beforeEach(() => { loadClientActivity.mockResolvedValue({ available: true, events: [event], nextCursor: null }); logClientInteraction.mockResolvedValue('saved') })
+beforeEach(() => { loadClientEngagementSummary.mockResolvedValue({ available: true, lastContact: null, conversations: [], pendingFollowUps: 0 }); loadClientActivity.mockResolvedValue({ available: true, events: [event], nextCursor: null }); logClientInteraction.mockResolvedValue('saved') })
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
 
 test('renders dates, actor and source links, and filters through the paged reader', async () => {
@@ -105,7 +105,7 @@ test('incoming and outgoing views distinguish a campaign response from provider 
   expect(screen.getByText(/Only a recorded response confirms a reply/)).toBeTruthy()
 })
 
-test('refresh preserves expanded details, search and previously loaded older history', async () => {
+test('refresh preserves search and discards old pages that may have lost permission', async () => {
   const old = { ...event, id: 'older', title: 'Earlier enquiry', occurred_at: '2026-10-08T10:00:00Z' }
   loadClientActivity.mockResolvedValueOnce({ available: true, events: [event], nextCursor: { id: event.id, occurred_at: event.occurred_at } })
     .mockResolvedValueOnce({ available: true, events: [old], nextCursor: null })
@@ -117,7 +117,8 @@ test('refresh preserves expanded details, search and previously loaded older his
   fireEvent.change(screen.getByRole('textbox', { name: 'Search activity' }), { target: { value: 'Earlier' } })
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
   await waitFor(() => expect(loadClientActivity).toHaveBeenCalledTimes(3))
-  expect(screen.getByRole('button', { name: 'Earlier enquiry' }).getAttribute('aria-expanded')).toBe('true')
+  expect(screen.queryByRole('button', { name: 'Earlier enquiry' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Load older activity' })).toBeTruthy()
   expect(screen.getByRole('textbox', { name: 'Search activity' }).value).toBe('Earlier')
 })
 
@@ -139,4 +140,54 @@ test('automatic updates preserve expansion and stop while updates are paused', a
   fireEvent.click(screen.getByRole('switch'))
   await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
   expect(loadClientActivity).toHaveBeenCalledTimes(requests)
+})
+
+
+test('shows permitted team assignments independently of the current history category', async () => {
+  loadClientEngagementSummary.mockResolvedValue({ available: true, lastContact: { at: '2026-10-10T10:00:00Z', actorName: 'Robin' }, pendingFollowUps: 2, conversations: [{ id: 'thread', channel: 'whatsapp', assignedName: 'Robin', status: 'open', lastActivityAt: '2026-10-10T10:00:00Z' }] })
+  show()
+  expect(await screen.findByText('2 open follow-ups visible to you.')).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Open Inbox' }).getAttribute('href')).toBe('/inbox/whatsapp')
+  expect(screen.getByText('Last successful contact')).toBeTruthy()
+})
+
+test('a failed summary does not block logging or imply nobody else has contacted the client', async () => {
+  loadClientEngagementSummary.mockRejectedValue(new Error('Summary denied'))
+  show()
+  await screen.findByText(/Team engagement information is unavailable/)
+  expect(screen.queryByText('No visible conversations recorded.')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Log interaction' })).toBeTruthy()
+})
+
+test('records an unanswered call with its outcome', async () => {
+  show()
+  await screen.findByText('Confirmed viewing')
+  fireEvent.click(screen.getByRole('button', { name: 'Log interaction' }))
+  fireEvent.change(screen.getByLabelText('Call outcome'), { target: { value: 'no_answer' } })
+  fireEvent.change(screen.getByLabelText('Interaction details'), { target: { value: 'Tried the client' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save interaction' }))
+  await waitFor(() => expect(logClientInteraction).toHaveBeenCalledWith(client, expect.objectContaining({ outcome: 'no_answer' })))
+})
+
+test('denied refresh clears previously visible conversations and journal entries', async () => {
+  show()
+  await screen.findByText('Confirmed viewing')
+  loadClientActivity.mockRejectedValueOnce(new Error('Permission revoked'))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await screen.findByText('Permission revoked')
+  expect(screen.queryByText('Confirmed viewing')).toBeNull()
+  expect(screen.queryByRole('region', { name: 'Team engagements' })).toBeNull()
+})
+
+
+test('a late team summary cannot expose the previous client after switching profiles', async () => {
+  let resolveOld
+  loadClientEngagementSummary.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve }))
+    .mockResolvedValueOnce({ available: true, conversations: [], pendingFollowUps: 0 })
+  const { rerender } = show()
+  await screen.findByText('Confirmed viewing')
+  rerender(<MemoryRouter><ClientActivityPanel client={{ ...client, identityId: 'other-client' }} /></MemoryRouter>)
+  await screen.findByText('No visible conversations recorded.')
+  await act(async () => resolveOld({ available: true, conversations: [{ id: 'private-old', channel: 'email', assignedName: 'Previous client agent', lastActivityAt: '2026-01-01' }] }))
+  expect(screen.queryByText(/Previous client agent/)).toBeNull()
 })

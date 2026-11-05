@@ -29,3 +29,24 @@ test.each(['optional', 'recommended'])('%s canonical request stays visible and u
   expect(onUpload).toHaveBeenCalledWith(expect.objectContaining({ requirementInstanceId: 'supporting-letter' }), file, expect.any(Object))
   expect(screen.getByText('Received and awaiting review by your transaction team.')).toBeTruthy()
 })
+
+test('switching document requests clears the old file and cannot inherit its late success', async () => {
+  const center = buildCanonicalBuyerDocumentCenter({ requirements: ['first-letter', 'second-letter'].map(id => ({
+    id, document_definition_key: `buyer_${id}`, requirement_level: 'optional',
+    pack_key: 'buyer_finance', status: 'requested', uploadable_by_roles: ['buyer'],
+    document_definitions: { display_label: id },
+  })), documents: [] })
+  const model = buildBuyerDocumentPresentationModel({ items: center.items, source: 'canonical_projection' })
+  let complete
+  const onUpload = vi.fn(() => new Promise(resolve => { complete = resolve }))
+  const view = render(<BuyerDocumentWorkspace model={model} onUpload={onUpload} />)
+  const first = view.container.querySelector('input[type="file"]')
+  await act(async () => { fireEvent.change(first, { target: { files: [new File(['fixture'], 'first-only.pdf', { type: 'application/pdf' })] } }) })
+  expect(screen.getAllByText(/first-only.pdf/).length).toBeGreaterThan(0)
+  const buttons = [...view.container.querySelectorAll('button[data-document-status]')]
+  fireEvent.click(buttons[1])
+  expect(screen.queryAllByText(/first-only.pdf/)).toHaveLength(0)
+  await act(async () => complete({ ok: true }))
+  expect(screen.queryByText('Received and awaiting review by your transaction team.')).toBeNull()
+  expect(screen.getByLabelText('Upload document').disabled).toBe(false)
+})

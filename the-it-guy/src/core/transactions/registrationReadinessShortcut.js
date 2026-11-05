@@ -1,4 +1,5 @@
 import { isBondFinanceType, normalizeFinanceType } from './financeType.js'
+import { canonicalRegistrationReadiness } from './canonicalRegistrationReadiness.js'
 
 export const REGISTRATION_READINESS_SHORTCUT_VERSION = 'arch9_registration_readiness_shortcut_v1'
 
@@ -98,20 +99,21 @@ function requiresAttorneyBond(transaction = {}, workflow = null) {
 }
 
 export function buildRegistrationReadinessShortcut({ transaction = {}, workflows = {}, rollup = null } = {}) {
+  const canonical=canonicalRegistrationReadiness(transaction,rollup?.transactionJourneySnapshot?.legalJourney)
   const registrationWorkflow = getWorkflow(workflows, 'registration')
   const transferWorkflow = getWorkflow(workflows, 'attorney_transfer')
   const bondWorkflow = getWorkflow(workflows, 'attorney_bond')
   const cancellationWorkflow = getWorkflow(workflows, 'seller_bond_cancellation')
   const transactionId = firstText(transaction.id, transaction.transactionId, rollup?.transactionId)
   const registered = isRegistered(transaction, registrationWorkflow)
-  const bondRequired = requiresAttorneyBond(transaction, bondWorkflow)
-  const cancellationRequired = requiresCancellation(transaction, cancellationWorkflow)
+  const bondRequired = canonical.available ? canonical.requiredLaneKeys.includes('bond') : requiresAttorneyBond(transaction, bondWorkflow)
+  const cancellationRequired = canonical.available ? canonical.requiredLaneKeys.includes('cancellation') : requiresCancellation(transaction, cancellationWorkflow)
 
-  const transferReady = workflowReady(transferWorkflow, 'lodged')
-  const bondReady = !bondRequired || workflowReady(bondWorkflow, 'lodged')
-  const cancellationReady = !cancellationRequired || workflowReady(cancellationWorkflow, 'lodged')
+  const transferReady = canonical.available ? canonical.lanes.transfer===true : workflowReady(transferWorkflow, 'lodged')
+  const bondReady = !bondRequired || (canonical.available ? canonical.lanes.bond===true : workflowReady(bondWorkflow, 'lodged'))
+  const cancellationReady = !cancellationRequired || (canonical.available ? canonical.lanes.cancellation===true : workflowReady(cancellationWorkflow, 'lodged'))
   const allRequiredMattersLodged =
-    isComplete(getStep(registrationWorkflow, 'all_required_matters_lodged')?.status) ||
+    (canonical.available ? canonical.ready : isComplete(getStep(registrationWorkflow, 'all_required_matters_lodged')?.status)) ||
     (transferReady && bondReady && cancellationReady)
 
   const checks = [
@@ -207,7 +209,7 @@ export function buildRegistrationReadinessShortcut({ transaction = {}, workflows
     )
   }
 
-  const ready = registered || allRequiredMattersLodged
+  const ready = canonical.available ? canonical.ready : registered || allRequiredMattersLodged
   const status = registered ? 'registered' : ready ? 'ready_for_registration' : 'blocked'
   const nextAction = blockers[0]
     ? {
@@ -225,6 +227,7 @@ export function buildRegistrationReadinessShortcut({ transaction = {}, workflows
 
   return {
     version: REGISTRATION_READINESS_SHORTCUT_VERSION,
+    canonical,
     transactionId: transactionId || null,
     status,
     ready,

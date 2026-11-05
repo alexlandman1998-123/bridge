@@ -20,7 +20,7 @@ const STATUS_LABELS = {
   'Signed OTP recorded': 'Signed',
 }
 
-function BuyerJourneyOverviewPanel({ currentStageLabel = 'Buyer Timeline', stages = [], onStageSelect, onTransactionSetup }) {
+function BuyerJourneyOverviewPanel({ currentStageLabel = 'Buyer Timeline', stages = [], onStageSelect, onTransactionSetup, transactionSetupOpen = false, onCloseTransactionSetup }) {
   const currentStage = stages.find(step => step.state === 'current')
   const heading = STAGE_LABELS[currentStage?.key] || currentStageLabel
   return (
@@ -37,7 +37,7 @@ function BuyerJourneyOverviewPanel({ currentStageLabel = 'Buyer Timeline', stage
           </h2>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-        {onTransactionSetup ? <button type="button" onClick={onTransactionSetup} className="rounded-full border border-[#cbdcf5] bg-white px-3 py-1 text-xs font-semibold text-[#24568f]">Transaction setup</button> : null}
+        {onTransactionSetup ? <button type="button" aria-controls="buyer-journey-transaction-setup" aria-expanded={transactionSetupOpen} onClick={transactionSetupOpen ? onCloseTransactionSetup : onTransactionSetup} className="rounded-full border border-[#cbdcf5] bg-white px-3 py-1 text-xs font-semibold text-[#24568f]">{transactionSetupOpen ? 'Close transaction setup' : 'Transaction setup'}</button> : null}
         <span className="rounded-full border border-[#cbdcf5] bg-[#eef5ff] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#24568f]">
           Current step
         </span>

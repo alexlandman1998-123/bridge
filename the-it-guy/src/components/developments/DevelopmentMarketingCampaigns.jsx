@@ -20,8 +20,8 @@ const date = timestamp => { const result = timestamp ? new Date(timestamp) : nul
 
 export default function DevelopmentMarketingCampaigns(props) {
   const { authState } = useAuthSession()
-  const organisationId = String(authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '')
-  return <DevelopmentMarketingCampaignsWorkspace key={organisationId} {...props} organisationId={organisationId} />
+  const organisationId = String(authState?.currentWorkspace?.organisationId || authState?.currentWorkspace?.organisation_id || authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '')
+  return <DevelopmentMarketingCampaignsWorkspace key={`${organisationId}:${props.development.id}`} {...props} organisationId={organisationId} />
 }
 
 export function DevelopmentMarketingCampaignsWorkspace({ development, organisationId, organisationUsers = [], canManage = false, loadCampaigns = fetchDevelopmentCampaigns }) {
@@ -54,7 +54,7 @@ export function DevelopmentMarketingCampaignsWorkspace({ development, organisati
     return <section className="development-campaign-editor" aria-label={`${channelLabel(editor.channel)} campaign workspace`}><p className="development-campaign-context">Campaigns · {development.name}</p><Suspense fallback={<p role="status">Opening campaign workspace…</p>}>{editor.mode === 'create' ? <Builder campaignId={editor.id} developmentContext={developmentCampaignContext(development)} onBack={back} /> : <Detail campaignId={editor.id} onBack={back} onEdit={id => setEditor({ channel: editor.channel, id, mode: 'create' })} />}</Suspense></section>
   }
   return <section className="development-marketing-campaigns" aria-label="Development campaigns" aria-busy={loading}>
-    <header className="development-campaign-heading"><div><span className="development-campaign-eyebrow">Turn interest into conversations</span><h3>Your next campaign starts here.</h3><p>Reach your audience and follow the results for {development.name}.</p></div><Button type="button" variant="secondary" size="sm" onClick={() => setRefresh(previous => previous + 1)} disabled={loading}><RefreshCw size={15} aria-hidden="true" />Refresh</Button></header>
+    <header className="development-campaign-heading"><Button type="button" variant="secondary" size="sm" onClick={() => setRefresh(previous => previous + 1)} disabled={loading}><RefreshCw size={15} aria-hidden="true" />Refresh</Button></header>
     <div className="development-campaign-actions">
       <button type="button" className="development-campaign-action is-email" disabled={!canManage} onClick={() => setEditor({ channel: 'email', mode: 'create' })}><span className="development-campaign-action-icon"><Mail size={26} aria-hidden="true" /></span><strong>Email Campaign</strong><small>Tell the story. Spark the next enquiry.</small><ArrowUpRight size={20} aria-hidden="true" /></button>
       <button type="button" className="development-campaign-action is-whatsapp" disabled={!canManage} onClick={() => setEditor({ channel: 'whatsapp', mode: 'create' })}><span className="development-campaign-action-icon"><MessageCircle size={26} aria-hidden="true" /></span><strong>WhatsApp Campaign</strong><small>Start a conversation with your buyers.</small><ArrowUpRight size={20} aria-hidden="true" /></button>

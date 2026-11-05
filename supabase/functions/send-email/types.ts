@@ -1068,6 +1068,8 @@ export type SendSellerOnboardingPayload = {
   organisationId?: string;
   leadId?: string;
   listingId?: string;
+  transactionId?: string;
+  transactionSellerLinkId?: string;
   sellerName?: string;
   propertyTitle?: string;
   propertyType?: string;
@@ -1519,6 +1521,12 @@ export type SendAppointmentEmailPayload = {
     | "appointment_updated"
     | "appointment_cancelled"
     | "appointment_rescheduled"
+    | "appointment_time_change_requested"
+    | "appointment_time_change_proposed"
+    | "appointment_time_change_confirmed"
+    | "appointment_time_change_declined"
+    | "appointment_time_change_withdrawn"
+    | "appointment_time_change_expired"
     | "appointment_confirmation_required"
     | "appointment_reminder"
     | "appointment_documents_required";

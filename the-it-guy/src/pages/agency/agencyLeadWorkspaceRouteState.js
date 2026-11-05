@@ -7,7 +7,6 @@ export function normalizeBuyerWorkspaceTab(tab = '') {
   return key
 }
 
-
 export function resolveAgencyLeadWorkspaceTab(search = '') {
   const params = new URLSearchParams(search)
   return normalizeBuyerWorkspaceTab(params.get('tab') || params.get('sellerWorkspace')) || 'overview'

@@ -12,6 +12,7 @@ const agentDataService = await read('../src/lib/agentDataService.js')
 const attorneyMockData = await read('../src/core/transactions/attorneyMockData.js')
 const mockData = await read('../src/lib/mockData.js')
 const attorneyTransactionDetail = await read('../src/pages/AttorneyTransactionDetail.jsx')
+const bondApplicationDownloadService = await read('../src/services/bondApplicationDownloadService.js')
 
 assert.match(
   mockData,
@@ -37,8 +38,13 @@ for (const [label, source] of [
 
 assert.match(
   attorneyTransactionDetail,
-  /import\('html2pdf\.js\/src\/index\.js'\)/,
-  'Bond application PDF export should import html2pdf source entry so PDF dependencies can be split.',
+  /import\('\.\.\/services\/bondApplicationDownloadService\.js'\)/,
+  'The transaction workspace must load bond PDF downloads only when requested.',
+)
+assert.match(
+  bondApplicationDownloadService,
+  /import\('\.\.\/modules\/bond\/application\/exports\/bondApplicationPackPdf\.js'\)/,
+  'The download service must keep the bond PDF renderer behind a dynamic import.',
 )
 assert.doesNotMatch(
   attorneyTransactionDetail,

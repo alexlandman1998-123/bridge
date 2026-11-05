@@ -34,7 +34,7 @@ verify_enabled = true
 [auth.email]
 enable_confirmations = true
 max_frequency = "1m0s"
-otp_length = 8
+otp_length = 6
 
 [auth.email.smtp]
 host = "smtp.resend.com"
@@ -45,7 +45,7 @@ admin_email = "no-reply@arch9.co.za"
 sender_name = "Arch9"
 
 [auth.email.template.confirmation]
-subject = "Confirm your Arch9 email address"
+subject = "{{ .Token }} is your Arch9 verification code"
 content_path = "./supabase/templates/auth/confirmation.html"
 
 [auth.email.template.magic_link]
@@ -136,6 +136,18 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/revo-inbox-sync/deno.json"
 entrypoint = "./functions/revo-inbox-sync/index.ts"
+
+[functions.revo-imap-inbox]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-imap-inbox/deno.json"
+entrypoint = "./functions/revo-imap-inbox/index.ts"
+
+[functions.revo-inbox-attachment]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-inbox-attachment/deno.json"
+entrypoint = "./functions/revo-inbox-attachment/index.ts"
 
 [functions.meta-lead-ads-webhook]
 enabled = true
@@ -343,12 +355,6 @@ verify_jwt = true
 import_map = "./functions/whatsapp-campaigns/deno.json"
 entrypoint = "./functions/whatsapp-campaigns/index.ts"
 
-[functions.whatsapp-campaign-worker]
-enabled = true
-# The worker validates a server credential itself, including opaque secret keys.
-verify_jwt = false
-entrypoint = "./functions/whatsapp-campaign-worker/index.ts"
-
 [functions.meta-integrations]
 enabled = true
 verify_jwt = false
@@ -415,30 +421,6 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/document-requirement-dispatcher/deno.json"
 entrypoint = "./functions/document-requirement-dispatcher/index.ts"
-
-[functions.whatsapp-business-app-worker]
-enabled = true
-# Server-only credential check shared with the existing campaign worker.
-verify_jwt = false
-entrypoint = "./functions/whatsapp-business-app-worker/index.ts"
-
-[functions.whatsapp-automation-worker]
-enabled = true
-# Server-only credential check shared with the campaign worker.
-verify_jwt = false
-entrypoint = "./functions/whatsapp-automation-worker/index.ts"
-
-[functions.revo-imap-inbox]
-enabled = true
-verify_jwt = false
-import_map = "./functions/revo-imap-inbox/deno.json"
-entrypoint = "./functions/revo-imap-inbox/index.ts"
-
-[functions.revo-inbox-attachment]
-enabled = true
-verify_jwt = false
-import_map = "./functions/revo-inbox-attachment/deno.json"
-entrypoint = "./functions/revo-inbox-attachment/index.ts"
 
 [functions.shared-inbox-send]
 enabled = true

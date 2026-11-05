@@ -25,6 +25,7 @@ import { createProperty24ApiResponse } from './server/property24/api.js'
 import { createPrivatePropertyApiResponse } from './server/private-property/api.js'
 import { createMobileWebPushResponse } from './server/services/mobileWebPushApi.js'
 import { handleAiCampaign } from './server/services/aiCampaignApi.js'
+import { createDevelopmentLandingResponse } from './server/services/publicDevelopmentShareApi.js'
 
 function documentTitleFallbackPlugin() {
   const fallbackDocumentTitle = 'Arch9 | Platform'
@@ -193,6 +194,46 @@ function missionControlApiPlugin() {
   return {
     name: 'mission-control-api',
     configureServer(server) {
+      // Preview published development media with current links, without local
+      // production credentials or writes to the live development records.
+      server.middlewares.use('/api/public/development-landing', async (request, response) => {
+        if (request.method !== 'GET') return writeNodeJsonResponse(response, {
+          status: 405, headers: { Allow: 'GET' }, body: { error: 'Method not allowed.' },
+        })
+        const slug = new URL(request.url, 'http://localhost').searchParams.get('slug') || ''
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return writeNodeJsonResponse(response, {
+          status: 400, body: { error: 'Invalid development.' },
+        })
+        try {
+          const upstream = await fetch(`https://app.arch9.co.za/api/public/development-landing?slug=${encodeURIComponent(slug)}`, {
+            signal: AbortSignal.timeout(20000),
+          })
+          if (upstream.status === 404) {
+            // Older production releases may not include the JSON endpoint yet.
+            // Fall back to the same published-only service used by the endpoint;
+            // it signs only public marketing assets and never writes data.
+            const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
+            const result = await createDevelopmentLandingResponse({
+              method: request.method,
+              url: request.url,
+              headers: request.headers,
+              env,
+            })
+            response.statusCode = result.status
+            for (const [key, value] of Object.entries(result.headers || {})) response.setHeader(key, value)
+            response.end(result.body || '')
+            return
+          }
+          writeNodeJsonResponse(response, {
+            status: upstream.status, headers: { 'Cache-Control': 'no-store' }, body: await upstream.json(),
+          })
+        } catch {
+          writeNodeJsonResponse(response, {
+            status: 503, headers: { 'Cache-Control': 'no-store' },
+            body: { error: 'Development temporarily unavailable. Please try again.' },
+          })
+        }
+      })
       server.middlewares.use('/api/listings/publication-jobs', (request, response) => {
         const env = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env }
         return listingPublicationJobsHandler(request, response, { ...env, SUPABASE_URL: env.VITE_SUPABASE_URL || env.SUPABASE_URL })

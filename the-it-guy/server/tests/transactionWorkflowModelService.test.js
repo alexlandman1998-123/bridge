@@ -69,6 +69,7 @@ function buildMockClient(seed = {}) {
       this.action = 'upsert'
       this.payload = payload
       this.onConflict = options.onConflict || ''
+      this.ignoreDuplicates = options.ignoreDuplicates === true
       return this
     }
 
@@ -127,6 +128,7 @@ function buildMockClient(seed = {}) {
         }
 
         if (existingIndex >= 0) {
+          if(this.ignoreDuplicates)continue
           rows[existingIndex] = { ...rows[existingIndex], ...next }
           inserted.push(rows[existingIndex])
         } else {
@@ -155,6 +157,7 @@ function buildMockClient(seed = {}) {
       }
 
       if (this.action === 'upsert') {
+        if(this.table==='transaction_workflow_steps'&&seed.beforeStepWrite){const hook=seed.beforeStepWrite;seed.beforeStepWrite=null;hook(state)}
         const inserted = this._upsertRows(rows)
         return { data: inserted, error: null }
       }
@@ -178,6 +181,18 @@ function buildMockClient(seed = {}) {
 try {
   const workflowModel = await server.ssrLoadModule('/server/services/transactionWorkflowModelService.js')
   const rollupService = await server.ssrLoadModule('/server/services/transactionWorkflowRollup.js')
+
+  const preservedClient=buildMockClient()
+  preservedClient.state.transaction_workflow_instances.push({id:'preserved',transaction_id:'preserved-tx',workflow_key:'sales_otp',status:'complete'})
+  const preserved=await workflowModel.createWorkflowInstance('preserved-tx','sales_otp',{client:preservedClient})
+  assert.equal(preserved.status,'complete','A stale creation attempt must preserve a completed workflow.')
+  const concurrentClient=buildMockClient({beforeStepWrite:state=>state.transaction_workflow_steps.push({
+    id:'concurrently-completed',workflow_instance_id:'concurrent',step_key:'otp_generated',status:'complete',completed_by:'reviewer'})})
+  const concurrent=await workflowModel.createWorkflowSteps('concurrent','sales_otp',{client:concurrentClient,transactionId:'concurrent-tx',
+    steps:[{key:'otp_generated',label:'OTP generated',status:'not_started'}]})
+  assert.equal(concurrent.length,1)
+  assert.equal(concurrent[0].status,'complete','Concurrent task seeding must not reset completed work.')
+  assert.equal(concurrent[0].completed_by,'reviewer')
 
   const transaction = {
     id: 'tx-1',
@@ -267,6 +282,13 @@ try {
   assert.equal(rerolled.parentStatus, 'blocked')
   assert.equal(rerolled.activeWorkflowKey, 'finance_bond')
 
+  const projection=await server.ssrLoadModule('/server/services/transactionWorkflowModelService.js')
+  const savedSteps=['buyer_onboarding_complete','seller_onboarding_complete','signed_otp_received'].map(step_key=>({id:step_key,step_key,status:'not_started',required:true}))
+  const projected=projection.buildWorkflowStateMap({transaction:{onboarding_status:'signed_otp_received',seller_onboarding_status:'submitted'},instances:[{workflow_key:'sales_otp'}],stepsByWorkflowKey:{sales_otp:savedSteps}})
+  assert.ok(projected.sales_otp.requiredSteps.every(step=>step.status==='complete'))
+  assert.ok(savedSteps.every(step=>step.status==='not_started'),'Readback must not rewrite saved historical steps.')
+  const pending=projection.buildWorkflowStateMap({transaction:{onboarding_status:'not_started'},instances:[{workflow_key:'sales_otp'}],stepsByWorkflowKey:{sales_otp:savedSteps}})
+  assert.ok(pending.sales_otp.requiredSteps.some(step=>step.status==='not_started'))
   console.log('transactionWorkflowModelService tests passed')
 } finally {
   await server.close()

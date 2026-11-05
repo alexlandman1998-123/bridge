@@ -197,7 +197,10 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
     // Use http.request so the fixture can send the actual public Host header;
     // Node's fetch client replaces it with the loopback transport hostname.
     const send = (path, body, host = WEBSITE_HOST, extraHeaders = {}) => new Promise((resolve, reject) => {
+      // Each isolated request gets its own socket; stale keep-alive sockets
+      // can be closed by the fixture while a slow build/test yields the CPU.
       const request = httpRequest(`${websiteUrl}${path}`, {
+        agent: false,
         method: 'POST',
         headers: { Host: host, Origin: `https://${host}`, 'Content-Type': 'application/json', ...extraHeaders },
       }, (response) => {
@@ -524,7 +527,7 @@ test('the standalone website artifact serves its own CRM APIs', async (t) => {
         assert.equal(response.status, 404)
         assert.deepEqual(await response.json(), { error: 'not_found' })
       }
-      for (const path of ['/', '/about', '/contact', '/selling', '/buying?q=Moreleta+Park', '/renting', '/join', '/guarantee', `/properties/${LISTING_ID}`, '/demo/homeseekers', '/demo/homeseekers/buying']) {
+      for (const path of ['/', '/about', '/contact', '/selling', '/buying?q=Moreleta+Park', '/renting', '/join', '/join/teams', '/join/referrals', '/join/pricing', '/guarantee', `/properties/${LISTING_ID}`, '/demo/homeseekers', '/demo/homeseekers/buying']) {
         const page = await fetch(`${websiteUrl}${path}`, { redirect: 'manual' })
         assert.equal(page.status, 200, path)
         assert.equal(page.headers.get('location'), null, path)

@@ -247,7 +247,7 @@ async function closeDialog(page) {
 }
 
 async function openCreateLeadModal(page, categoryLabel) {
-  const title = `Add ${categoryLabel} Lead`
+  const title = categoryLabel === 'Seller' ? 'Create Seller Lead' : `Add ${categoryLabel} Lead`
   await clickByRole(page, 'button', new RegExp(`^Add ${categoryLabel} Lead$`))
   await page.getByRole('dialog').filter({ hasText: title }).first().waitFor({ state: 'visible', timeout: 10_000 })
 }
@@ -257,8 +257,8 @@ async function runLeadSmoke(page, baseUrl) {
   await chooseLeadType(page, 'Seller Leads')
   await openCreateLeadModal(page, 'Seller')
   await fillByLabel(page, 'First name', 'Phase Five')
-  await fillByLabel(page, 'Last name', 'Seller')
-  await fillByLabel(page, 'Mobile', '+27820000000')
+  await fillByLabel(page, 'Surname', 'Seller')
+  await fillByLabel(page, 'Phone', '+27820000000')
   await closeDialog(page)
 
   await chooseLeadType(page, 'Buyer Leads')

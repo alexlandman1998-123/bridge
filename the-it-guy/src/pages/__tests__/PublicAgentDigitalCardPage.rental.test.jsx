@@ -70,3 +70,14 @@ it('opens the rental form from the saved card rental link', async () => {
   await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
   expect(screen.getByText('Find a rental home')).toBeTruthy()
 })
+
+it('shows rentals alongside buying and selling on a card with all enquiries enabled', async () => {
+  mocks.resolve.mockResolvedValue(buildAgencyPublicIntakeContract({ link: { ...link, enabled_intents: ['buy', 'sell', 'rent'] } }))
+  show()
+  expect(await screen.findByRole('button', { name: /I want to buy/ })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /I want to sell/ })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /Find a rental/ }))
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect(screen.getByText('Find a rental home')).toBeTruthy()
+  expect(mocks.track).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'rental_cta_click' }))
+})

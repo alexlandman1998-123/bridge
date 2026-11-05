@@ -10,11 +10,15 @@ const server = await createServer({
 try {
   const {
     buildWorkspaceResolution,
+    buildWorkspacePreferenceIdentity,
     mergeAttorneyFirmBrandingRows,
     WORKSPACE_RESOLUTION_STATUSES,
     __workspaceResolutionTestUtils,
   } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
 
+  assert.deepEqual(buildWorkspacePreferenceIdentity({id:'firm-1',type:'attorney_firm',organisationId:'org-1'}),{active_workspace_id:'org-1',active_attorney_firm_id:'firm-1'})
+  assert.deepEqual(buildWorkspacePreferenceIdentity({id:'firm-2',type:'attorney_firm',organisationId:'org-1'}),{active_workspace_id:'org-1',active_attorney_firm_id:'firm-2'})
+  assert.deepEqual(buildWorkspacePreferenceIdentity({id:'agency-1',type:'agency'}),{active_workspace_id:'agency-1',active_attorney_firm_id:null})
   const timedOutBranding = await __workspaceResolutionTestUtils.fetchAttorneyFirmBrandingRows({
     from() {
       return {

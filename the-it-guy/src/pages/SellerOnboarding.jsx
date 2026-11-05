@@ -2390,6 +2390,50 @@ function getSellerOnboardingRequiredMissing(form = {}) {
   ].filter(Boolean)
 }
 
+function getSellerOnboardingEmailError(form = {}) {
+  const emailFields = ['email', 'spouseEmail', 'authorisedSignatoryEmail', 'authorisedTrusteeEmail', 'executorEmail', 'powerOfAttorneyEmail']
+  const people = [...(form.multipleOwners || []), ...(form.companyDirectors || []), ...(form.trustees || [])]
+  const emails = [...emailFields.map(key => form[key]), ...people.map(person => person.email)].filter(value => String(value || '').trim())
+  return emails.some(value => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())) ? 'Please check the email addresses you have entered, or leave them blank.' : ''
+}
+
+// Review and submission must evaluate the same normalized answers. Keep the
+// questionnaire's people/FICA checks alongside every required canonical check.
+export function getSellerOnboardingSubmissionIssues(form = {}, listing = {}) {
+  const normalized = normalizeSellerFormForProgression(form, listing)
+  const sellerMissing = new Set(getSellerOnboardingRequiredMissing(normalized))
+  const emailError = getSellerOnboardingEmailError(normalized)
+  if (emailError) sellerMissing.add(emailError)
+  const propertyMissing = new Set(getPropertyAddressMissingItems(getPropertyAddressDetails(listing, normalized)))
+  const payload = buildSellerProfileCanonicalPayload(normalized, listing, { draft: false })
+  const labels = {
+    seller_first_name_missing: 'Contact first name', seller_surname_missing: 'Contact surname',
+    seller_email_missing: 'Email', seller_phone_missing: 'Phone', seller_tax_number_missing: 'Tax number',
+    seller_tax_residency_missing: 'SA resident status', seller_date_of_birth_missing: 'Date of birth',
+    seller_nationality_missing: 'Nationality', seller_id_number_missing: 'ID number / passport',
+    seller_passport_missing: 'ID number / passport', seller_residential_address_missing: 'Residential address',
+    foreign_owner_country_missing: 'Foreign country / jurisdiction',
+    company_name_missing: 'Company name', company_registration_missing: 'Company registration number',
+    company_registered_address_missing: 'Company registered address', company_director_missing: 'Add at least one company director',
+    company_signatory_missing: 'Authorised signatory', company_signatory_capacity_missing: 'Authorised signatory capacity',
+    company_resolution_date_missing: 'Company resolution date', company_authority_basis_missing: 'Company signing authority basis',
+    trust_name_missing: 'Trust name', trust_registration_missing: 'Trust registration number',
+    trust_registered_address_missing: 'Trust registered address', trustee_details_missing: 'Add at least one trustee',
+    trust_authority_missing: 'Authorised trustee', trustee_capacity_missing: 'Authorised trustee capacity',
+    trust_authority_basis_missing: 'Trust signing authority basis',
+    property_address_missing: 'Address line 1', property_suburb_missing: 'Suburb',
+    property_city_missing: 'City', province_missing: 'Province',
+  }
+  for (const issue of payload.canonicalSellerFactReadiness?.validation?.required || []) {
+    if (issue.code === 'seller_email_invalid' && emailError) continue
+    const propertyIssue = issue.code.startsWith('property_') ||
+      ['province_missing', 'rates_taxes_missing', 'land_size_missing', 'bond_bank_missing', 'lease_expiry_missing'].includes(issue.code)
+    const target = propertyIssue ? propertyMissing : sellerMissing
+    target.add(labels[issue.code] || issue.message)
+  }
+  return { sellerMissing: [...sellerMissing], propertyMissing: [...propertyMissing] }
+}
+
 export function ReviewReadinessPanel({ issueGroups = [], legalOwnerName = '', contactName = '', ownershipLabel = '', ownerKind = '', propertyAddress = '', onSubmit = null, submitting = false, saving = false, agentAssisted = false }) {
   const issueCount = issueGroups.reduce((total, group) => total + (group.missing?.length || 0), 0)
   const ready = issueCount === 0
@@ -2414,7 +2458,6 @@ export function ReviewReadinessPanel({ issueGroups = [], legalOwnerName = '', co
             {ready
               ? agentAssisted ? 'The required details are filled in. Submit them to record onboarding as completed by the agency.' : 'The required details are filled in. Submit them to your agent for review.'
               : 'Complete the details listed below before submitting. You can save a draft now and return to this link later.'}
-
           </p>
         </div>
       </div>
@@ -2486,14 +2529,12 @@ export function ReviewReadinessPanel({ issueGroups = [], legalOwnerName = '', co
           className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
         >
           {saving ? 'Saving draft...' : submitting ? 'Submitting...' : ready ? agentAssisted ? 'Submit seller details' : 'Submit to agent for review' : 'Save draft and finish later'}
-
           <CheckCircle2 size={16} />
         </Button>
         <p className={`mt-2 text-center text-xs leading-5 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
           {ready
             ? 'Submitting completes this information step. Your agent must still review the details and supporting documents. It does not sign documents or publish the property.'
             : 'Save draft keeps your answers without submitting them. Return later, complete the missing details, then submit to your agent.'}
-
         </p>
       </div>
     </section>
@@ -4179,10 +4220,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
 
   function validateCaptureValues() {
     if (!form) return 'Form state unavailable.'
-    const emailFields = ['email', 'spouseEmail', 'authorisedSignatoryEmail', 'authorisedTrusteeEmail', 'executorEmail', 'powerOfAttorneyEmail']
-    const people = [...(form.multipleOwners || []), ...(form.companyDirectors || []), ...(form.trustees || [])]
-    const emails = [...emailFields.map(key => form[key]), ...people.map(person => person.email)].filter(value => String(value || '').trim())
-    return emails.some(value => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim())) ? 'Please check the email addresses you have entered, or leave them blank.' : ''
+    return getSellerOnboardingEmailError(form)
   }
 
   function validateCurrentStep() {
@@ -4353,16 +4391,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     setTermsAcceptanceError('')
     setSuccess('')
     let submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
-    const submissionAddress = getPropertyAddressDetails(listing || {}, submissionForm)
-    const submissionPropertyMissing = getPropertyAddressMissingItems(submissionAddress)
-    const submissionSellerMissing = getSellerOnboardingRequiredMissing(submissionForm)
+    const { sellerMissing: submissionSellerMissing, propertyMissing: submissionPropertyMissing } = getSellerOnboardingSubmissionIssues(submissionForm, listing || {})
     const finalRequiredMissing = [
       ...submissionSellerMissing.map((item) => `Seller: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
     ]
     if (finalRequiredMissing.length) {
       if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Draft saved. Your information has not been submitted. Return to this link, complete the missing details, then submit to your agent.')
-
+      setError(`Complete the following before submitting: ${finalRequiredMissing.join('; ')}`)
       return
     }
 
@@ -4474,7 +4510,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
       if (canonicalPayload.canonicalSellerFacts) {
         const factValidation = validateSellerOnboardingFacts(canonicalPayload.canonicalSellerFacts, { draft: false })
         if (!factValidation.ok) {
-          if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Your details have been saved. You can return to add the remaining information later.')
+          if (await saveDraft(FINAL_STEP_INDEX)) setSuccess('Draft saved. Your information has not been submitted.')
+          setError(`Complete the following before submitting: ${factValidation.required.map((issue) => issue.message).join(' ')}`)
           return
         }
       }
@@ -4715,9 +4752,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
     description: 'Capture the details needed for this ownership structure.',
   }
   const selectedSpecialMandateConditionLabels = getSpecialMandateConditionLabels(form.specialMandateConditions)
-  const sellerMissing = getSellerOnboardingRequiredMissing(form)
+  const { sellerMissing, propertyMissing } = getSellerOnboardingSubmissionIssues(form, listing || {})
   const reviewSubject = buildSellerSubject({ formData: form, listing })
-  const propertyMissing = getPropertyAddressMissingItems(resolveProgressionPropertyAddress(listing || {}, form || {}))
   const sectionSummaryValue = [form.schemeName, form.sectionNumber || form.unitNumber].filter(Boolean).join(' / ')
   const estateSummaryValue = [form.estateName || form.estateComplexName, form.hoaContactName].filter(Boolean).join(' / ')
   const propertySummaryLabel = showSectionalTitleDetails && showEstateDetails
@@ -4803,7 +4839,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
         {currentStep === FINAL_STEP_INDEX && captureDraft ? (
           <Button type="button" variant="ghost" onClick={handleSubmit} disabled={saving || submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
             {submitting ? 'Saving...' : 'Save and finish'}
-
             <CheckCircle2 size={14} />
           </Button>
         ) : null}
@@ -4837,7 +4872,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, complet
           {currentStep === FINAL_STEP_INDEX && captureDraft ? (
             <Button type="button" variant="ghost" onClick={handleSubmit} disabled={saving || submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
               {submitting ? 'Saving...' : 'Save and finish'}
-
               <CheckCircle2 size={14} />
             </Button>
           ) : null}

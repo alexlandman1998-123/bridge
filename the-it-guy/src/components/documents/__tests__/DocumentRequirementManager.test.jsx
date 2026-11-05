@@ -376,4 +376,3 @@ test('buyer controls show legacy client-owned requirements from the linked trans
   fireEvent.change(select, { target: { value: row.id } })
   expect(screen.getByLabelText('Upload file')).toBeTruthy()
 })
-

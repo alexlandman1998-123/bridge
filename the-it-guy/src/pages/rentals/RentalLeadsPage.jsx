@@ -48,7 +48,7 @@ import { buildRentalLeadKanbanColumns, filterRentalLeadList, rentalLeadListSumma
 
 function readLeadView(storageKey) {
   try {
-    const saved = JSON.parse(window.sessionStorage.getItem(storageKey) || '{}');
+    const saved = JSON.parse(window.localStorage.getItem(storageKey) || window.sessionStorage.getItem(storageKey) || '{}');
     return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
   } catch { return {}; }
 }
@@ -327,7 +327,7 @@ function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
   const advancePending = useRef(false);
   useEffect(() => {
     try {
-      window.sessionStorage.setItem(viewStorageKey, JSON.stringify({ role, query, ownerFilter, sourceFilter, stageFilter, sort, viewMode }));
+      window.localStorage.setItem(viewStorageKey, JSON.stringify({ role, query, ownerFilter, sourceFilter, stageFilter, sort, viewMode }));
     } catch { /* Browsing and editing remain available if storage is blocked. */ }
   }, [viewStorageKey, role, query, ownerFilter, sourceFilter, stageFilter, sort, viewMode]);
   const actor = useMemo(

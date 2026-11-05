@@ -75,6 +75,16 @@ export function buildBuyerLeadDocumentReconciliationPlan({ lead, documents = [],
     const key = String(row.key || row.documentType || row.document_type || '').trim()
     const base = { bucket, path, key, fileName: String(row.uploadedFileName || row.fileName || '').trim(), canonicalDocumentId: canonicalId }
     if (row._reconciliationConflict) return { ...base, status: 'manual_review', reason: 'conflicting_lead_metadata' }
+    if (canonicalId) {
+      const document = documents.find((entry) => String(entry.id) === canonicalId && entry.transaction_id === transactionId)
+      if (!document || (path && document.file_path !== path) ||
+        (bucket && (document.file_bucket || 'documents') !== bucket)) {
+        return { ...base, status: 'manual_review', reason: 'missing_or_mismatched_canonical_document' }
+      }
+      return existingBuyerDocument(document)
+        ? { ...base, status: 'already_canonical', documentId: canonicalId }
+        : { ...base, status: 'manual_review', reason: 'existing_document_not_buyer_visible' }
+    }
     try {
       assertStagedFile(row, { organisationId, leadId })
     } catch {
@@ -131,7 +141,7 @@ export async function reconcileStagedBuyerLeadDocuments(client, context = {}, { 
   if (leadResult.error) throw leadResult.error
   if (!leadResult.data) throw new Error('The source buyer lead could not be read.')
   const documentsResult = await client.from('documents')
-    .select('id, file_bucket, file_path, upload_idempotency_key, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+    .select('id, transaction_id, file_bucket, file_path, upload_idempotency_key, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
     .eq('transaction_id', transactionId)
   if (documentsResult.error) throw documentsResult.error
   const plan = buildBuyerLeadDocumentReconciliationPlan({
@@ -181,12 +191,31 @@ export async function promoteStagedBuyerLeadDocuments(client, {
   if (leadQuery.error) throw leadQuery.error
   if (!leadQuery.data) throw new Error('The source buyer lead could not be read.')
   const rows = stagedBuyerLeadDocumentRows(leadQuery.data)
+  const verifiedCanonicalDocuments = new Map()
   // Conversion calls this path directly too. Validate every staged object
   // before inserting any transaction mirrors, rather than leaving a partial
   // handoff or claiming that a missing object was carried through.
   for (const row of rows) {
     if (row._reconciliationConflict) throw new Error('Conflicting buyer lead document metadata needs manual review.')
-    if (row.canonicalDocumentId || row.canonical_document_id) continue
+    const canonicalId = String(row.canonicalDocumentId || row.canonical_document_id || '').trim()
+    if (canonicalId) {
+      const existing = await client.from('documents')
+        .select('id, transaction_id, file_bucket, file_path, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+        .eq('id', canonicalId).eq('transaction_id', transactionId).maybeSingle()
+      if (existing.error) throw existing.error
+      const document = existing.data
+      const path = String(row.storagePath || row.storage_path || '').trim()
+      const bucket = String(row.storageBucket || row.storage_bucket || '').trim()
+      if (!existingBuyerDocument(document) ||
+        (path && document.file_path !== path) ||
+        (bucket && (document.file_bucket || 'documents') !== bucket)) {
+        throw new Error('A previously linked buyer document needs manual review before handoff.')
+      }
+      const object = await client.storage.from(document.file_bucket || 'documents').info(document.file_path)
+      if (object.error || !object.data) throw new Error('A previously linked buyer document could not be verified in storage. No files were handed off.')
+      verifiedCanonicalDocuments.set(canonicalId, document)
+      continue
+    }
     const { bucket, path } = assertStagedFile(row, { organisationId, leadId })
     if (!resolveBuyerLeadDocumentTarget(row.key || row.documentType || row.document_type).documentDefinitionKey) {
       throw new Error('An unknown buyer document type needs manual review before handoff.')
@@ -197,7 +226,11 @@ export async function promoteStagedBuyerLeadDocuments(client, {
   const outcomes = []
   for (const row of rows) {
     if (row._reconciliationConflict) throw new Error('Conflicting buyer lead document metadata needs manual review.')
-    if (row.canonicalDocumentId || row.canonical_document_id) continue
+    const canonicalId = String(row.canonicalDocumentId || row.canonical_document_id || '').trim()
+    if (canonicalId) {
+      outcomes.push({ id: verifiedCanonicalDocuments.get(canonicalId).id, deduplicated: true })
+      continue
+    }
     const { bucket, path } = assertStagedFile(row, { organisationId, leadId })
     const idempotencyKey = buyerLeadDocumentIdempotencyKey({ leadId, bucket, path })
     const existing = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')

@@ -114,8 +114,9 @@ function PublicDevelopmentMetadata({ title, description, imageUrl }) {
   return null;
 }
 
-export default function PublicDevelopmentResponsiveRoute() {
-  const { slug = "" } = useParams();
+export default function PublicDevelopmentResponsiveRoute({ developmentSlug = "" }) {
+  const { slug: routeSlug = "" } = useParams();
+  const slug = developmentSlug || routeSlug;
   const [state, setState] = useState({ loading: true, data: null, error: "" });
   const [demoReservations, setDemoReservations] = useState(() => {
     try {
@@ -162,10 +163,16 @@ export default function PublicDevelopmentResponsiveRoute() {
           ...current,
           status: navigator.onLine ? "refreshing" : "offline",
         }));
-      const { data, error } = await supabase.rpc(
-        "get_public_development_landing",
-        { requested_slug: slug },
-      );
+      let data = null;
+      let error = null;
+      try {
+        const response = await fetch(`/api/public/development-landing?slug=${encodeURIComponent(slug)}`, { cache: "no-store" });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error || "This development page is unavailable.");
+        data = payload;
+      } catch (failure) {
+        error = failure;
+      }
       if (error || !data) {
         if (background) {
           setFreshness((current) => ({

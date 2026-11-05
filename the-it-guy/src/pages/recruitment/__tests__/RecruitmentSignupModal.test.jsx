@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import RecruitmentSignupModal from '../RecruitmentSignupModal'
 import HomeSeekersJoin from '../../HomeSeekersJoin'
 
@@ -18,12 +18,12 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.resto
 async function fill() {
   await screen.findByRole('form', { name: 'Create applicant account' })
   for (const [label,value] of [['First name','Fixture'],['Surname','Applicant'],['Email address','applicant@example.test'],['Mobile number','+27821234567'],['Password','FixturePass123']]) fireEvent.change(screen.getByLabelText(new RegExp(`^${label} `)), { target: { value } })
-  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox'))
 }
 it('replaces the Home Seekers bottom form and opens signup from a Join button', async () => {
   render(<HomeSeekersJoin />)
   expect(screen.queryByRole('button', { name: 'Send my application' })).toBeNull()
-  fireEvent.click(screen.getAllByRole('button', { name: /^Join Home Seekers$/i })[0])
+  fireEvent.click(screen.getAllByRole('link', { name: 'Apply to join' })[0])
   await screen.findByRole('dialog', { name: 'Join Home Seekers' })
   await fill()
   fireEvent.click(screen.getByRole('button', { name: 'Create account & continue' }))
@@ -110,7 +110,7 @@ const codeContext = { ...context, verificationMethod: 'email_code' }
 async function fillHomeContact() {
   await screen.findByRole('form', { name: 'Start recruitment enquiry' })
   for (const [label,value] of [['First name','Fixture'],['Surname','Applicant'],['Email address','applicant@example.test'],['Mobile number','+27821234567'],['Password','FixturePass123']]) fireEvent.change(screen.getByLabelText(new RegExp(`^${label} `)), { target: { value } })
-  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox'))
 }
 it('Home Seekers creates a password and continues with a code in the same popup', async () => {
   fetch.mockImplementation(async (_url,options) => {
@@ -118,7 +118,7 @@ it('Home Seekers creates a password and continues with a code in the same popup'
     return response(body.action==='context'?codeContext:body.action==='signup'?{accepted:true,contactAccepted:true,verificationRequired:true}:body.action==='send_verification'?{verificationRequested:true,resendAfterSeconds:60,codeLength:8}:{applicant:verifiedApplicant})
   })
   render(<HomeSeekersJoin />)
-  fireEvent.click(screen.getAllByRole('button',{name:/^Join Home Seekers$/i})[0])
+  fireEvent.click(screen.getAllByRole('link',{name:'Apply to join'})[0])
   await fillHomeContact()
   expect(screen.getByLabelText(/^Password/).type).toBe('password')
   fireEvent.click(screen.getByRole('button',{name:'Save & continue'}))
@@ -364,7 +364,7 @@ it.each([
   render(<RecruitmentSignupModal open onClose={()=>{}} />)
   await fillContact();fireEvent.click(screen.getByRole('button',{name:submitLabel}))
   await screen.findByRole('form', { name: 'Verify applicant email' })
-  const different=await screen.findByRole('button',{name:'Use a different email'})
+  const different=await screen.findByRole('button',{name:'Edit email address'})
   expect(different.disabled).toBe(true)
   await act(async()=>finishSend())
   expect(screen.getByLabelText('Email address').readOnly).toBe(true)
@@ -383,7 +383,7 @@ it.each([
   fireEvent.change(screen.getByLabelText(/^Password/),{target:{value:'CorrectFixture123'}})
   fireEvent.click(screen.getByRole('button',{name:submitLabel}))
   expect(requests.filter(r=>r.action==='signup')).toHaveLength(1)
-  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox'))
   fireEvent.click(screen.getByRole('button',{name:submitLabel}))
   await waitFor(()=>expect(screen.getByRole('button',{name:'Verify & continue'}).disabled).toBe(false))
   const captures=requests.filter(r=>r.action==='signup')
@@ -423,7 +423,7 @@ it.each([
   expect(screen.queryByText('Your contact details are saved')).toBeNull()
   fireEvent.change(email, { target: { value: 'invalid-address' } })
   fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: 'CorrectFixture123' } })
-  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox'))
   fireEvent.click(screen.getByRole('button', { name: submitLabel }))
   expect(requests.filter(r => r.action === 'signup')).toHaveLength(1)
   fireEvent.change(email, { target: { value: 'correct@example.test' } })

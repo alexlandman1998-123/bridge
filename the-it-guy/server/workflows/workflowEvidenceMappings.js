@@ -582,6 +582,10 @@ export function resolveWorkflowEvidenceMappings(context = {}) {
   return Array.isArray(resolved) ? resolved.filter(Boolean) : [resolved]
 }
 
+export function hasWorkflowEvidenceMapping(evidenceKey) {
+  return workflowEvidenceAliasIndex.has(normalizeKey(evidenceKey))
+}
+
 export function normalizeWorkflowEvidenceKey(value) {
   return normalizeKey(value)
 }

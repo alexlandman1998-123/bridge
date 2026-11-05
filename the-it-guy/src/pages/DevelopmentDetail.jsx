@@ -7,6 +7,7 @@ import DevelopmentAvailabilityWorkspace from '../components/developments/Develop
 import DevelopmentTransactionsWorkspace from '../components/developments/DevelopmentTransactionsWorkspace.jsx'
 import DevelopmentSnagsWorkspace from '../components/developments/DevelopmentSnagsWorkspace.jsx'
 import DevelopmentConfigurationWorkspace from '../components/developments/DevelopmentConfigurationWorkspace.jsx'
+import DevelopmentSectionMenu from '../components/developments/DevelopmentSectionMenu.jsx'
 import DevelopmentMarketingOverview from '../components/developments/DevelopmentMarketingOverview.jsx'
 import DevelopmentMarketingListings from '../components/developments/DevelopmentMarketingListings.jsx'
 import DevelopmentMarketingEvents from '../components/developments/DevelopmentMarketingEvents.jsx'
@@ -40,11 +41,15 @@ import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigura
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { markRouteMilestone } from '../lib/performanceTrace'
+import { invalidateTransactionsListCache } from '../lib/transactionsListApi.js'
+import { invalidateDevelopmentOptionsCache, invalidateTransactionWorkspaceCoreCache } from '../lib/developmentDetailApi'
 import { createAgencyIntroducedDeveloperLead, createDeveloperFedLead, listDeveloperLeadIntake, updateDeveloperLeadWorkspaceSetup } from '../services/developerLeadService'
-import { DEVELOPMENT_LEAD_BOARD_STAGES, getDevelopmentLeadBoardStage, resolveDevelopmentLeadBoardMove } from '../core/developments/developmentLeadBoard.js'
+import { DEVELOPMENT_LEAD_BOARD_STAGES, getDevelopmentLeadBoardStage, resolveDevelopmentLeadBoardMove, resolveDevelopmentLeadWorkspaceUrl, isActiveDevelopmentLeadReservation } from '../core/developments/developmentLeadBoard.js'
 import { saveDevelopmentLeadBoardStage } from '../services/developmentLeadBoardService.js'
+import { enrichDevelopmentLeadBuyerContacts } from '../services/developmentBuyerLeadService.js'
 
 const DevelopmentAttorneyCommercialSetup = lazy(() => import('../components/DevelopmentAttorneyCommercialSetup'))
+const LeadCreateDialog = lazy(() => import('../components/leads/LeadCreateDialog.jsx'))
 const DevelopmentBondCommercialSetup = lazy(() => import('../components/DevelopmentBondCommercialSetup'))
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -588,10 +593,16 @@ const DEVELOPMENT_UNIT_STATUS_OPTIONS = [
     lifecycleStage: null
   },
   {
+    value: 'Not Released',
+    label: 'Not released',
+    mainStage: 'BLOCKED',
+    lifecycleStage: null
+  },
+  {
     value: 'Reserved',
     label: 'Reserved',
     mainStage: 'DEP',
-    lifecycleStage: null
+    lifecycleStage: 'confirmed'
   },
   {
     value: 'OTP Signed',
@@ -2099,8 +2110,16 @@ function DevelopmentDetail() {
   const [developmentLeads, setDevelopmentLeads] = useState([])
   const [developmentLeadsLoading, setDevelopmentLeadsLoading] = useState(false)
   const [developmentLeadsError, setDevelopmentLeadsError] = useState('')
+  const developmentLeadSection = new URLSearchParams(location.search).get('leadSection') === 'reservations' ? 'reservations' : 'leads'
   const [developmentLeadView, setDevelopmentLeadView] = useState(() => new URLSearchParams(location.search).get('leadView') === 'kanban' ? 'kanban' : 'list')
   const [developmentLeadMovingId, setDevelopmentLeadMovingId] = useState('')
+  const [developmentLeadCreateOpen, setDevelopmentLeadCreateOpen] = useState(false)
+  const [developmentLeadCreateSaving, setDevelopmentLeadCreateSaving] = useState(false)
+  const [developmentLeadCreateError, setDevelopmentLeadCreateError] = useState('')
+  const [developmentLeadDraft, setDevelopmentLeadDraft] = useState(null)
+  const [developmentLeadSavedCrm, setDevelopmentLeadSavedCrm] = useState(null)
+  const developmentLeadCaptureIdentity = useRef(null)
+  const developmentLeadCaptureLock = useRef(false)
   const [developmentLeadMoveMessage, setDevelopmentLeadMoveMessage] = useState('')
   const developmentLeadMoveLock = useRef(false)
   const [financialsForm, setFinancialsForm] = useState(DEFAULT_FINANCIALS_FORM)
@@ -2127,6 +2146,7 @@ function DevelopmentDetail() {
   const [isEditingFinancialsSection, setIsEditingFinancialsSection] = useState(false)
   const [unitSaving, setUnitSaving] = useState(false)
   const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
+  const unitStatusChangeLock = useRef(false)
   const [unitQuickSavingKey, setUnitQuickSavingKey] = useState('')
   const [unitTransactionBackfillSaving, setUnitTransactionBackfillSaving] = useState(false)
   const [unitTransactionBackfillProgress, setUnitTransactionBackfillProgress] = useState({ completed: 0, total: 0 })
@@ -2178,6 +2198,7 @@ function DevelopmentDetail() {
       const nextSection = normalizeMarketingHubSection(sectionId)
       const params = new URLSearchParams(location.search)
       params.set('marketingSection', nextSection)
+      params.set('tab', 'marketing')
       setActiveTab('marketing')
       setMarketingHubSection(nextSection)
       setMarketingHubFocus(MARKETING_HUB_LEGACY_FOCUS[sectionId] || '')
@@ -2202,6 +2223,7 @@ function DevelopmentDetail() {
 
       const params = new URLSearchParams(location.search)
       params.delete('marketingSection')
+      params.set('tab', tabId)
       setActiveTab(tabId)
       navigate({
         pathname: location.pathname,
@@ -2383,11 +2405,15 @@ function DevelopmentDetail() {
       try {
         setDevelopmentLeadsLoading(true)
         setDevelopmentLeadsError('')
-        const leadRows = await listDeveloperLeadIntake({
+        const intakeRows = await listDeveloperLeadIntake({
           developerOrgId,
           status: 'all',
           source: 'all'
         })
+        const leadRows = await enrichDevelopmentLeadBuyerContacts(
+          currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id,
+          (intakeRows || []).filter(lead => developmentLeadBelongsToDevelopment(lead, developmentId)),
+        )
         if (active) {
           setDevelopmentLeads((leadRows || []).filter(lead => developmentLeadBelongsToDevelopment(lead, developmentId)))
         }
@@ -2404,21 +2430,25 @@ function DevelopmentDetail() {
     }
 
     void loadDevelopmentLeads()
+    window.addEventListener('itg:developer-leads-changed', loadDevelopmentLeads)
     return () => {
+      window.removeEventListener('itg:developer-leads-changed', loadDevelopmentLeads)
       active = false
     }
-  }, [currentWorkspace?.id, data?.development?.id, data?.development?.organisation_id, data?.development?.organisationId, developmentId])
+  }, [currentWorkspace?.id, currentWorkspace?.organisationId, currentWorkspace?.organisation_id, data?.development?.id, data?.development?.organisation_id, data?.development?.organisationId, developmentId])
 
   useEffect(() => {
     function refreshDevelopment() {
       void loadData()
     }
 
+    window.addEventListener('itg:listings-updated', refreshDevelopment)
     window.addEventListener('itg:transaction-created', refreshDevelopment)
     window.addEventListener('itg:transaction-updated', refreshDevelopment)
     window.addEventListener('itg:document-requirements-changed', refreshDevelopment)
     window.addEventListener('itg:developments-changed', refreshDevelopment)
     return () => {
+      window.removeEventListener('itg:listings-updated', refreshDevelopment)
       window.removeEventListener('itg:transaction-created', refreshDevelopment)
       window.removeEventListener('itg:transaction-updated', refreshDevelopment)
       window.removeEventListener('itg:document-requirements-changed', refreshDevelopment)
@@ -2508,6 +2538,9 @@ function DevelopmentDetail() {
   const alterations = useMemo(() => data?.alterations || [], [data?.alterations])
   const developmentLeadAccessKeys = useMemo(() => buildDevelopmentLeadAccessKeys(profile, organisationUsers), [organisationUsers, profile])
   const developmentLeadRows = useMemo(() => [...developmentLeads].sort((left, right) => new Date(right?.updatedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.createdAt || 0)), [developmentLeads])
+  const developmentReservationUnitIds = useMemo(() => new Set(rows.map(row => (row.unit || row).id).filter(Boolean)), [rows])
+  const visibleDevelopmentLeadRows = developmentLeadSection === 'reservations' ? developmentLeadRows.filter(lead => isActiveDevelopmentLeadReservation(lead, Date.now(), developmentReservationUnitIds)) : developmentLeadRows
+  const visibleProtectedLeadCount = visibleDevelopmentLeadRows.filter(lead => !canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)).length
   const developmentLeadFunnelItems = useMemo(() => {
     const counts = new Map(DEVELOPMENT_LEAD_FUNNEL_STAGES.map(stage => [stage.key, 0]))
     let protectedCount = 0
@@ -5562,8 +5595,15 @@ function DevelopmentDetail() {
   }
 
   async function handleUnitStatusQuickChange(unit, nextStatus) {
+    if (!canManageDevelopment || unitStatusChangeLock.current) return
     const statusOption = getDevelopmentUnitStatusOption(nextStatus)
     const nextStatusValue = statusOption.value || 'Available'
+    if (nextStatusValue === getDevelopmentUnitStatusOption(unit.status).value) return
+    if (unit.currentTransactionId && ['Available', 'Not Released'].includes(nextStatusValue)) {
+      setError('Release or cancel the linked transaction before returning this unit to available or unreleased stock.')
+      return
+    }
+    unitStatusChangeLock.current = true
 
     if (!unit.currentTransactionId && requiresDevelopmentTransaction(nextStatusValue)) {
       try {
@@ -5572,7 +5612,7 @@ function DevelopmentDetail() {
         setUnitQuickSavingKey(`${unit.id}:status`)
         setFeedback('')
         setError('')
-        const created = await createTransactionForUnitStatus(unit, nextStatusValue)
+        const created = await createTransactionForUnitStatus(unit, nextStatusValue, { notify: false })
         applyUnitQuickUpdate(unit.id, {
           unitPatch: {
             status: nextStatusValue,
@@ -5580,14 +5620,16 @@ function DevelopmentDetail() {
           },
           transactionPatch: { id: created.transactionId, stage: created.stage }
         })
-        await loadData()
+        await refreshUnitStatusViews(created.transactionId)
         setFeedback(`Transaction created for Unit ${unit.unitNumber} at ${created.stage}.`)
       } catch (saveError) {
+        await loadData()
         setError(saveError.message)
       } finally {
         setUnitSaving(false)
         setUnitStatusSavingId('')
         setUnitQuickSavingKey('')
+        unitStatusChangeLock.current = false
       }
       return
     }
@@ -5613,14 +5655,24 @@ function DevelopmentDetail() {
         unitPatch: { ...savedUnit, status: nextStatusValue },
         transactionPatch: statusOption.lifecycleStage ? { stage: statusOption.lifecycleStage } : null
       })
+      await refreshUnitStatusViews(unit.currentTransactionId)
       setFeedback(`Unit ${unit.unitNumber} marked ${nextStatusValue}.`)
     } catch (saveError) {
+      await loadData()
       setError(saveError.message)
     } finally {
       setUnitSaving(false)
       setUnitStatusSavingId('')
       setUnitQuickSavingKey('')
+      unitStatusChangeLock.current = false
     }
+  }
+
+  async function refreshUnitStatusViews(transactionId) {
+    invalidateTransactionsListCache()
+    await invalidateDevelopmentOptionsCache()
+    if (transactionId) await invalidateTransactionWorkspaceCoreCache(transactionId)
+    window.dispatchEvent(new Event(transactionId ? 'itg:transaction-updated' : 'itg:developments-changed'))
   }
 
   function openUnitModal(unit = null) {
@@ -5681,11 +5733,56 @@ function DevelopmentDetail() {
     return Boolean(lead?.developerLeadId && canEditDevelopmentLeads && (canManageDevelopment || can(PERMISSIONS.assignLeads) || canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)))
   }
 
+  function openDevelopmentLeadCapture() {
+    if (!developmentLeadCaptureIdentity.current) {
+      developmentLeadCaptureIdentity.current = { leadId: crypto.randomUUID(), contactId: crypto.randomUUID(), developerLeadId: crypto.randomUUID() }
+      setDevelopmentLeadDraft({ firstName: '', lastName: '', email: '', phone: '', notes: '', source: 'Other', category: 'development', developmentId, property: data?.development?.name || '' })
+      setDevelopmentLeadSavedCrm(null)
+      setDevelopmentLeadCreateError('')
+    }
+    setDevelopmentLeadCreateOpen(true)
+  }
+
+  async function handleCreateDevelopmentBuyerLead(form) {
+    if (!canEditDevelopmentLeads || developmentLeadCaptureLock.current) return
+    developmentLeadCaptureLock.current = true
+    setDevelopmentLeadCreateSaving(true)
+    setDevelopmentLeadCreateError('')
+    try {
+      const { createDevelopmentBuyerLead } = await import('../services/developmentBuyerLeadCaptureService.js')
+      const organisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id
+      const actor = { id: profile?.id || profile?.userId, userId: profile?.id || profile?.userId, name: profile?.fullName || profile?.full_name || profile?.email, email: profile?.email, role }
+      const result = await createDevelopmentBuyerLead({
+        organisationId, developerOrgId: developerOrganisationId, developmentId,
+        developmentName: data?.development?.name, form, actor,
+        identity: developmentLeadCaptureIdentity.current, savedCrmLead: developmentLeadSavedCrm,
+        onCrmLeadSaved: setDevelopmentLeadSavedCrm,
+      })
+      setDevelopmentLeads(previous => [result.developerLead, ...previous.filter(lead => lead.developerLeadId !== result.developerLead.developerLeadId && lead.sourceLeadId !== result.crmLead.leadId)])
+      setDevelopmentLeadCreateOpen(false)
+      developmentLeadCaptureIdentity.current = null
+      setDevelopmentLeadSavedCrm(null)
+      setFeedback('Lead created and linked to this development and the main Development Leads list.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+    } catch (createError) {
+      setDevelopmentLeadCreateError(createError.message || 'Unable to create the development lead.')
+    } finally {
+      setDevelopmentLeadCreateSaving(false)
+      developmentLeadCaptureLock.current = false
+    }
+  }
+
   function openDevelopmentLeadWorkspace(id, tab = 'overview') {
+    const lead = developmentLeads.find(item => item.developerLeadId === id || item.sourceLeadId === id)
+    if (!lead) return
+    const organisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id
+    const target = resolveDevelopmentLeadWorkspaceUrl(lead, organisationId, tab)
+    if (!target) return
     const params = new URLSearchParams(location.search)
     params.set('tab', 'leads')
     params.set('leadView', developmentLeadView)
-    navigate(`/developer/leads/${encodeURIComponent(id)}?workspaceTab=${encodeURIComponent(tab)}`, {
+    params.set('leadSection', developmentLeadSection)
+    navigate(target, {
       state: { returnTo: `${location.pathname}?${params.toString()}` }
     })
   }
@@ -6253,7 +6350,7 @@ function DevelopmentDetail() {
   }
 
   function renderMarketingListingsSection() {
-    return <DevelopmentMarketingListings listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+    return <DevelopmentMarketingListings canManage={canEditMarketing} onCreateListing={() => navigate(`/listings/new?developmentId=${encodeURIComponent(data.development.id)}`, { state: { returnTo: `${location.pathname}?tab=marketing&marketingSection=listings` } })} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
   }
 
   function renderMarketingBrandSection() {
@@ -9049,29 +9146,7 @@ function DevelopmentDetail() {
                 </div>
               </div>
             </section>
-            <nav className="mb-6 snap-x snap-mandatory overflow-x-auto rounded-[22px] border border-[#d8e5de] bg-gradient-to-br from-[#f3f8f5] to-[#eaf2ee] p-2 shadow-[0_8px_24px_rgba(28,63,45,0.04)]" aria-label="Marketing Hub sections">
-              <div className="grid min-w-[720px] grid-cols-6 gap-2">
-                {MARKETING_HUB_SECTIONS.map(section => {
-                  const isActive = marketingHubSection === section.id
-                  const Icon = section.icon
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      aria-current={isActive ? 'page' : undefined}
-                      onClick={() => openMarketingHubSection(section.id)}
-                      className={`group relative flex min-h-[104px] min-w-0 snap-start flex-col items-center justify-center gap-2.5 rounded-[16px] border px-3 py-4 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#238355] focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.985] motion-reduce:transition-none ${isActive ? 'border-[#bdd8c8] bg-white text-[#154d36] shadow-[0_5px_18px_rgba(28,63,45,0.08)]' : 'border-transparent text-[#667a6e] hover:border-[#d2e2d8] hover:bg-white/70 hover:text-[#176447]'}`}
-                    >
-                      <span className={`grid h-9 w-9 place-items-center rounded-xl transition-colors duration-200 ${isActive ? 'bg-[#176447] text-white shadow-[0_3px_8px_rgba(23,100,71,0.18)]' : 'bg-white/80 text-[#6a8879] group-hover:bg-[#e3f0e8] group-hover:text-[#176447]'}`}>
-                        <Icon size={20} aria-hidden="true" />
-                      </span>
-                      <span className="whitespace-nowrap">{section.label}</span>
-                      <span className={`absolute inset-x-8 bottom-0 h-[3px] rounded-t-full bg-[#238355] transition-opacity duration-200 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`} aria-hidden="true" />
-                    </button>
-                  )
-                })}
-              </div>
-            </nav>
+            <DevelopmentSectionMenu label="Marketing Hub sections" items={MARKETING_HUB_SECTIONS} value={marketingHubSection} onChange={openMarketingHubSection} />
 
             {marketingHubSection === 'listings' ? renderMarketingListingsSection() : renderMarketingHubSection()}
           </section>
@@ -9115,6 +9190,8 @@ function DevelopmentDetail() {
               onOpenSitePlanPublicationControls={() => openMarketingHubSection('public-page')}
               onEditUnit={unit => openUnitModal(unit)}
               onChangeUnitStatus={(unit, status) => void handleUnitStatusQuickChange(unit, status)}
+              unitStatusOptions={DEVELOPMENT_UNIT_STATUS_OPTIONS}
+              unitStatusSaving={unitSaving}
               onSetReleaseState={(unit, status) => handleUnitStatusQuickChange(unit, status)}
               onCreateTransaction={unit => openDevelopmentTransactionWizard({ unitId: unit.id })}
               onOpenTransaction={unit => openDevelopmentTransactionWorkspace(unit)}
@@ -9380,13 +9457,21 @@ function DevelopmentDetail() {
 
         {activeTab === 'leads' ? (
           <section className="mt-4">
+            <DevelopmentSectionMenu label="Lead workspace sections" items={[{ id: 'leads', label: 'Leads', icon: Users }, { id: 'reservations', label: 'Reservations', icon: ShieldCheck }]} value={developmentLeadSection} onChange={section => {
+              const params = new URLSearchParams(location.search)
+              params.set('tab', 'leads')
+              params.set('leadSection', section)
+              params.delete('marketingSection')
+              navigate({ pathname: location.pathname, search: `?${params.toString()}` })
+            }} />
             <section className={CARD_SHELL}>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                   <DevelopmentLeadViewSwitch value={developmentLeadView} onChange={setDevelopmentLeadView} />
-                  {developmentLeadFunnelItems.protectedCount ? (
+                  {canEditDevelopmentLeads && developmentLeadSection === 'leads' ? <Button type="button" onClick={openDevelopmentLeadCapture}><Plus size={16} />Create lead</Button> : null}
+                  {visibleProtectedLeadCount ? (
                     <span className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#64748b]">
                       <EyeOff size={13} />
-                      {formatNumber(developmentLeadFunnelItems.protectedCount)} protected
+                      {formatNumber(visibleProtectedLeadCount)} protected
                     </span>
                   ) : null}
               </div>
@@ -9400,16 +9485,16 @@ function DevelopmentDetail() {
               {developmentLeadsError ? <p role="alert" className="mt-5 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{developmentLeadsError}</p> : null}
               <p role="status" className={developmentLeadMoveMessage ? 'mt-3 text-sm text-[#28724e]' : 'sr-only'}>{developmentLeadMoveMessage}</p>
 
-              {!developmentLeadsLoading && !developmentLeadRows.length ? (
+              {!developmentLeadsLoading && !visibleDevelopmentLeadRows.length ? (
                 <div className="mt-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
-                  <p className="text-sm text-[#6b7d93]">No buyer leads allocated to this development yet.</p>
+                  <p className="text-sm text-[#6b7d93]">{developmentLeadSection === 'reservations' ? 'No active unit reservations for this development.' : 'No buyer leads allocated to this development yet.'}</p>
                 </div>
               ) : null}
 
-              {developmentLeadRows.length > 0 && developmentLeadView === 'kanban' ? (
+              {visibleDevelopmentLeadRows.length > 0 && developmentLeadView === 'kanban' ? (
                 <DevelopmentLeadsKanban
                   columns={DEVELOPMENT_LEAD_FUNNEL_STAGES}
-                  cards={developmentLeadRows.map(lead => {
+                  cards={visibleDevelopmentLeadRows.map(lead => {
                     const canOpen = canOpenDevelopmentLead(lead)
                     const canViewDetails = canViewDevelopmentLeadPrivateDetails(lead, developmentLeadAccessKeys)
                     return {
@@ -9435,13 +9520,13 @@ function DevelopmentDetail() {
                 />
               ) : null}
 
-              {developmentLeadRows.length > 0 && developmentLeadView === 'list' ? (
+              {visibleDevelopmentLeadRows.length > 0 && developmentLeadView === 'list' ? (
                 <div className="mt-5 overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-[#e8eef5]">
                       <thead className="bg-[#f8fafc]">
                         <tr>
-                          {['Lead', 'Source', 'Assigned To', 'Stage', 'Last Activity', 'Access'].map(heading => (
+                          {['Lead', ...(developmentLeadSection === 'reservations' ? ['Reserved unit'] : []), 'Source', 'Assigned To', 'Stage', 'Last Activity', 'Access'].map(heading => (
                             <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
                               {heading}
                             </th>
@@ -9449,7 +9534,7 @@ function DevelopmentDetail() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#edf2f7] bg-white">
-                        {developmentLeadRows.map(lead => {
+                        {visibleDevelopmentLeadRows.map(lead => {
                           const sourceLeadId = normalizeDevelopmentLeadText(lead.sourceLeadId)
                           const canOpenLead = canOpenDevelopmentLead(lead, developmentLeadAccessKeys)
                           const stage = getDevelopmentLeadStagePresentation(lead.leadStatus)
@@ -9457,20 +9542,22 @@ function DevelopmentDetail() {
                           const displayName = getDevelopmentLeadDisplayName(lead, canViewDetails)
                           const contactLine = getDevelopmentLeadContactLine(lead, canViewDetails)
                           const assignedAgent = getDevelopmentLeadAssignedAgent(lead, organisationUsers)
+                          const reservedUnit = rows.map(row => row.unit || row).find(unit => unit.id === lead.preferredUnitId)
                           return (
                             <tr
                               key={lead.developerLeadId || lead.sourceLeadId || `${displayName}-${lead.createdAt}`}
                               className={`transition ${canOpenLead ? 'cursor-pointer hover:bg-[#f8fbff]' : 'bg-white'}`}
                               onClick={() => {
                                 if (!canOpenLead || !lead.developerLeadId) return
-                                navigate(`/developer/leads/${encodeURIComponent(lead.developerLeadId)}`)
+                                openDevelopmentLeadWorkspace(lead.developerLeadId)
                               }}>
                               <td className="px-5 py-4 align-middle">
                                 <div className="flex min-w-[230px] items-center gap-4">
                                   <DevelopmentLeadPropertyImage src={getDevelopmentLeadUnitImage(lead, rows)} fallbackSrc={developmentHeroImageUrl} name={displayName} />
-                                  <span><strong className="block text-sm font-semibold text-[#142132]">{displayName}</strong><span className="mt-1 block text-xs text-[#6b7d93]">{contactLine}</span></span>
+                                  <span>{canOpenLead ? <button type="button" className="block text-left text-sm font-semibold text-[#142132]" onClick={event => { event.stopPropagation(); openDevelopmentLeadWorkspace(lead.developerLeadId) }}>{displayName}</button> : <strong className="block text-sm font-semibold text-[#142132]">{displayName}</strong>}<span className="mt-1 block text-xs text-[#6b7d93]">{contactLine}</span></span>
                                 </div>
                               </td>
+                              {developmentLeadSection === 'reservations' ? <td className="px-5 py-4 align-middle text-sm font-semibold text-[#142132]">{reservedUnit?.unit_number || reservedUnit?.unitNumber || 'Reserved unit'}</td> : null}
                               <td className="px-5 py-4 align-middle">
                                 <DevelopmentLeadSource source={lead.leadSource} brand={getDevelopmentLeadSourceBrand(lead, currentWorkspace)} />
                               </td>
@@ -9482,10 +9569,10 @@ function DevelopmentDetail() {
                               <td className="px-5 py-4 align-top">
                                 {canOpenLead ? (
                                   <div className="flex flex-col items-start gap-2">
-                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
-                                      Open developer lead
+                                    <button type="button" onClick={event => { event.stopPropagation(); openDevelopmentLeadWorkspace(lead.developerLeadId) }} className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
+                                      Open lead
                                       <ArrowUpRight size={12} />
-                                    </span>
+                                    </button>
                                     <DevelopmentLeadContactDemo />
                                   </div>
                                 ) : (
@@ -9504,6 +9591,14 @@ function DevelopmentDetail() {
                 </div>
               ) : null}
             </section>
+            {developmentLeadCreateOpen ? <Suspense fallback={<p role="status">Loading lead capture…</p>}>
+              <LeadCreateDialog open category="development" title="Create development lead"
+                subtitle="Capture this buyer once. Their lead will appear here and in the main Development Leads list."
+                draft={developmentLeadDraft} onChange={(field, value) => setDevelopmentLeadDraft(previous => ({ ...previous, [field]: value }))}
+                developmentOptions={[{ id: developmentId, label: data?.development?.name || 'This development' }]}
+                showAgentAssignment={false} saving={developmentLeadCreateSaving} readOnly={Boolean(developmentLeadSavedCrm)} error={developmentLeadCreateError}
+                onClose={() => setDevelopmentLeadCreateOpen(false)} onSave={form => void handleCreateDevelopmentBuyerLead(form)} />
+            </Suspense> : null}
           </section>
         ) : null}
 

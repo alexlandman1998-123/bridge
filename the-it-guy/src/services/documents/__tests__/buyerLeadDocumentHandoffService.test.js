@@ -177,3 +177,35 @@ test('direct conversion preflights every file so a missing later object cannot p
   await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /No files were handed off/)
   assert.equal(client.documents.length, 0)
 })
+
+test('direct conversion validates a canonical mirror before handing off any other lead files', async () => {
+  const foreignId = '55555555-5555-4555-8555-555555555555'
+  const client = clientFor({ rows: [
+    { key: 'buyer_id_document', storageBucket: 'documents', storagePath },
+    { key: 'buyer_proof_of_address', canonicalDocumentId: foreignId, storageBucket: 'documents', storagePath: `${storagePath}.address` },
+  ], existingDocuments: [{ id: foreignId, transaction_id: '66666666-6666-4666-8666-666666666666' }] })
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /canonical|linked.*document|manual review/i)
+  assert.equal(client.documents.length, 1, 'The first staged file must not be inserted before validating the second file.')
+})
+
+test('verified canonical transaction files are reconciled without requiring a former lead folder', async () => {
+  const id = '55555555-5555-4555-8555-555555555555'
+  const path = `client-portal/${transactionId}/identity.pdf`
+  const document = { id, transaction_id: transactionId, file_bucket: 'documents', file_path: path,
+    is_client_visible: true, visibility_scope: 'shared', client_recipient_role: 'buyer', uploaded_by_party: 'buyer' }
+  const client = clientFor({ rows: [{ key: 'buyer_id_document', canonicalDocumentId: id, storageBucket: 'documents', storagePath: path }], existingDocuments: [document] })
+  const context = { transactionId, organisationId, leadId }
+  assert.equal((await reconcileStagedBuyerLeadDocuments(client, context)).summary.alreadyCanonical, 1)
+  assert.deepEqual(await promoteStagedBuyerLeadDocuments(client, context), [{ id, deduplicated: true }])
+  assert.equal(client.documents.length, 1)
+})
+
+test('a canonical mirror cannot bypass audience or Storage verification', async () => {
+  const id = '55555555-5555-4555-8555-555555555555'
+  const row = { key: 'buyer_id_document', canonicalDocumentId: id, storageBucket: 'documents', storagePath }
+  const document = { id, transaction_id: transactionId, file_bucket: 'documents', file_path: storagePath,
+    is_client_visible: true, visibility_scope: 'shared', client_recipient_role: 'buyer', uploaded_by_party: 'buyer' }
+  const context = { transactionId, organisationId, leadId }
+  await assert.rejects(promoteStagedBuyerLeadDocuments(clientFor({ rows: [row], existingDocuments: [{ ...document, client_recipient_role: 'seller' }] }), context), /manual review/)
+  await assert.rejects(promoteStagedBuyerLeadDocuments(clientFor({ rows: [row], existingDocuments: [document], storageError: new Error('denied') }), context), /could not be verified/)
+})

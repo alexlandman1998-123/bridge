@@ -16,7 +16,6 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
   const hasReference = Boolean(channel.reference)
   const hasAdvert = hasReference || channel.hasAdvertIdentity === true
   const updateExisting = hasAdvert
-
   const automaticCheck = updateExisting && !preview && !checking && !previewError
   const edit = () => { onClose(); onEdit?.() }
   const fix = (action) => { onClose(); window.setTimeout(() => onFix?.(action), 0) }
@@ -49,7 +48,6 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
     onPreview={onCheck}
     onUpdate={hasAdvert && onPublish ? updateExisting ? () => onPublish({ updateExisting: true }) : onPublish : undefined}
     onPublish={!hasAdvert ? onPublish : undefined}
-
     onWithdraw={onWithdraw}
     renderChannelSettings={({ disabled, run }) => <>
       {onCheck ? <section aria-label={`${channel.label} requirements`} className="rounded-xl border border-[#e3ebf2] p-4 text-sm">
@@ -75,7 +73,6 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
           </label>
           <Button type="button" size="sm" disabled={disabled || !hasAdvert || !canMutate || !onChangeStatus} onClick={() => void run(() => onChangeStatus(status), 'Portal status request sent. Check latest status to confirm it.')}>Send status change</Button>
           {!hasAdvert ? <p className="text-xs text-[#607387]">A saved portal advert is required before changing its status.</p> : null}
-
           <label className="grid gap-2 font-semibold text-[#243d56]">Public listing URL
             <Field type="url" value={url} onChange={event => { setUrl(event.target.value); setConfirmed(false) }} placeholder={`https://${channel.key === 'property24' ? 'www.property24.com' : 'www.privateproperty.co.za'}/to-rent/…`} disabled={disabled} />
           </label>

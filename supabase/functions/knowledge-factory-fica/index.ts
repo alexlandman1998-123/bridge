@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { mayAccessFicaHandoff } from "./policy.ts";
@@ -12,14 +13,14 @@ function response(status: number, body: Json) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") return response(405, { error: "method_not_allowed" });
 
   // This boundary deliberately has no supplier call until the supported FICA
   // operation, authentication method and result contract are approved.
   // Credentials are never accepted from the browser.
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = text(supabaseServiceKey());
   if (!url || !serviceRoleKey) return response(503, { status: "integration_unavailable", error: "server_configuration_unavailable" });
 
   const body = await request.json().catch(() => ({})) as Json;
@@ -68,4 +69,4 @@ Deno.serve(async (request) => {
   // No provider protocol has been authorised. A readiness check must not
   // alter the case or imply that a supplier request was sent.
   return response(503, { status: "not_configured", error: "knowledge_factory_fica_adapter_not_configured" });
-});
+}));

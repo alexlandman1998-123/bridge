@@ -44,6 +44,7 @@ import {
   getOnboardingStepDefinitions,
   getPurchaserEntityType,
   normalizePurchaserType,
+  isBuyerSpouseContactRequired as isSpouseContactRequired,
   validateOnboardingSubmission,
 } from '../lib/purchaserPersonas'
 import {
@@ -395,11 +396,6 @@ const TRUST_DETAIL_KEYS = [
 
 function isMarriedPurchaser(purchaser = {}) {
   return String(purchaser.marital_status || '').trim().toLowerCase() === 'married'
-}
-
-function isSpouseContactRequired(purchaser = {}) {
-  const maritalRegime = String(purchaser.marital_regime || '').trim().toLowerCase()
-  return maritalRegime === 'in_community' || normalizeYesNoChoice(purchaser.spouse_is_co_purchaser) === 'yes'
 }
 
 const NATURAL_PURCHASER_SECTIONS = [
@@ -861,7 +857,7 @@ function normalizeInputValue(value) {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeInputValue(item)).filter(Boolean).join(', ')
   }
-  return String(value || '').trim()
+  return String(value ?? '').trim()
 }
 
 function isFilledValue(value) {
@@ -1448,7 +1444,7 @@ function getPurchaserFromLegacyFields(formData = {}, prefix = '') {
   return normalizePurchaserRecord(legacy)
 }
 
-function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType }) {
+export function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType }) {
   const structuredPurchasers = Array.isArray(formData.purchasers) ? formData.purchasers.map((item) => normalizePurchaserRecord(item)) : []
   const legacyPrimary = getPurchaserFromLegacyFields(formData, '')
   const legacySecondary = getPurchaserFromLegacyFields(formData, 'co_')
@@ -1457,7 +1453,7 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
 
   const modeCandidate = normalizeInputValue(formData?.purchaser?.natural_person_purchase_mode || formData.natural_person_purchase_mode).toLowerCase()
   const inferredMode =
-    modeCandidate === 'co_purchasing'
+    modeCandidate === 'co_purchasing' || structuredPurchasers.length > 2
       ? 'co_purchasing'
       : hasPurchaserData(secondaryPurchaser)
         ? 'co_purchasing'
@@ -1585,7 +1581,7 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
   const normalizedFinanceType = normalizeFinanceType(formData.purchase_finance_type || financeType || 'cash')
   const activePurchasers = isNaturalPersonEntityType(purchaserEntityType)
     ? naturalMode === 'co_purchasing'
-      ? [primaryPurchaser, secondaryPurchaser]
+      ? [primaryPurchaser, secondaryPurchaser, ...structuredPurchasers.slice(2)]
       : [primaryPurchaser]
     : []
 
@@ -1619,7 +1615,7 @@ function stripFlatPurchaserFields(target) {
   delete target.co_residential_address
 }
 
-function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fundingSources }) {
+export function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fundingSources }) {
   const cleaned = {}
 
   Object.entries(formData).forEach(([key, value]) => {
@@ -1681,10 +1677,10 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   delete cleaned.trustees
 
   if (isNaturalPersonEntityType(purchaserEntityType)) {
-    const purchaserCount = naturalMode === 'co_purchasing' ? 2 : 1
+    const purchaserCount = normalized.purchasers.length
     cleaned.purchasers = normalized.purchasers.slice(0, purchaserCount)
     setFlatPurchaserFields(cleaned, cleaned.purchasers[0], '')
-    if (purchaserCount === 2) {
+    if (purchaserCount >= 2) {
       setFlatPurchaserFields(cleaned, cleaned.purchasers[1], 'co_')
     }
     if (purchaserCount < 2) {
@@ -3116,6 +3112,10 @@ function ClientOnboarding() {
   }, [formData, touchedFields, activeStep?.key, validateDetailsStep])
 
   function updateNaturalPurchaseMode(value) {
+    if (value !== 'co_purchasing' && structuredPurchasers.length > 2) {
+      setError('This file has more than two purchasers. Keep co-purchasing selected so every saved purchaser is retained.')
+      return
+    }
     setFormData((previous) => {
       const normalizedMode = value === 'co_purchasing' ? 'co_purchasing' : 'individual'
       const details = normalizeDetailsState(
@@ -3131,7 +3131,7 @@ function ClientOnboarding() {
       return {
         ...previous,
         natural_person_purchase_mode: normalizedMode,
-        purchasers: normalizedMode === 'co_purchasing' ? details.purchasers.slice(0, 2) : [details.purchasers[0] || createEmptyPurchaser()],
+        purchasers: normalizedMode === 'co_purchasing' ? details.purchasers : [details.purchasers[0] || createEmptyPurchaser()],
       }
     })
   }
@@ -4619,9 +4619,9 @@ function ClientOnboarding() {
 
               {structuredPurchasers[0] ? <div>{renderNaturalPurchaserCard(structuredPurchasers[0], 0)}</div> : null}
 
-              {isCoPurchasingSelected && structuredPurchasers[1] ? (
-                <div>{renderNaturalPurchaserCard(structuredPurchasers[1], 1)}</div>
-              ) : null}
+              {isCoPurchasingSelected ? structuredPurchasers.slice(1).map((purchaser, index) => (
+                <div key={index + 1}>{renderNaturalPurchaserCard(purchaser, index + 1)}</div>
+              )) : null}
 
               <div>{renderFinanceDetailsCard()}</div>
             </div>
@@ -4703,7 +4703,6 @@ function ClientOnboarding() {
 
   function renderReviewStep() {
     const primaryPurchaser = structuredPurchasers[0] || createEmptyPurchaser()
-    const secondaryPurchaser = structuredPurchasers[1] || createEmptyPurchaser()
     const unitLabel = [unitDevelopment?.name, payload?.unit?.unit_number ? `Unit ${payload.unit.unit_number}` : '']
       .filter(Boolean)
       .join(' | ')
@@ -4723,8 +4722,8 @@ function ClientOnboarding() {
           { label: 'Marital status', value: formatReviewOption(MARITAL_STATUS_OPTIONS, primaryPurchaser.marital_status) },
           ...(naturalPersonPurchaseMode === 'co_purchasing'
             ? [
-                { label: 'Co-purchaser', value: getReviewPersonName(secondaryPurchaser) },
-                { label: 'Ownership split', value: `${formatReviewText(primaryPurchaser.ownership_share)}% / ${formatReviewText(secondaryPurchaser.ownership_share)}%` },
+                ...structuredPurchasers.slice(1).map((purchaser, index) => ({ label: `Purchaser ${index + 2}`, value: getReviewPersonName(purchaser) })),
+                { label: 'Ownership split', value: structuredPurchasers.map((purchaser) => `${formatReviewText(purchaser.ownership_share)}%`).join(' / ') },
               ]
             : []),
         ]

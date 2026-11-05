@@ -9,6 +9,6 @@ const component = readFileSync(resolve('the-it-guy/src/components/marketing/Emai
 for (const expected of ['create or replace view public.email_campaign_daily_performance with (security_invoker = true)', 'create or replace view public.email_campaign_category_performance with (security_invoker = true)', 'grant select on public.email_campaign_daily_performance, public.email_campaign_category_performance to authenticated;']) assert.ok(migration.includes(expected), `Missing Phase 7 intelligence contract: ${expected}`)
 assert.match(service, /dailyPerformance/)
 assert.match(service, /categoryPerformance/)
-assert.match(component, /function InsightsPanel/)
+assert.match(component, /function PerformanceOverview/)
 assert.match(component, /PERFORMANCE INTELLIGENCE/)
 console.log('Email campaign Phase 7 intelligence checks passed.')

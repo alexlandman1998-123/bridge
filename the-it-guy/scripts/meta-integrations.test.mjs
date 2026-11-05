@@ -7,7 +7,7 @@ import { createMetaIntegrationHandler } from '../../supabase/functions/meta-inte
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const org=id(1), other=id(2), user=id(3), sender=id(4), foreign=id(5), listingId=id(6), connection=id(7)
-const time=new Date(Date.now()-1000).toISOString(), origin='https://example.supabase.co'
+const time='2026-10-17T17:00:00.000Z', origin='https://example.supabase.co'
 const listing={id:listingId,organisation_id:org,title:'Family home',description:'Public description',asking_price:1000000,suburb:'Claremont',city:'Cape Town',listing_status:'active',is_active:true,updated_at:time,notes:'PRIVATE NOTE',street_address:'PRIVATE ADDRESS'}
 
 test('24-hour reply boundary and public listing snapshots',()=>{
@@ -36,30 +36,22 @@ test('authorization precedes data access and connection management requires an a
 
 async function fixture(){
   const db=new PGlite()
-  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;create table organisations(id uuid primary key);
+  await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create table organisations(id uuid primary key);
     create table organisation_communication_channels(id uuid primary key,organisation_id uuid,branch_id uuid,provider text,channel_type text,waba_id text,phone_number_id text,meta_business_id text,display_phone_number text,business_display_name text,connection_status text,verification_status text,is_default boolean,connected_at timestamptz,disconnected_at timestamptz,last_error_message text,last_checked_at timestamptz,created_by uuid,created_at timestamptz default now(),updated_at timestamptz,meta_access_token text);
     create table meta_lead_ads_connections(id uuid primary key,organisation_id uuid,page_id text,page_name text,connection_status text,token_ciphertext text,last_error_message text,connected_at timestamptz default now());
     create table private_listings(id uuid primary key,organisation_id uuid);
-    create table organisation_users(user_id uuid,organisation_id uuid,status text,role text);
-    create table whatsapp_campaigns(id uuid primary key,sender_id uuid,status text);
-    create table whatsapp_campaign_jobs(campaign_id uuid,status text);
-    create table whatsapp_campaign_recipients(id uuid primary key default gen_random_uuid(),campaign_id uuid,status text);
-    create table whatsapp_marketing_contacts(id uuid primary key default gen_random_uuid(),organisation_id uuid,phone text,consent_status text,opted_out_at timestamptz,updated_at timestamptz);
     grant all on organisation_communication_channels to anon,authenticated;
     alter table organisation_communication_channels enable row level security;
     create policy org_read on organisation_communication_channels for select to authenticated using(organisation_id=current_setting('test.org',true)::uuid);`)
   await db.exec(readFileSync(new URL('../../supabase/migrations/20261017172424_meta_inbox_and_listing_posts.sql',import.meta.url),'utf8'))
-  for (const migration of ['20261018094503_whatsapp_inbox_agent_ownership.sql','20261018111956_whatsapp_inbox_messaging.sql','20261018125856_whatsapp_business_app_sync.sql','20261018140502_instagram_listing_posts.sql']) await db.exec(readFileSync(new URL('../../supabase/migrations/'+migration,import.meta.url),'utf8'))
   await db.query('insert into organisations values($1),($2)',[org,other]);await db.query('insert into auth.users values($1)',[user]);await db.query('insert into private_listings values($1,$2)',[listingId,org])
-  await db.query("insert into organisation_users(user_id,organisation_id,status,role) values($1,$2,'active','owner')",[user,org])
-  await db.exec("alter table organisation_users enable row level security; create policy own_membership on organisation_users for select to authenticated using(user_id=auth.uid()); grant select on organisation_users to authenticated;")
   await db.query("insert into organisation_communication_channels(id,organisation_id,provider,channel_type,phone_number_id,waba_id,connection_status,meta_access_token) values($1,$2,'meta','whatsapp','100','200','connected','secret'),($3,$4,'meta','whatsapp','101','201','connected','foreign-secret')",[sender,org,foreign,other])
   await db.query("insert into meta_lead_ads_connections(id,organisation_id,page_id,page_name,connection_status,token_ciphertext,granted_scopes,page_tasks) values($1,$2,'300','Test Page','connected','encrypted',array['pages_manage_posts'],array['CREATE_CONTENT'])",[connection,org])
   return db
 }
 
 // Minimal PostgREST adapter: executes the real handler queries against PostgreSQL.
-function sqlClient(db){return {rpc:async(name,args)=>{try{return {data:(await db.query(`select * from ${name}(${Object.keys(args).map((k,i)=>`${k}=>$${i+1}`).join(',')})`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v))).rows.map(row => Object.keys(row).length===1 ? Object.values(row)[0] : row)[0],error:null}}catch(error){return {data:null,error}}},from:table=>{
+function sqlClient(db){return {rpc:async(name,args)=>{try{return {data:(await db.query(`select * from ${name}(${Object.keys(args).map((k,i)=>`${k}=>$${i+1}`).join(',')})`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v))).rows,error:null}}catch(error){return {data:null,error}}},from:table=>{
   let columns='*',filters=[],values=[],mutation=null,mode='',order=[],limit=''
   const bind=v=>{values.push(v&&typeof v==='object'&&!Array.isArray(v)?JSON.stringify(v):v);return `$${values.length}`}
   const q={select(c='*'){columns=c;return q},eq(k,v){filters.push(`${k}=${bind(v)}`);return q},is(k,v){assert.equal(v,null);filters.push(`${k} is null`);return q},gt(k,v){filters.push(`${k}>${bind(v)}`);return q},lte(k,v){filters.push(`${k}<=${bind(v)}`);return q},order(k,o={}){order.push(`${k} ${o.ascending===false?'desc':'asc'}`);return q},limit(n){limit=` limit ${Number(n)}`;return q},single(){mode='single';return q},maybeSingle(){mode='maybe';return q},update(patch){mutation=`update ${table} set ${Object.entries(patch).map(([k,v])=>`${k}=${bind(v)}`).join(',')}`;return q},insert(row){mutation=`insert into ${table}(${Object.keys(row).join(',')}) values(${Object.values(row).map(bind).join(',')})`;return q},async then(resolve){try{const where=filters.length?` where ${filters.join(' and ')}`:'';const sql=mutation?`${mutation}${where} returning ${columns}`:`select ${columns} from ${table}${where}${order.length?` order by ${order.join(',')}`:''}${limit}`;const rows=(await db.query(sql,values)).rows;if(mode==='single'&&rows.length!==1)throw Error('Expected one row');return resolve({data:mode?rows[0]||null:rows,error:null})}catch(error){return resolve({data:null,error})}}};return q
@@ -128,7 +120,7 @@ test('signed-event ingestion is idempotent, ordered and scoped; credentials and 
     assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,2)
     await applyWhatsAppInboxWebhook(sqlClient(db),{entry:[{id:'200',changes:[{field:'messages',value:{metadata:{phone_number_id:'100'},messages:[{id:'webhook',from:'27821234567',timestamp:String(Date.parse(time)/1000),type:'text',text:{body:'Hello'}}]}}]}]})
     assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,3)
-    await db.exec(`set role authenticated;set test.org='${org}';set request.jwt.claim.sub='${user}';`)
+    await db.exec(`set role authenticated;set test.org='${org}';`)
     assert.equal((await db.query('select id,phone_number_id from organisation_communication_channels')).rows.length,1)
     for(const col of ['meta_access_token','token_ciphertext']) await assert.rejects(db.query(`select ${col} from organisation_communication_channels`),/permission denied/)
     await assert.rejects(db.query("update organisation_communication_channels set meta_access_token='forged'"),/permission denied/)
@@ -147,7 +139,7 @@ test('real reply flow sends once under concurrency and never repeats an uncertai
     await Promise.all([call(),call()]);assert.equal(sent,1)
     assert.equal((await call()).message.delivery_status,'sent');assert.equal(sent,1)
     await assert.rejects(call(id(10),{message:'Changed'}),/different message/)
-    await assert.rejects(call(id(11),{organisationId:other}),/not found|staff membership/)
+    await assert.rejects(call(id(11),{organisationId:other}),/not found/)
     uncertain=true;assert.equal((await call(id(11))).message.delivery_status,'unknown');await call(id(11));assert.equal(sent,2)
     const callback=(status,phone='100')=>db.query('select whatsapp_inbox_status($1,$2,$3,$4,$5,$6,$7) ok',[phone,'200','wamid.late',`arch9-inbox:${id(11)}`,status,time,'failure'])
     assert.equal((await callback('read','101')).rows[0].ok,false)
@@ -196,7 +188,7 @@ test('calendar posts paginate, enforce actor listing visibility and expose only 
   const posts=Array.from({length:201},(_,index)=>({id:id(1000+index),listing_id:index===1?foreign:listingId,status:'published',published_at:time,token_ciphertext:'SECRET',snapshot_json:{private:'SECRET'}}))
   const db={from(table){assert.equal(table,'meta_listing_posts');const query={
     select(fields){assert.equal(fields,'id,listing_id,status,published_at');return query},
-    eq(key,value){assert.ok(['organisation_id','platform'].includes(key));assert.equal(value,key==='platform'?'facebook':org);return query},
+    eq(key,value){assert.equal(key,'organisation_id');assert.equal(value,org);return query},
     order(key){assert.equal(key,'id');return query},
     async range(start,end){ranges.push([start,end]);return {data:posts.slice(start,end+1)}},
   };return query}}

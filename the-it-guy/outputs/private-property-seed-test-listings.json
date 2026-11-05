@@ -1,89 +1,83 @@
 {
   "phase": "private-property-seed-test-listings",
-  "generatedAt": "2026-08-26T08:20:23.203Z",
-  "apply": true,
-  "status": "SEEDED",
+  "generatedAt": "2026-10-11T07:03:42.380Z",
+  "apply": false,
+  "status": "BLOCKED",
   "safety": {
     "privatePropertyApiCalled": false,
-    "databaseWritten": true,
+    "databaseWritten": false,
     "rawCredentialsStored": false,
     "listingPublished": false
   },
   "target": {
-    "workspace": "produktive",
-    "organisationId": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
-    "branchId": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
-    "assignedAgentId": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
-    "assignedAgentEmail": "alex.produktive.training@arch9.test"
+    "workspace": "custom",
+    "organisationId": "",
+    "branchId": "",
+    "assignedAgentId": "",
+    "assignedAgentEmail": ""
   },
-  "blockers": [],
+  "blockers": [
+    "missing_organisation_id",
+    "missing_assigned_agent"
+  ],
   "candidates": [
     {
-      "kind": "sale",
-      "listingReference": "PP-SANDBOX-SALE-001",
-      "title": "Private Property Sandbox Sale Listing",
+      "kind": "rental-residential",
+      "listingReference": "PP-SANDBOX-RENTAL-RES-001",
+      "title": "Private Property Sandbox Rental Residential",
+      "listingType": "Rental",
+      "propertyType": "Apartment",
+      "price": 18500
+    },
+    {
+      "kind": "rental-commercial-m2",
+      "listingReference": "PP-SANDBOX-RENTAL-COM-M2-001",
+      "title": "Private Property Sandbox Commercial Rental Per M2",
+      "listingType": "Rental",
+      "propertyType": "Offices",
+      "price": 220
+    },
+    {
+      "kind": "rental-commercial-day",
+      "listingReference": "PP-SANDBOX-RENTAL-COM-DAY-001",
+      "title": "Private Property Sandbox Commercial Rental Per Day",
+      "listingType": "Rental",
+      "propertyType": "Commercial",
+      "price": 2500
+    },
+    {
+      "kind": "sale-residential-video",
+      "listingReference": "PP-SANDBOX-SALE-RES-VIDEO-001",
+      "title": "Private Property Sandbox Sale Residential Video",
       "listingType": "Sale",
       "propertyType": "House",
       "price": 2500000
     },
     {
-      "kind": "rental",
-      "listingReference": "PP-SANDBOX-RENTAL-001",
-      "title": "Private Property Sandbox Rental Listing",
-      "listingType": "Rental",
-      "propertyType": "Apartment",
-      "price": 18500
-    }
-  ],
-  "result": [
-    {
-      "kind": "sale",
-      "action": "updated",
-      "listing": {
-        "id": "2520ee7a-e48b-4197-a567-19951ed92e75",
-        "listing_reference": "PP-SANDBOX-SALE-001",
-        "title": "Private Property Sandbox Sale Listing",
-        "organisation_id": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
-        "branch_id": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
-        "assigned_agent_id": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
-        "assigned_agent_email": "alex.produktive.training@arch9.test"
-      },
-      "publication": {
-        "id": "e99f77bd-47f8-4c73-9973-6c2b91e53805",
-        "listing_id": "2520ee7a-e48b-4197-a567-19951ed92e75",
-        "listing_type": "Sale",
-        "status": "Ready"
-      },
-      "media": {
-        "inserted": 0,
-        "updated": 3,
-        "skipped": 0
-      }
+      "kind": "sale-commercial-showday",
+      "listingReference": "PP-SANDBOX-SALE-COM-SHOWDAY-001",
+      "title": "Private Property Sandbox Commercial Sale Show Day",
+      "listingType": "Sale",
+      "propertyType": "Offices",
+      "price": 3850000
     },
     {
-      "kind": "rental",
-      "action": "updated",
-      "listing": {
-        "id": "1b497444-53fe-43c0-a5f8-192cb43a7e90",
-        "listing_reference": "PP-SANDBOX-RENTAL-001",
-        "title": "Private Property Sandbox Rental Listing",
-        "organisation_id": "efa6c6ff-6941-4b59-8bcb-e4d9ba9e585a",
-        "branch_id": "531f1439-62b3-4c76-a908-e6ec906d7fdf",
-        "assigned_agent_id": "763b2e6b-909d-42ef-9303-ff2dd64e6ade",
-        "assigned_agent_email": "alex.produktive.training@arch9.test"
-      },
-      "publication": {
-        "id": "b166e002-132d-40cd-8c79-a1b86cdb2a89",
-        "listing_id": "1b497444-53fe-43c0-a5f8-192cb43a7e90",
-        "listing_type": "Rental",
-        "status": "Ready"
-      },
-      "media": {
-        "inserted": 0,
-        "updated": 3,
-        "skipped": 0
-      }
+      "kind": "sale-farm-auction",
+      "listingReference": "PP-SANDBOX-SALE-FARM-AUCTION-001",
+      "title": "Private Property Sandbox Farm Auction",
+      "listingType": "Sale",
+      "propertyType": "Farm",
+      "price": 4500000
+    },
+    {
+      "kind": "sale-land-rates-levies",
+      "listingReference": "PP-SANDBOX-SALE-LAND-001",
+      "title": "Private Property Sandbox Sale Land",
+      "listingType": "Sale",
+      "propertyType": "Residential Land",
+      "price": 1450000
     }
   ],
-  "nextStep": "Run Private Property readiness for each listing, then preview/publish to sandbox."
+  "result": [],
+  "nextStep": "Provide --organisation-id plus --assigned-agent-id or --assigned-agent-email, then re-run."
 }

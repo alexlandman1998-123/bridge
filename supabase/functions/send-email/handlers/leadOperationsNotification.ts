@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import {
   renderBridgeCta,
   renderBridgeEmailLayout,
@@ -403,7 +404,7 @@ export async function handleLeadOperationsNotificationEmail(
     );
     const leadId = firstText(payload.leadId, payload.lead_id);
     const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-    const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const key = normalizeText(supabaseServiceKey());
     let clientIntroManaged = false;
     if (url && key && leadId) {
       const client = createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});

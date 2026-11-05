@@ -1,3 +1,4 @@
+import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { websitePublicationJobContext } from "../_shared/listingPublicationJob.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
@@ -301,7 +302,7 @@ async function cleanupRetiredAssets(input: {
   return { deleted: paths.length, pending: 0 };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -314,8 +315,8 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = text(Deno.env.get("SUPABASE_URL"));
-    const anonKey = text(Deno.env.get("SUPABASE_ANON_KEY"));
-    const serviceKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const anonKey = text(supabasePublishableKey());
+    const serviceKey = text(supabaseServiceKey());
     if (!supabaseUrl || !anonKey || !serviceKey) {
       throw new RequestError(
         503,
@@ -536,4 +537,4 @@ Deno.serve(async (req) => {
     const safe = publicError(error);
     return jsonResponse(safe.status, { error: safe.message, code: safe.code });
   }
-});
+}));

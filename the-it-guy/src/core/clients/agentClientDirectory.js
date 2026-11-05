@@ -829,7 +829,7 @@ async function fetchManualBuyerRow({ buyerId = '', organisationId = '' } = {}) {
 }
 
 async function resolveAgentOrganisationId({ profile = {}, role = 'agent', workspace = null } = {}) {
-  let organisationId = normalizeText(workspace?.id)
+  let organisationId = normalizeText(workspace?.organisationId || workspace?.organisation_id || workspace?.id)
   if (!isUuidLike(organisationId)) {
     const settings = await fetchOrganisationSettings()
     organisationId = normalizeText(settings?.organisation?.id)
@@ -920,14 +920,17 @@ async function readAgentClientDirectory({ organisationId, profile, role, current
   // Only seller rows depend on the transaction result. Everything else can start
   // together once the workspace is known.
   const transactions = isSupabaseConfigured && profile?.id
-    ? fetchTransactionsByParticipantSummary({
-        userId: profile.id,
-        roleType: role,
-        organisationId,
-        identityContext: { email: currentAgent.email, fullName: currentAgent.fullName },
-        includePropertyDetails: false,
-        forceRefresh,
-      }).then((rows) => rows.filter((row) => !isSeedOrDemoRow(row?.transaction || row) && !isSeedOrDemoRow(row?.buyer || {})))
+    ? (role === 'developer'
+      ? import('../../domains/reporting/api').then(({ fetchDashboardOverview }) => fetchDashboardOverview({ developmentId: null, organisationId, includeSecondaryData: false })).then(overview => overview?.rows || [])
+      : fetchTransactionsByParticipantSummary({
+          userId: profile.id,
+          roleType: role,
+          organisationId,
+          identityContext: { email: currentAgent.email, fullName: currentAgent.fullName },
+          includePropertyDetails: false,
+          forceRefresh,
+        }))
+      .then((rows) => rows.filter((row) => !isSeedOrDemoRow(row?.transaction || row) && !isSeedOrDemoRow(row?.buyer || {})))
     : Promise.resolve([])
   const transactionSources = transactions.then(async (transactionRows) => ({
     transactionRows,

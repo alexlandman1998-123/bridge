@@ -87,25 +87,18 @@ export function createEmailDocument(brand = {}) {
 export function normalizeDocument(document) {
   if (!document || document.version !== 1 || !Array.isArray(document.blocks))
     throw new Error("This email document version is not supported.");
-  const blocks = document.blocks.filter((block) =>
-    [
-      "header",
-      "text",
-      "image",
-      "button",
-      "property",
-      "divider",
-      "social",
-    ].includes(block.type),
-  );
-  return {
-    ...document,
-    blocks: [
-      ...blocks,
-      document.blocks.find((b) => b.type === "footer") || newBlock("footer"),
-    ],
-  };
+  const ids=new Set();
+  const blocks=document.blocks.filter(block=>block&&["header","text","image","button","property","divider","social","footer"].includes(block.type)).map(block=>{
+    const next={...newBlock(block.type),...block};
+    if(typeof next.id!=="string"||!next.id||ids.has(next.id))next.id=globalThis.crypto.randomUUID();
+    ids.add(next.id);
+    if(next.type==="property")next.listings=Array.isArray(next.listings)?next.listings.filter(item=>item&&typeof item==="object"):[];
+    if(next.type==="social")next.links=Array.isArray(next.links)?next.links.filter(item=>item&&typeof item==="object"):[];
+    return next;
+  });
+  return {...document,globalStyles:{primaryColour:"#18765b",fontFamily:"Arial",...(document.globalStyles||{})},blocks:[...blocks.filter(block=>block.type!=="footer"),blocks.find(block=>block.type==="footer")||newBlock("footer")]};
 }
+
 export function renderBlock(block, styles = {}, context = {}) {
   const primary = colour(block.colour || styles.primaryColour, "#18765b");
   const align = ["left", "center", "right"].includes(block.align)
@@ -115,18 +108,21 @@ export function renderBlock(block, styles = {}, context = {}) {
   const font = ["Arial", "Georgia", "Verdana"].includes(styles.fontFamily)
     ? styles.fontFamily
     : "Arial";
+  const textColour=colour(block.textColour,"#13223b");
+  const linkColour=colour(block.textColour,primary);
   const link = (label, url) =>
     safeUrl(url)
-      ? `<a href="${safeUrl(url)}" style="color:${primary}">${escapeHtml(label)}</a>`
+      ? `<a href="${safeUrl(url)}" style="color:${linkColour}">${escapeHtml(label)}</a>`
       : escapeHtml(label);
   let inner = "";
   if (block.type === "header")
     inner = safeUrl(block.src)
       ? `<img src="${safeUrl(block.src)}" alt="${escapeHtml(block.text)}" width="180" style="max-width:100%;height:auto" />`
-      : `<h2 style="margin:0;font: bold 28px Georgia">${escapeHtml(block.text)}</h2>`;
+      : `<h2 style="margin:0;font-size:28px;font-weight:bold">${escapeHtml(block.text)}</h2>`;
   if (block.type === "text") {
     const tag = block.style === "heading" ? "h1" : "p";
-    inner = `<${tag} style="margin:0;color:${colour(block.textColour, "#13223b")};font-size:${block.style === "heading" ? "30" : "15"}px;line-height:1.5;font-weight:${block.bold || block.style === "heading" ? "bold" : "normal"};font-style:${block.italic ? "italic" : "normal"}">${safeUrl(block.url) ? link(block.text, block.url) : block.richText ? sanitizeRichText(block.richText) : escapeHtml(block.text).replace(/\n/g, "<br>")}</${tag}>`;
+    const content=block.richText?sanitizeRichText(block.richText):escapeHtml(block.text).replace(/\n/g,"<br>");
+    inner = `<${tag} style="margin:0;color:${colour(block.textColour, "#13223b")};font-size:${block.style === "heading" ? "30" : "15"}px;line-height:1.5;font-weight:${block.bold || block.style === "heading" ? "bold" : "normal"};font-style:${block.italic ? "italic" : "normal"}">${safeUrl(block.url) ? `<a href="${safeUrl(block.url)}" style="color:${linkColour}">${content.replace(/<a\b[^>]*>|<\/a>/gi, "")}</a>` : content}</${tag}>`;
   }
   if (block.type === "image" && safeUrl(block.src)) {
     inner = `<img src="${safeUrl(block.src)}" alt="${escapeHtml(block.alt)}" width="564" style="display:block;width:100%;max-width:564px;height:auto;border:0" />`;
@@ -134,7 +130,7 @@ export function renderBlock(block, styles = {}, context = {}) {
       inner = `<a href="${safeUrl(block.url)}">${inner}</a>`;
   }
   if (block.type === "button")
-    inner = `<a ${safeUrl(block.url) ? `href="${safeUrl(block.url)}"` : ""} style="display:inline-block;padding:12px 25px;border:1px solid ${primary};border-radius:5px;background:${block.variant === "outline" ? "#ffffff" : primary};color:${block.variant === "outline" ? primary : "#ffffff"};text-decoration:none;font-weight:bold">${escapeHtml(block.text)}</a>`;
+    inner = `<a ${safeUrl(block.url) ? `href="${safeUrl(block.url)}"` : ""} style="display:inline-block;padding:12px 25px;border:1px solid ${primary};border-radius:5px;background:${block.variant === "outline" ? "#ffffff" : primary};color:${colour(block.textColour,block.variant === "outline" ? primary : "#ffffff")};text-decoration:none;font-weight:bold">${escapeHtml(block.text)}</a>`;
   if (block.type === "divider")
     inner = '<hr style="border:0;border-top:1px solid #e2e8ef" />';
   if (block.type === "social")
@@ -150,7 +146,7 @@ export function renderBlock(block, styles = {}, context = {}) {
   }
   if (block.type === "footer")
     inner = `<hr style="border:0;border-top:1px solid #e2e8ef"><p style="font-size:11px;line-height:1.6;color:#667085">You’re receiving this email from ${escapeHtml(context.agencyName || styles.name || "{{agency_name}}")}${context.senderEmail ? ` &lt;${escapeHtml(context.senderEmail)}&gt;` : ""}.${context.agencyAddress ? `<br>${escapeHtml(context.agencyAddress)}` : ""}<br>${safeUrl(context.unsubscribeUrl) ? `<a href="${safeUrl(context.unsubscribeUrl)}">Unsubscribe</a>` : "Unsubscribe · Personal link added on delivery"}</p>`;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="${align}" style="padding:${padding}px;font-family:${font},sans-serif;background:${colour(block.background, "#ffffff")}">${inner}</td></tr></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="${align}" style="padding:${padding}px;font-family:${font},sans-serif;color:${textColour};background:${colour(block.background, "#ffffff")}">${inner}</td></tr></table>`;
 }
 export function renderEmail(document, context = {}) {
   const doc = normalizeDocument(document);
@@ -163,7 +159,21 @@ export function emailIssues(document) {
   if (document.mode === "advanced")
     return document.advancedHtml?.trim() ? [] : ["Add email content."];
   const issues = [];
-  for (const b of document.blocks) {
+  const blocks=normalizeDocument(document).blocks;
+  const hasContent=blocks.some(b=>{
+    if(b.type==="text")return String(b.richText?sanitizeRichText(b.richText).replace(/<[^>]*>/g,"").replace(/&nbsp;|&#160;|&#xa0;/gi," "):b.text||"").trim().length>0;
+    if(b.type==="header")return Boolean(String(b.text||"").trim()||b.src);
+    if(b.type==="image")return Boolean(b.src);
+    if(b.type==="button")return Boolean(String(b.text||"").trim());
+    if(b.type==="property")return b.listings.length>0;
+    if(b.type==="social")return b.links.length>0;
+    return false;
+  });
+  if(!hasContent)issues.push("Add at least one content block before sending.");
+  for (const b of blocks) {
+    if(b.type==="button"&&!String(b.text||"").trim())issues.push("Add a label to each button.");
+    if(b.type==="social"&&(b.links||[]).some(link=>!safeUrl(link.url)))issues.push("Add a valid destination to each social link.");
+    if(b.type==="social"&&(b.links||[]).some(link=>!String(link.label||"").trim()))issues.push("Add a label to each social link.");
     if (b.type === "button" && !safeUrl(b.url))
       issues.push("Add a valid destination to each button.");
     if (b.type === "image" && !safeUrl(b.src))

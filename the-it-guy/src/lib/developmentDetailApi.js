@@ -6,6 +6,7 @@ const call = async (method, ...args) => {
 }
 
 const METHODS = [
+  'invalidateDevelopmentOptionsCache', 'invalidateTransactionWorkspaceCoreCache',
   'deleteDevelopment', 'deleteDevelopmentDocument', 'fetchDevelopmentDetail',
   'fetchDevelopmentMarketingAccess', 'createDevelopmentMarketingAccess', 'sendDevelopmentMarketingAccessInvite', 'fetchDevelopmentMarketingInvite', 'acceptDevelopmentMarketingInvite', 'fetchDevelopmentMarketingActivity', 'fetchDevelopmentMarketingEvents', 'createDevelopmentMarketingEvent',
   'fetchDevelopmentVisualAnalytics',
@@ -17,6 +18,7 @@ const METHODS = [
 ]
 const operations = Object.fromEntries(METHODS.map((method) => [method, (...args) => call(method, ...args)]))
 export const {
+  invalidateDevelopmentOptionsCache, invalidateTransactionWorkspaceCoreCache,
   deleteDevelopment, deleteDevelopmentDocument, fetchDevelopmentDetail,
   fetchDevelopmentMarketingAccess, createDevelopmentMarketingAccess, sendDevelopmentMarketingAccessInvite, fetchDevelopmentMarketingInvite, acceptDevelopmentMarketingInvite, fetchDevelopmentMarketingActivity, fetchDevelopmentMarketingEvents, createDevelopmentMarketingEvent,
   fetchDevelopmentVisualAnalytics,

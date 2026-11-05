@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { parse } from '@babel/parser'
+import { OFFER_WORKFLOW_RETIRED, assertOfferWorkflowAvailable } from '../src/core/offers/offerWorkflowRetirement.js'
+import { normalizeBuyerWorkspaceTab } from '../src/pages/agency/agencyLeadWorkspaceRouteState.js'
 import { readFile } from 'node:fs/promises'
 
 const agentLeadsPageShimSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
@@ -9,11 +12,22 @@ const buyerOnboardingBackfillAuditSql = await readFile(new URL('./sql/buyer-onbo
 const buyerOnboardingTransactionBootstrapSql = await readFile(new URL('../../supabase/migrations/202608140003_buyer_onboarding_transaction_bootstrap.sql', import.meta.url), 'utf8')
 const transactionLifecycleSource = await readFile(new URL('../src/lib/transactionLifecycleService.js', import.meta.url), 'utf8')
 const packageSource = await readFile(new URL('../package.json', import.meta.url), 'utf8')
-const simplifiedViewingPlannerStart = agencyPipelinePageSource.indexOf('data-testid="simplified-viewing-planner"')
-const simplifiedViewingPlannerEnd = agencyPipelinePageSource.indexOf('{false ? (', simplifiedViewingPlannerStart)
-assert.ok(simplifiedViewingPlannerStart > -1, 'Simplified viewing planner should exist.')
-assert.ok(simplifiedViewingPlannerEnd > simplifiedViewingPlannerStart, 'Simplified viewing planner should be sliced before the legacy hidden planner.')
-const simplifiedViewingPlannerSource = agencyPipelinePageSource.slice(simplifiedViewingPlannerStart, simplifiedViewingPlannerEnd)
+// Locate the actual section rather than a removed hidden legacy planner.
+const ast = parse(agencyPipelinePageSource, { sourceType: 'module', plugins: ['jsx'] })
+function findPlanner(node) {
+  if (!node || typeof node !== 'object') return null
+  if (node.type === 'JSXElement' && node.openingElement.attributes.some(attribute => attribute.name?.name === 'data-testid' && attribute.value?.value === 'simplified-viewing-planner')) return node
+  for (const value of Object.values(node)) {
+    for (const child of Array.isArray(value) ? value : [value]) {
+      const found = findPlanner(child)
+      if (found) return found
+    }
+  }
+  return null
+}
+const planner = findPlanner(ast)
+assert.ok(planner, 'Simplified viewing planner should exist.')
+const simplifiedViewingPlannerSource = agencyPipelinePageSource.slice(planner.start, planner.end)
 const sendBuyerOnboardingFromAppointmentStart = agencyPipelinePageSource.indexOf('async function handleSendBuyerOnboardingFromAppointment')
 const sendBuyerOnboardingFromAppointmentEnd = agencyPipelinePageSource.indexOf('function openBuyerOtpUploadPicker', sendBuyerOnboardingFromAppointmentStart)
 assert.ok(sendBuyerOnboardingFromAppointmentStart > -1, 'Appointment buyer onboarding sender should exist.')
@@ -40,45 +54,26 @@ const buyerProfileHydrationSource = agencyPipelinePageSource.slice(buyerProfileH
 assert.match(agentLeadsPageShimSource, /import AgencyPipelinePage from '\.\/agency\/AgencyPipelinePage'/)
 assert.match(agentLeadsPageShimSource, /<AgencyPipelinePage initialViewMode="leads" \/>/)
 
-assert.match(agencyPipelinePageSource, /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'/)
-assert.match(agencyPipelinePageSource, /function normalizeLeadWorkspaceTabKey/)
-assert.match(agencyPipelinePageSource, /'offers'[\s\S]*return BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
-assert.match(
-  agencyPipelinePageSource,
-  /\{ key: 'overview', label: 'Overview', meta: '' \},\s*\{ key: 'properties', label: 'Matches'[\s\S]*?\{ key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' \},\s*\{ key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer'[\s\S]*?\{ key: 'documents', label: 'Documents'[\s\S]*?\{ key: 'appointments', label: 'Appointments'[\s\S]*?\{ key: 'activity', label: 'Activity'/,
-)
+// Buyer offers are retired: old links must open documents, not resurrect
+// the old offer editor. Buyer capture and viewing remain available.
+assert.equal(OFFER_WORKFLOW_RETIRED, true)
+assert.throws(() => assertOfferWorkflowAvailable(), { code: 'offer_workflow_retired' })
+for (const tab of ['offer', 'offers', 'otp', 'onboarding_otp', 'buyer_onboarding_otp']) assert.equal(normalizeBuyerWorkspaceTab(tab), 'documents')
+assert.match(agencyPipelinePageSource, /normalizeBuyerWorkspaceTab\(normalizeKey\(tabKey\)\)/)
+assert.doesNotMatch(agencyPipelinePageSource, /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
+assert.doesNotMatch(agencyPipelinePageSource, /id="buyer-onboarding-otp-send-form"/)
+assert.match(agencyPipelinePageSource, /if \(OFFER_WORKFLOW_RETIRED\) \{\s*throw new Error\(OFFER_WORKFLOW_RETIRED_MESSAGE\)/)
 assert.match(agencyPipelinePageSource, /BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'/)
-assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === 'overview' && !selectedLeadIsSeller \? \(/)
-assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller \? \(/)
-assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
-assert.match(agencyPipelinePageSource, /Open Setup \/ Offer/)
-assert.match(agencyPipelinePageSource, /Upload Signed OTP/)
-assert.match(agencyPipelinePageSource, /buyer-transaction-setup-checklist/)
-assert.match(agencyPipelinePageSource, /buyer-offer-upload-confirmations/)
-assert.match(agencyPipelinePageSource, /onClick=\{openBuyerOtpUploadPicker\}/)
-assert.match(agencyPipelinePageSource, /ref=\{buyerOtpUploadInputRef\}/)
-assert.match(agencyPipelinePageSource, /form="buyer-onboarding-otp-send-form"/)
-assert.match(agencyPipelinePageSource, /id="buyer-onboarding-otp-send-form"/)
-assert.match(agencyPipelinePageSource, /lastBuyerOnboardingLink/)
-assert.match(agencyPipelinePageSource, /async function createAndSendBuyerOnboardingForLead/)
-assert.match(agencyPipelinePageSource, /async function ensureBuyerOnboardingTransactionForLead/)
-assert.match(agencyPipelinePageSource, /type: 'client_onboarding'/)
-assert.match(agencyPipelinePageSource, /buyer_onboarding_otp_workspace/)
-assert.match(agencyPipelinePageSource, /buyer_lead_workspace_transaction_bootstrap/)
-assert.match(agencyPipelinePageSource, /allowDirectLeadConversion: true/)
+assert.match(agencyPipelinePageSource, /'overview', BUYER_PROFILE_WORKSPACE_TAB_KEY, 'properties', 'appointments', 'documents', 'activity'/)
 assert.match(transactionLifecycleSource, /creation_mode: creationCommand\.creationMode/, 'Direct buyer onboarding transaction bootstrap should mark creation_mode for the RPC.')
 assert.match(buyerOnboardingTransactionBootstrapSql, /v_allow_direct_lead_conversion := v_offer_id is null and v_creation_mode in \('onboarding_capture', 'manual_intake', 'manual_capture'\)/, 'Buyer onboarding capture should be allowed without an accepted offer.')
 assert.match(buyerOnboardingTransactionBootstrapSql, /if v_offer_id is null and not v_allow_direct_lead_conversion then[\s\S]*accepted offer and idempotency key/, 'Accepted offer should remain required for non-onboarding transaction creation.')
 assert.match(buyerOnboardingTransactionBootstrapSql, /if v_offer_id is not null then[\s\S]*update public\.offers/, 'Offer linkage updates should only run when an accepted offer exists.')
-assert.match(agencyPipelinePageSource, /Buyer onboarding link ready: \{offerLinkForm\.lastBuyerOnboardingLink\}/)
-assert.doesNotMatch(agencyPipelinePageSource, /Buyer onboarding link ready: \{offerLinkForm\.lastBuyerOnboardingLink \|\| offerLinkForm\.lastOfferLink\}/)
-assert.doesNotMatch(agencyPipelinePageSource, /Offer link still available/)
-assert.doesNotMatch(sendBuyerOnboardingFromAppointmentSource, /createAndSendOfferLinkForLead/)
-assert.doesNotMatch(sendBuyerOnboardingFromAppointmentSource, /buyer_offer_link/)
-assert.doesNotMatch(sendBuyerOnboardingFromAppointmentSource, /\/offers/)
-assert.match(sendBuyerOnboardingFromAppointmentSource, /createAndSendBuyerOnboardingForLead/)
 assert.doesNotMatch(sendBuyerOnboardingFromLeadSource, /createAndSendOfferLinkForLead/)
 assert.match(sendBuyerOnboardingFromLeadSource, /createAndSendBuyerOnboardingForLead/)
+assert.match(agencyPipelinePageSource, /function formatContactName\(contact = null\)[\s\S]{0,450}contact\?\.name/)
+assert.match(agencyPipelinePageSource, /type: 'client_onboarding',[\s\S]{0,260}buyerName: resolvedBuyerName/)
+assert.match(agencyPipelinePageSource, /source: 'accepted_offer_conversion',[\s\S]{0,180}buyerName: selectedLeadContactName/)
 assert.match(agencyPipelinePageSource, /function AppointmentOverviewPanel/)
 assert.match(agencyPipelinePageSource, /function UpcomingAppointmentsPanel/)
 assert.match(agencyPipelinePageSource, /function LeadAppointmentsPanel/)
@@ -122,7 +117,7 @@ assert.match(saveBuyerProfileSource, /getMigrationGuardedBuyerOnboardingSnapshot
 assert.match(saveBuyerProfileSource, /getMigrationGuardedBuyerOnboardingSnapshot\(selectedLead\?\.buyer_onboarding\)/)
 assert.doesNotMatch(agencyPipelinePageSource, /selectedLeadLifecycleDiagnostic\?\.onboarding\?\.form_data \|\|/)
 assert.match(agencyPipelinePageSource, /data-testid="buyer-profile-onboarding-fields"/)
-assert.match(agencyPipelinePageSource, /Buyer information/)
+assert.match(agencyPipelinePageSource, /Buyer profile/)
 assert.match(agencyPipelinePageSource, /Download onboarding form/)
 assert.match(agencyPipelinePageSource, /downloadBuyerOnboardingForm/)
 assert.match(agencyPipelinePageSource, /id="buyer-profile-onboarding-form"/)

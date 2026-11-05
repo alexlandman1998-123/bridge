@@ -141,6 +141,25 @@ const update = async (status, command = randomUUID(), expected = undefined, note
   return (await db.query('select bridge_update_attorney_workflow_step_v4($1,$2,$3,$4,$5,$6,$7,$8,$9) result',
     [matter,targetLane,targetStep,status,command,expected,note,visibility,packet])).rows[0].result
 }
+await db.exec(migration('20261104093130_attorney_task_answers_before_completion.sql'))
+await db.exec(`create function check_current_command_answers() returns trigger language plpgsql as $$begin
+ if new.status='completed' and new.comment='atomic-packet-order-canary' and not exists(
+  select 1 from public.attorney_task_confirmations where step_id=new.id and task_confirmations#>>'{current_review,answer}'='yes') then
+  raise exception 'Current command answers were not available to completion validation';end if;return new;end$$;
+ create trigger check_current_command_answers before update on transaction_subprocess_steps for each row execute function check_current_command_answers();`)
+await db.exec('begin')
+const atomicAnswers=await update('completed',randomUUID(),undefined,'atomic-packet-order-canary',{
+ taskConfirmations:{current_review:{answer:'yes',note:'Controlled atomic review'}}})
+assert.equal(atomicAnswers.stepStatus,'completed','One command must save and validate its current answers.')
+assert.equal((await db.query('select task_confirmations from attorney_task_confirmations where step_id=$1',[step])).rows[0].task_confirmations.current_review.answer,'yes')
+await db.exec('rollback')
+const beforeInvalidAnswers=(await db.query('select status,updated_at from transaction_subprocess_steps where id=$1',[step])).rows[0]
+await assert.rejects(update('completed',randomUUID(),undefined,'atomic-packet-order-canary',{
+ taskConfirmations:{current_review:{answer:'invalid'}}}),/Invalid task confirmation/)
+assert.deepEqual((await db.query('select status,updated_at from transaction_subprocess_steps where id=$1',[step])).rows[0],beforeInvalidAnswers)
+assert.equal((await db.query('select count(*)::int n from attorney_task_confirmations where step_id=$1',[step])).rows[0].n,0,
+ 'A failed command must roll back its answers and task together.')
+
 const verifySavedJourney = async (saved, taskKey = 'instruction_received') => {
   const source = (await db.query('select bridge_read_professional_matter_journey($1) result', [matter])).rows[0].result
   assert.equal(source.revision, saved.revision, 'fresh journey read must observe the committed revision')

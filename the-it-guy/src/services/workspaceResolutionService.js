@@ -949,7 +949,7 @@ async function fetchServerWorkspacePreference(client, userId, options = {}) {
     result = await withWorkspaceQueryTimeout(
       client
         .from('user_workspace_preferences')
-        .select('active_workspace_id, active_workspace_source, updated_at')
+        .select('active_workspace_id, active_attorney_firm_id, active_workspace_source, updated_at')
         .eq('user_id', userId)
         .maybeSingle(),
       {
@@ -972,7 +972,7 @@ async function fetchServerWorkspacePreference(client, userId, options = {}) {
   }
 
   return {
-    workspaceId: normalizeText(result.data?.active_workspace_id),
+    workspaceId: normalizeText(result.data?.active_attorney_firm_id || result.data?.active_workspace_id),
     source: result.data?.active_workspace_source || '',
     updatedAt: result.data?.updated_at || null,
     missingSchema: false,
@@ -988,7 +988,7 @@ function normalizeWorkspaceContextRpcArray(context = null, key = '') {
 function normalizeWorkspaceContextRpcPreference(context = null) {
   const preference = context?.preference || null
   return {
-    workspaceId: normalizeText(preference?.active_workspace_id),
+    workspaceId: normalizeText(preference?.active_attorney_firm_id || preference?.active_workspace_id),
     source: preference?.active_workspace_source || '',
     updatedAt: preference?.updated_at || null,
     missingSchema: Boolean(context?.diagnostics?.preferenceSchemaMissing),
@@ -1060,6 +1060,15 @@ export async function fetchWorkspaceResolutionContextRpc(client, { userId = '', 
   return result.data || null
 }
 
+export function buildWorkspacePreferenceIdentity(workspace = {}) {
+  const id=normalizeText(workspace.id)
+  if(workspace.type===WORKSPACE_TYPES.attorneyFirm)return {
+    active_workspace_id:normalizeText(workspace.organisationId || workspace.organisation_id || workspace.raw?.organisation_id) || id,
+    active_attorney_firm_id:id,
+  }
+  return {active_workspace_id:id,active_attorney_firm_id:null}
+}
+
 export async function setActiveWorkspacePreference(userId, workspaceId, options = {}) {
   const client = requireClient(options.client)
   const safeUserId = normalizeText(userId)
@@ -1084,12 +1093,12 @@ export async function setActiveWorkspacePreference(userId, workspaceId, options 
     .upsert(
       {
         user_id: safeUserId,
-        active_workspace_id: safeWorkspaceId,
+        ...buildWorkspacePreferenceIdentity(validation.currentWorkspace),
         active_workspace_source: options.source || 'user_selected',
       },
       { onConflict: 'user_id' },
     )
-    .select('user_id, active_workspace_id, active_workspace_source, updated_at')
+    .select('user_id, active_workspace_id, active_attorney_firm_id, active_workspace_source, updated_at')
     .single()
 
   if (result.error) {
@@ -1630,7 +1639,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
           .upsert(
             {
               user_id: safeUserId,
-              active_workspace_id: resolution.currentWorkspace.id,
+              ...buildWorkspacePreferenceIdentity(resolution.currentWorkspace),
               active_workspace_source: normalizeText(options.requestedWorkspaceId) ? 'user_selected' : 'auth_boot',
             },
             { onConflict: 'user_id' },

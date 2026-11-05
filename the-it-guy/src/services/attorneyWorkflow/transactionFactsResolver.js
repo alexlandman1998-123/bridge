@@ -1,5 +1,6 @@
 import { resolveBuyerOnboardingFlow } from '../../lib/buyerOnboardingFlow.js'
 import { resolveTransactionSaleProfile } from '../../core/transactions/transactionSaleProfile.js'
+import { resolveTransferTaxDecision, TRANSFER_TAX_ROUTES } from '../transferTaxDecisionService.js'
 
 const CASH_FINANCE_VALUES = new Set(['cash', 'cash_sale', 'cash_deal', 'proof_of_funds'])
 const BOND_FINANCE_VALUES = new Set(['bond', 'bonded', 'bond_finance', 'mortgage', 'home_loan'])
@@ -371,7 +372,12 @@ export function resolveTransactionFacts(transaction = {}) {
       : normalizedSellerEntityType
   const propertyType = normalizeKey(transaction?.property_type || transaction?.propertyType || transaction?.unit?.property_type)
   const propertyTenure = normalizePropertyTenure(propertyTenureRaw || propertyType, transaction)
-  const vatTreatment = normalizeVatTreatment(vatTreatmentRaw)
+  const taxDecision = resolveTransferTaxDecision(routingProfile.transferTaxDecision || routingProfile.transfer_tax_decision)
+  const confirmedTaxRoute = taxDecision.status === 'confirmed'
+    && TRANSFER_TAX_ROUTES.includes(taxDecision.route) && taxDecision.route !== 'needs_tax_advice'
+  const vatTreatment = confirmedTaxRoute ? taxDecision.route : normalizeVatTreatment(vatTreatmentRaw)
+  if (confirmedTaxRoute) rawFieldsUsed.vatTreatment = routingProfile.transferTaxDecision
+    ? 'routing_profile_json.transferTaxDecision.route' : 'routing_profile_json.transfer_tax_decision.route'
   const buyerFlowSnapshot = extractBuyerOnboardingFlowSnapshot(transaction, onboardingFormData) ||
     (Object.keys(onboardingFormData || {}).length
       ? resolveBuyerOnboardingFlow(onboardingFormData, transaction, {

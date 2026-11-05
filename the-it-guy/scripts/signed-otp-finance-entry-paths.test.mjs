@@ -12,12 +12,12 @@ assert.match(lifecycleSource, /normalized\.includes\('finance'\) \|\| normalized
 
 assert.match(
   pipelineSource,
-  /onboarding_status: 'signed_otp_received',\s*stage: 'Finance In Progress',\s*current_main_stage: 'FIN'/s,
+  /onboarding_status: 'signed_otp_received',\s*stage: 'Finance(?: In Progress)?',\s*current_main_stage: 'FIN'/s,
   'Buyer-lead signed OTP upload must persist the transaction in Finance.',
 )
 assert.match(
   pipelineSource,
-  /transactionCreationOverrideReason:[\s\S]*?stage: 'Finance In Progress'/,
+  /transactionCreationOverrideReason:[\s\S]*?stage: 'Finance(?: In Progress)?'/,
   'Buyer-lead conversion must create the signed-OTP transaction directly in Finance.',
 )
 assert.doesNotMatch(

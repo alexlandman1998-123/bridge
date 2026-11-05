@@ -2,13 +2,13 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListingActivity, getPrivateListingActivity } from '../privateListingService'
 import { RENTAL_PORTAL_STATUSES } from './rentalListingChannelModel'
 
-async function call(listingId, channel, action, { body, refresh = false, allowUncertain = false } = {}) {
+async function call(listingId, channel, action, { body, refresh = false, allowUncertain = false, listingType = 'rental', recordSync = true } = {}) {
   if (!listingId) throw new Error('Save the rental listing before managing its channels.')
   if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before managing rental listing channels.')
   const token = (await supabase.auth.getSession()).data?.session?.access_token
   if (!token) throw new Error('Sign in again before managing rental listing channels.')
-  const query = channel === 'property24' ? `environment=production&refresh=${refresh}` : `environment=production&cached=${!refresh}&recordSync=true`
-  const path = channel === 'property24' ? `property24/rentals` : 'private-property/listings'
+  const query = channel === 'property24' ? `environment=production&refresh=${refresh}` : `environment=production&cached=${!refresh}&recordSync=${recordSync}`
+  const path = channel === 'property24' ? `property24/${listingType === 'rental' ? 'rentals' : 'listings'}` : 'private-property/listings'
   const response = await fetch(`/api/${path}/${encodeURIComponent(listingId)}/${action}?${query}`, {
     method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -30,9 +30,9 @@ async function call(listingId, channel, action, { body, refresh = false, allowUn
   return payload
 }
 
-export function getRentalPortalStatus(listingId, channel, { refresh = false } = {}) {
+export function getRentalPortalStatus(listingId, channel, { refresh = false, listingType = 'rental', recordSync = true } = {}) {
   if (!RENTAL_PORTAL_STATUSES[channel]) throw new Error('Unsupported rental listing channel.')
-  return call(listingId, channel, 'status', { refresh,allowUncertain:true })
+  return call(listingId, channel, 'status', { refresh, listingType, recordSync, allowUncertain:true })
 }
 
 export function reconcileRentalPortalPublication(listingId,channel) {

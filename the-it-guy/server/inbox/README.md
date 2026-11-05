@@ -1,5 +1,13 @@
 # Inbox mail worker
 
+27 October release status: the five Inbox migrations, nine Edge endpoints and
+primary app screens have been deployed. The owner deferred worker hosting. This
+Node service is **not running in production**, no real provider mailbox is
+connected and no transport acceptance/delivery is claimed. A review-only hosting
+configuration is retained with the current release evidence; no paid host was
+created. Complete hosting, server-secret configuration and the dedicated-provider
+checks below before treating queued email or receiving as operational.
+
 This is the primary transaction workspace's receiving and sending process. Run it as one
 long-lived Node 22+ service with outbound HTTPS and secure IMAP (TCP 993). It does
 not run in a browser, Vercel request handler, or Supabase Edge Function. One process

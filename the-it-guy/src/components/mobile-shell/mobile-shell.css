@@ -5,6 +5,28 @@
   background: #fff;
 }
 
+/* The shell owns vertical scrolling; the document must not compete with it. */
+html:has([data-mobile-shell]),
+body:has([data-mobile-shell]) {
+  height: 100%;
+  overflow: hidden;
+}
+
+.mobile-shell .mobile-shell-header {
+  flex-shrink: 0;
+}
+
+[data-mobile-scroll-root] {
+  overflow-x: hidden;
+  scroll-padding-block: 16px;
+}
+
+/* Include portalled dialogs and native sheets. CSS releases this lock when
+   the last overlay closes, including during navigation or nested dialogs. */
+body:has(dialog[open], [role="dialog"][aria-modal="true"], .mobile-notification-dropdown) [data-mobile-scroll-root] {
+  overflow-y: hidden;
+}
+
 .mobile-shell .mobile-shell-header {
   border-color: rgba(28, 32, 30, .07);
   background: #fff;

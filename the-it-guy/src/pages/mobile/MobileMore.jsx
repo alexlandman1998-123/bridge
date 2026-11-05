@@ -43,6 +43,7 @@ export default function MobileMore() {
   const moreItems = workspace.role === 'developer' ? [
     { key: 'developments', label: 'Developments', icon: Building2, meta: 'Portfolio and available units', to: '/mobile/developments' },
     { key: 'leads', label: 'Leads', icon: UsersRound, meta: 'Buyer interest and development enquiries', to: '/mobile/developer/leads' },
+    ...marketingItems,
     ...MORE_ITEMS,
   ] : [...marketingItems, ...MORE_ITEMS]
 

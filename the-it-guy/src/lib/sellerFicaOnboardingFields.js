@@ -74,7 +74,6 @@ export function getSellerFicaOnboardingMissing(form = {}) {
         missing.push(`Beneficial owners / controllers, person ${index + 1}: add an ownership share or explain how this person controls the company`)
       }
     })
-
   }
   if (branch === 'trust') {
     const founders = form.trustFounders ?? form.trust_founders

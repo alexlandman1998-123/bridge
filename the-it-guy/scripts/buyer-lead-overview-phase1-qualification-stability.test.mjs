@@ -14,5 +14,8 @@ assert.doesNotMatch(
 assert.match(pageSource, /data-testid="buyer-qualification-edit"/, 'qualification edit trigger contract is missing')
 assert.match(pageSource, /data-testid="buyer-qualification-editor"/, 'qualification editor contract is missing')
 assert.match(pageSource, /aria-controls="buyer-qualification-editor"/, 'qualification trigger must reference its editor')
+assert.match(pageSource, /const canUseLeadFieldFallbacks = includeLeadFieldFallbacks/, 'saved API qualification fields should remain available when notes contain only a partial answer block')
+assert.match(pageSource, /areaInterest: normalizeText\(parsed\.areaInterest\) \|\| \(canUseLeadFieldFallbacks \? normalizeText\(lead\?\.areaInterest \|\| lead\?\.area_interest\) : ''\)/, 'preferred area should fall back to the saved lead API field')
+assert.match(pageSource, /<AreaAutocomplete\s+label="Which area should we focus on\?"[\s\S]*?value=\{buyerQualificationForm\.areaInterest\}[\s\S]*?onChange=\{\(value\) => updateBuyerQualificationField\('areaInterest', value\)\}/, 'buyer qualification area should use the Arch9 area directory API')
 
 console.log('buyer lead overview Phase 1 qualification stability contracts passed')

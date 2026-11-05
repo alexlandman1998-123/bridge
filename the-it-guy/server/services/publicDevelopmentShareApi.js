@@ -9,7 +9,7 @@ const assetOfType = (assets, type) => (Array.isArray(assets) ? assets : []).find
 
 function requestOrigin(headers = {}) {
   const host = text(headers['x-forwarded-host'] || headers.host).toLowerCase()
-  if (host === 'app.arch9.co.za' || /^[a-z0-9-]+\.vercel\.app$/.test(host)) return `https://${host}`
+  if (['app.arch9.co.za', 'madisonplace.co.za', 'www.madisonplace.co.za'].includes(host) || /^[a-z0-9-]+\.vercel\.app$/.test(host)) return `https://${host}`
   if (/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) return `http://${host}`
   return 'https://app.arch9.co.za'
 }
@@ -24,7 +24,9 @@ function metadata(data, slug, origin) {
   return {
     title: text(seo.seoTitle) || text(seo.listingTitle) || name,
     description: text(seo.seoMetaDescription) || text(seo.listingDescription) || text(data.description) || `Explore ${name}.`,
-    url: `${origin}/development/${encodeURIComponent(slug)}`,
+    url: slug === 'madison-place-abcf1b8a' && ['https://madisonplace.co.za', 'https://www.madisonplace.co.za'].includes(origin)
+      ? 'https://madisonplace.co.za/'
+      : `${origin}/development/${encodeURIComponent(slug)}`,
     image: cover ? `${origin}/api/public/development-share-image?slug=${encodeURIComponent(slug)}&v=${coverVersion}` : '',
   }
 }
@@ -68,6 +70,71 @@ async function loadLanding(slug, env = process.env) {
   const { data, error } = await client.rpc('get_public_development_landing', { requested_slug: slug })
   if (error) throw error
   return data
+}
+
+// Only renew files already selected by the published landing RPC. The caller
+// supplies a slug, never a storage path or a URL to sign with server credentials.
+export async function createDevelopmentLandingResponse({ method = 'GET', url = '', headers = {}, dependencies = {}, env = process.env } = {}) {
+  const response = (status, data) => ({ status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, body: method === 'HEAD' ? '' : JSON.stringify(data) })
+  if (!['GET', 'HEAD'].includes(method)) return { ...response(405, { error: 'Method not allowed.' }), headers: { ...response(405, {}).headers, Allow: 'GET, HEAD' } }
+  const slug = safeSlug(new URL(url || '/', requestOrigin(headers)).searchParams.get('slug'))
+  if (!slug) return response(400, { error: 'Invalid development.' })
+  try {
+    const data = await (dependencies.loadLanding || loadLanding)(slug, env)
+    if (!data) return response(404, { error: 'This development page is not published.' })
+    if (method === 'HEAD') return response(200, {})
+    const storageOrigin = new URL(text(env.SUPABASE_URL || env.VITE_SUPABASE_URL)).origin
+    const pathFor = (value) => {
+      try {
+        const parsed = new URL(value)
+        const pathname = decodeURIComponent(parsed.pathname)
+        if (pathname.includes(String.fromCharCode(0))) return ''
+        const match = pathname.match(/^\/storage\/v1\/object\/(?:sign|public)\/documents\/(developments\/([a-zA-Z0-9-]+)\/(?:cover|floorplan|site_plan|marketing|logo|logo-dark|logo-light|brochure)\/[^/\\]+)$/)
+        return parsed.origin === storageOrigin && match && match[2] === data.id ? match[1] : ''
+      } catch { return '' }
+    }
+    const publicPaths = new Set()
+    const visitMedia = (value) => {
+      if (typeof value === 'string') {
+        for (const url of value.match(/https:\/\/[^\s,]+/g) || []) {
+          const path = pathFor(url)
+          if (path) publicPaths.add(path)
+        }
+      } else if (Array.isArray(value)) value.forEach(visitMedia)
+      else if (value && typeof value === 'object') Object.values(value).forEach(visitMedia)
+    }
+    visitMedia((Array.isArray(data.assets) ? data.assets : []).map((asset) => asset.fileUrl))
+    // Variant logos can be saved only in the published media library, rather
+    // than the RPC's legacy asset-type list. Both are existing public evidence.
+    visitMedia(data.marketing?.mediaLibrary)
+    visitMedia(data.marketing?.floorplans)
+    const paths = [...publicPaths]
+    if (paths.length > 250) throw new Error('Too many public media files.')
+    const replacements = new Map()
+    if (paths.length) {
+      const signPaths = dependencies.signPaths || (async (values) => {
+        const key = text(env.SUPABASE_SERVICE_ROLE_KEY)
+        if (!key) throw new Error('Media signing is not configured.')
+        const client = createClient(storageOrigin, key, { auth: { persistSession: false, autoRefreshToken: false } })
+        return client.storage.from('documents').createSignedUrls(values, 3600)
+      })
+      const { data: signed, error } = await signPaths(paths)
+      if (error) throw error
+      for (const asset of signed || []) {
+        if (paths.includes(asset.path) && asset.signedUrl && !asset.error) replacements.set(asset.path, asset.signedUrl)
+      }
+      if (replacements.size !== paths.length) throw new Error('Public media unavailable.')
+    }
+    const renew = (value) => {
+      if (typeof value === 'string') return value.replace(/https:\/\/[^\s,]+/g, (url) => replacements.get(pathFor(url)) || url)
+      if (Array.isArray(value)) return value.map(renew)
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, renew(item)]))
+      return value
+    }
+    return response(200, renew(data))
+  } catch {
+    return response(503, { error: 'Development temporarily unavailable. Please try again.' })
+  }
 }
 
 export async function createDevelopmentPageResponse({ method = 'GET', url = '', headers = {}, dependencies = {} } = {}) {

@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
@@ -360,7 +361,7 @@ async function ensureOrganisationRelationship({
   return normalizeText(fallbackInsert.data?.id);
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
@@ -370,7 +371,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-    const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+    const serviceRoleKey = normalizeText(supabaseServiceKey());
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse(500, { error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret." });
     }
@@ -513,4 +514,4 @@ Deno.serve(async (req: Request) => {
       error: (error as Error)?.message || "Unable to accept this partner invitation.",
     });
   }
-});
+}));

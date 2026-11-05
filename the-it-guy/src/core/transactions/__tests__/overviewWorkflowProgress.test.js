@@ -69,3 +69,11 @@ test('immediate progress follows the saved active workflow and advances when it 
   assert.equal(selectImmediateWorkflow([]).status, 'unknown')
   assert.equal(selectImmediateWorkflow(rows.map(row => ({ ...row, status: 'complete' }))).status, 'complete')
 })
+
+test('verified canonical closeout wins over a stale compatibility task without manufacturing completion',()=>{
+ const transaction={id:'tx',lifecycle_state:'completed',registered_at:'2026-11-04',completed_at:'2026-11-04'}
+ assert.equal(selectImmediateWorkflow(buildOverviewWorkflowProgress({transactionId:'tx',rollup,transaction})).detail,'Transaction completed')
+ for(const changed of [{lifecycle_state:'registered'},{lifecycle_state:'cancelled'},{completed_at:null},{id:'other'}]){
+  assert.notEqual(selectImmediateWorkflow(buildOverviewWorkflowProgress({transactionId:'tx',rollup,transaction:{...transaction,...changed}})).detail,'Transaction completed')
+ }
+})

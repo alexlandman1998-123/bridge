@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import process from 'node:process'
+import { createRequire } from 'node:module'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { evaluateLeadWorkspaceReleaseGate } from '../src/services/observability/leadWorkspaceReleaseGate.js'
 import {
@@ -9,6 +12,12 @@ import {
 } from '../src/services/observability/leadWorkspaceOperationalHealth.js'
 
 const APP_ROOT = new URL('../', import.meta.url)
+const require = createRequire(import.meta.url)
+assert.equal(
+  require('react-router-dom/package.json').version,
+  require('../package.json').dependencies['react-router-dom'],
+  'Install the pinned router before browser verification; an older local router can hide navigation regressions.',
+)
 const DEFAULT_PORT = 5195
 const DEFAULT_BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`
 const FAKE_SUPABASE_URL = 'https://agency-lead-workspace-smoke.supabase.co'
@@ -89,6 +98,30 @@ const staleLeadRow = {
 }
 
 let currentLeadRow = { ...staleLeadRow }
+const buyerContactRow = {
+  ...contactRow,
+  contact_id: '00000000-0000-4000-8000-000000000301',
+  first_name: 'Navigation',
+  last_name: 'Buyer',
+  email: 'navigation-buyer@arch9.test',
+}
+const buyerLeadRow = {
+  ...staleLeadRow,
+  lead_id: '00000000-0000-4000-8000-000000000302',
+  contact_id: buyerContactRow.contact_id,
+  lead_category: 'buyer',
+  stage: 'Contacted',
+  status: 'Active',
+  listing_id: null,
+  mandate_packet_id: null,
+  seller_onboarding_token: null,
+  seller_onboarding_status: null,
+}
+const calendarClientRow = {
+  ...contactRow,
+  contact_id: '00000000-0000-4000-8000-000000000303',
+  first_name: 'Lien', last_name: 'Saved', email: 'lien-saved@arch9.test', contact_type: 'Seller',
+}
 
 const listingRow = {
   id: LISTING_ID,
@@ -229,7 +262,7 @@ async function startViteServer() {
   }
 
   const outputRef = { value: '' }
-  const child = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(DEFAULT_PORT), '--strictPort'], {
+  const child = spawn('npm', ['run', 'dev', '--', '--force', '--host', '127.0.0.1', '--port', String(DEFAULT_PORT), '--strictPort'], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
@@ -302,12 +335,15 @@ function rowsForRequest(url, request) {
   const listingIdFilter = url.searchParams.get('id') || ''
 
   if (table === 'contacts') {
-    return wantsSingle ? contactRow : [contactRow]
+    const contactFilter = url.searchParams.get('contact_id') || ''
+    const rows = [contactRow, buyerContactRow, calendarClientRow].filter((row) => !contactFilter || contactFilter.includes(row.contact_id))
+    return wantsSingle ? rows[0] || null : rows
   }
 
   if (table === 'leads') {
+    if (leadIdFilter.includes(buyerLeadRow.lead_id)) return wantsSingle ? buyerLeadRow : [buyerLeadRow]
     if (leadIdFilter.includes(LEAD_ID)) return wantsSingle ? currentLeadRow : [currentLeadRow]
-    return [currentLeadRow]
+    return [currentLeadRow, buyerLeadRow]
   }
 
   if (table === 'private_listings') {
@@ -568,8 +604,79 @@ try {
     )
   }
 
+  // Exercise real client-side navigation: a changed URL alone does not prove
+  // that React rendered the destination or unmounted the lead workspace.
+  const navigationResults = []
+  const documentId = await page.evaluate(() => {
+    window.__leadNavigationDocumentId = crypto.randomUUID()
+    return window.__leadNavigationDocumentId
+  })
+  const expectLeadList = async () => {
+    await page.waitForURL('**/pipeline/leads', { timeout: 10_000 })
+    await page.getByRole('heading', { name: 'Buyer Leads', exact: true }).waitFor({ timeout: 10_000 })
+    assert.equal(await page.getByRole('button', { name: '← Back to Leads', exact: true }).count(), 0)
+  }
+  const expectDashboard = async () => {
+    await page.waitForURL('**/dashboard', { timeout: 10_000 })
+    await page.getByRole('heading', { name: 'Active Transactions', exact: true }).waitFor({ timeout: 10_000 })
+    assert.equal(await page.getByRole('button', { name: '← Back to Leads', exact: true }).count(), 0)
+  }
+  await page.getByRole('button', { name: '← Back to Leads', exact: true }).click()
+  await expectLeadList()
+  for (const [category, name, leadId] of [
+    ['Buyer', 'Navigation Buyer', buyerLeadRow.lead_id],
+    ['Seller', 'Alexander Landman', LEAD_ID],
+  ]) {
+    for (const view of ['Table', 'Kanban']) {
+      const openLead = async () => {
+        await page.getByRole('tab', { name: new RegExp(`^${category} Leads`) }).click()
+        await page.getByRole('button', { name: view, exact: true }).click()
+        if (view === 'Kanban') await page.getByRole('button', { name: `Open lead ${name}`, exact: true }).click()
+        else await page.getByRole('row').filter({ hasText: name }).click()
+        await page.waitForURL(`**/pipeline/leads/${leadId}`, { timeout: 10_000 })
+        await page.getByRole('heading', { name, exact: true }).waitFor({ timeout: 10_000 })
+      }
+      const navigationStarted = Date.now()
+      await openLead()
+      await page.getByRole('button', { name: '← Back to Leads', exact: true }).click()
+      await expectLeadList()
+      await openLead()
+      await page.getByRole('link', { name: 'Dashboard', exact: true }).click()
+      await expectDashboard()
+      await page.getByRole('button', { name: 'Pipeline', exact: true }).click()
+      await expectLeadList()
+      await page.goBack()
+      await expectDashboard()
+      await page.goForward()
+      await expectLeadList()
+      assert.equal(await page.evaluate(() => window.__leadNavigationDocumentId), documentId, 'Navigation must render its destination without a document reload.')
+      navigationResults.push({ category, view, passed: true, sequenceMs: Date.now() - navigationStarted })
+      console.log(`${category} ${view}: Back to Leads, Dashboard, Pipeline and browser Back/Forward rendered correctly.`)
+    }
+  }
+  assert.equal(observed.leadPatchBodies.length, 0, 'Reading and navigating leads must not update lead records.')
+  await page.getByRole('link', { name: 'Calendar', exact: true }).click()
+  await page.getByRole('heading', { name: 'Calendar', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Appointment', exact: true }).click()
+  const appointmentEditor = page.getByRole('dialog', { name: 'Create Appointment', exact: true })
+  await appointmentEditor.getByRole('button', { name: 'Clients', exact: true }).click()
+  await appointmentEditor.getByRole('searchbox', { name: 'Search clients' }).fill('lien')
+  await appointmentEditor.getByRole('button', { name: /Lien Saved lien-saved@arch9.test/ }).click()
+  assert.match(await appointmentEditor.getByRole('button', { name: 'Clients', exact: true }).innerText(), /Lien Saved/)
+  assert.equal(observed.leadPatchBodies.length, 0, 'Selecting an existing client must not create or change a lead.')
+  const outputDirectory = new URL('../../output/playwright/lead-navigation/', import.meta.url)
+  await mkdir(outputDirectory, { recursive: true })
+  await page.screenshot({ path: fileURLToPath(new URL('calendar-saved-client.png', outputDirectory)) })
+  await appointmentEditor.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByRole('button', { name: 'Pipeline', exact: true }).click()
+  await expectLeadList()
+  await page.screenshot({ path: fileURLToPath(new URL('leads-restored.png', outputDirectory)) })
+  await writeFile(new URL('result.json', outputDirectory), JSON.stringify({ passed: pageErrors.length === 0 && consoleErrors.length === 0, routerVersion: require('react-router-dom/package.json').version, navigationResults, calendarSavedClientPassed: true, pageErrors, consoleErrors }, null, 2))
+
   assert.deepEqual(pageErrors, [], `Unexpected page errors:\n${pageErrors.join('\n')}`)
   assert.deepEqual(consoleErrors, [], `Unexpected console errors:\n${consoleErrors.join('\n')}`)
+  console.log('Back to Leads, menu destinations and browser Back/Forward passed for buyer/seller leads in Table/Kanban without reloading.')
+  console.log('Calendar: searched and selected an existing saved client without a lead.')
   console.log(`${PHASE6_OPERATIONAL_MONITORING ? 'Lead workspace Phase 6 operational monitoring browser check' : PHASE5_RELEASE_GATE ? 'Lead workspace Phase 5 release browser gate' : PHASE1_OBSERVABILITY_ONLY ? 'Lead workspace Phase 1 observability browser check' : 'Agency lead workspace hydration smoke'} passed in ${hydratedMs}ms`)
 } catch (error) {
   const text = await page.locator('body').innerText({ timeout: 1000 }).catch(() => '')

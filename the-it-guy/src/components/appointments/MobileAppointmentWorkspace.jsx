@@ -163,7 +163,6 @@ export default function MobileAppointmentWorkspace({ appointment = null, organis
         {!draft.allDay ? <div className="grid grid-cols-2 gap-2"><label>Start time<input type="time" required value={draft.startTime} onChange={event => setDraft(previous => ({...previous,startTime:event.target.value,endTime:''}))} /></label><label>End time<input type="time" value={draft.endTime || ''} onChange={event => field('endTime',event.target.value)} /></label></div> : null}
         <label>Timezone<input required value={draft.timezone} onChange={event => field('timezone',event.target.value)} /></label>
         </fieldset>
-
         <label>Location<LocationInput value={draft.location || ''} onChange={event => field('location',event.target.value)} /></label>
         <label>Meeting URL<input type="url" value={draft.meetingUrl || ''} onChange={event => field('meetingUrl',event.target.value)} /></label>
         <label>Notes<textarea value={draft.notes || ''} onChange={event => field('notes',event.target.value)} /></label>

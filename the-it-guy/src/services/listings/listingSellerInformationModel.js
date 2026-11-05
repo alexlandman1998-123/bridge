@@ -120,6 +120,7 @@ export function buildListingSellerInformationModel(listing = {}) {
     const founders = peopleRows(draft.trustFounders, 'Founder')
     if (founders.length) groups.push(group('founders', 'Founders', founders))
     const beneficiaryRows = peopleRows(draft.trustBeneficiaries, 'Beneficiary')
+    beneficiaryRows.push({ key: 'trustBeneficiaryClass', label: 'Beneficiary class', value: draft.trustBeneficiaryClass })
     if (beneficiaryRows.length) groups.push(group('beneficiaries', 'Beneficial owners', beneficiaryRows))
     groups.push(group('authority', 'Signing authority', [
       { key: 'trustee', label: 'Authorised trustee', value: draft.authorisedTrusteeName, always: true },

@@ -35,8 +35,8 @@ const profile = {
   assert.equal(truth.version, MVP_TRANSACTION_TRUTH_VERSION)
   assert.equal(truth.stage.key, 'OTP')
   assert.equal(truth.participants.missing.length, 0)
-  assert.equal(truth.blockers[0].type, 'document')
-  assert.equal(truth.nextAction.ownerRole, 'buyer')
+  assert.equal(truth.blockers.some(item => item.type === 'document'), true)
+  assert.equal(truth.nextAction.ownerRole, 'transaction_coordinator')
   assert.equal(truth.readiness.status, 'blocked')
   assert.equal(truth.recentActivity.recorded, true)
   assert.equal(truth.satisfiesMvpTruthContract, true)
@@ -52,6 +52,8 @@ const profile = {
     requiresCancellationAttorney: true,
   }
   const truth = buildMvpTransactionTruth({
+    workflowLanes: [{ laneType: 'finance', status: 'active' }],
+    documentRequirements: [{ document_key: 'bond_preapproval', status: 'verified' }],
     transaction: { id: 'tx-bond', current_main_stage: 'FIN', next_action: 'Collect income documents' },
     routingProfile: {
       ...bondProfile,

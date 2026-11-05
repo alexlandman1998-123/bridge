@@ -15,7 +15,7 @@ type NavigationItem = { href: string; label: string }
 function HeaderLogo({ site, light }: { site: ResolvedSite; light: boolean }) {
   const logoUrl = selectWebsiteLogo(site, light)
   if (!logoUrl) return <span className="wordmark-text">{site.name}</span>
-  return <Image className="site-logo-image" src={logoUrl} alt={`${site.name} logo`} width={220} height={72} sizes="(max-width: 760px) 150px, 190px" unoptimized />
+  return <Image className="site-logo-image" src={logoUrl} alt={`${site.name} logo`} width={220} height={72} sizes="(max-width: 760px) 150px, 190px" />
 }
 
 export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref, currentHref, editorialTemplate, overlay }: {
@@ -49,18 +49,18 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
   ].filter(Boolean).join(' ')
 
   return <header className={headerClassName}>
-    <Link className="wordmark" href="/" aria-label={`${site.name} home`}>
+    <Link prefetch={false} className="wordmark" href="/" aria-label={`${site.name} home`}>
       <HeaderLogo site={site} light={useLightLogo} />
       {editorialTemplate && lwp ? <span className="header-brand-note">Beyond the sale.</span> : null}
     </Link>
     <nav aria-label="Primary">
-      {navigation.map((item) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}
+      {navigation.map((item) => <Link prefetch={false} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}
       <details className={resourceStyles.menu}>
         <summary className={resources.some(item => item.href === currentHref) ? resourceStyles.active : undefined}>Resources <span aria-hidden="true">⌄</span></summary>
-        <div className={resourceStyles.dropdown}>{resources.map(item => <Link key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div>
+        <div className={resourceStyles.dropdown}>{resources.map(item => <Link prefetch={false} key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div>
       </details>
     </nav>
-    {lwp ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{editorialTemplate ? 'Book a valuation' : 'Enquire now'}</Link>}
+    {lwp ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link prefetch={false} className="header-cta" href={enquiryHref}>{editorialTemplate ? 'Book a valuation' : 'Enquire now'}</Link>}
     <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={lwp ? 'See your home’s value' : editorialTemplate ? 'Book a valuation' : 'Enquire now'} brandName={site.name} brandNote={lwp ? 'Beyond the sale.' : undefined} />
   </header>
 }

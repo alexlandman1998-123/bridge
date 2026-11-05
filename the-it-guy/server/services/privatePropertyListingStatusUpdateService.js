@@ -87,11 +87,19 @@ export async function updatePrivatePropertyListingStatus({
     listingType: sync.listing_type || 'Sale',
     privatePropertyRef: sync.private_property_ref,
     externalStatus,
-    isOnPortal: externalStatus === 'active',
+    isOnPortal: ['active', 'under_offer'].includes(externalStatus),
     responseSummary,
   })
   if (key(propertyStatus) === 'inactive' && !['inactive', 'removed'].includes(externalStatus)) throw new Error('Private Property acknowledged the withdrawal but still reports the listing as active or processing. Refresh its status before treating it as withdrawn.')
-  const confirmed = reactivation ? externalStatus === 'active' : true
+  const requiresUnderOffer = key(propertyStatus) === 'pendingoffer'
+  const requiresSold = key(propertyStatus) === 'sold'
+  const confirmed = reactivation
+    ? externalStatus === 'active'
+    : requiresUnderOffer
+      ? externalStatus === 'under_offer'
+      : requiresSold
+        ? externalStatus === 'sold'
+        : ['inactive', 'removed'].includes(externalStatus)
   if (attempt) {
     if (!confirmed || externalStatus === 'unknown' || !recorded.sync?.id || recorded.externalLinkWarning) throw new Error('Private Property accepted this status request but its final result is unconfirmed. Reconcile before sending again.')
     await updateRentalPublicationAttempt(client,attempt,{ state:'accepted',receipt })
@@ -100,7 +108,9 @@ export async function updatePrivatePropertyListingStatus({
     status: confirmed ? 'UPDATED' : 'NOT_CONFIRMED', confirmed, externalStatus, propertyStatus,
     message: reactivation
       ? confirmed ? 'Private Property confirms this listing is active.' : `Private Property accepted the reactivation request but still reports ${externalStatus}. The listing is not confirmed live. Refresh status before trying again.`
-      : '',
+      : requiresSold
+        ? confirmed ? 'Private Property confirms this listing is sold.' : `Private Property accepted the Sold request but still reports ${externalStatus}. Refresh status before trying again.`
+        : '',
     response: { status: response.status, durationMs: response.durationMs, summary: responseSummary }, syncResult: recorded,
   }
   } catch (error) {

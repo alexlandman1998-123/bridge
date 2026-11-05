@@ -2,11 +2,10 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { SellerOnboarding, ReviewReadinessPanel, normalizeFormData } from '../../../pages/SellerOnboarding.jsx'
+import { SellerOnboarding, ReviewReadinessPanel, normalizeFormData, getSellerOnboardingSubmissionIssues } from '../../../pages/SellerOnboarding.jsx'
 import * as demoLinks from '../../../lib/onboardingDemoLinks.js'
 import { buildSellerProfileCanonicalPayload } from '../../../lib/sellerProfileCaptureModel.js'
 import { getSellerFicaOnboardingMissing } from '../../../lib/sellerFicaOnboardingFields.js'
-
 
 beforeEach(() => { vi.spyOn(window, 'scrollTo').mockImplementation(() => {}) })
 
@@ -15,6 +14,77 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 function capture(props = {}) {
   return render(<MemoryRouter><SellerOnboarding tokenOverride="demo-seller-onboarding" embedded {...props} /></MemoryRouter>)
 }
+
+function completeSellerListing(overrides = {}) {
+  const listing = demoLinks.getDemoSellerOnboardingListing('demo-seller-onboarding')
+  return { ...listing, sellerOnboarding: { ...listing.sellerOnboarding, formData: {
+    ...listing.sellerOnboarding.formData, ownerEntityType: 'natural_person', ownerStructureType: 'individual', ownershipRouteConfirmed: true,
+    dateOfBirth: '1985-03-03', nationality: 'South African', saResident: 'yes', occupation: 'Engineer',
+    sourceOfFunds: 'Salary', politicallyExposedPerson: 'no', ratesTaxes: 0, bondStatus: 'no_bond', existingBond: false, leaseExists: false,
+    sellerOnboardingConsents: { privacyProcessing: true, ficaKycPermission: true, informationAccuracy: true }, ...overrides,
+  } } }
+}
+
+test.each([
+  [{ ratesTaxes: '' }, 'Rates and taxes are required.'],
+  [{ bondStatus: 'bonded', existingBond: true, bondBank: '' }, 'Bond bank is required when there is an existing bond.'],
+  [{ leaseExists: true, leaseExpiryDate: '' }, 'Lease expiry date is required when a lease exists.'],
+  [{ propertyCategory: 'vacant_land', erfSize: '' }, 'Land size should be captured for vacant land and agricultural properties.'],
+])('review includes the submission blocker for %j and clears it after saved answers are supplied', (overrides, message) => {
+  const listing = completeSellerListing(overrides)
+  const issues = getSellerOnboardingSubmissionIssues(normalizeFormData(listing), listing)
+  expect(issues.propertyMissing).toContain(message)
+  const corrected = completeSellerListing({ ...overrides, ratesTaxes: 0, bondBank: 'Nedbank', leaseExpiryDate: '2027-12-31', erfSize: 1000 })
+  const reopened = normalizeFormData(corrected)
+  const payload = buildSellerProfileCanonicalPayload(reopened, corrected)
+  expect(getSellerOnboardingSubmissionIssues(reopened, corrected)).toEqual({ sellerMissing: [], propertyMissing: [] })
+  expect(payload.canonicalSellerFactReadiness.validation.required).toEqual([])
+  expect(payload.canonicalSellerFacts.property.rates_taxes).toBe(0)
+})
+
+test('review names final blockers and draft action never reports a blocked seller file as submitted', async () => {
+  const listing = completeSellerListing({ ratesTaxes: '', bondStatus: 'bonded', existingBond: true, bondBank: '', leaseExists: true, leaseExpiryDate: '' })
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue(listing)
+  const saved = vi.fn()
+  const submitted = vi.fn()
+  capture({ completionModeOverride: 'agent_assisted', onDraftSaved: saved, onSubmitted: submitted })
+  await screen.findByRole('heading', { name: 'Personal details' })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  const review = within(screen.getByRole('region', { name: 'Onboarding readiness' }))
+  for (const message of ['Rates and taxes are required.', 'Bond bank is required when there is an existing bond.', 'Lease expiry date is required when a lease exists.']) expect(review.getByText(message)).toBeTruthy()
+  expect(review.queryByRole('button', { name: 'Submit to agent for review' })).toBeNull()
+  fireEvent.click(review.getByRole('button', { name: 'Save draft and finish later' }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(3))
+  expect(await screen.findByText(/Complete the following before submitting:/)).toBeTruthy()
+  expect(submitted).not.toHaveBeenCalled()
+  expect(saved.mock.calls.at(-1)[0].sellerOnboarding.status).toBe('in_progress')
+})
+
+test('corrected saved property answers populate review and submit without another hidden blocker', async () => {
+  const listing = completeSellerListing({ ratesTaxes: 0, bondStatus: 'bonded', existingBond: true, bondBank: 'Nedbank',
+    leaseExists: true, leaseExpiryDate: '2027-12-31' })
+  vi.spyOn(demoLinks, 'getDemoSellerOnboardingListing').mockReturnValue(listing)
+  const saved = vi.fn()
+  const submitted = vi.fn()
+  capture({ completionModeOverride: 'agent_assisted', onDraftSaved: saved, onSubmitted: submitted })
+  await screen.findByRole('heading', { name: 'Personal details' })
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Continue', exact: true }))
+  await screen.findByRole('heading', { name: 'Check your seller file' })
+  const review = within(screen.getByRole('region', { name: 'Onboarding readiness' }))
+  expect(review.getAllByText('Required details filled in')).toHaveLength(2)
+  fireEvent.click(review.getByRole('button', { name: 'Submit seller details' }))
+  await waitFor(() => expect(submitted).toHaveBeenCalledTimes(1))
+  const result = submitted.mock.calls[0][0].sellerOnboarding
+  expect(result.status).toBe('completed')
+  expect(result.formData.canonicalSellerFacts.property.rates_taxes).toBe(0)
+  expect(result.formData.canonicalSellerFacts.finance.bond_bank).toBe('Nedbank')
+  expect(result.formData.canonicalSellerFacts.occupancy.lease_expiry_date).toBe('2027-12-31')
+})
 
 test('saved beneficial owners remain complete after loading and saving the seller review', async () => {
   const owner = { id: 'beneficial-owner-1', name: 'Sam', surname: 'Ngwenya',
@@ -208,7 +278,6 @@ test('seller can save incomplete information from the final step without complet
   await screen.findByRole('heading', { name: 'Check your seller file' })
   fireEvent.click(screen.getByRole('button', { name: 'Save draft and finish later', exact: true }))
   await screen.findByText('Draft saved. Your information has not been submitted. Return to this link, complete the missing details, then submit to your agent.')
-
   expect(submitted).not.toHaveBeenCalled()
   expect(saved.mock.calls.at(-1)[0].sellerOnboarding.status).toBe('in_progress')
 })
@@ -439,5 +508,4 @@ test.each([false, true])('review separates legal owner and contact and explains 
   expect(panel.queryByRole('button', { name: 'Save draft and finish later' })).toBeNull()
   expect(panel.getByRole('button', { name: agentAssisted ? 'Submit seller details' : 'Submit to agent for review' })).toBeTruthy()
   expect(panel.getByText(/Your agent must still review the details and supporting documents/)).toBeTruthy()
-
 })

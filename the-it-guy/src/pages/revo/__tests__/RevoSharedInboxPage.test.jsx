@@ -4,12 +4,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const api = vi.hoisted(() => ({ load:vi.fn(), channels:vi.fn(), update:vi.fn(), save:vi.fn(), read:vi.fn(), workflow:vi.fn(), org:'revo' }))
+vi.mock('../../../hooks/useMetaWorkspace', () => ({ useMetaWorkspace: () => ({ organisationId: api.org, accessScope: `${api.org}:me`, senders: [], loading: false, error: '', refresh: vi.fn() }) }))
+vi.mock('../../../hooks/useWhatsAppHistory', () => ({ default: () => ({ rows: [], loading: false, error: '', nextCursor: null, refresh: vi.fn(), loadOlder: vi.fn() }) }))
 vi.mock('../../../context/OrganisationContext', () => ({useOrganisation: () => ({organisation:{id:api.org}})}))
 vi.mock('../../../context/AuthSessionContext', () => ({useAuthSession: () => ({user:{id:'me'},profile:{fullName:'Revo Agent'}})}))
 vi.mock('../../../lib/supabaseClient', () => ({isSupabaseConfigured:false,supabase:null}))
 vi.mock('../../../modules/revo/sharedInbox/revoSharedInboxService', () => ({loadRevoInbox:api.load,loadRevoInboxChannels:api.channels,updateRevoInboxConversation:api.update,saveRevoInboxPrivateMessage:api.save,markRevoInboxConversationRead:api.read,createRevoInboxWorkflowRequest:api.workflow,isSharedInboxSchemaUnavailable:()=>false}))
 vi.mock('../../../modules/sharedInbox/receivedMailService.js', () => ({loadConversationPage:vi.fn().mockResolvedValue({messages:[],hasMore:false}),loadConversationActivity:vi.fn().mockResolvedValue([]),downloadMailAttachment:vi.fn()}))
-vi.mock('../../../components/inbox/InboxEmailActions.jsx',()=>({default:({replyDraft,selected,onQueued})=><><span data-testid="reply-draft-copy">{replyDraft}</span><button onClick={()=>onQueued({status:'queued',conversationId:selected.id},{conversationId:selected.id,body:replyDraft})}>Queue copied draft</button></>}))
+vi.mock('../../../components/inbox/InboxEmailActions.jsx',()=>({default:({replyDraft,selected,onQueued,createOnly})=>createOnly?<button>New message</button>:<><span data-testid="reply-draft-copy">{replyDraft}</span><button onClick={()=>onQueued({status:'queued',conversationId:selected.id},{conversationId:selected.id,body:replyDraft})}>Queue copied draft</button></>}))
 import RevoSharedInboxPage from '../RevoSharedInboxPage'
 const conversations = [
  {id:'one',channelId:'email1',channel:'email',providerKey:'google',channelAddress:'sales@revo.test',contactName:'Zoe',contactAddress:'zoe@test.test',subject:'Viewing',lastMessagePreview:'Home details',lastMessageAt:'2026-10-02T10:00:00Z',status:'open',unreadCount:2},
@@ -19,14 +21,14 @@ const conversations = [
 beforeEach(()=>{api.org='revo';Object.defineProperty(window,"innerWidth",{value:1600,writable:true});vi.clearAllMocks();api.load.mockResolvedValue({conversations,messages:[],activity:[],associations:[]});api.channels.mockResolvedValue([{id:'email1',address:'sales@revo.test',connectionStatus:'connected'},{id:'email2',address:'rentals@revo.test',connectionStatus:'connected'},{id:'wa',address:'123',connectionStatus:'connected'}]);api.save.mockResolvedValue({id:'draft'});api.update.mockResolvedValue({});api.read.mockResolvedValue({})})
 afterEach(cleanup)
 const open=async()=>{render(<MemoryRouter initialEntries={['/revo/inbox']}><RevoSharedInboxPage /></MemoryRouter>);await screen.findByRole('button',{name:/Zoe/})}
-it('selects connected addresses and never leaves an unrelated reader visible',async()=>{await open();fireEvent.change(screen.getByLabelText('Select inbox'),{target:{value:'email2'}});expect(screen.queryByRole('button',{name:/Zoe/})).toBeNull();expect(screen.getByRole('heading',{name:'Amy'})).toBeTruthy();fireEvent.change(screen.getByLabelText('Search conversations'),{target:{value:'missing'}});expect(screen.queryByRole('heading',{name:'Amy'})).toBeNull();expect(screen.getByText('No conversations match these filters.')).toBeTruthy()})
+it('selects connected addresses and never leaves an unrelated reader visible',async()=>{await open();fireEvent.click(screen.getByLabelText('Select inbox'));fireEvent.click(screen.getByRole('option',{name:/rentals@revo.test/}));expect(screen.queryByRole('button',{name:/Zoe/})).toBeNull();expect(screen.getByRole('heading',{name:'Amy'})).toBeTruthy();fireEvent.change(screen.getByLabelText('Search conversations'),{target:{value:'missing'}});expect(screen.queryByRole('heading',{name:'Amy'})).toBeNull();expect(screen.getByText('No conversations match these filters.')).toBeTruthy()})
 it('sorts by name, applies channel and ownership filters, and shows closed threads',async()=>{await open();fireEvent.change(screen.getByLabelText('Sort conversations'),{target:{value:'name'}});expect(document.querySelector('.revo-row').textContent).toContain('Amy');fireEvent.change(screen.getByLabelText('Conversation view'),{target:{value:'mine'}});expect(document.querySelectorAll('.revo-row').length).toBe(1);fireEvent.change(screen.getByLabelText('Conversation view'),{target:{value:'closed'}});fireEvent.change(screen.getByLabelText('Filter by channel'),{target:{value:'whatsapp'}});expect(screen.getByRole('heading',{name:'Ben'})).toBeTruthy()})
 it('keeps reply and note text separate for each conversation and saves through existing storage',async()=>{await open();fireEvent.change(screen.getByLabelText('Reply draft'),{target:{value:'Zoe draft'}});fireEvent.click(screen.getByRole('button',{name:/Amy/}));expect(screen.getByLabelText('Reply draft').value).toBe('');fireEvent.change(screen.getByLabelText('Reply draft'),{target:{value:'Amy draft'}});fireEvent.click(screen.getByRole('button',{name:/Zoe/}));expect(screen.getByLabelText('Reply draft').value).toBe('Zoe draft');fireEvent.click(screen.getByRole('button',{name:'Internal note'}));expect(screen.getByLabelText('Internal note').value).toBe('');fireEvent.change(screen.getByLabelText('Internal note'),{target:{value:'Private context'}});fireEvent.click(screen.getByRole('button',{name:'Save note'}));await waitFor(()=>expect(api.save).toHaveBeenCalledWith(expect.objectContaining({organisationId:'revo',conversation:expect.objectContaining({id:'one'}),type:'note',bodyText:'Private context'})));await screen.findByText('Internal note saved.');fireEvent.click(screen.getByRole('button',{name:'Reply draft'}));expect(screen.getByLabelText('Reply draft').value).toBe('Zoe draft')})
 it('persists owner/status changes and marks explicitly selected unread conversations read',async()=>{await open();fireEvent.click(screen.getByRole('button',{name:'Expand contact panel'}));fireEvent.change(screen.getByLabelText('Conversation owner'),{target:{value:'me'}});await waitFor(()=>expect(api.update).toHaveBeenCalledWith(expect.objectContaining({assignedUserId:'me',conversationId:'one'})));await screen.findByText('Conversation owner updated.');fireEvent.click(screen.getByRole('button',{name:/Zoe/}));await waitFor(()=>expect(api.read).toHaveBeenCalledWith({organisationId:'revo',conversationId:'one'}));fireEvent.change(screen.getByLabelText('Conversation status'),{target:{value:'closed'}});await waitFor(()=>expect(api.update).toHaveBeenCalledWith(expect.objectContaining({status:'closed'})))})
 it('opens contact details on demand and reports blocked pop-ups without losing the draft',async()=>{await open();expect(screen.queryByLabelText('Conversation owner')).toBeNull();fireEvent.change(screen.getByLabelText('Reply draft'),{target:{value:'Keep this draft'}});fireEvent.click(screen.getByRole('button',{name:'Expand contact panel'}));expect(screen.getByLabelText('Conversation owner')).toBeTruthy();fireEvent.keyDown(screen.getByRole('complementary',{name:'Contact details'}),{key:'Escape'});expect(screen.queryByLabelText('Conversation owner')).toBeNull();expect(screen.getByLabelText('Reply draft').value).toBe('Keep this draft');const pop=vi.spyOn(window,'open').mockReturnValue(null);fireEvent.click(screen.getByRole('button',{name:'Pop out email'}));expect(await screen.findByText(/Allow pop-ups/)).toBeTruthy();pop.mockRestore()})
 it('does not claim failed saves succeeded and retains the text for retry',async()=>{await open();api.save.mockRejectedValue(new Error('Permission denied'));fireEvent.change(screen.getByLabelText('Reply draft'),{target:{value:'Keep this'}});fireEvent.click(screen.getByRole('button',{name:'Save draft'}));await screen.findByText('Permission denied');expect(screen.getByLabelText('Reply draft').value).toBe('Keep this')})
 
-it('keeps the popped-out email on its own conversation while the main inbox changes',async()=>{await open();const frame=document.createElement('iframe');document.body.appendChild(frame);const win={document:frame.contentDocument,closed:false,addEventListener:vi.fn(),removeEventListener:vi.fn(),close:vi.fn(),focus:vi.fn()};const pop=vi.spyOn(window,'open').mockReturnValue(win);fireEvent.click(screen.getByRole('button',{name:'Pop out email'}));expect(within(win.document.body).getByRole('heading',{name:'Zoe'})).toBeTruthy();fireEvent.change(screen.getByLabelText('Select inbox'),{target:{value:'email2'}});expect(within(win.document.body).getByRole('heading',{name:'Zoe'})).toBeTruthy();fireEvent.change(within(win.document.body).getByLabelText('Reply draft'),{target:{value:'Popup draft'}});fireEvent.click(within(win.document.body).getByRole('button',{name:'Save draft'}));await waitFor(()=>expect(api.save).toHaveBeenCalledWith(expect.objectContaining({conversation:expect.objectContaining({id:'one'}),bodyText:'Popup draft'})));cleanup();expect(win.close).toHaveBeenCalled();frame.remove();pop.mockRestore()})
+it('keeps the popped-out email on its own conversation while the main inbox changes',async()=>{await open();const frame=document.createElement('iframe');document.body.appendChild(frame);const win={document:frame.contentDocument,closed:false,addEventListener:vi.fn(),removeEventListener:vi.fn(),close:vi.fn(),focus:vi.fn()};const pop=vi.spyOn(window,'open').mockReturnValue(win);fireEvent.click(screen.getByRole('button',{name:'Pop out email'}));expect(within(win.document.body).getByRole('heading',{name:'Zoe'})).toBeTruthy();fireEvent.click(screen.getByLabelText('Select inbox'));fireEvent.click(screen.getByRole('option',{name:/rentals@revo.test/}));expect(within(win.document.body).getByRole('heading',{name:'Zoe'})).toBeTruthy();fireEvent.change(within(win.document.body).getByLabelText('Reply draft'),{target:{value:'Popup draft'}});fireEvent.click(within(win.document.body).getByRole('button',{name:'Save draft'}));await waitFor(()=>expect(api.save).toHaveBeenCalledWith(expect.objectContaining({conversation:expect.objectContaining({id:'one'}),bodyText:'Popup draft'})));cleanup();expect(win.close).toHaveBeenCalled();frame.remove();pop.mockRestore()})
 
 it('opens a sidebar view link and falls back safely for unknown views',async()=>{const rendered=render(<MemoryRouter initialEntries={['/revo/inbox?view=mine']}><RevoSharedInboxPage /></MemoryRouter>);await screen.findByRole('button',{name:/Amy/});expect(screen.queryByRole('button',{name:/Zoe/})).toBeNull();expect(screen.getByLabelText('Conversation view').value).toBe('mine');rendered.unmount();render(<MemoryRouter initialEntries={['/revo/inbox?view=unknown']}><RevoSharedInboxPage /></MemoryRouter>);await screen.findByRole('button',{name:/Zoe/});expect(screen.getByLabelText('Conversation view').value).toBe('all')})
 
@@ -36,32 +38,10 @@ it('opens a non-Revo workspace using the shared Inbox routes and scopes requests
  await screen.findByRole('button', { name: /Zoe/ })
  expect(api.load).toHaveBeenCalledWith(api.org, { conversationLimit: 100 })
  expect(api.channels).toHaveBeenCalledWith(api.org)
- expect(screen.getByRole('link', { name: 'Manage inboxes' }).getAttribute('href')).toBe('/inbox/settings')
+ expect(screen.getByLabelText('Select inbox')).toBeTruthy();expect(screen.queryByRole('link', {name:'Manage inboxes'})).toBeNull()
 })
-it('offers isolated Email and WhatsApp samples with local-only notes and drafts', async () => {
- await open()
- fireEvent.click(screen.getByRole('button', { name: 'Sample inbox', exact: true }))
- expect(screen.getByText(/Fictional conversations/)).toBeTruthy()
- expect(document.querySelectorAll('.revo-row')).toHaveLength(4)
- fireEvent.change(screen.getByLabelText('Filter by channel'), { target: { value: 'email' } })
- expect(document.querySelectorAll('.revo-row')).toHaveLength(2)
- fireEvent.click(screen.getByRole('button', { name: /Michael Adams/ }))
- fireEvent.change(screen.getByLabelText('Reply draft'), { target: { value: 'Sample offer reply' } })
- fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
- expect(screen.getByText('Sample offer reply')).toBeTruthy()
- expect(screen.getByText('Sample draft saved in this session. Nothing was sent.')).toBeTruthy()
- fireEvent.click(screen.getByRole('button', { name: 'Internal note' }))
- fireEvent.change(screen.getByLabelText('Internal note'), { target: { value: 'Test team handoff' } })
- fireEvent.click(screen.getByRole('button', { name: 'Save note' }))
- expect(screen.getByText('Test team handoff')).toBeTruthy()
- fireEvent.click(screen.getByRole('button', { name: 'Expand contact panel' }))
- fireEvent.change(screen.getByLabelText('Conversation status'), { target: { value: 'waiting_on_client' } })
- expect(api.save).not.toHaveBeenCalled()
- expect(api.update).not.toHaveBeenCalled()
- expect(api.read).not.toHaveBeenCalled()
- fireEvent.click(screen.getByRole('button', { name: 'Back to live inbox' }))
- expect(screen.getByRole('button', { name: /Zoe/ })).toBeTruthy()
- expect(screen.queryByText('Test team handoff')).toBeNull()
+it('keeps the retired sample action hidden and exposes the new-message entry',async()=>{
+ await open();expect(screen.queryByRole('button',{name:'Sample inbox',exact:true})).toBeNull();expect(screen.getByRole('button',{name:'New message'})).toBeTruthy()
 })
 it('resizes both panels by keyboard, remembers widths, and resets the layout', async () => {
  localStorage.clear()
@@ -122,7 +102,7 @@ it('starts an empty development inbox with samples and respects returning to liv
 it('never copies an internal note into the email reply composer',async()=>{
  await open();fireEvent.click(screen.getByRole('button',{name:'Internal note'}))
  fireEvent.change(screen.getByLabelText('Internal note'),{target:{value:'Confidential team note'}})
- expect(screen.getByTestId('reply-draft-copy').textContent).toBe('')
+ expect(screen.queryByTestId('reply-draft-copy')).toBeNull()
  fireEvent.click(screen.getByRole('button',{name:'Reply draft'}))
  fireEvent.change(screen.getByLabelText('Reply draft'),{target:{value:'Public reply text'}})
  expect(screen.getByTestId('reply-draft-copy').textContent).toBe('Public reply text')

@@ -256,7 +256,8 @@ async function download(html, name, { signed = false, logoColour = [206, 20, 126
   const target = path.join(output, `${name}.pdf`)
   await file.saveAs(target)
   assert.equal(await file.failure(), null)
-  const pdf = await getDocument({ data: new Uint8Array(await fs.readFile(target)), useSystemFonts: true }).promise
+  const loadingTask = getDocument({ data: new Uint8Array(await fs.readFile(target)), useSystemFonts: true })
+  const pdf = await loadingTask.promise
   let signaturePixels = 0, logoPixels = 0
   try {
     assert.ok(pdf.numPages >= 2, `${name}: complete multi-page document required`)
@@ -282,7 +283,7 @@ async function download(html, name, { signed = false, logoColour = [206, 20, 126
     assert.ok(logoPixels > 50, `${name}: persisted agency logo must survive download`)
     if (signed) assert.ok(signaturePixels > 100, `${name}: recorded signatures must appear in the downloaded PDF`)
     downloadedPages += pdf.numPages; downloads++
-  } finally { await pdf.destroy() }
+  } finally { await loadingTask.destroy() }
   assert.equal(await page.locator('[data-seller-document-pdf-stage], .html2pdf__overlay').count(), 0)
   return target
 }
@@ -755,7 +756,7 @@ async function portalUploadService(fixture) {
     requireClient: () => client, normalizeText: value => String(value ?? '').trim(), normalizeUuid: value => value || '',
     getStoredSellerPortalAccessToken: () => '', getSellerPortalSignedUploadReference: fixture.api.getSellerPortalSignedUploadReference,
     getSellerOnboardingByToken: async () => { const opened = await workspace(fixture.listingId); return { listing: opened.listing, onboardingFormData: { formData: opened.listing.sellerOnboarding.formData } } },
-    requireSellerPortalStorageClient: () => ({}), validateDocumentUploadFile: file => ({ safeName: file.name }),
+    requireSellerPortalStorageClient: () => client, validateDocumentUploadFile: file => ({ safeName: file.name }),
     resolveExactSellerRequirement: ({ requirements, requirementKey }) => requirements.find(row => row.requirement_key === requirementKey),
     assertSellerUploadTarget: () => {}, sanitizeDocumentFileName: value => value,
     uploadToPrivateListingDocumentsBucket: async () => { events.uploads++; return 'synthetic-storage' },
@@ -1043,14 +1044,14 @@ try {
   }
   globalThis.fetch = () => { throw new Error('Remote requests are forbidden in this acceptance test') }
   globalThis.Deno = {
-    env: { get: key => ({ SUPABASE_URL: 'https://synthetic.example.test', SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service', SUPABASE_ANON_KEY: 'synthetic-anon',
+    env: { get: key => ({ SUPABASE_URL: 'https://synthetic.example.test', SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_synthetic-service', SUPABASE_ANON_KEY: 'sb_publishable_synthetic-anon',
       SELLER_PORTAL_SIGNING_ENABLED: 'true', RESEND_API_KEY: 'synthetic-email', RESEND_FROM_EMAIL: 'agency@example.test', PUBLIC_APP_URL: 'https://synthetic.example.test' })[key] },
     serve: callback => { handler = callback },
   }
   const mandateRuntime = await createSyntheticMandateSigningRuntime()
   await installEdge(mandateRuntime)
   const exporter = await build({ absWorkingDir: appRoot, stdin: { contents: "export { downloadHtmlDocumentPdf } from './src/lib/htmlDocumentPdf.js'; export { prepareSellerMandateReviewPreview } from './src/lib/sellerMandateReviewPreview.js';", resolveDir: appRoot }, bundle: true, platform: 'browser', format: 'esm', write: false })
-  const signingUi = await build({ absWorkingDir: appRoot, entryPoints: ['scripts/fixtures/seller-document-journey-browser.jsx'],
+  const signingUi = await build({ absWorkingDir: appRoot, entryPoints: ['scripts/fixtures/seller-document-journey-browser.jsx'], outfile: path.join(output, 'signing-ui.js'),
     bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', write: false,
     define: { 'process.env.NODE_ENV': '"production"' }, plugins: [{ name: 'local-public-transport-only', setup(builder) {
       builder.onLoad({ filter: /supabaseClient\.js$/ }, () => ({ loader: 'js', contents: `
@@ -1085,15 +1086,15 @@ try {
         return sendJson(404, { error: 'Unknown local transport' })
       }
       if (url.pathname === '/runtime.js') return response.writeHead(200, { 'content-type': 'text/javascript' }).end(exporter.outputFiles[0].text)
-      if (url.pathname === '/signing-ui.js') return response.writeHead(200, { 'content-type': 'text/javascript' }).end(signingUi.outputFiles[0].text)
-      if (url.pathname === '/app.css') return response.writeHead(200, { 'content-type': 'text/css' }).end(css.css)
+      if (url.pathname === '/signing-ui.js') return response.writeHead(200, { 'content-type': 'text/javascript' }).end(signingUi.outputFiles.find(file => file.path.endsWith('.js')).text)
+      if (url.pathname === '/app.css') return response.writeHead(200, { 'content-type': 'text/css' }).end(css.css + '\n' + (signingUi.outputFiles.find(file => file.path.endsWith('.css'))?.text || ''))
       response.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div>' +
         (url.pathname === '/' ? '<p>Local seller journey verification</p>' : '<script type="module" src="/signing-ui.js"></script>') + '</body></html>')
     } catch (error) { sendJson(400, { error: error.message }) }
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   baseUrl = `http://127.0.0.1:${server.address().port}`
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true, ...(process.env.PORTAL_TEST_BROWSER_CHANNEL ? { channel: process.env.PORTAL_TEST_BROWSER_CHANNEL } : {}) })
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
   await context.route('**/*', route => new URL(route.request().url()).origin === baseUrl ? route.continue() : route.abort('blockedbyclient'))
   page = await context.newPage(); page.on('pageerror', error => browserErrors.push(error.message))

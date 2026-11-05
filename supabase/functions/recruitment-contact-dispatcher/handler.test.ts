@@ -319,3 +319,30 @@ Deno.test('a saved signed-return notification goes to the agency with a review l
   assert(h.sends[0].idempotencyKey === `recruitment-contact/${base.id}`);
   assert(!h.sends[0].html.includes('storage/v1'));
 });
+
+Deno.test('Join follow-up mails the saved visitor with a booking link and no property-enquiry template', async () => {
+  const join = {...contact,version:'home-seekers-join-v1',name:'Sam Agent',type:'call',subject:'Call requested: 10-19, 70/30 · hero',details:'Name: Sam Agent\nRegistered sales: 10-19\nCurrent model: 70/30\nSource: hero'};
+  const h=harness([{...base,event_kind:'join_follow_up',recipient:contact.email,contact_json:join}]);
+  const result=await dispatchRecruitmentContacts(request(),h.dependencies as any);
+  assert((await result.json()).accepted===1);
+  assert(h.sends[0].subject==='Your Home Seekers call request');
+  assert(h.sends[0].text.includes('not a confirmed appointment'));
+  assert(h.sends[0].text.includes('https://calendly.com/thomas-homeseekers/30min'));
+  assert(!h.sends[0].html.includes('.test'));
+  assert(!h.sends[0].text.includes('property enquiry'));
+});
+Deno.test('Join breakdown preserves the source and computed result for visitor and owner',async()=>{
+ const join={...contact,version:'home-seekers-join-v1',name:'Sam Agent',type:'breakdown',subject:'Breakdown requested: 10 sales, 70/30, saves R147,000 · calculator',details:'Annual difference: R147,000\nSource: calculator\nAll amounts excluding VAT.'};
+ const h=harness([contact.email,'thomas@homeseekers.co.za'].map(recipient=>({...base,event_kind:'join_follow_up',recipient,contact_json:join})));
+ const result=await dispatchRecruitmentContacts(request(),h.dependencies as any);
+ assert((await result.json()).accepted===2);
+ assert(h.sends[0].subject==='Your Home Seekers split breakdown');
+ assert(h.sends[1].subject===join.subject);
+ assert(h.sends.every(message=>message.text.includes('R147,000')&&message.text.includes('calculator')));
+});
+Deno.test('Join follow-up cannot send to an unrelated saved recipient',async()=>{
+ const h=harness([{...base,event_kind:'join_follow_up',recipient:'other@unrelated.co.za',contact_json:{...contact,version:'home-seekers-join-v1'}}]);
+ const result=await dispatchRecruitmentContacts(request(),h.dependencies as any);
+ assert((await result.json()).pending===1);
+ assert(h.sends.length===0);
+});

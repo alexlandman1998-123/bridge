@@ -1,7 +1,7 @@
 import { requireClient } from '../../src/services/attorneyFirmServiceShared.js'
 import { ensureTransactionWorkflowInstances } from './transactionWorkflowModelService.js'
 import { logTransactionWorkflowEvent } from './workflowEventService.js'
-import { resolveWorkflowEvidenceMappings } from '../workflows/workflowEvidenceMappings.js'
+import { hasWorkflowEvidenceMapping, resolveWorkflowEvidenceMappings } from '../workflows/workflowEvidenceMappings.js'
 import { writeWorkflowEvidence } from './workflowEvidenceService.js'
 import { applyWorkflowStepStatus, ensureWorkflowStep } from './workflowStepService.js'
 import { publishWorkflowChanged } from './workflowRecomputeService.js'
@@ -40,7 +40,39 @@ function buildReasonCode(evidenceType = '', evidenceKey = '', status = '') {
   ].join('_')
 }
 
-export async function processWorkflowEvidence({
+const evidenceQueues = new Map()
+
+// A batch upload must not initialize and rewrite the same workflow concurrently
+// for every file. Preserve each event and its original client while serializing
+// the matter across both interactive and actor-pinned background clients.
+export async function processWorkflowEvidence(input = {}) {
+  if (!normalizeText(input.transactionId)) throw new Error('Transaction id is required.')
+  if (!hasWorkflowEvidenceMapping(input.evidenceKey)) {
+    return { mapped: false, results: [], rollup: null, compatibility: null }
+  }
+  const client = input.client || requireClient()
+  const queues = evidenceQueues
+  const key = normalizeText(input.transactionId)
+  const queuedInput = { ...input, client }
+  const previous = queues.get(key) || Promise.resolve()
+  const next = previous.catch(() => null).then(() => processWorkflowEvidenceNow(queuedInput))
+  queues.set(key, next)
+  try { return await next } finally { if (queues.get(key) === next) queues.delete(key) }
+}
+
+// Session switches and final lifecycle gates can wait for already-started
+// reporting without making the durable document save depend on that reporting.
+export async function flushWorkflowEvidence(transactionId) {
+  const queues = evidenceQueues
+  const key = normalizeText(transactionId)
+  while (queues?.has(key)) {
+    const pending = queues.get(key)
+    await pending.catch(() => null)
+    if (queues.get(key) === pending) queues.delete(key)
+  }
+}
+
+async function processWorkflowEvidenceNow({
   transactionId,
   evidenceType,
   evidenceId,

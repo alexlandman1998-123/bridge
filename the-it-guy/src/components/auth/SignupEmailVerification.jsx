@@ -107,12 +107,14 @@ export default function SignupEmailVerification({ email, client, withTimeout, re
       </form>
       <div className="auth-footer auth-code-resend">
         <span>No email? Check your spam folder.</span>
-        <button type="button" onClick={() => void resend()} disabled={secondsLeft > 0 || resending || busy}>
-          {resending ? 'Sending…' : secondsLeft > 0 ? `Resend code in ${secondsLeft}s` : 'Resend code'}
-        </button>
+        <div className="auth-code-actions">
+          <button type="button" onClick={() => void resend()} disabled={secondsLeft > 0 || resending || busy}>
+            {resending ? 'Sending…' : secondsLeft > 0 ? `Resend code in ${secondsLeft}s` : 'Resend code'}
+          </button>
+          <button type="button" className="auth-code-back" onClick={onBack} disabled={busy || resending}><ArrowLeft size={14} /> Back to sign in</button>
+        </div>
       </div>
       <p className="auth-code-security"><ShieldCheck size={15} aria-hidden="true" /> Your code is private. Never share it with anyone.</p>
-      <button type="button" className="auth-code-back" onClick={onBack} disabled={busy || resending}><ArrowLeft size={14} /> Back to sign in</button>
     </section>
   )
 }

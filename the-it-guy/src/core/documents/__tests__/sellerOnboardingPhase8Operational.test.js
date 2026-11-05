@@ -46,9 +46,10 @@ test('a selected attorney remains a seller preference and cannot become an instr
   assert.equal(readiness.canCreateAgencyInstruction, false)
 })
 
-test('rollout gate requires the distinct FICA and mandate pack', () => {
+test('reviewed documents can be prepared separately while an empty pack is rejected', () => {
   assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: true }).valid, true)
-  assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: false }).valid, false)
+  assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: false }).valid, true)
+  assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: false, mandate: false }).valid, false)
 })
 
 test('manual route agrees across the journey and document statuses', () => {

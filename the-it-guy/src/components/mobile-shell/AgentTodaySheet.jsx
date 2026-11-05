@@ -1,8 +1,8 @@
 import { ArrowLeft, ArrowRight, ChevronRight, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-const LABELS = { appointments: 'Appointments', followUps: 'Follow-ups', deals: 'Deals to move' }
-const EMPTY = { appointments: 'No appointments scheduled for today or upcoming.', followUps: 'No open follow-ups.', deals: 'No deals have a recorded next action.' }
+const LABELS = { appointments: 'Appointments', followUps: 'Tasks', deals: 'Deals to move' }
+const EMPTY = { appointments: 'No appointments scheduled for today or upcoming.', followUps: 'No outstanding tasks.', deals: 'No deals have a recorded next action.' }
 
 export default function AgentTodaySheet({ selection, today, onClose, onOpen, onRefresh }) {
   const dialogRef = useRef(null)

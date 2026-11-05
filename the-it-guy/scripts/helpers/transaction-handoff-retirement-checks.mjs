@@ -28,6 +28,18 @@ grant select on transaction_bond_applications to authenticated;
 `)
   await db.exec(sql('20260916125643_transaction_partner_workspace_assignment_handoff.sql'))
   await db.exec(sql('20261004083851_transaction_handoff_assignment_retirement.sql'))
+  const priorRetirementCheck = (await query("select pg_get_functiondef('handoff_private.retired_actor_only(uuid)'::regprocedure) definition")).rows[0].definition
+  const retirementContract = async () => (await query(`select oid,proowner,proacl,prosecdef,provolatile,proconfig,prorettype
+    from pg_proc where oid='handoff_private.retired_actor_only(uuid)'::regprocedure`)).rows[0]
+  const priorContract = await retirementContract()
+  await db.exec(priorRetirementCheck.replace('FUNCTION handoff_private.retired_actor_only(', 'FUNCTION handoff_private.retired_actor_only_before_performance_test('))
+  await db.exec(sql('20261028101749_short_circuit_unneeded_partner_retirement_checks.sql'))
+  assert.deepEqual(await retirementContract(), priorContract, 'the function identity, owner, grants and security settings must stay unchanged')
+  // No retirement history must skip every remaining access-check query.
+  await query('begin')
+  await db.exec(`create or replace function public.bridge_transaction_scope_is_internal_user() returns boolean language plpgsql stable as $$begin raise exception 'unnecessary access check';end$$;`)
+  assert.equal((await query('select handoff_private.retired_actor_only($1) blocked', [matter])).rows[0].blocked, false)
+  await query('rollback')
   await query("select set_config('test.matter_access','true',false)")
   const oldActor='40000000-0000-0000-0000-000000000002'
   await query(`insert into auth.users values($1,'old@partner.co.za',now())`,[oldActor])
@@ -124,5 +136,13 @@ grant select on transaction_bond_applications to authenticated;
   assert.equal((await query('select prepare_transaction_handoff_workspace($1,$2,$3) result',[oldLease.id,oldLease.attempt_count,oldLease.lease_token])).rows[0].result.reason,'stale_job')
   await query("delete from transaction_role_players where transaction_id=$1 and role_type='bond_originator'",[nested])
   assert.equal((await query("select count(*)::int n from transaction_partner_assignments where transaction_id=$1 and assignment_status='active'",[nested])).rows[0].n,0)
-  console.log('Handoff retirement: targeted grants, stale portal/invite denial, preserved native data and receipts, pristine intake reuse, progressed-work review, RLS and rollback checks passed')
+  const actors = ['', ...(await query('select id from auth.users')).rows.map(row => row.id)]
+  for (const actor of actors) {
+    await query("select set_config('test.uid',$1,false)", [actor])
+    assert.equal((await query(`select count(*)::int n from public.transactions t where
+      handoff_private.retired_actor_only(t.id) is distinct from handoff_private.retired_actor_only_before_performance_test(t.id)`)).rows[0].n, 0,
+    'the optimized check must preserve every prior retirement decision for every fixture actor')
+  }
+  await query("select set_config('test.uid',$1,false)", [user])
+  console.log('Handoff retirement: targeted grants, stale portal/invite denial, preserved native data and receipts, pristine intake reuse, progressed-work review, RLS, rollback, no-history fast path and old/new decision parity checks passed')
 }

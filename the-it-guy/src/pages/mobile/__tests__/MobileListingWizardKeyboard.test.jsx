@@ -4,6 +4,15 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WizardFooter } from '../../AgentListings.jsx'
 afterEach(cleanup)
+it('offers Save only without submitting and Save & update adverts as the primary submit action', () => {
+  const savedOnly = vi.fn(), updated = vi.fn()
+  render(<form onSubmit={event => { event.preventDefault(); updated() }}><WizardFooter isFinalStep onCancel={() => {}} onSaveDraft={savedOnly} saveDraftLabel="Save only" finalLabel="Save & update adverts" /></form>)
+  fireEvent.click(screen.getByRole('button', { name: 'Save only' }))
+  expect(savedOnly).toHaveBeenCalledTimes(1)
+  expect(updated).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Save & update adverts' }))
+  expect(updated).toHaveBeenCalledTimes(1)
+})
 it('Continue cannot turn into a submit action during the same click event', () => {
   const submitted = vi.fn()
   function Harness() {

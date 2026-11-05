@@ -177,3 +177,33 @@ test('team-provided shared documents never produce a buyer upload action', () =>
     documentCenter: { requiredDocuments: [{ key: 'body_corporate_rules', status: 'required', waitingForTeam: true }] } })
   assert.equal(actions.some(action => action.id === 'doc_upload_body_corporate_rules'), false)
 })
+
+test('registration supersedes stale bond intake without hiding later requests', () => {
+  for (const finance_type of ['bond', 'hybrid']) {
+    for (const registration of [
+      { registered_at: '2026-11-05T08:00:00Z' },
+      { lifecycle_state: 'registered' },
+      { lifecycle_state: 'completed', completed_at: '2026-11-05T09:00:00Z' },
+      { stage: 'Registered' },
+    ]) {
+      const context = { workspaceMode: 'buying', onboarding: { status: 'submitted' },
+        transaction: { finance_type, ...registration }, bondApplication: { status: 'draft' },
+        documentCenter: { requiredDocuments: [] } }
+      const actions = generateClientPortalNextActions(context)
+      assert.equal(actions.some(action => action.actionRoute === 'bond_application'), false)
+      assert.equal(actions.some(action => action.id === 'registration_complete'), true)
+      const withAppointment = generateClientPortalNextActions({ ...context,
+        appointments: [{ id: 'key-collection', status: 'proposed', appointmentType: 'Key collection' }] })
+      assert.equal(withAppointment.some(action => action.id === 'appointment_confirm_key-collection'), true)
+      assert.equal(withAppointment.some(action => action.actionRoute === 'bond_application'), false)
+      const withRequest = generateClientPortalNextActions({ ...context, documentCenter: {
+        requiredDocuments: [], additionalRequests: [{ id: 'final-copy', status: 'requested',
+          documentName: 'Final account copy', requestedFrom: 'buyer' }],
+      } })
+      assert.equal(withRequest.some(action => action.id === 'additional_upload_final-copy'), true)
+    }
+    const active = generateClientPortalNextActions({ workspaceMode: 'buying',
+      onboarding: { status: 'submitted' }, transaction: { finance_type }, bondApplication: { status: 'draft' } })
+    assert.equal(active.some(action => action.id === 'bond_application_required'), true)
+  }
+})

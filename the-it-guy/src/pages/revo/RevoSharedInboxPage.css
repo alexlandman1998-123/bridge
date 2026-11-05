@@ -184,8 +184,8 @@
 .inbox-sample-notice { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 24px; background: #faf6ec; border-bottom: 1px solid #ece4d3; color: #806f49; font-size: 12px; }
 .inbox-sample-notice > span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .inbox-sample-notice button { border: 0; padding: 0; background: transparent; color: #70613e; text-decoration: underline; font-size: 12px; }
-.revo-inbox-shell { grid-template-columns: minmax(240px, var(--inbox-list-weight, 32fr)) 8px minmax(280px, var(--inbox-reader-weight, 68fr)); }
-.revo-inbox-shell.inbox-details-visible { grid-template-columns: minmax(240px, var(--inbox-list-weight, 32fr)) 8px minmax(280px, var(--inbox-reader-weight, 44fr)) 8px minmax(220px, var(--inbox-details-weight, 24fr)); }
+.revo-inbox-shell { grid-template-columns: minmax(240px, var(--inbox-list-weight, 32fr)) 4px minmax(280px, var(--inbox-reader-weight, 68fr)); }
+.revo-inbox-shell.inbox-details-visible { grid-template-columns: minmax(240px, var(--inbox-list-weight, 32fr)) 4px minmax(280px, var(--inbox-reader-weight, 44fr)) 4px minmax(220px, var(--inbox-details-weight, 24fr)); }
 .revo-details { position: static; width: auto; box-shadow: none; border-left: 0; padding: 20px; }
 .inbox-panel-divider { display: flex; align-items: center; justify-content: center; background: #f3f6f4; cursor: col-resize; touch-action: none; user-select: none; z-index: 2; border-inline: 1px solid #e7ece8; }
 .inbox-panel-divider > span { display: block; width: 2px; height: 32px; border-radius: 3px; background: #c4d3c9; }
@@ -210,7 +210,7 @@
 .revo-details-heading { padding-bottom: 12px; border-bottom: 1px solid #edf0ee; }
 .revo-contact .revo-avatar { border-radius: 16px; width: 62px; height: 62px; background: linear-gradient(135deg, #e1eee5, #f1f6f2); }
 @container (max-width: 900px) {
-  .revo-inbox-shell.inbox-details-visible { grid-template-columns: minmax(240px, var(--inbox-list-weight, 32fr)) 8px minmax(280px, var(--inbox-reader-weight, 68fr)); }
+  .revo-inbox-shell.inbox-details-visible { grid-template-columns: minmax(240px, var(--inbox-list-weight, 32fr)) 4px minmax(280px, var(--inbox-reader-weight, 68fr)); }
   .revo-details { position: absolute; inset: 0 0 0 auto; width: 280px; box-shadow: -8px 0 24px #173d3012; border-left: 1px solid #e0e7e2; z-index: 4; }
   .inbox-panel-divider[aria-label='Resize contact details'] { display: none; }
   .revo-inbox-topbar { flex-wrap: wrap; padding: 14px 18px; }
@@ -249,3 +249,103 @@
 @container (max-width: 640px) {
   .revo-thread > header h2, .revo-thread > header p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* WhatsApp uses the existing provider reader within the shared list/reader grid. */
+.revo-whatsapp-reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--revo-canvas); }
+.revo-whatsapp-reader > header { flex: none; background: var(--revo-surface); }
+.revo-whatsapp-reader > [aria-label="Conversation messages"] { min-height: 80px; flex: 1 1 0; max-height: none; }
+.revo-whatsapp-reader > .wa-compact-composer { flex: 0 0 auto; min-height: 0; max-height: 55%; overflow: auto; background: var(--revo-surface); }
+.revo-whatsapp-tools { flex: 0 0 auto; max-height: 35%; overflow: auto; border-bottom: 1px solid var(--revo-border); background: var(--revo-surface); }
+.revo-whatsapp-reader textarea { min-height: 64px; }
+.revo-whatsapp-tools summary { cursor: pointer; padding: 8px 16px; font-size: 12px; font-weight: 600; }
+
+@media (max-width: 850px) {
+  .revo-whatsapp-reader { display: none; }
+  .revo-mobile-reader > .revo-whatsapp-reader { display: flex; }
+}
+@container (max-width: 640px) {
+  .revo-whatsapp-reader { display: none; }
+  .revo-mobile-reader > .revo-whatsapp-reader { display: flex; }
+}
+
+/* The Inbox is a full-height workspace beneath the shared app bar. */
+.ui-main-region:has(.revo-inbox-page) {
+  height: 100dvh;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.ui-main-region:has(.revo-inbox-page) > .ui-shell-header { flex-shrink: 0; }
+.ui-main-content:has(> .ui-content-container > .revo-inbox-page) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+.ui-content-container:has(> .revo-inbox-page) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+.revo-inbox-page {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.revo-inbox-topbar { min-height: 60px; padding: 8px 20px; }
+@container (max-width: 900px) {
+  .revo-inbox-topbar { padding: 8px 16px; }
+}
+.revo-popout { height: 100dvh; }
+
+.revo-inbox-topbar>.inbox-header-actions{margin-left:auto;justify-content:flex-end;min-width:0}.inbox-header-actions .inbox-account-menu{left:auto;right:0}
+
+/* Account controls belong to the conversation list, leaving the reader full height. */
+.revo-list-toolbar { display: flex; align-items: center; gap: 6px; position: relative; min-width: 0; }
+.revo-list-toolbar .inbox-account-picker { position: static; flex: 1; min-width: 0; max-width: none; }
+.revo-list-toolbar .inbox-account-menu { left: 0; right: auto; width: 340px; max-width: 100%; }
+
+/* A continuous reading surface with a restrained, anchored reply area. */
+.revo-email-reader { background:#fff; }
+.revo-email-reader > header { padding:14px 22px; }
+.revo-email-reader .revo-thread-context { padding:8px 22px; background:#fff; }
+.revo-email-reader .revo-history { gap:0; padding:0 22px; background:#fff; overscroll-behavior:contain; }
+.revo-email-reader .revo-history article { flex-shrink:0; padding:20px 0; border:0; border-bottom:1px solid #edf1ee; border-radius:0; box-shadow:none; background:#fff; }
+.revo-email-reader .revo-history article header { margin:0 0 5px; }
+.revo-email-reader .revo-history article header strong { font-size:13px; font-weight:600; color:#293b32; }
+.revo-email-reader .revo-history article small { font-size:11px; margin-bottom:8px; }
+.revo-email-reader .revo-history article.note { padding:14px; margin:10px 0; border-radius:6px; background:#fff9e9; }
+.revo-email-reader .revo-activity { padding:6px 0; font-size:10px; }
+.revo-email-reader .revo-composer { margin:0; border:0; border-top:1px solid #e5ebe7; border-radius:0; box-shadow:0 -3px 14px #173d3004; background:#fff; }
+.revo-email-reader .revo-composer > header { padding:8px 22px 0; border:0; }
+.revo-email-reader .revo-composer-tabs { gap:18px; padding:0; border-radius:0; background:transparent; }
+.revo-email-reader .revo-composer-tabs button { padding:7px 0; border-radius:0; border-bottom:2px solid transparent; font-size:12px; }
+.revo-email-reader .revo-composer-tabs button.active { border-bottom-color:#247154; color:#247154; background:transparent; box-shadow:none; }
+.revo-email-reader .revo-composer textarea { min-height:72px; max-height:160px; padding:12px 22px; resize:vertical; font-size:14px; line-height:1.6; outline:none; }
+.revo-email-reader .revo-composer:focus-within { border-top-color:#8bad9b; }
+.revo-email-reader .revo-composer footer { padding:4px 22px 14px; }
+.revo-email-reader .revo-composer footer button { min-height:34px; padding:7px 12px; font-size:12px; border-radius:6px; }
+.revo-email-reader .revo-composer footer .revo-save-draft { border-color:transparent; background:transparent; }
+.revo-email-reader .revo-composer[data-mode='note'] { background:#fffaf0; }
+.inbox-panel-divider > span { height:24px; }
+@container (max-width:640px) {
+ .revo-email-reader .revo-history { padding:0 14px; }
+ .revo-email-reader .revo-composer > header { padding:8px 14px 0; }
+ .revo-email-reader .revo-composer textarea { padding:12px 14px; font-size:16px; }
+ .revo-email-reader .revo-composer footer { padding:4px 14px 12px; }
+}
+
+.inbox-create-lead-button { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; padding:7px 11px; border:1px solid #cddfd3; border-radius:6px; background:#f0f7f2; color:#246347; font-size:12px!important; font-weight:600; }
+.inbox-create-lead-button:hover:not(:disabled) { background:#e3f0e7; border-color:#9cbea8; }
+.inbox-contact-create-lead { width:100%; margin:14px 0 4px; }
+/* Narrow reading columns truncate sender details instead of wrapping every word. */
+.revo-email-reader > header h2,.revo-email-reader > header p { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.revo-email-reader > header > div:last-child { flex-shrink:0; }
+
+.revo-row-avatar svg,.revo-avatar-small svg{width:20px;height:20px}.revo-row-facebook .revo-row-avatar,.revo-row-messenger .revo-row-avatar{background:#edf4ff;color:#1877f2}.revo-row-instagram .revo-row-avatar{background:#fff0f7;color:#c13584}.revo-email-reader .revo-avatar-small{background:#eef2fa;color:#5a7196}
+
+.revo-list-toolbar .inbox-create-action{flex-shrink:0}.revo-list-toolbar .inbox-create-action>button{display:inline-flex;align-items:center;gap:5px;min-height:34px;padding:7px 10px;background:#216b4c;color:#fff;border-color:#216b4c;white-space:nowrap}.revo-list-toolbar .inbox-create-action>button:hover:not(:disabled){background:#19583e}.revo-list-toolbar .inbox-create-action>button:focus-visible{outline:2px solid #216b4c;outline-offset:3px}

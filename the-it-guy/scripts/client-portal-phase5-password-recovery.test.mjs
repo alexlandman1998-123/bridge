@@ -32,6 +32,6 @@ assert.match(privateListingService, /completeSellerPortalPasswordRecovery/, 'the
 assert.match(passwordGate, /Forgot your password\?/, 'the password gate should expose self-service recovery')
 assert.match(passwordGate, /tokenKind === 'recovery'/, 'recovery links should render password reset mode')
 assert.match(passwordGate, /Save new password/, 'recovery mode should clearly describe its action')
-assert.match(listingDetail, /label="Recovery"/, 'agents should see recovery lifecycle status')
+assert.match(listingDetail, /handleResetSellerPortalPasswordAndResend/, 'agents should retain the explicit password reset and resend action')
 
 console.log('Client portal Phase 5 password recovery checks passed.')

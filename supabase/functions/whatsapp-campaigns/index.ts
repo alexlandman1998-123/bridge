@@ -1,15 +1,16 @@
+import { supabaseServiceKey, supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { createClient } from 'supabase'
 import { createCampaignHandler } from './handler.js'
-import { campaignMeta } from '../_shared/whatsappCampaignMeta.ts'
+import { whatsappAccessToken } from '../_shared/metaCredentials.ts'
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json' }
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers })
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed.' }), { status: 405, headers })
   try {
     const url = Deno.env.get('SUPABASE_URL') || ''
-    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    const anon = Deno.env.get('SUPABASE_ANON_KEY') || ''
+    const key = supabaseServiceKey() || ''
+    const anon = supabasePublishableKey() || ''
     if (!url || !key || !anon) throw new Error('WhatsApp server configuration is incomplete.')
     const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
     const handler = createCampaignHandler({
@@ -21,9 +22,20 @@ Deno.serve(async (req) => {
         if (error || !data.user) return null
         const userDb = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } })
         const member = await userDb.rpc('bridge_is_active_member', { target_org: org })
-        return !member.error && member.data === true ? {userId:data.user.id,userDb} : null
+        return !member.error && member.data === true ? data.user.id : null
       },
-      meta: campaignMeta,
+      meta: async (connection: { meta_access_token: string; token_ciphertext?: string }, path: string, payload?: unknown) => {
+        const version = Deno.env.get('WHATSAPP_GRAPH_VERSION') || 'v23.0'
+        if (!/^v\d+\.\d+$/.test(version)) throw new Error('Invalid Meta Graph API version configuration.')
+        const token = await whatsappAccessToken(connection)
+        const response = await fetch(`https://graph.facebook.com/${version}/${path}`, { method: payload ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(payload ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.timeout(15000) })
+        const body = await response.json()
+        if (!response.ok || body.error) {
+          const error = Object.assign(new Error(`Meta: ${body.error?.message || 'Request failed'}${body.error?.code ? ` (${body.error.code})` : ''}`), { definitive: response.status >= 400 && response.status < 500 })
+          throw error
+        }
+        return body
+      },
     })
     const raw = await req.text()
     if (raw.length > 1000000) throw new Error('Campaign request is too large.')
@@ -31,4 +43,4 @@ Deno.serve(async (req) => {
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'WhatsApp campaign request failed.' }), { status: 400, headers })
   }
-})
+}))

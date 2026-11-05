@@ -83,3 +83,45 @@ export async function listBuyerLeadDevelopmentOptions(organisationId, { client =
     .map((row) => ({ id: row.id, label: text(row.name) || 'Untitled development' }))
     .sort((a, b) => a.label.localeCompare(b.label))
 }
+
+// Only read buyer identities owned by the active workspace. Developer access to
+// an introduced lead does not imply access to the introducing agency's CRM.
+export async function enrichDevelopmentLeadBuyerContacts(organisationId, leads = [], { client = supabase } = {}) {
+  if (!isUuid(organisationId) || !client) return leads
+  const maskedAgencyIds = uniqueIds(leads.filter(lead => lead.leadOwner === 'agency' && lead.sourceAgencyOrgId === organisationId && !lead.sourceLeadId).map(lead => lead.developerLeadId))
+  const agencyLinks = []
+  for (let offset = 0; offset < maskedAgencyIds.length; offset += 200) {
+    agencyLinks.push(...rows(await client.from('developer_leads').select('developer_lead_id, source_lead_id')
+      .eq('source_agency_org_id', organisationId).in('developer_lead_id', maskedAgencyIds.slice(offset, offset + 200))))
+  }
+  const sourceByDeveloperLead = new Map(agencyLinks.map(link => [link.developer_lead_id, link.source_lead_id]))
+  const scopedLeads = leads.map(lead => lead.leadOwner === 'agency' && lead.sourceAgencyOrgId === organisationId && !lead.sourceLeadId && sourceByDeveloperLead.has(lead.developerLeadId)
+    ? { ...lead, sourceLeadId: sourceByDeveloperLead.get(lead.developerLeadId) } : lead)
+  const eligible = scopedLeads.filter(lead => (lead.leadOwner === 'agency' ? lead.sourceAgencyOrgId : lead.developerOrgId) === organisationId)
+  const ids = uniqueIds(eligible.map(lead => lead.sourceLeadId))
+  if (!ids.length) return leads
+  const sourceRows = []
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    sourceRows.push(...rows(await client.from('leads').select('lead_id, contact_id')
+      .eq('organisation_id', organisationId).in('lead_id', ids.slice(offset, offset + 200))))
+  }
+  const contactIds = uniqueIds(sourceRows.map(lead => lead.contact_id))
+  const contacts = []
+  for (let offset = 0; offset < contactIds.length; offset += 200) {
+    contacts.push(...rows(await client.from('contacts').select('contact_id, first_name, last_name, email, phone')
+      .eq('organisation_id', organisationId).in('contact_id', contactIds.slice(offset, offset + 200))))
+  }
+  const contactById = new Map(contacts.map(contact => [contact.contact_id, contact]))
+  const contactByLead = new Map(sourceRows.map(lead => [lead.lead_id, contactById.get(lead.contact_id)]))
+  const eligibleIds = new Set(ids)
+  return scopedLeads.map(lead => {
+    const owned = (lead.leadOwner === 'agency' ? lead.sourceAgencyOrgId : lead.developerOrgId) === organisationId
+    const contact = owned && eligibleIds.has(lead.sourceLeadId) && contactByLead.get(lead.sourceLeadId)
+    if (!contact) return lead
+    return { ...lead,
+      buyerFullName: [text(contact.first_name), text(contact.last_name)].filter(Boolean).join(' ') || lead.buyerFullName,
+      buyerEmail: text(contact.email),
+      buyerPhone: text(contact.phone),
+    }
+  })
+}

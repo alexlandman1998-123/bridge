@@ -1,3 +1,4 @@
+import { upcomingHomeSeekersSessions } from './homeSeekersBookingLinks'
 import { calculateSplitCosts } from './homeSeekersSplitCalculatorModel'
 export const nextStepsStorageKey = 'home-seekers-next-steps-review-v1'
 export const nextStepsEvents = ['qualifier_started', 'qualifier_passed', 'qualifier_failed', 'oneonone_booked', 'session_rsvp', 'application_completed', 'calculator_completed', 'calculator_email_submitted']
@@ -75,7 +76,7 @@ export function saveNextStepsReview(type, details, { id = crypto.randomUUID(), n
     outcome = 'booked'; event = 'oneonone_booked'
   } else if (type === 'session') {
     if (Object.keys(nextStepsErrors(details, 'session')).length) throw new Error('Check your registration details.')
-    if (!previewSessions(now).some(session => session.id === details.session)) throw new Error('That session is no longer available. Please choose another.')
+    if (!upcomingHomeSeekersSessions(now).some(session => session.id === details.session)) throw new Error('That session is no longer available. Please choose another.')
     outcome = 'registered'; event = 'session_rsvp'
   } else if (type === 'calculator') {
     const result = calculateSplitCosts(details.inputs || {})

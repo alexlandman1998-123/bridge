@@ -2,6 +2,7 @@ import Field from '../../ui/Field'
 
 export default function AttorneyDocumentRequestForm({ formId, form, onChange, onSubmit, requirementOptions = [], requestedFromOptions = [], visibilityOptions = [], disabled = false, error = '' }) {
   const selected = requirementOptions.find(option => option.id === form.canonicalRequirementInstanceId)
+  const recipientLabel = requestedFromOptions.find(option => option.value === form.requestedFrom)?.label || 'selected recipient'
   function chooseRequirement(id) {
     const option = requirementOptions.find(item => item.id === id)
     onChange({ ...form, canonicalRequirementInstanceId: id,
@@ -53,7 +54,7 @@ export default function AttorneyDocumentRequestForm({ formId, form, onChange, on
           Instructions for the recipient
           <Field as="textarea" rows={3} value={form.notes} onChange={event => onChange({ ...form, notes: event.target.value })} placeholder="Explain what is needed and any certification or signing requirements." />
         </label>
-        <p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-textMuted">{form.visibility === 'client_visible' ? 'The selected client can see this request and its instructions in their portal. Saving the request does not confirm email delivery.' : form.visibility === 'internal_only' ? 'This request is for internal matter users. It is not shown in the client portal.' : 'This request is shared with authorised professional role players. It is not shown in the client portal.'}</p>
+        <p className="rounded-lg bg-slate-50 p-3 text-xs leading-5 text-textMuted">{form.visibility === 'client_visible' ? `The ${recipientLabel.toLowerCase()} can see this request and its instructions in their portal. Saving the request does not confirm email delivery.` : form.visibility === 'internal_only' ? 'This request is for internal matter users. It is not shown in the client portal.' : 'This request is shared with authorised professional role players. It is not shown in the client portal.'}</p>
       </fieldset>
     </form>
   )

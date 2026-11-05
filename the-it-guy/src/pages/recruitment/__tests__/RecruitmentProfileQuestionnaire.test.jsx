@@ -307,3 +307,11 @@ it('saves an edited review section and returns directly to review with declarati
   expect(requests[0]).toMatchObject({action:'save_profile',revision:3,page:2,intent:'complete',answers:{propertiesSold:'0'}})
   expect(screen.getAllByRole('checkbox').every(input=>!input.checked)).toBe(true)
 })
+it('prefills calculator sales for a new Home Seekers application without replacing a saved answer',async()=>{
+  const calculatorContext={inputs:{sales:'18',averagePrice:'1500000',rate:'6',model:'70/30'},result:{difference:351000}}
+  const view=render(<RecruitmentProfileQuestionnaire {...homeProps} applicant={{...homeApplicant,profile:{page:2}}} calculatorContext={calculatorContext} preview />)
+  expect(screen.getByLabelText(/Properties sold/).value).toBe('18')
+  view.unmount()
+  render(<RecruitmentProfileQuestionnaire {...homeProps} calculatorContext={calculatorContext} applicant={{...homeApplicant,profile:{answers:{...validProfile(),propertiesSold:'7'},page:2}}} preview />)
+  expect(screen.getByLabelText(/Properties sold/).value).toBe('7')
+})

@@ -2,6 +2,7 @@ import { hydrateBuyerOnboardingCapture } from '../core/transactions/buyerOnboard
 import { saveTransactionSellerDetails } from '../services/transactionSellerSaveService.js'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation.js'
 import { createFreshDocumentSignedUrl } from './documentAccess.js'
+import { trackTransactionBackgroundWork, flushTransactionBackgroundWork } from './transactionBackgroundWork.js'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from './documentUploadRecovery.js'
 import { buildTransactionPartiesSnapshot, transactionPartiesOnboardingSeed, transactionSellerContactSlotId } from '../core/transactions/transactionPartyProfile.js'
 import { validateDevelopmentStructureNodes } from '../core/developments/developmentStructureModel.js'
@@ -120,7 +121,7 @@ import {
   resolveWizardInitialTransactionStage,
 } from '../core/transactions/newTransactionSetupHealth.js'
 import { resolveTransactionCaptureParticipantPolicy } from '../core/transactions/transactionCaptureFinance.js'
-import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
+import { resolveTransactionSaleProfile, normalizeStoredTransactionType as normalizeSaleStoredTransactionType } from '../core/transactions/transactionSaleProfile.js'
 import { assertTransactionCreationInput } from '../core/transactions/transactionCreationInput.js'
 import {
   TransactionCreationIncompleteError,
@@ -164,6 +165,8 @@ import {
 import {
   TRANSACTION_LIFECYCLE_STAGE_LABELS,
   normalizeTransactionLifecycleStage,
+  normalizePersistedTransactionLifecycleStage,
+  PERSISTED_TRANSACTION_LIFECYCLE_STAGES,
 } from '../core/transactions/transactionLifecycle'
 import {
   BOND_APPLICATION_PROGRESS_STATUSES,
@@ -294,7 +297,7 @@ import { runCanonicalDocumentRequestRecalculationBatch } from '../services/docum
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
-import { applyTransferTaxDecisionUpdate } from '../services/transferTaxDecisionService.js'
+import { applyTransferTaxDecisionUpdate, TRANSFER_TAX_ROUTES } from '../services/transferTaxDecisionService.js'
 import {
   buildMatterWorkflowPlan,
   diffMatterWorkflowPlans,
@@ -302,6 +305,7 @@ import {
 } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
 import { fetchSharedMatterJourney, fetchSellerSharedMatterJourney } from '../services/sharedMatterJourneyReader.js'
+import { canonicalRegistrationReadiness } from '../core/transactions/canonicalRegistrationReadiness.js'
 import { postMatterMessage, readMatterConversation } from '../services/matterConversationService.js'
 import { getAgentTransactionSyncReadModel } from '../services/transactionSyncReadModelService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
@@ -1119,9 +1123,10 @@ function requireScopedClient(headers = {}) {
   return client
 }
 
-function requireClientPortalTokenClient(token) {
+function requireClientPortalTokenClient(token, sellerAccessToken = '') {
   return requireScopedClient({
     'x-bridge-client-portal-token': String(token || '').trim(),
+    ...(sellerAccessToken ? {'x-bridge-seller-portal-access-token':sellerAccessToken} : {}),
   })
 }
 
@@ -1163,6 +1168,7 @@ function isMissingTableError(error, tableName) {
   const status = Number(error.status || error.statusCode || 0)
   const code = String(error.code || '').toUpperCase()
   const message = String(error.message || '').toLowerCase()
+  if (code && !['42P01', 'PGRST205', 'NOT_FOUND'].includes(code)) return false
   if (message.includes('permission denied')) {
     return false
   }
@@ -1172,7 +1178,7 @@ function isMissingTableError(error, tableName) {
     code === 'NOT_FOUND' ||
     status === 404 ||
     message.includes('relation does not exist') ||
-    message.includes('schema cache') ||
+    (message.includes('schema cache') && message.includes(String(tableName || '').toLowerCase()) && /\b(table|relation)\b/.test(message)) ||
     message.includes(`could not find the table '${String(tableName || '').toLowerCase()}'`) ||
     message.includes(`could not find the '${String(tableName || '').toLowerCase()}' table`)
   )
@@ -1240,6 +1246,7 @@ function isMissingFunctionError(error, functionName = '') {
     .trim()
     .toLowerCase()
   if (message.includes('permission denied')) return false
+  if (code && !['42883', 'PGRST202'].includes(code)) return false
   const functionMissing =
     code === '42883' || code === 'PGRST202' || message.includes('function') || message.includes('schema cache')
   return functionMissing && (!normalizedFunctionName || message.includes(normalizedFunctionName))
@@ -1424,7 +1431,8 @@ function isMissingRelationshipError(error) {
   if (!error) return false
   const code = String(error.code || '').toUpperCase()
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
-  return code === 'PGRST200' || message.includes('could not find a relationship') || message.includes('schema cache')
+  if (code && code !== 'PGRST200') return false
+  return code === 'PGRST200' || message.includes('could not find a relationship')
 }
 
 function isRecoverableTransactionSetupError(error) {
@@ -5085,7 +5093,7 @@ async function fetchDevelopmentFeatureFlags(client, developmentId) {
   return data || null
 }
 
-async function ensureDevelopmentSettings(client, developmentId, { createIfMissing = true } = {}) {
+async function ensureDevelopmentSettings(client, developmentId, { createIfMissing = false } = {}) {
   if (!developmentId) {
     return DEFAULT_DEVELOPMENT_SETTINGS
   }
@@ -5142,10 +5150,10 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
       alteration_requests_enabled: fallbackAlterationSetting,
     }
 
-    if (
+    if (createIfMissing && (
       normalized.snag_reporting_enabled !== merged.snag_reporting_enabled ||
       normalized.alteration_requests_enabled !== merged.alteration_requests_enabled
-    ) {
+    )) {
       try {
         await client
           .from('development_settings')
@@ -5919,7 +5927,7 @@ function normalizeAttorneyCloseoutDocumentRow(row = {}) {
   }
 }
 
-async function syncTransactionAttorneyCloseoutDocuments(client, closeoutId, configDocuments = []) {
+async function syncTransactionAttorneyCloseoutDocuments(client, closeoutId, configDocuments = [], {persistDefinitions=true} = {}) {
   const definitions = (configDocuments.length ? configDocuments : buildDefaultDevelopmentAttorneyDocuments()).map(
     (item) => normalizeDevelopmentAttorneyDocumentRow(item),
   )
@@ -5931,9 +5939,9 @@ async function syncTransactionAttorneyCloseoutDocuments(client, closeoutId, conf
     is_required: Boolean(item.requiredForCloseOut),
   }))
 
-  const { error } = await client.from('transaction_attorney_closeout_documents').upsert(payload, {
-    onConflict: 'transaction_attorney_closeout_id,document_type_key',
-  })
+  const { error } = persistDefinitions ? await client.from('transaction_attorney_closeout_documents').upsert(payload, {
+    onConflict: 'transaction_attorney_closeout_id,document_type_key',ignoreDuplicates:true,
+  }) : {error:null}
 
   if (error) {
     if (isMissingSchemaError(error)) {
@@ -5990,7 +5998,7 @@ async function ensureTransactionAttorneyCloseout(client, transaction) {
   const { data: existing, error: existingError } = await client
     .from('transaction_attorney_closeouts')
     .select(
-      'id, transaction_id, development_id, attorney_firm_id, attorney_firm_name, budgeted_amount, budget_source, budget_notes, actual_billed_amount, variance_amount, variance_percent, vat_included, invoice_reference, invoice_date, statement_date, close_out_status, reconciliation_status, ready_for_review_at, ready_for_review_by, closed_at, closed_by, notes, created_at, updated_at',
+      'id, transaction_id, development_id, responsible_attorney_firm_id, attorney_firm_id, attorney_firm_name, budgeted_amount, budget_source, budget_notes, actual_billed_amount, variance_amount, variance_percent, vat_included, invoice_reference, invoice_date, statement_date, close_out_status, reconciliation_status, ready_for_review_at, ready_for_review_by, closed_at, closed_by, notes, created_at, updated_at',
     )
     .eq('transaction_id', transaction.id)
     .maybeSingle()
@@ -6007,18 +6015,40 @@ async function ensureTransactionAttorneyCloseout(client, transaction) {
   const budgetedAmount = normalizeOptionalNumber(config?.defaultFeeAmount)
 
   if (existing) {
+    const authority=await client.rpc('bridge_can_manage_attorney_closeout',{p_transaction_id:transaction.id,p_firm_id:existing.responsible_attorney_firm_id})
+    if(authority.error)throw authority.error
     const documents = await syncTransactionAttorneyCloseoutDocuments(
       client,
       existing.id,
       config?.requiredDocuments || [],
+      {persistDefinitions:authority.data===true},
     )
     return { closeout: existing, config, documents }
   }
 
+  const assignment = await client.from('transaction_attorney_assignments')
+    .select('attorney_firm_id,firm_id,attorney_role,assignment_type,assignment_status,status')
+    .eq('transaction_id', transaction.id)
+  if (assignment.error) throw assignment.error
+  const responsible = (assignment.data || []).find(row =>
+    (row.attorney_role === 'transfer_attorney' || ['transfer','transfer_and_bond'].includes(row.assignment_type)) &&
+    (row.assignment_status || row.status) === 'active' && !['removed','revoked','inactive','paused'].includes(row.status))
+  const responsibleFirmId = responsible?.attorney_firm_id || responsible?.firm_id || null
+  if (!responsibleFirmId) return null
+  const authority = await client.rpc('bridge_can_manage_attorney_closeout', {
+    p_transaction_id: transaction.id, p_firm_id: responsibleFirmId,
+  })
+  if (authority.error) {
+    if (isPermissionDeniedError(authority.error)) return null
+    throw authority.error
+  }
+  if (authority.data !== true) return null
+
   const seedPayload = {
     transaction_id: transaction.id,
     development_id: transaction.development_id || null,
-    attorney_firm_id: config?.attorneyFirmId || null,
+    responsible_attorney_firm_id: responsibleFirmId,
+    attorney_firm_id: null,
     attorney_firm_name: config?.attorneyFirmName || transaction.attorney || null,
     budgeted_amount: budgetedAmount,
     budget_source: budgetedAmount !== null ? 'development_default' : 'development_default',
@@ -6029,11 +6059,11 @@ async function ensureTransactionAttorneyCloseout(client, transaction) {
 
   const { data: inserted, error: insertError } = await client
     .from('transaction_attorney_closeouts')
-    .insert(seedPayload)
+    .upsert(seedPayload, {onConflict:'transaction_id',ignoreDuplicates:true})
     .select(
-      'id, transaction_id, development_id, attorney_firm_id, attorney_firm_name, budgeted_amount, budget_source, budget_notes, actual_billed_amount, variance_amount, variance_percent, vat_included, invoice_reference, invoice_date, statement_date, close_out_status, reconciliation_status, ready_for_review_at, ready_for_review_by, closed_at, closed_by, notes, created_at, updated_at',
+      'id, transaction_id, development_id, responsible_attorney_firm_id, attorney_firm_id, attorney_firm_name, budgeted_amount, budget_source, budget_notes, actual_billed_amount, variance_amount, variance_percent, vat_included, invoice_reference, invoice_date, statement_date, close_out_status, reconciliation_status, ready_for_review_at, ready_for_review_by, closed_at, closed_by, notes, created_at, updated_at',
     )
-    .single()
+    .maybeSingle()
 
   if (insertError) {
     if (isMissingSchemaError(insertError)) {
@@ -6043,10 +6073,12 @@ async function ensureTransactionAttorneyCloseout(client, transaction) {
     throw insertError
   }
 
-  const documents = await syncTransactionAttorneyCloseoutDocuments(client, inserted.id, config?.requiredDocuments || [])
+  const saved = inserted || (await client.from('transaction_attorney_closeouts').select('*').eq('transaction_id',transaction.id).single()).data
+  if (!saved) throw new Error('The attorney closeout could not be loaded after creation.')
+  const documents = await syncTransactionAttorneyCloseoutDocuments(client, saved.id, config?.requiredDocuments || [])
 
   return {
-    closeout: inserted,
+    closeout: saved,
     config,
     documents,
   }
@@ -6831,7 +6863,9 @@ function isBondCommissionEligible(transaction) {
   ).toUpperCase()
   const detailedStage = normalizeStageLabel(transaction.stage || '')
 
-  return detailedStage === 'Bond Approved / Proof of Funds' || ['ATTY', 'XFER', 'REG'].includes(mainStage)
+  return detailedStage === 'Bond Approved / Proof of Funds' || ['ATTY', 'XFER', 'REG', 'TRANSFER_DUTY', 'LODGEMENT', 'REGISTRATION', 'POST_REGISTRATION'].includes(mainStage)
+    || Boolean(transaction.registered_at)
+    || ['Bond Approved', 'Grant Received', 'Grant Signed', 'Grant Submitted', 'Instruction Issued', 'Complete'].includes(transaction.finance_status)
 }
 
 function getOnboardingFinanceFieldValue(formData, keys = []) {
@@ -7083,6 +7117,7 @@ async function syncTransactionBondCloseoutDocuments(client, closeoutId, configDo
 
   const { error } = await client.from('transaction_bond_closeout_documents').upsert(payload, {
     onConflict: 'transaction_bond_closeout_id,document_type_key',
+    ignoreDuplicates: true,
   })
 
   if (error) {
@@ -7161,8 +7196,8 @@ async function ensureTransactionBondCloseout(client, transaction) {
   const seedPayload = {
     transaction_id: transaction.id,
     development_id: transaction.development_id || null,
-    bond_originator_id: config?.bondOriginatorId || null,
-    bond_originator_name: config?.bondOriginatorName || transaction.bond_originator || null,
+    bond_originator_id: transaction.primary_bond_consultant_user_id || config?.bondOriginatorId || null,
+    bond_originator_name: transaction.bond_originator || config?.bondOriginatorName || null,
     budgeted_amount: budgetedAmount,
     budget_source: 'development_default',
     vat_included: config?.vatIncluded ?? true,
@@ -7172,11 +7207,10 @@ async function ensureTransactionBondCloseout(client, transaction) {
 
   const { data: inserted, error: insertError } = await client
     .from('transaction_bond_closeouts')
-    .insert(seedPayload)
+    .upsert(seedPayload, { onConflict: 'transaction_id', ignoreDuplicates: true })
     .select(
       'id, transaction_id, development_id, bond_originator_id, bond_originator_name, budgeted_amount, budget_source, budget_notes, actual_paid_amount, variance_amount, variance_percent, vat_included, payout_reference, payout_date, statement_date, close_out_status, reconciliation_status, ready_for_review_at, ready_for_review_by, closed_at, closed_by, notes, created_at, updated_at',
     )
-    .single()
 
   if (insertError) {
     if (isMissingSchemaError(insertError)) {
@@ -7185,15 +7219,22 @@ async function ensureTransactionBondCloseout(client, transaction) {
     throw insertError
   }
 
-  const documents = await syncTransactionBondCloseoutDocuments(client, inserted.id, config?.requiredDocuments || [])
-  return { closeout: inserted, config, documents }
+  let saved = inserted?.[0]
+  if (!saved) {
+    const read = await client.from('transaction_bond_closeouts').select('*').eq('transaction_id', transaction.id).single()
+    if (read.error) throw read.error
+    saved = read.data
+  }
+  if (!saved) throw new Error('Bond close-out could not be loaded after initialization.')
+  const documents = await syncTransactionBondCloseoutDocuments(client, saved.id, config?.requiredDocuments || [])
+  return { closeout: saved, config, documents }
 }
 
 async function fetchTransactionForBondCloseout(client, transactionId) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, finance_type, stage, current_main_stage, bond_originator, sales_price, purchase_price, cash_amount, bond_amount',
+      'id, development_id, unit_id, buyer_id, finance_type, finance_status, stage, current_main_stage, registered_at, primary_bond_consultant_user_id, bond_originator, sales_price, purchase_price, cash_amount, bond_amount',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -8943,7 +8984,7 @@ export async function ensureTransactionRequiredDocuments(
     stage = null,
     currentMainStage = null,
   },
-  { sync = true, canonicalSourceRequired = false } = {},
+  { sync = true, canonicalSourceRequired = false, emitAudit = true } = {},
 ) {
   if (!transactionId) {
     return []
@@ -9363,7 +9404,7 @@ export async function ensureTransactionRequiredDocuments(
     const addedKeys = [...generatedKeys].filter((key) => !existingKeys.has(key))
     const removedKeys = staleRows.map((row) => row.document_key).filter(Boolean)
 
-    if (addedKeys.length || removedKeys.length) {
+    if (emitAudit && (addedKeys.length || removedKeys.length)) {
       try {
         await logTransactionEventIfPossible(client, {
           transactionId,
@@ -10799,9 +10840,13 @@ async function upsertTransactionParticipantsRowsWithFallback(
     return row
   })
 
-  let result = await client.from('transaction_participants').upsert(normalizedRows, { onConflict }).select(rowSelect)
+  // Current non-buyer identities have a partial unique index. PostgREST's
+  // on_conflict cannot express its predicate, so use the identity lookup path
+  // directly instead of issuing a known-invalid upsert on every assignment.
+  const lookupFirst = normalizedRows.every(row => row.role_type !== 'buyer' && row.transaction_role !== 'buyer')
+  let result = lookupFirst ? null : await client.from('transaction_participants').upsert(normalizedRows, { onConflict }).select(rowSelect)
 
-  if (!result.error || !isOnConflictConstraintError(result.error)) {
+  if (!lookupFirst && (!result.error || !isOnConflictConstraintError(result.error))) {
     return result
   }
 
@@ -10819,12 +10864,12 @@ async function upsertTransactionParticipantsRowsWithFallback(
 
     let existingResult = await lookupQuery.maybeSingle()
     if (existingResult.error && matchOnLegalRole && isMissingColumnError(existingResult.error, 'legal_role')) {
-      existingResult = await client
+      lookupQuery = client
         .from('transaction_participants')
         .select('id')
         .eq('transaction_id', row.transaction_id)
         .eq('role_type', row.role_type)
-        .maybeSingle()
+      existingResult = await lookupQuery.maybeSingle()
     }
 
     if (existingResult.error) {
@@ -10846,7 +10891,15 @@ async function upsertTransactionParticipantsRowsWithFallback(
       continue
     }
 
-    const insertResult = await client.from('transaction_participants').insert(row).select('id').single()
+    let insertResult = await client.from('transaction_participants').insert(row).select('id').single()
+    if (lookupFirst && insertResult.error?.code === '23505') {
+      const concurrent = await lookupQuery.maybeSingle()
+      if (concurrent.error) return concurrent
+      if (concurrent.data?.id) {
+        insertResult = await client.from('transaction_participants').update(row)
+          .eq('id', concurrent.data.id).select('id').maybeSingle()
+      }
+    }
 
     if (insertResult.error) {
       return insertResult
@@ -11492,6 +11545,13 @@ async function logTransactionEventIfPossible(client, payload = {}) {
     return null
   }
 
+  // Optional browser followups can outlive sign-out or an account switch.
+  // Never attribute their delayed audit write to the replacement session.
+  if (client === supabase && payload.createdBy) {
+    const session = await client.auth.getSession()
+    if (session.error || session.data?.session?.user?.id !== payload.createdBy) return null
+  }
+
   const activeProfile = await resolveActiveProfileContext(client)
   const insertPayload = {
     transaction_id: payload.transactionId,
@@ -11690,13 +11750,13 @@ function getLegacyMainStageForLifecycleStage(stage) {
 
 async function upsertTransactionLifecycleWorkflow(
   client,
-  { transactionId, currentStage, status = 'active', actorUserId = null, source = 'system', note = '' } = {},
+  { transactionId, currentStage, status = 'active', actorUserId = null, source = 'system', note = '', preserveLaterStage = false } = {},
 ) {
   if (!transactionId || !currentStage) {
     return null
   }
 
-  const normalizedStage = normalizeTransactionLifecycleStage(currentStage)
+  const normalizedStage = normalizePersistedTransactionLifecycleStage(currentStage)
   const normalizedStatus = ['active', 'completed', 'blocked'].includes(String(status || '').toLowerCase())
     ? String(status).toLowerCase()
     : 'active'
@@ -11713,6 +11773,9 @@ async function upsertTransactionLifecycleWorkflow(
       return null
     throw existing.error
   }
+
+  if (preserveLaterStage && existing.data && (existing.data.status === 'completed' ||
+    PERSISTED_TRANSACTION_LIFECYCLE_STAGES.indexOf(existing.data.current_stage) > PERSISTED_TRANSACTION_LIFECYCLE_STAGES.indexOf(normalizedStage))) return existing.data
 
   const payload = {
     transaction_id: transactionId,
@@ -11748,7 +11811,7 @@ async function upsertTransactionLifecycleWorkflow(
   }
 
   if (existing.data?.current_stage !== normalizedStage || existing.data?.status !== normalizedStatus) {
-    const label = TRANSACTION_LIFECYCLE_STAGE_LABELS[normalizedStage]
+    const label = TRANSACTION_LIFECYCLE_STAGE_LABELS[normalizedStage] || normalizedStage.replace(/_/g, ' ')
     await logTransactionEventIfPossible(client, {
       transactionId,
       eventType:
@@ -11979,6 +12042,7 @@ function normalizeBondOfferDecisionRow(row = {}, profileById = {}) {
         .toLowerCase() || 'declined',
     decidedBy,
     decidedByRole: row.decided_by_role || null,
+    supersededAt: row.superseded_at || null,
     decidedByName: decidedBy ? profileById[decidedBy]?.full_name || profileById[decidedBy]?.email || null : null,
     decisionAt: row.decision_at || row.created_at || null,
     notes: row.notes || '',
@@ -12281,6 +12345,7 @@ async function logBondHybridWorkflowActivity(
       transactionId,
       authorName: activeProfile.name || activeProfile.email || null,
       authorRole: actorRole || activeProfile.role || 'bond_originator',
+      authorUserId: activeProfile.userId || null,
       commentText: `[system][shared] ${message}`,
       client,
     }),
@@ -12566,7 +12631,7 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
     client
       .from('transaction_bond_offer_decisions')
       .select(
-        'id, transaction_id, bond_offer_id, decision, decided_by, decided_by_role, decision_at, notes, created_at, updated_at',
+        'id, transaction_id, bond_offer_id, decision, decided_by, decided_by_role, decision_at, notes, superseded_at, created_at, updated_at',
       )
       .eq('transaction_id', transactionId)
       .order('decision_at', { ascending: false }),
@@ -12649,7 +12714,7 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
     accumulator.set(offerId, decision)
     return accumulator
   }, new Map())
-  const acceptedDecision = decisions.find((decision) => decision.decision === 'accepted') || null
+  const acceptedDecision = decisions.find((decision) => decision.decision === 'accepted' && !decision.supersededAt) || null
   const acceptedOfferId =
     String(acceptedDecision?.bondOfferId || instruction?.acceptedBondOfferId || '').trim() ||
     String(
@@ -12727,11 +12792,10 @@ export async function createOrGetBondHybridFinanceWorkflow(transactionId, option
 
   const insert = await client
     .from('transaction_finance_workflows')
-    .insert(insertPayload)
+    .upsert(insertPayload, { onConflict: 'transaction_id,workflow_type', ignoreDuplicates: true })
     .select(
       'id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at',
     )
-    .single()
 
   if (insert.error) {
     if (insert.error.code === '23505' || /duplicate key/i.test(String(insert.error.message || ''))) {
@@ -12752,7 +12816,12 @@ export async function createOrGetBondHybridFinanceWorkflow(transactionId, option
     throw insert.error
   }
 
-  return insert.data
+  if (insert.data?.[0]) return insert.data[0]
+  const existing = await client.from('transaction_finance_workflows')
+    .select('id, transaction_id, workflow_type, current_stage, status, last_updated_by, last_updated_at, completed_at, created_at, updated_at')
+    .eq('transaction_id', transactionId).eq('workflow_type', BOND_HYBRID_FINANCE_WORKFLOW_TYPE).maybeSingle()
+  if (existing.error) throw existing.error
+  return existing.data || null
 }
 
 export async function updateBondHybridFinanceStage(transactionId, nextStage, options = {}) {
@@ -12816,7 +12885,8 @@ export async function updateBondHybridFinanceStage(transactionId, nextStage, opt
 
   await upsertTransactionLifecycleWorkflow(client, {
     transactionId,
-    currentStage: isCompleted ? 'transfer' : 'finance',
+    currentStage: 'finance',
+    preserveLaterStage: true,
     status: 'active',
     actorUserId: activeProfile.userId || null,
     source: 'bond_hybrid_finance_workflow',
@@ -13374,218 +13444,24 @@ export async function updateBondQuote(quoteId, payload = {}, options = {}) {
 }
 
 export async function approveBondQuote(quoteId, options = {}) {
-  const client = options.client || requireClient()
-  const actorRole = options.actorRole || null
-  const activeProfile = await resolveActiveProfileContext(client)
-  if (!quoteId) throw new Error('Bond quote is required.')
-
-  const quote = await client
-    .from('transaction_bond_quotes')
-    .select('id, transaction_id, workflow_id, bank_name')
-    .eq('id', quoteId)
-    .maybeSingle()
-  if (quote.error) throw quote.error
-  if (!quote.data) throw new Error('Bond quote was not found.')
-
-  const workflow = await fetchRawBondHybridWorkflow(client, quote.data.transaction_id, {
-    createIfMissing: false,
-  })
-  assertBondHybridWorkflowEditable(workflow, activeProfile, actorRole)
-
-  const clearExisting = await client
-    .from('transaction_bond_quotes')
-    .update({
-      quote_status: 'received',
-      approved_at: null,
-      updated_by: activeProfile.userId || null,
-    })
-    .eq('workflow_id', quote.data.workflow_id)
-    .eq('quote_status', 'approved_by_buyer')
-    .neq('id', quoteId)
-
-  if (clearExisting.error) throw clearExisting.error
-
-  const update = await client
-    .from('transaction_bond_quotes')
-    .update({
-      quote_status: 'approved_by_buyer',
-      approved_at: new Date().toISOString(),
-      updated_by: activeProfile.userId || null,
-    })
-    .eq('id', quoteId)
-    .select(
-      'id, transaction_id, workflow_id, bond_application_id, bank_name, quoted_amount, interest_rate, term_months, quote_status, quote_received_at, quote_expiry_at, approved_at, notes, created_by, updated_by, created_at, updated_at',
-    )
-    .single()
-  if (update.error) throw update.error
-
-  const decisionInsert = await client.from('transaction_bond_offer_decisions').insert({
-    transaction_id: quote.data.transaction_id,
-    bond_offer_id: quoteId,
-    decision: 'accepted',
-    decided_by: activeProfile.userId || null,
-    decided_by_role: normalizeRoleType(actorRole || activeProfile.role || 'buyer'),
-    notes: `${quote.data.bank_name} quote approved by buyer.`,
-  })
-
-  if (
-    decisionInsert.error &&
-    !isMissingTableError(decisionInsert.error, 'transaction_bond_offer_decisions') &&
-    decisionInsert.error.code !== '23505'
-  ) {
-    throw decisionInsert.error
-  }
-
-  await insertBondHybridWorkflowEvent(client, {
-    workflow,
-    fromStage: workflow.current_stage,
-    toStage: workflow.current_stage,
-    eventType: 'quote_approved',
-    notes: `${quote.data.bank_name} quote approved by buyer.`,
-    createdBy: activeProfile.userId || null,
-  })
-
-  if (getBondHybridFinanceStageIndex(workflow.current_stage) < getBondHybridFinanceStageIndex('quote_accepted')) {
-    await updateBondHybridFinanceStage(quote.data.transaction_id, 'quote_accepted', {
-      client,
-      actorRole,
-      notes: `${quote.data.bank_name} quote approved by buyer.`,
-    })
-  }
-
-  await logBondHybridWorkflowActivity(client, {
-    transactionId: quote.data.transaction_id,
-    actorRole,
-    message: buildBondHybridWorkflowActivityMessage({
-      action: 'quote_approved',
-      bankName: quote.data.bank_name,
-    }),
-    eventType: 'BondHybridFinanceQuoteUpdated',
-    eventData: {
-      workflowId: workflow.id,
-      quoteId,
-      bankName: quote.data.bank_name,
-      quoteStatus: 'approved_by_buyer',
-    },
-  })
-  await notifyBondHybridWorkflowRoles(client, {
-    transactionId: quote.data.transaction_id,
-    stage: 'quote_accepted',
-    message: 'Buyer has approved a finance quote.',
-    eventType: 'BondHybridFinanceQuoteUpdated',
-  })
-
-  await processWorkflowEvidenceIfPossible(client, {
-    transactionId: quote.data.transaction_id,
-    evidenceType: 'external_status',
-    evidenceId: quoteId,
-    evidenceKey: 'quote_approved',
-    status: 'approved',
-    source: 'bond_quote_approved',
-    createdBy: activeProfile.userId || null,
-    payload: {
-      workflowId: workflow.id,
-      bankName: quote.data.bank_name,
-    },
-  })
-
-  return getTransactionFinanceWorkflow(quote.data.transaction_id, { client })
+  return recordBondOfferDecision(quoteId, { ...options, decision: 'accepted' })
 }
 
 export async function recordBondOfferDecision(
   quoteId,
-  { decision = 'accepted', notes = '', actorRole = 'buyer', client: providedClient = null, token = '' } = {},
+  { decision = 'accepted', notes = '', client: providedClient = null, token = '' } = {},
 ) {
   const client = providedClient || (token ? requireClientPortalTokenClient(token) : requireClient())
   if (!quoteId) throw new Error('Bond offer is required.')
-
-  const normalizedDecision = String(decision || '')
-    .trim()
-    .toLowerCase()
-  if (!['accepted', 'declined'].includes(normalizedDecision)) {
-    throw new Error('Decision must be accepted or declined.')
-  }
-
-  let actorProfile = { userId: null, role: actorRole || 'buyer' }
-  try {
-    actorProfile = await resolveActiveProfileContext(client)
-  } catch {
-    actorProfile = { userId: null, role: actorRole || 'buyer' }
-  }
-
-  const quote = await client
-    .from('transaction_bond_quotes')
-    .select('id, transaction_id, workflow_id, bank_name')
-    .eq('id', quoteId)
-    .maybeSingle()
-  if (quote.error) throw quote.error
-  if (!quote.data) throw new Error('Bond offer was not found.')
-
-  const insert = await client
-    .from('transaction_bond_offer_decisions')
-    .insert({
-      transaction_id: quote.data.transaction_id,
-      bond_offer_id: quoteId,
-      decision: normalizedDecision,
-      decided_by: actorProfile.userId || null,
-      decided_by_role: normalizeRoleType(actorRole || actorProfile.role || 'buyer'),
-      notes: normalizeNullableText(notes),
-    })
-    .select(
-      'id, transaction_id, bond_offer_id, decision, decided_by, decided_by_role, decision_at, notes, created_at, updated_at',
-    )
-    .single()
-  if (insert.error) throw insert.error
-
-  const workflow = await fetchRawBondHybridWorkflow(client, quote.data.transaction_id, {
-    createIfMissing: false,
+  const normalizedDecision = String(decision || '').trim().toLowerCase()
+  if (!['accepted', 'declined'].includes(normalizedDecision)) throw new Error('Decision must be accepted or declined.')
+  const result = await client.rpc('bridge_record_bond_offer_decision', {
+    p_offer_id: quoteId, p_decision: normalizedDecision, p_notes: normalizeNullableText(notes) || '',
   })
-  if (workflow?.id && normalizedDecision === 'accepted') {
-    await insertBondHybridWorkflowEvent(client, {
-      workflow,
-      fromStage: workflow.current_stage,
-      toStage: workflow.current_stage,
-      eventType: 'quote_approved',
-      notes: `${quote.data.bank_name} offer accepted by buyer.`,
-      createdBy: actorProfile.userId || null,
-    })
-  }
-
-  await logTransactionEventIfPossible(client, {
-    transactionId: quote.data.transaction_id,
-    eventType: 'TransactionUpdated',
-    createdBy: actorProfile.userId || null,
-    createdByRole: normalizeRoleType(actorRole || actorProfile.role || 'buyer'),
-    eventData: {
-      source: 'transaction_bond_offer_decisions',
-      financeEventType: normalizedDecision === 'accepted' ? 'bond_offer_accepted' : 'bond_offer_declined',
-      quoteId,
-      bankName: quote.data.bank_name,
-      notes: normalizeNullableText(notes),
-    },
-  })
-
-  await notifyRolesForTransaction(client, {
-    transactionId: quote.data.transaction_id,
-    roleTypes:
-      normalizedDecision === 'accepted' ? ['bond_originator', 'agent', 'attorney'] : ['bond_originator', 'agent'],
-    title: normalizedDecision === 'accepted' ? 'Bond offer accepted' : 'Bond offer declined',
-    message:
-      normalizedDecision === 'accepted'
-        ? `${quote.data.bank_name} offer was accepted.`
-        : `${quote.data.bank_name} offer was declined.`,
-    notificationType: 'workflow_updated',
-    eventType: 'TransactionUpdated',
-    eventData: {
-      source: 'transaction_bond_offer_decisions',
-      financeEventType: normalizedDecision === 'accepted' ? 'bond_offer_accepted' : 'bond_offer_declined',
-      quoteId,
-    },
-    dedupePrefix: `bond-offer-decision:${quoteId}:${normalizedDecision}`,
-    excludeUserId: actorProfile.userId || null,
-  })
-
-  return getTransactionFinanceWorkflow(quote.data.transaction_id, { client })
+  if (result.error) throw result.error
+  // The anonymous portal must not run professional workflow/event writes.
+  if (token) return fetchClientPortalOriginatorFinanceByToken(token)
+  return getTransactionFinanceWorkflow(result.data.transactionId, { client })
 }
 
 export async function declineBondQuote(quoteId, options = {}) {
@@ -14254,6 +14130,20 @@ async function notifyRolesForTransaction(
     excludeUserId = null,
   } = {},
 ) {
+  const receipt = await client.rpc('bridge_notify_transaction_roles', {
+    p_transaction_id: transactionId,
+    p_role_types: roleTypes,
+    p_notification_type: normalizeNotificationType(notificationType),
+    p_title: title || '',
+    p_message: message || '',
+    p_event_type: normalizeEventType(eventType),
+    p_event_data: eventData || {},
+    p_dedupe_prefix: dedupePrefix,
+    p_exclude_user_id: excludeUserId || null,
+  })
+  if (!receipt.error) return Array.from({ length: Math.max(0, Number(receipt.data) || 0) }, () => ({ saved: true }))
+  if (!isMissingFunctionError(receipt.error, 'bridge_notify_transaction_roles')) throw receipt.error
+
   const targets = await fetchNotificationTargetsByRole(client, {
     transactionId,
     roleTypes,
@@ -14296,7 +14186,7 @@ async function computeTransactionReadinessSnapshot(client, transactionId) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, finance_type, purchaser_type, cash_amount, bond_amount, reservation_required, stage, current_main_stage',
+      'id, finance_type, purchaser_type, cash_amount, bond_amount, reservation_required, stage, current_main_stage, onboarding_status, onboarding_completed_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -14352,7 +14242,7 @@ async function computeTransactionReadinessSnapshot(client, transactionId) {
   const onboarding = await getOrCreateTransactionOnboardingRecord(client, {
     transactionId,
     purchaserType,
-  })
+  }, { createIfMissing: false })
   const onboardingStatus = onboarding?.status || 'Not Started'
   const salesSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus: transaction.onboarding_status || onboardingStatus,
@@ -16403,8 +16293,14 @@ function hasLifecycleAdminPermission(role) {
 }
 
 function isRegistrationConfirmationDocument(document = {}) {
-  const signal = `${document?.document_type || ''} ${document?.category || ''} ${document?.name || ''}`.toLowerCase()
-  return /registration/.test(signal)
+  const type = String(document.document_type || '').trim().toLowerCase()
+  if (/(company|companies|cipc|trust)/.test(type)) return false
+  if (['registration_confirmation', 'registration_confirmation_document', 'deeds_registration_confirmation',
+    'deeds_office_registration_confirmation', 'registration_proof', 'deeds_registration_proof', 'registered_title_deed'].includes(type)) return true
+  if (String(document.category || '').trim().toLowerCase() === 'registration_confirmation') return true
+  const name = String(document.name || '')
+  return /(registration confirmation|confirmation of registration|proof of deeds registration|deeds office registration)/i.test(name)
+    && !/(company|companies|cipc|trust registration)/i.test(name)
 }
 
 async function loadTransactionLifecycleContext(client, transactionId, { ensureRegisteredChecklist = false } = {}) {
@@ -16431,10 +16327,11 @@ async function loadTransactionLifecycleContext(client, transactionId, { ensureRe
     }
   }
 
-  const [documents, requestsByTransactionId, checklistByTransactionId, closeout] = await Promise.all([
+  const [documents, requestsByTransactionId, checklistByTransactionId, closeout, legalJourney] = await Promise.all([
     loadSharedDocuments(client, {
       transactionIds: [transactionId],
       viewer: 'internal',
+      includeSignedUrls: false,
     }),
     loadTransactionDocumentRequestsByIds(client, [transactionId]),
     loadTransactionChecklistItemsByIds(client, [transactionId]),
@@ -16442,6 +16339,7 @@ async function loadTransactionLifecycleContext(client, transactionId, { ensureRe
       if (isMissingSchemaError(error)) return null
       throw error
     }),
+    fetchSharedMatterJourney(client, transactionId, {audience:'attorney'}),
   ])
 
   const documentRequests = requestsByTransactionId[transactionId] || []
@@ -16461,6 +16359,7 @@ async function loadTransactionLifecycleContext(client, transactionId, { ensureRe
     documentRequests,
     checklistItems,
     operationalState,
+    registrationReadiness: canonicalRegistrationReadiness(transaction,legalJourney),
   }
 }
 
@@ -16479,6 +16378,7 @@ function buildRegistrationBlockers({
   const allChecklistItems = context?.checklistItems || []
   const requiredPendingChecklist = allChecklistItems.filter(
     (item) =>
+      normalizeAttorneyStageValue(item.stage) !== 'registered' &&
       normalizeDocumentRequestPriorityValue(item.priority) === 'required' &&
       TRANSACTION_CHECKLIST_PENDING_STATUSES.has(normalizeChecklistItemStatusValue(item.status)),
   )
@@ -16496,10 +16396,11 @@ function buildRegistrationBlockers({
     })
   }
 
-  if (!REGISTRATION_STAGE_KEYS.has(stageKey)) {
+  const canonical=context?.registrationReadiness
+  if (canonical?.available ? !canonical.ready : !REGISTRATION_STAGE_KEYS.has(stageKey)) {
     blockers.push({
       key: 'stage_position',
-      label: 'Incorrect stage for registration',
+      label: canonical?.available ? canonical.message : 'Incorrect stage for registration',
       description: 'Move the file to Registration Preparation before marking it as Registered.',
     })
   }
@@ -16534,6 +16435,10 @@ function buildRegistrationBlockers({
       label: 'Registration confirmation document is required',
       description: 'Upload a registration confirmation document before marking this file as Registered.',
     })
+  }
+  if (requestedDocumentId && !(context?.documents || []).some(document=>
+    document.id===requestedDocumentId && isRegistrationConfirmationDocument(document))) {
+    blockers.push({key:'registration_confirmation_document_scope',label:'Choose registration confirmation evidence from this transaction.'})
   }
 
   return {
@@ -16583,6 +16488,10 @@ export async function markTransactionRegistered({
   if (!transactionId) {
     throw new Error('Transaction is required.')
   }
+
+  const { flushWorkflowEvidence } = await loadWorkflowEvidenceMapper()
+  await flushTransactionBackgroundWork({ transactionId })
+  await flushWorkflowEvidence(transactionId, { client })
 
   const actorProfile = await resolveActiveProfileContext(client)
   if (!hasLifecycleWritePermission(actorProfile.role)) {
@@ -16821,6 +16730,10 @@ export async function markTransactionCompleted(transactionId) {
     throw new Error('Transaction is required.')
   }
 
+  const { flushWorkflowEvidence } = await loadWorkflowEvidenceMapper()
+  await flushTransactionBackgroundWork({ transactionId })
+  await flushWorkflowEvidence(transactionId, { client })
+
   const actorProfile = await resolveActiveProfileContext(client)
   if (!hasLifecycleWritePermission(actorProfile.role)) {
     throw new Error('Your role does not have permission to complete this transaction.')
@@ -16900,39 +16813,14 @@ export async function archiveTransactionLifecycle({ transactionId, reason = '' }
     throw new Error('Only Registered or Completed transactions can be archived.')
   }
 
-  const now = new Date().toISOString()
-  const updatePayload = {
-    lifecycle_state: 'archived',
-    archived_at: now,
-    archived_by_user_id: actorProfile.userId || null,
-    archive_reason: normalizeNullableText(reason),
-    updated_at: now,
-  }
-
-  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
-  if (updateResult.error) {
-    if (
-      isMissingColumnError(updateResult.error, 'lifecycle_state') ||
-      isMissingColumnError(updateResult.error, 'archived_at')
-    ) {
-      throw new Error('Archive lifecycle columns are not set up yet. Run sql/schema.sql and refresh.')
-    }
-    throw updateResult.error
-  }
-
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionUpdated',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || null,
-    eventData: {
-      source: 'archive_flow',
-      action: 'archived',
-      reason: normalizeNullableText(reason),
-    },
+  // The command also writes its audit before committing access retirement.
+  const { data, error } = await client.rpc('bridge_apply_transaction_lifecycle_action', {
+    p_transaction_id: transactionId,
+    p_action: 'archive',
+    p_reason: normalizeNullableText(reason),
   })
-
-  return fetchTransactionById(transactionId)
+  if (error) throw error
+  return data
 }
 
 export async function unarchiveTransactionLifecycle(transactionId) {
@@ -16951,45 +16839,14 @@ export async function unarchiveTransactionLifecycle(transactionId) {
     throw new Error('This transaction is not archived.')
   }
 
-  const nextState = context.transaction?.completed_at
-    ? 'completed'
-    : context.transaction?.registered_at || context.transaction?.current_main_stage === 'REG'
-      ? 'registered'
-      : 'active'
-
-  const now = new Date().toISOString()
-  const updatePayload = {
-    lifecycle_state: nextState,
-    archived_at: null,
-    archived_by_user_id: null,
-    archive_reason: null,
-    updated_at: now,
-  }
-
-  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
-  if (updateResult.error) {
-    if (
-      isMissingColumnError(updateResult.error, 'lifecycle_state') ||
-      isMissingColumnError(updateResult.error, 'archived_at')
-    ) {
-      throw new Error('Archive lifecycle columns are not set up yet. Run sql/schema.sql and refresh.')
-    }
-    throw updateResult.error
-  }
-
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionUpdated',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || null,
-    eventData: {
-      source: 'archive_flow',
-      action: 'unarchived',
-      nextState,
-    },
+  // The command also writes its audit before committing access retirement.
+  const { data, error } = await client.rpc('bridge_apply_transaction_lifecycle_action', {
+    p_transaction_id: transactionId,
+    p_action: 'unarchive',
+    p_reason: null,
   })
-
-  return fetchTransactionById(transactionId)
+  if (error) throw error
+  return data
 }
 
 export async function cancelTransactionLifecycle({ transactionId, reason = '' } = {}) {
@@ -17008,42 +16865,20 @@ export async function cancelTransactionLifecycle({ transactionId, reason = '' } 
     throw new Error('A cancellation reason is required.')
   }
 
-  const now = new Date().toISOString()
-  const updatePayload = {
-    lifecycle_state: 'cancelled',
-    cancelled_at: now,
-    cancelled_by_user_id: actorProfile.userId || null,
-    cancelled_reason: cancellationReason,
-    archived_at: null,
-    archived_by_user_id: null,
-    archive_reason: null,
-    updated_at: now,
+  const context = await loadTransactionLifecycleContext(client, transactionId)
+  if (context.transaction.registered_at || context.transaction.completed_at ||
+      ['registered', 'completed', 'archived'].includes(context.lifecycleState)) {
+    throw new Error('Undo registration or reopen the archived transaction before cancelling it.')
   }
 
-  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
-  if (updateResult.error) {
-    if (
-      isMissingColumnError(updateResult.error, 'lifecycle_state') ||
-      isMissingColumnError(updateResult.error, 'cancelled_at')
-    ) {
-      throw new Error('Cancellation lifecycle columns are not set up yet. Run sql/schema.sql and refresh.')
-    }
-    throw updateResult.error
-  }
-
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionUpdated',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || null,
-    eventData: {
-      source: 'cancellation_flow',
-      action: 'cancelled',
-      reason: cancellationReason,
-    },
+  // The command also writes its audit before committing access retirement.
+  const { data, error } = await client.rpc('bridge_apply_transaction_lifecycle_action', {
+    p_transaction_id: transactionId,
+    p_action: 'cancel',
+    p_reason: cancellationReason,
   })
-
-  return fetchTransactionById(transactionId)
+  if (error) throw error
+  return data
 }
 
 export async function getFinalReportData(transactionId) {
@@ -18254,20 +18089,26 @@ function toClientPortalFinalSignedDocumentDescriptor(document = {}) {
 }
 
 async function enrichDocuments(documents, { client = null, clientPortalFinalArtifactDescriptors = false } = {}) {
-  return Promise.all(
-    documents.map(async (document) => {
+  const results = new Array(documents.length)
+  let cursor = 0
+  await Promise.all(Array.from({length:Math.min(3,documents.length)}, async () => {
+    while(cursor < documents.length) {
+      const index = cursor++
+      const document = documents[index]
       if (clientPortalFinalArtifactDescriptors && isCanonicalFinalSignedDocumentRow(document)) {
-        return toClientPortalFinalSignedDocumentDescriptor(document)
+        results[index] = toClientPortalFinalSignedDocumentDescriptor(document)
+        continue
       }
-      return {
+      results[index] = {
         ...document,
         url: await getSignedUrl(document.file_path, {
           client,
           fileBucket: document.file_bucket || document.fileBucket || document.bucket_key || document.bucketKey || '',
         }),
       }
-    }),
-  )
+    }
+  }))
+  return results
 }
 
 function normalizeSharedDocumentRow(row, { hasClientVisibilityColumn = true } = {}) {
@@ -18539,7 +18380,7 @@ async function fetchClientPortalSafeSharedDocumentRowsByTransactionIds(client, t
 
 async function loadSharedDocuments(
   client,
-  { transactionIds = [], viewer = 'internal', viewerRole = null, clientPortalFinalArtifactDescriptors = false } = {},
+  { transactionIds = [], viewer = 'internal', viewerRole = null, clientPortalFinalArtifactDescriptors = false, includeSignedUrls = true } = {},
 ) {
   const rows = clientPortalFinalArtifactDescriptors
     ? await fetchClientPortalSafeSharedDocumentRowsByTransactionIds(client, transactionIds)
@@ -18547,7 +18388,9 @@ async function loadSharedDocuments(
   const visibleRows = filterSharedDocumentsByViewer(rows, viewer, {
     viewerRole,
   })
-  return enrichDocuments(visibleRows, { client, clientPortalFinalArtifactDescriptors })
+  return includeSignedUrls ? enrichDocuments(visibleRows, { client, clientPortalFinalArtifactDescriptors }) :
+    visibleRows.map(document => clientPortalFinalArtifactDescriptors && isCanonicalFinalSignedDocumentRow(document)
+      ? toClientPortalFinalSignedDocumentDescriptor(document) : document)
 }
 
 async function attemptPromotePendingSellerDocumentsIfPossible(client, listingId) {
@@ -20245,7 +20088,10 @@ async function fetchDevelopmentLinkedListings(client, { development = {}, units 
     rows.push(...(query.data || []))
     if ((query.data || []).length < 1000) break
   }
-  const linked = rows.filter(row => row.is_active !== false && !['archived', 'deleted'].includes(String(row.listing_status || row.status || '').toLowerCase()) && privateListingMatchesDevelopment(row, { development, units }))
+  const linked = rows.filter(row => {
+    const status = String(row.listing_status || row.status || 'draft').toLowerCase()
+    return (row.is_active !== false || ['draft', 'listing_review'].includes(status)) && !['archived', 'deleted'].includes(status) && privateListingMatchesDevelopment(row, { development, units })
+  })
   const publications = new Map(), media = new Map(), organisations = new Map()
   for (let offset = 0; offset < linked.length; offset += 100) {
     const chunk = linked.slice(offset, offset + 100)
@@ -20641,6 +20487,7 @@ export async function createDevelopmentMarketingEvent({
   if (!developmentId || !organisationId) throw new Error('Development and organisation are required.')
   if (!normalizeTextValue(title)) throw new Error('Event title is required.')
   if (!['show_day', 'launch'].includes(eventType)) throw new Error('Choose a valid event type.')
+  if (!startsAt || !Number.isFinite(new Date(startsAt).getTime())) throw new Error('Choose a valid event date and time.')
   const { data: authData, error: authError } = await client.auth.getUser()
   if (authError) throw authError
   if (!authData?.user?.id) throw new Error('Sign in before creating an event.')
@@ -20665,20 +20512,19 @@ export async function createDevelopmentMarketingEvent({
     .single()
 
   if (error) throw error
-  const activityResult = await client
-    .from('development_marketing_activity')
-    .insert({
-      development_id: developmentId,
-      actor_user_id: authData.user.id,
-      action_type: 'event_created',
-      metadata: { title: normalizeTextValue(title), event_type: eventType },
-    })
-  if (
-    activityResult.error &&
-    !isMissingTableError(activityResult.error, 'development_marketing_activity') &&
-    !isPermissionDeniedError(activityResult.error)
-  ) {
-    throw activityResult.error
+  try {
+    const activityResult = await client
+      .from('development_marketing_activity')
+      .insert({
+        development_id: developmentId,
+        actor_user_id: authData.user.id,
+        action_type: 'event_created',
+        metadata: { title: normalizeTextValue(title), event_type: eventType },
+      })
+    if (activityResult.error && !isMissingTableError(activityResult.error, 'development_marketing_activity') && !isPermissionDeniedError(activityResult.error)) throw activityResult.error
+  } catch {
+    // The authoritative event is already saved. A retry must not create it twice.
+    console.warn('[Development events] Event saved; activity history could not be recorded.')
   }
   return normalizeDevelopmentMarketingEventRow(data)
 }
@@ -25842,13 +25688,13 @@ function summarizeClientPortalMatterFinancialAccounts(accounts = []) {
   )
 }
 
-export async function fetchClientPortalMatterFinancialAccounts({ token, workspace = 'buyer' } = {}) {
+export async function fetchClientPortalMatterFinancialAccounts({ token, workspace = 'buyer', sellerAccessToken = '' } = {}) {
   const normalizedToken = normalizeNullableText(token)
   if (!normalizedToken) {
     throw new Error('Client portal token is required.')
   }
 
-  const client = requireClientPortalTokenClient(normalizedToken)
+  const client = requireClientPortalTokenClient(normalizedToken,sellerAccessToken)
   const rpc = await client.rpc('bridge_client_portal_matter_financial_accounts', {
     p_workspace: String(workspace || 'buyer')
       .trim()
@@ -25993,6 +25839,7 @@ export async function fetchTransactionCanonicalDocumentProjection(transactionId,
 export async function uploadClientPortalMatterFinancialProof({
   token,
   workspace = 'buyer',
+  sellerAccessToken = '',
   accountId,
   file,
   amount = null,
@@ -26014,7 +25861,7 @@ export async function uploadClientPortalMatterFinancialProof({
   }
 
   const filePolicy = validateDocumentUploadFile(file, { surface: 'client_financial_proof' })
-  const client = requireClientPortalTokenClient(normalizedToken)
+  const client = requireClientPortalTokenClient(normalizedToken,sellerAccessToken)
   const safeName = filePolicy.safeName
   return runRecoverableDocumentUpload({ client, scope: ['uploadClientPortalMatterFinancialProof', normalizedToken, workspace, normalizedAccountId, requestId, amount, paidOn, reference, notes], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
     toSavedReceipt: result => ({ document: buildClientPortalMatterFinancialDocumentViewModel(result.data.document), request: result.data.request || null, message: 'Document saved for attorney review.' }),
@@ -26090,6 +25937,7 @@ export async function uploadClientPortalMatterFinancialProof({
 export async function uploadClientPortalMatterFinancialRequestDocument({
   token,
   workspace = 'buyer',
+  sellerAccessToken = '',
   accountId,
   requestId,
   file,
@@ -26115,7 +25963,7 @@ export async function uploadClientPortalMatterFinancialRequestDocument({
   }
 
   const filePolicy = validateDocumentUploadFile(file, { surface: 'client_financial_request' })
-  const client = requireClientPortalTokenClient(normalizedToken)
+  const client = requireClientPortalTokenClient(normalizedToken,sellerAccessToken)
   const safeName = filePolicy.safeName
   return runRecoverableDocumentUpload({ client, scope: ['uploadClientPortalMatterFinancialRequestDocument', normalizedToken, workspace, normalizedAccountId, normalizedRequestId, amount, documentDate, reference, notes], file, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES,
     toSavedReceipt: result => ({ document: buildClientPortalMatterFinancialDocumentViewModel(result.data.document), request: result.data.request || null, message: 'Document saved for attorney review.' }),
@@ -26967,7 +26815,7 @@ async function persistTransactionRolePlayersIfPossible(
       selection_source: item.selectionSource,
       preferred_partner_id: item.preferredPartnerId || null,
       partner_relationship_id: item.partnerRelationshipId || null,
-      partner_connection_id: item.partnerConnectionId || null,
+      ...(item.partnerConnectionId ? { partner_connection_id: item.partnerConnectionId } : {}),
       partner_organisation_id: scope.organisationId || item.partnerOrganisationId || null,
       organisation_id: item.partnerOrganisationId || null,
       workspace_unit_id: item.workspaceUnitId || null,
@@ -28508,8 +28356,13 @@ async function replayRoleplayerAllocationForCompletedOnboarding(
 
 export async function saveTransactionRoleplayerSelections({ transactionId, roleplayers = [], actorRole = null, preserveUnspecifiedRoleplayers = false, source = 'buyer_onboarding_roleplayer_confirmation', allocationOnly = false } = {}) {
   if (!transactionId) throw new Error('Transaction is required.')
+  const timer = createPerfTimer('api.saveTransactionRoleplayerSelections', {
+    allocationOnly,
+    roleplayerCount: Array.isArray(roleplayers) ? roleplayers.length : 0,
+  })
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
+  timer.mark('actor_profile_resolved')
   const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
   if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin', 'attorney'].includes(normalizedActorRole)) {
     throw new Error('Your role does not have permission to manage transaction roleplayers.')
@@ -28539,6 +28392,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
   if (!transaction?.id) {
     throw new Error('Transaction not found.')
   }
+  timer.mark('transaction_loaded')
 
   if (transferAttorney && (source === 'imported_transaction_conveyancing' || allocationOnly)) {
     const firmId = await resolveAttorneyFirmIdForCreationRoleplayer(client, {
@@ -28562,6 +28416,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       throw new Error(`Unable to save ${selection.roleType.replaceAll('_', ' ')} roleplayer.`)
     }
   }
+  timer.mark('roleplayers_persisted')
 
   const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
   // Standalone allocation changes only the chosen professional; buyer delivery
@@ -28587,6 +28442,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     roleplayerPatch,
     'id, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, updated_at',
   )
+  timer.mark('transaction_updated')
 
   await propagateTransactionRoleplayersIfPossible(client, {
     transactionId,
@@ -28617,6 +28473,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
     financeType: transaction.finance_type || 'cash',
     preserveWorkflowState: allocationOnly,
   })
+  timer.mark('roleplayers_propagated')
 
   await logTransactionEventIfPossible(client, {
     transactionId,
@@ -28667,6 +28524,7 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       },
     })
   }
+  timer.mark('allocation_events_logged')
 
   if (!allocationOnly) {
     await replayRoleplayerAllocationForCompletedOnboarding(client, {
@@ -28692,8 +28550,18 @@ export async function saveTransactionRoleplayerSelections({ transactionId, rolep
       })),
     },
   })
+  timer.mark('workflow_change_published')
 
-  return fetchTransactionById(transactionId)
+  // Standalone allocation callers refresh only the active workspace dataset.
+  // Returning the full transaction detail here caused the dialog to wait for a
+  // broad read, followed by another focused refresh in the page.
+  if (allocationOnly) {
+    timer.end({ fullTransactionDetailSkipped: true })
+    return { transaction: updatedTransaction, allocationOnly: true }
+  }
+  const detail = await fetchTransactionById(transactionId)
+  timer.end({ fullTransactionDetailSkipped: false })
+  return detail
 }
 
 export async function reassignDeclinedTransferAttorneyInstruction({
@@ -30539,44 +30407,17 @@ async function persistTransactionCommissionSnapshotIfPossible(
     updated_at: new Date().toISOString(),
   }
 
-  let upsertResult = await client
-    .from('transaction_commissions')
-    .upsert(payload, { onConflict: 'transaction_id' })
-    .select('id')
-    .single()
+  // The canonical command checks the transaction, organisation and assigned
+  // actor. Direct table writes are intentionally restricted to administrators.
+  const rpcPayload = Object.fromEntries(
+    Object.entries(payload)
+      .filter(([key]) => key !== 'updated_at')
+      .map(([key, value]) => [`p_${key}`, value]),
+  )
+  const result = await client.rpc('bridge_upsert_transaction_commission_snapshot', rpcPayload)
+  if (result.error) throw result.error
+  return payload
 
-  if (!upsertResult.error) {
-    return payload
-  }
-
-  if (
-    !isMissingTableError(upsertResult.error, 'transaction_commissions') &&
-    !isMissingColumnError(upsertResult.error, 'commission_structure_name_snapshot') &&
-    !isMissingColumnError(upsertResult.error, 'assigned_agent_email') &&
-    !isMissingColumnError(upsertResult.error, 'assigned_agent_id') &&
-    !isOnConflictConstraintError(upsertResult.error, 'transaction_id')
-  ) {
-    throw upsertResult.error
-  }
-
-  const fallbackPayload = {
-    transaction_id: transactionId,
-    gross_commission_amount: normalizeOptionalNumber(commissionSnapshot.grossCommissionAmount),
-    agent_commission_amount: normalizeOptionalNumber(commissionSnapshot.agentCommissionAmount),
-    agency_commission_amount: normalizeOptionalNumber(commissionSnapshot.agencyCommissionAmount),
-    status: normalizeNullableText(commissionSnapshot.status) || 'projected',
-  }
-
-  upsertResult = await client.from('transaction_commissions').insert(fallbackPayload)
-  if (
-    upsertResult.error &&
-    !isMissingTableError(upsertResult.error, 'transaction_commissions') &&
-    !isMissingColumnError(upsertResult.error, 'gross_commission_amount')
-  ) {
-    throw upsertResult.error
-  }
-
-  return fallbackPayload
 }
 
 async function persistCommissionSnapshotToTransactionRowIfPossible(
@@ -31223,6 +31064,16 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   if (!actorUserId) {
     throw new Error('Please sign in again before creating a transaction.')
   }
+  const creationSession = typeof client.auth?.getSession === 'function'
+    ? (await client.auth.getSession())?.data?.session : null
+  if (creationSession?.user?.id && creationSession.user.id !== actorUserId) {
+    throw new Error('Your signed-in account changed. Retry transaction creation with the current account.')
+  }
+  // Follow-up work can outlive the dialog or an account switch. Keep the
+  // initiating actor's existing token rather than borrowing the next session.
+  const postCreateClient = creationSession?.access_token
+    ? createScopedSupabaseClient({ Authorization: `Bearer ${creationSession.access_token}` }) || client
+    : client
   const actorRole = normalizeRoleType(actorProfile.role || 'agent')
   const allowIncomplete = Boolean(options?.allowIncomplete)
   const skipClientPortalSetup = Boolean(options?.skipClientPortalSetup)
@@ -31283,6 +31134,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     resolvedOrganisationId = await resolveDevelopmentOrganisationId(client, setup.developmentId)
   }
 
+  if (transactionType === 'developer_sale' && setup.unitId) {
+    const activeDeal = await client.from('transactions').select('id')
+      .eq('unit_id', setup.unitId).eq('is_active', true).limit(1).maybeSingle()
+    if (activeDeal.error) throw activeDeal.error
+    if (activeDeal.data) {
+      const error = new Error('This unit already has an active transaction. Open that transaction to make changes.')
+      error.code = 'UNIT_ALREADY_HAS_ACTIVE_TRANSACTION'
+      error.existingTransactionId = activeDeal.data.id
+      throw error
+    }
+  }
+
   let buyer = null
   const selectedBuyerProfileId = normalizeNullableUuid(setup?.buyerProfileId || setup?.buyer_profile_id)
   if (selectedBuyerProfileId) {
@@ -31309,9 +31172,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     throw new Error('Buyer full name is required.')
   }
 
-  if (transactionType === 'developer_sale' && setup.unitId) {
-    await deactivateExistingUnitTransactions(client, setup.unitId)
-  }
 
   let developmentSettings = DEFAULT_DEVELOPMENT_SETTINGS
   if (transactionType === 'developer_sale' && setup.developmentId) {
@@ -31532,8 +31392,20 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     status: 'initializing',
   })
 
+  // Copy an explicit wizard answer into the canonical cancellation flags.
+  // Unknown remains in the capture snapshot; these booleans are NOT NULL.
+  const capturedSellerBondStatus = finance.captureSnapshot?.sellerBondStatus
+  const sellerBondCapturePatch = ['yes', 'no'].includes(capturedSellerBondStatus)
+    ? {
+        seller_has_existing_bond: capturedSellerBondStatus === 'yes',
+        existing_bond: capturedSellerBondStatus === 'yes',
+        cancellation_required: capturedSellerBondStatus === 'yes',
+      }
+    : {}
+
   const transactionPayload = {
     ...initialCreationLifecyclePatch,
+    ...sellerBondCapturePatch,
     organisation_id: resolvedOrganisationId,
     listing_id: linkedPrivateListingId,
     development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
@@ -31579,7 +31451,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     reservation_status: reservationStatus,
     reservation_payment_details: reservationRequired ? reservationPaymentDetails : {},
     alteration_charge_treatment: transactionType === 'developer_sale' ? alterationChargeTreatment : null,
-    is_active: true,
     reservation_paid_date:
       reservationRequired && ['paid', 'verified'].includes(reservationStatus)
         ? new Date().toISOString().slice(0, 10)
@@ -31674,57 +31545,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     return result
   }
 
-  let transactionResult = await executeTransactionMutationWithTargetedColumnRetry({
+  const transactionResult = await executeTransactionMutationWithTargetedColumnRetry({
     payload: insertTransactionPayload,
     execute: executeInsertMutation,
   })
 
-  if (transactionResult.error?.code === '23505') {
-    const { data: existingTransaction, error: existingTransactionError } = await client
-      .from('transactions')
-      .select('id')
-      .eq('unit_id', setup.unitId)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (existingTransactionError) throw existingTransactionError
-    if (!existingTransaction) throw transactionResult.error
-
-    const conflictPayload = {
-      ...insertTransactionPayload,
-      updated_at: new Date().toISOString(),
-    }
-    const executeUpdateMutation = async (payload) => {
-      let result = await client
-        .from('transactions')
-        .update(payload)
-        .eq('id', existingTransaction.id)
-        .select(transactionMutationSelect)
-        .limit(1)
-        .single()
-
-      if (
-        result.error &&
-        isFinanceTypeConstraintError(result.error) &&
-        payload.finance_type === 'combination'
-      ) {
-        result = await client
-          .from('transactions')
-          .update({ ...payload, finance_type: 'hybrid' })
-          .eq('id', existingTransaction.id)
-          .select(transactionMutationSelect)
-          .limit(1)
-          .single()
-      }
-      return result
-    }
-
-    transactionResult = await executeTransactionMutationWithTargetedColumnRetry({
-      payload: conflictPayload,
-      execute: executeUpdateMutation,
-    })
-  }
+  // A creation conflict must never overwrite another transaction.
   if (transactionResult.error) {
     throw transactionResult.error
   }
@@ -31735,22 +31561,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     if (lifecycleUpdate.error) {
       const persistenceError = new Error('Transaction creation status could not be persisted.')
       persistenceError.code = 'TRANSACTION_CREATION_STATUS_PERSISTENCE_FAILED'
+      persistenceError.transactionId = transaction.id
       persistenceError.cause = lifecycleUpdate.error
       throw persistenceError
     }
-  }
-
-  // Saving the deal and reserving its unit are the interactive boundary. The
-  // remaining setup can involve several independent database workflows (legal
-  // routing, requirement generation and portal provisioning), so it must not
-  // hold the creator on the final wizard step.
-  if (setup.unitId) {
-    const unitUpdatePayload = { status: resolvedDetailedStage }
-    const normalizedSalesPrice = normalizeOptionalNumber(setup.salesPrice)
-    if (normalizedSalesPrice !== null) unitUpdatePayload.price = normalizedSalesPrice
-
-    const { error: updateUnitError } = await client.from('units').update(unitUpdatePayload).eq('id', setup.unitId)
-    if (updateUnitError) throw updateUnitError
   }
 
   const setupWarnings = []
@@ -31774,6 +31588,15 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   let sellerHandoff = null
 
   const runCriticalSetup = async () => {
+  if (setup.unitId) {
+    const unitUpdatePayload = { status: resolvedDetailedStage }
+    const normalizedSalesPrice = normalizeOptionalNumber(setup.salesPrice)
+    if (normalizedSalesPrice !== null) unitUpdatePayload.price = normalizedSalesPrice
+
+    const { error: updateUnitError } = await client.from('units').update(unitUpdatePayload).eq('id', setup.unitId)
+    if (updateUnitError) throw updateUnitError
+  }
+
 
   if (persistedReservationRequired) {
     const persistedReservation = await persistReservationStateIfPossible(client, {
@@ -32200,6 +32023,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   // canonical document setup have completed. Keep telemetry, notification and
   // projection work off the interactive create path.
   const runPostCreateWork = async () => {
+  const client = postCreateClient
   const financePayload = {
     transaction_id: transaction.id,
     proof_of_funds_received: normalizeOptionalBoolean(finance.proofOfFundsReceived),
@@ -32459,11 +32283,27 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   return postCreateResult
   }
 
-  void runCriticalSetup()
-    .then(runPostCreateWork)
-    .catch((error) => {
-      console.warn('[createTransactionFromWizard] asynchronous setup failed', error)
+  // Critical setup must finish before success is returned. The inactive
+  // creation receipt remains available for recovery if any required step fails.
+  try {
+    await runCriticalSetup()
+  } catch (error) {
+    if (error instanceof TransactionCreationIncompleteError) throw error
+    await persistCreationLifecyclePatch(buildTransactionCreationPersistencePatch({
+      lifecycle: creationLifecycle,
+      status: 'incomplete',
+      error,
+      warnings: setupWarnings,
+    }))
+    throw new TransactionCreationIncompleteError({
+      transactionId: transaction.id,
+      incompleteSteps: getTransactionCreationIncompleteSteps(creationLifecycle),
+      cause: error,
     })
+  }
+  void trackTransactionBackgroundWork(transaction.id, runPostCreateWork()).catch((error) => {
+    console.warn('[createTransactionFromWizard] post-create updates failed', error)
+  })
 
   return {
     transactionId: transaction.id,
@@ -32477,15 +32317,15 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
           setup.propertyDescription ||
           'Private property matter'
         : null,
-    onboardingToken: null,
-    clientPortalToken: null,
-    clientPortalPath: '',
-    buyerPortalToken: null,
-    buyerPortalPath: '',
-    privateListingId: linkedPrivateListingId || null,
-    sellerOnboardingToken: null,
-    sellerPortalToken: null,
-    sellerPortalPath: '',
+    onboardingToken: onboardingRecord?.token || null,
+    clientPortalToken: clientPortalLink?.token || null,
+    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
+    buyerPortalToken: clientPortalLink?.token || null,
+    buyerPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
+    privateListingId: sellerHandoff?.privateListingId || linkedPrivateListingId || null,
+    sellerOnboardingToken: sellerHandoff?.sellerOnboardingToken || null,
+    sellerPortalToken: sellerHandoff?.sellerPortalToken || null,
+    sellerPortalPath: sellerHandoff?.sellerPortalPath || '',
     reservationRequired: Boolean(transactionPayload.reservation_required),
     reservationAmount: transactionPayload.reservation_amount ?? null,
     reservationAmountType: transactionPayload.reservation_amount_type,
@@ -32495,7 +32335,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     buyerPartyCount: buyerParties.length,
     rolePlayerCount: mergedRolePlayerSelections.length,
     handoffChecklist,
-    setupPending: true,
+    setupPending: false,
     setupHealth: buildNewTransactionSetupHealth({
       setupWarnings,
       handoffChecklist,
@@ -35770,7 +35610,7 @@ async function buildTransactionWorkspaceShellFromTransaction(client, transaction
   if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) throw buyerQuery.error
   if (developmentQuery.error && !isMissingSchemaError(developmentQuery.error)) throw developmentQuery.error
 
-  const buyer = buyerQuery.data || null
+  const buyer = buyerQuery.data || (Array.isArray(transaction.buyer) ? transaction.buyer[0] : transaction.buyer) || null
   const development = transaction.property_development || transaction.propertyDevelopment || (developmentQuery.data
     ? { ...developmentQuery.data, profile: developmentProfile || null, developmentProfile: developmentProfile || null }
     : null)
@@ -35829,7 +35669,7 @@ export async function fetchTransactionCoreById(transactionId) {
 // long-lived columns form the route contract; richer metadata is hydrated after
 // the workspace is already interactive.
 const TRANSACTION_ROUTE_CORE_SELECT =
-  'id, development_id, unit_id, listing_id, buyer_id, matter_number, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, lifecycle_state, current_main_stage, current_sub_stage_summary, current_detailed_stage, operational_state, stage, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, development_id, unit_id, listing_id, buyer_id, buyer:buyers!transactions_buyer_id_fkey(id,name,phone,email), onboarding_status, onboarding_completed_at, seller_onboarding_status, seller_name, seller_email, seller_phone, registered_at, completed_at, assigned_attorney_email, purchaser_type, finance_managed_by, matter_number, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, seller_has_existing_bond, existing_bond, cancellation_required, routing_profile_version, routing_profile_json, lifecycle_state, current_main_stage, current_sub_stage_summary, current_detailed_stage, operational_state, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 export async function fetchTransactionRouteCoreById(transactionId) {
   if (!transactionId) return null
@@ -36161,7 +36001,64 @@ export async function fetchTransactionPartnersWorkspace(transactionId, options =
       .eq('transaction_id', canonicalTransactionId)
   }
   if (participantsQuery.error && !isMissingSchemaError(participantsQuery.error)) throw participantsQuery.error
-  const transactionParticipants = (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row))
+  let transactionParticipants = (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row))
+  const attorneyOrganisationIds = [...new Set(rolePlayers
+    .filter((row) => ['transfer_attorney', 'bond_attorney', 'cancellation_attorney'].includes(
+      normalizeTextValue(row?.roleType || row?.role_type).toLowerCase(),
+    ))
+    .map((row) => normalizeTextValue(row?.organisationId || row?.organisation_id || row?.snapshot?.organisationId))
+    .filter(Boolean))]
+  if (attorneyOrganisationIds.length) {
+    let firmQuery = await client
+      .from('attorney_firms')
+      .select('organisation_id, name, email, phone')
+      .in('organisation_id', attorneyOrganisationIds)
+      .eq('is_active', true)
+    if (firmQuery.error && isMissingColumnError(firmQuery.error, 'is_active')) {
+      firmQuery = await client
+        .from('attorney_firms')
+        .select('organisation_id, name, email, phone')
+        .in('organisation_id', attorneyOrganisationIds)
+    }
+    if (
+      firmQuery.error &&
+      !isMissingTableError(firmQuery.error, 'attorney_firms') &&
+      !isMissingSchemaError(firmQuery.error) &&
+      !isPermissionDeniedError(firmQuery.error)
+    ) throw firmQuery.error
+
+    const firmsByOrganisation = new Map((firmQuery.data || []).map((firm) => [
+      normalizeTextValue(firm.organisation_id), firm,
+    ]).filter(([organisationId]) => organisationId))
+    if (firmsByOrganisation.size) {
+      transactionParticipants = transactionParticipants.map((participant) => {
+        if (participant.roleType !== 'attorney') return participant
+        const roleKey = participant.legalRole === 'transfer'
+          ? 'transfer_attorney'
+          : participant.legalRole === 'bond'
+            ? 'bond_attorney'
+            : participant.legalRole === 'cancellation'
+              ? 'cancellation_attorney'
+              : ''
+        const roleplayer = rolePlayers.find((row) =>
+          normalizeTextValue(row?.roleType || row?.role_type).toLowerCase() === roleKey,
+        )
+        const organisationId = normalizeTextValue(
+          roleplayer?.organisationId || roleplayer?.organisation_id || roleplayer?.snapshot?.organisationId,
+        )
+        const firm = firmsByOrganisation.get(organisationId)
+        if (!firm) return participant
+        return {
+          ...participant,
+          participantName: participant.participantName || normalizeTextValue(firm.name),
+          participantEmail: participant.participantEmail || normalizeTextValue(firm.email),
+          participantPhone: participant.participantPhone || normalizeTextValue(firm.phone),
+          organisationName: normalizeTextValue(firm.name),
+          firmName: normalizeTextValue(firm.name),
+        }
+      })
+    }
+  }
   return {
     transactionParticipants,
     rolePlayers,
@@ -39226,6 +39123,14 @@ function nullableUnknown(value) {
 }
 
 function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) {
+  const priorPurchaserType = normalizePurchaserType(transaction.purchaser_type)
+  const purchaserTypeInput = input.purchaserType ?? input.purchaser_type ?? transaction.purchaser_type
+  const requestedPurchaserType = normalizeRoutingKey(purchaserTypeInput) === 'unknown'
+    ? priorPurchaserType : normalizePurchaserType(purchaserTypeInput)
+  // The routing editor selects a broad legal entity. Choosing Individual must
+  // not erase the existing natural-person marriage/residency branch.
+  const purchaserType = requestedPurchaserType === 'individual' && !['company', 'trust'].includes(priorPurchaserType)
+    ? priorPurchaserType : requestedPurchaserType
   const financeType = normalizeRoutingFinanceType(
     input.financeType ?? input.finance_type ?? transaction.finance_type,
     'unknown',
@@ -39249,9 +39154,9 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
       input.transferTaxActor,
     )
     : existingRoutingProfile.transferTaxDecision || existingRoutingProfile.transfer_tax_decision
-  const decisionVatTreatment = transferTaxDecision?.status === 'confirmed' && [
-    'transfer_duty', 'vat', 'zero_rated_going_concern',
-  ].includes(transferTaxDecision.route)
+  const decisionVatTreatment = transferTaxDecision?.status === 'confirmed'
+    && TRANSFER_TAX_ROUTES.includes(transferTaxDecision.route)
+    && transferTaxDecision.route !== 'needs_tax_advice'
     ? transferTaxDecision.route
     : null
   const nextTransaction = {
@@ -39266,10 +39171,8 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
     transaction_type: nullableUnknown(input.transactionType ?? input.transaction_type ?? transaction.transaction_type),
     property_type: normalizeNullableText(input.propertyType ?? input.property_type ?? transaction.property_type),
     property_tenure: nullableUnknown(input.propertyTenure ?? input.property_tenure ?? transaction.property_tenure),
-    purchaser_type: normalizePurchaserType(input.purchaserType ?? input.purchaser_type ?? transaction.purchaser_type),
-    buyer_entity_type: normalizePurchaserType(
-      input.purchaserType ?? input.purchaser_type ?? transaction.purchaser_type,
-    ),
+    purchaser_type: purchaserType,
+    buyer_entity_type: purchaserType,
     seller_type: nullableUnknown(input.sellerType ?? input.seller_type ?? transaction.seller_type),
     seller_entity_type: nullableUnknown(input.sellerType ?? input.seller_type ?? transaction.seller_type),
     seller_has_existing_bond: sellerHasExistingBond,
@@ -39305,7 +39208,7 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
   const resolvedFinanceType = routingProfile.financeType === 'hybrid' ? 'hybrid' : financeType
   const resolvedTransactionType =
     routingProfile.transactionType && routingProfile.transactionType !== 'unknown'
-      ? routingProfile.transactionType
+      ? normalizeSaleStoredTransactionType(routingProfile.transactionType, '')
       : nextTransaction.transaction_type
   return {
     payload: {
@@ -39316,10 +39219,7 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
         routingProfile.propertyTenure && routingProfile.propertyTenure !== 'unknown'
           ? routingProfile.propertyTenure
           : nextTransaction.property_tenure || null,
-      purchaser_type:
-        routingProfile.buyerEntityType && routingProfile.buyerEntityType !== 'unknown'
-          ? routingProfile.buyerEntityType
-          : nextTransaction.purchaser_type || null,
+      purchaser_type: getTransactionPurchaserTypeValue(nextTransaction.purchaser_type),
       seller_type:
         routingProfile.sellerEntityType && routingProfile.sellerEntityType !== 'unknown'
           ? routingProfile.sellerEntityType
@@ -39486,6 +39386,21 @@ export async function saveTransactionRoutingProfile({
   }
 
   if (updateResult.error) throw updateResult.error
+
+  // A changed legal route can introduce an entire document pack. Persist that
+  // pack before returning a successful routing save; existing evidence and its
+  // approvals are retained by the protected reconciliation RPC.
+  try {
+    await resolveTransactionDocumentRequirements({
+      transactionId, client, writeLegacyProjection: false,
+      persistenceMode: TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc,
+    })
+  } catch (cause) {
+    const error = new Error('Routing facts were saved, but document requirements could not be refreshed. Retry the routing save before proceeding.')
+    error.code = 'ROUTING_DOCUMENT_RECONCILIATION_REQUIRED'
+    error.cause = cause
+    throw error
+  }
 
   try {
     await logTransactionEventIfPossible(client, {
@@ -42555,7 +42470,7 @@ export async function revokeClientPortalLink(linkId) {
   }
 }
 
-export async function getOrCreateTransactionOnboarding({ transactionId, purchaserType = 'individual' }) {
+export async function getOrCreateTransactionOnboarding({ transactionId, purchaserType = 'individual', prepareDocuments = true }) {
   const client = requireClient()
   const normalizedTransactionId = normalizeNullableUuid(transactionId)
 
@@ -42623,15 +42538,17 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
 
   const resolvedType = normalizePurchaserType(transaction?.purchaser_type || purchaserType || onboarding.purchaserType)
   const resolvedFinanceType = normalizeFinanceType(transaction?.finance_type || 'cash')
-  const requiredDocuments = await ensureTransactionRequiredDocuments(client, {
-    transactionId: normalizedTransactionId,
-    purchaserType: resolvedType,
-    financeType: resolvedFinanceType,
-    reservationRequired: Boolean(transaction?.reservation_required),
-    cashAmount: transaction?.cash_amount,
-    bondAmount: transaction?.bond_amount,
-    formData: {},
-  })
+  const requiredDocuments = prepareDocuments
+    ? await ensureTransactionRequiredDocuments(client, {
+      transactionId: normalizedTransactionId,
+      purchaserType: resolvedType,
+      financeType: resolvedFinanceType,
+      reservationRequired: Boolean(transaction?.reservation_required),
+      cashAmount: transaction?.cash_amount,
+      bondAmount: transaction?.bond_amount,
+      formData: {},
+    })
+    : []
 
   return {
     ...onboarding,
@@ -43971,25 +43888,27 @@ export async function fetchClientOnboardingByToken(token, buyerTarget = {}) {
     client,
     onboarding.transactionId,
   )
-  const formDataRow = await fetchOnboardingFormDataForTransaction(
+  const developmentId = unit?.development_id || transaction.development_id
+  const formDataPromise = fetchOnboardingFormDataForTransaction(
     client,
     transaction.id,
     transaction.purchaser_type || onboarding.purchaserType,
   )
-  const developmentId = unit?.development_id || transaction.development_id
-  let rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(DEFAULT_DEVELOPMENT_SETTINGS)
-  if (developmentId) {
-    try {
-      const developmentSettings = await ensureDevelopmentSettings(client, developmentId, {
-        createIfMissing: false,
+  const developmentSettingsPromise = developmentId
+    ? ensureDevelopmentSettings(client, developmentId, { createIfMissing: false })
+      .then((settings) => normalizeBuyerBondOriginatorPolicy(settings))
+      .catch((settingsError) => {
+        if (!isMissingSchemaError(settingsError) && !isPermissionDeniedError(settingsError)) throw settingsError
+        return normalizeBuyerBondOriginatorPolicy(DEFAULT_DEVELOPMENT_SETTINGS)
       })
-      rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(developmentSettings)
-    } catch (settingsError) {
-      if (!isMissingSchemaError(settingsError) && !isPermissionDeniedError(settingsError)) {
-        throw settingsError
-      }
-    }
-  }
+    : Promise.resolve(normalizeBuyerBondOriginatorPolicy(DEFAULT_DEVELOPMENT_SETTINGS))
+  const [formDataRow, rolePlayerPolicy, fundingSources, uploadedDocuments, buyerPortalAccess] = await Promise.all([
+    formDataPromise,
+    developmentSettingsPromise,
+    fetchTransactionFundingSources(client, transaction.id),
+    loadSharedDocuments(client, { transactionIds: [transaction.id], viewer: 'client' }),
+    getBuyerOnboardingPortalAccess(client),
+  ])
   let existingFormData = formDataRow?.formData || {}
   existingFormData = await hydrateSharedBuyerCapture(client, existingFormData, buyerTarget)
   const financeSnapshot = getOnboardingFinanceSnapshot({
@@ -44010,8 +43929,6 @@ export async function fetchClientOnboardingByToken(token, buyerTarget = {}) {
     financeType: financeSnapshot.financeType,
     formData: existingFormData,
   })
-  const fundingSources = await fetchTransactionFundingSources(client, transaction.id)
-
   const requiredDocuments = await ensureTransactionRequiredDocuments(
     client,
     {
@@ -44025,17 +43942,11 @@ export async function fetchClientOnboardingByToken(token, buyerTarget = {}) {
     },
     { sync: false },
   )
-
-  const uploadedDocuments = await loadSharedDocuments(client, {
-    transactionIds: [transaction.id],
-    viewer: 'client',
-  })
   const checklistResult = buildRequiredChecklistFromRows(requiredDocuments, uploadedDocuments)
 
   // An onboarding token is not the same capability as a portal token.  Use
   // the server-side exchange rather than trying to select or create raw links
   // under the onboarding header (which RLS correctly disallows).
-  const buyerPortalAccess = await getBuyerOnboardingPortalAccess(client)
   const clientPortalLink = buyerPortalAccess.clientPortalLink
 
   const mergedFormData = {
@@ -44488,10 +44399,9 @@ async function notifyTransactionOwnerOnOnboardingSubmitted(
     ? `Client ${resolvedBuyerName} buying ${propertyLine} has submitted the onboarding. Prepare their OTP and upload it to the transaction.`
     : `Client ${resolvedBuyerName} has submitted the onboarding. Prepare their OTP and upload it to the transaction.`
 
-  return createTransactionNotificationIfPossible(client, {
+  return notifyRolesForTransaction(client, {
     transactionId,
-    userId: ownerUserId,
-    roleType: ownerRoleType,
+    roleTypes: [ownerRoleType],
     notificationType: 'readiness_updated',
     title: 'Buyer Onboarding Submitted',
     message,
@@ -44781,7 +44691,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       cashAmount: financeSnapshot.cashAmount,
       bondAmount: financeSnapshot.bondAmount,
       formData: formDataForPersistence,
-    })
+    }, { emitAudit: false })
   } catch (requiredDocumentsError) {
     console.warn('Buyer onboarding required document projection failed after snapshot save', requiredDocumentsError)
     await recordBuyerOnboardingProjectionFailureMarker(client, {
@@ -44857,47 +44767,6 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         patch: informationSheetCapture.requirementPatch,
       })
 
-      if (informationSheetCapture.workflowEvidence) {
-        try {
-          await processWorkflowEvidenceIfPossible(client, {
-            transactionId: transaction.id,
-            ...informationSheetCapture.workflowEvidence,
-            createdBy: null,
-            payload: {
-              captureKind: informationSheetCapture.captureKind,
-              documentKey: informationSheetCapture.documentKey,
-              onboardingId: updatedOnboarding.id,
-              uploadedDocumentId: informationSheetCapture.uploadedDocumentId,
-            },
-          })
-        } catch (informationSheetEvidenceError) {
-          if (!isPermissionDeniedError(informationSheetEvidenceError) && !isMissingSchemaError(informationSheetEvidenceError)) {
-            throw informationSheetEvidenceError
-          }
-          console.warn('Information sheet workflow evidence projection skipped', informationSheetEvidenceError)
-        }
-      }
-
-      if (informationSheetCapture.event) {
-        try {
-          await logTransactionEventIfPossible(client, {
-            transactionId: transaction.id,
-            eventType: informationSheetCapture.event.type,
-            createdByRole: 'client',
-            eventData: {
-              ...informationSheetCapture.event.data,
-              version: informationSheetCapture.version,
-              status: informationSheetCapture.status,
-              isUploaded: informationSheetCapture.isUploaded,
-            },
-          })
-        } catch (informationSheetEventError) {
-          if (!isPermissionDeniedError(informationSheetEventError) && !isMissingSchemaError(informationSheetEventError)) {
-            throw informationSheetEventError
-          }
-          console.warn('Information sheet document capture event skipped', informationSheetEventError)
-        }
-      }
     } catch (informationSheetError) {
       console.warn('Buyer onboarding information sheet projection failed after snapshot save', informationSheetError)
       await recordBuyerOnboardingProjectionFailureMarker(client, {
@@ -44932,33 +44801,9 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       })
     }
 
-    // The token-bound snapshot RPC has already recorded the immutable
-    // completion event.  Other internal projections are best-effort from a
-    // bearer-token browser session and must not turn a completed onboarding
-    // into a client-facing failure.
-    try {
-      await processWorkflowEvidenceIfPossible(client, {
-        transactionId: transaction.id,
-        evidenceType: 'onboarding',
-        evidenceId: onboarding.id,
-        evidenceKey: 'buyer_onboarding_complete',
-        status: 'completed',
-        source: 'buyer_onboarding_completed',
-        createdBy: null,
-        payload: {
-          purchaserType,
-          financeType: financeSnapshot.financeType,
-        },
-      })
-    } catch (workflowEvidenceError) {
-      console.warn('Onboarding workflow evidence projection skipped', workflowEvidenceError)
-      await recordBuyerOnboardingProjectionFailureMarker(client, {
-        ...projectionMarkerContext,
-        eventType: 'buyer_onboarding_workflow_evidence_projection_failed',
-        projection: 'workflow_evidence',
-        error: workflowEvidenceError,
-      })
-    }
+    // The token-bound snapshot RPC owns the immutable completion audit.
+    // Professional reporting reads the saved facts; a bearer-token browser
+    // must not write staff workflow, audit or system-comment tables.
 
     let otpPendingState = {
       onboardingStatus: 'awaiting_signed_otp',
@@ -45038,42 +44883,9 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       source: 'buyer_onboarding_completed',
     })
 
-    try {
-      await logTransactionEventIfPossible(client, {
-        transactionId: transaction.id,
-        eventType: buyerOnboardingCompletionHook.event.type,
-        createdByRole: 'client',
-        eventData: {
-          ...buyerOnboardingCompletionHook.event.data,
-          version: buyerOnboardingCompletionHook.version,
-          onboardingId: buyerOnboardingCompletionHook.onboardingId,
-          completedAt: buyerOnboardingCompletionHook.completedAt,
-          nextOperationalActions: buyerOnboardingCompletionHook.nextOperationalActions,
-          steps: buyerOnboardingCompletionHook.steps,
-          buyerCompletion: buyerCompletionProjection?.target || null,
-        },
-      })
-    } catch (completionHookEventError) {
-      if (!isPermissionDeniedError(completionHookEventError) && !isMissingSchemaError(completionHookEventError)) {
-        throw completionHookEventError
-      }
-      console.warn('Buyer onboarding completion hook event skipped', completionHookEventError)
-    }
-
     if (bondAssistanceRoutingDecision?.event) {
       try {
-        await logTransactionEventIfPossible(client, {
-          transactionId: transaction.id,
-          eventType: bondAssistanceRoutingDecision.event.type,
-          createdByRole: 'client',
-          eventData: {
-            ...bondAssistanceRoutingDecision.event.data,
-            onboardingId: bondAssistanceRoutingDecision.onboardingId,
-            completedAt: bondAssistanceRoutingDecision.completedAt,
-            assigned: bondAssistanceRoutingDecision.assigned,
-            agentSelectionPoint: bondAssistanceRoutingDecision.agentSelectionPoint,
-          },
-        })
+
         if (bondAssistanceRoutingDecision.notification) {
           await notifyRolesForTransaction(client, {
             transactionId: transaction.id,
@@ -45090,17 +44902,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
     if (bondFallbackQueueCandidate?.required && bondFallbackQueueCandidate.event) {
       try {
-        await logTransactionEventIfPossible(client, {
-          transactionId: transaction.id,
-          eventType: bondFallbackQueueCandidate.event.type,
-          createdByRole: 'client',
-          eventData: {
-            ...bondFallbackQueueCandidate.event.data,
-            onboardingId: bondFallbackQueueCandidate.onboardingId,
-            completedAt: bondFallbackQueueCandidate.completedAt,
-            reasons: bondFallbackQueueCandidate.reasons,
-          },
-        })
+
         await notifyRolesForTransaction(client, {
           transactionId: transaction.id,
           roleTypes: ['agent', 'developer'],
@@ -45128,17 +44930,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
     if (attorneyHandoffRepairQueueCandidate?.required && attorneyHandoffRepairQueueCandidate.event) {
       try {
-        await logTransactionEventIfPossible(client, {
-          transactionId: transaction.id,
-          eventType: attorneyHandoffRepairQueueCandidate.event.type,
-          createdByRole: 'client',
-          eventData: {
-            ...attorneyHandoffRepairQueueCandidate.event.data,
-            onboardingId: attorneyHandoffRepairQueueCandidate.onboardingId,
-            completedAt: attorneyHandoffRepairQueueCandidate.completedAt,
-            reasons: attorneyHandoffRepairQueueCandidate.reasons,
-          },
-        })
+
         await notifyRolesForTransaction(client, {
           transactionId: transaction.id,
           roleTypes: ['agent', 'developer'],
@@ -45164,37 +44956,6 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         console.warn('Attorney handoff repair queue projection skipped', attorneyRepairError)
       }
     }
-
-    try {
-      await logTransactionEventIfPossible(client, {
-        transactionId: transaction.id,
-        eventType: 'finance_type_selected',
-        createdByRole: 'client',
-        eventData: {
-          source: 'buyer_onboarding_completed',
-          financeType: financeSnapshot.financeType,
-        },
-      })
-    } catch (financeEventError) {
-      console.warn('Buyer finance event projection skipped', financeEventError)
-      await recordBuyerOnboardingProjectionFailureMarker(client, {
-        ...projectionMarkerContext,
-        eventType: 'buyer_onboarding_finance_event_projection_failed',
-        projection: 'finance_type_event',
-        error: financeEventError,
-      })
-    }
-
-    await addTransactionDiscussionComment({
-      transactionId: transaction.id,
-      authorName: 'Arch9 System',
-      authorRole: 'internal_admin',
-      commentText: `[system] Buyer onboarding submitted. ${otpPendingState?.nextAction || 'Prepare the OTP before finance or attorney handoff.'}`,
-      unitId: transaction.unit_id || null,
-      client,
-    }).catch((discussionError) => {
-      console.warn('Onboarding submitted discussion update failed', discussionError)
-    })
 
     try {
       const developmentRecord =
@@ -45741,7 +45502,7 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     transaction,
     formData: formDataForPersistence,
     purchaserType,
-    onboardingStatus: onboardingAlreadyCompleted ? 'awaiting_signed_otp' : 'awaiting_client_onboarding',
+    onboardingStatus: existingOnboardingStatus || (onboardingAlreadyCompleted ? 'awaiting_signed_otp' : 'awaiting_client_onboarding'),
     onboardingCompletedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
     externalOnboardingSubmittedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
     fundingSources,
@@ -46804,6 +46565,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
+      'property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, lifecycle_state, registered_at, completed_at, archived_at, cancelled_at, ' +
       'id, organisation_id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
@@ -47315,6 +47077,7 @@ export async function fetchClientPortalCoreByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
+      'property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, lifecycle_state, registered_at, completed_at, archived_at, cancelled_at, ' +
       'id, organisation_id, development_id, unit_id, buyer_id, transaction_type, sale_route, sale_channel, seller_party_type, lead_owner, ownership_model, source_agency_org_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
@@ -49307,58 +49070,9 @@ export async function uploadClientPortalDocument({
     : normalizePortalDocumentType(documentType || requiredDocumentKey || category || file.name) ||
       'client_portal_document'
 
-  // Notification/readiness work must not sit in front of the actual file
-  // upload. Start it concurrently and consume it only after the atomic
-  // document write has succeeded.
-  const postUploadContextPromise = (async () => {
-    let transactionForBondNotifications = null
-    let onboardingFormDataForBondNotifications = {}
-    let previousReadiness = null
-    try {
-      const transactionQuery = await client
-        .from('transactions')
-        .select(
-          'id, finance_type, finance_managed_by, purchaser_type, buyer_id, buyer_name, buyer_email, assigned_agent, assigned_agent_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, primary_bond_consultant_user_id, property_address_line_1, property_description, development_id, unit_id',
-        )
-        .eq('id', link.transaction_id)
-        .maybeSingle()
-
-      if (transactionQuery.error) {
-        if (
-          !isMissingTableError(transactionQuery.error, 'transactions') &&
-          !isMissingSchemaError(transactionQuery.error) &&
-          !isPermissionDeniedError(transactionQuery.error)
-        ) {
-          throw transactionQuery.error
-        }
-      } else {
-        transactionForBondNotifications = transactionQuery.data || null
-      }
-
-      const purchaserType = normalizePurchaserType(
-        transactionForBondNotifications?.purchaser_type || transactionForBondNotifications?.purchaserType || 'individual',
-      )
-      const [formDataRow, readinessSnapshot] = await Promise.all([
-        fetchOnboardingFormDataForTransaction(client, link.transaction_id, purchaserType),
-        computeTransactionReadinessSnapshot(client, link.transaction_id),
-      ])
-      onboardingFormDataForBondNotifications = formDataRow?.formData || formDataRow?.form_data || {}
-      previousReadiness = readinessSnapshot
-    } catch (readinessError) {
-      console.warn('Client portal upload readiness baseline skipped', readinessError)
-    }
-
-    return {
-      transactionForBondNotifications,
-      onboardingFormDataForBondNotifications,
-      previousReadiness,
-    }
-  })()
-
   let developmentName = ''
   let unitReference = ''
   let buyerName = ''
-  let buyerEmail = null
 
   if (isReservationDepositProofUpload) {
     const [unitQuery, buyerQuery] = await Promise.all([
@@ -49388,7 +49102,6 @@ export async function uploadClientPortalDocument({
     )
     unitReference = normalizeTextValue(unitQuery.data?.unit_number ? `unit ${unitQuery.data.unit_number}` : '')
     buyerName = normalizeTextValue(buyerQuery.data?.name)
-    buyerEmail = normalizeNullableText(buyerQuery.data?.email)
   }
 
   return runRecoverableDocumentUpload({ client: client, onProgress, scope: ['buyer_portal', token, link.transaction_id, category, requiredDocumentKey, canonicalRequirementInstanceId, documentRequestId, documentType, bucketKey, financeLane, relatedEntityType, relatedEntityId], file,
@@ -49452,115 +49165,8 @@ export async function uploadClientPortalDocument({
 
       const result = { data: rpcResult.data, error: null }
 
-      // The document row and canonical requirement are already committed at this
-      // point. Projections, automation and notifications are follow-up work and
-      // must not keep the buyer staring at an Uploading state.
-      void (async () => {
-        const {
-          transactionForBondNotifications,
-          onboardingFormDataForBondNotifications,
-          previousReadiness,
-        } = await postUploadContextPromise
-
-        if (!documentRequestId) {
-          await updateDocumentRequestFromUploadIfPossible(client, {
-            transactionId: link.transaction_id,
-            documentId: result.data.id,
-            category: result.data.category || category || 'Client Portal',
-            documentName: result.data.name,
-            actorRole: 'client',
-            actorUserId: null,
-          }).catch((requestLinkError) => {
-            console.warn('Buyer portal upload request projection failed after the atomic upload completed', requestLinkError)
-          })
-        }
-
-        let readiness = null
-        try {
-          readiness = await runDocumentAutomationIfPossible(client, {
-            transactionId: link.transaction_id,
-            documentId: result.data.id,
-            documentName: result.data.name,
-            documentType: normalizedDocumentType,
-            category: result.data.category || category || 'Client Portal',
-            requiredDocumentKey: requiredDocumentKey || (isReservationDepositProofUpload ? 'reservation_deposit_proof' : null),
-            actorRole: 'client',
-            actorUserId: null,
-            source: normalizeNullableText(source) || 'client_portal_upload',
-          })
-        } catch (automationError) {
-          console.warn('Buyer portal post-upload automation failed after the atomic upload completed', automationError)
-          readiness = await computeTransactionReadinessSnapshot(client, link.transaction_id).catch(() => null)
-        }
-
-        const financeTypeForBondNotifications =
-          readiness?.financeType ||
-          transactionForBondNotifications?.finance_type ||
-          transactionForBondNotifications?.financeType
-        const financeManagedByForBondNotifications = deriveFinanceManagedBy({
-          financeType: financeTypeForBondNotifications,
-          financeManagedBy:
-            transactionForBondNotifications?.finance_managed_by ||
-            transactionForBondNotifications?.financeManagedBy,
-          formData: onboardingFormDataForBondNotifications,
-        })
-        if (
-          transactionForBondNotifications &&
-          isBondFinanceType(financeTypeForBondNotifications) &&
-          financeManagedByForBondNotifications === 'bond_originator'
-        ) {
-          try {
-            const notificationTransaction = {
-              ...transactionForBondNotifications,
-              finance_type: financeTypeForBondNotifications,
-              finance_managed_by: financeManagedByForBondNotifications,
-              buyer_name: buyerName || transactionForBondNotifications.buyer_name || null,
-              buyer_email: buyerEmail || transactionForBondNotifications.buyer_email || null,
-            }
-            const notificationMetadata = {
-              source: normalizeNullableText(source) || 'client_portal_upload',
-              documentKey: normalizedRequiredDocumentKey || null,
-              documentType: normalizedDocumentType,
-              documentId: result.data.id,
-              financeManagedBy: financeManagedByForBondNotifications,
-            }
-            const bondDocumentsCompleteResult = await checkAndNotifyBondDocumentsComplete({
-              transaction: notificationTransaction,
-              previousMissingCount: previousReadiness?.missingRequiredDocs,
-              readiness,
-              actor: { roleType: 'client' },
-              metadata: notificationMetadata,
-              client,
-            })
-            const bondProgress = getBondApplicationProgress({
-              transaction: notificationTransaction,
-              onboardingFormData: onboardingFormDataForBondNotifications,
-            })
-            await checkAndNotifyBondApplicationReadyForReview({
-              transaction: notificationTransaction,
-              previousReadyForReview: Boolean(
-                previousReadiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
-              ),
-              currentReadyForReview: Boolean(
-                readiness?.docsComplete && bondProgress.status === BOND_APPLICATION_PROGRESS_STATUSES.SUBMITTED,
-              ),
-              actor: { roleType: 'client' },
-              metadata: notificationMetadata,
-              client,
-            })
-            await notifyAttorneysForBondDocumentsComplete(client, {
-              transactionId: link.transaction_id,
-              result: bondDocumentsCompleteResult,
-              actor: { roleType: 'client' },
-              metadata: notificationMetadata,
-            })
-          } catch (bondNotificationError) {
-            console.warn('Client portal bond document completion notification failed', bondNotificationError)
-          }
-        }
-      })().catch((postUploadError) => {
-        console.warn('Buyer portal post-upload processing failed after the atomic upload completed', postUploadError)
-      })
+      // The upload RPC persists request linkage and in-app notifications.
+      // Buyer-owned evidence remains under review until an authorised reviewer acts.
 
       return {
         ...result.data,
@@ -51954,7 +51560,11 @@ function reportDocumentUploadFollowUpFailure({ transactionId, documentId, step, 
   })
 }
 
-async function runInternalDocumentUploadFollowUps(
+function runInternalDocumentUploadFollowUps(client, input) {
+  return trackTransactionBackgroundWork(input?.transactionId, runInternalDocumentUploadFollowUpsNow(client, input))
+}
+
+async function runInternalDocumentUploadFollowUpsNow(
   client,
   {
     transactionId,
@@ -52137,9 +51747,19 @@ export async function uploadDocument({
   const reportProgress = createDocumentUploadProgressReporter(onProgress)
 
   reportProgress('preparing', 'Checking the document and preparing a secure upload…')
-  const client = requireClient()
+  let client = requireClient()
   const activeTransactionId = await assertActiveTransactionForDocumentUpload(client, transactionId)
   const activeProfile = await resolveActiveProfileContext(client)
+  // The durable save returns before reporting finishes. Keep every part of
+  // this accepted upload under its verified actor even if the UI signs out.
+  const uploadSession = typeof client.auth?.getSession === 'function'
+    ? (await client.auth.getSession())?.data?.session : null
+  if (uploadSession?.user?.id && uploadSession.user.id !== activeProfile.userId) {
+    throw new Error('The signed-in account changed. Start the upload again.')
+  }
+  if (uploadSession?.access_token) {
+    client = createScopedSupabaseClient({ Authorization: `Bearer ${uploadSession.access_token}` }) || client
+  }
   const filePolicy = validateDocumentUploadFile(file, { surface: 'internal_transaction', transactionId: activeTransactionId })
   const attorneyLaneMetadata = resolveAttorneyDocumentLaneMetadata({ attorneyLaneKey, attorneyRole })
   const attorneySave = Boolean(attorneyLaneMetadata) || source === 'attorney_workspace'
@@ -52324,7 +51944,7 @@ export async function uploadDocument({
         attempt.saved({ data: saved })
         reportDocumentUploadTelemetry({ surface: 'internal_transaction', stage: 'persistence', outcome: 'durable_saved', transactionId: activeTransactionId, documentId: saved.id })
         if (!saved.deduplicated && saved.canonicalRequirementInstanceId) {
-          void reconcileAttorneyDocumentEvidence(client, { document: saved, status: 'uploaded', requirementInstanceId: saved.canonicalRequirementInstanceId })
+          void trackTransactionBackgroundWork(activeTransactionId, reconcileAttorneyDocumentEvidence(client, { document: saved, status: 'uploaded', requirementInstanceId: saved.canonicalRequirementInstanceId }))
             .catch(() => console.warn('[document-upload] Saved document reporting could not refresh'))
         }
         reportProgress('complete', 'Document saved successfully.', { documentId: saved.id, postUploadProcessing: 'complete' })
@@ -55547,7 +55167,7 @@ export async function revokeBondApplicationPortalAccessLinkForOriginator({ acces
   const linkId = String(accessLinkId || '').trim()
   if (!linkId) throw new Error('An application access link is required.')
   const client = requireClient()
-  const result = await client.rpc('bridge_revoke_bond_application_portal_access_link_for_originator', {
+  const result = await client.rpc('bridge_revoke_bond_originator_portal_link', {
     p_access_link_id: linkId,
   })
   if (result.error) throw result.error
@@ -55590,7 +55210,7 @@ export async function fetchBondApplicationPortalDeliveryActionCentre() {
 
 export async function fetchBondApplicationPortalOriginatorDocumentContinuity() {
   const client = requireClient()
-  const result = await client.rpc('bridge_bond_application_portal_originator_document_continuity_view')
+  const result = await client.rpc('bridge_bond_originator_document_continuity')
   if (result.error) throw result.error
   return result.data || { version: 'bond_application_portal_phase6', items: [] }
 }

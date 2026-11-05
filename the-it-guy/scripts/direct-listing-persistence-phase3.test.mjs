@@ -5,6 +5,7 @@ import { getSalesListingRequiredIssues } from '../src/services/listings/listingF
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
 import { verifyListingPropertyPersistenceCopies, verifyListingPropertySave } from '../src/lib/listingPropertySaveVerification.js'
 import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../src/lib/listingMarketingPropertyFactRecovery.js'
+import { buildCanonicalSellerOnboardingPayload } from '../src/services/documents/sellerOnboardingFactTransformer.js'
 
 const agentListingsSource = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const agentListingDetailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
@@ -19,6 +20,34 @@ function test(name, fn) {
     throw error
   }
 }
+
+test('complex / scheme survives the listing form, canonical save and reopened property check', () => {
+  for (const propertyStructureType of ['sectional_title', 'share_block', 'full_title']) {
+    for (const schemeName of [undefined, 'Previous scheme name']) {
+      const form = { propertyStructureType, complexName: 'Example Gardens', schemeName, unitNumber: '7', sectionNumber: '7' }
+      const savedForm = buildDirectListingIntakePayload(form).sellerOnboardingFormData
+      const facts = buildCanonicalSellerOnboardingPayload(savedForm).canonicalSellerFacts
+      assert.equal(facts.property.scheme.name, form.complexName)
+      assert.equal(facts.property.scheme_name, form.complexName)
+      // getPrivateListing projects the canonical scheme name into complexName.
+      const reopened = { complexName: facts.property.scheme.name, sellerCanonicalFacts: facts }
+      const verification = verifyListingPropertyPersistenceCopies({
+        form: { complexName: form.complexName }, listing: reopened,
+        onboarding: { form_data: savedForm }, publication: {},
+      })
+      assert.equal(verification.ready, true, JSON.stringify(verification.mismatches))
+    }
+  }
+})
+
+test('a genuinely missing complex name still blocks progression even if the draft retains it', () => {
+  const verification = verifyListingPropertyPersistenceCopies({
+    form: { complexName: 'Example Gardens' }, listing: { complexName: '', sellerCanonicalFacts: {} },
+    onboarding: { form_data: { complexName: 'Example Gardens' } }, publication: {},
+  })
+  assert.equal(verification.ready, false)
+  assert.deepEqual(verification.mismatches.map(row => row.field), ['complexName'])
+})
 
 test('Quick Add persists direct listing form data through the seller onboarding form-data helper', () => {
   assert.match(agentListingsSource, /persistSellerProfileOnboardingFormData/)

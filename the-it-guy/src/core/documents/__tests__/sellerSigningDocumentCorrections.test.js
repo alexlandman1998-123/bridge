@@ -91,7 +91,9 @@ test('every FICA field offered by the correction editor reaches the regenerated 
   for (const branch of ['individual', 'company']) {
     const copy = createSellerCorrectionFixture(branch)
     const edit = buildSellerSigningCorrectionEditData(copy, 'signed_fica_declaration')
-    const fica = Object.fromEntries(Object.keys(edit.fica).map(field => [field, `CORRECTED_${field}`]))
+    const booleanFields = new Set(['saResident', 'dualUseGoods', 'armsWeapons', 'actingOnBehalfOfAnother', 'heirInEstate', 'politicallyInfluentialPerson'])
+    const fica = Object.fromEntries(Object.keys(edit.fica).map(field => [field,
+      field === 'idType' ? 'passport' : booleanFields.has(field) ? 'yes' : `CORRECTED_${field}`]))
     const values = sellerCorrectionValues(copy, 'signed_fica_declaration', { fica })
     const html = renderSellerSigningDocumentCorrections(copy, 'signed_fica_declaration', values, 'fixture-listing').toLowerCase()
     for (const value of Object.values(fica)) assert.ok(html.includes(value.replaceAll('_', ' ').toLowerCase()) || html.includes(value.toLowerCase()), `${branch}: ${value}`)
@@ -189,9 +191,9 @@ test('Open corrections record an indefinite appointment without an old end date 
   assert.deepEqual(copy, before)
 })
 
-test('corrections reject impossible dates, excessive percentages and missing protection instructions', () => {
+test('corrections reject impossible dates, excessive percentages and negative protection days', () => {
   const copy = createSellerCorrectionFixture()
-  for (const mandate of [{ startDate: '2026-02-29' }, { endDate: '2026-09-31' }, { protectionPeriod: '' }, { commissionPercentage: '101' }]) {
+  for (const mandate of [{ startDate: '2026-02-29' }, { endDate: '2026-09-31' }, { protectionPeriod: '-1' }, { commissionPercentage: '101' }]) {
     assert.throws(() => sellerCorrectionValues(copy, 'signed_mandate', { mandate }), /Complete valid mandate terms/)
   }
 })

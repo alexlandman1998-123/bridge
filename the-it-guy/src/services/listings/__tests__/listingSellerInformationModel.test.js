@@ -9,6 +9,23 @@ function rowLabels(model) {
   return model.groups.flatMap((group) => group.rows.map((row) => row.label))
 }
 
+test('trust beneficiary class survives capture, canonical projection and profile display without named beneficiaries', () => {
+  const draft = createListingSellerProfileBuilderDraft({ sellerOnboarding: { formData: {
+    ownerEntityType: 'trust', ownerStructureType: 'trust', trustName: 'Family Trust', trustBeneficiaryClass: 'All descendants',
+  } } })
+  const formData = buildListingSellerProfileFormPatch(draft)
+  const facts = buildCanonicalSellerOnboardingPayload(formData).canonicalSellerFacts
+  assert.equal(facts.seller.trust.beneficiary_class, 'All descendants')
+  for (const listing of [{ sellerOnboarding: { formData } }, { sellerCanonicalFacts: facts }]) {
+    const model = buildListingSellerInformationModel(listing)
+    const row = model.groups.flatMap(group => group.rows).find(row => row.key === 'trustBeneficiaryClass')
+    assert.equal(row?.value, 'All descendants')
+    assert.equal(row?.displayValue, 'All descendants')
+  }
+  const cleared = buildListingSellerInformationModel({ sellerCanonicalFacts: facts, sellerOnboarding: { formData: { ...formData, trustBeneficiaryClass: '' } } })
+  assert(!cleared.groups.flatMap(group => group.rows).some(row => row.key === 'trustBeneficiaryClass'))
+})
+
 test('current capture clearing wins over stale canonical, listing and CRM-style fallbacks', () => {
   const model = buildListingSellerInformationModel({ sellerName: 'Old contact', sellerEmail: 'stale@example.com', sellerPhone: 'stale', sellerCanonicalFacts: { seller: { legal_type: 'company', company: { name: 'Old company', registration_number: 'OLD', directors: [{ id: 'old-person', full_name: 'Old Director' }] }, contact: { name: 'Old Contact', email: 'stale@example.com' } } }, sellerOnboarding: { formData: { ownerStructureType: 'company', companyName: '', companyRegistrationNumber: null, companyDirectors: [], primaryContactName: '', email: null, phone: '' } } })
   assert.equal(model.draft.companyName, '')

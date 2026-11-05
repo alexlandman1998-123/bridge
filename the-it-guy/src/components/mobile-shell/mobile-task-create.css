@@ -1,0 +1,23 @@
+.mobile-task-create-dialog { position: fixed; top: var(--task-top, 0px); left: 0; right: 0; width: 100%; max-width: none; height: min(var(--task-height, 100dvh), 100dvh); max-height: none; margin: 0; border: 0; padding: 0; overflow: hidden; background: #fff; color: #202b26; }
+.mobile-task-create-dialog::backdrop { background: #10243a66; }
+.mobile-task-create-form { display: flex; flex-direction: column; width: 100%; max-width: 520px; height: 100%; min-height: 0; margin: 0 auto; }
+.mobile-task-create-header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: max(8px, env(safe-area-inset-top)) 20px 8px; border-bottom: 1px solid #e6ece7; }
+.mobile-task-create-back { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; margin-left: -8px; border: 0; padding: 0 8px; border-radius: 8px; background: #fff; color: #26392d; font-size: 14px; }
+.mobile-task-create-header > span { color: #748077; font-size: 11px; }
+.mobile-task-create-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 20px; scroll-padding-block: 16px; }
+.mobile-task-create-body h2 { margin: 0; font-size: 25px; font-weight: 550; letter-spacing: -.035em; }
+.mobile-task-create-body > p { margin: 8px 0 24px; color: #748077; font-size: 13px; line-height: 1.5; }
+.mobile-task-create-body fieldset { display: grid; gap: 22px; min-width: 0; margin: 0; border: 0; padding: 0; }
+.mobile-task-create-body label { display: block; min-width: 0; font-size: 13px; font-weight: 500; }
+.mobile-task-create-body :is(input, select, textarea) { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; min-height: 48px; margin-top: 8px; border: 1px solid #dae3dc; border-radius: 10px; padding: 12px; background: #fff; color: #202b26; font: inherit; font-size: 16px; }
+.mobile-task-create-body input[type="date"] { appearance: none; -webkit-appearance: none; }
+.mobile-task-create-body textarea { resize: vertical; }
+.mobile-task-create-fields { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; }
+.mobile-task-create-optional { color: #748077; font-weight: 400; }
+.mobile-task-create-footer { flex-shrink: 0; border-top: 1px solid #e6ece7; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); background: #fff; }
+.mobile-task-create-footer button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; border: 0; border-radius: 10px; background: #172d21; color: #fff; font-size: 14px; font-weight: 500; }
+.mobile-task-create-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid #23835d; outline-offset: 2px; }
+.mobile-task-create-dialog button:disabled { opacity: .55; }
+.mobile-task-create-body > .mobile-task-create-error { margin-top: 20px; border-radius: 8px; padding: 12px; background: #fff1ef; color: #a73529; }
+@media (min-width: 640px) { .mobile-task-create-dialog { top: calc(var(--task-top, 0px) + 16px); width: calc(100% - 32px); max-width: 520px; height: min(calc(var(--task-height, 100dvh) - 32px), calc(100dvh - 32px)); max-height: 720px; margin-inline: auto; border-radius: 20px; } }
+@media (max-width: 340px) { .mobile-task-create-fields { grid-template-columns: 1fr; } }

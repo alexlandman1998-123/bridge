@@ -66,6 +66,12 @@
   ],
   "redirects": [
     {
+      "source": "/development/madison-place-abcf1b8a",
+      "has": [{ "type": "host", "value": "madisonplace.co.za" }],
+      "destination": "/",
+      "permanent": false
+    },
+    {
       "source": "/join",
       "destination": "https://admin.arch9.co.za/join",
       "permanent": false
@@ -150,6 +156,11 @@
   ],
   "rewrites": [
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "madisonplace.co.za" }],
+      "destination": "/api/public/development-page?slug=madison-place-abcf1b8a"
+    },
+    {
       "source": "/development/:slug",
       "destination": "/api/public/development-page?slug=:slug"
     },
@@ -161,10 +172,5 @@
       "source": "/((?!api/|assets/|brand/|favicon(?:-[^/]+)?\\.(?:png|svg|ico)|apple-touch-icon\\.png|icon-(?:192|512|maskable-512)\\.png|manifest\\.webmanifest|push-sw\\.js|arch9-launch-preview\\.png|vite\\.svg).*)",
       "destination": "/index.html"
     }
-  ],
-  "git": {
-    "deploymentEnabled": {
-      "main": false
-    }
-  }
+  ]
 }

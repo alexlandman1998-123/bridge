@@ -26,10 +26,10 @@ const ROLLUP_SELECT =
   'transaction_id, parent_stage, parent_status, progress_percent, active_workflow_key, active_step_key, completed_stages_json, blocked_stages_json, blockers_json, next_action_json, derived_from_json, derived_at, created_at, updated_at'
 
 const TRANSACTION_SELECT =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, development_id, transaction_type, property_type, seller_has_existing_bond, existing_bond, cancellation_required, updated_at, created_at'
+  'id, finance_type, current_main_stage, stage, onboarding_status, onboarding_completed_at, seller_onboarding_status, lifecycle_state, development_id, transaction_type, property_type, seller_has_existing_bond, existing_bond, cancellation_required, routing_profile_json, registration_date, title_deed_number, registration_confirmation_document_id, registered_at, updated_at, created_at'
 
 const TRANSACTION_SELECT_FALLBACK =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, development_id, transaction_type, property_type, updated_at, created_at'
+  'id, finance_type, current_main_stage, stage, onboarding_status, onboarding_completed_at, seller_onboarding_status, lifecycle_state, development_id, transaction_type, property_type, updated_at, created_at'
 
 const LEGACY_WORKFLOW_STEP_KEY_ALIAS = Object.freeze({
   sales_otp: {
@@ -328,11 +328,16 @@ export async function createWorkflowInstance(transactionId, workflowKey, options
 
   const query = await client
     .from('transaction_workflow_instances')
-    .upsert(payload, { onConflict: 'transaction_id,workflow_key' })
+    .upsert(payload, { onConflict: 'transaction_id,workflow_key', ignoreDuplicates: true })
     .select(INSTANCE_SELECT)
 
   if (query.error) throw query.error
-  return rowArray(query.data)[0] || payload
+  if (rowArray(query.data)[0]) return rowArray(query.data)[0]
+  const existing = await client.from('transaction_workflow_instances').select(INSTANCE_SELECT)
+    .eq('transaction_id', transactionId).eq('workflow_key', workflowKey).maybeSingle()
+  if (existing.error) throw existing.error
+  if (!existing.data) throw new Error('The workflow instance could not be confirmed after creation.')
+  return existing.data
 }
 
 export async function createWorkflowSteps(workflowInstanceId, workflowKey, options = {}) {
@@ -378,11 +383,14 @@ export async function createWorkflowSteps(workflowInstanceId, workflowKey, optio
 
   const query = await client
     .from('transaction_workflow_steps')
-    .insert(payload)
+    .upsert(payload, { onConflict: 'workflow_instance_id,step_key', ignoreDuplicates: true })
     .select(STEP_SELECT)
 
   if (query.error) throw query.error
-  return [...existingRows, ...rowArray(query.data)]
+  const refreshed = await client.from('transaction_workflow_steps').select(STEP_SELECT)
+    .eq('workflow_instance_id', workflowInstanceId)
+  if (refreshed.error) throw refreshed.error
+  return rowArray(refreshed.data)
 }
 
 export async function ensureTransactionWorkflowInstances(transactionId, options = {}) {
@@ -748,10 +756,17 @@ export function buildWorkflowStateMap(normalizedState = {}) {
     const steps = (stepsByWorkflowKey[instance.workflow_key] || []).map((step) => {
       const contextualStep = contextualDefinitions.get(step.step_key) || {}
       const contextualNotApplicable = normalizeWorkflowStepStatus(contextualStep.status) === 'not_applicable'
+      const tx=normalizedState.transaction || {}
+      const buyerStatus=String(tx.onboarding_status || '').toLowerCase()
+      const canonicalSalesCompletion=instance.workflow_key==='sales_otp' && (
+        (step.step_key==='buyer_onboarding_complete' && (Boolean(tx.onboarding_completed_at) || ['submitted','reviewed','approved','completed','client_onboarding_complete','awaiting_signed_otp','signed_otp_received'].includes(buyerStatus))) ||
+        (step.step_key==='seller_onboarding_complete' && ['submitted','reviewed','approved','completed'].includes(String(tx.seller_onboarding_status || '').toLowerCase())) ||
+        (step.step_key==='signed_otp_received' && buyerStatus==='signed_otp_received'))
+
       return {
         key: step.step_key,
         label: contextualStep.label || step.step_label,
-        status: contextualNotApplicable ? 'not_applicable' : normalizeWorkflowStepStatus(step.status),
+        status: contextualNotApplicable ? 'not_applicable' : canonicalSalesCompletion ? 'complete' : normalizeWorkflowStepStatus(step.status),
         ownerRole: contextualStep.ownerRole || step.owner_role,
         required: contextualStep.required === false ? false : step.required !== false,
         blocking: contextualStep.blocking === false ? false : step.blocking === true,

@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import {
@@ -53,12 +54,12 @@ function buildRecoveryEmail({ sellerName, propertyTitle, recoveryLink, branding 
   return { html, text };
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed." });
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(supabaseServiceKey());
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   if (!supabaseUrl || !serviceRoleKey || !resendApiKey) {
     console.error("[seller-portal-password-recovery] required service configuration is missing");
@@ -142,4 +143,4 @@ Deno.serve(async (req: Request) => {
     console.error("[seller-portal-password-recovery] unexpected failure", error);
     return jsonResponse(200, { ok: true, message: neutralMessage });
   }
-});
+}));

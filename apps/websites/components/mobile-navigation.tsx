@@ -78,9 +78,9 @@ export function MobileNavigation({ items, currentHref, enquiryHref, enquiryLabel
         <strong>{brandNote ?? 'Find your next move.'}</strong>
       </div>
       <div className="mobile-menu-links">
-        {items.map((item, index) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} data-index={index + 1} key={`${item.href}-${item.label}`}><span>{item.label}</span><b aria-hidden="true">↗</b></Link>)}
+        {items.map((item, index) => <Link prefetch={false} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} data-index={index + 1} key={`${item.href}-${item.label}`}><span>{item.label}</span><b aria-hidden="true">↗</b></Link>)}
       </div>
-      <Link className="header-cta" href={enquiryHref}>{enquiryLabel}</Link>
+      <Link prefetch={false} className="header-cta" href={enquiryHref}>{enquiryLabel}</Link>
     </nav>
   </div>
 }

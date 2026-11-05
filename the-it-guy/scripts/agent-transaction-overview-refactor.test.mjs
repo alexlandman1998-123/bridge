@@ -10,7 +10,7 @@ const overview = source.slice(start, end)
 assert.match(source, /<AgentTransactionCommandCenter/)
 assert.match(overview, /<TransactionJourneyTracker/)
 assert.match(overview, /<TransactionOverviewProgress/)
-assert.match(overview, /onClick=\{developerOverview \? \(\) => onOpenWorkspace\?\.\('transfer'\) : onOpenTimeline\}>View full journey/)
+assert.match(overview, /onClick=\{\(\) => onOpenWorkspace\?\.\('transfer'\)\}>View full journey/)
 assert.match(overview, /Record historical progress/)
 assert.match(overview, /View all parties/)
 assert.match(overview, /View documents/)
@@ -21,3 +21,15 @@ assert.match(source, /contact: buyerDisplayName/)
 assert.match(source, /email: buyerEmail/)
 assert.deepEqual(HIGH_LEVEL_MILESTONES.map(item => item.id), ['otp_signed', 'finance', 'transfer', 'lodgement', 'registration'])
 console.log('Agent overview: shared milestones, immediate progress, canonical contacts, deal summary and navigation passed')
+
+// Execute the actual overview prop expression against the canonical finance normalizer.
+const { normalizeFinanceType, financeTypeLabel: describeFinanceType } = await import('../src/core/transactions/financeType.js')
+const financeExpression = source.match(/financeDescription=\{([^\n]+)\}/)?.[1]
+assert.ok(financeExpression, 'attorney overview finance description must be present')
+const describeOverviewFinance = new Function('normalizedFinanceType', 'describeFinanceType', `return (${financeExpression})`)
+for (const input of ['cash', 'bond', 'hybrid', 'combination', 'developer']) {
+  const normalized = normalizeFinanceType(input, { allowUnknown: true })
+  assert.equal(describeOverviewFinance(normalized, describeFinanceType), describeFinanceType(input), `${input} must display its captured finance route`)
+}
+assert.equal(describeOverviewFinance('unknown', describeFinanceType), 'Finance type not captured')
+console.log('Attorney overview: cash, bond, hybrid alias, combination, developer and unknown finance labels passed')

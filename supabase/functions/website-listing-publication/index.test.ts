@@ -21,8 +21,8 @@ try {
 Deno.test("background HTTP publication uses caller authority even when its token differs from the local service key", async () => {
   const env = {
     SUPABASE_URL: "https://example.supabase.co",
-    SUPABASE_ANON_KEY: "public-test-key",
-    SUPABASE_SERVICE_ROLE_KEY: "legacy-server-test-key",
+    SUPABASE_ANON_KEY: "sb_publishable_public-test-key",
+    SUPABASE_SERVICE_ROLE_KEY: "sb_secret_local-server-test-key",
   };
   const previous = Object.fromEntries(Object.keys(env).map((key) => [key, Deno.env.get(key)]));
   const originalFetch = globalThis.fetch;

@@ -4,11 +4,12 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 const api = vi.hoisted(() => ({
   crm: vi.fn(), transactions: vi.fn(), listings: vi.fn(), canvassing: vi.fn(),
   identities: vi.fn(), activity: vi.fn(), settings: vi.fn(), users: vi.fn(),
-  from: vi.fn(), guard: vi.fn(),
+  from: vi.fn(), guard: vi.fn(), overview: vi.fn(),
   auth: vi.fn(() => ({ data: { subscription: { unsubscribe() {} } } })),
 }))
 vi.mock('../../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: { from: api.from, auth: { onAuthStateChange: api.auth } } }))
 vi.mock('../../../lib/agencyCrmRepository', () => ({ listAgencyCrmLeadContacts: api.crm }))
+vi.mock('../../../domains/reporting/api', () => ({ fetchDashboardOverview: api.overview }))
 vi.mock('../../../lib/transactionsListApi', () => ({ fetchTransactionsByParticipantSummary: api.transactions }))
 vi.mock('../../../services/privateListingService', () => ({ getOrganisationPrivateListings: api.listings }))
 vi.mock('../../../lib/canvassingRepository', () => ({ listCanvassingWorkspace: api.canvassing }))
@@ -26,7 +27,7 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 let queries
 beforeEach(() => {
   invalidateAgentClientDirectoryCache()
-  for (const mock of [api.crm, api.transactions, api.listings, api.canvassing, api.identities, api.activity, api.settings, api.users, api.from, api.guard]) mock.mockReset()
+  for (const mock of [api.crm, api.transactions, api.listings, api.canvassing, api.identities, api.activity, api.settings, api.users, api.from, api.guard, api.overview]) mock.mockReset()
   api.crm.mockResolvedValue(crm)
   api.transactions.mockResolvedValue([])
   api.listings.mockResolvedValue([])
@@ -130,4 +131,14 @@ test('rejects an unresolved workspace before reading its directory', async () =>
   api.guard.mockImplementation(() => { throw new Error('Select a workspace') })
   await expect(loadAgentClientDirectory(context)).rejects.toThrow('Select a workspace')
   expect(api.crm).not.toHaveBeenCalled()
+})
+
+
+test('developer directory retains portfolio reads and scopes identities to the organisation', async () => {
+  api.overview.mockResolvedValue({ rows: [] })
+  await loadAgentClientDirectory({ ...context, role: 'developer', workspace: { id: '22222222-2222-4222-8222-222222222222', organisationId } })
+  expect(api.identities).toHaveBeenCalledWith(organisationId)
+  expect(api.crm).toHaveBeenCalledWith(organisationId, { includeLocalFallback: false })
+  expect(api.overview).toHaveBeenCalledWith({ developmentId: null, organisationId, includeSecondaryData: false })
+  expect(api.transactions).not.toHaveBeenCalled()
 })

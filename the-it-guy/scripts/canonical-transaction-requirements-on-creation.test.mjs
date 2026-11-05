@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createServer } from 'vite'
 
 const root = process.cwd()
 const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
@@ -46,4 +47,24 @@ assert.doesNotMatch(
   /grant (?:all|insert|update|delete)[^;]*document_requirement_instances[^;]*authenticated/i,
 )
 
-console.log('canonical transaction requirements on creation contract passed')
+// Exercise the actual RPC boundary for the reported pending-policy failure.
+const server = await createServer({ root, logLevel: 'silent', server: { middlewareMode: true } })
+try {
+  const { syncTransactionRequirementInstancesForCreation } = await server.ssrLoadModule('/src/services/documents/canonicalDocumentResolverService.js')
+  const levels = ['pending_policy_required', 'pending_policy_required_unless_waived', 'required', 'blocker', 'optional']
+  const generatedInstances = levels.map((requirement_level, index) => ({ id: `requirement-${index}`, requirement_level }))
+  let captured
+  const client = { rpc: async (name, payload) => {
+    captured = { name, payload }
+    return { data: { instances: payload.p_generated_instances } }
+  } }
+  await syncTransactionRequirementInstancesForCreation({ transactionId: 'transaction', generatedInstances, client })
+  assert.equal(captured.name, 'bridge_sync_transaction_document_requirement_instances')
+  assert.deepEqual(captured.payload.p_generated_instances.map(row => row.requirement_level), ['optional', 'optional', 'required', 'blocker', 'optional'])
+  assert.deepEqual(generatedInstances.map(row => row.requirement_level), levels, 'persistence translation must not mutate the policy model')
+  await assert.rejects(syncTransactionRequirementInstancesForCreation({ transactionId: 'transaction', generatedInstances, client: { rpc: async () => ({ error: new Error('Permission denied') }) } }), /Permission denied/)
+} finally {
+  await server.close()
+}
+
+console.log('canonical transaction requirements on creation contract and pending-policy persistence passed')

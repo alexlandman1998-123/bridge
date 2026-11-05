@@ -1,0 +1,22 @@
+# Arch9's always-on connected-mail worker. Values are supplied in Render.
+# Paths are relative to the repository root, even when this file is nested.
+services:
+  - type: worker
+    name: arch9-connected-mail-worker
+    runtime: docker
+    plan: 0.5c-512mb
+    region: frankfurt
+    numInstances: 1
+    autoDeployTrigger: off
+    dockerfilePath: ./the-it-guy/server/inbox/Dockerfile
+    dockerContext: ./the-it-guy/server/inbox
+    maxShutdownDelaySeconds: 180
+    envVars:
+      - key: SUPABASE_URL
+        value: https://isdowlnollckzvltkasn.supabase.co
+      - key: SUPABASE_SECRET_KEYS
+        sync: false
+      - key: REVO_GOOGLE_CLIENT_ID
+        sync: false
+      - key: REVO_GOOGLE_CLIENT_SECRET
+        sync: false

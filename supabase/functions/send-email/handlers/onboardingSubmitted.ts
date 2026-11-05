@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   buildOnboardingSubmittedEmailHtml,
@@ -117,7 +118,7 @@ export async function handleOnboardingSubmittedEmail(
   }
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(supabaseServiceKey());
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
 
   if (!supabaseUrl || !serviceRoleKey) {

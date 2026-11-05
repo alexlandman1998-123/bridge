@@ -19,6 +19,8 @@ export default function OnboardingProgressLayout({
   steps = DEFAULT_STEPS,
   className = '',
   panelClassName = '',
+  onStepChange = null,
+  stepNavigationDisabled = false,
   children,
 }) {
   const activeIndex = resolveIndex(steps, activeStep)
@@ -31,7 +33,7 @@ export default function OnboardingProgressLayout({
           <h1>{title}</h1>
           {description ? <span>{description}</span> : null}
         </div>
-        <ol className="onboarding-progress-steps" style={{ '--step-count': steps.length }}>
+        <ol className="onboarding-progress-steps" aria-label="Setup progress" style={{ '--step-count': steps.length }}>
           {steps.map((step, index) => {
             const isDone = index < activeIndex
             const isActive = index === activeIndex
@@ -42,7 +44,18 @@ export default function OnboardingProgressLayout({
                 : ''
             return (
               <li key={step.key} className={className}>
-                {step.label}
+                {onStepChange ? (
+                  <button
+                    type="button"
+                    aria-label={step.label}
+                    aria-current={isActive ? 'step' : undefined}
+                    disabled={stepNavigationDisabled}
+                    onClick={() => onStepChange(index)}
+                  >
+                    <span className="onboarding-step-number" aria-hidden="true">{isDone ? '✓' : index + 1}</span>
+                    <span className="onboarding-step-label">{step.label}</span>
+                  </button>
+                ) : step.label}
               </li>
             )
           })}

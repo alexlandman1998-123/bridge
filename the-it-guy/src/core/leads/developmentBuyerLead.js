@@ -52,3 +52,13 @@ export function getDevelopmentLeadStage(value = '', fallbackKey = 'captured') {
   const stage = DEVELOPMENT_LEAD_STAGES.find(([id]) => id === stageKey) || DEVELOPMENT_LEAD_STAGES.find(([id]) => id === fallbackKey) || DEVELOPMENT_LEAD_STAGES[0]
   return { key: stage[0], label: stage[1], description: stage[2] }
 }
+
+
+export function getDevelopmentBuyerReservationEvidence(lead = {}, now = Date.now()) {
+  const context = lead.developmentLeadContext || {}
+  const unitSelected = Boolean(text(context.preferredUnitId || lead.preferredUnitId || lead.preferred_unit_id))
+  const reservationState = text(context.reservationState || lead.reservationState || lead.reservation_state || 'none').toLowerCase()
+  const expiresAt = context.reservationExpiresAt || lead.reservationExpiresAt || lead.reservation_expires_at
+  const expired = reservationState === 'expired' || (reservationState === 'reserved' && Boolean(expiresAt) && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now))
+  return { unitSelected, reservationState, expired, reserved: unitSelected && !expired && ['reserved', 'converted'].includes(reservationState) }
+}

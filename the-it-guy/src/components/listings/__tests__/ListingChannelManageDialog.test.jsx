@@ -201,6 +201,22 @@ it('retains successful status results and retries only failed channels', async (
   await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
   expect(onSave.mock.calls[1][0].retryResults).toEqual([failed])
 })
+it('shows a saved status with an unconfirmed channel without offering a blind retry', async () => {
+  const onSave = vi.fn(async () => ({ ok: false, results: [
+    { channel: 'Arch9', status: 'saved' },
+    { channel: 'Property24', action: 'under_offer', status: 'sent' },
+    { channel: 'Agency Website', action: 'under_offer', status: 'uncertain', retryable: false, detail: 'The previous request is unconfirmed. No new request was sent to this channel.' },
+  ] }))
+  render(<ListingChannelManageDialog {...props} onSave={onSave} />)
+  click('Change listing status')
+  fireEvent.change(screen.getByLabelText('Listing status'), { target: { value: 'under_offer' } })
+  click('Save changes')
+  expect(await screen.findByText('Agency Website · Not sent · check status')).toBeTruthy()
+  expect(screen.getByText('Arch9 · Saved')).toBeTruthy()
+  expect(screen.getByText('Property24 · Accepted · check advert')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Retry failed status updates' })).toBeNull()
+  expect(onSave).toHaveBeenCalledOnce()
+})
 it('reopens a saved status failure without resending successful channels', async () => {
   const failed = { channel: 'Private Property', action: 'sold', status: 'failed', detail: 'Try again.' }
   const onSave = vi.fn(async () => ({ ok: true }))

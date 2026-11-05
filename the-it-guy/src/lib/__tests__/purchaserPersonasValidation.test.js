@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { validateOnboardingSubmission } from '../purchaserPersonas.js'
+import { isBuyerSpouseContactRequired, validateOnboardingSubmission } from '../purchaserPersonas.js'
 
 const buyer = {
   first_name: 'Alex',
@@ -52,5 +52,26 @@ assert.doesNotThrow(() =>
     },
   }),
 )
+
+const transaction = { purchase_price: 2850000, finance_type: 'cash' }
+for (const regime of ['out_of_community', 'out_of_community_with_accrual', 'anc']) {
+  const spouse = { ...buyer, marital_status: 'married', marital_regime: regime,
+    spouse_full_name: 'Pat Buyer', spouse_identity_number: '9001015009087', spouse_is_co_purchaser: 'no' }
+  assert.equal(isBuyerSpouseContactRequired(spouse), false)
+  assert.doesNotThrow(() => validateOnboardingSubmission({ ...formData, purchasers: [spouse] }, { transaction }))
+  assert.throws(() => validateOnboardingSubmission({ ...formData, purchasers: [{ ...spouse, spouse_email: 'invalid' }] }, { transaction }), /Spouse Email/)
+  for (const requiredSpouse of [{ ...spouse, marital_regime: 'in_community' }, { ...spouse, spouse_is_co_purchaser: 'yes' }]) {
+    assert.equal(isBuyerSpouseContactRequired(requiredSpouse), true)
+    assert.throws(() => validateOnboardingSubmission({ ...formData, purchasers: [requiredSpouse] }, { transaction }), /Spouse Email/)
+    assert.throws(() => validateOnboardingSubmission({ ...formData, purchasers: [{ ...requiredSpouse, spouse_email: 'pat@example.com' }] }, { transaction }), /Spouse Phone/)
+  }
+}
+
+const threePurchasers = [30, 30, 40].map((share, index) => ({ ...buyer, first_name: `Buyer ${index + 1}`, ownership_share: share, consent_to_purchase: 'yes' }))
+const joint = { ...formData, natural_person_purchase_mode: 'co_purchasing', purchasers: threePurchasers }
+assert.doesNotThrow(() => validateOnboardingSubmission(joint, { transaction }))
+assert.throws(() => validateOnboardingSubmission({ ...joint, purchasers: threePurchasers.map((person, index) => index === 2 ? { ...person, tax_number: '' } : person) }, { transaction }), /Purchaser 3 Tax Number/)
+assert.throws(() => validateOnboardingSubmission({ ...joint, purchasers: threePurchasers.map((person, index) => index === 2 ? { ...person, ownership_share: 20 } : person) }, { transaction }), /Ownership shares must add up/)
+assert.doesNotThrow(() => validateOnboardingSubmission({ ...formData, purchasers: [{ ...buyer, number_of_dependants: 0, monthly_credit_commitments: 0 }] }, { transaction }))
 
 console.log('purchaser-personas validation tests passed')

@@ -1,4 +1,5 @@
 import { useTransactionPartnerOptions } from '../hooks/useTransactionPartnerOptions.js'
+import { captureBankAttorneyAppointment } from '../services/bankAttorneyAppointmentService.js'
 import { prepareSellerWorkspaceDelivery } from '../services/transactionSellerDeliveryService.js'
 import { transactionSellerDirectoryPeople } from '../core/transactions/transactionSellerDirectory.js'
 import { hasBuyerCaptureDetails } from '../core/transactions/buyerCaptureDetails.js'
@@ -117,7 +118,7 @@ import {
   CONVEYANCING_DOCUMENT_SHORTCUTS,
 } from '../core/transactions/attorneyDocumentControl'
 import { buildAttorneyCommunicationControl } from '../core/transactions/attorneyCommunicationControl'
-import { deriveFinanceManagedBy, isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
+import { deriveFinanceManagedBy, financeTypeLabel as describeFinanceType, isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   getTransactionSalePartyModel,
   getTransactionSaleRouteBadge,
@@ -413,6 +414,7 @@ const ROUTING_VAT_OPTIONS = [
   { value: 'transfer_duty', label: 'Transfer duty' },
   { value: 'vat', label: 'VAT' },
   { value: 'zero_rated_going_concern', label: 'Zero-rated going concern' },
+  { value: 'exempt', label: 'Exempt' },
   { value: 'unknown', label: 'Unknown' },
 ]
 
@@ -9327,10 +9329,22 @@ const ATTORNEY_DOCUMENT_DASHBOARD_PARTIES = [
 const ATTORNEY_DOCUMENT_RECEIVED_STATUSES = new Set(['uploaded', 'pending_review', 'verified', 'generated'])
 const ATTORNEY_DOCUMENT_MISSING_STATUSES = new Set(['missing', 'requested', 'rejected', 'expired'])
 
+function hasAttorneyDashboardStoredFile(row = {}) {
+  const document = row.linkedDocument || row.raw || {}
+  return Boolean(
+    row.fileUrl || row.file_url ||
+      document.file_path || document.filePath ||
+      document.storage_path || document.storagePath ||
+      document.url || document.file_url || document.public_url || document.signed_url,
+  )
+}
+
 function getAttorneyDashboardRowStatus(row = {}) {
-  return normalizeDocumentCommandStatus(row.status || row.requiredDocumentStatus, {
+  const status = normalizeDocumentCommandStatus(row.status || row.requiredDocumentStatus, {
     hasDocument: Boolean(row.fileUrl || row.linkedDocument || row.raw),
   })
+  if (status !== 'verified') return status
+  return hasAttorneyDashboardStoredFile(row) ? status : 'missing'
 }
 
 function getAttorneyDashboardRowParty(row = {}) {
@@ -9459,13 +9473,18 @@ function buildAttorneyDocumentsDashboardModel({
     const categories = definitions.map((definition) => {
       const requirements = dedupeAttorneyDocumentDashboardRows(requiredRows.filter((row) =>
         getAttorneyDashboardRowParty(row) === party.key && getAttorneyDashboardCategoryKey(row, party.key) === definition.key,
-      ))
+      )).map((row) => {
+        const status = getAttorneyDashboardRowStatus(row)
+        return status === row.status
+          ? row
+          : { ...row, status, statusLabel: getDocumentCommandStatusLabel(status) }
+      })
       const requirementKeys = new Set(requirements.map((row) => String(row.canonicalRequirementInstanceId || row.requiredDocumentId || row.requiredDocumentKey || row.id || '')).filter(Boolean))
       const documents = dedupeAttorneyDocumentDashboardRows(libraryRows.filter((row) => {
         if (getAttorneyDashboardRowParty(row) !== party.key) return false
         if (getAttorneyDashboardCategoryKey(row, party.key) !== definition.key) return false
         const requirementKey = String(row.requiredDocumentCanonicalId || row.requiredDocumentId || row.requiredDocumentKey || '')
-        return !requirementKey || !requirementKeys.has(requirementKey) || row.fileUrl
+        return !requirementKey || !requirementKeys.has(requirementKey) || hasAttorneyDashboardStoredFile(row)
       }))
       const basisRows = requirements.length ? requirements : documents
       const receivedCount = basisRows.filter((row) => ATTORNEY_DOCUMENT_RECEIVED_STATUSES.has(getAttorneyDashboardRowStatus(row))).length
@@ -9758,7 +9777,14 @@ function ArchlineDocumentsWorkspace({
         className="max-w-5xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Button type="button" variant="secondary" onClick={onRequest}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onRequest?.({
+                requestedFrom: currentCategory?.party || 'buyer',
+                visibility: 'client_visible',
+              })}
+            >
               <FileText size={14} />
               Request Document
             </Button>
@@ -9787,6 +9813,7 @@ function ArchlineDocumentsWorkspace({
             <div className="divide-y divide-slate-100">
               {activeCategoryRequirements.map((row) => {
                 const document = row.linkedDocument || row.raw || {}
+                const hasStoredFile = hasAttorneyDashboardStoredFile(row)
                 return (
                   <article key={row.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start">
                     <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full border ${getDocumentCommandStatusTone(row.status)}`}>
@@ -9800,7 +9827,7 @@ function ArchlineDocumentsWorkspace({
                       {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
                     </span>
                     <span className="ml-auto flex shrink-0 items-center gap-2">
-                    {row.fileUrl ? (
+                    {hasStoredFile ? (
                       <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
                         Replace
                       </Button>
@@ -14338,7 +14365,6 @@ function AgentTransactionCommandCenter({
   dealSummary = null,
   workflowProgress = [],
   onOpenDocuments,
-  onOpenTimeline,
   onOpenStakeholders,
   onOpenParties,
 }) {
@@ -14353,7 +14379,7 @@ function AgentTransactionCommandCenter({
   }
   const journeyActions = <div className="flex flex-wrap items-center gap-2">
     <Button type="button" variant="secondary" size="sm" disabled={journeyLoading} onClick={onRecordHistoricalProgress}>Record historical progress</Button>
-    <Button type="button" variant="secondary" size="sm" onClick={developerOverview ? () => onOpenWorkspace?.('transfer') : onOpenTimeline}>View full journey<ChevronRight size={14} /></Button>
+    <Button type="button" variant="secondary" size="sm" onClick={() => onOpenWorkspace?.('transfer')}>View full journey<ChevronRight size={14} /></Button>
   </div>
 
   return (
@@ -14413,7 +14439,7 @@ function AgentTransactionCommandCenter({
                 <button key={row.key} type="button" className="flex min-h-16 w-full flex-1 items-center gap-3 py-3 text-left" onClick={onOpenDocuments}>
                   <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-[9px] ${row.iconClass}`}><Icon size={16} /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-3"><strong className="truncate text-xs text-textStrong">{row.label}</strong><span className="shrink-0 text-xs font-semibold text-textMuted">{row.total ? row.countLabel : 'No requirements'}</span></span>
+                    <span className="flex items-center justify-between gap-3"><strong className="truncate text-xs text-textStrong">{row.label}</strong><span className="shrink-0 text-xs font-semibold text-textMuted">{row.total ? row.countLabel : 'View requirements'}</span></span>
                     <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${row.barClass}`} style={{ width: `${row.percent}%` }} /></span>
                   </span>
                 </button>
@@ -15024,11 +15050,16 @@ function createInitialLegalPartnerInviteDraft() {
     contactName: '',
     email: '',
     phone: '',
+    bankName: '',
+    appointmentReference: '',
+    evidenceDocumentId: '',
+    evidenceConfirmed: false,
   }
 }
 
 function PartnerInvitesSidePanel({
   invitations = [],
+  documents = [],
   loading = false,
   busyId = '',
   message = '',
@@ -15082,6 +15113,23 @@ function PartnerInvitesSidePanel({
                 </option>
               ))}
             </Field>
+            <Field aria-label="Appointing bank" placeholder="Appointing bank" value={createDraft.bankName}
+              onChange={event => onCreateDraftChange?.({ ...createDraft, bankName: event.target.value })} disabled={createBusy} required />
+            <Field aria-label="Bank appointment reference" placeholder="Bank appointment reference" value={createDraft.appointmentReference}
+              onChange={event => onCreateDraftChange?.({ ...createDraft, appointmentReference: event.target.value })} disabled={createBusy} required />
+            <Field as="select" aria-label="Bank appointment evidence" value={createDraft.evidenceDocumentId}
+              onChange={event => onCreateDraftChange?.({ ...createDraft, evidenceDocumentId: event.target.value })} disabled={createBusy} required>
+              <option value="">Select uploaded bank appointment evidence</option>
+              {documents.filter(document => document.id && !['archived', 'deleted', 'superseded'].includes(document.status)).map(document => (
+                <option key={document.id} value={document.id}>{document.name || document.filename || document.document_type || 'Uploaded document'}</option>
+              ))}
+            </Field>
+            <p className="text-xs text-textMuted">Upload the bank’s appointment in Documents first.</p>
+            <label className="flex items-start gap-2 text-xs text-textStrong">
+              <input type="checkbox" checked={createDraft.evidenceConfirmed} disabled={createBusy} required
+                onChange={event => onCreateDraftChange?.({ ...createDraft, evidenceConfirmed: event.target.checked })} />
+              I have checked that this bank appointed the firm below.
+            </label>
             <Field
               value={createDraft.companyName}
               onChange={(event) => onCreateDraftChange?.({ ...createDraft, companyName: event.target.value })}
@@ -16006,6 +16054,7 @@ function AttorneyTransactionDetail() {
   const discussionMessageRequestRef = useRef(null)
   const documentRequestCommandRef = useRef(null)
   const documentReviewCommandRef = useRef(null)
+  const allocationPendingSavesRef = useRef(new Map())
   liveMatterScopeRef.current = currentMatterAccessKey
   const canonicalRefreshSequenceRef = useRef(0)
   const canonicalRefreshRequestRef = useRef({ key: '', promise: null })
@@ -16028,6 +16077,8 @@ function AttorneyTransactionDetail() {
   const [historicalJourneyOpen, setHistoricalJourneyOpen] = useState(false)
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
+  const [matterAccessError, setMatterAccessError] = useState('')
+  const [matterAccessRetry, setMatterAccessRetry] = useState(0)
   const [matterAccessKey, setMatterAccessKey] = useState(() => (workspaceRole !== 'attorney' ? currentMatterAccessKey : ''))
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState(() => workspaceRole === 'attorney' && readTransferWorkspaceNavigation(location.search).active ? 'transfer' : 'overview')
@@ -16886,6 +16937,7 @@ function AttorneyTransactionDetail() {
         ? performance.now()
         : Date.now()
       let accessOutcome = 'failed'
+      setMatterAccessError('')
       if (workspaceRole !== 'attorney') {
         if (!active) return
         setMatterAccessAllowed(true)
@@ -16901,7 +16953,9 @@ function AttorneyTransactionDetail() {
       try {
         const hasMatterAccess = await canAccessAttorneyMatter(
           transactionId,
-          attorneyPermissionState.firmId,
+          matterAccessRetry,
+    loadData,
+    attorneyPermissionState.firmId,
           // Resolve the actor from the live Supabase session. Workspace profile
           // state can briefly lag behind an account/workspace switch and must
           // not turn a valid firm assignment into a false access denial.
@@ -16921,12 +16975,14 @@ function AttorneyTransactionDetail() {
         setMatterAccessAllowed(true)
         setError('')
         accessOutcome = 'success'
+        if(matterAccessRetry>0){foregroundLoadTransactionRef.current='';void loadData()}
 
       } catch (accessError) {
         if (!active) return
         setWorkflowOperations(null)
         setMatterAccessKey('')
-        setError(accessError?.message || 'You do not have access to this matter.')
+        setMatterAccessError(accessError?.message || 'Matter access could not be checked. Please retry.')
+        setError(accessError?.message || 'Matter access could not be checked. Please retry.')
         setMatterAccessAllowed(false)
       } finally {
         if (workspaceRole === 'attorney') {
@@ -16956,6 +17012,8 @@ function AttorneyTransactionDetail() {
       active = false
     }
   }, [
+    matterAccessRetry,
+    loadData,
     attorneyPermissionState.firmId,
     attorneyPermissionState.loading,
     attorneyPermissionState.membership,
@@ -17446,8 +17504,8 @@ function AttorneyTransactionDetail() {
       ? 'overview'
       : 'overview'
   useEffect(() => {
-    const needsOverviewDocuments = workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu)
-    if ((!needsOverviewDocuments && activeWorkspaceMenu !== 'documents') || documentDataHydrated) return
+    const needsAttorneyDocuments = workspaceRole === 'attorney' && ['today', 'overview', 'stakeholders'].includes(activeWorkspaceMenu)
+    if ((!needsAttorneyDocuments && activeWorkspaceMenu !== 'documents') || documentDataHydrated) return
     if (workspaceRole === 'attorney' && (!matterAccessAllowed || matterAccessKey !== currentMatterAccessKey)) return
     void loadDocumentsWorkspace().catch(() => {})
   }, [activeWorkspaceMenu, currentMatterAccessKey, documentDataHydrated, loadDocumentsWorkspace, matterAccessAllowed, matterAccessKey, workspaceRole])
@@ -17620,12 +17678,21 @@ function AttorneyTransactionDetail() {
       setLegalPartnerInviteBusy(true)
       setPartnerInvitationMessage('')
       setPartnerInvitationError('')
+      const appointment = await captureBankAttorneyAppointment({
+        transactionId: transaction.id,
+        ...draft,
+        bankName: legalPartnerInviteDraft.bankName,
+        appointmentReference: legalPartnerInviteDraft.appointmentReference,
+        evidenceDocumentId: legalPartnerInviteDraft.evidenceDocumentId,
+        evidenceConfirmed: legalPartnerInviteDraft.evidenceConfirmed,
+      })
       const result = await createTransactionPartnerInvitation({
         transactionId: transaction.id,
         ...draft,
         metadata: {
           source: 'attorney_transaction_detail_legal_partner_invite',
           invitedByRole: workspaceRole,
+          legal_role_appointment_id: appointment.id,
         },
       })
       const sent = result?.emailResult?.sent === true || result?.emailResult?.ok === true
@@ -21364,7 +21431,7 @@ function AttorneyTransactionDetail() {
       }),
     [onboardingCompleted, sellerPartyLabels, transactionContactRows],
   )
-  const overviewWorkflowProgress = useMemo(() => buildOverviewWorkflowProgress({ transactionId: transaction?.id, rollup: transactionRollup }), [transaction?.id, transactionRollup])
+  const overviewWorkflowProgress = useMemo(() => buildOverviewWorkflowProgress({ transactionId: transaction?.id, rollup: transactionRollup, transaction }), [transaction, transactionRollup])
   const agentOverviewDealSummary = useMemo(
     () =>
       buildAgentDealSummary({
@@ -21865,6 +21932,7 @@ function AttorneyTransactionDetail() {
   }
 
   async function allocateTransactionProfessional(roleType, option, source = 'transaction_workspace_allocation') {
+    const allocationScope = currentMatterAccessKey
     if (!canManageTransactionRoleplayers || !transaction?.id) throw new Error('You do not have permission to allocate transaction professionals.')
     if (!allocationRoles.some((role) => role.key === roleType && role.options.some((item) => item.id === option?.id || (item.organisationId && item.organisationId === option?.organisationId)))) {
       throw new Error('Choose an available firm for this transaction role.')
@@ -21885,11 +21953,16 @@ function AttorneyTransactionDetail() {
       allocationOnly: true,
       source,
     })
-    if (refreshed) setData(refreshed)
-    setStakeholderMessage(`${allocationRoles.find((role) => role.key === roleType)?.label || 'Professional'} allocation saved.`)
-    try { await loadData({ background: true }) }
-    catch { setError('The allocation was saved, but the latest transaction view could not be refreshed. Refresh the page.') }
-    window.dispatchEvent(new Event('itg:transaction-updated'))
+    if (refreshed?.transaction && liveMatterScopeRef.current === allocationScope) {
+      setData((previous) => previous ? {
+        ...previous,
+        transaction: { ...previous.transaction, ...refreshed.transaction },
+      } : previous)
+    }
+    if (liveMatterScopeRef.current === allocationScope) {
+      setStakeholderMessage(`${allocationRoles.find((role) => role.key === roleType)?.label || 'Professional'} allocation saved.`)
+    }
+    window.dispatchEvent(new CustomEvent('itg:transaction-updated', { detail: { transactionId: transaction.id } }))
   }
 
   function openRoleplayerConfirmation(target = null) {
@@ -22476,6 +22549,10 @@ function AttorneyTransactionDetail() {
       setReasonDialog((previous) => ({ ...previous, open: false }))
       setReasonDraft('')
       window.dispatchEvent(new Event('itg:transaction-updated'))
+      if (['archive', 'cancel'].includes(reasonDialog.action)) {
+        navigate(workspaceBackPath, { replace: true })
+        return
+      }
       await loadData()
     } catch (actionError) {
       setError(actionError.message || 'Unable to apply lifecycle action.')
@@ -23107,7 +23184,7 @@ function AttorneyTransactionDetail() {
   }
 
   if (workspaceRole === 'attorney' && !matterAccessAllowed) {
-    return <p className="status-message error">You do not have access to this matter.</p>
+    return <div className="status-message error"><p>{matterAccessError ? `Matter access could not be checked: ${matterAccessError}` : 'You do not have access to this matter.'}</p>{matterAccessError ? <button type="button" className="btn-secondary mt-3" onClick={() => setMatterAccessRetry(value => value + 1)}>Retry matter</button> : null}</div>
   }
 
   // A navigation preview is useful for carrying context between routes, but it
@@ -23176,7 +23253,7 @@ function AttorneyTransactionDetail() {
           {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
             <MatterOverviewQuickFacts
               purchasePrice={formatCurrencyValue(displayPurchasePriceValue, 'Not captured')}
-              financeDescription={normalizedFinanceType === 'cash' ? 'Cash purchase' : normalizedFinanceType === 'bond' ? 'Bond finance' : normalizedFinanceType === 'hybrid' ? 'Hybrid finance' : 'Finance type not captured'}
+              financeDescription={normalizedFinanceType === 'unknown' ? 'Finance type not captured' : describeFinanceType(normalizedFinanceType)}
               matterNumber={workspaceReference}
               onSaveMatterNumber={saveTransferMatterNumber}
               buyerDocuments={overviewPartyDocuments.buyer}
@@ -23567,7 +23644,7 @@ function AttorneyTransactionDetail() {
               onFilterChange={setActiveDocumentLibraryCategory}
               onSearchChange={setDocumentLibrarySearch}
               onUpload={() => openDocumentUploadModal()}
-              onRequest={() => openConveyancingDocumentRequest()}
+              onRequest={(defaults) => openConveyancingDocumentRequest(defaults || {})}
               onUploadRequirement={(row) => {
                 if (row.requirement || row.requiredDocument) {
                   openDocumentUploadModal({ requirement: row.requirement || row.requiredDocument })
@@ -23781,6 +23858,15 @@ function AttorneyTransactionDetail() {
               onOpenAssignments={openRoleplayerAllocation} onAssignRole={openRoleplayerAllocation} canManageAssignments={canManageTransactionRoleplayers}
               onOpenActivity={openRoleplayerActivityFeed}
             />
+            {canViewPartnerInvitations ? (
+              <PartnerInvitesSidePanel invitations={partnerInvitations} documents={allDocuments}
+                loading={partnerInvitationLoading} busyId={partnerInvitationBusyId}
+                message={partnerInvitationMessage} error={partnerInvitationError}
+                canCreateLegalInvite={canCreateLegalPartnerInvites} createDraft={legalPartnerInviteDraft}
+                createBusy={legalPartnerInviteBusy} onCreateDraftChange={setLegalPartnerInviteDraft}
+                onCreateSubmit={handleCreateLegalPartnerInvite} onRefresh={loadPartnerInvitations}
+                onResend={handleResendPartnerInvitation} onCopy={handleCopyPartnerInvitation} />
+            ) : null}
           </section>
         ) : null}
 
@@ -26020,13 +26106,15 @@ function AttorneyTransactionDetail() {
       </Modal>
 
       {allocationRoleType ? <TransactionRoleAllocationDialog
-        key={allocationRoleType}
+        key={`${currentMatterAccessKey}:${allocationRoleType}`}
         initialRoleType={allocationRoleType}
         roles={allocationRoles}
         loading={partnerOptionsLoading}
         loadError={partnerOptionsError}
         onRetry={retryPartnerOptions}
         onAllocate={allocateTransactionProfessional}
+        pendingSavesRef={allocationPendingSavesRef}
+        requestKey={currentMatterAccessKey}
         onClose={() => setAllocationRoleType('')}
       /> : null}
 
@@ -26438,13 +26526,14 @@ function AttorneyTransactionDetail() {
               </Field>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-label font-semibold uppercase text-textMuted">Purchaser type</span>
+              <span className="text-label font-semibold uppercase text-textMuted">Purchaser entity</span>
               <Field
                 as="select"
                 value={routingProfileDraft.purchaserType}
                 onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, purchaserType: event.target.value }))}
               >
-                {ROUTING_ENTITY_TYPE_OPTIONS.map((option) => (
+                <option value="unknown" disabled>Select purchaser entity</option>
+                {ROUTING_ENTITY_TYPE_OPTIONS.filter(option => ['individual', 'company', 'trust'].includes(option.value)).map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </Field>
@@ -26513,7 +26602,7 @@ function AttorneyTransactionDetail() {
                     value={routingProfileDraft.transferTaxDecision?.route || 'needs_tax_advice'}
                     onChange={(event) => setRoutingProfileDraft((previous) => ({
                       ...previous,
-                      vatTreatment: ['transfer_duty', 'vat', 'zero_rated_going_concern'].includes(event.target.value) ? event.target.value : 'unknown',
+                      vatTreatment: event.target.value === 'needs_tax_advice' ? 'unknown' : event.target.value,
                       transferTaxDecision: { ...previous.transferTaxDecision, route: event.target.value },
                     }))}
                   >

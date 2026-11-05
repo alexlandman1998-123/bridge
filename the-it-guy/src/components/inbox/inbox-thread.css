@@ -1,6 +1,21 @@
-.inbox-email-body{display:block;width:100%;height:360px;border:1px solid #dce5e8;border-radius:8px;background:#fff;margin:8px 0}
+.inbox-email-body{display:block;width:100%;min-height:48px;border:0;border-radius:0;background:#fff;margin:8px 0}
 .inbox-message-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .inbox-body-toggle{font-size:12px;margin:6px 0;padding:4px 8px}
 .inbox-message-attachments{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:6px}
 .inbox-message-attachments li{overflow-wrap:anywhere;font-size:12px}
 .inbox-message-attachments button{max-width:100%;white-space:normal;text-align:left;padding:6px 9px;border:1px solid #dce5e8;border-radius:6px;background:#f3f7f6}
+
+.revo-email-reader .inbox-body-toggle { display:inline-flex; align-items:center; min-height:28px; margin:2px 8px 6px 0; padding:3px 0; border:0; background:transparent; color:#64756d; font-size:11px; cursor:pointer; }
+.revo-email-reader .inbox-body-toggle:hover { color:#146b50; text-decoration:underline; }
+.inbox-image-controls { display:inline-flex; align-items:center; gap:8px; }
+.inbox-image-controls small { margin:0!important; font-size:11px!important; }
+
+.revo-email-reader .inbox-message-heading { padding:12px 14px; margin:0 0 10px; background:#f0f4f2; border-left:3px solid #87a693; border-radius:0 5px 5px 0; }
+.revo-email-reader .inbox-message-heading header { align-items:center; margin:0 0 4px; }
+.revo-email-reader .inbox-message-heading header strong { flex:1; color:#244334; font-weight:650; }
+.revo-email-reader .inbox-message-heading time { color:#5b7164; }
+.revo-email-reader .inbox-message-heading small { margin:0; color:#5a7064; }
+.inbox-delete-draft { display:inline-grid; place-items:center; flex-shrink:0; width:28px; height:28px; padding:0; background:transparent; border:0; border-radius:5px; color:#78857c; cursor:pointer; }
+.inbox-delete-draft:hover:not(:disabled) { color:#ad3c37; background:#fbeeed; }
+.inbox-delete-confirm { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 12px; margin-bottom:10px; background:#fff6f4; border-radius:6px; font-size:12px; }
+.inbox-delete-confirm button { padding:5px 9px; border:1px solid #e0c9c5; border-radius:5px; background:white; font-size:12px; }

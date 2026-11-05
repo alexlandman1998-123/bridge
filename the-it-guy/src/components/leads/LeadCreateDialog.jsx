@@ -32,6 +32,7 @@ function LeadCreateDialogContent({
   agents = [],
   currentAgent = {},
   saving = false,
+  readOnly = false,
   error = '',
   feedback = {},
   draft = null,
@@ -100,6 +101,7 @@ function LeadCreateDialogContent({
           </p>
         ) : null}
 
+        <fieldset disabled={saving || readOnly} className="contents">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
             First name
@@ -195,6 +197,7 @@ function LeadCreateDialogContent({
           <span className="flex items-center justify-between gap-3"><span>Notes</span><span className="text-xs font-normal text-[#8295a9]">Optional</span></span>
           <Field as="textarea" rows={3} value={form.notes || ''} onChange={(event) => setField('notes', event.target.value)} />
         </label>
+        </fieldset>
       </form>
     </Modal>
   )

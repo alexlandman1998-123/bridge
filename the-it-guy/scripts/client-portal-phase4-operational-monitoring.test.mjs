@@ -26,8 +26,8 @@ assert.match(migration, /greatest\(30, least\(coalesce\(p_retention_days, 90\), 
 assert.match(migration, /auth\.role\(\) <> 'service_role'/, 'history pruning must be service-role only')
 assert.match(privateListingService, /export async function getSellerPortalSecurityDiagnostics/, 'the agent UI needs a diagnostics service boundary')
 assert.match(privateListingService, /legacyFallback: true/, 'the diagnostics UI should tolerate frontend-first deployment')
-assert.match(listingDetail, /Portal Security/, 'the listing workspace should surface portal security health')
-assert.match(listingDetail, /Failures \(24h\)/, 'the listing workspace should surface recent failure volume')
-assert.match(listingDetail, /open security alert/, 'the listing workspace should surface open alerts')
+assert.match(listingDetail, /getSellerPortalSecurityDiagnostics\(token\)/, 'the listing workspace should load current portal diagnostics')
+assert.match(listingDetail, /diagnostics: sellerPortalSecurityDiagnostics/, 'current diagnostics must feed the seller lifecycle projection')
+assert.match(listingDetail, /<SellerPortalAccessControls/, 'the current listing workspace must retain explicit access controls')
 
 console.log('Client portal Phase 4 operational monitoring checks passed.')

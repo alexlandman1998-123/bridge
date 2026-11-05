@@ -154,8 +154,10 @@ export function getFeatureFlags() {
     bondApplicationBankAdaptersV1: resolveBondApplicationBankAdaptersFlag({ env: import.meta.env }).enabled,
     bondApplicationLiveDeliveryV1: resolveBondApplicationLiveDeliveryFlag({ env: import.meta.env }).enabled,
     bondApplicationExternalStatusSyncV1: resolveBondApplicationExternalStatusSyncFlag({ env: import.meta.env }).enabled,
-    enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, false),
-    enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
+    // Local phone previews must survive a dev-server restart without extra
+    // shell variables. Explicit settings still override the development default.
+    enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, import.meta.env.DEV === true),
+    enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, import.meta.env.DEV === true),
     allowDesktopFallbackOnMobile: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),
     disableRoleRestrictions: unsafeFlags.disableRoleRestrictions,
   }

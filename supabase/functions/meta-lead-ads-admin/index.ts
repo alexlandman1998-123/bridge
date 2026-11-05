@@ -1,6 +1,7 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
-import { loadMetaPageForms, assertMetaLeadContext, contactFromFields, leadFields, metaLeadDestination, metaLeadType, RecordValue, text } from "../_shared/metaLeadAds.ts";
+import { contactFromFields, leadFields, RecordValue, text } from "../_shared/metaLeadAds.ts";
 
 const GRAPH_VERSION=text(Deno.env.get("META_GRAPH_VERSION"))||"v23.0";
 const APP_ID=text(Deno.env.get("META_APP_ID"))||"1010066162083846";
@@ -9,7 +10,7 @@ const CORS={"access-control-allow-origin":"*","access-control-allow-headers":"au
 const json=(status:number,body:RecordValue)=>new Response(JSON.stringify(body),{status,headers:{...CORS,"content-type":"application/json"}});
 const base64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes));
 async function sha256(value:string){const b=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));return [...b].map(v=>v.toString(16).padStart(2,"0")).join("");}
-function serviceClient(){const u=text(Deno.env.get("SUPABASE_URL")),k=text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));return u&&k?createClient(u,k,{auth:{persistSession:false,autoRefreshToken:false}}):null;}
+function serviceClient(){const u=text(Deno.env.get("SUPABASE_URL")),k=text(supabaseServiceKey());return u&&k?createClient(u,k,{auth:{persistSession:false,autoRefreshToken:false}}):null;}
 function callbackUrl(){return `${text(Deno.env.get("SUPABASE_URL")).replace(/\/$/,"")}/functions/v1/meta-lead-ads-admin`;}
 async function encrypt(token:string){const kb=Uint8Array.from(atob(text(Deno.env.get("META_TOKEN_ENCRYPTION_KEY"))),c=>c.charCodeAt(0));if(kb.length!==32)throw new Error("Meta token encryption is not configured.");const iv=crypto.getRandomValues(new Uint8Array(12));const key=await crypto.subtle.importKey("raw",kb,"AES-GCM",false,["encrypt"]);const cipher=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(token)));return `${base64(iv)}.${base64(cipher)}`;}
 async function decrypt(ciphertext:string){const kb=Uint8Array.from(atob(text(Deno.env.get("META_TOKEN_ENCRYPTION_KEY"))),c=>c.charCodeAt(0)),[a,b]=ciphertext.split(".");const key=await crypto.subtle.importKey("raw",kb,"AES-GCM",false,["decrypt"]);return new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:Uint8Array.from(atob(a),c=>c.charCodeAt(0))},key,Uint8Array.from(atob(b),c=>c.charCodeAt(0))));}
@@ -18,7 +19,7 @@ function requestedDate(value:unknown,label:string){const raw=text(value);if(!raw
 function inRange(value:unknown,from:Date|null,to:Date|null){const date=new Date(text(value));if(Number.isNaN(date.getTime()))return false;return (!from||date>=from)&&(!to||date<=to);}
 async function actor(req:Request,db:any,organisationId:string){const jwt=text(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");const user=(await db.auth.getUser(jwt)).data.user;if(!user)throw new Error("Unauthenticated.");const member=await db.from("organisation_users").select("role,status").eq("organisation_id",organisationId).eq("user_id",user.id).maybeSingle();if(!member.data||member.data.status!=="active"||!["principal","owner","director","admin","super_admin","developer","agency_admin"].includes(member.data.role))throw new Error("Organisation administrator access required.");return user.id;}
 
-Deno.serve(async(req)=>{
+Deno.serve(withApiCredentials(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:CORS}); const db=serviceClient();if(!db)return json(500,{error:"Service is not configured."});
   const url=new URL(req.url), code=text(url.searchParams.get("code")), state=text(url.searchParams.get("state"));
   if(req.method==="GET"&&code&&state){
@@ -72,10 +73,9 @@ Deno.serve(async(req)=>{
       const token=await decrypt(row.token_ciphertext),response=await graph(`${mapping.form_id}/leads?fields=id,created_time&limit=100`,token),leads=Array.isArray(response.data)?response.data as RecordValue[]:[];
       const scoped=leads.filter(lead=>text(lead.id)&&inRange(lead.created_time,requestedFrom,requestedTo));
       const leadIds=scoped.map(lead=>text(lead.id)),references=leadIds.map(id=>`meta-leadgen:${id}`);
-      const existingLeads=references.length?(await db.from("leads").select("source_reference_id,lead_type").eq("organisation_id",org).in("source_reference_id",references)).data||[]:[];
-      const existingRecruitment=leadIds.length?(await db.from("recruitment_leads").select("id,meta_leadgen_id").eq("organisation_id",org).in("meta_leadgen_id",leadIds)).data||[]:[];
+      const existingLeads=references.length?(await db.from("leads").select("source_reference_id").eq("organisation_id",org).in("source_reference_id",references)).data||[]:[];
       const existingEvents=leadIds.length?(await db.from("meta_lead_ads_events").select("leadgen_id").eq("organisation_id",org).in("leadgen_id",leadIds)).data||[]:[];
-      const known=new Set([...existingLeads.map((lead:RecordValue)=>text(lead.source_reference_id).replace(/^meta-leadgen:/,"")),...existingRecruitment.map((lead:RecordValue)=>text(lead.meta_leadgen_id)),...existingEvents.map((event:RecordValue)=>text(event.leadgen_id))]);
+      const known=new Set([...existingLeads.map((lead:RecordValue)=>text(lead.source_reference_id).replace(/^meta-leadgen:/,"")),...existingEvents.map((event:RecordValue)=>text(event.leadgen_id))]);
       const duplicateCount=scoped.filter(lead=>known.has(text(lead.id))).length, newCount=scoped.length-duplicateCount;
       const paging=response.paging&&typeof response.paging==="object"?response.paging as RecordValue:{},cursors=paging.cursors&&typeof paging.cursors==="object"?paging.cursors as RecordValue:{};
       const previewComplete=!text(paging.next),metadata={preview:{sample_limit:100,complete:previewComplete,next_after:text(cursors.after)||null,returned_count:leads.length,matched_count:scoped.length,previewed_at:new Date().toISOString()}};
@@ -90,25 +90,24 @@ Deno.serve(async(req)=>{
       if(!["ready","paused"].includes(text(job.status)))return json(409,{error:"Import job is not ready to process."});
       const claim=await db.from("meta_lead_ads_imports").update({status:"importing",started_at:job.started_at||new Date().toISOString(),last_error_message:null}).eq("id",job.id).in("status",["ready","paused"]).select("*").maybeSingle();
       if(claim.error)throw new Error(claim.error.message);if(!claim.data)return json(409,{error:"This import batch is already being processed."});
-      const activeJob=claim.data,firstBatch=!job.started_at,mapping=(await db.from("meta_lead_ads_forms").select("id,form_id,form_name,page_id,lead_type,is_active").eq("id",activeJob.form_mapping_id).eq("organisation_id",org).eq("connection_id",row.id).eq("is_active",true).maybeSingle()).data;
+      const activeJob=claim.data,firstBatch=!job.started_at,mapping=(await db.from("meta_lead_ads_forms").select("id,form_id,form_name,page_id,is_active").eq("id",activeJob.form_mapping_id).eq("organisation_id",org).eq("connection_id",row.id).eq("is_active",true).maybeSingle()).data;
       if(!mapping||text(mapping.form_id)!==text(activeJob.form_id)||text(mapping.page_id)!==text(row.page_id)){await db.from("meta_lead_ads_imports").update({status:"failed",last_error_message:"The selected form is no longer enabled for this Page."}).eq("id",activeJob.id);return json(409,{error:"The selected form is no longer enabled for this Page."});}
       let processed=0,duplicates=0,invalid=0,failed=0,nextCursor:string|null=null,complete=false;
       try{
         const token=await decrypt(row.token_ciphertext),after=text(activeJob.next_cursor),path=`${mapping.form_id}/leads?fields=id,created_time,form_id,field_data,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name&limit=25${after?`&after=${encodeURIComponent(after)}`:""}`;
         const response=await graph(path,token),items=Array.isArray(response.data)?response.data as RecordValue[]:[],from=activeJob.requested_from?new Date(text(activeJob.requested_from)):null,to=activeJob.requested_to?new Date(text(activeJob.requested_to)):null;
         const candidateIds=items.map(item=>text(item.id)).filter(Boolean),references=candidateIds.map(id=>`meta-leadgen:${id}`);
-        const existingLeads=references.length?(await db.from("leads").select("source_reference_id,lead_type").eq("organisation_id",org).in("source_reference_id",references)).data||[]:[];
-        const existingRecruitment=candidateIds.length?(await db.from("recruitment_leads").select("id,meta_leadgen_id").eq("organisation_id",org).in("meta_leadgen_id",candidateIds)).data||[]:[];
+        const existingLeads=references.length?(await db.from("leads").select("source_reference_id").eq("organisation_id",org).in("source_reference_id",references)).data||[]:[];
         const existingEvents=candidateIds.length?(await db.from("meta_lead_ads_events").select("leadgen_id").eq("organisation_id",org).in("leadgen_id",candidateIds)).data||[]:[];
-        const known=new Set([...existingLeads.map((lead:RecordValue)=>text(lead.source_reference_id).replace(/^meta-leadgen:/,"")),...existingRecruitment.map((lead:RecordValue)=>text(lead.meta_leadgen_id)),...existingEvents.map((event:RecordValue)=>text(event.leadgen_id))]);
+        const known=new Set([...existingLeads.map((lead:RecordValue)=>text(lead.source_reference_id).replace(/^meta-leadgen:/,"")),...existingEvents.map((event:RecordValue)=>text(event.leadgen_id))]);
         for(const detail of items){
-          const leadgenId=text(detail.id),createdAt=text(detail.created_time);if(!leadgenId||!createdAt||!inRange(createdAt,from,to)){if(leadgenId&&!createdAt){invalid++;await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,lead_type:metaLeadType(mapping.lead_type),page_id:row.page_id,form_id:mapping.form_id,import_id:activeJob.id,ingestion_source:"historical",status:"ignored",attempts:1,payload_json:{id:leadgenId},error_message:"Meta lead has no valid submission time."},{onConflict:"leadgen_id",ignoreDuplicates:true});}continue;}
-          if(known.has(leadgenId)){duplicates++;const recruitment=existingRecruitment.find((lead:RecordValue)=>text(lead.meta_leadgen_id)===leadgenId);await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,lead_type:recruitment?"recruitment":metaLeadType(existingLeads.find((lead:RecordValue)=>text(lead.source_reference_id)===`meta-leadgen:${leadgenId}`)?.lead_type||mapping.lead_type),recruitment_lead_id:recruitment?.id||null,page_id:row.page_id,form_id:mapping.form_id,import_id:activeJob.id,ingestion_source:"historical",meta_created_at:createdAt,status:"duplicate",attempts:1,payload_json:{id:leadgenId,created_time:createdAt}},{onConflict:"leadgen_id",ignoreDuplicates:true});continue;}
+          const leadgenId=text(detail.id),createdAt=text(detail.created_time);if(!leadgenId||!createdAt||!inRange(createdAt,from,to)){if(leadgenId&&!createdAt){invalid++;await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,page_id:row.page_id,form_id:mapping.form_id,import_id:activeJob.id,ingestion_source:"historical",status:"ignored",attempts:1,payload_json:{id:leadgenId},error_message:"Meta lead has no valid submission time."},{onConflict:"leadgen_id",ignoreDuplicates:true});}continue;}
+          if(known.has(leadgenId)){duplicates++;await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,page_id:row.page_id,form_id:mapping.form_id,import_id:activeJob.id,ingestion_source:"historical",meta_created_at:createdAt,status:"duplicate",attempts:1,payload_json:{id:leadgenId,created_time:createdAt}},{onConflict:"leadgen_id",ignoreDuplicates:true});continue;}
           try{
-            assertMetaLeadContext(detail,leadgenId,mapping.form_id);const fields=leadFields(detail.field_data),contact=contactFromFields(fields),ingested=await db.rpc("meta_ingest_lead_ad_routed",{p_leadgen_id:leadgenId,p_organisation_id:org,p_page_id:row.page_id,p_form_id:mapping.form_id,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields},p_ingestion_source:"historical",p_meta_created_at:createdAt,p_import_id:activeJob.id});
+            const fields=leadFields(detail.field_data),contact=contactFromFields(fields),ingested=await db.rpc("meta_ingest_lead_ad",{p_leadgen_id:leadgenId,p_organisation_id:org,p_page_id:row.page_id,p_form_id:mapping.form_id,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields},p_ingestion_source:"historical",p_meta_created_at:createdAt,p_import_id:activeJob.id});
             if(ingested.error)throw new Error(ingested.error.message);
-            const event=await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,page_id:row.page_id,form_id:mapping.form_id,...metaLeadDestination(ingested.data),import_id:activeJob.id,ingestion_source:"historical",meta_created_at:createdAt,status:"processed",attempts:1,payload_json:detail,processed_at:new Date().toISOString(),error_message:null},{onConflict:"leadgen_id",ignoreDuplicates:true});if(event.error)throw new Error(event.error.message);processed++;
-          }catch(error){failed++;const message=error instanceof Error?error.message:"Historical lead processing failed.";await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,lead_type:metaLeadType(mapping.lead_type),page_id:row.page_id,form_id:mapping.form_id,import_id:activeJob.id,ingestion_source:"historical",meta_created_at:createdAt,status:"failed",attempts:1,payload_json:detail,error_message:message},{onConflict:"leadgen_id",ignoreDuplicates:true});}
+            const event=await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,page_id:row.page_id,form_id:mapping.form_id,crm_lead_id:ingested.data,import_id:activeJob.id,ingestion_source:"historical",meta_created_at:createdAt,status:"processed",attempts:1,payload_json:detail,processed_at:new Date().toISOString(),error_message:null},{onConflict:"leadgen_id",ignoreDuplicates:true});if(event.error)throw new Error(event.error.message);processed++;
+          }catch(error){failed++;const message=error instanceof Error?error.message:"Historical lead processing failed.";await db.from("meta_lead_ads_events").upsert({leadgen_id:leadgenId,organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,page_id:row.page_id,form_id:mapping.form_id,import_id:activeJob.id,ingestion_source:"historical",meta_created_at:createdAt,status:"failed",attempts:1,payload_json:detail,error_message:message},{onConflict:"leadgen_id",ignoreDuplicates:true});}
         }
         const paging=response.paging&&typeof response.paging==="object"?response.paging as RecordValue:{},cursors=paging.cursors&&typeof paging.cursors==="object"?paging.cursors as RecordValue:{};nextCursor=text(cursors.after)||null;complete=!text(paging.next);
         const updated=await db.from("meta_lead_ads_imports").update({status:complete?"completed":"paused",next_cursor:complete?null:nextCursor,imported_count:(firstBatch?0:Number(activeJob.imported_count||0))+processed,duplicate_count:(firstBatch?0:Number(activeJob.duplicate_count||0))+duplicates,invalid_count:(firstBatch?0:Number(activeJob.invalid_count||0))+invalid,failed_count:(firstBatch?0:Number(activeJob.failed_count||0))+failed,discovered_count:(firstBatch?0:Number(activeJob.discovered_count||0))+processed+duplicates+invalid+failed,completed_at:complete?new Date().toISOString():null,last_error_message:null}).eq("id",activeJob.id).select("id,status,imported_count,duplicate_count,invalid_count,failed_count,next_cursor").single();if(updated.error)throw new Error(updated.error.message);
@@ -116,20 +115,22 @@ Deno.serve(async(req)=>{
       }catch(error){const message=error instanceof Error?error.message:"Historical import batch failed.";const disconnected=/token|oauth|session|permission/i.test(message);await db.from("meta_lead_ads_imports").update({status:"paused",last_error_message:message}).eq("id",activeJob.id);if(disconnected)await db.from("meta_lead_ads_connections").update({connection_status:"error",last_error_message:message,last_checked_at:new Date().toISOString()}).eq("id",row.id);return json(502,{error:message});}
     }
     if(action==="list_forms"){
-      const token=await decrypt(row.token_ciphertext),graphForms=await loadMetaPageForms(row.page_id,token,graph);
+      const token=await decrypt(row.token_ciphertext),graphForms=(await graph(`${row.page_id}/leadgen_forms?fields=id,name,status&limit=200`,token)).data||[];
       const mappings=(await db.from("meta_lead_ads_forms").select("form_id,branch_id,assigned_agent_id,lead_type,is_active").eq("connection_id",row.id).eq("organisation_id",org)).data||[];
       const byFormId=new Map(mappings.map((mapping:RecordValue)=>[text(mapping.form_id),mapping]));
       return json(200,{forms:(graphForms as RecordValue[]).map((form)=>{const mapping=byFormId.get(text(form.id));return {...form,selected:Boolean(mapping?.is_active),branchId:mapping?.branch_id||null,assignedAgentId:mapping?.assigned_agent_id||null,leadType:text(mapping?.lead_type)||"buyer"};})});
     }
     if(action==="select_forms"){
       const forms=Array.isArray(body.forms)?body.forms as RecordValue[]:[],token=await decrypt(row.token_ciphertext);
-      const available=await loadMetaPageForms(row.page_id,token,graph);
-      if(forms.some(form=>!available.some(item=>text(item.id)===text(form.id))))throw new Error("Choose only forms returned by this connected Page.");
-      const selected=forms.map(form=>({...form,name:text(available.find(item=>text(item.id)===text(form.id))?.name)}));
-      const saved=await db.rpc("meta_form_routes_save",{p_org:org,p_actor:userId,p_connection:row.id,p_forms:selected});if(saved.error)throw new Error(saved.error.message);
-      if(forms.length)await graph(`${row.page_id}/subscribed_apps`,token,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({subscribed_fields:"leadgen"})});return json(200,{connected:true,formsSelected:forms.length});
+      for(const form of forms){
+        const branchId=text(form.branchId),agentId=text(form.assignedAgentId),leadType=text(form.leadType)==="seller"?"seller":"buyer";
+        if(branchId){const branch=(await db.from("organisation_branches").select("id").eq("id",branchId).eq("organisation_id",org).maybeSingle()).data;if(!branch)throw new Error("Selected branch does not belong to this organisation.");}
+        if(agentId){const member=(await db.from("organisation_users").select("user_id").eq("user_id",agentId).eq("organisation_id",org).eq("status","active").maybeSingle()).data;if(!member)throw new Error("Selected agent does not belong to this organisation.");}
+        const saved=await db.from("meta_lead_ads_forms").upsert({connection_id:row.id,organisation_id:org,page_id:row.page_id,form_id:text(form.id),form_name:text(form.name),branch_id:branchId||null,assigned_agent_id:agentId||null,lead_type:leadType,is_active:true},{onConflict:"organisation_id,form_id"});if(saved.error)throw new Error(saved.error.message);
+      }
+      await graph(`${row.page_id}/subscribed_apps`,token,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({subscribed_fields:"leadgen"})});return json(200,{connected:true,formsSelected:forms.length});
     }
     if(action==="disconnect"){const token=await decrypt(row.token_ciphertext);await graph(`${row.page_id}/subscribed_apps`,token,{method:"DELETE"}).catch(()=>null);await db.from("meta_lead_ads_connections").update({connection_status:"disconnected",disconnected_at:new Date().toISOString(),token_ciphertext:await encrypt(crypto.randomUUID())}).eq("id",row.id);return json(200,{disconnected:true});}
     return json(400,{error:"Unsupported action."});
   }catch(error){return json(502,{error:error instanceof Error?error.message:"Meta operation failed."});}
-});
+}));

@@ -74,6 +74,7 @@ function normaliseStatus(value) {
   if (
     source.includes("unreleased") ||
     source.includes("not released") ||
+    source.includes("blocked") ||
     source.includes("draft")
   )
     return "unreleased";
@@ -81,13 +82,16 @@ function normaliseStatus(value) {
   if (
     source.includes("sold") ||
     source.includes("registered") ||
-    source.includes("completed")
+    source.includes("complete")
   )
     return "sold";
   if (
     source.includes("transfer") ||
     source.includes("offer") ||
-    source.includes("sale")
+    source.includes("sale") ||
+    source.includes("finance") ||
+    source.includes("attorney") ||
+    source.includes("otp")
   )
     return "reserved";
   return "available";
@@ -219,11 +223,14 @@ export default function DevelopmentAvailabilityWorkspace({
   onSetReleaseState,
   onSaveUnitPrice,
   onEditUnit,
+  onChangeUnitStatus,
+  unitStatusOptions = [],
+  unitStatusSaving = false,
   inventoryManagement = null,
   legacySalesPanelEnabled = false,
 }) {
   const [workspaceView, setWorkspaceView] = useState("availability");
-  const [inventoryDisplay, setInventoryDisplay] = useState("list");
+  const [inventoryDisplay, setInventoryDisplay] = useState("cards");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [blockFilter, setBlockFilter] = useState("all");
@@ -1029,7 +1036,7 @@ export default function DevelopmentAvailabilityWorkspace({
           </div>
           {visibleUnits.length ? (
             inventoryDisplay === "cards" ? (
-              <div className="grid max-h-[620px] grid-cols-[repeat(auto-fill,minmax(min(100%,230px),1fr))] gap-4 overflow-auto p-4">
+              <div className="grid max-h-[620px] grid-cols-1 gap-4 overflow-auto p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" data-testid="availability-unit-cards">
                 {visibleUnits.map((unit) => {
                   const selected = unit.id === selectedUnit?.id;
                   return (
@@ -1065,16 +1072,14 @@ export default function DevelopmentAvailabilityWorkspace({
                 {visibleUnits.map((unit) => {
                   const selected = unit.id === selectedUnit?.id;
                   return (
-                    <button
+                    <div
                       key={unit.id}
-                      type="button"
-                      aria-pressed={selected}
                       onClick={() => selectUnit(unit)}
                       className={`grid w-full grid-cols-[minmax(90px,0.55fr)_minmax(150px,1fr)_minmax(125px,0.75fr)_minmax(145px,0.8fr)_auto] items-center gap-3 border-b border-[#edf2f7] px-5 py-4 text-left transition hover:bg-[#f8fbff] ${selected ? "bg-[#eff7f2] shadow-[inset_3px_0_0_#2f8f5c]" : "bg-white"}`}
                     >
-                    <strong className="text-sm font-semibold text-[#182b3d]">
+                    <button type="button" aria-label={`Open unit ${unit.displayNumber}`} onClick={() => selectUnit(unit)} className="text-left text-sm font-semibold text-[#182b3d]">
                       {unit.displayNumber}
-                    </strong>
+                    </button>
                     <span className="min-w-0">
                       <strong className="block truncate text-sm font-medium text-[#30485f]">
                         {unit.displayType}
@@ -1083,14 +1088,23 @@ export default function DevelopmentAvailabilityWorkspace({
                         {unit.location}
                       </small>
                     </span>
-                    <StatusPill status={unit.inventoryStatus} />
+                    {canManageInventory && onChangeUnitStatus ? (
+                      <Field as="select" aria-label={`Update status for unit ${unit.displayNumber}`}
+                        value={text(unit.status) || "Available"} disabled={unitStatusSaving}
+                        className={`h-10 min-w-0 rounded-full px-3 text-xs font-semibold ${STATUS_META[unit.inventoryStatus].tone}`}
+                        onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}
+                        onChange={event => { event.stopPropagation(); onChangeUnitStatus(unit, event.target.value); }}>
+                        {!unitStatusOptions.some(option => option.value === (text(unit.status) || "Available")) ? <option value={text(unit.status) || "Available"}>{text(unit.status) || "Available"}</option> : null}
+                        {unitStatusOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </Field>
+                    ) : <StatusPill status={unit.inventoryStatus} />}
                     <strong className="text-sm font-semibold text-[#24394e]">
                       {unit.displayPrice
                         ? currency.format(unit.displayPrice)
                         : "Price pending"}
                     </strong>
                     <ArrowUpRight size={16} className="text-[#8aa0b3]" />
-                    </button>
+                    </div>
                   );
                 })}
               </div>

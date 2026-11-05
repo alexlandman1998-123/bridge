@@ -5,7 +5,7 @@ import {
   formatMvpLaunchScopeIssue,
 } from '../core/transactions/mvpLaunchScope.js'
 import { resolveMvpLaunchRolePlan } from '../core/transactions/mvpLaunchRoles.js'
-import { resolveTransferTaxDecision } from './transferTaxDecisionService.js'
+import { resolveTransferTaxDecision, TRANSFER_TAX_ROUTES } from './transferTaxDecisionService.js'
 
 export const TRANSACTION_ROUTING_PROFILE_VERSION = 'transaction_routing_profile_v1'
 export const MATTER_PROFILE_VERSION = 'matter_profile_v1'
@@ -240,6 +240,7 @@ function normalizePropertyTenure(value, context = {}) {
 
 function normalizeVatTreatment(value, context = {}) {
   const normalized = normalizeKey(value)
+  if (normalized === 'exempt') return 'exempt'
   if (['vat', 'vat_applicable', 'standard_vat', 'taxable_supply'].includes(normalized)) return 'vat'
   if (['zero_rated', 'zero_rated_going_concern', 'going_concern'].includes(normalized)) return 'zero_rated_going_concern'
   if (['transfer_duty', 'duty', 'no_vat'].includes(normalized)) return 'transfer_duty'
@@ -591,11 +592,9 @@ export function resolveTransactionRoutingProfile(input = {}) {
   )
   // A confirmed attorney decision is authoritative. Older scalar VAT fields remain
   // as a compatibility projection for existing templates and reports.
-  const vatTreatment = transferTaxDecision.status === 'confirmed' && [
-    'transfer_duty',
-    'vat',
-    'zero_rated_going_concern',
-  ].includes(transferTaxDecision.route)
+  const vatTreatment = transferTaxDecision.status === 'confirmed'
+    && TRANSFER_TAX_ROUTES.includes(transferTaxDecision.route)
+    && transferTaxDecision.route !== 'needs_tax_advice'
     ? transferTaxDecision.route
     : capturedVatTreatment
   const baseProfile = {

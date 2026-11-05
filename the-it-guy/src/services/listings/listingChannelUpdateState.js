@@ -78,7 +78,8 @@ export function deriveListingChannelUpdateStates(activityRows = [], sessionResul
       const channel = text(result?.channel)
       if (!CHANNELS.includes(channel) || states[channel]) continue
       const resultAction = text(result.action) || action
-      if (result.status === 'failed') states[channel] = { status: 'needs_attention', action: resultAction, detail: text(result.detail) || 'Portal update failed.', retriable: true }
+      if (result.status === 'uncertain') states[channel] = { status: 'needs_attention', action: resultAction, detail: text(result.detail) || 'The previous advertising request is unconfirmed. Check status before sending again.', retriable: false }
+      else if (result.status === 'failed') states[channel] = { status: 'needs_attention', action: resultAction, detail: text(result.detail) || 'Portal update failed.', retriable: true }
       else if (result.status === 'pending') states[channel] = { status: 'needs_attention', action: resultAction, detail: 'Arch9 saved this change, but the portal update has not been confirmed.' }
       else if (result.status === 'sent') states[channel] = { status: 'awaiting_verification', action: resultAction, detail: 'Update accepted; check the public page before confirming it is current.' }
       else if (result.status === 'not_connected') states[channel] = { status: 'needs_attention', action: resultAction, detail: text(result.detail) || 'No confirmed live listing to update.', retriable: false }
@@ -89,7 +90,8 @@ export function deriveListingChannelUpdateStates(activityRows = [], sessionResul
   for (const result of Array.isArray(sessionResults) ? sessionResults : []) {
     const channel = text(result?.channel)
     if (!CHANNELS.includes(channel)) continue
-    if (result.status === 'failed') states[channel] = { ...states[channel], action: text(result.action) || text(sessionAction) || states[channel]?.action || '', status: 'needs_attention', detail: text(result.detail) || 'Portal update failed.' }
+    if (result.status === 'uncertain') states[channel] = { action: text(result.action) || text(sessionAction), status: 'needs_attention', detail: text(result.detail) || 'Check the previous advertising request before sending again.', retriable: false }
+    else if (result.status === 'failed') states[channel] = { ...states[channel], action: text(result.action) || text(sessionAction) || states[channel]?.action || '', status: 'needs_attention', detail: text(result.detail) || 'Portal update failed.' }
     else if (result.status === 'not_connected') states[channel] = { action: text(sessionAction), status: 'needs_attention', detail: text(result.detail) || 'No confirmed live listing to update.', retriable: false }
     else if (result.status === 'sent' && !['current', 'needs_attention'].includes(states[channel]?.status)) states[channel] = { ...states[channel], action: text(sessionAction) || states[channel]?.action || '', status: 'awaiting_verification', detail: 'Update accepted; check the public page before confirming it is current.' }
   }

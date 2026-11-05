@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import type { SendSellerOnboardingPayload } from "../types.ts";
 import {
@@ -24,6 +25,7 @@ import {
   isMissingTableError,
 } from "../utils/db.ts";
 import { normalizeText } from "../utils/text.ts";
+import { resolveAppBaseUrl } from "../utils/url.ts";
 
 const SELLER_ONBOARDING_RESEND_TIMEOUT_MS = 45_000;
 
@@ -47,6 +49,19 @@ function sellerParticipantInvitationToken(link: string) {
   } catch {
     return "";
   }
+}
+
+export async function verifyTransactionSellerInviteSetup(
+  supabase: any, transactionId: string, linkId: string, recipientEmail: string, link: string,
+) {
+  let token = "";
+  try { token = new URL(link).pathname.match(/^\/seller\/transaction\/([a-f0-9]{64})\/?$/i)?.[1] || ""; } catch { /* fail closed */ }
+  if (!supabase || !transactionId || !linkId || !token) return {ok:false,status:400,error:"The transaction seller invitation could not be confirmed."};
+  const {data,error} = await supabase.rpc("bridge_validate_transaction_seller_delivery", {
+    p_transaction_id:transactionId,p_link_id:linkId,p_token:token,p_email:recipientEmail,
+  });
+  if(error || data?.valid !== true) return {ok:false,status:409,error:"Seller details or invitation changed. Review the latest recipient before sending."};
+  return {ok:true,canonicalPath:`/seller/transaction/${token}`};
 }
 
 export async function verifySellerParticipantInviteSetup(
@@ -313,7 +328,7 @@ export async function handleSellerOnboardingEmail(
   const resendApiKey = normalizeText(Deno.env.get("RESEND_API_KEY"));
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   if (!resendApiKey) {
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
@@ -370,6 +385,15 @@ export async function handleSellerOnboardingEmail(
     })
     : null;
   const listingId = normalizeText(payload.listingId);
+  const transactionSellerLinkId = normalizeText(payload.transactionSellerLinkId);
+  if (transactionSellerLinkId || /\/seller\/transaction\//.test(onboardingLink)) {
+    if (portalDocumentsMode || listingId) return jsonResponse(400,{error:"The seller invitation source does not match this transaction link."});
+    const guard = await verifyTransactionSellerInviteSetup(supabase,normalizeText(payload.transactionId),transactionSellerLinkId,to,onboardingLink);
+    if (!guard.ok) return jsonResponse(guard.status || 409,{error:guard.error});
+    const baseUrl = resolveAppBaseUrl(new Request("https://app.arch9.co.za")) || "https://app.arch9.co.za";
+    onboardingLink = `${baseUrl}${guard.canonicalPath}`;
+  }
+
   const sellerParticipantInvite = portalDocumentsMode &&
     normalizeStatusKey(emailKind) === "seller_participant";
   if (portalDocumentsMode) {
@@ -520,6 +544,7 @@ export async function handleSellerOnboardingEmail(
         organisationId,
         leadId: normalizeText(payload.leadId),
         listingId,
+        transactionId: normalizeText(payload.transactionId),
         metadata: {
           emailKind,
           portalDocumentsMode,
@@ -549,6 +574,7 @@ export async function handleSellerOnboardingEmail(
     html,
     text,
     timeoutMs: SELLER_ONBOARDING_RESEND_TIMEOUT_MS,
+    ...(transactionSellerLinkId ? {idempotencyKey:`transaction-seller-onboarding/${transactionSellerLinkId}`} : {}),
   });
   const resendSubmissionMs = Math.max(0, Math.round(performance.now() - resendStartedAt));
 

@@ -11,6 +11,38 @@ function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 }
 
+// Enforce the effective migration constraint in the fake database too. A
+// JavaScript status can otherwise pass these checks and fail in production.
+const migrationsUrl = new URL('../../supabase/migrations/', import.meta.url)
+const statusConstraints = fs.readdirSync(migrationsUrl).filter(name => name.endsWith('.sql')).sort()
+  .flatMap(name => [...fs.readFileSync(new URL(name, migrationsUrl), 'utf8').matchAll(
+    /constraint\s+private_property_listing_syncs_external_status_check\s+check\s*\(external_status\s+in\s*\(([^)]+)\)\)/gi,
+  )].map(match => [...match[1].matchAll(/'([^']+)'/g)].map(value => value[1])))
+const allowedStatuses = statusConstraints.at(-1)
+assert.ok(allowedStatuses?.includes('under_offer'), 'effective database constraint must accept the application under_offer state')
+assert.ok(allowedStatuses?.includes('sold'), 'effective database constraint must accept confirmed Sold readbacks')
+
+// Execute the corrective migration against PostgreSQL, including the old
+// constraint, rather than relying only on a JavaScript imitation of it.
+const { PGlite } = await import('@electric-sql/pglite')
+const database = new PGlite()
+try {
+  const originalConstraint = statusConstraints[0].map(value => `'${value}'`).join(', ')
+  await database.exec(`create table public.private_property_listing_syncs (
+    external_status text not null,
+    constraint private_property_listing_syncs_external_status_check check (external_status in (${originalConstraint}))
+  ); insert into public.private_property_listing_syncs values ('active');`)
+  await assert.rejects(database.query('insert into public.private_property_listing_syncs values ($1)', ['under_offer']), { code: '23514' })
+  await database.exec(fs.readFileSync(new URL('20261103163000_private_property_under_offer_status.sql', migrationsUrl), 'utf8'))
+  await assert.rejects(database.query('insert into public.private_property_listing_syncs values ($1)', ['sold']), { code: '23514' })
+  await database.exec(fs.readFileSync(new URL('20261103170000_private_property_sold_status.sql', migrationsUrl), 'utf8'))
+  for (const status of allowedStatuses) await database.query('insert into public.private_property_listing_syncs values ($1)', [status])
+  await assert.rejects(database.query('insert into public.private_property_listing_syncs values ($1)', ['unsupported']), { code: '23514' })
+  assert.equal((await database.query("select count(*)::int as count from public.private_property_listing_syncs where external_status='active'")).rows[0].count, 2)
+} finally {
+  await database.close()
+}
+
 class FakeQuery {
   constructor(table, operations) {
     this.table = table
@@ -42,6 +74,7 @@ class FakeQuery {
 
   async single() {
     if (this.table === 'private_property_listing_syncs') {
+      assert.ok(allowedStatuses.includes(this.last.payload.external_status), 'sync must persist a database-supported status')
       return {
         data: {
           id: 'sync-1',
@@ -92,6 +125,13 @@ function createFakeClient() {
 }
 
 assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus: 'For Sale' }), 'active')
+for (const privatePropertyStatus of ['PendingOffer', 'Pending Offer', 'under_offer', 'Offer Accepted']) {
+  assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus }), 'under_offer')
+}
+assert.equal(resolveArch9PrivatePropertyStatus({ externalStatus: 'under_offer' }), 'published')
+assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus: 'Sold', eventType: 'Activated' }), 'sold')
+assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus: 'For Sale', eventType: 'Sold' }), 'active')
+assert.equal(resolveArch9PrivatePropertyStatus({ externalStatus: 'sold', isOnPortal: true }), 'removed')
 assert.equal(resolvePrivatePropertyExternalStatus({ eventType: 'Activated', eventStatus: 'Active' }), 'active')
 assert.equal(resolvePrivatePropertyExternalStatus({ eventType: 'ErrorDownloadingImages' }), 'failed')
 assert.equal(resolvePrivatePropertyExternalStatus({ privatePropertyStatus: 'Inactive' }), 'inactive')

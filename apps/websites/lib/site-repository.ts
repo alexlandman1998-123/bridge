@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { resolveRentalPriceFrequency } from './listing-price'
 import { additionalMockProperties } from '@/lib/mock-properties'
 import { applyBlogMediaAssets, visiblePublishedBlogPosts } from '@/lib/blog-publication'
@@ -254,16 +255,16 @@ async function getPublishedWebsiteListings(
   site: Pick<ResolvedSite, 'id' | 'organisationId'>,
   limit = 100,
 ) {
-  const channelResult = await supabase
+  const [channelResult, partnerListings] = await Promise.all([supabase
     .from('website_listing_publications')
     .select('listing_id, publication_json, media_json')
     .eq('website_site_id', site.id)
     .eq('status', 'published')
     .order('last_synced_at', { ascending: false })
-    .limit(limit)
+    .limit(limit), getPublishedPartnerListings(supabase, site, limit)])
   if (channelResult.error) throw channelResult.error
   const listingIds = (channelResult.data || []).map((row) => String(row.listing_id)).filter(Boolean)
-  if (!listingIds.length) return getPublishedPartnerListings(supabase, site, limit)
+  if (!listingIds.length) return partnerListings
 
   const eligibilityResult = await supabase
     .from('listing_publication_data')
@@ -284,9 +285,11 @@ async function getPublishedWebsiteListings(
   const assignedAgentIds = [...new Set([...eligibleListings.values()].map((listing) => listing.assignedAgentId).filter(Boolean))]
   const consultants = new Map<string, { name: string; email?: string; phone?: string; avatarUrl?: string }>()
   if (assignedAgentIds.length) {
-    const { data: members, error: membersError } = await supabase.from('organisation_users').select('user_id, first_name, last_name, email').eq('organisation_id', site.organisationId).in('user_id', assignedAgentIds)
+    const [{ data: members, error: membersError }, { data: profiles, error: profilesError }] = await Promise.all([
+      supabase.from('organisation_users').select('user_id, first_name, last_name, email').eq('organisation_id', site.organisationId).in('user_id', assignedAgentIds),
+      supabase.from('profiles').select('id, full_name, first_name, last_name, phone_number, avatar_url').in('id', assignedAgentIds),
+    ])
     if (membersError) throw membersError
-    const { data: profiles, error: profilesError } = await supabase.from('profiles').select('id, full_name, first_name, last_name, phone_number, avatar_url').in('id', assignedAgentIds)
     if (profilesError) throw profilesError
     const profilesById = new Map((profiles || []).map((profile) => [String(profile.id), profile]))
     for (const member of members || []) {
@@ -324,14 +327,15 @@ async function getPublishedWebsiteListings(
       media: mapSnapshotMedia(channel.media_json),
     }]
   })
-  const partnerListings = await getPublishedPartnerListings(supabase, site, limit)
   return [...ownListings, ...partnerListings].slice(0, limit)
 }
 
+const listingsForRequest = cache(async (siteId: string, organisationId: string, limit: number) =>
+  getPublishedWebsiteListings(getServerSupabase(), { id: siteId, organisationId }, limit))
+
 export async function getPublicProperties(site: ResolvedSite, query: Record<string, string | undefined> = {}): Promise<PublicProperty[]> {
   if (site.preview && site.id === demoSite.id) return filterProperties(site.properties, query)
-  const supabase = getServerSupabase()
-  const listings = await getPublishedWebsiteListings(supabase, site)
+  const listings = await listingsForRequest(site.id, site.organisationId, 100)
   const publishedProperties = mapPublishedProperties(listings)
   return filterProperties(publishedProperties, query)
 }
@@ -443,19 +447,23 @@ export async function getPublicBlogRedirect(site: ResolvedSite, slug: string): P
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target) ? target : null
 }
 
-export async function hasPublishedBlogPosts(site: ResolvedSite): Promise<boolean> {
-  if (site.preview && site.id === demoSite.id) return false
+const blogPresenceForRequest = cache(async (siteId: string, organisationId: string, revisionId: string): Promise<boolean> => {
   const supabase = getServerSupabase()
   const { data, error } = await supabase.from('website_blog_posts')
     .select('id')
-    .eq('website_site_id', site.id)
-    .eq('organisation_id', site.organisationId)
-    .eq('revision_id', site.publishedRevisionId)
+    .eq('website_site_id', siteId)
+    .eq('organisation_id', organisationId)
+    .eq('revision_id', revisionId)
     .eq('status', 'published')
     .lte('published_at', new Date().toISOString())
     .limit(1)
   if (error) throw error
   return (data || []).length > 0
+})
+
+export async function hasPublishedBlogPosts(site: ResolvedSite): Promise<boolean> {
+  if (site.preview && site.id === demoSite.id) return false
+  return blogPresenceForRequest(site.id, site.organisationId, site.publishedRevisionId)
 }
 
 export async function getPublicPage(site: ResolvedSite, slug: string): Promise<PublicPage | null> {
@@ -478,7 +486,7 @@ export async function getPublicPages(site: ResolvedSite): Promise<PublicPage[]> 
   return (data || []).map((page) => mapPage(page as Record<string, unknown>))
 }
 
-export async function resolveSite(host: string | null | undefined): Promise<ResolvedSite | null> {
+const resolveSiteForRequest = cache(async (host: string, includeProperties: boolean): Promise<ResolvedSite | null> => {
   const hostname = normalizeHostname(host)
   // This is intentionally development-only. It lets the website team review a
   // site's current draft with its real branding before a preview hostname has
@@ -569,7 +577,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
 
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
   const organisationIconUrl = organisationBrandingResult.data?.logo_icon_url
-  const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
+  const properties = includeProperties ? await listingsForRequest(site.id, site.organisation_id, 12) : []
   const publishedProperties = mapPublishedProperties(properties)
   return {
     id: site.id,
@@ -602,6 +610,11 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     preview: domain.domain_kind === 'preview',
     properties: publishedProperties,
   }
+
+})
+
+export async function resolveSite(host: string | null | undefined, includeProperties = true): Promise<ResolvedSite | null> {
+  return resolveSiteForRequest(normalizeHostname(host), includeProperties)
 }
 
 async function resolveLocalSitePreview(siteId: string): Promise<ResolvedSite | null> {

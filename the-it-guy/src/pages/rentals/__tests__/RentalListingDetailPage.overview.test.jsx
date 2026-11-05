@@ -63,17 +63,18 @@ it('keeps duplicate checklist and portal cards off the rental Marketing page', a
   expect(screen.queryByRole('region', { name: 'Private Property requirements' })).toBeNull()
 })
 
-it('shows persisted partial results and retries the saved rental without creating or resending every website', async () => {
+it('keeps failed-channel recovery in Listing Channels without the removed saved-result card', async () => {
   const listing = { ...mediaListing(), listingStatus: 'active', sellerCanonicalFacts: { distribution: { selectedChannels: ['property24', 'private_property'] } } }
   mocks.publication = [{ key: 'property24', label: 'Property24', status: 'submitted' }, { key: 'private_property', label: 'Private Property', status: 'needs_attention', retryable: true, message: 'Fix the description.' }]
   let finish
   mocks.retryPublication.mockImplementation(() => new Promise(resolve => { finish = resolve }))
   renderMedia(listing)
-  const summary = await screen.findByRole('region', { name: 'Saved listing and advertising' })
-  expect(within(summary).getByText(/Check the public advert before treating it as live/)).toBeTruthy()
-  fireEvent.click(within(summary).getByRole('button', { name: 'Retry failed channels' }))
+  const channels = await screen.findByRole('article', { name: 'Listing channels' })
+  expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
+  expect(screen.queryByText(/Check the public advert before treating it as live/)).toBeNull()
+  fireEvent.click(within(channels).getByRole('button', { name: 'Retry failed channels' }))
   await waitFor(() => expect(mocks.retryPublication).toHaveBeenCalledWith(expect.objectContaining({ listingId: listing.id, listingStatus: 'active', channels: ['property24', 'private_property'] })))
-  expect(within(summary).getByRole('button', { name: 'Retry failed channels' }).disabled).toBe(true)
+  expect(within(channels).getByRole('button', { name: 'Retry failed channels' }).disabled).toBe(true)
   finish([{ key: 'private_property', status: 'publishing' }])
   await screen.findByText(/Retrying only the failed websites/)
   expect(mocks.publishP24).not.toHaveBeenCalled()
@@ -82,20 +83,22 @@ it('keeps a saved rental visible when status checking fails and offers no unknow
   mocks.publication = [{ key: 'property24', label: 'Property24', status: 'uncertain' }]
   mocks.refreshPublication.mockRejectedValue(new Error('Offline'))
   renderMedia(mediaListing())
-  const summary = await screen.findByRole('region', { name: 'Saved listing and advertising' })
-  expect(within(summary).queryByRole('button', { name: 'Retry failed channels' })).toBeNull()
-  fireEvent.click(within(summary).getByRole('button', { name: 'Check status' }))
+  const channels = await screen.findByRole('article', { name: 'Listing channels' })
+  expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
+  expect(within(channels).queryByRole('button', { name: 'Retry failed channels' })).toBeNull()
+  fireEvent.click(within(channels).getByRole('button', { name: 'Check status' }))
   await screen.findByText(/Your rental is saved. Advertising status could not be checked/)
   expect(screen.getByRole('heading', { name: '12 Example Road' })).toBeTruthy()
 })
-it('opens the rental advertising controls through the Marketing tab without a saved summary on Overview', async () => {
+it('opens the rental advertising controls without restoring the removed summary on Marketing', async () => {
   mocks.publication = [{ key: 'property24', label: 'Property24', status: 'submitted' }]
   renderMedia({ ...mediaListing(), listingStatus: 'active' }, 'overview')
   await screen.findByRole('heading', { name: '12 Example Road' })
   expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
   fireEvent.click(screen.getByRole('tab', { name: 'Marketing' }))
   expect(await screen.findByRole('heading', { name: 'Listing Channels' })).toBeTruthy()
-  expect(screen.getByRole('region', { name: 'Saved listing and advertising' })).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
+  expect(within(screen.getByRole('article', { name: 'Listing channels' })).getByRole('button', { name: 'Check status' })).toBeTruthy()
 })
 it('checks durable initial requests before an alternative portal publish control sends anything', async () => {
   mocks.previewP24.mockResolvedValue({ report: { preview: { canSubmit: true, dataBlockers: [], technicalBlockers: [] } } })
@@ -477,7 +480,12 @@ it('offers reconciliation without a lost reference and keeps publish and status 
  expect(mocks.expiry).toHaveBeenCalledWith(listing.id,{expiryDate:'2028-04-30',expectedUpdatedAt:listing.updatedAt},expect.objectContaining({organisationId:'org-1',assignedAgentId:'agent-1'}))
  })
 
- it('keeps a saved edit on the rental workspace without the redundant Listing saved card', async () => {
+ it.each([{ receipts: 'none', publication: [] }, { receipts: 'accepted', publication: [
+  { key: 'agency_website', label: 'Agency Website', status: 'submitted' },
+  { key: 'private_property', label: 'Private Property', status: 'submitted' },
+  { key: 'property24', label: 'Property24', status: 'submitted' },
+ ] }])('keeps a saved edit without the redundant card with $receipts receipts', async ({ publication }) => {
+  mocks.publication = publication
   const listing = mediaListing()
   mocks.load.mockResolvedValue(listing)
   mocks.overview.mockResolvedValue(buildRentalListingOverview({ listing }))
@@ -487,6 +495,7 @@ it('offers reconciliation without a lost reference and keeps publish and status 
   expect(within(heading.closest('header')).getAllByText('12 Example Road')).toHaveLength(1)
   expect(screen.queryByRole('region', { name: 'Saved listing and advertising' })).toBeNull()
   expect(screen.queryByText(/This save did not update your public adverts/)).toBeNull()
+  expect(screen.queryByText('Previous advertising request')).toBeNull()
   expect(mocks.publishP24).not.toHaveBeenCalled()
   expect(screen.getByRole('tab', { name: 'Landlord' })).toBeTruthy()
   expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy()

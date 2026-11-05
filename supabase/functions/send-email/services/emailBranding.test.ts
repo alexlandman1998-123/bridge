@@ -87,6 +87,7 @@ Deno.test("client and internal email senders keep their distinct identities", as
         select: () => query,
         eq: () => query,
         is: () => query,
+        order: () => query,
         limit: async () => ({
           data: [{ from_email: "hello@homeseekers.co.za" }],
           error: null,
@@ -112,6 +113,7 @@ Deno.test("client and internal email senders keep their distinct identities", as
         select: () => query,
         eq: () => query,
         is: () => query,
+        order: () => query,
         limit: async () => ({
           data: ++lookups === 1 ? [] : [{ from_email: "mail@homeseekers.co.za" }],
           error: null,
@@ -496,4 +498,24 @@ Deno.test("resolveEmailBranding falls back to payload and defaults without an or
   assertEquals(branding.organisationName, "Payload Only");
   assertEquals(branding.primaryColor, DEFAULT_EMAIL_BRANDING.primaryColor);
   assertEquals(branding.secondaryColor, "#654321");
+});
+
+Deno.test("the agency's selected default sender takes precedence over a historic branding address", async () => {
+  const rows = [
+    { organisation_id: "agency", provider: "resend", from_email: "old@agency.co.za", verification_status: "verified", sending_paused_at: null, is_default: false },
+    { organisation_id: "agency", provider: "resend", from_email: "news@updates.agency.co.za", verification_status: "verified", sending_paused_at: null, is_default: true },
+  ];
+  const supabase = { from: () => {
+    const filters: Array<(row: typeof rows[number]) => boolean> = [];
+    const query = {
+      select: () => query,
+      eq: (key: keyof typeof rows[number], value: unknown) => { filters.push((row) => row[key] === value); return query; },
+      is: (key: keyof typeof rows[number], value: unknown) => { filters.push((row) => row[key] === value); return query; },
+      order: () => query,
+      limit: async () => ({ data: rows.filter((row) => filters.every((filter) => filter(row))).slice(0, 1), error: null }),
+    };
+    return query;
+  } };
+  assertEquals(await resolveAudienceEmailSender({ audience: "client", branding: { organisationId: "agency", organisationName: "Agency", fromEmail: "old@agency.co.za" },
+    platformSender: "Arch9 <hello@arch9.co.za>", supabase }), "Agency <news@updates.agency.co.za>");
 });

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppointmentClients, AppointmentOrganisers } from '../AppointmentPeopleFields'
-import { toggleAppointmentClient, updateAppointmentOrganisers } from '../appointmentPeopleModel'
+import { mergeAppointmentClients, toggleAppointmentClient, updateAppointmentOrganisers } from '../appointmentPeopleModel'
 import { getAppointmentTypeOptions } from '../../../lib/appointmentTypeDefinitions'
 
 afterEach(cleanup)
@@ -77,6 +77,63 @@ describe('appointment people', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create client & add' }))
     await screen.findByRole('button', { name: 'Create new client' })
     expect(onCreate).toHaveBeenCalledTimes(2)
+  })
+
+  it('includes saved clients without leads and preserves contact links when selecting them', () => {
+    const saved = { id: 'client:contact-only', contactId: 'contact-only', name: 'Lien Leach', email: 'lien@example.test', role: 'Seller' }
+    function Harness() {
+      const [form, setForm] = useState({ participants: [], listingId: 'chosen-property' })
+      return <><AppointmentClients form={form} clients={mergeAppointmentClients([client, saved])} onChange={setForm} /><output>{JSON.stringify(form)}</output></>
+    }
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clients', exact: true }))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'lien' } })
+    fireEvent.click(screen.getByRole('button', { name: /Lien Leach lien@example.test/ }))
+    const form = JSON.parse(document.querySelector('output').textContent)
+    expect(form).toMatchObject({ contactId: 'contact-only', relatedEntityType: 'client', relatedEntityId: 'contact-only', listingId: 'chosen-property' })
+    expect(form.participants).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: /Lien Leach lien@example.test/ }))
+    expect(JSON.parse(document.querySelector('output').textContent)).toMatchObject({ contactId: '', relatedEntityType: 'none', relatedEntityId: '', participants: [] })
+  })
+
+  it('uses directory names and aliases without losing lead, contact or property context', () => {
+    const rows = mergeAppointmentClients([
+      { ...client, name: 'Client', listingId: 'property' },
+      { id: 'client:one', contactId: client.contactId, name: 'Client', email: client.email },
+    ], [{ id: 'identity-one', name: 'Laetitia Leach', email: client.email, emails: [], linkedLeadIds: [client.leadId], typeLabel: 'Seller Lead' }])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ name: 'Laetitia Leach', contactId: client.contactId, leadId: client.leadId, listingId: 'property' })
+    expect(toggleAppointmentClient({ participants: [] }, rows[0])).toMatchObject({ relatedEntityType: 'lead', relatedEntityId: client.leadId })
+  })
+
+  it('shows usable contact details instead of repeated generic names and keeps distinct people separate', () => {
+    const rows = mergeAppointmentClients([
+      { id: 'lead:a', name: 'Client', email: 'a@example.test', phone: '0821234567' },
+      { id: 'lead:b', name: 'Client', email: 'b@example.test', phone: '0821234567' },
+      { id: 'lead:c', name: 'Taylor Client' },
+      { id: 'lead:d', name: 'Taylor Client' },
+    ])
+    expect(rows).toHaveLength(4)
+    expect(rows.map(row => row.name)).toContain('a@example.test')
+    expect(rows.map(row => row.name)).toContain('b@example.test')
+  })
+
+  it('can select and deselect a directory-only person without inventing a lead or contact', () => {
+    const [saved] = mergeAppointmentClients([], [{ id: 'profile-only', name: 'Saved Person', email: '', linkedLeadIds: [], sources: [] }])
+    const form = toggleAppointmentClient({ participants: [], transactionId: 'transaction', relatedEntityType: 'transaction', relatedEntityId: 'transaction' }, saved)
+    expect(form).toMatchObject({ relatedEntityType: 'transaction', relatedEntityId: 'transaction', transactionId: 'transaction' })
+    expect(form.participants).toHaveLength(1)
+    expect(toggleAppointmentClient(form, saved).participants).toHaveLength(0)
+  })
+
+  it('reports incomplete client loading and lets the user retry without losing selection', () => {
+    const retry = vi.fn()
+    render(<AppointmentClients form={{ participants: [], contactId: client.contactId }} clients={[client]} loading loadError="Unable to load saved clients." onRetry={retry} onChange={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Clients', exact: true }).textContent).toContain(client.name)
+    fireEvent.click(screen.getByRole('button', { name: 'Clients', exact: true }))
+    expect(screen.getByRole('status').textContent).toContain('Loading saved clients')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry clients' }))
+    expect(retry).toHaveBeenCalledOnce()
   })
 })
 

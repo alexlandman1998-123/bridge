@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { normalizeBuyerWorkspaceTab } from '../src/pages/agency/agencyLeadWorkspaceRouteState.js'
 import fs from 'node:fs/promises'
 import { buildBuyerJourneyAlignmentModel } from '../src/services/buyerJourneyAlignmentService.js'
 import { buildBuyerViewingRequestSummary } from '../src/pages/agency/buyerViewingRequestSummary.js'
@@ -98,7 +99,7 @@ const viewingCompletionBlock = extractBlock(
   'viewing completion flow',
 )
 for (const contract of [
-  /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'/,
+  /normalizeBuyerWorkspaceTab/,
   /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\[/,
   /normalizeLeadWorkspaceTabKey/,
   /parseBuyerViewingPlanNoteBlock/,
@@ -110,8 +111,9 @@ for (const contract of [
 ]) {
   assert.match(pageSource, contract, `buyer workspace should keep the simplified viewing workflow contract ${contract}`)
 }
+for (const legacyTab of ['offers', 'onboarding_otp']) assert.equal(normalizeBuyerWorkspaceTab(legacyTab), 'documents')
 const buyerTabSet = extractBlock(pageSource, 'const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set([', '])', 'buyer workspace tab set')
-for (const tab of ["'overview'", "'properties'", "'appointments'", "'activity'", 'BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY']) {
+for (const tab of ["'overview'", "'properties'", "'appointments'", "'activity'", "'documents'"]) {
   assert.ok(buyerTabSet.includes(tab), `buyer workspace should keep the ${tab} tab`)
 }
 
@@ -233,7 +235,7 @@ for (const contract of [
   /seller viewing availability request renders company branding and access instructions/,
   /Kingstons Property/,
   /background: #123abc/,
-  /border-bottom: 4px solid #fedcba/,
+  /background: #fedcba/,
 ]) {
   assert.match(brandedEmailTestSource, contract, `branded email QA should include ${contract}`)
 }
