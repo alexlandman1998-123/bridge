@@ -20090,7 +20090,7 @@ async function fetchDevelopmentLinkedListings(client, { development = {}, units 
   }
   const linked = rows.filter(row => {
     const status = String(row.listing_status || row.status || 'draft').toLowerCase()
-    return (row.is_active !== false || ['draft', 'listing_review'].includes(status)) && !['archived', 'deleted'].includes(status) && privateListingMatchesDevelopment(row, { development, units })
+    return (row.is_active !== false || ['seller_lead', 'draft', 'listing_review'].includes(status)) && !['archived', 'deleted'].includes(status) && privateListingMatchesDevelopment(row, { development, units })
   })
   const publications = new Map(), media = new Map(), organisations = new Map()
   for (let offset = 0; offset < linked.length; offset += 100) {

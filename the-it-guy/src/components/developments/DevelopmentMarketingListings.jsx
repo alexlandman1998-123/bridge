@@ -32,7 +32,7 @@ export default function DevelopmentMarketingListings({ listings = [], organisati
           addressLabel: listing.location && listing.location !== 'Location pending' ? listing.location : listing.title,
           imageUrl: listing.coverImageUrl,
           propertyFacts: getListingPropertyFacts(listing),
-          inventoryStatusKey: ['draft', 'listing_review'].includes(listing.status) ? 'draft' : listing.status,
+          inventoryStatusKey: ['seller_lead', 'draft', 'listing_review'].includes(listing.status) ? 'draft' : listing.status,
           inventoryStatusLabel: 'Draft Listing',
           liveChannels: listing.liveChannels || [],
           assignedAgent: {
