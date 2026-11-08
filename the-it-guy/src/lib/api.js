@@ -3,6 +3,7 @@ import { DEFAULT_DEVELOPMENT_FINANCIALS, normalizeDevelopmentFinancialsRow, norm
 export { fetchDevelopmentFinancials, fetchDevelopmentDocuments, fetchDevelopmentMarketingAccess, fetchDevelopmentMarketingInvite, fetchDevelopmentMarketingActivity, fetchDevelopmentMarketingEvents, fetchDevelopmentVisualAnalytics, fetchDevelopmentDocumentRequirements } from '../domains/developments/api.js'
 import { isDocumentUploaded as isBondPackDocumentUploaded } from '../modules/bond/application/documents/bondApplicationDocumentStatus.js'
 import { hydrateBuyerOnboardingCapture } from '../core/transactions/buyerOnboardingCapture.js'
+import { commitTransactionLifecycle, getTransactionLifecyclePermissions, readCommittedLifecycle, requireLifecycleActionReceipt } from '../services/transactionLifecycleCommitService.js'
 import { saveTransactionSellerDetails } from '../services/transactionSellerSaveService.js'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation.js'
 import { createFreshDocumentSignedUrl } from './documentAccess.js'
@@ -16285,6 +16286,8 @@ export async function getRegistrationBlockers({
     throw new Error('Transaction is required.')
   }
 
+  const permissions = await getTransactionLifecyclePermissions(client, transactionId)
+  if (!permissions.canRegister) return { canMarkRegistered: false, blockers: [{ key: 'registration_permission', label: 'Only the assigned transfer legal team or an authorised developer can record registration.' }] }
   const context = await loadTransactionLifecycleContext(client, transactionId)
   const validation = buildRegistrationBlockers({
     context,
@@ -16361,37 +16364,25 @@ export async function markTransactionRegistered({
     throw new Error(workflowActionErrorMessage(workflowResult) || 'Registration workflow is blocked.')
   }
 
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionStageChanged',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || null,
-    eventData: {
-      source: 'registration_flow',
-      action: 'marked_registered',
-      stage: 'Registered',
-      registrationDate: normalizedRegistrationDate,
-      titleDeedNumber: normalizedTitleDeedNumber,
-      registrationConfirmationDocumentId: validation.requestedDocumentId,
-    },
+  return readCommittedLifecycle({
+    receipt: workflowResult.receipt, transaction: context.transaction,
+    warnings: workflowResult.warnings || [], read: () => fetchTransactionById(transactionId),
+    followUps: [
+      { label: 'the activity entry', run: () => logTransactionEventIfPossible(client, {
+        transactionId, eventType: 'TransactionStageChanged', createdBy: actorProfile.userId || null,
+        createdByRole: actorProfile.role || null,
+        eventData: { source: 'registration_flow', action: 'marked_registered', stage: 'Registered',
+          registrationDate: normalizedRegistrationDate, titleDeedNumber: normalizedTitleDeedNumber,
+          registrationConfirmationDocumentId: validation.requestedDocumentId },
+      }) },
+      { label: 'registration notifications', run: () => notifyRolesForTransaction(client, {
+        transactionId, roleTypes: ['attorney', 'developer', 'agent', 'bond_originator'], title: 'Transaction Registered',
+        message: 'The transaction has been marked as Registered.', notificationType: 'registration_completed',
+        eventType: 'TransactionStageChanged', eventData: { action: 'registered', registrationDate: normalizedRegistrationDate },
+        dedupePrefix: 'registration-completed', excludeUserId: actorProfile.userId || null,
+      }) },
+    ],
   })
-
-  await notifyRolesForTransaction(client, {
-    transactionId,
-    roleTypes: ['attorney', 'developer', 'agent', 'bond_originator'],
-    title: 'Transaction Registered',
-    message: 'The transaction has been marked as Registered.',
-    notificationType: 'registration_completed',
-    eventType: 'TransactionStageChanged',
-    eventData: {
-      action: 'registered',
-      registrationDate: normalizedRegistrationDate,
-    },
-    dedupePrefix: 'registration-completed',
-    excludeUserId: actorProfile.userId || null,
-  })
-
-  return fetchTransactionById(transactionId)
 }
 
 export async function undoTransactionRegistration({ transactionId, reason = '' } = {}) {
@@ -16445,7 +16436,7 @@ export async function undoTransactionRegistration({ transactionId, reason = '' }
     updated_at: now,
   }
 
-  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId).select('id').maybeSingle()
   if (updateResult.error) {
     if (
       isMissingColumnError(updateResult.error, 'lifecycle_state') ||
@@ -16456,28 +16447,23 @@ export async function undoTransactionRegistration({ transactionId, reason = '' }
     throw updateResult.error
   }
 
-  await upsertTransactionLifecycleWorkflow(client, {
-    transactionId,
-    currentStage: 'transfer',
-    status: 'active',
-    actorUserId: actorProfile.userId || null,
-    source: 'registration_flow',
-    note: reversalReason,
+  if (updateResult.data?.id !== transactionId) throw new Error('Registration reversal could not be confirmed. Refresh and check your access before trying again.')
+  return readCommittedLifecycle({
+    receipt: { transactionId, action: 'undo_registration', lifecycleState: 'active', registeredAt: null, completedAt: null,
+      registrationDate: null, titleDeedNumber: null, registrationConfirmationDocumentId: null },
+    transaction: { ...context.transaction, ...updatePayload }, read: () => fetchTransactionById(transactionId),
+    followUps: [
+      { label: 'the workflow view', run: () => upsertTransactionLifecycleWorkflow(client, {
+        transactionId, currentStage: 'transfer', status: 'active', actorUserId: actorProfile.userId || null,
+        source: 'registration_flow', note: reversalReason,
+      }) },
+      { label: 'the activity entry', run: () => logTransactionEventIfPossible(client, {
+        transactionId, eventType: 'TransactionStageChanged', createdBy: actorProfile.userId || null,
+        createdByRole: actorProfile.role || null,
+        eventData: { source: 'registration_flow', action: 'registration_reversed', reason: reversalReason },
+      }) },
+    ],
   })
-
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionStageChanged',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || null,
-    eventData: {
-      source: 'registration_flow',
-      action: 'registration_reversed',
-      reason: reversalReason,
-    },
-  })
-
-  return fetchTransactionById(transactionId)
 }
 
 function getMissingCloseoutDocumentKeys(closeout = null) {
@@ -16508,6 +16494,8 @@ export async function getCompletionBlockers(transactionId) {
     throw new Error('Transaction is required.')
   }
 
+  const permissions = await getTransactionLifecyclePermissions(client, transactionId)
+  if (!permissions.canComplete) return { canMarkCompleted: false, blockers: [{ key: 'completion_permission', label: 'Only the assigned transfer legal team or an authorised developer can complete this transaction.' }] }
   const context = await loadTransactionLifecycleContext(client, transactionId, {
     ensureRegisteredChecklist: true,
   })
@@ -16542,6 +16530,7 @@ export async function getCompletionBlockers(transactionId) {
 
   return {
     canMarkCompleted: blockers.length === 0,
+    transaction: context.transaction,
     blockers,
     lifecycleState: context.lifecycleState,
     closeoutStatus: context.closeout?.closeOutStatus || context.closeout?.close_out_status || 'not_started',
@@ -16568,57 +16557,8 @@ export async function markTransactionCompleted(transactionId) {
     throw new Error(completion.blockers.map((item) => item.label).join(' • '))
   }
 
-  const now = new Date().toISOString()
-  const updatePayload = {
-    stage: 'Registered',
-    current_main_stage: 'REG',
-    lifecycle_state: 'completed',
-    attorney_stage: 'registered',
-    completed_at: now,
-    completed_by_user_id: actorProfile.userId || null,
-    archived_at: null,
-    archived_by_user_id: null,
-    archive_reason: null,
-    cancelled_at: null,
-    cancelled_by_user_id: null,
-    cancelled_reason: null,
-    is_active: true,
-    last_meaningful_activity_at: now,
-    updated_at: now,
-  }
-
-  const updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
-  if (updateResult.error) {
-    if (
-      isMissingColumnError(updateResult.error, 'lifecycle_state') ||
-      isMissingColumnError(updateResult.error, 'completed_at')
-    ) {
-      throw new Error('Completion lifecycle columns are not set up yet. Run sql/schema.sql and refresh.')
-    }
-    throw updateResult.error
-  }
-
-  await upsertTransactionLifecycleWorkflow(client, {
-    transactionId,
-    currentStage: 'registration',
-    status: 'completed',
-    actorUserId: actorProfile.userId || null,
-    source: 'completion_flow',
-    note: 'Transaction marked as completed.',
-  })
-
-  await logTransactionEventIfPossible(client, {
-    transactionId,
-    eventType: 'TransactionUpdated',
-    createdBy: actorProfile.userId || null,
-    createdByRole: actorProfile.role || null,
-    eventData: {
-      source: 'completion_flow',
-      action: 'marked_completed',
-    },
-  })
-
-  return fetchTransactionById(transactionId)
+  const receipt = await commitTransactionLifecycle(client, { transactionId, action: 'complete' })
+  return readCommittedLifecycle({ receipt, transaction: completion.transaction || { id: transactionId }, read: () => fetchTransactionById(transactionId) })
 }
 
 export async function archiveTransactionLifecycle({ transactionId, reason = '' } = {}) {
@@ -16644,7 +16584,7 @@ export async function archiveTransactionLifecycle({ transactionId, reason = '' }
     p_reason: normalizeNullableText(reason),
   })
   if (error) throw error
-  return data
+  return requireLifecycleActionReceipt(data, transactionId, ['archived'])
 }
 
 export async function unarchiveTransactionLifecycle(transactionId) {
@@ -16670,7 +16610,7 @@ export async function unarchiveTransactionLifecycle(transactionId) {
     p_reason: null,
   })
   if (error) throw error
-  return data
+  return requireLifecycleActionReceipt(data, transactionId, ['active', 'registered', 'completed'])
 }
 
 export async function cancelTransactionLifecycle({ transactionId, reason = '' } = {}) {
@@ -16702,7 +16642,7 @@ export async function cancelTransactionLifecycle({ transactionId, reason = '' } 
     p_reason: cancellationReason,
   })
   if (error) throw error
-  return data
+  return requireLifecycleActionReceipt(data, transactionId, ['cancelled'])
 }
 
 export async function getFinalReportData(transactionId) {

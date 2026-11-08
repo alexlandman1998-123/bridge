@@ -10,6 +10,7 @@ function setup({ transaction = {}, overrides = {} } = {}) {
   const calls = []
   const row = { id: 'transaction', finance_type: 'bond', finance_managed_by: 'client', onboarding_status: 'completed', status: 'Registered', buyer_id: null, ...transaction }
   const deps = {
+    createPerfTimer: () => ({ mark() {}, finish() {}, end() {} }),
     requireClient: () => ({}),
     resolveActiveProfileContext: async () => ({ userId: 'agent', role: 'agent' }),
     normalizeRoleType: (role) => role,
@@ -116,10 +117,12 @@ test('reallocating an originator preserves the existing application status and c
 
 const page = readFileSync(new URL('../../pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 const allocateSource = page.slice(page.indexOf('  async function allocateTransactionProfessional('), page.indexOf('  function openRoleplayerConfirmation('))
-test('the workspace allocation handler saves only the requested role and reports refresh failure without repeating allocation', async () => {
+test('the workspace allocation handler saves only the requested role and emits one scoped refresh without repeating allocation', async () => {
   const { save, calls, row } = setup()
   const messages = []
   const deps = {
+    currentMatterAccessKey: 'transaction:agent',
+    liveMatterScopeRef: { current: 'transaction:agent' },
     canManageTransactionRoleplayers: true,
     transaction: row,
     workspaceRole: 'agent',
@@ -130,7 +133,8 @@ test('the workspace allocation handler saves only the requested role and reports
     setStakeholderMessage: (message) => messages.push(message),
     loadData: async () => { throw new Error('Refresh unavailable') },
     setError: (message) => messages.push(message),
-    window: { dispatchEvent: () => {} },
+    window: { dispatchEvent: event => calls.push(['workspace-event', event]) },
+    CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options?.detail } },
     Event: class {},
   }
   const allocate = new Function(...Object.keys(deps), `${allocateSource}; return allocateTransactionProfessional`)(...Object.values(deps))
@@ -138,6 +142,6 @@ test('the workspace allocation handler saves only the requested role and reports
   assert.equal(calls.filter(([type]) => type === 'upsert').length, 1)
   assert.equal(calls.some(([type]) => type === 'onboarding-replay'), false)
   assert.match(messages[0], /allocation saved/)
-  assert.match(messages[1], /allocation was saved/)
+  assert.deepEqual(calls.find(([type]) => type === 'workspace-event')[1].detail, { transactionId: row.id })
   assert.equal(row.onboarding_status, 'completed')
 })

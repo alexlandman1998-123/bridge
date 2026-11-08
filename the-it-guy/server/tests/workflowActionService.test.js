@@ -191,6 +191,19 @@ function buildMockClient(seed = {}) {
 
   return {
     state,
+    async rpc(name, args) {
+      assert.equal(name, 'bridge_commit_transaction_lifecycle')
+      assert.equal(args.p_action, 'register')
+      if (state.registrationError) return { data: null, error: state.registrationError }
+      const transaction = state.transactions.find(row => row.id === args.p_transaction_id)
+      const step = state.transaction_workflow_steps.find(row => row.transaction_id === transaction.id && row.workflow_key === 'registration' && row.step_key === 'registration_confirmed')
+      const now = new Date().toISOString()
+      Object.assign(step, { status: 'complete', completed_at: now })
+      Object.assign(state.transaction_workflow_instances.find(row => row.id === step.workflow_instance_id), { status: 'complete', completed_at: now })
+      state.transaction_workflow_evidence.push({ id: 'registration-evidence', transaction_id: transaction.id, workflow_step_id: step.id, workflow_key: 'registration', step_key: 'registration_confirmed', evidence_type: 'document', evidence_id: args.p_confirmation_document_id, evidence_status: 'accepted' })
+      Object.assign(transaction, { lifecycle_state: 'registered', registered_at: now, registration_date: args.p_registration_date, title_deed_number: args.p_title_deed_number, registration_confirmation_document_id: args.p_confirmation_document_id })
+      return { data: { transactionId: transaction.id, action: 'register', lifecycleState: 'registered', registeredAt: now, completedAt: null, registrationDate: args.p_registration_date, titleDeedNumber: args.p_title_deed_number, registrationConfirmationDocumentId: args.p_confirmation_document_id }, error: null }
+    },
     from(table) {
       return new Query(table)
     },
@@ -511,6 +524,12 @@ try {
   assert.equal(registrationReady.rollup.parentStage, 'REGISTRATION')
   assert.equal(registrationReady.compatibility.current_main_stage, 'REG')
 
+  const beforeRegistration = cashClient.state.transaction_workflow_steps.find(row => row.workflow_key === 'registration' && row.step_key === 'registration_confirmed').status
+  cashClient.state.registrationError = { message: 'Access changed', code: '42501' }
+  await assert.rejects(() => actionService.runWorkflowAction({ transactionId: 'tx-2', actionKey: 'MARK_REGISTERED', userId: 'user-2',
+    payload: { registrationDate: '2026-06-02', titleDeedNumber: 'T123', registrationConfirmationDocumentId: 'doc-reg-1' }, client: cashClient }), error => error.message === 'Access changed')
+  assert.equal(cashClient.state.transaction_workflow_steps.find(row => row.workflow_key === 'registration' && row.step_key === 'registration_confirmed').status, beforeRegistration)
+  cashClient.state.registrationError = null
   const registered = await actionService.runWorkflowAction({
     transactionId: 'tx-2',
     actionKey: 'MARK_REGISTERED',

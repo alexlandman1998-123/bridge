@@ -4,6 +4,7 @@ import {
   buildTransactionCreationPersistencePatch,
   createTransactionCreationLifecycle,
   getTransactionCreationIncompleteSteps,
+  getTransactionCreationIssues,
   setTransactionCreationStepOutcome,
 } from '../transactionCreationLifecycle.js'
 
@@ -97,5 +98,14 @@ const surfaced = new TransactionCreationIncompleteError({
 assert.equal(surfaced.code, 'TRANSACTION_CREATION_INCOMPLETE')
 assert.equal(surfaced.transactionId, 'transaction-1')
 assert.match(surfaced.message, /requirement_generation/)
+
+const issues = getTransactionCreationIssues(incompletePatch)
+assert.deepEqual(issues.map(issue => issue.key), ['requirement_generation', 'portal_setup'])
+assert.match(issues[0].label, /document checklist/)
+assert.match(issues[0].message, /setup service is unavailable/)
+assert.match(issues[1].message, /not finished/)
+assert.deepEqual(getTransactionCreationIssues({...incompletePatch,creation_status:'complete'}), [])
+assert.match(getTransactionCreationIssues({creation_status:'incomplete',creation_steps:{attorney_assignment:{required:true,status:'failed',error:{code:'42501',message:'row level security'}}}})[0].message,/permissions blocked/)
+assert.deepEqual(getTransactionCreationIssues({creation_status:'initializing',creation_steps:{portal_setup:{required:false,status:'not_required'}}}),[])
 
 console.log('transaction creation lifecycle tests passed')

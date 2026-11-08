@@ -5,6 +5,7 @@ function ConfirmDialog({
   open,
   title,
   description,
+  errorMessage = '',
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   onConfirm,
@@ -42,6 +43,7 @@ function ConfirmDialog({
       }
     >
       <p className="text-secondary text-textBody">{description}</p>
+      {errorMessage ? <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{errorMessage}</p> : null}
     </Modal>
   )
 }

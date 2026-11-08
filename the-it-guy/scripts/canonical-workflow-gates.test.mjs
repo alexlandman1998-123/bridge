@@ -2,6 +2,14 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const server = await createServer({
+  configFile: false,
+  envFile: false,
+  plugins: [{
+    name: 'isolated-canonical-gate-client',
+    enforce: 'pre',
+    resolveId(id) { if (/supabaseClient(?:\.js)?$/.test(id)) return '\0isolated-canonical-gate-client' },
+    load(id) { if (id === '\0isolated-canonical-gate-client') return 'export const isSupabaseConfigured=true;export const supabase=null;' },
+  }],
   root: process.cwd(),
   logLevel: 'silent',
   server: { middlewareMode: true },
