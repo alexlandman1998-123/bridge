@@ -361,7 +361,7 @@ function CommandSection({ eyebrow, title, description, action, children, classNa
     <section className={`rounded-[22px] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60 ${className}`}>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{eyebrow}</p> : null}
+          {eyebrow && !title ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{eyebrow}</p> : null}
           <h2 className="mt-1 text-xl font-semibold text-slate-950">{title}</h2>
           {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
         </div>
@@ -2193,7 +2193,7 @@ export default function BondBankRelationshipsPage() {
   if (state.error) {
     return (
       <main className="min-w-0 w-full text-slate-950">
-        <div className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="min-w-0 w-full rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h1 className="text-2xl font-semibold text-slate-950">Bank Relationships</h1>
           <p className="mt-3 text-sm text-slate-600">{state.error}</p>
         </div>

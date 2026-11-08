@@ -3119,9 +3119,9 @@ function SellerWelcomeHero({
     : sellerAgencyName || sellerAgentName || 'Your property team'
 
   return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fcfdff_100%)] px-6 py-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:px-8 md:py-8">
+    <header className="ui-workspace-header !block">
       <div className="min-w-0">
-        <h1 className="text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
+        <h1 className="font-semibold text-[#142132]">
           Welcome, {sellerFirstName}
         </h1>
         <div className="mt-5 space-y-1.5 text-sm leading-6 text-[#51657b]">
@@ -3162,7 +3162,7 @@ function SellerWelcomeHero({
           </SellerPortalAction>
         </div>
       </div>
-    </section>
+    </header>
   )
 }
 
@@ -3272,19 +3272,19 @@ function PortalProgressJourney({
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#e5edf5] bg-[#f5f9fd] px-4 py-3">
-        <p className="flex min-w-0 items-start gap-2 text-sm leading-6 text-[#4f647b]">
+      {helperMessage || actionLabel ? <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#e5edf5] bg-[#f5f9fd] px-4 py-3">
+        {helperMessage ? <p className="flex min-w-0 items-start gap-2 text-sm leading-6 text-[#4f647b]">
           <CheckCircle2 className="mt-0.5 shrink-0 text-[#16a34a]" size={16} />
           <span>{helperMessage}</span>
-        </p>
-        <Link
+        </p> : null}
+        {actionLabel ? <Link
           to={getPortalWorkspacePath(token, workspaceNavigationScope, actionTo)}
           className={PORTAL_DESIGN_TOKENS.button.link}
         >
           {actionLabel}
           <ArrowRight size={15} />
-        </Link>
-      </div>
+        </Link> : null}
+      </div> : null}
     </section>
   )
 }
@@ -5694,7 +5694,7 @@ function SellerMobileDocumentsPage({
 
   return (
     <section className="mt-6">
-      <div className="flex items-center justify-between gap-3"><h1 className="text-2xl font-semibold text-[#142132]">Documents</h1>
+      <header className="ui-workspace-header"><h1 className="font-semibold text-[#142132]">Documents</h1>
         <button
           type="button"
           onClick={() => typeof onOpenUploadPicker === 'function' && onOpenUploadPicker()}
@@ -5704,7 +5704,7 @@ function SellerMobileDocumentsPage({
           <Plus size={18} />
           <span>Upload document</span>
         </button>
-      </div>
+      </header>
       <SellerChecklistSummary documentCenter={documentCenter} />
       {renderTabs()}
       {renderSearchControls('Search documents...')}
@@ -13444,7 +13444,7 @@ function ClientPortal() {
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
-                  <h1 className="mt-3 text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]">
+                  <h1 className="text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]">
                     {hasSellingContext ? 'Property Sale Journey' : 'Thinking of selling your property?'}
                   </h1>
                   <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">

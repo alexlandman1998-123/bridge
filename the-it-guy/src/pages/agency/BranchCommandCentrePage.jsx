@@ -192,14 +192,10 @@ export default function BranchCommandCentrePage() {
 
   return (
     <section className="space-y-4">
-      <section className="rounded-[24px] border border-[#dfe8f1] bg-white p-5 shadow-[0_16px_40px_rgba(24,45,68,0.06)]">
+      <section className="ui-workspace-header !block">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Agency Operations</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-[-0.055em] text-[#102236]">Branch Command Centre</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
-              Manage agents, listings, leads and transactions inside the branch layer.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {model.branches.map((branch) => (

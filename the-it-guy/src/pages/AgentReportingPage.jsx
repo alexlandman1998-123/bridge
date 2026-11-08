@@ -23,6 +23,7 @@ import {
 
 const pageShell = 'flex min-w-0 w-full flex-col gap-6'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
+const metricGridClass = 'grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))]'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -61,12 +62,12 @@ function MetricCard({ label, value, icon: Icon, tone = 'slate' }) {
     red: 'bg-rose-50 text-rose-600',
   }
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</p>
-        {Icon ? <span className={`grid h-9 w-9 place-items-center rounded-xl ${tones[tone] || tones.slate}`}><Icon size={17} /></span> : null}
+        <p className="min-w-0 flex-1 break-words text-xs font-semibold text-slate-500">{label}</p>
+        {Icon ? <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${tones[tone] || tones.slate}`}><Icon size={17} /></span> : null}
       </div>
-      <strong className="mt-3 block text-2xl font-semibold tracking-[-0.045em] text-slate-950">{value}</strong>
+      <strong className="mt-3 block break-words text-2xl font-semibold tracking-[-0.045em] text-slate-950">{value}</strong>
     </article>
   )
 }
@@ -75,7 +76,7 @@ function SectionHeader({ eyebrow, title, copy, action }) {
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        {eyebrow ? <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{eyebrow}</p> : null}
+        {eyebrow && !title ? <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{eyebrow}</p> : null}
         <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
         {copy ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{copy}</p> : null}
       </div>
@@ -108,19 +109,23 @@ function downloadCsv(type, analytics) {
 }
 
 function ExportButtons({ analytics }) {
+  const [type, setType] = useState('leads')
+  const reports = [
+    ['leads', 'Leads'], ['funnel', 'Buyer funnel'], ['sources', 'Buyer sources'],
+    ['agents', 'Buyer agents'], ['listings', 'Listings'], ['seller_funnel', 'Seller funnel'],
+    ['seller_sources', 'Seller sources'], ['seller_agents', 'Seller agents'],
+    ['seller_branches', 'Seller branches'], ['suggestions', 'Suggestions'],
+    ['recommendations', 'Recommendations'], ['property_shares', 'Property shares'],
+    ['communication_deliveries', 'Communication delivery'],
+  ]
   return (
-    <div className="flex flex-wrap gap-2">
-      {['funnel', 'sources', 'agents', 'listings', 'seller_funnel', 'seller_sources', 'seller_agents', 'seller_branches', 'suggestions', 'recommendations', 'property_shares', 'communication_deliveries', 'leads'].map((type) => (
-        <button
-          key={type}
-          type="button"
-          onClick={() => downloadCsv(type, analytics)}
-          className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          <Download size={14} />
-          {type}
-        </button>
-      ))}
+    <div className="flex min-w-0 max-w-full flex-wrap gap-2">
+      <select aria-label="Report to export" value={type} onChange={event => setType(event.target.value)} className="min-h-10 min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+        {reports.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+      <button type="button" onClick={() => downloadCsv(type, analytics)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+        <Download size={14} /> Export CSV
+      </button>
     </div>
   )
 }
@@ -132,7 +137,6 @@ function FunnelSection({ stages = [] }) {
       <SectionHeader
         eyebrow="Funnel"
         title="Enquiries to Registrations"
-        copy="Explainable volume, conversion, drop-off, and average time signals from the existing lead engine."
       />
       <div className="mt-5 grid gap-3">
         {stages.map((stage) => (
@@ -147,7 +151,7 @@ function FunnelSection({ stages = [] }) {
                   <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(3, (stage.volume / max) * 100)}%` }} />
                 </div>
               </div>
-              <dl className="grid min-w-[320px] grid-cols-3 gap-2 text-right text-xs">
+              <dl className="grid w-full min-w-0 grid-cols-3 gap-2 text-right text-xs lg:w-auto lg:min-w-[320px]">
                 <div>
                   <dt className="font-semibold uppercase tracking-[0.08em] text-slate-400">Conversion</dt>
                   <dd className="mt-1 font-semibold text-slate-800">{formatPercent(stage.conversionPercent)}</dd>
@@ -186,7 +190,7 @@ function SellerFunnelSection({ stages = [] }) {
                 <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.max(3, (stage.volume / max) * 100)}%` }} />
               </div>
             </div>
-            <dl className="grid min-w-[360px] grid-cols-4 gap-2 text-right text-xs">
+            <dl className="grid w-full min-w-0 grid-cols-2 gap-3 text-left text-xs sm:grid-cols-4 lg:w-auto lg:min-w-[360px] lg:text-right">
               <div>
                 <dt className="font-semibold uppercase tracking-[0.08em] text-slate-400">Conversion</dt>
                 <dd className="mt-1 font-semibold text-slate-800">{formatPercent(stage.conversionPercent)}</dd>
@@ -362,7 +366,7 @@ function AgentReportingPage() {
 
       {analytics && !loading ? (
         <>
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-10">
+          <section className={metricGridClass}>
             <MetricCard label="Enquiries" value={formatNumber(analytics.overview.totalEnquiries)} icon={Search} tone="blue" />
             <MetricCard label="Leads" value={formatNumber(analytics.overview.totalLeads)} icon={Users} tone="blue" />
             <MetricCard label="Requirements" value={formatNumber(analytics.overview.totalRequirements)} icon={Target} tone="green" />
@@ -375,12 +379,12 @@ function AgentReportingPage() {
             <MetricCard label="Transactions" value={formatNumber(analytics.overview.totalTransactions)} icon={BarChart3} tone="green" />
           </section>
 
-          <section className={`${panelClass} p-4`}>
-            <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.4fr)_repeat(5,minmax(130px,1fr))]">
-              <label className="relative block">
-                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-300" placeholder="Search sources, agents, listings" />
-              </label>
+          <section className="space-y-4">
+            <label className="relative block max-w-xl">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input aria-label="Search analytics" value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-300" placeholder="Search sources, agents, listings" />
+            </label>
+            <div className={metricGridClass}>
               <MetricCard label="Avg Response" value={formatHours(analytics.response.averageResponseHours)} icon={MessageSquareText} tone="blue" />
               <MetricCard label="Median Response" value={formatHours(analytics.response.medianResponseHours)} icon={MessageSquareText} tone="blue" />
               <MetricCard label="Overdue" value={formatNumber(analytics.response.overdueLeads)} icon={TrendingUp} tone="red" />
@@ -395,9 +399,8 @@ function AgentReportingPage() {
             <SectionHeader
               eyebrow="Buyer Intelligence"
               title="Buyer Insights & Mapping"
-              copy="Buyer demand, qualification, activity, and area signals moved out of the individual lead workspace and into reporting."
             />
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className={`mt-5 ${metricGridClass}`}>
               <MetricCard label="Qualified Buyers" value={formatNumber((analytics.funnel || []).find((stage) => stage.key === 'qualified')?.volume)} icon={CheckCircle2} tone="green" />
               <MetricCard label="Viewings Booked" value={formatNumber(analytics.overview.totalViewings)} icon={CalendarDays} tone="amber" />
               <MetricCard label="Offers Created" value={formatNumber(analytics.overview.totalOffers)} icon={BriefcaseBusiness} tone="amber" />
@@ -420,16 +423,15 @@ function AgentReportingPage() {
             <SectionHeader
               eyebrow="Seller Funnel"
               title="Seller Journey Analytics"
-              copy="Seller lead, mandate, and listing-live metrics derived from the existing seller journey service."
             />
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className={`mt-5 ${metricGridClass}`}>
               <MetricCard label="Seller Leads" value={formatNumber(analytics.seller?.overview?.sellerLeads)} icon={Users} tone="blue" />
               <MetricCard label="Mandates Sent" value={formatNumber(analytics.seller?.overview?.mandatesSent)} icon={MessageSquareText} tone="blue" />
               <MetricCard label="Mandates Signed" value={formatNumber(analytics.seller?.overview?.mandatesSigned)} icon={CheckCircle2} tone="green" />
               <MetricCard label="Listings Live" value={formatNumber(analytics.seller?.overview?.listingsLive)} icon={TrendingUp} tone="green" />
               <MetricCard label="Avg Live Time" value={formatDays(analytics.seller?.overview?.averageDaysToListingLive)} icon={Clock3} tone="amber" />
             </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className={`mt-3 ${metricGridClass}`}>
               <MetricCard label="Ready For Listing" value={formatNumber(analytics.seller?.overview?.readyForListing)} icon={CheckCircle2} tone="green" />
               <MetricCard label="Blocked Listings" value={formatNumber(analytics.seller?.overview?.blockedListings)} icon={TrendingUp} tone="red" />
               <MetricCard label="Signature Wait" value={formatNumber(analytics.seller?.overview?.mandatesAwaitingSignature)} icon={MessageSquareText} tone="amber" />
@@ -439,7 +441,7 @@ function AgentReportingPage() {
               <MetricCard label="Blocked Sellers" value={formatNumber(analytics.seller?.overview?.readinessDistribution?.blocked)} icon={TrendingUp} tone="red" />
             </div>
             <SellerFunnelSection stages={analytics.seller?.funnel || []} />
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className={`mt-5 ${metricGridClass}`}>
               <MetricCard label="Mandate Conversion" value={formatPercent(analytics.seller?.overview?.mandateConversionRate)} icon={TrendingUp} tone="green" />
               <MetricCard label="Listing Live Conversion" value={formatPercent(analytics.seller?.overview?.listingLiveConversionRate)} icon={TrendingUp} tone="green" />
               <MetricCard label="Listings Created" value={formatNumber(analytics.seller?.overview?.listingsCreated)} icon={BriefcaseBusiness} tone="blue" />
@@ -568,7 +570,7 @@ function AgentReportingPage() {
           <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
             <div className={`${panelClass} p-5`}>
               <SectionHeader eyebrow="Demand" title="Requirement Trends" copy="Market intelligence from structured lead requirements." />
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className={`mt-5 ${metricGridClass}`}>
                 <TrendList title="Most Requested Suburbs" rows={analytics.requirements.topSuburbs} />
                 <TrendList title="Most Requested Areas" rows={analytics.requirements.topAreas} />
                 <TrendList title="Property Types" rows={analytics.requirements.topPropertyTypes} />
@@ -579,8 +581,8 @@ function AgentReportingPage() {
             </div>
 
             <div className={`${panelClass} p-5`}>
-              <SectionHeader eyebrow="Communication" title="Touchpoint Analytics" copy="Manual communication logs and match outcomes. No messages are sent from reporting." />
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <SectionHeader eyebrow="Communication" title="Touchpoint Analytics" copy="Recorded communication activity. Reporting does not send messages." />
+              <div className={`mt-5 ${metricGridClass}`}>
                 <MetricCard label="Calls Logged" value={formatNumber(analytics.communication.call)} icon={MessageSquareText} tone="blue" />
                 <MetricCard label="Emails Logged" value={formatNumber(analytics.communication.email)} icon={MessageSquareText} tone="blue" />
                 <MetricCard label="WhatsApps Logged" value={formatNumber(analytics.communication.whatsapp)} icon={MessageSquareText} tone="green" />
@@ -588,13 +590,13 @@ function AgentReportingPage() {
                 <MetricCard label="Notes Logged" value={formatNumber(analytics.communication.note)} icon={MessageSquareText} tone="slate" />
                 <MetricCard label="Touchpoints / TX" value={formatNumber(analytics.communication.averageTouchpointsBeforeTransaction)} icon={TrendingUp} tone="green" />
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className={`mt-5 ${metricGridClass}`}>
                 <MetricCard label="Matches Created" value={formatNumber(analytics.communication.matchesCreated)} icon={Target} tone="green" />
                 <MetricCard label="Matches Viewed" value={formatNumber(analytics.communication.matchesViewed)} icon={Target} tone="blue" />
                 <MetricCard label="Matches Dismissed" value={formatNumber(analytics.communication.matchesDismissed)} icon={Target} tone="red" />
                 <MetricCard label="Viewings Generated" value={formatNumber(analytics.communication.viewingsGenerated)} icon={CalendarDays} tone="amber" />
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className={`mt-5 ${metricGridClass}`}>
                 <MetricCard label="Suggestions Generated" value={formatNumber(analytics.suggestions.generated)} icon={Target} tone="blue" />
                 <MetricCard label="Suggestions Accepted" value={formatNumber(analytics.suggestions.accepted)} icon={Target} tone="green" />
                 <MetricCard label="Suggestions Rejected" value={formatNumber(analytics.suggestions.rejected)} icon={Target} tone="red" />
@@ -602,15 +604,15 @@ function AgentReportingPage() {
                 <MetricCard label="Suggestion to Offer" value={formatPercent(analytics.suggestions.suggestionToOfferRate)} icon={BriefcaseBusiness} tone="amber" />
                 <MetricCard label="Suggestion to TX" value={formatPercent(analytics.suggestions.suggestionToTransactionRate)} icon={TrendingUp} tone="green" />
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className={`mt-5 ${metricGridClass}`}>
                 <MetricCard label="Properties Sent" value={formatNumber(analytics.propertyShares.propertiesSent)} icon={MessageSquareText} tone="green" />
                 <MetricCard label="Emails Sent" value={formatNumber(analytics.propertyShares.emailsSent)} icon={MessageSquareText} tone="blue" />
                 <MetricCard label="WhatsApps Sent" value={formatNumber(analytics.propertyShares.whatsAppsSent)} icon={MessageSquareText} tone="green" />
                 <MetricCard label="Pending Sends" value={formatNumber(analytics.propertyShares.pendingSends)} icon={Clock3} tone="amber" />
               </div>
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <SectionHeader eyebrow="Communication Performance" title="Delivery Performance" copy="Delivery attempts, provider acceptance, and failure signals from manually approved buyer communications." />
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <SectionHeader eyebrow="Communication Performance" title="Delivery Performance" copy="Delivery results for approved buyer communications." />
+                <div className={`mt-4 ${metricGridClass}`}>
                   <MetricCard label="Communications Sent" value={formatNumber(analytics.communicationPerformance?.communicationsSent)} icon={MessageSquareText} tone="blue" />
                   <MetricCard label="Delivered" value={formatNumber(analytics.communicationPerformance?.communicationsDelivered)} icon={CheckCircle2} tone="green" />
                   <MetricCard label="Failed" value={formatNumber(analytics.communicationPerformance?.communicationsFailed)} icon={MessageSquareText} tone="red" />
@@ -650,7 +652,7 @@ function AgentReportingPage() {
                 </div>
                 <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
                   <h3 className="text-sm font-semibold text-slate-950">Communication Infrastructure</h3>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className={`mt-3 ${metricGridClass}`}>
                     {Object.values(analytics.communicationInfrastructure || {}).map((row) => (
                       <div key={row.channel} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <div className="flex items-center justify-between gap-3">
@@ -665,7 +667,7 @@ function AgentReportingPage() {
                   </div>
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className={`mt-5 ${metricGridClass}`}>
                 <MetricCard label="Recommendations Created" value={formatNumber(analytics.recommendations.created)} icon={MessageSquareText} tone="blue" />
                 <MetricCard label="Recommendations Accepted" value={formatNumber(analytics.recommendations.accepted)} icon={MessageSquareText} tone="green" />
                 <MetricCard label="Recommendations Completed" value={formatNumber(analytics.recommendations.completed)} icon={CheckCircle2} tone="green" />
@@ -678,7 +680,7 @@ function AgentReportingPage() {
 
           <section className={`${panelClass} p-5`}>
             <SectionHeader eyebrow="Lead Health" title="Pipeline Health" copy="Operational lead health from ownership, SLA, and activity recency fields." />
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className={`mt-5 ${metricGridClass}`}>
               <MetricCard label="New Leads" value={formatNumber(analytics.pipeline.newLeads)} icon={Users} tone="blue" />
               <MetricCard label="Assigned" value={formatNumber(analytics.pipeline.assignedLeads)} icon={Users} tone="green" />
               <MetricCard label="Unassigned" value={formatNumber(analytics.pipeline.unassignedLeads)} icon={Users} tone="amber" />

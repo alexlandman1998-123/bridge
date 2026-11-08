@@ -2296,7 +2296,7 @@ function AttorneyMattersPage() {
 
   return (
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-2">
-      <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
+      <div className="min-w-0 w-full max-w-none space-y-5">
         {viewKey === 'all' && !hasDashboardMetricDrilldown ? (
           <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}

@@ -253,7 +253,7 @@ export default function BondAutomationCentrePage() {
   if (state.error) {
     return (
       <Shell className={shellClassName}>
-        <div className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="min-w-0 w-full rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h1 className="text-2xl font-semibold text-slate-950">Automation & Rules</h1>
           <p className="mt-3 text-sm text-slate-600">{state.error}</p>
         </div>

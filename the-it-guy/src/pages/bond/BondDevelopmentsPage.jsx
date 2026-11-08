@@ -199,13 +199,10 @@ export function PortfolioSummary({ summary = {} }) {
 
 function PortfolioHeader({ onExport, onReports, onAdd }) {
   return (
-    <section className="rounded-[24px] border border-[#dfe8f2] bg-white px-5 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+    <header className="ui-workspace-header">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-[1.65rem] font-semibold tracking-normal text-[#142132]">Developments</h1>
-          <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#60758d]">
-            Manage development performance, bond applications, developer relationships, and portfolio risk.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <button
@@ -234,7 +231,7 @@ function PortfolioHeader({ onExport, onReports, onAdd }) {
           </button>
         </div>
       </div>
-    </section>
+    </header>
   )
 }
 

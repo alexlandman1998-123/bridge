@@ -1,3 +1,4 @@
+import PageHeader from '../../ui/PageHeader'
 import { AlertCircle, CheckCircle2, Clock3, FileText, Folder, UploadCloud } from 'lucide-react'
 import { useState } from 'react'
 import { buyerPortalHexToRgba, createBuyerPortalTheme } from '../buyerPortalTheme'
@@ -125,11 +126,11 @@ export default function BuyerDocumentWorkspace({
   }
 
   return (
-    <section data-buyer-documents="workspace" data-document-source={model?.source || 'unknown'} className="space-y-5">
-
+    <section data-buyer-documents="workspace" data-document-source={model?.source || 'unknown'} className="min-w-0 w-full space-y-5">
+      <PageHeader title="Documents" />
 
       <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)] lg:p-5">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:divide-x lg:divide-[#dbe5ef]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-[#dbe5ef]">
           {[
             [`${model?.counts?.approved || 0} of ${model?.counts?.total || 0}`, 'Documents approved', 'approved'],
             [model?.counts?.action || 0, 'Needs your attention', 'action'],

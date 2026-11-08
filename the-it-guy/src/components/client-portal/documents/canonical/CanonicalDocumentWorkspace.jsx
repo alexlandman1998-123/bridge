@@ -116,7 +116,7 @@ function CanonicalDocumentWorkspace({
           <FolderOpen size={22} className="mt-1 text-[#35546c]" />
           <div>
             <h3 className="text-[1.16rem] font-semibold tracking-[-0.03em] text-[#142132]">Document Data Room</h3>
-            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">No canonical document requirements are available yet. The existing document centre remains available.</p>
+            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Your document checklist is not available yet. You can still use the document centre.</p>
           </div>
         </div>
       </section>

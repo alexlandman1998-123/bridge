@@ -228,7 +228,7 @@ export default function BondHQCommandCentrePage() {
   if (dashboardState.error) {
     return (
       <main className="min-w-0 w-full text-slate-950">
-        <div className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="min-w-0 w-full rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h1 className="text-2xl font-semibold text-slate-950">HQ Command Centre</h1>
           <p className="mt-3 text-sm text-slate-600">{dashboardState.error}</p>
         </div>

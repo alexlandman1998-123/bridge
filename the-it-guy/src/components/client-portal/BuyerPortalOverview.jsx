@@ -8,12 +8,12 @@ export function BuyerPortalOverviewShell({
   support,
 }) {
   return (
-    <section className="space-y-6" data-buyer-portal-overview="shared">
+    <section className="min-w-0 w-full space-y-6" data-buyer-portal-overview="shared">
       <div data-buyer-overview-region="hero">{hero}</div>
       {progress ? <div data-buyer-overview-region="progress">{progress}</div> : null}
       {afterProgress ? <div data-buyer-overview-region="after-progress">{afterProgress}</div> : null}
       {updates || documents ? (
-        <section className="grid gap-5 xl:grid-cols-2 xl:items-stretch" data-buyer-overview-region="activity-documents">
+        <section className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2 xl:items-stretch" data-buyer-overview-region="activity-documents">
           {updates ? <div className="min-w-0">{updates}</div> : null}
           {documents ? <div className="min-w-0">{documents}</div> : null}
         </section>
@@ -58,7 +58,7 @@ export function BuyerPortalOverviewHero({
     : theme?.heroOverlayStyle
 
   return (
-    <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
+    <section className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
       <header className="ui-workspace-header xl:col-span-2">
         <h1 className="text-[1.6rem] font-semibold leading-tight tracking-[-0.035em] text-[#102a2b] sm:text-[2rem]">
           Welcome, {welcomeName}.
@@ -93,7 +93,7 @@ export function BuyerPortalOverviewHero({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm font-medium text-white/75">Your purchase</p>
-              <h2 className="mt-4 max-w-xl text-[1.4rem] sm:text-[1.65rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{propertyName}</h2>
+              <h2 className="mt-4 max-w-xl break-words text-[1.4rem] sm:text-[1.65rem] font-semibold leading-[1.08] tracking-[-0.04em] text-white">{propertyName}</h2>
               {unitLabel ? <p className="mt-2 text-base font-semibold text-white/85">{unitLabel}</p> : null}
             </div>
             <span className={`shrink-0 rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${statusClassName}`}>

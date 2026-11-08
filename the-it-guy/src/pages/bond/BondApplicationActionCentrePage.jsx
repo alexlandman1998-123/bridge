@@ -264,19 +264,17 @@ export default function BondApplicationActionCentrePage() {
   const externalSubmissionsByPackageId = new Map((Array.isArray(state.externalSubmissions?.items) ? state.externalSubmissions.items : []).map((item) => [item.exportPackageId, item]))
   return (
     <BondPageShell className="space-y-5">
-      <section className="rounded-[22px] border border-[#dce6f2] bg-white p-6 shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
+      <header className="ui-workspace-header !block">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5c7895]">Buyer application workflow</p>
-            <h1 className="mt-2 text-2xl font-semibold text-[#142132]">Application action centre</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">Issue a secure buyer link, request supporting documents, and see the current access state without entering the buyer portal.</p>
+            <h1 className="text-2xl font-semibold text-[#142132]">Application action centre</h1>
           </div>
           <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 rounded-xl border border-[#dbe5f0] px-3 py-2 text-sm font-semibold text-[#24518a]">
             <RefreshCw size={16} /> Refresh
           </button>
         </div>
         <p className="mt-4 flex items-center gap-2 rounded-xl bg-[#f4f8fc] px-3 py-2 text-xs text-[#526d88]"><ShieldCheck size={16} className="text-[#2f7a54]" /> Track the bank process here. Buyer links can be used for shared documents; signing and bank-service connections are not required.</p>
-      </section>
+      </header>
 
       {state.error ? <section className="rounded-xl border border-[#f0caca] bg-[#fff6f6] p-4 text-sm text-[#9c3535]">{state.error}</section> : null}
       {state.loading ? <BondEmptyState title="Loading your application actions…" description="Checking your assigned originator intake packages." /> : null}

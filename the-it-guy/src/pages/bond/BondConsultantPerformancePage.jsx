@@ -737,7 +737,7 @@ function SettingsPanel({ title, rows }) {
 function ErrorState({ message }) {
   return (
     <main className="min-h-screen bg-[#f5f8fb] px-4 py-8 text-[#142132]">
-      <div className="mx-auto max-w-[980px] rounded-[20px] border border-[#dfe7ef] bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+      <div className="min-w-0 w-full rounded-[20px] border border-[#dfe7ef] bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
         <h1 className="text-2xl font-bold">Consultant unavailable</h1>
         <p className="mt-2 text-sm text-[#64748b]">{message}</p>
         <Link to="/bond/organisation?view=consultants" className="mt-5 inline-flex items-center gap-2 rounded-[12px] bg-[#17324d] px-4 py-2 text-sm font-bold text-white">Back to consultants <ArrowRight size={15} /></Link>

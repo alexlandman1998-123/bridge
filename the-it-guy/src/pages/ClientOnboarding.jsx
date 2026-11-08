@@ -2001,20 +2001,12 @@ function DemoDesktopOnboardingHero({
           <div className="flex min-h-0 flex-col">
             <BuyerBrandBar brand={brand} tone="dark" />
             <div className="flex flex-1 flex-col justify-center py-10">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/70">Buyer onboarding</p>
               <h1 className="mt-4 max-w-4xl text-[4.2rem] font-semibold leading-[0.96] tracking-[-0.075em] text-white">
                 Complete your buyer onboarding
               </h1>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-white/80">
-                A personalised buyer intake for your identity, finance, and purchase details. We only ask for what your transaction team needs.
+                Add your details and documents. You can save and return later.
               </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                {['Guided questions', 'Save & continue later', 'Bond-ready workflow'].map((chip) => (
-                  <span key={chip} className="inline-flex min-h-[42px] items-center rounded-full border border-white/20 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur">
-                    {chip}
-                  </span>
-                ))}
-              </div>
             </div>
           </div>
 
@@ -5152,27 +5144,12 @@ function ClientOnboarding() {
                 </div>
                 <div className="grid gap-0 md:grid-cols-[1.25fr_0.95fr]">
                   <div className="p-4 md:p-8">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--buyer-brand-action)] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
                     <h1 className="mt-3 max-w-2xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-[#132033] md:mt-4 md:text-5xl">
                       Complete your buyer onboarding
                     </h1>
                     <p className="mt-3 max-w-2xl text-sm leading-6 text-[#556679] md:mt-4 md:text-[1.02rem] md:leading-7">
-                      A calm guided flow for your identity, finance, and transaction details. We only ask for the information that matters to your purchase.
+                      Add your details and documents. You can save and return later.
                     </p>
-                    <div className="mt-4 flex flex-wrap gap-2 md:mt-6 md:gap-3">
-                      {[
-                        'Guided questions',
-                        'Save & continue later',
-                        'Branch-aware questions',
-                      ].map((chip) => (
-                        <span
-                          key={chip}
-                          className="inline-flex min-h-[30px] items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-medium text-[#42566b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] md:min-h-[38px] md:px-4 md:py-2 md:text-sm"
-                        >
-                          {chip}
-                        </span>
-                      ))}
-                    </div>
                   </div>
 
                   <aside className={HERO_SUMMARY_CLASS}>

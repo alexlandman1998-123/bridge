@@ -134,10 +134,9 @@ export default function AssistantDashboardPage() {
 
   return (
     <section className="space-y-4">
-      <section className="rounded-[24px] border border-[#dfe8f1] bg-white p-5 shadow-[0_16px_40px_rgba(24,45,68,0.06)]">
+      <section className="ui-workspace-header !block">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Operational Support</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-[-0.055em] text-[#102236]">{roleLabel(role)} Workspace</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
               Coordinate work for assigned agents without taking ownership, commission attribution, or executive authority.

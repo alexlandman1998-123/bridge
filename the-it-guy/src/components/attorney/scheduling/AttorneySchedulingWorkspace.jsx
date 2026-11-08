@@ -670,10 +670,9 @@ function createInviteDraftDefaults(selectedDate = new Date()) {
 function SchedulingPageHeader({ onCreateInvite, rolloutStatus }) {
   const inviteEnabled = rolloutStatus?.enabled === true
   return (
-    <section className="scheduling-page-header">
+    <header className="ui-workspace-header scheduling-page-header">
       <div>
         <h1>Calendar</h1>
-        <p>Manage appointments, deadlines and important dates.</p>
       </div>
       <div className="scheduling-header-actions">
         <button
@@ -681,13 +680,13 @@ function SchedulingPageHeader({ onCreateInvite, rolloutStatus }) {
           className="scheduling-primary-action"
           onClick={onCreateInvite}
           disabled={!inviteEnabled}
-          title={inviteEnabled ? 'Create attorney invite' : 'Create Invite is outside the active rollout cohort'}
+          title={inviteEnabled ? 'Create attorney invite' : 'Appointment invites are not enabled for this workspace.'}
         >
           <Plus size={16} />
           Create Invite
         </button>
       </div>
-    </section>
+    </header>
   )
 }
 
@@ -1577,11 +1576,12 @@ function SchedulingStyles() {
     <style>{`
       .attorney-scheduling-os {
         display: grid;
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr);
         gap: 1rem;
         color: #10233f;
       }
 
-      .scheduling-page-header,
       .scheduling-toolbar,
       .scheduling-panel,
       .scheduling-metric-card {
@@ -1590,36 +1590,10 @@ function SchedulingStyles() {
         box-shadow: 0 8px 24px rgba(15, 35, 65, 0.05);
       }
 
-      .scheduling-page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
-        border-radius: 14px;
-        padding: 0.82rem 0.95rem;
-      }
-
-      .scheduling-page-header > div:first-child > span {
-        display: block;
-        color: #2563eb;
-        font-size: 0.68rem;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .scheduling-page-header h1 {
-        margin: 0;
-        font-size: 1.2rem;
-        line-height: 1.05;
-        letter-spacing: 0;
-        color: #08172d;
-      }
-
-      .scheduling-page-header p {
-        margin: 0.25rem 0 0;
-        color: #5a6f89;
-        font-size: 0.78rem;
+      .scheduling-primary-action:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+        box-shadow: none;
       }
 
       .scheduling-header-actions {

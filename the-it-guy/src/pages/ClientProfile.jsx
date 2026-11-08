@@ -423,8 +423,7 @@ function ClientProfile() {
             {getInitials(client.name)}
           </div>
           <div className="mt-5">
-            <span className="text-[0.78rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{copy.profileLabel || 'Client Profile'}</span>
-            <h1 className="mt-3 break-words text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{client.name}</h1>
+            <h1 className="break-words text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">{client.name}</h1>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#5d7690]">
                 {client.typeLabel}

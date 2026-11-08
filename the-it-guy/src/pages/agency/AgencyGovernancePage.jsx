@@ -175,14 +175,12 @@ export default function AgencyGovernancePage() {
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <header className="ui-workspace-header">
         <div>
-          <p className="text-sm font-semibold text-[#60758d]">Agency / Governance</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#10243a]">{organisationName} Governance</h1>
-          <p className="mt-1 text-sm text-[#61778f]">Authority hierarchy, role controls and operational governance for the agency.</p>
         </div>
         <Button type="button" variant="secondary">Export Matrix</Button>
-      </div>
+      </header>
 
       {error ? <div className="rounded-2xl border border-[#f3d1d1] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</div> : null}
       {loading ? <div className="rounded-2xl border border-[#dde6f1] bg-white px-5 py-6 text-sm text-[#647a92]">Loading governance…</div> : null}

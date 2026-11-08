@@ -528,25 +528,6 @@ function OrganisationCommandHeader({
             ? 'Routing Rules'
           : 'Organisation'
   )
-  const subtitle = partnerTitle
-    ? 'Review this partner relationship, routing defaults, applications, and performance.'
-    : consultantTitle
-      ? 'Review this consultant’s workload, assigned applications, and current operating momentum.'
-    : branchTitle
-    ? 'Review branch pressure, the consultant roster, and file flow for this branch.'
-    : regionTitle
-      ? 'Monitor the region structure, branch coverage, and high-level performance.'
-        : view === 'partners'
-          ? 'Manage agency, development, and referral partners that send bond applications.'
-        : view === 'consultants'
-        ? 'Manage consultant workload, application ownership, and performance.'
-        : view === 'routing-rules'
-          ? 'Define partner, development, regional, overflow, and company fallback routing defaults.'
-        : view === 'branches'
-          ? 'Manage branch capacity, consultant allocation, and branch application performance.'
-          : view === 'regions'
-            ? 'Manage regional coverage, branch grouping, and regional application performance.'
-        : 'Manage your bond origination network, branch structure, consultant workload, and application performance.'
 
   if (isHqOverview) {
     if (!canManage) return null
@@ -589,12 +570,11 @@ function OrganisationCommandHeader({
   }
 
   return (
-    <section className="rounded-[26px] border border-[#dbe5f0] bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <header className="ui-workspace-header">
+      <div className="flex w-full flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#75879b]">{snapshot?.visibleScope?.label || 'Organisation'}</p>
-          <h1 className="mt-2 text-[1.75rem] font-semibold tracking-normal text-[#142132]">{title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f7287]">{subtitle}</p>
+          <h1 className="text-[1.75rem] font-semibold tracking-normal text-[#142132]">{title}</h1>
+          {snapshot?.visibleScope?.label && snapshot.visibleScope.label !== title ? <p className="mt-2 text-sm text-[#5f7287]">{snapshot.visibleScope.label}</p> : null}
         </div>
         {actions.length ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -611,7 +591,7 @@ function OrganisationCommandHeader({
           </div>
         ) : null}
       </div>
-    </section>
+    </header>
   )
 }
 

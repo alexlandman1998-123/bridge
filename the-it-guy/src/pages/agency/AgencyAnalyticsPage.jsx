@@ -561,16 +561,12 @@ export default function AgencyAnalyticsPage() {
   return (
     <section className="agency-analytics flex flex-col gap-5 pb-8">
       <header className={`${CARD_CLASS} overflow-hidden`}>
-        <div className="border-b border-[#edf2f7] bg-[linear-gradient(135deg,#ffffff_0%,#f6faff_100%)] px-5 py-5 sm:px-6">
+        <div className="ui-workspace-header !block !rounded-none !border-0">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#1769d1]">Agency Intelligence</p>
               <h1 className="mt-2 text-[1.65rem] font-semibold tracking-[-0.045em] text-[#101d2c] sm:text-[2rem]">
-                Principal Analytics Dashboard
+                Agency analytics
               </h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5f738a]">
-                Executive view across branch performance, pipeline health, buyer intelligence, lead conversion, and finance signals.
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={loadAnalytics} className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#d8e3ef] bg-white px-4 text-sm font-semibold text-[#21374d] shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
