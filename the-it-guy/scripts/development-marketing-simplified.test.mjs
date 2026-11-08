@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
 const headerSource = readFileSync(resolve(root, 'src/components/HeaderBar.jsx'), 'utf8')
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = [readFileSync(resolve(root, 'src/lib/api.js'), 'utf8'), readFileSync(resolve(root, 'src/domains/developments/profileNormalization.js'), 'utf8')].join('\n')
 
 assert.match(detailSource, /id: 'campaigns', label: 'Campaigns'/, 'development marketing should expose the Campaigns tab')
 assert.match(detailSource, /documents: 'campaigns'/, 'legacy Marketing Documents links should open Campaigns')
