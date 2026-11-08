@@ -4,7 +4,7 @@ Deno.serve = ((fn: typeof handler) => { handler = fn; }) as typeof Deno.serve;
 await import('./index.ts');
 Deno.serve = serve;
 const assert = (ok: unknown, message: string) => { if (!ok) throw new Error(message); };
-const events = ['email.delivered','email.bounced','email.complained','email.opened','email.clicked','email.suppressed','domain.created','domain.updated','domain.deleted'];
+const events = ['email.sent','email.delivery_delayed','email.failed','email.delivered','email.bounced','email.complained','email.opened','email.clicked','email.suppressed','domain.created','domain.updated','domain.deleted'];
 for (const scenario of ['ready','pagination','non-executive','wrong-domain','wrong-id','pending-domain','provider-sending-disabled','missing-domain','disabled-sending','zero-budget','budget-error','missing-suppressed','missing-domain-events','disabled-webhook','wrong-secret','unsigned-accepted','provider-error']) {
   Deno.test(`campaign platform readiness: ${scenario}`, async () => {
     const settings: Record<string,string> = {

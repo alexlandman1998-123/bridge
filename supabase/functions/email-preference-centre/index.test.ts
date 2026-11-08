@@ -23,7 +23,7 @@ for (const scenario of ['unsubscribe','write-failure','missing-token','foreign-c
       globalThis.fetch = (async (input: any, options: any = {}) => {
         const url = String(input);
         const json = (body: unknown, status = 200) => Response.json(body, { status });
-        if (url.endsWith('/rpc/email_campaign_apply_preferences')) {
+        if ((url.endsWith('/rpc/email_campaign_apply_preferences') || url.endsWith('/rpc/email_campaign_change_preferences'))) {
           writes.push(JSON.parse(options.body));
           if (scenario === 'write-failure') return json({ code: 'XX000', message: 'Database unavailable' },500);
           if (scenario === 'foreign-category') return json({ code: '22023', message: 'Wrong organisation' },400);
@@ -42,13 +42,13 @@ for (const scenario of ['unsubscribe','write-failure','missing-token','foreign-c
       const isPreference = ['foreign-category','read-failure','escaped-view'].includes(scenario);
       const method = scenario === 'escaped-view' || scenario === 'read-failure' ? 'GET' : 'POST';
       const response = await (isPreference ? preferences : unsubscribe)(new Request('https://functions.example.test/?token=link-token&organisationId=foreign&email=foreign@example.test', {
-        method, ...(method === 'POST' ? { body: new URLSearchParams({ subscription: category, organisationId: 'foreign' }) } : {}),
+        method, ...(method === 'POST' ? { body: new URLSearchParams({ subscription: category, organisationId: 'foreign', confirm: 'unsubscribe' }) } : {}),
       }));
       const html = await response.text();
       const expected = scenario === 'write-failure' || scenario === 'read-failure' ? 503 : scenario === 'foreign-category' ? 400 : scenario === 'missing-token' ? 404 : 200;
       assert(response.status === expected, `Expected ${expected}, received ${response.status}`);
       assert(response.headers.get('cache-control') === 'no-store', 'Bearer pages must not be cached');
-      if (scenario === 'unsubscribe') assert(JSON.stringify(writes) === JSON.stringify([{ p_token: 'link-token', p_selected: [] }]), 'Ignore foreign organisation/address fields');
+      if (scenario === 'unsubscribe') assert(JSON.stringify(writes) === JSON.stringify([{ p_token: 'link-token', p_selected: [], p_recipient_id: null, p_recipient_token: null, p_source: 'campaign_unsubscribe' }]), 'Ignore foreign organisation/address fields');
       if (scenario === 'foreign-category') assert(!html.includes('<h1>Preferences saved'), 'Rejected foreign choices cannot report success');
       if (scenario === 'escaped-view') assert(!html.includes('<script>') && html.includes('&lt;script&gt;') && html.includes('&lt;b&gt;News'), 'Escape all displayed values');
     } finally {
@@ -68,11 +68,12 @@ for (const scenario of ['redirect','invalid-link','write-error','unsafe-target',
       for(const [key,value] of Object.entries(settings)) Deno.env.set(key,value);
       globalThis.fetch=(async(input: any,options: any={})=>{
         requests++;
-        assert(String(input).endsWith('/rpc/email_campaign_record_click'),'Tracking must use its atomic RPC');
-        assert(JSON.parse(options.body).p_link_token==='link-token','Keep the original bearer capability');
+        assert(/\/rpc\/email_campaign_(resolve_link|record_click_v2)$/.test(String(input)),'Tracking must separate destination reads from telemetry writes');
+        if(String(input).endsWith('record_click_v2')) return Response.json(null);
+        assert(JSON.parse(options.body).p_link_token===(scenario==='write-error'?'uncached-link':'link-token'),'Keep the original bearer capability');
         return scenario==='write-error'?Response.json({code:'XX000',message:'Fixture error'},{status:500}):Response.json(scenario==='invalid-link'?null:scenario==='unsafe-target'?'javascript:alert(1)':'https://example.com/listings');
       }) as typeof fetch;
-      const response=await tracking(new Request(`https://functions.example.test/?l=link-token&r=${scenario==='invalid-id'?'bad-id':'11111111-1111-4111-8111-111111111111'}&t=recipient-token`));
+      const response=await tracking(new Request(`https://functions.example.test/?l=${scenario==='write-error'?'uncached-link':'link-token'}&r=${scenario==='invalid-id'?'bad-id':'11111111-1111-4111-8111-111111111111'}&t=recipient-token`));
       assert(response.status===(scenario==='redirect'?302:scenario==='write-error'?503:scenario==='invalid-id'?400:404),'Tracking must reflect committed storage and validated destination');
       assert(response.headers.get('cache-control')==='no-store','Tracking redirects must not be cached');
       if(scenario==='invalid-id') assert(requests===0,'Reject malformed ids before storage');

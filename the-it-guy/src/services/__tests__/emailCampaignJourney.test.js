@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { expect, it, vi } from 'vitest'
 import { createEmailCampaignDatabase } from '../../../../scripts/fixtures/emailCampaignDatabase.mjs'
+import { installMarketingMeasurementFixture } from '../../../../scripts/fixtures/marketingMeasurementDatabase.mjs'
 import { emailCampaignClient } from '../../../../scripts/fixtures/emailCampaignClient.mjs'
 import { createWorkerHandler } from '../../../../supabase/functions/email-campaign-worker/handler.ts'
 import { createContentCheckHandler } from '../../../../supabase/functions/email-campaign-content-check/handler.ts'
 import { createCampaignTrackingHandler } from '../../../../supabase/functions/email-campaign-track/handler.ts'
 import { createUnsubscribeHandler } from '../../../../supabase/functions/email-unsubscribe/handler.ts'
 import { prepareEmailImport, uploadPreparedEmail } from '../emailCampaignImportService'
-import { createEmailSender, saveEmailCampaign, scheduleEmailCampaign, preflightEmailCampaign, getEmailCampaignAnalytics } from '../emailCampaignService'
+import { createEmailSender, saveEmailCampaign, scheduleEmailCampaign, preflightEmailCampaign, getEmailCampaignAnalytics, exportEmailCampaignRecipients } from '../emailCampaignService'
 const connection = vi.hoisted(() => ({ client: null }))
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: new Proxy({}, { get: (_,key) => connection.client[key] }) }))
 const readMigration = name => readFileSync(new URL('../../../../supabase/migrations/'+name,import.meta.url),'utf8')
@@ -41,6 +42,9 @@ it('imports HTML and an owned image, saves/preflights/schedules, dispatches both
       for(const policy of foundation.split('\n').filter(line=>line.startsWith('create policy ') && line.includes(' on public.'+table+' '))) await db.exec(policy)
     }
     await db.exec('alter view email_campaign_performance set (security_invoker=true); grant select on email_campaign_performance to authenticated,service_role')
+    await installMarketingMeasurementFixture(fixture)
+    await db.query("insert into website_sites values($1,$2,'published')",['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',org])
+    await db.query("insert into website_domains values($1,'agency.example.com','active',true,now())",['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])
     await db.exec("update email_campaign_account_limits set enabled=true,daily_limit=100,monthly_limit=200")
     const service = emailCampaignClient({ db, before: asService })
     const caller = emailCampaignClient({ db, before: () => asUser(org), user: { id: user,email: 'manager@example.test' } })
@@ -117,22 +121,37 @@ it('imports HTML and an owned image, saves/preflights/schedules, dispatches both
     const recipient=await one('select * from email_campaign_recipients where campaign_id=$1',[campaigns[0].id])
     expect((await service.rpc('email_campaign_record_provider_event',{p_event_id:'signed-delivered',p_provider_id:recipient.provider_message_id,p_event_type:'email.delivered',p_payload:{}})).error).toBeNull()
     const tracking=createCampaignTrackingHandler({createClient:()=>service,env})
-    const link=await one('select * from email_campaign_links where campaign_id=$1',[campaigns[0].id])
-    const clicked=await tracking(new Request(`${base}?l=${link.tracking_token}&r=${recipient.id}&t=${recipient.tracking_token}`))
-    expect(clicked.status).toBe(302);expect(clicked.headers.get('location')).toBe('https://agency.example.com/listings')
+    const actualLink=deliveries[0].html.match(/href="([^"]*email-campaign-track[^"]*)"/)[1].replaceAll('&amp;','&')
+    const clicked=await tracking(new Request(actualLink))
+    expect(clicked.status).toBe(302)
+    const destination=new URL(clicked.headers.get('location'))
+    expect(destination.origin+destination.pathname).toBe('https://agency.example.com/listings');expect(destination.searchParams.get('arch9_attribution')).toMatch(/^[a-f0-9]{32}$/)
     const report=await one('select * from email_campaign_performance where campaign_id=$1',[campaigns[0].id])
     expect(report.clicked).toBe(1)
     const activity=await getEmailCampaignAnalytics(campaigns[0].id)
     expect(activity.recipients[0].status).toBe('clicked')
-    expect(activity.events.map(event=>event.event_type).sort()).toEqual(['clicked','delivered','sent'])
+    expect(activity.events.map(event=>event.event_type).sort()).toEqual(['clicked'])
+    expect(activity.recipientCount).toBe(1)
     expect(activity.links[0].unique_clickers).toBe(1)
     expect(activity.audit.some(event=>event.event_type==='scheduled')).toBe(true)
     await asService()
     const pref=await one('select * from contact_marketing_preferences where organisation_id=$1',[org])
     const unsubscribe=createUnsubscribeHandler({createClient:()=>service,env})
-    expect((await unsubscribe(new Request(`${base}?token=${pref.unsubscribe_token}`,{method:'POST'}))).status).toBe(200)
+    expect((await unsubscribe(new Request(`${base}?token=${pref.unsubscribe_token}&r=${recipient.id}&t=${recipient.tracking_token}`,{method:'POST',body:'List-Unsubscribe=One-Click'}))).status).toBe(200)
     expect((await one('select marketing_consent_status from contact_marketing_preferences where organisation_id=$1',[org])).marketing_consent_status).toBe('opted_out')
     expect((await one('select marketing_consent_status from contact_marketing_preferences where organisation_id=$1',[other])).marketing_consent_status).toBe('opted_in')
-    expect((await one('select count(*)::int n from email_events where campaign_id=$1',[campaigns[0].id])).n).toBe(3)
+    expect((await one('select count(*)::int n from email_events where campaign_id=$1',[campaigns[0].id])).n).toBe(4)
+    expect((await one('select clicked,delivered,unsubscribed from email_campaign_performance where campaign_id=$1',[campaigns[0].id]))).toEqual({clicked:1,delivered:1,unsubscribed:1})
+    await asService()
+    await db.query("insert into email_campaign_recipients(organisation_id,campaign_id,email) select $1,$2,'page-'||n||'@example.test' from generate_series(1,55) n",[org,campaigns[0].id])
+    const pageOne=await getEmailCampaignAnalytics(campaigns[0].id)
+    const pageTwo=await getEmailCampaignAnalytics(campaigns[0].id,{page:1})
+    expect(pageOne.recipientCount).toBe(56);expect(pageOne.recipients).toHaveLength(50);expect(pageTwo.recipients).toHaveLength(6)
+    expect(new Set([...pageOne.recipients,...pageTwo.recipients].map(row=>row.id)).size).toBe(56)
+    const search=await getEmailCampaignAnalytics(campaigns[0].id,{query:'buyer@example.test'})
+    expect(search.recipientCount).toBe(1);expect(search.events[0].event_type).toBe('unsubscribed')
+    await asService(); await db.query("update email_campaign_recipients set error_reason='=DANGEROUS()' where id=$1",[recipient.id])
+    const csv=await exportEmailCampaignRecipients(campaigns[0].id)
+    expect(csv.split('\r\n')).toHaveLength(57);expect(csv).toContain("'=DANGEROUS()")
   } finally { connection.client=null;await db.close() }
 },20000)

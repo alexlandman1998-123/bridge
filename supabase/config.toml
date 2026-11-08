@@ -463,3 +463,6 @@ verify_jwt = false
 
 [functions.whatsapp-automation-worker]
 verify_jwt = false
+
+[functions.marketing-click]
+verify_jwt = false

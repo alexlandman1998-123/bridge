@@ -39,6 +39,7 @@ export async function refreshSendingDomain({ db, domain, resendKey, fetcher = fe
     p_error: providerError,
   });
   if (error) throw new Error("Unable to save domain verification. Please try again.");
+  await recordSendingDomainTracking(db, domain.id, domain.provider_domain_id, details);
   return status;
 }
 
@@ -59,4 +60,21 @@ export async function findSendingDomain({ name, resendKey, fetcher = fetch }: { 
     after = cursor;
   }
   throw new Error("The email provider's domain list is too large to safely check.");
+}
+
+// Sending DNS and engagement tracking are separate provider capabilities.
+export function sendingDomainTracking(details: any) {
+  const openEnabled = typeof details?.open_tracking === 'boolean' ? details.open_tracking : null;
+  const clickEnabled = typeof details?.click_tracking === 'boolean' ? details.click_tracking : null;
+  const subdomain = typeof details?.tracking_subdomain === 'string' ? details.tracking_subdomain.slice(0, 253) : null;
+  const records = Array.isArray(details?.records) ? details.records.filter((row: any) => String(row.record || '').toLowerCase() === 'tracking') : [];
+  const domainReady = subdomain && records.length ? records.every((row: any) => row.status === 'verified') : null;
+  const status = (enabled: boolean | null) => enabled === null ? 'unknown' : !enabled ? 'disabled' : domainReady === true ? 'ready' : domainReady === false ? 'pending' : 'unknown';
+  return { openEnabled, clickEnabled, subdomain, domainReady: domainReady === null ? null : Boolean(domainReady), openStatus: status(openEnabled), clickStatus: status(clickEnabled) };
+}
+export async function recordSendingDomainTracking(db: any, domainId: string | null, providerId: string, details: any) {
+  const snapshot = sendingDomainTracking(details);
+  const result = await db.rpc('email_record_tracking_status', { p_domain_id: domainId, p_provider_domain_id: providerId, p_snapshot: snapshot });
+  if (result.error) throw new Error('Engagement tracking settings could not be saved. Recheck the domain shortly.');
+  return snapshot;
 }

@@ -15,6 +15,7 @@ Deno.serve(withApiCredentials(async (req) => {
     const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
     const handler = createCampaignHandler({
       db,
+      functionBaseUrl: `${url.replace(/\/$/,'')}/functions/v1`,
       authorize: async (authorization: string, org: string) => {
         const token = (authorization || '').replace(/^Bearer\s+/i, '')
         if (!token || token === key) return null

@@ -14,7 +14,7 @@ async function allRows(query) {
 }
 const safeSenderFields = 'id,organisation_id,business_display_name,display_phone_number,connection_status,verification_status,waba_id,phone_number_id'
 
-export function createCampaignHandler({ db, authorize, meta }) {
+export function createCampaignHandler({ db, authorize, meta, functionBaseUrl }) {
   const { sender: loadSender, templates } = createCampaignDelivery({ db, meta })
   const sender = async (org, id) => {
     if (!uuid(id)) throw new Error('Choose a connected WhatsApp sender.')
@@ -24,6 +24,11 @@ export function createCampaignHandler({ db, authorize, meta }) {
     if (!uuid(id)) throw new Error('Choose a campaign.')
     if(actor?.userDb){const accessible=await result(actor.userDb.from('whatsapp_campaigns').select('id').eq('organisation_id',org).eq('id',id).maybeSingle());if(!accessible)throw new Error('Campaign not found in your current workspace access.')}
     return result(db.from('whatsapp_campaigns').select('*').eq('organisation_id', org).eq('id', id).single())
+  }
+  async function engagement(org, ids) {
+    const rows = []
+    for (let first=0; first<ids.length; first+=100) rows.push(...await allRows(() => db.from('whatsapp_campaign_engagement').select('*').eq('organisation_id',org).in('campaign_id',ids.slice(first,first+100)).order('campaign_id')))
+    return new Map(rows.map(row=>[row.campaign_id,row]))
   }
   async function validateCampaign(org, row) {
     const connection = await sender(org, row.sender_id)
@@ -54,7 +59,9 @@ export function createCampaignHandler({ db, authorize, meta }) {
         ])
         const access=await result(db.rpc('whatsapp_campaign_plan_request',{p_org:org,p_actor:actor.userId,p_action:'list'}))
         const visible=new Map(access.campaigns.map(row=>[row.id,row.plan]))
-        return { campaigns:campaigns.filter(row=>visible.has(row.id)).map(row=>({...row,audience_plan:visible.get(row.id)})),contacts,senders }
+        const allowed=campaigns.filter(row=>visible.has(row.id))
+        const measured=await engagement(org,allowed.map(row=>row.id))
+        return { campaigns:allowed.map(row=>({...row,engagement:measured.get(row.id),audience_plan:visible.get(row.id)})),contacts,senders }
       }
       case 'crm_contacts': return { contacts: await allRows(() => db.from('contacts').select('contact_id,first_name,last_name,phone').eq('organisation_id', org).order('contact_id')) }
       case 'templates': return { templates: await templates(await sender(org, payload.senderId)) }
@@ -122,9 +129,20 @@ export function createCampaignHandler({ db, authorize, meta }) {
         if (payload.action === 'dispatch') throw new Error('Sending now runs in the background. Reopen campaign results to see progress.')
         return { campaign: await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()) }
       }
+      case 'tracking_link': {
+        const row = await campaign(org, payload.campaignId, actor)
+        let target
+        try { target = new URL(clean(payload.targetUrl)) } catch { throw new Error('Use a complete HTTP or HTTPS destination.') }
+        if (!['http:','https:'].includes(target.protocol) || target.username || target.password || target.href.length>4096) throw new Error('Use a complete HTTP or HTTPS destination.')
+        if (!functionBaseUrl) throw new Error('Campaign link tracking is not configured.')
+        const link = await result(db.rpc('marketing_create_attribution_link',{p_channel:'whatsapp',p_campaign_id:row.id,p_recipient_id:null,p_target_url:target.href}))
+        const base = `${functionBaseUrl.replace(/\/$/,'')}/marketing-click?token=`
+        return { url: `${base}${encodeURIComponent(link.token)}`, templateUrl: `${base}{{1}}`, buttonValue: link.token }
+      }
       case 'detail': {
         const row = await campaign(org, payload.campaignId, actor)
-        return { campaign: await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()), recipients: await allRows(() => db.from('whatsapp_campaign_recipients').select('id,full_name,phone,status,error_message,attempted_at,sent_at,delivered_at,read_at').eq('organisation_id', org).eq('campaign_id', row.id).order('id')) }
+        const measured=await engagement(org,[row.id])
+        return { campaign: { ...await result(db.from('whatsapp_campaign_performance').select('*').eq('organisation_id', org).eq('id', row.id).single()),engagement:measured.get(row.id) }, recipients: await allRows(() => db.from('whatsapp_campaign_recipients').select('id,full_name,phone,status,error_message,attempted_at,sent_at,delivered_at,read_at').eq('organisation_id', org).eq('campaign_id', row.id).order('id')) }
       }
       default: throw new Error('Unknown WhatsApp campaign action.')
     }

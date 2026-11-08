@@ -24,6 +24,7 @@ Deno.test('a custom-domain check failure does not block the independent platform
       if (url.endsWith('/domains/custom-domain')) return json({},503);
       if (url.endsWith('/domains/platform-domain')) return json({ id: 'platform-domain', name: 'updates.arch9.co.za', status: 'verified' });
       if (url.endsWith('/rpc/email_campaign_apply_platform_status')) { writes.push(JSON.parse(options.body)); return json(null); }
+      if (url.endsWith('/rpc/email_record_tracking_status')) return json(null);
       if (url.endsWith('/rpc/email_activate_verified_organisation')) return json(null);
       if (url.includes('/email_sender_identities?')) return json([{ id: 'shared', verification_status: 'verified' }]);
       throw new Error(`Unexpected fixture request: ${url}`);

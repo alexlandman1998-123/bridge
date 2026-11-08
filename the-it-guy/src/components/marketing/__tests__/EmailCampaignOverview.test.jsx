@@ -60,21 +60,21 @@ describe('Email campaign homepage', () => {
   })
   it('shows five all-time cards with weighted rates that remain independent of list filters', async () => {
     mocks.workspace.mockResolvedValue(workspace({ performance: [
-      { campaign_id: 'sent', recipients: 100, delivered: 80, opened: 40, clicked: 8 },
-      { campaign_id: 'other', recipients: 20, delivered: 20, opened: 20, clicked: 2 },
+      { campaign_id: 'sent', recipients: 100, accepted: 90, delivered: 80, opened: 40, clicked: 8 },
+      { campaign_id: 'other', recipients: 20, accepted: 20, delivered: 20, opened: 20, clicked: 2 },
     ] }))
     render(<EmailCampaignOverview />)
     await screen.findByText('Spring listings')
     const stats = screen.getByRole('region', { name: 'All-time campaign statistics' })
     const cards = within(stats).getAllByRole('article')
     expect(cards).toHaveLength(5)
-    expect(cards.map((card) => card.querySelector('strong').textContent)).toEqual(['1', '60%', '120', '83%', '10%'])
+    expect(cards.map((card) => card.querySelector('strong').textContent)).toEqual(['1', '60%', '120', '91%', '10%'])
     fireEvent.click(screen.getByRole('button', { name: /^draft/i }))
     expect(cards[0].querySelector('strong').textContent).toBe('1')
   })
   it('charts only the last 30 calendar days, switches metrics and opens ranked campaigns', async () => {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
-    mocks.workspace.mockResolvedValue(workspace({ campaigns: [sent], performance: [{ campaign_id: 'sent', recipients: 100, delivered: 90, opened: 50, clicked: 10, bounced: 5, unsubscribed: 2 }], dailyPerformance: [
+    mocks.workspace.mockResolvedValue(workspace({ campaigns: [sent], performance: [{ campaign_id: 'sent', recipients: 100, accepted: 90, delivered: 90, opened: 50, clicked: 10, bounced: 5, unsubscribed: 2 }], dailyPerformance: [
       { metric_date: today, recipients: 100, delivered: 90, opened: 50, clicked: 10 },
       { metric_date: '2000-01-01', recipients: 9999, delivered: 9999, opened: 9999, clicked: 9999 },
     ] }))
@@ -93,11 +93,11 @@ describe('Email campaign homepage', () => {
     fireEvent.click(screen.getByRole('button', { name: /#1 campaign Buyer update/ }))
     expect(open).toHaveBeenCalledWith('sent')
     const health = screen.getByRole('region', { name: 'All-time audience health' })
-    expect(within(health).getByText('5%')).toBeTruthy()
+    expect(within(health).getByText('5,6%')).toBeTruthy()
     expect(within(health).getByText('2')).toBeTruthy()
   })
   it('shows a truthful empty chart when sends fall outside the date range', async () => {
-    mocks.workspace.mockResolvedValue(workspace({ performance: [{ campaign_id: 'sent', recipients: 100, delivered: 90 }], dailyPerformance: [{ metric_date: '2000-01-01', recipients: 100, delivered: 90 }] }))
+    mocks.workspace.mockResolvedValue(workspace({ performance: [{ campaign_id: 'sent', recipients: 100, accepted: 90, delivered: 90 }], dailyPerformance: [{ metric_date: '2000-01-01', recipients: 100, delivered: 90 }] }))
     render(<EmailCampaignOverview />)
     expect(await screen.findByText('No delivered in this period')).toBeTruthy()
     expect(screen.queryByRole('img', { name: /by send date/ })).toBeNull()
@@ -155,4 +155,11 @@ it('clears private campaign rows when switching workspace and the next load fail
   expect(screen.queryByText('Spring listings')).toBeNull()
   await screen.findByText('New workspace unavailable')
   expect(screen.queryByText('Spring listings')).toBeNull()
+})
+
+it('does not equate missing open observations with a verified zero open rate', async () => {
+  mocks.workspace.mockResolvedValue(workspace({performance:[{campaign_id:'sent',recipients:10,accepted:10,delivered:10,opened:0}]}))
+  render(<EmailCampaignOverview />)
+  const stats=await screen.findByRole('region',{name:'All-time campaign statistics'})
+  expect(await within(stats).findByText('Not reported')).toBeTruthy()
 })

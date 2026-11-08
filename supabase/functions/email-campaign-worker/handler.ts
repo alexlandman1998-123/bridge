@@ -3,6 +3,7 @@ import { campaignSenderDetails } from "../_shared/emailCampaignSender.js";
 import { refreshPlatformCampaignSender } from "../_shared/emailCampaignPlatformSender.ts";
 import { refreshSendingDomain } from "../_shared/emailSendingDomain.ts";
 import { supabaseServiceKey } from "../_shared/apiCredentials.ts";
+import { signCampaignDestination } from "../_shared/emailCampaignTracking.ts";
 import { escapeHtml } from "../_shared/emailDocument.js";
 import { visitEmailHtml } from "../_shared/emailHtmlAssets.js";
 import { inspectEmailHtml, renderCampaignDelivery } from "../_shared/emailContent.js";
@@ -29,7 +30,7 @@ async function failQueuedCampaign(db: any, job: any, reason: string) {
   if (!result.data) throw new Error("Dispatch lease is no longer owned by this worker.");
 }
 
-async function trackLinks(db: any, html: string, campaign: any, recipient: any, functionBaseUrl: string, tokens: Map<string, string>) {
+async function trackLinks(db: any, html: string, campaign: any, recipient: any, functionBaseUrl: string, tokens: Map<string, string>, signingSecret: string) {
   const edits: { start: number; end: number; target: string }[] = [];
   visitEmailHtml(html, (node: any, { offset }: { offset: number }) => {
     if (node.tagName !== "a") return;
@@ -52,7 +53,20 @@ async function trackLinks(db: any, html: string, campaign: any, recipient: any, 
       token = data.tracking_token;
       if (tokens.size < 500) tokens.set(target, token!);
     }
-    links.set(target, `${functionBaseUrl}?l=${encodeURIComponent(token!)}&r=${encodeURIComponent(recipient.id)}&t=${encodeURIComponent(recipient.tracking_token)}`);
+    let destination = target;
+    let attributionToken: string | undefined;
+    // Only append attribution to a published website owned by this agency.
+    try {
+      const attribution = await db.rpc('marketing_create_attribution_link', { p_channel: 'email', p_campaign_id: campaign.id, p_recipient_id: recipient.id, p_target_url: target });
+      if (attribution.error) throw attribution.error;
+      attributionToken = attribution.data?.token;
+      if (attribution.data?.firstParty && attribution.data?.token) {
+        const url = new URL(target); url.searchParams.set('arch9_attribution', attribution.data.token); if (url.href.length <= 4096) destination = url.href;
+      }
+    } catch { console.warn('email_campaign_tracking.attribution_unavailable'); }
+    const signature = await signCampaignDestination(signingSecret, { l: token!, r: recipient.id, t: recipient.tracking_token, u: destination, c: campaign.id, o: campaign.organisation_id, a: attributionToken });
+    const query = new URLSearchParams({ l: token!, r: recipient.id, t: recipient.tracking_token, ...signature });
+    links.set(target, `${functionBaseUrl}?${query}`);
   }
   let output = html;
   for (const edit of edits.sort((a, b) => b.start - a.start)) {
@@ -205,14 +219,14 @@ return async (req: Request) => {
           await updateJob(db, job, { last_error: "Waiting for sending capacity or an organisation sending control. Queued recipients are retained." });
           break;
         }
-        const unsubscribeUrl = `${url.replace(/\/$/, "")}/functions/v1/email-unsubscribe?token=${encodeURIComponent(text(preference?.unsubscribe_token))}`;
+        const unsubscribeUrl = `${url.replace(/\/$/, "")}/functions/v1/email-unsubscribe?token=${encodeURIComponent(text(preference?.unsubscribe_token))}&r=${encodeURIComponent(recipient.id)}&t=${encodeURIComponent(recipient.tracking_token)}`;
         const output = renderCampaignDelivery(campaign, { ...context, unsubscribeUrl }, { ...recipient.recipient_snapshot, agency_name: recipient.recipient_snapshot?.agency_name || identity?.display_name });
         const renderedCheck = inspectEmailHtml(output.html);
         if (!renderedCheck.ready) {
           await checked(db.from("email_campaign_recipients").update({ status: "failed", error_reason: renderedCheck.errors[0] }).eq("id", recipient.id));
           continue;
         }
-        const html = await trackLinks(db, output.html, campaign, recipient, `${url.replace(/\/$/, "")}/functions/v1/email-campaign-track`, linkTokens);
+        const html = await trackLinks(db, output.html, campaign, recipient, `${url.replace(/\/$/, "")}/functions/v1/email-campaign-track`, linkTokens, text(env("EMAIL_CAMPAIGN_LINK_SIGNING_SECRET")) || key);
         const finalCheck = inspectEmailHtml(html);
         if (!finalCheck.ready) {
           await checked(db.from("email_campaign_recipients").update({ status: "failed", error_reason: finalCheck.errors[0] }).eq("id", recipient.id));
