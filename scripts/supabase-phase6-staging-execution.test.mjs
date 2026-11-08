@@ -2,18 +2,47 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase6-staging-execution.mjs')
-const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
+// Exercise known pending rows without depending on today's operational backlog.
+// All mutation scenarios below must fail before a database command can run.
+const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), 'phase6-gate-fixture-'))
+process.on('exit', () => rmSync(fixtureRoot, { recursive: true, force: true }))
+mkdirSync(path.join(fixtureRoot, 'supabase/migrations'), { recursive: true })
+mkdirSync(path.join(fixtureRoot, 'docs/non-runnable-clearance'), { recursive: true })
+const manifest = { linkedProjectRef: 'isdowlnollckzvltkasn', rows: [
+  {
+    "version": "20260905102430",
+    "file": "20260905102430_fixture_apply.sql",
+    "stream": "bond_finance_runtime",
+    "action": "apply_original_after_dependency_check"
+  },
+  {
+    "version": "20260903094957",
+    "file": "20260903094957_fixture_repair.sql",
+    "stream": "bond_finance_runtime",
+    "action": "repair_only_after_smoke"
+  }
+] }
+writeFileSync(path.join(fixtureRoot, 'docs/supabase-phase-5-application-manifest.json'), JSON.stringify(manifest))
+for (const row of manifest.rows) writeFileSync(path.join(fixtureRoot, 'supabase/migrations', row.file), '-- Fixture only; never executed.\n')
+
+// A fully reconciled real manifest legitimately produces an empty plan.
+const currentManifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs/supabase-phase-5-application-manifest.json'), 'utf8'))
+const currentPlan = spawnSync(process.execPath, [runner, '--plan', '--json'], { cwd: repoRoot, encoding: 'utf8' })
+assert.equal(currentPlan.status, 0, currentPlan.stderr)
+assert.ok(JSON.parse(currentPlan.stdout).count >= 0)
+assert.ok(JSON.parse(currentPlan.stdout).count <= currentManifest.rows.length)
+
 
 function run(args, extraEnv = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
-    cwd: repoRoot,
+    cwd: fixtureRoot,
     encoding: 'utf8',
     env: {
       ...process.env,

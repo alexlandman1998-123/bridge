@@ -1,6 +1,6 @@
 {
   "date": "2026-11-08",
-  "status": "database_and_edge_release_verified_frontend_build_pending",
+  "status": "production_release_verified",
   "scope": "Arch9 outstanding source, recent branch work and production migration history from 2026-10-09 to 2026-11-08",
   "mainBefore": "c101328f117ce3e104b7a0b43d53647683d528ec",
   "sourceCommit": "b013c63d3045f6b2617dc785c109953dc3d85a91",
@@ -35,7 +35,10 @@
     "Required an organisation before saving an email template.",
     "Preserved live gateway authentication settings for four service-authenticated workers.",
     "Updated the compatible production dependency chain and incorporated the existing Next.js 16.4.3 patch branch.",
-    "Runtime and production startup validation accept the modern browser publishable-key setting without requiring a legacy alias."
+    "Runtime and production startup validation accept the modern browser publishable-key setting without requiring a legacy alias.",
+    "Preserved Home Seekers cloud routing: unknown API routes return JSON 404, public routes and six APIs remain available.",
+    "Migration gate CI exercises isolated pending fixtures and accepts a legitimate empty operational plan; mutation guards are unchanged.",
+    "Updated the root operational WebSocket lockfile dependency within its existing supported major version."
   ],
   "verification": {
     "appLint": {
@@ -77,7 +80,7 @@
       "typecheck": "passed",
       "productionDependencyAudit": "zero findings"
     },
-    "productionDependencyAudits": "Primary app, public website, admin and connected-mail worker have zero production findings after the reviewed updates.",
+    "productionDependencyAudits": "Primary app, public website, admin, connected-mail worker and root operational lockfiles have zero production findings.",
     "localFullBuild": "Not run: limited RAM and an earlier full-build memory failure. Production builds run in the cloud.",
     "fullLocalMigrationReplay": "Not run: local free disk is below the documented 10 GiB requirement.",
     "additionalMigrationChecks": 3,
@@ -105,7 +108,27 @@
       "externalRequests": "blocked"
     },
     "emailStatusAuthentication": "Unauthenticated production request rejected with HTTP 401.",
-    "kingdomProductionHealth": "HTTP 200 with status ok; live homepage identifies the new deployment."
+    "kingdomProductionHealth": "HTTP 200 with status ok; live homepage identifies the new deployment.",
+    "cloudBuilds": "Primary app, admin, both Kingdom projects and isolated Home Seekers production builds passed.",
+    "migrationGateCiCorrection": "Both isolated guard suites and both empty-manifest workflow checks passed locally; final GitHub receipts are in the evidence directory.",
+    "sharedCredentialRecheck": {
+      "checks": 11,
+      "result": "passed"
+    },
+    "homeSeekersProduction": {
+      "siteApi": 200,
+      "unknownApi": 404,
+      "errorBody": {
+        "error": "not_found"
+      },
+      "buyingPage": 200,
+      "joinPage": 200,
+      "packagedPublicFunctions": 6
+    },
+    "migrationDryRunAfter": "Remote database is up to date; no pending SQL, seeds or role changes.",
+    "appProductionReleaseMarker": "13972f32d4e7404cd3d50053f864023f3fb8a7ce",
+    "appProductionSupabaseOrigin": "https://isdowlnollckzvltkasn.supabase.co",
+    "repositoryDependencyAlerts": "After the main source release GitHub reported 36 alerts: 34 in development dependencies (2 critical) and 2 root WebSocket runtime alerts. The root runtime alerts are patched by this follow-up; development-tooling upgrades remain outstanding."
   },
   "targets": {
     "app": "bridge / app.arch9.co.za",
@@ -136,6 +159,65 @@
       "updatedActiveFunctions": 64,
       "retiredEndpointReleasesPreserved": 8,
       "status": "verified"
+    },
+    {
+      "type": "app",
+      "deploymentId": "dpl_F5JP3gBYvPp4gjFxVVCQWp51bDdN",
+      "url": "https://app.arch9.co.za",
+      "sourceCommit": "13972f32d4e7404cd3d50053f864023f3fb8a7ce",
+      "status": "live_verified",
+      "rollbackDeployment": "dpl_2g4dDHwc4XwqajnTBSM65eWBGMXr"
+    },
+    {
+      "type": "admin",
+      "deploymentId": "dpl_AVCoE4j1RziUPeRmnVMwbtabFBge",
+      "url": "https://admin.arch9.co.za",
+      "sourceCommit": "13972f32d4e7404cd3d50053f864023f3fb8a7ce",
+      "status": "live_verified"
+    },
+    {
+      "type": "kingdomCustomer",
+      "deploymentId": "dpl_8Y2Js7RtUaHiWBWnGSngfYzkxReJ",
+      "url": "https://kingdomrealestate.co.za",
+      "sourceCommit": "b013c63d3045f6b2617dc785c109953dc3d85a91",
+      "status": "live_health_ok",
+      "rollbackDeployment": "dpl_2ZXVGCVpy4E7F1PZ9nYM1bjcdVuR"
+    },
+    {
+      "type": "kingdomMirror",
+      "deploymentId": "dpl_U148stpZY1cUcYmEQow1T6hG9D5S",
+      "sourceCommit": "b013c63d3045f6b2617dc785c109953dc3d85a91",
+      "status": "promoted_ready"
+    },
+    {
+      "type": "homeSeekers",
+      "deploymentId": "dpl_CngXuA1rEw41N897XyDjSiJ1nfur",
+      "url": "https://home-seekers-website-alpha.vercel.app",
+      "sourceCommit": "13972f32d4e7404cd3d50053f864023f3fb8a7ce",
+      "status": "live_routes_verified",
+      "deploymentOverlay": {
+        "vercel.json": "vercel.home-seekers.json"
+      },
+      "rollbackDeployment": "dpl_jx1qnBQupDjmZjPmgjo3tGnZjPRM"
+    },
+    {
+      "type": "mailWorker",
+      "serviceId": "srv-dbmb1dhsrm7s73fjqh60",
+      "sourceCommit": "37567dad831b4647c784e9070db815d482b32df9",
+      "status": "existing_live_runtime_matches_release"
     }
+  ],
+  "applicationDeploymentCommit": "13972f32d4e7404cd3d50053f864023f3fb8a7ce",
+  "mainUpdate": "Reconciled source fast-forwarded to main; the following audit/CI commit contains no product runtime source changes.",
+  "workspacePreservation": {
+    "sourceFilesSynced": 121,
+    "concurrentChanges": "Newer bond-workflow edits remain uncommitted in the original checkout. One overlapping API export was preserved by a clean three-way merge.",
+    "backup": "output/arch9-reconciliation-20261108/original-source-backup",
+    "generatedReviewPackages": "Retained locally and excluded from the source release."
+  },
+  "remainingRisks": [
+    "Development dependency alerts remain, including two critical tinypool advisories; upgrading the test runner requires a separate compatibility review.",
+    "131 migration-history SQL differences before this 30-day window and inherited security advisories remain documented. No historical SQL was replayed or ledger-repaired.",
+    "No manual production email, WhatsApp message, portal listing publication or reservation was created to test delivery. Provider activation and authenticated live-user acceptance remain distinct from a verified code/schema release."
   ]
 }
