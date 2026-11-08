@@ -395,7 +395,10 @@ describe('manual originator workflow database commands', () => {
   await db.exec('alter table transaction_bond_applications add assignment_rule_id uuid,add assignment_method text,add scope_level text,add scope_metadata jsonb,add assignment_source text,add updated_at timestamptz;')
   await db.exec(readFileSync(new URL('../../../../../../supabase/migrations/20261108164023_bond_manual_originator_workflow.sql',import.meta.url),'utf8'))
   const s=(await db.query('select * from transaction_bond_application_submissions where id=(select active_submission_id from bond_applications where id=$1)',[app])).rows[0]
-  submissionId=s.id; bankId=s.selected_bank_ids[0]; submittedAt=s.signed_at
+  submissionId=s.id; bankId=s.selected_bank_ids[0]
+  // Signature dates are calendar dates and can be the next UTC midnight after
+  // local midnight. Use the database clock for the actual bank submission time.
+  submittedAt=(await db.query('select now() as submitted_at')).rows[0].submitted_at
   reviewChecks={applicationChecked:true,documentsChecked:true,signaturesChecked:true,bankFormsChecked:true}
  },30000)
  beforeEach(async () => {
