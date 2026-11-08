@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { cwd } from 'node:process'
 import { parse } from '@babel/parser'
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -11,13 +12,13 @@ import LeadActivityDialog from '../LeadActivityDialog.jsx'
 afterEach(cleanup)
 
 it.each(contract)('preserves the full $name controls, callbacks and open conditions', record => {
-  const source = readFileSync(resolve(process.cwd(), 'src/pages/agency', `${record.name}.jsx`), 'utf8')
+  const source = readFileSync(resolve(cwd(), 'src/pages/agency', `${record.name}.jsx`), 'utf8')
   const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] })
   const fn = ast.program.body.find(node => node.type === 'ExportDefaultDeclaration').declaration
   const element = fn.body.body.find(node => node.type === 'ReturnStatement').argument
   expect(createHash('sha256').update(source.slice(element.start, element.end)).digest('hex')).toBe(record.jsxHash)
   expect(fn.params[0].properties.map(property => property.key.name).sort()).toEqual([...record.props].sort())
-  const page = readFileSync(resolve(process.cwd(), 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
+  const page = readFileSync(resolve(cwd(), 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
   expect(page).toContain(`const ${record.name} = lazy(() => import('./${record.name}.jsx'))`)
   expect(page).toContain(`{(${record.openExpression}) ? <Suspense`)
 })
