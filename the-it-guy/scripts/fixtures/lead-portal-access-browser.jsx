@@ -1,3 +1,4 @@
+/* global PORTAL_HANDLER_SOURCE */
 import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import SellerPortalPasswordGate from '../../src/components/client-portal/SellerPortalPasswordGate.jsx'
