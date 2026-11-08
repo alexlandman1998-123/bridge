@@ -35,6 +35,7 @@ export default function RentalListingOverview({ detail, snapshot, agentPanel, on
       />
       <div className="rental-overview-refresh"><span>{!loaded ? 'Loading overview…' : snapshot.issues.length ? `Could not load: ${snapshot.issues.join(', ')}` : 'Overview up to date'}</span><button type="button" data-rental-control="overview-refresh" onClick={onRefresh}><RefreshCw size={15} />Refresh</button></div>
     </section>
+    {snapshot?.issueDetails?.length ? <ul className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">{snapshot.issueDetails.map(({ source, message }) => <li key={source}><strong>{source}:</strong> {message} Refresh to retry.</li>)}</ul> : null}
     <div className="rental-overview-activity-grid">
       <article className={`${panel} rental-overview-latest-activity`}>
         <Header title="Latest Tenant Activity" action="View all leads" onClick={() => onOpenTab('leads')} />

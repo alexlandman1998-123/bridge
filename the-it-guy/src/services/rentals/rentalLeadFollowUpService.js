@@ -7,8 +7,9 @@ const text = (value) => String(value ?? '').trim()
 export async function listRentalLeadFollowUps(organisationId, options = {}) {
   const [leads, records] = await Promise.all([
     listRentalLeads(organisationId, options),
-    listAgencyCrmLeadContacts(organisationId, { includePrimaryRecords: false, includeRelatedRecords: true, includeLocalFallback: false }),
+    listAgencyCrmLeadContacts(organisationId, { includePrimaryRecords: false, includeRelatedRecords: true, includeLocalFallback: false, paginateRelatedRecords: true }),
   ])
+  if (records.tasksAvailable === false) throw new Error('Rental follow-ups could not be loaded. Check your access and refresh to retry.')
   const leadById = new Map(leads.map((lead) => [lead.id, lead]))
   const tasks = (records.tasks || [])
     .filter((task) => leadById.has(text(task.leadId)))
@@ -17,9 +18,7 @@ export async function listRentalLeadFollowUps(organisationId, options = {}) {
 }
 
 export async function createRentalLeadFollowUp(lead = {}, values = {}, context = {}) {
-  const visible = await listRentalLeads(context.organisationId, { ...(context.scope || {}), includeClosed: true })
-  const currentLead = visible.find((item) => item.id === lead.id)
-  if (!currentLead) throw new Error('This rental lead is not available in your current scope.')
+  const { lead: currentLead } = await getRentalLeadWorkspace(context.organisationId, lead.id, context.scope || {})
   const draft = { ...buildRentalLeadFollowUpDraft(currentLead), ...values, leadId: currentLead.id }
   const errors = validateRentalLeadFollowUp(draft)
   if (errors.length) throw new Error(errors.join(' '))

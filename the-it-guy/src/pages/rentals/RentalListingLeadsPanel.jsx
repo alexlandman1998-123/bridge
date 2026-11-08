@@ -1,6 +1,7 @@
 import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CalendarDays, ChevronLeft, ChevronRight, Download, MessageSquare, MoreVertical, Plus, Search, SlidersHorizontal, UserRound, Users } from 'lucide-react'
+import { RENTAL_TENANT_PIPELINE_STAGES } from '../../services/rentals/rentalLeadPipelineModel'
 import LeadSourceLogo from '../../components/mobile-shell/LeadSourceLogo'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
@@ -9,7 +10,7 @@ import './rental-listing-leads.css'
 const text = (value) => String(value ?? '')
 const time = (value) => Date.parse(value) || 0
 const date = (value) => time(value) ? new Date(value).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const contactedStages = new Set(['contacted', 'qualified', 'viewing_scheduled', 'viewing_completed', 'application_pending', 'application_received', 'screening_pending', 'screening_complete', 'landlord_approval_pending', 'lease_pending', 'placement_ready', 'lease_signed', 'tenancy_created'])
+const contactedStages = new Set([...RENTAL_TENANT_PIPELINE_STAGES.filter(stage => stage !== 'new'), 'contacted', 'qualified', 'viewing_scheduled', 'viewing_completed', 'application_pending', 'application_received', 'screening_pending', 'screening_complete', 'landlord_approval_pending', 'lease_pending', 'placement_ready', 'lease_signed', 'tenancy_created'])
 const PAGE_SIZE = 10
 const initials = (name) => text(name).trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 
@@ -114,7 +115,7 @@ export default function RentalListingLeadsPanel({ snapshot, onNavigate, onAddLea
   return <section className="rental-listing-leads">
     <article className="rental-listing-leads-panel">
       <header><h2>Leads for this listing</h2><div className="rental-listing-leads-actions"><Button size="sm" variant="secondary" aria-expanded={filtersOpen} aria-controls="rental-listing-lead-filters" onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={14} />Filters{activeFilters ? ` (${activeFilters})` : ''}</Button><Button size="sm" variant="secondary" onClick={exportLeads} disabled={!filtered.length}><Download size={14} />Export</Button><Button size="sm" aria-label="Add Tenant Lead" onClick={onAddLead}><Plus size={14} /><span className="sm:hidden">Add Lead</span><span className="hidden sm:inline">Add Tenant Lead</span></Button></div></header>
-      {snapshot.issues.includes('Leads') ? <p role="alert">Tenant leads could not be loaded. Refresh the overview to retry.</p> : null}
+      {snapshot.issues.includes('Leads') ? <p role="alert">Tenant leads could not be loaded. {snapshot.issueDetails?.find(item => item.source === 'Leads')?.message} Refresh the overview to retry.</p> : null}
       <div className="rental-listing-lead-metrics" aria-label="Listing lead metrics">{metrics.map((metric) => <article key={metric.label}><div><span>{createElement(metric.icon, { size: 16, 'aria-hidden': true })}</span><p>{metric.label}</p></div><strong>{metric.value}</strong><p>{metric.meta}</p></article>)}</div>
       <div className="rental-listing-lead-search"><label><Search size={15} aria-hidden="true" /><Field className="pl-9" aria-label="Search listing leads" placeholder="Search lead, phone, or email" value={search} onChange={(event) => change(setSearch, event.target.value)} /></label><span aria-live="polite">{filtered.length} shown</span></div>
       {filtersOpen ? <div className="rental-listing-lead-filters" id="rental-listing-lead-filters"><label>Status<Field as="select" value={stage} onChange={(event) => change(setStage, event.target.value)}><option value="all">All statuses</option>{[...new Map(rows.map((lead) => [lead.stage, lead.stageLabel])).entries()].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Field></label><label>Source<Field as="select" value={source} onChange={(event) => change(setSource, event.target.value)}><option value="all">All sources</option>{[...new Set(rows.map((lead) => lead.source || 'Manual'))].map((value) => <option key={value}>{value}</option>)}</Field></label><label>Activity<Field as="select" value={activity} onChange={(event) => change(setActivity, event.target.value)}><option value="all">All activity</option><option value="viewing">Has viewing</option><option value="application">Has application</option></Field></label><label>Date<Field as="select" value={period} onChange={(event) => change(setPeriod, event.target.value)}><option value="all">All dates</option><option value="today">Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></Field></label>{activeFilters ? <Button size="sm" variant="secondary" onClick={clearFilters}>Clear filters</Button> : null}</div> : null}
@@ -152,7 +153,7 @@ export default function RentalListingLeadsPanel({ snapshot, onNavigate, onAddLea
             <button data-rental-control="lead-page" type="button" aria-label="Next leads page" disabled={currentPage >= pages} onClick={() => { setPage(currentPage + 1); setMenu(null) }}><ChevronRight size={15} /></button>
           </div>
         </footer>
-      </> : <div className="rental-listing-leads-empty">
+      </> : snapshot.issues.includes('Leads') ? null : <div className="rental-listing-leads-empty">
         <span className="rental-listing-leads-empty-icon"><Users size={20} /></span>
         <h3>No leads yet</h3>
         <p>Tenant enquiries for this listing will appear here as they come in.</p>

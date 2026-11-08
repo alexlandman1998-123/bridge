@@ -62,6 +62,9 @@ describe('rental listing overview', () => {
     }
     const snapshot = await loadRentalListingOverview(listing, { organisationId: 'org-1' }, { assignedAgentId: 'agent-1' }, calls)
     expect(snapshot.issues).toEqual(['Documents'])
+    expect(snapshot.issueDetails).toEqual([{ source: 'Documents', message: 'timeout' }])
+    expect(calls.getPrivateListingDocuments).toHaveBeenCalledWith(listing.id, { requireAvailable: true })
+    expect(calls.getPrivateListingDocumentRequirements).toHaveBeenCalledWith(listing.id, { requireAvailable: true })
     expect(snapshot.applications).toHaveLength(1)
     expect(snapshot.mandates).toHaveLength(1)
     expect(calls.listRentalLeads).toHaveBeenCalledWith('org-1', { assignedAgentId: 'agent-1', includeClosed: true })

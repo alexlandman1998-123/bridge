@@ -12,12 +12,8 @@ import {
 
 assert.equal(RENTAL_LISTING_INDEX_VERSION, 'arch9_rental_listing_index_v1')
 assert.deepEqual(RENTAL_LISTING_STATUS_TABS.map((tab) => tab.key), [
-  'all',
-  'draft',
-  'mandate',
-  'ready',
-  'published',
-  'applications',
+  'current',
+  'previous',
 ])
 
 const draftListing = {
@@ -113,6 +109,8 @@ assert.equal(summary.applications, 1)
 assert.deepEqual(filterRentalListingIndexRows(rows, { status: 'ready' }).map((row) => row.id), ['rental-2'])
 assert.deepEqual(filterRentalListingIndexRows(rows, { status: 'applications' }).map((row) => row.id), ['rental-3'])
 assert.deepEqual(filterRentalListingIndexRows(rows, { query: 'trust owner' }).map((row) => row.id), ['rental-2'])
+assert.deepEqual(filterRentalListingIndexRows([...rows, { ...draftRow, id: 'past', collection: 'previous' }], { status: 'previous' }).map(row => row.id), ['past'])
+assert.equal(filterRentalListingIndexRows(rows, { status: 'current' }).length, 3)
 assert.equal(formatRentalIndexStatusLabel('signed_uploaded'), 'Signed Uploaded')
 
 console.log('rental listing index model tests passed')

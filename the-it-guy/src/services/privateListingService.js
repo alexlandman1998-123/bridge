@@ -6864,11 +6864,16 @@ export async function getPrivateListingActivity(listingId, { requireAvailable = 
   return query.data || []
 }
 
-export async function getPrivateListingDocumentRequirements(listingId) {
+function unavailableListingDocumentRows(requireAvailable, label) {
+  if (requireAvailable) throw new Error(`${label} are unavailable in this environment. Contact support to check the database setup.`)
+  return []
+}
+
+export async function getPrivateListingDocumentRequirements(listingId, { requireAvailable = false } = {}) {
   const client = requireClient()
-  if (hasMissingTableCache('private_listing_document_requirements')) return []
+  if (hasMissingTableCache('private_listing_document_requirements')) return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   const reqState = getSelectFallbackState('private_listing_document_requirements')
-  if (reqState?.reason === 'schemaIncompatible') return []
+  if (reqState?.reason === 'schemaIncompatible') return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await runSelectWithFallback(
@@ -6882,21 +6887,21 @@ export async function getPrivateListingDocumentRequirements(listingId) {
   )
   if (query.missingTable) {
     rememberMissingTable('private_listing_document_requirements')
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   }
-  if (query.schemaIncompatible) return []
+  if (query.schemaIncompatible) return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   if (query.error) {
     if (!isMissingColumnError(query.error)) throw query.error
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   }
   return normalizeRequirementRows(query.data)
 }
 
-export async function getPrivateListingDocuments(listingId) {
+export async function getPrivateListingDocuments(listingId, { requireAvailable = false } = {}) {
   const client = requireClient()
-  if (hasMissingTableCache('private_listing_documents')) return []
+  if (hasMissingTableCache('private_listing_documents')) return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   const docState = getSelectFallbackState('private_listing_documents')
-  if (docState?.reason === 'schemaIncompatible') return []
+  if (docState?.reason === 'schemaIncompatible') return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await runSelectWithFallback(
@@ -6910,12 +6915,12 @@ export async function getPrivateListingDocuments(listingId) {
   )
   if (query.missingTable) {
     rememberMissingTable('private_listing_documents')
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   }
-  if (query.schemaIncompatible) return []
+  if (query.schemaIncompatible) return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   if (query.error) {
     if (!isMissingColumnError(query.error)) throw query.error
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   }
   return enrichPrivateListingDocumentRows(client, query.data)
 }

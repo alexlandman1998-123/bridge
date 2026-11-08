@@ -2,7 +2,19 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import RentalListingLeadsPanel from '../RentalListingLeadsPanel'
+import { RENTAL_TENANT_PIPELINE_STAGES } from '../../../services/rentals/rentalLeadPipelineModel'
 afterEach(cleanup)
+it('keeps tenants contacted as they reach submitted, screening and FICA stages', () => {
+  const leads = RENTAL_TENANT_PIPELINE_STAGES.map(stage => ({ id: stage, stage, name: stage, stageLabel: stage }))
+  render(<RentalListingLeadsPanel snapshot={{ leads, applications: [], viewings: [], upcoming: [], issues: [], leadCount: leads.length, viewingCount: 0, newLeadCount: 0 }} onNavigate={vi.fn()} />)
+  const contacted = within(screen.getByLabelText('Listing lead metrics')).getByText('Contacted').closest('article')
+  expect(contacted.querySelector('strong').textContent).toBe(String(leads.length - 1))
+})
+it('explains unavailable leads without claiming that no enquiries exist', () => {
+  render(<RentalListingLeadsPanel snapshot={{ leads: [], issues: ['Leads'], issueDetails: [{ source: 'Leads', message: 'Your access to this workspace has changed.' }], leadCount: null, viewingCount: null }} onNavigate={vi.fn()} />)
+  expect(screen.getByRole('alert').textContent).toContain('Your access to this workspace has changed.')
+  expect(screen.queryByText('No leads yet')).toBeNull()
+})
 it('filters and pages actual property leads and opens the linked application', () => {
   const navigate = vi.fn()
   const leads = Array.from({ length: 12 }, (_, index) => ({ id: `lead-${index}`, name: `Tenant ${index}`, email: `tenant${index}@example.test`, source: index === 0 ? 'Property24' : 'Manual', stage: index === 0 ? 'qualified' : 'new', stageLabel: index === 0 ? 'Qualified' : 'New', createdAt: '2026-10-03T08:00:00Z' }))

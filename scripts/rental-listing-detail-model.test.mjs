@@ -35,8 +35,10 @@ const sampleListing = {
 assert.equal(RENTAL_LISTING_DETAIL_VERSION, 'arch9_rental_listing_detail_v1')
 assert.equal(resolveRentalListingDetailTab('terms'), 'terms')
 assert.equal(resolveRentalListingDetailTab('bad-tab'), 'overview')
+assert.equal(resolveRentalListingDetailTab('syndication'), 'marketing')
+assert.equal(resolveRentalListingDetailTab('documents'), 'mandate')
 assert.equal(buildRentalListingDetailPath('rental-1', 'overview'), '/agent/rentals/listings/rental-1')
-assert.equal(buildRentalListingDetailPath('rental-1', 'syndication'), '/agent/rentals/listings/rental-1/syndication')
+assert.equal(buildRentalListingDetailPath('rental-1', 'syndication'), '/agent/rentals/listings/rental-1/marketing')
 
 const tabs = getRentalListingDetailTabs('rental-1')
 assert.deepEqual(tabs.map((tab) => tab.key), [

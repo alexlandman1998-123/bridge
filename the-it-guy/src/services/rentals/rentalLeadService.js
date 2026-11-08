@@ -104,7 +104,7 @@ export function buildRentalLeadView(lead = {}, contact = {}) {
 
 export async function listRentalLeads(organisationId, options = {}) {
   const records = await listAgencyCrmLeadContacts(organisationId, {
-    includeLocalFallback: false, includePrimaryRecords: true, includeRelatedRecords: false, ...options,
+    ...options, includeLocalFallback: false, includePrimaryRecords: true, includeRelatedRecords: false, paginatePrimaryRecords: true,
   })
   if (records.leadsAvailable === false) {
     throw new Error('Rental leads could not be loaded. Check your access and refresh to try again.')
@@ -118,17 +118,22 @@ export async function listRentalLeads(organisationId, options = {}) {
 }
 
 export async function getRentalLeadWorkspace(organisationId, leadId, options = {}) {
-  const visibleLeads = await listRentalLeads(organisationId, { ...options, includeClosed: true })
-  if (!visibleLeads.some((lead) => lead.id === text(leadId))) throw new Error('This rental lead is not available in your current scope.')
   const workspace = await fetchAgencyCrmLeadWorkspace(organisationId, leadId)
+  if (workspace.leadWorkspaceStatus === 'unavailable') throw new Error('This rental lead could not be loaded. Check your access and refresh to try again.')
   const rawLead = workspace.leads?.[0]
   if (!rawLead || !isRentalLead(rawLead)) throw new Error('Rental lead not found.')
+  // Check the freshly fetched row, not an older board snapshot. A lead can be
+  // reassigned between reads, and an older lead may be beyond the CRM list cap.
+  if (text(rawLead.leadId || rawLead.lead_id) !== text(leadId)
+    || text(rawLead.organisationId || rawLead.organisation_id) !== text(organisationId)
+    || !isRentalLeadVisibleInScope(rawLead, options)) throw new Error('This rental lead is not available in your current scope.')
   const contact = (workspace.contacts || []).find((item) => text(item.contactId) === text(rawLead.contactId)) || {}
   return { ...workspace, lead: buildRentalLeadView(rawLead, contact) }
 }
 
 export async function updateRentalLeadQualification(leadId, values = {}, context = {}) {
   const { lead } = await getRentalLeadWorkspace(context.organisationId, leadId, context.scope || {})
+  if (!lead.updatedAt) throw new Error('Refresh this rental lead before saving changes.')
   const landlord = lead.role === 'landlord'
   const required = text(landlord ? values.propertyAddress : values.desiredArea)
   if (!required) throw new Error(landlord ? 'Property address is required.' : 'Desired area is required.')
@@ -148,7 +153,7 @@ export async function updateRentalLeadQualification(leadId, values = {}, context
   const patch = landlord
     ? { sellerPropertyAddress: required, formattedAddress: required, rawEnquiryPayload: metadata }
     : { areaInterest: required, budget: qualification.monthlyBudget || 0, rawEnquiryPayload: metadata }
-  await updateAgencyCrmLeadRecord(context.organisationId, lead.id, patch)
+  await updateAgencyCrmLeadRecord(context.organisationId, lead.id, patch, { expectedUpdatedAt: lead.updatedAt })
   void createAgencyCrmLeadActivity(context.organisationId, lead.id, {
     activityType: 'Rental Lead Qualified', activityNote: `${landlord ? 'Landlord property' : 'Tenant requirement'} updated.`, outcome: 'Updated',
   }, { actor: context.actor || {} }).catch(() => null)
@@ -158,6 +163,7 @@ export async function updateRentalLeadQualification(leadId, values = {}, context
 export async function assignRentalLead(leadId, assignedUserId, context = {}) {
   const scope = context.scope || {}
   const { lead } = await getRentalLeadWorkspace(context.organisationId, leadId, scope)
+  if (!lead.updatedAt) throw new Error('Refresh this rental lead before saving changes.')
   const users = await listOrganisationUsersForWorkspace({ organisationId: context.organisationId })
   const candidate = users.find((user) => text(user.userId) === text(assignedUserId))
   assertRentalLeadAssignee(scope, candidate, context.organisationId)
@@ -170,7 +176,7 @@ export async function assignRentalLead(leadId, assignedUserId, context = {}) {
     assignedAt: new Date().toISOString(),
     ownershipStatus: 'assigned',
     rawEnquiryPayload: metadata,
-  })
+  }, { expectedUpdatedAt: lead.updatedAt })
   void createAgencyCrmLeadActivity(context.organisationId, lead.id, {
     activityType: 'Rental Lead Assigned', activityNote: `Assigned to ${text(candidate.fullName || candidate.email)}.`, outcome: 'Assigned',
   }, { actor: context.actor || {} }).catch(() => null)
