@@ -266,21 +266,21 @@ async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false, agen
   const revision = cacheRevision
   const entry = { expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS }
   const promise = (async () => {
+    // We already read every row for legacy category inference. Count those rows
+    // instead of executing a second RLS-filtered scan via count=exact.
     const pageSize = 1000
     const leads = []
     let page = 0
-    let totalCount = 0
     let hasMore = true
     while (hasMore) {
-      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize, agentScope, includeCount: page === 0 })
+      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize, agentScope, includeCount: false })
       if (result.error && !isUnavailable(result.error)) throw result.error
       const rows = Array.isArray(result.data) ? result.data : []
-      totalCount = Number(result.count || totalCount || rows.length)
       leads.push(...rows.map(mapLead))
       page += 1
-      hasMore = Boolean(rows.length && rows.length === pageSize && leads.length < totalCount)
+      hasMore = rows.length === pageSize
     }
-    const data = { leads: await enrichDevelopmentBuyerLeads(workspaceId, leads), totalCount: Number(totalCount || leads.length), source: 'remote' }
+    const data = { leads: await enrichDevelopmentBuyerLeads(workspaceId, leads), totalCount: leads.length, source: 'remote' }
     if (revision === cacheRevision && landingMetricsCache.get(cacheKey) === entry) landingMetricsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
     return data
   })().catch((error) => {

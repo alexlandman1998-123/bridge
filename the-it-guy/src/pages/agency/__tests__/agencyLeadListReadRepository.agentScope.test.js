@@ -254,7 +254,7 @@ it('loads contacts only for the visible page when not searching and reuses that 
 })
 
 
-it('shares simultaneous snapshot reads and counts the complete scope only once', async () => {
+it('shares simultaneous snapshot reads without an extra database count scan', async () => {
   fixture.leads = Array.from({ length: 1001 }, (_, i) => makeLead(i))
   const [first, second] = await Promise.all([
     listAgencyLeadLandingMetrics(org), listAgencyLeadLandingMetrics(org),
@@ -263,7 +263,7 @@ it('shares simultaneous snapshot reads and counts the complete scope only once',
   const indexes = fixture.urls.flatMap((url, index) => url.pathname.endsWith('/leads') ? [index] : [])
   expect(indexes).toHaveLength(2)
   const prefer = (index) => new Headers(fixture.requestHeaders[index]).get('prefer') || ''
-  expect(prefer(indexes[0])).toContain('count=exact')
+  expect(prefer(indexes[0])).not.toContain('count=exact')
   expect(prefer(indexes[1])).not.toContain('count=exact')
   expect(first.leads).toHaveLength(1001)
 })
@@ -293,5 +293,14 @@ it('keeps a newer explicit refresh cached when an older read completes afterward
   release()
   await old
   expect(await listAgencyLeadLandingMetrics(org)).toBe(fresh)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
+})
+
+
+it('counts a complete thousand-row boundary without a database count or losing the final page', async () => {
+  fixture.leads = Array.from({ length: 1000 }, (_, i) => makeLead(i))
+  const metrics = await listAgencyLeadLandingMetrics(org)
+  expect(metrics.totalCount).toBe(1000)
+  expect(metrics.leads).toHaveLength(1000)
   expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
 })
