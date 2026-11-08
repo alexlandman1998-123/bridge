@@ -64,3 +64,12 @@ it('opens the precise shared buyer in its owning workspace and keeps other-agenc
   expect(resolveDevelopmentLeadWorkspaceUrl({ ...lead, leadOwner: 'agency', sourceAgencyOrgId: id(7) }, id(7))).toContain(`/pipeline/leads/${id(3)}`)
   expect(resolveDevelopmentLeadWorkspaceUrl({ ...lead, sourceLeadId: '' }, id(1))).toContain(`/developer/leads/${id(5)}`)
 })
+
+
+it('keeps the membership branch and userId-shaped assignee on both sides of development capture', async () => {
+  const deps = dependencies()
+  const assignedAgent = { userId: id(9), branchId: id(10), email: 'agent@example.test' }
+  await createDevelopmentBuyerLead({ ...input, assignedAgent }, deps)
+  expect(deps.createCrm.mock.calls[0][1]).toMatchObject({ assignedUserId: id(9), branchId: id(10) })
+  expect(deps.createDirect.mock.calls[0][0]).toMatchObject({ assignedAgentId: id(9), sourceAgentUserId: id(9) })
+})

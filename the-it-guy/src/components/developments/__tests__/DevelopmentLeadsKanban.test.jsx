@@ -18,6 +18,8 @@ it('groups cards by stage without losing the actual status, source, agent or nav
   expect(screen.getAllByText('No leads in this stage')).toHaveLength(2)
   fireEvent.click(within(viewing).getByRole('button', { name: 'Open developer lead' }))
   expect(open).toHaveBeenCalledWith('developer-lead-1')
+  expect(screen.queryByRole('button', { name: 'Contact', exact: true })).toBeNull()
+  expect(screen.queryByText('Sarah Williams')).toBeNull()
 })
 
 it('renders protected presentation without adding a navigation action for unlinked leads', () => {

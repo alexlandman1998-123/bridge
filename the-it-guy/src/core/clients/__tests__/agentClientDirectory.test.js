@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { buildAgentClientDirectory, getAgentClientOpenPath, getAgentClientProfile } from '../agentClientDirectory.js'
+import { buildAgentClientDirectory, filterAgentClientDirectory, getAgentClientOpenPath, getAgentClientProfile } from '../agentClientDirectory.js'
 import { clientMatchesStoredId, findClientDuplicateCandidates, resolveClientRedirect, validateClientContactDetails } from '../clientIdentity.js'
 
 test('manual buyers open by their stable buyer id', () => {
@@ -99,4 +99,15 @@ test('invalid contact details and redirect cycles are rejected', () => {
   expect(() => validateClientContactDetails({ name: 'Alex', emails: ['not-an-email'] })).toThrow('valid email')
   expect(validateClientContactDetails({ name: ' Alex ', emails: ['A@example.test', 'a@example.test'], phones: ['0821234567'] })).toEqual({ name: 'Alex', emails: ['a@example.test'], phones: ['27821234567'] })
   expect(resolveClientRedirect([{ id: 'a', merged_into: 'b' }, { id: 'b', merged_into: 'a' }], 'a')).toBeNull()
+})
+
+
+test('client tags survive identity grouping and are searchable without exposing another organisation', () => {
+  const clients = buildAgentClientDirectory([], { available: true, canManage: true,
+    profiles: [{ id: 'person', organisation_id: 'agency-a', name: 'Alex Buyer' }], identifiers: [], links: [],
+    tags: [{ client_id: 'person', organisation_id: 'agency-a', tag: 'lyle-investor' }, { client_id: 'person', organisation_id: 'agency-b', tag: 'private-other-agency' }],
+  })
+  expect(clients[0].tags).toEqual(['lyle-investor'])
+  expect(filterAgentClientDirectory(clients, { search: 'LYLE-INVESTOR' })).toHaveLength(1)
+  expect(filterAgentClientDirectory(clients, { search: 'private-other-agency' })).toHaveLength(0)
 })

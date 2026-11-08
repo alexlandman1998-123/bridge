@@ -15,7 +15,6 @@ import DevelopmentMarketingEvents from '../components/developments/DevelopmentMa
 import DevelopmentMarketingCampaigns from '../components/developments/DevelopmentMarketingCampaigns.jsx'
 import { DevelopmentLeadAgent, DevelopmentLeadPropertyImage, DevelopmentLeadSource } from '../components/developments/DevelopmentLeadVisuals.jsx'
 import DevelopmentLeadsKanban, { DevelopmentLeadViewSwitch } from '../components/developments/DevelopmentLeadsKanban.jsx'
-import DevelopmentLeadContactDemo from '../components/developments/DevelopmentLeadContactDemo.jsx'
 import { getDevelopmentLeadAssignedAgent, getDevelopmentLeadSourceBrand, getDevelopmentLeadUnitImage } from '../components/developments/developmentLeadVisualsModel.js'
 import DevelopmentWebsiteAnalytics from '../components/developments/DevelopmentWebsiteAnalytics'
 import DevelopmentDemandIntelligencePanel from '../components/developments/DevelopmentDemandIntelligencePanel'
@@ -2077,7 +2076,7 @@ function DevelopmentDetail() {
   const navigate = useNavigate()
   const location = useLocation()
   const { developmentId } = useParams()
-  const { role, can, profile, currentWorkspace } = useWorkspace()
+  const { role, can, profile, currentWorkspace, currentMembership } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const loadedDevelopmentIdRef = useRef('')
@@ -5764,6 +5763,7 @@ function DevelopmentDetail() {
       const result = await createDevelopmentBuyerLead({
         organisationId, developerOrgId: developerOrganisationId, developmentId,
         developmentName: data?.development?.name, form, actor,
+        branchId: currentMembership?.branchId || currentMembership?.branch_id || currentMembership?.primaryBranchId || currentMembership?.primary_branch_id || '',
         identity: developmentLeadCaptureIdentity.current, savedCrmLead: developmentLeadSavedCrm,
         onCrmLeadSaved: setDevelopmentLeadSavedCrm,
       })
@@ -9598,7 +9598,6 @@ function DevelopmentDetail() {
                                       if (['reserved', 'expired'].includes(lead.reservationState)) void handleDevelopmentReservation({ developerLeadId: lead.developerLeadId, unitId: lead.preferredUnitId, reserved: false })
                                       else setUnitReservationDraft({ leadId: lead.developerLeadId, unitId: lead.preferredUnitId || '' })
                                     }} className="text-xs font-semibold text-[#176c50]">{['reserved', 'expired'].includes(lead.reservationState) ? 'Release reservation' : 'Reserve unit'}</button> : null}
-                                    <DevelopmentLeadContactDemo />
                                   </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#64748b]">

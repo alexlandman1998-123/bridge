@@ -19,3 +19,11 @@ it('supports keyboard selection, preserves the account identity and closes on Es
  expect(change).toHaveBeenCalledWith('wa');expect(document.querySelector('details').open).toBe(false)
  fireEvent.keyDown(trigger,{key:'End'});expect(document.activeElement.textContent).toContain('@agency.photos');fireEvent.keyDown(document.activeElement,{key:'Escape'});expect(document.querySelector('details').open).toBe(false);expect(document.activeElement).toBe(trigger)
 })
+
+
+it('keeps unfinished and sample accounts distinct from a connected mailbox',()=>{
+ render(<InboxAccountPicker accounts={[{id:'draft',channel:'email',address:'pending@example.test',connectionStatus:'draft'},{id:'sample',channel:'email',address:'demo@example.test',connectionStatus:'sample'}]} value="all" onChange={vi.fn()}/>)
+ fireEvent.keyDown(screen.getByLabelText('Select inbox'),{key:'ArrowDown'})
+ expect(screen.getByText('Not connected')).toBeTruthy()
+ expect(screen.getByText('Sample account')).toBeTruthy()
+})

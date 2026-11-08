@@ -1,3 +1,4 @@
+import { emailCampaignPreflightFailure } from '../../services/emailCampaignPreflightModel'
 import EmailAudienceCards from './EmailAudienceCards'
 import Arch9CampaignSenderForm from "./Arch9CampaignSenderForm";
 import { validCalendarDate } from '../../services/marketingCalendarModel';
@@ -742,6 +743,7 @@ export default function EmailCampaignBuilder({
         ))}
       </nav>
       <main className="eb-stage">
+      {workspace.canSend === false ? <p role="status" className="eb-notice">You can prepare and save drafts. Launching bulk email requires an organisation administrator or an authorised sending role.</p> : null}
       {(error || workspace.error) && (
         <p role="alert" className="eb-error">
           {error || workspace.error}
@@ -1102,6 +1104,7 @@ export default function EmailCampaignBuilder({
                   className="eb-primary"
                   disabled={
                     busy ||
+                    workspace.canSend === false ||
                     !detailsReady ||
                     !audienceCount ||
                     Boolean(contentIssues.length) ||
@@ -1110,6 +1113,7 @@ export default function EmailCampaignBuilder({
                   }
                   onClick={() =>
                     void run(async () => {
+                      if (workspace.canSend === false) throw new Error('Your account cannot launch bulk email. Ask your organisation administrator for the appropriate sending role.');
                       const scope = lifetime.current;
                       const reviewed = JSON.stringify(draftRef.current);
                       const sendAt = scheduledFor ? new Date(scheduledFor).getTime() : null;
@@ -1126,8 +1130,7 @@ export default function EmailCampaignBuilder({
                       if (preflight.contentCheck) setCheckedContent({ key: contentKey, report: preflight.contentCheck });
                       if (!preflight.ready)
                         throw new Error(
-                          preflight.contentCheck?.errors?.[0] ||
-                          "Pre-send checks found an issue. Check sender, consent, sending policy and audience.",
+                          emailCampaignPreflightFailure(preflight),
                         );
                       if (draft.contentJson.ai_campaign) {
                         if (!aiReview || aiReview.key !== JSON.stringify(draftRef.current)) throw new Error('Review this saved campaign version before approving.');

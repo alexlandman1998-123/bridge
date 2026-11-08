@@ -156,3 +156,11 @@ it('clears private campaign rows when switching workspace and the next load fail
   await screen.findByText('New workspace unavailable')
   expect(screen.queryByText('Spring listings')).toBeNull()
 })
+
+
+it('shows that an agent can draft but needs an authorised sending role', async () => {
+ mocks.workspace.mockResolvedValue(workspace({canSend:false}))
+ render(<EmailCampaignOverview />)
+ expect(await screen.findByText(/You can prepare and save drafts/)).toBeTruthy()
+ expect(screen.getByRole('button',{name:'Create campaign'}).disabled).toBe(false)
+})

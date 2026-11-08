@@ -698,3 +698,20 @@ it('preselects the development entry point and saves removal without stale conte
  await waitFor(()=>expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({campaign:expect.objectContaining({developmentContext:null})})))
  expect(mocks.save.mock.calls.at(-1)[0].campaign.contentJson.arch9_context).toBeUndefined()
 })
+
+
+it('explains the agent sending restriction while keeping draft creation available', async () => {
+ render(<EmailCampaignBuilder workspace={{...workspace,canSend:false}} onCancel={vi.fn()} />)
+ expect(screen.getByText(/You can prepare and save drafts/)).toBeTruthy()
+ expect(screen.getByRole('textbox',{name:'Campaign title'}).disabled).toBe(false)
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it('lists the concrete failed sender and audience checks instead of a generic preflight error', async () => {
+ mocks.preflight.mockResolvedValueOnce({ready:false,checks:[{key:'sender',ok:false},{key:'audience',ok:false}]})
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & send'}))
+ expect(await screen.findByRole('alert')).toHaveProperty('textContent',expect.stringContaining('Choose a verified sender'))
+ expect(screen.getByRole('alert').textContent).toContain('No eligible recipients')
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})

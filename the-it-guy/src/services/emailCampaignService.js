@@ -1,3 +1,4 @@
+import { emitAgencyCrmUpdated } from '../lib/agencyCrmUpdateBus'
 import { archiveMarketingAudience, saveMarketingAudience } from './marketingAudienceService'
 import { supabase } from '../lib/supabaseClient'
 
@@ -127,6 +128,7 @@ export async function saveClientMarketingTags({ organisationId, client, tags, ta
     p_expected_version: tagVersion, p_tags: nextTags,
   })
   if (error) throw error
+  emitAgencyCrmUpdated({ organisationId, mutation: 'client_tags_saved' })
   return data
 }
 
@@ -159,7 +161,11 @@ export async function getEmailCampaignWorkspace(organisationId) {
     supabase.from('email_campaign_category_performance').select('*').eq('organisation_id', organisationId).order('recipients', { ascending: false }),
   ])
   for (const result of [campaigns, performance, identities, domains, contacts, subscriptionTypes, deliverability, templates, savedAudiences, usage, billingProfile, dailyPerformance, categoryPerformance]) if (result.error) throw result.error
-  const platformStatus = await supabase.rpc('email_campaign_platform_sender_status', { p_organisation_id: organisationId })
+  const [platformStatus, sendPermission] = await Promise.all([
+    supabase.rpc('email_campaign_platform_sender_status', { p_organisation_id: organisationId }),
+    supabase.rpc('email_campaign_can_send', { p_organisation_id: organisationId }),
+  ])
+  const canSend = !sendPermission.error && typeof sendPermission.data === 'boolean' ? sendPermission.data : null
   const platformSender = platformStatus.error ? { ready: false, available: false } : { ...platformStatus.data, available: true }
   // Saved selections keep their common ID and reviewed criteria revision.
   // Membership stays live; a criteria change requires choosing the audience again.
@@ -168,7 +174,7 @@ export async function getEmailCampaignWorkspace(organisationId) {
       ? { ...audience, filter_json: { saved_audience_id: audience.id, ...(Number.isInteger(audience.revision) ? { audience_revision: audience.revision } : {}) } }
       : audience
   ))
-  return { platformSender, campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: campaignAudiences, usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
+  return { canSend, platformSender, campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: campaignAudiences, usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
 }
 
 const canonicalEmailIntent = (value) => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry) ? Object.fromEntries(Object.keys(entry).sort().map((key) => [key, entry[key]])) : entry)
