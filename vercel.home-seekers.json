@@ -3,5 +3,51 @@
   "framework": null,
   "installCommand": "npm --prefix the-it-guy ci --no-audit --no-fund",
   "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 npm --prefix the-it-guy run build:home-seekers-website && node -e \"require('node:fs').cpSync('the-it-guy/.vercel/home-seekers-website/.vercel/output', '.vercel/output', { recursive: true })\"",
-  "regions": ["cpt1"]
+  "regions": [
+    "cpt1"
+  ],
+  "routes": [
+    {
+      "src": "^/assets/.*$",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$|join/(?:teams|referrals|pricing)/?$)",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/demo/homeseekers(?:/.*)?$",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/api(?:/.*)?$",
+      "dest": "/api-not-found.json",
+      "status": 404
+    },
+    {
+      "src": "^/(?:$|(?:guarantee|about|contact|selling|buying|renting|join|buy|sell|rent|developments|people|areas|valuation)/?$|(?:buying|properties)/[^/]+/?$|join/(?:teams|referrals|pricing)/?$)",
+      "dest": "/index.html"
+    },
+    {
+      "src": "^/demo/homeseekers(?:/.*)?$",
+      "dest": "/index.html"
+    },
+    {
+      "src": "^/.*$",
+      "dest": "/not-found.html",
+      "status": 404
+    }
+  ]
 }

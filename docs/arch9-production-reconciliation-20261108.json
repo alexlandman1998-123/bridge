@@ -3,7 +3,7 @@
   "status": "database_and_edge_release_verified_frontend_build_pending",
   "scope": "Arch9 outstanding source, recent branch work and production migration history from 2026-10-09 to 2026-11-08",
   "mainBefore": "c101328f117ce3e104b7a0b43d53647683d528ec",
-  "sourceCommit": null,
+  "sourceCommit": "b013c63d3045f6b2617dc785c109953dc3d85a91",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "reconciliation": {
     "recentCommitsCompared": 110,
@@ -81,7 +81,7 @@
     "localFullBuild": "Not run: limited RAM and an earlier full-build memory failure. Production builds run in the cloud.",
     "fullLocalMigrationReplay": "Not run: local free disk is below the documented 10 GiB requirement.",
     "additionalMigrationChecks": 3,
-    "appliedReleaseSql": "The first 33 applied migrations match reviewed SQL exactly; the final security correction is separately guarded and verified.",
+    "appliedReleaseSql": "All 34 applied release migrations match the reviewed SQL statements exactly.",
     "partnerRoleNamespaceCheck": "Existing transaction-partner handoff fixture passes with the pinned helper namespace.",
     "publishableKeyConfigurationChecks": {
       "checks": 6,
@@ -92,7 +92,20 @@
       "checks": 24,
       "result": "passed",
       "externalRequests": "blocked"
-    }
+    },
+    "listingRecoveryBrowsers": {
+      "sales": {
+        "checks": 7,
+        "result": "passed"
+      },
+      "rentals": {
+        "checks": 7,
+        "result": "passed"
+      },
+      "externalRequests": "blocked"
+    },
+    "emailStatusAuthentication": "Unauthenticated production request rejected with HTTP 401.",
+    "kingdomProductionHealth": "HTTP 200 with status ok; live homepage identifies the new deployment."
   },
   "targets": {
     "app": "bridge / app.arch9.co.za",
@@ -106,7 +119,8 @@
     "Explicitly disabled legal-document workers remain disabled.",
     "Madison trust reservations remain disabled until the existing server flag and confirmed trust-bank settings are configured.",
     "Provider account quotas, sender readiness and Meta permissions remain real operational prerequisites; this release does not claim a test email, WhatsApp message or portal listing was sent.",
-    "Home Seekers custom domain records were already unverified; existing project routing is retained."
+    "Home Seekers custom domain records were already unverified; existing project routing is retained.",
+    "The global bulk-email sending gate remains off with zero account quotas; provider limits must be verified before activation."
   ],
   "evidenceDirectory": "output/arch9-reconciliation-20261108/",
   "deploymentResults": [

@@ -519,6 +519,7 @@ try {
    results.push({ category, kind, check: 'browser recovery journey', passed: false, message: error.message })
    await writeFile(resolve(out, category + '-' + kind + '-error.txt'), await page.locator('body').ariaSnapshot().catch(() => 'No snapshot'))
    console.error(category, kind, error.message)
+   if (errors.length) console.error("Browser errors:", JSON.stringify(errors))
   } finally { await context.close(); await writeFile(resolve(out, 'results.json'), JSON.stringify(results, null, 2)) }
  }
 } finally { await browser.close(); await fixture.close() }

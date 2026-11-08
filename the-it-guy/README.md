@@ -4930,9 +4930,12 @@ Vercel link, deploy anything, copy environment files, include other CRM APIs or
 include scheduled jobs. Generate this artifact from the approved release source;
 do not copy a previous `dist` directory into a static-only deployment.
 
-For a cloud build, deploy the repository root to the same Home Seekers project
-with `vercel deploy --local-config vercel.home-seekers.json --prod --skip-domain`.
-Set the Home Seekers project and organisation IDs shown below. This configuration
+For a cloud build, export the approved repository commit into a separate upload
+directory and copy `vercel.home-seekers.json` to `vercel.json` in that export.
+Deploy that directory with `vercel deploy --prod --skip-domain`, setting the
+Home Seekers project and organisation IDs shown below. Do not replace the
+repository root configuration in the normal working tree: Vercel must receive
+the dedicated configuration as the uploaded `vercel.json`. This configuration
 runs the existing isolated builder on Vercel and publishes its Build Output API
 artifact, including only the Home Seekers functions and no CRM scheduled jobs.
 Inspect the candidate before promoting it to the existing production aliases.
