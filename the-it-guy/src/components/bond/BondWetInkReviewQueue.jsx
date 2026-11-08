@@ -46,17 +46,17 @@ function SignedCopyReview({ item, onReviewed }) {
     {error ? <p role="alert" className="text-sm text-red-800">{error}</p> : null}
   </article>
 }
-export default function BondWetInkReviewQueue() {
+export default function BondWetInkReviewQueue({ transactionId = null, onChanged } = {}) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     setLoading(true); setError('')
-    try { setItems(await fetchBondWetInkReviewQueue() || []) } catch { setError('Signed-copy reviews are unavailable. Refresh to retry; the signing service may not yet be enabled.') } finally { setLoading(false) }
-  }, [])
+    try { setItems((await fetchBondWetInkReviewQueue() || []).filter(item => !transactionId || item.version.transaction_id === transactionId)) } catch { setError('Signed-copy reviews are unavailable. Refresh to retry; the signing service may not yet be enabled.') } finally { setLoading(false) }
+  }, [transactionId])
   useEffect(() => { void load() }, [load])
   return <section className="space-y-4 rounded-2xl border bg-white p-5"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Signed applications to review</h2><button type="button" className={button} disabled={loading} onClick={() => void load()}>Refresh signed copies</button></div>
     {error ? <p role="alert" className="text-sm text-red-800">{error}</p> : loading ? <p role="status">Loading signed copies…</p> : !items.length ? <p className="text-sm text-[#60758d]">No signed copies awaiting your review.</p> : null}
-    {items.map((item) => <SignedCopyReview key={item.uploads.find((upload) => upload.status === 'awaiting_review')?.id || item.version.id} item={item} onReviewed={load} />)}
+    {items.map((item) => <SignedCopyReview key={item.uploads.find((upload) => upload.status === 'awaiting_review')?.id || item.version.id} item={item} onReviewed={async () => { await load(); await onChanged?.() }} />)}
   </section>
 }

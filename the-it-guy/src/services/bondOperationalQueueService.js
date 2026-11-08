@@ -40,6 +40,7 @@ export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
 })
 
 const NEW_APPLICATION_INTAKE_STATUSES = new Set([
+  BOND_INTAKE_STATUSES.AWAITING_DOCUMENTS,
   BOND_INTAKE_STATUSES.AWAITING_BUYER_APPLICATION,
   BOND_INTAKE_STATUSES.BUYER_IN_PROGRESS,
   BOND_INTAKE_STATUSES.AWAITING_OTP,
@@ -347,14 +348,14 @@ export function getBondOriginatorQueueState(row = {}) {
   const intakeSummary = getBondIntakeSummary(getBondIntakeInput(row))
   const status = intakeSummary.intakeStatus
   const bucket = APPLICATION_INTAKE_STATUSES.has(status) ? 'applications' : NEW_APPLICATION_INTAKE_STATUSES.has(status) ? 'pipeline' : 'hidden'
-  const isNew = status === BOND_INTAKE_STATUSES.READY_FOR_REVIEW && !hasReviewBeenPickedUp(row)
+  const isNew = intakeSummary.canAccept && !hasReviewBeenPickedUp(row)
 
   return {
     status,
     bucket,
     label: BOND_INTAKE_STATUS_LABELS[status] || 'Not applicable',
     isNew,
-    actionRequired: status === BOND_INTAKE_STATUSES.READY_FOR_REVIEW || status === BOND_INTAKE_STATUSES.READY_TO_START,
+    actionRequired: intakeSummary.canAccept || status === BOND_INTAKE_STATUSES.READY_TO_START,
   }
 }
 

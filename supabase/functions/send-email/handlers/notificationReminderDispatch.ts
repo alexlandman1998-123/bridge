@@ -40,6 +40,7 @@ const REMINDER_AUTOMATION_KEYS = [
 const REMINDER_EVENT_SELECT = [
   "id",
   "automation_key",
+  "trigger_type",
   "organisation_id",
   "branch_id",
   "assigned_user_id",
@@ -68,6 +69,7 @@ type ReminderAutomationKey = typeof REMINDER_AUTOMATION_KEYS[number];
 type ReminderEventRow = {
   id: string;
   automation_key: string | null;
+  trigger_type?: string | null;
   organisation_id: string | null;
   branch_id?: string | null;
   assigned_user_id?: string | null;
@@ -107,6 +109,11 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+export function isObsoleteBondApplicationReminder(event: ReminderEventRow): boolean {
+  return event.automation_key === "bond_application_portal_completion_reminder" &&
+    asRecord(event.metadata_json).deliveryKind !== "manual" && event.trigger_type !== "manual_send";
 }
 
 function normalizeUuid(value: unknown) {
@@ -633,17 +640,17 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
 
   if (automationKey === "bond_application_portal_completion_reminder") {
     return {
-      title: "Complete your bond application",
-      ctaLabel: "Continue application",
+      title: "View your bond progress",
+      ctaLabel: "View bond progress",
       greeting,
       organisationName,
       intro: [
-        "Your bond application is ready to complete securely.",
+        "Your bond originator is tracking progress in Arch9.",
         "Use the secure link below to continue. You do not need to sign in to the buyer portal.",
       ],
-      summaryTitle: "Bond application",
+      summaryTitle: "Bond progress",
       summaryFields: [
-        { label: "Next step", value: "Complete the outstanding application details and documents." },
+        { label: "Next step", value: "View progress and provide any documents requested by your originator." },
       ],
       fallback: "If the secure button is not available, contact your bond originator for a new link.",
       security: "This secure link is personal to your application and may expire or be replaced when a new reminder is sent.",
@@ -725,11 +732,12 @@ export function buildReminderEmail(
 ): ReminderEmailContent {
   const actionLink = resolveActionLink(event, req);
   const template = resolveTemplate(event, actionLink);
-  const subject = coalesceText(
+  const bondProgressLink = event.automation_key === "bond_application_portal_completion_reminder";
+  const subject = bondProgressLink ? "View your bond progress" : coalesceText(
     event.subject,
     `Reminder: ${reminderDisplayName(normalizeText(event.automation_key))}`,
   );
-  const messagePreview = coalesceText(
+  const messagePreview = bondProgressLink ? template.intro[0] : coalesceText(
     event.message_preview,
     template.intro[0],
   );
@@ -1290,6 +1298,14 @@ export async function handleNotificationReminderDispatchEmail(
   for (const event of events) {
     const automationKey = normalizeText(event.automation_key);
     if (!isReminderAutomationKey(automationKey)) {
+      continue;
+    }
+
+    // Application completion is not a buyer task in tracker mode. Preserve
+    // explicitly requested progress-link emails, but stop scheduled nudges.
+    if (isObsoleteBondApplicationReminder(event)) {
+      if (!dryRun) await markReminderEventSkipped(supabase, event, "bond_tracker_no_application_required");
+      results.push({ eventId: event.id, automationKey, ok: true, skipped: true, reason: "bond_tracker_no_application_required" });
       continue;
     }
 

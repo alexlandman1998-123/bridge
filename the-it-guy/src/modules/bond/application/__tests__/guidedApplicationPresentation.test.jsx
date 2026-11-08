@@ -7,7 +7,7 @@ import AssetsScreen from '../guided/AssetsScreen.jsx'
 import LiabilitiesScreen from '../guided/LiabilitiesScreen.jsx'
 import { calculateLiabilityTotal } from '../flow/bondApplicationDerivedValues.js'
 import { buildBondApplicationReviewSections } from '../submission/bondApplicationSubmissionViewModel.js'
-import GuidedBondApplication, { IncomeBankScreen, MonthlyCommitmentsScreen } from '../guided/GuidedBondApplication.jsx'
+import { BondApplicationCapture as GuidedBondApplication, IncomeBankScreen, MonthlyCommitmentsScreen } from '../guided/GuidedBondApplication.jsx'
 import { getDemoClientPortalSeedData } from '../../../../lib/onboardingDemoLinks.js'
 import { buildBondApplicationState, toLegacyBondApplication, fromLegacyBondApplication } from '../legacy/bondApplicationLegacyAdapter.js'
 import { validateBondApplicationScreen } from '../flow/bondApplicationScreenValidation.js'
@@ -252,34 +252,23 @@ it('asks only for the income bank, saves the selection and advances without acco
   expect(save.mock.calls.at(-1)[0].formData.bond_application.banking_liabilities.primary_bank_name).toBe('FNB')
 })
 
-it.each(['permanent_employee', 'contract_employee', 'retired'])('requests three months of income statements for %s with an inline picker and no redirect', (employmentType) => {
+it.each(['permanent_employee', 'contract_employee', 'retired'])('requests three months of income statements for %s with external delivery instructions and no fake upload', (employmentType) => {
   const state = buildBondApplicationState(portal)
   state.participants.primaryApplicant.employment.occupation_status = employmentType
   render(<IncomeBankScreen state={state} updateRepeatableGroup={vi.fn()} />)
   expect(screen.getByText(/latest 3 consecutive months of bank statements/)).toBeTruthy()
-  expect(screen.getByText(/Sending will be available here once/)).toBeTruthy()
-  expect(screen.getByLabelText('Choose bank statements').getAttribute('type')).toBe('file')
-  expect(screen.getByRole('button', { name: 'Send statements to bond consultant' }).disabled).toBe(true)
+  expect(screen.getByText(/without a connected statement service/)).toBeTruthy()
+  expect(screen.queryByLabelText('Choose bank statements')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Send statements to bond consultant' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Open Documents' })).toBeNull()
 })
 
-it('selects multiple statements inline without sending, saving or claiming receipt, and lets the buyer remove a file', () => {
+it('explains external statement delivery without selecting unsaved files or claiming receipt', () => {
   const update = vi.fn()
   render(<IncomeBankScreen state={buildBondApplicationState(portal)} updateRepeatableGroup={update} />)
-  const january = new File(['statement-one'], 'January.pdf', { type: 'application/pdf', lastModified: 1 })
-  const february = new File(['statement-two'], 'February.pdf', { type: 'application/pdf', lastModified: 2 })
-  const input = screen.getByLabelText('Choose bank statements')
-  expect(input.multiple).toBe(true)
-  fireEvent.change(input, { target: { files: [january, february] } })
-  expect(screen.getByText('January.pdf')).toBeTruthy()
-  expect(screen.getByText('February.pdf')).toBeTruthy()
-  expect(screen.getAllByText('Selected · not sent')).toHaveLength(2)
+  expect(screen.getByText(/Provide statements through the channel agreed/)).toBeTruthy()
+  expect(screen.queryByLabelText('Choose bank statements')).toBeNull()
   expect(update).not.toHaveBeenCalled()
-  fireEvent.change(input, { target: { files: [january] } })
-  expect(screen.getAllByText('January.pdf')).toHaveLength(1)
-  fireEvent.click(screen.getByRole('button', { name: 'Remove January.pdf' }))
-  expect(screen.queryByText('January.pdf')).toBeNull()
-  expect(screen.getByText('February.pdf')).toBeTruthy()
   expect(screen.queryByText('Already received')).toBeNull()
 })
 

@@ -1,8 +1,8 @@
 import { Copy, FilePlus2, Link2, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import usePortalWorkspaceRefresh from '../../hooks/usePortalWorkspaceRefresh.js'
 import BondApplicationHandoff from '../../components/bond/BondApplicationHandoff'
-import BondWetInkReviewQueue from '../../components/bond/BondWetInkReviewQueue.jsx'
-import { BondSubmissionPackWorkspace } from '../../components/bond/BondSubmissionPackPanel.jsx'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageShell from '../../components/bond/BondPageShell'
 import {
@@ -11,7 +11,6 @@ import {
   fetchBondApplicationPortalOriginatorDocumentContinuity,
   fetchBondApplicationSubmissionReadiness,
   fetchBondApplicationExternalSubmissions,
-  fetchBondApplicationHandoff,
   fetchBondApplicationPortalDeliveryActionCentre,
   issueBondApplicationPortalAccessLinkForOriginator,
   revokeBondApplicationPortalAccessLinkForOriginator,
@@ -108,19 +107,15 @@ function RequestDocumentForm({ item, onCreated }) {
 function ExternalSubmissionForm({ item, readiness, onRecorded }) {
   const [open, setOpen] = useState(false)
   const [lenders, setLenders] = useState('')
-  const [version, setVersion] = useState(null)
   const [submittedAt, setSubmittedAt] = useState('')
   const [externalReference, setExternalReference] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const openForm = async () => {
-    setError(''); setVersion(null); setOpen(true)
-    const localNow = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19)
-    setSubmittedAt(localNow)
-    try { setVersion((await fetchBondApplicationHandoff({ exportPackageId: item.exportPackageId })).currentVersion) }
-    catch (e) { setError(e.message || 'Could not load the signed application version.') }
+  const openForm = () => {
+    setError(''); setOpen(true)
+    setSubmittedAt(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19))
   }
 
   if (readiness?.status !== 'ready') return null
@@ -135,7 +130,7 @@ function ExternalSubmissionForm({ item, readiness, onRecorded }) {
     setSaving(true)
     setError('')
     try {
-      await recordBondApplicationExternalSubmission({ exportPackageId: item.exportPackageId, expectedSubmissionId: version?.id, submittedAt: new Date(submittedAt).toISOString(), lenderNames, externalReference, notes })
+      await recordBondApplicationExternalSubmission({ exportPackageId: item.exportPackageId, submittedAt: new Date(submittedAt).toISOString(), lenderNames, externalReference, notes })
       setOpen(false)
       setLenders('')
       setExternalReference('')
@@ -168,12 +163,12 @@ function ExternalSubmissionForm({ item, readiness, onRecorded }) {
             <input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional internal note" className="rounded-lg border border-[#dbe5f0] bg-white px-3 py-2 text-sm text-[#17324d]" />
           </label>
           <label className="grid gap-1 text-xs font-semibold text-[#526d88]">When submitted<input required type="datetime-local" step="1" value={submittedAt} onChange={(event) => setSubmittedAt(event.target.value)} className="rounded-lg border border-[#dbe5f0] bg-white px-3 py-2 text-sm text-[#17324d]" /></label>
-          <p className="text-sm text-[#17324d]">{version ? `Recording signed application version ${version.number}. Confirm this is the version you sent.` : 'Loading signed application version…'}</p>
+          <p className="text-sm text-[#17324d]">Record the work completed through your bank channel. No signed application is required in Arch9.</p>
           <p className="text-xs leading-5 text-[#60758d] sm:col-span-2">This records that you submitted externally. The platform does not submit anything to a bank.</p>
           {error ? <p className="text-sm text-[#a33a3a] sm:col-span-2">{error}</p> : null}
           <div className="flex justify-end gap-2 sm:col-span-2">
             <button type="button" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 text-sm font-semibold text-[#526d88]">Cancel</button>
-            <button disabled={saving || !version} className="rounded-lg bg-[#24518a] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Recording…' : 'Record submission'}</button>
+            <button disabled={saving} className="rounded-lg bg-[#24518a] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Recording…' : 'Record submission'}</button>
           </div>
         </form>
       ) : null}
@@ -186,23 +181,35 @@ export default function BondApplicationActionCentrePage() {
   const [linkResult, setLinkResult] = useState(null)
   const [busyPackageId, setBusyPackageId] = useState('')
 
-  const load = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: '' }))
-    try {
-      const [data, deliveryData, documentContinuity, readiness, externalSubmissions] = await Promise.all([
-        fetchBondApplicationOriginatorActionCentre(),
-        fetchBondApplicationPortalDeliveryActionCentre(),
-        fetchBondApplicationPortalOriginatorDocumentContinuity(),
-        fetchBondApplicationSubmissionReadiness(),
-        fetchBondApplicationExternalSubmissions(),
-      ])
-      setState({ loading: false, error: '', data, deliveryData, documentContinuity, readiness, externalSubmissions })
-    } catch (error) {
-      setState({ loading: false, error: String(error?.message || 'Could not load the application action centre.'), data: null, deliveryData: null, documentContinuity: null, readiness: null, externalSubmissions: null })
-    }
+  const loadGeneration = useRef(0)
+  const load = useCallback(async ({ background = false } = {}) => {
+    const generation = ++loadGeneration.current
+    if (!background) setState((current) => ({ ...current, loading: true, error: '' }))
+    const names = ['Application actions', 'Email delivery', 'Document updates', 'Submission readiness', 'Submission history']
+    const results = await Promise.allSettled([
+      fetchBondApplicationOriginatorActionCentre(),
+      fetchBondApplicationPortalDeliveryActionCentre(),
+      fetchBondApplicationPortalOriginatorDocumentContinuity(),
+      fetchBondApplicationSubmissionReadiness(),
+      fetchBondApplicationExternalSubmissions(),
+    ])
+    if (generation !== loadGeneration.current) return false
+    const errors = results.flatMap((result, index) => result.status === 'rejected' ? [`${names[index]}: ${result.reason?.message || 'Could not refresh. Please retry.'}`] : [])
+    setState((current) => ({
+      loading: false,
+      error: errors.join(' '),
+      data: results[0].status === 'fulfilled' ? results[0].value : current.data,
+      deliveryData: results[1].status === 'fulfilled' ? results[1].value : null,
+      documentContinuity: results[2].status === 'fulfilled' ? results[2].value : null,
+      // Never keep a stale ready result after a failed readiness read.
+      readiness: results[3].status === 'fulfilled' ? results[3].value : null,
+      externalSubmissions: results[4].status === 'fulfilled' ? results[4].value : null,
+    }))
+    return errors.length === 0
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(); return () => { loadGeneration.current += 1 } }, [load])
+  usePortalWorkspaceRefresh({ onRefresh: () => load({ background: true }), pollingIntervalMs: 30_000 })
 
   const issueLink = async (item) => {
     setBusyPackageId(item.exportPackageId)
@@ -268,14 +275,13 @@ export default function BondApplicationActionCentrePage() {
             <RefreshCw size={16} /> Refresh
           </button>
         </div>
-        <p className="mt-4 flex items-center gap-2 rounded-xl bg-[#f4f8fc] px-3 py-2 text-xs text-[#526d88]"><ShieldCheck size={16} className="text-[#2f7a54]" /> Email delivery is queued safely. Follow-ups are planned for days 1, 3, and 7, and stop once the application is submitted or cancelled.</p>
+        <p className="mt-4 flex items-center gap-2 rounded-xl bg-[#f4f8fc] px-3 py-2 text-xs text-[#526d88]"><ShieldCheck size={16} className="text-[#2f7a54]" /> Track the bank process here. Buyer links can be used for shared documents; signing and bank-service connections are not required.</p>
       </section>
 
-      <BondWetInkReviewQueue />
-      <BondSubmissionPackWorkspace />
       {state.error ? <section className="rounded-xl border border-[#f0caca] bg-[#fff6f6] p-4 text-sm text-[#9c3535]">{state.error}</section> : null}
       {state.loading ? <BondEmptyState title="Loading your application actions…" description="Checking your assigned originator intake packages." /> : null}
-      {!state.loading && items.length === 0 ? <BondEmptyState title="No assigned applications" description="When an intake package is assigned to you, its buyer link and document actions will appear here." /> : null}
+      {!state.loading && !state.error && items.length === 0 ? <BondEmptyState title="No document handoff packages yet" description="Your assigned buyer files are available in Applications. Prepared handoff packages appear here." /> : null}
+      <Link to="/bond/applications" className="inline-flex min-h-11 items-center text-sm font-semibold text-[#24518a]">Open assigned applications</Link>
 
       {items.map((item) => {
         const isBusy = busyPackageId === item.exportPackageId
@@ -307,8 +313,8 @@ export default function BondApplicationActionCentrePage() {
             </div>
             {currentResult?.url ? <div className="mt-3 rounded-xl border border-[#c9deef] bg-[#f4faff] p-3"><p className="text-xs font-semibold text-[#24518a]">Copy this link now — it is only shown after issuing it.</p><div className="mt-2 flex gap-2"><input readOnly value={currentResult.url} className="min-w-0 flex-1 rounded-lg border border-[#d3e2f0] bg-white px-3 py-2 text-xs text-[#17324d]" /><button onClick={() => void copyLink()} className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#24518a]"><Copy size={15} />Copy</button></div></div> : null}
             {continuity.total ? <p className="mt-3 text-xs text-[#526d88]">Document continuity: {continuity.linked || 0} linked · {continuity.outstanding || 0} outstanding · {continuity.awaitingReview || 0} awaiting review.</p> : null}
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-[#f8fbfd] px-3 py-3 text-xs text-[#526d88]"><span>Submission readiness: {readiness?.label || readiness?.status || 'Not assessed'}{readiness?.blockers?.length ? ` · ${readiness.blockers.length} blocker(s)` : ''}. No bank submission is performed.</span><button disabled={isBusy} onClick={() => void assessReadiness(item)} className="rounded-lg border border-[#c9d9e8] bg-white px-3 py-2 text-xs font-semibold text-[#24518a] disabled:opacity-50">Assess readiness</button></div>
-            {externalSubmissions.length ? <details className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><summary className="cursor-pointer font-semibold">External submission history ({externalSubmissions.length})</summary><ul className="mt-3 space-y-3">{externalSubmissions.map((record) => <li key={record.id} className="border-t border-slate-200 pt-2"><p>{record.lenderNames?.join(', ') || 'Lender not recorded'} · {record.submittedAt ? new Date(record.submittedAt).toLocaleString('en-ZA') : 'Date not recorded'} · {record.status}</p><p>Reference: {record.externalReference || 'Not supplied'}</p><p>Submitted by: {record.submittedBy || 'Not recorded'}</p><p>{record.version ? `Signed version ${record.version.submissionVersion} · Application revision ${record.version.applicationRevision}` : 'Legacy record: signed version was not captured.'}</p>{record.version?.snapshotHash ? <p className="break-all text-xs">Version fingerprint: {record.version.snapshotHash}</p> : null}{record.notes ? <p>{record.notes}</p> : null}</li>)}</ul></details> : null}
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-[#f8fbfd] px-3 py-3 text-xs text-[#526d88]"><span>Tracker access: {readiness?.label || readiness?.status || 'Refresh to check access'}{readiness?.blockers?.length ? ` · ${readiness.blockers.length} blocker(s)` : ''}. No bank submission is performed.</span><button disabled={isBusy} onClick={() => void assessReadiness(item)} className="rounded-lg border border-[#c9d9e8] bg-white px-3 py-2 text-xs font-semibold text-[#24518a] disabled:opacity-50">Refresh access</button></div>
+            {externalSubmissions.length ? <details className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700"><summary className="cursor-pointer font-semibold">External submission history ({externalSubmissions.length})</summary><ul className="mt-3 space-y-3">{externalSubmissions.map((record) => <li key={record.id} className="border-t border-slate-200 pt-2"><p>{record.lenderNames?.join(', ') || 'Lender not recorded'} · {record.submittedAt ? new Date(record.submittedAt).toLocaleString('en-ZA') : 'Date not recorded'} · {record.status}</p><p>Reference: {record.externalReference || 'Not supplied'}</p><p>Submitted by: {record.submittedBy || 'Not recorded'}</p><p>{record.version ? `Signed version ${record.version.submissionVersion} · Application revision ${record.version.applicationRevision}` : 'Recorded in the bond tracker.'}</p>{record.version?.snapshotHash ? <p className="break-all text-xs">Version fingerprint: {record.version.snapshotHash}</p> : null}{record.notes ? <p>{record.notes}</p> : null}</li>)}</ul></details> : null}
             {deliveries.length ? <div className="mt-3 rounded-xl bg-[#f8fbfd] px-3 py-3 text-xs text-[#526d88]"><p className="font-semibold text-[#17324d]">Delivery history</p><div className="mt-2 space-y-1">{deliveries.slice(0, 3).map((delivery) => <p key={delivery.id}>{delivery.deliveryKind === 'scheduled' ? `Reminder ${delivery.reminderNumber}` : 'Initial email'} · {delivery.status || 'queued'} · {formatDate(delivery.sentAt || delivery.createdAt)}</p>)}</div></div> : null}
             <RequestDocumentForm item={item} onCreated={load} />
             <BondApplicationHandoff item={item} onChanged={load} />

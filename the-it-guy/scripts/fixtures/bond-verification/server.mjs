@@ -1,3 +1,4 @@
+import { getBondSubmissionReleaseGate } from '../../../server/services/bond/bondSubmissionReleaseGate.js'
 import { jsPDF } from 'jspdf'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -10,6 +11,7 @@ export async function startBondVerificationServer() {
   }, configureServer(server) {
     server.middlewares.use(async (req, res, next) => {
       if (req.url?.split('?')[0] === '/') { res.setHeader('Content-Type','text/html'); res.end(await server.transformIndexHtml(req.url, '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bond verification (offline)</title></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/bond-verification/app.jsx"></script></body></html>')); return }
+      if (req.url === '/api/public/bond-submission-release') { res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(getBondSubmissionReleaseGate())); return }
       if (req.url === '/verification-file.pdf') { res.setHeader('Content-Type','application/pdf'); const pdf = new jsPDF(); pdf.text('SYNTHETIC VERIFICATION FIXTURE - NOT A SIGNED APPLICATION', 12, 20); res.end(Buffer.from(pdf.output('arraybuffer'))); return }
       next()
     })

@@ -92,6 +92,7 @@ export const fetchClientPortalOriginatorFinanceByToken = (...args) => call('fetc
 export const resolveClientPortalQuotePdf = (...args) => call('resolveClientPortalQuotePdf', ...args)
 
 export const fetchBuyerBondApplicationRuntime = (...args) => call('fetchBuyerBondApplicationRuntime', ...args)
+export const startBuyerBondApplicationRuntime = (...args) => call('startBuyerBondApplicationRuntime', ...args)
 export const saveBuyerBondApplicationRuntimeDraft = (...args) => call('saveBuyerBondApplicationRuntimeDraft', ...args)
 export const reconcileBuyerBondApplicationRuntimeDocuments = (...args) => call('reconcileBuyerBondApplicationRuntimeDocuments', ...args)
 export const uploadBuyerBondApplicationRuntimeDocument = (...args) => call('uploadBuyerBondApplicationRuntimeDocument', ...args)
@@ -104,3 +105,5 @@ export const uploadBuyerBondWetInkSignedCopy = (...args) => call('uploadBuyerBon
 export const cancelBuyerBondWetInkSigning = (...args) => call('cancelBuyerBondWetInkSigning', ...args)
 export const renderBuyerBondWetInkSigningPdf = (...args) => call('renderBuyerBondWetInkSigningPdf', ...args)
 export const readBuyerBondWetInkOriginal = (...args) => call('readBuyerBondWetInkOriginal', ...args)
+
+export const fetchBuyerBondTrackerContext = (...args) => call('fetchBuyerBondTrackerContext', ...args)

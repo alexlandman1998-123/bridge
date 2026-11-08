@@ -274,6 +274,7 @@ function runSuretyFlowDocumentDeclarationTests() {
 function runSuretyJourneyReadinessTests() {
   const normalized = normalizedWithSurety()
   const blocked = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026', selectedBankIds: ['bank-a'] } },
     documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 8, completedRequired: 8 },
     selectedBankIds: ['bank-a'],
@@ -284,6 +285,7 @@ function runSuretyJourneyReadinessTests() {
   assert.equal(blocked.nextActions[0].key, 'complete_participant_applications')
 
   const ready = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026', selectedBankIds: ['bank-a'] } },
     documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 8, completedRequired: 8 },
     selectedBankIds: ['bank-a'],

@@ -1,3 +1,4 @@
+import { isBondStatementHandoff } from './bondDocumentWorkspacePresentation.js'
 import {
   getBondApplicationDocumentBuyerStatus,
   getBondApplicationDocumentBuyerStatusLabel,
@@ -36,7 +37,7 @@ function matchesRequirement(requirement, document, requirementRow = null) {
   const linkedIds = getLinkedDocumentIds(requirementRow || {})
   if (requirement.scope === 'participant') {
     const participantKey = document.participant_key || document.participantKey || document.metadata?.participant_key || document.metadata?.participantKey
-    const explicitRole = document.participant_role || document.participantRole || document.metadata?.participant_role || (participantKey ? String(participantKey).split(':')[0] : null) || document.uploaded_by_role
+    const explicitRole = document.participant_role || document.participantRole || document.metadata?.participant_role || document.metadata?.participantRole || (participantKey ? String(participantKey).split(':')[0] : null) || (['co_applicant', 'surety'].includes(document.uploaded_by_party) ? document.uploaded_by_party : null) || document.uploaded_by_role
     const role = ['co_applicant', 'surety'].includes(explicitRole) ? explicitRole : 'primary_applicant'
     if (participantKey && requirement.participantKey && participantKey !== requirement.participantKey) return false
     if (role !== requirement.participantRole) return false
@@ -45,6 +46,7 @@ function matchesRequirement(requirement, document, requirementRow = null) {
   }
   // A manually linked requirement may identify the file, but cannot override
   // the applicant/surety owner recorded on that file.
+  if (linkedIds.length && !requirementAllowsMultipleFiles(requirement)) return linkedIds.includes(documentId)
   if (documentId && linkedIds.includes(documentId)) return true
   // Canonical uploads may use a custom request key rather than a type alias.
   // Match all files belonging to that exact requirement, never a neighbouring one.
@@ -117,6 +119,8 @@ function mergeExternallyRequestedRequirements(existingRequiredDocuments = [], ma
 }
 
 export function buildBondApplicationDocumentChecklist({
+  externalReceipts = [],
+  submissionId = null,
   activeRequirements = [],
   existingRequiredDocuments = [],
   existingDocuments = [],
@@ -133,7 +137,10 @@ export function buildBondApplicationDocumentChecklist({
       existingRequiredDocuments,
       existingDocuments,
     })
-    const status = match.ambiguous
+    const externalReceipt = submissionId && isBondStatementHandoff(requirement)
+      ? externalReceipts.find(receipt => receipt.status === 'verified' && receipt.submissionId === submissionId && receipt.requirementKey === requirement.key)
+      : null
+    const status = externalReceipt ? 'satisfied' : match.ambiguous
       ? 'missing'
       : getBondApplicationDocumentBuyerStatus({ requirement, matchedDocuments: match.documents })
     const complete = status === 'satisfied' ||
@@ -141,6 +148,8 @@ export function buildBondApplicationDocumentChecklist({
     return {
       requirement,
       requirementRow: match.requirementRow,
+      externalReceipt: externalReceipt || null,
+      externalVerified: Boolean(externalReceipt),
       documents: match.ambiguous ? [] : match.documents,
       candidateDocuments: match.ambiguous ? match.documents : [],
       status,

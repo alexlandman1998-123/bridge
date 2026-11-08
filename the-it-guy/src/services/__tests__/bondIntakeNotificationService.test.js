@@ -462,9 +462,9 @@ try {
   const buyerIntroCall = buyerIntroEmailCalls.find((call) => call.request.body.type === 'bond_originator_buyer_intro')
   assert.ok(buyerIntroCall)
   assert.equal(buyerIntroCall.request.body.to, 'mila@example.test')
-  assert.equal(buyerIntroCall.request.body.subject, 'Complete your bond application')
-  assert.equal(buyerIntroCall.request.body.title, 'Complete your bond application')
-  assert.match(buyerIntroCall.request.body.message, /Complete the online application/)
+  assert.equal(buyerIntroCall.request.body.subject, 'View your bond progress')
+  assert.equal(buyerIntroCall.request.body.title, 'View your bond progress')
+  assert.match(buyerIntroCall.request.body.message, /View progress and provide any documents/)
   assert.equal(buyerIntroCall.request.body.metadata.consultantName, 'Olive Originator')
   assert.equal(buyerIntroCall.request.body.metadata.consultantPhone, '082 555 0101')
   assert.equal(buyerIntroCall.request.body.metadata.organisationName, 'Originator Partners')
@@ -530,6 +530,29 @@ try {
   })
   assert.equal(suppressed.emailSuppressed, true)
   assert.equal(suppressedClient.state.transaction_events.length, 1)
+
+  for (const response of [{ ok: true, sent: false, queued: true }, { ok: true, sent: false, suppressed: true }, {}, { ok: false, sent: true }]) {
+    const result = await notifyBondIntakeEvent({
+      eventType: BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO,
+      transaction: transaction(),
+      recipients: [{ userId: 'buyer-user-1', email: 'buyer@example.test', roleType: 'buyer' }],
+      emailEnabled: true,
+      client: createMockClient(baseState),
+      invokeEmailFunction: async () => ({ data: response, error: null }),
+    })
+    assert.equal(result.emailSent, false)
+    assert.equal(result.emails[0].sent, false)
+    assert.equal(Boolean(result.emails[0].queued), Boolean(response.queued))
+    assert.equal(JSON.stringify(result.activity).includes('email sent'), false)
+  }
+  const failedEmail = await notifyBondIntakeEvent({
+    eventType: BOND_NOTIFICATION_EVENTS.BOND_APPLICATION_ACCEPTED, transaction: transaction(),
+    recipients: [{ userId: 'buyer-user-1', email: 'buyer@example.test', roleType: 'buyer' }], emailEnabled: true,
+    client: createMockClient(baseState), invokeEmailFunction: async () => { throw new Error('Network interrupted') },
+  })
+  assert.equal(failedEmail.emailSent, false)
+  assert.equal(failedEmail.emails[0].unconfirmed, true)
+  assert.equal(Boolean(failedEmail.activity), true, 'notification transport must not undo a saved workflow action')
 
   console.log('bondIntakeNotificationService tests passed')
 } finally {

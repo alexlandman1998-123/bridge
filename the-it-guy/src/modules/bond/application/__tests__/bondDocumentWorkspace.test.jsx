@@ -44,13 +44,12 @@ it('shows category tabs, all files, inline upload and file viewing', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Document Centre' }))
   expect(centre).toHaveBeenCalledOnce()
 })
-it('keeps bank statements local and blocks the shared uploader', async () => {
+it('explains external statement delivery and blocks the ordinary uploader', async () => {
   const requirement = { ...income, key: 'bond_application_bank_statements', title: 'Bank statements', canonicalDocumentType: 'bank_statements', evidencePeriodMonths: 6, matching: { canonicalTypes: ['bank_statements'] } }
   const control = controller(buildBondApplicationDocumentChecklist({ activeRequirements: [requirement] }))
   render(<DocumentsChecklistScreen documentsController={control} />)
-  fireEvent.change(screen.getByLabelText('Choose statements: Bank statements'), { target: { files: [new File(['private'], 'Statement.pdf')] } })
-  expect(screen.getByText(/Statement.pdf · Selected, not sent/)).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Send to bond consultant' }).disabled).toBe(true)
+  expect(screen.getByText(/Provide statements through the channel agreed/)).toBeTruthy()
+  expect(screen.queryByLabelText('Choose statements: Bank statements')).toBeNull()
   expect(control.uploadDocument).not.toHaveBeenCalled()
   const upload = vi.fn()
   const { result } = renderHook(() => useBondApplicationDocuments({ applicationState: createEmptyBondApplicationState(), onUploadRequiredDocument: upload }))
@@ -76,4 +75,67 @@ it('preserves a rejected file and displays its replacement feedback', () => {
   render(<DocumentsChecklistScreen documentsController={control} />)
   expect(within(screen.getByRole('complementary')).getByText('Please upload a clearer copy')).toBeTruthy()
   expect(screen.getByText('Replace document')).toBeTruthy()
+})
+
+it('reuses explicitly shared buyer evidence uploaded by staff without exposing private or seller files', () => {
+  const docs = [
+    { id: 'shared-id', document_type: 'buyer_id_document', status: 'uploaded', uploaded_by_role: 'agent', is_client_visible: true, uploaded_by_party: 'buyer' },
+    { id: 'internal-id', document_type: 'buyer_id_document', status: 'uploaded', uploaded_by_role: 'agent', visibility_scope: 'internal' },
+    { id: 'seller-id', document_type: 'buyer_id_document', status: 'uploaded', is_client_visible: true, uploaded_by_party: 'seller' },
+    { id: 'unscoped-staff', document_type: 'buyer_id_document', status: 'uploaded', uploaded_by_role: 'agent' },
+  ]
+  const checklist = buildBondApplicationDocumentChecklist({ activeRequirements: [identity], existingDocuments: docs })
+  expect(checklist.items[0].documents.map(doc => doc.id)).toEqual(['shared-id'])
+  expect(checklist.items[0].complete).toBe(true)
+})
+it('never counts empty records, pending uploads or expired evidence as received', () => {
+  const invalid = [{ id: 'empty' }, { id: 'missing', status: 'missing', file_path: 'not-uploaded.pdf' }, { id: 'expired', status: 'expired', review_status: 'approved', file_path: 'old.pdf' }, { id: 'pending', status: 'pending_upload' }, { id: 'failed-review', status: 'uploaded', review_status: 'failed', file_path: 'failed.pdf' }, { id: 'withdrawn', status: 'withdrawn', review_status: 'approved', file_path: 'withdrawn.pdf' }]
+  for (const doc of invalid) {
+    const checklist = buildBondApplicationDocumentChecklist({ activeRequirements: [identity], existingDocuments: [{ ...doc, document_type: 'buyer_id_document' }] })
+    expect(checklist.items[0].complete, doc.id).toBe(false)
+    expect(buildBondDocumentWorkspace(checklist).counts.approved).toBe(0)
+  }
+})
+
+it('uses the current linked replacement rather than an older approved file of the same type', () => {
+  const checklist = buildBondApplicationDocumentChecklist({ activeRequirements: [identity], existingRequiredDocuments: [{ document_key: identity.key, uploaded_document_id: 'replacement' }], existingDocuments: [
+    { id: 'old', document_type: 'buyer_id_document', status: 'uploaded', review_status: 'approved' },
+    { id: 'replacement', document_type: 'buyer_id_document', status: 'uploaded', review_status: 'rejected' },
+  ] })
+  expect(checklist.items[0].documents.map(doc => doc.id)).toEqual(['replacement'])
+  expect(checklist.items[0].complete).toBe(false)
+  expect(checklist.items[0].status).toBe('rejected')
+})
+
+it('does not reuse a co-applicant or surety file for the primary applicant when only party ownership is recorded', () => {
+  const requirement={...identity,scope:'participant',participantRole:'primary_applicant'}
+  const checklist=buildBondApplicationDocumentChecklist({activeRequirements:[requirement],existingDocuments:[
+    {id:'co-id',document_type:'buyer_id_document',status:'approved',uploaded_by_party:'co_applicant'},
+    {id:'surety-id',document_type:'buyer_id_document',status:'approved',uploaded_by_party:'surety'},
+  ]})
+  expect(checklist.items[0].complete).toBe(false)
+  expect(checklist.items[0].documents).toEqual([])
+})
+it('does not let professional-only or seller-only evidence make the buyer checklist ready', () => {
+  for (const audience of [{visibility_scope:'professional_shared'},{visibility_scope:'internal_only'},{client_recipient_role:'seller'}]) {
+    const checklist=buildBondApplicationDocumentChecklist({activeRequirements:[identity],existingDocuments:[{id:'private',document_type:'buyer_id_document',status:'approved',uploaded_by_party:'buyer',...audience}]})
+    expect(checklist.items[0].complete).toBe(false)
+    expect(checklist.items[0].documents).toEqual([])
+  }
+})
+
+it('counts external statement evidence only for its exact requirement and current signed version', () => {
+ const requirement={...income,key:'personal_bank_statements',canonicalDocumentType:'personal_bank_statements',title:'Statements',minimumFileCount:3}
+ const receipt={status:'verified',requirementKey:requirement.key,submissionId:'signed-v2',receivedAt:'2026-11-01'}
+ const build=(submissionId,externalReceipts)=>buildBondApplicationDocumentChecklist({activeRequirements:[requirement],submissionId,externalReceipts})
+ expect(build('signed-v2',[receipt]).items[0]).toMatchObject({complete:true,externalVerified:true,uploadedCount:0})
+ expect(build('signed-v1',[receipt]).items[0].complete).toBe(false)
+ expect(build('signed-v2',[{...receipt,requirementKey:'co_applicant:1:personal_bank_statements'}]).items[0].complete).toBe(false)
+ expect(build('signed-v2',[{...receipt,status:'unverified'}]).items[0].complete).toBe(false)
+})
+
+it('shows the originator’s buyer-safe replacement reason from the shared requirement', () => {
+ const checklist=buildBondApplicationDocumentChecklist({activeRequirements:[identity],existingRequiredDocuments:[{document_key:identity.key,status:'rejected',notes:'Please upload the reverse side of your identity card.',uploaded_document_id:'rejected-id'}],existingDocuments:[{id:'rejected-id',document_type:'buyer_id_document',status:'rejected'}]})
+ render(<DocumentsChecklistScreen documentsController={controller(checklist)} />)
+ expect(screen.getByText(/Replacement requested: Please upload the reverse side/)).toBeTruthy()
 })

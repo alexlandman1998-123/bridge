@@ -18955,6 +18955,7 @@ function AttorneyTransactionDetail() {
       activeViewerPermissions={{ canEditFinanceWorkflow: canEditBondHybridFinanceWorkflow }}
       loadingAction={bondHybridFinanceActionLoading}
       onSubmitBankApplication={(payload) => void handleAddBondHybridApplication(payload)}
+      onTrackerChanged={async () => { await refreshBondHybridFinanceWorkflow(); await loadData({ background: true }) }}
       onUpdateBankApplication={(application, payload) => void handleUpdateBondHybridApplication(application.id, payload)}
       onCaptureBondOffer={(payload) => void handleAddBondHybridQuote(payload)}
       onAcceptOffer={(offer) => void handleApproveBondHybridQuote(offer.id)}

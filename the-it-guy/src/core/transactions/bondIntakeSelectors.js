@@ -155,7 +155,8 @@ function getFinanceTypeCandidates(transaction = {}, onboardingFormData = null) {
 }
 
 export function isBondFinanceType(transaction = {}, onboardingFormData = null) {
-  return getFinanceTypeCandidates(transaction, onboardingFormData).some((value) => isCanonicalBondFinanceType(value))
+  // An old onboarding answer must not override the deal's current finance type.
+  return isCanonicalBondFinanceType(pickFirstText(getFinanceTypeCandidates(transaction, onboardingFormData)))
 }
 
 function getFinanceManagedByCandidates(transaction = {}, onboardingFormData = null) {
@@ -373,6 +374,7 @@ export function isOtpFullySigned(input = {}) {
 }
 
 function isFinanceDocument(candidate = {}) {
+  if (candidate.is_required === false || candidate.required === false || candidate.enabled === false) return false
   const text = [
     candidate.category,
     candidate.document_category,
@@ -481,6 +483,8 @@ function buildUploadedDocumentIndex(documents = []) {
 }
 
 function getMatchingDocuments(request = {}, documentsByKey = new Map()) {
+  const linkedIds = [request.uploaded_document_id, request.uploadedDocumentId, request.document_id, request.documentId].map(normalizeLower).filter(Boolean)
+  if (linkedIds.length) return linkedIds.flatMap((key) => documentsByKey.get(key) || [])
   const keys = [
     getDocumentKey(request),
     normalizeLower(request.id),
@@ -488,22 +492,29 @@ function getMatchingDocuments(request = {}, documentsByKey = new Map()) {
     normalizeLower(request.document_type || request.documentType || request.type),
     normalizeLower(request.title || request.label || request.name),
   ].filter(Boolean)
-  return keys.flatMap((key) => documentsByKey.get(key) || [])
+  return keys.flatMap((key) => documentsByKey.get(key) || []).filter((document) => {
+    const boundRequest = normalizeText(document.document_request_id || document.documentRequestId || document.request_id || document.requestId)
+    return !boundRequest || !request.id || boundRequest === normalizeText(request.id)
+  })
 }
 
 function isDocumentComplete(request = {}, matchingDocuments = []) {
   const status = getDocumentStatus(request)
   if (NOT_REQUIRED_DOCUMENT_STATUSES.has(status)) return true
   if (REJECTED_DOCUMENT_STATUSES.has(status)) return false
-  if (COMPLETED_DOCUMENT_STATUSES.has(status) || hasUploadedDocument(request)) return true
-  return matchingDocuments.some((document) => {
-    const documentStatus = getDocumentStatus(document)
-    if (REJECTED_DOCUMENT_STATUSES.has(documentStatus)) return false
-    return COMPLETED_DOCUMENT_STATUSES.has(documentStatus) || hasUploadedDocument(document)
+  if (!matchingDocuments.length && (request.uploaded_document_id || request.uploadedDocumentId || request.document_id || request.documentId)) return false
+  if (matchingDocuments.length) return matchingDocuments.some((document) => {
+    const currentStatus = getDocumentStatus(document)
+    if (document.archived_at || document.deleted_at || ['expired', 'superseded', 'cancelled', 'inactive'].includes(currentStatus) || REJECTED_DOCUMENT_STATUSES.has(currentStatus)) return false
+    return COMPLETED_DOCUMENT_STATUSES.has(currentStatus) || hasUploadedDocument(document)
   })
+  if (COMPLETED_DOCUMENT_STATUSES.has(status) || hasUploadedDocument(request)) return true
+  return false
 }
 
 function isDocumentApproved(request = {}, matchingDocuments = []) {
+  if (!isDocumentComplete(request, matchingDocuments)) return false
+  if (matchingDocuments.length) return matchingDocuments.some((document) => !document.archived_at && !document.deleted_at && APPROVED_DOCUMENT_STATUSES.has(getDocumentStatus(document)))
   const status = getDocumentStatus(request)
   if (APPROVED_DOCUMENT_STATUSES.has(status)) return true
   return matchingDocuments.some((document) => APPROVED_DOCUMENT_STATUSES.has(getDocumentStatus(document)))
@@ -672,6 +683,8 @@ function hasAcceptedAssignment(input = {}) {
 
 export function getBondIntakeStatus(input = {}) {
   const transaction = input.transaction || {}
+  const currentFinanceType = pickFirstText(getFinanceTypeCandidates(transaction, input.onboardingFormData))
+  if (currentFinanceType && !isCanonicalBondFinanceType(currentFinanceType)) return BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT
   const assignmentStatus = normalizeLower(transaction.bond_assignment_status || transaction.bondAssignmentStatus)
   const hasOnboardingHandoff = ['awaiting_buyer_onboarding', 'buyer_onboarding_sent'].includes(assignmentStatus)
     && getRolePlayers(input).some((rolePlayer) => rolePlayerIsBondOriginator(rolePlayer, input.currentOrganisationId))
@@ -755,7 +768,12 @@ export function getBondIntakeSummary(input = {}) {
     intakeStatus,
     applicationProgress,
     documentReadiness,
-    canAccept: intakeStatus === BOND_INTAKE_STATUSES.READY_FOR_REVIEW,
+    // Ownership allows the originator to help complete the application.
+    // It never implies that the application is ready for a bank.
+    canAccept: isOriginatorManagedBondFinance(input.transaction || {}, input.onboardingFormData)
+      && ![BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT, BOND_INTAKE_STATUSES.ACCEPTED, BOND_INTAKE_STATUSES.DECLINED].includes(intakeStatus)
+      && !['registered', 'completed', 'cancelled', 'archived'].includes(normalizeLower(input.transaction?.lifecycle_state))
+      && !input.transaction?.registered_at && !input.transaction?.cancelled_at && !input.transaction?.archived_at,
     readinessLabel: BOND_INTAKE_STATUS_LABELS[intakeStatus] || BOND_INTAKE_STATUS_LABELS[BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT],
     readinessTone: BOND_INTAKE_STATUS_TONES[intakeStatus] || 'muted',
     reasons: getReasons({ intakeStatus, applicationProgress, documentReadiness }),

@@ -3,7 +3,7 @@ import {
   BOND_APPLICATION_PRE_APPROVAL_STATUSES,
 } from '../bondApplicationState.js'
 
-export const BOND_APPLICATION_JOURNEY_VERSION = 'phase-5-stage-gates-v1'
+export const BOND_APPLICATION_JOURNEY_VERSION = 'bond-originator-tracker-v1'
 
 export const BOND_APPLICATION_JOURNEY_STAGE_KEYS = Object.freeze({
   received: 'received',
@@ -42,7 +42,7 @@ export const BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS = Object.freeze([
     key: BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks,
     label: 'Submitted to Banks',
     iconKey: 'bank',
-    actionLabel: 'Submit to banks',
+    actionLabel: 'Record bank submission',
     target: 'quotes',
     requirements: [
       { key: 'bank_selection_complete', label: 'At least one bank selected' },
@@ -262,9 +262,10 @@ function getQuoteBankName(quote = {}) {
 }
 
 function isInstructionSent(action = {}, workflowData = {}) {
-  const stage = normalizeKey(action.stage || action.currentStage || action.current_stage || workflowData.current_stage)
+  const stage = normalizeKey(workflowData.workflow?.currentStage || workflowData.workflow?.current_stage || workflowData.current_stage || action.stage || action.currentStage || action.current_stage)
   const instruction = workflowData.instruction || {}
   return Boolean(
+    normalizeKey(action.status) === 'registered' || normalizeKey(workflowData.workflow?.status) === 'completed' ||
     ['instruction_sent', 'registered', 'complete', 'completed'].includes(stage) ||
     action.instructionSentAt ||
     action.instruction_sent_at ||
@@ -276,8 +277,9 @@ function isInstructionSent(action = {}, workflowData = {}) {
 }
 
 function isComplete(action = {}, workflowData = {}) {
-  const stage = normalizeKey(action.stage || action.currentStage || action.current_stage || workflowData.current_stage)
+  const stage = normalizeKey(workflowData.workflow?.currentStage || workflowData.workflow?.current_stage || workflowData.current_stage || action.stage || action.currentStage || action.current_stage)
   return Boolean(
+    normalizeKey(action.status) === 'registered' || normalizeKey(workflowData.workflow?.status) === 'completed' ||
     ['registered', 'complete', 'completed'].includes(stage) ||
     action.registeredAt ||
     action.registered_at ||
@@ -371,6 +373,7 @@ function mergeRequirementDefinitions(definition = {}, statuses = {}) {
 }
 
 export function buildBondApplicationJourneyModel({
+  trackerOnly = true,
   action = {},
   applicationState = null,
   applicationViewModel = null,
@@ -524,9 +527,28 @@ export function buildBondApplicationJourneyModel({
     },
   }
 
-  const stageDefinitions = preApprovalOnly
+  if (trackerOnly) {
+    // Later recorded milestones are sufficient evidence of earlier progress;
+    // an imported or existing deal need not recreate its application history.
+    if (quoteCount > 0 || acceptedQuote || instructionSent || workflowCompleted) requirementStatusByStage.banks.bank_submission_sent = buildRequirement('bank_submission_sent', true, 'Bank progress is evidenced by a recorded later milestone.')
+    if (acceptedQuote || instructionSent || workflowCompleted) requirementStatusByStage.quotes.bank_response_received = buildRequirement('bank_response_received', true, 'Offer or later progress recorded.')
+    if (instructionSent || workflowCompleted) requirementStatusByStage.grant.preferred_offer_selected = buildRequirement('preferred_offer_selected', true, 'Attorney instruction or completion recorded.')
+    if (workflowCompleted) requirementStatusByStage.instruction.attorney_instruction_sent = buildRequirement('attorney_instruction_sent', true, 'Workflow completion recorded.')
+  }
+
+  const baseStageDefinitions = preApprovalOnly
     ? BOND_APPLICATION_PRE_APPROVAL_JOURNEY_STAGE_DEFINITIONS
     : BOND_APPLICATION_JOURNEY_STAGE_DEFINITIONS
+
+  // Document collection and application capture are optional tracking tools.
+  // The first financial milestone is an actual recorded bank submission.
+  const stageDefinitions = trackerOnly ? baseStageDefinitions
+    .filter(stage => stage.key !== BOND_APPLICATION_JOURNEY_STAGE_KEYS.documents)
+    .map(stage => stage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.received
+      ? { ...stage, label: 'Referral received', actionLabel: 'Open tracker', target: 'quotes' }
+      : stage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks
+        ? { ...stage, requirements: [{ key: 'bank_submission_sent', label: 'Bank submission recorded' }] }
+        : stage) : baseStageDefinitions
 
   const stages = stageDefinitions.map((definition) => {
     const requirements = mergeRequirementDefinitions(definition, requirementStatusByStage[definition.key])
@@ -547,7 +569,7 @@ export function buildBondApplicationJourneyModel({
   }))
 
   const currentStage = decoratedStages.find((stage) => stage.state === 'current') || decoratedStages.at(-1)
-  const nextActions = buildBondApplicationJourneyActions({
+  const nextActions = trackerOnly && currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks ? [{ key: 'record_bank_submission', label: 'Record bank submission', helper: 'Record the bank and date of a submission made through your usual bank channel.', target: 'quotes', priority: 'normal' }] : buildBondApplicationJourneyActions({
     currentStage,
     applicationIntent,
     preApprovalOnly,
@@ -566,10 +588,13 @@ export function buildBondApplicationJourneyModel({
     completed: workflowCompleted,
   })
 
+  const summary = buildCurrentStageSummary({ currentStage, nextActions, applicationIntent, preApprovalOnly, preApprovalStatus, preApprovalSubmitted, preApprovalOutcomeCaptured, documentReadiness, participantReadiness: participants, missingDocuments, submittedBanks, selectedBanks, quoteCount, acceptedQuote, acceptedBank, instructionSent, completed: workflowCompleted })
+  if (trackerOnly && currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.complete && instructionSent && !workflowCompleted) Object.assign(summary, { title: 'Monitor registration', description: 'Attorney instruction is recorded. Follow registration progress.', actionLabel: 'Monitor registration' })
+  if (trackerOnly && currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks) Object.assign(summary, { title: 'Record bank submission', description: 'Track submissions through your usual bank channel. Signing, statement connections and document approvals are not required in Arch9.', actionLabel: 'Record bank submission' })
   return {
     version: BOND_APPLICATION_JOURNEY_VERSION,
     stages: Object.freeze(decoratedStages),
-    currentStage: Object.freeze(buildCurrentStageSummary({ currentStage, nextActions, applicationIntent, preApprovalOnly, preApprovalStatus, preApprovalSubmitted, preApprovalOutcomeCaptured, documentReadiness, participantReadiness: participants, missingDocuments, submittedBanks, selectedBanks, quoteCount, acceptedQuote, acceptedBank, instructionSent, completed: workflowCompleted })),
+    currentStage: Object.freeze(summary),
     nextActions: Object.freeze(nextActions),
     facts: Object.freeze({
       applicationIntent,
@@ -644,10 +669,10 @@ function buildBondApplicationJourneyActions({
   if (currentStage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.banks) {
     return [{
       key: preApprovalOnly ? 'submit_pre_approval' : 'submit_to_banks',
-      label: preApprovalOnly ? 'Submit pre-approval' : 'Submit to banks',
+      label: preApprovalOnly ? 'Record pre-approval submission' : 'Record bank submission',
       helper: preApprovalOnly
-        ? `${selectedBanks} selected provider${selectedBanks === 1 ? '' : 's'} waiting for the pre-approval pack.`
-        : `${selectedBanks} selected bank${selectedBanks === 1 ? '' : 's'} waiting for submission.`,
+        ? `Record when the pre-approval pack was sent to the ${selectedBanks} selected provider${selectedBanks === 1 ? '' : 's'} outside Arch9.`
+        : `Record when the application was sent to the ${selectedBanks} selected bank${selectedBanks === 1 ? '' : 's'} outside Arch9.`,
       target: 'quotes',
       priority: 'high',
     }]

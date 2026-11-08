@@ -1,6 +1,7 @@
 import { requireClient, isMissingTableError, isMissingColumnError, isMissingSchemaError, isPermissionDeniedError, normalizeTextValue, normalizeOptionalNumber } from './api/shared/readHelpers.js'
 import { DEFAULT_DEVELOPMENT_FINANCIALS, normalizeDevelopmentFinancialsRow, normalizeDevelopmentDocumentRow, normalizeDevelopmentMarketingAccessRow, normalizeDevelopmentMarketingEventRow, fetchDevelopmentFinancials, fetchDevelopmentDocuments, fetchDevelopmentMarketingAccess, fetchDevelopmentMarketingActivity, fetchDevelopmentMarketingEvents, fetchDevelopmentVisualAnalytics } from '../domains/developments/readApi.js'
 export { fetchDevelopmentFinancials, fetchDevelopmentDocuments, fetchDevelopmentMarketingAccess, fetchDevelopmentMarketingInvite, fetchDevelopmentMarketingActivity, fetchDevelopmentMarketingEvents, fetchDevelopmentVisualAnalytics, fetchDevelopmentDocumentRequirements } from '../domains/developments/api.js'
+import { isDocumentUploaded as isBondPackDocumentUploaded } from '../modules/bond/application/documents/bondApplicationDocumentStatus.js'
 import { hydrateBuyerOnboardingCapture } from '../core/transactions/buyerOnboardingCapture.js'
 import { saveTransactionSellerDetails } from '../services/transactionSellerSaveService.js'
 import { getListingLiveChannels } from '../services/listings/listingMarketingChannelPresentation.js'
@@ -54873,7 +54874,7 @@ export async function fetchBondApplicationPortalOriginatorDocumentContinuity() {
   return result.data || { version: 'bond_application_portal_phase6', items: [] }
 }
 
-export async function fetchBondApplicationDownloadContext({ transactionId } = {}) {
+export async function fetchBondApplicationDownloadContext({ transactionId, externalReceipts = [] } = {}) {
   const client = requireClient()
   const transaction = await client.from('transactions').select('id, reference, transaction_reference').eq('id', transactionId).maybeSingle()
   if (transaction.error) throw transaction.error
@@ -54898,7 +54899,7 @@ export async function fetchBondApplicationDownloadContext({ transactionId } = {}
   }
   const applicationState = bundle ? buildApplicationStateFromNormalizedApplication(bundle) : buildBondApplicationState({ transaction: transaction.data, onboardingFormData: onboarding.data || {} })
   const resolved = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
-  const documentChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: resolved.activeRequirements, existingDocuments: documents.data || [], existingRequiredDocuments: required.data || [] })
+  const documentChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: resolved.activeRequirements, existingDocuments: documents.data || [], existingRequiredDocuments: required.data || [], externalReceipts, submissionId: bundle?.activeSubmission?.id })
   const draftSnapshot = buildBondApplicationSubmissionSnapshot({ applicationState, documentChecklist, signerIdentity: resolveBondApplicationSignerIdentities(applicationState), transaction: transaction.data })
   draftSnapshot.draftDeclarations = [
     { participantRole: 'primary_applicant', answers: applicationState.participants?.primaryApplicant?.declarations || {} },
@@ -54920,7 +54921,7 @@ export async function fetchBondApplicationPackDocumentUrl({ transactionId, docum
   const result = await client.from('documents').select('*').eq('id', documentId).eq('transaction_id', transactionId).maybeSingle()
   if (result.error) throw result.error
   const document = result.data
-  if (!document || document.archived_at || document.deleted_at || ['rejected', 'superseded', 'cancelled'].includes(document.review_status || document.status)) throw new Error('A pack document is no longer available. Refresh the application.')
+  if (!document || !isBondPackDocumentUploaded(document)) throw new Error('A pack document is no longer available. Refresh the application.')
   const path = document.file_path || document.storage_path
   if (!path || (expectedPath && path !== expectedPath)) throw new Error('A supporting file changed. Refresh the application before downloading.')
   const bucket = document.file_bucket || document.bucket || DOCUMENTS_BUCKET_CANDIDATES[0]
@@ -54937,23 +54938,14 @@ async function readBondPackageReadiness(exportPackageId) {
   if (packageResult.error) throw packageResult.error
   if (!packageResult.data?.transaction_id) throw new Error('Application package is not accessible.')
   const transactionId = packageResult.data.transaction_id
-  const [bundle, documents, required] = await Promise.all([
-    fetchNormalizedBondApplicationBundle(client, transactionId),
-    client.from('documents').select('*').eq('transaction_id', transactionId),
-    client.from('transaction_required_documents').select('*').eq('transaction_id', transactionId),
-  ])
-  if (documents.error) throw documents.error
-  if (required.error) throw required.error
-  const applicationState = bundle ? buildApplicationStateFromNormalizedApplication(bundle) : {}
-  const resolved = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
-  const documentChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: resolved.activeRequirements, existingDocuments: documents.data || [], existingRequiredDocuments: required.data || [] })
-  return validateBondApplicationSubmissionReadiness({ applicationState, documentChecklist, submission: bundle?.activeSubmission, stage: 'bank_submission' })
+  const tracker = await fetchBondTrackerContext({ transactionId })
+  return { mode: 'originator_tracker', ready: tracker.canEdit === true, label: tracker.canEdit ? 'Tracking available' : 'This deal is closed or no longer uses bond finance.', issues: tracker.canEdit ? [] : [{ code: 'open_bond_deal_required', message: 'An open deal with bond finance is required.' }] }
+
 }
 
 function mergeBondSubmissionAssessment(assessment, readiness) {
-  const blockers = [...(assessment?.blockers || []), ...readiness.issues.map((item) => ({ ...item, key: item.code }))]
-  const ready = assessment?.status === 'ready' && readiness.ready && blockers.length === 0
-  return { ...assessment, status: ready ? 'ready' : 'blocked', label: ready ? readiness.label : (readiness.ready ? 'Awaiting originator review' : readiness.label), blockers }
+  const blockers = readiness.issues.map(item => ({ ...item, key: item.code }))
+  return { ...assessment, mode: 'originator_tracker', status: readiness.ready ? 'ready' : 'blocked', label: readiness.label, blockers }
 }
 
 export async function fetchBondApplicationSubmissionReadiness() {
@@ -54973,13 +54965,9 @@ export async function assessBondApplicationSubmissionReadiness({ exportPackageId
 }
 
 export async function recordBondApplicationExternalSubmission({ exportPackageId, expectedSubmissionId, submittedAt, lenderNames = [], externalReference = '', notes = '' } = {}) {
-  const assessment = await assessBondApplicationSubmissionReadiness({ exportPackageId })
-  if (assessment.status !== 'ready') {
-    const error = new Error('Resolve the outstanding application requirements before recording submission.')
-    error.issues = assessment.blockers
-    throw error
-  }
-  const result = await requireClient().rpc('bridge_record_bond_handoff_submission', { p_export_package_id: String(exportPackageId || '').trim(), p_expected_submission_id: expectedSubmissionId, p_submitted_at: submittedAt, p_lender_names: lenderNames, p_external_reference: externalReference || null, p_notes: notes || null })
+  // The server checks tracker access and the open deal. No application or
+  // signing preflight is needed; retain the retired RPC argument as null.
+  const result = await requireClient().rpc('bridge_record_bond_handoff_submission', { p_export_package_id: String(exportPackageId || '').trim(), p_expected_submission_id: expectedSubmissionId || null, p_submitted_at: submittedAt, p_lender_names: lenderNames, p_external_reference: externalReference || null, p_notes: notes || null })
   if (result.error) throw result.error
   return result.data || null
 }
@@ -56182,6 +56170,7 @@ function buyerBondApplicationRuntime({ token, accessToken } = {}) {
   return createBuyerBondApplicationRuntimeService({ client, validateFile: (file) => validateDocumentUploadFile(file, { surface: 'buyer_portal' }) })
 }
 export const fetchBuyerBondApplicationRuntime = (args) => buyerBondApplicationRuntime(args).load()
+export const startBuyerBondApplicationRuntime = (args) => buyerBondApplicationRuntime(args).start()
 export const saveBuyerBondApplicationRuntimeDraft = (args) => buyerBondApplicationRuntime(args).save(args)
 export const reconcileBuyerBondApplicationRuntimeDocuments = (args) => buyerBondApplicationRuntime(args).reconcile(args)
 export const uploadBuyerBondApplicationRuntimeDocument = (args) => buyerBondApplicationRuntime(args).upload(args)
@@ -56205,12 +56194,13 @@ import { createBondWetInkSigningService } from '../services/bondWetInkSigningSer
 export async function fetchBondSubmissionPackContext({ transactionId } = {}) {
   const proof = await requireClient().rpc('bridge_bond_submission_pack_original', { p_transaction: transactionId })
   if (proof.error) throw proof.error
-  const context = await fetchBondApplicationDownloadContext({ transactionId })
+  const manual = await fetchBondManualContext({ transactionId })
+  const context = await fetchBondApplicationDownloadContext({ transactionId, externalReceipts: manual.externalReceipts || [] })
   if (proof.data?.submissionId !== context.submission?.id) throw new Error('The signed application changed. Refresh and retry.')
   const review = await requireClient().rpc('bridge_bond_submission_review_context', { p_transaction: transactionId })
   if (review.error) throw review.error
   if (review.data?.submissionId !== context.submission?.id) throw new Error('The signed application changed. Refresh and retry.')
-  return { ...context, originalEvidence: proof.data?.originalEvidence || null, reviewContext: review.data }
+  return { ...context, originalEvidence: proof.data?.originalEvidence || null, reviewContext: review.data, manualContext: manual }
 }
 
 export async function fetchBondSubmissionPackQueue() {
@@ -56221,6 +56211,63 @@ export async function fetchBondSubmissionPackQueue() {
 
 export async function recordBondSubmissionConsultantReview({ transactionId, submissionId, contextHash, checks } = {}) {
   const result = await requireClient().rpc('bridge_record_bond_submission_review', { p_transaction: transactionId, p_submission: submissionId, p_context_hash: contextHash, p_checks: checks })
+  if (result.error) throw result.error
+  return result.data
+}
+
+
+// These commands only prepare/record the manual workflow. They never transmit to a bank.
+export async function fetchBondManualContext({ transactionId }) {
+  const result = await requireClient().rpc('bridge_bond_manual_context', { p_transaction: transactionId })
+  if (result.error) throw result.error
+  return result.data
+}
+export async function prepareOriginatorBondApplication({ transactionId }) {
+  const result = await requireClient().rpc('bridge_prepare_originator_bond_application', { p_transaction: transactionId })
+  if (result.error) throw result.error
+  return result.data
+}
+export async function recordBondStatementReceipt({ transactionId, submissionId, requirementKey, receivedAt, reference }) {
+  const result = await requireClient().rpc('bridge_record_bond_statement_receipt', { p_transaction: transactionId, p_submission: submissionId, p_requirement_key: requirementKey, p_received_at: receivedAt, p_reference: reference })
+  if (result.error) throw result.error
+  return result.data
+}
+export async function revokeBondStatementReceipt({ transactionId, submissionId, requirementKey }) {
+  const result = await requireClient().rpc('bridge_revoke_bond_statement_receipt', { p_transaction: transactionId, p_submission: submissionId, p_requirement_key: requirementKey })
+  if (result.error) throw result.error
+}
+export async function recordManualBondSubmission({ transactionId, submissionId, contextHash, bankId, bankName, submittedAt, reference }) {
+  const result = await requireClient().rpc('bridge_record_manual_bond_submission', { p_transaction: transactionId, p_submission: submissionId, p_context_hash: contextHash, p_bank_id: bankId, p_bank_name: bankName, p_submitted_at: submittedAt, p_reference: reference })
+  if (result.error) throw result.error
+  return result.data
+}
+
+export async function requestManualBondDocument({ transactionId, requestId, type, title, instruction }) {
+  const result = await requireClient().rpc('bridge_request_manual_bond_document', { p_transaction: transactionId, p_request: requestId, p_type: type, p_title: title, p_instruction: instruction })
+  if (result.error) throw result.error
+  return result.data
+}
+
+export async function reviewManualBondDocument({ transactionId, requirementId, documentId, expectedPath, action, feedback = '' }) {
+  const result = await requireClient().rpc('bridge_review_manual_bond_document', { p_transaction: transactionId, p_requirement: requirementId, p_document: documentId, p_expected_path: expectedPath, p_action: action, p_feedback: feedback })
+  if (result.error) throw result.error
+  return result.data
+}
+
+
+export async function fetchBondTrackerContext({ transactionId }) {
+  const result = await requireClient().rpc('bridge_bond_tracker_context', { p_transaction: transactionId })
+  if (result.error) throw result.error
+  return result.data
+}
+export async function recordBondTrackerSubmission({ transactionId, bankName, submittedAt, reference = '', notes = '' }) {
+  const result = await requireClient().rpc('bridge_record_bond_tracker_submission', { p_transaction: transactionId, p_bank_name: bankName, p_submitted_at: submittedAt, p_reference: reference, p_notes: notes })
+  if (result.error) throw result.error
+  return result.data
+}
+export async function fetchBuyerBondTrackerContext({ token, accessToken } = {}) {
+  const client = accessToken ? requireBondApplicationPortalTokenClient(accessToken) : requireClientPortalTokenClient(token)
+  const result = await client.rpc('bridge_buyer_bond_tracker_context')
   if (result.error) throw result.error
   return result.data
 }

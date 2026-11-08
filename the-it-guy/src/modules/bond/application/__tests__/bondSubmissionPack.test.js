@@ -36,7 +36,7 @@ it('makes supporting-only ZIP with checklist, file hashes and explicit incomplet
   expect(Object.keys(archive).filter(key => key.startsWith('supporting-documents/'))).toHaveLength(2)
   expect(Object.keys(archive).some(key => key.includes('signed') || key.includes('bank.pdf'))).toBe(false)
   const index = JSON.parse(strFromU8(archive['document-index.json']))
-  expect(index).toMatchObject({ submissionId: 'sub', ready: false, statementHandoff: 'not_connected' })
+  expect(index).toMatchObject({ submissionId: 'sub', ready: false, statementHandoff: 'manual_external' })
   expect(index.files[0].sha256).toBe(await sha(originalBytes))
   expect(strFromU8(archive['READ-ME.txt'])).toContain('INCOMPLETE')
   expect(loadFile.mock.calls.map(([doc]) => doc.id)).toEqual(['id', 'bond'])

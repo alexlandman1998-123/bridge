@@ -279,7 +279,8 @@ function TransactionBondHybridFinanceWorkflowPanel({
       {canEdit && !isCompleted ? (
         <div className="mt-4 grid gap-4 xl:grid-cols-2">
           <form className="rounded-[16px] border border-[#e4ebf4] bg-[#fbfcfe] p-4" onSubmit={submitApplication}>
-            <h4 className="text-sm font-semibold text-[#142132]">Add Bank / Lender</h4>
+            <h4 className="text-sm font-semibold text-[#142132]">Record Bank / Lender Application</h4>
+            <p className="mt-2 text-xs text-[#6b7d93]">Record an application handled outside Arch9. Saving this record does not send an application to a bank.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <InlineField label="Bank / Lender">
                 <Field value={applicationForm.bankName} onChange={(event) => setApplicationForm((previous) => ({ ...previous, bankName: event.target.value }))} required />
@@ -302,7 +303,7 @@ function TransactionBondHybridFinanceWorkflowPanel({
               </InlineField>
             </div>
             <div className="mt-3 flex justify-end">
-              <Button type="submit" size="sm" disabled={Boolean(loadingAction)}>Add Bank</Button>
+              <Button type="submit" size="sm" disabled={Boolean(loadingAction)}>Save bank record</Button>
             </div>
           </form>
 

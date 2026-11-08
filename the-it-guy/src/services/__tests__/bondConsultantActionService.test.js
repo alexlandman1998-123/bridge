@@ -7,7 +7,7 @@ import {
 } from '../bondConsultantActionService.js'
 
 const cases = [
-  [{ financeStageKey: 'bond_application_open' }, 'documents_received', 'review-application', 'application'],
+  [{ financeStageKey: 'bond_application_open' }, 'documents_received', 'submit-bank', 'workflow'],
   [{ financeStageKey: 'ready_for_review' }, 'ready_for_review', 'submit-bank', 'workflow'],
   [{ financeStageKey: 'submitted_to_banks' }, 'applications_submitted', 'update-bank-feedback', 'workflow'],
   [{ financeStageKey: 'bank_feedback' }, 'quotes_received', 'capture-offer', 'workflow'],

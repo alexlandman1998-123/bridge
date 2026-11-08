@@ -69,8 +69,8 @@ export const BOND_CONSULTANT_ACTIONS = Object.freeze({
   },
   submitBank: {
     key: 'submit-bank',
-    label: 'Submit to banks',
-    reason: 'Send the application to one or more configured banks.',
+    label: 'Record bank submission',
+    reason: 'Record a submission completed outside Arch9, including its bank and date.',
     targetWorkspaceTab: 'workflow',
     targetAction: 'submit-bank',
     requiredInputs: ['Bank name', 'Submission date'],
@@ -192,8 +192,8 @@ export function resolveBondProgressStage(row = {}) {
   }
 
   if (normalized.status === 'cancelled') return 'declined'
-  if (normalized.financeKey === 'ready_for_review' || normalized.financeLabel === 'ready for review') return 'ready_for_review'
   if (normalized.status === 'registered' || normalized.transferKey === 'registered') return 'registered'
+  if (normalized.financeKey === 'ready_for_review' || normalized.financeLabel === 'ready for review') return 'ready_for_review'
   if (['bond_instruction_sent', 'instruction_sent'].includes(normalized.financeKey)) return 'instruction_sent'
   if (['bond_approved', 'bond_approved_', 'approval_granted'].includes(normalized.financeKey)) return 'bond_approved'
   if (normalized.financeKey === 'grant_received') return 'grant_received'
@@ -238,8 +238,8 @@ function pickActionForExplicitNextAction(nextAction = '') {
 
 function getStageAction(stage = '') {
   const actionsByStage = {
-    documents_received: BOND_CONSULTANT_ACTIONS.reviewApplication,
-    documents_reviewed: BOND_CONSULTANT_ACTIONS.reviewDocuments,
+    documents_received: BOND_CONSULTANT_ACTIONS.submitBank,
+    documents_reviewed: BOND_CONSULTANT_ACTIONS.submitBank,
     ready_for_review: BOND_CONSULTANT_ACTIONS.submitBank,
     applications_submitted: BOND_CONSULTANT_ACTIONS.updateBankFeedback,
     quotes_received: BOND_CONSULTANT_ACTIONS.captureOffer,
@@ -260,9 +260,6 @@ export function resolveBondConsultantAction(row = {}) {
   const explicitAction = pickActionForExplicitNextAction(row.nextAction)
   const action = explicitAction || getStageAction(stage)
   const blockers = []
-  if (action.key === 'submit-bank' && Number(row.missingDocuments ?? row.documentSummary?.missingCount ?? 0) > 0) {
-    blockers.push('Outstanding documents')
-  }
   if (action.key === 'send-attorney-instruction' && !row.acceptedOffer && !row.acceptedQuote) {
     blockers.push('Accepted quote')
   }

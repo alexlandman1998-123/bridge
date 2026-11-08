@@ -48,6 +48,8 @@ import LoadingSkeleton from '../../components/LoadingSkeleton'
 import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
+import BuyerQualificationFields from '../../components/leads/BuyerQualificationFields.jsx'
+import BuyerQualificationDialog from '../../components/leads/BuyerQualificationDialog.jsx'
 
 import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
 import BuyerSignedOtpDocuments from './BuyerSignedOtpDocuments'
@@ -10679,11 +10681,8 @@ const BUYER_QUALIFICATION_NOTE_FIELDS = [
   { key: 'propertyNeed', label: 'Property need' },
   { key: 'additionalNotes', label: 'Call notes' },
 ]
-const BUYER_MOVE_TIMEFRAME_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
-const BUYER_BUDGET_OPTIONS = ['', 'Under R 1m', 'R 1m – R 2m', 'R 2m – R 3m', 'R 3m – R 5m', 'R 5m – R 8m', 'R 8m+', 'Flexible / discuss']
 const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
 const BUYER_SUBJECT_TO_FINANCE_OPTIONS = ['', 'Yes', 'No', 'Unsure']
-const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitted', 'Needs bond originator', 'Cash buyer']
 const BUYER_PROPERTY_TO_SELL_OPTIONS = ['', 'No', 'Yes', 'Unsure']
 const BUYER_VIEWING_PLAN_STATUS_OPTIONS = [
   { key: 'draft', label: 'Draft', meta: 'Select properties' },
@@ -10708,9 +10707,6 @@ const BUYER_SELLER_COORDINATION_DEFAULTS = {
   sellerRecipientEmails: '',
   sellerCoordinationNotes: '',
 }
-const BUYER_QUALIFICATION_LABEL_CLASS = 'grid gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-[#60758b]'
-const BUYER_QUALIFICATION_FIELD_CLASS = 'h-11 rounded-[12px] px-3 text-sm font-medium tracking-normal placeholder:font-medium placeholder:tracking-normal'
-const BUYER_QUALIFICATION_TEXTAREA_CLASS = 'min-h-[132px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6 tracking-normal placeholder:font-medium placeholder:tracking-normal'
 
 function stripLeadNoteBlock(notes = '', startMarker = '', endMarker = '') {
   const raw = String(notes || '').trim()
@@ -11955,6 +11951,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   const buyerProfileEditBaselineRef = useRef(null)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
+  const [buyerQualificationDialog, setBuyerQualificationDialog] = useState({ open: false, error: '' })
   const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
   const buyerQualificationLeadKeyRef = useRef('')
   const buyerQualificationBaselineRef = useRef(BUYER_QUALIFICATION_FORM_DEFAULTS)
@@ -15399,6 +15396,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       buyerQualificationBaselineRef.current = nextForm
       setBuyerQualificationForm(nextForm)
       setBuyerQualificationEditing(false)
+      setBuyerQualificationDialog({ open: false, error: '' })
       return
     }
 
@@ -22709,17 +22707,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     setAppointmentModalOpen(true)
   }
 
-  async function handleSaveBuyerQualification(event) {
+  async function handleSaveBuyerQualification(event, { complete = false } = {}) {
     event.preventDefault()
-    if (!organisationId || !selectedLead) return
+    if (!organisationId || !selectedLead || isLeadDetailSaving) return
+    const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
+    const qualificationDraft = { ...buyerQualificationForm }
+    const qualificationBaseline = { ...buyerQualificationBaselineRef.current }
 
     setIsLeadDetailSaving(true)
     try {
       const now = new Date().toISOString()
       const latestLeadSeed = await fetchAgencyCrmLeadRouteHydrationSeed(organisationId, selectedLead.leadId)
+      if (buyerQualificationLeadKeyRef.current !== leadKey) return
       const latestLead = latestLeadSeed.leads?.[0]
       if (!latestLead) throw new Error('Unable to reload this lead. Please try saving again.')
-      const changedAnswers = buildBuyerQualificationDraftPatch(buyerQualificationForm, buyerQualificationBaselineRef.current)
+      const changedAnswers = buildBuyerQualificationDraftPatch(qualificationDraft, qualificationBaseline)
       const mergedForm = { ...buildBuyerQualificationFormFromLead(latestLead), ...changedAnswers }
       const combinedIntake = buildBuyerQualificationIntake(mergedForm, {
         notes: latestLead.notes,
@@ -22729,6 +22731,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       })
       const mergedAnswers = combinedIntake.qualification?.answers || {}
       const qualificationEvidence = getBuyerQualificationEvidence(mergedAnswers)
+      if (complete && !qualificationEvidence.complete) {
+        throw new Error(`Capture at least ${qualificationEvidence.minimumCount} qualification answers before marking the buyer qualified.`)
+      }
       const qualificationNotes = buildBuyerQualificationNotes(mergedAnswers, latestLead.notes)
       const notes = buildBuyerIntakeNotes(combinedIntake, qualificationNotes)
       const qualificationLeadFields = buildBuyerQualificationLeadFields(combinedIntake)
@@ -22758,6 +22763,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         { actor: currentAgent },
       ).catch(() => null)
 
+      if (buyerQualificationLeadKeyRef.current !== leadKey) return
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       const savedForm = buildBuyerQualificationFormFromLead({ ...latestLead, ...leadPatch })
       buyerQualificationBaselineRef.current = savedForm
@@ -22771,6 +22777,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         notes,
       }))
       setBuyerQualificationEditing(false)
+      setBuyerQualificationDialog({ open: false, error: '' })
       setError('')
       if (qualificationEvidence.complete) {
         setBuyerJourneyActionStage('viewing')
@@ -22781,7 +22788,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         : `Qualification saved as in progress. Capture ${qualificationEvidence.minimumCount - qualificationEvidence.answeredCount} more answer${qualificationEvidence.minimumCount - qualificationEvidence.answeredCount === 1 ? '' : 's'} to mark qualified.`)
       scheduleRecordsReload(organisationId, 250)
     } catch (saveError) {
-      setError(saveError?.message || 'Unable to save buyer qualification right now.')
+      if (buyerQualificationLeadKeyRef.current !== leadKey) return
+      const message = saveError?.message || 'Unable to save buyer qualification right now.'
+      if (complete) setBuyerQualificationDialog({ open: true, error: message })
+      else setError(message)
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -29632,9 +29642,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
 
   async function handleMarkBuyerQualifiedAction() {
     if (!organisationId || !selectedLead || selectedLeadIsSeller || isLeadDetailSaving) return
-    if (!selectedLeadBuyerQualificationEvidence.complete) {
-      setError(`Capture at least ${selectedLeadBuyerQualificationEvidence.minimumCount} qualification answers before marking the buyer qualified.`)
+    if (!selectedLeadBuyerQualificationEvidence.complete || buyerQualificationEditing) {
+      setError('')
       handleOpenBuyerQualificationAction()
+      setBuyerQualificationDialog({
+        open: true,
+        error: !selectedLeadBuyerQualificationEvidence.complete
+          ? `Capture at least ${selectedLeadBuyerQualificationEvidence.minimumCount} qualification answers before marking the buyer qualified.`
+          : 'Save your latest answers before marking the buyer qualified.',
+      })
       return
     }
     setIsLeadDetailSaving(true)
@@ -36448,72 +36464,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                                   </div>
                                 </div>
 
-                                {buyerQualificationEditing ? (
+                                {buyerQualificationEditing && !buyerQualificationDialog.open ? (
                                   <>
-                                    <div id="buyer-qualification-editor" className="mt-4 grid gap-3.5" data-testid="buyer-qualification-editor">
-                                      <div className="grid gap-4 md:grid-cols-2">
-                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                          What is your budget?
-                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.budget} onChange={(event) => updateBuyerQualificationField('budget', event.target.value)}>
-                                            {BUYER_BUDGET_OPTIONS.map((option) => <option key={option || 'empty-budget'} value={option}>{option || 'Select budget range'}</option>)}
-                                          </Field>
-                                        </label>
-                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                          When would you like to move?
-                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.moveTimeframe} onChange={(event) => updateBuyerQualificationField('moveTimeframe', event.target.value)}>
-                                            {BUYER_MOVE_TIMEFRAME_OPTIONS.map((option) => (
-                                              <option key={option || 'empty-timeframe'} value={option}>{option || 'Select timeframe'}</option>
-                                            ))}
-                                          </Field>
-                                        </label>
-                                      </div>
-                                      <AreaAutocomplete
-                                        label="Which area should we focus on?"
-                                        value={buyerQualificationForm.areaInterest}
-                                        onChange={(value) => updateBuyerQualificationField('areaInterest', value)}
-                                        placeholder="Search saved areas or enter an area"
-                                        description="Choose an Arch9 area or type a suburb, town, or region."
-                                      />
-                                      <div>
-                                        <span className={BUYER_QUALIFICATION_LABEL_CLASS}>Finance readiness</span>
-                                        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-                                          {['Cash', 'Bond', 'Pre-approved', 'Needs assistance'].map((option) => {
-                                            const selected = buyerQualificationForm.financeType === option
-                                            return <button key={option} type="button" className={`rounded-[12px] border px-3 py-3 text-sm font-semibold transition ${selected ? 'border-[#157aaf] bg-[#eaf5fb] text-[#135e89] ring-2 ring-[#c9e7f5]' : 'border-[#dbe7f2] bg-white text-[#29435d] hover:border-[#9ec9df]'}`} onClick={() => updateBuyerQualificationField('financeType', option)} aria-pressed={selected}>{option}</button>
-                                          })}
-                                        </div>
-                                      </div>
-                                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                          Deposit available?
-                                          <Field className={BUYER_QUALIFICATION_FIELD_CLASS} placeholder="R 400 000" value={buyerQualificationForm.depositAvailable} onChange={(event) => updateBuyerQualificationField('depositAvailable', event.target.value)} />
-                                        </label>
-                                        {normalizeText(buyerQualificationForm.financeType).toLowerCase() !== 'cash' && (
-                                          <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                            Bond pre-approval status?
-                                            <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.preApprovalStatus} onChange={(event) => updateBuyerQualificationField('preApprovalStatus', event.target.value)}>
-                                              {BUYER_PRE_APPROVAL_OPTIONS.map((option) => (
-                                                <option key={option || 'empty-pre-approval'} value={option}>{option || 'Select status'}</option>
-                                              ))}
-                                            </Field>
-                                          </label>
-                                        )}
-                                        <div>
-                                          <span className={BUYER_QUALIFICATION_LABEL_CLASS}>Do you need to sell a property first?</span>
-                                          <div className="mt-2 flex gap-2">
-                                            {['Yes', 'No'].map((option) => <button key={option} type="button" className={`flex-1 rounded-[12px] border px-3 py-2.5 text-sm font-semibold ${buyerQualificationForm.propertyToSell === option ? 'border-[#157aaf] bg-[#eaf5fb] text-[#135e89]' : 'border-[#dbe7f2] bg-white text-[#29435d]'}`} onClick={() => updateBuyerQualificationField('propertyToSell', option)} aria-pressed={buyerQualificationForm.propertyToSell === option}>{option}</button>)}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                        What type of property do you need?
-                                        <Field className={BUYER_QUALIFICATION_FIELD_CLASS} placeholder="Property type, bedrooms, must-haves" value={buyerQualificationForm.propertyNeed} onChange={(event) => updateBuyerQualificationField('propertyNeed', event.target.value)} />
-                                      </label>
-                                      <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                        What did the buyer say on the call?
-                                        <Field as="textarea" className={BUYER_QUALIFICATION_TEXTAREA_CLASS} rows={5} placeholder="Capture affordability, urgency, must-haves, exclusions, and next step..." value={buyerQualificationForm.additionalNotes} onChange={(event) => updateBuyerQualificationField('additionalNotes', event.target.value)} />
-                                      </label>
-                                    </div>
+                                    <BuyerQualificationFields
+                                      form={buyerQualificationForm}
+                                      onChange={updateBuyerQualificationField}
+                                      disabled={isLeadDetailSaving}
+                                    />
 
                                     <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#edf3f8] pt-4">
                                       <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationForm(buyerQualificationBaselineRef.current)}>
@@ -40663,6 +40620,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
           </div>
         </div>
       </Modal>
+
+      <BuyerQualificationDialog
+        open={buyerQualificationDialog.open && Boolean(selectedLead) && !selectedLeadIsSeller}
+        buyerName={selectedLeadDisplayName}
+        form={buyerQualificationForm}
+        onChange={updateBuyerQualificationField}
+        onClose={() => setBuyerQualificationDialog({ open: false, error: '' })}
+        onSubmit={(event) => void handleSaveBuyerQualification(event, { complete: true })}
+        saving={isLeadDetailSaving}
+        error={buyerQualificationDialog.error}
+      />
 
       <Modal
         open={Boolean(manualSellerOnboarding)}

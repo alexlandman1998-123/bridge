@@ -12,6 +12,8 @@ export function useBondApplicationDocuments({
   requiredDocuments = [],
   documents = [],
   additionalRequirements = [],
+  externalReceipts = [],
+  submissionId = null,
   onReconcileDocumentRequirements,
   onUploadRequiredDocument,
   onRefreshDocuments,
@@ -37,7 +39,9 @@ export function useBondApplicationDocuments({
     activeRequirements: resolved.activeRequirements,
     existingRequiredDocuments: requiredDocuments,
     existingDocuments: documents,
-  }), [documents, requiredDocuments, resolved.activeRequirements])
+    externalReceipts,
+    submissionId,
+  }), [documents, requiredDocuments, resolved.activeRequirements, externalReceipts, submissionId])
 
   const progress = useMemo(() => calculateBondApplicationDocumentProgress(checklist), [checklist])
 
@@ -79,7 +83,7 @@ export function useBondApplicationDocuments({
       return { ok: false, error: 'Choose a file to upload.' }
     }
     if (isBondStatementHandoff(requirement)) {
-      const message = 'Bank statements must be sent through your consultant’s secure connection. It is not connected yet.'
+      const message = 'Provide statements through the channel agreed with your bond consultant. They confirm receipt here before recording bank submission.'
       setError(message)
       return { ok: false, error: message }
     }

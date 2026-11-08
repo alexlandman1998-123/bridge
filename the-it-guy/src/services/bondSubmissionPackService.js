@@ -59,6 +59,6 @@ export async function fetchBondSubmissionReleaseGate() {
     if (!gate.version || !Array.isArray(gate.blockers) || !gate.methods) throw new Error('Release assessment invalid')
     return gate
   } catch {
-    return { ready: false, methods: {}, blockers: [{ code: 'release_assessment_unavailable', message: 'Release approvals could not be verified. Bank submission remains blocked.' }] }
+    return { ready: false, methods: {}, blockers: [{ code: 'release_assessment_unavailable', message: 'Manual workflow availability could not be verified. Refresh and retry before recording submission.' }] }
   }
 }
