@@ -7,7 +7,7 @@ import contract from './fixtures/api-extraction-contract.json'
 
 it('preserves every existing public API name and the extracted function bodies', () => {
   const names = [], bodies = {}
-  for (const [index, relative] of ['../../api.js', '../shared/readHelpers.js', '../../../domains/developments/readApi.js'].entries()) {
+  for (const [index, relative] of ['../../api.js', '../shared/readHelpers.js', '../../../domains/developments/readApi.js', '../../../domains/developments/profileNormalization.js'].entries()) {
     const source = readFileSync(new URL(relative, import.meta.url), 'utf8')
     const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] })
     for (const node of ast.program.body) {
