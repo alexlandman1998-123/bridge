@@ -3,6 +3,19 @@ import { refreshListingPhotoUrls } from '../../src/services/listings/listingPhot
 import { createProperty24ListingPlan } from './property24ListingMapper.js'
 import { prepareProperty24PublishingPhoto, PROPERTY24_PHOTO_PREPARATION_VERSION, PROPERTY24_PHOTO_GALLERY_TARGET, PROPERTY24_PHOTO_SOURCE_LIMIT } from './property24PhotoPreparation.js'
 
+export const PROPERTY24_GALLERY_TIMEOUT_MS = 120_000
+const galleryTimeoutMessage = 'Preparing the gallery took too long. Retry the photo check before publishing; no photos will be omitted.'
+async function beforeGalleryDeadline(work, signal) {
+  signal.throwIfAborted()
+  let onAbort
+  const interrupted = new Promise((_, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try { return await Promise.race([Promise.resolve().then(work), interrupted]) }
+  finally { signal.removeEventListener('abort', onAbort) }
+}
+
 export function normalizeProperty24PreviewText(value = '') {
   return String(value || '').trim()
 }
@@ -278,9 +291,9 @@ async function readDownloadBody(download) {
   throw new Error('Downloaded image body cannot be converted to bytes.')
 }
 
-async function downloadImageBytes({ url, fetchImpl, storageClient }) {
+async function downloadImageBytes({ url, fetchImpl, storageClient, signal }) {
   try {
-    const response = await fetchImpl(url, { signal: AbortSignal.timeout(30_000) })
+    const response = await fetchImpl(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) })
     if (!response.ok) throw new Error(`Image download failed with ${response.status}.`)
     if (Number(response.headers?.get?.('content-length')) > PROPERTY24_PHOTO_SOURCE_LIMIT) throw new Error('Original photo exceeds the processing size limit.')
     let arrayBuffer
@@ -305,6 +318,7 @@ async function downloadImageBytes({ url, fetchImpl, storageClient }) {
       source: 'url',
     }
   } catch (urlError) {
+    signal.throwIfAborted()
     if (urlError.message === 'Original photo exceeds the processing size limit.') {
       throw Object.assign(new Error('This original is too large to process safely. Contact support for help preparing it; the original has not been changed.'), { code: 'PHOTO_SOURCE_TOO_LARGE' })
     }
@@ -330,9 +344,12 @@ async function downloadImageBytes({ url, fetchImpl, storageClient }) {
 export async function loadProperty24ImageBytesForPreview({
   media = [], fetchImpl = globalThis.fetch, storageClient = null, storageBaseUrl = '',
   maxImages = null, maxBytesPerImage = 10 * 1024 * 1024, maxTotalImageBytes = 60_000_000,
+  timeoutMs = PROPERTY24_GALLERY_TIMEOUT_MS,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required to prepare listing photos.')
   if (!(maxBytesPerImage > 0) || !(maxTotalImageBytes > 0)) throw new Error('Photo size allowances must be positive.')
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Photo preparation needs a positive time allowance.')
+  const deadline = AbortSignal.timeout(Math.ceil(timeoutMs))
   const rows = Array.isArray(media) ? media : []
   const indexedMedia = rows.map((item, index) => ({ item, index }))
     .filter(({ item }) => isProperty24ImageMedia(item))
@@ -365,10 +382,10 @@ export async function loadProperty24ImageBytesForPreview({
     try {
       if (selectionError) throw new Error(selectionError)
       if (!url) throw new Error('This photo has no saved file. Upload it again, save the listing, then check again.')
-      const download = await downloadImageBytes({ url, fetchImpl, storageClient })
+      const download = await beforeGalleryDeadline(() => downloadImageBytes({ url, fetchImpl, storageClient, signal: deadline }), deadline)
       downloaded = true
       const original = Buffer.isBuffer(download.arrayBuffer) ? download.arrayBuffer : Buffer.from(download.arrayBuffer)
-      const prepared = await prepareProperty24PublishingPhoto(original, targetBytes)
+      const prepared = await beforeGalleryDeadline(() => prepareProperty24PublishingPhoto(original, targetBytes), deadline)
       return { buffer: prepared.buffer, result: {
         index, photoNumber, photoLabel, mediaId: item.id || null, status: 'LOADED',
         sourceUrl: sanitizeUrl(url), source: download.source, mimeContentType: 'image/jpeg',
@@ -380,7 +397,7 @@ export async function loadProperty24ImageBytesForPreview({
       } }
     } catch (error) {
       return { result: { index, photoNumber, photoLabel, mediaId: item.id || null, status: 'FAILED',
-        sourceUrl: sanitizeUrl(url), message: `${photoLabel}: ${downloaded || selectionError || !url || error.code === 'PHOTO_SOURCE_TOO_LARGE' ? error.message : 'The saved file could not be downloaded. Check the photo, retry the check, or upload it again.'}` } }
+        sourceUrl: sanitizeUrl(url), message: `${photoLabel}: ${deadline.aborted ? galleryTimeoutMessage : downloaded || selectionError || !url || error.code === 'PHOTO_SOURCE_TOO_LARGE' ? error.message : 'The saved file could not be downloaded. Check the photo, retry the check, or upload it again.'}` } }
     }
   }
   // Keep at most two originals/decoders in flight, replacing each completed job

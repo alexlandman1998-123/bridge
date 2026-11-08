@@ -192,7 +192,7 @@ export function summarizePrivatePropertySoapResponse(method = '', xml = '') {
   const normalizedMethod = normalizePrivatePropertyText(method)
   const continuationKey = extractPrivatePropertyXmlTag(xml, 'ContinuationKey')
   const resultText = normalizedMethod ? extractPrivatePropertyXmlTag(xml, `${normalizedMethod}Result`) : ''
-  const mutation = ['UpdateListing', 'ListingStatusUpdate'].includes(normalizedMethod)
+  const mutation = ['UpdateListing', 'ListingStatusUpdate', 'ListingShowdayUpdate'].includes(normalizedMethod)
   const redactedResult = resultText.replace(/https?:[^\s<"']+/g, (raw) => {
     try { const url = new URL(raw.replaceAll('&amp;', '&')); url.search = ''; return url.toString() } catch { return '[URL]' }
   })
@@ -254,7 +254,9 @@ export function createPrivatePropertyClient({
         body,
         signal: controller.signal,
       })
-      const responseBody = await response.text().catch(() => '')
+      // Losing the body after HTTP headers is still a failed observation, not
+      // an empty successful feed or status. Never retry a possible mutation.
+      const responseBody = await response.text()
       const fault = extractPrivatePropertySoapFault(responseBody)
 
       if (!response.ok || fault) {
@@ -271,7 +273,7 @@ export function createPrivatePropertyClient({
         )
       }
 
-      const summary = ['UpdateListing', 'ListingStatusUpdate'].includes(normalizedMethod)
+      const summary = ['UpdateListing', 'ListingStatusUpdate', 'ListingShowdayUpdate'].includes(normalizedMethod)
         ? validatePrivatePropertySoapResult({ status: response.status, data: responseBody }, normalizedMethod)
         : summarizePrivatePropertySoapResponse(normalizedMethod, responseBody)
       return {

@@ -1,13 +1,17 @@
 import { publicationJobClient } from './listingPublicationJobs.js'
 import { createProperty24ApiResponse } from '../property24/api.js'
 import { createPrivatePropertyApiResponse } from '../private-property/api.js'
+import { listingPortalFailureMessage } from '../../src/services/listings/listingChannelUpdateState.js'
 
 const labels = { property24: 'Property24', private_property: 'Private Property', agency_website: 'Agency Website', kingdom_website: 'Kingdom Website' }
 export function listingExpiryOutcome(response, action) {
   const body = response.body || {}
-  if (response.status >= 500 || body.status === 'UNCERTAIN') return { state: action === 'update' ? 'update_uncertain' : 'expiry_uncertain', message: 'The channel response is uncertain. Check the advert before sending again.' }
+  const detail = listingPortalFailureMessage(body).slice(0, 600)
+  const unconfirmed = [body.status, body.report?.status, body.update?.status].some(status => ['UNCERTAIN', 'NOT_CONFIRMED'].includes(String(status || '').toUpperCase()))
+    || body.error === 'RENTAL_PUBLICATION_PENDING' || body.submissionAttempt?.requiresReconciliation || body.report?.submissionAttempt?.requiresReconciliation
+  if (response.status >= 500 || unconfirmed) return { state: action === 'update' ? 'update_uncertain' : 'expiry_uncertain', message: `${detail ? `${detail} ` : ''}The channel response is uncertain. Check the advert before sending again.` }
   const accepted = action === 'update' ? body.status === 'SUBMITTED' : response.website ? body.publication?.status === 'unpublished' : response.channel === 'property24' ? body.status === 'SUBMITTED' : body.update?.status === 'UPDATED'
-  if (response.status >= 400 || !accepted) return { state: action === 'update' ? 'update_failed' : 'expiry_failed', message: 'The channel has not accepted this expiry change. Check its status and requirements.' }
+  if (response.status >= 400 || !accepted) return { state: action === 'update' ? 'update_failed' : 'expiry_failed', message: detail || 'The channel has not accepted this expiry change. Check its status and requirements.' }
   return { state: action === 'update' ? 'scheduled' : 'expired', message: action === 'update' ? 'Portal accepted the expiry date. Removal is scheduled for the end of that day.' : 'Channel accepted removal. Check the public advert to confirm.' }
 }
 export async function dispatchListingExpiry(job, { client, env = process.env, property24 = createProperty24ApiResponse, privateProperty = createPrivatePropertyApiResponse } = {}) {

@@ -61,34 +61,52 @@ try {
     // Exercise the same draft through recovery, a failed upload and a confirmed
     // save. A fresh context must use the saved record, not device recovery.
     const start = fixture.events.length
-    if (kind === 'sale') { await page.locator('[name="listingPrice"]').fill('1234567'); await page.getByRole('button', { name: 'Continue', exact: true }).click() }
+    if (kind === 'sale') {
+     await page.locator('[name="listingPrice"]').fill('1234567')
+     await page.getByRole('button', { name: 'Continue', exact: true }).click()
+     await page.getByRole('heading', { name: 'Extra details (optional)' }).waitFor()
+     await page.getByRole('button', { name: 'Continue', exact: true }).click()
+    }
     else await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
     const photo = await (await page.request.get(fixture.origin + '/fixture/photo.png')).body()
     const photoField = kind === 'sale' ? 'listingImages' : 'galleryImages'
+    // Sales registers a private draft while uploading photos, before Save.
+    // Interrupt this first transfer so recovery retains the original file.
+    if (kind === 'sale') await page.request.post(fixture.origin + '/fixture/failure', { data: { value: 'upload' } })
     await page.locator(`input[name="${photoField}"]`).setInputFiles({ name: 'recovered.png', mimeType: 'image/png', buffer: photo })
     await page.getByRole('complementary', { name: 'Draft advert preview' }).getByAltText('Selected cover photo').waitFor()
     await page.getByText(/Photos are still saving for recovery/).waitFor({ state: 'hidden' })
+    const createsBeforeOffline = fixture.events.slice(start).filter(row => row.kind === 'create').length
+    assert.ok(createsBeforeOffline <= 1)
+    const offlineStart = fixture.events.length
     await context.setOffline(true)
     const description = page.getByRole('textbox', { name: 'Listing description', exact: true })
     await description.fill('Text entered while the connection was interrupted.')
     await page.getByRole('button', { name: 'Save draft', exact: true }).click()
     await page.getByText(/Could not confirm saving to Listings/).waitFor()
-    assert.equal(fixture.events.slice(start).filter(row => ['create', 'queue'].includes(row.kind)).length, 0)
+    assert.equal(fixture.events.slice(offlineStart).filter(row => ['create', 'queue'].includes(row.kind)).length, 0)
     await context.setOffline(false)
     results.push({ category, kind, check: 'offline saving gives no cloud success or publication claim and keeps the typed text', passed: true })
+    const capturedSession = await page.evaluate(() => history.state.listingCaptureSession)
+    assert.ok(capturedSession?.id)
     await page.close()
     const recovered = await context.newPage()
     recovered.setDefaultTimeout(30000); recovered.setDefaultNavigationTimeout(180000)
     recovered.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss())
     recovered.on('pageerror', error => errors.push(error.message))
     try {
-     await recovered.goto(fixture.origin + base + '/new', { waitUntil: 'domcontentloaded' })
+     // Restore the closed capture tab's history entry. An explicit New tab
+     // deliberately creates another session and must not inherit this draft.
+     await recovered.goto(fixture.origin + '/fixture/blank', { waitUntil: 'domcontentloaded' })
+     await recovered.evaluate(({base,capturedSession}) => history.replaceState({...history.state,listingCaptureSession:capturedSession},'',base+'/new'), {base,capturedSession})
+     await recovered.reload({ waitUntil: 'domcontentloaded' })
      if (kind === 'sale') await recovered.getByRole('button', { name: /Step .*Photos & description/ }).click()
      else await recovered.getByRole('button', { name: /Step .*Photos & description/ }).click()
      await recovered.getByRole('complementary', { name: 'Draft advert preview' }).getByAltText('Selected cover photo').waitFor()
      assert.equal(await recovered.getByRole('textbox', { name: 'Listing description', exact: true }).inputValue(), 'Text entered while the connection was interrupted.')
-     assert.equal(fixture.events.slice(start).filter(row => ['create', 'queue'].includes(row.kind)).length, 0)
-     results.push({ category, kind, check: 'closing the tab restores the unsaved photo without creating or publishing a listing', passed: true })
+     assert.equal(fixture.events.slice(start).filter(row => row.kind === 'create').length, createsBeforeOffline)
+     assert.equal(fixture.events.slice(start).filter(row => row.kind === 'queue').length, 0)
+     results.push({ category, kind, check: 'restoring the capture tab keeps the unsaved photo without creating another listing or publishing', passed: true })
      await recovered.request.post(fixture.origin + '/fixture/failure', { data: { value: 'upload' } })
      await recovered.getByRole('button', { name: 'Save draft', exact: true }).click()
      await recovered.getByText(/Could not confirm saving to Listings/).waitFor()
@@ -261,10 +279,22 @@ try {
     assert.equal(fixture.events.slice(lostStart).filter(row => row.kind === 'create').length, kind === 'rental' ? 1 : 0)
     await page.screenshot({ path: resolve(out, category + '-' + kind + '-unconfirmed-desktop.png') })
     results.push({ category, kind, check: 'lost queue response preserves the saved listing without unsafe retry or a false save failure', passed: true })
+    // Per-channel requests finish independently. Wait for the original action
+    // before seeding its final receipts or counting subsequent requests.
+    const statusLabel = kind === 'sale' ? 'Check Property24 status' : 'Check status'
+    await page.waitForFunction(label => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === label && !button.disabled), statusLabel)
+    assert.deepEqual(queues(lostStart).flatMap(row => row.body.channels).sort(), ['agency_website', 'private_property', 'property24'])
     const lostJobs = await jobsFor(lostRequest.body.listingId)
     await page.request.post(fixture.origin + '/fixture/seed-jobs', { data: { id: lostRequest.body.listingId, jobs: lostJobs.map(job => ({ ...job, state: 'accepted' })) } })
     const queueCount = queues(lostStart).length
-    await page.getByRole('button', { name: kind === 'sale' ? 'Check Property24 status' : 'Check status', exact: true }).first().click()
+    const statusButton = page.getByRole('button', { name: kind === 'sale' ? 'Check Property24 status' : 'Check status', exact: true }).first()
+    try { await statusButton.click({ timeout: 5000 }) }
+    catch (error) {
+     // The real watcher can consume the accepted receipt before a click runs.
+     // Require that exact accepted result; a missing/disabled control alone is
+     // never a pass, and the queue-count assertion below still forbids resends.
+     if (kind !== 'sale' || !await page.getByLabel('Property24 update', { exact: true }).getByText(/Check the public advert before treating it as live/).isVisible()) throw error
+    }
     if (kind === 'rental') await feedback().getByText(/An unconfirmed request will not be retried/).waitFor({ state: 'hidden' })
     else await page.getByLabel('Property24 update', { exact: true }).getByText(/Check the public advert before treating it as live/).waitFor()
     assert.equal(queues(lostStart).length, queueCount)

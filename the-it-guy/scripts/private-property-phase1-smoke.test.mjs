@@ -122,3 +122,22 @@ await assert.rejects(() => connectionFailureClient.getCountries(), {
 })
 
 console.log('Private Property phase 1 SOAP client contract passed')
+
+// An interrupted body is not an empty, successful status observation.
+for (const failure of [new DOMException('Body read timed out', 'AbortError'), new Error('Connection closed while reading the response')]) {
+ let requests = 0
+ const interrupted = createPrivatePropertyClient({username:'fixture',password:'fixture',fetchImpl:async()=>{
+  requests++
+  return {ok:true,status:200,text:async()=>{throw failure}}
+ }})
+ await assert.rejects(interrupted.callSoap('GetListingStatus'), /timed out|Connection closed/)
+ assert.equal(requests,1)
+}
+
+// HTTP 200 alone must not turn a rejected show day into a successful sync.
+for (const answer of ['false','Error: The show day end date is before its start date.','']) {
+ const rejectedShowday=createPrivatePropertyClient({username:'fixture',password:'fixture',fetchImpl:async()=>({ok:true,status:200,text:async()=>`<ListingShowdayUpdateResult>${answer}</ListingShowdayUpdateResult>`})})
+ await assert.rejects(rejectedShowday.listingShowdayUpdate({branchGuid:'branch',propertyId:'property',startDate:'2099-12-01',endDate:'2099-12-02'}),/did not acknowledge ListingShowdayUpdate/)
+}
+const acceptedShowday=createPrivatePropertyClient({username:'fixture',password:'fixture',fetchImpl:async()=>({ok:true,status:200,text:async()=>'<ListingShowdayUpdateResult>Successful</ListingShowdayUpdateResult>'})})
+assert.equal((await acceptedShowday.listingShowdayUpdate({branchGuid:'branch',propertyId:'property',startDate:'2099-12-01',endDate:'2099-12-02'})).ok,true)

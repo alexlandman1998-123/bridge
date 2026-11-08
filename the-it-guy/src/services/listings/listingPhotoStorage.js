@@ -48,7 +48,10 @@ export async function refreshListingPhotoUrls(client, rows = [], { strict = fals
           if (strict) throw new Error(message, { cause: response.error || item?.error })
           row.file_url = ''
           row.mediaLoadError = message
-        } else row.file_url = item.signedUrl
+        } else {
+          row.file_url = item.signedUrl
+          delete row.mediaLoadError
+        }
       }
     }
   }

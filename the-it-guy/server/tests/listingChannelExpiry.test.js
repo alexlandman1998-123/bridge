@@ -130,3 +130,18 @@ test('worker stores independent results and never repeats an uncertain provider 
   await runListingChannelExpiryJobs({ client, dispatch: async job => { calls.push(job.channel); if (job.channel === 'property24') throw new Error('Lost response'); return { status: 422, body: {} } } })
   assert.deepEqual(calls, ['property24', 'private_property']); assert.deepEqual(writes.map(row => row.state), ['update_uncertain', 'update_failed'])
 })
+
+
+test('expiry receipts preserve specific provider rejection reasons and redact credentials', () => {
+ const result=listingExpiryOutcome({status:422,body:{report:{error:{message:'The expiry date is before the publication date. Authorization: Bearer hidden-token'}}}},'update')
+ assert.equal(result.state,'update_failed')
+ assert.match(result.message,/expiry date is before/)
+ assert.doesNotMatch(result.message,/hidden-token/)
+})
+test('expiry treats pending rental journals and nested unconfirmed outcomes as uncertain', () => {
+ for(const body of [{error:'RENTAL_PUBLICATION_PENDING',message:'Reconcile the saved request before sending again.'},{report:{status:'UNCERTAIN'}},{update:{status:'NOT_CONFIRMED'}}]) {
+  for(const action of ['update','expire']) {
+   assert.equal(listingExpiryOutcome({status:409,body},action).state,action==='update'?'update_uncertain':'expiry_uncertain')
+  }
+ }
+})
