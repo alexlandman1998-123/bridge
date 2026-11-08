@@ -5,6 +5,7 @@ import {
   createTransactionCreationLifecycle,
   getTransactionCreationIncompleteSteps,
   getTransactionCreationIssues,
+  requiresTransactionBuyerPortal,
   setTransactionCreationStepOutcome,
 } from '../transactionCreationLifecycle.js'
 
@@ -107,5 +108,11 @@ assert.match(issues[1].message, /not finished/)
 assert.deepEqual(getTransactionCreationIssues({...incompletePatch,creation_status:'complete'}), [])
 assert.match(getTransactionCreationIssues({creation_status:'incomplete',creation_steps:{attorney_assignment:{required:true,status:'failed',error:{code:'42501',message:'row level security'}}}})[0].message,/permissions blocked/)
 assert.deepEqual(getTransactionCreationIssues({creation_status:'initializing',creation_steps:{portal_setup:{required:false,status:'not_required'}}}),[])
+for (const transactionType of ['developer_sale','private_property']) {
+  assert.equal(requiresTransactionBuyerPortal({transactionType,allowIncomplete:true}),false,'an explicitly permitted buyerless draft must defer portal setup')
+  assert.equal(requiresTransactionBuyerPortal({transactionType,allowIncomplete:true,buyerId:'buyer'}),true,'a draft with a buyer still gets its portal')
+  assert.equal(requiresTransactionBuyerPortal({transactionType}),true,'ordinary creation must not silently omit the buyer portal')
+  assert.equal(requiresTransactionBuyerPortal({transactionType,buyerId:'buyer',skipClientPortalSetup:true}),false)
+}
 
 console.log('transaction creation lifecycle tests passed')

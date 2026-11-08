@@ -132,6 +132,7 @@ import {
   TransactionCreationIncompleteError,
   buildTransactionCreationPersistencePatch,
   createTransactionCreationLifecycle,
+  requiresTransactionBuyerPortal,
   getTransactionCreationIncompleteSteps,
   setTransactionCreationStepOutcome,
 } from '../core/transactions/transactionCreationLifecycle.js'
@@ -30976,7 +30977,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     attorneyAssignmentRequired: expectedAttorneyAssignments > 0,
     bondOriginatorAssignmentRequired: expectedBondOriginatorAssignments > 0,
     sellerHandoffRequired: transactionType === 'private_property',
-    portalSetupRequired: !skipClientPortalSetup && ['developer_sale', 'private_property'].includes(transactionType),
+    portalSetupRequired: requiresTransactionBuyerPortal({ transactionType, buyerId: buyer?.id, allowIncomplete, skipClientPortalSetup }),
   })
   const initialCreationLifecyclePatch = buildTransactionCreationPersistencePatch({
     lifecycle: creationLifecycle,

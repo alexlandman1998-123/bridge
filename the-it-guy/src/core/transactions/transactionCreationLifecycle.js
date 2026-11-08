@@ -11,6 +11,11 @@ export const TRANSACTION_CREATION_CRITICAL_STEPS = Object.freeze([
 
 const TERMINAL_STEP_STATUSES = new Set(['complete', 'failed', 'not_required'])
 
+export function requiresTransactionBuyerPortal({ transactionType, buyerId, allowIncomplete = false, skipClientPortalSetup = false } = {}) {
+  return !skipClientPortalSetup && ['developer_sale', 'private_property'].includes(transactionType)
+    && !(allowIncomplete && !buyerId)
+}
+
 function text(value) {
   return String(value ?? '').trim()
 }
