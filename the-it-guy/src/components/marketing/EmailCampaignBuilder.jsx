@@ -39,7 +39,6 @@ import {
 import { getOrganisationPrivateListings } from "../../services/privateListingService";
 import {
   createEmailDocument,
-  mergeEmail,
   normalizeDocument,
   renderEmail,
 } from "../../../../supabase/functions/_shared/emailDocument.js";
@@ -48,7 +47,7 @@ import EmailCampaignImages from "./EmailCampaignImages";
 import EmailCampaignImport from "./EmailCampaignImport";
 import ImportedEmailEditor from "./ImportedEmailEditor";
 import EmailDevelopmentSelector from "./EmailDevelopmentSelector";
-import { inspectCampaignEmail } from "../../../../supabase/functions/_shared/emailContent.js";
+import { inspectCampaignEmail, renderCampaignDelivery } from "../../../../supabase/functions/_shared/emailContent.js";
 import "./EmailCampaignBuilder.css";
 import { reviewAiCampaign, approveAiCampaign } from '../../services/aiCampaignService';
 import { ensureEmailCampaignPlan } from '../../services/emailCampaignPlanService';
@@ -226,7 +225,10 @@ export default function EmailCampaignBuilder({
     )
       ? "Choose a send permission category."
       : "",
-    senderIdentityId: !sender ? "Choose your sender or set up sending through Arch9." : sender.sender_mode === "arch9" && !workspace.platformSender?.ready ? "Arch9 campaign sending is awaiting activation." : "",
+    senderIdentityId: !sender ? "Choose your sender or set up sending through Arch9."
+      : sender.verification_status !== 'verified' || sender.sending_paused_at ? 'This sender is not verified or is paused. Check Email settings.'
+      : sender.sender_mode === "arch9" ? workspace.platformSender?.ready ? '' : "Arch9 campaign sending is awaiting activation."
+      : !domains.some(domain => domain.id === sender.email_sending_domain_id && domain.verification_status === 'verified') ? 'This sending domain is not verified. Recheck its DNS in Email settings.' : '',
   };
   const detailsReady = !Object.values(missing).some(Boolean);
   const draftDetailsReady = !missing.name && !missing.subject && !missing.subscriptionTypeId;
@@ -496,7 +498,7 @@ export default function EmailCampaignBuilder({
   const go = async (next) => {
     if (next <= step) { setStep(next); setError(""); return; }
     if ((next === 3 && !detailsReady) || (next === 1 && !draftDetailsReady)) {
-      setError(!draftDetailsReady ? "Complete the required campaign details before continuing." : "Choose a ready sender through Arch9 or your own verified domain before delivery review. You can keep editing and saving your draft.");
+      setError(!draftDetailsReady ? "Complete the required campaign details before continuing." : `${missing.senderIdentityId} You can keep editing and saving your draft.`);
       setStep(0);
       return;
     }
@@ -575,10 +577,10 @@ export default function EmailCampaignBuilder({
   };
   const openPreview = () => {
     setPreviewHtml(
-      mergeEmail(html, {
+      renderCampaignDelivery({ contentJson: draft.contentJson }, context, {
         agency_name: context.agencyName,
         ...contacts.find((c) => c.id === testRecipient),
-      }),
+      }, true).html,
     );
     setModal("preview");
   };
@@ -1126,7 +1128,7 @@ export default function EmailCampaignBuilder({
                       if (preflight.contentCheck) setCheckedContent({ key: contentKey, report: preflight.contentCheck });
                       if (!preflight.ready)
                         throw new Error(
-                          preflight.contentCheck?.errors?.[0] ||
+                          preflight.issues?.join(' ') || preflight.contentCheck?.errors?.[0] ||
                           "Pre-send checks found an issue. Check sender, consent, sending policy and audience.",
                         );
                       if (draft.contentJson.ai_campaign) {

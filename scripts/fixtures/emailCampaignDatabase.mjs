@@ -61,5 +61,6 @@ await db.exec(`alter table email_campaign_assets enable row level security; gran
  create policy email_campaign_assets_member_read on email_campaign_assets for select to authenticated using(public.bridge_has_organisation_membership(organisation_id));`)
 
 await db.exec(readFileSync('supabase/migrations/20261105170104_email_campaign_final_readiness.sql','utf8'))
+await db.exec(readFileSync('supabase/migrations/20261108160845_email_campaign_delivery_diagnostics.sql','utf8'))
 return { db, one, org, other, user, asUser, asService, shared, reserve, foundation }
 }

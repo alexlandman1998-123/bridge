@@ -1,6 +1,13 @@
 // Always read the provider's current state. Webhook payloads may be duplicated
 // or delivered out of order, and must never restore a stale verified status.
 const text = (value: unknown) => String(value || "").trim();
+export function sendingDomainState(details: any) {
+  const disabled = details?.capabilities && Object.hasOwn(details.capabilities, "sending") && details.capabilities.sending !== "enabled";
+  const status = disabled ? "failed" : details?.status === "verified" ? "verified" : ["failed", "temporary_failure"].includes(details?.status) ? "failed" : "pending";
+  return { status, error: disabled
+    ? "Sending is disabled for this domain at the email provider. Ask your domain administrator to enable sending, then recheck verification."
+    : status === "failed" ? "DNS verification failed. Check the records below, then retry verification." : null };
+}
 export function sendingDomainRecords(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((r) => ({ record: text(r.record), name: text(r.name), type: text(r.type), value: text(r.value),
@@ -26,10 +33,10 @@ export async function refreshSendingDomain({ db, domain, resendKey, fetcher = fe
   if (text(details.name).toLowerCase() !== domain.domain_name || text(details.id) !== domain.provider_domain_id) {
     throw new Error("The provider domain does not match this agency's domain.");
   }
-  const status = details.status === "verified" ? "verified" : ["failed", "temporary_failure"].includes(details.status) ? "failed" : "pending";
+  const { status, error: providerError } = sendingDomainState(details);
   const { error } = await db.rpc("email_apply_domain_status", {
     p_domain_id: domain.id, p_status: status, p_records: sendingDomainRecords(details.records),
-    p_error: status === "failed" ? "DNS verification failed. Check the records below, then retry verification." : null,
+    p_error: providerError,
   });
   if (error) throw new Error("Unable to save domain verification. Please try again.");
   return status;

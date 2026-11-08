@@ -45,3 +45,29 @@ it('explains an unavailable server check without falling back to client-only val
   await expect(scheduleEmailCampaign('campaign')).rejects.toThrow('administrator to enable it')
   expect(mocks.rpc).not.toHaveBeenCalled()
 })
+
+
+it('preserves the actionable server explanation for failed content checks', async () => {
+  mocks.invoke.mockResolvedValue({ error: Object.assign(new Error('Edge Function returned a non-2xx status code'), {
+    context: new Response(JSON.stringify({ error: 'Your session expired. Sign in again to check this campaign.' }), { status: 401 }),
+  }) })
+  await expect(checkEmailCampaignContent('campaign')).rejects.toThrow('Your session expired. Sign in again')
+  expect(mocks.rpc).not.toHaveBeenCalled()
+})
+it('explains each failed sender, category, policy and audience check', async () => {
+  mocks.rpc.mockResolvedValue({ data: { ready: false, checks: ['sender', 'subscription', 'policy', 'audience'].map(key => ({ key, ok: false })) } })
+  const report = await preflightEmailCampaign('campaign')
+  expect(report.ready).toBe(false)
+  expect(report.issues.join(' ')).toMatch(/verified, active sender/)
+  expect(report.issues.join(' ')).toMatch(/subscription category/)
+  expect(report.issues.join(' ')).toMatch(/paused or not approved/)
+  expect(report.issues.join(' ')).toMatch(/no eligible recipients/)
+})
+it('does not accept contradictory or malformed sending readiness', async () => {
+  mocks.rpc.mockResolvedValue({ data: { ready: true, checks: [{ key: 'sender', ok: false }] } })
+  expect((await preflightEmailCampaign('campaign')).ready).toBe(false)
+  for (const data of [null, { ready: true }, { ready: true, checks: [] }, { ready: true, checks: [{ key: 'sender' }] }]) {
+    mocks.rpc.mockResolvedValue({ data })
+    await expect(preflightEmailCampaign('campaign')).rejects.toThrow('readiness could not be confirmed')
+  }
+})

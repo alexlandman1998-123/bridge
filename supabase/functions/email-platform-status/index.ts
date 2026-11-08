@@ -1,5 +1,6 @@
 import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { ARCH9_CAMPAIGN_DOMAIN } from "../_shared/emailCampaignSender.js";
+import { sendingDomainState } from "../_shared/emailSendingDomain.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.49.9";
 
@@ -81,7 +82,7 @@ Deno.serve(withApiCredentials(async (req) => {
     const subscribed = Array.isArray(webhook?.events) ? webhook.events.map(text) : [];
     const checks = checksFrom({
       provider: true,
-      "sender-domain": Boolean(domain) && domain.id === providerId && text(domain.name).toLowerCase() === ARCH9_CAMPAIGN_DOMAIN && domain.status === "verified",
+      "sender-domain": Boolean(domain) && domain.id === providerId && text(domain.name).toLowerCase() === ARCH9_CAMPAIGN_DOMAIN && sendingDomainState(domain).status === "verified",
       "campaign-sending": sharedEnabled && Boolean(providerId),
       "campaign-capacity": budgetReady,
       webhook: webhook?.status === "enabled" && normaliseUrl(webhook?.endpoint) === callbackUrl && requiredEvents.every(event => subscribed.includes(event)),

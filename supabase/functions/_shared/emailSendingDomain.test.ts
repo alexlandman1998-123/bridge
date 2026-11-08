@@ -42,3 +42,12 @@ Deno.test('provider domain lookup fails closed on provider failure or incomplete
     await assertRejects(() => findSendingDomain({name:domain.domain_name,resendKey:'fixture',fetcher:(()=>Promise.resolve(response)) as typeof fetch}));
   }
 });
+
+Deno.test("DNS proof cannot enable a provider domain whose sending capability is disabled", async () => {
+  let saved: any;
+  const db = { rpc: (_name: string, args: any) => { saved = args; return { error: null }; } };
+  const fetcher = (() => Promise.resolve(Response.json({ id: "provider", name: domain.domain_name, status: "verified", capabilities: { sending: "disabled", receiving: "enabled" }, records: [] }))) as typeof fetch;
+  assertEquals(await refreshSendingDomain({ db, domain, resendKey: "test", fetcher }), "failed");
+  assertEquals(saved.p_status, "failed");
+  assertEquals(saved.p_error.includes("Sending is disabled"), true);
+});

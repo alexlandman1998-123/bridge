@@ -4,14 +4,15 @@ import { supabase } from '../lib/supabaseClient'
 const clean = (value) => String(value || '').trim()
 const normalizeEmail = (value) => clean(value).toLowerCase()
 
-async function emailSetupError(error) {
+async function emailSetupError(error, fallback = '') {
   // Function HTTP failures carry the actionable message in their response body.
   // Keep it visible so an agency can resolve DNS, ownership or limit errors.
   try {
     const payload = await error.context?.clone().json()
-    if (typeof payload?.error === 'string') return new Error(payload.error)
+    const message = [payload?.error, payload?.message, payload?.error?.message].find(value => typeof value === 'string' && value.trim())
+    if (message) return new Error(message, { cause: error })
   } catch { /* Fall back to the original network error. */ }
-  return error
+  return fallback ? new Error(fallback, { cause: error }) : error
 }
 
 function normalizeTags(tags = []) {
@@ -232,12 +233,24 @@ export async function preflightEmailCampaign(campaignId) {
   const contentCheck = await checkEmailCampaignContent(campaignId)
   const { data, error } = await supabase.rpc('email_campaign_preflight', { p_campaign_id: campaignId })
   if (error) throw error
-  return { ...data, ready: Boolean(data?.ready && contentCheck.ready), contentCheck, checks: [...(data?.checks || []), { key: 'content', ok: contentCheck.ready }] }
+  if (typeof data?.ready !== 'boolean' || !Array.isArray(data.checks) || !data.checks.length || data.checks.some(check => typeof check?.ok !== 'boolean')) {
+    throw new Error('Sending readiness could not be confirmed. Refresh the campaign and try again.')
+  }
+  const messages = {
+    sender: 'Choose a verified, active sender and check its sending domain in Email settings.',
+    subscription: 'Choose an active email subscription category.',
+    policy: 'Organisation sending is paused or not approved. Check the sending controls in Email settings.',
+    audience: 'There are no eligible recipients. Check the selected audience, consent and subscription category.',
+    account: 'Arch9 sending capacity is unavailable. Check Email settings or contact your workspace administrator.',
+  }
+  const failed = data.checks.filter(check => !check.ok)
+  const issues = [...new Set([...contentCheck.errors, ...failed.map(check => messages[check.key] || 'A sending readiness check failed. Refresh the campaign and try again.')])]
+  return { ...data, ready: data.ready && contentCheck.ready && !failed.length, issues, contentCheck, checks: [...data.checks, { key: 'content', ok: contentCheck.ready }] }
 }
 
 export async function checkEmailCampaignContent(campaignId) {
   const { data, error } = await supabase.functions.invoke('email-campaign-content-check', { body: { campaignId } })
-  if (error) throw new Error('Email content checking is unavailable. Ask your workspace administrator to enable it, then try again.')
+  if (error) throw await emailSetupError(error, 'Email content checking is unavailable. Ask your workspace administrator to enable it, then try again.')
   if (data?.error) throw new Error(data.error)
   if (!data || typeof data.ready !== 'boolean' || !Array.isArray(data.errors) || !Array.isArray(data.warnings)) throw new Error('The email content check could not be confirmed. Try again before sending.')
   return data
@@ -281,7 +294,7 @@ export async function sendEmailCampaignTest(payload) {
     const status = error.context?.status
     let details = null
     try { details = await error.context?.clone?.().json() } catch { /* Some SDK/network responses have already consumed their body. */ }
-    failure.deliveryUncertain = details?.deliveryUncertain === true || !(status >= 400 && status < 500 && status !== 408)
+    failure.deliveryUncertain = typeof details?.deliveryUncertain === 'boolean' ? details.deliveryUncertain : !(status >= 400 && status < 500 && status !== 408)
     throw failure
   }
   if (data?.error) throw Object.assign(new Error(data.error), { deliveryUncertain: true })
@@ -353,15 +366,16 @@ export async function getClientSharedAudienceMemberships({ organisationId, clien
 }
 
 export async function getEmailCampaignAnalytics(campaignId) {
-  if (!campaignId) return { recipients: [], events: [], links: [], audit: [] }
-  const [recipients, events, links, audit] = await Promise.all([
+  if (!campaignId) return { recipients: [], events: [], links: [], audit: [], delivery: null }
+  const [recipients, events, links, audit, delivery] = await Promise.all([
     supabase.from('email_campaign_recipients').select('id,email,recipient_snapshot,status,error_reason,sent_at,delivered_at,opened_at,clicked_at,bounced_at').eq('campaign_id', campaignId).order('created_at', { ascending: false }),
     supabase.from('email_events').select('id,recipient_id,event_type,url,occurred_at').eq('campaign_id', campaignId).order('occurred_at', { ascending: false }).limit(500),
     supabase.from('email_campaign_link_performance').select('*').eq('campaign_id', campaignId).order('unique_clickers', { ascending: false }),
     supabase.from('email_campaign_audit_events').select('*').eq('campaign_id', campaignId).order('created_at', { ascending: false }).limit(30),
+    supabase.rpc('email_campaign_delivery_status', { p_campaign_id: campaignId }),
   ])
   for (const result of [recipients, events, links, audit]) if (result.error) throw result.error
-  return { recipients: recipients.data || [], events: events.data || [], links: links.data || [], audit: audit.data || [] }
+  return { recipients: recipients.data || [], events: events.data || [], links: links.data || [], audit: audit.data || [], delivery: delivery?.error || typeof delivery?.data?.state !== 'string' ? null : delivery.data }
 }
 
 export async function getEmailDraft(organisationId, id) {

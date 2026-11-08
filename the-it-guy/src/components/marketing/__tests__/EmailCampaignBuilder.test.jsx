@@ -14,7 +14,7 @@ vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({
 vi.mock('../../../services/privateListingService', () => ({ getOrganisationPrivateListings: async () => [] }))
 vi.mock('../../../services/emailCampaignAssetService', () => ({ getEmailCampaignAssets: async () => [], uploadEmailCampaignImage: mocks.upload, validateEmailCampaignImage: async () => {} }))
 vi.mock('../../../services/emailCampaignService', () => ({ saveEmailCampaign: mocks.save, getEmailDraft: mocks.get, getEmailRevisions: mocks.revisions, previewEmailAudience: mocks.audiencePreview, createEmailSender: vi.fn(), createEmailSendingDomain: vi.fn(), checkEmailCampaignContent: mocks.check, preflightEmailCampaign: mocks.preflight, refreshEmailSenderVerification: vi.fn(), saveEmailTemplate: mocks.template, scheduleEmailCampaign: mocks.schedule, sendEmailCampaignTest: mocks.sendTest, verifyEmailSendingDomain: vi.fn() }))
-const workspace = { organisationId: 'org', userId: 'user', contacts: [], templates: [], savedAudiences: [], subscriptionTypes: [{ id: 'consent', name: 'Property updates' }], identities: [{ id: 'sender', display_name: 'Kingdom', from_email: 'hello@example.com', verification_status: 'verified' }], refresh: vi.fn() }
+const workspace = { organisationId: 'org', userId: 'user', domains: [{ id: 'domain', verification_status: 'verified' }], contacts: [], templates: [], savedAudiences: [], subscriptionTypes: [{ id: 'consent', name: 'Property updates' }], identities: [{ id: 'sender', display_name: 'Kingdom', from_email: 'hello@example.com', verification_status: 'verified', email_sending_domain_id: 'domain' }], refresh: vi.fn() }
 vi.mock('../../../services/developmentBuyerLeadService',()=>({listBuyerLeadDevelopmentOptions:async()=>[{id:'madison',label:'Madison Place'}]}))
 const Audience = () => <div>Audience controls</div>
 it('links a quick AI email to its campaign, keeping edits made during linking and the newest saved timestamp', async () => {
@@ -435,7 +435,7 @@ it('reopens saved content without a configured sender while keeping actual sendi
   expect(screen.getByRole('button', { name: /^Details Complete$/ })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Email HTML'), { target: { value: '<p>Improved saved property story</p>' } })
   fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
-  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Choose a ready sender through Arch9 or your own verified domain before delivery review. You can keep editing and saving your draft.')
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Choose your sender or set up sending through Arch9. You can keep editing and saving your draft.')
   fireEvent.click(screen.getByRole('button', { name: /3 Content/ }))
   expect(await screen.findByLabelText('Email HTML')).toHaveProperty('value', '<p>Improved saved property story</p>')
   expect(mocks.schedule).not.toHaveBeenCalled()
@@ -697,4 +697,27 @@ it('preselects the development entry point and saves removal without stale conte
  fireEvent.click(screen.getByRole('button',{name:'Save as draft'}))
  await waitFor(()=>expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({campaign:expect.objectContaining({developmentContext:null})})))
  expect(mocks.save.mock.calls.at(-1)[0].campaign.contentJson.arch9_context).toBeUndefined()
+})
+
+it('does not call a sender ready when its current domain proof is missing', async () => {
+ mocks.get.mockResolvedValue({ id: 'campaign', name: 'News', subject: 'Homes', sender_identity_id: 'sender', subscription_type_id: 'consent', content_json: { ...createEmailDocument(), mode: 'advanced', advancedHtml: '<p>Homes</p>' } })
+ render(<EmailCampaignBuilder workspace={{...workspace,domains:[{id:'domain',verification_status:'pending'}]}} AudienceStudio={Audience} campaignId="campaign" onBack={() => {}} />)
+ await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('News'))
+ fireEvent.click(screen.getByRole('button',{name:/4 Review/}))
+ expect(await screen.findByRole('alert')).toHaveProperty('textContent','This sending domain is not verified. Recheck its DNS in Email settings. You can keep editing and saving your draft.')
+ expect(screen.queryByRole('button',{name:'Preflight & send'})).toBeNull()
+ expect(mocks.preflight).not.toHaveBeenCalled()
+})
+
+it('previews the delivery footer for imported HTML without exposing an unsubscribe capability', async () => {
+ mocks.get.mockResolvedValue({id:'preview',name:'News',subject:'Homes',sender_identity_id:'sender',subscription_type_id:'consent',content_json:{...createEmailDocument(),mode:'advanced',advancedHtml:'<html><body><p>Hello {{first_name}}</p></body></html>'}})
+ render(<EmailCampaignBuilder workspace={workspace} campaignId="preview" onBack={()=>{}} />)
+ await waitFor(()=>expect(screen.getByLabelText('Internal campaign name').value).toBe('News'))
+ fireEvent.click(screen.getByRole('button',{name:/3 Content/}))
+ fireEvent.click(await screen.findByRole('button',{name:'Preview',exact:true}))
+ const preview=screen.getByTitle('Rendered email preview')
+ expect(preview.srcdoc).toContain('Personal unsubscribe links are added on campaign delivery.')
+ expect(preview.srcdoc).toContain('Kingdom')
+ expect(preview.srcdoc).not.toContain('{{first_name}}')
+ expect(preview.getAttribute('sandbox')).toBe('')
 })
