@@ -202,7 +202,8 @@ export function resolveSalesWorkflowSnapshot({
     ([OTP_DOCUMENT_TYPES.approved, OTP_DOCUMENT_TYPES.sentToClient].includes(generatedType) ||
       inferredApprovedFromText ||
       otpAvailableToClient)
-  const signedOtpReceived = Boolean(latestSignedOtpDocument)
+  const signedOtpReceived = normalizedOnboardingStatus !== 'signed_otp_uploaded_for_review' && Boolean(latestSignedOtpDocument)
+  const uploadedOtpAwaitingReview = !signedOtpReceived && normalizedOnboardingStatus === 'signed_otp_uploaded_for_review'
   const signedOtpSource = latestCanonicalSignedOtpDocument
     ? 'canonical_signed_final'
     : latestKingstonsManualSignedOtpDocument
@@ -223,6 +224,8 @@ export function resolveSalesWorkflowSnapshot({
   const stageOneBlocker = onboardingComplete ? '' : 'Client onboarding must be completed before moving ahead.'
   const stageTwoBlocker = !onboardingComplete
     ? 'Onboarding must be completed before OTP preparation starts.'
+    : uploadedOtpAwaitingReview
+      ? 'Review the uploaded signed OTP in Documents. No new upload is needed.'
     : signedOtpReceived
       ? ''
       : !latestGeneratedOtpDocument
@@ -260,6 +263,8 @@ export function resolveSalesWorkflowSnapshot({
   if (!readyForFinance) {
     if (!onboardingComplete) {
       nextAction = 'complete_onboarding'
+    } else if (uploadedOtpAwaitingReview) {
+      nextAction = 'complete_supporting_documents'
     } else if (!signedOtpReceived && !latestGeneratedOtpDocument) {
       nextAction = 'generate_otp'
     } else if (!signedOtpReceived && !otpApproved) {

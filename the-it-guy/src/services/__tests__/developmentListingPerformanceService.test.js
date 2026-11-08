@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ from: vi.fn(), analytics: vi.fn(), reads: [] }))
-vi.mock('../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from } }))
+const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn(), analytics: vi.fn(), reads: [] }))
+vi.mock('../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from, rpc: mocks.rpc } }))
 vi.mock('../listings/listingOverviewPerformanceService.js', () => ({ getListingOverviewAnalytics: mocks.analytics }))
 import { loadDevelopmentListingPerformance } from '../developmentListingPerformanceService.js'
 
@@ -77,4 +77,21 @@ it('stops stale reads when the selected period is cancelled', async () => {
   await expect(loadDevelopmentListingPerformance(listings, 7, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
   expect(mocks.analytics).not.toHaveBeenCalled()
   expect(mocks.from).not.toHaveBeenCalled()
+})
+
+
+it('reads development website activity once instead of summing listing website counters', async () => {
+ mocks.rpc.mockReturnValue({ abortSignal: async () => ({data:{summary:{sceneViews:152,enquiries:8,submittedEnquiries:3}},error:null}) })
+ const signal=new AbortController().signal
+ const result=await loadDevelopmentListingPerformance(listings,30,signal,{developmentId:idA,websitePublished:true})
+ expect(mocks.rpc).toHaveBeenCalledWith('get_development_visual_analytics',{requested_development_id:idA,requested_days:30})
+ expect(result.website.metrics.views).toMatchObject({available:true,value:152})
+ expect(result.website.metrics.enquiries.value).toBe(3)
+ expect(result.website.periodLabel).toContain('including today')
+})
+it('does not show a fabricated zero when development website analytics cannot be read', async () => {
+ mocks.rpc.mockReturnValue({ abortSignal: async () => ({data:null,error:{message:'denied'}}) })
+ const result=await loadDevelopmentListingPerformance(listings,30,new AbortController().signal,{developmentId:idA})
+ expect(result.website.statisticsUnavailable).toBe(true)
+ expect(result.website.metrics.views).toMatchObject({available:false,value:null})
 })

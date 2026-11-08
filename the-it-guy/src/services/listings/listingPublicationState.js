@@ -14,6 +14,7 @@ const SNAPSHOT_FIELDS = Object.freeze([
   ['pricePresentation', 'Price presentation', 'Pricing'],
   ['listingStatus', 'Listing status', 'Status'],
   ['address', 'Address', 'Property'],
+  ['exactAddressVisibility', 'Street address display', 'Property'],
   ['propertyType', 'Property type', 'Property'],
   ['propertySubtype', 'Property subtype', 'Property'],
   ['bedrooms', 'Bedrooms', 'Property'],
@@ -130,7 +131,7 @@ export function buildListingPublicationSnapshot(draft = {}) {
   const floorplans = Array.isArray(draft.floorplans) ? draft.floorplans : []
   const cover = gallery.find((item) => text(item?.id) === text(draft.coverImageId)) || gallery[0] || null
   return {
-    version: 2,
+    version: 3,
     headline: text(draft.headline),
     description: text(draft.description),
     listingPreviewDescription: text(draft.listingPreviewDescription),
@@ -138,6 +139,7 @@ export function buildListingPublicationSnapshot(draft = {}) {
     pricePresentation: text(draft.pricePresentation),
     listingStatus: text(draft.listingStatus),
     address: text(draft.formattedAddress || draft.addressLine1 || draft.streetAddress),
+    exactAddressVisibility: text(draft.exactAddressVisibility) || 'hide_street_address',
     propertyType: text(draft.propertyType),
     propertySubtype: text(draft.propertySubtype),
     bedrooms: numberText(draft.bedrooms),
@@ -167,6 +169,15 @@ function displayValue(value) {
   return text(value) || 'Not set'
 }
 
+function addressVisibilityDisplay(value) {
+  return ({
+    show_exact_address: 'Show full street address',
+    hide_street_address: 'Hide street address',
+    hide_street_number: 'Contact agent for street address',
+    complex_only: 'Show complex or estate only',
+  })[text(value)] || 'Previous setting not recorded'
+}
+
 function publicationStatusComparable(value, channel) {
   const status = text(value).toLowerCase().replace(/[\s-]+/g, '_')
   // Publishing promotes the internal seller workflow without changing the
@@ -188,13 +199,14 @@ export function diffListingPublicationSnapshots(current = {}, published = {}, { 
       ? comparable(Array.isArray(snapshot[key]) ? snapshot[key].map(mediaIdentity) : mediaIdentity(snapshot[key] || ''))
       : area ? areaComparable(snapshot, key)
       : key === 'listingStatus' ? publicationStatusComparable(snapshot[key], channel)
+      : key === 'exactAddressVisibility' ? text(snapshot[key])
       : comparable(snapshot[key])
     if (normalize(current) === normalize(published)) return []
     const previousItems = media ? mediaNames(published[key]) : undefined
     const currentItems = media ? mediaNames(current[key]) : undefined
     return [{ key, label, group,
-      previousValue: area ? areaDisplay(published, key) : displayValue(previousItems || published[key]),
-      currentValue: area ? areaDisplay(current, key) : displayValue(currentItems || current[key]),
+      previousValue: area ? areaDisplay(published, key) : key === 'exactAddressVisibility' ? addressVisibilityDisplay(published[key]) : displayValue(previousItems || published[key]),
+      currentValue: area ? areaDisplay(current, key) : key === 'exactAddressVisibility' ? addressVisibilityDisplay(current[key]) : displayValue(currentItems || current[key]),
       ...(media ? { previousItems, currentItems } : {}),
     }]
   })
@@ -267,6 +279,8 @@ export function deriveListingPublicationStates(activityRows = [], currentSnapsho
       ? []
       : state.publishedSnapshot
       ? diffListingPublicationSnapshots(currentSnapshot, state.publishedSnapshot, { channel: state.key })
+      : ['accepted', 'verified', 'legacy_live'].includes(state.stage)
+      ? diffListingPublicationSnapshots({ exactAddressVisibility: currentSnapshot.exactAddressVisibility }, {})
       : []
     state.changeCount = state.changes.length
   }

@@ -36,3 +36,18 @@ describe('Email document delivery contract', () => {
     expect(html).toBe('<p><strong>Hi</strong><a>X</a></p>')
   })
 })
+
+it('normalises incomplete saved layouts, duplicate IDs and a single footer without losing metadata',()=>{
+ const doc=normalizeDocument({version:1,arch9_campaign:{id:'plan'},blocks:[null,{id:'same',type:'property'},{id:'same',type:'social',links:null},{type:'unknown'},{type:'footer'},{type:'footer'}]})
+ expect(doc.globalStyles.fontFamily).toBe('Arial');expect(doc.blocks.map(b=>b.type)).toEqual(['property','social','footer']);expect(new Set(doc.blocks.map(b=>b.id)).size).toBe(3);expect(doc.blocks[0].listings).toEqual([]);expect(doc.blocks[1].links).toEqual([]);expect(doc.arch9_campaign.id).toBe('plan');expect(()=>renderEmail(doc)).not.toThrow()
+})
+it('uses font, colour, spacing and alignment settings in the rendered email',()=>{
+ const doc=createEmailDocument();doc.globalStyles.fontFamily='Verdana';doc.blocks=[{...newBlock('header'),text:'Brand',textColour:'#123456',background:'#abcdef',align:'right',padding:30},{...newBlock('button'),text:'Open',url:'https://example.test',textColour:'#654321',colour:'#112233',variant:'outline'}];const html=renderEmail(doc);expect(html).toContain('font-family:Verdana,sans-serif;color:#123456;background:#abcdef');expect(html).toContain('align="right"');expect(html).toContain('padding:30px');expect(html).not.toContain('28px Georgia');expect(html).toContain('color:#654321;text-decoration:none')
+})
+it('retains rich formatting when a whole text block is linked and avoids nested anchors',()=>{
+ const doc=createEmailDocument();doc.blocks=[{...newBlock('text'),text:'Hello world',richText:'<strong>Hello</strong> <a href="https://old.example">world</a>',url:'https://new.example'}];const html=renderEmail(doc);expect(html).toContain('<a href="https://new.example" style="color:#18765b"><strong>Hello</strong> world</a>');expect(html).not.toContain('old.example')
+})
+
+it('blocks footer-only emails and incomplete buttons or social links before sending',()=>{
+ const doc=createEmailDocument();doc.blocks=[newBlock('footer')];expect(emailIssues(doc)).toContain('Add at least one content block before sending.');doc.blocks=[{...newBlock('text'),richText:'<p>&nbsp;<br></p>'},{...newBlock('social'),links:[]},newBlock('footer')];expect(emailIssues(doc)).toContain('Add at least one content block before sending.');doc.blocks=[{...newBlock('button'),text:'',url:'https://example.test'},newBlock('social'),newBlock('footer')];expect(emailIssues(doc)).toContain('Add a label to each button.');expect(emailIssues(doc)).toContain('Add a valid destination to each social link.');
+})

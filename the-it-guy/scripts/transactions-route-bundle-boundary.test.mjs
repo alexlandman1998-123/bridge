@@ -43,16 +43,17 @@ assert.match(routeLoader, /Promise\.all\(\[routePromise, tablePromise, apiPromis
 assert.match(routeLoader, /Promise\.all\(\[routePromise, tablePromise, dataPromise\]\)/)
 
 assert.match(app, /<Suspense fallback=\{<TransactionsRouteShell \/>\}>/)
-assert.match(app, /<BrowserRouter unstable_useTransitions=\{false\}>/)
+assert.match(app, /<BrowserRouter useTransitions=\{false\}>/)
 assert.match(routeShell, /Loading transactions/)
 assert.match(routeShell, />Transactions</)
 
 assert.match(sidebar, /role === 'agent' && item\.key === 'transactions'/)
-assert.match(sidebar, /organisationId: activeOrganisationId === 'all' \? '' : activeOrganisationId/)
-assert.match(sidebar, /onMouseEnter=\{preloadTransactions\}/)
-assert.match(sidebar, /onPointerDown=\{preloadTransactions\}/)
-assert.match(sidebar, /onTouchStart=\{preloadTransactions\}/)
-assert.match(sidebar, /onFocus=\{preloadTransactions\}/)
+assert.match(sidebar, /const organisationId = activeOrganisationId === 'all' \? '' : activeOrganisationId/)
+assert.match(sidebar, /preloadAgentTransactionsRoute\(\{[\s\S]*?organisationId,/)
+assert.match(sidebar, /onMouseEnter=\{preloadNavigationTarget\}/)
+assert.match(sidebar, /onPointerDown=\{preloadNavigationTarget\}/)
+assert.match(sidebar, /onTouchStart=\{preloadNavigationTarget\}/)
+assert.match(sidebar, /onFocus=\{preloadNavigationTarget\}/)
 
 assert.match(pipeline, /const LEAD_WORKSPACE_ROUTE_PATTERN =/)
 assert.match(pipeline, /if \(!LEAD_WORKSPACE_ROUTE_PATTERN\.test\(pathname\)\) return ''/)

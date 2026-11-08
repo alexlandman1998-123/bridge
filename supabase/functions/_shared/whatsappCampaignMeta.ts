@@ -7,7 +7,7 @@ export async function campaignMeta(connection: { meta_access_token: string; toke
   const response = await fetch(`https://graph.facebook.com/${version}/${path}`, { method: payload ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(payload ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.timeout(15000) })
   const body = await response.json()
   if (!response.ok || body.error) {
-    throw Object.assign(new Error(`Meta: ${body.error?.message || 'Request failed'}${body.error?.code ? ` (${body.error.code})` : ''}`), { definitive: response.status >= 400 && response.status < 500 })
+    throw Object.assign(new Error(`Meta: ${String(body.error?.message || 'Request failed').split(token).join('[redacted]').slice(0, 500)}${body.error?.code ? ` (${body.error.code})` : ''}`), { definitive: response.status >= 400 && response.status < 500 })
   }
   return body
 }

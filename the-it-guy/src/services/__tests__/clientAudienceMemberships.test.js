@@ -35,3 +35,15 @@ test('propagates lookup failures instead of reporting an empty membership list',
   supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('Unavailable') })
   await expect(getClientAudienceMemberships({ organisationId, marketingContact, savedAudiences: [audience('rules', { rules: [] })] })).rejects.toThrow('Unavailable')
 })
+
+test('does not advertise audience membership for an invalidated CRM address', async () => {
+  expect(await getClientAudienceMemberships({ organisationId, marketingContact: { ...marketingContact, is_valid_email: false }, savedAudiences: [audience('all', {})] })).toEqual([])
+  expect(supabase.rpc).not.toHaveBeenCalled()
+})
+
+test('canonical definitions use the shared matcher instead of treating an unknown filter as everyone', async () => {
+  supabase.rpc.mockResolvedValueOnce({ data: false, error: null })
+  const shared = audience('shared', { shared_audience_id: 'shared' }, { definition: { match: 'all', rules: [] } })
+  expect(await getClientAudienceMemberships({ organisationId, marketingContact, savedAudiences: [shared] })).toEqual([])
+  expect(supabase.rpc).toHaveBeenCalledWith('marketing_audience_has_email_contact', { p_org: organisationId, p_audience: 'shared', p_contact: marketingContact.id })
+})

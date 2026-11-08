@@ -542,3 +542,15 @@ const multipleContacts = createProperty24ListingPlan({ listing: baseListing, pub
 assert.equal(multipleContacts.canSubmit, true)
 assert.deepEqual(multipleContacts.payload.contactAgentIds, [77959, 77970])
 assert.deepEqual(multipleContacts.summary.contactAgentIds, [77959, 77970])
+
+for (const unitNumber of ['001', '010']) {
+ const plan=createProperty24ListingPlan({listing:{...baseListing,seller_canonical_facts_json:{property:{complexName:'Madison Place',unitNumber}}},publication:basePublication,media:imageWithBytes,catalogMapping:baseCatalogMapping,agentMapping:baseAgentMapping,options:{agencyId:31382,expiryDate:'2026-12-31'}})
+ assert.deepEqual(plan.payload.complexInfo,{complexName:'Madison Place',unitNumber})
+ assert.equal(plan.payload.listingNumber,undefined)
+}
+
+for (const noTransferDuty of [true, false]) {
+ const plan=createProperty24ListingPlan({listing:{...baseListing,seller_canonical_facts_json:{property:{no_transfer_duty:noTransferDuty}}},publication:basePublication,media:imageWithBytes,catalogMapping:baseCatalogMapping,agentMapping:baseAgentMapping,options:{agencyId:31382,expiryDate:'2026-12-31'}})
+ assert.equal(/No transfer duty\./.test(plan.payload.description),false)
+ assert.equal(plan.payload.noTransferCost,noTransferDuty)
+}

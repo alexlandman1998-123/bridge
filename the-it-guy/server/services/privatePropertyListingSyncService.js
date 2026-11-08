@@ -24,7 +24,7 @@ export function normalizePrivatePropertyPublicUrl(value = '') {
 
 function normalizeExternalStatus(value = '', fallback = 'submitted') {
   const status = normalizeStatusKey(value)
-  if (['submitted', 'active', 'inactive', 'failed', 'removed', 'paused', 'unknown'].includes(status)) return status
+  if (['submitted', 'active', 'under_offer', 'sold', 'inactive', 'failed', 'removed', 'paused', 'unknown'].includes(status)) return status
   return normalizeStatusKey(fallback) || 'submitted'
 }
 
@@ -39,9 +39,13 @@ export function resolvePrivatePropertyExternalStatus({
   const event = normalizeStatusKey(eventStatus)
 
   // A current status probe outranks historical activation/error events.
+  if (status === 'sold') return 'sold'
   if (['inactive', 'removed', 'archived', 'paused'].includes(status)) return status === 'archived' ? 'removed' : status
   if (['error', 'failed'].includes(status)) return 'failed'
+  if (['pending_offer', 'pendingoffer', 'under_offer', 'offer_accepted'].includes(status)) return 'under_offer'
   if (['active', 'for_sale', 'forsale', 'to_let', 'tolet', 'live', 'published'].includes(status)) return 'active'
+  if (type === 'sold' || event === 'sold') return 'sold'
+  if (['pending_offer', 'pendingoffer', 'under_offer', 'offer_accepted'].includes(type) || ['pending_offer', 'pendingoffer', 'under_offer', 'offer_accepted'].includes(event)) return 'under_offer'
   if (type.includes('error') || event.includes('error') || event.includes('failed')) return 'failed'
   if (['processing', 'pending', 'submitted', 'queued'].includes(status)) return 'submitted'
   if (['activated', 'active', 'for_sale', 'to_let', 'live', 'published'].includes(type) || ['active', 'for_sale', 'to_let'].includes(status) || event === 'active') return 'active'
@@ -54,9 +58,9 @@ export function resolvePrivatePropertyExternalStatus({
 
 export function resolveArch9PrivatePropertyStatus({ externalStatus = '', isOnPortal = false } = {}) {
   const status = normalizeStatusKey(externalStatus)
-  if (['removed', 'inactive'].includes(status)) return 'removed'
+  if (['removed', 'inactive', 'sold'].includes(status)) return 'removed'
   if (status === 'paused') return 'paused'
-  if (status === 'active' || isOnPortal) return 'published'
+  if (['active', 'under_offer'].includes(status) || isOnPortal) return 'published'
   return 'draft'
 }
 
@@ -171,7 +175,7 @@ export async function recordPrivatePropertyListingSync({
     fallback: externalStatus || 'submitted',
   })
   const syncExternalStatus = normalizeExternalStatus(privatePropertyStatus ? eventDerivedStatus : externalStatus, eventDerivedStatus)
-  const portalStatus = syncExternalStatus === 'active' || Boolean(isOnPortal && !['inactive', 'removed', 'paused', 'failed'].includes(syncExternalStatus))
+  const portalStatus = ['active', 'under_offer'].includes(syncExternalStatus) || Boolean(isOnPortal && !['inactive', 'removed', 'sold', 'paused', 'failed'].includes(syncExternalStatus))
   const arch9Status = resolveArch9PrivatePropertyStatus({ externalStatus: syncExternalStatus, isOnPortal: portalStatus })
 
   if (!privateListingId) throw new Error('listingId is required.')
@@ -194,7 +198,7 @@ export async function recordPrivatePropertyListingSync({
     continuation_key: normalizePrivatePropertyText(continuationKey) || null,
     ...(suburbId !== undefined ? { suburb_id: Number(suburbId) || null } : {}),
     ...(agentIds !== undefined ? { agent_ids: normalizeJsonArray(agentIds).map(normalizePrivatePropertyText).filter(Boolean) } : {}),
-    ...(syncExternalStatus === 'active' ? { last_successful_sync_at: now } : {}),
+    ...(['active', 'under_offer'].includes(syncExternalStatus) ? { last_successful_sync_at: now } : {}),
     ...(normalizePrivatePropertyText(submittedAt) ? { submitted_at: normalizePrivatePropertyText(submittedAt) } : {}),
     ...(normalizePrivatePropertyText(activatedAt) ? { activated_at: normalizePrivatePropertyText(activatedAt) } : {}),
     last_checked_at: now,

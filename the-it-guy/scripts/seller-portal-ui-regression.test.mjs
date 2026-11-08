@@ -92,7 +92,7 @@ assert.match(source, /Listing Progress[\s\S]*Sale Progress/, 'seller progress sh
 assert.match(source, /listingProgressModel=\{sellerListingProgressModel\}/, 'seller dashboard should retain the listing workflow after sale progress starts')
 const mobilePortal = source.slice(source.indexOf('function SellerMobilePortal('), source.indexOf('function SellerCompliancePackCard('))
 assert.match(mobilePortal, /<SellerProgressJourney/, 'mobile overview must render the shared desktop progress model')
-assert.match(source, /mode: isSellerPortalToken \? 'full' : 'core'/, 'seller reconciliation must refresh complete documents and appointments')
+assert.match(source, /mode: isSellerPortalToken \|\| !\['', 'overview', 'progress'\]\.includes\(String\(requestedSection \|\| ''\)\.toLowerCase\(\)\) \? 'full' : 'core'/, 'seller reconciliation must refresh complete documents and appointments')
 assert.match(source, /!isSellerPortalToken && \['', 'overview', 'progress'\]/, 'seller overview must hydrate beyond the initial core snapshot')
 assert.doesNotMatch(source, /label: 'Schedule Call'|>Schedule call</, 'appointment navigation must not promise unavailable call booking')
 const agentEmailResolver = source.slice(source.indexOf('  const sellerAgentEmail ='), source.indexOf('  const sellerAgentPhone ='))

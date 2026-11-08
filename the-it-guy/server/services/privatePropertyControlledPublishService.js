@@ -343,8 +343,8 @@ export async function runPrivatePropertyControlledPublishRehearsal({
       if (!receipt.accepted && isDefinitePortalRejection(error)) await updateRentalPublicationAttempt(client,attempt,{ state:'rejected',last_error:error.message })
       else await retainUncertainRentalPublication(client,attempt,error,receipt)
     }
-    report.status = attempt && (receipt.accepted || !isDefinitePortalRejection(error)) ? 'UNCERTAIN' : 'BLOCKED'
-    report.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:report.status === 'UNCERTAIN' ? 'uncertain' : 'rejected',receipt })
+    report.status = receipt.accepted || !isDefinitePortalRejection(error) ? 'UNCERTAIN' : 'BLOCKED'
+    if (attempt) report.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:report.status === 'UNCERTAIN' ? 'uncertain' : 'rejected',receipt })
     report.safety.listingPublished = false
     report.blockers = unique([...report.blockers, 'private_property_update_listing_failed'])
     report.apiResponse = {

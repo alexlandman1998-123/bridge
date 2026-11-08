@@ -2,6 +2,7 @@ import {
   dispatchLeadAgentEmails,
   handleLeadAgentEmailDispatcher,
   renderLeadAgentEnvelope,
+  leadAgentPlatformSender,
 } from "./leadAgentEmailDispatch.ts";
 const equal = (a: unknown, b: unknown) => {
   if (JSON.stringify(a) !== JSON.stringify(b)) {
@@ -249,9 +250,12 @@ Deno.test("client intro rendering has distinct buyer and seller copy and no agen
         select: () => q,
         eq: () => q,
         maybeSingle: async () => ({
-          data: table === "organisations" ? { name: "Intro Agency" } : null,
+          data: table === "organisations" ? { name: "Intro Agency" }
+            : table === "leads" ? { lead_domain: "agency", status: "New Lead", contact_id: "intro-contact", raw_enquiry_payload: {} }
+            : table === "contacts" ? { email: "client@real-agency.co.za" } : null,
           error: null,
         }),
+        insert: async () => ({ error: null }),
       };
       return q;
     },
@@ -275,6 +279,8 @@ Deno.test("client intro rendering has distinct buyer and seller copy and no agen
     equal(message.text.includes("Hi Taylor"), true);
     equal(message.replyTo, "jamie@agency.co.za");
     equal(message.subject.includes("selling"), enquiryKind === "seller");
+    equal(message.html.includes("/viewing-preferences/"), enquiryKind === "sale");
+    equal(message.text.includes("/viewing-preferences/"), enquiryKind === "sale");
   }
 });
 
@@ -304,4 +310,24 @@ Deno.test("invalid optional agent details cannot block or redirect a valid clien
   equal(message.to, "o'neill@agency.co.za");
   equal(Boolean(message.replyTo?.includes("invalid")), false);
   equal(message.html.includes("Our team will connect you"), true);
+});
+
+Deno.test("internal alerts cannot use Resend's onboarding sender and preserve configured production senders", () => {
+ equal(leadAgentPlatformSender("Arch9 <onboarding@resend.dev>"), "Arch9 <no-reply@arch9.co.za>");
+ equal(leadAgentPlatformSender(""), "Arch9 <no-reply@arch9.co.za>");
+ equal(leadAgentPlatformSender("Arch9 <notifications@arch9.co.za>"), "Arch9 <notifications@arch9.co.za>");
+});
+Deno.test("a repaired frozen request uses a new provider key and records safe rejection status", async () => {
+ const db=fixture([{...job,payload_json:{...job.payload_json,deliveryRevision:"madison-sender-20261108"},envelope_json:envelope}]);
+ let key="";
+ await dispatchLeadAgentEmails(db,{apiKey:"fixture",send:async(options)=>{key=options.idempotencyKey||"";return {ok:false,status:403,error:{message:"private provider data"}}}});
+ equal(key,"lead-agent-email:job-one:madison-sender-20261108");
+ equal(db.calls.at(-1).args.p_error,"provider_http_403");
+});
+Deno.test("website manager alerts link to the saved development lead without claiming agent delivery failed", async () => {
+ const db={...fixture(),from(){const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:null,error:null})};return q}};
+ const result=await renderLeadAgentEnvelope(db,{...job,kind:"manager",payload_json:{...job.payload_json,eventKind:"new_website_enquiry_principal",developerLeadId:"10000000-0000-4000-8000-000000000001"}},"https://app.arch9.co.za");
+ equal(result.subject.startsWith("New website enquiry:"),true);
+ equal(result.text.includes("/developer/leads/10000000-0000-4000-8000-000000000001"),true);
+ equal(result.text.includes("could not be delivered"),false);
 });

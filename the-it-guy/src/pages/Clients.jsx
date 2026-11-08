@@ -974,7 +974,7 @@ function Clients() {
     email: profile?.email,
     fullName: profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' '),
   }), [profile?.id, profile?.email, profile?.fullName, profile?.firstName, profile?.lastName])
-  const directoryWorkspace = useMemo(() => ({ id: workspace?.id }), [workspace?.id])
+  const directoryWorkspace = useMemo(() => ({ id: workspace?.id, organisationId: workspace?.organisationId || workspace?.organisation_id }), [workspace?.id, workspace?.organisationId, workspace?.organisation_id])
   const directoryMembership = useMemo(() => ({
     id: currentMembership?.id,
     role: currentMembership?.role,
@@ -986,7 +986,7 @@ function Clients() {
   if (!performanceBaselineRef.current) {
     performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'clients', route: '/clients' })
   }
-  const isAgentClientDirectory = role === 'agent'
+  const isAgentClientDirectory = role === 'agent' || role === 'developer'
   const isRentalClientsDirectory = isAgentClientDirectory && businessWorkspaceId === BUSINESS_WORKSPACES.rentals
   const isPrimaryAgentClientsRoute = isAgentClientDirectory && location.pathname === '/clients'
   const isAttorneyClientDirectory = role === 'attorney'
@@ -1145,10 +1145,17 @@ function Clients() {
     return () => window.cancelAnimationFrame(frameId)
   }, [activeOrganisationId, error, isPrimaryAgentClientsRoute, loading, profile?.id, rows.length])
 
-  const developmentOptions = useMemo(() => getDevelopmentOptionsFromRows(rows), [rows])
+  const developmentOptions = useMemo(() => getDevelopmentOptionsFromRows(role === 'developer' ? rows.flatMap(client => client.transactions || []) : rows), [role, rows])
   const sourceRows = useMemo(
-    () => (isAgentClientDirectory ? rows : filterRowsByDevelopment(rows, selectedDevelopmentId)),
-    [isAgentClientDirectory, rows, selectedDevelopmentId],
+    () => {
+      if (!isAgentClientDirectory) return filterRowsByDevelopment(rows, selectedDevelopmentId)
+      if (role !== 'developer' || selectedDevelopmentId === 'all') return rows
+      return rows.filter(client => {
+        const ids = new Set([...(client.linkedDevelopmentIds || []), ...(client.transactions || []).map(getRowDevelopmentId)].filter(Boolean))
+        return selectedDevelopmentId === NO_DEVELOPMENT_ID ? !ids.size : ids.has(selectedDevelopmentId)
+      })
+    },
+    [isAgentClientDirectory, role, rows, selectedDevelopmentId],
   )
   const matterOptions = useMemo(
     () => (isAttorneyClientDirectory ? getMatterOptionsFromRows(sourceRows) : []),
@@ -1549,7 +1556,7 @@ function Clients() {
             value={viewMode}
             onChange={handleViewModeChange}
           />
-          {!isAgentClientDirectory ? (
+          {!isAgentClientDirectory || role === 'developer' ? (
             <div className={isAttorneyClientDirectory ? 'xl:col-span-2' : 'xl:col-span-2'}>
               <Field as="select" value={selectedDevelopmentId} onChange={handleDevelopmentFilterChange}>
                 {developmentOptions.map((option) => (

@@ -77,7 +77,8 @@ export function prepareMvpTransactionCreationCommand({
     throw error
   }
 
-  const sourceIdentity = scopedOfferId ? `offer_${scopedOfferId}` : `lead_${scopedLeadId}`
+  const sourceIdentity = scopedOfferId ? `offer_${scopedOfferId}` : creationMode === 'signed_otp_capture'
+    ? `lead_${scopedLeadId}_listing_${scopedListingId}` : `lead_${scopedLeadId}`
   const stableIdempotencyKey = normalize(idempotencyKey) || `mvp_tx_${normalizeKey(scopedOrganisationId)}_${normalizeKey(sourceIdentity)}`
 
   return Object.freeze({

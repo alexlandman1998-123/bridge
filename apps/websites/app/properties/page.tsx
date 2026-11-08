@@ -11,7 +11,7 @@ import { hasEditorialPropertyExperience, templateClassName } from '@/lib/site-te
 export const dynamic = 'force-dynamic'
 type Query = { q?: string; type?: string; propertyType?: string; bedrooms?: string; minPrice?: string; maxPrice?: string; area?: string; priceRange?: string; availability?: string; sort?: string }
 type Props = { searchParams: Promise<Query> }
-const loadSite = cache(async () => resolveSite((await headers()).get('host')))
+const loadSite = cache(async () => resolveSite((await headers()).get('host'), false))
 
 export async function generateMetadata({ searchParams }: Props) {
   const [site, query] = await Promise.all([loadSite(), searchParams])

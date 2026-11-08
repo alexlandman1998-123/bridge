@@ -14,3 +14,8 @@ test('requires an accounting reference and recorded billing party', () => {
   assert.throws(() => buildTransactionFeeInvoiceDraftModel({ billingPartyType: 'agent' }), /invoice reference/)
   assert.throws(() => buildTransactionFeeInvoiceDraftModel({ invoiceReference: 'INV-100', billingPartyType: 'buyer' }), /billing party/)
 })
+
+test('marks controlled test invoice copies as not payable', () => {
+  assert.equal(buildTransactionFeeInvoiceDraftModel({ invoiceReference: 'TEST-NOT-PAYABLE', billingPartyType: 'agent' }).testInvoice, true)
+  assert.equal(buildTransactionFeeInvoiceDraftModel({ invoiceReference: 'INV-100', billingPartyType: 'agent' }).testInvoice, false)
+})

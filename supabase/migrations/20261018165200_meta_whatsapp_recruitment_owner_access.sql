@@ -1,4 +1,7 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
 
 -- Recruitment's existing RLS and action RPCs include active agency Owners.
 -- Align the newer Meta routing, audiences and automation checks with that rule.
@@ -18,6 +21,8 @@ begin
     end if;
     execute regexp_replace(definition, role_pattern, '(''owner'',''principal'',''admin'',''super_admin'')', 'g');
   end loop;
-end; $$;
+end; $$
+;
 
-commit;
+commit
+;

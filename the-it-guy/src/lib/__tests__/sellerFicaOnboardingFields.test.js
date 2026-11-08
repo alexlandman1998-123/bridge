@@ -24,7 +24,6 @@ test('saved database field names reach FICA validation and generation without re
   assert.equal(cleared.seller.company.name, '')
   assert.deepEqual(cleared.seller.company.directors, [])
   assert.ok(getSellerFicaOnboardingMissing({ ...saved, company_beneficial_owners: [] }).includes('Beneficial owners / controllers: add at least one person'))
-
   const trust = { ...saved, owner_structure_type: 'trust', trust_name: 'Ana Trust', trust_trustees: [owner], authorised_trustee_capacity: 'Trustee', trust_founders: [owner], trust_beneficiary_class: 'Descendants' }
   assert.deepEqual(getSellerFicaOnboardingMissing(trust), [])
   const trustFacts = buildCanonicalSellerOnboardingPayload(trust).canonicalSellerFacts

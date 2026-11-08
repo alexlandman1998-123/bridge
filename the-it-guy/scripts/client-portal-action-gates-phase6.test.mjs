@@ -70,5 +70,5 @@ test('activity shortcuts cannot navigate into profile-disabled portal sections',
 
   assert.match(block, /normalizePortalWorkspaceSection\(route\)/)
   assert.match(block, /if \(!ensurePortalSectionEnabled\(sectionKey\)\) return/)
-  assert.match(block, /navigate\(getPortalWorkspacePath\(token, workspaceNavigationScope, route\)\)/)
+  assert.match(block, /navigate\(getPortalWorkspacePath\(token, workspaceNavigationScope, sectionKey\)\)/)
 })

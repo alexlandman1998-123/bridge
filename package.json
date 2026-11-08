@@ -1,8 +1,8 @@
 {
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "npm --prefix the-it-guy run dev",
+    "build": "npm --prefix the-it-guy run build",
+    "preview": "npm --prefix the-it-guy run preview",
     "check:quick": "npm --prefix the-it-guy run test",
     "check:app": "npm --prefix the-it-guy run lint && npm --prefix the-it-guy run test && npm --prefix the-it-guy run build",
     "check:website": "npm --prefix apps/websites run typecheck && npm --prefix apps/websites run test && npm --prefix apps/websites run build",

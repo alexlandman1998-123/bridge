@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { runRecoverableDocumentUpload } from '../documentUploadRecovery.js'
 
-function fixture({ stallUpload = false, stallSave = false, stallFollowUp = false } = {}) {
+function fixture({ stallUpload = false, stallSave = false, stallFollowUp = false, storedOnUpload = true } = {}) {
   const events = [], paths = []
   const file = new File(['durable bytes'], 'mandate.pdf', { type: 'application/pdf' })
   const scope = ['progress-recovery', crypto.randomUUID()]
@@ -12,7 +12,7 @@ function fixture({ stallUpload = false, stallSave = false, stallFollowUp = false
     timeouts: { uploading: 5, saving: 5, followUp: 10 },
     run: async attempt => {
       const path = attempt.path('listing/mandate.pdf'); paths.push(path)
-      await attempt.upload(async () => { state.uploads++; state.stored = true; if (stallUpload) await new Promise(() => {}); return 'documents' })
+      await attempt.upload(async () => { state.uploads++; state.stored = storedOnUpload; if (stallUpload) await new Promise(() => {}); return 'documents' })
       const saved = await attempt.persist({ save: async () => { state.saves++; state.row = { id: crypto.randomUUID(), storage_path: path }; if (stallSave) await new Promise(() => {}); return { data: state.row } }, read: async () => ({ data: state.row }) })
       if (stallFollowUp) await new Promise(() => {})
       return { ...saved.data, saved: true }
@@ -38,11 +38,24 @@ test('a stalled save reply is bounded and recovers the committed record', async 
   assert.equal(f.state.saves, 1)
 })
 
-test('a stalled transfer does not report Uploaded; retry reconciles the same object before saving', async () => {
+test('a lost transfer reply recovers verified bytes and reports Uploaded only after durable save', async () => {
   const f = fixture({ stallUpload: true })
+  assert.equal((await f.action()).saved, true)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+  const completed = f.events.find(event => event.stage === 'complete')
+  assert.equal(completed.document.id, f.state.row.id)
+  assert.equal((await f.action()).id, f.state.row.id)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+})
+
+test('an unconfirmed transfer stays incomplete until the exact object can be verified', async () => {
+  const f = fixture({ stallUpload: true, storedOnUpload: false })
   await assert.rejects(f.action(), { code: 'document_save_unconfirmed' })
   assert.equal(f.events.some(event => event.stage === 'complete'), false)
   assert.equal(f.state.saves, 0)
+  f.state.stored = true
   assert.equal((await f.action()).saved, true)
   assert.equal(f.state.uploads, 1)
   assert.equal(f.state.saves, 1)

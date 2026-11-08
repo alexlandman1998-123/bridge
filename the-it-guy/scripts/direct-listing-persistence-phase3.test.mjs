@@ -2,13 +2,27 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { getSalesListingRequiredIssues } from '../src/services/listings/listingFieldRequirements.js'
+import { resolvePublicListingDescription } from '../src/services/listings/listingMarketingDraftSafety.js'
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
 import { verifyListingPropertyPersistenceCopies, verifyListingPropertySave } from '../src/lib/listingPropertySaveVerification.js'
 import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../src/lib/listingMarketingPropertyFactRecovery.js'
+import { buildCanonicalSellerOnboardingPayload } from '../src/services/documents/sellerOnboardingFactTransformer.js'
 
 const agentListingsSource = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const agentListingDetailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const privateListingServiceSource = readFileSync(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+
+test('street address visibility must survive both the saved form and reopened listing', () => {
+  for (const visibility of ['show_exact_address', 'hide_street_address', 'hide_street_number', 'complex_only']) {
+    const copies = { form: { exactAddressVisibility: visibility }, listing: { propertyDetails: { exactAddressVisibility: visibility } }, onboarding: { form_data: { exactAddressVisibility: visibility } } }
+    assert.equal(verifyListingPropertyPersistenceCopies(copies).ready, true)
+    const stale = visibility === 'show_exact_address' ? 'hide_street_address' : 'show_exact_address'
+    const lostForm = verifyListingPropertyPersistenceCopies({ ...copies, onboarding: { form_data: { exactAddressVisibility: stale } } })
+    assert.equal(lostForm.ready, false)
+    assert.equal(lostForm.mismatches[0].field, 'exactAddressVisibility')
+    assert.equal(verifyListingPropertyPersistenceCopies({ ...copies, listing: { propertyDetails: { exactAddressVisibility: stale } } }).ready, false)
+  }
+})
 
 function test(name, fn) {
   try {
@@ -19,6 +33,34 @@ function test(name, fn) {
     throw error
   }
 }
+
+test('complex / scheme survives the listing form, canonical save and reopened property check', () => {
+  for (const propertyStructureType of ['sectional_title', 'share_block', 'full_title']) {
+    for (const schemeName of [undefined, 'Previous scheme name']) {
+      const form = { propertyStructureType, complexName: 'Example Gardens', schemeName, unitNumber: '7', sectionNumber: '7' }
+      const savedForm = buildDirectListingIntakePayload(form).sellerOnboardingFormData
+      const facts = buildCanonicalSellerOnboardingPayload(savedForm).canonicalSellerFacts
+      assert.equal(facts.property.scheme.name, form.complexName)
+      assert.equal(facts.property.scheme_name, form.complexName)
+      // getPrivateListing projects the canonical scheme name into complexName.
+      const reopened = { complexName: facts.property.scheme.name, sellerCanonicalFacts: facts }
+      const verification = verifyListingPropertyPersistenceCopies({
+        form: { complexName: form.complexName }, listing: reopened,
+        onboarding: { form_data: savedForm }, publication: {},
+      })
+      assert.equal(verification.ready, true, JSON.stringify(verification.mismatches))
+    }
+  }
+})
+
+test('a genuinely missing complex name still blocks progression even if the draft retains it', () => {
+  const verification = verifyListingPropertyPersistenceCopies({
+    form: { complexName: 'Example Gardens' }, listing: { complexName: '', sellerCanonicalFacts: {} },
+    onboarding: { form_data: { complexName: 'Example Gardens' } }, publication: {},
+  })
+  assert.equal(verification.ready, false)
+  assert.deepEqual(verification.mismatches.map(row => row.field), ['complexName'])
+})
 
 test('Quick Add persists direct listing form data through the seller onboarding form-data helper', () => {
   assert.match(agentListingsSource, /persistSellerProfileOnboardingFormData/)
@@ -77,7 +119,9 @@ test('listing description is persisted and rehydrated through shared aliases', (
   assert.match(agentListingsSource, /const description = normalizeText\(form\.listingDescription\)/)
   assert.match(agentListingsSource, /const saved = await performUpdateExistingListing\(\{\s*\n\s*navigateAfterSave: false,\s*\n\s*reloadAfterSave: false,\s*\n\s*emitListingsUpdated: false,/)
   assert.match(agentListingsSource, /if \(!saved\) \{\s*\n\s*setIsListingSaving\(false\)\s*\n\s*return\s*\n\s*\}/)
-  assert.match(agentListingDetailSource, /onboardingFormData\.listingDescription/)
+  assert.match(agentListingDetailSource, /resolvePublicListingDescription\(listingRecord, onboardingFormData\)/)
+  assert.equal(resolvePublicListingDescription({}, { listingDescription: 'Saved description' }), 'Saved description')
+  assert.equal(resolvePublicListingDescription({}, { propertyDescription: 'Legacy description' }), 'Legacy description')
   assert.match(agentListingDetailSource, /propertyDescription: String\(draft\.description/)
   assert.match(agentListingDetailSource, /listingPreviewDescription: String\(draft\.listingPreviewDescription \?\? ''\)/)
   assert.match(agentListingDetailSource, /listingPreviewDescription: resolveMarketingDraftText\([\s\S]*?'listingPreviewDescription'/)

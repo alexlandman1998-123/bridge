@@ -1,5 +1,3 @@
-import { isDocumentRequirementRequired } from '../documents/documentRequirementIdentity.js'
-
 const ACTION_STATUSES = new Set(['required', 'requested', 'rejected', 'missing', 'outstanding', 'action_required', 'action-required'])
 const REVIEW_STATUSES = new Set(['uploaded', 'under_review', 'under-review', 'received', 'reviewed', 'pending_review', 'pending-review'])
 const APPROVED_STATUSES = new Set(['approved', 'completed', 'complete', 'verified', 'signed', 'available'])
@@ -41,12 +39,13 @@ export function resolveBuyerDocumentCategory(item = {}) {
 export function resolveBuyerDocumentStatus(item = {}) {
   const rawStatus = normalizeKey(item.status || item.requiredDocumentStatus || item.required_document_status)
   if (item.waitingForTeam) return 'upcoming'
-  if (!isDocumentRequirementRequired(item)) {
-    if (REVIEW_STATUSES.has(rawStatus)) return 'review'
+  const optional = item.required === false || item.isRequired === false ||
+    ['optional', 'recommended'].includes(normalizeKey(item.requirementLevel || item.requirement_level))
+  if (optional) {
     if (item.satisfied || APPROVED_STATUSES.has(rawStatus)) return 'approved'
+    if (item.reviewRequired || REVIEW_STATUSES.has(rawStatus) || item.linkedDocument || item.hasUploadedDocument || item.uploaded) return 'review'
     return 'optional'
   }
-
   if (item.actionRequired || ACTION_STATUSES.has(rawStatus)) return 'action'
   if (item.reviewRequired || REVIEW_STATUSES.has(rawStatus)) return 'review'
   if (item.satisfied || APPROVED_STATUSES.has(rawStatus)) return 'approved'
@@ -56,7 +55,7 @@ export function resolveBuyerDocumentStatus(item = {}) {
 }
 
 function statusLabel(status, item = {}) {
-  if (status === 'optional') return item.uploadSpec ? 'Optional upload' : 'Optional document'
+  if (status === 'optional') return 'Optional upload'
   if (status === 'action') return normalizeKey(item.status) === 'rejected' ? 'Rejected' : 'Action required'
   if (status === 'review') return 'In review'
   if (status === 'approved') return 'Approved'

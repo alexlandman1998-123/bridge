@@ -1,4 +1,4 @@
-import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, isStagingLikeEnvironment, validateProductionConfiguration } from '../config/productionValidation'
+import { getRequiredProductionEnvVars, getUnsafeProductionFlags, hasConfiguredBrowserSupabaseKey, isProductionEnvironment, isStagingLikeEnvironment, validateProductionConfiguration } from '../config/productionValidation'
 import {
   resolveGuidedBondApplicationChangeRequestsFlag,
   resolveBondApplicationBankAdaptersFlag,
@@ -86,11 +86,8 @@ function buildMissingMessage(vars = []) {
 export function getRuntimeEnvValidation() {
   const required = isProductionEnvironment() ? getRequiredProductionEnvVars() : ['VITE_SUPABASE_URL']
   const missing = required.filter((name) => !normalize(import.meta.env[name]))
-  const hasAnonKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_ANON_KEY))
-  const hasLegacyKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_KEY))
-
-  if (!hasAnonKey && !hasLegacyKey) {
-    missing.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
+  if (!hasConfiguredBrowserSupabaseKey()) {
+    missing.push('VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
   }
 
   return {
@@ -154,8 +151,10 @@ export function getFeatureFlags() {
     bondApplicationBankAdaptersV1: resolveBondApplicationBankAdaptersFlag({ env: import.meta.env }).enabled,
     bondApplicationLiveDeliveryV1: resolveBondApplicationLiveDeliveryFlag({ env: import.meta.env }).enabled,
     bondApplicationExternalStatusSyncV1: resolveBondApplicationExternalStatusSyncFlag({ env: import.meta.env }).enabled,
-    enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, false),
-    enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
+    // Local phone previews must survive a dev-server restart without extra
+    // shell variables. Explicit settings still override the development default.
+    enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, import.meta.env.DEV === true),
+    enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, import.meta.env.DEV === true),
     allowDesktopFallbackOnMobile: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),
     disableRoleRestrictions: unsafeFlags.disableRoleRestrictions,
   }

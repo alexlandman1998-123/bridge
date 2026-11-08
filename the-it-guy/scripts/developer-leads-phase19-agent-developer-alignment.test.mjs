@@ -200,7 +200,8 @@ assert.match(developerLeadsPageSource, /convertDeveloperLeadToTransactionAndSend
 assert.match(developerLeadServiceSource, /createAgencyIntroducedDeveloperLead/)
 assert.match(developerLeadServiceSource, /visibility_state: 'limited'/)
 assert.match(developerLeadServiceSource, /handover_source: 'agency'/)
-assert.match(developerLeadConversionSource, /createTransactionFromWizard/)
+assert.doesNotMatch(developerLeadConversionSource, /createTransactionFromWizard/)
+assert.match(developerLeadConversionSource, /Complete buyer onboarding and the signed OTP/)
 assert.match(developerLeadConversionSource, /type: 'client_onboarding'/)
 
 assert.match(docsSource, /Developer Leads Phase 19 Agent Developer Alignment/)

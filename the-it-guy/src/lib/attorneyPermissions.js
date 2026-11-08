@@ -650,7 +650,8 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
       p_firm_id: normalizeText(firmId),
       p_capability: 'view',
     })
-    return !teamAccess.error && teamAccess.data === true
+    if (teamAccess.error) throw teamAccess.error
+    return teamAccess.data === true
   }
 
   const assignmentsQuery = await client
@@ -688,7 +689,8 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
       p_firm_id: assignmentFirmId,
       p_capability: 'view',
     })
-    return !teamAccess.error && teamAccess.data === true
+    if (teamAccess.error) throw teamAccess.error
+    return teamAccess.data === true
   }))
   const visibleAssignments = scopedAssignments.filter((_, index) => visibilityChecks[index])
   if (!visibleAssignments.length) return false

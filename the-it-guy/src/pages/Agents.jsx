@@ -1458,7 +1458,7 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
         title: `Unit ${row?.unit?.unit_number || '-'}`,
         developmentName: row?.development?.name || 'Development',
         suburb: row?.transaction?.suburb || row?.development?.location || 'Area pending',
-        price: Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0),
+        price: Number(row?.transaction?.purchase_price ?? row?.transaction?.sales_price ?? row?.unit?.price ?? 0),
         status: normalizeDealStatus(row) === 'completed' ? 'Sold' : 'Active',
         mandateStatus: 'N/A',
         sellerOnboardingStatus: 'N/A',
@@ -1521,12 +1521,12 @@ function computeAgentWorkspaceData({ transactions, transactionRolePlayers = [], 
     const cancelledDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'cancelled')
 
     const totalSalesValue = completedDeals.reduce((sum, row) => {
-      const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0)
+      const value = Number(row?.transaction?.purchase_price ?? row?.transaction?.sales_price ?? row?.unit?.price ?? 0)
       return sum + (Number.isFinite(value) ? value : 0)
     }, 0)
 
     const activeDealValue = activeDeals.reduce((sum, row) => {
-      const value = Number(row?.transaction?.sales_price || row?.transaction?.purchase_price || row?.unit?.price || 0)
+      const value = Number(row?.transaction?.purchase_price ?? row?.transaction?.sales_price ?? row?.unit?.price ?? 0)
       return sum + (Number.isFinite(value) ? value : 0)
     }, 0)
 
@@ -4927,7 +4927,7 @@ export function AgentWorkspace({ agent, canManageSettings = false, commissionStr
                   {group.rows.length ? group.rows.map((row) => (
                     <div key={row.transaction.id} className="min-w-0 rounded-xl border border-[#e4ebf5] bg-white px-3 py-2">
                       <p className="truncate text-sm font-semibold text-[#1f3448]">{row.buyer?.name || row.seller?.name || 'Client pending'}</p>
-                      <p className="mt-1 truncate text-xs text-[#60758d]">{row.development?.name || 'Private'} • {row.unit?.unit_number || '-'} • {formatCurrency(row.transaction?.sales_price || row.transaction?.purchase_price)}</p>
+                      <p className="mt-1 truncate text-xs text-[#60758d]">{row.development?.name || 'Private'} • {row.unit?.unit_number || '-'} • {formatCurrency(row.transaction?.purchase_price ?? row.transaction?.sales_price)}</p>
                     </div>
                   )) : <p className="text-sm text-[#60758d]">No deals in this segment.</p>}
                 </div>
@@ -6478,7 +6478,7 @@ export function AgentsPage() {
         transactionId: transaction.id,
         buyerId: transaction.buyer_id || null,
         financeType: transaction.finance_type || 'cash',
-        purchasePrice: transaction.sales_price || transaction.purchase_price || 0,
+        purchasePrice: transaction.purchase_price ?? transaction.sales_price ?? 0,
         purchaserType: transaction.purchaser_type || 'individual',
         financeManagedBy: transaction.finance_managed_by || 'bond_originator',
         mainStage: row?.mainStage || transaction.current_main_stage || 'SALES',

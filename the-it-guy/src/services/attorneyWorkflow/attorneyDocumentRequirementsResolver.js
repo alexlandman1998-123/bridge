@@ -508,9 +508,9 @@ function addBondRequirements(requirements, signingRequirements, facts) {
   }
 
   requirements.push(
-    requirement({ ...bondBase, id: 'bond_instruction', label: 'Bond Instruction', reason: 'Bond/hybrid transaction requires bond instruction handling.' }),
-    requirement({ ...bondBase, id: 'bond_grant_letter', label: 'Grant Letter', reason: 'Bond grant letter confirms approved bond terms.' }),
-    requirement({ ...bondBase, id: 'bank_requirements', label: 'Bank Requirements', reason: 'Bank requirements must be confirmed for bond registration.' }),
+    requirement({ ...bondBase, id: 'bond_instruction', label: 'Bond Instruction', requiredFrom: 'bond_originator', clientUploadAllowed: false, reason: 'Bond/hybrid transaction requires bond instruction handling.' }),
+    requirement({ ...bondBase, id: 'bond_grant_letter', label: 'Grant Letter', requiredFrom: 'bond_originator', reason: 'Bond grant letter confirms approved bond terms.' }),
+    requirement({ ...bondBase, id: 'bank_requirements', label: 'Bank Requirements', requiredFrom: 'bond_originator', clientUploadAllowed: false, reason: 'Bank requirements must be confirmed for bond registration.' }),
     requirement({ ...bondBase, id: 'buyer_bank_fica', label: 'Buyer FICA for Bank', visibilityDefault: 'client_visible', reason: 'Bank may require buyer FICA documents.' }),
     requirement({ ...bondBase, id: 'bond_documents', label: 'Bond Documents', requiredFrom: 'attorney', clientUploadAllowed: false, reason: 'Bond documents must be prepared and signed.' }),
     requirement({ ...bondBase, id: 'bank_signing_documents', label: 'Bank Signing Documents', requiredFrom: 'attorney', clientUploadAllowed: false, reason: 'Bank signing pack is required for bond registration.' }),

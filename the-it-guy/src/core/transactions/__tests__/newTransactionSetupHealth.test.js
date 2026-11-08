@@ -106,6 +106,16 @@ assert.equal(recoveredAudit?.auditEventId, 'event-1')
 assert.equal(recoveredAudit?.auditEventCreatedAt, '2026-08-24T12:00:00.000Z')
 assert.equal(recoveredAudit?.auditEventLogged, true)
 
+const normalizedAudit = extractNewTransactionSetupHealthFromEvents([{
+  id: 'legacy-normalized-audit', event_type: 'TransactionUpdated',
+  event_data: { setupHealth: agentListingNeedsOtpUpload },
+}])
+assert.equal(normalizedAudit?.auditEventId, 'legacy-normalized-audit')
+assert.equal(normalizedAudit?.status, recoveredAudit.status)
+assert.equal(extractNewTransactionSetupHealthFromEvents([{
+  event_type: 'TransactionUpdated', event_data: { setupHealth: { version: 'unrelated' } },
+}]), null)
+
 console.log('new transaction setup health tests passed')
 
 assert.deepEqual(

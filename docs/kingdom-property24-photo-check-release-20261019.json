@@ -1,0 +1,66 @@
+{
+  "baseCommit": "7b2bdd2350253792104e7ec85324a0adf19d7c3a",
+  "rollbackDeployment": "dpl_7rciQS496Te9Mobg6MPGYycXkkHS",
+  "product": "Primary Arch9 workspace",
+  "domain": "app.arch9.co.za",
+  "projectId": "prj_rbfXykMU6mU1eECbc0lJS9sPspmp",
+  "databaseMigrations": [],
+  "files": [
+    "the-it-guy/server/property24/publishService.js",
+    "the-it-guy/scripts/property24-real-listing-preview.test.mjs",
+    "the-it-guy/README.md"
+  ],
+  "deployed": true,
+  "sha256": {
+    "the-it-guy/server/property24/publishService.js": "e6afaeffe6c04fe17b19b3edfa333bfb40f5fd5492e37fa56cb4f3ee2d643d4c",
+    "the-it-guy/scripts/property24-real-listing-preview.test.mjs": "c01e0839f72a9223191bb69f65f0cc4594eea289f609257defaea8909fc51660",
+    "the-it-guy/README.md": "9b5f17e06406edc126fbf31aa9d7f4f70429a966c722c11c05258cbc5ca4740f"
+  },
+  "focusedChecks": [
+    "test:property24-preview-listing",
+    "test:rental-property24-api-preview",
+    "test:rental-property24-api-publish",
+    "test:property24-publish-listing",
+    "test:property24-api-layer",
+    "focused ESLint",
+    "RentalPortalManagementPanel: 3 passing tests",
+    "rentalListingReadinessPresentation: 7 passing tests",
+    "node --check publishService.js"
+  ],
+  "realRentalPreparation": "20 photos loaded, 0 failed; canSubmit=true; read only",
+  "localBuild": {
+    "status": "INCOMPLETE",
+    "reason": "Stopped after more than 8 minutes of disk/memory pressure with only 2.5 GiB free; 4976 modules transformed and chunk rendering started.",
+    "productionBuildRequired": true
+  },
+  "productionApprovalRequired": true,
+  "portalPublicationApprovalRequired": true,
+  "releaseCommit": "8e27891945996b77a6773ef9193e8c53d88a004a",
+  "approval": "Deploy fix and submit the existing rental",
+  "databaseRecoveryStatus": "RECOVERY_LOCKED",
+  "productionVerified": true,
+  "deploymentId": "dpl_FjNL3ojE1ABuhP9Ld2fwenJJG8Fu",
+  "deploymentUrl": "https://bridge-24o8unucg-alexs-projects-f5496a21.vercel.app",
+  "deploymentState": "READY",
+  "remoteBuild": "PASSED",
+  "verifiedAt": "2026-10-19T07:42:29.974146+00:00",
+  "publication": {
+    "listingId": "458f5847-f60d-46d8-827e-858cf2be72c3",
+    "listingNumber": 117731148,
+    "state": "SUBMITTED",
+    "isOnPortal": true,
+    "images": {
+      "requested": 20,
+      "loaded": 20,
+      "failed": 0,
+      "convertedToJpeg": 0,
+      "skipped": 0,
+      "totalImageBytes": 5212345
+    },
+    "attemptId": "8493ddbb-125f-46f1-b055-cecfe0d18f1f",
+    "confirmedAt": "2026-10-19T07:44:03.741Z"
+  },
+  "privatePropertyChanged": false,
+  "runtimeErrorScan": "No error/fatal logs found for this deployment during post-promotion scan",
+  "completedAt": "2026-10-19T07:44:35.416667+00:00"
+}

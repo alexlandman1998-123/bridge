@@ -301,6 +301,7 @@ export default function MobileModulePage({ moduleKey }) {
       (searchParams.get('scope') !== 'assigned' || isLeadAssignedToActor(row, resolveMobileLeadActor(workspace))))
   }, [state.leads, searchParams, workspace])
 
+
   function openTransaction(item) {
     navigate(item.to || '/mobile/transaction/unknown', { state: { mobileWorkspaceItem: item } })
   }

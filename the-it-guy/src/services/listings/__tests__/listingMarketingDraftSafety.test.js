@@ -33,3 +33,13 @@ test('local and failed media are blocked while durable remote media are accepted
   assert.equal(hasBlockingListingMediaUploads(draft), true)
   assert.equal(hasBlockingListingMediaUploads({ galleryImages: [{ url: 'https://cdn.example.com/ready.jpg' }] }), false)
 })
+
+
+test('uses public advert copy instead of internal developer metadata', async () => {
+ const { resolvePublicListingDescription } = await import('../listingMarketingDraftSafety.js')
+ const notes = 'Developer listing: development unit\nDevelopment ID: abc\nBRIDGE_QUICK_ADD_METADATA: {"origin":"development_unit"}'
+ assert.equal(resolvePublicListingDescription({description: notes, publicationData:{description:'A bright Madison Place home.'}}), 'A bright Madison Place home.')
+ assert.equal(resolvePublicListingDescription({description:notes}), '')
+ assert.equal(resolvePublicListingDescription({description:'Original public advert.'}), 'Original public advert.')
+ assert.equal(resolvePublicListingDescription(null), '')
+})

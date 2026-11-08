@@ -15,6 +15,14 @@ const rollup = { transactionId: 'tx', usedLegacyFallback: false, workflows: {
   finance_bond: workflow(step('applications_submitted', 'complete'), step('feedback_received', 'pending', 'bank'), step('quote_approved', 'pending', 'buyer')),
 }, transactionJourneySnapshot: { legalJourney: legal } }
 
+test('an uploaded OTP awaiting review directs the existing deal to Documents', () => {
+  const stale = { ...rollup, workflows: { ...rollup.workflows, sales_otp: workflow(step('buyer_onboarding_complete', 'pending', 'buyer')) } }
+  const rows = buildOverviewWorkflowProgress({ transactionId: 'tx', rollup: stale, onboardingStatus: 'signed_otp_uploaded_for_review' })
+  assert.equal(selectImmediateWorkflow(rows).detail, 'Review uploaded signed OTP')
+  assert.equal(selectImmediateWorkflow(rows).target, 'documents')
+  assert.equal(rows[0].status, 'waiting')
+})
+
 test('shows current subprocesses across all applicable lanes alongside bank feedback', () => {
   const rows = buildOverviewWorkflowProgress({ transactionId: 'tx', rollup })
   assert.deepEqual(rows.map(row => row.label), ['Sales / OTP', 'Finance', 'Transfer', 'Bond registration', 'Bond cancellation'])
@@ -68,4 +76,12 @@ test('immediate progress follows the saved active workflow and advances when it 
   assert.equal(selectImmediateWorkflow(rows).key, 'transfer')
   assert.equal(selectImmediateWorkflow([]).status, 'unknown')
   assert.equal(selectImmediateWorkflow(rows.map(row => ({ ...row, status: 'complete' }))).status, 'complete')
+})
+
+test('verified canonical closeout wins over a stale compatibility task without manufacturing completion',()=>{
+ const transaction={id:'tx',lifecycle_state:'completed',registered_at:'2026-11-04',completed_at:'2026-11-04'}
+ assert.equal(selectImmediateWorkflow(buildOverviewWorkflowProgress({transactionId:'tx',rollup,transaction})).detail,'Transaction completed')
+ for(const changed of [{lifecycle_state:'registered'},{lifecycle_state:'cancelled'},{completed_at:null},{id:'other'}]){
+  assert.notEqual(selectImmediateWorkflow(buildOverviewWorkflowProgress({transactionId:'tx',rollup,transaction:{...transaction,...changed}})).detail,'Transaction completed')
+ }
 })

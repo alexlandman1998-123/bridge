@@ -3,6 +3,7 @@ import {
   maskDeveloperLeadForDeveloper,
   normalizeDeveloperLeadStatus,
 } from '../core/developerLeads/developerLeadContract.js'
+import { enrichDevelopmentLeadBuyerContacts } from './developmentBuyerLeadService.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 
 const DEVELOPER_LEAD_SELECT = [
@@ -144,7 +145,7 @@ function requireClient() {
 function isMissingDeveloperLeadSchema(error) {
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeLower(`${error?.message || ''} ${error?.details || ''}`)
-  return code === '42P01' || code === '42703' || code === 'PGRST204' || code === 'PGRST205' || message.includes('developer_leads')
+  return code === '42P01' || code === '42703' || code === 'PGRST204' || code === 'PGRST205' || /(?:could not find|does not exist|schema cache).*developer_leads|developer_leads.*(?:does not exist|schema cache)/.test(message)
 }
 
 function isMissingOptionalSchema(error, tableName = '') {
@@ -417,11 +418,13 @@ export async function fetchDeveloperLeadIntake({ developerLeadId = '' } = {}) {
     fetchInterestsByLeadIds(client, [leadId]),
     fetchOnboardingFormDataByTransactionIds(client, [data.converted_transaction_id].filter(Boolean)),
   ])
-  return mapDeveloperLead(data, {
+  const mapped = mapDeveloperLead(data, {
     privateDetails: privateById.get(leadId) || null,
     interests: interestsById.get(leadId) || [],
     onboardingFormData: onboardingByTransactionId.get(data.converted_transaction_id) || null,
   })
+  const [enriched] = await enrichDevelopmentLeadBuyerContacts(data.developer_org_id, [mapped], { client })
+  return enriched
 }
 
 export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'all', source = 'all', throwOnUnavailable = false } = {}) {
@@ -459,11 +462,12 @@ export async function listDeveloperLeadIntake({ developerOrgId = '', status = 'a
     fetchOnboardingFormDataByTransactionIds(client, transactionIds),
   ])
 
-  return (data || []).map((row) => mapDeveloperLead(row, {
+  const mapped = (data || []).map((row) => mapDeveloperLead(row, {
     privateDetails: privateById.get(row.developer_lead_id) || null,
     interests: interestsById.get(row.developer_lead_id) || [],
     onboardingFormData: onboardingByTransactionId.get(row.converted_transaction_id) || null,
   }))
+  return enrichDevelopmentLeadBuyerContacts(orgId, mapped, { client })
 }
 
 export async function createAgencyIntroducedDeveloperLead(input = {}) {
@@ -660,6 +664,8 @@ export async function findDeveloperLeadDuplicateWarnings({ developerOrgId = '', 
 export async function createDeveloperFedLead(input = {}) {
   const developerOrgId = requireDeveloperOrgId(input.developerOrgId)
   const client = requireClient()
+  const captureId = normalizeUuid(input.developerLeadId)
+  const sourceLeadId = normalizeUuid(input.sourceLeadId)
   const primaryDevelopmentId = normalizeUuid(input.primaryDevelopmentId)
   const interestedDevelopmentIds = [
     primaryDevelopmentId,
@@ -673,6 +679,8 @@ export async function createDeveloperFedLead(input = {}) {
   const now = new Date().toISOString()
 
   const leadPayload = {
+    ...(captureId ? { developer_lead_id: captureId } : {}),
+    ...(sourceLeadId ? { source_lead_id: sourceLeadId } : {}),
     developer_org_id: developerOrgId,
     assigned_agent_id: assignedAgentId,
     primary_development_id: primaryDevelopmentId,
@@ -691,14 +699,22 @@ export async function createDeveloperFedLead(input = {}) {
     protected_summary: buildProtectedSummary(input),
   }
 
-  const { data: leadRow, error: leadError } = await client
-    .from('developer_leads')
-    .insert(leadPayload)
-    .select(DEVELOPER_LEAD_SELECT)
-    .single()
-
-  if (leadError) throw leadError
-
+  const leadWrite = client.from('developer_leads')
+  const leadResult = captureId
+    ? await leadWrite.upsert(leadPayload, { onConflict: 'developer_lead_id', ignoreDuplicates: true }).select(DEVELOPER_LEAD_SELECT).maybeSingle()
+    : await leadWrite.insert(leadPayload).select(DEVELOPER_LEAD_SELECT).single()
+  if (leadResult.error) throw leadResult.error
+  let leadRow = leadResult.data
+  const resumingCapture = captureId && !leadRow
+  if (resumingCapture) {
+    const existing = await client.from('developer_leads').select(DEVELOPER_LEAD_SELECT)
+      .eq('developer_lead_id', captureId).eq('developer_org_id', developerOrgId).maybeSingle()
+    if (existing.error) throw existing.error
+    leadRow = existing.data
+    if (!leadRow || leadRow.source_lead_id !== sourceLeadId || leadRow.primary_development_id !== primaryDevelopmentId) {
+      throw new Error('This lead capture no longer matches the saved buyer and development. Refresh before continuing.')
+    }
+  }
   const leadId = leadRow.developer_lead_id
   const privatePayload = {
     developer_lead_id: leadId,
@@ -712,15 +728,15 @@ export async function createDeveloperFedLead(input = {}) {
     },
   }
 
-  const privateInsert = await client
-    .from('developer_lead_private_details')
-    .insert(privatePayload)
+  const privateWrite = client.from('developer_lead_private_details')
+  const privateInsert = await (captureId ? privateWrite.upsert(privatePayload, { onConflict: 'developer_lead_id' }) : privateWrite.insert(privatePayload))
     .select(PRIVATE_DETAIL_SELECT)
     .single()
 
   if (privateInsert.error) throw privateInsert.error
 
   if (uniqueDevelopmentIds.length) {
+    const existingInterests = resumingCapture ? (await fetchInterestsByLeadIds(client, [leadId])).get(leadId) || [] : []
     const interestPayload = uniqueDevelopmentIds.map((developmentId, index) => ({
       developer_lead_id: leadId,
       developer_org_id: developerOrgId,
@@ -732,17 +748,17 @@ export async function createDeveloperFedLead(input = {}) {
       budget_max: budgetMax,
       unit_type_interest: normalizeText(input.unitTypeInterest) || null,
       is_primary: developmentId === primaryDevelopmentId || (!primaryDevelopmentId && index === 0),
-    }))
+    })).filter(interest => !existingInterests.some(existing => existing.developmentId === interest.development_id && normalizeUuid(existing.unitId) === normalizeUuid(interest.unit_id)))
 
-    const interestInsert = await client
+    const interestInsert = interestPayload.length ? await client
       .from('developer_lead_development_interests')
       .insert(interestPayload)
-      .select(INTEREST_SELECT)
+      .select(INTEREST_SELECT) : { error: null }
 
     if (interestInsert.error) throw interestInsert.error
   }
 
-  const activityInsert = await client
+  const activityInsert = resumingCapture ? { error: null } : await client
     .from('developer_lead_activity')
     .insert({
       developer_lead_id: leadId,
@@ -817,6 +833,12 @@ export async function updateDeveloperLeadWorkspaceSetup(input = {}) {
   const patch = {}
   if (Object.prototype.hasOwnProperty.call(input, 'leadStatus')) {
     patch.lead_status = normalizeStatus(input.leadStatus)
+    if (['onboarding_sent', 'onboarding_submitted', 'otp', 'converted'].includes(normalizeStatus(input.previousLeadStatus))) {
+      throw new Error('Continue this deal in its buyer or transaction workflow; a lead setup edit cannot move it backwards.')
+    }
+    if (['onboarding_sent', 'onboarding_submitted', 'otp', 'converted'].includes(patch.lead_status)) {
+      throw new Error('Complete onboarding, signed OTP and transaction handoff through the buyer workflow; these stages require saved evidence.')
+    }
   }
   if (Object.prototype.hasOwnProperty.call(input, 'preferredUnitId')) {
     patch.preferred_unit_id = normalizeUuid(input.preferredUnitId)
@@ -836,14 +858,11 @@ export async function updateDeveloperLeadWorkspaceSetup(input = {}) {
   }
 
   const client = requireClient()
-  const { data, error } = await client
-    .from('developer_leads')
-    .update(patch)
-    .eq('developer_org_id', developerOrgId)
-    .eq('developer_lead_id', developerLeadId)
-    .select(DEVELOPER_LEAD_SELECT)
-    .single()
-
+  let update = client.from('developer_leads').update(patch)
+    .eq('developer_org_id', developerOrgId).eq('developer_lead_id', developerLeadId)
+  if (patch.lead_status && input.previousLeadStatus) update = update.eq('lead_status', normalizeStatus(input.previousLeadStatus))
+  const { data, error } = await update.select(DEVELOPER_LEAD_SELECT).single()
+  if (error?.code === 'PGRST116') throw new Error('This lead changed. Refresh it before moving to the next stage.')
   if (error) throw error
 
   if (patch.preferred_unit_id && data.primary_development_id) {
@@ -886,7 +905,7 @@ export async function updateDeveloperLeadWorkspaceSetup(input = {}) {
     })
 
   if (activityInsert.error && !isMissingDeveloperLeadSchema(activityInsert.error) && !isPermissionError(activityInsert.error)) {
-    throw activityInsert.error
+    console.warn('Developer lead saved; activity history could not be recorded.', activityInsert.error.code || '')
   }
 
   const [privateById, interestsById] = await Promise.all([

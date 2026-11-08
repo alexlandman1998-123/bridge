@@ -94,7 +94,7 @@ export async function hydrateMatterPropertyContext(client, transactions = []) {
   const units = await fetchRows(
     client,
     'units',
-    'id, development_id, unit_number, unit_label, phase, block, price, current_price, list_price, status, property_type, property_title_type',
+    'id, development_id, unit_number, unit_label, phase, block, unit_type, price, current_price, list_price, status',
     unitIds,
     'id, development_id, unit_number, phase, price, status',
   )

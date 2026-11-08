@@ -6,9 +6,10 @@ export function buildTransactionFeeInvoiceEmailDraft({ recipientEmail = '', bill
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Enter the agreed billing email address before preparing delivery.')
   if (!['agent', 'attorney'].includes(billingParty)) throw new Error('The recorded billing party must be agent or attorney.')
   if (!text(invoiceReference)) throw new Error('An accounting-system invoice reference is required before preparing delivery.')
+  const testInvoice = /^TEST(?:[-\s]|$)/i.test(text(invoiceReference))
   return {
     recipientEmail: email,
-    subject: `Transaction fee invoice ${text(invoiceReference)}`,
-    body: `Dear ${billingParty === 'attorney' ? 'Attorney' : 'Agent'},\n\nPlease find the transaction fee invoice attached.\n\nInvoice reference: ${text(invoiceReference)}\nTransaction reference: ${text(transactionId)}\nAmount due: R1,725.00 (R1,500.00 excl. VAT plus R225.00 VAT).\n\nKind regards`,
+    subject: `${testInvoice ? '[TEST - NOT PAYABLE] ' : ''}Transaction fee invoice ${text(invoiceReference)}`,
+    body: `${testInvoice ? 'CONTROLLED TEST ONLY - NOT PAYABLE. No payment is required.\n\n' : ''}Dear ${billingParty === 'attorney' ? 'Attorney' : 'Agent'},\n\nPlease find the transaction fee invoice attached.\n\nInvoice reference: ${text(invoiceReference)}\nTransaction reference: ${text(transactionId)}\n${testInvoice ? 'Test amount' : 'Amount due'}: R1,725.00 (R1,500.00 excl. VAT plus R225.00 VAT).\n\nKind regards`,
   }
 }

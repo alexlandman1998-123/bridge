@@ -118,3 +118,29 @@ it('refreshes and authorizes a developer document at click time', async () => {
     expect(tab.close).toHaveBeenCalledOnce()
   } finally { open.mockRestore() }
 })
+
+
+it('clears the previous buyer and selected file immediately when props change without a parent key', async () => {
+  mocks.read.mockResolvedValueOnce(ready([savedFile]))
+  const view = render(<DeveloperLeadDocuments developerOrgId="org-one" developerLeadId="lead-one" />)
+  await act(async () => {})
+  choose()
+  mocks.read.mockImplementationOnce(() => new Promise(() => {}))
+  view.rerender(<DeveloperLeadDocuments developerOrgId="org-two" developerLeadId="lead-two" />)
+  expect(screen.queryByRole('button', { name: 'Open Buyer ID.pdf' })).toBeNull()
+  expect(screen.queryByRole('form', { name: 'Upload buyer document' })).toBeNull()
+  expect(screen.getByRole('status').textContent).toContain('Loading saved documents')
+  expect(mocks.save).not.toHaveBeenCalled()
+})
+
+
+it('refreshes requirement commands from this tab and other tabs without another upload', async () => {
+  setup(); await act(async () => {})
+  mocks.read.mockResolvedValue(ready([savedFile]))
+  await act(async () => window.dispatchEvent(new CustomEvent('arch9:document-requirements-changed')))
+  expect(screen.getByRole('button', { name: 'Open Buyer ID.pdf' })).toBeTruthy()
+  mocks.read.mockResolvedValue(ready())
+  await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: 'arch9:document-requirements-changed', newValue: 'refresh' })))
+  expect(screen.queryByRole('button', { name: 'Open Buyer ID.pdf' })).toBeNull()
+  expect(mocks.save).not.toHaveBeenCalled()
+})

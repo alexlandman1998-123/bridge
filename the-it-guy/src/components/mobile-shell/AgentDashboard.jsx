@@ -8,12 +8,14 @@ import { maskDeveloperLeadForDeveloper } from '../../core/developerLeads/develop
 import { WORKFLOW_MAIN_STAGE_LABELS } from '../../core/workflows/workflowConstants.js'
 import LeadSourceLogo from './LeadSourceLogo.jsx'
 import AgentCommissionCard from './AgentCommissionCard.jsx'
+import MobileHomeSummaryCards from './MobileHomeSummaryCards.jsx'
+import MobileDeveloperMarketingCards from './MobileDeveloperMarketingCards.jsx'
+import { recentDeveloperLeads } from '../../services/mobileDeveloperMarketingService.js'
 import { getLeadSourcePresentation } from './leadSourcePresentation.js'
 import './agent-dashboard.css'
 import MobileTodayLeadScroller from './MobileTodayLeadScroller.jsx'
 import useMobileMomentum from './useMobileMomentum.js'
 import { useMobileAppointmentCreate } from './mobileAppointmentCreateContext.js'
-import MobileDailyMomentum from './MobileDailyMomentum.jsx'
 
 function summary(snapshot, key, fallback = '0') {
   return snapshot.summaryCards?.find((card) => card.key === key)?.value ?? fallback
@@ -55,11 +57,11 @@ function DeveloperLeadCard({ item, onOpen }) {
   </a>
 }
 
-export default function AgentDashboard({ snapshot, onOpen, onRefresh, onUpdateTask, onContactLead, onCreateAppointment, brandStyle = {} }) {
+export default function AgentDashboard({ snapshot, onOpen, onRefresh, onCreateTask, onUpdateTask, onContactLead, onCreateAppointment, brandStyle = {} }) {
   const appointmentCreate = useMobileAppointmentCreate()
   const createAppointment = onCreateAppointment || appointmentCreate?.openAppointmentCreate
   const bookRef = useRef(null)
-  const appointmentsRef = useRef(null)
+  const commissionRef = useRef(null)
   const [page, setPage] = useState(0)
   const [selection, setSelection] = useState(null)
   const deals = snapshot.activeWork || []
@@ -67,7 +69,7 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh, onUpdateTa
   const developer = snapshot.category === 'developer'
   const dailyPanels = ['agent', 'principal', 'default'].includes(snapshot.category)
   const transactions = snapshot.transactions || deals
-  const newLeads = snapshot.newLeads || []
+  const newLeads = developer ? recentDeveloperLeads(snapshot.newLeads || []) : snapshot.newLeads || []
   const newLeadsAvailable = snapshot.newLeadsAvailable !== false && Array.isArray(snapshot.newLeads)
   const pages = ['Today', 'Deals', developer ? 'Developments' : 'Listings']
   const developments = snapshot.developments || []
@@ -94,13 +96,11 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh, onUpdateTa
     setSelection({ item })
   }
 
-  function showAppointments() {
-    if (appointmentsRef.current) {
-      appointmentsRef.current.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })
-    } else setSelection({ category: 'appointments', todayOnly: true })
+  function showCommission() {
+    commissionRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })
   }
 
-  const appointmentsSection = (<section ref={appointmentsRef} className="agent-home-appointments" aria-label="Appointments today">
+  const appointmentsSection = (<section className="agent-home-appointments" aria-label="Appointments today">
           <div className="agent-home-section-heading"><h2>Appointments today</h2><div className="agent-home-appointment-controls"><button type="button" className="agent-home-calendar-link" onClick={() => onOpen('/mobile/calendar')}>View calendar<ChevronRight size={14} aria-hidden="true" /></button><button type="button" className="agent-home-appointment-add" aria-label="Add appointment" disabled={!createAppointment} onClick={createAppointment}><Plus size={19} aria-hidden="true" /></button></div></div>
           {!today.available.appointments ? <p>We couldn’t load today’s appointments. <button type="button" onClick={onRefresh}>Retry appointments</button></p>
             : today.items.appointments.filter(item => item.today).length ? today.items.appointments.filter(item => item.today).slice(0, 3).map(item => <button className="agent-home-appointment" type="button" key={item.id} onClick={() => openItem(item)}>
@@ -131,36 +131,25 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh, onUpdateTa
     <div className={`agent-dashboard${developer ? ' developer-dashboard' : ''}`} data-mobile-home data-agent-dashboard data-mobile-feedback={momentum.feedback?.kind}>
       <h1 className="sr-only">{developer ? 'Developer dashboard' : 'Home'}</h1>
 
-      {snapshot.category === 'agent' && <>
-        <div className="agent-today-counts agent-home-summary" aria-label="Today summary">
-          <button type="button" onClick={showAppointments}><strong>{today.counts.appointments ?? '—'}</strong><span>Appointments today</span></button>
-          <button type="button" onClick={() => onOpen('/mobile/leads?stage=new&scope=assigned')}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New leads</span></button>
-        </div>
-        {momentumScope && <MobileDailyMomentum momentum={momentum} onRefresh={onRefresh} />}
-        <AgentCommissionCard commission={snapshot.commission} onRefresh={onRefresh} />
-
-      </>}
+      {dailyPanels && <MobileHomeSummaryCards snapshot={snapshot} today={today} onOpen={onOpen} onRefresh={onRefresh} onTasks={() => setSelection({ category: 'followUps' })} onCommission={showCommission} />}
 
       {developer ? <div className="agent-today-counts developer-dashboard-counts" aria-label="Developer summary">
-        <button type="button" onClick={() => onOpen('/mobile/developer/leads')}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New Leads</span></button>
+        <button type="button" onClick={() => onOpen('/mobile/developer/leads')}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New Leads · 30 days</span></button>
         <button type="button" onClick={() => onOpen('/mobile/transactions')}><strong>{summary(snapshot, 'active')}</strong><span>Active Deals</span></button>
-      </div> : snapshot.category === 'agent' ? null : ['principal', 'default'].includes(snapshot.category) ? <div className="agent-today-counts agent-home-summary" aria-label="Today summary">
-        <button type="button" onClick={showAppointments}><strong>{today.counts.appointments ?? '—'}</strong><span>Appointments today</span></button>
-        <button type="button" onClick={() => onOpen(`/mobile/leads?stage=new${snapshot.category === 'principal' ? '' : '&scope=assigned'}`)}><strong>{newLeadsAvailable ? newLeads.length : '—'}</strong><span>New leads</span></button>
-      </div> : <div className="agent-today-counts" aria-label="Today summary">
+      </div> : !dailyPanels && <div className="agent-today-counts" aria-label="Today summary">
         {[["appointments", "Appointments today"], ["followUps", "Follow-ups due"], ["deals", "Deals to move"]].map(([key, label]) => <button type="button" key={key} onClick={() => setSelection({ category: key })}><strong>{today.counts[key] ?? '—'}</strong><span>{label}</span></button>)}
       </div>}
       {incomplete && <p className="agent-today-unavailable">Some updates couldn’t load. <button type="button" onClick={onRefresh}>Try again</button></p>}
       {['agent', 'principal', 'default'].includes(snapshot.category) && !newLeadsAvailable && <p className="agent-today-unavailable">New leads couldn’t load. <button type="button" onClick={onRefresh}>Retry new leads</button></p>}
 
-      {snapshot.category !== 'agent' && momentumScope && <MobileDailyMomentum momentum={momentum} onRefresh={onRefresh} />}
-      {dailyPanels ? <><MobileTodayLeadScroller key={momentum.day} today={today} leads={newLeads} leadsAvailable={newLeadsAvailable} onOpen={onOpen} onRefresh={onRefresh} onUpdateTask={onUpdateTask} onContactLead={onContactLead} onProgress={momentum.confirmed} onBeginAction={momentum.arm} rewardedTaskId={momentum.feedback?.kind === 'task' || momentum.feedback?.kind === 'clear' ? momentum.feedback.id : ''} />{appointmentsSection}
+      {dailyPanels ? <><MobileTodayLeadScroller key={momentum.day} today={today} leads={newLeads} leadsAvailable={newLeadsAvailable} onOpen={onOpen} onRefresh={onRefresh} onCreateTask={onCreateTask} onUpdateTask={onUpdateTask} onContactLead={onContactLead} onProgress={momentum.confirmed} onBeginAction={momentum.arm} rewardedTaskId={momentum.feedback?.kind === 'task' || momentum.feedback?.kind === 'clear' ? momentum.feedback.id : ''} />{appointmentsSection}
         {(!today.available.deals || attentionDeals.length > 0) && <section className="agent-home-appointments agent-home-attention" aria-label="Deals needing attention">
           <div className="agent-home-section-heading"><h2>Deals needing attention</h2><button type="button" onClick={() => onOpen('/mobile/transactions')}>View deals<ChevronRight size={14} aria-hidden="true" /></button></div>
           {!today.available.deals ? <p>We couldn’t load your deal actions. <button type="button" onClick={onRefresh}>Retry deals</button></p> : attentionDeals.map(item => <button className="agent-home-attention-row" type="button" key={item.id} onClick={() => openItem(item)}>
             <span><strong>{item.body || 'Transaction'}</strong><small>{item.title}</small>{item.meta && <span className="agent-home-attention-stage">{item.meta}</span>}</span><ChevronRight size={17} aria-hidden="true" />
           </button>)}
         </section>}
+        {snapshot.category === 'agent' && <div ref={commissionRef}><AgentCommissionCard commission={snapshot.commission} onRefresh={onRefresh} /></div>}
       </> : <>
       <nav className="agent-book-tabs" aria-label="Dashboard pages" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -215,6 +204,7 @@ export default function AgentDashboard({ snapshot, onOpen, onRefresh, onUpdateTa
       <div className="agent-book-position"><span>Swipe to explore</span><span aria-label={`Page ${page + 1} of 3`}>{pages.map((label, index) => <i key={label} className={page === index ? 'is-current' : ''} />)}</span><span>0{page + 1} / 03</span></div>
       </>}
       {developer && <>
+        <MobileDeveloperMarketingCards developmentIds={developments.map(item => item.id)} organisationId={snapshot.organisationId} refreshKey={snapshot.generatedAt} />
         <section className="agent-home-work" aria-label="Active transactions">
           <div className="agent-home-developments-heading"><h2>Active transactions</h2><DashboardLink to="/mobile/transactions" onOpen={onOpen} /></div>
           {transactions.length ? <div className="agent-home-card-scroller" role="region" aria-label="Swipe through active transactions" tabIndex={0}>

@@ -690,13 +690,19 @@ async function findExistingTransactionForLead({
   if (isUuidLike(normalizedConvertedId)) {
     const byId = await supabase
       .from('transactions')
-      .select('id, organisation_id, stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at')
+      .select(TRANSACTION_IDENTITY_SELECT_LEGACY)
       .eq('id', normalizedConvertedId)
+      .eq('organisation_id', organisationId)
       .maybeSingle()
     if (byId.error && !isMissingColumnError(byId.error)) {
       throw byId.error
     }
-    if (byId.data?.id) return byId.data
+    if (byId.data?.id) {
+      if (byId.data.organisation_id !== organisationId || ![byId.data.originating_lead_id, byId.data.originating_buyer_lead_id].includes(normalizedLeadId)) {
+        throw new Error('The saved deal is not linked to this buyer. Refresh the buyer workspace before continuing.')
+      }
+      return byId.data
+    }
   }
 
   if (!normalizedLeadId) return null
@@ -710,7 +716,7 @@ async function findExistingTransactionForLead({
   for (const candidate of candidateQueries) {
     const query = await supabase
       .from('transactions')
-      .select('id, organisation_id, stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at')
+      .select(TRANSACTION_IDENTITY_SELECT_LEGACY)
       .eq('organisation_id', organisationId)
       .eq(candidate.column, candidate.value)
       .order('created_at', { ascending: false })
@@ -851,14 +857,13 @@ async function updateLeadConversionLinkage({
   leadId = '',
   transactionId = '',
   organisationId = '',
+  preserveLeadStage = false,
 } = {}) {
   if (!supabase || !transactionId || !isUuidLike(leadId)) return { updated: false }
   const updatePayload = {
     converted_transaction_id: transactionId,
     converted_at: new Date().toISOString(),
-    current_stage: 'Onboarding',
-    stage: 'Onboarding',
-    status: 'Onboarding',
+    ...(!preserveLeadStage ? { current_stage: 'Onboarding', stage: 'Onboarding', status: 'Onboarding' } : {}),
     updated_at: new Date().toISOString(),
   }
 
@@ -916,10 +921,11 @@ export async function createTransactionFromLeadOverride({
 
   const nextOrganisationId = normalize(payload?.organisationId || created?.transactionRow?.transaction?.organisation_id)
   const nextLeadId = normalize(payload?.originatingLeadId || payload?.originatingBuyerLeadId || lead?.leadId)
-  const nextAssignedAgentId = normalize(payload?.assignedAgentId || lead?.assignedAgentId || actor?.id)
-  const nextAssignedAgentEmail = normalize(payload?.assignedAgentEmail || lead?.assignedAgentEmail || actor?.email).toLowerCase()
-  const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
   const acceptedOfferId = normalize(payload?.acceptedOfferId || payload?.accepted_offer_id || options?.acceptedOfferId)
+  const signedOtpCapture = !acceptedOfferId && (payload.creationMode || options.creationMode) === 'signed_otp_capture' && Boolean(payload.signedOtpStoragePath)
+  const nextAssignedAgentId = normalize((signedOtpCapture && (lead?.assignedAgentId || lead?.assigned_agent_id)) || payload?.assignedAgentId || lead?.assignedAgentId || actor?.id)
+  const nextAssignedAgentEmail = normalize((signedOtpCapture && lead?.assignedAgentEmail) || payload?.assignedAgentEmail || lead?.assignedAgentEmail || actor?.email).toLowerCase()
+  const nextListingId = normalize(payload?.listingId || listing?.id || created?.transactionRow?.transaction?.unit_id)
   const allowDirectLeadConversion = options?.allowDirectLeadConversion === true
   const overrideReason = resolveTransactionCreationOverrideReason(payload, options)
   const unsafeFallbackAllowed = isUnsafeFallbackAllowed()
@@ -930,18 +936,20 @@ export async function createTransactionFromLeadOverride({
   async function withBuyerDocumentHandoff(result) {
     if (!result?.persisted || !result?.transactionId || !isUuidLike(nextLeadId)) return result
     try {
+      const { prepareBuyerOnboardingDocumentWorkspace } = await import('./api')
+      await prepareBuyerOnboardingDocumentWorkspace(result.transactionId)
       await promoteStagedBuyerLeadDocuments(supabase, {
         transactionId: result.transactionId,
         organisationId: nextOrganisationId,
         leadId: nextLeadId,
         lead,
       })
-      return result
+      return { ...result, buyerDocumentWorkspacePrepared: true }
     } catch (error) {
       console.warn('[transactionLifecycleService] Buyer lead document handoff needs retry.', error)
       return {
         ...result,
-        warning: [result.warning, 'Buyer lead documents need handoff retry.'].filter(Boolean).join(' '),
+        warning: [result.warning, 'The deal is saved; its shared document setup needs retry.'].filter(Boolean).join(' '),
       }
     }
   }
@@ -955,7 +963,7 @@ export async function createTransactionFromLeadOverride({
   if (!acceptedOfferId && !allowDirectLeadConversion) {
     throw new Error('Buyer transactions must be created from an accepted offer. Create and accept an offer before conversion.')
   }
-  const overrideAuthorization = !acceptedOfferId && allowDirectLeadConversion
+  const overrideAuthorization = !acceptedOfferId && allowDirectLeadConversion && !signedOtpCapture
     ? assertMvpTransactionOverrideAuthorization({
       actor,
       payload,
@@ -1015,6 +1023,9 @@ export async function createTransactionFromLeadOverride({
       : null
 
     if (duplicateByAcceptedOffer?.id) {
+      if (duplicateByAcceptedOffer.listing_id !== nextListingId || (nextLeadId && ![duplicateByAcceptedOffer.originating_lead_id, duplicateByAcceptedOffer.originating_buyer_lead_id].includes(nextLeadId))) {
+        throw new Error('The existing deal belongs to a different buyer or property. Refresh before continuing.')
+      }
       let leadLinkageResult = { updated: false, reason: null }
       try {
         leadLinkageResult = await updateLeadConversionLinkage({
@@ -1056,12 +1067,16 @@ export async function createTransactionFromLeadOverride({
       : null
 
     if (duplicate?.id) {
+      if (signedOtpCapture && (duplicate.listing_id !== nextListingId || duplicate.organisation_id !== nextOrganisationId || ![duplicate.originating_lead_id, duplicate.originating_buyer_lead_id].includes(nextLeadId))) {
+        throw new Error('The existing buyer deal is for a different property. Select its linked property before attaching the OTP.')
+      }
       let leadLinkageResult = { updated: false, reason: null }
       try {
         leadLinkageResult = await updateLeadConversionLinkage({
           leadId: nextLeadId,
           transactionId: duplicate.id,
           organisationId: nextOrganisationId,
+          preserveLeadStage: signedOtpCapture,
         })
       } catch (linkageError) {
         leadLinkageResult = {
@@ -1139,7 +1154,7 @@ export async function createTransactionFromLeadOverride({
       next_action: onboardingNextAction,
       comment: acceptedOfferId
         ? `Transaction created from accepted buyer offer. Client intake mode: ${onboardingLabel}.`
-        : `Transaction created from lead with manual override. Reason: ${overrideReason}`,
+        : signedOtpCapture ? 'Signed buyer OTP captured for review.' : `Transaction created from lead with manual override. Reason: ${overrideReason}`,
       onboarding_status: onboardingStatus,
       assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
       assigned_agent_email: nextAssignedAgentEmail || null,
@@ -1159,6 +1174,7 @@ export async function createTransactionFromLeadOverride({
       commission_snapshot_id: normalize(payload?.commissionSnapshotId) || null,
       creation_idempotency_key: creationCommand.idempotencyKey,
       creation_mode: creationCommand.creationMode,
+      signed_otp_storage_path: signedOtpCapture ? normalize(payload.signedOtpStoragePath) : null,
       transaction_creation_override_reason: overrideReason || null,
       transaction_creation_override_actor_id: overrideAuthorization?.actorId || null,
       transaction_creation_override_actor_role: overrideAuthorization?.actorRole || null,

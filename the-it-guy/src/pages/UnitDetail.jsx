@@ -1,5 +1,5 @@
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
-import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   BadgeDollarSign,
@@ -3287,6 +3287,7 @@ function UnitDetail() {
   })
   const [clientInfoSubmitAttempted, setClientInfoSubmitAttempted] = useState(false)
   const [onboardingMode, setOnboardingMode] = useState('client_portal')
+  const [isOnboardingModePending, startOnboardingModeTransition] = useTransition()
   const [manualSectionCompletion, setManualSectionCompletion] = useState(() => ({ ...DEFAULT_SECTION_COMPLETION }))
   const [manualDocumentStatusOverrides, setManualDocumentStatusOverrides] = useState({})
   const [updatingRequiredDocumentKey, setUpdatingRequiredDocumentKey] = useState('')
@@ -4957,6 +4958,7 @@ function UnitDetail() {
           transactionId: transaction.id,
           resend,
           deliveryMode,
+          buyerName: normalizeText(buyer?.name || [buyer?.firstName, buyer?.lastName].filter(Boolean).join(' ')),
         },
       })
       const payloadError = result?.data?.error || result?.data?.message
@@ -5856,7 +5858,7 @@ function UnitDetail() {
     try {
       setError('')
       setArchivingTransaction(true)
-      await archiveTransactionLifecycle(transaction.id)
+      await archiveTransactionLifecycle({ transactionId: transaction.id })
       window.dispatchEvent(new Event('itg:transaction-updated'))
       await loadDetail()
     } catch (archiveError) {
@@ -9426,9 +9428,10 @@ function UnitDetail() {
                                   ? 'border-[#cfe1f7] bg-white text-[#1f3b53] shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
                                   : 'border-[#e3ebf4] bg-[#f7f9fc] text-[#6b7d93] hover:bg-white',
                               ].join(' ')}
-                              onClick={() => setOnboardingMode(option.value)}
+                              aria-busy={isOnboardingModePending && onboardingMode !== option.value}
+                              onClick={() => startOnboardingModeTransition(() => setOnboardingMode(option.value))}
                             >
-                              {option.label}
+                              {isOnboardingModePending && onboardingMode !== option.value ? 'Preparing…' : option.label}
                             </button>
                           ))}
                         </div>

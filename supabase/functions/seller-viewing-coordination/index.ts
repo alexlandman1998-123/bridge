@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
@@ -53,7 +54,7 @@ function firstText(...values: unknown[]) {
 
 async function invokeSendEmailFunction(payload: JsonRecord) {
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"), 500);
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), 5000);
+  const serviceRoleKey = normalizeText(supabaseServiceKey(), 5000);
   if (!supabaseUrl || !serviceRoleKey) return null;
   const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/send-email`, {
     method: "POST",
@@ -314,13 +315,13 @@ async function getAuthenticatedUser(req: Request, supabaseUrl: string, anonKey: 
   return data.user;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed.", code: "method_not_allowed" });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const anonKey = supabasePublishableKey() || "";
+  const serviceRoleKey = supabaseServiceKey() || "";
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return jsonResponse(503, { error: "Viewing coordination is temporarily unavailable.", code: "service_unavailable" });
   }
@@ -602,4 +603,4 @@ Deno.serve(async (req) => {
   }
 
   return jsonResponse(200, { ok: true, session: { ...publicSession, status: "submitted", response, submittedAt: now } });
-});
+}));

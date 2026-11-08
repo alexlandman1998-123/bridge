@@ -1,4 +1,6 @@
 import { buildRentalPublicationSnapshot } from './rentalListingChannelModel'
+import { listingPhotoPreparationError } from '../listings/listingPhotoPreparationFeedback.js'
+import { listingPortalFailureMessage } from '../listings/listingChannelUpdateState.js'
 import { ensureRentalListingVacancy } from './rentalListingInventoryRepository.js'
 import { isRentalCreationId } from './rentalListingCreationRecovery.js'
 import { isRentalListingInWorkspace } from './rentalWorkspaceScope.js'
@@ -259,6 +261,8 @@ export function formatRentalProperty24ApiError(payload = {}, fallback = 'Propert
   if (missing.length) return `Property24 setup is incomplete: ${missing.join(', ')}.`
 
   const preview = payload?.preview || payload?.report?.preview || {}
+  const photoError = listingPhotoPreparationError(preview)
+  if (photoError) return `Property24 cannot publish this rental yet. ${photoError}`
   const dataBlockers = Array.isArray(preview.dataBlockers) ? preview.dataBlockers : []
   const technicalBlockers = Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers : []
   if (technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit')) {
@@ -268,7 +272,7 @@ export function formatRentalProperty24ApiError(payload = {}, fallback = 'Propert
   const blockers = [...dataBlockers, ...technicalBlockers].map(formatProperty24Blocker)
   if (blockers.length) return `Property24 cannot publish this rental yet: ${blockers.join(', ')}.`
 
-  return String(payload?.message || payload?.error || fallback)
+  return listingPortalFailureMessage(payload, fallback)
 }
 
 export function isRentalListingRecord(listing = {}) {
@@ -380,7 +384,7 @@ export async function createRentalListingDraft(form = {}, context = {}) {
 }
 
 export async function updateRentalListingDraft(listingId, form = {}, context = {}) {
-  const validationErrors = validateRentalListingEditForm(form, context)
+  const validationErrors = validateRentalListingEditForm(context.deferChannelChecks ? { ...form, selectedSyndicationChannels: [] } : form, context)
   if (validationErrors.length) {
     const error = new Error(validationErrors.join(' '))
     error.validationErrors = validationErrors
@@ -533,7 +537,7 @@ export async function previewRentalProperty24Listing(listingId, options = {}) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      photosChanged: true,
+      photosChanged: 'auto',
       ...options,
     }),
   })
@@ -560,7 +564,7 @@ export async function publishRentalProperty24Listing(listingId, options = {}) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      photosChanged: true,
+      photosChanged: 'auto',
       ...options,
     }),
   })
@@ -622,11 +626,11 @@ async function callPrivatePropertyRentalAction(listingId, action, body = {}, { m
       Authorization: `Bearer ${accessToken}`,
       ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
     },
-    ...(method === 'GET' ? {} : { body: JSON.stringify({ environment: 'production', photosChanged: true, ...body }) }),
+    ...(method === 'GET' ? {} : { body: JSON.stringify({ environment: 'production', photosChanged: 'auto', ...body }) }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(String(payload?.message || 'Private Property rental request failed.'))
+    const error = new Error(listingPortalFailureMessage(payload, 'Private Property rental request failed. Check requirements for details.'))
     error.definiteRejection = [400,401,403,404,422].includes(response.status) && payload.status !== 'UNCERTAIN' && payload.report?.status !== 'UNCERTAIN'
     throw error
   }

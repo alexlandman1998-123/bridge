@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ detail: vi.fn(), list: vi.fn(), developments: vi.fn(), users: vi.fn(), units: vi.fn(), journey: vi.fn() }))
@@ -27,8 +27,10 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+function TransactionTarget() { const location=useLocation();return <p>Transaction workspace {location.search}</p> }
+
 function setup(path = '/developer/leads/lead-one') {
-  return render(<MemoryRouter initialEntries={[path]}><Routes><Route path="/developer/leads/:developerLeadId?" element={<DeveloperLeadsPage />} /><Route path="/developments/11111111-1111-4111-8111-111111111111" element={<p>Returned to development board</p>} /></Routes></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={[path]}><Routes><Route path="/transactions/:id" element={<TransactionTarget/>} /><Route path="/pipeline/leads/:buyerId" element={<p>Canonical buyer workflow</p>} /><Route path="/developer/leads/:developerLeadId?" element={<DeveloperLeadsPage />} /><Route path="/developments/11111111-1111-4111-8111-111111111111" element={<p>Returned to development board</p>} /></Routes></MemoryRouter>)
 }
 
 it('opens a linked lead from an agency workspace using its owning developer context', async () => {
@@ -74,4 +76,21 @@ it('opens the onboarding and offer actions when their workflow is requested', as
   setup('/developer/leads/lead-one?workspaceTab=onboarding_otp')
   await screen.findByRole('heading', { name: 'Saved Buyer' })
   expect(screen.getByRole('tab', { name: /Transaction Setup \/ Offer/ }).getAttribute('aria-selected')).toBe('true')
+})
+
+it('opens the existing Revo-shaped buyer workflow from the next-action container',async()=>{
+ mocks.detail.mockResolvedValue({...lead,developerOrgId:'agency-org',leadStatus:'qualified',sourceLeadId:'existing-buyer',buyerWorkspaceTransactionId:'existing-context'})
+ setup();await screen.findByRole('heading',{name:'Saved Buyer'});
+ fireEvent.click(screen.getAllByRole('button',{name:'Continue Buyer Workflow'})[0]);expect(await screen.findByText('Canonical buyer workflow')).toBeTruthy()
+})
+it('keeps a saved follow-up separate from the actual next workflow action',async()=>{
+ mocks.detail.mockResolvedValue({...lead,nextActionNote:'Old viewing follow-up'})
+ setup();await screen.findByRole('heading',{name:'Saved Buyer'});
+ expect(screen.getByRole('heading',{name:'Mark Contacted'})).toBeTruthy();expect(screen.getByText('Follow-up note: Old viewing follow-up')).toBeTruthy()
+})
+
+it('opens the signed OTP action in the real transaction document tab',async()=>{
+ mocks.detail.mockResolvedValue({...lead,leadStatus:'onboarding_submitted',convertedTransactionId:'existing-tx'});
+ setup();await screen.findByRole('heading',{name:'Saved Buyer'});
+ fireEvent.click(screen.getAllByRole('button',{name:'Upload Signed OTP'})[0]);expect(await screen.findByText('Transaction workspace ?tab=documents')).toBeTruthy();
 })

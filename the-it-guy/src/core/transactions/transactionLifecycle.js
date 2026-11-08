@@ -133,6 +133,20 @@ export function normalizeTransactionLifecycleStage(value, fallback = 'confirmed'
   return fallback
 }
 
+// The overview's five legacy buckets are not database lifecycle phases.
+// Keep canonical phases intact when persisting a lifecycle workflow.
+export const PERSISTED_TRANSACTION_LIFECYCLE_STAGES = Object.freeze([
+  'instruction', 'documents', 'finance', 'transfer_duty', 'lodgement', 'registration', 'post_registration',
+])
+
+export function normalizePersistedTransactionLifecycleStage(value) {
+  const key = normalizeKey(value)
+  if (PERSISTED_TRANSACTION_LIFECYCLE_STAGES.includes(key)) return key
+  const legacy = normalizeTransactionLifecycleStage(value)
+  return ({ confirmed: 'instruction', reservation_deposit_paid: 'instruction', otp: 'instruction',
+    finance: 'finance', transfer: 'documents', registration: 'registration' })[legacy] || 'instruction'
+}
+
 export function formatTransactionRollupStageLabel(value = '') {
   const normalized = normalizeText(value).toUpperCase()
   return normalized ? toTitleLabel(normalized.toLowerCase()) : 'Workflow'

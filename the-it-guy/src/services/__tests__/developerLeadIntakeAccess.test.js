@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), reads: [], results: {} }))
 vi.mock('../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from } }))
-import { fetchDeveloperLeadIntake } from '../developerLeadService.js'
+import { fetchDeveloperLeadIntake, listDeveloperLeadIntake } from '../developerLeadService.js'
 
 const leadId = '00000000-0000-4000-8000-000000000011'
 const developerOrgId = '00000000-0000-4000-8000-000000000001'
@@ -59,4 +59,24 @@ it('retains protected agency lead masking before handover', async () => {
 it('rejects invalid identifiers before issuing a query', async () => {
   expect(await fetchDeveloperLeadIntake({ developerLeadId: 'bad-id' })).toBeNull()
   expect(mocks.from).not.toHaveBeenCalled()
+})
+
+
+it('hydrates Revo-style linked buyers from their owning CRM without creating or changing a deal', async () => {
+ const sourceId='00000000-0000-4000-8000-000000000021',contactId='00000000-0000-4000-8000-000000000022';
+ mocks.results.developer_leads.data.source_lead_id=sourceId;
+ mocks.results.developer_leads.data.lead_status='qualified';
+ mocks.results.developer_lead_private_details.data=[];
+ mocks.results.leads={data:[{lead_id:sourceId,contact_id:contactId,converted_transaction_id:'existing-context'}],error:null};
+ mocks.results.contacts={data:[{contact_id:contactId,first_name:'Revo',last_name:'Buyer',email:'buyer@example.test',phone:'0820000000'}],error:null};
+ const lead=await fetchDeveloperLeadIntake({developerLeadId:leadId});
+ expect(lead.buyerFullName).toBe('Revo Buyer');expect(lead.buyerEmail).toBe('buyer@example.test');expect(lead.buyerWorkspaceTransactionId).toBe('existing-context');
+ expect(lead.convertedTransactionId).toBe('');
+ expect(mocks.reads.find(r=>r.table==='leads').filters.organisation_id).toBe(developerOrgId);
+ expect(mocks.reads.find(r=>r.table==='contacts').filters.organisation_id).toBe(developerOrgId);
+});
+
+it('surfaces a database outage instead of pretending the workspace has no leads',async()=>{
+ mocks.results.developer_leads={data:null,error:{code:'XX000',message:'Database timed out reading developer_leads'}};
+ await expect(listDeveloperLeadIntake({developerOrgId})).rejects.toMatchObject({code:'XX000'});
 })

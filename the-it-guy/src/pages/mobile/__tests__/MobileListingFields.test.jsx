@@ -2,12 +2,13 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { MobileDeveloperListingStock, MobileListingReviewFields, MobileListingSellerFields } from '../MobileListingFields.jsx'
+import { MobileDeveloperListingStock, MobileListingAssignment, MobileListingReviewFields, MobileListingSellerFields } from '../MobileListingFields.jsx'
 import MobileListingProgress from '../MobileListingProgress.jsx'
 afterEach(cleanup)
 it('developer stock selection includes development, unit, sales assignment and scoped visibility', () => {
   const update = vi.fn(), onSelectUnit = vi.fn()
-  render(<MobileDeveloperListingStock form={{ developmentId: 'dev-one', unitId: '', assignedAgentId: 'sales-one', visibility: 'agent' }} update={update} developments={[{ id: 'dev-one', name: 'Oak Court' }]} units={[{ id: 'unit-one', unit_number: '001' }]} agents={[{ userId: 'sales-one', fullName: 'Sales user' }]} branches={[]} onSelectUnit={onSelectUnit} canAssign canAssignAcross />)
+  const form = { developmentId: 'dev-one', unitId: '', assignedAgentId: 'sales-one', visibility: 'agent' }
+  render(<><MobileDeveloperListingStock form={form} update={update} developments={[{ id: 'dev-one', name: 'Oak Court' }]} units={[{ id: 'unit-one', unit_number: '001' }]} onSelectUnit={onSelectUnit} /><MobileListingAssignment form={form} update={update} agents={[{ userId: 'sales-one', fullName: 'Sales user' }]} branches={[]} canAssign canAssignAcross /></>)
   fireEvent.change(screen.getByLabelText('Unit *'), { target: { value: 'unit-one' } })
   expect(onSelectUnit).toHaveBeenCalledWith('unit-one')
   fireEvent.change(screen.getByLabelText('Internal visibility'), { target: { value: 'organisation' } })
@@ -22,7 +23,7 @@ it('seller choices use canonical values and retain decimals and document file se
   fireEvent.change(screen.getByLabelText('Commission (%)'), { target: { value: '2.5' } })
   expect(update).toHaveBeenCalledWith('commissionValue', '2.5')
   const file = new File(['sample'], 'fica.pdf', { type: 'application/pdf' })
-  fireEvent.change(screen.getByLabelText('Add documents'), { target: { files: [file] } })
+  fireEvent.change(screen.getByLabelText(/^Add documents/), { target: { files: [file] } })
   expect(update).toHaveBeenCalledWith('supportingDocumentFiles', [file])
 })
 it('restored lifecycle statuses remain visible and explicit changes use the existing status handler', () => {

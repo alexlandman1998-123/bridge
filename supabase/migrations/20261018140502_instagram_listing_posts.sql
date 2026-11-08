@@ -1,7 +1,11 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
 
 alter table public.meta_lead_ads_connections
-  add column publishing_version bigint not null default 1 check (publishing_version > 0);
+  add column publishing_version bigint not null default 1 check (publishing_version > 0)
+;
 
 create function public.meta_connection_publishing_version()
 returns trigger language plpgsql security invoker set search_path = '' as $$
@@ -13,10 +17,15 @@ begin
   end if;
   return new;
 end;
-$$;
-revoke all on function public.meta_connection_publishing_version() from public,anon,authenticated;
+$$
+;
+
+revoke all on function public.meta_connection_publishing_version() from public,anon,authenticated
+;
+
 create trigger meta_connection_publishing_version before update on public.meta_lead_ads_connections
-  for each row execute function public.meta_connection_publishing_version();
+  for each row execute function public.meta_connection_publishing_version()
+;
 
 alter table public.meta_listing_posts
   add column platform text not null default 'facebook' check (platform in ('facebook','instagram')),
@@ -27,9 +36,12 @@ alter table public.meta_listing_posts
   add column publishing_started_at timestamptz,
   add column publish_requested_at timestamptz,
   add constraint meta_instagram_post_target check (platform <> 'instagram' or
-    (target_account_id ~ '^[0-9]{1,32}$' and target_account_id is not null and connection_version > 0 and connection_version is not null));
+    (target_account_id ~ '^[0-9]{1,32}$' and target_account_id is not null and connection_version > 0 and connection_version is not null))
+;
+
 create unique index meta_instagram_container_identity on public.meta_listing_posts(provider_container_id)
-  where platform='instagram' and provider_container_id is not null;
+  where platform='instagram' and provider_container_id is not null
+;
 
 -- Only the authenticated Edge Function can claim work. A browser cannot choose
 -- another actor, bypass membership, or repeat a provider submission directly.
@@ -60,10 +72,20 @@ begin
   end if;
   return false;
 end;
-$$;
-revoke all on function public.meta_instagram_post_claim(uuid,uuid,uuid,text) from public,anon,authenticated;
-grant execute on function public.meta_instagram_post_claim(uuid,uuid,uuid,text) to service_role;
-grant select,update(user_id) on public.organisation_users to service_role;
-grant select,update(id) on public.meta_lead_ads_connections to service_role;
+$$
+;
 
-commit;
+revoke all on function public.meta_instagram_post_claim(uuid,uuid,uuid,text) from public,anon,authenticated
+;
+
+grant execute on function public.meta_instagram_post_claim(uuid,uuid,uuid,text) to service_role
+;
+
+grant select,update(user_id) on public.organisation_users to service_role
+;
+
+grant select,update(id) on public.meta_lead_ads_connections to service_role
+;
+
+commit
+;

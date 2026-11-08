@@ -33,7 +33,7 @@ const nav = [
   ["Join us", homeSeekersPath("/join")],
 ];
 const agentProposition = [
-  ["01", "KEEP 100% OF YOUR COMMISSION", "No split and no cap. You write it, you keep it. We charge a fee for carrying the business, not a share of your deals, which means we have no reason to be in your pocket and every reason to help you build something."],
+  ["01", "NO SPLIT. ONE FIXED FEE.", "No split and no cap. You write it, you keep it. We charge a fee for carrying the business, not a share of your deals, which means we have no reason to be in your pocket and every reason to help you build something."],
   ["02", "ONE FIXED FEE, PRINTED", "R10,000 a month paid from your deals, R9,000 a month on debit order, or R100,000 for the year upfront. R1,500 per registered sale. No joining fee, no desk fee, no royalty, no marketing levy. Every price we charge is on this website."],
   ["03", "WE ARE NOT FOR EVERYBODY", "Five registered sales in the last twelve months, or R6 million of property. Below that the fee costs you more than it saves you and we will say so on the first call. The fee is the filter, which is why nobody here is doing two deals a year."],
 ];

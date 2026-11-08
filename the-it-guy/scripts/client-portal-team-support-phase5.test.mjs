@@ -66,7 +66,8 @@ test('canonical profile exposes distinct support labels by buyer portal type', (
 test('client portal fetches assigned-agent contact fields for support cards', () => {
   for (const functionName of ['fetchClientPortalByToken', 'fetchClientPortalCoreByToken']) {
     const body = functionBody(apiSource, functionName)
-    const primarySelect = body.match(/\.select\(\s*'([^']+)'/)?.[1] || ''
+    const selectExpression = body.match(/\.select\(\s*((?:'[^']*'\s*\+\s*)*'[^']*')/)?.[1] || ''
+    const primarySelect = [...selectExpression.matchAll(/'([^']*)'/g)].map(match => match[1]).join('')
 
     for (const field of ['assigned_agent', 'assigned_agent_email']) {
       assert.match(
@@ -99,8 +100,8 @@ test('team page and sidebar use resolved support context labels', () => {
   assert.match(clientPortalSource, /const buyerTeamHeading = resolveBuyerPortalLabel\('team', 'Your team'\)/)
   assert.match(clientPortalSource, /const buyerTeamDescription = portalProfile\?\.isAgencyIntroducedDevelopmentPortal/)
   assert.match(clientPortalSource, /const buyerPortalBrandName = pickFirstText/)
-  assert.match(clientPortalSource, /\{buyerTeamHeading\}/)
-  assert.match(clientPortalSource, /\{buyerTeamDescription\}/)
+  assert.match(clientPortalSource, /heading: buyerTeamHeading/)
+  assert.match(clientPortalSource, /description: buyerTeamDescription/)
   assert.match(clientPortalSource, /\{buyerPortalBrandName\}/)
   assert.match(clientPortalSource, /\{buyerPortalBrandDescriptor\}/)
 })

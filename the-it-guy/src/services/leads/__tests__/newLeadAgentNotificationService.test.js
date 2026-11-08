@@ -53,3 +53,14 @@ it('reports an agent lookup transport failure without turning a saved lead into 
   expect(result.error.message).toBe('lookup offline')
   expect(send).not.toHaveBeenCalled()
 })
+it('keeps synthetic workflow checks from emailing a real agent or looking up another recipient', async () => {
+  const send = vi.fn(), client = { from: vi.fn() }
+  for (const marked of [
+    { ...input, contact: { ...input.contact, email: 'workflow@example.invalid' } },
+    { ...input, lead: { ...input.lead, rawEnquiryPayload: { testDataProtection: { isTestData: true, controlledTestRoleSet: 'mvp_pilot_v1' } } } },
+  ]) {
+    expect((await notifyNewLeadAssignedAgent(marked, { client, send })).data.reason).toBe('controlled_test_data')
+  }
+  expect(client.from).not.toHaveBeenCalled()
+  expect(send).not.toHaveBeenCalled()
+})

@@ -227,13 +227,14 @@ function buildWarningsError(message, error = null) {
 async function fetchTransactionContext(client, transactionId, warnings) {
   let query = await client
     .from('transactions')
-    .select('id, finance_type, property_type, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email')
+    .select('id, finance_type, property_type, onboarding_completed_at, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email')
     .eq('id', transactionId)
     .maybeSingle()
 
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'property_type') ||
+    (isMissingColumnError(query.error, 'onboarding_completed_at') ||
+      isMissingColumnError(query.error, 'property_type') ||
       isMissingColumnError(query.error, 'assigned_agent_email') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_bond_originator_email'))
@@ -433,8 +434,36 @@ function deriveChecklistStatus({ definition, linkedStep = null, linkedDocument =
   if (actionType === 'document_upload' && linkedDocument?.id) {
     return 'completed'
   }
+  if (actionType === 'document_review' && linkedDocument?.id &&
+      ['approved', 'accepted', 'completed'].includes(toLower(linkedDocument.status))) return 'completed'
 
   return 'pending'
+}
+
+async function fetchBondFinanceEvidence(client, transaction, warnings) {
+  if (normalizeFinanceType(transaction?.finance_type) === 'cash') return null
+  const specs = [
+    ['transaction_bond_applications', 'application_type,status,feedback_received_at'],
+    ['transaction_finance_workflows', 'workflow_type,current_stage,status'],
+    ['transaction_bond_quotes', 'quote_status'],
+  ]
+  const results = await Promise.all(specs.map(([table, columns]) =>
+    client.from(table).select(columns).eq('transaction_id', transaction.id)))
+  if (results.some(result => result.error)) {
+    results.forEach((result, index) => {
+      if (result.error) warnings.push(buildWarningsError(`Failed to reconcile ${specs[index][0]}`, result.error))
+    })
+    return null
+  }
+  const applications = results[0].data || []
+  const workflow = (results[1].data || []).find(row => row.workflow_type === 'bond_hybrid')
+  const approvedStages = ['bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent', 'complete']
+  return {
+    feedbackReceived: applications.some(row => row.application_type === 'bank_application' && row.feedback_received_at),
+    bondApproved: applications.some(row => row.application_type === 'bank_application' && row.status === 'approved') &&
+      approvedStages.includes(workflow?.current_stage) &&
+      (results[2].data || []).some(row => row.quote_status === 'approved_by_buyer'),
+  }
 }
 
 function buildDesiredLaneChecklistItems({
@@ -444,6 +473,8 @@ function buildDesiredLaneChecklistItems({
   participants = [],
   documents = [],
   documentRequests = [],
+  allSubprocesses = [],
+  bondFinanceEvidence = null,
 }) {
   const rows = []
   const steps = getOperationalStepsForLane(laneKey, {
@@ -457,8 +488,27 @@ function buildDesiredLaneChecklistItems({
       continue
     }
 
-    const linkedDocument = findMatchingDocument(documents, definition.requiredDocumentType)
+    const financeType = normalizeFinanceType(transaction?.finance_type)
+    const cashFinance = laneKey === 'finance' && financeType === 'cash'
+    const hasCashContribution = laneKey === 'finance' && ['cash', 'combination'].includes(financeType)
+    const cashContributionStep = ['proof_of_funds_requested', 'proof_of_funds_received', 'funds_secured_confirmed'].includes(definition.stepKey)
+    const ownerRole = cashFinance || (hasCashContribution && cashContributionStep) ? 'attorney' : definition.ownerRole
+    const linkedDocument = findMatchingDocument(documents,
+      hasCashContribution && definition.stepKey === 'proof_of_funds_requested' ? 'proof_of_funds' : definition.requiredDocumentType)
     const linkedRequest = findMatchingDocumentRequest(documentRequests, definition.requiredDocumentType)
+    let status = deriveChecklistStatus({ definition, linkedStep, linkedDocument })
+    // Finance decisions live in the bond workflow. Legacy subprocess rows can
+    // remain pending after a valid decision; reconcile from its actual evidence.
+    if (laneKey === 'finance' && !cashFinance &&
+      ((definition.stepKey === 'bank_feedback_received' && bondFinanceEvidence?.feedbackReceived) ||
+       (definition.stepKey === 'bond_approved' && bondFinanceEvidence?.bondApproved))) status = 'completed'
+    if (hasCashContribution && definition.stepKey === 'proof_of_funds_requested' && linkedDocument?.id) status = 'completed'
+    if (hasCashContribution && definition.stepKey === 'funds_secured_confirmed') {
+      const proof = findMatchingDocument(documents, 'proof_of_funds')
+      const reviewedProof = proof?.id && ['approved', 'accepted', 'completed'].includes(toLower(proof.status))
+      if (reviewedProof && (cashFinance || bondFinanceEvidence?.bondApproved) && allSubprocesses.some(lane =>
+        lane.laneKey === 'transfer' && lane.steps?.some(step => step.step_key === 'payment_security_review' && step.status === 'completed'))) status = 'completed'
+    }
     const dedupeKey = buildOperationalDedupeKey({
       lane: laneKey,
       stepKey: definition.stepKey,
@@ -472,10 +522,10 @@ function buildDesiredLaneChecklistItems({
       stepLabel: linkedStep.step_label || definition.label,
       label: definition.label,
       description: definition.clientUpdateText || linkedStep.step_label || definition.label,
-      status: deriveChecklistStatus({ definition, linkedStep, linkedDocument }),
+      status,
       priority: getChecklistPriorityFromActionType(definition.actionType),
-      ownerRole: definition.ownerRole,
-      ownerUserId: getOwnerUserId(definition.ownerRole, participants),
+      ownerRole,
+      ownerUserId: getOwnerUserId(ownerRole, participants),
       linkedDocumentId: linkedDocument?.id || null,
       linkedDocumentRequestId: linkedRequest?.id || null,
       sortOrder: Number(index + 1),
@@ -791,12 +841,13 @@ export async function syncOperationalChecklistForTransaction(transactionId, opti
     return { items: [], warnings, insertedCount: 0, updatedCount: 0 }
   }
 
-  const [subprocesses, participants, existingChecklistRows, documents, documentRequests] = await Promise.all([
+  const [subprocesses, participants, existingChecklistRows, documents, documentRequests, bondFinanceEvidence] = await Promise.all([
     fetchSubprocessGraph(client, transactionId, warnings),
     fetchParticipants(client, transactionId, warnings),
     fetchChecklistRows(client, transactionId, warnings),
     fetchDocuments(client, transactionId, warnings),
     fetchDocumentRequests(client, transactionId, warnings),
+    fetchBondFinanceEvidence(client, transaction, warnings),
   ])
 
   const desiredRows = []
@@ -810,6 +861,8 @@ export async function syncOperationalChecklistForTransaction(transactionId, opti
         participants,
         documents,
         documentRequests,
+        allSubprocesses: subprocesses,
+        bondFinanceEvidence,
       }),
     )
   }

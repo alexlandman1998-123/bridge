@@ -6,9 +6,15 @@ import { fileURLToPath } from 'node:url'
 import { resolveTransactionRoutingProfile } from '../src/services/transactionRoutingProfileService.js'
 import {
   buildTransactionRoutingAudit,
+  buildTransactionRoutingAuditItem,
   buildTransactionRoutingBackfillPlan,
   summarizeTransactionRoutingAudit,
 } from '../src/services/transactionRoutingGovernanceService.js'
+
+for(const [routingType,storedType] of [['private_sale','private_property'],['private_property','private_property'],['resale','private_property'],['development_sale','developer_sale']]) {
+  const item=buildTransactionRoutingAuditItem({id:'type-roundtrip',transaction_type:routingType,finance_type:'cash'})
+  assert.equal(item.updatePayload.transaction_type,storedType,'Routing labels must not replace the stored transaction type.')
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 

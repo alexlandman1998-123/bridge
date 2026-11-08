@@ -41,3 +41,11 @@ test('explicit removal disables compatibility requirements', () => {
   assert.equal(transaction.is_required, false)
   assert.equal(canonicalInstanceToPrivateListingRequirement(removed).is_required, false)
 })
+
+test('agency-owned requirements use a supported legacy role without changing canonical ownership', () => {
+  for (const role of ['agency_admin', 'agency_owner', 'transaction_coordinator']) {
+    const instance = { ...custom, requested_from_role: role }
+    assert.equal(canonicalInstanceToTransactionRequiredDocument(instance).required_from_role, 'agent')
+    assert.equal(instance.requested_from_role, role)
+  }
+})

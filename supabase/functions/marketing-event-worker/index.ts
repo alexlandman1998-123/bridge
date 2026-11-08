@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.49.9";
 
@@ -25,7 +26,7 @@ async function sameCredential(left: string, right: string) {
 }
 
 function serviceCredentials() {
-  const legacy = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const legacy = text(supabaseServiceKey());
   let secrets: string[] = [];
   try {
     const configured = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}");
@@ -167,7 +168,7 @@ async function dispatchMessages(client: AdminClient, serviceRoleKey: string, pro
   return { sent, failed };
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") return json(405, { error: "POST is required." });
   const credentials = serviceCredentials();
   if (!await isServiceRoleRequest(request, credentials)) return json(403, { error: "Service-role authorization is required." });
@@ -205,4 +206,4 @@ Deno.serve(async (request) => {
   } catch {
     return json(503, { ok: false, error: "Marketing worker could not complete." });
   }
-});
+}));

@@ -1,8 +1,8 @@
 # Supabase Production Recovery Test Packet
 
-Generated: 2026-10-26T08:21:30.139Z
+Generated: 2026-11-08T14:58:55.028Z
 Production project: `isdowlnollckzvltkasn`
-Current lock status: `RECOVERY_LOCK_BLOCKED`
+Current lock status: `RECOVERY_LOCKED`
 
 ## Purpose
 
@@ -15,9 +15,9 @@ Use this packet to complete the production recovery lock without storing secrets
 | Recorded method | `equivalent_managed_backup` |
 | Recorded PITR enabled | No |
 | Recorded physical backups | 8 |
-| Live check performed | No |
-| Live PITR enabled | Not available |
-| Live physical backups | Not available |
+| Live check performed | Yes |
+| Live PITR enabled | No |
+| Live physical backups | 8 |
 
 ## Required Restore Test
 
@@ -50,8 +50,8 @@ After the restore test has genuinely passed, update `docs/supabase-production-re
   "testedAt": "<ISO-8601 timestamp>",
   "testedBy": "<person or team>",
   "acceptedBy": "<release owner>",
-  "restoreTarget": "Supabase preview branch codex-prod-recovery-20260725, project ref jhxihynofflyyycwdttw, branch id 34d01c00-a842-4f2b-a782-7bd9da3025e5",
-  "evidenceUrlOrTicket": "docs/supabase-production-recovery-restore-test-report.md",
+  "restoreTarget": "local-docker-arch9-recovery-20261027",
+  "evidenceUrlOrTicket": "output/campaign-catchup-production-20261027/recovery-restore-verification.json",
   "notes": [
     "Restore test completed against an isolated non-production target. No secrets or exported production data are stored here."
   ]
@@ -60,8 +60,7 @@ After the restore test has genuinely passed, update `docs/supabase-production-re
 
 ## Current Blockers
 
-- `recovery_test_not_recorded`
-- `backup_restore_not_proven`
+- None
 
 ## Final Check
 

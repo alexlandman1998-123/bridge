@@ -85,7 +85,7 @@ export async function getKingdomRecentlySold(site: ResolvedSite, client = getSer
           const url = new URL(String(item.file_url))
           // Reuse only copied public website photos; never sign private CRM files.
           const prefix = `/storage/v1/object/public/listing-media/organisations/${row.organisation_id}/websites/${site.id}/listings/${id}/`
-          if (url.protocol !== 'https:' || url.search || !url.pathname.startsWith(prefix)) return []
+          if (url.origin !== new URL(process.env.SUPABASE_URL || '').origin || url.protocol !== 'https:' || url.search || !url.pathname.startsWith(prefix)) return []
           return [{ type: 'image' as const, url: url.href, order: Number(item.sort_order || 0) }]
         } catch { return [] }
       }).sort((a, b) => a.order - b.order) : []
@@ -100,10 +100,20 @@ export async function getKingdomRecentlySold(site: ResolvedSite, client = getSer
         lastUpdated: String(row.updated_at), features: [], amenities: [], media,
       })
     }
-    // Cover fallback stays bounded; avoid signing an entire gallery for one card.
-    const missingPhotos = sold.filter(property => ids.includes(property.id) && !property.media.length)
-    for (let index = 0; index < missingPhotos.length; index += 6) {
-      await Promise.all(missingPhotos.slice(index, index + 6).map(async property => {
+    // Retained website copies can disappear after withdrawal. Validate just the
+    // cover candidates, then use the existing scoped CRM fallback when needed.
+    const batch = sold.filter(property => ids.includes(property.id))
+    for (let index = 0; index < batch.length; index += 6) {
+      await Promise.all(batch.slice(index, index + 6).map(async property => {
+        for (const photo of property.media.slice(0, 3)) {
+          try {
+            const response = await fetch(photo.url, { method: 'HEAD', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(2500) })
+            if (response.ok && response.headers.get('content-type')?.startsWith('image/')) {
+              property.media = [photo]
+              return
+            }
+          } catch { /* A stale public copy must not break the sold collection. */ }
+        }
         property.media = await getCrmSoldCoverPhoto(supabase, property.id)
       }))
     }

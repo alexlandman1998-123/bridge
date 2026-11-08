@@ -1,0 +1,12 @@
+.mobile-developer-marketing { min-width: 0; margin-top: 24px; }
+.mobile-developer-marketing > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mobile-developer-marketing h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.mobile-developer-marketing > header > span { color: #657b70; font-size: 12px; }
+.mobile-developer-marketing-track { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 2px 2px 12px; }
+.mobile-developer-marketing-card { flex: 0 0 76%; max-width: 320px; min-width: 220px; scroll-snap-align: start; border: 1px solid #dce7e0; border-radius: 18px; background: #fff; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; }
+.mobile-developer-marketing-card h3 { margin: 0; font-size: 16px; font-weight: 650; color: #163a2b; }
+.mobile-developer-marketing-period, .mobile-developer-marketing-card small { color: #657b70; font-size: 11px; }
+.mobile-developer-marketing-card > strong { margin-top: 18px; font-size: 32px; line-height: 1.2; color: #163a2b; }
+.mobile-developer-marketing-card > span { color: #657b70; font-size: 12px; }
+.mobile-developer-marketing-card p { display: flex; justify-content: space-between; gap: 16px; width: 100%; border-top: 1px solid #edf2ee; padding-top: 12px; margin: 14px 0 8px; font-size: 12px; color: #52695c; }
+.mobile-developer-marketing-track:focus-visible { outline: 2px solid #327c58; outline-offset: 3px; }

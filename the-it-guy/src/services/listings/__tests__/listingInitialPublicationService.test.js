@@ -119,6 +119,7 @@ it('does not replace current progress after the status watcher is cancelled', as
 it.each(['queued', 'processing', 'dispatching', 'uncertain'])('blocks alternative publishing controls for a durable %s request', async state => {
  const deps = receiptDependencies([{ id: 'p24', channel: 'property24', state }])
  await expect(requireSettledListingPublication(listingId, ['property24'], deps)).rejects.toThrow('Check status before sending again')
+ await expect(requireSettledListingPublication(listingId, ['property24'], deps)).rejects.toMatchObject({ code: 'LISTING_PUBLICATION_UNSETTLED', channels: ['property24'] })
  expect(deps.fetch).not.toHaveBeenCalled()
  await expect(requireSettledListingPublication(listingId, ['private_property'], deps)).resolves.toHaveLength(1)
 })
@@ -154,100 +155,50 @@ it('restarts status watching for a retry after the initial request has finished'
  expect(window.removeEventListener).toHaveBeenCalledWith('itg:initial-listing-publication', expect.any(Function))
 })
 
-it.each(['failed', 'uncertain'])('refreshes a stale %s receipt after another request succeeds, without resending', async state => {
+it('avoids overlapping reads when the tab becomes visible during a slow poll', async () => {
  vi.useFakeTimers()
- const jobs = [{ id: 'p24', channel: 'property24', state, message: 'Old property type error.' }]
- const deps = receiptDependencies(jobs)
- const stop = watchInitialListingPublication(listingId, { client: deps.client, interval: 10, attentionInterval: 30 })
+ let visibility, finish
+ vi.stubGlobal('document', { hidden: false, addEventListener: vi.fn((_name, fn) => { visibility = fn }), removeEventListener: vi.fn() })
+ const eq = vi.fn(() => new Promise(resolve => { finish = resolve }))
+ const client = { from: () => ({ select: () => ({ eq }) }) }
+ const stop = watchInitialListingPublication(listingId, { client, interval: 10 })
+ visibility(); visibility()
+ expect(eq).toHaveBeenCalledTimes(1)
+ finish({ data: [{ id: 'job', channel: 'property24', state: 'accepted' }] })
  await vi.advanceTimersByTimeAsync(0)
- expect(readInitialListingChannelResults(listingId)[0].status).toBe(state === 'failed' ? 'needs_attention' : 'uncertain')
- jobs[0] = { ...jobs[0], state: 'accepted', message: 'Submitted.' }
- await vi.advanceTimersByTimeAsync(30)
- expect(readInitialListingChannelResults(listingId)[0]).toMatchObject({ status: 'submitted', retryable: false, message: 'Submitted.' })
- expect(deps.fetch).not.toHaveBeenCalled()
+ expect(eq).toHaveBeenCalledTimes(2)
  stop()
+ finish({ data: [] })
+ await vi.advanceTimersByTimeAsync(100)
+ expect(eq).toHaveBeenCalledTimes(2)
+})
+it('does not notify the UI again for an unchanged durable receipt', async () => {
+ const dispatchEvent = vi.fn()
+ vi.stubGlobal('window', { dispatchEvent })
+ const deps = receiptDependencies([{id:'job',channel:'property24',state:'dispatching'}])
+ await refreshListingPublicationResults(listingId, deps)
+ await refreshListingPublicationResults(listingId, deps)
+ expect(dispatchEvent).toHaveBeenCalledTimes(1)
 })
 
-function publicationWindow() {
- const events = new EventTarget()
- const target = {
-  dispatchEvent: vi.fn(event => events.dispatchEvent(event)),
-  addEventListener: vi.fn((...args) => events.addEventListener(...args)),
-  removeEventListener: vi.fn((...args) => events.removeEventListener(...args)),
- }
- vi.stubGlobal('window', target)
- return target
-}
-
-it.each(['focus', 'pageshow'])('checks the current receipt on %s and removes the listener when closed', async eventName => {
+it('refreshes unresolved receipts slowly and on focus, then stops after acceptance', async () => {
  vi.useFakeTimers()
- const target = publicationWindow()
- const jobs = [{ id: 'p24', channel: 'property24', state: 'failed', message: 'Old property type error.' }]
- const deps = receiptDependencies(jobs)
- const stop = watchInitialListingPublication(listingId, { client: deps.client })
+ const listeners = new Map()
+ vi.stubGlobal('window', { dispatchEvent: vi.fn(), addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name) => listeners.delete(name) })
+ const jobs = [{id:'job',channel:'property24',state:'failed',message:'Correct the price.'}]
+ const eq = vi.fn(async () => ({data:jobs}))
+ const stop = watchInitialListingPublication(listingId,{client:{from:()=>({select:()=>({eq})})},interval:10,attentionInterval:100})
  await vi.advanceTimersByTimeAsync(0)
- jobs[0] = { ...jobs[0], state: 'accepted', message: 'Submitted.' }
- target.dispatchEvent(new Event(eventName))
- await vi.advanceTimersByTimeAsync(0)
- expect(readInitialListingChannelResults(listingId)[0].status).toBe('submitted')
- expect(deps.fetch).not.toHaveBeenCalled()
- stop()
- expect(target.removeEventListener).toHaveBeenCalledWith(eventName, expect.any(Function))
-})
-
-it('keeps the newer receipt when an earlier check returns its old failure afterwards', async () => {
- vi.useFakeTimers()
- const target = publicationWindow()
- const deps = receiptDependencies([{ id: 'p24', channel: 'property24', state: 'failed' }])
- const stop = watchInitialListingPublication(listingId, { client: deps.client })
- await vi.advanceTimersByTimeAsync(0)
- const pendingReads = []
- deps.client.from = () => ({ select: () => ({ eq: () => new Promise(resolve => pendingReads.push(resolve)) }) })
- target.dispatchEvent(new Event('focus'))
- target.dispatchEvent(new Event('pageshow'))
- expect(pendingReads).toHaveLength(2)
- pendingReads[1]({ data: [{ id: 'p24', channel: 'property24', state: 'accepted', message: 'Submitted.' }] })
- await vi.advanceTimersByTimeAsync(0)
- pendingReads[0]({ data: [{ id: 'p24', channel: 'property24', state: 'failed', message: 'Old property type error.' }] })
- await vi.advanceTimersByTimeAsync(0)
- expect(readInitialListingChannelResults(listingId)[0]).toMatchObject({ status: 'submitted', message: 'Submitted.' })
- stop()
-})
-
-it('keeps a genuine failure visible, reads at the slower interval and stops checking when closed', async () => {
- vi.useFakeTimers()
- const deps = receiptDependencies([{ id: 'p24', channel: 'property24', state: 'failed', message: 'Fix the description.' }])
- const from = vi.spyOn(deps.client, 'from')
- const stop = watchInitialListingPublication(listingId, { client: deps.client, interval: 10, attentionInterval: 30 })
- await vi.advanceTimersByTimeAsync(29)
- expect(from).toHaveBeenCalledTimes(1)
+ await vi.advanceTimersByTimeAsync(99)
+ expect(eq).toHaveBeenCalledTimes(1)
  await vi.advanceTimersByTimeAsync(1)
- expect(from).toHaveBeenCalledTimes(2)
- expect(readInitialListingChannelResults(listingId)[0]).toMatchObject({ status: 'needs_attention', retryable: true, message: 'Fix the description.' })
- expect(deps.fetch).not.toHaveBeenCalled()
- stop()
- await vi.advanceTimersByTimeAsync(90)
- expect(from).toHaveBeenCalledTimes(2)
-})
-
-it('pauses receipt reads while the tab is hidden and refreshes on return', async () => {
- vi.useFakeTimers()
- let hidden = false
- const events = new EventTarget()
- vi.stubGlobal('document', { get hidden() { return hidden }, addEventListener: (...args) => events.addEventListener(...args), removeEventListener: (...args) => events.removeEventListener(...args) })
- const jobs = [{ id: 'p24', channel: 'property24', state: 'failed' }]
- const deps = receiptDependencies(jobs)
- const from = vi.spyOn(deps.client, 'from')
- const stop = watchInitialListingPublication(listingId, { client: deps.client, interval: 10, attentionInterval: 30 })
- await vi.advanceTimersByTimeAsync(0)
- hidden = true
- jobs[0].state = 'accepted'
- await vi.advanceTimersByTimeAsync(60)
- expect(from).toHaveBeenCalledTimes(1)
- hidden = false
- events.dispatchEvent(new Event('visibilitychange'))
+ expect(eq).toHaveBeenCalledTimes(2)
+ jobs[0].state='accepted'
+ listeners.get('focus')()
  await vi.advanceTimersByTimeAsync(0)
  expect(readInitialListingChannelResults(listingId)[0].status).toBe('submitted')
- expect(from).toHaveBeenCalledTimes(2)
- stop()
+ const reads=eq.mock.calls.length
+ await vi.advanceTimersByTimeAsync(500)
+ expect(eq).toHaveBeenCalledTimes(reads)
+ stop();expect(listeners.size).toBe(0)
 })

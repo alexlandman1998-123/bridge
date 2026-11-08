@@ -90,6 +90,7 @@ export function buildDealSetupCommercialPayload({ terms = {}, finance = {} } = {
   return {
     purchaser_type: text(terms.purchaserType) || null,
     purchase_price: number(terms.purchasePrice),
+    sales_price: number(terms.purchasePrice),
     deposit_amount: number(terms.depositAmount),
     finance_type: financeType || null,
     finance_managed_by: usesBond || !financeType ? text(finance.managedBy) || null : null,
@@ -105,6 +106,7 @@ export function buildDealSetup({ transaction = {}, buyerParties = [] } = {}) {
   return Object.freeze({
     version: DEAL_SETUP_CONTRACT_VERSION,
     transactionId: text(transaction.id),
+    revision: text(transaction.updated_at),
     property: Object.freeze({ developmentId: text(transaction.development_id), unitId: text(transaction.unit_id), address: text(transaction.property_address_line_1), sellerName: text(transaction.seller_name) }),
     buyers: Object.freeze(parties),
     // A manually captured buyer may not yet have a reusable buyers-table

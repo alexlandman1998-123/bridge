@@ -1,6 +1,6 @@
 import { requireClient } from '../../src/services/attorneyFirmServiceShared.js'
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
-import { buildRegistrationReadinessBlockers } from '../../src/core/transactions/registrationReadinessShortcut.js'
+import { buildRegistrationReadinessBlockers, buildRegistrationReadinessShortcut } from '../../src/core/transactions/registrationReadinessShortcut.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
 import {
   attachWorkflowEvidence,
@@ -266,6 +266,9 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
     if (registrationBlockers.length) {
       return registrationBlockers
     }
+    // The current legal plan has already enforced its own milestone gates.
+    // Do not re-block it on retired compatibility workflow predecessors.
+    if (buildRegistrationReadinessShortcut({transaction:state.transaction,rollup}).canonical.available) return []
   }
 
   if (descriptor.actionKey === 'MARK_READY_FOR_REGISTRATION') {
@@ -277,6 +280,7 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
     if (readinessBlockers.length) {
       return readinessBlockers
     }
+    if (buildRegistrationReadinessShortcut({transaction:state.transaction,rollup}).canonical.available) return []
   }
 
   if (

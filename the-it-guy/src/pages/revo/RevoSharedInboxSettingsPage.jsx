@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Settings2 } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Mail, MessageCircle, PenLine, Settings2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuthSession } from '../../context/AuthSessionContext'
 import { useOrganisation } from '../../context/OrganisationContext'
@@ -29,9 +29,10 @@ function WhatsAppChannels({ organisationId, userId, canManage }) {
     catch (cause) { if (active.current) setError(cause.message || 'WhatsApp channel settings could not be saved.') }
     finally { lock.current = false; if (active.current) setBusy(false) }
   }
-  return <section className="revo-whatsapp-settings" aria-label="WhatsApp channels"><h2>WhatsApp channels</h2>
+  return <section className="revo-whatsapp-settings" aria-label="WhatsApp channels">
+    <div className="inbox-settings-heading"><div><h2>WhatsApp numbers</h2><p>Connect a business number and manage your team's conversations.</p></div><Link className="inbox-settings-link" to="/settings/integrations/whatsapp">Manage WhatsApp <ArrowUpRight size={15} aria-hidden="true" /></Link></div>
     {error && <p role="alert" className="inbox-settings-error">{error}</p>}{notice && <p role="status">{notice}</p>}
-    {loading ? <p role="status">Loading WhatsApp channels…</p> : <div className="revo-channel-grid">{!channels.length && <p className="revo-channel-empty">No WhatsApp channels have been prepared yet.</p>}{channels.map(channel => <article key={channel.id}>
+    {loading ? <p role="status">Loading WhatsApp channels…</p> : <div className="revo-channel-grid">{!channels.length && <div className="revo-channel-empty"><MessageCircle size={28} aria-hidden="true" /><h3>Your next conversation starts here</h3><p>Connect a WhatsApp Business number to bring customer messages into Inbox.</p><Link className="inbox-settings-link" to="/settings/integrations/whatsapp">Connect WhatsApp <ArrowUpRight size={15} aria-hidden="true" /></Link></div>}{channels.map(channel => <article key={channel.id}>
       <h3>{channel.displayName || channel.address}</h3><p>{channel.address}</p><p>{channel.connectionStatus === 'draft' ? 'Not connected' : channel.connectionStatus}</p>
       {canManage && <footer><button type="button" disabled={busy || channel.isDefault} onClick={() => void run(async () => { await setRevoInboxDefaultChannel(channel.id); return 'Default WhatsApp channel updated.' })}>{channel.isDefault ? 'Default channel' : 'Make default'}</button>
       <button type="button" disabled={busy} onClick={() => void run(async () => { await updateRevoInboxChannel({ organisationId, channelId: channel.id, connectionStatus: channel.connectionStatus === 'paused' ? 'draft' : 'paused' }); return channel.connectionStatus === 'paused' ? 'Channel returned to setup mode.' : 'Channel setup paused.' })}>{channel.connectionStatus === 'paused' ? 'Resume setup' : 'Pause'}</button></footer>}
@@ -47,9 +48,24 @@ function WhatsAppChannels({ organisationId, userId, canManage }) {
 export default function RevoSharedInboxSettingsPage() {
   const { organisation, membershipRole } = useOrganisation()
   const { user } = useAuthSession()
+  const [tab, setTab] = useState('mailboxes')
+  const [emailTab, setEmailTab] = useState('mailboxes')
+  const activateTab = value => { setTab(value); if (value !== 'whatsapp') setEmailTab(value) }
+  const tabs = [['mailboxes', 'Email accounts', <Mail size={17} aria-hidden="true" />], ['signatures', 'Signatures', <PenLine size={17} aria-hidden="true" />], ['whatsapp', 'WhatsApp', <MessageCircle size={17} aria-hidden="true" />]]
+  const selectTab = (event, index) => {
+    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null
+    if (next === null) return
+    event.preventDefault()
+    activateTab(tabs[next][0])
+    event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next].focus()
+  }
   return <main className="revo-channel-settings">
-    <header><div><Link to="/inbox"><ArrowLeft size={16} /> Inbox</Link><h1>Inbox settings</h1><p>Manage email mailboxes, signatures and WhatsApp channels.</p></div><Settings2 size={30} aria-hidden="true" /></header>
-    <EmailMailboxSettings organisationId={organisation?.id} userId={user?.id} />
-    <WhatsAppChannels key={`${organisation?.id}:${user?.id}`} organisationId={organisation?.id} userId={user?.id} canManage={isOrganisationAdminMembershipRole(membershipRole)} />
+    <Link className="inbox-settings-back" to="/inbox"><ArrowLeft size={15} aria-hidden="true" /> Back to inbox</Link>
+    <header className="inbox-settings-page-heading"><div><span className="inbox-settings-eyebrow">WORKSPACE SETTINGS</span><h1>Inbox settings</h1><p>Your accounts, your team, one connected inbox.</p></div><span className="inbox-settings-page-icon"><Settings2 size={23} aria-hidden="true" /></span></header>
+    <div className="inbox-page-tabs" role="tablist" aria-label="Inbox settings sections">{tabs.map(([value, label, icon], index) => <button key={value} id={`inbox-tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`inbox-panel-${value}`} tabIndex={tab === value ? 0 : -1} onClick={() => activateTab(value)} onKeyDown={event => selectTab(event, index)}>{icon}{label}</button>)}</div>
+    <section id={`inbox-panel-${emailTab}`} role="tabpanel" aria-labelledby={`inbox-tab-${emailTab}`} hidden={tab === 'whatsapp'}>
+      <EmailMailboxSettings organisationId={organisation?.id} userId={user?.id} tab={emailTab} showTabs={false} />
+    </section>
+    {tab === 'whatsapp' && <section id="inbox-panel-whatsapp" role="tabpanel" aria-labelledby="inbox-tab-whatsapp"><WhatsAppChannels key={`${organisation?.id}:${user?.id}`} organisationId={organisation?.id} userId={user?.id} canManage={isOrganisationAdminMembershipRole(membershipRole)} /></section>}
   </main>
 }

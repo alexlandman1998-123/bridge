@@ -54,6 +54,10 @@ export function getRequiredProductionEnvVars() {
   ]
 }
 
+export function hasConfiguredBrowserSupabaseKey(env = import.meta.env) {
+  return Boolean(normalize(env.VITE_SUPABASE_PUBLISHABLE_KEY) || normalize(env.VITE_SUPABASE_ANON_KEY) || normalize(env.VITE_SUPABASE_KEY))
+}
+
 export function validateProductionConfiguration({ strict = isProductionEnvironment() } = {}) {
   const unsafeFlags = getUnsafeProductionFlags()
   const enabledUnsafeFlags = Object.entries(unsafeFlags)
@@ -61,13 +65,11 @@ export function validateProductionConfiguration({ strict = isProductionEnvironme
     .map(([name]) => name)
   const requiredEnvVars = getRequiredProductionEnvVars()
   const missingEnvVars = requiredEnvVars.filter((name) => !normalize(import.meta.env[name]))
-  const hasBrowserSupabaseKey = Boolean(
-    normalize(import.meta.env.VITE_SUPABASE_ANON_KEY) || normalize(import.meta.env.VITE_SUPABASE_KEY),
-  )
+  const hasBrowserSupabaseKey = hasConfiguredBrowserSupabaseKey()
   const issues = []
 
   if (strict && !hasBrowserSupabaseKey) {
-    missingEnvVars.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
+    missingEnvVars.push('VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
   }
 
   if (strict && enabledUnsafeFlags.length) {

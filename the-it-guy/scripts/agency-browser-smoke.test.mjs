@@ -7,7 +7,7 @@ const APP_ROOT = new URL('../', import.meta.url)
 const DEFAULT_PORT = 5194
 const DEFAULT_BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}`
 const FAKE_SUPABASE_URL = 'https://agency-smoke.supabase.co'
-const FAKE_ANON_KEY = 'agency-smoke-anon-key'
+const FAKE_PUBLISHABLE_KEY = 'sb_publishable_agency_browser_smoke_fixture'
 const DEV_AUTH_STORAGE_KEY = 'itg:dev-auth-role'
 
 const smokeSteps = [
@@ -90,7 +90,8 @@ async function startViteServer() {
       ...process.env,
       VITE_APP_ENV: 'development',
       VITE_SUPABASE_URL: FAKE_SUPABASE_URL,
-      VITE_SUPABASE_ANON_KEY: FAKE_ANON_KEY,
+      VITE_SUPABASE_PUBLISHABLE_KEY: FAKE_PUBLISHABLE_KEY,
+      VITE_SUPABASE_ANON_KEY: '',
       VITE_SUPABASE_KEY: '',
       VITE_ENABLE_DEV_AUTH_BYPASS: 'true',
       VITE_ENABLE_LOCAL_FALLBACKS: 'true',
@@ -130,6 +131,12 @@ async function startViteServer() {
 
 function isIgnorableConsoleMessage(message) {
   const text = `${message.type()} ${message.text()}`.toLowerCase()
+  // The transport double rejects writes without a persistence receipt. The
+  // seller scenario verifies the visible failure and retained input explicitly.
+  if (text.includes('contact persistence could not be verified') &&
+      (text.includes('[agencycrmrepository] create lead failed without local fallback') || text.includes('[seller onboarding] draft save failed'))) return true
+  // Leaving that deliberately rejected draft can abort its last fixture save.
+  if (text.includes('[seller onboarding] draft save failed') && text.includes('typeerror: failed to fetch')) return true
   return [
     'dev auth bypass is enabled',
     'download the react devtools',
@@ -247,7 +254,7 @@ async function closeDialog(page) {
 }
 
 async function openCreateLeadModal(page, categoryLabel) {
-  const title = `Add ${categoryLabel} Lead`
+  const title = categoryLabel === 'Seller' ? 'Create Seller Lead' : `Add ${categoryLabel} Lead`
   await clickByRole(page, 'button', new RegExp(`^Add ${categoryLabel} Lead$`))
   await page.getByRole('dialog').filter({ hasText: title }).first().waitFor({ state: 'visible', timeout: 10_000 })
 }
@@ -257,9 +264,19 @@ async function runLeadSmoke(page, baseUrl) {
   await chooseLeadType(page, 'Seller Leads')
   await openCreateLeadModal(page, 'Seller')
   await fillByLabel(page, 'First name', 'Phase Five')
-  await fillByLabel(page, 'Last name', 'Seller')
-  await fillByLabel(page, 'Mobile', '+27820000000')
+  await fillByLabel(page, 'Surname', 'Seller')
+  await fillByLabel(page, 'Phone', '+27820000000')
   await closeDialog(page)
+
+  // The transport double deliberately returns no confirmed write receipt.
+  // The capture must keep the draft visible instead of closing on an unknown save.
+  const sellerDialog = page.getByRole('dialog', { name: 'Create Seller Lead', exact: true })
+  if (await sellerDialog.isVisible()) {
+    await sellerDialog.getByText('Contact persistence could not be verified.', { exact: true }).waitFor()
+    assert.equal(await sellerDialog.getByLabel('First name', { exact: true }).inputValue(), 'Phase Five')
+    assert.equal(await sellerDialog.getByLabel('Surname', { exact: true }).inputValue(), 'Seller')
+    await openAsAgent(page, baseUrl, '/pipeline/leads')
+  }
 
   await chooseLeadType(page, 'Buyer Leads')
   await openCreateLeadModal(page, 'Buyer')
@@ -312,7 +329,9 @@ async function runOrganisationBrandingSmoke(page, baseUrl) {
 }
 
 const server = await startViteServer()
-const browser = await chromium.launch({ headless: true })
+let browser
+try {
+browser = await chromium.launch({ headless: true, ...(process.env.PORTAL_TEST_BROWSER_CHANNEL ? { channel: process.env.PORTAL_TEST_BROWSER_CHANNEL } : {}) })
 const context = await browser.newContext({
   viewport: { width: 1440, height: 1100 },
   permissions: ['clipboard-read', 'clipboard-write'],
@@ -328,6 +347,7 @@ await context.addInitScript((storageKey) => {
 await stubSupabaseTraffic(context)
 
 const page = await context.newPage()
+page.on('dialog', dialog => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss())
 page.on('console', (message) => {
   if (message.type() === 'error' && !isIgnorableConsoleMessage(message)) {
     consoleErrors.push(message.text())
@@ -337,7 +357,6 @@ page.on('pageerror', (error) => {
   pageErrors.push(error.message)
 })
 
-try {
   console.log('Agency browser smoke')
   for (const step of smokeSteps) {
     console.log(`  - ${step.label}`)
@@ -352,6 +371,6 @@ try {
   assert.deepEqual(consoleErrors, [], `Browser console errors:\n${consoleErrors.join('\n')}`)
   console.log('agency browser smoke tests passed')
 } finally {
-  await browser.close()
+  await browser?.close()
   await server.stop()
 }

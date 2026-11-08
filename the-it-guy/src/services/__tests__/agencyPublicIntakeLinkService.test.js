@@ -134,6 +134,9 @@ assert.equal(agentCardPayload.is_primary, false)
 assert.equal(agentCardPayload.default_assigned_agent_id, '33333333-3333-4333-8333-333333333333')
 assert.equal(agentCardPayload.lead_source_label, 'Agent Digital Card')
 assert.equal(agentCardPayload.metadata_json.surface, AGENT_DIGITAL_CARD_SURFACE)
+assert.deepEqual(agentCardPayload.enabled_intents, ['buy', 'sell', 'rent'])
+assert.deepEqual(buildPayload({ organisationId: 'org-1' }).enabled_intents, ['buy', 'sell'])
+assert.deepEqual(buildAgentCardPayload({ organisationId: 'org-1', agentUserId: 'agent-1' }, { enabledIntents: ['buy', 'sell'] }).enabled_intents, ['buy', 'sell'])
 
 // Dashboard edits retain the existing public configuration, but allow optional
 // contact details and a photo to be explicitly removed.

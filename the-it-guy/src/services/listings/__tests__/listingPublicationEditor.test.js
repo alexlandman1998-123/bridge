@@ -4,10 +4,28 @@ import { expect, it, vi } from 'vitest'
 // Exercise the editor's real retry controller without mounting the unrelated
 // listing grid, seller intake and development workspaces in the same page.
 const page = readFileSync(new URL('../../../pages/AgentListings.jsx', import.meta.url), 'utf8')
+it('saves ordinary sales edits and automatically queues their updates without a separate requirements action', async () => {
+  const form = { listingStatus: 'active' }
+  const context = {
+    form, draftRecoveryBlocked: false, editDraftConflict: null, isCreateListingWorkspace: false, isEditListingWorkspace: true, isDeveloperWorkspace: false, editorRelistChannel: '',
+    buildFinalSalesListingForm: () => form, listingFieldIssues: [{ step: 'marketing', message: 'Portal photo requirement' }],
+    floorplanUploading: false, isListingSaving: false, publicationStatusBusy: false, publicationPending: false, publicationUncertain: false,
+    listingSaveInFlightRef: { current: false }, completedCreateListingRef: { current: false },
+    setError: vi.fn(), setWorkflowMessage: vi.fn(), setIsListingSaving: vi.fn(), setCloudSave: vi.fn(),
+    performUpdateExistingListing: vi.fn(async () => true), setValidationAttemptedStep: vi.fn(), setCreateListingStep: vi.fn(),
+  }
+  const controller = page.slice(page.indexOf('  async function handleSaveListing('), page.indexOf('  function requestListingDeletion('))
+  const save = new Function(...Object.keys(context), `${controller}; return handleSaveListing;`)(...Object.values(context))
+  await save({ preventDefault() {} })
+  expect(context.performUpdateExistingListing).toHaveBeenCalledWith({ sendUpdates: true, relistChannel: '' })
+  expect(context.setValidationAttemptedStep).not.toHaveBeenCalled()
+  expect(context.listingSaveInFlightRef.current).toBe(false)
+})
+
 const source = page.slice(page.indexOf('  async function retryListingPublication('), page.indexOf('  async function handleSaveListing('))
 function editor(overrides = {}) {
   const context = {
-    editorRelistChannel: '', getSalesListingRequiredIssues: () => [],
+    advertUpdateResults: [], editorRelistChannel: '', getSalesListingRequiredIssues: () => [],
     getListingFieldIssues: () => context.listingFieldIssues,
     initialChannelResults: [{ key: 'private_property', retryable: true }],
     publicationStatusBusy: false, isListingSaving: false, publicationPending: false, isEditListingWorkspace: true,

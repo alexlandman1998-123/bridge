@@ -14,6 +14,7 @@ beforeEach(() => { vi.clearAllMocks(); mocks.role='admin'; mocks.load.mockResolv
 afterEach(cleanup)
 it('uses the shared email settings surface and keeps WhatsApp channel creation separate', async () => {
   render(<MemoryRouter><RevoSharedInboxSettingsPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('tab',{name:'WhatsApp',exact:true}))
   await screen.findByText('+27115550100',{ selector:'p' })
   expect(screen.getByText('Shared email settings: org · user')).toBeTruthy()
   expect(screen.queryByRole('heading',{ name:'email@example.test' })).toBeNull()
@@ -24,6 +25,7 @@ it('uses the shared email settings surface and keeps WhatsApp channel creation s
 it('does not offer WhatsApp administration to ordinary members', async () => {
   mocks.role='agent'
   render(<MemoryRouter><RevoSharedInboxSettingsPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('tab',{name:'WhatsApp',exact:true}))
   await screen.findByText('+27115550100',{ selector:'p' })
   expect(screen.queryByRole('button',{ name:'Save WhatsApp channel' })).toBeNull()
 })

@@ -8,6 +8,13 @@ const completeOnboarding = {
 }
 
 describe('sales workflow Phase 0 signed OTP containment', () => {
+  it('reuses an uploaded OTP awaiting review without asking for generation or another upload', () => {
+    const snapshot = resolveSalesWorkflowSnapshot({ ...completeOnboarding, onboardingStatus: 'signed_otp_uploaded_for_review', onboardingCompletedAt: '2026-10-29T19:00:46Z', documents: [{id:'existing-otp',document_type:'signed_otp',status:'uploaded'}] })
+    expect(snapshot.nextAction).toBe('complete_supporting_documents')
+    expect(snapshot.readyForFinance).toBe(false)
+    expect(snapshot.signedOtpReceived).toBe(false)
+    expect(snapshot.blockers.join(' ')).toContain('No new upload is needed')
+  })
   it('does not let manual OTP evidence unlock signed OTP or Finance', () => {
     const snapshot = resolveSalesWorkflowSnapshot({
       ...completeOnboarding,

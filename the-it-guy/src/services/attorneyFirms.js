@@ -1017,11 +1017,53 @@ export async function updateAttorneyFirm(firmId, payload = {}) {
   return mergeFirmWithBranding(mapFirmRow(query.data), branding)
 }
 
+export async function getAttorneyQuickStartDetails(organisationId) {
+  if (!organisationId) return {}
+  const result = await requireClient().from('organisation_settings').select('settings_json').eq('organisation_id', organisationId).maybeSingle()
+  if (result.error) throw result.error
+  return result.data?.settings_json?.attorneyQuickStart || {}
+}
+
+export async function saveAttorneyQuickStartDetails(client, firm, firmInformation, branding) {
+  if (!firm.organisationId) throw new Error('Your firm was created, but its workspace could not be confirmed. Please retry.')
+  const organisationId = firm.organisationId
+  const current = await client.from('organisation_settings').select('settings_json').eq('organisation_id', organisationId).maybeSingle()
+  if (current.error) throw current.error
+  const saved = await client.from('organisation_settings').upsert({
+    organisation_id: organisationId,
+    settings_json: {
+      ...(current.data?.settings_json || {}),
+      attorneyQuickStart: { lpcNumber: String(firmInformation.lpcNumber || '').trim(), branding },
+    },
+  }, { onConflict: 'organisation_id' }).select('organisation_id').single()
+  if (saved.error) throw saved.error
+
+  if (branding.logoIconUrl) {
+    const updated = await client.from('organisation_branding').update({
+      logo_icon_url: branding.logoIconUrl,
+    }).eq('organisation_id', organisationId).select('organisation_id').maybeSingle()
+    if (updated.error) throw updated.error
+    if (!updated.data) {
+      const inserted = await client.from('organisation_branding').insert({
+        organisation_id: organisationId,
+        organisation_display_name: firm.name,
+        logo_light_url: branding.logoUrl || null,
+        logo_dark_url: branding.logoDarkUrl || null,
+        logo_icon_url: branding.logoIconUrl,
+        primary_brand_color: branding.primaryColour,
+        secondary_brand_color: branding.secondaryColour,
+      }).select('organisation_id').single()
+      if (inserted.error) throw inserted.error
+    }
+  }
+}
+
 export async function completeAttorneyFirmOnboarding({
   firmInformation = {},
   branding = {},
   activeDepartmentTypes = [],
   invites = [],
+  quickStart = false,
 } = {}) {
   const combinedFirmPayload = {
     ...firmInformation,
@@ -1029,10 +1071,13 @@ export async function completeAttorneyFirmOnboarding({
   }
 
   try {
-    let createdFirm = await createAttorneyFirm(combinedFirmPayload)
+    let createdFirm = await createAttorneyFirm(quickStart
+      ? { ...combinedFirmPayload, skipOnboardingCompletion: true }
+      : combinedFirmPayload)
     const authUser = await getAuthenticatedUser(requireClient()).catch(() => null)
     const brandingRecord = await saveAttorneyFirmBranding(requireClient(), createdFirm.id, branding, authUser?.id || null)
     createdFirm = mergeFirmWithBranding(createdFirm, brandingRecord)
+    if (quickStart) await saveAttorneyQuickStartDetails(requireClient(), createdFirm, firmInformation, branding)
     rememberAttorneyFirmRecovery(authUser?.id || '', createdFirm)
     const updatedDepartments = await setAttorneyFirmDepartmentActivation(createdFirm.id, activeDepartmentTypes)
     const activeDepartments = updatedDepartments.filter((department) => department.isActive)
@@ -1062,6 +1107,18 @@ export async function completeAttorneyFirmOnboarding({
       } catch {
         inviteWarnings.push(`Invitation could not be sent to ${String(invite.email || '').trim()}. You can resend it later from firm settings.`)
       }
+    }
+
+    if (quickStart) {
+      if (!authUser?.id) throw new Error('Your session could not be confirmed. Please sign in and retry setup.')
+      await completeOnboarding({
+        userId: authUser.id,
+        user: authUser,
+        appRole: 'attorney',
+        workspaceType: 'attorney_firm',
+        workspaceId: createdFirm.id,
+        context: { source: 'attorney_quick_start' },
+      })
     }
 
     return {

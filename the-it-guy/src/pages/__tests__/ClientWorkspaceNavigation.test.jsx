@@ -12,7 +12,7 @@ vi.mock('../../context/OrganisationContext', () => ({ useOrganisation: () => ({ 
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: null }))
 vi.mock('../../core/clients/agentClientDirectory', async original => ({ ...await original(), loadAgentClientDirectory: vi.fn(), loadAgentClientProfile: vi.fn() }))
 vi.mock('../../services/observability/agentRoutePerformanceBaseline', () => ({ createAgentRoutePerformanceBaseline: () => ({ recordCheckpoint: vi.fn() }) }))
-vi.mock('../../services/emailCampaignService', () => ({ getClientMarketingWorkspace: vi.fn(), getClientAudienceMemberships: vi.fn().mockResolvedValue([]), saveClientMarketingTags: vi.fn(), saveEmailAudience: vi.fn() }))
+vi.mock('../../services/emailCampaignService', () => ({ getClientMarketingWorkspace: vi.fn(), getClientSharedAudienceMemberships: vi.fn().mockResolvedValue([]), saveClientMarketingTags: vi.fn(), saveEmailAudience: vi.fn() }))
 vi.mock('../../components/clients/ClientAudiences', () => ({ default: () => <p>Client audiences</p> }))
 vi.mock('../../components/clients/ClientActivityPanel', () => ({ default: ({ client }) => <section aria-label="Client activity">Activity for {client.identityId}</section> }))
 vi.mock('../../components/clients/ClientAttributionPanel', () => ({ default: ({ client }) => <section aria-label="Client sources">Sources for {client.identityId}</section> }))
@@ -24,12 +24,13 @@ function Location() { const location = useLocation(); const navigate = useNaviga
 const mount = (url='/clients?view=buyer', state) => render(<MemoryRouter initialEntries={[state ? { pathname: url, state } : url]}><Routes><Route path="/clients" element={<Clients />} /><Route path="/clients/:clientId" element={<ClientProfile />} /></Routes><Location /></MemoryRouter>)
 beforeEach(() => {
   localStorage.clear()
+  context.role = 'agent'
   context.profile = { id: 'agent' }
   context.workspace = { id: 'agency', organisationId: 'agency' }
   loadAgentClientDirectory.mockResolvedValue({ clients: [client], filters: { sources: [], assignedAgents: [] } })
   loadAgentClientProfile.mockResolvedValue(undefined)
-  getClientMarketingWorkspace.mockResolvedValue({ marketingContact: { id: 'contact', tags: ['launch'] } })
-  saveClientMarketingTags.mockImplementation(async ({ tags }) => ({ id: 'contact', tags }))
+  getClientMarketingWorkspace.mockResolvedValue({ tags: ['launch'], tagVersion: 1, marketingContact: { id: 'contact', tags: ['launch'] } })
+  saveClientMarketingTags.mockImplementation(async ({ tags }) => ({ id: 'contact', tags, tagVersion: 2 }))
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 test('client card opens the full workspace, exposes its tabs, and returns to the filtered directory', async () => {
@@ -66,12 +67,12 @@ test('a direct workspace link keeps tag editing available and preserves email/ag
   await screen.findByText('launch')
   expect(screen.queryByText('Client Workspace')).toBeNull()
   expect(screen.queryByText('TS', { exact: true })).toBeNull()
-  expect(getClientMarketingWorkspace).toHaveBeenCalledWith({ organisationId: 'agency', email: client.email })
+  expect(getClientMarketingWorkspace).toHaveBeenCalledWith({ organisationId: 'agency', email: client.email, clientId: identityId })
   fireEvent.change(screen.getByLabelText('Add a client tag'), { target: { value: 'Show-Day' } })
   fireEvent.click(screen.getByRole('button', { name: 'Add tag' }))
   fireEvent.click(screen.getByRole('button', { name: 'Save tags' }))
   await screen.findByText('Client tags saved.')
-  expect(saveClientMarketingTags).toHaveBeenCalledWith({ organisationId: 'agency', client: expect.objectContaining({ identityId }), tags: ['launch','show-day'] })
+  expect(saveClientMarketingTags).toHaveBeenCalledWith({ organisationId: 'agency', client: expect.objectContaining({ identityId }), tags: ['launch','show-day'], tagVersion: 1 })
 })
 test('untrusted return paths cannot navigate outside Clients, and inaccessible clients do not open another profile', async () => {
   loadAgentClientProfile.mockResolvedValueOnce(null)
@@ -150,4 +151,32 @@ test('late activity enrichment cannot replace clients from a new workspace', asy
   await act(async () => { finishOldActivity({ clients: [{ ...client, name: 'Old activity client' }], activityWarning: 'Old warning' }) })
   await waitFor(() => expect(screen.queryByText('Old warning')).toBeNull())
   expect(screen.queryByRole('button', { name: 'Open client workspace for Old activity client' })).toBeNull()
+})
+
+test('developer clients use the shared directory, audience tab and permanent profile', async () => {
+  context.role = 'developer'
+  context.profile = { id: 'developer' }
+  mount()
+  fireEvent.click(await screen.findByRole('button', { name: 'Audiences', exact: true }))
+  await screen.findByText('Client audiences')
+  fireEvent.click(screen.getByRole('button', { name: 'Clients', exact: true }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Open client workspace for Taylor Smith' }))
+  await screen.findByRole('heading', { name: 'Taylor Smith', level: 1 })
+  await screen.findByText('launch')
+  expect(loadAgentClientDirectory).toHaveBeenCalledWith(expect.objectContaining({ role: 'developer' }))
+  expect(getClientMarketingWorkspace).toHaveBeenCalledWith({ organisationId: 'agency', email: client.email, clientId: identityId })
+  expect(screen.getByRole('button', { name: 'Save tags' }).disabled).toBe(false)
+})
+
+test('developer development filters retain phone-only CRM clients in the unassigned view', async () => {
+  context.role = 'developer'
+  const linked = { ...client, id: 'client:linked', name: 'Linked Buyer', linkedDevelopmentIds: ['development-a'], transactions: [{ development: { id: 'development-a', name: 'Development A' } }] }
+  loadAgentClientDirectory.mockResolvedValue({ clients: [client, linked], filters: { sources: [], assignedAgents: [] } })
+  mount('/clients?developmentId=development-a')
+  await screen.findByRole('button', { name: 'Open client workspace for Linked Buyer' })
+  expect(screen.queryByRole('button', { name: 'Open client workspace for Taylor Smith' })).toBeNull()
+  const filter = screen.getByRole('option', { name: 'All Developments' }).parentElement
+  fireEvent.change(filter, { target: { value: 'no-development-assigned' } })
+  await screen.findByRole('button', { name: 'Open client workspace for Taylor Smith' })
+  expect(screen.queryByRole('button', { name: 'Open client workspace for Linked Buyer' })).toBeNull()
 })

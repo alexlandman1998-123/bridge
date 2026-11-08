@@ -1,12 +1,13 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.49.9';
 import { dispatchCalendarAppointmentJob } from '../_shared/calendarAppointmentDelivery.ts';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
-Deno.serve(async request => {
+Deno.serve(withApiCredentials(async request => {
   if (request.method !== 'POST') return json(405,{error:'POST is required.'});
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const serviceRoleKey = supabaseServiceKey() || '';
   if (!serviceRoleKey || request.headers.get('authorization') !== `Bearer ${serviceRoleKey}`) return json(403,{error:'Worker authorization required.'});
   const appUrl = Deno.env.get('ARCH9_APP_URL') || '';
   if (!supabaseUrl || !/^https:\/\/[^/]+/.test(appUrl)) return json(500,{error:'Worker environment configuration is incomplete.'});
@@ -16,4 +17,4 @@ Deno.serve(async request => {
   if (claimed.error) return json(500,{error:'Delivery queue could not be claimed.'});
   const results = await Promise.all((claimed.data || []).map((job: Record<string, unknown>) => dispatchCalendarAppointmentJob(client,job,{supabaseUrl,serviceRoleKey,appUrl})));
   return json(200,{ok:true,claimed:results.length,results});
-});
+}));

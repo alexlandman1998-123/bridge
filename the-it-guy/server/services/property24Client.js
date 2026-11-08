@@ -136,13 +136,17 @@ export function createProperty24Client({
 
     const startedAt = Date.now()
     const url = appendProperty24Query(new URL(`${normalizedBaseUrl}${normalizedPath}`), params)
+    const timeoutError = () => new Property24HttpError(`Property24 ${method} ${normalizedPath} timed out after ${timeoutMs}ms.`, { method, path: normalizedPath })
 
     // Property24 can occasionally return a short-lived gateway error. Retry a
     // read once, but never retry publishes, status changes, or agent writes.
     const attempts = method.toUpperCase() === 'GET' ? 2 : 1
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      // A retry shares the original deadline; it must not double the user's wait.
+      const remainingMs = timeoutMs - (Date.now() - startedAt)
+      if (remainingMs <= 0) throw timeoutError()
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), timeoutMs)
+      const timeout = setTimeout(() => controller.abort(), remainingMs)
       try {
         const response = await fetchImpl(url, {
           method,
@@ -158,8 +162,8 @@ export function createProperty24Client({
         })
         const contentType = response.headers?.get?.('content-type') || ''
         const responseBody = contentType.includes('json')
-          ? await response.json().catch(() => null)
-          : await response.text().catch(() => '')
+          ? await response.json().catch(error => { if (error.name === 'AbortError') throw error; return null })
+          : await response.text().catch(error => { if (error.name === 'AbortError') throw error; return '' })
 
         if (!response.ok) {
           const error = new Property24HttpError(`Property24 ${method} ${normalizedPath} failed with ${response.status}.`, {
@@ -170,7 +174,9 @@ export function createProperty24Client({
             responseBody,
           })
           if (attempt < attempts && TRANSIENT_GET_STATUSES.has(response.status)) {
-            await waitForProperty24Retry(Math.max(0, Number(transientRetryDelayMs) || 0))
+            const retryDelayMs = Math.max(0, Number(transientRetryDelayMs) || 0)
+            if (Date.now() - startedAt + retryDelayMs >= timeoutMs) throw error
+            await waitForProperty24Retry(retryDelayMs)
             continue
           }
           throw error
@@ -184,10 +190,7 @@ export function createProperty24Client({
         }
       } catch (error) {
         if (error.name === 'AbortError') {
-          throw new Property24HttpError(`Property24 ${method} ${normalizedPath} timed out after ${timeoutMs}ms.`, {
-            method,
-            path: normalizedPath,
-          })
+          throw timeoutError()
         }
         throw error
       } finally {

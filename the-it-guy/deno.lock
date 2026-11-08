@@ -30,16 +30,11 @@
     "npm:lucide-react@0.577": "0.577.0_react@19.2.7",
     "npm:motion@^12.38.0": "12.42.2_react@19.2.7_react-dom@19.2.7__react@19.2.7",
     "npm:openai@^4.52.5": "4.104.0",
-    "npm:pdfjs-dist@^5.7.284": "5.7.284",
     "npm:playwright@^1.59.1": "1.61.1",
-    "npm:postcss@^8.5.8": "8.5.14",
     "npm:react-dom@^19.2.0": "19.2.7_react@19.2.7",
-    "npm:react-router-dom@^7.13.1": "7.18.1_react@19.2.7_react-dom@19.2.7__react@19.2.7",
     "npm:react@^19.2.0": "19.2.7",
     "npm:tailwind-merge@^3.5.0": "3.6.0",
-    "npm:tailwindcss@^3.4.17": "3.4.19",
-    "npm:vite@^7.3.1": "7.3.3",
-    "npm:xlsx@~0.18.5": "0.18.5"
+    "npm:tailwindcss@^3.4.17": "3.4.19"
   },
   "jsr": {
     "@std/assert@1.0.19": {
@@ -2696,6 +2691,7 @@
         "npm:@testing-library/react@^16.3.2",
         "npm:@types/react-dom@^19.2.3",
         "npm:@types/react@^19.2.7",
+        "npm:@vercel/functions@3.9.11",
         "npm:@vitejs/plugin-react@^5.1.1",
         "npm:autoprefixer@^10.4.27",
         "npm:class-variance-authority@~0.7.1",
@@ -2704,6 +2700,7 @@
         "npm:eslint-plugin-react-hooks@^7.0.1",
         "npm:eslint-plugin-react-refresh@~0.4.24",
         "npm:eslint@^9.39.1",
+        "npm:fake-indexeddb@6.2.5",
         "npm:fflate@0.8.3",
         "npm:globals@^16.5.0",
         "npm:html2pdf.js@0.14",
@@ -2712,20 +2709,28 @@
         "npm:lenis@^1.3.21",
         "npm:lucide-react@0.577",
         "npm:motion@^12.38.0",
-        "npm:pdfjs-dist@^5.7.284",
+        "npm:parse5@7.3.0",
+        "npm:pdfjs-dist@6.4.299",
         "npm:playwright@^1.59.1",
-        "npm:postcss@^8.5.8",
+        "npm:postcss@8.5.31",
         "npm:qrcode@^1.5.4",
         "npm:react-dom@^19.2.0",
-        "npm:react-router-dom@^7.13.1",
+        "npm:react-router-dom@7.18.4",
         "npm:react@^19.2.0",
-        "npm:sharp@~0.35.4",
+        "npm:sharp@0.35.5",
         "npm:tailwind-merge@^3.5.0",
         "npm:tailwindcss@^3.4.17",
-        "npm:vite@^7.3.1",
+        "npm:vite@7.3.7",
         "npm:vitest@^3.2.7",
-        "npm:xlsx@~0.18.5"
-      ]
+        "npm:web-push@3.6.7"
+      ],
+      "overrides": {
+        "ws": "8.22.0",
+        "source-map-js": "1.2.2",
+        "nanoid": "3.3.20",
+        "browserslist": "4.29.4",
+        "dompurify": "3.4.17"
+      }
     }
   }
 }

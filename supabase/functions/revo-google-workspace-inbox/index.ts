@@ -4,7 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
 const PROVIDER_KEY = "google_workspace";
-const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization,x-client-info,apikey,content-type", "access-control-allow-methods": "GET,POST,OPTIONS" };
+const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization,x-client-info,apikey,content-type", "access-control-allow-methods": "GET,POST,OPTIONS", "cache-control": "no-store" };
 const text = (value: unknown) => String(value ?? "").trim();
 const json = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 const now = () => new Date().toISOString();
@@ -21,7 +21,9 @@ function providerConfig() {
   if (!clientId || !clientSecret) throw new Error("Google Workspace connection is not configured yet.");
   return { clientId, clientSecret };
 }
-function providerScopes() { return ["openid", "email", "https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send"].join(" "); }
+// Receiving reads mailbox history, bodies and attachments; sending uses its own
+// narrow scope. Arch9 does not modify Gmail labels or delete Gmail messages.
+function providerScopes() { return ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"].join(" "); }
 function randomUrlSafe(bytes = 32) { return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(bytes)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); }
 async function sha256(value: string) { const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))); return [...digest].map((item) => item.toString(16).padStart(2, "0")).join(""); }
 async function pkceChallenge(verifier: string) { const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))); return btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, ""); }

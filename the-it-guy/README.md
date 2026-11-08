@@ -1,5 +1,142 @@
 # bridge.
 
+## Canonical Inbox and email campaign source — 5 November 2026
+
+Use this package (`the-it-guy/`) for the current Inbox and email campaign UI,
+including audience import, HTML/media editing, the final review and protected
+test sends. The newer UI previously kept in `output/inbox-ui-dev-20261103` has
+been merged here, retaining the primary app's newer shared-client audiences,
+sending controls, authentication and other product work. The output copy is an
+archive, not the source for development or deployment.
+
+Run `npm run dev` from the repository root, or `npm run dev` in this package.
+The root `supabase/` directory owns all shared campaign functions and migrations.
+Do not deploy the archived copy's older backend functions.
+
+Durable test-send protection requires the prepared
+`20261105195509_email_campaign_test_delivery_receipts.sql` migration and matching
+`email-campaign-test` bundle. The server stores a receipt before dispatch;
+accepted requests replay their receipt, pending/uncertain requests cannot send
+again, and a confirmed pre-provider pause can retry safely. **Start a new test**
+creates an explicit new intent. No message bodies or provider secrets are stored
+in the receipt table. Never delete these receipts as a retry mechanism.
+
+This consolidation is local. See the
+[release scope](../output/email-production-readiness-20261105/release-scope.json)
+and review in that directory for activation prerequisites and verification.
+
+## Session and property-save production fixes — 28 October 2026
+
+The 15-minute inactivity logout, its warning and timeout-only login notice are
+removed. Manual sign-out, session refresh and normal account/session validation
+remain. Refresh existing open tabs to load the new code.
+
+The listing wizard now carries its complex name into the canonical scheme-name
+field during saving, including renamed complexes. The existing save verification
+still blocks a genuinely missing durable value.
+
+Current production source is `4a31bcfbcfd27beef73b0afb876de07bdf4b8ee2` in
+`output/property-save-session-20261028/candidate`, extending the Under offer
+release below. All three app/Madison domains use deployment
+`dpl_CQY4mQt6KHaaEaFcwmjqxhCi5vZV`. The focused checks, cloud build, 25 staged and
+25 live hosted checks passed, plus ten public-domain checks. No database or Edge
+change was needed. See the
+[combined release record](../output/property-save-session-20261028/release-review.md).
+
+## Under offer production fix — 28 October 2026
+
+The primary app now saves Under offer/Sold while leaving channels with an
+unconfirmed previous advertising request unsent and flagged for a status check.
+Confirmed channels can receive the status update; an uncertain request cannot
+be blindly retried. Capital Park's existing website request and listing data
+were preserved during deployment; no advertising action was used as a smoke test.
+
+The Under offer release source was `cabe0933d41494563ef3de2cd380d211cd3b1409` in
+`output/under-offer-20261028/candidate`, extending the connected mailbox release
+below. It retains Campaigns, WhatsApp, rental cards, Inbox, the back-button fix
+and Madison Place. All three production domains use deployment
+`dpl_FLREUE8ANTa6JaH3KAdjJZLgDDph`. The cloud build and 27 staged / 27 live hosted
+checks passed, along with ten public-domain checks. See the
+[release record](../output/under-offer-20261028/release-review.md).
+
+## Connected mailbox release — 27 October 2026
+
+The primary app now exposes Inbox to every organisation workspace, with mailbox
+access controls, signatures, message reading/attachments, email composition and
+an outgoing queue. Five Inbox migrations and nine separately verified Edge
+endpoints are deployed. This supersedes the older "prepared locally" notes for
+those database, API and screen changes below.
+
+The owner deferred background worker hosting. No mail worker was started, no real
+provider mailbox was connected and no email was sent; actual receiving/sending
+still waits for that service and provider setup. Paid Campaign AI remains off:
+no provider key, enabled model or agency budget was added. The confirmed blank
+email lead-access issue is fixed; the unknown authenticated probe now sees zero
+leads, with all other lead policies retained.
+
+The production app source is commit `6efabd81a41b8bfa53a01736d3a3a3d4045770cf` in
+`output/remaining-mail-ai-access-20261027/candidate`. It extends the earlier
+Campaigns release while retaining rentals, WhatsApp scheduling/automations,
+the back-button fix and Madison Place hosting. See the
+[follow-up release record](../output/remaining-mail-ai-access-20261027/release-review.md)
+and [lead-access correction](../docs/lead-assignment-email-access-20261027.md).
+
+## Campaigns production release — 27 October 2026
+
+The Campaigns, WhatsApp campaign handoffs/shared templates and campaign-email
+updates are live in the primary app. The release includes the fourteen Campaigns
+migrations listed in `output/campaign-catchup-production-20261027/release-scope.json`,
+four separately preserved Edge artifacts, and rental defaults on all 120 existing
+agent cards. Existing WhatsApp scheduling, Inbox/CRM/attachments, email automations,
+back-button handling and Madison Place hosting were retained. This dated release
+record supersedes earlier "prepared locally" status for those Campaigns changes;
+the separate multi-mailbox Inbox foundation/receiving/sending work below remains
+unreleased. AI provider credentials, enabled models and agency budgets are not
+configured. No real message or social publication was used as a smoke test.
+
+The earlier Campaigns release source was commit `c90a5b5004016102c227c8d365928949e48ff961`
+in `output/campaign-catchup-production-20261027/candidate`. The connected mailbox
+release above is the current baseline for another release from this active
+working tree. See the
+[release verification](../output/campaign-catchup-production-20261027/release-review.md).
+
+## Madison Place domain binding
+
+The standalone Madison Place page is served by this primary app at
+`https://madisonplace.co.za/`. Its hostname selects Madison Place at the client
+root route; the host-scoped Vercel project rewrite serves its metadata without a redirect.
+Old Madison development-path links redirect to `/` only on the Madison domain.
+When releasing the primary app by assigning individual Vercel aliases, keep
+`madisonplace.co.za` and `www.madisonplace.co.za` on the same deployment as
+`app.arch9.co.za`; retain the `www` redirect to the apex domain. The public
+development handler fetches its HTML shell from the same Madison hostname,
+keeping its JavaScript files tied to that deployment. The project-level
+"Madison Place custom domain homepage" rule must remain an internal rewrite to
+`/api/public/development-page?slug=madison-place-abcf1b8a`, with no redirect status.
+This runs before Vercel's static root index so initial HTML has Madison metadata;
+the source also includes the host-scoped rewrite. Verify the page's referenced `/assets/`
+files return 200 on the custom domain and check the rendered page after release.
+
+The `/api/public/development-landing` endpoint renews expiring media
+links from the published landing projection before returning its data. It signs
+only that development's listed marketing files, keeps credentials on the server
+and changes no stored content or Storage policies. The requester approved the
+27 October 2026 release, and it is live on the app and Madison domains. Checks
+covered all 22 published Storage files, the rendered logo/hero and the estate
+plan, alongside nine server tests and seven component tests.
+
+For local development, open `/development/madison-place-abcf1b8a` on the Vite
+server. Its development-landing middleware reads the published public feed so
+photos have current links without requiring production credentials locally.
+
+Madison Place’s 48-hour EFT reservation flow is prepared locally. It replaces
+simulated payment with a shared hold, queued trust-payment instructions and
+manual Samlin deposit confirmation. Online requests remain disabled until the
+confirmed Tuckers Attorneys bank details and payment-contact addresses are
+configured and the migration/function/scheduler are released. See the
+[reservation activation and verification guide](../docs/madison-place-reservations.md).
+No live reservation or email was created during implementation.
+
 ## Business campaigns on Facebook
 
 Saved business campaigns can prepare a native Facebook Page text/link post from
@@ -211,12 +348,17 @@ expanding list. Membership/permission changes invalidate the review before it ca
 be applied. Empty selections never become "all contacts"; selections above 500
 WhatsApp or 10,000 Email recipients require narrower filters. Existing final send
 checks and confirmations remain in the channel editors. Audience actions do not
-send messages. Existing email-only audiences and WhatsApp permission management
-remain accessible below the shared library. Meta/social paid targeting is separate.
+send messages. Clients, Campaigns, Email and WhatsApp now open the same catalogue.
+Existing email-only definitions appear in it with their exact targeting retained;
+they can be renamed, copied, shared or archived, and remain email-only. Create a
+CRM audience for WhatsApp rather than implicitly converting branch/staff/contact
+restrictions. WhatsApp contact permission management remains available separately.
+Meta/social paid targeting is separate.
 
-Requires `20261025102447_shared_crm_marketing_audiences.sql`, prepared locally and
-**not applied to any remote database**. Until applied, the UI reports that the
-shared library is not enabled. Definition revisions prevent conflicting edits;
+Requires `20261025102447_shared_crm_marketing_audiences.sql` and
+`20261105185204_unified_client_audiences.sql` (after the client Stage 1/2 changes).
+Stage 3 is prepared locally; deployment is separate. Until the required schema is
+available, the UI reports that the shared library is not enabled. Definition revisions prevent conflicting edits;
 all new reads and writes retain source-table RLS and tenant scope.
 
 Focused checks: `MarketingAudiences.test.jsx`, `marketingAudienceService.test.js`,
@@ -1757,6 +1899,12 @@ Both views retain the current filters and selected unit. Expand Manage units in
 Availability for bulk setup, catalogue and structure tools, and inline unit edits.
 Unit availability can switch between List and Cards without resetting those
 filters or the selected unit.
+Cards are the default, with at most four across on desktop. Inventory managers
+can change status directly in the List status column. Changes use the existing
+unit and linked-transaction save path, invalidate cached transaction/development
+data, and refresh the stock views and totals. Failed saves reload canonical data
+before showing the error. A linked sale must be released or cancelled in its
+transaction before its unit can return to available or unreleased stock.
 Selecting a unit from List, Cards or the site plan opens a full-screen unit
 workspace. Facts and pricing have room to read, while fixed Previous and Next
 controls browse the currently filtered units. Close or Escape returns to inventory.
@@ -1765,6 +1913,12 @@ The development Leads tab switches between List and Kanban without changing the
 recorded stages. Kanban retains source branding, property images, assigned agent,
 last activity and the existing developer lead link. Buyer contact details remain
 hidden for users who are not assigned to the lead. The total-leads pill is removed.
+Create lead uses the shared contact capture form with the current development
+selected. It saves the CRM buyer and a linked developer intake record, refreshes
+the main Development Leads cache, and resumes partial saves using the same IDs.
+Linked leads open their exact CRM buyer workspace in the owning agency or developer
+workspace. Other agencies' protected leads retain their developer intake route.
+The buyer workspace's Back to Leads action returns to the originating development.
 The board follows the Revo buyer flow from Captured through Transaction, with
 Lost as a separate outcome. Editable cards support drag-and-drop and a keyboard/
 touch Move to menu. Follow-up changes save the lead status under its owning
@@ -1792,11 +1946,52 @@ in a larger dialog. Search, status filters and Refresh remain within this develo
 Focused checks: `node src/core/developments/__tests__/developmentSnags.test.js`
 and `npx vitest run src/services/__tests__/developmentSnagsService.test.js`.
 
+Development buyer guidance uses the same evidence as its journey rail and keeps
+unit reservation between the presentation and buyer onboarding. Qualification
+cards omit the Development sales introduction and the What’s next qualification
+card omits its explanatory copy. Qualification validation remains active. Manual
+completion reloads the development reservation and later milestones in order;
+expired holds cannot permit onboarding or transaction setup. Development viewing
+outcomes open the actual appointment editor, and guidance continues to unit
+selection rather than directly sending onboarding. Normal buyer guidance is
+unchanged.
+
+The development Leads workspace uses the same icon menu as Marketing, with
+Leads and Reservations. Leads retains the full list. Reservations is a filtered
+view of confirmed, unexpired reservations tied to a unit in this development;
+provisional, expired, lost and converted records are excluded. The reserved unit
+appears in the list, both list and kanban share the filter, and returning from a
+buyer workspace preserves the selected section. This view does not create or
+change reservations.
+
+### Development lead document continuity
+
+Developer lead Documents uses the shared `bridge_document_requirement_context`
+reader, including custom and legacy client-owned buyer slots. Current review
+state wins over stale file approval; removed slots and superseded files do not
+reappear in the active view. The document room resets on buyer/workspace changes
+and listens for same-tab and cross-tab requirement changes. Reads, signing and
+uploads recheck the saved lead association; conflicting buyer, organisation,
+development, unit and transaction references are rejected. Files are not approved
+by upload or filename alone. Existing records with missing buyer-origin references
+require reviewed data repair; no link is inferred from a name or an empty slot.
+
+Focused checks: DeveloperLeadDocuments and developerLeadDocumentsService Vitest
+suites; buyerLeadDocumentReadService, buyerLeadDocumentHandoffService,
+documentUploadRecovery, documentAccess and documentRequirementIdentity.database
+Node suites. These exercise local fixtures; remote document/link changes require
+explicit approval. Route session snapshots are memoized so cached JSON parsing
+cannot repeatedly restart lead hydration during document-page renders.
+
 ## Development marketing
 
 The development Marketing tab combines listing records and marketing tools.
 Its menu is Overview, Listings, Website, Media, Events and Campaigns. Listings
-uses the shared listing card design; Website shows analytics only; Media includes
+uses the shared listing card design. Add listing opens the standard Listings form
+with the development already linked; Cancel/Close returns to this development.
+Saved drafts and listings read the same `private_listings` records as the main
+Listings page, with draft badges and existing organisation access preserved.
+Website shows analytics only; Media includes
 floor plans. Overview combines
 listing performance across all linked agents and teams, with channel coverage,
 unique buyer leads, viewings and average days on market above a horizontal listing
@@ -1806,7 +2001,7 @@ from Overview. Older marketing section links open the
 corresponding new section. The website preview does not publish changes.
 
 Website shows sessions, scene views, property opens and enquiries using existing
-tracking, with 7/30/90-day periods, refresh, selectable device breakdowns and
+tracking over the last 30 days, with the metric cards first, selectable device breakdowns and
 sortable rankings. Harbour Heights has a clearly labelled demo data option;
 switch to Tracked activity to read recorded visits. Demo figures never write
 visitor events. Website settings, publishing controls and brand panels are hidden
@@ -1815,7 +2010,10 @@ from this tab. Missing tracking remains unavailable rather than appearing as zer
 Events has large Create show day and Create launch actions, each opening a focused
 form. Upcoming events and past event history show the date, time, venue, notes,
 status and organising agent resolved from the existing event creator. Cancelled
-events remain in the history. Event creation retains development permissions.
+events remain in the history. Event creation retains development permissions,
+requires a valid date, blocks double submission and retains failed form details.
+An optional activity-log failure does not report an already saved event as failed.
+Events and Campaigns omit the introductory promotional headings.
 
 Campaigns replaces the Marketing Documents tab, including old `documents` links.
 Email and WhatsApp actions use the existing campaign builders, with Meta marked
@@ -1946,24 +2144,36 @@ shown as proof that a portal is live. Save Draft does not submit channels.
 New submissions and content updates are sent only from listing setup. Confirmed
 failures can be retried there; successful channels are excluded after a fresh
 receipt check. Unconfirmed requests require a status check and are never
-automatically resent. Marketing shows channel lifecycle status and the saved-result summary. Full
+automatically resent. Marketing shows channel lifecycle status in Listing Channels. Full
 sales content review and updates continue in listing setup.
 Property24's initial marketing expiry defaults to 90 days, independently of
 seller mandate dates.
 
-The saved-listing summary identifies the property and the next action. It keeps
-saving, queued requests, sending, accepted requests, confirmed failures and
-unconfirmed outcomes separate. Accepted requests still need public-advert
+Listing setup keeps saving, queued requests, sending, accepted requests,
+confirmed failures and unconfirmed outcomes separate in the channel controls.
+The duplicate saved-listing advertising receipt container is removed from all
+application screens, including rental Marketing with existing receipts and the
+legacy editor and quick-add result. Accepted requests still need public-advert
 verification. Keep the page open until the advertising request has a durable
 receipt; confirmed queued work continues after navigation. Rental publishing
 queue failures open the saved rental with an advertising warning rather than
 reporting a failed property save. An activation failure retains the confirmed
 save and retries the same rental identity and revision.
 
-Rental edits save without sending adverts. Their saved notice and receipt
-comparison explain which updates still need sending. Review advertising opens
-the existing controls; seller/landlord details and documents have separate
-links. Rental results offer a targeted failed-website retry; sales offer it in
+Existing sales and rental editors offer **Save & update adverts** from any
+editing step, alongside **Save only**. The primary action verifies saving first,
+then checks and queues updates for the selected existing active adverts. Current
+portal and website status is read before sending; old channel selections never
+create a new advert or relist an inactive one. Initial publication and explicit
+relisting keep their existing flows. Results and targeted retry/status actions
+appear inside each channel row on Review, without another saved-result card.
+Rental core save validation stays enforced while publication requirements run
+through the normal queue/provider checks after saving. A failed or unconfirmed
+channel does not imply that the property save failed. Retrying a failed channel
+saves corrections first and rereads its durable receipt before sending.
+Seller/landlord details and documents have separate tabs.
+Rental Listing Channels retains status checking and failed-website retry without
+repeating the old receipts above the workspace; sales offer targeted retries in
 listing setup. Every retry rereads durable receipts and excludes successful,
 pending and unconfirmed requests. Alternative portal/website publish controls
 also check unresolved durable requests before sending. Status watching resumes
@@ -2039,12 +2249,23 @@ per-image/total byte limits remain unchanged. Initial channel receipts appear
 individually, with one persisted-detail refresh after all selected submissions
 settle instead of a full reload per channel. Browser uploads remain bounded to
 two storage operations, preserving successful uploads on retries.
-Property24 requirements checks recognise saved gallery photos without downloading
-their bytes. An intentionally empty preview byte payload no longer reports
-missing photos or keeps Publish disabled. Submission still downloads every
-selected photo and blocks on failed downloads or a genuinely empty gallery.
-Focused check: `npm run test:property24-preview-listing`, including sale/rental
-requirements, successful submission preparation, failed photos and empty galleries.
+Property24 readiness and Publish now use the same read-only photo preparation.
+Every photo, including JPEGs, receives an oriented, resized JPEG publishing copy;
+original uploads and gallery order remain untouched. Preparation allocates a
+combined 18 MB target before encoding (within the existing 60 MB raw-byte limit),
+reduces quality/dimensions as needed, and checks the final JSON request against
+25 MB including base64 overhead. All saved photos must succeed. Missing,
+unreadable or unprocessable files block submission with their photo number and
+an actionable explanation. Explicit photo limits and excess floor plans block
+rather than silently excluding part of a gallery. An internal metadata-only
+inspection still recognises saved photos but is not the public readiness route.
+Focused check: `npm run test:property24-preview-listing`, including oversized real
+JPEGs, a complete 95-photo gallery with a constrained budget, invalid files,
+original preservation and sale/rental readiness/publish parity. Also run
+`test:property24-api-layer`, `test:rental-property24-api-preview`,
+`test:rental-property24-api-publish` and the rental readiness presentation tests.
+The November preparation change is not activated by local tests; its hosted
+acceptance and release status are recorded separately from the October receipt.
 Deployed to the primary app on 19 October 2026. Kingdom's existing rental passed
 all 20 photos and Property24 confirmed listing 117731148 on its portal. The
 focused checks and Vercel production build passed; no database migration was needed.
@@ -2122,25 +2343,36 @@ src/services/__tests__/agentNeedsAttentionService.test.js` and the primary app b
 
 ## Agent card rental enquiries
 
-Agents can enable Rental enquiries and edit the Rental button label in Dashboard
-→ My digital business card → Edit card, or in the Lead Capture card editor.
-Existing cards retain their buy/sell actions. Rental-only cards are supported.
+Agent cards default to buyer, seller and rental enquiries in both Dashboard → My
+digital business card and the public card. Agents can switch enquiry actions off
+and edit the Rental button label in Edit card or the Lead Capture card editor.
+Rental-only cards are supported.
 The public card captures monthly rent, area and preferences using the same privacy
 consent and retry protection as existing enquiries. The server uses the card's
 organisation, branch and agent assignment and the shared rental CRM metadata, so
 these contacts appear as tenant leads. Rental submissions do not create sales
 matching requirements; card statistics count them separately.
 
-Apply `20261008140000_agent_card_rental_enquiries.sql` before deploying the app/API.
-It expands the existing intake and event constraints; rental actions require an
-agent card. It changes no permissions or existing card settings. The custom label
-uses existing card metadata. This local change has not been deployed or applied
-to a remote database.
+The rental constraints migration `20261008140000_agent_card_rental_enquiries.sql`
+and defaults migration `20261027075525_agent_card_rental_defaults.sql` are applied
+in production. The append-only correction
+`20261027145332_agent_card_rental_legacy_backfill.sql` was applied before the
+defaults migration: it updates only enquiry actions under an exclusive table lock,
+temporarily suspending the assignment validator inside the same transaction, so
+retained cards with inactive/missing assignments do not block the backfill. The
+original validator is re-enabled before commit. The release preserves card status,
+profiles, custom labels and permissions; ordinary agency intake links retain
+their existing actions. Later edits can disable rentals again. The custom label
+uses existing card metadata. All 120 existing cards have rentals enabled; future
+membership-provisioned drafts default to all three enquiry actions. Kevin's live
+public card and its rental dialog were verified in the browser on 27 October 2026.
 
 Focused checks: `npx vitest run
 src/components/dashboard/__tests__/AgentDigitalCardPanel.test.jsx
 src/pages/__tests__/PublicAgentDigitalCardPage.rental.test.jsx
-server/tests/agentCardRentalMigration.test.js`,
+server/tests/agentCardRentalMigration.test.js
+server/tests/agentCardRentalDefaults.test.js
+server/tests/agentCardRentalLegacyBackfill.test.js --maxWorkers=1`,
 `node src/services/__tests__/agencyPublicIntakeLinkService.test.js` and
 `node server/tests/publicAgencyIntakeApi.test.js`.
 
@@ -4698,6 +4930,13 @@ Vercel link, deploy anything, copy environment files, include other CRM APIs or
 include scheduled jobs. Generate this artifact from the approved release source;
 do not copy a previous `dist` directory into a static-only deployment.
 
+For a cloud build, deploy the repository root to the same Home Seekers project
+with `vercel deploy --local-config vercel.home-seekers.json --prod --skip-domain`.
+Set the Home Seekers project and organisation IDs shown below. This configuration
+runs the existing isolated builder on Vercel and publishes its Build Output API
+artifact, including only the Home Seekers functions and no CRM scheduled jobs.
+Inspect the candidate before promoting it to the existing production aliases.
+
 The frontend now has a dedicated public entry (`home-seekers.html` and
 `src/homeSeekersMain.jsx`), containing only Home Seekers routes. The standalone
 homepage is `/`, with clean links such as `/buying`, `/selling` and `/join`.
@@ -5144,6 +5383,16 @@ Run the existing `npm run test:transaction-partner-invite-org-connection` for
 executable replacement, removal, closure, stale-link, direct-access, preservation
 and rollback checks. `npm run test:transaction-handoff-dispatch` covers register
 presentation and prior dispatch gates. Tests use local fixtures and send no email.
+
+The proposed `20261028101749_short_circuit_unneeded_partner_retirement_checks.sql`
+optimization adds an immediate false result when a transaction has no retired
+partner history. Its existing retirement decision is unchanged when history
+exists. The binding fixture also verifies unchanged function identity, owner,
+grants and security settings, skips the remaining access checks for no-history
+transactions, and compares old/new decisions across all fixture actors and matters.
+This is a prepared database change, not a production performance result. After
+an approved release, remeasure the authenticated developments query under the
+same caller context and retain the restart investigation separately.
 
 Release requires `20261004083851_transaction_handoff_assignment_retirement.sql`
 after Phases 1–3 and the primary app changes. No existing migration was edited.
@@ -6889,18 +7138,20 @@ Campaign provider milestones are grouped only by the exact recipient ID; confirm
 staff responses remain separate because their journal rows have no recipient ID.
 Search, dates and view counts describe loaded history; Load older activity extends
 that history. In progress shows workflow events, including completed milestones,
-not a live count of unfinished tasks. Last logged interaction is drawn from manual/CRM
-interaction entries in the loaded category. Auto update reads every 30 seconds
-while visible, preserving expanded entries and older pages; it pauses during
-logging and can be switched off. Quick contact actions open the existing logger.
+not a live count of unfinished tasks. After the client engagement migration below,
+Last successful contact is read independently of the loaded history category.
+Auto update reads every 30 seconds while visible and preserves expanded entries
+still present on the refreshed page. Refresh replaces previously loaded pages
+to discard entries whose permissions may have changed; older history can be
+loaded again. Updates pause during logging and can be switched off. Quick contact actions open the existing logger.
 
 Read-only local design preview:
 `http://127.0.0.1:5173/server/tests/fixtures/client-activity-preview.html`.
 The preview includes illustrative campaign milestones and disables all writes.
 Existing capture boundaries still apply: offline contact requires manual logging,
 portal visits are best effort, and repeated campaign opens/clicks are not all copied
-to the journal. Mailbox replies need a connector or a staff-confirmed response.
-No database migration is required for this presentation change.
+to the journal. Offline interactions require staff logging; Inbox events require
+the engagement migration and connected channel ingestion described below.
 
 Focused verification: `node scripts/client-activity.test.mjs` executes the actual
 identity and activity migrations in an isolated PostgreSQL fixture. It checks
@@ -6908,6 +7159,90 @@ history, new intake, aliases/merges, immutable entries, uncertain-save retries,
 source permissions, cross-agency isolation, late linking, cursor pagination,
 and buyer/seller portal access guards. Also run the existing identity check and
 `npx vitest run src/components/clients/ClientActivityPanel.test.jsx src/services/__tests__/clientActivityService.test.js src/core/clients/__tests__/agentClientDirectory.test.js src/components/clients/ClientIdentityPanel.test.jsx src/services/__tests__/clientIdentityService.test.js`.
+
+
+### Inbox engagements and team awareness
+
+`20261105192633_client_engagement_history.sql` extends the primary client workspace
+for agency and developer organisations. Apply only through an approved database
+release after the identity, activity, campaign journal and unified audiences
+migrations. No hosted changes or provider sends are part of this implementation.
+
+Successful external email and native WhatsApp messages create metadata-only
+journal entries. Queued sends, drafts and internal notes do not imply client
+contact. Failed sends remain visible as failures; delivery/read updates do not
+duplicate a successful message. Email associates exact known email aliases;
+WhatsApp uses an explicit CRM lead link or a unique canonical phone identity.
+An ambiguous household number is not assigned to a person automatically. An
+explicit recruitment link is never mapped to an agency client by phone fallback.
+Late identity/link creation replays matching existing records with original dates
+and historical markers. Reviewed merges preserve immutable evidence while the
+reader displays one copy of a message addressed to two merged aliases.
+
+Client access and current channel permissions apply at read time, including when
+calculating recency inside privileged campaign selection. Private email stays
+private even from an organisation administrator; selected mailboxes retain their
+membership rules. WhatsApp retains its active staff/admin or assignee boundary.
+Deleted/revoked messages and changed CRM associations no longer expose old
+communication entries. Bodies, subjects and attachments are not copied to the
+client journal. Open Inbox navigates to the channel's existing Inbox screen.
+
+Team engagements shows up to 20 permitted conversations, their current assignee,
+status, latest activity and a count of accessible open lead/transaction tasks.
+It cannot establish whether someone is speaking privately outside those visible
+threads. A failed summary stays explicitly unavailable and does not block the
+history or logger. Logging a call now distinguishes Connected from No answer;
+notes are records rather than successful contact. Request IDs retain the outcome
+across retries and reject changing a previously saved command.
+
+Successful inbound/outbound messages, connected calls, completed manual contacts,
+qualified CRM outcomes and confirmed campaign responses affect recent-contact
+and quiet-period eligibility. Failed sends, unanswered calls, notes, opens and
+clicks do not. Future dates remain evidence but are excluded from latest/recency
+calculations until their time occurs. Audience preview and dispatch share this
+calculation, and changed eligibility invalidates an earlier reviewed selection.
+Fresh attribution intake gets a five-minute clock/request-latency tolerance
+before its identity-link trigger marks it historical; occurrence dates stay intact.
+
+Existing messages are not automatically scanned during migration. The service-only
+`client_engagement_backfill(organisation_id, false)` previews candidate messages;
+`true` explicitly replays them without provider calls and is idempotent. Any
+hosted backfill is a remote write requiring separate release approval.
+
+Focused checks (run serially with a conservative Node heap):
+`node scripts/client-engagement-history.test.mjs`,
+`node scripts/client-attribution.test.mjs`, `node scripts/client-activity.test.mjs`
+and `node scripts/client-campaign.test.mjs`. UI/service coverage lives beside
+`ClientActivityPanel`, `clientActivityService` and `clientActivityTimeline`.
+
+
+### Client system release acceptance
+
+The forward correction `20261105194348_client_audience_import_catalogue.sql`
+updates the email importer after the unified audience catalogue migration. It
+writes a shared `marketing_audiences` definition with the exact
+`{emailFilter: {contact_ids: [...]}}` envelope; existing compatibility IDs and
+public import RPC/receipt formats stay the same. The old compatibility view
+remains read-only. Consent, suppression, prior unsubscribes, organisation access
+and request retry checks continue to apply. Duplicate email audience names fail
+atomically, including rolling back contacts created by that failed request.
+
+`node scripts/client-engagement-history.test.mjs` executes the actual client
+stages, original importer and forward correction together in isolated PostgreSQL.
+It covers import visibility in the unified catalogue, exact preview/dispatch
+recipient parity, opt-out preservation, failed-import rollback, tenant isolation,
+developer manager imports and transactional rollback of the correction itself.
+The existing identity, activity, attribution, campaign, feed, tags, unified
+catalogue and marketing audience checks remain the focused regression suite.
+The local read-only activity preview includes sample team conversations and
+never fetches live summaries or enables Inbox links/writes.
+
+Local acceptance does not approve deployment. Before release, compare the remote
+migration ledger with the exact intended source files, resolve historical gaps,
+and review every candidate with the database release runbook. A missing history
+file is not evidence that a live migration should be reverted. Never repair the
+ledger or push unrelated pending work to bypass a failed dry run. Hosted replay,
+provider delivery and live agency/developer acceptance require an approved release.
 
 ## Agency client source attribution
 
@@ -7035,19 +7370,70 @@ change does not enable provider tracking or send campaigns.
 
 
 Client selection opens a full workspace at `/clients/:clientId`, from both the
-Clients cards and list rows, including the Open workspace action menu. The agent
-workspace retains contact identity/merge controls, linked records and transactions,
-Activity, Sources, Campaigns and bulk-email tags (in Overview). Client links are
+Clients cards and list rows, including the Open workspace action menu. Agency and
+developer workspaces retain contact identity/merge controls, linked records and transactions,
+Activity, Sources, Campaigns and shared client tags (in Overview). Client links are
 encoded safely and work when opened directly. Back to Clients preserves the
 originating directory's URL filters, search, filter selections and grid/list
 view; a direct link returns to Clients. Tag editing
-uses the selected client's agency and email, blocks writes after a failed load,
-and keeps edits for retry after an uncertain save. Client-switch guards discard
+uses the selected organisation and permanent client identity, including phone-only
+clients. Tags include retained aliases after reviewed merges. Version checks block
+stale array replacements; refresh explicitly before retrying a conflict. Reads that
+fail block tag writes. Client-switch guards discard
 late profile and tag responses from the previous workspace.
 
 Focused navigation checks: `node scripts/client-marketing-directory.test.mjs`
 and `npx vitest run src/pages/__tests__/ClientWorkspaceNavigation.test.jsx src/components/clients/ClientMarketingTagsPanel.test.jsx`.
-This navigation change requires no new database migration. Deployment is separate.
+Stage 2 shared identities/tags require
+`20261105183145_shared_client_identity_tags.sql` after the Stage 1 feed repair,
+identity, shared-CRM-audience and Inbox shared-tag migrations. New source intake
+supports developer-company identities and retains source permissions. The existing
+developer portfolio reader is scoped to the selected organisation. Existing
+source data requires an explicitly approved, service-only
+`client_identity_refresh(organisation_id)` followed by the email projection refresh.
+The migration does not run either backfill. Tag changes never create consent,
+combine destination permissions, or send messages. Older direct writers to
+`agency_client_tags` must move to `client_tags_save`; direct browser array writes
+cannot bypass the shared revision check. Identity/tag APIs fail visibly when the
+migration is absent. Deploy the database and matching app changes together.
+
+`node --test --test-concurrency=1 scripts/client-shared-tags.test.mjs` checks the
+actual migration with synthetic developer records, phone-only tags, alias merges,
+conflicts, source/tenant permissions and unchanged consent. The existing identity,
+activity, attribution, campaign and audience checks remain relevant. Audience
+communication/team-awareness ingestion and live acceptance are later stages.
+Deployment and live backfills remain separate.
+
+Client-system Stage 3 uses `marketing_audiences` as the single writable catalogue.
+The migration locks both catalogues, rejects ID collisions, imports every legacy
+email definition with its original ID, creator, timestamps and archive status, and
+retains the original table privately as `email_saved_audiences_archive`. A read-only
+`security_invoker` compatibility view retains the old name. No filter conversion,
+metadata truncation, consent change or message send is performed. The import is
+transactional and is a live data write when eventually applied: release the reviewed
+migration and matching app together with explicit approval and recovery evidence.
+Old browsers attempting the former direct-table writes fail visibly until updated.
+
+New audience creation uses the common editor and personal visibility by default;
+workspace sharing requires existing sending authority. Creators can rename/archive
+an existing shared definition, while changing its shared targeting requires that
+authority. Revisions prevent conflicting replacements. Client memberships come
+from one source-authorised person-level query, including phone-only contacts and
+retained email aliases, rather than sampled email lists. Archived/private/foreign
+saved references fail closed during recipient selection. New saved selections also
+check the criteria revision; changed filters require reselection while membership
+continues to update with the CRM. A saved reference mixed
+with custom restrictions is rejected; choose custom filters explicitly in the email
+builder. Existing reviewed recipient snapshots remain channel-owned and continue
+through consent and suppression checks.
+
+Focused Stage 3 database check:
+`NODE_OPTIONS=--max-old-space-size=1024 node --test --test-concurrency=1 scripts/client-unified-audiences.test.mjs`.
+It exercises the real migration, collision rollback, exact legacy filters, personal
+and shared permissions, revision conflicts, phone-only/developer membership,
+privileged-selector privacy and preview/dispatch agreement. The shared audience,
+client membership/tag/navigation and email campaign component/service checks remain
+relevant. Stage 4 engagement/team-awareness work and live acceptance remain separate.
 
 ### Home Seekers common login (10 October 2026)
 

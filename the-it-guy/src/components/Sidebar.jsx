@@ -49,7 +49,6 @@ import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from '../lib/busin
 import { preloadAgencyLeadsRoute } from '../routes/leadsRouteLoader'
 import { preloadAgentTransactionsRoute } from '../routes/transactionsRouteLoader'
 import { withSharedInboxNavigation } from '../modules/sharedInbox/navigation'
-import { REVO_INBOX_VIEWS, resolveRevoInboxView } from '../modules/revo/sharedInbox/sharedInboxViews'
 
 const ICON_BY_KEY = {
   agency_recruitment: Users,
@@ -517,42 +516,6 @@ function Sidebar() {
     const hasChildren = item.key !== 'clients' && Array.isArray(item.children) && item.children.length > 0
     const isParentActive = hasChildren ? isParentNavActive(item, location) : false
     const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)
-
-    if (item.key === 'revo_shared_inbox') {
-      const isInboxPage = ['/inbox', '/revo/inbox'].includes(location.pathname)
-      const isInboxActive = isInboxPage || location.pathname.startsWith('/inbox/') || location.pathname.startsWith('/revo/inbox/')
-      const inboxView = resolveRevoInboxView(new URLSearchParams(location.search).get('view'))
-      const inboxExpanded = expandedMenus[item.key] ?? isInboxActive
-      return (
-        <div key={item.key} className="revo-inbox-sidebar-navigation space-y-1">
-          <button
-            type="button"
-            className={`ui-sidebar-link w-full ${isInboxActive ? 'ui-sidebar-link-active' : ''}`.trim()}
-            aria-label={item.label}
-            aria-expanded={inboxExpanded}
-            aria-controls="revo-inbox-sidebar-views"
-            onClick={() => {
-              const nextExpanded = !inboxExpanded
-              if (nextExpanded && !isInboxPage) navigate(item.to)
-              setExpandedMenus((previous) => ({ ...previous, [item.key]: nextExpanded }))
-            }}
-          >
-            <Icon size={15} /><span>{item.label}</span>
-            <ChevronDown size={14} className={`ml-auto transition ${inboxExpanded ? 'rotate-180' : ''}`} />
-          </button>
-          {inboxExpanded ? <nav id="revo-inbox-sidebar-views" className="space-y-1 pl-3" aria-label="Inbox views">
-            {REVO_INBOX_VIEWS.map((view) => (
-              <Link
-                key={view.key}
-                to={`/inbox?view=${view.key}`}
-                className={`ui-sidebar-link ui-sidebar-link-child ${isInboxPage && inboxView === view.key ? 'ui-sidebar-link-active' : ''}`.trim()}
-                aria-current={isInboxPage && inboxView === view.key ? 'page' : undefined}
-              >{view.label}</Link>
-            ))}
-          </nav> : null}
-        </div>
-      )
-    }
 
     if (!hasChildren) {
       const matchesCustomActive = Array.isArray(item.activeMatch)

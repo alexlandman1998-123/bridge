@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-10-26T08:21:30.139Z",
-  "status": "RECOVERY_LOCK_BLOCKED",
-  "locked": false,
+  "generatedAt": "2026-11-08T14:58:55.028Z",
+  "status": "RECOVERY_LOCKED",
+  "locked": true,
   "productionProjectRef": "isdowlnollckzvltkasn",
   "recoveryScope": "database",
   "storageObjectsIncluded": false,
@@ -13,12 +13,12 @@
     "pitrEnabled": false,
     "physicalBackupCount": 8,
     "equivalentManagedBackupAccepted": true,
-    "recoveryTested": false,
-    "testedAt": "2026-07-25T18:55:39.570Z",
-    "testedBy": "Codex using Supabase CLI preview branch restore/clone",
-    "acceptedBy": "Alexander Landman production migration workflow request",
-    "restoreTarget": "Supabase preview branch codex-prod-recovery-20260725, project ref jhxihynofflyyycwdttw, branch id 34d01c00-a842-4f2b-a782-7bd9da3025e5",
-    "evidenceUrlOrTicket": "docs/supabase-production-recovery-restore-test-report.md",
+    "recoveryTested": true,
+    "testedAt": "2026-10-27T14:47:24.185Z",
+    "testedBy": "Codex — identified logical backup restored into isolated PostgreSQL 17.6.1.063",
+    "acceptedBy": "Alexander Landman — current-task instruction to verify recovery and release the scoped production updates",
+    "restoreTarget": "local-docker-arch9-recovery-20261027",
+    "evidenceUrlOrTicket": "output/campaign-catchup-production-20261027/recovery-restore-verification.json",
     "notes": [
       "Live read-only verification on 2026-07-25 showed PITR disabled and 8 physical backups available for production.",
       "Restore test used an isolated Supabase preview branch created from production with --with-data; production project isdowlnollckzvltkasn was not restored over or mutated.",
@@ -26,17 +26,30 @@
       "Temporary restore branch 34d01c00-a842-4f2b-a782-7bd9da3025e5 was deleted after evidence capture to avoid copied production data sprawl and ongoing branch cost.",
       "Do not commit credentials, database URLs, backup secrets, or exported production data in this file.",
       "2026-10-21 coverage review: the July --with-data branch exercise demonstrates a live database clone and aggregate smoke checks, not restoration from an identified backup. Keep this historical record, but do not use it as completed backup-restore proof.",
-      "Supabase database backups omit Storage object bytes. An independent encrypted Storage backup and isolated recovery exercise remain pending; no production restore has been attempted."
+      "Supabase database backups omit Storage object bytes. An independent encrypted Storage backup and isolated recovery exercise remain pending; no production restore has been attempted.",
+      "2026-10-27: Completed an identified logical backup and restored its original roles, equivalent schema and full consistent data into a separate local Docker database. All 17 key record counts matched; functions, logical columns, indexes, triggers and 1,962 policies were verified. Earlier failed exports are not recovery evidence. No paid recovery project was created; production and staging were not restored over. Database-only scope excludes Storage bytes and provider root encryption key. Full proof and archive SHA-256 are in output/campaign-catchup-production-20261027/."
     ],
-    "backupRestoreTest": null,
-    "recordedExerciseType": "live_database_clone"
+    "backupRestoreTest": {
+      "method": "logical_backup_restore",
+      "sourceProjectRef": "isdowlnollckzvltkasn",
+      "sourceBackupId": "arch9-logical-20261027-e247ea692bb82b70",
+      "sourceBackupSha256": "e247ea692bb82b70ed5d5581e27854fced92b14441f95b8f3e2c312c3d54df94",
+      "targetProjectRef": "local-docker-arch9-recovery-20261027",
+      "smokeChecksPassed": true,
+      "recordCountChecks": 17,
+      "schemaEquivalenceVerified": true,
+      "networkIsolated": true,
+      "cronLaunchingDisabled": true,
+      "storageObjectBytesCovered": false
+    },
+    "recordedExerciseType": "logical_backup_restore"
   },
   "live": {
-    "checked": false,
-    "ok": false
+    "checked": true,
+    "ok": true,
+    "pitrEnabled": false,
+    "physicalBackupCount": 8,
+    "recoverable": true
   },
-  "blockers": [
-    "recovery_test_not_recorded",
-    "backup_restore_not_proven"
-  ]
+  "blockers": []
 }

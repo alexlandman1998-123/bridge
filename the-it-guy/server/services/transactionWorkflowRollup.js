@@ -1514,7 +1514,11 @@ async function buildContext(transactionId, options = {}) {
   }
 
   const client = options.client || requireClient()
-  const readModel = await getTransactionWorkflowReadModel(transactionId, { client })
+  const readModel = await getTransactionWorkflowReadModel(transactionId, {
+    client,
+    viewerRole: options.actorRole,
+    canViewPrivate: !['buyer', 'seller', 'client'].includes(String(options.actorRole || '').toLowerCase()),
+  })
   const transaction = await fetchTransactionRow(client, transactionId, readModel.transaction || {})
   const [documents, requiredDocuments, events] = await Promise.all([
     fetchDocuments(client, transactionId),

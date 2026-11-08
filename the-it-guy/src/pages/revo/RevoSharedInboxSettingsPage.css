@@ -1,2 +1,117 @@
-.revo-channel-settings{max-width:1040px;margin:0 auto;padding:30px;color:#213343}.revo-channel-settings>header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.revo-channel-settings header>a{display:inline-flex;align-items:center;gap:6px;color:#176f7f;font-size:13px;font-weight:700;text-decoration:none}.revo-channel-settings h1{margin:10px 0 5px;font-size:27px;letter-spacing:-.035em}.revo-channel-settings header p{margin:0;color:#6c8490}.revo-channel-settings>header>svg{color:#ff7a59}.revo-channel-guidance{margin:25px 0;padding:14px 16px;border:1px solid #f0d6aa;border-radius:9px;background:#fff8e9;color:#76511c}.revo-channel-guidance p{margin:5px 0 0;font-size:13px;line-height:1.5}.revo-channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.revo-channel-grid article{position:relative;padding:19px 18px 15px 64px;border:1px solid #dce5ea;border-radius:10px;background:#fff;box-shadow:0 5px 15px #163a4b08}.revo-channel-empty{grid-column:1/-1;margin:0;padding:25px;border:1px dashed #cddbe1;border-radius:9px;color:#718793;text-align:center}.revo-channel-icon{position:absolute;top:18px;left:17px;display:grid;place-items:center;width:32px;height:32px;border-radius:7px}.revo-channel-icon.email{background:#e7f0ff;color:#3171bb}.revo-channel-icon.whatsapp{background:#e3f7ee;color:#168958}.revo-channel-card-head{display:flex;justify-content:space-between;gap:12px}.revo-channel-card-head h2{margin:0;font-size:14px}.revo-channel-card-head p,.revo-channel-address{margin:4px 0 0;color:#718793;font-size:12px}.revo-channel-address{overflow-wrap:anywhere}.revo-channel-status{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:11px;font-weight:800}.revo-channel-status.draft{color:#966117}.revo-channel-status.connected{color:#198457}.revo-channel-status.paused,.revo-channel-status.disconnected{color:#6b7880}.revo-channel-grid footer{display:flex;gap:8px;margin-top:16px}.revo-channel-grid footer button,.revo-add-channel form>button{padding:7px 10px;border:1px solid #cad8df;border-radius:6px;background:#fff;color:#365666;font:inherit;font-size:12px;font-weight:750;cursor:pointer}.revo-channel-grid footer button:disabled,.revo-add-channel form>button:disabled{cursor:not-allowed;opacity:.6}.revo-add-channel{margin-top:25px;padding:20px;border:1px solid #dce5ea;border-radius:10px;background:#fff}.revo-add-channel>div>span{display:inline-flex;align-items:center;gap:7px;font-weight:800}.revo-add-channel>div>span svg{color:#ff7a59}.revo-add-channel>div>p{margin:5px 0 18px;color:#718793;font-size:13px}.revo-add-channel form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.revo-add-channel label{display:grid;gap:6px;color:#405c6b;font-size:12px;font-weight:750}.revo-add-channel label small{font-weight:500}.revo-add-channel input,.revo-add-channel select{box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid #cddae0;border-radius:6px;background:#fff;color:#2e4b5a;font:inherit;font-size:13px}.revo-channel-type{display:flex;gap:7px}.revo-channel-type button{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid #cad8df;border-radius:6px;background:#fff;color:#496473;font:inherit;font-size:12px;cursor:pointer}.revo-channel-type button.active{border-color:#ff7a59;background:#fff1ed;color:#a84f38;font-weight:800}.revo-add-channel form>button{align-self:end;border-color:#ff7a59;background:#ff7a59;color:#fff}.revo-channel-notice{margin:15px 0 0;padding:10px 12px;border-radius:6px;background:#eef5f7;color:#3d6676;font-size:12px}@media(max-width:700px){.revo-channel-settings{padding:18px}.revo-channel-grid,.revo-add-channel form{grid-template-columns:1fr}.revo-channel-card-head{display:block}.revo-channel-status{margin-top:8px}}
-.revo-channel-settings>.inbox-email-settings{margin-top:28px}.revo-whatsapp-settings{margin-top:38px;border-top:1px solid #dce5ea;padding-top:20px}.revo-whatsapp-settings .revo-channel-grid article{padding:18px}.revo-whatsapp-settings .revo-channel-grid h3{font-size:15px;margin:0}.revo-whatsapp-settings .revo-channel-grid footer{flex-wrap:wrap}.revo-whatsapp-settings details summary{cursor:pointer;font-weight:600}.revo-whatsapp-settings details form{padding-top:18px}
+.revo-channel-settings {
+  --inbox-ink: #182b36;
+  --inbox-muted: #657883;
+  --inbox-border: #e1e8ec;
+  --inbox-accent: #176b50;
+  width: 100%; max-width: 1240px; margin: 0 auto; padding: 28px 36px 48px;
+  color: var(--inbox-ink); font-size: 14px; line-height: 1.5;
+}
+.revo-channel-settings *, .revo-channel-settings *::before, .revo-channel-settings *::after { box-sizing: border-box; }
+.revo-channel-settings .inbox-settings-back { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: var(--inbox-muted); text-decoration: none; margin-bottom: 22px; }
+.revo-channel-settings .inbox-settings-back:hover { color: var(--inbox-accent); }
+.revo-channel-settings .inbox-settings-page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 27px; }
+.revo-channel-settings .inbox-settings-eyebrow { color: var(--inbox-muted); font-size: 10px; font-weight: 650; letter-spacing: .13em; }
+.revo-channel-settings h1 { font-size: 29px; line-height: 1.2; font-weight: 650; letter-spacing: -.04em; margin: 6px 0 8px; color: var(--inbox-ink); }
+.revo-channel-settings .inbox-settings-page-heading p { margin: 0; color: var(--inbox-muted); font-size: 14px; }
+.revo-channel-settings .inbox-settings-page-icon { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--inbox-border); border-radius: 13px; background: #fff; color: var(--inbox-accent); }
+.revo-channel-settings .inbox-page-tabs { display: flex; gap: 27px; border-bottom: 1px solid var(--inbox-border); margin-bottom: 27px; }
+.revo-channel-settings .inbox-page-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 1px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--inbox-muted); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; white-space: nowrap; }
+.revo-channel-settings .inbox-page-tabs button[aria-selected=true] { color: var(--inbox-accent); border-bottom-color: var(--inbox-accent); }
+.revo-channel-settings [hidden] { display: none !important; }
+.revo-channel-settings :is(button,a,input,select,summary,[contenteditable]):focus-visible { outline: 2px solid #21896a; outline-offset: 3px; }
+.revo-channel-settings .inbox-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.revo-channel-settings .inbox-settings-heading h2 { margin: 0 0 4px; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
+.revo-channel-settings .inbox-settings-heading p { margin: 0; font-size: 13px; color: var(--inbox-muted); }
+.revo-channel-settings .inbox-email-settings { margin: 0; padding: 0; border: 0; }
+.revo-channel-settings .inbox-email-settings button, .revo-channel-settings .revo-whatsapp-settings button, .revo-channel-settings .inbox-settings-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 8px 13px; border: 1px solid #d6e0e5; border-radius: 7px; background: #fff; color: #354d59; font: inherit; font-size: 12px; font-weight: 550; line-height: 1.4; text-decoration: none; cursor: pointer; transition: background .15s, border-color .15s; }
+.revo-channel-settings .inbox-email-settings button:hover:not(:disabled), .revo-channel-settings .revo-whatsapp-settings button:hover:not(:disabled), .revo-channel-settings .inbox-settings-link:hover { background: #f3f7f5; border-color: #9db9ad; }
+.revo-channel-settings button:disabled { cursor: default; opacity: .5; }
+.revo-channel-settings .inbox-settings-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 18px; align-items: start; }
+.revo-channel-settings .inbox-settings-single { grid-template-columns: minmax(0,1fr); }
+.revo-channel-settings .inbox-settings-single .inbox-mailbox-list { display: none; }
+.revo-channel-settings .inbox-mailbox-list { display: grid; gap: 8px; }
+.revo-channel-settings .inbox-mailbox-list button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 14px; gap: 4px; width: 100%; min-width: 0; overflow-wrap: anywhere; }
+.revo-channel-settings .inbox-mailbox-list button[aria-current=true] { background: #eef6f2; border-color: #b4d1c4; }
+.revo-channel-settings .inbox-mailbox-list strong { font-size: 13px; font-weight: 600; }
+.revo-channel-settings .inbox-mailbox-list :is(span,small) { font-size: 11px; color: var(--inbox-muted); }
+.revo-channel-settings .inbox-mailbox-list small { display: flex; align-items: center; gap: 5px; }
+.revo-channel-settings .inbox-mailbox-detail { min-width: 0; padding: 24px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #182b3603; }
+.revo-channel-settings .inbox-account-heading { align-items: flex-start; margin-bottom: 22px; }
+.revo-channel-settings .inbox-account-identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.revo-channel-settings .inbox-account-identity > div { min-width: 0; }
+.revo-channel-settings .inbox-account-identity h3 { margin: 0 0 3px; font-size: 16px; font-weight: 650; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.revo-channel-settings .inbox-account-identity p { font-size: 12px; overflow-wrap: anywhere; }
+.revo-channel-settings .inbox-account-identity small { display: block; margin-top: 2px; color: #84939a; font-size: 11px; }
+.revo-channel-settings .inbox-provider-icon { display: grid; place-items: center; flex: 0 0 44px; height: 44px; color: #356ca0; background: #eef4fa; border: 1px solid #e2ebf5; border-radius: 11px; }
+.revo-channel-settings .inbox-connection-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; color: #896319; background: #faf5e8; border: 1px solid #efe5c8; border-radius: 6px; font-size: 11px; font-weight: 550; text-transform: none; white-space: nowrap; }
+.revo-channel-settings .inbox-connection-status > span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.revo-channel-settings .inbox-connection-status.is-connected { color: #176b50; background: #eef7f2; border-color: #d8eadf; }
+.revo-channel-settings .inbox-mailbox-facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; margin: 0 0 18px; padding: 16px 0; border-top: 1px solid #edf1f3; border-bottom: 1px solid #edf1f3; }
+.revo-channel-settings .inbox-mailbox-facts div { display: block; min-width: 0; }
+.revo-channel-settings .inbox-mailbox-facts dt { color: var(--inbox-muted); font-size: 11px; margin-bottom: 4px; }
+.revo-channel-settings .inbox-mailbox-facts dd { margin: 0; color: #354d59; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.revo-channel-settings .inbox-sync-state { color: #775c22; background: #fbf8ef; border: 1px solid #eee6d2; border-radius: 7px; padding: 10px 12px; margin: 0 0 16px; font-size: 12px; line-height: 1.6; }
+.revo-channel-settings .inbox-connection-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.revo-channel-settings .inbox-connection-actions > button:first-of-type, .revo-channel-settings .inbox-email-settings .inbox-primary { background: var(--inbox-accent); color: #fff; border-color: var(--inbox-accent); }
+.revo-channel-settings .inbox-connection-actions > button:first-of-type:hover:not(:disabled), .revo-channel-settings .inbox-email-settings .inbox-primary:hover:not(:disabled) { background: #12583f; border-color: #12583f; }
+.revo-channel-settings .inbox-email-settings :is(input,select), .revo-channel-settings .revo-add-channel :is(input,select) { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #d6e0e5; border-radius: 7px; padding: 8px 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 400; color: #354d59; }
+.revo-channel-settings .inbox-email-settings label, .revo-channel-settings .revo-add-channel label { display: grid; gap: 6px; font-size: 12px; font-weight: 550; }
+.revo-channel-settings .inbox-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.revo-channel-settings .inbox-sharing { border-top: 1px solid #edf1f3; padding-top: 18px; margin-top: 20px; }
+.revo-channel-settings .inbox-sharing h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+.revo-channel-settings .inbox-sharing form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; max-width: 580px; }
+.revo-channel-settings .inbox-sharing form > label { flex: 1 1 240px; }
+.revo-channel-settings .inbox-sharing form > p { flex-basis: 100%; margin: 0; }
+.revo-channel-settings .inbox-sharing > h4:not(:first-child) { margin-top: 20px; }
+.revo-channel-settings .inbox-sharing :is(p,small) { font-size: 12px; color: var(--inbox-muted); }
+.revo-channel-settings .inbox-member { margin-bottom: 9px; }
+.revo-channel-settings .inbox-account-advanced { border-top: 1px solid #edf1f3; margin: 4px 0 0; }
+.revo-channel-settings .inbox-account-advanced summary { padding: 14px 0; font-size: 12px; font-weight: 550; cursor: pointer; color: #4e6470; }
+.revo-channel-settings .inbox-account-advanced summary span { margin-left: 12px; color: #83929a; font-weight: 400; }
+.revo-channel-settings .inbox-history-form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin: 2px 0 18px; }
+.revo-channel-settings .inbox-history-form > label { flex: 1 1 200px; max-width: 360px; }
+.revo-channel-settings .inbox-disconnect-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid #edf1f3; }
+.revo-channel-settings .inbox-disconnect-row h4 { margin: 0 0 3px; font-size: 12px; }
+.revo-channel-settings .inbox-disconnect-row p { margin: 0; color: var(--inbox-muted); font-size: 12px; }
+.revo-channel-settings .inbox-email-settings .inbox-disconnect-button { color: #ab4141; border-color: #eed5d5; }
+.revo-channel-settings .inbox-add-mailbox, .revo-channel-settings .revo-add-channel { padding: 16px 20px; margin-top: 16px; border: 1px dashed #cbd8d2; border-radius: 9px; background: #f9fcfa; }
+.revo-channel-settings :is(.inbox-add-mailbox,.revo-add-channel) summary { color: var(--inbox-accent); font-weight: 550; font-size: 13px; cursor: pointer; }
+.revo-channel-settings :is(.inbox-add-mailbox,.revo-add-channel) form { padding-top: 20px; }
+.revo-channel-settings :is(.inbox-settings-error,.inbox-settings-notice) { padding: 11px 13px; font-size: 12px; border-radius: 7px; margin: 0 0 16px; }
+.revo-channel-settings .inbox-settings-empty { padding: 28px; text-align: center; border: 1px dashed var(--inbox-border); border-radius: 10px; color: var(--inbox-muted); background: #fff; }
+.revo-channel-settings .revo-whatsapp-settings { margin: 0; padding: 0; border: 0; }
+.revo-channel-settings .revo-channel-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.revo-channel-settings .revo-channel-grid article { border: 1px solid var(--inbox-border); border-radius: 10px; background: white; padding: 20px; }
+.revo-channel-settings .revo-channel-grid h3 { margin: 0 0 6px; font-size: 15px; }
+.revo-channel-settings .revo-channel-grid article p { font-size: 12px; color: var(--inbox-muted); }
+.revo-channel-settings .revo-channel-grid footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.revo-channel-settings .revo-channel-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 24px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; }
+.revo-channel-settings .revo-channel-empty > svg { color: var(--inbox-accent); margin-bottom: 16px; }
+.revo-channel-settings .revo-channel-empty p { max-width: 350px; margin: 2px 0 20px; color: var(--inbox-muted); font-size: 13px; }
+.revo-channel-settings .revo-add-channel form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.revo-channel-settings .revo-add-channel form > button { justify-self: start; align-self: end; }
+@media (max-width: 900px) {
+  .revo-channel-settings { padding: 24px; }
+  .revo-channel-settings .inbox-settings-layout { grid-template-columns: minmax(0,1fr); }
+  .revo-channel-settings .inbox-mailbox-list { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 600px) {
+  .revo-channel-settings { padding: 20px 16px 32px; }
+  .revo-channel-settings h1 { font-size: 25px; }
+  .revo-channel-settings .inbox-settings-page-icon { display: none; }
+  .revo-channel-settings .inbox-page-tabs { gap: 0; justify-content: space-between; }
+  .revo-channel-settings .inbox-page-tabs button { gap: 6px; font-size: 12px; padding: 12px 2px; }
+  .revo-channel-settings .inbox-settings-heading { flex-wrap: wrap; }
+  .revo-channel-settings .inbox-section-heading { align-items: start; }
+  .revo-channel-settings .inbox-mailbox-detail { padding: 18px; }
+  .revo-channel-settings .inbox-account-heading { gap: 12px; }
+  .revo-channel-settings .inbox-mailbox-facts { grid-template-columns: minmax(0,1fr); gap: 12px; }
+  .revo-channel-settings .inbox-mailbox-facts div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .revo-channel-settings .inbox-mailbox-facts dt { margin: 0; }
+  .revo-channel-settings :is(.inbox-form-grid,.revo-add-channel form,.revo-channel-grid,.inbox-mailbox-list) { grid-template-columns: minmax(0,1fr); }
+  .revo-channel-settings .inbox-account-advanced summary span { display: none; }
+  .revo-channel-settings .inbox-settings-page-heading { margin-bottom: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .revo-channel-settings * { transition: none !important; } }
+.revo-channel-settings .inbox-email-settings .inbox-checkbox input { width: auto; min-height: 0; }
+.revo-channel-settings .inbox-account-advanced { margin-top: 20px; }

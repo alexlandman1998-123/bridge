@@ -7,7 +7,7 @@ const owner='10000000-0000-0000-0000-000000000001', partner='10000000-0000-0000-
 const matter='20000000-0000-0000-0000-000000000001', rp='30000000-0000-0000-0000-000000000001'
 await db.exec(`
 create role anon; create role authenticated; create role service_role;
-create table organisations(id uuid primary key,name text,company_email text);
+create table organisations(id uuid primary key,name text,company_email text,email text,primary_contact_email text);
 create table transactions(id uuid primary key,organisation_id uuid,finance_type text,finance_managed_by text,onboarding_status text,onboarding_completed_at timestamptz,external_onboarding_submitted_at timestamptz,bond_workspace_id uuid,bond_assignment_status text,bond_assignment_source text,seller_has_existing_bond boolean,routing_profile_json jsonb);
 create table transaction_role_players(id uuid primary key,transaction_id uuid references transactions on delete cascade,role_type text,assigned_organisation_id uuid,partner_organisation_id uuid,organisation_id uuid,email_address text,status text,assignment_status text,transaction_partner_invitation_id uuid,updated_at timestamptz default now());
 create table transaction_partner_invitations(id uuid primary key,transaction_id uuid references transactions on delete cascade,role_type text,organisation_id uuid,company_name text,email text,status text,expires_at timestamptz,invitation_token uuid default gen_random_uuid(),created_at timestamptz default now());
@@ -33,6 +33,12 @@ create table transaction_events(id uuid primary key default gen_random_uuid(),tr
 `)
 await db.exec(`insert into transactions(id,organisation_id,finance_type,onboarding_status) values ('20000000-0000-0000-0000-000000000099','${owner}','cash','signed_otp_received')`)
 await db.exec(readFileSync(new URL('../../../supabase/migrations/20261004080223_transaction_handoff_durable_dispatch.sql',import.meta.url),'utf8'))
+// Include the real organisations.email column: recipient selection must qualify
+// its lateral email alias to avoid the production-schema ambiguity.
+const repair = readFileSync(new URL('../../../supabase/migrations/20261101070855_repair_transaction_handoff_billing_closeout.sql',import.meta.url),'utf8')
+const preparation = repair.match(/CREATE OR REPLACE FUNCTION public\.prepare_transaction_handoff_workspace\([\s\S]*?AS \$function\$[\s\S]*?\$function\$/)?.[0]
+if (!preparation) throw new Error('The current handoff preparation repair is missing')
+await db.exec(`${preparation};`)
 await db.exec(`
 create table queued_legal_notifications(event_type text);
 create function bridge_phase6_title_case(text) returns text language sql as $$select initcap(replace($1,'_',' '))$$;

@@ -25,7 +25,8 @@ alter table transaction_role_players add column user_id uuid,add column assigned
 alter table transaction_role_players alter column id set default gen_random_uuid();
 create table organisation_partners(id uuid primary key default gen_random_uuid(),organisation_id uuid,partner_organisation_id uuid,relationship_status text,status text,relationship_type text,visibility_level text,partner_type text,scope_type text,scope_id uuid,preferred boolean,accepted_at timestamptz,created_by uuid,created_at timestamptz default now(),updated_at timestamptz);
 create table transaction_user_access(id uuid primary key default gen_random_uuid(),transaction_id uuid,user_id uuid,access_role text,created_by_invitation_id uuid,updated_at timestamptz,unique(transaction_id,user_id,access_role));
-create table transaction_participants(id uuid primary key default gen_random_uuid(),transaction_id uuid,user_id uuid,role_type text,legal_role text,transaction_role text,status text,participant_name text,participant_email text,invited_by_user_id uuid,invited_at timestamptz,accepted_at timestamptz,visibility_scope text,is_internal boolean,participant_scope text,assignment_source text,transaction_partner_invitation_id uuid,partner_organisation_id uuid,can_view boolean,can_comment boolean,can_upload_documents boolean,can_edit_finance_workflow boolean,can_edit_attorney_workflow boolean,can_edit_core_transaction boolean,removed_at timestamptz,created_at timestamptz default now(),updated_at timestamptz,unique(transaction_id,role_type,legal_role));
+create table transaction_participants(id uuid primary key default gen_random_uuid(),transaction_id uuid,user_id uuid,role_type text,legal_role text,transaction_role text,status text,participant_name text,participant_email text,invited_by_user_id uuid,invited_at timestamptz,accepted_at timestamptz,visibility_scope text,is_internal boolean,participant_scope text,assignment_source text,transaction_partner_invitation_id uuid,partner_organisation_id uuid,can_view boolean,can_comment boolean,can_upload_documents boolean,can_edit_finance_workflow boolean,can_edit_attorney_workflow boolean,can_edit_core_transaction boolean,removed_at timestamptz,created_at timestamptz default now(),updated_at timestamptz);
+create unique index transaction_participants_non_buyer_role_uidx on transaction_participants(transaction_id,role_type,legal_role) where coalesce(transaction_role,'')<>'buyer';
 create table invites(id uuid primary key default gen_random_uuid(),token text unique,invite_type text,status text,metadata jsonb,target_transaction_id uuid,email text,expires_at timestamptz,accepted_by_user_id uuid,accepted_at timestamptz,updated_at timestamptz,revoked_at timestamptz,revoked_by_user_id uuid);
 create function bridge_accept_invite(text) returns jsonb language sql as $$select jsonb_build_object('success',true,'legacy',true)$$;
 create function bridge_log_transaction_partner_invitation_event(uuid,text,uuid,jsonb) returns void language sql as $$select null::void$$;
@@ -49,6 +50,24 @@ await db.exec(sql('20261004082510_transaction_partner_handoff_signup_binding.sql
 const activeWrapper = (await query("select pg_get_functiondef('public.bridge_accept_transaction_partner_invitation(text,jsonb,uuid)'::regprocedure) as definition")).rows[0].definition
 await db.exec(compatibility)
 assert.equal((await query("select pg_get_functiondef('public.bridge_accept_transaction_partner_invitation(text,jsonb,uuid)'::regprocedure) as definition")).rows[0].definition, activeWrapper)
+await db.exec(sql('20261104114730_partner_invitation_participant_identity.sql'))
+await db.exec(`alter table public.transaction_user_access add constraint transaction_user_access_access_role_check check(access_role in ('transfer_attorney','bond_originator','developer','other'))`)
+await db.exec(sql('20261104115341_bank_attorney_access_roles.sql'))
+await db.exec(`
+create table organisation_partner_roles(id uuid primary key default gen_random_uuid(),organisation_id uuid,relationship_id uuid,partner_organisation_id uuid,role_type text,is_active boolean default true,is_preferred_default boolean default false,external_partner_id uuid,source text,metadata jsonb,created_by uuid,updated_at timestamptz default now());
+create unique index organisation_partner_roles_relationship_role_idx on organisation_partner_roles(organisation_id,relationship_id,role_type) where relationship_id is not null;
+alter table transaction_role_players add column partner_role_configuration_id uuid references organisation_partner_roles(id),add column preferred_partner_id uuid;
+alter table transaction_role_players add constraint transaction_role_players_canonical_partner_assignment_check check(partner_role_configuration_id is not null or(preferred_partner_id is null and partner_relationship_id is null));
+create function bridge_normalize_partner_role_type(text) returns text language sql immutable as $$select case when $1='external_collaborator' then 'other' else lower($1) end$$;
+`)
+const canonicalAssignment = sql('202607200012_canonical_partner_assignment_ids.sql')
+await db.exec(canonicalAssignment.slice(canonicalAssignment.indexOf('create or replace function public.bridge_normalize_partner_assignment_role'), canonicalAssignment.indexOf('alter table public.transaction_role_players')))
+await db.exec(canonicalAssignment.slice(canonicalAssignment.indexOf('create or replace function public.bridge_validate_transaction_partner_assignment'), canonicalAssignment.indexOf('create or replace function public.bridge_validate_private_listing_partner_assignment')))
+await db.exec(sql('20261104115649_bank_attorney_invitation_role_shape.sql'))
+await db.exec(sql('20261108145808_pin_partner_invite_role_shape_search_path.sql'))
+assert.deepEqual((await query("select proconfig from pg_proc where oid='public.bridge_transaction_partner_invite_role_shape(text)'::regprocedure")).rows[0].proconfig, ['search_path=""'])
+await db.exec(sql('20261104120200_canonical_partner_destination_change.sql'))
+
 const accept = async (token, org = null) => (await query('select bridge_accept_transaction_partner_invitation($1,$2,$3) as result', [token, {}, org])).rows[0].result
 const preview = async token => (await query('select bridge_get_partner_handoff_invitation($1) as result', [token])).rows[0].result
 const invite = async (transactionId, role = 'bond_originator', status = 'pending') => {
@@ -59,6 +78,9 @@ const invite = async (transactionId, role = 'bond_originator', status = 'pending
 }
 const newMatter = async (status = 'signed_otp_received') => (await query(`insert into transactions(id,organisation_id,finance_type,finance_managed_by,onboarding_status) values(gen_random_uuid(),$1,'bond','bond_originator',$2) returning id`, [owner,status])).rows[0].id
 try {
+  for(const role of ['bond_attorney','cancellation_attorney'])await query('insert into transaction_user_access(transaction_id,user_id,access_role) values($1,$2,$3)',[matter,user,role])
+  await assert.rejects(query("insert into transaction_user_access(transaction_id,user_id,access_role) values($1,$2,'arbitrary_owner')",[matter,user]),/access_role_check/)
+  await query("delete from transaction_user_access where transaction_id=$1 and user_id=$2 and access_role in ('bond_attorney','cancellation_attorney')",[matter,user])
   const pending = await invite(matter)
   const publicPreview = await preview(pending.token)
   assert.equal(publicPreview.ok,true)
@@ -94,6 +116,7 @@ try {
   const accepted = await accept(pending.token,partner)
   assert.equal((await query('select invite_token from signup_intents where auth_user_id=$1',[user])).rows[0].invite_token,null,'durable return reference clears only after connection succeeds')
   assert.equal(accepted.success,true);assert.equal(accepted.deliveryConfirmed,false)
+  assert.ok((await query('select partner_role_configuration_id from transaction_role_players where transaction_id=$1',[matter])).rows[0].partner_role_configuration_id)
   assert.equal(accepted.partnerOrganisationId,partner)
   assert.equal((await query('select active_workspace_id from user_workspace_preferences where user_id=$1',[user])).rows[0].active_workspace_id,partner)
   const bound=(await query("select * from transaction_handoffs where transaction_id=$1 and role_type='bond_originator'",[matter])).rows[0]

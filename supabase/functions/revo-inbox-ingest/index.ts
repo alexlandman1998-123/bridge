@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "supabase"
 
@@ -7,7 +8,7 @@ const json = (status: number, body: Record<string, unknown>) => new Response(JSO
 
 function serviceClient() {
   const url = text(Deno.env.get("SUPABASE_URL"))
-  const key = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"))
+  const key = text(supabaseServiceKey())
   if (!url || !key) throw new Error("server_unavailable")
   return createClient(url, key, { auth: { persistSession: false } })
 }
@@ -20,7 +21,7 @@ function validSource(value: unknown) {
   throw new Error("invalid_source")
 }
 
-Deno.serve(async (request) => {
+Deno.serve(withApiCredentials(async (request) => {
   if (request.method !== "POST") return json(405, { error: "method_not_allowed" })
   try {
     const expectedKey = text(Deno.env.get("REVO_INBOX_INGEST_KEY"))
@@ -52,4 +53,4 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : "ingestion_failed" })
   }
-})
+}))

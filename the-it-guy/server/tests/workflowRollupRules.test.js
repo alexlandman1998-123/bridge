@@ -10,6 +10,11 @@ import {
 } from '../services/workflowRollupRules.js'
 import { calculateProgressPercent } from '../services/workflowProgressCalculator.js'
 
+for(const lifecycle_state of ['registered','completed']) {
+  assert.equal(deriveParentStage({transaction:{lifecycle_state},workflows:{sales_otp:{status:'not_started'},finance:{status:'cancelled'}}}),
+    PARENT_STAGE_ENUM.COMPLETE,'Canonical registration must not regress because compatibility workflows are stale.')
+}
+
 function step(status, overrides = {}) {
   return {
     key: overrides.key || 'step',

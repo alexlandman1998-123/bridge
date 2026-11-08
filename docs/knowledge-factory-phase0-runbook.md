@@ -1,5 +1,239 @@
 # Knowledge Factory Phase 0 runbook
 
+## 19 October 2026: boundary snapshots and existing seller selection
+
+Owner: primary Arch9 app/API, plus the shared database filing functions. Prepared
+locally; no hosted database changes, paid lookups or deployment were performed.
+
+Before buying a live report, the agent can search accessible existing seller leads
+by name/address and explicitly choose one. The quote saves that selection; execution
+checks it again before requesting supplier data. Filing reuses its private listing,
+or creates an internal workspace when absent. Existing contacts, onboarding answers
+and documents remain intact; all supplier owners appear separately for review.
+Organisation, assignment and existing property links are checked server-side. A
+property already linked to a seller continues using that seller; this release does
+not move previously filed documents between leads or merge duplicate CRM records.
+
+Map lookups issue short-lived signed boundary receipts scoped to organisation,
+user, property and supplier environment. Only verified geometry enters the quote
+and immutable report snapshot. WKT polygons, holes and multiple islands are kept;
+point-location fallback boxes, unknown projections, malformed shapes and oversized
+receipt payloads are omitted whole. Receipts are bounded to keep map responses
+within serverless payload limits; no outline is simplified or partially saved.
+The Full PDF draws a compact vector outline without extra supplier, tile or font
+requests. The fictional preview remains three pages; longer data flows onward.
+
+**Current map access is still controlled UAT.** Its boundary must not be drawn as
+a live report boundary. A live report selected from a UAT map records that reason
+and shows the outline as unavailable. Supplier-approved live map access/query costs
+must be reviewed before enabling live-map egress. Old report snapshots without
+geometry are not backfilled or re-purchased. Phone-field availability remains
+unverified and no phone number is guessed.
+
+Scoped migration order (after verifying existing report/CRM prerequisites):
+
+1. `20261018083318_knowledge_factory_report_cost_approval_and_credit_ledger.sql`
+2. `20261019185816_knowledge_factory_seller_lead_filing.sql`
+3. `20261019191728_knowledge_factory_report_boundary_and_existing_seller.sql`
+
+The first two are earlier prepared work; do not replay them when already applied.
+The third is additive and replaces the filing function forward. Release database
+changes before the dependent primary app/API. Confirm the private `documents`
+bucket and the existing seller source panel/document reader in the target.
+
+Local verification: 32 backend/PDF/SQL checks passed, including real PostgreSQL
+fixtures, explicit manual lead selection, all-owner preservation, existing seller
+answers, property/tenant/assignment conflicts, quote-to-snapshot boundary provenance,
+private PDF filing after an uncertain upload, and idempotent retry. 16 purchase/completed-report/invoice UI tests also passed. API and browser
+module bundles and targeted ESLint passed. The fictional PDF was rendered and all
+three pages inspected. The one-line attorney contact navigation fix uses
+`window.location.assign(href)` to resolve the prior lint violation while preserving
+navigation; isolated attorney-page lint passed with 0 errors (39 existing warnings). The full `npm run check:app` attempt was killed by the operating system
+during lint. A separate production build (supplier login probe explicitly disabled)
+was also killed during Vite transformation with exit 137. The normal nine baseline
+service checks passed. Full build readiness remains unconfirmed; focused bundles
+and tests do not replace that release check.
+
+Focused commands, from `the-it-guy/`:
+
+```sh
+node --test scripts/knowledge-factory-seller-filing-db.test.mjs server/services/knowledgeFactoryBoundaryReceipt.test.js server/services/knowledgeFactorySellerFiling.test.js scripts/knowledge-factory-full-report-pdf.test.mjs scripts/knowledge-factory-report-accounting.test.mjs scripts/knowledge-factory-map-geometry.test.mjs scripts/knowledge-factory-package-cost-recipes-phase2.test.mjs
+npx vitest run src/components/canvassing/__tests__/KnowledgeFactoryReportPurchaseModal.billing.test.jsx src/components/canvassing/__tests__/KnowledgeFactorySellerFiling.test.jsx src/components/canvassing/__tests__/KnowledgeFactoryReportInvoices.test.jsx --maxWorkers=1
+```
+
+Before release, obtain approval for the exact target/release, follow
+`docs/database-release-runbook.md` guards/recovery and exact migration dry run,
+review the scoped file manifest rather than deploying the whole active working
+tree, and complete the app check on sufficient resources. After release verify
+RPC service-only access, test-report isolation, accessible existing lead selection,
+and private saved PDF retrieval. A paid live report acceptance needs separately
+approved supplier credentials, access, exact costs and a bounded execution.
+
+## 19 October 2026: automatic seller-lead filing prepared locally
+
+Successful live Basic and Full property reports now attempt to create/reuse one
+seller lead per organisation and Knowledge Factory property ID. Every returned
+owner is seeded into the seller profile and retained, with supplier type and share,
+in a separate unverified source panel. The original report stays immutable.
+Subsequent reports add distinct private PDF documents to the same seller listing;
+agent/seller answers are not overwritten by newer supplier data. Existing manual
+leads can be explicitly selected before purchase (see the newer entry above), or
+reused when they carry the supplier property source reference; no name/address
+guesses are used. Test/unknown-environment reports do
+not create real CRM seller leads.
+
+The PDF is generated server-side using the normal report renderer and stored in the
+private `documents` bucket. Filing checks bucket privacy, uses a deterministic path
+and stable PDF metadata, and verifies matching bytes after an uncertain upload.
+Document completion is idempotent. The file is an internal, optional property
+research document, not an approved title deed, FICA check or seller declaration.
+No contact details, consent, selling intent, invitation or mandate is inferred.
+
+A filing failure does not change the successful paid report or trigger another
+supplier request. Completed reports retains a retry action, and offers the seller
+lead link once its document receipt is complete. The saved report itself is the
+recovery source, including if the request ends before the first filing attempt.
+
+Release the existing report/accounting prerequisites, then the new migration
+`20261019185816_knowledge_factory_seller_lead_filing.sql`, before the app/API change.
+This work has not applied migrations, changed hosted data, executed paid lookups,
+or deployed. The original supplier-access limitations remain.
+
+Focused verification:
+- `node --test scripts/knowledge-factory-seller-filing-db.test.mjs server/services/knowledgeFactorySellerFiling.test.js`
+- `npx vitest run src/components/canvassing/__tests__/KnowledgeFactorySellerFiling.test.jsx --maxWorkers=1`
+- Existing accounting, saved-report, PDF and report-review checks.
+
+
+## 18 October 2026: supplier access check and prepaid cost clarification
+
+The requester confirmed the Knowledge Factory account is **prepaid: 30 credits
+per cent (3,000 credits per rand)**. New local commercial-policy defaults and
+the internal setup form use this rate. Existing saved policies are not overwritten;
+no remote account plan, selling price, limit or rollout setting was changed.
+
+The reviewed Basic/Full query selects two buyer-name versions, type and share.
+Their documented field fees total **535 credits per owner**, approximately
+**R0.18 prepaid**, before property, transfer and query charges. Its 20-owner
+allowance is 10,700 owner-field credits. The internal estimate now separates that
+component from the full report ceiling. This is not a confirmed name-and-phone
+price: neither current report query selects a phone field.
+
+Public supplier material was fetched again on 18 October:
+
+- [Cost specification](https://new.propertyintellect.co.za/graphql/portal/downloads/graphql-cost-specification.pdf),
+  revised 22 September 2026, pages 3–5: buyer field fees and credit conversion.
+- [Migration guide](https://new.propertyintellect.co.za/graphql/portal/migration):
+  current owners are current-transfer buyers; use pagination to detect additional owners.
+- [Supplier demo](https://new.propertyintellect.co.za/graphql/portal/downloads/google-maps-demo.zip):
+  `Demo/propertyApi.js` requests `buyerName`, `buyerNameFix`, `buyerType`, `share`;
+  `Demo/mapHandling.js` displays `buyerNameFix || buyerName`. Keep that fallback
+  until authenticated schema and real field evidence justify removing a name field.
+
+Anonymous UAT v1 introspection returned HTTP 400 with `HC0046`, "Introspection
+is not allowed for the current request." The existing private metadata-discovery
+connection returned `supplier_login_http_403` for roots, Buyer and Transfer.
+Those calls requested schema metadata only; no report execution, customer
+invoice or database write was made. This proves that this saved discovery
+connection could not authenticate; it does not prove that every Arch9 supplier
+connection is unavailable. Phone-field availability remains unverified.
+
+The primary Vercel project's CLI metadata confirms its three UAT supplier variables
+are configured. Production Secret values cannot be pulled for a local check;
+the internal-console browser also requires sign-in. Neither fallback provided an
+authenticated supplier schema session. No credentials were changed or entered.
+
+Diagnostic handling now retains numeric billing from HTTP/GraphQL report errors
+before assessing field completeness. An uncertain customer execution no longer
+offers a new estimate in the same modal; it directs the user to Completed reports
+and administrator review. A charged failure must not produce another automatic
+supplier request or a customer invoice.
+
+Next supplier checks, once authenticated discovery works:
+
+1. Confirm any owner phone/mobile/contact field or separate contact endpoint,
+   its required permission and its exact fee. An omitted field in the price PDF
+   does not establish whether the field is available.
+2. Confirm whether `buyerNameFix` is always populated, and the meaning/nullability
+   of `buyerType` and `share` in UAT and live. Do not invent missing values.
+3. Explain why the earlier one-placeholder-owner UAT response billed the full
+   20-owner field allowance. Do not promise R0.18 as a complete lookup price.
+4. Prepare fresh Basic and Full diagnostic grants with new immutable IDs and
+   fresh exact-query validation, bounded by 12,000 and 20,000 credits respectively
+   (illustrative prepaid allowances R4.00 and R6.67). The old Basic claim remains
+   consumed; the previous Full approval expired on 2 October. Neither was reset
+   or executed in this task. Review the real report/PDF and numeric billing before
+   approving customer selling prices, limits or live activation.
+
+Local checks after these fixes: 42 focused API/accounting/diagnostic tests and
+six invoice/purchase UI tests passed; the internal console build and targeted
+primary-app ESLint passed. The final `npm run check:app` also passed (lint,
+baseline tests and production build), with the optional supplier login probe
+explicitly disabled. No deployment or remote migration has been performed.
+
+## 18 October 2026: report accounting and monthly agency billing prepared locally
+
+Owner: primary Arch9 workspace and its existing internal Operating Console.
+FICA and its separate supplier API are outside this work. No remote migration,
+paid supplier execution, price change, access grant or deployment was performed.
+
+Report execution now reserves the full reviewed maximum in PostgreSQL before a
+supplier data request. A policy-row lock serializes agency reservations. Monthly,
+daily, hourly and named-pilot limits include pending requests and charged failures;
+existing saved reports remain counted without double counting. Unknown billing
+keeps its reservation until an executive records supplier-confirmed amounts and
+a reference. Reservations do not expire automatically. A supplier timeout is
+never permission to repeat the request.
+
+The supplier response's numeric billing is recorded before property parsing or
+GraphQL errors can discard it. Report request, immutable result snapshot, completed
+purchase intent and one invoice line save atomically. If saving fails, the supplier
+charge remains accounted for and no customer invoice line is created. Only live
+reports create monthly ZAR agency invoices at their confirmed customer price.
+UAT reports never create customer invoice lines. The current month remains a draft;
+an executive may issue it after month end. No automatic delivery or payment
+collection is implemented. Agency administrators can view and export monthly charges
+from completed property reports. Invoice export is not a delivery confirmation.
+
+Cost approval is a distinct, expiring record, bound to organisation, Basic/Full
+package, exact query hash, fee schedule and supplier environment. It requires a
+saved execution diagnostic with actual numeric billing and complete owner-field
+coverage, plus executive field review and supplier fee confirmation. A maximum-cost
+estimate alone cannot satisfy it. Missing Basic owner type/share evidence and
+unexecuted Full diagnostics remain real blockers; historical evidence is not
+rewritten or silently marked passed. Saving a reviewed approval does not grant
+customer access. The internal console separately saves an approved selling price.
+
+Default configuration remains UAT. Live reports require all of:
+
+- `KNOWLEDGE_FACTORY_REPORT_ENVIRONMENT=live`;
+- `KNOWLEDGE_FACTORY_LIVE_REPORTS_ENABLED=true` on a `VERCEL_ENV=production` deployment;
+- exact `KNOWLEDGE_FACTORY_LIVE_GRAPHQL_ENDPOINT=https://propinfoapi.co.za/live/v1/graphql/`;
+- separate private `KNOWLEDGE_FACTORY_LIVE_EMAIL` and `KNOWLEDGE_FACTORY_LIVE_PASSWORD`;
+- an unexpired live cost approval and an executive-configured `production` commercial
+  rollout, existing organisation entitlement and named-user permission.
+
+A quote cannot cross supplier environments. Credential sessions are separated by
+endpoint and account; private supplier requests reject redirects and have bounded
+timeouts. The map API and FICA configuration retain their existing boundaries.
+The live fee schedule still needs explicit supplier confirmation; UAT evidence does
+not automatically approve production fees.
+
+Release order: apply only
+`20261018083318_knowledge_factory_report_cost_approval_and_credit_ledger.sql`
+under the existing environment guard and release runbook, then release primary API/UI
+and internal console together. Existing default UAT credentials are unchanged.
+All new accounting tables have RLS and no browser grants. Mutating RPCs use invoker
+rights and are executable only by the private service role. Hold an uncertain
+report for reconciliation rather than removing its ledger entry during rollback.
+
+Focused local checks: `node --test scripts/knowledge-factory-report-accounting.test.mjs
+scripts/knowledge-factory-report-invoices.test.mjs` from `the-it-guy/`, plus
+`vitest run src/components/canvassing/__tests__/KnowledgeFactoryReportInvoices.test.jsx`.
+These use synthetic supplier responses and isolated PostgreSQL. Supplier acceptance,
+real report/PDF review and live invoicing have not been exercised.
+
+
 ## 1 October 2026: report-completeness fixes prepared locally, not released
 
 The user chose **prepare without releasing**. No deployment, database migration,

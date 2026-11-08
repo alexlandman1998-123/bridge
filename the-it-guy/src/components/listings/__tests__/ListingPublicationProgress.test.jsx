@@ -79,3 +79,11 @@ it('requires unsaved changes to be saved before a retry unless the retry explici
   rerender(<ListingPublicationProgress unsavedChanges retrySavesChanges results={[result('needs_attention', true)]} onRetry={vi.fn()} />)
   expect(screen.getByRole('button', { name: 'Save and retry failed channels' }).disabled).toBe(false)
 })
+
+it('shows actionable provider details and a support reference for a failed channel', () => {
+ const message = 'Price must be greater than zero. ' + 'Correct the listed fields before retrying. '.repeat(8)
+ render(<ListingPublicationProgress results={[{...result('needs_attention',true),jobId:'job-reference-123',message}]} onRetry={vi.fn()} />)
+ expect(screen.getByText(message.trim())).toBeTruthy()
+ expect(screen.getByText('job-reference-123')).toBeTruthy()
+ expect(screen.getByText(/Support reference:/)).toBeTruthy()
+})

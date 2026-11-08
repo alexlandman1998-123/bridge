@@ -136,6 +136,11 @@ body .arch9-access.auth-page .arch9-access-main .signup-role-grid { grid-templat
 body .arch9-access.auth-page .arch9-access-main .signup-role-grid-wrap { max-height: none; overflow: visible; }
 body .arch9-access.auth-page .arch9-access-main .signup-role-card { min-height: 88px; padding: 16px; border-color: #dce3dc; border-radius: 12px; background: #fff; box-shadow: 0 2px 3px #15262103; }
 body .arch9-access.auth-page .arch9-access-main .signup-position-card { min-height: 104px; padding: 16px; border-color: #dce3dc; border-radius: 12px; background: #fff; box-shadow: 0 2px 3px #15262103; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-grid-simple { gap: 16px; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-grid-simple .signup-position-card { display: grid; grid-template-columns: 40px minmax(0, 1fr) 18px; align-items: center; gap: 14px; min-height: 112px; padding: 18px; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-grid-simple .signup-position-icon { width: 40px; height: 40px; border-radius: 12px; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-grid-simple .signup-position-card strong { font-size: 16px; line-height: 1.3; }
+body .arch9-access.auth-page .arch9-access-main .signup-position-grid-simple .signup-position-card > span > span { color: #647269; font-size: 13px; line-height: 1.45; }
 body .arch9-access.auth-page .arch9-access-main .signup-position-check { color: var(--access-accent); }
 body .arch9-access.auth-page .arch9-access-main .signup-role-card.active,
 body .arch9-access.auth-page .arch9-access-main .signup-position-card.active { border-color: #166b50; background: #f0f6f0; box-shadow: none; }
@@ -255,6 +260,8 @@ body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form .auth-code
 body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form .auth-code-input:focus { outline: 3px solid #166b5026; border-color: #166b50; }
 body .arch9-access.auth-page .arch9-access-main .auth-card .auth-form .auth-code-input::placeholder { color: #c1ccc5; }
 body .arch9-access.auth-page .arch9-access-main .auth-code-resend { flex-direction: column; gap: 0; }
+body .arch9-access.auth-page .arch9-access-main .auth-code-actions { display: flex; align-items: center; justify-content: center; gap: clamp(12px, 3vw, 24px); }
+body .arch9-access.auth-page .arch9-access-main .auth-code-actions button { white-space: nowrap; }
 body .arch9-access.auth-page .arch9-access-main .auth-code-resend button:disabled { cursor: default; color: #6d7d73; }
 body .arch9-access.auth-page .auth-code-security { display: flex; align-items: flex-start; justify-content: center; gap: 7px; margin: 0; color: #69766d; font-size: 11px; line-height: 1.5; }
 body .arch9-access.auth-page .auth-code-security svg { flex-shrink: 0; }

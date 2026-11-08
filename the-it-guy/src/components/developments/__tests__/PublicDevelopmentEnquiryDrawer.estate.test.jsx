@@ -5,7 +5,7 @@ import { afterEach, expect, it } from 'vitest';
 import PublicDevelopmentEnquiryDrawer from '../PublicDevelopmentEnquiryDrawer.jsx';
 function Harness() {
   const [open, setOpen] = useState(false);
-  return <><button onClick={() => setOpen(true)}>Reserve unit 011</button><PublicDevelopmentEnquiryDrawer open={open} onClose={() => setOpen(false)} developmentName="Madison Place" agency="Samlin Construction" enquiry="#enquire" estatePresentation reservationUnit={{ id: 'u11', unitNumber: '011' }} /></>;
+  return <><button onClick={() => setOpen(true)}>Reserve unit 011</button><PublicDevelopmentEnquiryDrawer open={open} onClose={() => setOpen(false)} developmentName="Madison Place" agency="Samlin Construction" enquiry="#enquire" estatePresentation reservationConfig={{ enabled: true, refundTerms: "Fully refundable." }} onRequestReservation={() => {}} reservationUnit={{ id: 'u11', unitNumber: '011' }} /></>;
 }
 afterEach(() => { cleanup(); sessionStorage.clear(); });
 it('uses one heading and supports keyboard focus, dismissal and scroll restoration', () => {
@@ -18,7 +18,7 @@ it('uses one heading and supports keyboard focus, dismissal and scroll restorati
   expect(screen.queryByText('Make it home')).toBeNull();
   expect(screen.queryByText('Enquire')).toBeNull();
   expect(document.activeElement).toBe(screen.getByLabelText('Full name'));
-  const submit = screen.getByRole('button', { name: 'Send reservation request' });
+  const submit = screen.getByRole('button', { name: 'Request reservation' });
   submit.focus();
   fireEvent.keyDown(window, { key: 'Tab' });
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close enquiry form' }));

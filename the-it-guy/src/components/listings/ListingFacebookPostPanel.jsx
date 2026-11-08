@@ -6,19 +6,30 @@ import Modal from '../ui/Modal'
 import { metaIntegrationRequest } from '../../services/metaIntegrationService'
 
 export default function ListingFacebookPostPanel({ organisationId, listingId }) {
-  const key = `${organisationId}:${listingId}`, generation = useRef(0), lock = useRef(false)
+  const key = `${organisationId}:${listingId}`, generation = useRef(0), lock = useRef(false), currentKey = useRef(key)
+  currentKey.current = key
   const invalidate = useCallback(() => { generation.current++ }, [])
   const [state, setState] = useState({ key: '', pages: [], posts: [], loading: true, error: '' })
   const [draft, setDraft] = useState({ key: '', pageId: '', caption: undefined, mode: undefined }), [preview, setPreview] = useState(null), [busy, setBusy] = useState(''), [error, setError] = useState('')
   const data = state.key === key ? state : { pages: [], posts: [], loading: true, error: '' }
   const input = draft.key === key ? draft : { pageId: '', caption: undefined, mode: undefined }
   const currentPreview = preview?.key === key ? preview.post : null
+  const previewPageName = preview?.key === key ? preview.pageName : ''
+  const failedRequest = preview?.key === key && preview.failedRequest
+  const needsStatusCheck = currentPreview && (failedRequest || ['unknown', 'publishing'].includes(currentPreview.status))
   const refresh = useCallback(async () => {
     const current = ++generation.current
     if (!organisationId || !listingId) return
     try {
       const [workspace, posts] = await Promise.all([metaIntegrationRequest(organisationId, 'workspace'), metaIntegrationRequest(organisationId, 'listing_posts', { listingId })])
-      if (current === generation.current) setState({ key, pages: workspace.pages || [], posts: posts.posts || [], error: '', loading: false })
+      if (current === generation.current && currentKey.current === key) {
+        setState({ key, pages: workspace.pages || [], posts: posts.posts || [], error: '', loading: false })
+        setPreview(old => {
+          if (old?.key !== key || (!old.failedRequest && !['unknown', 'publishing'].includes(old.post.status))) return old
+          const saved = posts.posts?.find(post => post.id === old.post.id)
+          return saved && saved.status !== 'draft' ? { ...old, post: { ...old.post, ...saved }, failedRequest: false } : old
+        })
+      }
     } catch (failure) { if (current === generation.current) setState({ key, pages: [], posts: [], error: failure.message, loading: false }) }
   }, [key, organisationId, listingId])
   useEffect(() => { setDraft({ key, pageId: '', caption: undefined, mode: undefined }); setPreview(null); setBusy(''); setError(''); void refresh(); return invalidate }, [key, refresh, invalidate])
@@ -32,21 +43,33 @@ export default function ListingFacebookPostPanel({ organisationId, listingId }) 
       const response = await metaIntegrationRequest(organisationId, 'preview_post', { listingId, connectionId: page?.id, ...(input.caption !== undefined ? { caption: input.caption } : {}), ...(input.mode ? { mode: input.mode } : {}) })
       if (current !== generation.current) return
       setDraft({ key, pageId: page.id, caption: response.post.snapshot_json.caption, mode: response.post.snapshot_json.mode })
-      setPreview({ key, post: response.post })
+      setPreview({ key, post: response.post, pageName: response.pageName || page.page_name, failedRequest: false })
     } catch (failure) { if (current === generation.current) setError(failure.message) }
     finally { lock.current = false; if (current === generation.current) setBusy('') }
   }
   async function publish() {
-    if (lock.current || !currentPreview || currentPreview.status !== 'draft') return
+    if (lock.current || !currentPreview || currentPreview.status !== 'draft' || failedRequest) return
     lock.current = true; setBusy('publish'); setError('')
-    const current = generation.current
+    const current = key, postId = currentPreview.id
     try {
       const response = await metaIntegrationRequest(organisationId, 'publish_post', { postId: currentPreview.id })
-      if (current !== generation.current) return
-      setPreview({ key, post: response.post })
+      if (current !== currentKey.current) return
+      setPreview(old => old?.key === key && old.post.id === postId ? { ...old, post: { ...old.post, ...response.post } } : old)
       await refresh()
-    } catch (failure) { if (current === generation.current) setError(`${failure.message} Refresh post history before submitting again.`) }
-    finally { lock.current = false; setBusy('') }
+    } catch (failure) {
+      if (current === currentKey.current) {
+        setPreview(old => old?.key === key && old.post.id === postId ? { ...old, failedRequest: true } : old)
+        setError(`${failure.message} Check post status and the Facebook Page before preparing another post.`)
+      }
+    }
+    finally { lock.current = false; if (current === currentKey.current) setBusy('') }
+  }
+  async function checkStatus() {
+    if (lock.current) return
+    const current = key
+    lock.current = true; setBusy('check'); setError('')
+    try { await refresh() }
+    finally { lock.current = false; if (current === currentKey.current) setBusy('') }
   }
   return <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-sm">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="flex items-center gap-2 text-base font-semibold text-[#142132]"><Facebook size={18} />Post to Facebook</h3><p className="mt-1 text-sm text-slate-600">Review a post from this listing’s public details, then publish it to your connected Page.</p></div><Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void refresh()}><RefreshCw size={15} />Refresh</Button></header>
@@ -57,11 +80,11 @@ export default function ListingFacebookPostPanel({ organisationId, listingId }) 
       <div><Button disabled={Boolean(busy) || !page?.canPost} onClick={() => void prepare()}>{busy === 'preview' ? 'Preparing…' : 'Preview Facebook post'}</Button></div>
     </div> : <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm"><p>{data.pages.length ? 'Reconnect your Facebook Page with permission to create Page posts.' : 'Connect a Facebook Page to publish this listing from Arch9.'}</p><Link className="mt-3 inline-block font-semibold text-blue-800" to="/settings/integrations/meta">Connect Facebook Page</Link></div>}
     {data.posts.length ? <div className="mt-5 border-t pt-4"><h4 className="text-sm font-semibold">Recent posts</h4><ul className="mt-2 space-y-2 text-sm">{data.posts.map(post => <li key={post.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 p-3"><span>{new Date(post.created_at).toLocaleString()} · {post.status === 'unknown' || post.status === 'publishing' ? 'Unconfirmed—check the Facebook Page' : post.status}</span>{post.public_url ? <a className="font-semibold text-blue-800" href={post.public_url} target="_blank" rel="noreferrer">Open post</a> : null}{post.error_message ? <p className="w-full text-xs text-red-800">{post.error_message}</p> : null}</li>)}</ul></div> : null}
-    <Modal open={Boolean(currentPreview)} title="Review Facebook post" subtitle={page?.page_name} onClose={busy === 'publish' ? undefined : () => setPreview(null)} footer={currentPreview?.status === 'draft' ? <Button disabled={Boolean(busy)} onClick={() => void publish()}>{busy === 'publish' ? 'Publishing…' : 'Publish to Facebook'}</Button> : <Button variant="secondary" onClick={() => setPreview(null)}>Close</Button>}>
+    <Modal open={Boolean(currentPreview)} title="Review Facebook post" subtitle={previewPageName} onClose={busy === 'publish' ? undefined : () => setPreview(null)} footer={currentPreview?.status === 'draft' && !failedRequest ? <Button disabled={Boolean(busy)} onClick={() => void publish()}>{busy === 'publish' ? 'Publishing…' : 'Publish to Facebook'}</Button> : <>{needsStatusCheck ? <Button disabled={Boolean(busy)} onClick={() => void checkStatus()}>{busy === 'check' ? 'Checking…' : 'Check post status'}</Button> : null}<Button variant="secondary" disabled={Boolean(busy)} onClick={() => setPreview(null)}>Close</Button></>}>
       {currentPreview?.snapshot_json?.imageUrl ? <img className="mb-4 max-h-80 w-full rounded-xl object-cover" src={currentPreview.snapshot_json.imageUrl} alt="Listing photo for the Facebook post" /> : null}
       <p className="whitespace-pre-wrap break-words text-sm leading-6">{currentPreview?.snapshot_json?.caption}</p>
       {currentPreview?.snapshot_json?.link ? <p className="mt-3 break-all text-sm text-blue-800">{currentPreview.snapshot_json.link}</p> : null}
-      {currentPreview?.status === 'draft' ? <p className="mt-5 rounded-lg bg-blue-50 p-3 text-sm">Publish will share this preview publicly on {page?.page_name}.</p> : currentPreview?.status === 'published' ? <p role="status" className="mt-4 text-green-800">Meta accepted this post. <a href={currentPreview.public_url} target="_blank" rel="noreferrer" className="font-semibold underline">Open it on Facebook</a></p> : <p role="alert" className="mt-4 text-red-800">{currentPreview?.error_message || 'The publish result is unconfirmed. Check the Page before posting again.'}</p>}
+      {currentPreview?.status === 'draft' && !failedRequest ? <p className="mt-5 rounded-lg bg-blue-50 p-3 text-sm">Publish will share this preview publicly on {previewPageName}.</p> : currentPreview?.status === 'published' ? <p role="status" className="mt-4 text-green-800">Meta accepted this post. <a href={currentPreview.public_url} target="_blank" rel="noreferrer" className="font-semibold underline">Open it on Facebook</a></p> : <p role="alert" className="mt-4 text-red-800">{currentPreview?.error_message || 'The publish result is unconfirmed. Check the Page before posting again.'}</p>}
     </Modal>
   </section>
 }

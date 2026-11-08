@@ -1,19 +1,31 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
 
 alter table public.organisation_communication_channels
   add column owner_user_id uuid references auth.users(id) on delete restrict,
   add column ownership_changed_by uuid references auth.users(id) on delete set null,
-  add column ownership_version integer not null default 1;
+  add column ownership_version integer not null default 1
+;
+
 alter table public.meta_whatsapp_authorizations
-  add column owner_user_id uuid references auth.users(id) on delete cascade;
+  add column owner_user_id uuid references auth.users(id) on delete cascade
+;
+
 alter table public.whatsapp_inbox_conversations
   add column assigned_user_id uuid references auth.users(id) on delete set null,
   add column assigned_at timestamptz,
   add column assigned_by uuid references auth.users(id) on delete set null,
   add column assignment_version integer not null default 1,
-  add constraint whatsapp_inbox_conversation_org_identity unique(id,organisation_id);
-create index whatsapp_inbox_assignee_activity on public.whatsapp_inbox_conversations(organisation_id,assigned_user_id,last_message_at desc);
-create index whatsapp_sender_owner on public.organisation_communication_channels(organisation_id,owner_user_id) where owner_user_id is not null;
+  add constraint whatsapp_inbox_conversation_org_identity unique(id,organisation_id)
+;
+
+create index whatsapp_inbox_assignee_activity on public.whatsapp_inbox_conversations(organisation_id,assigned_user_id,last_message_at desc)
+;
+
+create index whatsapp_sender_owner on public.organisation_communication_channels(organisation_id,owner_user_id) where owner_user_id is not null
+;
 
 -- Inbox contents stay behind the authenticated server handler. Browser keys have
 -- no direct read/write grant, including the assignment ledger.
@@ -27,11 +39,20 @@ create table public.whatsapp_inbox_assignments (
   assignment_version integer not null,
   created_at timestamptz not null default now(),
   foreign key(conversation_id,organisation_id) references public.whatsapp_inbox_conversations(id,organisation_id)
-);
-create index whatsapp_inbox_assignments_conversation on public.whatsapp_inbox_assignments(conversation_id,created_at desc);
-alter table public.whatsapp_inbox_assignments enable row level security;
-revoke all on public.whatsapp_inbox_assignments from public,anon,authenticated;
-grant all on public.whatsapp_inbox_assignments to service_role;
+)
+;
+
+create index whatsapp_inbox_assignments_conversation on public.whatsapp_inbox_assignments(conversation_id,created_at desc)
+;
+
+alter table public.whatsapp_inbox_assignments enable row level security
+;
+
+revoke all on public.whatsapp_inbox_assignments from public,anon,authenticated
+;
+
+grant all on public.whatsapp_inbox_assignments to service_role
+;
 
 create function public.whatsapp_staff_is_admin(p_org uuid,p_actor uuid) returns boolean
 language plpgsql security invoker set search_path='' as $$
@@ -43,7 +64,8 @@ begin
     raise exception 'Active staff membership is required' using errcode='42501';
   end if;
   return member_role in ('owner','principal','director','admin','super_admin','developer','agency_admin');
-end; $$;
+end; $$
+;
 
 -- Existing agency senders retain campaign capability. A personally owned number
 -- cannot become a default automation sender or a bulk campaign sender.
@@ -67,9 +89,12 @@ begin
     new.ownership_version:=old.ownership_version+case when new.owner_user_id is distinct from old.owner_user_id then 1 else 0 end;
   else new.ownership_version:=1; end if;
   return new;
-end; $$;
+end; $$
+;
+
 create trigger whatsapp_sender_owner_guard before insert or update on public.organisation_communication_channels
-  for each row execute function public.whatsapp_sender_owner_guard();
+  for each row execute function public.whatsapp_sender_owner_guard()
+;
 
 create function public.whatsapp_inbox_assignment_stamp() returns trigger
 language plpgsql security invoker set search_path='' as $$
@@ -87,9 +112,13 @@ begin
     if new.assigned_user_id is distinct from old.assigned_user_id then new.assigned_at:=now(); end if;
   end if;
   return new;
-end; $$;
+end; $$
+;
+
 create trigger whatsapp_inbox_assignment_stamp before insert or update on public.whatsapp_inbox_conversations
-  for each row execute function public.whatsapp_inbox_assignment_stamp();
+  for each row execute function public.whatsapp_inbox_assignment_stamp()
+;
+
 create function public.whatsapp_inbox_assignment_audit() returns trigger
 language plpgsql security invoker set search_path='' as $$
 begin
@@ -98,9 +127,13 @@ begin
       values(new.organisation_id,new.id,old.assigned_user_id,new.assigned_user_id,new.assigned_by,new.assignment_version);
   end if;
   return new;
-end; $$;
+end; $$
+;
+
 create trigger whatsapp_inbox_assignment_audit after update on public.whatsapp_inbox_conversations
-  for each row execute function public.whatsapp_inbox_assignment_audit();
+  for each row execute function public.whatsapp_inbox_assignment_audit()
+;
+
 create function public.whatsapp_sender_transfer_inbox() returns trigger
 language plpgsql security invoker set search_path='' as $$
 begin
@@ -109,19 +142,25 @@ begin
       where channel_id=new.id and organisation_id=new.organisation_id and assigned_user_id is distinct from new.owner_user_id;
   end if;
   return new;
-end; $$;
+end; $$
+;
+
 create trigger whatsapp_sender_transfer_inbox after update of owner_user_id on public.organisation_communication_channels
-  for each row execute function public.whatsapp_sender_transfer_inbox();
+  for each row execute function public.whatsapp_sender_transfer_inbox()
+;
 
 -- Credential columns are still excluded from browser grants. This restrictive
 -- policy also hides another agent's number from direct metadata queries.
-grant select(owner_user_id,ownership_version) on public.organisation_communication_channels to authenticated;
+grant select(owner_user_id,ownership_version) on public.organisation_communication_channels to authenticated
+;
+
 create policy whatsapp_owned_sender_visibility on public.organisation_communication_channels as restrictive for select to authenticated using (
   owner_user_id is null or owner_user_id=(select auth.uid()) or exists(
     select 1 from public.organisation_users m where m.organisation_id=organisation_communication_channels.organisation_id
       and m.user_id=(select auth.uid()) and m.status='active' and m.role in ('owner','principal','director','admin','super_admin','developer','agency_admin')
   )
-);
+)
+;
 
 create function public.whatsapp_sender_set_owner(p_org uuid,p_actor uuid,p_sender uuid,p_owner uuid,p_version integer) returns jsonb
 language plpgsql security invoker set search_path='' as $$
@@ -133,7 +172,8 @@ begin
   if p_version is distinct from sender.ownership_version then raise exception 'Number ownership changed. Refresh before saving' using errcode='40001'; end if;
   update public.organisation_communication_channels set owner_user_id=p_owner,ownership_changed_by=p_actor where id=sender.id returning * into sender;
   return jsonb_build_object('saved',true,'ownership_version',sender.ownership_version);
-end; $$;
+end; $$
+;
 
 -- Every content operation rechecks current membership and assignment in the same
 -- transaction as its read/write. Client supplied user IDs never reach this RPC.
@@ -180,7 +220,8 @@ begin
     update public.whatsapp_inbox_conversations set status=p_action,updated_at=now() where id=thread.id returning * into thread;
   end if;
   return jsonb_build_object('conversation',to_jsonb(thread));
-end; $$;
+end; $$
+;
 
 -- A reassignment between reading a thread and clicking Send cannot bypass access.
 create function public.whatsapp_inbox_outbound_guard() returns trigger
@@ -192,8 +233,11 @@ begin
   select * into thread from public.whatsapp_inbox_conversations where id=new.conversation_id and organisation_id=new.organisation_id for update;
   if thread.id is null or not (is_admin or coalesce(thread.assigned_user_id=new.created_by,false)) then raise exception 'Conversation assignment changed. Refresh your inbox' using errcode='42501'; end if;
   return new;
-end; $$;
-create trigger whatsapp_inbox_outbound_guard before insert on public.whatsapp_inbox_messages for each row execute function public.whatsapp_inbox_outbound_guard();
+end; $$
+;
+
+create trigger whatsapp_inbox_outbound_guard before insert on public.whatsapp_inbox_messages for each row execute function public.whatsapp_inbox_outbound_guard()
+;
 
 -- Protect both enqueue and the last database claim before a worker sends.
 create function public.whatsapp_campaign_agency_sender_guard() returns trigger
@@ -205,16 +249,25 @@ begin
     if found then raise exception 'Bulk campaigns require an agency number, not an agent number'; end if;
   end if;
   return new;
-end; $$;
+end; $$
+;
+
 create trigger whatsapp_campaign_agency_sender_guard before insert or update of status on public.whatsapp_campaign_recipients
-  for each row execute function public.whatsapp_campaign_agency_sender_guard();
+  for each row execute function public.whatsapp_campaign_agency_sender_guard()
+;
 
 revoke all on function public.whatsapp_staff_is_admin(uuid,uuid),public.whatsapp_sender_owner_guard(),public.whatsapp_inbox_assignment_stamp(),
   public.whatsapp_inbox_assignment_audit(),public.whatsapp_sender_transfer_inbox(),public.whatsapp_inbox_outbound_guard(),public.whatsapp_campaign_agency_sender_guard(),
-  public.whatsapp_sender_set_owner(uuid,uuid,uuid,uuid,integer),public.whatsapp_inbox_request(uuid,uuid,text,uuid,uuid,integer,uuid) from public,anon,authenticated;
-grant execute on function public.whatsapp_staff_is_admin(uuid,uuid),public.whatsapp_sender_set_owner(uuid,uuid,uuid,uuid,integer),
-  public.whatsapp_inbox_request(uuid,uuid,text,uuid,uuid,integer,uuid) to service_role;
--- SELECT FOR SHARE also needs an UPDATE privilege; no membership row is changed.
-grant select,update(user_id) on public.organisation_users to service_role;
+  public.whatsapp_sender_set_owner(uuid,uuid,uuid,uuid,integer),public.whatsapp_inbox_request(uuid,uuid,text,uuid,uuid,integer,uuid) from public,anon,authenticated
+;
 
-commit;
+grant execute on function public.whatsapp_staff_is_admin(uuid,uuid),public.whatsapp_sender_set_owner(uuid,uuid,uuid,uuid,integer),
+  public.whatsapp_inbox_request(uuid,uuid,text,uuid,uuid,integer,uuid) to service_role
+;
+
+-- SELECT FOR SHARE also needs an UPDATE privilege; no membership row is changed.
+grant select,update(user_id) on public.organisation_users to service_role
+;
+
+commit
+;

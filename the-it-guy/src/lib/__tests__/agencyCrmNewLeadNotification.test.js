@@ -79,6 +79,40 @@ it('updates seller summaries without reading the lead for an unchanged assignmen
   expect(fixture.send).not.toHaveBeenCalled()
 })
 
+it.each([
+  '01234567-89ab-0def-3123-456789abcdef',
+  '019abcde-f012-7abc-8123-0123456789ab',
+  '01234567-89AB-CDEF-0123-456789ABCDEF',
+  'lead_01234567-89ab-cdef-0123-456789abcdef',
+])('saves a Kanban stage against the exact persisted UUID %s', async (leadId) => {
+  const savedId = leadId.replace(/^lead_/i, '').toLowerCase()
+  const result = Promise.resolve({ data: [{ lead_id: savedId }], error: null })
+  const query = {
+    update: vi.fn(() => query), eq: vi.fn(() => query), select: vi.fn(() => query),
+    then: (resolve, reject) => result.then(resolve, reject),
+  }
+  fixture.from.mockReturnValue(query)
+
+  await updateAgencyCrmLeadRecord(organisationId, leadId, { stage: 'Contacted', status: 'Contacted' })
+
+  expect(fixture.from).toHaveBeenCalledOnce()
+  expect(fixture.from).toHaveBeenCalledWith('leads')
+  expect(query.update).toHaveBeenCalledWith(expect.objectContaining({ stage: 'Contacted', status: 'Contacted' }))
+  expect(query.eq.mock.calls).toEqual([['organisation_id', organisationId], ['lead_id', savedId]])
+  expect(query.select).toHaveBeenCalledWith('lead_id')
+  expect(fixture.send).not.toHaveBeenCalled()
+})
+
+it.each([
+  'lead_not-saved',
+  '01234567-89ab-cdef-0123-456789abcdeg',
+  'other_01234567-89ab-cdef-0123-456789abcdef',
+  '01234567-89ab-cdef-0123-456789abcdef/another-record',
+])('blocks an invalid lead identity before attempting a database update: %s', async (leadId) => {
+  await expect(updateAgencyCrmLeadRecord(organisationId, leadId, { stage: 'Contacted' })).rejects.toThrow('persisted lead id')
+  expect(fixture.from).not.toHaveBeenCalled()
+})
+
 it('routes rental assignment notifications to the rental journey with its role',()=>{
   const payload=__agencyCrmRepositoryTestUtils.buildLeadAssignmentEmailBase(organisationId,{lead_id:'rental-tenant',lead_category:'buyer',raw_enquiry_payload:{rental_crm:{classification:'rental',role:'tenant'}}})
   expect(payload.leadCategory).toBe('tenant')

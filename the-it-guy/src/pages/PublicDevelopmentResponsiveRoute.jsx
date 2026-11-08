@@ -11,7 +11,6 @@ import {
 } from "../core/developments/developmentVisualMap.js";
 import { normaliseDevelopmentVisualEvent } from "../core/developments/developmentVisualAnalytics.js";
 
-const DEMO_RESERVATION_KEY = "arch9:development-reservation-demo:v1";
 const text = (value) => String(value || "").trim();
 const list = (value) =>
   Array.isArray(value)
@@ -114,25 +113,11 @@ function PublicDevelopmentMetadata({ title, description, imageUrl }) {
   return null;
 }
 
-export default function PublicDevelopmentResponsiveRoute() {
-  const { slug = "" } = useParams();
+export default function PublicDevelopmentResponsiveRoute({ developmentSlug = "" }) {
+  const { slug: routeSlug = "" } = useParams();
+  const slug = developmentSlug || routeSlug;
   const [state, setState] = useState({ loading: true, data: null, error: "" });
-  const [demoReservations, setDemoReservations] = useState(() => {
-    try {
-      const saved = JSON.parse(window.sessionStorage.getItem(DEMO_RESERVATION_KEY) || "{}");
-      if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
-      return Object.fromEntries(Object.entries(saved).filter(([, ids]) => Array.isArray(ids) && ids.every((id) => typeof id === "string")));
-    } catch {
-      return {};
-    }
-  });
-  useEffect(() => {
-    try {
-      window.sessionStorage.setItem(DEMO_RESERVATION_KEY, JSON.stringify(demoReservations));
-    } catch {
-      // The demo still works in memory when session storage is unavailable.
-    }
-  }, [demoReservations]);
+  const [reservationConfig, setReservationConfig] = useState(null);
   const [freshness, setFreshness] = useState({
     status: "connecting",
     updatedAt: null,
@@ -162,10 +147,16 @@ export default function PublicDevelopmentResponsiveRoute() {
           ...current,
           status: navigator.onLine ? "refreshing" : "offline",
         }));
-      const { data, error } = await supabase.rpc(
-        "get_public_development_landing",
-        { requested_slug: slug },
-      );
+      let data = null;
+      let error = null;
+      try {
+        const response = await fetch(`/api/public/development-landing?slug=${encodeURIComponent(slug)}`, { cache: "no-store" });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error || "This development page is unavailable.");
+        data = payload;
+      } catch (failure) {
+        error = failure;
+      }
       if (error || !data) {
         if (background) {
           setFreshness((current) => ({
@@ -181,6 +172,12 @@ export default function PublicDevelopmentResponsiveRoute() {
         });
         return;
       }
+      if (slug === "madison-place-abcf1b8a") {
+        try {
+          const result = await supabase.rpc('madison_public_reservation_availability');
+          setReservationConfig(result.error ? null : result.data);
+        } catch { setReservationConfig(null); }
+      } else setReservationConfig(null);
       setState({ loading: false, data, error: "" });
       setFreshness({ status: "live", updatedAt: new Date().toISOString() });
     },
@@ -425,15 +422,26 @@ export default function PublicDevelopmentResponsiveRoute() {
       assetSitePlan,
   };
   const estatePresentation = slug === "madison-place-abcf1b8a";
-  const inventory = (Array.isArray(data.inventory) ? data.inventory : []).map((unit) =>
-    estatePresentation && demoReservations[slug]?.includes(String(unit.id)) && keyFor(unit.status) === "available"
-      ? { ...unit, status: "reserved", demoReserved: true }
-      : unit,
-  );
-  const simulateReservation = (unitId) => {
-    if (!estatePresentation || !inventory.some((unit) => String(unit.id) === String(unitId) && keyFor(unit.status) === "available")) return false;
-    setDemoReservations((current) => ({ ...current, [slug]: [...new Set([...(current[slug] || []), String(unitId)])] }));
-    return true;
+  const inventory = (Array.isArray(data.inventory) ? data.inventory : []).map(unit => {
+    const hold = estatePresentation && reservationConfig?.holds?.find(item => String(item.unitId) === String(unit.id));
+    if (!hold || ["sold", "unreleased"].includes(keyFor(unit.status))) return unit;
+    if (hold.state === 'awaiting_deposit') return { ...unit, status: 'reserved', reservationLabel: 'Awaiting deposit', holdExpiresAt: hold.expiresAt };
+    // Expired stock is released by the database job; retain the authoritative
+    // inventory status until that release succeeds.
+    return unit;
+  });
+  const requestReservation = async input => {
+    const { data: receipt, error } = await supabase.functions.invoke('madison-reservations', { body: { action: 'request', ...input } });
+    if (error || !receipt?.id) {
+      let message = receipt?.error;
+      try { message ||= (await error?.context?.json())?.error; } catch { /* Keep a recoverable fallback. */ }
+      await loadPublicDevelopment({ background: true });
+      throw new Error(message || 'Your request could not be confirmed. Retry with the same details or contact Samlin.');
+    }
+    // Reflect the accepted server hold immediately, then refresh live stock.
+    setReservationConfig(current => ({ ...current, holds: [...(current?.holds || []).filter(hold => String(hold.unitId) !== String(input.unitId)), { unitId: input.unitId, state: receipt.state, expiresAt: receipt.expiresAt }] }));
+    void loadPublicDevelopment({ background: true });
+    return receipt;
   };
   const available = inventory.filter(
     (unit) => keyFor(unit.status) === "available",
@@ -490,7 +498,8 @@ export default function PublicDevelopmentResponsiveRoute() {
 
   const sharedProps = {
     estatePresentation,
-    onSimulateReservation: estatePresentation ? simulateReservation : undefined,
+    reservationConfig: estatePresentation ? reservationConfig : undefined,
+    onRequestReservation: estatePresentation ? requestReservation : undefined,
     data,
     marketing,
     media,
@@ -511,7 +520,7 @@ export default function PublicDevelopmentResponsiveRoute() {
         description={seoDescription}
         imageUrl={socialPreviewImage}
       />
-      {inventory.some((unit) => unit.demoReserved) ? <aside aria-label="Reservation demo" className="flex flex-wrap items-center justify-center gap-3 bg-[#f1eee5] px-5 py-3 text-center text-xs text-[#173b32]">Demo reservations apply only to this browser session. Live availability is unchanged.<button type="button" className="min-h-9 rounded border border-[#173b32] px-3 font-semibold" onClick={() => setDemoReservations((current) => ({ ...current, [slug]: [] }))}>Reset demo</button></aside> : null}
+
       {mobileViewport ? (
         <div className={`public-development-mobile${estatePresentation ? " public-development-estate" : ""}`} style={brandStyle}>
           <MobilePublicDevelopmentExperience {...sharedProps} />

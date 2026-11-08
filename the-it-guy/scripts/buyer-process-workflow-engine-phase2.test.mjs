@@ -68,8 +68,8 @@ try {
     actor,
   })
   assert.equal(illegal.allowed, false)
-  assert.equal(illegal.allowedTargetKeys.includes(definition.BUYER_PROCESS_STAGE_KEYS.contacted), true)
-  assert.match(illegal.reason, /Captured cannot move directly to Offer/)
+  assert.equal(illegal.requirements[0].ok, false)
+  assert.match(illegal.reason, /Upload the signed OTP/)
 
   const contacted = await workflow.validateBuyerStageTransition({
     lead,
@@ -113,9 +113,8 @@ try {
     toStage: 'Ready to Generate OTP',
     actor,
   })
-  assert.equal(offerReceived.allowed, true)
-  assert.equal(offerReceived.toStage, 'Offer to purchase signed')
-  assert.equal(offerReceived.toStageKey, definition.BUYER_PROCESS_STAGE_KEYS.offerReceived)
+  assert.equal(offerReceived.allowed, false)
+  assert.match(offerReceived.reason, /Upload the signed OTP/)
   assert.equal(offerReceived.requirements[0].requirement.key, 'otp_document_uploaded')
   assert.equal(offerReceived.requirements[0].skipped, true)
 

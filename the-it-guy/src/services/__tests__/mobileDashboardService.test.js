@@ -52,7 +52,7 @@ it('rebuilds today’s buyer contact progress from saved records within the view
   const team = await getMobileDashboardSnapshotAsync({ workspace: { ...workspace, role: 'principal' }, organisation })
   expect(team.momentum.contactedLeadIds).toEqual(['mine', 'other'])
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 it('counts only new leads assigned to the current agent and distinguishes failed reads', async () => {
   api.crm.mockResolvedValue({ tasks: [], tasksAvailable: true, leadsAvailable: true, leads: [
@@ -86,7 +86,7 @@ it('loads real work for the current organisation and personal appointment scope 
 })
 
 it('loads new leads only for the selected developer organisation and retains every returned card', async () => {
-  const leads = Array.from({ length: 8 }, (_, index) => ({ developerLeadId: `lead-${index}`, leadStatus: 'new' }))
+  const leads = Array.from({ length: 8 }, (_, index) => ({ createdAt: new Date().toISOString(), developerLeadId: `lead-${index}`, leadStatus: 'new' }))
   api.leads.mockResolvedValue(leads)
   const developer = { ...workspace, role: 'developer' }
   const snapshot = await getMobileDashboardSnapshotAsync({ workspace: developer, organisation })
@@ -96,6 +96,8 @@ it('loads new leads only for the selected developer organisation and retains eve
 })
 
 it('aligns both developer owners on shared organisation priorities using the developer layout', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-23T08:00:00Z'))
   api.crm.mockResolvedValue({ tasksAvailable: true, tasks: [
     { taskId: 'alex-follow-up', assignedAgentId: 'alex', title: 'Follow up with buyer', dueDate: '2020-01-01' },
     { taskId: 'closed', assignedAgentId: 'alex', status: 'Completed', dueDate: '2020-01-01' },
@@ -133,7 +135,7 @@ it('keeps the developer portfolio available when leads fail and recovers on refr
   expect(snapshot.newLeads).toEqual([])
   expect(snapshot.newLeadsAvailable).toBe(false)
   expect(snapshot.today.available.deals).toBe(true)
-  api.leads.mockResolvedValue([{ developerLeadId: 'saved-lead', leadStatus: 'new' }])
+  api.leads.mockResolvedValue([{ createdAt: new Date().toISOString(), developerLeadId: 'saved-lead', leadStatus: 'new' }])
   const refreshed = await getMobileDashboardSnapshotAsync({ ...options, force: true })
   expect(refreshed.newLeadsAvailable).toBe(true)
   expect(refreshed.newLeads).toHaveLength(1)

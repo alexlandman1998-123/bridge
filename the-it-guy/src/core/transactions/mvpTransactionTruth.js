@@ -1,3 +1,4 @@
+import { transactionBootstrapBlockers } from './transactionBootstrapHealth.js'
 import { evaluateMvpLaunchScope } from './mvpLaunchScope.js'
 import { resolveMvpLaunchRolePlan } from './mvpLaunchRoles.js'
 import { evaluateMvpOnboardingGate } from './mvpOnboardingGate.js'
@@ -263,7 +264,7 @@ export function buildMvpTransactionTruth({
   const transferBlockers = stageMeta.rank === 3
     ? transferGate.blockers.map((blocker) => ({ ...blocker, type: 'transfer', label: 'Transfer readiness gate' }))
     : []
-  const blockers = uniqueByKey([...scopeBlockers, ...workflowBlockers, ...participantBlockers, ...documentBlockers, ...onboardingBlockers, ...otpBlockers, ...financeBlockers, ...transferBlockers])
+  const blockers = uniqueByKey([...transactionBootstrapBlockers({transaction,workflowLanes,documentRequirements}),...scopeBlockers, ...workflowBlockers, ...participantBlockers, ...documentBlockers, ...onboardingBlockers, ...otpBlockers, ...financeBlockers, ...transferBlockers])
   const explicitNextAction = normalizeText(transaction.nextAction || transaction.next_action)
   const firstOutstandingDocument = documents.outstanding[0] || null
   const nextAction = blockers[0]

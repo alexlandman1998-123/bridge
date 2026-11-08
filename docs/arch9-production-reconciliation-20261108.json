@@ -1,0 +1,127 @@
+{
+  "date": "2026-11-08",
+  "status": "database_and_edge_release_verified_frontend_build_pending",
+  "scope": "Arch9 outstanding source, recent branch work and production migration history from 2026-10-09 to 2026-11-08",
+  "mainBefore": "c101328f117ce3e104b7a0b43d53647683d528ec",
+  "sourceCommit": null,
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "reconciliation": {
+    "recentCommitsCompared": 110,
+    "recoveredAppliedMigrationFiles": 14,
+    "existingRecentMigrationFilesVerifiedAgainstAppliedSql": 11,
+    "reviewedPendingMigrations": 34,
+    "duplicateUnappliedMadisonDraft": "Archived outside the active migration set; equivalent SQL is already applied as 20261105172212. No inventory replay.",
+    "historicalSqlDifferences": "131 matching-version differences before the review window remain recorded; no historical replay or ledger repair.",
+    "sourceSafety": "Generated/private outputs excluded; no conflict markers or embedded privileged credentials found in selected release sources.",
+    "unappliedDraftCorrection": {
+      "archived": "20261104081626_seller_followup_listing_identity_type.sql",
+      "replacement": "20261108145107_seller_followup_optional_rpc_identity_guard.sql",
+      "reason": "Production has no optional seller follow-up RPC. Preserve the existing missing-RPC fallback instead of creating legacy automation.",
+      "checks": "Three PGlite scenarios passed."
+    },
+    "excludedGeneratedReviewPackages": [
+      "docs/listing-portal-rebuild-2026-10-23/",
+      "docs/private-property-integration-brief-2026-10-26/",
+      "docs/property24-integration-brief-2026-10-26/"
+    ],
+    "excludedPackageHandling": "Generated investigation packages are retained in the original workspace and excluded from the production source commit.",
+    "postApplySecurityCorrection": "20261108145808_pin_partner_invite_role_shape_search_path.sql pins the literal-only invitation role mapper without changing its output or grants."
+  },
+  "repairs": [
+    "Restored signed-OTP capture, file recovery and review gating from the October 31 and November 1 release work.",
+    "Restored transaction finance closeout controls and bounded workspace-access checks.",
+    "Retained newer document access and reverse buyer-origin checks.",
+    "Preserved the live WhatsApp number connection and ownership screen and customer tags/enquiries controls.",
+    "Required an organisation before saving an email template.",
+    "Preserved live gateway authentication settings for four service-authenticated workers.",
+    "Updated the compatible production dependency chain and incorporated the existing Next.js 16.4.3 patch branch.",
+    "Runtime and production startup validation accept the modern browser publishable-key setting without requiring a legacy alias."
+  ],
+  "verification": {
+    "appLint": {
+      "errors": 0,
+      "warnings": 638
+    },
+    "changedVitestInitial": {
+      "files": 171,
+      "passedChecks": 1795,
+      "failedChecksBeforeReconciliation": 17
+    },
+    "initialFailureRecheck": {
+      "files": 8,
+      "checks": 68,
+      "result": "passed"
+    },
+    "restoredWorkflowVitest": {
+      "files": 14,
+      "checks": 92,
+      "result": "passed"
+    },
+    "changedNodeFiles": 176,
+    "nodeFailureRechecks": {
+      "files": 5,
+      "result": "passed"
+    },
+    "migrationFocusedChecks": {
+      "files": 21,
+      "result": "passed"
+    },
+    "edgePackages": {
+      "typechecked": 72,
+      "deployedAndVersionVerified": 64,
+      "retiredEndpointsExcluded": 8,
+      "result": "All configured active updates verified; existing retired endpoint releases preserved."
+    },
+    "website": {
+      "checks": 60,
+      "typecheck": "passed",
+      "productionDependencyAudit": "zero findings"
+    },
+    "productionDependencyAudits": "Primary app, public website, admin and connected-mail worker have zero production findings after the reviewed updates.",
+    "localFullBuild": "Not run: limited RAM and an earlier full-build memory failure. Production builds run in the cloud.",
+    "fullLocalMigrationReplay": "Not run: local free disk is below the documented 10 GiB requirement.",
+    "additionalMigrationChecks": 3,
+    "appliedReleaseSql": "The first 33 applied migrations match reviewed SQL exactly; the final security correction is separately guarded and verified.",
+    "partnerRoleNamespaceCheck": "Existing transaction-partner handoff fixture passes with the pinned helper namespace.",
+    "publishableKeyConfigurationChecks": {
+      "checks": 6,
+      "result": "passed"
+    },
+    "agencyBrowser": "Passed with isolated provider fixtures; rejected contact writes preserve values and explain the failure.",
+    "listingChannelBrowser": {
+      "checks": 24,
+      "result": "passed",
+      "externalRequests": "blocked"
+    }
+  },
+  "targets": {
+    "app": "bridge / app.arch9.co.za",
+    "kingdomCustomer": "arch9-websites-staging / kingdomrealestate.co.za",
+    "kingdomMirror": "arch9-websites-production",
+    "admin": "bridge-admin / admin.arch9.co.za; runtime source already matches production",
+    "mailWorker": "srv-dbmb1dhsrm7s73fjqh60; runtime source already matches live commit 37567dad831b4647c784e9070db815d482b32df9",
+    "homeSeekers": "home-seekers-website / home-seekers-website-alpha.vercel.app; isolated public build and six public APIs"
+  },
+  "activationLimits": [
+    "Explicitly disabled legal-document workers remain disabled.",
+    "Madison trust reservations remain disabled until the existing server flag and confirmed trust-bank settings are configured.",
+    "Provider account quotas, sender readiness and Meta permissions remain real operational prerequisites; this release does not claim a test email, WhatsApp message or portal listing was sent.",
+    "Home Seekers custom domain records were already unverified; existing project routing is retained."
+  ],
+  "evidenceDirectory": "output/arch9-reconciliation-20261108/",
+  "deploymentResults": [
+    {
+      "type": "database",
+      "appliedMigrations": 34,
+      "migrationCountAfter": 1676,
+      "pendingMigrations": 0,
+      "status": "verified"
+    },
+    {
+      "type": "edge",
+      "updatedActiveFunctions": 64,
+      "retiredEndpointReleasesPreserved": 8,
+      "status": "verified"
+    }
+  ]
+}

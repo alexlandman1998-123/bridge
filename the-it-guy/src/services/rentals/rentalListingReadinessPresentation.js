@@ -1,4 +1,5 @@
 import { RENTAL_PORTAL_FIELDS } from './rentalPortalFieldCatalog.js'
+import { listingPhotoPreparationMessages } from '../listings/listingPhotoPreparationFeedback.js'
 
 const text = value => String(value ?? '').trim()
 const list = value => Array.isArray(value) ? value : []
@@ -33,7 +34,7 @@ export function describeRentalPortalRequirement(value, channel, source = 'listin
     detail = 'Choose a future date in Property24 expiry date, save it, then check again.'
     action = { kind: 'expiry', label: 'Go to expiry date' }; category = 'Listing field'
   } else if (/image|photo/.test(code)) {
-    label = /three/.test(code) ? 'At least three listing photos are required' : /bytes|load|failed/.test(code) ? 'Listing photos could not be prepared for the portal' : 'Add a listing photo'
+    label = suppliedMessage || (/three/.test(code) ? 'At least three listing photos are required' : /bytes|load|failed|preparation/.test(code) ? 'Listing photos could not be prepared for the portal' : 'Add a listing photo')
     detail = 'Review the saved photos in Marketing. Replace unreadable photos or add the required images, save, then check again.'
     action = editor('marketing'); category = 'Photos'
   } else if (/description|marketing_title/.test(code)) {
@@ -59,7 +60,12 @@ export function getRentalPortalReadiness(channel, payload, { error = '', checkin
   const preview = channel === 'property24' ? report : report.preview || payload?.preview || {}
   const blockers = [...list(report.blockers), ...list(payload?.report?.blockers), ...list(report.checks).flatMap(check => list(check.blockers)), ...list(preview.dataBlockers), ...list(preview.technicalBlockers)]
   const images = preview.imageByteLoad?.summary || {}
-  if (channel === 'property24' && Number(images.failed) > 0) blockers.push('listing_image_bytes_not_loaded_for_property24_submit')
+  const photoMessages = listingPhotoPreparationMessages(preview)
+  if (channel === 'property24' && photoMessages.length) {
+    for (let index = blockers.length - 1; index >= 0; index--) if (/listing_(image_bytes|photo_preparation|photo_submission)/.test(String(blockers[index]))) blockers.splice(index, 1)
+    blockers.push(...photoMessages.map((message, index) => ({ code: `listing_photo_preparation_failed:${index}`, message })))
+  }
+  if (channel === 'property24' && Number(images.failed) > 0 && !photoMessages.length) blockers.push('listing_photo_preparation_failed')
   const uniqueIssues = values => [...new Map(values.map(value => {
     const issue = describeRentalPortalRequirement(value, channel, list(preview.technicalBlockers).includes(value) ? 'technical' : 'listing')
     return [issue.key, issue]

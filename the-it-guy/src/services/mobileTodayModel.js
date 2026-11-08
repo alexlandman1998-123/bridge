@@ -86,6 +86,7 @@ export function buildMobileToday({ tasks = [], leads = [], contacts = [], appoin
   const queue = [...followUps, ...appointmentItems, ...dealItems].sort((a, b) => a.rank - b.rank || a.time - b.time)
   const available = { appointments: availability.appointments !== false, followUps: availability.followUps !== false, deals: availability.deals !== false }
   return {
+    asOf: nowTime,
     dateLabel: new Date(now).toLocaleDateString('en-ZA', { timeZone: CALENDAR_TIMEZONE, weekday: 'long', day: 'numeric', month: 'long' }),
     counts: {
       appointments: available.appointments ? appointmentItems.filter((item) => item.today).length : null,

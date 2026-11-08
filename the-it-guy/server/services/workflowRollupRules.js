@@ -164,6 +164,8 @@ export function deriveParentStage({ transaction = {}, workflows = {} } = {}) {
   if (String(transaction?.lifecycle_state || transaction?.lifecycleState || '').trim().toLowerCase() === 'cancelled') {
     return PARENT_STAGE_ENUM.CANCELLED
   }
+  const lifecycle=String(transaction?.lifecycle_state || transaction?.lifecycleState || '').trim().toLowerCase()
+  if (['registered','completed'].includes(lifecycle)) return PARENT_STAGE_ENUM.COMPLETE
   if (hasCancelledWorkflow(workflows)) {
     return PARENT_STAGE_ENUM.CANCELLED
   }

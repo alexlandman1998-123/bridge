@@ -1,3 +1,4 @@
+import { getDevelopmentBuyerReservationEvidence } from '../leads/developmentBuyerLead.js'
 import { resolveTransactionSaleProfile } from '../transactions/transactionSaleProfile.js'
 
 export const DEVELOPER_LEAD_PHASE17_CONTRACT = 'developer-leads-phase17-transaction-handoff-v1'
@@ -39,10 +40,9 @@ function buildWarning(code, message) {
 }
 
 function resolveConversionDetailedStage(lead = {}) {
-  const reservationState = normalizeLower(lead.reservationState)
   const reservationStatus = normalizeLower(lead.reservationStatus)
 
-  if (reservationState === 'reserved' || reservationStatus === 'paid') return 'Deposit Paid'
+  if (['paid', 'verified'].includes(reservationStatus)) return 'Deposit Paid'
   return 'Reserved'
 }
 
@@ -121,6 +121,10 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
     blockers.push(buildBlocker('unit_missing', 'Select a preferred unit before buyer onboarding can be sent.'))
   }
 
+  if (normalizeText(lead.preferredUnitId) && !getDevelopmentBuyerReservationEvidence(lead).reserved) {
+    blockers.push(buildBlocker('reservation_missing', 'Confirm the current unit reservation before buyer onboarding can be sent.'))
+  }
+
   const handoff = {
     setup: {
       transactionType: 'developer_sale',
@@ -142,7 +146,7 @@ export function buildDeveloperLeadTransactionHandoff(lead = {}, {
     },
     finance: {
       reservationRequired: ['provisional', 'reserved'].includes(normalizeLower(lead.reservationState)),
-      reservationStatus: normalizeLower(lead.reservationState) === 'reserved' ? 'paid' : 'not_required',
+      reservationStatus: ['paid', 'verified'].includes(normalizeLower(lead.reservationStatus)) ? normalizeLower(lead.reservationStatus) : ['provisional', 'reserved'].includes(normalizeLower(lead.reservationState)) ? 'pending' : 'not_required',
       nextAction: 'Send buyer onboarding link from the lead workspace.',
     },
     status: {

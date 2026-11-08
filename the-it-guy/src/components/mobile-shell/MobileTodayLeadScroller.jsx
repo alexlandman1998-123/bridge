@@ -4,7 +4,7 @@ import { useMobileLeadCreate } from './mobileLeadCreateContext.js'
 import LeadSourceLogo from './LeadSourceLogo.jsx'
 import { getMobileBuyerQualification } from '../../services/mobileLeadContextModel.js'
 
-const MobileCreateSheet = lazy(() => import('./MobileCreateSheet.jsx'))
+const MobileTaskCreateSheet = lazy(() => import('./MobileTaskCreateSheet.jsx'))
 
 function contactNumber(value) {
   const text = String(value || '').trim()
@@ -15,7 +15,7 @@ function contactNumber(value) {
   return /^[1-9]\d{7,14}$/.test(digits) ? digits : ''
 }
 
-export default function MobileTodayLeadScroller({ today, leads = [], leadsAvailable, onUpdateTask, onContactLead, onOpen, onRefresh, onProgress, onBeginAction, rewardedTaskId }) {
+export default function MobileTodayLeadScroller({ today, leads = [], leadsAvailable, onCreateTask, onUpdateTask, onContactLead, onOpen, onRefresh, onProgress, onBeginAction, rewardedTaskId }) {
   const leadCreate = useMobileLeadCreate()
   const [taskCreateOpen, setTaskCreateOpen] = useState(false)
   const busy = useRef(new Set())
@@ -79,7 +79,7 @@ export default function MobileTodayLeadScroller({ today, leads = [], leadsAvaila
   return <><section className="mobile-day-leads" aria-label="Tasks and new leads">
     <div className="mobile-day-leads-track" tabIndex={0} role="region" aria-label="Swipe between tasks and new leads">
       <section className="mobile-task-panel" aria-label="Today’s tasks">
-        <div className="mobile-task-panel-heading"><h2>Tasks for today</h2><button type="button" aria-label="Add task" onClick={() => setTaskCreateOpen(true)}><Plus size={19} aria-hidden="true" /></button></div>
+        <div className="mobile-task-panel-heading"><h2>Tasks for today</h2><button type="button" aria-label="Add task" onClick={() => setTaskCreateOpen(true)}><Plus size={17} aria-hidden="true" /><span>Add task</span></button></div>
         {!today.available.followUps ? <div className="mobile-panel-empty"><p>We couldn’t load your tasks.</p><button type="button" onClick={onRefresh}>Retry tasks</button></div> : tasks.size ? <div className="mobile-task-list">{sortedTasks.map(task => <div className={`mobile-checklist-task${task.completed ? ' is-completed' : ''}${rewardedTaskId === task.id ? ' is-rewarded' : ''}`} key={task.id}>
           <label><input type="checkbox" checked={Boolean(task.completed)} disabled={pending[task.id] || !onUpdateTask} onChange={() => void toggle(task)} aria-label={`${task.completed ? 'Reopen' : 'Complete'} ${task.title}${task.body ? ` for ${task.body}` : ''}`} /><span className="mobile-task-check" aria-hidden="true">{task.completed && <Check size={15} />}</span><span className="mobile-task-copy"><strong>{task.title}</strong>{task.body && <span>{task.body}</span>}<small>{pending[task.id] ? 'Saving…' : task.completed ? 'Completed · uncheck to reopen' : task.meta}</small></span></label>
           {errors[task.id] && <p role="alert">{errors[task.id]}</p>}
@@ -109,6 +109,6 @@ export default function MobileTodayLeadScroller({ today, leads = [], leadsAvaila
       </section>
     </div>
   </section>
-    {taskCreateOpen && <Suspense fallback={null}><MobileCreateSheet open type="follow-up" route="/mobile/home" onClose={() => setTaskCreateOpen(false)} /></Suspense>}
+    {taskCreateOpen && <Suspense fallback={null}><MobileTaskCreateSheet onCreateTask={onCreateTask} onClose={() => setTaskCreateOpen(false)} onSaved={() => { setTaskCreateOpen(false); onRefresh?.() }} /></Suspense>}
   </>
 }

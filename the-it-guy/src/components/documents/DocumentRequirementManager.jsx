@@ -23,7 +23,7 @@ export default function DocumentRequirementManager(props) {
   return <RequirementControls key={`${props.contextType}:${props.contextId}:${props.party || ''}`} {...props} />
 }
 
-function RequirementControls({ client, contextType, contextId, party: fixedParty, onChange, presentation, open, onClose, initialRequirementId, documentLabel }) {
+function RequirementControls({ client, contextType, contextId, party: fixedParty, onChange, presentation, open, onClose, initialRequirementId, initialSelectedRequirementId, documentLabel }) {
   const [snapshot, setSnapshot] = useState(null)
   const [actorId, setActorId] = useState('')
   const [pending, setPending] = useState(null)
@@ -53,15 +53,15 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
 
   useEffect(() => {
     if (presentation !== 'dialog' || !open) return
-    setUploadStep(false)
+    setUploadStep(Boolean(initialSelectedRequirementId))
     setLabel('')
     setTypeChoice('')
-    setSelectedId('')
+    setSelectedId(initialSelectedRequirementId || '')
     setReason('')
     setFile(null)
     setNotice('')
     setUploadProgress(null)
-  }, [presentation, open])
+  }, [presentation, open, initialSelectedRequirementId])
 
   useEffect(() => {
     if (uploadStep) existingControls.current?.focus()
@@ -228,7 +228,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
   }
 
   const content = <div className="space-y-4" data-testid="document-requirement-manager">
-      <p className="text-sm text-slate-600">{presentation === 'dialog' ? `Name the document, then request it from the ${party} or continue to upload a file. Documents stay in sync across linked workspaces.` : 'Changes apply across linked workspaces for this matter. Removing a requirement keeps its files and history. New requirements queue a secure portal email. Delivery waits for an active portal and a matching recipient.'}</p>
+      <p className="text-sm text-slate-600">{presentation === 'dialog' ? initialSelectedRequirementId ? 'Upload to the selected request. The file and its review status stay in sync across linked workspaces.' : `Name the document, then request it from the ${party} or continue to upload a file. Documents stay in sync across linked workspaces.` : 'Changes apply across linked workspaces for this matter. Removing a requirement keeps its files and history. New requirements queue a secure portal email. Delivery waits for an active portal and a matching recipient.'}</p>
 
       {error ? <div className="space-y-2"><p role="alert" className="text-sm text-red-700">{error}</p>{!snapshot ? <button type="button" disabled={busy} className={buttonClass} onClick={() => void refreshRef.current?.()}>Refresh requirements</button> : null}</div> : null}
       {notice ? <p role="status" className="text-sm text-green-800">{notice}</p> : null}
@@ -280,7 +280,6 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
           {presentation === 'dialog' ? <button type="button" disabled={disabled || !addContext || !label.trim() || !validChoice || duplicates.length > 0} className="rounded-lg bg-[#176842] px-4 py-2 text-sm font-semibold text-white hover:bg-[#125535] disabled:opacity-50" onClick={() => void save('add', false, 'upload')}>Continue to upload</button> : null}
         </div>
         {presentation === 'dialog' ? <p className="text-xs leading-5 text-slate-500">Creating a document queues a secure {party} portal email. Uploading its file cancels any request email still waiting to send. Delivery requires an active portal and matching recipient.</p> : null}
-
       </form> : <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-slate-800">Upload {selected ? labelOf(selected) : 'document'}</h4><button type="button" disabled={disabled} className={buttonClass} onClick={() => setUploadStep(false)}>Back to new document</button></div>}
       {presentation === 'dialog' && !uploadStep ? <details className="border-t border-slate-200 pt-4"><summary className="cursor-pointer text-sm font-medium text-slate-600">Manage an existing document</summary><div className="mt-3">{existingForm()}</div></details> : existingForm()}
     </div>
@@ -322,7 +321,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
     </div>
   </Modal>
 
-  if (presentation === 'dialog') return <Modal open={open} onClose={() => { if (!busy) onClose?.() }} title="Upload/Request New Document" subtitle={party === 'buyer' ? 'Buyer documents' : 'Seller documents'} className="max-w-xl">{content}</Modal>
+  if (presentation === 'dialog') return <Modal open={open} onClose={() => { if (!busy) onClose?.() }} title={initialSelectedRequirementId ? 'Upload document' : 'Upload/Request New Document'} subtitle={party === 'buyer' ? 'Buyer documents' : 'Seller documents'} className="max-w-xl">{content}</Modal>
 
   return <details className="rounded-2xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-800">Manage document requirements{busy ? ' · Saving…' : pending ? ' · Unfinished change' : ''}</summary><div className="mt-4">{content}</div></details>
 }

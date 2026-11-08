@@ -1,52 +1,156 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import HomeSeekersJoin from '../HomeSeekersJoin'
+import HomeSeekersJoinDetails, { HomeSeekersAgentRentalOffering } from '../HomeSeekersJoinDetails'
+import { setHomeSeekersMeasurementConsent } from '../homeSeekersPixel'
 
-afterEach(cleanup)
-
-it('presents individual subscriptions and reveals team pricing in the option popup', () => {
-  render(<HomeSeekersJoin />)
-  for (const option of ['Prepaid', 'Upfront']) {
-    const card = screen.getByRole('article', { name: option })
-    expect(card.textContent).not.toMatch(/team|leader/i)
-    expect(screen.queryByRole('dialog', { name: option })).toBeNull()
-
-    fireEvent.click(within(card).getByRole('button', { name: `View details for ${option}` }))
-    const popup = screen.getByRole('dialog', { name: option })
-    expect(within(popup).getByRole('heading', { name: 'Bringing a team?' })).toBeTruthy()
-    expect(within(popup).getByRole('rowheader', { name: 'Team leader' })).toBeTruthy()
-    expect(within(popup).getByRole('rowheader', { name: 'Seats 2 to 5' })).toBeTruthy()
-    expect(within(popup).getByRole('rowheader', { name: 'Seat 6 onwards' })).toBeTruthy()
-    fireEvent.click(within(popup).getByRole('button', { name: 'Back to options' }))
-  }
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
-it('bases rental fees on collected rent in the page and rental book popup', () => {
-  render(<HomeSeekersJoin />)
-  const rentals = screen.getByRole('region', { name: 'Build a rental book. Keep it yours.' })
-  expect(within(rentals).getByText('3.5% of rent collected')).toBeTruthy()
-  expect(within(rentals).getByText(/Home Seekers’ fee: R12[,\s]000 × 3\.5%/)).toBeTruthy()
-  expect(within(rentals).getByText('R420', { selector: 'dd' })).toBeTruthy()
-  expect(within(rentals).getByText('R780 / month', { selector: 'dd' })).toBeTruthy()
-
-  fireEvent.click(within(rentals).getByRole('button', { name: 'Explore the rental offering' }))
-  const popup = screen.getByRole('dialog', { name: 'Build a rental book.' })
-  expect(within(popup).getByText('3.5% of rent collected')).toBeTruthy()
-  expect(within(popup).getByText('R420', { selector: 'dd' })).toBeTruthy()
-  expect(within(popup).getByText('R780 / month', { selector: 'dd' })).toBeTruthy()
-  expect(within(popup).getByText(/Home Seekers’ fee: R600[,\s]000 × 3\.5%/)).toBeTruthy()
-  expect(within(popup).getByText(/R21[,\s]000/, { selector: 'dd' })).toBeTruthy()
-  expect(within(popup).getByText(/remaining each month, R468[,\s]000 a year/).parentElement.textContent).toMatch(/R39[,\s]000/)
+it('keeps full subscriptions and separate team billing rows on the detail pages', () => {
+  const { unmount } = render(<HomeSeekersJoinDetails page="pricing" />)
+  expect(screen.getByText((_, element) => element.classList.contains('hs-join-pricing__price') && /R100[,\s]000 \/ year/.test(element.textContent))).toBeTruthy()
+  expect(screen.getByText(/R700 for the runner/)).toBeTruthy()
+  expect(screen.getByText(/maximum of 50% of that deal/)).toBeTruthy()
+  unmount()
+  render(<HomeSeekersJoinDetails page="teams" />)
+  expect(screen.getByRole('rowheader', {name:'Team leader, monthly'})).toBeTruthy()
+  expect(screen.getByRole('rowheader', {name:'Team leader, upfront'})).toBeTruthy()
+  expect(screen.getByText('R7,000 each')).toBeTruthy()
+  expect(screen.getByText('R6,000 each')).toBeTruthy()
+})
+it('preserves collected-rent fees and the worked examples on the rental offering', () => {
+  render(<HomeSeekersAgentRentalOffering />)
+  expect(screen.getByText('3.5% of rent collected')).toBeTruthy()
+  expect(screen.getByText('R420', {selector:'dd'})).toBeTruthy()
+  expect(screen.getByText('R780 / month', {selector:'dd'})).toBeTruthy()
+  expect(screen.getByText(/R21[,\s]000/, {selector:'dd'})).toBeTruthy()
+  expect(screen.getByText(/remaining each month, R468[,\s]000 a year/).parentElement.textContent).toMatch(/R39[,\s]000/)
+})
+it('preserves every growth percentage on the full pricing page', () => {
+  render(<HomeSeekersJoinDetails page="pricing" />)
+  for (const [sales, percentage] of [[5,26],[8,17],[10,14],[15,10],[20,8]]) {
+    expect(screen.getByText(`${sales} sales a year`).parentElement.querySelector('strong').textContent).toBe(`${percentage}%`)
+  }
+  expect(screen.getByText(/R123[,\s]000 for the year/)).toBeTruthy()
+})
+it('presents the ten sections in order and the same priority actions in each placement', () => {
+  const {container} = render(<HomeSeekersJoin />)
+  expect([...container.querySelectorAll('[data-join-section]')].map(node=>node.dataset.joinSection)).toEqual(['hero','trust','split','maths','calculator','payments','included','founder','next steps','faq'])
+  for (const source of ['hero','calculator','founder','FAQ']) {
+    const actions=container.querySelector(`[data-placement="${source}"]`)
+    expect([...actions.querySelectorAll('a')].map(node=>node.textContent)).toEqual(['Book a call with Thomas','Join the next live session','Apply to join'])
+  }
+  expect(container.textContent).toContain('Thomas Potgieter')
+  expect(container.textContent).not.toMatch(/\[FOUNDER (?:FIRST|FULL) NAME\]/)
+  expect(container.textContent).not.toMatch(/agent overview|Qualifying agents only|See if you qualify|Send it to me/)
+  expect(container.querySelector('a[href$="/join/teams"]')).toBeTruthy()
+  expect(container.querySelector('a[href$="/join/referrals"]')).toBeTruthy()
+  expect(container.querySelector('a[href$="/join/pricing"]')).toBeTruthy()
 })
 
-it('calculates the requested growth illustration using 6% commission', () => {
+it('offers the supplied video and a local poster without a YouTube embed or measurement consent', () => {
+  setHomeSeekersMeasurementConsent(false)
   render(<HomeSeekersJoin />)
-  const growth = screen.getByRole('region', { name: /The better you get,.*the cheaper we get\./i })
-  for (const [sales, percentage] of [[5, 26], [8, 17], [10, 14], [15, 10], [20, 8]]) {
-    const row = within(growth).getByText(`${sales} sales a year`).parentElement
-    expect(row.querySelector('strong').textContent).toBe(`${percentage}%`)
-  }
-  expect(within(growth).getByText(/R123[,\s]000 for the year/)).toBeTruthy()
-  expect(within(growth).getByText('Rounded percentages using option 2, an average R1.5 million sale price and 6% commission, excluding VAT.')).toBeTruthy()
+  const section = screen.getByRole('region', { name: 'What our agents say' })
+  const video = within(section).getByTitle('What our agents say')
+  expect(video.tagName).toBe('VIDEO')
+  expect(video.getAttribute('src')).toBe('/assets/homeseekers/agent-story-bc2542f538b1.mp4')
+  expect(video.getAttribute('poster')).toBe('/assets/homeseekers/agent-story-poster-09b58dde8d57.jpg')
+  expect(video.preload).toBe('none')
+  expect(video.controls).toBe(true)
+  expect(video.playsInline).toBe(true)
+  expect(video.autoplay).toBe(false)
+  expect(section.querySelector('iframe')).toBeNull()
+  const watch = within(section).getByRole('link', { name: /Watch on YouTube/ })
+  expect(watch.getAttribute('href')).toBe('https://www.youtube.com/watch?v=1cmCKGbUlrE&t=9s')
+  expect(watch.getAttribute('target')).toBe('_blank')
+  expect(within(section).queryByRole('alert')).toBeNull()
+})
+
+it('keeps the video and watch link available when browser storage is blocked', () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('Storage blocked', 'SecurityError') })
+  render(<HomeSeekersJoin />)
+  const section = screen.getByRole('region', { name: 'What our agents say' })
+  expect(within(section).getByTitle('What our agents say').controls).toBe(true)
+  expect(within(section).getByRole('link', { name: /Watch on YouTube/ })).toBeTruthy()
+})
+
+it('shows the preview and recovery options when the video fails, and resets on retry', () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  const reload = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
+  render(<HomeSeekersJoin />)
+  const section = screen.getByRole('region', { name: 'What our agents say' })
+  const video = within(section).getByTitle('What our agents say')
+  const watch = within(section).getByRole('link', { name: /Watch on YouTube/ })
+  fireEvent.error(video)
+  expect(within(section).getByRole('alert').textContent).toContain('could not be loaded')
+  expect(video.hidden).toBe(true)
+  expect(within(section).getByAltText('Thomas and Amanda in the agent interview')).toBeTruthy()
+  expect(within(section).getByRole('link', { name: /Watch on YouTube/ })).toBe(watch)
+  fireEvent.click(within(section).getByRole('link', { name: 'Retry video' }))
+  expect(reload).toHaveBeenCalledOnce()
+  expect(video.hidden).toBe(false)
+  expect(within(section).queryByRole('alert')).toBeNull()
+})
+
+it('offers recovery for slow loading without stopping playback, then clears it when playing', () => {
+  vi.useFakeTimers()
+  const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  render(<HomeSeekersJoin />)
+  const section = screen.getByRole('region', { name: 'What our agents say' })
+  const video = within(section).getByTitle('What our agents say')
+  act(() => vi.advanceTimersByTime(30000))
+  expect(within(section).queryByRole('alert')).toBeNull()
+  fireEvent.play(video)
+  act(() => vi.advanceTimersByTime(15000))
+  expect(within(section).getByRole('alert').textContent).toContain('still loading')
+  expect(video.hidden).toBe(false)
+  expect(pause).not.toHaveBeenCalled()
+  expect(within(section).getByAltText('Thomas and Amanda in the agent interview')).toBeTruthy()
+  expect(within(section).getByRole('link', { name: /Watch on YouTube/ })).toBeTruthy()
+  fireEvent.playing(video)
+  expect(within(section).queryByRole('alert')).toBeNull()
+  expect(within(section).queryByAltText('Thomas and Amanda in the agent interview')).toBeNull()
+})
+
+it('does not time out playing or paused video, or a network stall with playback continuing', () => {
+  vi.useFakeTimers()
+  render(<HomeSeekersJoin />)
+  const section = screen.getByRole('region', { name: 'What our agents say' })
+  const video = within(section).getByTitle('What our agents say')
+  fireEvent.play(video)
+  fireEvent.playing(video)
+  fireEvent.stalled(video)
+  act(() => vi.advanceTimersByTime(30000))
+  expect(within(section).queryByRole('alert')).toBeNull()
+  fireEvent.play(video)
+  fireEvent.pause(video)
+  act(() => vi.advanceTimersByTime(30000))
+  expect(within(section).queryByRole('alert')).toBeNull()
+})
+
+it('uses both founder profiles and the owner-supplied Thomas biographies, and keeps Amanda as the only testimonial', () => {
+  const {container} = render(<HomeSeekersJoin />)
+  const portraits=screen.getAllByAltText('Thomas Potgieter, founder of Home Seekers')
+  expect(portraits).toHaveLength(2)
+  expect(container.querySelector('.hs-founders__card img').getAttribute('src')).toBe('/brand/homeseekers/thomas-potgieter-polo.jpg')
+  expect(container.querySelector('#book-call img').getAttribute('src')).toBe('/brand/homeseekers/thomas-potgieter.jpg')
+  expect(screen.getByText(/Thomas Potgieter has worked in South African property since 2012/).textContent).toContain('since 2014')
+  expect(screen.getByText(/registered with the PPRA that same year/).textContent).toContain('2025')
+  expect(screen.getByText(/He intends to get back to it/).closest('details').open).toBe(false)
+  expect(screen.getByText(/Agents keep one hundred percent/).textContent).toContain('R1,500 per registered sale, excluding VAT')
+  expect(screen.getByAltText('Rode Potgieter, co-founder of Home Seekers').getAttribute('src')).toBe('/brand/homeseekers/rode-potgieter.jpg')
+  expect(container.querySelectorAll('.hs-founders__card')).toHaveLength(2)
+  expect(screen.getByText('Read Thomas’s full bio')).toBeTruthy()
+  expect(screen.getByText('Read Rode’s full bio')).toBeTruthy()
+  expect(container.textContent).not.toMatch(/\[FOUNDER (PHOTO|BIO)\]/)
+  expect(screen.getByText('Amanda’s story.')).toBeTruthy()
+  expect(container.querySelectorAll('video')).toHaveLength(1)
+  expect(container.querySelector('.hs-join-rebuild__testimonials')).toBeNull()
+  expect(container.textContent).not.toMatch(/TESTIMONIAL [123]|not a verified agent quote/)
 })

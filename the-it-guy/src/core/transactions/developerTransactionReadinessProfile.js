@@ -25,7 +25,7 @@ function isRegisteredStage(transaction = {}) {
   const mainStage = normalizeText(transaction.current_main_stage || transaction.currentMainStage).toUpperCase()
   const lifecycle = normalizeKey(transaction.lifecycle_state || transaction.lifecycleState)
   const stage = normalizeKey(transaction.stage || transaction.detailed_stage || transaction.detailedStage)
-  return ['REG', 'COMPLETE', 'REGISTERED'].includes(mainStage) || ['registered', 'completed'].includes(lifecycle) || stage.includes('registration')
+  return Boolean(transaction.registered_at || transaction.registeredAt) || ['REG', 'COMPLETE', 'REGISTERED'].includes(mainStage) || ['registered', 'completed'].includes(lifecycle) || ['registered', 'registration_confirmed', 'registration_complete', 'registration_completed'].includes(stage)
 }
 
 function action({
@@ -242,7 +242,7 @@ function buildRelationshipSummaryFromRow(input = {}) {
   const transaction = toRecord(rawTransaction)
   const unit = toRecord(rawUnit)
   const buyer = toRecord(rawBuyer)
-  const developmentName = normalizeText(row?.development?.name || unit?.development?.name || transaction.developer_name || transaction.developer)
+  const developmentName = normalizeText(row?.development?.name || unit?.development?.name || transaction.development_name || transaction.developmentName || transaction.developer_name || transaction.developer)
   const buyerName = normalizeText(buyer?.name || row?.buyerName || transaction.buyer_name)
   const assignedAgent = normalizeText(transaction.assigned_agent || row?.assignedAgent || row?.agent)
   const assignedAgentEmail = normalizeText(transaction.assigned_agent_email || row?.assignedAgentEmail || row?.agentEmail)
@@ -279,7 +279,7 @@ function buildMandateProfileFromRow(input = {}) {
   const transaction = toRecord(rawTransaction)
   const row = toRecord(rawRow)
   const developerAgentMandateRequired = Boolean(relationshipSummary?.relationshipProfile?.developerAgentMandateRequired)
-  const developerName = normalizeText(row?.development?.name || row?.unit?.development?.name || transaction.developer_name || transaction.developer)
+  const developerName = normalizeText(row?.development?.name || row?.unit?.development?.name || transaction.development_name || transaction.developmentName || transaction.developer_name || transaction.developer)
   const agentName = normalizeText(transaction.assigned_agent || row?.assignedAgent || row?.agent)
   const agentEmail = normalizeText(transaction.assigned_agent_email || row?.assignedAgentEmail || row?.agentEmail)
   const requiredSigners = developerAgentMandateRequired

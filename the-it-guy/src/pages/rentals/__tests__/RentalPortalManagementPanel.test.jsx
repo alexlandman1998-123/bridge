@@ -4,6 +4,24 @@ import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react'
 import RentalPortalManagementPanel from '../RentalPortalManagementPanel'
 afterEach(cleanup)
 const channel={key:'private_property',label:'Private Property',status:'active',reference:'R123',publicUrl:'',activity:[{label:'Accepted',time:'2026-10-04T10:00:00Z'}]}
+it('explains old generic failures and offers a diagnostic check without guessing what to edit',async()=>{
+ const onCheck=vi.fn(),onPublish=vi.fn(),onEdit=vi.fn()
+ render(<RentalPortalManagementPanel channel={{...channel,key:'property24',label:'Property24',reference:'',error:'Channel needs attention.'}} onCheck={onCheck} onPublish={onPublish} onEdit={onEdit} onClose={()=>{}} />)
+ expect(screen.getByRole('alert').textContent).toContain('Arch9 did not save the detailed reason')
+ expect(screen.queryByRole('button',{name:'Edit listing details'})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:'Check requirements now'}))
+ await waitFor(()=>expect(onCheck).toHaveBeenCalledOnce())
+ expect(onPublish).not.toHaveBeenCalled();expect(onEdit).not.toHaveBeenCalled()
+})
+
+it('shows specific requirements and sends the agent to the relevant settings',async()=>{
+ const onFix=vi.fn(),onClose=vi.fn()
+ render(<RentalPortalManagementPanel channel={{...channel,key:'property24',label:'Property24'}} preview={{report:{preview:{canSubmit:false,technicalBlockers:['missing_agent_mapping']}}}} onCheck={vi.fn()} onFix={onFix} onClose={onClose} />)
+ expect(screen.getByText('Assigned agent needs a portal mapping')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'Open portal settings'}))
+ await waitFor(()=>expect(onFix).toHaveBeenCalledWith(expect.objectContaining({kind:'settings',path:'/settings/syndication/property24'})))
+ expect(onClose).toHaveBeenCalledOnce()
+})
 it('offers rental statuses, explicit refresh and manually confirmed links',async()=>{
  const onRefresh=vi.fn(),onChangeStatus=vi.fn(),onVerifyLink=vi.fn()
  render(<RentalPortalManagementPanel channel={channel} onRefresh={onRefresh} onChangeStatus={onChangeStatus} onVerifyLink={onVerifyLink} onClose={()=>{}} />)

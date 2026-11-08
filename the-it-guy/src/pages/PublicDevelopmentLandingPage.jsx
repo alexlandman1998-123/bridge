@@ -63,7 +63,8 @@ export default function PublicDevelopmentLandingPage({
   freshness,
   renderVisualMap,
   estatePresentation = false,
-  onSimulateReservation,
+  reservationConfig,
+  onRequestReservation,
 }) {
   const [enquiryOpen, setEnquiryOpen] = useState(false);
   const [reservationUnit, setReservationUnit] = useState(null);
@@ -219,7 +220,8 @@ export default function PublicDevelopmentLandingPage({
       <PublicDevelopmentEnquiryDrawer
         estatePresentation={estatePresentation}
         reservationUnit={reservationUnit ? inventory.find((unit) => String(unit.id) === String(reservationUnit.id)) || reservationUnit : null}
-        onSimulateReservation={onSimulateReservation}
+        reservationConfig={reservationConfig}
+        onRequestReservation={onRequestReservation}
         open={enquiryOpen}
         onClose={() => setEnquiryOpen(false)}
         developmentName={data.name}

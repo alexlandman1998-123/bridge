@@ -64,3 +64,10 @@ test('distinguishes inaccessible counts from a verified zero and excludes duplic
   assert.equal(empty.leadsAvailable, true)
   assert.equal(empty.averageDaysOnMarket, null)
 })
+
+
+test('retains a successful portal sync when there are no statistics yet', () => {
+ const lastAttempt={status:'completed',at:'2026-11-06T08:00:00Z',failed:false}
+ const result=aggregateDevelopmentListingPerformance({listings:[listings[0]],snapshots:[{data:{property24:{published:true,lastAttempt,metrics:{}}}}]})
+ assert.deepEqual(result.property24.lastAttempt,lastAttempt)
+})

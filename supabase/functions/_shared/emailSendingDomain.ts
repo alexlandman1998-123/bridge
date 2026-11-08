@@ -13,7 +13,7 @@ export async function refreshSendingDomain({ db, domain, resendKey, fetcher = fe
   if (domain.verification_status === "disabled") return "disabled";
   if (!domain.provider_domain_id) throw new Error("Domain setup is incomplete. Add the domain again to retry.");
   const response = await fetcher(`https://api.resend.com/domains/${encodeURIComponent(domain.provider_domain_id)}`, {
-    headers: { authorization: `Bearer ${resendKey}` },
+    headers: { authorization: `Bearer ${resendKey}` }, signal: AbortSignal.timeout(15000),
   });
   const details = await response.json().catch(() => ({}));
   if (response.status === 404) {
@@ -33,4 +33,23 @@ export async function refreshSendingDomain({ db, domain, resendKey, fetcher = fe
   });
   if (error) throw new Error("Unable to save domain verification. Please try again.");
   return status;
+}
+
+// Recover a provider domain created before a lost response/database save. Domain
+// creation does not support the email API's idempotency-key contract.
+export async function findSendingDomain({ name, resendKey, fetcher = fetch }: { name: string; resendKey: string; fetcher?: typeof fetch }) {
+  let after = "";
+  for (let page = 0; page < 100; page++) {
+    const query = new URLSearchParams({ limit: "100", ...(after ? { after } : {}) });
+    const response = await fetcher(`https://api.resend.com/domains?${query}`, { headers: { authorization: `Bearer ${resendKey}` }, signal: AbortSignal.timeout(15000) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(body.data)) throw new Error("The email provider's domain list could not be checked. Try again shortly.");
+    const found = body.data.find((row: any) => text(row.name).toLowerCase() === name.toLowerCase());
+    if (found) return found;
+    if (!body.has_more) return null;
+    const cursor = text(body.data.at(-1)?.id);
+    if (!cursor || cursor === after) throw new Error("The email provider returned an incomplete domain list.");
+    after = cursor;
+  }
+  throw new Error("The email provider's domain list is too large to safely check.");
 }

@@ -6,7 +6,7 @@ import { metaIntegrationRequest } from '../../services/metaIntegrationService'
 const label = kind => ({ buyer: 'Buyer', seller: 'Seller', recruitment: 'Recruitment' }[kind] || 'CRM')
 const keyFor = record => `${record.kind}:${record.recordId}`
 
-export default function WhatsAppCrmLink({ organisationId, accessScope, conversationId, assignmentVersion }) {
+export default function WhatsAppCrmLink({ organisationId, accessScope, conversationId, assignmentVersion, onChanged }) {
   const scope = `${accessScope}:${conversationId}:${assignmentVersion}`
   const generation = useRef(0), lock = useRef(false)
   const activeScope = useRef(scope)
@@ -40,7 +40,7 @@ export default function WhatsAppCrmLink({ organisationId, accessScope, conversat
         ...(!unlink ? { kind: selected.kind, recordId: selected.recordId } : {}),
       })
       if (generation.current !== current) return
-      setChoice(''); await refresh(); if (activeScope.current === scope) setNotice(unlink ? 'CRM link removed.' : 'CRM record linked.')
+      setChoice(''); await refresh(); if (activeScope.current === scope) onChanged?.(); if (activeScope.current === scope) setNotice(unlink ? 'CRM link removed.' : 'CRM record linked.')
     } catch (error) {
       if (generation.current === current) { await refresh(); if (activeScope.current === scope) setNotice(error.message) }
     } finally { lock.current = false; if (activeScope.current === scope) setBusy(false) }

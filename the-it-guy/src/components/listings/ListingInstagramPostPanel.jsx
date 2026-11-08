@@ -89,7 +89,7 @@ function InstagramPostEditor({ organisationId, listingId, viewerId }) {
     {data.posts.length ? <div className="mt-5 border-t pt-4"><h4 className="text-sm font-semibold">Recent Instagram posts</h4><ul className="mt-2 space-y-2 text-sm">{data.posts.map(post => <li key={post.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 p-3">
       <span>@{post.target_account_name} · {statusLabel(post)}</span>
       {post.public_url ? <a className="font-semibold text-blue-800" href={post.public_url} target="_blank" rel="noreferrer">Open Instagram post</a> : null}
-      {post.created_by === viewerId ? <button className="font-semibold text-blue-800" disabled={Boolean(busy)} onClick={() => { setPreview(post); setError('') }}>Review post details</button> : null}
+      {post.created_by === viewerId ? <button type="button" className="font-semibold text-blue-800" disabled={Boolean(busy)} onClick={() => { setPreview(post); setError('') }}>Review post details</button> : null}
       {post.error_message ? <p className="w-full text-xs text-red-800">{post.error_message}</p> : null}
     </li>)}</ul></div> : null}
     <Modal open={Boolean(preview)} title="Review Instagram post" subtitle={preview?.target_account_name ? `@${preview.target_account_name}` : ''} onClose={busy ? undefined : () => setPreview(null)} footer={<div className="flex flex-wrap gap-2">

@@ -9,7 +9,6 @@ import {
   Hammer,
   Landmark,
   Scale,
-  ShieldCheck,
   UserRound,
   WalletCards,
 } from 'lucide-react'
@@ -361,9 +360,15 @@ const ROLE_ICONS = {
   [SIGNUP_BUSINESS_TYPES.client]: UserRound,
 }
 const POSITION_ICON = Landmark
-const AGENCY_POSITION_COPY = {
+const SIGNUP_POSITION_COPY = {
   agency_owner: { label: 'Principal', description: 'Create and manage your agency.', icon: Building2 },
   agency_operational: { label: 'Agent', description: 'Join your agency workspace.', icon: UserRound },
+  attorney_owner: { label: 'Firm owner', description: 'Create and manage your firm.', icon: Scale },
+  attorney_operational: { label: 'Team member', description: 'Join your firm’s workspace.', icon: UserRound },
+  bond_owner: { label: 'Business owner', description: 'Create and manage your bond business.', icon: WalletCards },
+  bond_operational: { label: 'Team member', description: 'Join your bond business’s workspace.', icon: UserRound },
+  developer_owner: { label: 'Company owner', description: 'Create and manage your company.', icon: Building2 },
+  developer_operational: { label: 'Team member', description: 'Join your company’s workspace.', icon: UserRound },
 }
 const ROLE_DISPLAY_COPY = {
   [SIGNUP_BUSINESS_TYPES.agency]: {
@@ -414,9 +419,9 @@ function getBusinessSetupCopy(businessTypeLabel = 'workspace') {
   if (normalized === 'Residential Estate Agency') return 'Tell us about your residential agency'
   if (normalized === 'Commercial Real Estate Brokerage') return 'Tell us about your commercial brokerage'
   if (normalized === 'Mixed Residential + Commercial Agency') return 'Tell us about your mixed agency'
-  if (normalized === 'Attorney' || normalized === 'Attorney Firm') return 'Tell us about your firm'
-  if (normalized === 'Developer') return 'Tell us about your development company'
-  if (normalized === 'Bond Originator') return 'Tell us about your bond business'
+  if (normalized === 'Attorney' || normalized === 'Attorney Firm') return 'Your role'
+  if (normalized === 'Developer') return 'Your role'
+  if (normalized === 'Bond Originator') return 'Your role'
   if (normalized === 'Buyer / Seller') return 'Tell us about your transaction'
   return `Tell us about your ${normalized.toLowerCase()}`
 }
@@ -504,8 +509,8 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
     })
   }, [inviteDrivenSignup, inviteSignupPosition, inviteToken, partnerHandoffToken, position])
   const positionOptions = (POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || [])
-    .filter((option) => businessType !== SIGNUP_BUSINESS_TYPES.agency || Object.hasOwn(AGENCY_POSITION_COPY, option.value))
-    .map((option) => businessType === SIGNUP_BUSINESS_TYPES.agency ? { ...option, ...AGENCY_POSITION_COPY[option.value] } : option)
+    .filter((option) => businessType !== SIGNUP_BUSINESS_TYPES.agency || Object.hasOwn(SIGNUP_POSITION_COPY, option.value))
+    .map((option) => ({ ...option, ...(SIGNUP_POSITION_COPY[option.value] || {}) }))
   const selectedBusinessTypeLabel = ROLE_DISPLAY_COPY[businessType]?.label || BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
   const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
 
@@ -880,7 +885,6 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
     navigate(redirectTo, { replace: true })
   }
 
-  const securityLogoutMessage = new URLSearchParams(location.search).get('security') === '1'
   const orderedBusinessTypeOptions = getOrderedBusinessTypeOptions()
   const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading && !inviteDrivenSignup
   const showingAuthFields = mode === 'login' || mode === 'forgot_password' || signupStep === 2
@@ -915,13 +919,6 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
   return (
     <Arch9AccessLayout mode={mode} audience={homeSeekers ? 'Home Seekers' : ''} homeSeekers={homeSeekers}>
         <section className={`auth-card ${mode === 'signup' ? 'auth-card-signup' : 'auth-card-login'} ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
-          {mode === 'login' && securityLogoutMessage ? (
-            <div className="auth-security-notice" role="status">
-              <span><ShieldCheck size={18} /></span>
-              <p>Your session expired for security. Please sign in again.</p>
-            </div>
-          ) : null}
-
           <form id="auth-form" ref={authFormRef} className="auth-form" onSubmit={handleSubmit}>
             {mode === 'signup' ? (
               <>
@@ -1010,7 +1007,7 @@ function Auth({ onDevBypass = null, homeSeekers = false }) {
                     <div className="auth-card-head compact">
                       <h2>{getBusinessSetupCopy(selectedBusinessTypeLabel)}</h2>
                     </div>
-                    <div className="signup-position-grid">
+                    <div className={`signup-position-grid${[SIGNUP_BUSINESS_TYPES.attorney, SIGNUP_BUSINESS_TYPES.developer, SIGNUP_BUSINESS_TYPES.bondOriginator].includes(businessType) ? ' signup-position-grid-simple' : ''}`}>
                     {positionOptions.map((option) => {
                       const active = position === option.value
                       const PositionIcon = option.icon || POSITION_ICON

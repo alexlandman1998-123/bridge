@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { transactionHandoffManagedByWorker } from '../services/transactionHandoffDispatch.ts';
 import {
   renderBridgeCta,
@@ -135,7 +136,7 @@ function firstText(...values: unknown[]) {
 
 async function serviceClient() {
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = normalizeText(supabaseServiceKey());
   if (!url || !key) return null;
   const { createClient } = await import("supabase");
   return createClient(url, key, {
@@ -158,10 +159,9 @@ function jwtRole(authorization: string) {
 
 function isServiceRequest(req: Request) {
   const authorization = normalizeText(req.headers.get("authorization"));
-  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = normalizeText(supabaseServiceKey());
   return Boolean(
-    (serviceKey && authorization === `Bearer ${serviceKey}`) ||
-      jwtRole(authorization) === "service_role",
+    (serviceKey && authorization === `Bearer ${serviceKey}`),
   );
 }
 

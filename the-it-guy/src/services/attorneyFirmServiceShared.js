@@ -66,8 +66,12 @@ export function isValidWebsite(value) {
 export function isMissingTableError(error, tableName = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
+  // A missing column/function is a different deployment problem. In particular,
+  // PostgREST includes the table name and "schema cache" in column errors.
+  if (code && !['42p01', 'pgrst205'].includes(code)) return false
   const expectedTable = String(tableName || '').toLowerCase()
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  if (!code && /\b(column|function|relationship)\b/.test(message)) return false
   const referencesExpectedTable = Boolean(expectedTable && message.includes(expectedTable))
   const hasMissingSchemaLanguage =
     message.includes('does not exist') ||

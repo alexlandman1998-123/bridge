@@ -41,3 +41,22 @@ it('opens the selected type and submits it without losing the form after a faile
   expect(screen.getByRole('dialog', { name: 'Create show day' })).toBeTruthy()
   expect(screen.getByLabelText('Event title').value).toBe('')
 })
+
+
+it('submits a show day once while saving and closes only after success', async () => {
+  let finish
+  const create = vi.fn(() => new Promise(resolve => { finish = resolve }))
+  render(<DevelopmentMarketingEvents canManage onCreate={create} now={now} />)
+  fireEvent.click(screen.getByRole('button', { name: /Create show day/ }))
+  const dialog = screen.getByRole('dialog', { name: 'Create show day' })
+  fireEvent.change(within(dialog).getByLabelText('Event title'), { target: { value: 'Sunday viewing' } })
+  fireEvent.change(within(dialog).getByLabelText('Date and time'), { target: { value: '2026-11-15T10:00' } })
+  const form = within(dialog).getByLabelText('Event title').closest('form')
+  fireEvent.submit(form)
+  fireEvent.submit(form)
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(create.mock.calls[0][0]).toMatchObject({ eventType: 'show_day', title: 'Sunday viewing' })
+  expect(within(dialog).getByRole('button', { name: 'Cancel' }).disabled).toBe(true)
+  finish(true)
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})

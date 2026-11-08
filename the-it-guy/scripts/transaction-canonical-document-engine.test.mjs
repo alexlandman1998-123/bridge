@@ -232,6 +232,21 @@ try {
   assert.equal(financeVisibility.visible, true)
   assert.equal(financeVisibility.blocking, true)
 
+  const professionalDefinitions = ['bank_feedback', 'bond_instruction_to_attorneys'].map(key => ({
+    key, display_label: key, pack_key: 'buyer_finance', default_requirement_level: 'blocker',
+    default_visibility: ['agent', 'bond_originator'], default_upload_roles: ['bond_originator'],
+  }))
+  const professionalCandidates = buildProjectedTransactionRequirementCandidates({
+    transaction: { ...otpBondTransaction, current_main_stage: 'FIN', stage: 'Finance Pending' },
+    formData: { purchaser_type: 'individual', purchase_finance_type: 'bond' },
+    definitions: [...definitions, ...professionalDefinitions], rules: [], documents: [], subprocesses: [],
+  })
+  for (const key of ['bank_feedback', 'bond_instruction_to_attorneys']) {
+    const rows = professionalCandidates.candidates.filter(row => row.generated.document_definition_key === key)
+    assert(rows.length > 0, `${key} remains in the professional workflow`)
+    assert(rows.every(row => row.generated.requested_from_role === 'bond_originator'), `${key} must not be requested from the buyer`)
+  }
+
   const cashCandidates = buildProjectedTransactionRequirementCandidates({
     transaction: {
       id: 'tx-cash',
@@ -388,6 +403,24 @@ try {
   assert.equal(upserted.length, 0)
   assert.equal(removedResult.requirements.length, 0)
   assert(projection[0].superseded_at)
+
+  db.rpc = async (_name, args) => ({ error: null, data: {
+    instances: args.p_generated_instances.map((row, index) => ({ ...row, id: `canonical-${index}`, status: 'pending' })),
+  } })
+  const refreshProjection = () => resolveTransactionDocumentRequirements({
+    transaction: { ...otpBondTransaction, id: 'mixed-projection-fixture', listing: {} },
+    formData: {}, documents: [], subprocesses: [], client: db, persistenceMode: 'transaction_creation_rpc',
+  })
+  projection = []
+  await refreshProjection()
+  assert(upserted.length > 1)
+  const original = { ...upserted[0] }
+  assert.match(original.id, /^[0-9a-f-]{36}$/i, 'new projection rows need a real ID before a bulk save')
+  projection = [original]
+  await refreshProjection()
+  assert(upserted.every(row => /^[0-9a-f-]{36}$/i.test(row.id)), 'mixed existing/new rows may not contain a missing ID')
+  const retained = upserted.find(row => row.document_key === original.document_key && row.requested_from === original.requested_from && row.visible_section === original.visible_section)
+  assert.equal(retained.id, original.id, 'refresh keeps the existing row identity')
 
   console.log('transaction canonical document engine tests passed')
 } finally {

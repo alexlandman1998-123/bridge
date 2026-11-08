@@ -1,3 +1,4 @@
+import {UploadCloud} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { rewriteEmailAssets } from '../../lib/emailHtmlAssets'
 import { emailImportProblems, matchEmailImportFiles, prepareEmailImport, uploadPreparedEmail, validateEmailImportFiles } from '../../services/emailCampaignImportService'
@@ -11,7 +12,8 @@ export default function EmailCampaignImport({ organisationId, onImported }) {
   const [error, setError] = useState('')
   const [progress, setProgress] = useState(null)
   const [preview, setPreview] = useState('')
-  const version = useRef(0)
+  const version = useRef(0),fileInput=useRef(null)
+  const [dragging,setDragging]=useState(false)
   useEffect(() => () => { version.current++ }, [])
   const matches = useMemo(() => prepared ? matchEmailImportFiles(prepared, overrides) : [], [prepared, overrides])
   const problems = useMemo(() => prepared ? emailImportProblems(prepared, overrides) : [], [prepared, overrides])
@@ -72,16 +74,14 @@ export default function EmailCampaignImport({ organisationId, onImported }) {
   }
 
   return <div className="eb-import">
-    <h2>Upload email</h2>
-    <p>Choose your designer’s ZIP containing one HTML email and its images, or select the HTML and image files together. JPG, PNG, GIF and WebP are supported.</p>
-    <label className="eb-field">Email package or HTML and images
-      <input type="file" multiple accept={`.zip,.html,.htm,${IMAGE_ACCEPT}`} disabled={busy} onChange={(event) => {
-        const files = Array.from(event.target.files || [])
-        event.target.value = ''
-        if (files.length) void choose(files)
-      }} />
-    </label>
+    <h2>Upload HTML</h2>
+    <p>Upload an HTML file with its images, or a ZIP containing both. Arch9 hosts the included images and updates their links in your email. JPG, PNG, GIF and WebP are supported.</p>
+    <div className={`eb-import-upload${dragging?' is-dragging':''}`} onDragOver={event=>{event.preventDefault();if(!busy)setDragging(true)}} onDragLeave={()=>setDragging(false)} onDrop={event=>{event.preventDefault();setDragging(false);if(!busy&&event.dataTransfer.files.length)void choose(Array.from(event.dataTransfer.files))}}>
+      <UploadCloud size={28} strokeWidth={1.5}/><div><strong>Drop HTML and images, or a ZIP</strong><span>Your included images will be hosted by Arch9.</span></div><button type="button" disabled={busy} onClick={()=>fileInput.current?.click()}>Browse files</button>
+      <input ref={fileInput} type="file" hidden aria-label="Email package or HTML and images" multiple accept={`.zip,.html,.htm,${IMAGE_ACCEPT}`} disabled={busy} onChange={event=>{const files=Array.from(event.target.files||[]);event.target.value='';if(files.length)void choose(files)}}/>
+    </div>
     <small>ZIP up to 25 MB · HTML up to 750 KB · Each image up to 5 MB</small>
+    <p className="eb-import-hosting-note">Include the original image files to host them here. Images already linked to external websites keep those external URLs.</p>
     {error && <p className="eb-import-error" role="alert">{error}</p>}
     {busy && <p role="status">{progress ? `Hosting images: ${progress.completed} of ${progress.total} ready…` : prepared ? 'Preparing your email for import…' : 'Reading your email package…'}</p>}
     {prepared && <>
@@ -100,8 +100,7 @@ export default function EmailCampaignImport({ organisationId, onImported }) {
       {prepared.warnings?.length > 0 && <div className="eb-content-warnings"><strong>Inbox compatibility</strong><ul>{prepared.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
       <h3>Email preview</h3>
       {preview ? <iframe key={preview} title="Uploaded email preview" sandbox="" srcDoc={preview} /> : <p role="status">Preparing preview…</p>}
-      <p>Importing replaces the current email content after its images are hosted. You can undo the replacement. Hosted images remain available for sent emails.</p>
-      <button className="eb-primary" disabled={busy || !preview || problems.length > 0} onClick={() => void confirm()}>{busy ? 'Importing…' : 'Host images and replace email'}</button>
+      <div className="eb-import-actions"><button className="eb-primary" disabled={busy || !preview || problems.length > 0} onClick={() => void confirm()}>{busy ? 'Importing…' : 'Host images and replace email'}</button></div>
     </>}
   </div>
 }

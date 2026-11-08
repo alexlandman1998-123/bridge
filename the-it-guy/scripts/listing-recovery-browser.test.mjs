@@ -15,8 +15,9 @@ const results = []
 try {
  for (const [category, label] of categories.filter(([key]) => !process.argv[3] || process.argv[3].split(',').includes(key))) for (const kind of ['sale', 'rental'].filter(key => !process.argv[4] || key === process.argv[4])) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' })
-  await context.route('**/*', route => {
+  await context.route('**/*', async route => {
    const url = new URL(route.request().url())
+   if (url.origin === 'https://fixture.invalid' && url.pathname === '/photo.png') return route.fulfill({ response: await context.request.get(fixture.origin + '/fixture/photo.png') })
    return url.origin === fixture.origin || ['data:', 'blob:'].includes(url.protocol) ? route.continue() : route.abort()
   })
   const page = await context.newPage(); page.setDefaultTimeout(30000); page.setDefaultNavigationTimeout(180000)
@@ -165,31 +166,38 @@ try {
     const start = fixture.events.length
     const fail = value => page.request.post(fixture.origin + '/fixture/failure', { data: { value } })
     const rentalDraft = async () => {
-     await page.goto(fixture.origin + '/fixture/blank')
+     await page.goto(fixture.origin + '/agent/rentals/listings/new', { waitUntil: 'domcontentloaded' })
+     await page.getByRole('button', { name: /Step 1: Property details/ }).waitFor()
      await page.evaluate(async ({ form, actor, org }) => {
       const { buildRentalListingDraftStorageKey, resolveRentalWorkspaceScope } = await import('/src/services/rentals/rentalWorkspaceScope.js')
       const { saveListingRecoveryDraft } = await import('/src/services/listings/listingDraftRecovery.js')
-      const key = buildRentalListingDraftStorageKey(resolveRentalWorkspaceScope({ currentWorkspace: { id: org }, profile: { id: actor }, workspaceRole: 'principal' }))
+      const captureId = history.state?.listingCaptureSession?.id
+      if (!captureId) throw new Error('Rental capture session was not initialized')
+      const key = buildRentalListingDraftStorageKey(resolveRentalWorkspaceScope({ currentWorkspace: { id: org }, profile: { id: actor }, workspaceRole: 'principal' })) + ':capture:' + captureId
       localStorage.setItem(key, JSON.stringify({ activeStep: 'review', form }))
       await saveListingRecoveryDraft(key, { form, recovery: { activeStep: 'review' }, photoField: 'galleryImages' })
      }, { form: { ...source.form, galleryImages, selectedSyndicationChannels: ['property24', 'private_property', 'agency_website'] }, actor: fixture.actor, org: fixture.org })
-     await page.goto(fixture.origin + '/agent/rentals/listings/new', { waitUntil: 'domcontentloaded' })
+     await page.reload({ waitUntil: 'domcontentloaded' })
+     await page.getByRole('button', { name: /Step .*Check/ }).click()
     }
     let id
     if (kind === 'rental') await rentalDraft()
     else {
      id = randomUUID()
      const propertyType = source.form.propertyType.toLowerCase().replaceAll(' ', '_')
+     // This is an update of existing active adverts, not initial publication.
      const payload = {
       title: category.replaceAll('_', ' ') + ' result diagnostic', listingCategory: 'private_sale', listingStatus: 'active', organisationId: fixture.org, assignedAgentId: fixture.actor,
       propertyCategory: category, propertyType, propertyStructureType: 'freehold', askingPrice: 1250000,
       addressLine1: '10 Diagnostic Road', streetNumber: '10', streetName: 'Diagnostic Road', suburb: 'Sandton', city: 'Johannesburg', province: 'Gauteng', country: 'South Africa', description: source.form.description,
+      property24Status: 'published', property24Reference: '123456789', privatePropertyStatus: 'published', privatePropertyReference: 'T1234567', simulatedWebsiteStatus: 'published',
+      simulatedPortalState: { property24: { status: 'published', reference: '123456789' }, private_property: { status: 'active', reference: 'T1234567' } },
       propertyDetails: { ...source.form, propertyType, price: 1250000, galleryImages, propertyStructureType: 'freehold', selectedSyndicationChannels: ['property24', 'private_property', 'agency_website'] },
       sellerCanonicalFacts: { distribution: { selectedChannels: ['property24', 'private_property', 'agency_website'] } },
      }
      const seed = await page.request.post(fixture.origin + '/fixture/create', { data: { payload, options: { creationId: id } } })
      assert.equal((await seed.json()).error, null)
-     await page.goto(fixture.origin + `/listings/${id}/edit?step=property&scope=listing-publication`, { waitUntil: 'domcontentloaded' })
+     await page.goto(fixture.origin + `/listings/${id}/edit?step=review&scope=listing-publication`, { waitUntil: 'domcontentloaded' })
      await page.getByRole('button', { name: /Step .*Where to advertise/ }).click()
      for (const channel of ['Property24', 'Private Property', 'Agency website']) {
       const choice = page.getByRole('button', { name: channel, exact: true })
@@ -197,36 +205,43 @@ try {
      }
      await page.getByRole('button', { name: /Step .*Check/ }).click()
     }
+    const save = () => page.getByRole('button', { name: kind === 'sale' ? 'Save & update adverts' : 'Save and publish', exact: true })
+    const feedback = () => kind === 'sale' ? page.getByLabel('Private Property update', { exact: true }) : page.getByRole('article', { name: 'Listing channels', exact: true })
+    const retry = () => feedback().getByRole('button', { name: kind === 'sale' ? 'Retry Private Property' : 'Retry failed channels', exact: true })
+    const queues = offset => fixture.events.slice(offset).filter(row => row.kind === 'queue')
+    const jobsFor = async listingId => (await (await page.request.post(fixture.origin + '/fixture/jobs', { data: { id: listingId } })).json()).data
     await fail('private_property')
-    await page.getByRole('button', { name: kind === 'sale' ? 'Save and publish changes' : 'Save and publish', exact: true }).click()
-    const summary = page.getByRole('region', { name: 'Saved listing and advertising' })
-    await summary.getByRole('button', { name: 'Retry failed channels', exact: true }).waitFor()
-    const requests = fixture.events.slice(start).filter(row => row.kind === 'queue')
-    assert.equal(requests.length, 1)
-    assert.deepEqual([...requests[0].body.channels].sort(), ['agency_website', 'private_property', 'property24'])
+    await save().click()
+    await retry().waitFor()
+    // A failed channel can render while the next independent channel is still
+    // queuing. Await the save operation before asserting the completed batch.
+    await page.waitForFunction(label => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === label && !button.disabled), kind === 'sale' ? 'Save & update adverts' : 'Retry failed channels')
+    const requests = queues(start)
+    assert.deepEqual(requests.flatMap(row => row.body.channels).sort(), ['agency_website', 'private_property', 'property24'])
     id = requests[0].body.listingId
     assert.equal((await (await page.request.post(fixture.origin + '/fixture/read', { data: { id } })).json()).data.id, id)
-    assert.equal(await summary.getByText(/Check the public advert before treating it as live/).count(), 2)
-    results.push({ category, kind, check: 'verified save retains the property and exposes partial website failures without claiming accepted requests are live', passed: true })
+    assert.equal((await jobsFor(id)).filter(job => job.state === 'accepted').length, 2)
+    assert.equal(await feedback().getByText(/Local simulated provider receipt/).count(), 1)
+    await feedback().getByText(/Support reference:/).waitFor()
+    results.push({ category, kind, check: 'saved listing retains the provider reason and support reference for partial failure without claiming live acceptance', passed: true })
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await summary.getByRole('button', { name: 'Retry failed channels', exact: true }).waitFor()
-    assert.equal(await summary.getByText(/Successful channels will not be resent/).count(), 1)
-    results.push({ category, kind, check: 'partial results reload from durable receipts', passed: true })
+    if (kind === 'sale') await page.getByRole('button', { name: /Step .*Check/ }).click()
+    await retry().waitFor()
+    if (kind === 'sale') await feedback().getByText('Previous advertising request', { exact: true }).waitFor()
+    assert.equal((await jobsFor(id)).filter(job => job.state === 'accepted').length, 2)
+    results.push({ category, kind, check: 'unresolved channel failure reloads from durable receipts with its original reason', passed: true })
+    const retryStart = fixture.events.length
     await fail('')
-    await summary.getByRole('button', { name: 'Retry failed channels', exact: true }).click()
-    await summary.getByRole('button', { name: 'Retry failed channels', exact: true }).waitFor({ state: 'hidden' })
-    const retry = fixture.events.slice(start).filter(row => row.kind === 'queue').at(-1)
-    assert.equal(retry.body.listingId, id)
-    assert.deepEqual(retry.body.channels, ['private_property'])
+    await retry().click()
+    await retry().waitFor({ state: 'hidden' })
+    assert.deepEqual(queues(retryStart).flatMap(row => row.body.channels), ['private_property'])
+    assert.equal((await jobsFor(id)).filter(job => job.state === 'accepted').length, 3)
     assert.equal(fixture.events.slice(start).filter(row => row.kind === 'create').length, 1)
-    await page.reload({ waitUntil: 'domcontentloaded' })
-    await summary.getByText(/Check the public advert before treating it as live/).first().waitFor()
-    assert.equal(await summary.getByText(/Check the public advert before treating it as live/).count(), 3)
-    results.push({ category, kind, check: 'retry resends only the confirmed failed destination and keeps successful receipts and the same property', passed: true })
-    await summary.screenshot({ path: resolve(out, category + '-' + kind + '-results-desktop.png') })
+    results.push({ category, kind, check: 'retry sends only Private Property and retains both successful channels and the same saved listing', passed: true })
+    await page.screenshot({ path: resolve(out, category + '-' + kind + '-results-desktop.png') })
     await page.setViewportSize({ width: 390, height: 900 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    results.push({ category, kind, check: 'saved result and actions fit a narrow screen', passed: true })
+    results.push({ category, kind, check: 'result and actions fit a narrow screen', passed: true })
     await page.setViewportSize({ width: 1280, height: 900 })
     const lostStart = fixture.events.length
     if (kind === 'rental') await rentalDraft()
@@ -236,22 +251,24 @@ try {
      await page.getByRole('button', { name: /Step .*Check/ }).click()
     }
     await fail('queue-response')
-    await page.getByRole('button', { name: kind === 'sale' ? 'Save and publish changes' : 'Save and publish', exact: true }).click()
-    await summary.getByText(/An unconfirmed request will not be retried/).waitFor()
-    assert.equal(await summary.getByRole('button', { name: 'Retry failed channels', exact: true }).count(), 0)
+    await save().click()
+    if (kind === 'rental') await feedback().getByText(/An unconfirmed request will not be retried/).waitFor()
+    else await page.getByLabel('Property24 update', { exact: true }).getByText(/Submission could not be confirmed|Simulated lost publishing response|could not be confirmed|Not confirmed/).waitFor()
+    assert.equal(await page.getByRole('button', { name: /^(Retry Private Property|Retry failed channels)$/ }).count(), 0)
     assert.equal(await page.getByText(/Could not confirm saving to Listings/).count(), 0)
-    const lostRequest = fixture.events.slice(lostStart).find(row => row.kind === 'queue')
+    const lostRequest = queues(lostStart)[0]
     assert.ok(lostRequest)
     assert.equal(fixture.events.slice(lostStart).filter(row => row.kind === 'create').length, kind === 'rental' ? 1 : 0)
-    await summary.screenshot({ path: resolve(out, category + '-' + kind + '-unconfirmed-desktop.png') })
-    results.push({ category, kind, check: 'lost publishing response remains a saved listing with no unsafe retry or false save failure', passed: true })
-    const lostJobs = (await (await page.request.post(fixture.origin + '/fixture/jobs', { data: { id: lostRequest.body.listingId } })).json()).data
+    await page.screenshot({ path: resolve(out, category + '-' + kind + '-unconfirmed-desktop.png') })
+    results.push({ category, kind, check: 'lost queue response preserves the saved listing without unsafe retry or a false save failure', passed: true })
+    const lostJobs = await jobsFor(lostRequest.body.listingId)
     await page.request.post(fixture.origin + '/fixture/seed-jobs', { data: { id: lostRequest.body.listingId, jobs: lostJobs.map(job => ({ ...job, state: 'accepted' })) } })
-    await summary.getByRole('button', { name: 'Check status', exact: true }).click()
-    await summary.getByText(/An unconfirmed request will not be retried/).waitFor({ state: 'hidden' })
-    assert.equal(fixture.events.slice(lostStart).filter(row => row.kind === 'queue').length, 1)
-    assert.equal(await summary.getByText(/Check the public advert before treating it as live/).count(), 3)
-    results.push({ category, kind, check: 'checking the lost response finds accepted receipts without resubmission or duplication', passed: true })
+    const queueCount = queues(lostStart).length
+    await page.getByRole('button', { name: kind === 'sale' ? 'Check Property24 status' : 'Check status', exact: true }).first().click()
+    if (kind === 'rental') await feedback().getByText(/An unconfirmed request will not be retried/).waitFor({ state: 'hidden' })
+    else await page.getByLabel('Property24 update', { exact: true }).getByText(/Check the public advert before treating it as live/).waitFor()
+    assert.equal(queues(lostStart).length, queueCount)
+    results.push({ category, kind, check: 'status check discovers accepted receipts without resending or duplicating a listing', passed: true })
     assert.deepEqual(errors, [])
     continue
    }
@@ -417,6 +434,25 @@ try {
    assert.equal((await seeded.json()).error, null)
    const read = async () => (await (await page.request.post(fixture.origin + '/fixture/read', { data: { id } })).json()).data
    const before = await read()
+   if (process.argv[5] === 'edit-receipt' && kind === 'sale') {
+    const eventOffset = fixture.events.length
+    for (const state of ['accepted', 'failed', 'uncertain']) {
+     await page.request.post(fixture.origin + '/fixture/seed-jobs', { data: { id, jobs: ['agency_website', 'private_property', 'property24'].map(channel => ({ id: randomUUID(), listing_id: id, channel, state, message: 'Previous advertising request' })) } })
+     // Match the Edit Listing Publication URL, including its final review step.
+     await page.goto(fixture.origin + `/listings/${id}/edit?step=review&scope=listing-publication`, { waitUntil: 'domcontentloaded' })
+     await page.getByRole('heading', { name: 'Check your listing', exact: true }).waitFor()
+     await page.reload({ waitUntil: 'domcontentloaded' })
+     await page.getByRole('heading', { name: 'Check your listing', exact: true }).waitFor()
+     assert.equal(await page.getByRole('region', { name: 'Saved listing and advertising' }).count(), 0)
+     assert.equal(await page.getByText('Advertising results', { exact: true }).count(), 0)
+     assert.equal(await page.getByRole('button', { name: 'Check status', exact: true }).count(), 0)
+    }
+    assert.equal(fixture.events.slice(eventOffset).filter(event => event.kind === 'queue').length, 0)
+    assert.deepEqual(errors, [])
+    await page.screenshot({ path: resolve(out, category + '-edit-review-no-receipt.png'), fullPage: true })
+    results.push({ category, kind, check: 'edit review hides previous accepted, failed and uncertain advertising receipts after reload without publishing', passed: true })
+    continue
+   }
    if (process.argv[5] === 'extras' && kind === 'sale') {
     const eventOffset = fixture.events.length
     await page.goto(fixture.origin + `/listings/${id}/edit?scope=property&step=features`, { waitUntil: 'domcontentloaded' })

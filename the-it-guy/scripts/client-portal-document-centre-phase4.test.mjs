@@ -218,7 +218,7 @@ test('seller generated mandate and property disclosure expose the correct downlo
   const disclosureSaleDocument = model.saleDocuments.find((item) => item.sourceId === 'seller-declaration-disclosure')
   const signedMandate = model.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
   const generatedDisclosure = model.uploadedDocuments.find((item) => item.requirementKey === 'property_condition_disclosure')
-  const completedDisclosureRequirement = model.items.find((item) => item.sourceId === 'signed_disclosure_form')
+  const completedDisclosureRequirement = model.items.find((item) => item.sourceId === 'defects_declaration')
 
   assert.equal(Boolean(disclosureSaleDocument), true)
   assert.equal(disclosureSaleDocument.sellerCategoryKey, 'sale')

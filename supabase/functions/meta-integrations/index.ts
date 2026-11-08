@@ -1,16 +1,14 @@
-import { assertFreshCampaignFacebookContacts } from '../_shared/campaignFacebookContacts.js';
-import { withApiCredentials } from "../_shared/apiCredentials.ts";
-import { supabaseServiceKey, supabasePublishableKey } from "../_shared/apiCredentials.ts";
-import { META_ADMIN_ROLES, META_STAFF_ROLES } from '../_shared/metaIntegrationCore.js';
+import { supabaseServiceKey, supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { createClient } from 'supabase';
 import { createMetaIntegrationHandler } from './handler.js';
 import { decryptMetaToken, encryptMetaToken } from '../_shared/metaCredentials.ts';
 import { readMetaIntegrationPayload } from '../_shared/whatsappInboxMessaging.js';
+import { assertFreshCampaignFacebookContacts } from '../_shared/campaignFacebookContacts.js';
 
 const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
 const env=(name:string)=>Deno.env.get(name)?.trim()||'';
-const ADMIN=new Set(META_ADMIN_ROLES);
-const STAFF=new Set(META_STAFF_ROLES);
+const ADMIN=new Set(['owner','principal','director','admin','super_admin','developer','agency_admin']);
+const STAFF=new Set([...ADMIN,'agent','senior_agent','manager','branch_manager','broker','assistant']);
 
 Deno.serve(withApiCredentials(async req=>{
   if(req.method==='OPTIONS') return new Response('ok',{headers});
@@ -57,7 +55,7 @@ Deno.serve(withApiCredentials(async req=>{
         if(listing.error||!listing.data) return null;
         const publication=await actor.userDb.from('listing_publication_data').select('title,description,asking_price,suburb,updated_at').eq('listing_id',id).maybeSingle();
         if(publication.error) throw new Error('Saved public listing details could not be loaded.');
-        const media=await actor.userDb.from('listing_media').select('id,listing_id,media_type,file_url,storage_bucket,storage_path,sort_order,is_cover').eq('listing_id',id).eq('media_type','image').order('is_cover',{ascending:false}).order('sort_order').limit(50);
+        const media=await actor.userDb.from('listing_media').select('id,media_type,file_url,sort_order,is_cover').eq('listing_id',id).eq('media_type','image').order('is_cover',{ascending:false}).order('sort_order').limit(50);
         if(media.error) throw new Error('Listing photos could not be loaded.');
         const saved=publication.data;
         return {listing:{...listing.data,...(saved?{title:saved.title,description:saved.description,asking_price:saved.asking_price,suburb:saved.suburb}:{}),updated_at:`${listing.data.updated_at}:${saved?.updated_at||''}`},media:media.data||[]};

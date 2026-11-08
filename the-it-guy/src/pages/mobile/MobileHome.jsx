@@ -436,6 +436,12 @@ export default function MobileHome() {
     navigate(action.to)
   }
 
+  async function createHomeTask(payload) {
+    const organisationId = snapshot?.organisationId || organisation?.id || organisation?.organisationId || organisation?.organisation_id || organisation?.workspaceId || workspace.currentWorkspace?.organisationId || workspace.currentWorkspace?.organisation_id || workspace.currentWorkspace?.id || workspace.workspace?.id
+    const { createAgencyTask } = await import('../../lib/agencyCrmRepository.js')
+    return createAgencyTask(organisationId, payload, { actor: workspace.profile || {} })
+  }
+
   async function updateHomeTask(task, completed) {
     const organisationId = snapshot?.organisationId || organisation?.id || organisation?.organisationId || organisation?.organisation_id || organisation?.workspaceId || workspace.currentWorkspace?.organisationId || workspace.currentWorkspace?.organisation_id || workspace.currentWorkspace?.id || workspace.workspace?.id
     const taskId = task.taskId || String(task.id || '').replace(/^task:/, '')
@@ -460,7 +466,7 @@ export default function MobileHome() {
   if (['agent', 'principal', 'developer', 'default'].includes(snapshot?.category)) {
     return <>
       {showUnsupportedNotice && <MobileCard><h2>That page is not available on mobile yet.</h2><p>You can continue from your mobile workspace.</p></MobileCard>}
-      <AgentDashboard key={`${snapshot?.organisationId || ''}:${snapshot?.viewerId || workspace.profile?.id || workspace.profile?.userId || ''}`} snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} onUpdateTask={updateHomeTask} onContactLead={contactHomeLead} brandStyle={brandStyle} />
+      <AgentDashboard key={`${snapshot?.organisationId || ''}:${snapshot?.viewerId || workspace.profile?.id || workspace.profile?.userId || ''}`} snapshot={snapshot} onOpen={handlePriorityOpen} onRefresh={load} onCreateTask={createHomeTask} onUpdateTask={updateHomeTask} onContactLead={contactHomeLead} brandStyle={brandStyle} />
     </>
   }
 

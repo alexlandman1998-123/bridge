@@ -17,6 +17,30 @@ import {
 import { recordProperty24ListingSync } from './syncService.js'
 import { assertProperty24ProductionWriteAllowed } from './liveCutoverService.js'
 import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
+import { PROPERTY24_PHOTO_PREPARATION_VERSION, PROPERTY24_PHOTO_PAYLOAD_LIMIT } from '../services/property24PhotoPreparation.js'
+
+function finishPhotoPreparation(preview, loaded, attempted) {
+  if (!attempted) return preview
+  preview.summary.photoPreparationVersion = PROPERTY24_PHOTO_PREPARATION_VERSION
+  const incomplete = loaded.summary.failed > 0 || loaded.summary.skipped > 0 || loaded.summary.loaded !== loaded.summary.requested
+  if (incomplete) {
+    preview.technicalBlockers = preview.technicalBlockers.filter(code => code !== 'listing_image_bytes_not_loaded_for_property24_submit')
+    preview.technicalBlockers.push('listing_photo_preparation_failed')
+  }
+  if (preview.payload) {
+    preview.summary.photoPayloadBytes = Buffer.byteLength(JSON.stringify(preview.payload))
+    if (preview.summary.photoPayloadBytes > PROPERTY24_PHOTO_PAYLOAD_LIMIT) {
+      preview.technicalBlockers.push('listing_photo_submission_too_large')
+      preview.imageByteLoad.message = 'The prepared photos and listing details exceed the publishing request allowance. Contact support before publishing; no photos have been omitted.'
+    }
+  }
+  if (incomplete || preview.technicalBlockers.includes('listing_photo_submission_too_large')) {
+    preview.canSubmit = false
+    preview.payload = null
+    preview.status = 'PREVIEW_READY'
+  }
+  return preview
+}
 
 function normalizeLower(value = '') {
   return normalizeProperty24PreviewText(value).toLowerCase()
@@ -408,7 +432,7 @@ export async function buildProperty24ListingSubmitPlan({
   const destinationNumber = bundle.existingSync?.listing_number || listingNumber || ''
   const photoChange = resolveListingPhotoChange({
     media: bundle.media, existingSync: bundle.existingSync,
-    scope: { channel: 'property24', environment, agencyId: String(agencyId), maxImages, convertImagesToJpeg },
+    scope: { channel: 'property24', environment, agencyId: String(agencyId), maxImages, convertImagesToJpeg, preparationVersion: PROPERTY24_PHOTO_PREPARATION_VERSION },
     identityMatches: Boolean(destinationNumber) &&
       bundle.existingSync?.last_payload_summary?.photoListingNumber === String(destinationNumber) &&
       String(bundle.existingSync?.agency_id) === String(agencyId) && bundle.existingSync?.environment === environment,
@@ -467,14 +491,14 @@ export async function buildProperty24ListingSubmitPlan({
     },
   })
   preview.summary.photoFingerprint = photoChange.fingerprint
-  // Requirements-only previews leave bytes unloaded; only an attempted byte
-  // preparation can establish that the submission has no usable photos.
-  if (loadImageBytes && photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
+  // An explicitly empty replacement gallery is invalid, even in a metadata-only
+  // check. Unloaded bytes on a nonempty gallery are handled separately.
+  if (photosChanged && !bundle.media.some(row => String(row.media_type || row.mediaType || 'image').toLowerCase() === 'image')) {
     preview.dataBlockers.push('missing_listing_image')
     preview.canSubmit = false
     preview.canPreview = false
   }
-  return preview
+  return finishPhotoPreparation(preview, loaded, loadImageBytes)
 }
 
 export async function buildProperty24RentalListingSubmitPlan({
@@ -516,7 +540,7 @@ export async function buildProperty24RentalListingSubmitPlan({
   const destinationNumber = bundle.existingSync?.listing_number || listingNumber || ''
   const photoChange = resolveListingPhotoChange({
     media: bundle.media, existingSync: bundle.existingSync,
-    scope: { channel: 'property24', environment, agencyId: String(agencyId), maxImages, convertImagesToJpeg },
+    scope: { channel: 'property24', environment, agencyId: String(agencyId), maxImages, convertImagesToJpeg, preparationVersion: PROPERTY24_PHOTO_PREPARATION_VERSION },
     identityMatches: Boolean(destinationNumber) &&
       bundle.existingSync?.last_payload_summary?.photoListingNumber === String(destinationNumber) &&
       String(bundle.existingSync?.agency_id) === String(agencyId) && bundle.existingSync?.environment === environment,
@@ -575,12 +599,12 @@ export async function buildProperty24RentalListingSubmitPlan({
     },
   })
   preview.summary.photoFingerprint = photoChange.fingerprint
-  if (loadImageBytes && photosChanged && Array.isArray(preview.payload?.photos) && preview.payload.photos.length === 0) {
+  if (photosChanged && !bundle.media.some(row => String(row.media_type || row.mediaType || 'image').toLowerCase() === 'image')) {
     preview.dataBlockers.push('missing_listing_image')
     preview.canSubmit = false
     preview.canPreview = false
   }
-  return preview
+  return finishPhotoPreparation(preview, loaded, loadImageBytes)
 }
 
 export function createProperty24PublishReport({ config = {}, preview, apply = false } = {}) {
@@ -650,8 +674,8 @@ export async function applyProperty24ListingPublish({
       if (!receipt.accepted && isDefinitePortalRejection(error)) await updateRentalPublicationAttempt(supabase,attempt,{ state:'rejected',last_error:error.message })
       else await retainUncertainRentalPublication(supabase,attempt,error,receipt)
     }
-    nextReport.status = attempt && (receipt.accepted || !isDefinitePortalRejection(error)) ? 'UNCERTAIN' : 'FAILED'
-    nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:nextReport.status === 'UNCERTAIN' ? 'uncertain' : 'rejected',receipt })
+    nextReport.status = receipt.accepted || !isDefinitePortalRejection(error) ? 'UNCERTAIN' : 'FAILED'
+    if (attempt) nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:nextReport.status === 'UNCERTAIN' ? 'uncertain' : 'rejected',receipt })
     nextReport.safety.property24ApiCalled = true
     nextReport.error = {
       name: error.name || 'Error',
@@ -662,10 +686,10 @@ export async function applyProperty24ListingPublish({
     return nextReport
   }
 
-  if (attempt && !receipt.reference) {
+  if (!receipt.reference) {
     nextReport.status = 'UNCERTAIN'
-    nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
-    nextReport.error = { message:'Property24 returned no usable listing number. Reconcile before sending again.' }
+    if (attempt) nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
+    nextReport.error = { message:'Property24 returned no usable listing number. Check the channel status before sending again.' }
     return nextReport
   }
   const listingNumber = result.data?.listingNumber || result.data?.ListingNumber || result.data
@@ -724,7 +748,14 @@ export async function applyProperty24ListingPublish({
       nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'accepted',receipt })
     }
     } catch (error) {
-      if (!attempt) throw error
+      if (!attempt) {
+        // Keep the accepted portal receipt even if linking it locally fails.
+        // A returned reference may belong to another unit; never silently
+        // reassign that reference or leave the submission marked running.
+        nextReport.status = 'UNCERTAIN'
+        nextReport.error = { code: error.code || 'property24_receipt_save_failed', message: error.message, listingNumber }
+        return nextReport
+      }
       await retainUncertainRentalPublication(supabase,attempt,error,receipt)
       nextReport.status = 'UNCERTAIN'
       nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
@@ -732,8 +763,8 @@ export async function applyProperty24ListingPublish({
     }
   } else if (attempt) {
     nextReport.status = 'UNCERTAIN'
-    nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
-    nextReport.error = { message:'Property24 returned no usable listing number. Reconcile before sending again.' }
+    if (attempt) nextReport.submissionAttempt = publicRentalPublicationAttempt({ ...attempt,state:'uncertain',receipt })
+    nextReport.error = { message:'Property24 returned no usable listing number. Check the channel status before sending again.' }
   }
 
   return nextReport

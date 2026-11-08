@@ -4,8 +4,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import ListingChannelStatistics from '../ListingChannelStatistics'
 import { Eye } from 'lucide-react'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn() }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), website:vi.fn() }))
 vi.mock('../../../services/listings/listingOverviewPerformanceService', () => ({ getListingOverviewAnalytics: mocks.get }))
+vi.mock('../../../services/listings/linkedDevelopmentWebsiteStatistics.js',()=>({loadLinkedDevelopmentWebsiteStatistics:mocks.website}))
 const props = { organisationId: 'agency-1', listingId: 'listing-1' }
 const metric = (value, complete = true) => ({ value, available: value !== null, complete, coveredDays: complete ? 30 : 2, expectedDays: 30 })
 const source = (views, extra = {}) => ({ published: true, complete: true, metrics: { views: metric(views), alerts: metric(0) }, dataThrough: '2026-10-07', lastSyncedAt: '2026-10-08T06:15:00Z', ...extra })
@@ -17,7 +18,7 @@ const fixture = (days = 30) => ({
   website: source(9, { complete: false, metrics: { views: metric(9, false), enquiries: { value: 0, available: true, complete: true } }, lastTrackedAt: '2026-10-07T20:15:00Z', lastSyncedAt: null }),
 })
 const card = (name) => within(screen.getByRole('article', { name: `${name} statistics` }))
-beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(fixture()) })
+beforeEach(() => { vi.resetAllMocks(); mocks.get.mockResolvedValue(fixture());mocks.website.mockResolvedValue(null) })
 afterEach(cleanup)
 
 it('loads the shared default period with listing and organisation scope', async () => {
@@ -203,4 +204,15 @@ it('shows today’s website visits separately without adding them to the complet
   expect(card('Website').getByText('9')).toBeTruthy()
   expect(card('Website').getByText(/Views recorded today: 1/)).toBeTruthy()
   expect(card('Website').getByText(/shown separately from the report/)).toBeTruthy()
+})
+
+it('labels live development website activity separately and excludes it from listing total views',async()=>{
+ mocks.website.mockResolvedValue({scope:'development',developmentName:'Madison Place',published:true,metrics:{views:metric(153,false),enquiries:metric(4,false)},periodLabel:'Whole development · including today'})
+ render(<ListingChannelStatistics {...props} developmentId='development' summaryCards={[{label:'Leads',value:'1',meta:'',icon:Eye}]}/>)
+ await screen.findByText('Madison Place')
+ expect(screen.getByText('Website live')).toBeTruthy()
+ expect(screen.getByText('Development website')).toBeTruthy()
+ expect(screen.getByText('Enquiry starts')).toBeTruthy()
+ expect(screen.getByText(/1[\s,]276/)).toBeTruthy()
+ expect(mocks.website).toHaveBeenCalledWith('development',30)
 })

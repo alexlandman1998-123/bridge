@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Mail, PenLine, ArrowLeft, UserRound, Check } from 'lucide-react'
 import Button from '../ui/Button.jsx'
 import TransactionBuyerProfileFields from './TransactionBuyerProfileFields.jsx'
 import { loadTransactionBuyerCapture, saveTransactionBuyerCapture } from '../../services/transactionBuyerCaptureService.js'
+import { getOrCreateTransactionOnboarding } from '../../lib/transactionWorkspaceApi.js'
 
 export default function TransactionBuyerOnboardingPanel({ transactionId, organisationId = '', buyers = [], purchaserType = 'individual', canEdit = false, onSendLink, onUpdated }) {
+  const navigate = useNavigate()
   const [mode, setMode] = useState('choice')
   const [participantId, setParticipantId] = useState('')
   const [context, setContext] = useState(null)
@@ -65,6 +68,24 @@ export default function TransactionBuyerOnboardingPanel({ transactionId, organis
       await onUpdated?.()
     } catch (saveError) { if (current === generation.current) setError(saveError.message) }
     finally { if (current === generation.current) { inFlight.current = false; setBusy(false) } }
+  }
+  async function continueToSharedForm() {
+    if (inFlight.current || !context || dirty) return
+    const current = generation.current
+    inFlight.current = true; setBusy(true); setError(''); setMessage('')
+    try {
+      const onboarding = await getOrCreateTransactionOnboarding({
+        transactionId,
+        purchaserType: profile.purchaser_type || context.purchaserType || purchaserType,
+      })
+      if (current !== generation.current) return
+      if (!onboarding?.token) throw new Error('The shared onboarding form could not be opened. Please try again.')
+      navigate(`/client/onboarding/${encodeURIComponent(onboarding.token)}`)
+    } catch (openError) {
+      if (current === generation.current) setError(openError?.message || 'The shared onboarding form could not be opened.')
+    } finally {
+      if (current === generation.current) { inFlight.current = false; setBusy(false) }
+    }
   }
   async function showProfiles() {
     if (inFlight.current) return
@@ -143,7 +164,13 @@ export default function TransactionBuyerOnboardingPanel({ transactionId, organis
           setProfile(next)
           if (isEntity) setBuyer(previous => ({ ...previous, ...Object.fromEntries(['name', 'email', 'phone'].map(key => [key, `${entityType}_${key === 'name' ? 'name' : `contact_${key}`}`]).filter(([, field]) => next[field] !== profile[field]).map(([key, field]) => [key, next[field] || ''])) }))
         }} /> : <p className="text-sm text-textMuted">Review the recipient before sending. Saved buyer details will appear in their form.</p>}
-        <div className="flex justify-end"><Button type="submit" disabled={busy || !canEdit || !buyer.name?.trim()}>{busy ? 'Saving…' : mode === 'link' ? 'Review onboarding link' : 'Save buyer details'}</Button></div>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          {mode === 'manual' ? <p className="max-w-xl text-xs leading-5 text-textMuted">After saving, open the shared form to complete it with the buyer’s information. It still requires the buyer’s FICA declaration and consent before submission.</p> : <span />}
+          <div className="flex flex-wrap justify-end gap-2">
+            {mode === 'manual' && context ? <Button type="button" variant="secondary" disabled={busy || dirty || !canEdit} onClick={() => void continueToSharedForm()}>{busy ? 'Opening…' : 'Open shared form to submit'}</Button> : null}
+            <Button type="submit" disabled={busy || !canEdit || !buyer.name?.trim()}>{busy ? 'Saving…' : mode === 'link' ? 'Review onboarding link' : 'Save buyer details'}</Button>
+          </div>
+        </div>
       </form> : null}
       {context && review ? <div className="rounded-xl border border-borderSoft bg-surfaceAlt p-5"><p className="font-semibold text-textStrong">{context.buyer.name}</p><p className="mt-1 break-all text-sm text-textMuted">{context.buyer.email}</p><div className="mt-5 flex flex-wrap gap-2"><Button type="button" disabled={busy} onClick={() => void send()}><Mail size={15} aria-hidden="true" />{busy ? 'Sending…' : 'Send link'}</Button><Button type="button" variant="secondary" disabled={busy} onClick={() => setReview(false)}>Edit recipient</Button></div></div> : null}
     </div>}

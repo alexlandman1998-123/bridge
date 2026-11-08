@@ -184,6 +184,10 @@ const credentials = resolvePrivatePropertyRuntimeCredentials(branchConfig, {
 })
 assert.equal(credentials.username, 'PrivatePropertyUser')
 assert.equal(credentials.password, 'private-password-value')
+assert.equal(resolvePrivatePropertyRuntimeCredentials(branchConfig, {
+  PRODUKTIVE_PRIVATE_PROPERTY_USERNAME: ' fixture-user ',
+  PRODUKTIVE_PRIVATE_PROPERTY_PASSWORD: ' password with spaces ',
+}).password, ' password with spaces ', 'Opaque provider passwords must survive the runtime configuration path unchanged')
 assert.deepEqual(credentials.missingSecrets, [])
 assert.equal(credentials.redacted.usernamePresent, true)
 assert.equal(credentials.redacted.passwordPresent, true)

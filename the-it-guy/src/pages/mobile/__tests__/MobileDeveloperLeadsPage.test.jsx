@@ -74,20 +74,16 @@ it('loads the linked development in the organisation and saves a chosen unit thr
   fireEvent.change(screen.getByRole('combobox', { name: 'Preferred unit' }), { target: { value: 'unit-one' } })
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save Unit' })))
   expect(mocks.update).toHaveBeenCalledWith({ developerOrgId: 'org-one', developerLeadId: 'lead-one', preferredUnitId: 'unit-one' })
-  expect(screen.getByRole('button', { name: 'Send Buyer Onboarding' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Confirm Unit Reservation' })).toBeTruthy()
   expect(screen.queryByRole('form', { name: 'Select preferred unit' })).toBeNull()
 })
 
-it('uses the desktop onboarding send operation and opens the resulting saved context', async () => {
-  const ready = { ...lead, primaryDevelopmentId: 'dev-one', preferredUnitId: 'unit-one', leadStatus: 'qualified' }
-  mocks.read.mockResolvedValueOnce([ready]).mockResolvedValueOnce([{ ...ready, leadStatus: 'onboarding_sent', convertedTransactionId: 'tx-one' }])
-  mocks.convert.mockResolvedValue({ transactionId: 'tx-one', onboardingUrl: 'https://example.test/onboarding/one', onboardingEmail: { sent: true } })
-  setup()
-  await act(async () => {})
-  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send Buyer Onboarding' })))
-  expect(mocks.convert).toHaveBeenCalledWith(expect.objectContaining({ developerOrgId: 'org-one', lead: expect.objectContaining({ developerLeadId: 'lead-one' }), sendBuyerOnboarding: true }))
-  expect(screen.getByText('Buyer onboarding email sent.')).toBeTruthy()
-  expect(screen.getByRole('link', { name: 'Open Onboarding Context' }).getAttribute('href')).toBe('/mobile/transaction/tx-one')
+it('routes onboarding to the same canonical buyer without creating a premature transaction', async () => {
+  const ready={...lead,primaryDevelopmentId:'dev-one',preferredUnitId:'unit-one',reservationState:'reserved',leadStatus:'reserved',sourceLeadId:'buyer-one'}
+  mocks.read.mockResolvedValue([ready]);setup();await act(async()=>{})
+  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Open Buyer Onboarding'})))
+  expect(mocks.convert).not.toHaveBeenCalled()
+  expect(screen.getByText('Canonical buyer workspace')).toBeTruthy()
 })
 
 it('copies an onboarding link without requesting email delivery', async () => {
@@ -123,7 +119,7 @@ it('keeps a completed action in its original organisation when the workspace cha
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Mark Contacted' })))
   mocks.workspace = { role: 'developer', currentWorkspace: { id: 'org-two' } }
   mocks.organisation = { organisation: { id: 'org-two' }, loading: false }
-  await act(async () => view.rerender(<MemoryRouter initialEntries={['/mobile/developer/leads/lead-one']}><Routes><Route path="/mobile/developer/leads/:leadId?" element={<MobileDeveloperLeadsPage />} /></Routes></MemoryRouter>))
+  await act(async () => view.rerender(<MemoryRouter initialEntries={['/mobile/developer/leads/lead-one']}><Routes><Route path="/pipeline/leads/:workspaceId" element={<div>Canonical buyer workspace</div>} /><Route path="/mobile/developer/leads/:leadId?" element={<MobileDeveloperLeadsPage />} /></Routes></MemoryRouter>))
   expect(screen.getByRole('heading', { name: 'Other Buyer' })).toBeTruthy()
   await act(async () => finishSave({}))
   expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ developerOrgId: 'org-one' }))
@@ -132,7 +128,7 @@ it('keeps a completed action in its original organisation when the workspace cha
 })
 afterEach(cleanup)
 function setup(id = 'lead-one') {
-  return render(<MemoryRouter initialEntries={[`/mobile/developer/leads/${id}`]}><Routes><Route path="/mobile/developer/leads/:leadId?" element={<MobileDeveloperLeadsPage />} /></Routes></MemoryRouter>)
+  return render(<MemoryRouter initialEntries={[`/mobile/developer/leads/${id}`]}><Routes><Route path="/pipeline/leads/:workspaceId" element={<div>Canonical buyer workspace</div>} /><Route path="/mobile/developer/leads/:leadId?" element={<MobileDeveloperLeadsPage />} /></Routes></MemoryRouter>)
 }
 
 it('opens a saved lead directly and returns to the list without repeating its workspace read', async () => {

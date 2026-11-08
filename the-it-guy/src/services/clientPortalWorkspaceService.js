@@ -1,7 +1,6 @@
 import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
-import { documentRequirementLabel, documentRequirementTypeKey, isDocumentRequirementRequired, matchDocumentRequirementLink } from '../core/documents/documentRequirementIdentity.js'
+import { documentRequirementLabel, documentRequirementTypeKey } from '../core/documents/documentRequirementIdentity.js'
 import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
-import { isTransientBuyerPortalReadError } from '../lib/clientPortalReadRecovery.js'
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
   fetchClientPortalOriginatorFinanceByToken,
@@ -1783,8 +1782,9 @@ function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
 }
 
 function documentMatchesRequirement(document = {}, requirement = {}) {
-  const explicitMatch = matchDocumentRequirementLink(document, requirement)
-  if (explicitMatch !== null) return explicitMatch
+  const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
+  const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
+  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
@@ -1804,12 +1804,9 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
-  const matchingDocuments = (uploadedDocuments || []).filter(document => documentMatchesRequirement(document, requirement))
-  const exactLinkedDocument = matchingDocuments.find(document => matchDocumentRequirementLink(document, requirement) === true)
-  if (exactLinkedDocument) return exactLinkedDocument
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   if (requirementKey) {
-    const exactDocument = matchingDocuments.find((document) => {
+    const exactDocument = (uploadedDocuments || []).find((document) => {
       const directKeys = [
         document?.requirementKey,
         document?.requirement_key,
@@ -1822,7 +1819,7 @@ function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement 
     })
     if (exactDocument) return exactDocument
   }
-  return matchingDocuments[0] || null
+  return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
 }
 
 function toDisplayText(value = '', fallback = '') {
@@ -1933,16 +1930,13 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
         ? requirement.uploaded_document
         : null
   const uploadedDocumentId = toDisplayText(requirement?.uploadedDocumentId || requirement?.uploaded_document_id)
-  const suppliedDocument =
+  const linkedDocument =
     embeddedLinkedDocument ||
-    (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : null)
-  const linkedDocument = suppliedDocument && matchDocumentRequirementLink(suppliedDocument, requirement) !== false
-    ? suppliedDocument : findUploadedDocumentForRequirement(uploadedDocuments, requirement)
+    (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
   const uploadAllowed = requirement?.canUpload !== false && !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
   const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
-  const required = isDocumentRequirementRequired(requirement)
-
+  const required = requirement?.required !== false && requirement?.is_required !== false && requirement?.isRequired !== false
 
   return {
     id: `required_${key}`,
@@ -3285,20 +3279,7 @@ function mergeSellerPortalSharedRequirements(rows, listing = {}) {
 }
 
 export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspaceMode = 'selling') {
-  const rawRequirements = [...resolveSellerPortalRawRequirements(portalData)]
-  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
-  const persistedRequirements = Array.isArray(listing.documentRequirements) ? listing.documentRequirements
-    : Array.isArray(listing.document_requirements) ? listing.document_requirements : []
-  // Required-only profile builders can omit optional persisted rows. Retain
-  // those rows' IDs and saved state before deriving the visible portal pack.
-  for (const saved of workspaceMode === 'selling' ? persistedRequirements : []) {
-    if (isDocumentRequirementRequired(saved)) continue
-    const key = normalizeDocumentMatchKey(saved.key || saved.requirement_key)
-    if (!key) continue
-    const index = rawRequirements.findIndex(row => normalizeDocumentMatchKey(row.key || row.requirement_key) === key)
-    if (index < 0) rawRequirements.push(saved)
-    else if (!rawRequirements[index].id) rawRequirements[index] = { ...rawRequirements[index], ...saved }
-  }
+  const rawRequirements = resolveSellerPortalRawRequirements(portalData)
   const retiredRequirements = filterSellerPortalRequirements(
     rawRequirements.filter(isRetiredSellerPortalRequirement),
   )
@@ -3316,6 +3297,7 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
     }
   }
 
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
   const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
   const formData = resolveSellerPortalFormData(portalData)
   const mandatePacket =
@@ -3439,6 +3421,8 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     const linkedDocument = documentsById.get(String(requirement?.satisfied_by_document_id || '').trim()) ||
       documentsByRequirementId.get(id) || null
     const status = canonicalRequirementStatusForPortal(requirement?.status || 'required')
+    const requirementLevel = normalizeValue(requirement?.requirement_level || 'required')
+    const required = !['optional', 'recommended'].includes(requirementLevel)
     const terminal = ['approved', 'completed', 'waived', 'not_applicable'].includes(status)
     const uploadable = Array.isArray(requirement?.uploadable_by_roles)
       && requirement.uploadable_by_roles.some((candidate) =>
@@ -3447,8 +3431,6 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     const title = documentRequirementLabel(requirement, definition)
     const typeKey = documentRequirementTypeKey(requirement)
     const categoryKey = canonicalBuyerDocumentCategory(packKey)
-    const requirementLevel = requirement?.requirement_level || definition?.default_requirement_level || 'required'
-    const required = isDocumentRequirementRequired({ ...requirement, requirement_level: requirementLevel })
     return {
       id: `canonical_requirement_${id}`,
       sourceId: id,
@@ -3458,15 +3440,16 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
       canonical_requirement_instance_id: id,
       key: typeKey,
       title,
-      description: String(definition?.description || requirement?.description || (required ? 'Supporting document required for your transaction.' : 'Supporting document for your transaction.')).trim(),
+      description: String(definition?.description || requirement?.description || 'Supporting document required for your transaction.').trim(),
       group: packKey,
       category: packKey,
       buyerCategoryKey: categoryKey,
       buyerCategoryLabel: categoryKey,
       status,
-      required,
-      requirementLevel,
       requiredDocumentStatus: status,
+      requirementLevel,
+      required,
+      isRequired: required,
       waitingForTeam: Array.isArray(requirement.uploadable_by_roles) && !uploadable && !terminal && !linkedDocument,
       rejectionReason: String(requirement?.rejection_reason || '').trim(),
       linkedDocument,
@@ -3508,16 +3491,15 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     })
   const items = [...requiredDocuments, ...unmatchedItems]
   const summary = items.reduce((result, item) => {
-    if (item.required === false) return result
     const status = normalizeDocumentStatus(item.status)
     result.total += 1
     if (item.waitingForTeam) return result
     if (status === 'rejected') result.rejected += 1
-    else if (['required', 'requested'].includes(status)) result.outstanding += 1
+    else if (item.required !== false && ['required', 'requested'].includes(status)) result.outstanding += 1
     else if (status === 'uploaded') result.uploaded += 1
     else if (status === 'under_review') result.underReview += 1
     else if (['approved', 'completed'].includes(status)) result.approved += 1
-    if (['required', 'requested', 'rejected'].includes(status)) result.blocking += 1
+    if (item.required !== false && ['required', 'requested', 'rejected'].includes(status)) result.blocking += 1
     return result
   }, { total: 0, outstanding: 0, uploaded: 0, underReview: 0, approved: 0, rejected: 0, blocking: 0 })
 
@@ -4255,9 +4237,6 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
         canonicalDocumentProjection,
       }
     } catch (error) {
-      // A transient failure is still an incomplete buyer load. Let the page's
-      // bounded recovery retry it instead of stranding the document room.
-      if (isTransientBuyerPortalReadError(error)) throw error
       console.error('[document-trust-phase4] Buyer canonical projection unavailable; legacy document reads are fenced.', error)
       portalData = {
         ...portalData,

@@ -1,5 +1,4 @@
 import RentalApplicationAnswerSummary from './RentalApplicationAnswerSummary.jsx'
-
 import AddressInput from '../../../../components/location/AddressInput'
 import { isAddressFieldKey } from '../../../../components/location/addressInputModel'
 import { createElement, useRef, useState } from 'react'

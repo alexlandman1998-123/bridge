@@ -1,21 +1,16 @@
 import AddressInput from '../components/location/AddressInput'
+import '../components/onboarding/agency-workspace-onboarding.css'
+import DeveloperOnboardingForm from '../components/onboarding/DeveloperOnboardingForm'
+import BondOnboardingForm from '../components/onboarding/BondOnboardingForm'
 import {
   ArrowRight,
   Building2,
   CheckCircle2,
-  Globe2,
-  Mail,
-  MapPin,
-  Palette,
-  Phone,
-  Plus,
   ShieldCheck,
-  Trash2,
   UploadCloud,
-  Users,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
@@ -24,22 +19,24 @@ import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES, ONBOARDING_STEPS } fr
 import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { clearStoredSignupIntent } from '../lib/signupIntent'
 import { hasCommercialAccessMarker } from '../lib/commercialAccess'
-import { WORKSPACE_KINDS, WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
-  AGENCY_BUSINESS_FOCUS_OPTIONS,
-  AGENCY_INVITE_ROLE_OPTIONS,
-  AGENCY_TYPE_OPTIONS,
+  AGENCY_SIGNUP_STEPS,
+  applyAgencyBrandingUpload,
+  buildAgencySignupSubmission,
+  getAgencySignupDetails,
+  validateAgencySignupStep,
   buildDefaultAgencyOnboarding,
   createAgencyBranchDraft,
-  createAgencyInviteDraft,
-  isCommercialAgencyType,
   mergeAgencyOnboardingDraft,
   normalizeAgencyType,
 } from '../lib/agencyOnboarding'
 import {
   completeAgencyOnboarding,
   uploadOrganisationBrandingAsset,
+  uploadAccountAvatar,
 } from '../lib/settingsApi'
+import { updateUserProfile } from '../lib/profileApi'
 import { fetchAgencyOnboardingSettings } from '../lib/organisationBootstrapApi'
 import {
   createWorkspaceFromIntent,
@@ -47,44 +44,12 @@ import {
 } from '../services/workspaceService'
 import { requestOrganizationMembership, searchOrganizations } from '../services/organizationService'
 
-const AGENCY_SETUP_STEPS = [
-  { key: 'organisation', label: 'Organisation' },
-  { key: 'branches', label: 'Branches' },
-  { key: 'branding', label: 'Branding' },
-  { key: 'team', label: 'Team' },
-  { key: 'review', label: 'Review' },
+const AGENCY_LOGO_VARIANTS = [
+  { key: 'logoLight', label: 'Light logo', variant: 'light', description: 'For light backgrounds' },
+  { key: 'logoDark', label: 'Dark logo', variant: 'dark', description: 'For dark backgrounds' },
+  { key: 'logoIcon', label: 'Icon', variant: 'icon', description: 'For compact spaces' },
 ]
-const BOND_SETUP_STEPS = [
-  { key: 'type', label: 'Type' },
-  { key: 'business', label: 'Business' },
-  { key: 'owner', label: 'Owner' },
-  { key: 'team', label: 'Team' },
-  { key: 'review', label: 'Review' },
-]
-const BOND_WORKSPACE_KIND_OPTIONS = [
-  {
-    value: WORKSPACE_KINDS.personalOriginator,
-    label: 'Independent originator',
-    title: 'I operate as an individual originator',
-    description: 'Create a solo workspace with owner-led consulting and processing.',
-    defaultTeamName: 'My Pipeline',
-    ownerTitle: 'Independent Originator',
-  },
-  {
-    value: WORKSPACE_KINDS.bondCompany,
-    label: 'Originator company',
-    title: 'I represent a bond originator company',
-    description: 'Create a company workspace that can grow into branches, teams, and role-based invites.',
-    defaultTeamName: 'Main Team',
-    ownerTitle: 'Owner',
-  },
-]
-const BOND_INVITE_ROLE_OPTIONS = [
-  { value: 'consultant', label: 'Consultant' },
-  { value: 'processor', label: 'Processor' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'admin_staff', label: 'Admin Staff' },
-]
+const AGENCY_SETUP_STEPS = AGENCY_SIGNUP_STEPS
 const SETUP_DRAFT_SCHEMA_VERSION = 1
 const SETUP_DRAFT_STORAGE_PREFIX = 'bridge:post-dashboard-setup-draft'
 const RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS = new Set([
@@ -165,13 +130,6 @@ function getAgencyTypeForSignupIntent(intent = null) {
   return 'residential'
 }
 
-function getAgencySetupLabel(agencyType = '') {
-  const normalized = normalizeAgencyType(agencyType)
-  if (normalized === 'commercial') return 'commercial brokerage'
-  if (normalized === 'mixed') return 'mixed agency'
-  return 'agency'
-}
-
 function getAgencySetupTitle(agencyType = '') {
   const normalized = normalizeAgencyType(agencyType)
   if (normalized === 'commercial') return 'Set up your commercial brokerage'
@@ -179,15 +137,8 @@ function getAgencySetupTitle(agencyType = '') {
   return 'Set up your agency workspace'
 }
 
-function getAgencySetupDescription(agencyType = '') {
-  const normalized = normalizeAgencyType(agencyType)
-  if (normalized === 'commercial') {
-    return 'Create the commercial brokerage profile your brokers will enter: business details, branches, branding, permissions, and team invitations.'
-  }
-  if (normalized === 'mixed') {
-    return 'Create one operating profile for residential and commercial teams: agency details, branches, branding, permissions, and invitations.'
-  }
-  return 'Create the operating profile your agents will enter: agency details, branches, branding, permissions, and team invitations.'
+function getAgencySetupDescription() {
+  return 'Your details, agency details and optional branding.'
 }
 
 function getDefaultForm(intent, profile) {
@@ -210,228 +161,6 @@ function getDefaultForm(intent, profile) {
   }
 }
 
-function splitFullName(value = '') {
-  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
-  if (parts.length <= 1) {
-    return {
-      firstName: parts[0] || '',
-      lastName: '',
-    }
-  }
-  return {
-    firstName: parts[0],
-    lastName: parts.slice(1).join(' '),
-  }
-}
-
-function createBondInviteDraft(seed = {}) {
-  return {
-    id: seed.id || `bond-invite-${Math.random().toString(36).slice(2, 10)}`,
-    name: normalizeText(seed.name),
-    email: normalizeText(seed.email),
-    role: normalizeText(seed.role) || 'consultant',
-  }
-}
-
-function getBondDraftDefaults(intent, profile) {
-  const companyName = normalizeText(profile?.companyName)
-  const workspaceKind = normalizeText(intent?.workspace_kind) === WORKSPACE_KINDS.personalOriginator
-    ? WORKSPACE_KINDS.personalOriginator
-    : WORKSPACE_KINDS.bondCompany
-  const kindOption = BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === workspaceKind) || BOND_WORKSPACE_KIND_OPTIONS[1]
-  const personalName = normalizeText(profile?.fullName)
-  const defaultBusinessName = workspaceKind === WORKSPACE_KINDS.personalOriginator
-    ? companyName || personalName
-    : companyName
-  return {
-    businessInformation: {
-      businessName: defaultBusinessName || '',
-      legalName: defaultBusinessName || '',
-      tradingName: defaultBusinessName || '',
-      registrationNumber: '',
-      businessEmail: normalizeText(profile?.email),
-      contactNumber: normalizeText(profile?.phoneNumber),
-      website: '',
-      province: '',
-      city: '',
-      physicalAddress: '',
-      supportEmail: normalizeText(profile?.email),
-    },
-    ownerInformation: {
-      fullName: normalizeText(profile?.fullName),
-      title: kindOption.ownerTitle,
-      email: normalizeText(profile?.email),
-      phoneNumber: normalizeText(profile?.phoneNumber),
-    },
-    teamStructure: {
-      defaultTeamName: kindOption.defaultTeamName,
-      launchRoles: {
-        ownerHandlesConsulting: true,
-        ownerHandlesProcessing: true,
-      },
-      expectedMonthlyApplications: '',
-      notes: '',
-    },
-    invitations: [createBondInviteDraft()],
-    meta: {
-      workspaceKind,
-      onboardingPath: intent?.onboarding_path || 'bond_owner',
-    },
-  }
-}
-
-function mergeBondOnboardingDraft(defaultDraft, incomingDraft = {}) {
-  return {
-    ...defaultDraft,
-    ...(incomingDraft || {}),
-    businessInformation: {
-      ...defaultDraft.businessInformation,
-      ...((incomingDraft && incomingDraft.businessInformation) || {}),
-    },
-    ownerInformation: {
-      ...defaultDraft.ownerInformation,
-      ...((incomingDraft && incomingDraft.ownerInformation) || {}),
-    },
-    teamStructure: {
-      ...defaultDraft.teamStructure,
-      ...((incomingDraft && incomingDraft.teamStructure) || {}),
-      launchRoles: {
-        ...defaultDraft.teamStructure.launchRoles,
-        ...((incomingDraft && incomingDraft.teamStructure?.launchRoles) || {}),
-      },
-    },
-    invitations:
-      Array.isArray(incomingDraft?.invitations) && incomingDraft.invitations.length
-        ? incomingDraft.invitations.map((invite) => createBondInviteDraft(invite))
-        : defaultDraft.invitations,
-    meta: {
-      ...defaultDraft.meta,
-      ...((incomingDraft && incomingDraft.meta) || {}),
-    },
-  }
-}
-
-function countBondInvitesByRole(invites = [], role = '') {
-  return (Array.isArray(invites) ? invites : []).filter((invite) => normalizeText(invite.role) === role && normalizeText(invite.email)).length
-}
-
-function resolveBondStepError(stepKey, draft) {
-  const business = draft?.businessInformation || {}
-  const owner = draft?.ownerInformation || {}
-  const team = draft?.teamStructure || {}
-  const invites = Array.isArray(draft?.invitations) ? draft.invitations : []
-  const workspaceKind = normalizeText(draft?.meta?.workspaceKind) || WORKSPACE_KINDS.bondCompany
-  const isPersonalOriginator = workspaceKind === WORKSPACE_KINDS.personalOriginator
-
-  if (stepKey === 'type') {
-    if (![WORKSPACE_KINDS.personalOriginator, WORKSPACE_KINDS.bondCompany].includes(workspaceKind)) {
-      return 'Choose the originator setup type.'
-    }
-  }
-
-  if (stepKey === 'business') {
-    if (!normalizeText(business.businessName)) {
-      return isPersonalOriginator ? 'Originator name is required.' : 'Bond originator business name is required.'
-    }
-    if (!isPersonalOriginator && !normalizeText(business.legalName)) return 'Legal name is required.'
-    if (!normalizeText(business.businessEmail)) return isPersonalOriginator ? 'Contact email is required.' : 'Business email is required.'
-    if (!normalizeText(business.contactNumber)) return isPersonalOriginator ? 'Contact number is required.' : 'Business contact number is required.'
-    if (!normalizeText(business.province)) return 'Province is required.'
-    if (!normalizeText(business.city)) return 'City is required.'
-    if (!isPersonalOriginator && !normalizeText(business.physicalAddress)) return 'Physical address is required.'
-  }
-
-  if (stepKey === 'owner') {
-    if (!normalizeText(owner.fullName)) return 'Owner full name is required.'
-    if (!normalizeText(owner.email)) return 'Owner email is required.'
-    if (!normalizeText(owner.phoneNumber)) return 'Owner phone number is required.'
-  }
-
-  if (stepKey === 'team') {
-    if (!normalizeText(team.defaultTeamName)) return 'Default team name is required.'
-    if (isPersonalOriginator) return ''
-    for (const invite of invites) {
-      const hasRowData = normalizeText(invite.name || invite.email)
-      if (!hasRowData) continue
-      if (!normalizeText(invite.name)) return 'Each invited teammate needs a name.'
-      if (!normalizeText(invite.email)) return 'Each invited teammate needs an email address.'
-    }
-    if (!team.launchRoles?.ownerHandlesConsulting && countBondInvitesByRole(invites, 'consultant') === 0) {
-      return 'Add a consultant invite or confirm that the owner will handle consulting at launch.'
-    }
-    if (!team.launchRoles?.ownerHandlesProcessing && countBondInvitesByRole(invites, 'processor') === 0) {
-      return 'Add a processor invite or confirm that the owner will handle processing at launch.'
-    }
-  }
-
-  return ''
-}
-
-function buildBondWorkspaceSubmission(draft, profile) {
-  const business = draft?.businessInformation || {}
-  const owner = draft?.ownerInformation || {}
-  const team = draft?.teamStructure || {}
-  const workspaceKind = normalizeText(draft?.meta?.workspaceKind) === WORKSPACE_KINDS.personalOriginator
-    ? WORKSPACE_KINDS.personalOriginator
-    : WORKSPACE_KINDS.bondCompany
-  const isPersonalOriginator = workspaceKind === WORKSPACE_KINDS.personalOriginator
-  const ownerName = normalizeText(owner.fullName || profile?.fullName)
-  const ownerNameParts = splitFullName(ownerName)
-  const cleanedInvites = (Array.isArray(draft?.invitations) ? draft.invitations : [])
-    .map((invite) => ({
-      email: normalizeText(invite.email),
-      name: normalizeText(invite.name),
-      workspace_role: normalizeText(invite.role) || 'consultant',
-    }))
-    .filter((invite) => invite.email)
-
-  return {
-    name: normalizeText(business.businessName),
-    legalName: normalizeText(business.legalName || business.businessName),
-    tradingName: normalizeText(business.tradingName || business.businessName),
-    registrationNumber: normalizeText(business.registrationNumber),
-    businessEmail: normalizeText(business.businessEmail),
-    contactNumber: normalizeText(business.contactNumber),
-    website: normalizeText(business.website),
-    province: normalizeText(business.province),
-    city: normalizeText(business.city),
-    physicalAddress: normalizeText(business.physicalAddress),
-    mainBranchName: normalizeText(team.defaultTeamName) || 'Main Team',
-    primaryContactName: ownerName,
-    ownerFullName: ownerName,
-    ownerFirstName: ownerNameParts.firstName,
-    ownerLastName: ownerNameParts.lastName,
-    ownerEmail: normalizeText(owner.email),
-    ownerPhone: normalizeText(owner.phoneNumber),
-    firstName: ownerNameParts.firstName,
-    lastName: ownerNameParts.lastName,
-    workspaceKind,
-    branches: [{
-      name: normalizeText(team.defaultTeamName) || 'Main Team',
-      province: normalizeText(business.province),
-      city: normalizeText(business.city),
-      location: normalizeText(business.city || business.province),
-      phone: normalizeText(business.contactNumber),
-      email: normalizeText(business.businessEmail),
-    }],
-    invites: cleanedInvites,
-    settings: {
-      workspaceType: WORKSPACE_TYPES.bondOriginator,
-      workspaceKind,
-      bondOnboarding: draft,
-      bondWorkspace: {
-        operatingModel: isPersonalOriginator ? 'independent' : 'company',
-        teamName: normalizeText(team.defaultTeamName) || 'Main Team',
-        supportEmail: normalizeText(business.supportEmail || business.businessEmail),
-        ownerHandlesConsulting: Boolean(team.launchRoles?.ownerHandlesConsulting),
-        ownerHandlesProcessing: Boolean(team.launchRoles?.ownerHandlesProcessing),
-        expectedMonthlyApplications: normalizeText(team.expectedMonthlyApplications),
-        launchNotes: normalizeText(team.notes),
-      },
-    },
-  }
-}
-
 function getDashboardPath(appRole = '') {
   if (appRole === 'attorney') return '/attorney/dashboard'
   if (appRole === 'client') return '/client-access'
@@ -443,6 +172,10 @@ function getAgencyDraftDefaults(intent, profile) {
   const companyName = normalizeText(profile?.companyName)
   const signupAgencyType = getAgencyTypeForSignupIntent(intent)
   return mergeAgencyOnboardingDraft(defaultDraft, {
+    branding: {
+      ...defaultDraft.branding,
+      brandColours: { ...defaultDraft.branding.brandColours, primary: '#166b50', secondary: '#152621' },
+    },
     agencyInformation: {
       ...defaultDraft.agencyInformation,
       agencyName: companyName || defaultDraft.agencyInformation.agencyName,
@@ -553,42 +286,6 @@ function mergeClaimWorkspaceDetailsIntoDraft(draft, claimSettings, profile) {
   }, profile)
 }
 
-function resolveAgencyStepError(stepKey, draft) {
-  const agency = draft?.agencyInformation || {}
-  const principal = draft?.principalInformation || {}
-  const branches = draft?.branchStructure?.branches || []
-  const invites = draft?.invitations || []
-
-  if (stepKey === 'organisation') {
-    if (!normalizeText(agency.agencyName)) return 'Agency name is required.'
-    if (!normalizeText(agency.mainEmailAddress)) return 'Business email is required.'
-    if (!normalizeText(agency.mainOfficeNumber)) return 'Main office number is required.'
-    if (!normalizeText(agency.physicalAddress)) return 'Physical address is required.'
-    if (!normalizeText(agency.province)) return 'Province is required.'
-    if (!normalizeText(principal.principalFullName)) return 'Principal name is required.'
-    if (!normalizeText(principal.emailAddress)) return 'Principal email is required.'
-  }
-
-  if (stepKey === 'branches') {
-    if (!branches.length) return 'Add at least one branch.'
-    for (const branch of branches) {
-      if (!normalizeText(branch.branchName)) return 'Each branch needs a name.'
-      if (!normalizeText(branch.officeLocation)) return 'Each branch needs an office location.'
-    }
-  }
-
-  if (stepKey === 'team') {
-    for (const invite of invites) {
-      const hasRowData = normalizeText(invite.name || invite.email)
-      if (!hasRowData) continue
-      if (!normalizeText(invite.name)) return 'Each invite needs an agent name.'
-      if (!normalizeText(invite.email)) return 'Each invite needs an email address.'
-    }
-  }
-
-  return ''
-}
-
 function SetupStatusCard({ title, children, tone = 'info' }) {
   const toneClass =
     tone === 'warning'
@@ -652,8 +349,6 @@ export default function PostDashboardSetup() {
   const [form, setForm] = useState(() => getDefaultForm(intent, profile))
   const [agencyDraft, setAgencyDraft] = useState(() => getAgencyDraftDefaults(intent, profile))
   const [agencyStepIndex, setAgencyStepIndex] = useState(0)
-  const [bondDraft, setBondDraft] = useState(() => getBondDraftDefaults(intent, profile))
-  const [bondStepIndex, setBondStepIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -689,14 +384,9 @@ export default function PostDashboardSetup() {
     [authState.user?.id, intent, profile?.id],
   )
   const agencyCurrentStep = AGENCY_SETUP_STEPS[agencyStepIndex] || AGENCY_SETUP_STEPS[0]
-  const bondCurrentStep = BOND_SETUP_STEPS[bondStepIndex] || BOND_SETUP_STEPS[0]
   const agencySignupType = getAgencyTypeForSignupIntent(intent)
   const agencySetupType = agencyDraft?.agencyInformation?.agencyType || agencySignupType
-  const agencySetupLabel = getAgencySetupLabel(agencySetupType)
   const claimedWorkspaceName = getOrganisationName(claimWorkspaceSettings?.organisation)
-  const agencyDisplayName = canClaimExistingWorkspace
-    ? firstText(claimedWorkspaceName, agencyDraft?.agencyInformation?.agencyName, `Existing ${agencySetupLabel}`)
-    : firstText(agencyDraft?.agencyInformation?.agencyName, `New ${agencySetupLabel}`)
   const hasCommercialWorkspaceAccess = useMemo(
     () => [currentMembership, ...(activeMemberships || [])].some((membership) => hasCommercialAccessMarker(membership)),
     [activeMemberships, currentMembership],
@@ -742,7 +432,6 @@ export default function PostDashboardSetup() {
       ...previous,
     }))
     setAgencyDraft((previous) => mergeAgencyOnboardingDraft(getAgencyDraftDefaults(intent, profile), previous, profile))
-    setBondDraft((previous) => mergeBondOnboardingDraft(getBondDraftDefaults(intent, profile), previous))
   }, [intent, profile])
 
   useEffect(() => {
@@ -779,7 +468,9 @@ export default function PostDashboardSetup() {
     )
     const savedStepIndex = Number(savedDraft.agencyStepIndex)
     if (Number.isFinite(savedStepIndex)) {
-      setAgencyStepIndex(Math.max(0, Math.min(AGENCY_SETUP_STEPS.length - 1, savedStepIndex)))
+      const savedKeyIndex = AGENCY_SETUP_STEPS.findIndex((step) => step.key === savedDraft.agencyStepKey)
+      // Old drafts combined agency and owner details, followed by branches.
+      setAgencyStepIndex(savedKeyIndex >= 0 ? savedKeyIndex : [0, 1, 2, 2, 2][savedStepIndex] || 0)
     }
     if (savedDraft.savedAt) {
       setMessage(`Draft restored from ${new Date(savedDraft.savedAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}.`)
@@ -828,6 +519,7 @@ export default function PostDashboardSetup() {
         form,
         agencyDraft,
         agencyStepIndex,
+        agencyStepKey: AGENCY_SETUP_STEPS[agencyStepIndex]?.key,
       })
       setMessage(`Draft saved ${new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}.`)
     }, 800)
@@ -885,112 +577,6 @@ export default function PostDashboardSetup() {
     setForm((previous) => ({ ...previous, [field]: value }))
   }
 
-  function updateBondDraft(nextDraftOrUpdater) {
-    setBondDraft((previous) => {
-      const nextDraft = typeof nextDraftOrUpdater === 'function' ? nextDraftOrUpdater(previous) : nextDraftOrUpdater
-      return mergeBondOnboardingDraft(previous, nextDraft)
-    })
-  }
-
-  function updateBondSection(section, field, value) {
-    updateBondDraft((previous) => ({
-      ...previous,
-      [section]: {
-        ...(previous?.[section] || {}),
-        [field]: value,
-      },
-    }))
-  }
-
-  function updateBondLaunchRole(field, value) {
-    updateBondDraft((previous) => ({
-      ...previous,
-      teamStructure: {
-        ...(previous?.teamStructure || {}),
-        launchRoles: {
-          ...(previous?.teamStructure?.launchRoles || {}),
-          [field]: value,
-        },
-      },
-    }))
-  }
-
-  function updateBondWorkspaceKind(workspaceKind) {
-    const kindOption = BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === workspaceKind) || BOND_WORKSPACE_KIND_OPTIONS[1]
-    const isPersonalOriginator = workspaceKind === WORKSPACE_KINDS.personalOriginator
-    updateBondDraft((previous) => {
-      const previousKind = normalizeText(previous?.meta?.workspaceKind) || WORKSPACE_KINDS.bondCompany
-      const previousOption = BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === previousKind) || BOND_WORKSPACE_KIND_OPTIONS[1]
-      const ownerName = normalizeText(previous?.ownerInformation?.fullName || profile?.fullName)
-      const currentBusinessName = normalizeText(previous?.businessInformation?.businessName)
-      const nextBusinessName = currentBusinessName || (isPersonalOriginator ? ownerName : normalizeText(profile?.companyName))
-      const currentTeamName = normalizeText(previous?.teamStructure?.defaultTeamName)
-      const nextTeamName = !currentTeamName || currentTeamName === previousOption.defaultTeamName
-        ? kindOption.defaultTeamName
-        : currentTeamName
-      const currentOwnerTitle = normalizeText(previous?.ownerInformation?.title)
-      const nextOwnerTitle = !currentOwnerTitle || currentOwnerTitle === previousOption.ownerTitle
-        ? kindOption.ownerTitle
-        : currentOwnerTitle
-      return {
-        ...previous,
-        businessInformation: {
-          ...(previous?.businessInformation || {}),
-          businessName: nextBusinessName,
-          legalName: normalizeText(previous?.businessInformation?.legalName) || nextBusinessName,
-          tradingName: normalizeText(previous?.businessInformation?.tradingName) || nextBusinessName,
-        },
-        ownerInformation: {
-          ...(previous?.ownerInformation || {}),
-          title: nextOwnerTitle,
-        },
-        teamStructure: {
-          ...(previous?.teamStructure || {}),
-          defaultTeamName: nextTeamName,
-          launchRoles: {
-            ...(previous?.teamStructure?.launchRoles || {}),
-            ownerHandlesConsulting: isPersonalOriginator ? true : previous?.teamStructure?.launchRoles?.ownerHandlesConsulting ?? true,
-            ownerHandlesProcessing: isPersonalOriginator ? true : previous?.teamStructure?.launchRoles?.ownerHandlesProcessing ?? true,
-          },
-        },
-        meta: {
-          ...(previous?.meta || {}),
-          workspaceKind,
-          operatingModel: isPersonalOriginator ? 'independent' : 'company',
-        },
-      }
-    })
-  }
-
-  function updateBondInvite(inviteId, patch) {
-    updateBondDraft((previous) => ({
-      ...previous,
-      invitations: (previous?.invitations || []).map((invite) =>
-        invite.id === inviteId ? { ...invite, ...patch } : invite,
-      ),
-    }))
-  }
-
-  function addBondInvite() {
-    updateBondDraft((previous) => ({
-      ...previous,
-      invitations: [
-        ...(previous?.invitations || []),
-        createBondInviteDraft(),
-      ],
-    }))
-  }
-
-  function removeBondInvite(inviteId) {
-    updateBondDraft((previous) => {
-      const nextRows = (previous?.invitations || []).filter((invite) => invite.id !== inviteId)
-      return {
-        ...previous,
-        invitations: nextRows.length ? nextRows : [createBondInviteDraft()],
-      }
-    })
-  }
-
   function updateAgencyDraft(nextDraftOrUpdater) {
     setAgencyDraft((previous) => {
       const nextDraft = typeof nextDraftOrUpdater === 'function' ? nextDraftOrUpdater(previous) : nextDraftOrUpdater
@@ -1021,71 +607,36 @@ export default function PostDashboardSetup() {
     }))
   }
 
-  function updateBranch(branchId, patch) {
-    updateAgencyDraft((previous) => ({
-      ...previous,
-      branchStructure: {
-        ...(previous?.branchStructure || {}),
-        branches: (previous?.branchStructure?.branches || []).map((branch) =>
-          branch.id === branchId ? { ...branch, ...patch } : branch,
-        ),
-      },
-    }))
-  }
-
-  function addBranch() {
-    updateAgencyDraft((previous) => ({
-      ...previous,
-      branchStructure: {
-        ...(previous?.branchStructure || {}),
-        branches: [
-          ...(previous?.branchStructure?.branches || []),
-          createAgencyBranchDraft({ branchName: `Branch ${(previous?.branchStructure?.branches || []).length + 1}` }),
-        ],
-      },
-    }))
-  }
-
-  function removeBranch(branchId) {
+  function updatePersonalDetails(field, value) {
     updateAgencyDraft((previous) => {
-      const nextBranches = (previous?.branchStructure?.branches || []).filter((branch) => branch.id !== branchId)
+      const details = { ...getAgencySignupDetails(previous, profile), [field]: value }
       return {
         ...previous,
-        branchStructure: {
-          ...(previous?.branchStructure || {}),
-          branches: nextBranches.length ? nextBranches : [createAgencyBranchDraft()],
+        principalInformation: {
+          ...previous.principalInformation,
+          ...details,
+          principalFullName: [details.firstName, details.lastName].filter(Boolean).join(' '),
         },
       }
     })
   }
 
-  function updateInvite(inviteId, patch) {
-    updateAgencyDraft((previous) => ({
-      ...previous,
-      invitations: (previous?.invitations || []).map((invite) =>
-        invite.id === inviteId ? { ...invite, ...patch } : invite,
-      ),
-    }))
-  }
-
-  function addInvite() {
-    updateAgencyDraft((previous) => ({
-      ...previous,
-      invitations: [
-        ...(previous?.invitations || []),
-        createAgencyInviteDraft({ branchId: previous?.branchStructure?.branches?.[0]?.id || '' }),
-      ],
-    }))
-  }
-
-  function removeInvite(inviteId) {
-    updateAgencyDraft((previous) => {
-      const nextRows = (previous?.invitations || []).filter((invite) => invite.id !== inviteId)
-      return {
-        ...previous,
-        invitations: nextRows.length ? nextRows : [createAgencyInviteDraft()],
-      }
-    })
+  async function handleProfilePhoto(file) {
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError('Choose a JPG, PNG or WebP image smaller than 5 MB.')
+      return
+    }
+    try {
+      setUploadingLogoTarget('profilePhoto')
+      setError('')
+      const upload = await uploadAccountAvatar({ file })
+      updatePersonalDetails('avatarUrl', upload.resolvedUrl || upload.publicUrl)
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Your photo could not be uploaded. Try again or continue without it.')
+    } finally {
+      setUploadingLogoTarget('')
+    }
   }
 
   async function handleLogoUpload(file, targetKey) {
@@ -1096,19 +647,13 @@ export default function PostDashboardSetup() {
       setMessage('')
       const upload = await uploadOrganisationBrandingAsset({
         file,
-        variant: targetKey === 'logoDark' ? 'dark' : 'light',
+        variant: AGENCY_LOGO_VARIANTS.find((asset) => asset.key === targetKey)?.variant || 'light',
       })
       updateAgencyDraft((previous) => ({
         ...previous,
-        branding: {
-          ...(previous?.branding || {}),
-          [targetKey]: upload.resolvedUrl || upload.publicUrl || previous?.branding?.[targetKey] || '',
-          [`${targetKey}Name`]: upload.fileName || file.name,
-          [`${targetKey}Bucket`]: upload.bucket || previous?.branding?.[`${targetKey}Bucket`] || '',
-          [`${targetKey}Path`]: upload.path || previous?.branding?.[`${targetKey}Path`] || '',
-        },
+        branding: applyAgencyBrandingUpload(previous?.branding, targetKey, upload, file.name),
       }))
-      setMessage(`${targetKey === 'logoDark' ? 'Dark' : 'Light'} logo uploaded.`)
+      setMessage(`${AGENCY_LOGO_VARIANTS.find((asset) => asset.key === targetKey)?.label || 'Logo'} uploaded.`)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the selected logo.')
     } finally {
@@ -1117,8 +662,9 @@ export default function PostDashboardSetup() {
   }
 
   async function completeAgencyPrincipalSetup() {
+    if (saving || uploadingLogoTarget) return
     const allStepError = AGENCY_SETUP_STEPS
-      .map((step) => resolveAgencyStepError(step.key, agencyDraft))
+      .map((step) => validateAgencySignupStep(step.key, agencyDraft))
       .find(Boolean)
     if (allStepError) {
       setError(allStepError)
@@ -1129,20 +675,22 @@ export default function PostDashboardSetup() {
       setSaving(true)
       setError('')
       setMessage('')
-      const result = await completeAgencyOnboarding(agencyDraft)
+      const verifiedEmail = authState.user?.email || profile?.email || principal.emailAddress
+      const submission = buildAgencySignupSubmission(agencyDraft, profile, verifiedEmail)
+      await updateUserProfile({
+        userId: authState.user?.id,
+        firstName: submission.principalInformation.firstName,
+        lastName: submission.principalInformation.lastName,
+        avatarUrl: submission.principalInformation.avatarUrl,
+      })
+      const result = await completeAgencyOnboarding(submission)
+      window.clearTimeout(autosaveTimerRef.current)
       clearSetupDraft(setupDraftStorageKey)
       refreshAuthState?.()
       const organisationName = result.organisation?.displayName || result.organisation?.name || agencyDraft.agencyInformation.agencyName
-      const resumedCopy = result.completion?.resumed_duplicate_workspace ? ' Existing setup resumed and repaired.' : ''
       const completedAgencyType = normalizeAgencyType(result.onboarding?.agencyInformation?.agencyType || agencyDraft.agencyInformation?.agencyType)
-      const targetPath = result.recruitmentJoining?.length ? '/agency/recruitment' : completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'
-      const inviteWarnings = result.inviteEmailDelivery?.warnings || []
-      const inviteCopy = inviteWarnings.length
-        ? ` ${inviteWarnings[0]}`
-        : result.inviteEmailDelivery?.sent?.length
-          ? ` ${result.inviteEmailDelivery.sent.length} invite email${result.inviteEmailDelivery.sent.length === 1 ? '' : 's'} sent.`
-          : ''
-      setMessage(`${organisationName} is ready.${resumedCopy}${inviteCopy}${result.recruitmentJoining?.length ? ' Joining enquiries saved. Existing matches need principal review. Opening Recruitment...' : ` Opening your ${completedAgencyType === 'commercial' ? 'Commercial workspace' : 'dashboard'}...`}`)
+      const targetPath = completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'
+      setMessage(`${organisationName} is ready. Opening your workspace…`)
       window.setTimeout(() => {
         navigate(targetPath, { replace: true })
       }, 500)
@@ -1155,7 +703,8 @@ export default function PostDashboardSetup() {
 
   function handleAgencyStepSubmit(event) {
     event.preventDefault()
-    const stepError = resolveAgencyStepError(agencyCurrentStep.key, agencyDraft)
+    if (saving || uploadingLogoTarget) return
+    const stepError = validateAgencySignupStep(agencyCurrentStep.key, agencyDraft)
     if (stepError) {
       setError(stepError)
       return
@@ -1167,49 +716,6 @@ export default function PostDashboardSetup() {
       return
     }
     void completeAgencyPrincipalSetup()
-  }
-
-  async function completeBondOwnerSetup() {
-    const allStepError = BOND_SETUP_STEPS
-      .map((step) => resolveBondStepError(step.key, bondDraft))
-      .find(Boolean)
-    if (allStepError) {
-      setError(allStepError)
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-      setMessage('')
-      const submission = buildBondWorkspaceSubmission(bondDraft, profile)
-      const result = await createWorkspaceFromIntent(intent, authState.user, submission)
-      refreshAuthState?.()
-      setMessage(`${result.workspace.name} is ready. Opening your dashboard...`)
-      window.setTimeout(() => {
-        navigate(getDashboardPath(intent?.app_role || baseRole), { replace: true })
-      }, 500)
-    } catch (setupError) {
-      setError(setupError?.message || 'Bond originator setup failed.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function handleBondStepSubmit(event) {
-    event.preventDefault()
-    const stepError = resolveBondStepError(bondCurrentStep.key, bondDraft)
-    if (stepError) {
-      setError(stepError)
-      return
-    }
-
-    setError('')
-    if (bondStepIndex < BOND_SETUP_STEPS.length - 1) {
-      setBondStepIndex((previous) => Math.min(previous + 1, BOND_SETUP_STEPS.length - 1))
-      return
-    }
-    void completeBondOwnerSetup()
   }
 
   async function handleCreateWorkspace(event) {
@@ -1339,730 +845,143 @@ export default function PostDashboardSetup() {
   const hasPendingOnboardingState = onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
   const showPendingApprovalNotice = !canAcceptInvite && (hasPendingMembership || hasPendingOnboardingState || request)
   const inviteToken = normalizeText(form.inviteToken)
-  const branches = agencyDraft?.branchStructure?.branches || []
-  const invites = agencyDraft?.invitations || []
   const agency = agencyDraft?.agencyInformation || {}
   const principal = agencyDraft?.principalInformation || {}
   const branding = agencyDraft?.branding || {}
-  const bondBusiness = bondDraft?.businessInformation || {}
-  const bondOwner = bondDraft?.ownerInformation || {}
-  const bondTeam = bondDraft?.teamStructure || {}
-  const bondInvites = Array.isArray(bondDraft?.invitations) ? bondDraft.invitations : []
-  const bondWorkspaceKind = normalizeText(bondDraft?.meta?.workspaceKind) || WORKSPACE_KINDS.bondCompany
-  const isPersonalBondOriginator = bondWorkspaceKind === WORKSPACE_KINDS.personalOriginator
-  const bondWorkspaceKindLabel =
-    BOND_WORKSPACE_KIND_OPTIONS.find((option) => option.value === bondWorkspaceKind)?.label || 'Originator company'
-  const inviteCount = invites.filter((invite) => normalizeText(invite.name || invite.email)).length
-  const currentStepReady = resolveAgencyStepError(agencyCurrentStep.key, agencyDraft) ? 0 : 1
-  const completedStepCount = Math.min(AGENCY_SETUP_STEPS.length, agencyStepIndex + currentStepReady)
-  const bondInviteCount = bondInvites.filter((invite) => normalizeText(invite.name || invite.email)).length
-  const bondCurrentStepReady = resolveBondStepError(bondCurrentStep.key, bondDraft) ? 0 : 1
-  const bondCompletedStepCount = Math.min(BOND_SETUP_STEPS.length, bondStepIndex + bondCurrentStepReady)
-  const developerSetupItems = [
-    {
-      label: 'Company identity',
-      complete: Boolean(normalizeText(form.name) && normalizeText(form.legalName)),
-    },
-    {
-      label: 'Contact route',
-      complete: Boolean(normalizeText(form.businessEmail) && normalizeText(form.contactNumber)),
-    },
-    {
-      label: 'Operating footprint',
-      complete: Boolean(normalizeText(form.province) || normalizeText(form.operatingArea)),
-    },
-    {
-      label: 'Launch workspace',
-      complete: Boolean(normalizeText(form.name) && normalizeText(form.businessEmail) && normalizeText(form.contactNumber)),
-    },
-  ]
-  const developerCompletedSectionCount = developerSetupItems.filter((item) => item.complete).length
-
-  function renderBondStep() {
-    if (bondCurrentStep.key === 'type') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Workspace type"
-            title="Choose your originator setup"
-            copy="This controls the workspace kind Arch9 creates and the defaults used for teams, scope, and owner coverage."
-            icon={Building2}
-          />
-          <div className="agency-setup-list">
-            {BOND_WORKSPACE_KIND_OPTIONS.map((option) => {
-              const isSelected = bondWorkspaceKind === option.value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`agency-setup-row-card ${isSelected ? 'is-selected' : ''}`}
-                  onClick={() => updateBondWorkspaceKind(option.value)}
-                  aria-pressed={isSelected}
-                >
-                  <div className="agency-setup-row-head">
-                    <strong>{option.title}</strong>
-                    {isSelected ? <CheckCircle2 size={17} /> : null}
-                  </div>
-                  <p className="text-left text-sm leading-6 text-[#5f748b]">{option.description}</p>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )
-    }
-
-    if (bondCurrentStep.key === 'business') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Foundation"
-            title={isPersonalBondOriginator ? 'Originator profile' : 'Business profile'}
-            copy={isPersonalBondOriginator
-              ? 'This becomes your solo originator identity, support contact, and reporting home.'
-              : 'This becomes the finance business identity, support contact, and default reporting home for the workspace.'}
-            icon={Building2}
-          />
-          <div className="setup-field-grid">
-            <SetupField label={isPersonalBondOriginator ? 'Originator display name' : 'Business name'}>
-              <input className="setup-input" value={bondBusiness.businessName || ''} onChange={(event) => updateBondSection('businessInformation', 'businessName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Legal name" hint={isPersonalBondOriginator ? 'Optional for independent originators.' : ''}>
-              <input className="setup-input" value={bondBusiness.legalName || ''} onChange={(event) => updateBondSection('businessInformation', 'legalName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Trading name">
-              <input className="setup-input" value={bondBusiness.tradingName || ''} onChange={(event) => updateBondSection('businessInformation', 'tradingName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Registration number" hint="Optional, but useful for duplicate protection and legal records.">
-              <input className="setup-input" value={bondBusiness.registrationNumber || ''} onChange={(event) => updateBondSection('businessInformation', 'registrationNumber', event.target.value)} />
-            </SetupField>
-            <SetupField label={isPersonalBondOriginator ? 'Contact email' : 'Business email'}>
-              <input className="setup-input" type="email" value={bondBusiness.businessEmail || ''} onChange={(event) => updateBondSection('businessInformation', 'businessEmail', event.target.value)} />
-            </SetupField>
-            <SetupField label="Contact number">
-              <input className="setup-input" value={bondBusiness.contactNumber || ''} onChange={(event) => updateBondSection('businessInformation', 'contactNumber', event.target.value)} />
-            </SetupField>
-            <SetupField label="Support email">
-              <input className="setup-input" type="email" value={bondBusiness.supportEmail || ''} onChange={(event) => updateBondSection('businessInformation', 'supportEmail', event.target.value)} />
-            </SetupField>
-            <SetupField label="Website">
-              <input className="setup-input" value={bondBusiness.website || ''} onChange={(event) => updateBondSection('businessInformation', 'website', event.target.value)} placeholder="https://" />
-            </SetupField>
-            <SetupField label="Province">
-              <input className="setup-input" value={bondBusiness.province || ''} onChange={(event) => updateBondSection('businessInformation', 'province', event.target.value)} />
-            </SetupField>
-            <SetupField label="City">
-              <input className="setup-input" value={bondBusiness.city || ''} onChange={(event) => updateBondSection('businessInformation', 'city', event.target.value)} />
-            </SetupField>
-            <SetupField label="Physical address" hint={isPersonalBondOriginator ? 'Optional for independent originators.' : ''}>
-              <AddressInput className="setup-input setup-textarea" value={bondBusiness.physicalAddress || ''} onChange={(event) => updateBondSection('businessInformation', 'physicalAddress', event.target.value)} />
-            </SetupField>
-          </div>
-        </div>
-      )
-    }
-
-    if (bondCurrentStep.key === 'owner') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Account owner"
-            title="Launch owner details"
-            copy="The owner receives HQ-level workspace access and becomes the first accountable contact for invites, operations, and recovery."
-            icon={ShieldCheck}
-          />
-          <div className="setup-field-grid">
-            <SetupField label="Full name">
-              <input className="setup-input" value={bondOwner.fullName || ''} onChange={(event) => updateBondSection('ownerInformation', 'fullName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Title / position">
-              <input className="setup-input" value={bondOwner.title || ''} onChange={(event) => updateBondSection('ownerInformation', 'title', event.target.value)} />
-            </SetupField>
-            <SetupField label="Email">
-              <input className="setup-input" type="email" value={bondOwner.email || ''} onChange={(event) => updateBondSection('ownerInformation', 'email', event.target.value)} />
-            </SetupField>
-            <SetupField label="Phone number">
-              <input className="setup-input" value={bondOwner.phoneNumber || ''} onChange={(event) => updateBondSection('ownerInformation', 'phoneNumber', event.target.value)} />
-            </SetupField>
-          </div>
-        </div>
-      )
-    }
-
-    if (bondCurrentStep.key === 'team') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Operating setup"
-            title={isPersonalBondOriginator ? 'Pipeline and coverage' : 'Default team and launch roles'}
-            copy={isPersonalBondOriginator
-              ? 'Arch9 creates a personal pipeline and gives the owner full coverage at launch.'
-              : 'Arch9 creates one finance team immediately, then uses these launch choices to avoid leaving the workspace without coverage.'}
-            icon={Users}
-          />
-          <div className="setup-field-grid">
-            <SetupField label="Default team name">
-              <input className="setup-input" value={bondTeam.defaultTeamName || ''} onChange={(event) => updateBondSection('teamStructure', 'defaultTeamName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Expected monthly applications" hint="Optional planning signal for future dashboards and staffing.">
-              <input className="setup-input" value={bondTeam.expectedMonthlyApplications || ''} onChange={(event) => updateBondSection('teamStructure', 'expectedMonthlyApplications', event.target.value)} />
-            </SetupField>
-            <label className="setup-field">
-              <span>Owner covers consulting at launch</span>
-              <button
-                type="button"
-                className="setup-secondary-button"
-                onClick={() => updateBondLaunchRole('ownerHandlesConsulting', !bondTeam.launchRoles?.ownerHandlesConsulting)}
-              >
-                {bondTeam.launchRoles?.ownerHandlesConsulting ? 'Yes, owner covers consulting' : 'No, invite a consultant'}
-              </button>
-            </label>
-            <label className="setup-field">
-              <span>Owner covers processing at launch</span>
-              <button
-                type="button"
-                className="setup-secondary-button"
-                onClick={() => updateBondLaunchRole('ownerHandlesProcessing', !bondTeam.launchRoles?.ownerHandlesProcessing)}
-              >
-                {bondTeam.launchRoles?.ownerHandlesProcessing ? 'Yes, owner covers processing' : 'No, invite a processor'}
-              </button>
-            </label>
-            <SetupField label="Launch notes" hint="Optional handoff notes for the first finance team.">
-              <textarea className="setup-input setup-textarea" value={bondTeam.notes || ''} onChange={(event) => updateBondSection('teamStructure', 'notes', event.target.value)} />
-            </SetupField>
-          </div>
-
-          {!isPersonalBondOriginator ? (
-            <>
-              <div className="agency-setup-divider" />
-              <SetupSectionHeader
-                eyebrow="Invites"
-                title="Invite the first operating team"
-                copy="Add consultants, processors, or admin staff who should enter the new workspace immediately after creation."
-                icon={Mail}
-              />
-              <div className="agency-setup-list">
-                {bondInvites.map((invite, index) => (
-                  <section key={invite.id} className="agency-setup-row-card">
-                    <div className="agency-setup-row-head">
-                      <strong>{normalizeText(invite.name) || `Teammate ${index + 1}`}</strong>
-                      <button type="button" className="setup-icon-button" onClick={() => removeBondInvite(invite.id)} disabled={bondInvites.length <= 1} aria-label="Remove invite">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    <div className="setup-field-grid">
-                      <SetupField label="Name">
-                        <input className="setup-input" value={invite.name || ''} onChange={(event) => updateBondInvite(invite.id, { name: event.target.value })} />
-                      </SetupField>
-                      <SetupField label="Email">
-                        <input className="setup-input" type="email" value={invite.email || ''} onChange={(event) => updateBondInvite(invite.id, { email: event.target.value })} />
-                      </SetupField>
-                      <SetupField label="Role">
-                        <select className="setup-input" value={invite.role || 'consultant'} onChange={(event) => updateBondInvite(invite.id, { role: event.target.value })}>
-                          {BOND_INVITE_ROLE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </SetupField>
-                    </div>
-                  </section>
-                ))}
-              </div>
-              <button type="button" className="setup-secondary-button" onClick={addBondInvite}>
-                <Plus size={16} />
-                Add teammate invite
-              </button>
-            </>
-          ) : null}
-        </div>
-      )
-    }
-
-    return (
-      <div className="agency-setup-card">
-        <SetupSectionHeader
-          eyebrow="Final check"
-          title={isPersonalBondOriginator ? 'Create the independent originator workspace' : 'Create the bond company workspace'}
-          copy={isPersonalBondOriginator
-            ? 'Arch9 will create a solo originator workspace, activate the owner membership, and create the personal pipeline.'
-            : 'Arch9 will create the company workspace, activate the owner membership, create the default team, and queue the launch invites.'}
-          icon={CheckCircle2}
-        />
-        <div className="agency-review-grid">
-          <div>
-            <Building2 size={18} />
-            <span>{isPersonalBondOriginator ? 'Originator' : 'Business'}</span>
-            <strong>{bondBusiness.businessName || 'Not set'}</strong>
-            <small>{bondWorkspaceKindLabel}</small>
-          </div>
-          <div>
-            <ShieldCheck size={18} />
-            <span>Owner</span>
-            <strong>{bondOwner.fullName || 'Not set'}</strong>
-            <small>{bondOwner.email || 'Owner email missing'}</small>
-          </div>
-          <div>
-            <Users size={18} />
-            <span>{isPersonalBondOriginator ? 'Pipeline' : 'Team'}</span>
-            <strong>{bondTeam.defaultTeamName || 'Main Team'}</strong>
-            <small>{isPersonalBondOriginator ? 'Owner covers launch roles' : `${bondInviteCount} ${bondInviteCount === 1 ? 'invite' : 'invites'} ready`}</small>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
+  const personalDetails = getAgencySignupDetails(agencyDraft, profile)
+  const verifiedEmail = authState.user?.email || profile?.email || principal.emailAddress || ''
+  const previewColour = /^#[0-9a-f]{6}$/i.test(branding.brandColours?.primary || '') ? branding.brandColours.primary : '#166b50'
   function renderAgencyStep() {
+    if (agencyCurrentStep.key === 'personal') {
+      return (
+        <div className="agency-setup-card">
+          <SetupSectionHeader title="Your details" />
+          <div className="agency-signup-photo">
+            <div className="agency-signup-avatar">
+              {personalDetails.avatarUrl
+                ? <img src={personalDetails.avatarUrl} alt="Your profile" />
+                : <span aria-hidden="true">{[personalDetails.firstName, personalDetails.lastName].map((part) => part?.[0] || '').join('') || 'You'}</span>}
+            </div>
+            <div>
+              <label className="setup-secondary-button agency-signup-upload">
+                {uploadingLogoTarget === 'profilePhoto' ? 'Uploading…' : 'Add profile photo'}
+                <input type="file" aria-label="Profile photo (optional)" accept="image/jpeg,image/png,image/webp" disabled={saving || Boolean(uploadingLogoTarget)} onChange={(event) => { void handleProfilePhoto(event.target.files?.[0]); event.target.value = '' }} />
+              </label>
+              <p>Optional · JPG, PNG or WebP, up to 5 MB</p>
+            </div>
+          </div>
+          <div className="setup-field-grid">
+            <SetupField label="First name">
+              <input className="setup-input" autoComplete="given-name" required value={personalDetails.firstName} onChange={(event) => updatePersonalDetails('firstName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Surname">
+              <input className="setup-input" autoComplete="family-name" required value={personalDetails.lastName} onChange={(event) => updatePersonalDetails('lastName', event.target.value)} />
+            </SetupField>
+            <SetupField label="Email" hint="Already verified">
+              <input className="setup-input" type="email" autoComplete="email" readOnly value={verifiedEmail} />
+            </SetupField>
+            <SetupField label="Your FFC number (optional)">
+              <input className="setup-input" value={principal.ppraNumber || ''} onChange={(event) => updateAgencySection('principalInformation', 'ppraNumber', event.target.value)} />
+            </SetupField>
+          </div>
+        </div>
+      )
+    }
+
     if (agencyCurrentStep.key === 'organisation') {
       return (
         <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Foundation"
-            title={isCommercialAgencyType(agency.agencyType) ? `${agencySetupLabel[0].toUpperCase()}${agencySetupLabel.slice(1)} profile` : 'Agency profile'}
-            copy={canClaimExistingWorkspace
-              ? `Confirm the saved business details for ${agencyDisplayName}.`
-              : 'This becomes the legal and operational identity for the workspace.'}
-            icon={Building2}
-          />
+          <SetupSectionHeader title="Agency details" />
           <div className="setup-field-grid">
-            <SetupField label={canClaimExistingWorkspace ? 'Workspace name' : 'Agency name'}>
-              <input className="setup-input" value={agency.agencyName || ''} onChange={(event) => updateAgencySection('agencyInformation', 'agencyName', event.target.value)} />
+            <SetupField label="Agency name">
+              <input className="setup-input" autoComplete="organization" required value={agency.agencyName || ''} onChange={(event) => updateAgencySection('agencyInformation', 'agencyName', event.target.value)} />
             </SetupField>
-            <SetupField label="Trading name">
-              <input className="setup-input" value={agency.tradingName || ''} onChange={(event) => updateAgencySection('agencyInformation', 'tradingName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Agency type">
-              <select className="setup-input" value={agency.agencyType || 'residential'} onChange={(event) => updateAgencySection('agencyInformation', 'agencyType', event.target.value)}>
-                {AGENCY_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </SetupField>
-            <SetupField label="Business focus">
-              <select className="setup-input" value={agency.businessFocus || 'sales'} onChange={(event) => updateAgencySection('agencyInformation', 'businessFocus', event.target.value)}>
-                {AGENCY_BUSINESS_FOCUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </SetupField>
-            <SetupField label="Registration number">
+            <SetupField label="Company registration number (optional)">
               <input className="setup-input" value={agency.companyRegistrationNumber || ''} onChange={(event) => updateAgencySection('agencyInformation', 'companyRegistrationNumber', event.target.value)} />
             </SetupField>
-            <SetupField label="PPRA / FFC number">
+            <SetupField label="Agency FFC number (optional)">
               <input className="setup-input" value={agency.eaabPpraNumber || ''} onChange={(event) => updateAgencySection('agencyInformation', 'eaabPpraNumber', event.target.value)} />
             </SetupField>
-            <SetupField label="Business email">
-              <input className="setup-input" type="email" value={agency.mainEmailAddress || ''} onChange={(event) => updateAgencySection('agencyInformation', 'mainEmailAddress', event.target.value)} />
-            </SetupField>
-            <SetupField label="Office number">
-              <input className="setup-input" value={agency.mainOfficeNumber || ''} onChange={(event) => updateAgencySection('agencyInformation', 'mainOfficeNumber', event.target.value)} />
-            </SetupField>
-            <SetupField label="Website">
-              <input className="setup-input" value={agency.website || ''} onChange={(event) => updateAgencySection('agencyInformation', 'website', event.target.value)} placeholder="https://" />
-            </SetupField>
-            <SetupField label="Province">
-              <input className="setup-input" value={agency.province || ''} onChange={(event) => updateAgencySection('agencyInformation', 'province', event.target.value)} />
-            </SetupField>
-            <SetupField label="Physical address">
-              <AddressInput className="setup-input setup-textarea" value={agency.physicalAddress || ''} onChange={(event) => updateAgencySection('agencyInformation', 'physicalAddress', event.target.value)} />
-            </SetupField>
-            <SetupField label="Country">
-              <input className="setup-input" value={agency.country || ''} onChange={(event) => updateAgencySection('agencyInformation', 'country', event.target.value)} />
-            </SetupField>
           </div>
-
-          <div className="agency-setup-divider" />
-          <SetupSectionHeader
-            eyebrow="Principal"
-            title="Account owner"
-            copy="The principal gets full workspace control and invite permissions."
-            icon={ShieldCheck}
-          />
-          <div className="setup-field-grid">
-            <SetupField label="Full name">
-              <input className="setup-input" value={principal.principalFullName || ''} onChange={(event) => updateAgencySection('principalInformation', 'principalFullName', event.target.value)} />
-            </SetupField>
-            <SetupField label="Position">
-              <input className="setup-input" value={principal.position || ''} onChange={(event) => updateAgencySection('principalInformation', 'position', event.target.value)} />
-            </SetupField>
-            <SetupField label="Email">
-              <input className="setup-input" type="email" value={principal.emailAddress || ''} onChange={(event) => updateAgencySection('principalInformation', 'emailAddress', event.target.value)} />
-            </SetupField>
-            <SetupField label="Phone">
-              <input className="setup-input" value={principal.phoneNumber || ''} onChange={(event) => updateAgencySection('principalInformation', 'phoneNumber', event.target.value)} />
-            </SetupField>
-            <SetupField label="Principal PPRA number">
-              <input className="setup-input" value={principal.ppraNumber || ''} onChange={(event) => updateAgencySection('principalInformation', 'ppraNumber', event.target.value)} />
-            </SetupField>
-            <SetupField label="ID number">
-              <input className="setup-input" value={principal.idNumber || ''} onChange={(event) => updateAgencySection('principalInformation', 'idNumber', event.target.value)} />
-            </SetupField>
-          </div>
-        </div>
-      )
-    }
-
-    if (agencyCurrentStep.key === 'branches') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Operating structure"
-            title="Branches"
-            copy="Create the offices your agents and reporting will be grouped under."
-            icon={MapPin}
-          />
-          <div className="agency-setup-list">
-            {branches.map((branch, index) => (
-              <section key={branch.id} className="agency-setup-row-card">
-                <div className="agency-setup-row-head">
-                  <strong>{index === 0 ? 'Head office' : `Branch ${index + 1}`}</strong>
-                  <button type="button" className="setup-icon-button" onClick={() => removeBranch(branch.id)} disabled={branches.length <= 1} aria-label="Remove branch">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <div className="setup-field-grid">
-                  <SetupField label="Branch name">
-                    <input className="setup-input" value={branch.branchName || ''} onChange={(event) => updateBranch(branch.id, { branchName: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Office location">
-                    <AddressInput className="setup-input" value={branch.officeLocation || ''} onChange={(event) => updateBranch(branch.id, { officeLocation: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Branch manager">
-                    <input className="setup-input" value={branch.branchManager || ''} onChange={(event) => updateBranch(branch.id, { branchManager: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Estimated agents">
-                    <input className="setup-input" type="number" min="0" value={branch.numberOfAgents || ''} onChange={(event) => updateBranch(branch.id, { numberOfAgents: event.target.value })} />
-                  </SetupField>
-                </div>
-              </section>
-            ))}
-          </div>
-          <button type="button" className="setup-secondary-button" onClick={addBranch}>
-            <Plus size={16} />
-            Add branch
-          </button>
-        </div>
-      )
-    }
-
-    if (agencyCurrentStep.key === 'branding') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Branding"
-            title="Workspace identity"
-            copy="Apply agency branding before the team lands in the workspace."
-            icon={Palette}
-          />
-          <div className="agency-branding-grid">
-            <div className="agency-logo-upload">
-              <div className="agency-logo-preview-box">
-                {branding.logoLight ? <img src={branding.logoLight} alt="Light logo preview" /> : <Building2 size={28} />}
-              </div>
-              <div>
-                <strong>Light logo</strong>
-                <p>{branding.logoLightName || 'Used on documents, emails, and light UI surfaces.'}</p>
-                <label className="setup-secondary-button">
-                  <UploadCloud size={16} />
-                  {uploadingLogoTarget === 'logoLight' ? 'Uploading...' : 'Upload logo'}
-                  <input type="file" accept="image/png,image/jpeg,image/svg+xml" onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoLight')} hidden />
-                </label>
-              </div>
-            </div>
-
-            <div className="agency-logo-upload agency-logo-upload-dark">
-              <div className="agency-logo-preview-box">
-                {branding.logoDark ? <img src={branding.logoDark} alt="Dark logo preview" /> : <Building2 size={28} />}
-              </div>
-              <div>
-                <strong>Dark logo</strong>
-                <p>{branding.logoDarkName || 'Used on dark headers and future branded portals.'}</p>
-                <label className="setup-secondary-button">
-                  <UploadCloud size={16} />
-                  {uploadingLogoTarget === 'logoDark' ? 'Uploading...' : 'Upload logo'}
-                  <input type="file" accept="image/png,image/jpeg,image/svg+xml" onChange={(event) => void handleLogoUpload(event.target.files?.[0], 'logoDark')} hidden />
-                </label>
-              </div>
-            </div>
-          </div>
-          <div className="setup-field-grid agency-colour-grid">
-            <SetupField label="Primary colour">
-              <div className="setup-colour-field">
-                <input type="color" value={branding.brandColours?.primary || '#274C69'} onChange={(event) => updateBrandColour('primary', event.target.value)} />
-                <input className="setup-input" value={branding.brandColours?.primary || ''} onChange={(event) => updateBrandColour('primary', event.target.value)} />
-              </div>
-            </SetupField>
-            <SetupField label="Secondary colour">
-              <div className="setup-colour-field">
-                <input type="color" value={branding.brandColours?.secondary || '#10273A'} onChange={(event) => updateBrandColour('secondary', event.target.value)} />
-                <input className="setup-input" value={branding.brandColours?.secondary || ''} onChange={(event) => updateBrandColour('secondary', event.target.value)} />
-              </div>
-            </SetupField>
-          </div>
-        </div>
-      )
-    }
-
-    if (agencyCurrentStep.key === 'team') {
-      return (
-        <div className="agency-setup-card">
-          <SetupSectionHeader
-            eyebrow="Team access"
-            title="Add your first team"
-            copy="New agents start in Recruitment. Existing staff and support roles use access invitations."
-            icon={Users}
-          />
-          <div className="agency-setup-list">
-            {invites.map((invite, index) => (
-              <section key={invite.id} className="agency-setup-row-card">
-                <div className="agency-setup-row-head">
-                  <strong>{normalizeText(invite.name) || `Team member ${index + 1}`}</strong>
-                  <button type="button" className="setup-icon-button" onClick={() => removeInvite(invite.id)} disabled={invites.length <= 1} aria-label="Remove invite">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <div className="setup-field-grid">
-                  <SetupField label="Name">
-                    <input className="setup-input" value={invite.name || ''} onChange={(event) => updateInvite(invite.id, { name: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Email">
-                    <input className="setup-input" type="email" value={invite.email || ''} onChange={(event) => updateInvite(invite.id, { email: event.target.value })} />
-                  </SetupField>
-                  <SetupField label="Branch">
-                    <select className="setup-input" value={invite.branchId || ''} onChange={(event) => updateInvite(invite.id, { branchId: event.target.value })}>
-                      <option value="">Unassigned</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>{branch.branchName || 'Branch'}</option>
-                      ))}
-                    </select>
-                  </SetupField>
-                  {['agent','senior_agent','commercial_broker'].includes(invite.role || 'agent') && <SetupField label="Invitation purpose"><select className="setup-input" value={invite.purpose || 'new_recruit'} onChange={(event) => updateInvite(invite.id,{purpose:event.target.value})}><option value="new_recruit">New agent · Recruitment</option><option value="existing_staff">Existing or returning staff access</option></select></SetupField>}
-                  <SetupField label="Role">
-                    <select className="setup-input" value={invite.role || 'agent'} onChange={(event) => updateInvite(invite.id, { role: event.target.value })}>
-                      {AGENCY_INVITE_ROLE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </SetupField>
-                </div>
-              </section>
-            ))}
-          </div>
-          <button type="button" className="setup-secondary-button" onClick={addInvite}>
-            <Plus size={16} />
-            Add team member
-          </button>
         </div>
       )
     }
 
     return (
       <div className="agency-setup-card">
-        <SetupSectionHeader
-          eyebrow="Final check"
-          title={canClaimExistingWorkspace ? `Activate ${agencyDisplayName}` : `Create the ${agencySetupLabel} workspace`}
-          copy={canClaimExistingWorkspace
-            ? 'Arch9 will save these details, activate your principal membership, and open the existing workspace.'
-            : 'Arch9 will create the organisation, save this setup, activate the principal account, and queue the team invitations.'}
-          icon={CheckCircle2}
-        />
-        <div className="agency-review-grid">
-          <div>
-            <Building2 size={18} />
-            <span>{isCommercialAgencyType(agency.agencyType) ? agencySetupLabel : 'Agency'}</span>
-            <strong>{agency.agencyName || 'Not set'}</strong>
-            <small>{agency.province || 'Province missing'}</small>
-          </div>
-          <div>
-            <Users size={18} />
-            <span>Team</span>
-            <strong>{branches.length} {branches.length === 1 ? 'branch' : 'branches'}</strong>
-            <small>{inviteCount} {inviteCount === 1 ? 'invite' : 'invites'} ready</small>
-          </div>
-          <div>
-            <Palette size={18} />
-            <span>Branding</span>
-            <strong>{branding.logoLight ? 'Logo uploaded' : 'Arch9 fallback'}</strong>
-            <small>{branding.brandColours?.primary || '#274C69'} primary</small>
+        <SetupSectionHeader title="Make it yours" />
+        <div className="agency-signup-logo-options">
+          {AGENCY_LOGO_VARIANTS.map((asset) => (
+            <div className="agency-signup-logo-option" key={asset.key}>
+              <div className={`agency-signup-logo-preview${asset.variant === 'dark' ? ' is-dark' : ''}${asset.variant === 'icon' ? ' is-icon' : ''}`}>
+                {branding[asset.key]
+                  ? <img src={branding[asset.key]} alt={`${asset.label} preview`} />
+                  : <Building2 size={28} aria-hidden="true" />}
+              </div>
+              <div className="agency-signup-logo-caption">
+                <strong>{asset.label}</strong>
+                <span>{asset.description}</span>
+              </div>
+              <label className="setup-secondary-button agency-signup-upload">
+                <UploadCloud size={14} />
+                {uploadingLogoTarget === asset.key ? 'Uploading…' : branding[asset.key] ? 'Change' : 'Upload'}
+                <input type="file" aria-label={`${asset.label} (optional)`} accept="image/png,image/jpeg,image/webp,image/svg+xml" disabled={saving || Boolean(uploadingLogoTarget)} onChange={(event) => { void handleLogoUpload(event.target.files?.[0], asset.key); event.target.value = '' }} />
+              </label>
+            </div>
+          ))}
+        </div>
+        <div className="agency-signup-colour-row">
+          <SetupField label="Primary colour (optional)">
+            <div className="setup-colour-field">
+              <input type="color" aria-label="Choose primary colour" value={previewColour} onChange={(event) => updateBrandColour('primary', event.target.value)} />
+              <input className="setup-input" aria-label="Primary colour hex" maxLength={7} pattern="#[0-9a-fA-F]{6}" title="Use a six-digit hex colour, such as #166b50" value={branding.brandColours?.primary || ''} onChange={(event) => updateBrandColour('primary', event.target.value)} />
+            </div>
+          </SetupField>
+          <div className="agency-signup-colour-preview" style={{ '--agency-colour': previewColour }} aria-label="Your branding preview">
+            {branding.logoIcon ? <img src={branding.logoIcon} alt="Agency icon preview" /> : <Building2 size={24} />}
+            <strong>{agency.agencyName || 'Your agency'}</strong>
           </div>
         </div>
       </div>
     )
   }
 
-  function renderDeveloperSetup() {
-    return (
-      <form className="agency-setup-shell" onSubmit={handleCreateWorkspace}>
-        <aside className="agency-setup-command">
-          <div>
-            <p className="agency-setup-kicker">Developer setup</p>
-            <h2>{form.name || 'New developer workspace'}</h2>
-            <span>{APP_ROLE_LABELS[intent.app_role] || 'Developer'} · {intendedRole.replace(/_/g, ' ') || 'owner'}</span>
-          </div>
-          <div className="agency-setup-progress">
-            <strong>{developerCompletedSectionCount}/{developerSetupItems.length}</strong>
-            <span>launch sections ready</span>
-            <div><i style={{ width: `${Math.round((developerCompletedSectionCount / developerSetupItems.length) * 100)}%` }} /></div>
-          </div>
-          <nav className="agency-setup-nav" aria-label="Developer setup readiness">
-            {developerSetupItems.map((item, index) => (
-              <button
-                key={item.label}
-                type="button"
-                className={item.complete ? 'is-active' : ''}
-                aria-pressed={item.complete}
-              >
-                <span>{index + 1}</span>
-                <strong>{item.label}</strong>
-                {item.complete ? <CheckCircle2 size={15} /> : null}
-              </button>
-            ))}
-          </nav>
-          <div className="agency-setup-snapshot">
-            <p><Mail size={14} />{form.businessEmail || 'Business email missing'}</p>
-            <p><Phone size={14} />{form.contactNumber || 'Contact number missing'}</p>
-            <p><MapPin size={14} />{form.operatingArea || form.province || 'Operating area optional'}</p>
-          </div>
-        </aside>
+  if (isBondOwnerSetup && !canOpenActiveWorkspace) {
+    return <BondOnboardingForm key={setupDraftStorageKey} profile={profile} authState={authState} intent={intent} initialForm={form} draftStorageKey={setupDraftStorageKey} refreshAuthState={refreshAuthState} />
+  }
 
-        <section className="agency-setup-main">
-          <div className="agency-setup-card">
-            <SetupSectionHeader
-              eyebrow="Workspace foundation"
-              title="Create the developer company profile"
-              copy="This becomes the command centre for developments, stock visibility, buyer demand, and shared transaction progress."
-              icon={Building2}
-            />
-            <div className="setup-field-grid">
-              <SetupField label="Developer company name">
-                <input className="setup-input" value={form.name} onChange={(event) => updateField('name', event.target.value)} />
-              </SetupField>
-              <SetupField label="Legal name">
-                <input className="setup-input" value={form.legalName} onChange={(event) => updateField('legalName', event.target.value)} />
-              </SetupField>
-              <SetupField label="Business email">
-                <input className="setup-input" type="email" value={form.businessEmail} onChange={(event) => updateField('businessEmail', event.target.value)} />
-              </SetupField>
-              <SetupField label="Contact number">
-                <input className="setup-input" value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} />
-              </SetupField>
-              <SetupField label="Registration number" hint="Optional, but useful for legal records and duplicate protection.">
-                <input className="setup-input" value={form.registrationNumber} onChange={(event) => updateField('registrationNumber', event.target.value)} />
-              </SetupField>
-              <SetupField label="Province">
-                <input className="setup-input" value={form.province} onChange={(event) => updateField('province', event.target.value)} />
-              </SetupField>
-              <SetupField label="Operating area" hint="Example: Johannesburg North, Cape Town Atlantic Seaboard, KZN North Coast.">
-                <input className="setup-input" value={form.operatingArea} onChange={(event) => updateField('operatingArea', event.target.value)} />
-              </SetupField>
-              <SetupField label="Primary contact">
-                <input className="setup-input" value={form.primaryContactName} onChange={(event) => updateField('primaryContactName', event.target.value)} />
-              </SetupField>
-            </div>
-          </div>
+  if (isDeveloperCompanySetup && !canOpenActiveWorkspace) {
+    return <DeveloperOnboardingForm key={setupDraftStorageKey} profile={profile} authState={authState} intent={intent} initialForm={form} draftStorageKey={setupDraftStorageKey} refreshAuthState={refreshAuthState} />
+  }
 
-          <div className="agency-setup-card">
-            <SetupSectionHeader
-              eyebrow="Launch workspace"
-              title="What Arch9 prepares next"
-              copy="Once created, this workspace can hold developments, unit inventory, agency partner activity, buyer leads, and transaction movement."
-              icon={CheckCircle2}
-            />
-            <div className="agency-review-grid">
-              <div>
-                <Building2 size={18} />
-                <span>Developments</span>
-                <strong>Project-ready</strong>
-                <small>Stock, units, pricing, and release status</small>
-              </div>
-              <div>
-                <Users size={18} />
-                <span>Sales network</span>
-                <strong>Partner visibility</strong>
-                <small>Agents, buyers, and launch activity</small>
-              </div>
-              <div>
-                <ShieldCheck size={18} />
-                <span>Transactions</span>
-                <strong>Controlled workspace</strong>
-                <small>Offers, finance, transfer, and registration</small>
-              </div>
-            </div>
-          </div>
-
-          {message ? <p className="setup-message success">{message}</p> : null}
-          {error ? <p className="setup-message error">{error}</p> : null}
-          <div className="agency-setup-actions">
-            <button type="submit" className="setup-primary-button" disabled={saving}>
-              {saving ? 'Creating developer workspace...' : (
-                <>
-                  Create developer company
-                  <ArrowRight size={16} />
-                </>
-              )}
-            </button>
-          </div>
-        </section>
-      </form>
-    )
+  if (canCreateWorkspace && intent?.workspace_type === WORKSPACE_TYPES.attorneyFirm && !canOpenActiveWorkspace) {
+    return <Navigate to="/attorney/onboarding" replace />
   }
 
   return (
     <OnboardingProgressLayout
-      title={pageTitle}
-      description={pageDescription}
+      title={canClaimExistingWorkspace && claimWorkspaceLoading ? 'Loading your agency workspace…' : pageTitle}
+      description={isAgencyPrincipalSetup && !canClaimExistingWorkspace ? '' : pageDescription}
       activeStep={
         isAgencyPrincipalSetup
           ? agencyCurrentStep.key
-          : isBondOwnerSetup
-            ? bondCurrentStep.key
-            : onboardingState?.onboardingStep || ONBOARDING_STEPS.createOrJoinWorkspace
+          : onboardingState?.onboardingStep || ONBOARDING_STEPS.createOrJoinWorkspace
       }
-      steps={isAgencyPrincipalSetup ? AGENCY_SETUP_STEPS : isBondOwnerSetup ? BOND_SETUP_STEPS : undefined}
-      className={canAcceptInvite ? 'setup-invite-progress-page' : ''}
+      steps={isAgencyPrincipalSetup ? AGENCY_SETUP_STEPS : undefined}
+      className={isAgencyPrincipalSetup ? 'agency-workspace-onboarding' : canAcceptInvite ? 'setup-invite-progress-page' : ''}
+      onStepChange={isAgencyPrincipalSetup ? (index) => {
+        const stepError = index > agencyStepIndex
+          ? AGENCY_SETUP_STEPS.slice(0, index).map((step) => validateAgencySignupStep(step.key, agencyDraft)).find(Boolean)
+          : ''
+        if (stepError) { setError(stepError); return }
+        setAgencyStepIndex(index)
+        setError('')
+      } : null}
+      stepNavigationDisabled={saving || Boolean(uploadingLogoTarget)}
       panelClassName={canAcceptInvite ? 'setup-invite-progress-panel' : ''}
     >
       {isAgencyPrincipalSetup ? (
         <form className="agency-setup-shell" onSubmit={handleAgencyStepSubmit}>
-          <aside className="agency-setup-command">
-            <div>
-              <p className="agency-setup-kicker">{canClaimExistingWorkspace ? 'Workspace claim' : 'Principal setup'}</p>
-              <h2>{claimWorkspaceLoading ? 'Loading workspace...' : agencyDisplayName}</h2>
-              <span>{APP_ROLE_LABELS[intent.app_role] || 'Agent'} · {intendedRole.replace(/_/g, ' ')}</span>
-            </div>
-            <div className="agency-setup-progress">
-              <strong>{completedStepCount}/{AGENCY_SETUP_STEPS.length}</strong>
-              <span>setup sections ready</span>
-              <div><i style={{ width: `${Math.round((completedStepCount / AGENCY_SETUP_STEPS.length) * 100)}%` }} /></div>
-            </div>
-            <nav className="agency-setup-nav" aria-label="Agency setup steps">
-              {AGENCY_SETUP_STEPS.map((step, index) => {
-                const isActive = index === agencyStepIndex
-                const hasError = Boolean(resolveAgencyStepError(step.key, agencyDraft))
-                return (
-                  <button
-                    key={step.key}
-                    type="button"
-                    className={isActive ? 'is-active' : ''}
-                    onClick={() => {
-                      setAgencyStepIndex(index)
-                      setError('')
-                    }}
-                  >
-                    <span>{index + 1}</span>
-                    <strong>{step.label}</strong>
-                    {!hasError ? <CheckCircle2 size={15} /> : null}
-                  </button>
-                )
-              })}
-            </nav>
-            <div className="agency-setup-snapshot">
-              <p><Mail size={14} />{agency.mainEmailAddress || 'Business email missing'}</p>
-              <p><Phone size={14} />{agency.mainOfficeNumber || 'Office number missing'}</p>
-              <p><Globe2 size={14} />{agency.website || 'Website optional'}</p>
-            </div>
-          </aside>
-
           <section className="agency-setup-main">
             {renderAgencyStep()}
             {message ? <p className="setup-message success">{message}</p> : null}
@@ -2075,99 +994,30 @@ export default function PostDashboardSetup() {
                   setError('')
                   setAgencyStepIndex((previous) => Math.max(previous - 1, 0))
                 }}
-                disabled={saving || agencyStepIndex === 0}
+                disabled={saving || Boolean(uploadingLogoTarget) || agencyStepIndex === 0}
               >
                 Back
               </button>
-              <button type="submit" className="setup-primary-button" disabled={saving}>
-                {saving
-                  ? 'Creating agency...'
-                  : agencyStepIndex === AGENCY_SETUP_STEPS.length - 1
-                    ? 'Create agency and save team'
-                    : (
-                        <>
-                          Continue
-                          <ArrowRight size={16} />
-                        </>
-                      )}
-              </button>
+              <div className="agency-signup-final-actions">
+                {agencyCurrentStep.key === 'branding' ? (
+                  <button type="button" className="agency-signup-skip" disabled={saving || Boolean(uploadingLogoTarget)} onClick={() => void completeAgencyPrincipalSetup()}>Skip for now</button>
+                ) : null}
+                <button type="submit" className="setup-primary-button" disabled={saving || Boolean(uploadingLogoTarget)}>
+                  {saving
+                    ? 'Opening your workspace...'
+                    : agencyStepIndex === AGENCY_SETUP_STEPS.length - 1
+                      ? 'Open my workspace'
+                      : (
+                          <>
+                            Continue
+                            <ArrowRight size={16} />
+                          </>
+                        )}
+                </button>
+              </div>
             </div>
           </section>
         </form>
-      ) : isBondOwnerSetup ? (
-        <form className="agency-setup-shell" onSubmit={handleBondStepSubmit}>
-          <aside className="agency-setup-command">
-            <div>
-              <p className="agency-setup-kicker">{isPersonalBondOriginator ? 'Independent originator setup' : 'Bond company setup'}</p>
-              <h2>{bondBusiness.businessName || 'New bond business'}</h2>
-              <span>{bondWorkspaceKindLabel} · {APP_ROLE_LABELS[intent.app_role] || 'Bond Originator'}</span>
-            </div>
-            <div className="agency-setup-progress">
-              <strong>{bondCompletedStepCount}/{BOND_SETUP_STEPS.length}</strong>
-              <span>setup sections ready</span>
-              <div><i style={{ width: `${Math.round((bondCompletedStepCount / BOND_SETUP_STEPS.length) * 100)}%` }} /></div>
-            </div>
-            <nav className="agency-setup-nav" aria-label="Bond setup steps">
-              {BOND_SETUP_STEPS.map((step, index) => {
-                const isActive = index === bondStepIndex
-                const hasError = Boolean(resolveBondStepError(step.key, bondDraft))
-                return (
-                  <button
-                    key={step.key}
-                    type="button"
-                    className={isActive ? 'is-active' : ''}
-                    onClick={() => {
-                      setBondStepIndex(index)
-                      setError('')
-                    }}
-                  >
-                    <span>{index + 1}</span>
-                    <strong>{step.label}</strong>
-                    {!hasError ? <CheckCircle2 size={15} /> : null}
-                  </button>
-                )
-              })}
-            </nav>
-            <div className="agency-setup-snapshot">
-              <p><Mail size={14} />{bondBusiness.businessEmail || 'Business email missing'}</p>
-              <p><Phone size={14} />{bondBusiness.contactNumber || 'Business phone missing'}</p>
-              <p><Users size={14} />{isPersonalBondOriginator ? bondTeam.defaultTeamName || 'My Pipeline' : bondTeam.defaultTeamName || 'Main Team'}</p>
-            </div>
-          </aside>
-
-          <section className="agency-setup-main">
-            {renderBondStep()}
-            {message ? <p className="setup-message success">{message}</p> : null}
-            {error ? <p className="setup-message error">{error}</p> : null}
-            <div className="agency-setup-actions">
-              <button
-                type="button"
-                className="setup-secondary-button"
-                onClick={() => {
-                  setError('')
-                  setBondStepIndex((previous) => Math.max(previous - 1, 0))
-                }}
-                disabled={saving || bondStepIndex === 0}
-              >
-                Back
-              </button>
-              <button type="submit" className="setup-primary-button" disabled={saving}>
-                {saving
-                  ? 'Creating bond workspace...'
-                  : bondStepIndex === BOND_SETUP_STEPS.length - 1
-                    ? isPersonalBondOriginator ? 'Create independent workspace' : 'Create bond business workspace'
-                    : (
-                        <>
-                          Continue
-                          <ArrowRight size={16} />
-                        </>
-                      )}
-              </button>
-            </div>
-          </section>
-        </form>
-      ) : isDeveloperCompanySetup ? (
-        renderDeveloperSetup()
       ) : (
         <>
           {intent && !canAcceptInvite ? (

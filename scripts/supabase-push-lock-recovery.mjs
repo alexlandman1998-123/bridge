@@ -78,10 +78,12 @@ function parseJsonLoose(text) {
 }
 
 function runSupabase(repoRoot, args) {
-  const result = spawnSync('npx', ['--yes', 'supabase@latest', ...args], {
+  const cli = process.env.SUPABASE_CLI_PATH
+  const result = spawnSync(cli || 'npx', cli ? args : ['--yes', 'supabase@latest', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
+    timeout: 60000,
     env: { ...process.env, NO_COLOR: '1' },
   })
   return {

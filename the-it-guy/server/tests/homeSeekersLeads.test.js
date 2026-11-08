@@ -49,6 +49,16 @@ test('Home Seekers enquiries create CRM leads atomically and queue scoped notifi
       }
       assert.equal((await db.query('select count(*)::int as count from contacts')).rows[0].count, 1, 'reuse the contact within this organisation')
     })
+    await t.test('join-page qualifier outcomes and source survive CRM capture', async () => {
+      for (const outcome of ['A', 'B', 'C']) {
+        const key = `founder-qualifier-${outcome}-1234567890`
+        const answers = { source: 'homeseeker_join_next_steps', type: 'founder_call_qualifier', outcome, ffc: outcome === 'C' ? 'No' : 'Yes', sales: outcome === 'A' ? 5 : 1, value: 1000000, area: 'Sandton', split: '70/30' }
+        const result = await capture({ pageUrl: `https://${f.host}/join`, message: JSON.stringify(answers), phone: '+27821234567', leadIntent: 'other', idempotencyKey: key }, { headers: { ...headers, 'x-forwarded-for': `198.51.100.${outcome.charCodeAt(0)}` } })
+        assert.equal(result.status, 201)
+        const lead = (await db.query('select lead.notes from leads lead join website_lead_submissions receipt on receipt.lead_id=lead.lead_id where receipt.idempotency_key=$1', [key])).rows[0]
+        assert.deepEqual(JSON.parse(lead.notes), answers)
+      }
+    })
     await t.test('an unchanged retry creates one lead and an unaccepted duplicate never shows success', async () => {
       const first = await capture()
       assert.equal(first.status, 201)

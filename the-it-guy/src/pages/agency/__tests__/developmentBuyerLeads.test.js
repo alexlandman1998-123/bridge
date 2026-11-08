@@ -4,6 +4,7 @@ import { buildAgencyLeadLandingMetrics, buildAgencyLeadListModel, getAgencyLeadC
 import { getLeadDevelopmentId } from '../../../core/leads/developmentBuyerLead.js'
 import { enrichDevelopmentBuyerLeads, listBuyerLeadDevelopmentOptions } from '../../../services/developmentBuyerLeadService.js'
 import { buildDevelopmentBuyerJourneyModel } from '../../../services/developmentBuyerJourneyService.js'
+import { buildBuyerJourneyAlignmentModel } from '../../../services/buyerJourneyAlignmentService.js'
 
 const org = '00000000-0000-4000-8000-000000000010'
 const leadId = '00000000-0000-4000-8000-000000000020'
@@ -85,6 +86,43 @@ describe('development link reads', () => {
 
 describe('shared development buyer journey', () => {
   const ready = { leadCaptured: true, contacted: true, qualified: true, viewingCompleted: true }
+  it('does not show a linked transaction context as a completed sale before its prerequisites', () => {
+    const lead = { ...buyer, developmentLeadContext: { preferredUnitId: 'unit', reservationState: 'reserved' } }
+    for (const missing of ['buyerOnboardingSubmitted', 'offerComplete']) {
+      const evidence = { ...ready, buyerOnboardingSubmitted: true, offerComplete: true, transactionCreated: true, [missing]: false }
+      const model = buildDevelopmentBuyerJourneyModel({ lead, evidence, details: { transaction: 'Created' } })
+      expect(model.stages.find(stage => stage.key === 'transaction')).toMatchObject({ done: false, state: 'upcoming', detail: 'Awaiting completed onboarding and signed OTP' })
+    }
+    const evidence = { ...ready, buyerOnboardingSubmitted: true, offerComplete: true, transactionCreated: true }
+    const reserved = buildDevelopmentBuyerJourneyModel({ lead, evidence })
+    expect(reserved.stages.find(stage => stage.key === 'transaction').done).toBe(true)
+    const unreserved = buildDevelopmentBuyerJourneyModel({ lead: buyer, evidence })
+    expect(unreserved.stages.find(stage => stage.key === 'transaction')).toMatchObject({ done: false, detail: 'Awaiting unit reservation' })
+  })
+
+  it('keeps development guidance separate from the unchanged open-market flow', () => {
+    const options = { evidence: { contacted: true } }
+    const before = buildBuyerJourneyAlignmentModel(options)
+    const development = buildDevelopmentBuyerJourneyModel({ ...options, lead: { ...buyer, developmentId } })
+    expect(development.journeyType).toBe('development')
+    expect(development.nextAction.title).toBe('Qualify development buyer')
+    expect(development.nextAction.description).toBe('')
+    expect(before.nextAction.title).toBe('Qualify lead')
+    expect(before.stages.some(stage => stage.key === 'development_selection')).toBe(false)
+    expect(buildBuyerJourneyAlignmentModel(options)).toEqual(before)
+  })
+
+  it('uses development presentation guidance before unit selection', () => {
+    const evidence = { contacted: true, qualified: true }
+    const model = buildDevelopmentBuyerJourneyModel({ lead: buyer, evidence })
+    expect(model.currentStageKey).toBe('viewing')
+    expect(model.nextAction.key).toBe('schedule_viewing')
+    expect(model.nextAction.description).toContain('show-unit viewing')
+    const scheduled = buildDevelopmentBuyerJourneyModel({ lead: buyer, evidence: { ...evidence, viewingScheduled: true } })
+    expect(scheduled.nextAction.key).toBe('progress_from_viewing')
+    expect(scheduled.nextAction.description).toContain('before unit selection and reservation')
+  })
+
   it('retains the buyer stages and adds unit selection before onboarding', () => {
     const model = buildDevelopmentBuyerJourneyModel({ lead: { ...buyer, developmentId }, evidence: ready })
     expect(model.stages.map((stage) => stage.label)).toEqual(['Captured', 'Contacted', 'Qualified', 'Viewing / Presentation', 'Unit Selection & Reservation', 'Buyer onboarding sent', 'Buyer onboarding submitted', 'Offer to purchase signed', 'Transaction created', 'Buyer documents uploaded'])

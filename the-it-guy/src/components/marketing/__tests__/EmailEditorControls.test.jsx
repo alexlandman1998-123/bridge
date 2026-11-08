@@ -1,0 +1,46 @@
+// @vitest-environment jsdom
+import React,{useState} from 'react'
+import {render,screen,fireEvent,cleanup} from '@testing-library/react'
+import {afterEach,it,expect,vi} from 'vitest'
+import EmailVisualEditor from '../EmailVisualEditor'
+import {createEmailDocument,newBlock} from '../../../../../supabase/functions/_shared/emailDocument.js'
+vi.mock('../EmailCampaignImages',()=>({default:()=>null}))
+afterEach(()=>{cleanup();vi.restoreAllMocks()})
+const listing=(id,address)=>({id,address,suburb:'Cape Town',price:'R1,000,000',image:`https://example.test/${id}.png`,url:`https://example.test/${id}`,features:'2 beds'})
+const listings=[listing('one','First home'),listing('two','Second home')]
+function Harness({initial,templates=[],callbacks={}}){const[document,onChange]=useState(initial||createEmailDocument({name:'Agency'}));return <><EmailVisualEditor document={document} onChange={onChange} templates={templates} listings={listings} contacts={[{id:'person',first_name:'Pat',full_name:'Pat Smith'}]} brand={{name:'Agency'}} context={{agencyName:'Agency'}} onSaveTemplate={callbacks.save||(()=>{})} onPreviewTemplate={callbacks.preview||(()=>{})} onManageBrand={callbacks.brand||(()=>{})}/><output aria-label="Saved design">{JSON.stringify(document)}</output></>}
+const design=()=>JSON.parse(screen.getByLabelText('Saved design').textContent)
+const add=name=>fireEvent.click(screen.getByRole('button',{name,exact:true}))
+const input=(label,value)=>fireEvent.change(screen.getByLabelText(label,{exact:true}),{target:{value}})
+it('adds every block type, protects one final footer, duplicates, moves and deletes blocks',()=>{
+ render(<Harness/>);for(const name of ['Header','Text','Image','Button','Property listing','Divider','Social links'])add(name);expect(new Set(design().blocks.map(b=>b.type))).toEqual(new Set(['header','text','image','button','property','divider','social','footer']));const count=design().blocks.length;add('Footer');expect(design().blocks).toHaveLength(count);expect(screen.queryByRole('button',{name:'Delete block'})).toBeNull();add('Text');
+ fireEvent.click(screen.getByRole('button',{name:'Duplicate block'}));expect(new Set(design().blocks.map(b=>b.id)).size).toBe(design().blocks.length);const id=design().blocks.at(-2).id;fireEvent.click(screen.getByRole('button',{name:'Move block up'}));expect(design().blocks.at(-1).type).toBe('footer');fireEvent.click(screen.getByRole('button',{name:'Move block down'}));fireEvent.click(screen.getByRole('button',{name:'Delete block'}));expect(design().blocks.some(b=>b.id===id)).toBe(false);
+})
+it('edits header, image, button and typography settings into the stored and rendered content',()=>{
+ render(<Harness/>);input('Text','Hello {{first_name}}');input('Text colour','#123456');input('Background colour','#abcdef');input('Padding','27');input('Alignment','right');input('Preview as','person');expect(document.querySelector('.eb-email-page').textContent).toContain('Hello Pat');expect(design().blocks[0]).toMatchObject({textColour:'#123456',background:'#abcdef',padding:27,align:'right'});
+ add('Image');input('Image URL','https://example.test/hero.png');input('Alt text','Our home');input('Image link','https://example.test/home');expect(document.querySelector('img[alt="Our home"]').src).toBe('https://example.test/hero.png');fireEvent.click(screen.getByRole('button',{name:'Remove image'}));expect(design().blocks.find(b=>b.alt==='Our home').src).toBe('');
+ add('Button');expect(screen.getByLabelText('Text colour').value).toBe('#ffffff');input('Button label','Enquire');input('Destination URL','https://example.test/enquire');input('Button style','outline');input('Button colour','#654321');input('Text colour','#abcdef');expect(document.querySelector('.eb-canvas-block.is-selected a').getAttribute('style')).toContain('color:#abcdef');
+ input('Primary brand colour','#112233');expect(design().globalStyles.primaryColour).toBe('#112233');expect(design().blocks.find(b=>b.text==='Enquire').colour).toBe('#654321');
+})
+it('supports property search, all layouts, card ordering, links and removal',()=>{
+ render(<Harness/>);add('Property listing');fireEvent.click(screen.getByRole('button',{name:/First home/}));fireEvent.click(screen.getByRole('button',{name:/Second home/}));expect(design().blocks.find(b=>b.type==='property').listings).toHaveLength(2);input('CTA label','See home');input('Card layout','list');fireEvent.click(screen.getAllByRole('button',{name:'Move up',exact:true})[1]);expect(design().blocks.find(b=>b.type==='property').listings[0].id).toBe('two');input('Card layout','featured');expect(design().blocks.find(b=>b.type==='property').listings).toHaveLength(1);input('Public listing URL','https://example.test/updated');expect(document.querySelector('.eb-canvas-block.is-selected a').href).toBe('https://example.test/updated');input('Search listings','Nothing matches');expect(screen.getByText('No listings match your search.')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Remove',exact:true}));expect(design().blocks.find(b=>b.type==='property').listings).toEqual([]);
+})
+it('edits social links and switches device previews without changing the design',()=>{
+ render(<Harness/>);add('Social links');input('Label','Company');input('URL','https://example.test/company');fireEvent.click(screen.getByRole('button',{name:'Add link'}));expect(design().blocks.find(b=>b.type==='social').links).toHaveLength(2);fireEvent.click(screen.getAllByRole('button',{name:'Remove link'})[1]);const before=design();fireEvent.click(screen.getByRole('button',{name:'Mobile',exact:true}));expect(document.querySelector('.eb-email-page').classList.contains('is-mobile')).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Desktop',exact:true}));expect(design()).toEqual(before);expect(document.querySelector('.eb-canvas-block.is-selected a').href).toBe('https://example.test/company');
+})
+it('applies and previews templates, starts fresh and retains a valid inspector selection',()=>{
+ const template=createEmailDocument({name:'Template agency'}),callbacks={save:vi.fn(),preview:vi.fn(),brand:vi.fn()};vi.spyOn(window,'confirm').mockReturnValue(true);render(<Harness templates={[{id:'template',name:'My template',design_json:template,html:'<p>Template</p>'}]} callbacks={callbacks}/>);fireEvent.click(screen.getByRole('button',{name:'Saved',exact:true}));fireEvent.click(screen.getByRole('button',{name:'Preview',exact:true}));expect(callbacks.preview).toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Apply template'}));expect(screen.getByRole('textbox',{name:'Text',exact:true}).value).toBe('Template agency');input('Text','Edited template');expect(design().blocks[0].text).toBe('Edited template');fireEvent.click(screen.getByRole('button',{name:'Save current layout'}));expect(callbacks.save).toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Buyer update · Starter layout'}));expect(design().blocks[0].text).toBe('Agency');fireEvent.click(screen.getByRole('button',{name:'Manage brand'}));expect(callbacks.brand).toHaveBeenCalled();
+})
+
+it('drags new and existing blocks while keeping the footer last and ignores unknown drags',()=>{
+ render(<Harness/>);const data=new Map();const transfer={setData:(key,value)=>data.set(key,value),getData:key=>data.get(key)||''};
+ fireEvent.dragStart(screen.getByRole('button',{name:'Text',exact:true}),{dataTransfer:transfer});fireEvent.drop(document.querySelector('.eb-canvas-block:last-child'),{dataTransfer:transfer});const fresh=design().blocks.at(-2);expect(fresh.type).toBe('text');
+ data.clear();fireEvent.dragStart(screen.getByRole('button',{name:'Drag block'}),{dataTransfer:transfer});fireEvent.drop(document.querySelector('.eb-canvas-block:first-child'),{dataTransfer:transfer});expect(design().blocks[1].id).toBe(fresh.id);expect(design().blocks.at(-1).type).toBe('footer');const before=design();data.clear();data.set('email/block-id','not-found');fireEvent.drop(document.querySelector('.eb-canvas-block:first-child'),{dataTransfer:transfer});expect(design()).toEqual(before);
+})
+it('retains text formatting, whole-block styles and personalisation edits together',()=>{
+ render(<Harness/>);add('Text');const rich=screen.getByRole('textbox',{name:'Rich text'});rich.innerHTML='<strong>Personal update</strong>';fireEvent.input(rich);input('Text link','https://example.test/story');input('Text style','heading');fireEvent.click(screen.getByRole('button',{name:'Italic entire block'}));fireEvent.click(screen.getByRole('button',{name:'Bold entire block'}));expect(document.querySelector('.eb-canvas-block.is-selected a strong').textContent).toBe('Personal update');expect(design().blocks.find(b=>b.richText)).toMatchObject({bold:true,italic:true,style:'heading'});
+})
+
+it('keeps the current design and gives a recoverable error for a malformed saved template',()=>{
+ vi.spyOn(window,'confirm').mockReturnValue(true);render(<Harness templates={[{id:'broken',name:'Broken template',design_json:{version:1,blocks:null},html:''}]}/>);const before=design();fireEvent.click(screen.getByRole('button',{name:'Saved',exact:true}));fireEvent.click(screen.getByRole('button',{name:'Apply template'}));expect(screen.getByRole('alert').textContent).toContain('current content is unchanged');expect(design()).toEqual(before);
+})

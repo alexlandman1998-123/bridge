@@ -2,6 +2,7 @@ import {
   PRIVATE_PROPERTY_SANDBOX_BASE_URL,
   normalizePrivatePropertyBaseUrl,
   normalizePrivatePropertyText,
+  normalizePrivatePropertySecret,
 } from './privatePropertyClient.js'
 import { fetchPrivatePropertyAgencyCredentials } from './privatePropertyCredentialService.js'
 
@@ -307,7 +308,7 @@ export function resolvePrivatePropertyRuntimeCredentials(config = null, secrets 
   if (!row) return { username: '', password: '', missingSecrets: ['private_property_config'] }
 
   const username = normalizePrivatePropertyText(secrets[row.usernameSecretName])
-  const password = normalizePrivatePropertyText(secrets[row.passwordSecretName])
+  const password = normalizePrivatePropertySecret(secrets[row.passwordSecretName])
   const missingSecrets = []
   if (!username) missingSecrets.push(row.usernameSecretName)
   if (!password) missingSecrets.push(row.passwordSecretName)

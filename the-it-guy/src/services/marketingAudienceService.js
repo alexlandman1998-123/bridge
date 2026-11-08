@@ -1,8 +1,13 @@
 import { supabase } from '../lib/supabaseClient'
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export const AUDIENCE_FIELDS = { role: 'Contact / lead type', stage: 'Lead stage', area: 'Area', owner: 'Responsible agent', tags: 'Tags', budget: 'Budget' }
+export const isEmailAudienceDefinition = definition => Boolean(definition && Object.hasOwn(definition, 'emailFilter'))
 export const emptyAudienceDefinition = () => ({ match: 'all', rules: [{ field: 'role', operator: 'in', values: ['buyer'] }], excludeClosed: true, quietDays: 0 })
 export function validateAudienceDefinition(definition) {
+  if (isEmailAudienceDefinition(definition)) {
+    if (Object.keys(definition).length !== 1 || !definition.emailFilter || Array.isArray(definition.emailFilter) || typeof definition.emailFilter !== 'object') throw new Error('Keep the saved email targeting unchanged.')
+    return definition
+  }
   if (!definition || !['all', 'any'].includes(definition.match) || typeof definition.excludeClosed !== 'boolean' || !Number.isInteger(definition.quietDays) || definition.quietDays < 0 || definition.quietDays > 365 || !Array.isArray(definition.rules) || !definition.rules.length || definition.rules.length > 12) throw new Error('Complete the audience rules and choose a quiet period from 0 to 365 days.')
   for (const rule of definition.rules) {
     if (!Object.hasOwn(AUDIENCE_FIELDS, rule.field) || !Array.isArray(rule.values) || !rule.values.length || rule.values.length > 10 || rule.values.some((value) => typeof value !== 'string' || !value.trim() || value.length > 120)) throw new Error('Choose a field and at least one value for every rule.')
@@ -11,7 +16,7 @@ export function validateAudienceDefinition(definition) {
   }
   return definition
 }
-function scope(org, client) { if (!client || !uuid.test(org || '')) throw new Error('Choose an agency workspace first.') }
+function scope(org, client) { if (!client || !uuid.test(org || '')) throw new Error('Choose an organisation workspace first.') }
 function failure(error) {
   if (['42P01', 'PGRST205', 'PGRST202', '42883'].includes(error?.code)) return new Error('Shared CRM audiences are not enabled in this workspace yet.')
   return new Error(error?.message || 'The audience could not be loaded. Please try again.')
@@ -24,7 +29,7 @@ export async function loadMarketingAudiences(org, search = '', offset = 0, { cli
 export async function saveMarketingAudience(org, draft, { client = supabase } = {}) {
   scope(org, client); validateAudienceDefinition(draft.definition)
   const name = String(draft.name || '').trim(), description = String(draft.description || '').trim()
-  if (!name || name.length > 120 || description.length > 600 || !['personal', 'agency'].includes(draft.visibility)) throw new Error('Add an audience name, description of up to 600 characters and visibility.')
+  if (!name || name.length > (isEmailAudienceDefinition(draft.definition) ? 140 : 120) || (!isEmailAudienceDefinition(draft.definition) && description.length > 600) || !['personal', 'agency'].includes(draft.visibility)) throw new Error('Add an audience name, description of up to 600 characters and visibility.')
   const payload = { name, description, definition: draft.definition, visibility: draft.visibility }
   const data = await result(draft.id ? client.from('marketing_audiences').update({ ...payload, revision: draft.revision + 1 }).eq('organisation_id', org).eq('id', draft.id).eq('revision', draft.revision).is('archived_at', null).select().maybeSingle() : client.from('marketing_audiences').insert({ ...payload, organisation_id: org }).select().single())
   if (!data?.id) throw new Error('This audience changed or is no longer editable. Refresh before saving.')

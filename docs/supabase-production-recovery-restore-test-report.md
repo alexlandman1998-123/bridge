@@ -59,3 +59,31 @@ Recovery test passed for the platform-managed isolated restore target. The produ
 The historical exercise above used a branch created from the current live database with `--with-data`. It proved an isolated database copy could start and return aggregate counts. It did **not** identify and restore one of the physical backups, so it is insufficient proof of backup recovery. The corresponding evidence now records `recoveryTested: false` and `recordedExerciseType: live_database_clone` until an actual identified-backup restore passes. Production and the active staging project must not be used as restore targets.
 
 Live review found eight completed daily physical backups, latest `2024466958` from `2026-10-21T03:10:55.758Z`, with PITR disabled. Storage contains 5,514 objects totaling 5,877,106,235 bytes; these file bytes are excluded from database backups. The full app recovery gap and proposed encrypted off-site file-backup setup are recorded in [the coverage review](security/api-key-and-backup-coverage.md). No backup restore, paid recovery service, or copied production file archive was created during this review.
+
+
+## Identified logical backup restore — 27 October 2026
+
+A new logical backup `arch9-logical-20261027-e247ea692bb82b70` was restored successfully into
+`local-docker-arch9-recovery-20261027`, using the production PostgreSQL 17.6.1.063 image.
+The target had no network interfaces beyond loopback, no published ports, cron
+launching disabled and the HTTP worker pointed at an empty separate database.
+All 17 recorded core table counts matched the consistent source snapshot. The
+function, index, trigger and logical-column definitions matched production; all
+1,962 access policies were equivalent, including a 27-case check of one
+associative OR grouping difference introduced by SQL re-parsing. The original
+Supabase bootstrap role was preserved so membership grantors restored correctly.
+
+The completed backup SHA-256 is `e247ea692bb82b70ed5d5581e27854fced92b14441f95b8f3e2c312c3d54df94`. The verified backup,
+schema and password-free role files are retained with private permissions under
+`~/.codex/recovery/arch9/20261027-e247ea692bb82b70/`, outside Git. Task-owned temporary
+connection settings and rejected incomplete exports were removed after release. The retention hashes
+are recorded in `output/campaign-catchup-production-20261027/recovery-retention.json`;
+non-secret restore evidence is recorded in
+`output/campaign-catchup-production-20261027/recovery-restore-verification.json`.
+Earlier interrupted exports were rejected and do not establish recovery.
+
+This is a database recovery test. It does not restore Storage object bytes, custom
+role passwords, provider credentials or the provider root encryption key. No
+production/staging restore, new paid project or customer communication occurred.
+The preserved legacy leads policy returned shared rows to an actor probe and
+needs a separate access review; the campaign-specific isolation probes passed.

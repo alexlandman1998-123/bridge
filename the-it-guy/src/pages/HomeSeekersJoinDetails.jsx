@@ -1,0 +1,52 @@
+import { useEffect } from 'react'
+import { recruitmentPricing, recruitmentExample, recruitmentPaymentOptions } from './homeSeekersRecruitment'
+import { homeSeekersPath } from './homeSeekersRoutes'
+import { Eyebrow, CheckList, RentalFees, RentalExample, MobileDetails } from './homeSeekersJoinContent'
+import { money, paymentDetails, ffcTransferCopy, example, rentalFileFee, rentalExampleRent, rentalExampleCommission, rentalExampleFee, rentalExampleAgentIncome } from './homeSeekersJoinCopy'
+import { JoinActions, JoinHeader } from './HomeSeekersJoinActions'
+import HomeSeekersFooter from './HomeSeekersFooter'
+import './HomeSeekersJoin.css'
+import './HomeSeekersJoinRebuild.css'
+const { monthlyFee, referralMonthlyCredit, referralLimit } = recruitmentPricing
+const annualFee = example.cost, growthCommissionRate = 0.06
+export function HomeSeekersAgentRentalOffering() { return <div className="hs-join hs-join-rebuild" id="agent-offering">    <section className="hs-join__section hs-join__light hs-join__white" aria-labelledby="rentals-title">
+      <Eyebrow>Rentals and <strong>property management</strong></Eyebrow><h2 id="rentals-title">Build a rental book.<br /><em>Keep it yours.</em></h2>
+      <p className="hs-join__intro">Home Seekers carries the trust account, PayProp, reconciliations, monthly statements and annual audit. You carry the relationships.</p>
+      <MobileDetails><RentalFees /></MobileDetails>
+      <MobileDetails><RentalExample /></MobileDetails>
+
+    </section><div className="hs-join__section">      <p>Run your rentals and property management through Home Seekers. We carry the administration behind the book, while you carry the client relationships.</p>
+      <section><h4>What Home Seekers handles</h4><CheckList items={['The trust account', 'PayProp', 'Reconciliations', 'Monthly statements', 'The annual audit']} /></section>
+
+
+      <section className="hs-rental-modal__example" aria-labelledby="rental-example-title">
+        <h4 id="rental-example-title">What a book of 50 properties could look like</h4>
+        <p>50 properties renting at R12,000 a month, managed at a 10% fee.</p>
+        <dl><div><dt>Rent collected: 50 × {money(rentalExampleRent)}</dt><dd>{money(50 * rentalExampleRent)}</dd></div><div><dt>Your monthly commission at 10%</dt><dd>{money(50 * rentalExampleCommission)}</dd></div><div><dt>Home Seekers’ fee: {money(50 * rentalExampleRent)} × 3.5%</dt><dd>{money(50 * rentalExampleFee)}</dd></div></dl>
+        <strong className="hs-rental-modal__income">{money(50 * rentalExampleAgentIncome)}<span>remaining each month, {money(50 * rentalExampleAgentIncome * 12)} a year</span></strong>
+        <p className="hs-rental-modal__note">An illustration, not a promise. Figures exclude VAT, once-off file fees and other costs. Opening 50 new rental files would incur {money(50 * rentalFileFee)} in once-off file fees.</p>
+      </section>
+      <section><h4>The book stays yours</h4><p>You own your rental book outright and can sell it when you decide to move on. The relationships and the value you build remain yours.</p><h4>Income for the quieter months</h4><p>Sales income depends on the next deal. A rental book can provide recurring monthly income, including the months when you have not listed or sold a property. It is a business you build over time.</p></section>
+<JoinActions section="rental" /></div></div> }
+export default function HomeSeekersJoinDetails({ page }) {
+ useEffect(() => { const previous = document.title; document.title = `Home Seekers | ${page}`; return () => { document.title = previous } }, [page])
+ return <main className="hs-join hs-join-rebuild"><JoinHeader /><a className="hs-join-rebuild__back" href={homeSeekersPath('/join')}>Back to Join</a>{page === 'teams' && <>    <section className="hs-join__section hs-join__light hs-join__team" aria-labelledby="team-title">
+      <Eyebrow>Bring <strong>your team</strong></Eyebrow><h1 id="team-title">Your own seat at full price.<br /><em>Every seat after costs less.</em></h1>
+      <p className="hs-join__intro">The team leader chooses R9,000 monthly or R100,000 upfront for their own seat. Additional team members must pay monthly and cannot be paid upfront. One account, one invoice.</p>
+      <MobileDetails><table className="hs-join__pricing-table"><caption>Team subscriptions, excluding VAT</caption><thead><tr><th scope="col">Seat</th><th scope="col">Per month</th><th scope="col">Annual cost</th></tr></thead><tbody>
+        <tr><th scope="row">Team leader, monthly</th><td>R9,000 / month</td><td>R108,000 / year</td></tr><tr><th scope="row">Team leader, upfront</th><td>—</td><td>R100,000 / year</td></tr>
+        <tr><th scope="row">Seats 2 to 5</th><td>R7,000 each</td><td>{money(7000 * 12)} each<span className="hs-join__seat-math">R7,000 × 12 months</span></td></tr>
+        <tr><th scope="row">Seat 6 onwards</th><td>R6,000 each</td><td>{money(6000 * 12)} each<span className="hs-join__seat-math">R6,000 × 12 months</span></td></tr>
+      </tbody></table></MobileDetails>
+      <p className="hs-join__fine">R1,500 per registered sale still applies. Team seats cannot be paid from deals. The leader may pay their own seat upfront while the team pays monthly. Your team structure and agreements stay yours.</p>
+    </section></>}{page === 'referrals' && <>    <section className="hs-join__section hs-join__light hs-join__white hs-join__referral" aria-labelledby="referral-title">
+      <div><Eyebrow>Twelve referrals. <strong>Your seat covered.</strong></Eyebrow><h1 id="referral-title">Bring people with you.<br /><em>Cover your monthly fee.</em></h1><p>R750 a month for each agent you personally refer who joins and stays, capped at twelve agents. Payments continue for as long as those agents remain with Home Seekers.</p><p>One tier. You earn on the people you personally brought, and nobody else.</p><p className="hs-join__fine">Twelve active referrals cover the R9,000 monthly subscription on option 2. Registered-sale fees and VAT still apply.</p></div>
+      <div><MobileDetails><table className="hs-join__referral-table"><caption>Referral income against option 2, excluding VAT</caption><thead><tr><th scope="col">Agents</th><th scope="col">You earn</th><th scope="col">Net monthly fee</th></tr></thead><tbody>{[3, 6, 9, 12].map((agents) => <tr className={agents === referralLimit ? 'is-featured' : ''} key={agents}><th scope="row">{agents}</th><td>{money(agents * referralMonthlyCredit)}</td><td>{money(Math.max(0, monthlyFee - Math.min(agents, referralLimit) * referralMonthlyCredit))}</td></tr>)}</tbody></table></MobileDetails><p className="hs-join__statement">You’re here to sell houses.<br /><em>Not recruit your cousin.</em></p><p>No levels. No downline. No organisation to build. No Monday night calls about your “why”.</p></div>
+    </section></>}{page === 'pricing' && <><section className="hs-join__section" aria-labelledby="full-prices-title"><header className="hs-join-pricing__intro"><h1 id="full-prices-title">Full price list</h1><p>All amounts excluding VAT.</p><p>Same support on every option.</p></header><div className="hs-join__fees hs-join-pricing__options">{recruitmentPaymentOptions.map((option,index) => <article key={option.id} className={option.id === 'monthly' ? 'is-standard' : undefined}><p className="hs-join-pricing__option-number">Option {index+1}{option.id === 'monthly' && ' · The standard'}</p><h2>{option.title}</h2><p className="hs-join-pricing__price">{money(option.amount)} <span>{option.period}</span></p><p className="hs-join-pricing__annual">{money(option.annualFee)} annual subscription<br />Plus {money(recruitmentPricing.transactionFee)} per registered sale</p><p>{option.copy}</p><p>{option.note}</p><details><summary>Show details</summary><h3>Who it suits</h3><p>{paymentDetails[option.id].suits}</p><h3>How payment works</h3><ol>{paymentDetails[option.id].steps.map(step=><li key={step}>{step}</li>)}</ol>{paymentDetails[option.id].example && <p>{paymentDetails[option.id].example}</p>}<p>Keep 100% of your commission, less your chosen subscription and R1,500 per registered sale.</p><p>No joining fee, desk fee, royalty, marketing levy or exit fee.</p></details></article>)}</div><p><strong>FFC transfer:</strong> {ffcTransferCopy}</p><h2>Same support on every option</h2><p>Listing platforms, CRM, deal administration, training, compliance support and your choice of LOOM or CMA Info.</p><p>You can change your payment option at renewal.</p><p>Additional team seats are paid monthly and cannot be paid upfront. Team seats cannot be paid from deals.</p><a href={homeSeekersPath('/join/teams')}>Running a team? See team pricing</a></section>    <section className="hs-join__section" aria-labelledby="growth-title">
+      <Eyebrow>The part <strong>nobody else can say</strong></Eyebrow><h2 id="growth-title">The better you get,<br /><em>the cheaper we get.</em></h2>
+      <p className="hs-join__intro">Your subscription stays fixed. As your sales grow, the total fees take a smaller share of your commission.</p>
+      <div className="hs-join__growth">{[5, 8, 10, 15, 20].map((sales) => <div key={sales}><span>{sales} sales a year</span><strong>{Math.round(recruitmentExample(sales, 'monthly', growthCommissionRate).effectivePercent)}<small>%</small></strong><span>of your commission</span></div>)}</div>
+      <div className="hs-join__two-columns hs-join__prose"><p>The traditional split takes thirty percent whether you do four sales or forty. The balloon model takes a monthly fee and then ten percent on top of it.</p><p>On option 2, we charge R9,000 a month and R1,500 per registered sale. At ten sales, that’s {money(annualFee)} for the year. You can plan around it.</p></div>
+      <p className="hs-join__fine">Rounded percentages using option 2, an average R1.5 million sale price and {growthCommissionRate * 100}% commission, excluding VAT.</p>
+    </section><section className="hs-join__section"><h2>The break-even maths</h2><p>With Prepaid at R9,000 a month plus R1,500 per registered sale, break-even against a 70/30 split is about {example.breakEvenSales.toFixed(1)} sales a year, assuming R1.5 million per sale and 5% commission, excluding VAT.</p><p>In whole sales, you need six registered sales a year to come out ahead on those assumptions.</p><p>Your own sale prices and commission rates will change that number.</p></section></>}<div className="hs-join__section"><JoinActions section={page} /></div><HomeSeekersFooter /></main>
+}

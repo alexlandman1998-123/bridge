@@ -1,7 +1,8 @@
-import { CheckCircle2, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import PublicDevelopmentEnquiryForm from "./PublicDevelopmentEnquiryForm.jsx";
 import "./public-estate-enquiry.css";
+import MadisonReservationForm from "./MadisonReservationForm.jsx";
 
 export default function PublicDevelopmentEnquiryDrawer({
   open,
@@ -11,10 +12,10 @@ export default function PublicDevelopmentEnquiryDrawer({
   enquiry,
   reservationUnit = null,
   estatePresentation = false,
-  onSimulateReservation,
+  reservationConfig,
+  onRequestReservation,
 }) {
   const panelRef = useRef(null);
-  const demoReserved = Boolean(onSimulateReservation && reservationUnit?.demoReserved);
   useEffect(() => {
     if (!open) return undefined;
     const opener = document.activeElement;
@@ -38,7 +39,7 @@ export default function PublicDevelopmentEnquiryDrawer({
       window.removeEventListener("keydown", closeOnEscape);
       if (estatePresentation && opener?.isConnected) opener.focus({ preventScroll: true });
     };
-  }, [open, onClose, estatePresentation, demoReserved]);
+  }, [open, onClose, estatePresentation]);
 
   if (!open) return null;
   return (
@@ -51,18 +52,13 @@ export default function PublicDevelopmentEnquiryDrawer({
         <div className={`mx-auto mb-5 flex max-w-xl items-start justify-between gap-4${estatePresentation ? " estate-enquiry__header" : ""}`}>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-[#64766d]">{estatePresentation ? developmentName : "Make it home"}</p>
-            <h2 className="mt-1 font-serif text-3xl leading-none">{demoReserved ? `Unit ${reservationUnit.unitNumber} reserved.` : reservationUnit ? `Reserve unit ${reservationUnit.unitNumber}.` : estatePresentation ? "Let’s talk." : "Let’s talk about your future home."}</h2>
-            {estatePresentation ? <p className="estate-enquiry__intro">{demoReserved ? "Your simulated reservation is complete." : reservationUnit && onSimulateReservation ? "Leave your details, then simulate a R10,000 payment to reserve this unit for your browser session." : reservationUnit ? "Leave your details and our team will confirm availability and guide you through the next steps." : "Tell us what you have in mind. Our team will be in touch to help."}</p> : null}
+            <h2 className="mt-1 font-serif text-3xl leading-none">{reservationUnit ? `Reserve unit ${reservationUnit.unitNumber}.` : estatePresentation ? "Let’s talk." : "Let’s talk about your future home."}</h2>
+            {estatePresentation ? <p className="estate-enquiry__intro">{reservationUnit ? "A little closer to your new home." : "Tell us what you have in mind. Our team will be in touch to help."}</p> : null}
           </div>
           <button onClick={onClose} aria-label="Close enquiry form" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[#9eada5] text-[#14352c]"><X size={20} /></button>
         </div>
         <div className={`mx-auto max-w-xl${estatePresentation ? " estate-enquiry__body" : ""}`}>
-          {demoReserved ? (
-            <div className="estate-reservation-demo__success">
-              <div role="status"><CheckCircle2 size={36} aria-hidden="true" /><p className="estate-reservation-demo__amount">R10,000</p><p>Simulated payment complete</p><p className="estate-reservation-demo__notice">Unit {reservationUnit.unitNumber} now shows as Reserved in this browser session. No money was charged and no live reservation was made.</p></div>
-              <button type="button" data-reservation-done onClick={onClose}>Back to residences</button>
-            </div>
-          ) : <PublicDevelopmentEnquiryForm key={reservationUnit?.id || "enquiry"} estatePresentation={estatePresentation} reservationUnit={reservationUnit} onSimulateReservation={onSimulateReservation} developmentName={developmentName} agency={agency} enquiry={enquiry} tone="light" />}
+          {estatePresentation && reservationUnit ? <MadisonReservationForm key={reservationUnit.id} unit={reservationUnit} config={reservationConfig} onRequest={onRequestReservation} onClose={onClose} /> : <PublicDevelopmentEnquiryForm key={reservationUnit?.id || "enquiry"} estatePresentation={estatePresentation} reservationUnit={reservationUnit} developmentName={developmentName} agency={agency} enquiry={enquiry} tone="light" />}
         </div>
       </section>
     </div>

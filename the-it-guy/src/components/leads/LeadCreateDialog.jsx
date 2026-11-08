@@ -32,6 +32,7 @@ function LeadCreateDialogContent({
   agents = [],
   currentAgent = {},
   saving = false,
+  readOnly = false,
   error = '',
   feedback = {},
   draft = null,
@@ -100,6 +101,7 @@ function LeadCreateDialogContent({
           </p>
         ) : null}
 
+        <fieldset disabled={saving || readOnly} className="contents">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
             First name
@@ -111,11 +113,11 @@ function LeadCreateDialogContent({
           </label>
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
             Mobile
-            <Field required type="tel" inputMode="tel" value={form.phone || ''} onChange={(event) => setField('phone', event.target.value)} />
+            <Field required={!String(form.email || '').trim()} type="tel" inputMode="tel" value={form.phone || ''} onChange={(event) => setField('phone', event.target.value)} />
           </label>
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
             Email
-            <Field required type="email" value={form.email || ''} onChange={(event) => setField('email', event.target.value)} />
+            <Field required={!String(form.phone || '').trim()} type="email" value={form.email || ''} onChange={(event) => setField('email', event.target.value)} />
           </label>
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
             Lead source
@@ -135,6 +137,8 @@ function LeadCreateDialogContent({
             </div>
           ) : null}
         </div>
+
+        <p className="text-xs text-[#60758b]">Add a mobile number or email address. You can complete the other contact details later.</p>
 
         {category === 'development' && !lockProperty ? (
           <label className="grid min-w-0 gap-1.5 text-sm font-semibold text-[#29435d]">
@@ -195,6 +199,7 @@ function LeadCreateDialogContent({
           <span className="flex items-center justify-between gap-3"><span>Notes</span><span className="text-xs font-normal text-[#8295a9]">Optional</span></span>
           <Field as="textarea" rows={3} value={form.notes || ''} onChange={(event) => setField('notes', event.target.value)} />
         </label>
+        </fieldset>
       </form>
     </Modal>
   )

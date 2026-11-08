@@ -15,7 +15,7 @@ beforeEach(() => {
   events = []; objects = new Map()
   tables = {
     private_listings: [{ id: listingId, organisation_id: '00000000-0000-4000-8000-000000000003', listing_status: 'onboarding_sent', listing_visibility: 'internal', is_active: false }],
-    private_listing_seller_onboarding: [{ id: '00000000-0000-4000-8000-000000000002', private_listing_id: listingId, status: 'sent', seller_type: 'individual', form_data: { ownershipType: 'individual', maritalStatus: 'not_married', propertyStructureType: 'sectional_title' } }],
+    private_listing_seller_onboarding: [{ id: '00000000-0000-4000-8000-000000000002', private_listing_id: listingId, status: 'sent', seller_type: 'individual', form_data: { ownershipType: 'individual', maritalStatus: 'not_married', propertyStructureType: 'sectional_title', sellerProfileCapturedAt: '2026-11-07T08:00:00Z' } }],
     private_listing_document_requirements: [], private_listing_documents: [],
   }
   client.auth.getUser.mockResolvedValue({ data: { user: { id: '00000000-0000-4000-8000-000000000004' } }, error: null })
@@ -61,7 +61,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-it.each(['signed_mandate', 'signed_disclosure_form', 'signed_fica_declaration'])('saves %s on the first attempt before onboarding capture finishes', async requirementKey => {
+it.each(['signed_mandate', 'signed_disclosure_form', 'signed_fica_declaration'])('saves %s on the first attempt after ownership capture, before onboarding submission', async requirementKey => {
   const file = new File(['%PDF-1.4\nSynthetic signed upload'], `${requirementKey}.pdf`, { type: 'application/pdf' })
   const result = await uploadPrivateListingDocument(listingId, file, { requirementKey, documentType: requirementKey, visibility: 'internal', existingSignedEvidence: true, deferMandateSigning: true })
   const savedRequirement = tables.private_listing_document_requirements.find(row => row.requirement_key === requirementKey)
@@ -77,6 +77,14 @@ it.each(['signed_mandate', 'signed_disclosure_form', 'signed_fica_declaration'])
   expect(reopened.id).toBe(result.id)
   expect(objects.size).toBe(1)
   expect(tables.private_listing_documents).toHaveLength(1)
+})
+
+it('does not invent seller requirements before the saved ownership model is captured', async () => {
+  delete tables.private_listing_seller_onboarding[0].form_data.sellerProfileCapturedAt
+  await expect(uploadPrivateListingDocument(listingId, new File(['%PDF-1.4'], 'mandate.pdf', { type: 'application/pdf' }), { requirementKey: 'signed_mandate', documentType: 'signed_mandate', existingSignedEvidence: true }))
+    .rejects.toThrow(/No active seller requirement/)
+  expect(events).toEqual([])
+  expect(objects.size).toBe(0)
 })
 
 it('rejects a retired visible target before uploading or creating another requirement', async () => {

@@ -14,7 +14,7 @@ async function readAll(buildQuery, signal) {
   }
 }
 
-export async function loadDevelopmentListingPerformance(listings, days, signal) {
+export async function loadDevelopmentListingPerformance(listings, days, signal, { developmentId, websitePublished } = {}) {
   const unique = [...new Map(listings.map(listing => [`${listing.organisationId}:${listing.id}`, listing])).values()]
   const snapshots = new Array(unique.length)
   let next = 0
@@ -70,5 +70,20 @@ export async function loadDevelopmentListingPerformance(listings, days, signal) 
     leadBatches.push({ organisationId, rows: leadRows, error: leadError, available: leadAvailable })
     viewingBatches.push({ organisationId, rows: viewingRows, error: viewingError })
   }
-  return aggregateDevelopmentListingPerformance({ listings: unique, snapshots, leadBatches, viewingBatches, days })
+  const result = aggregateDevelopmentListingPerformance({ listings: unique, snapshots, leadBatches, viewingBatches, days })
+  if (UUID.test(developmentId || '')) {
+    const response = await supabase.rpc('get_development_visual_analytics', {
+      requested_development_id: developmentId, requested_days: days,
+    }).abortSignal(signal)
+    const summary = response.error ? null : response.data?.summary
+    const metric = value => ({ available: typeof value === 'number' && Number.isFinite(value) && value >= 0, value: typeof value === 'number' ? value : null, complete: false })
+    result.website = {
+      published: websitePublished,
+      statisticsUnavailable: !summary,
+      complete: false,
+      periodLabel: `Development website activity over the last ${days} days, including today. Views count scene visits; enquiries count successfully saved website submissions.`,
+      metrics: { views: metric(summary?.sceneViews), enquiries: metric(summary?.submittedEnquiries) },
+    }
+  }
+  return result
 }

@@ -7,7 +7,7 @@ import { createMetaIntegrationHandler } from '../../supabase/functions/meta-inte
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const org=id(1), other=id(2), user=id(3), sender=id(4), foreign=id(5), listingId=id(6), connection=id(7)
-const time=new Date(Date.now()-1000).toISOString(), origin='https://example.supabase.co'
+const time='2026-10-17T17:00:00.000Z', origin='https://example.supabase.co'
 const listing={id:listingId,organisation_id:org,title:'Family home',description:'Public description',asking_price:1000000,suburb:'Claremont',city:'Cape Town',listing_status:'active',is_active:true,updated_at:time,notes:'PRIVATE NOTE',street_address:'PRIVATE ADDRESS'}
 
 test('24-hour reply boundary and public listing snapshots',()=>{
@@ -128,7 +128,7 @@ test('signed-event ingestion is idempotent, ordered and scoped; credentials and 
     assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,2)
     await applyWhatsAppInboxWebhook(sqlClient(db),{entry:[{id:'200',changes:[{field:'messages',value:{metadata:{phone_number_id:'100'},messages:[{id:'webhook',from:'27821234567',timestamp:String(Date.parse(time)/1000),type:'text',text:{body:'Hello'}}]}}]}]})
     assert.equal((await db.query('select count(*)::int n from whatsapp_inbox_messages')).rows[0].n,3)
-    await db.exec(`set role authenticated;set test.org='${org}';set request.jwt.claim.sub='${user}';`)
+    await db.exec(`set role authenticated;set test.org='${org}';`)
     assert.equal((await db.query('select id,phone_number_id from organisation_communication_channels')).rows.length,1)
     for(const col of ['meta_access_token','token_ciphertext']) await assert.rejects(db.query(`select ${col} from organisation_communication_channels`),/permission denied/)
     await assert.rejects(db.query("update organisation_communication_channels set meta_access_token='forged'"),/permission denied/)
@@ -196,7 +196,7 @@ test('calendar posts paginate, enforce actor listing visibility and expose only 
   const posts=Array.from({length:201},(_,index)=>({id:id(1000+index),listing_id:index===1?foreign:listingId,status:'published',published_at:time,token_ciphertext:'SECRET',snapshot_json:{private:'SECRET'}}))
   const db={from(table){assert.equal(table,'meta_listing_posts');const query={
     select(fields){assert.equal(fields,'id,listing_id,status,published_at');return query},
-    eq(key,value){assert.ok(['organisation_id','platform'].includes(key));assert.equal(value,key==='platform'?'facebook':org);return query},
+    eq(key,value){assert.equal(key,'organisation_id');assert.equal(value,org);return query},
     order(key){assert.equal(key,'id');return query},
     async range(start,end){ranges.push([start,end]);return {data:posts.slice(start,end+1)}},
   };return query}}

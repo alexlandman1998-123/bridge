@@ -96,9 +96,12 @@ export function resolveMvpTransactionCreationLineage({
     transaction.id,
   )
   const override = resolveOverride(transaction, routingProfile)
+  const signedOtpCapture = object(routingProfile.signedOtpCapture)
   const mode = acceptedOfferId
     ? 'accepted_offer'
-    : override.reason || override.actorId || override.actorRole
+    : signedOtpCapture.source === 'signed_buyer_otp'
+      ? 'signed_otp_capture'
+      : override.reason || override.actorId || override.actorRole
       ? 'manual_override'
       : 'unknown'
   const issues = []
@@ -109,6 +112,10 @@ export function resolveMvpTransactionCreationLineage({
   if (mode === 'accepted_offer') {
     if (receipt.ready === false) issues.push('conversion_receipt_failed')
     if (!acceptedOfferId) issues.push('accepted_offer_missing')
+  } else if (mode === 'signed_otp_capture') {
+    if (!signedOtpCapture.capturedBy || !signedOtpCapture.storagePath) issues.push('signed_otp_evidence_missing')
+    if (!signedOtpCapture.leadId || !signedOtpCapture.listingId) issues.push('signed_otp_source_missing')
+    if (signedOtpCapture.leadId !== (transaction.originating_buyer_lead_id || transaction.originating_lead_id) || signedOtpCapture.listingId !== transaction.listing_id) issues.push('signed_otp_source_mismatch')
   } else if (mode === 'manual_override') {
     if (!override.reason) issues.push('override_reason_missing')
     if (override.reason && override.reason.length < 12) issues.push('override_reason_too_short')
@@ -125,6 +132,8 @@ export function resolveMvpTransactionCreationLineage({
     mode,
     label: mode === 'accepted_offer'
       ? 'Accepted offer conversion'
+      : mode === 'signed_otp_capture'
+        ? 'Signed OTP captured for review'
       : mode === 'manual_override'
         ? 'Manual transaction override'
         : 'Creation lineage missing',
@@ -134,9 +143,12 @@ export function resolveMvpTransactionCreationLineage({
     receiptStatus: text(receipt.status) || null,
     receiptVerified: receipt.ready === true && Boolean(transactionId),
     override: mode === 'manual_override' ? override : null,
+    signedOtpCapture: mode === 'signed_otp_capture' ? signedOtpCapture : null,
     auditVisible: mode === 'accepted_offer'
       ? Boolean(acceptedOfferId && idempotencyKey)
-      : mode === 'manual_override'
+      : mode === 'signed_otp_capture'
+        ? Boolean(signedOtpCapture.capturedBy && signedOtpCapture.storagePath)
+        : mode === 'manual_override'
         ? Boolean(override.reason && override.actorId && override.actorRole && override.authorised === true)
         : false,
     confirmed,

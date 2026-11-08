@@ -1,3 +1,4 @@
+import { buildHomeSeekersJoinFollowUp } from '../send-email/content/homeSeekersJoinFollowUp.ts';
 import { buildRecruitmentContactNotification } from "../send-email/content/recruitmentContactNotification.ts";
 import { sendViaResendApi } from "../send-email/services/resend.ts";
 import {
@@ -68,8 +69,8 @@ export async function dispatchRecruitmentContacts(request: Request, {
     try {
       if (
         job.organisation_id !== organisationId ||
-        !recipients.has(job.recipient) ||
-        !["lead_received", "application_received", "documents_received", "contract_returned"]
+        !(recipients.has(job.recipient) || (job.event_kind === 'join_follow_up' && job.contact_json?.version === 'home-seekers-join-v1' && job.recipient === job.contact_json?.email)) ||
+        !["lead_received", "application_received", "documents_received", "contract_returned", "join_follow_up"]
           .includes(job.event_kind || "lead_received")
       ) {
         await complete(null, "invalid_saved_recipient");
@@ -113,12 +114,9 @@ export async function dispatchRecruitmentContacts(request: Request, {
         message = {
           from,
           to: job.recipient,
-          ...buildRecruitmentContactNotification(
-            job.lead_id,
-            contact,
-            resolved,
-            job.event_kind || "lead_received",
-          ),
+          ...(job.event_kind === "join_follow_up"
+            ? buildHomeSeekersJoinFollowUp(contact, job.recipient)
+            : buildRecruitmentContactNotification(job.lead_id, contact, resolved, job.event_kind || "lead_received")),
         };
       }
       // Persist the exact provider payload before calling Resend, including on an uncertain retry.

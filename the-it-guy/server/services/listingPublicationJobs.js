@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createProperty24ApiResponse } from '../property24/api.js'
 import { createPrivatePropertyApiResponse } from '../private-property/api.js'
+import { listingPortalFailureMessage } from '../../src/services/listings/listingChannelUpdateState.js'
 
 const rpc = async (client, name, args) => {
   const { data, error } = await client.rpc(name, args)
@@ -73,10 +74,11 @@ export async function dispatchPublicationJob(job, { client, env = process.env, p
 export function publicationJobOutcome(response) {
   const body = response.body || {}
   const status = String(body.status || body.report?.status || '').toUpperCase()
-  if (status === 'UNCERTAIN' || response.status >= 500) return { state: 'uncertain', message: body.message
-    ? `Submission could not be confirmed. ${String(body.message).slice(0, 500)} Check the channel before submitting again.`
+  const detail = listingPortalFailureMessage(body)
+  if (status === 'UNCERTAIN' || response.status >= 500) return { state: 'uncertain', message: detail
+    ? `Submission could not be confirmed. ${detail.slice(0, 500)} Check the channel before submitting again.`
     : 'Submission could not be confirmed. Check the channel before submitting again.' }
-  if (response.status >= 400 || ['BLOCKED','FAILED','REJECTED'].includes(status)) return { state: 'failed', message: String(body.message || body.report?.nextStep || body.error || 'Channel needs attention.').slice(0, 800) }
+  if (response.status >= 400 || ['BLOCKED','FAILED','REJECTED'].includes(status)) return { state: 'failed', message: (detail || 'Publishing failed, but no detailed reason was returned. Check requirements to identify what needs fixing.').slice(0, 800) }
   return { state: 'accepted', message: 'Submitted. Waiting for the channel to confirm it is live.' }
 }
 
@@ -87,7 +89,7 @@ export async function runListingPublicationJobs({ client = publicationJobClient(
     if (!await rpc(client, 'begin_listing_publication_dispatch', { p_job: job.id, p_claim: job.claim_id })) return { id: job.id, state: 'cancelled' }
     let outcome
     try { outcome = publicationJobOutcome(await dispatch(job, { client, env })) }
-    catch { outcome = publicationJobOutcome({ status: 503 }) }
+    catch (error) { outcome = publicationJobOutcome({ status: 503, body: { error } }) }
     const result = await client.from('listing_publication_jobs').update({ ...outcome, updated_at: new Date().toISOString() })
       .eq('id', job.id).eq('claim_id', job.claim_id).eq('state', 'dispatching').select('id').single()
     if (result.error || !result.data) throw new Error('Publication receipt could not be saved.')

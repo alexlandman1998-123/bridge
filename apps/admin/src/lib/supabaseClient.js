@@ -36,7 +36,7 @@ function decodeJwtPayload(token = '') {
 function resolveFrontendKey() {
   const key = normalize(env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_KEY)
   if (!key) return ''
-  if (key.startsWith('sb_publishable_')) return ''
+  if (key.startsWith('sb_publishable_')) return key
   if (!isJwtLikeKey(key)) return ''
 
   const payload = decodeJwtPayload(key)

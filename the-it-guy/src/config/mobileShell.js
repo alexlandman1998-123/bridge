@@ -130,6 +130,7 @@ export function getMobilePageMenuItems(workspace = {}) {
 }
 
 export function canAccessMobileMarketing(workspace = {}) {
+  if (resolveMobileRoleCategory(workspace) === 'developer') return true
   if (!['agent', 'principal'].includes(resolveMobileRoleCategory(workspace))) return false
   const businessWorkspace = normalize(workspace.businessWorkspaceId)
   if (businessWorkspace && businessWorkspace !== 'sales') return false

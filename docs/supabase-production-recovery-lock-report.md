@@ -1,11 +1,11 @@
 # Supabase Production Recovery Lock Report
 
-Generated: 2026-10-26T08:21:30.139Z
+Generated: 2026-11-08T14:58:55.028Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
 
-**Status: RECOVERY_LOCK_BLOCKED**
+**Status: RECOVERY_LOCKED**
 
 Production promotion remains blocked until this report says `RECOVERY_LOCKED`. This is a database-only recovery gate: Supabase database backups do not include Storage file bytes. A locked database gate does not prove full application recovery. This report does not enable PITR, restore data, apply SQL, repair ledgers, or modify production.
 
@@ -18,16 +18,15 @@ Production promotion remains blocked until this report says `RECOVERY_LOCKED`. T
 | Recovery method | `equivalent_managed_backup` |
 | Recorded PITR enabled | No |
 | Recorded physical backups | 8 |
-| Recovery tested | No |
-| Live check performed | No |
-| Live PITR enabled | Not available |
-| Live physical backups | Not available |
-| Recovery locked | No |
+| Recovery tested | Yes |
+| Live check performed | Yes |
+| Live PITR enabled | No |
+| Live physical backups | 8 |
+| Recovery locked | Yes |
 
 ## Blockers
 
-- `recovery_test_not_recorded`
-- `backup_restore_not_proven`
+- None
 
 ## Evidence Rule
 

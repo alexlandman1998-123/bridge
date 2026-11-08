@@ -6,7 +6,7 @@ import { RENTAL_PORTAL_STATUSES } from '../../services/rentals/rentalListingChan
 import { getRentalPortalReadiness } from '../../services/rentals/rentalListingReadinessPresentation'
 import { rentalChannelStatus } from '../../services/rentals/rentalChannelStatus'
 
-export default function RentalPortalManagementPanel({ channel, listing = {}, busy, onClose, onRefresh, onChangeStatus, onVerifyLink, onEdit, onCheck, onPublish, onWithdraw, onFix, preview, previewError = '', checking = false, historyError }) {
+export default function RentalPortalManagementPanel({ channel, listing = {}, busy, onClose, onRefresh, onChangeStatus, onVerifyLink, onCheck, onPublish, onWithdraw, onFix, preview, previewError = '', checking = false, historyError }) {
   const [status, setStatus] = useState(RENTAL_PORTAL_STATUSES[channel.key][0])
   const [url, setUrl] = useState(channel.publicUrl || '')
   const [confirmed, setConfirmed] = useState(false)
@@ -16,9 +16,10 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
   const hasReference = Boolean(channel.reference)
   const hasAdvert = hasReference || channel.hasAdvertIdentity === true
   const updateExisting = hasAdvert
-
   const automaticCheck = updateExisting && !preview && !checking && !previewError
-  const edit = () => { onClose(); onEdit?.() }
+  const savedError = /^(channel needs attention\.?|portal publication failed\.?|the portal did not accept this request\.?)$/i.test(String(channel.error || '').trim())
+    ? 'The previous publishing attempt failed, but Arch9 did not save the detailed reason. Check requirements below to identify what needs fixing.'
+    : channel.error
   const fix = (action) => { onClose(); window.setTimeout(() => onFix?.(action), 0) }
 
   return <ListingChannelManageDialog
@@ -32,7 +33,7 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
       statusLabel: channel.statusLabel || rentalChannelStatus(channel.status).label,
       checkedAt: channel.lastCheckedAt,
       publicationState: channel.publicationState,
-      issues: [...new Set([channel.error, channel.statusDetail].filter(Boolean))],
+      issues: [...new Set([savedError, channel.statusDetail].filter(Boolean))],
       activity: (channel.activity || []).map(item => ({ title: item.label, at: item.time })),
       activityUnavailable: Boolean(historyError),
     }}
@@ -44,18 +45,17 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
     canWithdraw={canMutate && hasAdvert && !inactive}
     updateUnavailableMessage={channel.requiresReconciliation ? 'Reconcile the previous request before sending another change.' : inactive ? 'This advert is inactive. Review its portal status before sending content updates.' : 'Check requirements before updating this advert.'}
     onClose={onClose}
-    onFix={onEdit ? edit : undefined}
     onRefresh={onRefresh && (hasAdvert || channel.requiresReconciliation) ? onRefresh : undefined}
     onPreview={onCheck}
     onUpdate={hasAdvert && onPublish ? updateExisting ? () => onPublish({ updateExisting: true }) : onPublish : undefined}
     onPublish={!hasAdvert ? onPublish : undefined}
-
     onWithdraw={onWithdraw}
     renderChannelSettings={({ disabled, run }) => <>
       {onCheck ? <section aria-label={`${channel.label} requirements`} className="rounded-xl border border-[#e3ebf2] p-4 text-sm">
         <h4 className="font-semibold text-[#243d56]">Listing requirements</h4>
         <p role="status" className="mt-2 font-semibold text-[#243d56]">{automaticCheck ? 'Checked automatically when you update' : readiness.state}</p>
         <p className="mt-1 text-xs leading-5 text-[#607387]">{automaticCheck ? 'Arch9 checks the saved listing and portal setup before sending your update.' : readiness.detail}</p>
+        <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={disabled} onClick={() => void run(onCheck, '', `Checking ${channel.label} requirements…`)}>{preview || previewError ? 'Check requirements again' : 'Check requirements now'}</Button>
         {preview && channel.key === 'property24' ? <p className="mt-2 text-xs text-[#607387]">Photos prepared: {readiness.imagesLoaded}. Photos that failed: {readiness.imagesFailed}.</p> : null}
         {readiness.issues.length ? <ul className="mt-3 space-y-3">{readiness.issues.map(issue => <li key={issue.key}>
           <p className="font-semibold text-[#8a5b13]">{issue.label}</p>
@@ -75,7 +75,6 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
           </label>
           <Button type="button" size="sm" disabled={disabled || !hasAdvert || !canMutate || !onChangeStatus} onClick={() => void run(() => onChangeStatus(status), 'Portal status request sent. Check latest status to confirm it.')}>Send status change</Button>
           {!hasAdvert ? <p className="text-xs text-[#607387]">A saved portal advert is required before changing its status.</p> : null}
-
           <label className="grid gap-2 font-semibold text-[#243d56]">Public listing URL
             <Field type="url" value={url} onChange={event => { setUrl(event.target.value); setConfirmed(false) }} placeholder={`https://${channel.key === 'property24' ? 'www.property24.com' : 'www.privateproperty.co.za'}/to-rent/…`} disabled={disabled} />
           </label>

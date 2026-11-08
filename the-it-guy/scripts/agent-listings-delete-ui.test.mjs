@@ -207,8 +207,8 @@ assert(
 assert(
   source.includes("function isArchivedListingRecord(row = {})") &&
     source.includes("return 'archived'") &&
-    source.includes("{ key: 'archived', label: 'Previous Listings'") &&
-    source.includes("setListingCollectionView('archived')"),
+    source.includes("'Previous Listings'") &&
+    source.includes("handleListingFiltersChange({ ...categoryFilters, collectionView: 'archived' })"),
   'archived listings should be placed in Previous Listings immediately after archival.',
 )
 

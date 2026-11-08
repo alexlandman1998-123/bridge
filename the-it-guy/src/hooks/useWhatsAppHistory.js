@@ -7,7 +7,12 @@ export default function useWhatsAppHistory({ organisationId, accessScope, conver
   const [state, setState] = useState({ ...empty, scope: '' })
   const snapshot = useRef(state), generation = useRef(0), active = useRef(scope), pending = useRef(null)
   snapshot.current = state; active.current = scope
-  const invalidate = useCallback(() => { generation.current++ }, [])
+  const invalidate = useCallback(() => {
+    generation.current++
+    // An effect restart must be able to begin a replacement request immediately.
+    // The old response is still rejected by its generation and token checks.
+    pending.current = null
+  }, [])
   const load = useCallback(async (older = false) => {
     if (!organisationId || (thread && !conversationId) || pending.current?.scope === scope) return
     const previous = snapshot.current.scope === scope ? snapshot.current : empty

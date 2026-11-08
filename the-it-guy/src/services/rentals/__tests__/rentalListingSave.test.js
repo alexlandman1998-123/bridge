@@ -45,6 +45,21 @@ beforeEach(() => {
   mocks.upload.mockImplementation(async (file) => asset(file))
 })
 
+it('saves verified rental details before deferred portal checks and retains the chosen channels', async () => {
+  const draft = { ...form(), description: '', selectedSyndicationChannels: ['property24', 'private_property'] }
+  await expect(updateRentalListingDraft('listing-1', draft, context)).rejects.toThrow(/description|photo/)
+  expect(mocks.sync).not.toHaveBeenCalled()
+  await updateRentalListingDraft('listing-1', draft, { ...context, deferChannelChecks: true })
+  expect(mocks.sync).toHaveBeenCalledTimes(1)
+  expect(mocks.sync.mock.calls[0][1].listingPatch.sellerCanonicalFacts.distribution.selectedChannels).toEqual(['property24', 'private_property'])
+  expect(mocks.publish).not.toHaveBeenCalled()
+})
+
+it('still rejects invalid core rental details when channel checks are deferred', async () => {
+  await expect(updateRentalListingDraft('listing-1', { ...form(), monthlyRent: 0 }, { ...context, deferChannelChecks: true })).rejects.toThrow(/rental amount/)
+  expect(mocks.sync).not.toHaveBeenCalled()
+})
+
 it('verifies refreshed photo identity even when readback has a different signed URL', async () => {
   const originalSave = mocks.sync.getMockImplementation()
   mocks.sync.mockImplementation(async (...args) => {

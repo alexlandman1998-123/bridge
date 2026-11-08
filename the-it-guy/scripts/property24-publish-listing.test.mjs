@@ -63,8 +63,9 @@ assert.match(scriptSource, /applyProperty24ListingPublish/)
 assert.doesNotMatch(scriptSource, /31382@arch9\.co\.za/i)
 
 const previewServiceSource = read('server/services/property24Arch9ListingPreviewService.js')
-assert.match(previewServiceSource, /import\('sharp'\)/)
-assert.match(previewServiceSource, /sips/)
+assert.match(previewServiceSource, /prepareProperty24PublishingPhoto/)
+assert.match(read('server/services/property24PhotoPreparation.js'), /import sharp from 'sharp'/)
+assert.doesNotMatch(previewServiceSource, /sips/)
 assert.match(previewServiceSource, /convertedToJpeg/)
 
 const publishServiceSource = read('server/property24/publishService.js')

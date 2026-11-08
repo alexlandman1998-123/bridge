@@ -9,6 +9,9 @@ import ListingCaptureLayout from '../../components/listings/ListingCaptureLayout
 import { RENT_PREVIEW_UNITS, listingTitleExample } from '../../services/listings/listingAdvertPreviewModel'
 import { isRentalListingDraft } from '../../services/rentals/rentalListingIndexModel'
 import ListingChannelLogo from '../../components/listings/ListingChannelLogo'
+import ListingAdvertUpdateReceipt from '../../components/listings/ListingAdvertUpdateReceipt'
+import { updateExistingListingAdverts } from '../../services/listings/listingAdvertUpdates'
+import { INITIAL_LISTING_PUBLICATION_EVENT, watchInitialListingPublication, refreshListingPublicationResults, requireSettledListingPublication } from '../../services/listings/listingInitialPublicationService'
 import ListingFieldIssues from '../../components/listings/ListingFieldIssues'
 import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../../services/syndicationChannelAvailabilityService'
 import { isRentalCreationId, serializeRentalCreationDraft } from '../../services/rentals/rentalListingCreationRecovery'
@@ -356,6 +359,19 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
   const [correctionField, setCorrectionField] = useState('')
   const [correctionRequest, setCorrectionRequest] = useState(0)
   const [notice, setNotice] = useState('')
+  const [advertResults, setAdvertResults] = useState([])
+  const advertRequestRef = useRef({ fingerprint: '', key: '' })
+  const recordAdvertResult = result => setAdvertResults(current => [...current.filter(row => row.key !== result.key), result])
+  useEffect(() => {
+    if (!isEditing) return
+    const refresh = event => {
+      if (event.detail?.listingId !== editListingId) return
+      setAdvertResults(current => current.map(row => row.notSent || row.status === 'skipped' ? row : event.detail.results.find(next => next.key === row.key) || row))
+    }
+    window.addEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh)
+    const stop = watchInitialListingPublication(editListingId)
+    return () => { stop(); window.removeEventListener(INITIAL_LISTING_PUBLICATION_EVENT, refresh) }
+  }, [isEditing, editListingId])
   const [leaveAction, setLeaveAction] = useState(null)
   const requestLeave = useCallback(proceed => setLeaveAction(() => proceed), [])
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
@@ -372,7 +388,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
   const [channelAvailability, setChannelAvailability] = useState(UNAVAILABLE_SYNDICATION_CHANNELS)
   const [channelAvailabilityLoading, setChannelAvailabilityLoading] = useState(true)
   useEffect(() => { let cancelled = false; setChannelAvailabilityLoading(true); getSyndicationChannelAvailability(organisationId, { listingType: 'rental' }).then(value => { if (!cancelled) setChannelAvailability(value) }).catch(() => { if (!cancelled) setChannelAvailability(UNAVAILABLE_SYNDICATION_CHANNELS) }).finally(() => { if (!cancelled) setChannelAvailabilityLoading(false) }); return () => { cancelled = true } }, [organisationId])
-  const fieldIssues = useMemo(() => getRentalListingValidationIssues(form, { organisationId }), [form, organisationId])
+  const fieldIssues = useMemo(() => getRentalListingValidationIssues(isEditing && !isDraftCapture ? { ...form, selectedSyndicationChannels: [] } : form, { organisationId }), [form, organisationId, isEditing, isDraftCapture])
   const includeLandlordStep = isEditing || activeStep === 'landlord' || fieldIssues.some(issue => issue.step === 'landlord')
   const steps = useMemo(() => CREATE_STEPS.filter(step => includeLandlordStep || step.key !== 'landlord').map(step => isEditing && !isDraftCapture && step.key === 'review' ? { ...step, label: 'Check & save' } : step), [isEditing, isDraftCapture, includeLandlordStep])
   const stepForError = message => fieldIssues.find(issue => issue.message === message)?.step || stepForValidationError(message)
@@ -739,10 +755,10 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
     }
   }
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event, { sendUpdates = true, retryChannels } = {}) {
     event.preventDefault()
     if (savingRef.current) return
-    if (activeStep !== 'review') {
+    if (activeStep !== 'review' && (!isEditing || isDraftCapture)) {
       goToNextStep()
       return
     }
@@ -758,6 +774,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
       setCloudSave({ status: 'saving' })
       setSaveProgress(pendingListingId || isEditing ? 'Saving rental details…' : 'Creating rental draft…')
       setError('')
+      if (isEditing && !isDraftCapture) await requireSettledListingPublication(editListingId, selectedDistributionChannels)
       if (!isEditing) {
         // Persist before the first request. A browser-storage failure must not
         // leave a remotely created record with no durable recovery identity.
@@ -766,6 +783,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
         setCreationId(creationIdRef.current)
       }
       const context = {
+        deferChannelChecks: isEditing && !isDraftCapture,
         creationId: creationIdRef.current,
         canonicalPropertyId: linkedLandlordLead && portfolioPropertyId
           ? landlordWorkspace(linkedLandlordLead).portfolio.find(item => item.id === portfolioPropertyId)?.canonicalPropertyId : undefined,
@@ -811,6 +829,10 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
         cloudSavedFormRef.current = JSON.stringify(confirmedForm)
         setForm(confirmedForm)
         setCloudSave({ status: 'saved', savedAt: confirmedForm.expectedUpdatedAt || new Date().toISOString() })
+        if (isEditing) {
+          editBaselineRef.current = { form: confirmedForm, revision: listingRecoveryRevision(result.listing) }
+          setEditRecoveryBaseline(editBaselineRef.current)
+        }
         detailsSaved = true
         if (linkedLandlordLead && !isEditing) {
           setPendingListingId(listingId)
@@ -825,6 +847,20 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
         if (!mountedRef.current) return
         const activation = !isEditing || isDraftCapture ? await activateRentalListing(result.listing, form, { websiteDestination: channelAvailability.agency_website }) : null
         if (!mountedRef.current) return
+        if (isEditing && !isDraftCapture && sendUpdates) {
+          setActiveStep('review')
+          setSaveProgress('Checking requirements and updating adverts…')
+          const fingerprint = JSON.stringify({ ...form, expectedUpdatedAt: undefined })
+          if (advertRequestRef.current.fingerprint !== fingerprint) advertRequestRef.current = { fingerprint, key: crypto.randomUUID() }
+          const results = await updateExistingListingAdverts({ listingId, listingStatus: result.listing.listingStatus || form.listingStatus || 'active',
+            form: confirmedForm, rental: true, channels: retryChannels || selectedDistributionChannels, requestKey: advertRequestRef.current.key, retryOnly: Boolean(retryChannels), onResult: recordAdvertResult })
+          advertRequestRef.current.fingerprint = JSON.stringify({ ...confirmedForm, expectedUpdatedAt: undefined })
+          if (!mountedRef.current) return
+          recoveryProtection.markSaved()
+          void clearListingRecoveryDraft(draftStorageKey).catch(() => {})
+          setNotice(results.some(row => ['needs_attention', 'uncertain'].includes(row.status)) ? 'Changes saved. Check the affected channel below.' : results.some(row => row.status === 'publishing' || row.status === 'submitted') ? 'Changes saved. Follow each advert’s update below.' : 'Changes saved. No active adverts were queued for update.')
+          return
+        }
         recoveryProtection.markSaved()
         recoveryWarningGenerationRef.current += 1
         completedDraftRef.current = true
@@ -860,7 +896,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
       }
       if (!mountedRef.current) return
       if (!detailsSaved) setCloudSave({ status: 'error' })
-      else setNotice(saveError.code === 'RENTAL_INVENTORY_LINK_FAILED' ? 'Your rental details are saved. Retry connecting the vacancy using this same listing.' : 'Your rental details are saved. Activation did not finish. Continue with the same listing; do not create another rental.')
+      else setNotice(saveError.code === 'RENTAL_INVENTORY_LINK_FAILED' ? 'Your rental details are saved. Retry connecting the vacancy using this same listing.' : isEditing && !isDraftCapture ? 'Changes saved. Advertising updates could not be checked. Your edits are kept here.' : 'Your rental details are saved. Activation did not finish. Continue with the same listing; do not create another rental.')
       if (!isEditing && saveError.listingId) { pendingListingIdRef.current = saveError.listingId; setPendingListingId(saveError.listingId) }
       if (Array.isArray(saveError.galleryImages)) {
         setForm((current) => ({ ...current, galleryImages: saveError.galleryImages }))
@@ -1170,12 +1206,12 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
               <span>Selected channels need more photos.</span>
               <button type="button" data-rental-control="syndication-photos" className="font-semibold underline underline-offset-2" onClick={() => goToStep('marketing')}>Add photos</button>
             </div> : null}
-            <p className="text-xs leading-5 text-[#607891]">{isEditing ? 'Save rental changes saves your details here. It does not update public adverts. Send updates from the saved listing when you are ready.' : 'Choose where this rental will appear. Save draft keeps it private.'}</p>
+            <p className="text-xs leading-5 text-[#607891]">{isEditing && !isDraftCapture ? 'Save & update adverts checks and updates existing active adverts. Save only keeps changes in Arch9. New or withdrawn adverts must be published separately.' : 'Choose where this rental will appear. Save draft keeps it private.'}</p>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
             <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
-              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Check your rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the details below, then {isEditing && !isDraftCapture ? 'save your changes. Public adverts will need a separate update.' : selectedDistributionChannels.length ? 'save and publish to your selected websites.' : 'save this listing. No adverts will be sent.'}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step {steps.length} of {steps.length}</p><h2 className="text-2xl font-semibold text-[#18324b]">Check your rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the details below, then {isEditing && !isDraftCapture ? 'save and update your existing active adverts, or choose Save only.' : selectedDistributionChannels.length ? 'save and publish to your selected websites.' : 'save this listing. No adverts will be sent.'}</p></div>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationAttemptedStep === activeStep && validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationAttemptedStep !== activeStep ? 'Review details' : validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -1183,7 +1219,7 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
               <ReviewSummaryCard title="Extra details (optional)" onEdit={() => goToStep('features')} details={[{ label: 'Confirmed features', value: `${selectedSellingPoints.length} confirmed` }, { label: 'Pet friendly', value: form.petsPolicy === 'allowed' ? 'Yes' : form.petsPolicy === 'not_allowed' ? 'No' : 'Subject to approval' }]} />
             </div>
             <ListingReviewDetails form={form} rental compact onEdit={goToStep} />
-            {isEditing ? <p className="rounded-xl border border-[#f1d4a6] bg-[#fffaf0] p-4 text-sm">Saving here does not update your public adverts. Send the updates from the saved listing.</p> : null}
+            {isEditing && !isDraftCapture ? <p className="text-sm text-[#607387]">Save & update adverts checks the requirements automatically and updates your existing active adverts. Choose Save only to keep these changes in Arch9.</p> : null}
             <div className="rounded-xl border border-[#dce6f2] bg-[#fbfdff] p-4">
               <h3 className="text-sm font-semibold text-[#18324b]">Publishing readiness</h3>
               <div className="mt-3 grid gap-2">
@@ -1192,6 +1228,10 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
                   return <div key={channel.key} className="flex flex-wrap items-center gap-5 rounded-lg border border-[#dce6f2] bg-white p-3">
                     <ListingChannelLogo channel={{ ...channel, availability: destination }} agencyLogo={agencyLogo} />
                     <span className="text-sm text-[#2d445e]">{destination?.label || channel.label}</span>
+                    <ListingAdvertUpdateReceipt result={advertResults.find(row => row.key === channel.key)} busy={saving}
+                      dirty={unsavedToListings} onRetry={() => void handleSubmit({ preventDefault() {} }, { retryChannels: [channel.key] })}
+                      onCheck={() => void refreshListingPublicationResults(editListingId).catch(() => setError('Unable to check advertising status. Your changes are saved.'))}
+                      onFix={() => goToStep(advertResults.find(row => row.key === channel.key)?.fixStep || 'property')} />
                   </div>
                 })}
               </div>
@@ -1210,15 +1250,15 @@ function ScopedRentalListingCreatePage({ captureSessionId }) {
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={saveDraftToListings} disabled={saving || recovering || recoveryBlocked}>Save draft</Button>
+              <Button type="button" variant="secondary" onClick={isEditing && !isDraftCapture ? event => void handleSubmit(event, { sendUpdates: false }) : saveDraftToListings} disabled={saving || recovering || recoveryBlocked}>{isEditing && !isDraftCapture ? 'Save only' : 'Save draft'}</Button>
               <Button
                 key={activeStep === 'review' ? 'submit' : 'continue'}
-                type={activeStep === 'review' ? 'submit' : 'button'}
-                onClick={activeStep === 'review' ? undefined : (event) => { event.preventDefault(); goToNextStep() }}
+                type={activeStep === 'review' || (isEditing && !isDraftCapture) ? 'submit' : 'button'}
+                onClick={activeStep === 'review' || (isEditing && !isDraftCapture) ? undefined : (event) => { event.preventDefault(); goToNextStep() }}
                 disabled={saving || recovering || recoveryBlocked}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? (saving ? 'Saving rental…' : isEditing && !isDraftCapture ? 'Save rental changes' : (pendingListingId || creationId) && cloudSave.status !== 'saved' && !isDraftCapture ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : 'Continue'}
+                {isEditing && !isDraftCapture ? saving ? 'Saving and checking…' : 'Save & update adverts' : activeStep === 'review' ? (saving ? 'Saving rental…' : (pendingListingId || creationId) && cloudSave.status !== 'saved' && !isDraftCapture ? selectedDistributionChannels.length ? 'Retry save and publish' : 'Retry save listing' : selectedDistributionChannels.length ? 'Save and publish' : 'Save listing') : 'Continue'}
               </Button>
             </div>
           </footer>

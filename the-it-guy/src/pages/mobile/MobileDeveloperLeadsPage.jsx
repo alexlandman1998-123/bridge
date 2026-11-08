@@ -71,8 +71,8 @@ export default function MobileDeveloperLeadsPage() {
   async function handleLeadAction(action) {
     if (!developer || !developerOrgId || !selectedId || activeActionRef.current?.scope === actionScope || (actionResult?.scope === actionScope && actionResult.refreshRequired)) return false
     const authorizedLead = maskDeveloperLeadForDeveloper(selected)
-    const primaryAction = getDeveloperLeadPrimaryAction(authorizedLead)
-    if (action.key === 'copy_onboarding' ? authorizedLead.accessProfile.requiresHandoverBeforePrivateDetails
+    const primaryAction = getDeveloperLeadPrimaryAction(authorizedLead, { overrides: journeyResult?.key === journeyKey ? journeyResult.overrides : [] })
+    if (action.key === 'copy_onboarding' ? authorizedLead.accessProfile.requiresHandoverBeforePrivateDetails || authorizedLead.leadStatus === 'lost'
       : action.key === 'save_unit' ? primaryAction.key !== 'select_unit' || !action.preferredUnitId
         : action.key !== primaryAction.key || primaryAction.disabled) return false
     const token = { scope: actionScope }
@@ -82,6 +82,18 @@ export default function MobileDeveloperLeadsPage() {
     try {
       let message = ''
       let onboardingUrl = ''
+      if (action.key === 'open_buyer_workspace') {
+        navigate(`/pipeline/leads/${encodeURIComponent(authorizedLead.sourceLeadId)}?tab=buyer_profile`)
+        return true
+      }
+      if (action.key === 'reserve_unit') {
+        navigate(`/developer/developments/${encodeURIComponent(authorizedLead.primaryDevelopmentId)}?tab=leads`)
+        return true
+      }
+      if (action.key === 'complete_setup') {
+        navigate(`/developer/leads/${encodeURIComponent(selectedId)}?workspaceTab=buyer_profile`)
+        return true
+      }
       if (action.key === 'update_status' || action.key === 'save_unit') {
         const { updateDeveloperLeadWorkspaceSetup } = await import('../../services/developerLeadService.js')
         await updateDeveloperLeadWorkspaceSetup({ developerOrgId, developerLeadId: selectedId,
@@ -93,6 +105,10 @@ export default function MobileDeveloperLeadsPage() {
         await requestAgencyLeadHandover({ developerOrgId, developerLeadId: selectedId })
         message = 'Agency handover requested.'
       } else if (action.key === 'send_onboarding' || action.key === 'copy_onboarding') {
+        if (!authorizedLead.convertedTransactionId && authorizedLead.sourceLeadId) {
+          navigate(`/pipeline/leads/${encodeURIComponent(authorizedLead.sourceLeadId)}?tab=buyer_profile`)
+          return true
+        }
         const { convertDeveloperLeadToTransactionAndSendOnboarding } = await import('../../services/developerLeadConversionService.js')
         const copyOnly = action.key === 'copy_onboarding'
         const response = await convertDeveloperLeadToTransactionAndSendOnboarding({ developerOrgId, lead: authorizedLead, sendBuyerOnboarding: !copyOnly, ...(copyOnly ? { manualBuyerOnboardingDelivery: true } : {}) })

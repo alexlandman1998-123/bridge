@@ -8,8 +8,9 @@ export default function ListingPublicationProgress({ results = [], busy = false,
   const uncertain = results.some(row => row.status === 'uncertain')
   const draft = listingStatus === 'draft'
   return <section aria-label="Saved listing and advertising" className="rounded-xl border border-[#dce6f2] bg-white p-4 text-sm">
-    {title ? <p className="break-words font-medium text-[#243d56]">{title}</p> : null}
-    <div role="status" aria-live="polite" className={`${title ? 'mt-3 ' : ''}space-y-3 text-[#607387]`}>
+    <h2 className="font-semibold text-[#243d56]">Listing saved</h2>
+    {title ? <p className="mt-1 break-words font-medium text-[#243d56]">{title}</p> : null}
+    <div role="status" aria-live="polite" className="mt-3 space-y-3 text-[#607387]">
       {draft ? <p>Saved as a draft. Finish the details before sending adverts.</p> : null}
       {unsavedChanges ? <p>Changes in this form have not been saved or sent. The results below are for the previous request.</p>
         : changesNotSent ? <p>Changes saved. This save did not update your public adverts. Review the advertising controls to send them.</p> : null}
@@ -17,7 +18,8 @@ export default function ListingPublicationProgress({ results = [], busy = false,
       {results.length ? <p className="font-semibold text-[#243d56]">{changesNotSent || unsavedChanges ? 'Previous advertising request' : 'Advertising results'}</p> : null}
       {results.map(row => <div key={row.key}>
         <p><strong>{row.label}</strong> · {listingPublicationReceipt(row).label}</p>
-        <p className="mt-1">{listingPublicationReceipt(row).message}</p>
+        <p className="mt-1 break-words whitespace-pre-wrap">{listingPublicationReceipt(row).message}</p>
+        {['needs_attention', 'uncertain'].includes(row.status) && row.jobId ? <p className="mt-1 text-xs">Support reference: <code>{row.jobId}</code></p> : null}
       </div>)}
       {pending && results.every(row => row.status !== 'publishing' || row.jobId) ? <p>Publishing continues after you leave this page.</p> : null}
       {failed ? <p>Your listing and successful channels are kept. Fix the details, then retry the failed channels. Successful channels will not be resent.</p> : null}

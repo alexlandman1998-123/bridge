@@ -592,11 +592,11 @@
   background: #e9f3ef;
   color: var(--eb-green);
 }
-.eb-library > .eb-tabs {
+.eb-library-content > .eb-tabs {
   border-bottom: 1px solid var(--eb-border);
   margin-bottom: 15px;
 }
-.eb-library > .eb-tabs button[aria-pressed="true"] {
+.eb-library-content > .eb-tabs button[aria-pressed="true"] {
   background: white;
   border-radius: 0;
   border-bottom: 2px solid var(--eb-green);
@@ -788,7 +788,7 @@
   border-radius: 5px;
   margin-top: 18px;
 }
-.eb-inspector > small {
+.eb-inspector-content > small {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   line-height: 1.6;
@@ -802,7 +802,7 @@
 .eb-inspector summary {
   cursor: pointer;
 }
-.eb-inspector > p {
+.eb-inspector-content > p {
   font-size: 0.875rem;
   line-height: 1.7;
   color: var(--color-text-body);
@@ -1197,3 +1197,70 @@
 .eb-image-library-item > div { min-width: 0; }
 .eb-image-library-item strong { display: block; overflow-wrap: anywhere; }
 .eb-image-library-item > label, .eb-image-library-item > .eb-image-library-actions { grid-column: 1 / -1; }
+
+/* Email setup and audience share the app's type scale and available width. */
+.eb-builder{font-family:inherit;font-size:.875rem}.eb-builder p{font-weight:400}.eb-details-layout>.eb-basics{border-radius:12px;padding:22px}.eb-details-layout>.eb-basics>h1,.eb-audience>h1{font-size:1.375rem;line-height:1.35;letter-spacing:-.025em;margin:0 0 20px}.eb-details-layout .eb-field{margin:14px 0;gap:6px}.eb-details-layout .eb-field input,.eb-details-layout .eb-field select{font-size:.875rem;min-height:42px;padding:9px 11px}.eb-details-layout>.eb-basics>.eb-attention{margin-top:18px;border-radius:9px}.eb-audience{width:100%;max-width:none;min-width:0;margin:0;border-radius:12px;padding:22px}.eb-audience>p{font-size:.875rem;color:var(--color-text-muted);margin:0 0 18px;line-height:1.6}.eb-audience .email-audience-studio{background:#fafcfb;border:1px solid #e3eae6;border-radius:10px;padding:20px;gap:18px}.eb-audience .email-audience-title{display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:600;letter-spacing:normal;color:var(--color-text-strong);margin:0}.eb-audience .email-audience-title svg{color:#638170}.eb-audience .wa-field-label{font-size:.875rem;font-weight:500}.eb-audience .wa-field-label :is(input,select){font-family:inherit;font-size:.875rem;min-height:42px}.eb-audience .wa-field-label small{font-size:.75rem;font-weight:400}.eb-audience .email-template-actions :is(input,select,button){font-family:inherit;font-size:.875rem;min-height:42px}.eb-audience .email-contact-picker select{min-height:160px}.eb-audience .eb-attention{margin-top:18px;padding:12px 16px;border-radius:8px;background:#f1f7f3;border-color:#deebe2}.eb-audience .ma-picker{margin:0 0 18px}.eb-audience .ma-picker>button{font-family:inherit;font-size:.875rem}@media(max-width:760px){.eb-audience,.eb-details-layout>.eb-basics{padding:18px}.eb-audience .email-audience-studio{padding:16px}}
+
+/* Folding either tool panel returns its width to the email canvas. */
+.eb-side-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:18px}.eb-side-heading h2{margin:0;font-size:15px}.eb-builder .eb-side-heading button{border:0;background:none;padding:5px;color:#7a8f82;flex-shrink:0}.eb-library-content[hidden],.eb-inspector-content[hidden]{display:none}.eb-workspace>.is-collapsed{padding:12px 7px;overflow:hidden}.eb-workspace>.is-collapsed .eb-side-heading{flex-direction:column-reverse;gap:14px;margin:0}.eb-workspace>.is-collapsed h2{writing-mode:vertical-rl;font-size:12px;font-weight:500;color:#7c9184;white-space:nowrap}.eb-builder .eb-side-heading button:focus-visible{outline:2px solid #337e58;outline-offset:2px}
+@media(min-width:901px){.eb-workspace{--eb-library-width:clamp(175px,17vw,240px);--eb-inspector-width:clamp(235px,23vw,330px);grid-template-columns:var(--eb-library-width) minmax(0,1fr) var(--eb-inspector-width)}.eb-workspace.is-library-collapsed{--eb-library-width:44px}.eb-workspace.is-inspector-collapsed{--eb-inspector-width:44px}}
+@media(min-width:561px) and (max-width:900px){.eb-workspace.is-library-collapsed{grid-template-columns:44px minmax(0,1fr)}}
+@media(max-width:900px){.eb-inspector.is-collapsed .eb-side-heading{flex-direction:row}.eb-inspector.is-collapsed h2{writing-mode:horizontal-tb}.eb-inspector.is-collapsed{padding:10px 14px}}
+@media(max-width:560px){.eb-library.is-collapsed .eb-side-heading{flex-direction:row}.eb-library.is-collapsed h2{writing-mode:horizontal-tb}.eb-library.is-collapsed{padding:10px 14px}}
+
+.eb-import-upload{display:flex;align-items:center;gap:15px;border:1px dashed #bfd2c6;border-radius:10px;background:#f7fbf8;padding:22px;color:#71957f;margin:18px 0 9px}.eb-import-upload>div{display:grid;gap:5px;flex:1}.eb-import-upload strong{font-size:14px;font-weight:600;color:#41674e}.eb-import-upload span{font-size:12px;color:#8a9b90}.eb-import-upload.is-dragging{background:#eaf5ee;border-color:#4a8963}.eb-import-hosting-note{font-size:12px!important;font-weight:400!important;color:#7f9386!important;margin-top:10px!important}@media(max-width:560px){.eb-import-upload{flex-wrap:wrap;padding:18px}.eb-import-upload button{margin-left:43px}}
+
+/* Final review uses the same open workspace and compact cards as the builder. */
+.eb-review { width: 100%; max-width: 1240px; margin: 0 auto; padding: 28px 32px 40px; }
+.eb-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+.eb-review h1 { font-size: 26px; margin: 0 0 8px; }
+.eb-review p { color: var(--color-text-muted); line-height: 1.6; margin: 0; }
+.eb-review h2 { font-size: 16px; margin: 0 0 18px; }
+.eb-review-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); gap: 20px; margin-bottom: 20px; }
+.eb-review-card { background: var(--color-surface, #fff); border: 1px solid var(--color-border, #e4e9e6); border-radius: 12px; padding: 24px; min-width: 0; }
+.eb-review .eb-review-grid { margin: 0; gap: 22px 28px; }
+.eb-review-grid strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.eb-review-test { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.eb-review-test h2 { margin: 0; }
+.eb-review-test small { color: var(--color-text-muted); font-size: 12px; }
+.eb-review-icon { padding: 10px; border-radius: 12px; background: #edf5f0; color: var(--eb-green); display: inline-flex; }
+.eb-review-delivery { margin-bottom: 20px; }
+.eb-review-delivery .eb-field { max-width: 440px; margin-bottom: 0; }
+.eb-review .eb-content-check p { margin: 12px 0; font-size: 13px; }
+.eb-test-results { list-style: none; padding: 0; margin: 18px 0; }
+.eb-test-results li { display: flex; align-items: center; gap: 10px; padding: 10px 0; color: var(--eb-green); overflow-wrap: anywhere; }
+.eb-test-results small { display: block; color: var(--color-text-muted); margin-top: 3px; }
+@media (max-width: 760px) { .eb-review { padding: 20px 16px; } .eb-review-layout { grid-template-columns: 1fr; } .eb-review-heading { align-items: flex-start; flex-direction: column; } .eb-review-card { padding: 18px; } }
+
+/* Consistent spacing in the HTML import dialog. */
+.eb-modal .eb-import{display:flex;flex-direction:column;gap:14px;min-width:0}
+.eb-modal .eb-import>h2,.eb-modal .eb-import>p{margin:0}
+.eb-modal .eb-import .eb-import-upload{margin:0;padding:20px}
+.eb-modal .eb-import .eb-import-summary{padding:12px 0;margin-top:2px}
+.eb-modal .eb-import>h3{margin:4px 0 0}
+.eb-modal .eb-import>iframe{display:block;flex:none;height:430px;max-height:48vh;min-height:220px}
+.eb-import-actions{display:flex;justify-content:flex-end;padding-top:14px;border-top:1px solid var(--eb-border)}
+@media(max-width:560px){.eb-import-actions>button{width:100%}.eb-modal .eb-import .eb-import-upload{padding:16px}}
+
+/* Compact campaign workspace header. */
+.eb-builder .eb-header{padding:16px 20px;gap:16px;border-radius:16px;align-items:center}
+.eb-builder .eb-header>div:first-child{min-width:170px;flex:1}
+.eb-builder .eb-header .eb-back{padding:0;min-height:22px;font-size:11px;margin-bottom:7px;gap:6px;background:transparent;border:0}
+.eb-builder .eb-title-row{gap:7px;justify-content:flex-start;flex-wrap:nowrap}
+.eb-builder .eb-title-row>input{width:clamp(110px,16vw,250px);max-width:100%;min-width:60px;padding:0;font-size:21px;line-height:1.3;font-weight:600;letter-spacing:-.4px;border:0;background:transparent}
+.eb-builder .eb-title-row>button{padding:4px;width:25px;min-height:25px;border:0;background:transparent;color:#86958a}
+.eb-builder .eb-save-state{font-size:10px;gap:4px;white-space:nowrap;color:#739080;margin-left:2px}
+.eb-builder .eb-save-state svg{width:12px;height:12px}
+.eb-builder .eb-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.eb-builder .eb-header-actions button,.eb-builder .eb-header-actions .eb-overflow>summary{min-height:36px;padding:8px 11px;font-size:12px;font-weight:500;gap:7px;border-radius:8px;box-shadow:none}
+.eb-edit-tools{display:flex;align-items:center;gap:3px;padding-right:10px;margin-right:2px;border-right:1px solid #e5eae7}
+.eb-builder .eb-edit-tools button{border:0;background:transparent;color:#62766b}
+.eb-builder .eb-edit-tools button:hover:not(:disabled){background:#f2f6f3;color:#235c40}
+.eb-builder .eb-edit-tools button:disabled{opacity:.35}
+.eb-builder .eb-header-actions .eb-save-draft-tool{border:0;background:transparent;color:#526b5c}
+.eb-builder .eb-header-actions .eb-primary{padding:9px 16px;background:#18765b;color:white;border-color:#18765b}
+.eb-builder .eb-header-actions .eb-overflow>summary{padding:7px;min-width:32px;border:0;background:transparent;color:#708276}
+@media(max-width:1150px){.eb-builder .eb-header{align-items:flex-start}.eb-builder .eb-header-actions{max-width:65%}.eb-builder .eb-edit-tools{border:0;padding:0;margin:0;justify-content:flex-end;width:100%}.eb-builder .eb-title-row{flex-wrap:wrap}.eb-builder .eb-title-row>input{width:150px}.eb-builder .eb-save-state{flex-basis:100%;margin:2px 0 0}}
+@media(max-width:650px){.eb-builder .eb-header{padding:14px;flex-direction:column;align-items:stretch}.eb-builder .eb-header-actions{max-width:none;justify-content:space-between;gap:5px}.eb-builder .eb-edit-tools{justify-content:flex-start;flex-wrap:wrap}.eb-builder .eb-save-state{flex-basis:auto;margin:0 0 0 6px}.eb-builder .eb-title-row>input{width:180px}}
+
+.eb-builder .eb-title-row>input{width:auto;max-width:280px}@media(max-width:650px){.eb-builder .eb-title-row>input{max-width:200px}}

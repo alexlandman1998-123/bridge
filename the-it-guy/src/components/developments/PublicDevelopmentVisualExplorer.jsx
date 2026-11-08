@@ -202,7 +202,7 @@ function ComparisonDialog({ units, media, enquiry, onRemove, onClose }) {
     ["Parking", (unit) => unit.parkingCount ?? "—"],
     ["Floor", (unit) => unit.floor ?? unit.floorNumber ?? "—"],
     ["Phase", (unit) => unit.phase || "—"],
-    ["Status", (unit) => STATUS[visualUnitStatus(unit.status)].label],
+    ["Status", (unit) => unit.reservationLabel || STATUS[visualUnitStatus(unit.status)].label],
   ];
   return (
     <div
@@ -996,8 +996,8 @@ export default function PublicDevelopmentVisualExplorer({
               key={`${hotspot.id}:label`}
               data-hotspot
               data-hotspot-button
-              title={unit ? `Unit ${unit.unitNumber} · ${unitStatus.label}` : undefined}
-              aria-description={unitStatus?.label}
+              title={unit ? `Unit ${unit.unitNumber} · ${unit.reservationLabel || unitStatus.label}` : undefined}
+              aria-description={unit?.reservationLabel || unitStatus?.label}
               aria-label={`${hotspot.label?.text || unit?.unitNumber || hotspot.target.id}. ${destination.type === "scene" ? "Explore this view" : "Open details"}`}
               onClick={() => activateHotspot(hotspot)}
               style={{
@@ -1395,7 +1395,7 @@ export default function PublicDevelopmentVisualExplorer({
                         <span
                           className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${status.chip}`}
                         >
-                          {status.label}
+                          {unit.reservationLabel || status.label}
                         </span>
                       </span>
                       <strong className="text-xs text-[#153d33]">

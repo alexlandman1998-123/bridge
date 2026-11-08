@@ -1,34 +1,64 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
 
 create table public.whatsapp_saved_audiences (
  id uuid primary key default gen_random_uuid(),organisation_id uuid not null references public.organisations(id),name text not null check(length(trim(name)) between 1 and 100),
  filters jsonb not null,version integer not null default 1,created_by uuid not null references auth.users(id),updated_at timestamptz not null default now(),archived_at timestamptz,
  unique(id,organisation_id)
-);
-create index whatsapp_saved_audiences_org on public.whatsapp_saved_audiences(organisation_id,updated_at desc);
-create index whatsapp_saved_audiences_actor on public.whatsapp_saved_audiences(created_by);
+)
+;
+
+create index whatsapp_saved_audiences_org on public.whatsapp_saved_audiences(organisation_id,updated_at desc)
+;
+
+create index whatsapp_saved_audiences_actor on public.whatsapp_saved_audiences(created_by)
+;
+
 create table public.whatsapp_campaign_audience_plans (
  campaign_id uuid primary key,organisation_id uuid not null,plan jsonb not null,request_json jsonb not null,saved_by uuid not null references auth.users(id),updated_at timestamptz not null default now(),
  foreign key(organisation_id,campaign_id) references public.whatsapp_campaigns(organisation_id,id) on delete cascade
-);
-create index whatsapp_campaign_audience_plans_org on public.whatsapp_campaign_audience_plans(organisation_id);
-create index whatsapp_campaign_audience_plans_actor on public.whatsapp_campaign_audience_plans(saved_by);
-alter table public.whatsapp_campaign_recipients add column crm_route_snapshot jsonb not null default '{}';
+)
+;
+
+create index whatsapp_campaign_audience_plans_org on public.whatsapp_campaign_audience_plans(organisation_id)
+;
+
+create index whatsapp_campaign_audience_plans_actor on public.whatsapp_campaign_audience_plans(saved_by)
+;
+
+alter table public.whatsapp_campaign_recipients add column crm_route_snapshot jsonb not null default '{}'
+;
+
 create table public.whatsapp_campaign_reply_routes (
  message_id uuid primary key references public.whatsapp_inbox_messages(id) on delete cascade,organisation_id uuid not null references public.organisations(id),conversation_id uuid not null,
  campaign_id uuid not null,recipient_id uuid not null references public.whatsapp_campaign_recipients(id) on delete cascade,status text not null check(status in ('routed','needs_review','preserved')),
  reason text not null,created_at timestamptz not null default now(),foreign key(conversation_id,organisation_id) references public.whatsapp_inbox_conversations(id,organisation_id),
  foreign key(organisation_id,campaign_id) references public.whatsapp_campaigns(organisation_id,id)
-);
-create index whatsapp_campaign_reply_routes_org on public.whatsapp_campaign_reply_routes(organisation_id,created_at desc);
-create index whatsapp_campaign_reply_routes_thread on public.whatsapp_campaign_reply_routes(conversation_id,created_at desc);
-create index whatsapp_campaign_reply_routes_recipient on public.whatsapp_campaign_reply_routes(recipient_id);
-create index whatsapp_campaign_reply_routes_campaign on public.whatsapp_campaign_reply_routes(campaign_id);
-create index whatsapp_campaign_reply_context on public.whatsapp_inbox_messages(channel_id,reply_to_provider_message_id) where direction='inbound' and reply_to_provider_message_id is not null;
+)
+;
+
+create index whatsapp_campaign_reply_routes_org on public.whatsapp_campaign_reply_routes(organisation_id,created_at desc)
+;
+
+create index whatsapp_campaign_reply_routes_thread on public.whatsapp_campaign_reply_routes(conversation_id,created_at desc)
+;
+
+create index whatsapp_campaign_reply_routes_recipient on public.whatsapp_campaign_reply_routes(recipient_id)
+;
+
+create index whatsapp_campaign_reply_routes_campaign on public.whatsapp_campaign_reply_routes(campaign_id)
+;
+
+create index whatsapp_campaign_reply_context on public.whatsapp_inbox_messages(channel_id,reply_to_provider_message_id) where direction='inbound' and reply_to_provider_message_id is not null
+;
 
 create function private.whatsapp_recruitment_manager(p_org uuid,p_actor uuid) returns boolean language sql stable security invoker set search_path='' as $$
  select exists(select 1 from public.organisation_users where organisation_id=p_org and user_id=p_actor and status='active' and role in ('principal','admin','super_admin'));
-$$;
+$$
+;
+
 create function private.whatsapp_audience_rows(p_org uuid,p_filters jsonb,p_record uuid default null) returns table(record_id uuid,kind text,phone text,name text,stage text,owner_id uuid,areas text[],contact_id uuid,eligible boolean,state jsonb)
 language sql stable security invoker set search_path='' as $$
  with records as (
@@ -55,7 +85,8 @@ language sql stable security invoker set search_path='' as $$
  )
  select r.record_id,r.kind,r.phone,r.name,r.stage,r.owner_id,r.areas,c.id,coalesce(c.consent_status='opted_in' and c.opted_out_at is null,false),r.state
  from matched r left join public.whatsapp_marketing_contacts c on c.organisation_id=p_org and c.phone=r.phone;
-$$;
+$$
+;
 
 create function public.whatsapp_audiences_request(p_org uuid,p_actor uuid,p_action text,p_id uuid default null,p_version integer default null,p_config jsonb default null,p_limit integer default 500,p_search text default '') returns jsonb language plpgsql security invoker set search_path='' as $$
 declare a public.whatsapp_saved_audiences%rowtype; f jsonb; items jsonb; total integer; permitted integer; phones integer; invalid integer; ambiguous integer;
@@ -88,16 +119,22 @@ begin
  elsif p_action='options' then
   select jsonb_build_object('areas',coalesce(jsonb_agg(distinct area) filter(where area is not null),'[]')) into items from private.whatsapp_audience_rows(p_org,jsonb_build_object('kind',coalesce(f->>'kind','buyer'),'areas','[]'::jsonb,'stages','[]'::jsonb,'includeClosed',false)) r cross join lateral unnest(r.areas) area;return items;
  end if;raise exception 'Unknown audience action';
-end; $$;
+end; $$
+;
 
 create function private.whatsapp_plan_access(p_org uuid,p_campaign uuid) returns boolean language plpgsql stable security definer set search_path='' as $$
 begin
  if not exists(select 1 from public.organisation_users where organisation_id=p_org and user_id=(select auth.uid()) and status='active') then return false;end if;
  if exists(select 1 from public.whatsapp_campaign_audience_plans where organisation_id=p_org and campaign_id=p_campaign and plan->'filters'->>'kind'='recruitment') then return private.whatsapp_recruitment_manager(p_org,(select auth.uid()));end if;
  return true;
-end; $$;
-create policy whatsapp_campaign_recruitment_scope on public.whatsapp_campaigns as restrictive for select to authenticated using(private.whatsapp_plan_access(organisation_id,id));
-create policy whatsapp_recipient_recruitment_scope on public.whatsapp_campaign_recipients as restrictive for select to authenticated using(private.whatsapp_plan_access(organisation_id,campaign_id));
+end; $$
+;
+
+create policy whatsapp_campaign_recruitment_scope on public.whatsapp_campaigns as restrictive for select to authenticated using(private.whatsapp_plan_access(organisation_id,id))
+;
+
+create policy whatsapp_recipient_recruitment_scope on public.whatsapp_campaign_recipients as restrictive for select to authenticated using(private.whatsapp_plan_access(organisation_id,campaign_id))
+;
 
 create function private.whatsapp_target_reason(p_org uuid,p_target jsonb,p_plan jsonb,p_actor uuid) returns text language plpgsql security invoker set search_path='' as $$
 declare a public.whatsapp_saved_audiences%rowtype; r record; admin boolean; current_state jsonb;
@@ -119,7 +156,8 @@ begin
  if not found or not r.eligible then return 'CRM recipient, area, stage or campaign permission changed';end if;
  if r.state is distinct from p_target->'state' then return 'CRM phone, assignment or stage changed; review recipients';end if;
  return null;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_campaign_plan_request(p_org uuid,p_actor uuid,p_action text,p_id uuid default null,p_version integer default null,p_fields jsonb default null,p_plan jsonb default null,p_existing boolean default false) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare c public.whatsapp_campaigns%rowtype; prior public.whatsapp_campaign_audience_plans%rowtype; a public.whatsapp_saved_audiences%rowtype; normalized jsonb; item jsonb; reason text; ids uuid[]; admin boolean; items jsonb; comparisons jsonb;
@@ -178,7 +216,8 @@ begin
  if p_plan is null then delete from public.whatsapp_campaign_audience_plans where campaign_id=c.id;
  else insert into public.whatsapp_campaign_audience_plans(campaign_id,organisation_id,plan,request_json,saved_by) values(c.id,p_org,normalized,p_plan,p_actor) on conflict(campaign_id) do update set plan=excluded.plan,request_json=excluded.request_json,saved_by=excluded.saved_by,updated_at=now();end if;
  return jsonb_build_object('campaign',to_jsonb(c)||jsonb_build_object('audience_plan',p_plan));
-end; $$;
+end; $$
+;
 
 -- The existing enqueue and leased claim keep their ownership, consent, pause
 -- and unknown-result guards. This additional guard freezes exact CRM routing.
@@ -199,8 +238,11 @@ begin
   if reason is not null then new.status:='skipped';new.error_message:=reason;end if;
  end if;
  return new;
-end; $$;
-create trigger whatsapp_campaign_target_guard before insert or update on public.whatsapp_campaign_recipients for each row execute function private.whatsapp_campaign_target_guard();
+end; $$
+;
+
+create trigger whatsapp_campaign_target_guard before insert or update on public.whatsapp_campaign_recipients for each row execute function private.whatsapp_campaign_target_guard()
+;
 
 create function private.whatsapp_route_campaign_reply(p_message uuid) returns void language plpgsql security invoker set search_path='' as $$
 declare m public.whatsapp_inbox_messages%rowtype; t public.whatsapp_inbox_conversations%rowtype; r public.whatsapp_campaign_recipients%rowtype; linked public.whatsapp_inbox_crm_links%rowtype;
@@ -242,15 +284,20 @@ begin
  if outcome='routed' and t.assigned_user_id is distinct from agent then update public.whatsapp_inbox_conversations set assigned_user_id=agent,assigned_by=issuer,updated_at=now() where id=t.id;end if;
  update public.whatsapp_inbox_messages set campaign_recipient_id=r.id where id=m.id and campaign_recipient_id is null;
  insert into public.whatsapp_campaign_reply_routes(message_id,organisation_id,conversation_id,campaign_id,recipient_id,status,reason) values(m.id,m.organisation_id,t.id,r.campaign_id,r.id,outcome,note) on conflict(message_id) do nothing;
-end; $$;
+end; $$
+;
 
 create function private.whatsapp_campaign_reply_capture() returns trigger language plpgsql security invoker set search_path='' as $$
 begin
  if pg_trigger_depth()>1 then return null;end if;
  if new.direction='inbound' and new.reply_to_provider_message_id is not null then perform private.whatsapp_route_campaign_reply(new.id);end if;
  return null;
-end; $$;
-create trigger whatsapp_campaign_reply_capture after insert or update of reply_to_provider_message_id,campaign_recipient_id on public.whatsapp_inbox_messages for each row execute function private.whatsapp_campaign_reply_capture();
+end; $$
+;
+
+create trigger whatsapp_campaign_reply_capture after insert or update of reply_to_provider_message_id,campaign_recipient_id on public.whatsapp_inbox_messages for each row execute function private.whatsapp_campaign_reply_capture()
+;
+
 create function private.whatsapp_campaign_reply_reconcile() returns trigger language plpgsql security invoker set search_path='' as $$
 declare message_id uuid;
 begin
@@ -259,25 +306,38 @@ begin
  join public.whatsapp_campaigns c on c.id=new.campaign_id and c.organisation_id=new.organisation_id
  where m.direction='inbound' and m.organisation_id=new.organisation_id and m.channel_id=c.sender_id and t.contact_phone=new.phone and m.reply_to_provider_message_id=new.provider_message_id loop perform private.whatsapp_route_campaign_reply(message_id);end loop;
  return null;
-end; $$;
-create trigger whatsapp_campaign_reply_reconcile after insert or update of provider_message_id on public.whatsapp_campaign_recipients for each row execute function private.whatsapp_campaign_reply_reconcile();
+end; $$
+;
+
+create trigger whatsapp_campaign_reply_reconcile after insert or update of provider_message_id on public.whatsapp_campaign_recipients for each row execute function private.whatsapp_campaign_reply_reconcile()
+;
+
 create function public.whatsapp_campaign_reply_status(p_org uuid,p_actor uuid,p_conversation uuid) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare items jsonb;
 begin
  perform public.whatsapp_inbox_request(p_org,p_actor,'access',p_conversation);
  select coalesce(jsonb_agg(to_jsonb(r) order by created_at desc),'[]') into items from (select status,reason,created_at from public.whatsapp_campaign_reply_routes where organisation_id=p_org and conversation_id=p_conversation order by created_at desc limit 5) r;
  return jsonb_build_object('routes',items);
-end; $$;
+end; $$
+;
 
 create table public.meta_lead_ads_campaign_routes (
  id uuid primary key default gen_random_uuid(),organisation_id uuid not null references public.organisations(id),form_mapping_id uuid not null references public.meta_lead_ads_forms(id),
  campaign_id text not null check(campaign_id ~ '^[0-9]{1,30}$'),campaign_name text not null default '',lead_type text not null check(lead_type in ('buyer','seller','recruitment')),
  assigned_agent_id uuid references auth.users(id),branch_id uuid,enabled boolean not null default true,version integer not null default 1,updated_by uuid not null references auth.users(id),updated_at timestamptz not null default now(),
  unique(form_mapping_id,campaign_id),check(lead_type<>'recruitment' or (assigned_agent_id is null and branch_id is null))
-);
-create index meta_campaign_routes_org on public.meta_lead_ads_campaign_routes(organisation_id,updated_at desc);
-create index meta_campaign_routes_agent on public.meta_lead_ads_campaign_routes(assigned_agent_id);
-create index meta_campaign_routes_actor on public.meta_lead_ads_campaign_routes(updated_by);
+)
+;
+
+create index meta_campaign_routes_org on public.meta_lead_ads_campaign_routes(organisation_id,updated_at desc)
+;
+
+create index meta_campaign_routes_agent on public.meta_lead_ads_campaign_routes(assigned_agent_id)
+;
+
+create index meta_campaign_routes_actor on public.meta_lead_ads_campaign_routes(updated_by)
+;
+
 create function public.meta_campaign_routes_request(p_org uuid,p_actor uuid,p_action text,p_id uuid default null,p_version integer default null,p_config jsonb default null) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare item public.meta_lead_ads_campaign_routes%rowtype; form public.meta_lead_ads_forms%rowtype; rows jsonb; forms jsonb; selected_mapping_id uuid;
 begin
@@ -303,7 +363,8 @@ begin
  if item.id is null then insert into public.meta_lead_ads_campaign_routes(organisation_id,form_mapping_id,campaign_id,campaign_name,lead_type,assigned_agent_id,branch_id,updated_by) values(p_org,form.id,p_config->>'campaignId',coalesce(p_config->>'campaignName',''),p_config->>'leadType',(p_config->>'agentId')::uuid,(p_config->>'branchId')::uuid,p_actor) returning * into item;
  else update public.meta_lead_ads_campaign_routes set form_mapping_id=form.id,campaign_id=p_config->>'campaignId',campaign_name=coalesce(p_config->>'campaignName',''),lead_type=p_config->>'leadType',assigned_agent_id=(p_config->>'agentId')::uuid,branch_id=(p_config->>'branchId')::uuid,enabled=true,version=version+1,updated_by=p_actor,updated_at=now() where id=item.id returning * into item;end if;
  return jsonb_build_object('route',to_jsonb(item));
-end; $$;
+end; $$
+;
 
 -- Saving form choices is authoritative and atomic: unchecked forms stop intake.
 create function public.meta_form_routes_save(p_org uuid,p_actor uuid,p_connection uuid,p_forms jsonb) returns jsonb language plpgsql security invoker set search_path='' as $$
@@ -332,10 +393,17 @@ begin
  end loop;
  update public.meta_lead_ads_forms set is_active=false where organisation_id=p_org and connection_id=p_connection and form_id not in (select value->>'id' from jsonb_array_elements(p_forms));
  return jsonb_build_object('formsSelected',jsonb_array_length(p_forms));
-end; $$;
-revoke all on function public.meta_form_routes_save(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
-grant execute on function public.meta_form_routes_save(uuid,uuid,uuid,jsonb) to service_role;
-grant insert,update on public.meta_lead_ads_forms to service_role;
+end; $$
+;
+
+revoke all on function public.meta_form_routes_save(uuid,uuid,uuid,jsonb) from public,anon,authenticated
+;
+
+grant execute on function public.meta_form_routes_save(uuid,uuid,uuid,jsonb) to service_role
+;
+
+grant insert,update on public.meta_lead_ads_forms to service_role
+;
 
 create function private.meta_campaign_effective_form(p_org uuid,p_page text,p_form text,p_payload jsonb) returns public.meta_lead_ads_forms language plpgsql security invoker set search_path='' as $$
 declare form public.meta_lead_ads_forms%rowtype; route public.meta_lead_ads_campaign_routes%rowtype;
@@ -348,7 +416,8 @@ begin
   form.lead_type:=route.lead_type;form.assigned_agent_id:=route.assigned_agent_id;form.branch_id:=case when route.lead_type='recruitment' then null else coalesce(route.branch_id,form.branch_id) end;
  end if;
  return form;
-end; $$;
+end; $$
+;
 
 -- Extend the existing ingestion functions in place so live webhooks, historical
 -- imports and old callers share the same rule. Stop if the expected guard moved.
@@ -378,29 +447,72 @@ begin
    definition:=replace(definition,'where id = r.id returning *;','where id = r.id returning *) select * from claimed where claimed.status=''processing'';');execute definition;
   else raise exception 'Campaign claim changed; review CRM route guard';end if;
  end loop;
-end; $$;
+end; $$
+;
 
-grant select,insert,update on public.contacts,public.leads,public.recruitment_leads,public.lead_activities to service_role;
-grant select,update(requirement_id) on public.lead_requirements to service_role;
-grant select,update(id) on public.private_listings to service_role;
-grant select,update(id) on public.meta_lead_ads_forms to service_role;
-grant select,update(id) on public.meta_lead_ads_connections to service_role;
-grant select on public.meta_lead_ads_imports,public.organisation_branches to service_role;
+grant select,insert,update on public.contacts,public.leads,public.recruitment_leads,public.lead_activities to service_role
+;
 
-alter table public.whatsapp_saved_audiences enable row level security;
-alter table public.whatsapp_campaign_audience_plans enable row level security;
-alter table public.whatsapp_campaign_reply_routes enable row level security;
-alter table public.meta_lead_ads_campaign_routes enable row level security;
-revoke all on public.whatsapp_saved_audiences,public.whatsapp_campaign_audience_plans,public.whatsapp_campaign_reply_routes,public.meta_lead_ads_campaign_routes from public,anon,authenticated;
-grant all on public.whatsapp_saved_audiences,public.whatsapp_campaign_audience_plans,public.whatsapp_campaign_reply_routes,public.meta_lead_ads_campaign_routes to service_role;
-revoke select on public.whatsapp_campaign_recipients from authenticated;
-grant select(id,organisation_id,campaign_id,contact_id,full_name,phone,payload,status,provider_message_id,error_message,consent_snapshot,attempted_at,sent_at,delivered_at,read_at,failed_at,updated_at) on public.whatsapp_campaign_recipients to authenticated;
+grant select,update(requirement_id) on public.lead_requirements to service_role
+;
+
+grant select,update(id) on public.private_listings to service_role
+;
+
+grant select,update(id) on public.meta_lead_ads_forms to service_role
+;
+
+grant select,update(id) on public.meta_lead_ads_connections to service_role
+;
+
+grant select on public.meta_lead_ads_imports,public.organisation_branches to service_role
+;
+
+alter table public.whatsapp_saved_audiences enable row level security
+;
+
+alter table public.whatsapp_campaign_audience_plans enable row level security
+;
+
+alter table public.whatsapp_campaign_reply_routes enable row level security
+;
+
+alter table public.meta_lead_ads_campaign_routes enable row level security
+;
+
+revoke all on public.whatsapp_saved_audiences,public.whatsapp_campaign_audience_plans,public.whatsapp_campaign_reply_routes,public.meta_lead_ads_campaign_routes from public,anon,authenticated
+;
+
+grant all on public.whatsapp_saved_audiences,public.whatsapp_campaign_audience_plans,public.whatsapp_campaign_reply_routes,public.meta_lead_ads_campaign_routes to service_role
+;
+
+revoke select on public.whatsapp_campaign_recipients from authenticated
+;
+
+grant select(id,organisation_id,campaign_id,contact_id,full_name,phone,payload,status,provider_message_id,error_message,consent_snapshot,attempted_at,sent_at,delivered_at,read_at,failed_at,updated_at) on public.whatsapp_campaign_recipients to authenticated
+;
+
 -- Private policy function checks the actual signed-in user's membership.
-revoke all on function private.whatsapp_plan_access(uuid,uuid) from public,anon,authenticated;
-grant usage on schema private to authenticated,service_role;
-grant execute on function private.whatsapp_plan_access(uuid,uuid) to authenticated,service_role;
-revoke all on function private.whatsapp_recruitment_manager(uuid,uuid),private.whatsapp_audience_rows(uuid,jsonb,uuid),private.whatsapp_target_reason(uuid,jsonb,jsonb,uuid),private.whatsapp_campaign_target_guard(),private.whatsapp_route_campaign_reply(uuid),private.whatsapp_campaign_reply_capture(),private.whatsapp_campaign_reply_reconcile(),private.meta_campaign_effective_form(uuid,text,text,jsonb) from public,anon,authenticated;
-grant execute on function private.whatsapp_recruitment_manager(uuid,uuid),private.whatsapp_audience_rows(uuid,jsonb,uuid),private.whatsapp_target_reason(uuid,jsonb,jsonb,uuid),private.whatsapp_campaign_target_guard(),private.whatsapp_route_campaign_reply(uuid),private.whatsapp_campaign_reply_capture(),private.whatsapp_campaign_reply_reconcile(),private.meta_campaign_effective_form(uuid,text,text,jsonb) to service_role;
-revoke all on function public.whatsapp_audiences_request(uuid,uuid,text,uuid,integer,jsonb,integer,text),public.whatsapp_campaign_plan_request(uuid,uuid,text,uuid,integer,jsonb,jsonb,boolean),public.whatsapp_campaign_reply_status(uuid,uuid,uuid),public.meta_campaign_routes_request(uuid,uuid,text,uuid,integer,jsonb),public.meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid),public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) from public,anon,authenticated;
-grant execute on function public.whatsapp_audiences_request(uuid,uuid,text,uuid,integer,jsonb,integer,text),public.whatsapp_campaign_plan_request(uuid,uuid,text,uuid,integer,jsonb,jsonb,boolean),public.whatsapp_campaign_reply_status(uuid,uuid,uuid),public.meta_campaign_routes_request(uuid,uuid,text,uuid,integer,jsonb),public.meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid),public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) to service_role;
-commit;
+revoke all on function private.whatsapp_plan_access(uuid,uuid) from public,anon,authenticated
+;
+
+grant usage on schema private to authenticated,service_role
+;
+
+grant execute on function private.whatsapp_plan_access(uuid,uuid) to authenticated,service_role
+;
+
+revoke all on function private.whatsapp_recruitment_manager(uuid,uuid),private.whatsapp_audience_rows(uuid,jsonb,uuid),private.whatsapp_target_reason(uuid,jsonb,jsonb,uuid),private.whatsapp_campaign_target_guard(),private.whatsapp_route_campaign_reply(uuid),private.whatsapp_campaign_reply_capture(),private.whatsapp_campaign_reply_reconcile(),private.meta_campaign_effective_form(uuid,text,text,jsonb) from public,anon,authenticated
+;
+
+grant execute on function private.whatsapp_recruitment_manager(uuid,uuid),private.whatsapp_audience_rows(uuid,jsonb,uuid),private.whatsapp_target_reason(uuid,jsonb,jsonb,uuid),private.whatsapp_campaign_target_guard(),private.whatsapp_route_campaign_reply(uuid),private.whatsapp_campaign_reply_capture(),private.whatsapp_campaign_reply_reconcile(),private.meta_campaign_effective_form(uuid,text,text,jsonb) to service_role
+;
+
+revoke all on function public.whatsapp_audiences_request(uuid,uuid,text,uuid,integer,jsonb,integer,text),public.whatsapp_campaign_plan_request(uuid,uuid,text,uuid,integer,jsonb,jsonb,boolean),public.whatsapp_campaign_reply_status(uuid,uuid,uuid),public.meta_campaign_routes_request(uuid,uuid,text,uuid,integer,jsonb),public.meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid),public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) from public,anon,authenticated
+;
+
+grant execute on function public.whatsapp_audiences_request(uuid,uuid,text,uuid,integer,jsonb,integer,text),public.whatsapp_campaign_plan_request(uuid,uuid,text,uuid,integer,jsonb,jsonb,boolean),public.whatsapp_campaign_reply_status(uuid,uuid,uuid),public.meta_campaign_routes_request(uuid,uuid,text,uuid,integer,jsonb),public.meta_ingest_lead_ad(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid),public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) to service_role
+;
+
+commit
+;

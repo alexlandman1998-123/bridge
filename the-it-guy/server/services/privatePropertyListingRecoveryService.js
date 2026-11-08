@@ -75,7 +75,7 @@ export async function inspectPrivatePropertyListingRecovery({ portal, existingSy
       ['suburb', 'Suburb'], ['suburbId', 'SuburbId'], ['town', 'Town'], ['province', 'Province'],
     ].map(([key, tag]) => [key, extractPrivatePropertyXmlTag(xml, tag)]))
     const reference = extractPrivatePropertyXmlTag(xml, 'Ref') || existingSync.private_property_ref || ''
-    const addressLocked = Boolean(existingSync.activated_at || reference || ['active', 'inactive', 'paused', 'removed'].includes(externalStatus))
+    const addressLocked = Boolean(existingSync.activated_at || reference || ['active', 'under_offer', 'sold', 'inactive', 'paused', 'removed'].includes(externalStatus))
     const changedFields = comparePrivatePropertyStoredAddress(address, storedAddress)
     if (addressLocked && !(Number(storedAddress.suburbId) > 0 || storedAddress.suburb && storedAddress.town && storedAddress.province)) {
       throw new Error('Private Property returned an incomplete address for this existing record.')
@@ -91,7 +91,7 @@ export async function inspectPrivatePropertyListingRecovery({ portal, existingSy
       ...result, canReactivate: true, blockers: ['private_property_reactivation_required'],
       message: 'Private Property reports this listing as inactive. The stored address matches. Use Reactivate on Private Property; sending content changes will not reactivate it.',
     }
-    if (['removed', 'paused', 'failed', 'unknown'].includes(externalStatus)) return {
+    if (['removed', 'sold', 'paused', 'failed', 'unknown'].includes(externalStatus)) return {
       ...result, blockers: ['private_property_existing_listing_requires_review'],
       message: `Private Property reports ${portalStatus || 'an unknown status'}. Refresh and review the existing record before sending changes.`,
     }

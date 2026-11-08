@@ -1,5 +1,5 @@
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { MarketingLink as Link } from './MarketingNavigation.jsx'
 import QRCode from 'qrcode'
 import { canPersistMarketingEvents, listMarketingEvents } from '../../services/marketingEventRepository'
 import './ShowDaysLanding.css'

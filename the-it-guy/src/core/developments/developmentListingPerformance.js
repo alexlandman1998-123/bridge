@@ -29,7 +29,7 @@ export function aggregateDevelopmentListingPerformance({ listings = [], snapshot
       published: sources.some(source => source?.published),
       statisticsUnavailable: snapshots.some(snapshot => !snapshot.data),
       complete: metrics.views.complete,
-      lastAttempt: sources.some(source => source?.lastAttempt?.failed) ? { failed: true } : null,
+      lastAttempt: sources.find(source => source?.lastAttempt?.failed)?.lastAttempt || sources.map(source => source?.lastAttempt).filter(Boolean).sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))[0] || null,
     }
   }
 

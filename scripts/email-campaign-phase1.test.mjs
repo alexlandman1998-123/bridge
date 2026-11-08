@@ -18,6 +18,6 @@ for (const expected of [
 
 assert.match(worker, /daily_recipient_limit/)
 assert.match(worker, /marketing_consent_status !== "opted_in"/)
-assert.match(preferences, /email_suppressions.*delete/)
+assert.match(preferences, /email_campaign_apply_preferences/)
 assert.match(preferences, /contact_email_subscriptions/)
 console.log('Email campaign Phase 1 trust and deliverability checks passed.')

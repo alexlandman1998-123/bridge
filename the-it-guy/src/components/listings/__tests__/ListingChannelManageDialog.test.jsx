@@ -175,9 +175,9 @@ it('disables inappropriate actions for an inactive advert and completed sale', (
 it('shows durable portal failures, warnings and readable technical details', () => {
   const detail = 'System.SoapException: the supplier rejected this request.'
   render(<ListingChannelManageDialog {...props} portal={{ ...props.portal, issues: [detail], warnings: ['Address is locked on the existing advert.'] }} />)
-  expect(screen.getByRole('alert').textContent).toContain('portal could not process')
-  fireEvent.click(screen.getByText('Technical details'))
-  expect(screen.getByText(detail)).toBeTruthy()
+  expect(screen.getByRole('alert').textContent).toContain('the supplier rejected this request.')
+  expect(screen.queryByText('Technical details')).toBeNull()
+  expect(screen.queryByText(detail)).toBeNull()
   expect(screen.getByText('Address is locked on the existing advert.')).toBeTruthy()
 })
 it('retries a failed content update only after explicit confirmation', async () => {
@@ -200,6 +200,22 @@ it('retains successful status results and retries only failed channels', async (
   click('Retry failed status updates')
   await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
   expect(onSave.mock.calls[1][0].retryResults).toEqual([failed])
+})
+it('shows a saved status with an unconfirmed channel without offering a blind retry', async () => {
+  const onSave = vi.fn(async () => ({ ok: false, results: [
+    { channel: 'Arch9', status: 'saved' },
+    { channel: 'Property24', action: 'under_offer', status: 'sent' },
+    { channel: 'Agency Website', action: 'under_offer', status: 'uncertain', retryable: false, detail: 'The previous request is unconfirmed. No new request was sent to this channel.' },
+  ] }))
+  render(<ListingChannelManageDialog {...props} onSave={onSave} />)
+  click('Change listing status')
+  fireEvent.change(screen.getByLabelText('Listing status'), { target: { value: 'under_offer' } })
+  click('Save changes')
+  expect(await screen.findByText('Agency Website · Not sent · check status')).toBeTruthy()
+  expect(screen.getByText('Arch9 · Saved')).toBeTruthy()
+  expect(screen.getByText('Property24 · Accepted · check advert')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Retry failed status updates' })).toBeNull()
+  expect(onSave).toHaveBeenCalledOnce()
 })
 it('reopens a saved status failure without resending successful channels', async () => {
   const failed = { channel: 'Private Property', action: 'sold', status: 'failed', detail: 'Try again.' }
@@ -354,4 +370,12 @@ it.each([true, false])('keeps an update review on Private Property and requires 
   expect(screen.getByRole('heading', { name: 'Review Private Property update' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Continue update' }).disabled).toBe(!ready)
   expect(screen.queryByRole('button', { name: 'Check Property24 readiness' })).toBeNull()
+})
+
+it('never exposes credentials through expanded portal failure details', () => {
+ const reason = 'Correct the suburb. ' + 'More useful field guidance. '.repeat(40) + '<Password>hidden-secret</Password>'
+ render(<ListingChannelManageDialog {...props} portal={{...props.portal,issues:[reason]}} />)
+ fireEvent.click(screen.getByText('Technical details'))
+ expect(screen.getByRole('alert').textContent).toContain('Correct the suburb.')
+ expect(screen.getByRole('alert').textContent).not.toContain('hidden-secret')
 })

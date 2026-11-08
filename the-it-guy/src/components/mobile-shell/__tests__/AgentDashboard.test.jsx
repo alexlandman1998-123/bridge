@@ -23,7 +23,7 @@ it('omits the greeting from the home header', () => {
   expect(screen.queryByText(/Good afternoon,/)).toBeNull()
 })
 
-it('shows two agent header counters before commission and opens only today’s appointments or assigned new leads', () => {
+it('shows the four summary cards in order and opens the assigned leads and calendar', () => {
   const today = buildMobileToday({ now, profile, appointments: [
     { id: 'one', dateTime: '2026-10-06T10:30:00Z', typeLabel: 'Viewing today', statusKey: 'confirmed' },
     { id: 'later', dateTime: '2026-10-07T10:30:00Z', typeLabel: 'Tomorrow viewing', statusKey: 'confirmed' },
@@ -31,18 +31,18 @@ it('shows two agent header counters before commission and opens only today’s a
   const onOpen = vi.fn()
   render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, newLeads: [{ leadId: 'one' }, { leadId: 'two' }], newLeadsAvailable: true }} onOpen={onOpen} />)
   const summary = screen.getByLabelText('Today summary')
-  expect(within(summary).getAllByRole('button')).toHaveLength(2)
+  expect([...summary.querySelectorAll('.mobile-home-summary-title')].map(item => item.textContent)).toEqual(['New Leads', 'Appointments Today', 'Tasks Outstanding', 'Commission This Month'])
   expect(summary.compareDocumentPosition(screen.getByRole('region', { name: 'Your commission' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(within(summary).queryByText('Follow-ups due')).toBeNull()
   expect(within(summary).queryByText('Deals to move')).toBeNull()
-  fireEvent.click(within(summary).getByRole('button', { name: '2 New leads' }))
+  fireEvent.click(within(summary).getByRole('button', { name: /^New Leads: Buyer:/ }))
   expect(onOpen).toHaveBeenCalledWith('/mobile/leads?stage=new&scope=assigned')
-  fireEvent.click(within(summary).getByRole('button', { name: '1 Appointments today' }))
-  expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
+  fireEvent.click(within(summary).getByRole('button', { name: /^Appointments Today: 1\./ }))
+  expect(onOpen).toHaveBeenLastCalledWith('/mobile/calendar')
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-it('places personal commission before today-only appointments and opens their saved details', () => {
+it('keeps commission details below appointments and opens them from the summary', () => {
   const today = buildMobileToday({ now, profile, appointments: [
     { id: 'today', dateTime: '2026-10-06T10:30:00Z', typeLabel: 'Property Viewing', statusKey: 'confirmed', clientName: 'Sarah', propertyAddress: '18 Oak Avenue' },
     { id: 'tomorrow', dateTime: '2026-10-07T10:30:00Z', typeLabel: 'Tomorrow Viewing', statusKey: 'confirmed' },
@@ -50,7 +50,9 @@ it('places personal commission before today-only appointments and opens their sa
   render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, commission: { signedThisMonth: 25000, pipeline: 75000 } }} onOpen={vi.fn()} />)
   const commission = screen.getByRole('region', { name: 'Your commission' })
   const appointments = screen.getByRole('region', { name: 'Appointments today' })
-  expect(commission.compareDocumentPosition(appointments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(appointments.compareDocumentPosition(commission) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Commission This Month:/ }))
+  expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
   expect(within(appointments).getByText('12:30')).toBeTruthy()
   expect(within(appointments).queryByText(/Tomorrow/)).toBeNull()
   fireEvent.click(within(appointments).getByRole('button', { name: /Sarah/ }))
@@ -59,6 +61,18 @@ it('places personal commission before today-only appointments and opens their sa
   fireEvent.click(screen.getByRole('button', { name: 'Show total pipeline commission' }))
   expect(screen.getByRole('button', { name: 'Show total pipeline commission' }).getAttribute('aria-pressed')).toBe('true')
   expect(HTMLElement.prototype.scrollTo).toHaveBeenCalled()
+})
+
+it('opens the saved outstanding task list including future tasks from the summary', () => {
+  const today = buildMobileToday({ now, profile, tasks: [
+    { taskId: 'late', title: 'Call Sarah', dueDate: '2026-10-05', assignedAgentId: 'me' },
+    { taskId: 'future', title: 'Prepare the pack', dueDate: '2026-10-09', assignedAgentId: 'me' },
+  ] })
+  const onOpen = vi.fn()
+  render(<AgentDashboard snapshot={{ ...base, category: 'agent', today, newLeads: [] }} onOpen={onOpen} />)
+  fireEvent.click(screen.getByRole('button', { name: /^Tasks Outstanding: 2\./ }))
+  expect(within(screen.getByRole('dialog')).getByRole('button', { name: /Prepare the pack/ })).toBeTruthy()
+  expect(onOpen).not.toHaveBeenCalled()
 })
 
 it('distinguishes empty and unavailable appointments below the commission card', () => {
@@ -111,7 +125,7 @@ it('offers a retry for unavailable work instead of displaying a false clear day'
   render(<AgentDashboard snapshot={{ ...base, today }} onOpen={vi.fn()} onAction={vi.fn()} onRefresh={onRefresh} />)
   expect(screen.queryByText('No actions due today.')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '— Follow-ups due' }))
-  expect(within(screen.getByRole('dialog')).getByText('We couldn’t load follow-ups.')).toBeTruthy()
+  expect(within(screen.getByRole('dialog')).getByText('We couldn’t load tasks.')).toBeTruthy()
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Try again' }))
   expect(onRefresh).toHaveBeenCalledOnce()
 })
@@ -153,11 +167,11 @@ it('opens each current development from the home scroller, includes later cards,
 it('gives developers two top counters, then all transaction and lead cards before their developments', () => {
   const onOpen = vi.fn()
   const transactions = Array.from({ length: 7 }, (_, index) => ({ id: `tx-${index}`, title: `Unit ${index + 1}`, eyebrow: `Buyer ${index + 1}`, stage: 'XFER', to: `/mobile/transaction/tx-${index}` }))
-  const newLeads = Array.from({ length: 6 }, (_, index) => ({ developerLeadId: `lead-${index}`, buyerFullName: `New Buyer ${index + 1}`, leadStatus: 'new', leadSource: 'property24', unitTypeInterest: 'Two bedrooms' }))
+  const newLeads = Array.from({ length: 6 }, (_, index) => ({ createdAt: new Date().toISOString(), developerLeadId: `lead-${index}`, buyerFullName: `New Buyer ${index + 1}`, leadStatus: 'new', leadSource: 'property24', unitTypeInterest: 'Two bedrooms' }))
   const { rerender } = render(<AgentDashboard snapshot={{ ...base, category: 'developer', transactions, activeWork: transactions.slice(0, 5), newLeads, summaryCards: [{ key: 'active', value: 7 }], developments: [{ id: 'dev', title: 'Estate', status: 'active', to: '/mobile/development/dev' }] }} onOpen={onOpen} />)
   const counts = screen.getByLabelText('Developer summary')
   expect(within(counts).getAllByRole('button')).toHaveLength(2)
-  fireEvent.click(within(counts).getByRole('button', { name: '6 New Leads' }))
+  fireEvent.click(within(counts).getByRole('button', { name: '6 New Leads · 30 days' }))
   expect(onOpen).toHaveBeenLastCalledWith('/mobile/developer/leads')
   fireEvent.click(within(counts).getByRole('button', { name: '7 Active Deals' }))
   expect(onOpen).toHaveBeenLastCalledWith('/mobile/transactions')
@@ -184,7 +198,7 @@ it('gives developers two top counters, then all transaction and lead cards befor
 })
 
 it('keeps agency-held buyer details protected in dashboard lead cards', () => {
-  render(<AgentDashboard snapshot={{ ...base, category: 'developer', newLeads: [{ developerLeadId: 'agency/one', leadOwner: 'agency', visibilityState: 'limited', buyerFullName: 'Private buyer', buyerEmail: 'private@example.test', nextActionNote: 'Call Private buyer', publicReference: 'REF-101', protectedSummary: 'Two bedroom apartment' }] }} onOpen={vi.fn()} />)
+  render(<AgentDashboard snapshot={{ ...base, category: 'developer', newLeads: [{ createdAt: new Date().toISOString(), developerLeadId: 'agency/one', leadOwner: 'agency', visibilityState: 'limited', buyerFullName: 'Private buyer', buyerEmail: 'private@example.test', nextActionNote: 'Call Private buyer', publicReference: 'REF-101', protectedSummary: 'Two bedroom apartment' }] }} onOpen={vi.fn()} />)
   const scroller = screen.getByRole('region', { name: 'Swipe through new leads' })
   expect(within(scroller).queryByText(/Private buyer/)).toBeNull()
   expect(within(scroller).queryByText('private@example.test')).toBeNull()
@@ -194,10 +208,10 @@ it('keeps agency-held buyer details protected in dashboard lead cards', () => {
 
 it('shows portal logos in new leads, removes source-only enquiry captions and retains actual property preferences', () => {
   const leads = [
-    { developerLeadId: 'p24', buyerFullName: 'Buyer One', leadSource: 'Property24 development enquiry', unitTypeInterest: 'Property24 Development Enquiry' },
-    { developerLeadId: 'pp', buyerFullName: 'Buyer Two', leadSource: 'Private Property Inquiry', unitTypeInterest: 'Private Property Inquiry' },
-    { developerLeadId: 'specific', buyerFullName: 'Buyer Three', leadSource: 'property24', unitTypeInterest: 'Two bedrooms' },
-    { developerLeadId: 'direct', buyerFullName: 'Buyer Four', leadSource: 'developer_direct', unitTypeInterest: 'Townhouse' },
+    { createdAt: new Date().toISOString(), developerLeadId: 'p24', buyerFullName: 'Buyer One', leadSource: 'Property24 development enquiry', unitTypeInterest: 'Property24 Development Enquiry' },
+    { createdAt: new Date().toISOString(), developerLeadId: 'pp', buyerFullName: 'Buyer Two', leadSource: 'Private Property Inquiry', unitTypeInterest: 'Private Property Inquiry' },
+    { createdAt: new Date().toISOString(), developerLeadId: 'specific', buyerFullName: 'Buyer Three', leadSource: 'property24', unitTypeInterest: 'Two bedrooms' },
+    { createdAt: new Date().toISOString(), developerLeadId: 'direct', buyerFullName: 'Buyer Four', leadSource: 'developer_direct', unitTypeInterest: 'Townhouse' },
   ]
   render(<AgentDashboard snapshot={{ ...base, category: 'developer', newLeads: leads }} onOpen={vi.fn()} />)
   const scroller = within(screen.getByRole('region', { name: 'Swipe through new leads' }))
@@ -216,11 +230,11 @@ it('shows portal logos in new leads, removes source-only enquiry captions and re
 it('distinguishes empty leads from an unavailable lead read and offers a retry', () => {
   const onRefresh = vi.fn()
   const { rerender } = render(<AgentDashboard snapshot={{ ...base, category: 'developer', newLeads: [] }} onOpen={vi.fn()} onRefresh={onRefresh} />)
-  expect(screen.getByRole('button', { name: '0 New Leads' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '0 New Leads · 30 days' })).toBeTruthy()
   expect(screen.getByText('No new leads yet.')).toBeTruthy()
   expect(screen.getByText('No active transactions yet.')).toBeTruthy()
   rerender(<AgentDashboard snapshot={{ ...base, category: 'developer', newLeads: [], newLeadsAvailable: false }} onOpen={vi.fn()} onRefresh={onRefresh} />)
-  expect(screen.getByRole('button', { name: '— New Leads' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '— New Leads · 30 days' })).toBeTruthy()
   expect(screen.queryByText('No new leads yet.')).toBeNull()
   fireEvent.click(within(screen.getByRole('region', { name: 'New leads' })).getByRole('button', { name: 'Try again' }))
   expect(onRefresh).toHaveBeenCalledOnce()
@@ -289,4 +303,15 @@ it('opens appointment creation from the matching plus in the appointments contai
   fireEvent.click(within(section).getByRole('button', { name: 'Add appointment' }))
   expect(onCreateAppointment).toHaveBeenCalledOnce()
   expect(within(section).getByRole('button', { name: 'View calendar' })).toBeTruthy()
+})
+
+it('shows developer marketing above active transactions and excludes old cached leads from the counter', () => {
+ const recent={developerLeadId:'recent',createdAt:new Date().toISOString(),buyerFullName:'Recent buyer'}
+ const old={developerLeadId:'old',createdAt:new Date(Date.now()-31*86400000).toISOString(),buyerFullName:'Old buyer'}
+ render(<AgentDashboard snapshot={{...base,category:'developer',newLeads:[recent,old]}} onOpen={vi.fn()} />)
+ expect(screen.getByRole('button',{name:'1 New Leads · 30 days'})).toBeTruthy()
+ const marketing=screen.getByRole('heading',{name:'Marketing'})
+ const transactions=screen.getByRole('heading',{name:'Active transactions'})
+ expect(marketing.compareDocumentPosition(transactions)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+ expect(screen.queryByText('Old buyer')).toBeNull()
 })

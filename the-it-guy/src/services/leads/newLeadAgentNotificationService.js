@@ -1,5 +1,6 @@
 import { invokeEdgeFunction, supabase } from '../../lib/supabaseClient'
 import { buildNewLeadAgentNotification } from './newLeadAgentNotificationModel.js'
+import { assessMvpTestDataProtection } from '../../core/transactions/mvpTestDataProtection.js'
 
 export { buildNewLeadAgentNotification } from './newLeadAgentNotificationModel.js'
 
@@ -9,6 +10,11 @@ const email = (value) => text(value).toLowerCase()
 export async function notifyNewLeadAssignedAgent(input, { client = supabase, send = invokeEdgeFunction } = {}) {
   try {
     const lead = { ...input.lead }
+    const protection = assessMvpTestDataProtection({
+      lead: { ...lead, email: input.contact?.email || lead.email },
+      metadata: lead.rawEnquiryPayload || lead.raw_enquiry_payload || {},
+    })
+    if (!protection.externalDeliveryAllowed) return { data: { skipped: true, reason: 'controlled_test_data' }, error: null }
     const ownerId = text(lead.assignedUserId || lead.assigned_user_id || lead.assignedAgentId || lead.assigned_agent_id)
     if (!email(lead.assignedAgentEmail || lead.assigned_agent_email) && ownerId && client) {
       const result = await client.from('organisation_users').select('user_id, email, first_name, last_name')

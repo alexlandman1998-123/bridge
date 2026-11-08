@@ -3,6 +3,12 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, expect, it, vi } from 'vitest'
 import TransactionOverviewProgress from '../TransactionOverviewProgress.jsx'
 afterEach(cleanup)
+it('opens the existing uploaded OTP review in Documents', () => {
+  const open = vi.fn()
+  render(<TransactionOverviewProgress workflows={[{ key: 'otp', label: 'Sales / OTP', detail: 'Review uploaded signed OTP', status: 'waiting', target: 'documents', isActive: true }]} onOpenWorkspace={open} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open Documents' }))
+  expect(open.mock.calls).toEqual([['documents']])
+})
 const workflows = [
   { key: 'finance', label: 'Finance', detail: 'Waiting on bond quotes', owner: 'Bank', status: 'waiting', target: 'finance' },
   { key: 'transfer', label: 'Transfer', detail: 'Transfer documents being signed', status: 'in_progress', target: 'transfer' },

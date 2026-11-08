@@ -1,0 +1,148 @@
+.setup-module-shell:has(.agency-workspace-onboarding) {
+  color: #152621;
+  background: #f1f4f0;
+}
+
+body .setup-module-shell .agency-workspace-onboarding {
+  display: block;
+  align-content: start;
+  min-height: 100dvh;
+  padding: 32px;
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+}
+
+body .agency-workspace-onboarding .onboarding-progress-panel {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: 32px;
+  gap: 0;
+  border: 1px solid #dde5de;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 40px #15262106;
+}
+
+body .agency-workspace-onboarding .onboarding-progress-heading { gap: 7px; }
+body .agency-workspace-onboarding .onboarding-progress-heading > p { display: none; }
+body .agency-workspace-onboarding .onboarding-progress-heading h1 { margin: 0; color: #152621; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -.04em; }
+body .agency-workspace-onboarding .onboarding-progress-heading > span { color: #647269; font-size: 14px; font-weight: 400; }
+
+body .agency-workspace-onboarding .onboarding-progress-steps { display: grid; grid-template-columns: repeat(var(--step-count), minmax(0, 1fr)); gap: 0; margin: 24px 0 0; padding: 0 0 20px; border-bottom: 1px solid #dde5de; list-style: none; }
+body .agency-workspace-onboarding .onboarding-progress-steps li { position: relative; min-width: 0; margin: 0; padding: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body .agency-workspace-onboarding .onboarding-progress-steps li:not(:last-child)::after { content: ''; position: absolute; z-index: 0; top: 16px; left: calc(50% + 25px); width: calc(100% - 50px); height: 1px; background: #dce5dd; }
+body .agency-workspace-onboarding .onboarding-progress-steps li.is-done::after { background: #166b50; }
+body .agency-workspace-onboarding .onboarding-progress-steps button { position: relative; z-index: 1; display: grid; justify-items: center; align-content: start; gap: 9px; width: 100%; min-height: 58px; padding: 0 4px; border: 0; border-radius: 8px; background: transparent; color: #748077; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+body .agency-workspace-onboarding .onboarding-step-number { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #d9e2da; border-radius: 50%; background: #f9faf8; color: #748077; font-size: 12px; }
+body .agency-workspace-onboarding .is-active .onboarding-step-number { border-color: #166b50; background: #166b50; color: #fff; }
+body .agency-workspace-onboarding .is-done .onboarding-step-number { border-color: #c8dfce; background: #edf5ef; color: #166b50; }
+body .agency-workspace-onboarding .is-active .onboarding-step-label,
+body .agency-workspace-onboarding .is-done .onboarding-step-label { color: #166b50; }
+body .agency-workspace-onboarding .onboarding-progress-steps button:focus-visible { outline: 2px solid #166b50; outline-offset: 4px; }
+
+body .agency-workspace-onboarding .agency-setup-shell,
+body .agency-workspace-onboarding .agency-setup-main { display: block; min-width: 0; }
+body .agency-workspace-onboarding .agency-setup-card { display: grid; gap: 20px; margin: 0; padding: 24px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+body .agency-workspace-onboarding .setup-section-header { display: block; }
+body .agency-workspace-onboarding .setup-section-icon,
+body .agency-workspace-onboarding .setup-section-header p { display: none; }
+body .agency-workspace-onboarding .setup-section-header h2 { margin: 0 0 6px; color: #152621; font-size: 22px; font-weight: 600; letter-spacing: -.025em; line-height: 1.3; }
+body .agency-workspace-onboarding .setup-section-header div > span { color: #647269; font-size: 13px; font-weight: 400; line-height: 1.65; }
+body .agency-workspace-onboarding .setup-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px; }
+body .agency-workspace-onboarding .setup-field { display: grid; align-content: start; gap: 7px; min-width: 0; }
+body .agency-workspace-onboarding .setup-field > span { color: #354a3e; font-size: 12px; font-weight: 600; }
+body .agency-workspace-onboarding .setup-field .setup-input { width: 100%; min-width: 0; min-height: 46px; height: auto; padding: 11px 13px; border: 1px solid #d7dfd8; border-radius: 8px; outline: none; background: #fff; color: #1c3025; box-shadow: 0 1px 2px #15262103; font: inherit; font-size: 14px; font-weight: 400; line-height: 1.5; }
+body .agency-workspace-onboarding .setup-input:focus-visible { border-color: #166b50; box-shadow: 0 0 0 3px #166b5014; }
+body .agency-workspace-onboarding .setup-field small { color: #748077; font-size: 12px; line-height: 1.5; }
+body .agency-workspace-onboarding .agency-setup-divider { height: 1px; margin: 4px 0; background: #e1e7e1; }
+body .agency-workspace-onboarding .agency-setup-row-card { padding: 22px; border: 1px solid #dde5de; border-radius: 10px; background: #fff; box-shadow: none; }
+body .agency-workspace-onboarding .agency-setup-row-head strong { color: #1c3025; }
+body .agency-workspace-onboarding .agency-review-grid > div,
+body .agency-workspace-onboarding .agency-logo-upload { border-color: #dde5de; border-radius: 10px; background: #fff; color: #1c3025; box-shadow: none; }
+body .agency-workspace-onboarding .agency-logo-upload-dark { background: #152621; color: #fff; }
+body .agency-workspace-onboarding .agency-logo-preview-box { border-color: #dde5de; border-radius: 8px; color: #166b50; }
+body .agency-workspace-onboarding .agency-logo-upload-dark .agency-logo-preview-box { border-color: #ffffff26; background: #ffffff0d; color: #d1ebdc; }
+body .agency-workspace-onboarding .agency-logo-upload p,
+body .agency-workspace-onboarding .agency-review-grid span,
+body .agency-workspace-onboarding .agency-review-grid small { color: #647269; font-weight: 400; }
+body .agency-workspace-onboarding .agency-logo-upload-dark p { color: #c2d3c9; }
+body .agency-workspace-onboarding .agency-review-grid strong { color: #1c3025; font-weight: 600; }
+body .agency-workspace-onboarding .setup-colour-field input[type='color'],
+body .agency-workspace-onboarding .setup-icon-button { border-color: #d7dfd8; border-radius: 8px; color: #647269; }
+body .agency-workspace-onboarding .agency-review-grid svg { color: #166b50; }
+body .agency-workspace-onboarding .setup-primary-button { min-height: 46px; padding: 12px 22px; border: 1px solid #166b50; border-radius: 8px; background: #166b50; color: #fff; box-shadow: 0 3px 6px #166b5010; font-size: 13px; font-weight: 600; }
+body .agency-workspace-onboarding .setup-primary-button:hover:not(:disabled) { background: #11543e; }
+body .agency-workspace-onboarding .setup-secondary-button { min-height: 44px; padding: 10px 16px; border: 1px solid #d7dfd8; border-radius: 8px; background: #fff; color: #3b5947; box-shadow: none; font-size: 13px; font-weight: 500; }
+body .agency-workspace-onboarding button:disabled { cursor: not-allowed; opacity: .5; }
+body .agency-workspace-onboarding .agency-setup-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 0; padding: 18px 0 0; border-top: 1px solid #e7ece7; background: transparent; }
+body .agency-workspace-onboarding .setup-message { margin: 0 0 16px; border-radius: 8px; font-size: 13px; }
+body .agency-workspace-onboarding .setup-message.success { padding: 0; border: 0; background: transparent; color: #647269; font-size: 12px; font-weight: 400; }
+
+body .agency-workspace-onboarding .agency-signup-photo { display: flex; align-items: center; gap: 18px; }
+body .agency-workspace-onboarding .agency-signup-avatar { display: grid; flex: 0 0 64px; width: 64px; height: 64px; place-items: center; overflow: hidden; border-radius: 50%; background: #e8f1eb; color: #166b50; font-size: 20px; font-weight: 600; }
+body .agency-workspace-onboarding .agency-signup-avatar img { width: 100%; height: 100%; object-fit: cover; }
+body .agency-workspace-onboarding .agency-signup-photo p,
+body .agency-workspace-onboarding .agency-signup-note { margin: 8px 0 0; color: #647269; font-size: 12px; font-weight: 400; line-height: 1.6; }
+body .agency-workspace-onboarding .agency-signup-upload { position: relative; cursor: pointer; }
+body .agency-workspace-onboarding .agency-signup-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+body .agency-workspace-onboarding .agency-signup-upload:focus-within { outline: 2px solid #166b50; outline-offset: 3px; }
+body .agency-workspace-onboarding .setup-input[readonly] { background: #f0f3ef; color: #647269; }
+body .agency-workspace-onboarding .agency-signup-final-actions { display: flex; align-items: center; gap: 24px; }
+body .agency-workspace-onboarding .agency-signup-skip { padding: 12px 0; border: 0; background: transparent; color: #496453; font: inherit; font-size: 13px; cursor: pointer; }
+body .agency-workspace-onboarding .agency-signup-skip:hover { text-decoration: underline; }
+body .agency-workspace-onboarding .agency-signup-logo-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+body .agency-workspace-onboarding .agency-signup-logo-option { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid #dde5de; border-radius: 10px; }
+body .agency-workspace-onboarding .agency-signup-logo-preview { display: grid; place-items: center; height: 60px; padding: 10px; border-radius: 6px; background: #f3f6f2; color: #166b50; }
+body .agency-workspace-onboarding .agency-signup-logo-preview.is-dark { background: #152621; color: #d1ebdc; }
+body .agency-workspace-onboarding .agency-signup-logo-preview img { max-width: 100%; max-height: 40px; object-fit: contain; }
+body .agency-workspace-onboarding .agency-signup-logo-preview.is-icon img { width: 40px; height: 40px; }
+body .agency-workspace-onboarding .agency-signup-logo-caption { display: grid; gap: 3px; }
+body .agency-workspace-onboarding .agency-signup-logo-caption strong { color: #1c3025; font-size: 13px; font-weight: 600; }
+body .agency-workspace-onboarding .agency-signup-logo-caption span { color: #647269; font-size: 11px; line-height: 1.4; }
+body .agency-workspace-onboarding .agency-signup-logo-option .setup-secondary-button { min-height: 36px; padding: 8px 12px; font-size: 12px; }
+body .agency-workspace-onboarding .agency-signup-colour-row { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 28px; }
+body .agency-workspace-onboarding .agency-signup-colour-preview { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 8px 12px; border-left: 3px solid var(--agency-colour); color: var(--agency-colour); background: #f6f8f5; border-radius: 0 6px 6px 0; }
+body .agency-workspace-onboarding .agency-signup-colour-preview strong { color: #152621; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+body .agency-workspace-onboarding .agency-signup-colour-preview img { width: 28px; height: 28px; object-fit: contain; }
+body .attorney-workspace-onboarding .attorney-signup-secondary-swatch { flex: 0 0 24px; width: 24px; height: 24px; margin-left: auto; border: 1px solid #d7dfd8; border-radius: 50%; }
+body .attorney-workspace-onboarding .setup-field-grid:has(input[readonly]) > .setup-field:last-child { grid-column: 1 / -1; }
+body .company-workspace-onboarding .company-signup-secondary-swatch { flex: 0 0 24px; width: 24px; height: 24px; margin-left: auto; border: 1px solid #d7dfd8; border-radius: 50%; }
+body .company-workspace-onboarding .setup-field-grid:has(input[readonly]) > .setup-field:last-child { grid-column: 1 / -1; }
+
+@media (min-width: 768px) and (max-height: 760px) {
+  body .setup-module-shell .agency-workspace-onboarding { padding: 16px 32px; }
+  body .agency-workspace-onboarding .onboarding-progress-panel { padding: 24px 28px; }
+  body .agency-workspace-onboarding .onboarding-progress-steps { margin-top: 18px; padding-bottom: 14px; }
+  body .agency-workspace-onboarding .agency-setup-card { padding-block: 20px; gap: 18px; }
+  body .agency-workspace-onboarding .agency-signup-logo-preview { height: 48px; }
+  body .agency-workspace-onboarding .agency-signup-logo-preview img { max-height: 28px; }
+}
+
+@media (max-width: 640px) {
+  body .setup-module-shell .agency-workspace-onboarding { padding: 16px; }
+  body .agency-workspace-onboarding .onboarding-progress-panel { padding: 24px 20px; border-radius: 16px; }
+  body .agency-workspace-onboarding .onboarding-progress-heading h1 { max-width: none; font-size: 25px; }
+  body .agency-workspace-onboarding .onboarding-progress-heading > span { font-size: 13px; }
+  body .agency-workspace-onboarding .onboarding-progress-steps { margin-top: 24px; padding-bottom: 20px; }
+  body .agency-workspace-onboarding .onboarding-progress-steps button { gap: 8px; padding-inline: 0; font-size: 12px; }
+  body .agency-workspace-onboarding .onboarding-step-number { width: 28px; height: 28px; }
+  body .agency-workspace-onboarding .onboarding-progress-steps li:not(:last-child)::after { top: 14px; left: calc(50% + 19px); width: calc(100% - 38px); }
+  body .agency-workspace-onboarding .agency-setup-card { gap: 20px; padding-block: 24px; }
+  body .agency-workspace-onboarding .setup-field-grid { grid-template-columns: 1fr; gap: 18px; }
+  body .agency-workspace-onboarding .agency-setup-row-card { padding: 18px; }
+  body .agency-workspace-onboarding .agency-setup-actions { padding-block: 16px 0; }
+  body .agency-workspace-onboarding .agency-signup-logo-options { grid-template-columns: 1fr; gap: 12px; }
+  body .agency-workspace-onboarding .agency-signup-logo-option { grid-template-columns: 64px 1fr; align-items: center; }
+  body .agency-workspace-onboarding .agency-signup-logo-preview { grid-row: span 2; }
+  body .agency-workspace-onboarding .agency-signup-logo-option .setup-secondary-button { justify-self: start; }
+  body .agency-workspace-onboarding .agency-signup-colour-row { grid-template-columns: 1fr; gap: 16px; }
+  body .agency-workspace-onboarding .agency-signup-final-actions { gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+  body .agency-workspace-onboarding .agency-setup-actions:has(.agency-signup-skip) { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  body .agency-workspace-onboarding .agency-setup-actions:has(.agency-signup-skip) .agency-signup-final-actions { display: contents; }
+  body .agency-workspace-onboarding .agency-setup-actions:has(.agency-signup-skip) > .setup-secondary-button { justify-self: start; }
+  body .agency-workspace-onboarding .agency-setup-actions:has(.agency-signup-skip) .agency-signup-skip { justify-self: end; }
+  body .agency-workspace-onboarding .agency-setup-actions:has(.agency-signup-skip) .setup-primary-button { grid-column: 1 / -1; }
+}
+
+@media (max-width: 360px) {
+  body .agency-workspace-onboarding .onboarding-progress-steps button { font-size: 11px; }
+}

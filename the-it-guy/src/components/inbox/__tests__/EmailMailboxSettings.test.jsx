@@ -26,7 +26,7 @@ describe('Mailbox email settings', () => {
   it('lists multiple mailboxes with independent connection state', async () => {
     render(<EmailMailboxSettings {...props} />)
     await screen.findByRole('heading', { name: 'Office' })
-    expect(screen.getByText('connected')).toBeTruthy()
+    expect(screen.getByText('Synced')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Jane jane@example.test/ }))
     await screen.findByRole('heading', { name: 'Jane' })
     expect(screen.getByLabelText('IMAP server')).toBeTruthy()

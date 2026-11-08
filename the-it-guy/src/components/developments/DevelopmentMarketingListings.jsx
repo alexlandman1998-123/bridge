@@ -1,20 +1,22 @@
-import { Building2 } from 'lucide-react'
+import { Building2, Plus } from 'lucide-react'
+import Button from '../ui/Button'
 import SalesListingIndexCard from '../listings/SalesListingIndexCard'
 import { getListingPropertyFacts } from '../../services/listings/listingIndexCardPresentation'
 
 const currency = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
 
-export default function DevelopmentMarketingListings({ listings = [], organisationUsers = [], onOpenListing }) {
+export default function DevelopmentMarketingListings({ listings = [], organisationUsers = [], onOpenListing, onCreateListing, canManage = false }) {
+  const actions = canManage && onCreateListing ? <div className="mb-4 flex justify-end"><Button type="button" onClick={onCreateListing}><Plus size={16} aria-hidden="true" />Add listing</Button></div> : null
   if (!listings.length) return (
-    <section className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
+    <>{actions}<section className="mt-4 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
       <Building2 className="mx-auto text-[#8da0b5]" size={24} aria-hidden="true" />
       <p className="mt-3 text-base font-semibold text-[#142132]">No linked agent listings yet.</p>
       <p className="mx-auto mt-1 max-w-xl text-sm leading-6 text-[#6b7d93]">Agent listings linked to this development will appear here.</p>
-    </section>
+    </section></>
   )
 
   return (
-    <section aria-label="Development listings" className="mt-4 grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+    <>{actions}<section aria-label="Development listings" className="mt-4 grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {listings.map((listing, index) => {
         const agent = organisationUsers.find(user =>
           [user.id, user.userId, user.user_id, user.email].filter(Boolean).some(key =>
@@ -30,7 +32,7 @@ export default function DevelopmentMarketingListings({ listings = [], organisati
           addressLabel: listing.location && listing.location !== 'Location pending' ? listing.location : listing.title,
           imageUrl: listing.coverImageUrl,
           propertyFacts: getListingPropertyFacts(listing),
-          inventoryStatusKey: listing.status === 'draft' ? 'draft' : listing.status,
+          inventoryStatusKey: ['seller_lead', 'draft', 'listing_review'].includes(listing.status) ? 'draft' : listing.status,
           inventoryStatusLabel: 'Draft Listing',
           liveChannels: listing.liveChannels || [],
           assignedAgent: {
@@ -48,6 +50,6 @@ export default function DevelopmentMarketingListings({ listings = [], organisati
           onOpen={() => onOpenListing(listing.id)}
         />
       })}
-    </section>
+    </section></>
   )
 }

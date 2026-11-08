@@ -35,6 +35,7 @@ const sampleLeads = [
     visibilityState: 'full',
     primaryDevelopmentId: 'development-1',
     preferredUnitId: 'unit-1',
+    reservationState: 'reserved',
     updatedAt: '2026-08-13T12:00:00.000Z',
   },
   {

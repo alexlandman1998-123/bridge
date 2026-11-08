@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import sharp from 'sharp'
+import { randomBytes } from 'node:crypto'
 import {
   createProperty24Arch9ListingPreview,
   fetchArch9ListingForProperty24Preview,
@@ -9,6 +11,8 @@ import {
 import { extractMatterportSpaceId, extractYouTubeVideoId } from '../server/services/listingPortalVideo.js'
 import { buildProperty24ListingSubmitPlan, buildProperty24RentalListingSubmitPlan } from '../server/property24/publishService.js'
 import { RENTAL_LISTING_RELEASE_GATE_FIXTURE } from '../src/services/rentals/rentalListingReleaseGateModel.js'
+
+const imageBytes = await sharp({ create: { width: 32, height: 24, channels: 3, background: '#3987aa' } }).jpeg().toBuffer()
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -223,7 +227,7 @@ const loaded = await loadProperty24ImageBytesForPreview({
     headers: {
       get: () => 'image/jpeg',
     },
-    arrayBuffer: async () => new TextEncoder().encode('fake-image-bytes').buffer,
+    arrayBuffer: async () => imageBytes,
   }),
 })
 assert.equal(loaded.summary.loaded, 1)
@@ -240,13 +244,13 @@ const galleryLoaded = await loadProperty24ImageBytesForPreview({
     ok: true,
     status: 200,
     headers: { get: () => 'image/jpeg' },
-    arrayBuffer: async () => new Uint8Array([1]).buffer,
+    arrayBuffer: async () => imageBytes,
   }),
 })
 assert.equal(galleryLoaded.summary.requested, 151)
 assert.equal(galleryLoaded.summary.loaded, 151)
 assert.equal(galleryLoaded.summary.skipped, 0)
-assert.equal(galleryLoaded.media[150].bytes, 'AQ==')
+assert.equal((await sharp(Buffer.from(galleryLoaded.media[150].bytes, 'base64')).metadata()).format, 'jpeg')
 
 const galleryCappedByCaller = await loadProperty24ImageBytesForPreview({
   media: largeGallery,
@@ -255,16 +259,17 @@ const galleryCappedByCaller = await loadProperty24ImageBytesForPreview({
     ok: true,
     status: 200,
     headers: { get: () => 'image/jpeg' },
-    arrayBuffer: async () => new Uint8Array([1]).buffer,
+    arrayBuffer: async () => imageBytes,
   }),
 })
-assert.equal(galleryCappedByCaller.summary.loaded, 50)
-assert.equal(galleryCappedByCaller.summary.skipped, 101)
+assert.equal(galleryCappedByCaller.summary.loaded, 0)
+assert.equal(galleryCappedByCaller.summary.failed, 151)
+assert.equal(galleryCappedByCaller.summary.skipped, 0)
 
 const galleryWithPlans = await loadProperty24ImageBytesForPreview({
   media: [
     ...largeGallery,
-    ...Array.from({ length: 6 }, (_, index) => ({
+    ...Array.from({ length: 5 }, (_, index) => ({
       media_type: 'floor_plan',
       file_url: `https://www.arch9.co.za/plan-${index}.jpg`,
     })),
@@ -273,13 +278,13 @@ const galleryWithPlans = await loadProperty24ImageBytesForPreview({
     ok: true,
     status: 200,
     headers: { get: () => 'image/jpeg' },
-    arrayBuffer: async () => new Uint8Array([1]).buffer,
+    arrayBuffer: async () => imageBytes,
   }),
 })
 assert.equal(galleryWithPlans.summary.loaded, 156)
-assert.equal(galleryWithPlans.summary.skipped, 1)
-assert.equal(galleryWithPlans.media[155].bytes, 'AQ==')
-assert.equal(galleryWithPlans.media[156].bytes, undefined)
+assert.equal(galleryWithPlans.summary.skipped, 0)
+assert.ok(galleryWithPlans.media[155].bytes)
+
 const gallerySubmit = createProperty24Arch9ListingPreview({
   ...bundle,
   media: galleryWithPlans.media,
@@ -296,6 +301,15 @@ assert.equal(gallerySubmit.canSubmit, true)
 assert.equal(gallerySubmit.payload.photos.length, 156)
 assert.equal(gallerySubmit.payload.photos.filter((photo) => photo.isFloorPlan).length, 5)
 
+const excessPlans = await loadProperty24ImageBytesForPreview({
+  media: Array.from({ length: 6 }, (_, index) => ({ media_type: 'floor_plan', file_url: `https://photos.example/plan-${index}.jpg` })),
+  fetchImpl: async () => { throw new Error('Invalid selections must be rejected before downloading') },
+})
+assert.equal(excessPlans.summary.requested, 6)
+assert.equal(excessPlans.summary.failed, 6)
+assert.equal(excessPlans.summary.skipped, 0)
+assert.match(excessPlans.results[0].message, /five floor plan images/)
+
 const budgetLoaded = await loadProperty24ImageBytesForPreview({
   media: largeGallery.slice(0, 3),
   maxTotalImageBytes: 2,
@@ -303,14 +317,15 @@ const budgetLoaded = await loadProperty24ImageBytesForPreview({
     ok: true,
     status: 200,
     headers: { get: () => 'image/jpeg' },
-    arrayBuffer: async () => new Uint8Array([1]).buffer,
+    arrayBuffer: async () => imageBytes,
   }),
 })
-assert.equal(budgetLoaded.summary.requested, 2)
-assert.equal(budgetLoaded.summary.loaded, 2)
-assert.equal(budgetLoaded.summary.skipped, 1)
-assert.equal(budgetLoaded.summary.totalImageBytes, 2)
-assert.equal(budgetLoaded.results[2].status, 'SKIPPED')
+assert.equal(budgetLoaded.summary.requested, 3)
+assert.equal(budgetLoaded.summary.loaded, 0)
+assert.equal(budgetLoaded.summary.failed, 3)
+assert.equal(budgetLoaded.summary.skipped, 0)
+assert.equal(budgetLoaded.summary.totalImageBytes, 0)
+assert.equal(budgetLoaded.results[2].status, 'FAILED')
 
 const fallbackLoaded = await loadProperty24ImageBytesForPreview({
   media: [
@@ -336,7 +351,7 @@ const fallbackLoaded = await loadProperty24ImageBytesForPreview({
           async download(objectPath) {
             assert.equal(objectPath, 'private-listings/example/photo.jpg')
             return {
-              data: new Blob(['storage-image-bytes'], { type: 'image/jpeg' }),
+              data: new Blob([imageBytes], { type: 'image/jpeg' }),
               error: null,
             }
           },
@@ -347,6 +362,14 @@ const fallbackLoaded = await loadProperty24ImageBytesForPreview({
 })
 assert.equal(fallbackLoaded.summary.loaded, 1)
 assert.equal(fallbackLoaded.results[0].source, 'supabase_storage')
+
+const oversizedStorageOriginal = await loadProperty24ImageBytesForPreview({
+  media: [{ media_type: 'image', file_url: 'https://project.supabase.co/storage/v1/object/sign/documents/private-listings/example/large.jpg' }],
+  fetchImpl: async () => ({ ok: false, status: 400 }),
+  storageClient: { storage: { from: () => ({ download: async () => ({ data: { size: 51 * 1024 * 1024 }, error: null }) }) } },
+})
+assert.equal(oversizedStorageOriginal.summary.failed, 1)
+assert.match(oversizedStorageOriginal.results[0].message, /Photo 1.*too large to process safely.*Contact support/)
 
 const conversionFallbackLoaded = await loadProperty24ImageBytesForPreview({
   media: [
@@ -366,11 +389,11 @@ const conversionFallbackLoaded = await loadProperty24ImageBytesForPreview({
   }),
   convertImagesToJpeg: true,
 })
-assert.equal(conversionFallbackLoaded.summary.loaded, 1)
-assert.equal(conversionFallbackLoaded.results[0].status, 'LOADED')
-assert.equal(conversionFallbackLoaded.results[0].conversionFailedOriginalUsed, true)
-assert.equal(conversionFallbackLoaded.media[0].mimeContentType, 'image/png')
-assert.match(conversionFallbackLoaded.media[0].bytes, /^[A-Za-z0-9+/=]+$/)
+assert.equal(conversionFallbackLoaded.summary.loaded, 0)
+assert.equal(conversionFallbackLoaded.summary.failed, 1)
+assert.equal(conversionFallbackLoaded.results[0].status, 'FAILED')
+assert.match(conversionFallbackLoaded.results[0].message, /Photo 1.*cannot be read/)
+assert.equal(conversionFallbackLoaded.media[0].bytes, undefined)
 
 const submitReadyReport = createProperty24Arch9ListingPreview({
   ...bundle,
@@ -458,34 +481,34 @@ const concurrentMedia = [
   { media_type: 'image', file_url: 'https://images.example/third.jpg', sort_order: 2 },
 ]
 const concurrentLoad = loadProperty24ImageBytesForPreview({
-  media: concurrentMedia, maxTotalImageBytes: 3,
+  media: concurrentMedia, maxTotalImageBytes: imageBytes.length * 6,
   fetchImpl: url => {
     concurrentStarts.push(url)
     return new Promise(resolve => completeDownloads.set(url, () => resolve({
       ok: true, status: 200, headers: { get: () => 'image/jpeg' },
-      arrayBuffer: async () => new Uint8Array([1, 2]).buffer,
+      arrayBuffer: async () => imageBytes,
     })))
   },
 })
 assert.deepEqual(concurrentStarts, ['https://images.example/cover.jpg', 'https://images.example/second.jpg'])
 completeDownloads.get('https://images.example/second.jpg')()
-await new Promise(resolve => setImmediate(resolve))
-assert.equal(concurrentStarts.length, 2, 'bound work while the cover is still loading')
+const nextDownloadDeadline = Date.now() + 2000
+while (concurrentStarts.length < 3 && Date.now() < nextDownloadDeadline) await new Promise(resolve => setTimeout(resolve, 10))
+assert.equal(concurrentStarts.length, 3, 'reuse the completed slot while the slower cover is still loading')
 completeDownloads.get('https://images.example/cover.jpg')()
-await new Promise(resolve => setImmediate(resolve))
 assert.equal(concurrentStarts.length, 3)
 completeDownloads.get('https://images.example/third.jpg')()
 const concurrentResult = await concurrentLoad
-assert.deepEqual(concurrentResult.results.map(row => [row.index, row.status]), [[1, 'LOADED'], [0, 'SKIPPED'], [2, 'SKIPPED']])
-assert.equal(concurrentResult.media[1].bytes, 'AQI=')
-assert.equal(concurrentResult.media[0].bytes, undefined)
-assert.equal(concurrentResult.summary.totalImageBytes, 2)
+assert.deepEqual(concurrentResult.results.map(row => [row.index, row.status]), [[1, 'LOADED'], [0, 'LOADED'], [2, 'LOADED']])
+assert.ok(concurrentResult.media[1].bytes)
+assert.ok(concurrentResult.media[0].bytes)
+assert.ok(concurrentResult.summary.totalImageBytes <= imageBytes.length * 6)
 assert.equal(concurrentMedia[1].bytes, undefined)
 const partialFailure = await loadProperty24ImageBytesForPreview({
   media: concurrentMedia,
   fetchImpl: async url => {
     if (url.endsWith('cover.jpg')) throw new Error('Photo download unavailable')
-    return { ok: true, status: 200, headers: { get: () => 'image/jpeg' }, arrayBuffer: async () => new Uint8Array([3]).buffer }
+    return { ok: true, status: 200, headers: { get: () => 'image/jpeg' }, arrayBuffer: async () => imageBytes }
   },
 })
 assert.deepEqual(partialFailure.results.map(row => row.status), ['FAILED', 'LOADED', 'LOADED'])
@@ -493,8 +516,8 @@ assert.equal(partialFailure.summary.failed, 1)
 assert.equal(partialFailure.summary.loaded, 2)
 console.log('Property24 bounded photo preparation and ordered byte budget checks passed.')
 
-// Requirements checks deliberately skip photo downloads. Exercise the same
-// builders used by the API so an empty byte payload cannot hide saved photos.
+// Internal metadata-only inspection still recognises a saved gallery. Public
+// readiness and publish routes both request the full preparation checked below.
 const originalFetch = globalThis.fetch
 try {
   for (const [category, buildPlan] of [
@@ -529,7 +552,7 @@ try {
     globalThis.fetch = async (url) => {
       downloads += 1
       assert.ok(tables.listing_media.some(row => row.file_url === url))
-      return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/jpeg' } })
+      return new Response(imageBytes, { headers: { 'content-type': 'image/jpeg' } })
     }
     const requirements = await buildPlan({ ...args, loadImageBytes: false })
     assert.equal(requirements.canPreview, true, `${category}: ${JSON.stringify(requirements.dataBlockers)}`)
@@ -544,13 +567,16 @@ try {
     assert.equal(submission.payload.photos.length, 2)
     assert.equal(submission.imageByteLoad.summary.loaded, 2)
     assert.equal(downloads, 2, 'Submission must still prepare every saved photo')
+    const readiness = await buildPlan({ ...args, loadImageBytes: true })
+    assert.equal(readiness.canSubmit, submission.canSubmit)
+    assert.deepEqual(readiness.payload.photos, submission.payload.photos, 'Readiness and publish prepare identical copies')
 
     globalThis.fetch = async (url) => url.endsWith('second.jpg')
       ? new Response('', { status: 503 })
-      : new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg' } })
+      : new Response(imageBytes, { headers: { 'content-type': 'image/jpeg' } })
     const failedPhoto = await buildPlan(args)
     assert.equal(failedPhoto.canSubmit, false, 'A failed photo must still block submission')
-    assert.ok(failedPhoto.technicalBlockers.includes('listing_image_bytes_not_loaded_for_property24_submit'))
+    assert.ok(failedPhoto.technicalBlockers.includes('listing_photo_preparation_failed'))
     assert.equal(failedPhoto.imageByteLoad.summary.failed, 1)
 
     const emptyGallery = await buildPlan({ ...args, supabase: createFakeClient({ ...tables, listing_media: [] }), loadImageBytes: false })
@@ -564,3 +590,48 @@ try {
   globalThis.fetch = originalFetch
 }
 console.log('Property24 sale/rental requirements and submission photo checks passed.')
+
+// Use real decoded images, including a photographic-sized JPEG exceeding the
+// old source limit. Keep native work serial here on low-memory developer hosts.
+const originalJpeg = await sharp(randomBytes(2000 * 2000 * 3), { raw: { width: 2000, height: 2000, channels: 3 } })
+  .jpeg({ quality: 100, chromaSubsampling: '4:4:4' }).toBuffer()
+assert.ok(originalJpeg.byteLength > 10 * 1024 * 1024)
+const originalHash = (await import('node:crypto')).createHash('sha256').update(originalJpeg).digest('hex')
+const oversizedJpeg = await loadProperty24ImageBytesForPreview({
+  media: [{ id: 'large-original', media_type: 'image', file_url: 'https://photos.example/large.jpg' }],
+  fetchImpl: async () => new Response(originalJpeg, { headers: { 'content-type': 'image/jpeg' } }),
+})
+assert.equal(oversizedJpeg.summary.failed, 0)
+assert.equal(oversizedJpeg.summary.publishingCopies, 1)
+assert.ok(oversizedJpeg.results[0].byteLength <= 512_000)
+assert.ok(oversizedJpeg.results[0].width <= 1600 && oversizedJpeg.results[0].height <= 1600)
+assert.equal((await import('node:crypto')).createHash('sha256').update(originalJpeg).digest('hex'), originalHash)
+
+const detailedJpeg = await sharp(randomBytes(256 * 256 * 3), { raw: { width: 256, height: 256, channels: 3 } }).jpeg({ quality: 98 }).toBuffer()
+const completeGallery = Array.from({ length: 95 }, (_, index) => ({ id: `photo-${index}`, media_type: 'image', file_url: `https://photos.example/${index}.jpg`, sort_order: index, is_cover: index === 8 }))
+const beforeMedia = structuredClone(completeGallery)
+const wholeGallery = await loadProperty24ImageBytesForPreview({
+  media: completeGallery, maxTotalImageBytes: 95 * 30_000,
+  fetchImpl: async () => new Response(detailedJpeg, { headers: { 'content-type': 'image/jpeg' } }),
+})
+assert.equal(wholeGallery.summary.requested, 95)
+assert.equal(wholeGallery.summary.loaded, 95)
+assert.equal(wholeGallery.summary.failed, 0)
+assert.equal(wholeGallery.summary.skipped, 0)
+assert.ok(wholeGallery.summary.totalImageBytes <= 95 * 30_000)
+assert.ok(wholeGallery.results.every(photo => photo.quality < 84), 'Gallery allowance adjusts compression before the total is exceeded')
+assert.equal(wholeGallery.results[0].index, 8, 'Prepare cover first without changing stored gallery order')
+assert.equal(wholeGallery.results[0].photoNumber, 9, 'Failure labels use the agent’s gallery position, including a cover selected later in the gallery')
+assert.deepEqual(completeGallery, beforeMedia)
+assert.deepEqual(wholeGallery.media.map(photo => photo.id), completeGallery.map(photo => photo.id))
+const corrupt = await loadProperty24ImageBytesForPreview({
+  media: [{ media_type: 'image', file_url: '', bytes: 'stale' }, { media_type: 'image', file_url: 'https://photos.example/damaged.jpg', base64: 'stale' }],
+  fetchImpl: async () => new Response('not an image'),
+})
+assert.equal(corrupt.summary.failed, 2)
+assert.equal(corrupt.summary.skipped, 0)
+assert.match(corrupt.results[0].message, /Photo 1.*no saved file/)
+assert.match(corrupt.results[1].message, /Photo 2.*cannot be read/)
+assert.equal(corrupt.media[0].bytes, undefined)
+assert.equal(corrupt.media[1].base64, undefined)
+console.log('Oversized JPEG, complete 95-photo compression, unreadable-file and original-preservation checks passed.')

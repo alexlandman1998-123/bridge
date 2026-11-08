@@ -82,6 +82,7 @@ it('opens the new-leads view with only the agent’s assigned new leads and can 
   expect(screen.getByText('Contacted buyer')).toBeTruthy()
 })
 
+
 it('loads saved leads after Transactions without crashing before the lead request starts, then opens the buyer journey', async () => {
   const request = deferred()
   mocks.leads.mockReturnValue(request.promise)

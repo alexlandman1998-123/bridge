@@ -2530,22 +2530,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         <Button
           onClick={() => {
             if (createdTransaction.transactionId) {
-              if (role === 'agent') {
-                const searchValue =
-                  createdTransaction.transactionReference ||
-                  createdTransaction.reference ||
-                  createdTransaction.transactionId
-                const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
-                navigate(`/transactions${query}`)
-                return
-              }
-
               const route = resolveTransactionWorkspaceRoute({
                 transactionId: createdTransaction.transactionId,
                 unitId: createdTransaction.unitId,
                 unitNumber: createdTransaction.unitNumber,
                 transactionReference: createdTransaction.transactionReference || createdTransaction.reference,
               })
+              onClose()
               navigate(route.path, route.state ? { state: route.state } : undefined)
               return
             }
@@ -2555,6 +2546,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                 unitId: createdTransaction.unitId,
                 unitNumber: createdTransaction.unitNumber,
               })
+              onClose()
               navigate(route.path, route.state ? { state: route.state } : undefined)
             }
           }}

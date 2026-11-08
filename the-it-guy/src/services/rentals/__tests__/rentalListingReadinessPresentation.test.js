@@ -1,6 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildRentalChecklistIssues, describeRentalPortalRequirement, getRentalPortalReadiness } from '../rentalListingReadinessPresentation.js'
+import { listingPhotoPreparationError } from '../../listings/listingPhotoPreparationFeedback.js'
+
+test('shows affected photos and an actionable explanation instead of an image-bytes error', () => {
+ const preview={canSubmit:false,technicalBlockers:['listing_photo_preparation_failed'],imageByteLoad:{summary:{requested:95,loaded:94,failed:1},results:[{index:4,status:'FAILED',message:'Photo 5 (Kitchen): This file cannot be read as a complete photo. Replace it, save, then check again.'}]}}
+ const result=getRentalPortalReadiness('property24',{preview})
+ assert.equal(result.ready,false)
+ assert.equal(result.issues.length,1)
+ assert.match(result.issues[0].label,/Photo 5 \(Kitchen\).*Replace it/)
+ assert.equal(result.issues[0].action.step,'marketing')
+ assert.match(listingPhotoPreparationError(preview),/Photo 5/)
+ assert.doesNotMatch(listingPhotoPreparationError(preview),/image bytes/)
+})
 test('explains exactly which local fields are missing and uses their editor steps', () => {
  const issues=buildRentalChecklistIssues({row:{address:'1 Main Road',landlordName:'Owner'},readinessItems:[{key:'property',complete:false},{key:'landlord',complete:false},{key:'marketing',complete:false,detail:'Awaiting approval'},{key:'syndication',complete:false}]})
  assert.deepEqual(issues[0].missing.map(item=>item.label),['Monthly rent','Available from'])

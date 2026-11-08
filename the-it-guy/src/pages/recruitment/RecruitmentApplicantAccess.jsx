@@ -75,7 +75,7 @@ export default function RecruitmentApplicantAccess({ mode, email: initialEmail, 
       <button type="submit" disabled={setup && mode !== 'signin' && !codeRequested && !!wait} className="recruitment-signup__submit">{busy ? 'Please wait…' : mode === 'signin' ? setup ? 'Log in' : 'Sign in & continue' : setup ? codeRequested ? 'Log in' : wait ? `Request a new code in ${wait}s` : 'Send login code' : 'Verify & continue'}</button>
       {(!setup || (mode !== 'signin' && codeRequested)) && <div className={onDifferentEmail ? 'recruitment-signup__email-actions' : undefined}>
         <button type="button" className="recruitment-signup__secondary" disabled={!!wait} onClick={() => request('send_verification')}>{wait ? `Request a new code in ${wait}s` : setup ? 'Send login code' : 'Send a new email code'}</button>
-        {onDifferentEmail && <button type="button" className="recruitment-signup__secondary" disabled={busy || parentBusy} onClick={onDifferentEmail}>Use a different email</button>}
+        {onDifferentEmail && <button type="button" className="recruitment-signup__secondary" disabled={busy || parentBusy} onClick={onDifferentEmail}>Edit email address</button>}
       </div>}
       {setup && mode !== 'signin' && !codeRequested && <button type="button" className="recruitment-signup__secondary" onClick={() => setCodeRequested(true)}>I already have a login code</button>}
       {(!codeOnly || setup) && <button type="button" className="recruitment-signup__secondary" onClick={() => onMode(mode === 'signin' ? 'email' : 'signin')}>{mode === 'signin' ? 'Use an email code instead' : 'Sign in with a password'}</button>}

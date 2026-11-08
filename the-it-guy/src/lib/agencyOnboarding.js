@@ -1,5 +1,86 @@
 const ONBOARDING_SCHEMA_VERSION = 1
 
+export const AGENCY_SIGNUP_STEPS = [
+  { key: 'personal', label: 'Your details' },
+  { key: 'organisation', label: 'Agency details' },
+  { key: 'branding', label: 'Branding' },
+]
+
+export function getAgencySignupDetails(draft = {}, profile = {}) {
+  const principal = draft.principalInformation || {}
+  const fullName = normalizeText(principal.principalFullName || profile?.fullName)
+  const parts = fullName.split(/\s+/)
+  const useProfileNames = fullName === normalizeText(profile?.fullName)
+  return {
+    firstName: principal.firstName ?? (useProfileNames && profile?.firstName ? profile.firstName : parts[0] || ''),
+    lastName: principal.lastName ?? (useProfileNames && profile?.lastName ? profile.lastName : parts.slice(1).join(' ')),
+    avatarUrl: principal.avatarUrl ?? profile?.avatarUrl ?? '',
+  }
+}
+
+export function validateAgencySignupStep(step, draft) {
+  const details = getAgencySignupDetails(draft)
+  if (step === 'personal') {
+    if (!normalizeText(details.firstName)) return 'Enter your first name.'
+    if (!normalizeText(details.lastName)) return 'Enter your surname.'
+  }
+  if (step === 'organisation' && !normalizeText(draft?.agencyInformation?.agencyName)) return 'Enter your agency name.'
+  return ''
+}
+
+export function buildAgencySignupSubmission(draft, profile, verifiedEmail) {
+  const details = getAgencySignupDetails(draft, profile)
+  return {
+    ...draft,
+    agencyInformation: {
+      ...draft.agencyInformation,
+      mainEmailAddress: draft.agencyInformation?.mainEmailAddress || verifiedEmail,
+    },
+    principalInformation: {
+      ...draft.principalInformation,
+      ...details,
+      firstName: normalizeText(details.firstName),
+      lastName: normalizeText(details.lastName),
+      principalFullName: [details.firstName, details.lastName].map(normalizeText).filter(Boolean).join(' '),
+      emailAddress: verifiedEmail,
+    },
+    branding: {
+      ...draft.branding,
+      brandColours: {
+        ...draft.branding?.brandColours,
+        primary: /^#[0-9a-f]{6}$/i.test(draft.branding?.brandColours?.primary || '') ? draft.branding.brandColours.primary : '#166b50',
+      },
+    },
+    // The shorter signup has no team invitation screen. Do not dispatch unseen
+    // invitations restored from an older five-step draft or organisation settings.
+    invitations: [createAgencyInviteDraft()],
+  }
+}
+
+export function applyAgencyBrandingUpload(branding = {}, target, upload, fileName) {
+  const url = upload.resolvedUrl || upload.signedUrl || upload.publicUrl
+  if (!url) throw new Error('The logo uploaded, but its preview could not be loaded. Please try again.')
+  const next = {
+    ...branding,
+    [target]: url,
+    [`${target}Name`]: fileName,
+    [`${target}Bucket`]: upload.bucket || '',
+    [`${target}Path`]: upload.path || '',
+  }
+  if (target === 'logoIcon') {
+    for (const asset of ['favicon', 'portalIcon', 'mobileIcon', 'browserTile']) {
+      const followsPreviousIcon = branding[`${asset}GeneratedFrom`] === 'Generated from Icon Logo' && branding[asset] === branding.logoIcon
+      if (normalizeText(next[asset]) && !followsPreviousIcon) continue
+      next[asset] = url
+      next[`${asset}Name`] = fileName
+      next[`${asset}GeneratedFrom`] = 'Generated from Icon Logo'
+      next[`${asset}Bucket`] = upload.bucket || ''
+      next[`${asset}Path`] = upload.path || ''
+    }
+  }
+  return next
+}
+
 export const AGENCY_TYPE_OPTIONS = [
   { value: 'residential', label: 'Residential' },
   { value: 'commercial', label: 'Commercial' },

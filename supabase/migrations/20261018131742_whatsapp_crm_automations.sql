@@ -1,4 +1,7 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
 
 -- All configuration and execution is server-mediated. Enabling never backfills.
 create table public.whatsapp_automation_rules (
@@ -6,15 +9,27 @@ create table public.whatsapp_automation_rules (
   created_by uuid not null references auth.users(id), config jsonb not null, version integer not null default 1,
   enabled boolean not null default false, enabled_at timestamptz, sender_version integer,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(id,organisation_id)
-);
-create index whatsapp_automation_rules_org on public.whatsapp_automation_rules(organisation_id,created_at desc);
-create index whatsapp_automation_rules_creator on public.whatsapp_automation_rules(created_by);
-create unique index whatsapp_automation_rules_active on public.whatsapp_automation_rules(organisation_id,(config->>'kind'),(config->>'trigger'),(config->>'stage')) where enabled;
+)
+;
+
+create index whatsapp_automation_rules_org on public.whatsapp_automation_rules(organisation_id,created_at desc)
+;
+
+create index whatsapp_automation_rules_creator on public.whatsapp_automation_rules(created_by)
+;
+
+create unique index whatsapp_automation_rules_active on public.whatsapp_automation_rules(organisation_id,(config->>'kind'),(config->>'trigger'),(config->>'stage')) where enabled
+;
+
 create table public.whatsapp_automation_subjects (
   record_id uuid not null, kind text not null, organisation_id uuid not null references public.organisations(id),
   epoch uuid not null default gen_random_uuid(), snapshot jsonb not null, primary key(record_id,kind)
-);
-create index whatsapp_automation_subjects_org on public.whatsapp_automation_subjects(organisation_id);
+)
+;
+
+create index whatsapp_automation_subjects_org on public.whatsapp_automation_subjects(organisation_id)
+;
+
 create table public.whatsapp_automation_runs (
   id uuid primary key default gen_random_uuid(), organisation_id uuid not null references public.organisations(id), rule_id uuid not null,
   rule_version integer not null, record_id uuid not null, kind text not null, epoch uuid not null, snapshot jsonb not null,
@@ -24,15 +39,32 @@ create table public.whatsapp_automation_runs (
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
   foreign key(rule_id,organisation_id) references public.whatsapp_automation_rules(id,organisation_id),
   unique(rule_id,rule_version,record_id,epoch)
-);
-create index whatsapp_automation_runs_due on public.whatsapp_automation_runs(due_at,created_at) where status in ('queued','leased');
-create index whatsapp_automation_runs_inflight on public.whatsapp_automation_runs(lease_until) where status='sending';
-create index whatsapp_automation_runs_anchor on public.whatsapp_automation_runs(anchor_message_id) where anchor_message_id is not null;
-create index whatsapp_automation_runs_org on public.whatsapp_automation_runs(organisation_id,created_at desc,id desc);
-create index whatsapp_automation_runs_subject on public.whatsapp_automation_runs(organisation_id,kind,record_id) where status in ('queued','leased');
-create index whatsapp_automation_runs_phone on public.whatsapp_automation_runs(organisation_id,phone) where status in ('queued','leased');
-alter table public.whatsapp_inbox_messages add column automation_run_id uuid references public.whatsapp_automation_runs(id);
-create index whatsapp_inbox_messages_automation on public.whatsapp_inbox_messages(automation_run_id) where automation_run_id is not null;
+)
+;
+
+create index whatsapp_automation_runs_due on public.whatsapp_automation_runs(due_at,created_at) where status in ('queued','leased')
+;
+
+create index whatsapp_automation_runs_inflight on public.whatsapp_automation_runs(lease_until) where status='sending'
+;
+
+create index whatsapp_automation_runs_anchor on public.whatsapp_automation_runs(anchor_message_id) where anchor_message_id is not null
+;
+
+create index whatsapp_automation_runs_org on public.whatsapp_automation_runs(organisation_id,created_at desc,id desc)
+;
+
+create index whatsapp_automation_runs_subject on public.whatsapp_automation_runs(organisation_id,kind,record_id) where status in ('queued','leased')
+;
+
+create index whatsapp_automation_runs_phone on public.whatsapp_automation_runs(organisation_id,phone) where status in ('queued','leased')
+;
+
+alter table public.whatsapp_inbox_messages add column automation_run_id uuid references public.whatsapp_automation_runs(id)
+;
+
+create index whatsapp_inbox_messages_automation on public.whatsapp_inbox_messages(automation_run_id) where automation_run_id is not null
+;
 
 create function private.whatsapp_automation_snapshot(p_kind text,p_record uuid) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare item jsonb; person jsonb;
@@ -47,7 +79,8 @@ begin
   select to_jsonb(c) into person from public.contacts c where contact_id=(item->>'contact_id')::uuid and organisation_id=(item->>'organisation_id')::uuid for share;
   return jsonb_build_object('org',item->>'organisation_id','phone',public.whatsapp_crm_phone(person->>'phone'),'name',trim(concat_ws(' ',person->>'first_name',person->>'last_name')),'stage',lower(trim(item->>'stage')),'owner',coalesce(item->>'assigned_user_id',item->>'assigned_agent_id'),'status',item->>'status',
     'inactive',lower(coalesce(item->>'status','')) in ('archived','deleted','closed_lost','closed_won','lost') or lower(coalesce(item->>'stage','')) in ('archived','deleted','closed_lost','closed_won','lost') or coalesce((item->>'is_archived')::boolean,false) or item->>'archived_at' is not null);
-end; $$;
+end; $$
+;
 
 create function private.whatsapp_automation_subject(p_kind text,p_record uuid,p_org uuid) returns public.whatsapp_automation_subjects language plpgsql security invoker set search_path='' as $$
 declare state jsonb; subject public.whatsapp_automation_subjects%rowtype;
@@ -61,7 +94,8 @@ begin
   update public.whatsapp_automation_runs set status='skipped',reason='Lead stage, contact or assignment changed',updated_at=now()
     where organisation_id=p_org and record_id=p_record and kind=p_kind and epoch<>subject.epoch and status in ('queued','leased');
   return subject;
-end; $$;
+end; $$
+;
 
 create function private.whatsapp_automation_enqueue(p_subject public.whatsapp_automation_subjects,p_trigger text,p_at timestamptz,p_anchor uuid default null) returns void language plpgsql security invoker set search_path='' as $$
 begin
@@ -73,7 +107,8 @@ begin
       and r.config->>'kind'=p_subject.kind and r.config->>'trigger'=p_trigger
       and (p_trigger<>'stage_changed' or r.config->>'stage'=p_subject.snapshot->>'stage')
     on conflict(rule_id,rule_version,record_id,epoch) do nothing;
-end; $$;
+end; $$
+;
 
 -- Assignment only fills an empty new Buyer/Seller lead. Existing choices win.
 create function private.whatsapp_automation_assign() returns trigger language plpgsql security definer set search_path='' as $$
@@ -88,8 +123,11 @@ begin
     update public.contacts set assigned_agent_id=agent where contact_id=new.contact_id and organisation_id=new.organisation_id and assigned_agent_id is null;
   end if;
   return new;
-end; $$;
-create trigger z_whatsapp_automation_assign before insert on public.leads for each row execute function private.whatsapp_automation_assign();
+end; $$
+;
+
+create trigger z_whatsapp_automation_assign before insert on public.leads for each row execute function private.whatsapp_automation_assign()
+;
 
 create function private.whatsapp_automation_crm() returns trigger language plpgsql security definer set search_path='' as $$
 declare item jsonb; prior jsonb; kind text; target_record uuid; target_org uuid; subject public.whatsapp_automation_subjects%rowtype;
@@ -111,9 +149,14 @@ begin
     perform private.whatsapp_automation_enqueue(subject,'stage_changed',now());
   end if;
   return null;
-end; $$;
-create trigger whatsapp_automation_crm after insert or update or delete on public.leads for each row execute function private.whatsapp_automation_crm();
-create trigger whatsapp_automation_crm after insert or update or delete on public.recruitment_leads for each row execute function private.whatsapp_automation_crm();
+end; $$
+;
+
+create trigger whatsapp_automation_crm after insert or update or delete on public.leads for each row execute function private.whatsapp_automation_crm()
+;
+
+create trigger whatsapp_automation_crm after insert or update or delete on public.recruitment_leads for each row execute function private.whatsapp_automation_crm()
+;
 
 create function private.whatsapp_automation_contact() returns trigger language plpgsql security definer set search_path='' as $$
 declare l record;
@@ -124,8 +167,11 @@ begin
     end loop;
   end if;
   return null;
-end; $$;
-create trigger whatsapp_automation_contact after update on public.contacts for each row execute function private.whatsapp_automation_contact();
+end; $$
+;
+
+create trigger whatsapp_automation_contact after update on public.contacts for each row execute function private.whatsapp_automation_contact()
+;
 
 create function private.whatsapp_automation_message() returns trigger language plpgsql security definer set search_path='' as $$
 declare thread public.whatsapp_inbox_conversations%rowtype; linked public.whatsapp_inbox_crm_links%rowtype; subject public.whatsapp_automation_subjects%rowtype; target_kind text;
@@ -149,8 +195,11 @@ begin
     if subject.snapshot->>'phone'=thread.contact_phone then perform private.whatsapp_automation_enqueue(subject,'no_response',new.event_at,new.id); end if;
   end if;
   return null;
-end; $$;
-create trigger whatsapp_automation_message after insert or update on public.whatsapp_inbox_messages for each row execute function private.whatsapp_automation_message();
+end; $$
+;
+
+create trigger whatsapp_automation_message after insert or update on public.whatsapp_inbox_messages for each row execute function private.whatsapp_automation_message()
+;
 
 create function private.whatsapp_automation_optout() returns trigger language plpgsql security definer set search_path='' as $$
 declare target_phone text;
@@ -163,9 +212,14 @@ begin
   end if;
   update public.whatsapp_automation_runs j set status='skipped',reason='Customer opted out',updated_at=now() where j.organisation_id=new.organisation_id and j.phone=target_phone and j.status in ('queued','leased');
   return null;
-end; $$;
-create trigger whatsapp_automation_optout after insert or update on public.whatsapp_inbox_permissions for each row execute function private.whatsapp_automation_optout();
-create trigger whatsapp_automation_optout after insert or update on public.whatsapp_marketing_contacts for each row execute function private.whatsapp_automation_optout();
+end; $$
+;
+
+create trigger whatsapp_automation_optout after insert or update on public.whatsapp_inbox_permissions for each row execute function private.whatsapp_automation_optout()
+;
+
+create trigger whatsapp_automation_optout after insert or update on public.whatsapp_marketing_contacts for each row execute function private.whatsapp_automation_optout()
+;
 
 create function private.whatsapp_automation_conversation() returns trigger language plpgsql security definer set search_path='' as $$
 begin
@@ -173,9 +227,14 @@ begin
     update public.whatsapp_automation_runs set status='skipped',reason='Conversation assignment or status changed',updated_at=now() where organisation_id=new.organisation_id and phone=new.contact_phone and status in ('queued','leased');
   end if;
   return null;
-end; $$;
-create trigger whatsapp_automation_conversation after update on public.whatsapp_inbox_conversations for each row execute function private.whatsapp_automation_conversation();
-revoke all on function private.whatsapp_automation_conversation() from public,anon,authenticated;
+end; $$
+;
+
+create trigger whatsapp_automation_conversation after update on public.whatsapp_inbox_conversations for each row execute function private.whatsapp_automation_conversation()
+;
+
+revoke all on function private.whatsapp_automation_conversation() from public,anon,authenticated
+;
 
 create function public.whatsapp_automation_rules_request(p_org uuid,p_actor uuid,p_action text,p_id uuid default null,p_version integer default null,p_config jsonb default null) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare rule public.whatsapp_automation_rules%rowtype; sender public.organisation_communication_channels%rowtype; items jsonb; recruitment_admin boolean;
@@ -221,7 +280,8 @@ begin
   else raise exception 'Unknown automation action'; end if;
   update public.whatsapp_automation_runs set status='skipped',reason='Rule edited or switched off',updated_at=now() where rule_id=rule.id and status in ('queued','leased');
   return jsonb_build_object('rule',to_jsonb(rule));
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_automation_next() returns jsonb language plpgsql security invoker set search_path='' as $$
 declare job public.whatsapp_automation_runs%rowtype;
@@ -233,7 +293,8 @@ begin
   if job.id is null then return null; end if;
   update public.whatsapp_automation_runs set status='leased',lease_token=gen_random_uuid(),lease_until=now()+interval '90 seconds',updated_at=now() where id=job.id returning * into job;
   return to_jsonb(job);
-end; $$;
+end; $$
+;
 
 create function private.whatsapp_automation_time(p_config jsonb,p_at timestamptz) returns timestamptz language plpgsql stable security invoker set search_path='' as $$
 declare local_day date; d date; starts timestamptz; ends timestamptz; offset_day integer;
@@ -248,7 +309,8 @@ begin
     end if;
   end loop;
   raise exception 'Invalid sending window';
-end; $$;
+end; $$
+;
 
 -- Preparation is repeatable until the final, atomic message claim. Nothing after
 -- that claim can ever requeue a send, even if the provider response is lost.
@@ -316,7 +378,8 @@ begin
   update public.whatsapp_inbox_messages set automation_run_id=j.id where id=j.id;
   update public.whatsapp_automation_runs set status='sending',message_id=j.id,reason=null,lease_until=now()+interval '90 seconds',updated_at=now() where id=j.id;
   return jsonb_build_object('ready',true,'messageId',j.id,'senderId',sender.id);
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_automation_finish(p_id uuid,p_token uuid,p_status text,p_provider_id text default null) returns void language plpgsql security invoker set search_path='' as $$
 declare j public.whatsapp_automation_runs%rowtype; ch public.organisation_communication_channels%rowtype;
@@ -334,24 +397,47 @@ begin
     update public.whatsapp_inbox_messages set delivery_status=p_status,error_message=case when p_status='failed' then 'Meta rejected this automatic message' else 'Delivery result unconfirmed; automatic resend blocked' end where id=j.message_id and delivery_status='sending';
   end if;
   update public.whatsapp_automation_runs set status=p_status,reason=case when p_status='sent' then 'Submitted to Meta; delivery status is in the inbox' when p_status='failed' then 'Meta rejected this message' else 'Delivery result unconfirmed; automatic resend blocked' end,updated_at=now() where id=j.id;
-end; $$;
+end; $$
+;
 
 -- Recruitment follow-up tasks retain the recruitment management boundary.
 create policy whatsapp_automation_recruitment_task_scope on public.tasks as restrictive for all to authenticated
 using (metadata->>'recruitment_lead_id' is null or exists(select 1 from public.organisation_users m where m.organisation_id=tasks.organisation_id and m.user_id=(select auth.uid()) and m.status='active' and m.role in ('principal','admin','super_admin')))
-with check (metadata->>'recruitment_lead_id' is null or exists(select 1 from public.organisation_users m where m.organisation_id=tasks.organisation_id and m.user_id=(select auth.uid()) and m.status='active' and m.role in ('principal','admin','super_admin')));
+with check (metadata->>'recruitment_lead_id' is null or exists(select 1 from public.organisation_users m where m.organisation_id=tasks.organisation_id and m.user_id=(select auth.uid()) and m.status='active' and m.role in ('principal','admin','super_admin')))
+;
 
-alter table public.whatsapp_automation_rules enable row level security;
-alter table public.whatsapp_automation_subjects enable row level security;
-alter table public.whatsapp_automation_runs enable row level security;
-revoke all on public.whatsapp_automation_rules,public.whatsapp_automation_subjects,public.whatsapp_automation_runs from public,anon,authenticated;
-grant all on public.whatsapp_automation_rules,public.whatsapp_automation_subjects,public.whatsapp_automation_runs to service_role;
-grant select,update on public.leads,public.contacts,public.recruitment_leads to service_role;
-grant insert,select on public.tasks to service_role;
-revoke all on function public.whatsapp_automation_rules_request(uuid,uuid,text,uuid,integer,jsonb),public.whatsapp_automation_next(),public.whatsapp_automation_prepare(uuid,uuid,boolean,text,jsonb),public.whatsapp_automation_finish(uuid,uuid,text,text) from public,anon,authenticated;
-grant execute on function public.whatsapp_automation_rules_request(uuid,uuid,text,uuid,integer,jsonb),public.whatsapp_automation_next(),public.whatsapp_automation_prepare(uuid,uuid,boolean,text,jsonb),public.whatsapp_automation_finish(uuid,uuid,text,text) to service_role;
-revoke all on function private.whatsapp_automation_snapshot(text,uuid),private.whatsapp_automation_subject(text,uuid,uuid),private.whatsapp_automation_enqueue(public.whatsapp_automation_subjects,text,timestamptz,uuid),private.whatsapp_automation_assign(),private.whatsapp_automation_crm(),private.whatsapp_automation_contact(),private.whatsapp_automation_message(),private.whatsapp_automation_optout(),private.whatsapp_automation_time(jsonb,timestamptz) from public,anon,authenticated;
-grant execute on function private.whatsapp_automation_snapshot(text,uuid),private.whatsapp_automation_subject(text,uuid,uuid),private.whatsapp_automation_time(jsonb,timestamptz) to service_role;
+alter table public.whatsapp_automation_rules enable row level security
+;
+
+alter table public.whatsapp_automation_subjects enable row level security
+;
+
+alter table public.whatsapp_automation_runs enable row level security
+;
+
+revoke all on public.whatsapp_automation_rules,public.whatsapp_automation_subjects,public.whatsapp_automation_runs from public,anon,authenticated
+;
+
+grant all on public.whatsapp_automation_rules,public.whatsapp_automation_subjects,public.whatsapp_automation_runs to service_role
+;
+
+grant select,update on public.leads,public.contacts,public.recruitment_leads to service_role
+;
+
+grant insert,select on public.tasks to service_role
+;
+
+revoke all on function public.whatsapp_automation_rules_request(uuid,uuid,text,uuid,integer,jsonb),public.whatsapp_automation_next(),public.whatsapp_automation_prepare(uuid,uuid,boolean,text,jsonb),public.whatsapp_automation_finish(uuid,uuid,text,text) from public,anon,authenticated
+;
+
+grant execute on function public.whatsapp_automation_rules_request(uuid,uuid,text,uuid,integer,jsonb),public.whatsapp_automation_next(),public.whatsapp_automation_prepare(uuid,uuid,boolean,text,jsonb),public.whatsapp_automation_finish(uuid,uuid,text,text) to service_role
+;
+
+revoke all on function private.whatsapp_automation_snapshot(text,uuid),private.whatsapp_automation_subject(text,uuid,uuid),private.whatsapp_automation_enqueue(public.whatsapp_automation_subjects,text,timestamptz,uuid),private.whatsapp_automation_assign(),private.whatsapp_automation_crm(),private.whatsapp_automation_contact(),private.whatsapp_automation_message(),private.whatsapp_automation_optout(),private.whatsapp_automation_time(jsonb,timestamptz) from public,anon,authenticated
+;
+
+grant execute on function private.whatsapp_automation_snapshot(text,uuid),private.whatsapp_automation_subject(text,uuid,uuid),private.whatsapp_automation_time(jsonb,timestamptz) to service_role
+;
 
 create function private.run_whatsapp_automation_worker() returns jsonb language plpgsql security definer set search_path='' as $$
 declare project_url text; service_key text; headers jsonb; request_id bigint;
@@ -365,11 +451,20 @@ begin
   if left(service_key,10)<>'sb_secret_' then headers:=headers||jsonb_build_object('Authorization','Bearer '||service_key); end if;
   select net.http_post(url:=rtrim(project_url,'/')||'/functions/v1/whatsapp-automation-worker',headers:=headers,body:='{}'::jsonb,timeout_milliseconds:=90000) into request_id;
   return jsonb_build_object('scheduled',true,'request_id',request_id);
-end; $$;
-revoke all on function private.run_whatsapp_automation_worker() from public,anon,authenticated;
-grant execute on function private.run_whatsapp_automation_worker() to service_role;
+end; $$
+;
+
+revoke all on function private.run_whatsapp_automation_worker() from public,anon,authenticated
+;
+
+grant execute on function private.run_whatsapp_automation_worker() to service_role
+;
+
 do $$ begin
   if to_regclass('cron.job') is not null then perform cron.schedule('whatsapp-automation-worker','* * * * *','select private.run_whatsapp_automation_worker();');
   else raise notice 'Enable pg_cron and pg_net, then schedule private.run_whatsapp_automation_worker() every minute.';end if;
-end; $$;
-commit;
+end; $$
+;
+
+commit
+;

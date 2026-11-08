@@ -35,7 +35,9 @@ it('renders retrieved, persisted and authenticated SQL totals for all three peri
 it('keeps persisted totals on supplier delay/failure and repeated upserts',async()=>{
   const original = (await db.query('select count(*)::int as n from private_property_listing_statistics_daily')).rows[0].n
   const now=new Date(retrieval.now.getTime()+61*60*1000)
-  const pull=()=>syncPrivatePropertyStatistics({...retrieval,config:retrieval.config,now,days:7,maxRequests:2})
+  // Retry the same saved period after cooldown, including when this test runs
+  // after 23:00 SAST and advancing 61 minutes crosses into the next day.
+  const pull=()=>syncPrivatePropertyStatistics({...retrieval,config:retrieval.config,now,days:7,endDate:retrieval.window.endDate,maxRequests:2})
   await pull()
   expect((await db.query('select count(*)::int as n from private_property_listing_statistics_daily')).rows[0].n).toBe(original)
   await db.exec('truncate private_property_statistics_attempts')

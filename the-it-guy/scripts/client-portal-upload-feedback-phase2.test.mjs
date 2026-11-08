@@ -12,7 +12,7 @@ assert.match(uploadButton, /Received and awaiting review by your transaction tea
 assert.match(uploadButton, /Try again/, 'Uploads should offer a clear retry state after an error.')
 assert.match(uploadButton, /role="status" aria-live="polite"/, 'Upload feedback should be announced to assistive technology.')
 assert.match(uploadButton, /setSubmitting\(true\)/, 'The upload button should prevent duplicate submissions before parent state updates.')
-assert.match(uploadButton, /await onUpload\(uploadSpec, file\)/, 'Upload feedback should wait for the actual upload result.')
+assert.match(uploadButton, /await onUpload\(uploadSpec, file(?:,\s*\{[\s\S]*?onProgress[\s\S]*?\})?\)/, 'Upload feedback should wait for the actual upload result.')
 assert.match(canonicalArea, /ClientDocumentUploadButton/, 'Canonical document requests should use the shared upload-feedback control.')
 assert.doesNotMatch(canonicalArea, /type="file"/, 'Canonical document requests should not retain a second upload implementation.')
 assert.match(clientPortal, /return \{ ok: true, document: uploaded \}/, 'The portal upload handler should report successful receipt to the shared control.')

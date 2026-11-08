@@ -39,6 +39,7 @@ const sampleLeads = [
     buyerEmail: 'released@example.test',
     primaryDevelopmentId: 'development-1',
     preferredUnitId: 'unit-1',
+    reservationState: 'reserved',
   },
   {
     developerLeadId: 'lead-blocked',
@@ -121,7 +122,7 @@ for (const token of [
 }
 
 for (const token of [
-  'createTransactionFromWizard',
+  'Complete buyer onboarding and the signed OTP',
   'recordBuyerOnboardingSent',
   'sendBuyerOnboarding = true',
 ]) {

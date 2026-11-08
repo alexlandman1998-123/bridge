@@ -31,7 +31,8 @@ export default function MobilePublicDevelopmentExperience({
   freshness,
   renderVisualMap,
   estatePresentation = false,
-  onSimulateReservation,
+  reservationConfig,
+  onRequestReservation,
 }) {
   const [menu, setMenu] = useState(false);
   const [enquiryOpen, setEnquiryOpen] = useState(false);
@@ -210,7 +211,8 @@ export default function MobilePublicDevelopmentExperience({
       <PublicDevelopmentEnquiryDrawer
         estatePresentation={estatePresentation}
         reservationUnit={reservationUnit ? inventory.find((unit) => String(unit.id) === String(reservationUnit.id)) || reservationUnit : null}
-        onSimulateReservation={onSimulateReservation}
+        reservationConfig={reservationConfig}
+        onRequestReservation={onRequestReservation}
         open={enquiryOpen}
         onClose={() => setEnquiryOpen(false)}
         developmentName={data.name}

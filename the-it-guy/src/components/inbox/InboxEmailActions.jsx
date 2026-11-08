@@ -1,7 +1,9 @@
 import { useCallback,useEffect,useRef,useState } from 'react'
+import InboxNewMessageDialog from './InboxNewMessageDialog'
+import { Plus, UploadCloud, Paperclip, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { changeOutgoingEmail,loadOutgoingEmails,loadReplyContext,loadSendingMailboxes,queueOutgoingEmail,uploadOutgoingAttachment } from '../../modules/sharedInbox/outgoingMailService.js'
-import { normalizeOutgoing,outgoingBody,OUTGOING_FILE_LIMIT,OUTGOING_TOTAL_LIMIT,OUTGOING_STATES } from '../../../../supabase/functions/_shared/inboxOutgoing.js'
+import { normalizeOutgoing,OUTGOING_FILE_LIMIT,OUTGOING_TOTAL_LIMIT,OUTGOING_STATES } from '../../../../supabase/functions/_shared/inboxOutgoing.js'
 import './inbox-outgoing.css'
 function Dialog({title,children,onClose,busy=false}){
  const panel=useRef(null),previous=useRef(null)
@@ -34,7 +36,14 @@ function EmailComposer({organisationId,mailboxes,reply,initialBody,onClose,onQue
  },[organisationId,reply?.id])
  const ready=Boolean(!replyLoading&&!replyError&&mailbox?.connected&&(mailbox.providerKey!=='other_email'||mailbox.smtpConfigured))
  const payload={to,cc,bcc,subject,body,useSignature:signature===true,signatureRevision:mailbox?.signatureRevision||0,conversationId:reply?.id||null,replyMessageId,attachmentIds:[]}
- const preview=outgoingBody({...payload,body:body||'Your message'},mailbox?.signature||{})
+ const fileInput=useRef(null),dragDepth=useRef(0)
+ const [dragging,setDragging]=useState(false)
+ const addFiles=incoming=>{
+  if(busy||pending)return
+  const next=[...files,...Array.from(incoming||[])],maximum=mailbox?.providerKey==='microsoft_365'?2097152:OUTGOING_TOTAL_LIMIT
+  if(next.length>10||next.some(file=>file.size>OUTGOING_FILE_LIMIT)||next.reduce((sum,file)=>sum+file.size,0)>maximum)setError('Choose up to 10 files, 10 MiB each, with no more than '+(mailbox?.providerKey==='microsoft_365'?'2 MiB':'20 MiB')+' in total.')
+  else{setFiles(next);setError('')}
+ }
  const confirmQueued=result=>{if(!live.current)return;if(reply&&initialBody)onQueued(result,{conversationId:reply.id,body:initialBody});else onQueued(result);onClose()}
  const send=async()=>{
   if(lock.current||!ready)return
@@ -70,15 +79,17 @@ function EmailComposer({organisationId,mailboxes,reply,initialBody,onClose,onQue
   <label>Subject<input required maxLength={500} value={subject} disabled={busy||pending||replyLoading} onChange={event=>setSubject(event.target.value)}/></label>
   <label>Message<textarea required rows={7} value={body} disabled={busy||pending} onChange={event=>setBody(event.target.value)}/></label>
   <label className="inbox-send-signature"><input type="checkbox" checked={signature===true} disabled={busy||pending} onChange={event=>setSignature(event.target.checked)}/>Include this mailbox’s signature</label>
-  <details><summary>Preview email and signature</summary><iframe title="Outgoing email preview" sandbox="" referrerPolicy="no-referrer" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src https:; base-uri 'none'; form-action 'none'"></head><body>${preview.html}</body></html>`}/></details>
-  <label>Attachments<input type="file" multiple disabled={busy||pending} onChange={event=>{
-   const next=[...files,...event.target.files],maximum=mailbox?.providerKey==='microsoft_365'?2097152:OUTGOING_TOTAL_LIMIT
-   if(next.length>10||next.some(file=>file.size>OUTGOING_FILE_LIMIT)||next.reduce((sum,file)=>sum+file.size,0)>maximum)setError('Choose up to 10 files, 10 MiB each, with no more than '+(mailbox?.providerKey==='microsoft_365'?'2 MiB':'20 MiB')+' in total.')
-   else{setFiles(next);setError('')}
-   event.target.value=''
-  }}/></label>
-  <small>{mailbox?.providerKey==='microsoft_365'?'Microsoft direct sending: up to 2 MiB total attachments.':'Up to 10 files, 10 MiB each and 20 MiB total.'}</small>
-  {files.length>0&&<ul aria-label="Selected attachments">{files.map((file,index)=><li key={index}>{file.name} <button type="button" disabled={busy||pending} aria-label={`Remove ${file.name}`} onClick={()=>setFiles(rows=>rows.filter((_,position)=>position!==index))}>Remove</button></li>)}</ul>}
+  <section className="inbox-attachments" aria-label="Email attachments">
+   <strong>Attachments</strong>
+   <div className={`inbox-attachment-dropzone${dragging?' is-dragging':''}${busy||pending?' is-disabled':''}`} role="group" aria-label="Attachment drop zone" aria-disabled={busy||pending} onDragEnter={event=>{event.preventDefault();event.stopPropagation();if(busy||pending)return;dragDepth.current++;setDragging(true)}} onDragOver={event=>{event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect=busy||pending?'none':'copy'}} onDragLeave={event=>{event.preventDefault();event.stopPropagation();dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false)}} onDrop={event=>{event.preventDefault();event.stopPropagation();dragDepth.current=0;setDragging(false);addFiles(event.dataTransfer.files)}}>
+    <UploadCloud size={26} strokeWidth={1.5} aria-hidden="true"/>
+    <span><strong>{dragging?'Drop files to attach':'Drag files here'}</strong><small>or choose them from your device</small></span>
+    <button type="button" disabled={busy||pending} onClick={()=>fileInput.current?.click()}>Browse files</button>
+    <input ref={fileInput} className="inbox-attachment-input" type="file" aria-label="Attachments" multiple disabled={busy||pending} onChange={event=>{addFiles(event.target.files);event.target.value=''}}/>
+   </div>
+   <small className="inbox-attachment-limits">{mailbox?.providerKey==='microsoft_365'?'Up to 10 files, 2 MiB in total for Microsoft mailboxes.':'Up to 10 files · 10 MiB per file · 20 MiB total'}</small>
+   {files.length>0&&<ul className="inbox-attachment-files" aria-label="Selected attachments">{files.map((file,index)=><li key={index}><Paperclip size={16} aria-hidden="true"/><span><strong>{file.name}</strong><small>{file.size<1048576?`${Math.max(1,Math.ceil(file.size/1024))} KB`:`${(file.size/1048576).toFixed(1)} MB`}</small></span><button type="button" disabled={busy||pending} aria-label={`Remove ${file.name}`} onClick={()=>setFiles(rows=>rows.filter((_,position)=>position!==index))}><X size={15}/></button></li>)}</ul>}
+  </section>
   {error&&<p className="inbox-settings-error" role="alert">{error}</p>}
   <footer><small>Queued email is sent by the server. Provider acceptance does not confirm recipient delivery.</small>{pending&&<button type="button" disabled={busy} onClick={()=>void check()}>Check queue status</button>}<button type="submit" disabled={busy||!ready}>{busy?'Preparing email…':pending?'Retry same email request':'Send email'}</button></footer>
  </form></Dialog>
@@ -91,12 +102,14 @@ function OutgoingQueue({organisationId,onClose,onRefresh}){
  const act=async(row,action)=>{if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await changeOutgoingEmail({organisationId,jobId:row.id,action});if(live.current){await load();onRefresh?.()}}catch{if(live.current)setError('The email state or your mailbox access changed. Refresh before trying again.')}finally{lock.current=false;if(live.current)setBusy(false)}}
  return <Dialog title="Outgoing email" onClose={onClose}><p>Latest 50 requests from your accessible mailboxes. Refresh to check provider acceptance.</p><button type="button" disabled={busy} onClick={()=>void load()}>Refresh outgoing email</button>{error&&<p role="alert">{error}</p>}{!rows.length&&!busy&&!error&&<p>No outgoing email yet.</p>}<ul className="inbox-outgoing-list">{rows.map(row=><li key={row.id}><strong>{row.subject}</strong><span>{OUTGOING_STATES[row.status]||row.status}</span>{row.rejectedCount>0&&<p>Some recipients were rejected{row.rejectedAddresses?.length?`: ${row.rejectedAddresses.join(', ')}`:'. Check the provider before contacting them again.'}</p>}{row.status==='uncertain'&&<p>The email may have been accepted. Automatic resend is blocked to avoid duplicates.</p>}{row.errorCode&&row.status==='failed'&&<p>{row.errorCode==='provider_message_too_large'?'Reduce the email size and compose a new email.':row.errorCode==='mailbox_send_access_changed'?'Check mailbox access and reconnect before trying again.':'Check the mailbox connection, sending permissions and recipient addresses before retrying.'}</p>}<small>{new Date(row.createdAt).toLocaleString('en-ZA',{timeZone:'Africa/Johannesburg'})}</small>{row.status==='queued'&&<button type="button" disabled={busy} onClick={()=>void act(row,'cancel')}>Cancel queued email</button>}{row.status==='failed'&&<button type="button" disabled={busy} onClick={()=>void act(row,'retry')}>Retry unchanged email</button>}</li>)}</ul></Dialog>
 }
-export default function InboxEmailActions({organisationId,userId,selected,replyDraft='',initialChannelId,onQueued}){
+export default function InboxEmailActions({organisationId,userId,selected,replyDraft='',initialChannelId,onQueued,replyOnly=false,createOnly=false,disabled=false,whatsAppConversations=[],onWhatsApp}){
  const [mailboxes,setMailboxes]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[mode,setMode]=useState('')
  const live=useRef(true)
  const [replySelection,setReplySelection]=useState(null)
  useEffect(()=>{live.current=true;loadSendingMailboxes(organisationId).then(rows=>{if(live.current)setMailboxes(rows)}).catch(()=>{if(live.current)setError('Email sending needs the workspace update or mailbox access.')}).finally(()=>{if(live.current)setLoading(false)});return()=>{live.current=false}},[organisationId,userId])
  const reply=selected?.channel==='email'&&mailboxes.some(box=>box.id===selected.channelId)?selected:null
+ const replyMailbox=mailboxes.find(box=>box.id===selected?.channelId)
+ const replyUnavailable=error||(!reply?'You need sending access to this mailbox.':!replyMailbox?.connected?'Connect this mailbox before sending.':replyMailbox.providerKey==='other_email'&&!replyMailbox.smtpConfigured?'Configure SMTP before sending.':'')
  const openComposer=async type=>{
   const target=type==='reply'?reply:null,copiedBody=type==='reply'?replyDraft:''
   setLoading(true);setError('')
@@ -111,5 +124,5 @@ export default function InboxEmailActions({organisationId,userId,selected,replyD
   finally{if(live.current)setLoading(false)}
  }
 
- return <span className="inbox-email-actions"><button type="button" disabled={loading||!mailboxes.length} title={error||undefined} onClick={()=>void openComposer('new')}>New email</button>{reply&&<button type="button" disabled={loading} onClick={()=>void openComposer('reply')}>Reply by email</button>}<button type="button" disabled={loading} onClick={()=>setMode('outbox')}>Outgoing email</button>{error&&<small role="status">{error}</small>}{mode==='outbox'?<OutgoingQueue organisationId={organisationId} onClose={()=>setMode('')} onRefresh={()=>onQueued?.(null)}/>:mode&&<EmailComposer key={`${organisationId}:${userId}:${mode}:${mode==='reply'?replySelection?.id:'new'}`} organisationId={organisationId} mailboxes={mode==='reply'?mailboxes.filter(box=>box.id===replySelection?.channelId):mailboxes} reply={mode==='reply'?replySelection:null} initialBody={mode==='reply'?replySelection?.initialBody:''} initialChannelId={mailboxes.some(box=>box.id===initialChannelId)?initialChannelId:undefined} onClose={()=>setMode('')} onQueued={(result,copiedDraft)=>{if(copiedDraft)onQueued?.(result,copiedDraft);else onQueued?.(result)}}/>}</span>
+ return <span className={`inbox-email-actions${replyOnly?' inbox-inline-reply':''}${createOnly?' inbox-create-action':''}`}>{replyOnly?<button type="button" disabled={loading||disabled||Boolean(replyUnavailable)} title={replyUnavailable||'Review and send your reply'} onClick={()=>void openComposer('reply')}>Send reply</button>:createOnly?<button type="button" disabled={disabled} onClick={()=>setMode('choose')}><Plus size={14}/>New message</button>:<><button type="button" disabled={loading||!mailboxes.length} title={error||undefined} onClick={()=>void openComposer('new')}>New email</button>{reply&&<button type="button" disabled={loading} onClick={()=>void openComposer('reply')}>Reply by email</button>}<button type="button" disabled={loading} onClick={()=>setMode('outbox')}>Outgoing email</button></>}{(error||(replyOnly&&!loading&&replyUnavailable))&&<small role="status">{error||replyUnavailable}</small>}{mode==='choose'?<InboxNewMessageDialog onClose={()=>setMode('')} emailDisabled={loading||!mailboxes.length} emailHint={error||(!mailboxes.length?'Connect an email account with sending access':undefined)} onEmail={()=>void openComposer('new')} conversations={whatsAppConversations} onWhatsApp={id=>{setMode('');onWhatsApp?.(id)}}/>:mode==='outbox'?<OutgoingQueue organisationId={organisationId} onClose={()=>setMode('')} onRefresh={()=>onQueued?.(null)}/>:mode&&<EmailComposer key={`${organisationId}:${userId}:${mode}:${mode==='reply'?replySelection?.id:'new'}`} organisationId={organisationId} mailboxes={mode==='reply'?mailboxes.filter(box=>box.id===replySelection?.channelId):mailboxes} reply={mode==='reply'?replySelection:null} initialBody={mode==='reply'?replySelection?.initialBody:''} initialChannelId={mailboxes.some(box=>box.id===initialChannelId)?initialChannelId:undefined} onClose={()=>setMode('')} onQueued={(result,copiedDraft)=>{if(copiedDraft)onQueued?.(result,copiedDraft);else onQueued?.(result)}}/>}</span>
 }

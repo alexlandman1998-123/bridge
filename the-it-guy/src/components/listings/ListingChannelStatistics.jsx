@@ -1,3 +1,4 @@
+import {loadLinkedDevelopmentWebsiteStatistics} from '../../services/listings/linkedDevelopmentWebsiteStatistics.js'
 import { useEffect, useState } from 'react'
 import { Eye, Globe, Loader2 } from 'lucide-react'
 import { getListingOverviewAnalytics } from '../../services/listings/listingOverviewPerformanceService'
@@ -24,7 +25,7 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
   const anyData = Object.values(metrics).some(hasValue)
   const views = metrics.views
   const initialLoading = loading && !source
-  const label = initialLoading ? 'Loading…' : (unavailable && !source) || (source?.statisticsUnavailable && !anyData) ? 'Unavailable'
+  const label = definition.key === 'website' && source?.scope === 'development' ? source.published === true ? 'Website live' : source.published === false ? 'Website not live' : 'Publication status unavailable' : initialLoading ? 'Loading…' : (unavailable && !source) || (source?.statisticsUnavailable && !anyData) ? 'Unavailable'
     : anyData ? (source.complete ? 'Views complete' : 'Partial data')
       : source?.published ? (source.lastAttempt ? 'Awaiting statistics' : 'Awaiting first sync') : 'Not published'
   const showLogo = definition.logo && failedLogo !== definition.logo
@@ -40,18 +41,19 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
         ) : (
           <h3 className="inline-flex items-center gap-2.5 text-sm font-semibold text-[#142132]">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#f1f6f5] text-[#1b6553]"><Globe size={18} aria-hidden="true" /></span>
-            {definition.label}
+            {source?.scope === 'development' ? 'Development website' : definition.label}
           </h3>
         )}
         <p className={`rounded-full px-2.5 py-1 text-[0.65rem] font-medium ${label === 'Partial data' ? 'bg-[#fff7e8] text-[#8a5a16]' : label === 'Views complete' ? 'bg-[#edf7f2] text-[#21634f]' : 'bg-[#f3f5f7] text-[#607387]'}`}>{label}</p>
       </div>
       <div className="mt-6">
-        <p className="text-xs font-medium text-[#607387]">Views</p>
+        {source?.scope === 'development' && <p className="mb-2 text-sm font-semibold text-[#142132]">{source.developmentName}</p>}
+        <p className="text-xs font-medium text-[#607387]">{source?.scope === 'development' ? 'Scene views' : 'Views'}</p>
         <p className="mt-1 break-words text-[2rem] font-semibold leading-tight tracking-[-0.04em] text-[#10243a]">
           {initialLoading ? '…' : hasValue(views) ? numberFormat.format(views.value) : '—'}
         </p>
         {!initialLoading && !hasValue(views) ? <p className="mt-1 text-xs text-[#607387]">Views unavailable</p> : null}
-        {definition.key === 'website' && !initialLoading ? <p className="mt-2 text-xs text-[#607387]">Report includes completed days. {source?.todayViews !== null && source?.todayViews !== undefined ? `Views recorded today: ${numberFormat.format(source.todayViews)} (${source.todayDate}); shown separately from the report.` : 'Today’s visits appear in the report after the day ends.'}</p> : null}
+        {definition.key === 'website' && !initialLoading ? <p className="mt-2 text-xs text-[#607387]">{source?.periodLabel || 'Report includes completed days.'} {!source?.periodLabel && (source?.todayViews !== null && source?.todayViews !== undefined ? `Views recorded today: ${numberFormat.format(source.todayViews)} (${source.todayDate}); shown separately from the report.` : 'Today’s visits appear in the report after the day ends.')}</p> : null}
         {definition.key !== 'website' && hasValue(views) ? (
           <p className="mt-1 text-xs text-[#607387]">
             {views.coveredDays} of {views.expectedDays} {source?.listingCount ? 'listing-days' : 'days'} covered{views.complete ? '' : ' · Partial count'}
@@ -63,7 +65,7 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
           const metric = metrics[key]
           return (
             <div key={key} className="min-w-0">
-              <dt className="text-xs leading-5 text-[#607387]">{title}</dt>
+              <dt className="text-xs leading-5 text-[#607387]">{source?.scope === 'development' && key === 'enquiries' ? 'Enquiry starts' : title}</dt>
               <dd aria-label={!initialLoading && !hasValue(metric) ? `${title} unavailable` : undefined} className={`mt-0.5 text-sm font-semibold ${hasValue(metric) ? 'text-[#243d56]' : 'text-[#91a0ae]'}`}>
                 {initialLoading ? '…' : hasValue(metric) ? numberFormat.format(metric.value) : '—'}
                 {hasValue(metric) && !metric.complete ? <span className="ml-1 text-[0.65rem] font-medium text-[#8a5a16]"> Partial</span> : null}
@@ -80,10 +82,10 @@ function StatisticsCard({ definition, source, loading, unavailable }) {
   )
 }
 
-export default function ListingChannelStatistics({ organisationId, listingId, refreshKey = '', summaryCards = [] }) {
+export default function ListingChannelStatistics({ organisationId, listingId, developmentId, refreshKey = '', summaryCards = [] }) {
   const [days, setDays] = useState(30)
   const [retry, setRetry] = useState(0)
-  const key = `${organisationId || ''}:${listingId || ''}:${days}`
+  const key = `${organisationId || ''}:${listingId || ''}:${developmentId || ''}:${days}`
   const [request, setRequest] = useState({ key: '', loading: true, data: null, error: '' })
   const current = request.key === key ? request : { loading: true, data: null, error: '' }
 
@@ -96,7 +98,8 @@ export default function ListingChannelStatistics({ organisationId, listingId, re
     setRequest((previous) => ({ key, loading: true, data: previous.key === key ? previous.data : null, error: '' }))
     async function load() {
       try {
-        const data = await getListingOverviewAnalytics({ organisationId, listingId, days })
+        const [data,website] = await Promise.all([getListingOverviewAnalytics({ organisationId, listingId, days }),loadLinkedDevelopmentWebsiteStatistics(developmentId,days).catch(()=>developmentId?{scope:'development',developmentName:'Linked development',published:null,statisticsUnavailable:true,metrics:{}}:null)])
+        if(website)data.website=website
         // An older reader includes today and lacks metric coverage. Never label
         // those values as the new completed-day period during a staged release.
         if (!data.period?.completedDaysOnly || data.windowDays !== days || !data.period.startDate || !data.period.endDate) throw new Error('Statistics period unavailable')
@@ -107,14 +110,14 @@ export default function ListingChannelStatistics({ organisationId, listingId, re
     }
     void load()
     return () => { cancelled = true }
-  }, [organisationId, listingId, days, key, refreshKey, retry])
+  }, [organisationId, listingId, developmentId, days, key, refreshKey, retry])
 
   return <ListingStatisticsPanel data={current.data} loading={current.loading} error={current.error} days={days} onDaysChange={setDays} onRetry={() => setRetry(value => value + 1)} summaryCards={summaryCards} scopeId={listingId} />
 }
 
 export function ListingStatisticsPanel({ data, loading = false, error = '', days = 30, onDaysChange, onRetry, summaryCards = [], scopeId = 'listing' }) {
   const current = { data, loading, error }
-  const viewMetrics = CHANNELS.map(({ key: channelKey }) => current.data?.[channelKey]?.metrics?.views)
+  const viewMetrics = CHANNELS.filter(({key})=>!(key==='website'&&current.data?.website?.scope==='development')).map(({ key: channelKey }) => current.data?.[channelKey]?.metrics?.views)
   const availableViews = viewMetrics.filter(hasValue)
   const totalViews = availableViews.length ? availableViews.reduce((total, metric) => total + metric.value, 0) : null
   const completeViews = viewMetrics.every((metric) => hasValue(metric) && metric.complete)

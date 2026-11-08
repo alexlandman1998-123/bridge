@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const api = vi.hoisted(() => ({ branch: vi.fn(), settings: vi.fn(), from: vi.fn() }))
+const api = vi.hoisted(() => ({ branch: vi.fn(), settings: vi.fn(), from: vi.fn(), covers: vi.fn() }))
+vi.mock('../../../services/privateListingService', async original => ({ ...(await original()), getPrivateListingCoverImageUrls: api.covers,
+  getListingCardImageSource: src => ({ src, fallbackSrc: src?.includes('thumbnail') ? 'https://photos.test/original.jpg' : '' }) }))
 vi.mock('../../../services/branchDashboardDataService', () => ({ getBranchDashboardData: api.branch }))
 vi.mock('../../../lib/supabaseClient', async (original) => ({ ...(await original()), isSupabaseConfigured: true, supabase: { from: api.from } }))
 vi.mock('../../../lib/settingsApi', async (original) => ({ ...(await original()), fetchOrganisationSettings: api.settings, listOrganisationCommissionStructures: vi.fn(async () => []), listOrganisationPreferredPartners: vi.fn(async () => []) }))
@@ -18,9 +20,10 @@ const fixture = () => ({
   transactions: [{ id: 'open', assigned_branch_id: 'branch-one', assigned_user_id: 'owner-user', lifecycle_state: 'active', created_at: '2026-01-01' }, { id: 'closed', assigned_branch_id: 'branch-one', assigned_user_id: 'owner-user', lifecycle_state: 'registered', registered_at: '2026-08-01' }],
 })
 function Location() { return <p data-testid="route">{useLocation().pathname}</p> }
-function show() { return render(<MemoryRouter initialEntries={['/agency/branches/branch-one/staff']}><Routes><Route path="/agency/branches/:branchId/:tab" element={<AgencyBranchWorkspacePage />} /><Route path="*" element={<Location />} /></Routes></MemoryRouter>) }
+function show(tab = 'staff') { return render(<MemoryRouter initialEntries={[`/agency/branches/branch-one/${tab}`]}><Routes><Route path="/agency/branches/:branchId/:tab" element={<AgencyBranchWorkspacePage />} /><Route path="*" element={<Location />} /></Routes></MemoryRouter>) }
 function metric(card, label) { return card.getByText(label).parentElement.textContent }
 beforeEach(() => {
+  api.covers.mockResolvedValue({})
   api.branch.mockResolvedValue(fixture())
   api.settings.mockResolvedValue({ organisation: { id: 'company-one' }, membershipRole: 'owner' })
   const query = { select: vi.fn(), eq: vi.fn(), in: vi.fn(), order: vi.fn() }
@@ -66,4 +69,49 @@ it('keeps pending invitation cards separate from actual staff metrics', async ()
   expect(metric(pending, 'In progress')).toBe('In progress—')
   expect(pending.getByText('Waiting for acceptance')).toBeTruthy()
   expect(pending.queryByText(/Commission/)).toBeNull()
+})
+
+it('loads saved cover photos for visible branch listings instead of relying on absent image columns', async () => {
+  api.covers.mockImplementation(async (ids, { onCover }) => { onCover({ sale: 'https://photos.test/thumbnail.jpg' }); return { sale: 'https://photos.test/thumbnail.jpg' } })
+  show('listings')
+  expect((await screen.findByAltText('sale')).getAttribute('src')).toBe('https://photos.test/thumbnail.jpg')
+  expect(api.covers).toHaveBeenCalledWith(['sale', 'rental', 'draft', 'sold'], expect.objectContaining({ thumbnail: true, onCover: expect.any(Function) }))
+})
+it('uses the original when a thumbnail fails, and can renew a failed photo without opening the listing', async () => {
+  api.covers.mockResolvedValueOnce({ sale: 'https://photos.test/thumbnail.jpg' }).mockResolvedValueOnce({ sale: 'https://photos.test/renewed.jpg' })
+  show('listings')
+  const image=await screen.findByAltText('sale')
+  fireEvent.error(image)
+  expect(image.getAttribute('src')).toBe('https://photos.test/original.jpg')
+  fireEvent.error(image)
+  fireEvent.click(await screen.findByRole('button',{name:'Retry photo'}))
+  await waitFor(()=>expect(screen.getByAltText('sale').getAttribute('src')).toBe('https://photos.test/renewed.jpg'))
+  expect(screen.queryByTestId('route')).toBeNull()
+})
+it('keeps listing cards usable after a cover lookup failure and retries the photo lookup', async () => {
+  api.covers.mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce({ sale: 'https://photos.test/recovered.jpg' })
+  show('listings')
+  expect((await screen.findByRole('alert')).textContent).toContain('Listing photos could not be loaded.')
+  expect(screen.getByRole('heading',{name:'sale'})).toBeTruthy()
+  fireEvent.click(screen.getByRole('button',{name:'Retry photos'}))
+  expect((await screen.findByAltText('sale')).getAttribute('src')).toBe('https://photos.test/recovered.jpg')
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+it('does not request listing photos on other branch tabs', async () => {
+  show()
+  await screen.findByRole('heading',{name:'Owner One'})
+  expect(api.covers).not.toHaveBeenCalled()
+})
+it('discards an old cover response after leaving the tab and requesting fresh photos', async () => {
+  let finishOld
+  api.covers.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    .mockResolvedValueOnce({ sale: 'https://photos.test/fresh.jpg' })
+  show('listings')
+  await waitFor(() => expect(api.covers).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('tab', { name: 'Staff' }))
+  await screen.findByRole('heading', { name: 'Owner One' })
+  fireEvent.click(screen.getByRole('tab', { name: 'Listings' }))
+  expect((await screen.findByAltText('sale')).getAttribute('src')).toBe('https://photos.test/fresh.jpg')
+  await act(async () => { finishOld({ sale: 'https://photos.test/stale.jpg' }) })
+  expect(screen.getByAltText('sale').getAttribute('src')).toBe('https://photos.test/fresh.jpg')
 })

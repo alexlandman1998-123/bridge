@@ -372,6 +372,10 @@ try {
     }, selectedTaskKey: 'buyer_fica_review' })
     assert.equal(workspace.selectedTask.stageTwoParties[0].entityType, entityType,
       `${entityType} party facts flow through to the Stage 2 Work tab`)
+    const integratedFica = buildLegalTaskWorkbenchModel({ task: workspace.selectedTask, taskContext: workspace.selectedTaskContext })
+    assert.ok(integratedFica.confirmationRows.some(row => row.id === `rmcp_review:${party.id}`),
+      'The actual workspace party identity must survive into the persisted RMCP answer key.')
+    assert.equal(integratedFica.confirmationRows.some(row => row.id.includes('undefined')), false)
   }
   const twoPartyDocuments = [
     { id: 'alice-id', sourceRequirementKey: 'buyer_id_document', partyId: 'alice', fileUrl: 'https://example.test/alice.pdf' },

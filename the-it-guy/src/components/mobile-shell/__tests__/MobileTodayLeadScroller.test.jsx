@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import MobileTodayLeadScroller from '../MobileTodayLeadScroller.jsx'
 import { buildMobileToday } from '../../../services/mobileTodayModel.js'
 import { buildBuyerIntakeNotes } from '../../../services/buyerIntakeModel.js'
 
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+})
 afterEach(cleanup)
 const now = new Date('2026-10-20T10:00:00Z')
 const today = buildMobileToday({ now, profile: { id: 'me' }, tasks: [
@@ -114,12 +118,12 @@ it('opens and closes task capture over Home without navigating away', async () =
   render(<MobileTodayLeadScroller {...props} onOpen={onOpen} />)
   expect(screen.queryByText('Today’s tasks and anything overdue.')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
-  expect(await screen.findByRole('heading', { name: 'Schedule follow-up' })).toBeTruthy()
-  expect(screen.getByRole('textbox', { name: 'Follow-up title' })).toBeTruthy()
+  expect(await screen.findByRole('heading', { name: 'Add task' })).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Task title' })).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'Tasks for today' })).toBeTruthy()
   expect(onOpen).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Close create sheet' }))
-  expect(screen.queryByRole('heading', { name: 'Schedule follow-up' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+  expect(screen.queryByRole('heading', { name: 'Add task' })).toBeNull()
   expect(onOpen).not.toHaveBeenCalled()
 })
 

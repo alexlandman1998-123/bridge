@@ -30,10 +30,10 @@ function documentSignals(item = {}) {
     item.requirement_key,
     item.title,
     item.label,
-    item.description,
     item.metadata?.requirementKey,
     item.metadata?.requirement_key,
-    item.group,
+    // Collections and descriptions can mention FICA supporting evidence;
+    // neither identifies a team-managed signed document pack.
     item.linkedDocument?.requirementKey,
     item.linkedDocument?.requirement_key,
     item.linkedDocument?.document_type,

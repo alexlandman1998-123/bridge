@@ -1,0 +1,74 @@
+{
+  "product": "Primary Arch9 workspace",
+  "domain": "app.arch9.co.za",
+  "baseCommit": "8e27891945996b77a6773ef9193e8c53d88a004a",
+  "rollbackDeployment": "dpl_FjNL3ojE1ABuhP9Ld2fwenJJG8Fu",
+  "files": [
+    "the-it-guy/src/pages/agency/AgencyPipelinePage.jsx",
+    "the-it-guy/src/hooks/usePipelineAppointments.js",
+    "the-it-guy/src/hooks/__tests__/usePipelineAppointments.test.jsx",
+    "the-it-guy/src/lib/agencyPipelineService.js",
+    "the-it-guy/src/lib/__tests__/leadAppointmentHistory.test.js",
+    "the-it-guy/README.md",
+    "the-it-guy/src/lib/coalescedRefresh.js",
+    "the-it-guy/src/lib/__tests__/coalescedRefresh.test.js",
+    "the-it-guy/src/pages/agency/__tests__/AgencyPipelinePage.calendarRefresh.test.jsx",
+    "the-it-guy/src/components/appointments/dashboard/__tests__/AppointmentDashboardSection.test.jsx"
+  ],
+  "deployed": false,
+  "databaseMigrations": [],
+  "releaseCommit": "0d882c4fa2132a832dfb9459292574766bd11e7c",
+  "checks": {
+    "focusedSuite": {
+      "result": "PASSED",
+      "tests": 85,
+      "files": 7
+    },
+    "lint": "PASSED (no errors; pre-existing warnings on the large page)",
+    "diffCheck": "PASSED",
+    "newSchemaChanges": false,
+    "productionGuard": "PASSED",
+    "recovery": "RECOVERY_LOCKED; live check passed; 8 physical backups",
+    "previewCompilation": "PASSED; Vercel build output completed"
+  },
+  "sha256": {
+    "the-it-guy/src/pages/agency/AgencyPipelinePage.jsx": "693f0f9ee772548d6fae02fc56c3efbdbe0e069dfb64e68822527201b2e232a4",
+    "the-it-guy/src/hooks/usePipelineAppointments.js": "57937630ff1653cc3b93984c507fe446e510fdf0c66c8fb4ef8736f2fd962dcd",
+    "the-it-guy/src/hooks/__tests__/usePipelineAppointments.test.jsx": "af8c2ea2f64b488b985bb7c10d1617685008828489b0a77dcabae35123d15627",
+    "the-it-guy/src/lib/agencyPipelineService.js": "eb185ae107763383879f35a53a2c9bffc08f06727c45b50daa5c7b10df297a81",
+    "the-it-guy/src/lib/__tests__/leadAppointmentHistory.test.js": "9b62ce0d0f49a1d2749062550d5a1784af53b41e2d4e1e3eac96fc1f251d9f72",
+    "the-it-guy/README.md": "a5f0713c4c2d3007b839e9b4748aaa6146d5282de7775123291aaf9583a9c69f",
+    "the-it-guy/src/lib/coalescedRefresh.js": "7da88546cfdc9ec739363818495dca48e3602108a64d8ec562589fe4bd96ba87",
+    "the-it-guy/src/lib/__tests__/coalescedRefresh.test.js": "c59ad0d869b9ce9c35cf18a1a0b5c690798ab583027ad230ba48598e83b5e74c",
+    "the-it-guy/src/pages/agency/__tests__/AgencyPipelinePage.calendarRefresh.test.jsx": "24731c2576fa3b96b243a62e6d7947f0bbd0c9fc7aacfc73433f9ddb5aa36ee8",
+    "the-it-guy/src/components/appointments/dashboard/__tests__/AppointmentDashboardSection.test.jsx": "ab11f3164b3ec5a34462b944495ba725aedf3ccd326ae1b675964b0b6f771c0f"
+  },
+  "approvalRequired": "Production release of the calendar refresh fix",
+  "previewDeploymentId": "dpl_GpTaNK8PVeyJTcFD2EopiA6MsjHH",
+  "previewUrl": "https://bridge-qskqrpf3y-alexs-projects-f5496a21.vercel.app",
+  "previewBuild": "PASSED",
+  "behaviour": [
+    "At most one active appointment read and one queued follow-up per screen and viewer scope",
+    "Automatic appointment reads start at least five seconds apart and back off for thirty seconds after errors; explicit Retry bypasses that delay",
+    "Appointment and attendance HTTP reads receive cancellation signals for timeout, navigation, viewer changes and unmount",
+    "Routine calendar polling, focus and range navigation do not reload CRM, inbound enquiries or the listing catalogue",
+    "CRM refreshes wait for underlying reads to settle even after a screen deadline; leaving the screen prevents later enrichment reads"
+  ],
+  "regressionEvidence": {
+    "before": "20 spaced refresh events started 21 appointment service calls before the first completed",
+    "after": "The same burst keeps one active call and one trailing call",
+    "renderedCalendar": "20 focus/visibility cycles plus 65 seconds of timers produced zero CRM, inbound-email and listing reloads; appointments continued to refresh",
+    "fixtures": "Real hooks, calendar component and appointment data adapter exercised with mocked database responses; no live load test"
+  },
+  "remainingVerification": [
+    "Production release requires a future explicit request and a passing production-target build",
+    "Post-release verification and a reload of the open Arch9 tab are required if this is released later"
+  ],
+  "originalInitiatingEvent": "Not established by the retained browser/server logs; fixes the confirmed request amplification regardless of which refresh trigger fired",
+  "previewState": "READY",
+  "previewVerifiedBy": "Vercel CLI inspect",
+  "previewVerifiedAt": "2026-10-19T08:18:24.996933+00:00",
+  "productionApproval": "User chose: Keep it as a preview for now",
+  "releaseDecision": "PREVIEW_ONLY",
+  "productionPromoted": false
+}

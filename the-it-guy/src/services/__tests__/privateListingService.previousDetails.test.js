@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest'
 import { getPrivateListing } from '../privateListingService'
-const mocks = vi.hoisted(() => ({ from: vi.fn(), row: null }))
+const mocks = vi.hoisted(() => ({ from: vi.fn(), row: null, onboarding: null }))
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from } }))
 const id = '11111111-1111-4111-8111-111111111111'
 const options = { includeRequirementsAndDocuments: false, includePreviousListings: true }
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.onboarding = null
   mocks.row = { id, listing_category: 'rental', organisation_id: 'org-a', listing_status: 'withdrawn', listing_visibility: 'archived', seller_canonical_facts_json: { property24Import: { reference: 'HISTORIC' } } }
   mocks.from.mockImplementation(table => {
-    const query = { then(resolve, reject) { return Promise.resolve({ data: [], error: null }).then(resolve, reject) }, maybeSingle: async () => ({ data: table === 'private_listings' ? mocks.row : null, error: null }) }
+    const query = { then(resolve, reject) { return Promise.resolve({ data: table === 'private_listing_seller_onboarding' && mocks.onboarding ? [mocks.onboarding] : [], error: null }).then(resolve, reject) }, maybeSingle: async () => ({ data: table === 'private_listings' ? mocks.row : null, error: null }) }
     for (const method of ['select', 'eq', 'in', 'order', 'limit', 'range', 'not', 'neq']) query[method] = vi.fn().mockReturnValue(query)
     return query
   })
@@ -21,7 +22,13 @@ it('loads saved historic rental details only when previous listings are requeste
 it('renders a core record without downloading seller onboarding or document history', async () => {
   const listing = await getPrivateListing(id, { ...options, includeRelatedData: false })
   expect(listing).toMatchObject({ id, listingCategory: 'rental' })
+  expect(listing).not.toHaveProperty('exactAddressVisibility')
+  expect(listing.propertyDetails).not.toHaveProperty('exactAddressVisibility')
   expect(mocks.from.mock.calls.map(([table]) => table)).toEqual(['private_listings'])
+})
+it.each(['show_exact_address', 'hide_street_address', 'hide_street_number', 'complex_only'])('reopens the saved address display setting: %s', async visibility => {
+  mocks.onboarding = { id: 'onboarding-1', private_listing_id: id, form_data: { exactAddressVisibility: visibility } }
+  expect(await getPrivateListing(id, options)).toMatchObject({ exactAddressVisibility: visibility, propertyDetails: { exactAddressVisibility: visibility } })
 })
 it.each([
   { deleted_at: '2026-10-05T10:00:00Z' },

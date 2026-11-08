@@ -105,3 +105,63 @@ it('cannot activate an unpublished Property24 listing through its expiry control
   await expect(saveListingChannelManagement(input({ expiryDate: '2026-12-31', activeChannels: [] }), deps)).rejects.toThrow('listing setup')
   expect(deps.saveDraft).not.toHaveBeenCalled()
 })
+
+const unsettled = () => Object.assign(new Error('Previous advertising request is unconfirmed.'), { code: 'LISTING_PUBLICATION_UNSETTLED' })
+
+it.each(['under_offer', 'sold'])('saves %s and updates confirmed portals when the website request is uncertain', async listingStatus => {
+  const { deps } = fixture({ checkPublication: vi.fn(async target => {
+    if (target.channel === 'Agency Website') throw unsettled()
+  }) })
+  const outcome = await saveListingChannelManagement(input({ listingStatus, activeChannels: channels.slice(0, 3) }), deps)
+  expect(deps.saveDraft).toHaveBeenCalledWith(expect.objectContaining({ listingStatus }))
+  expect(deps.sendUpdate.mock.calls.map(([target]) => target.channel)).toEqual(['Property24', 'Private Property'])
+  expect(deps.recordStarted).toHaveBeenCalledWith(channels.slice(0, 2).map(channel => ({ channel, action: listingStatus })))
+  expect(deps.recordStage.mock.calls.some(([target]) => target.channel === 'Agency Website')).toBe(false)
+  expect(outcome).toMatchObject({ ok: false, results: [
+    { channel: 'Arch9', status: 'saved' },
+    { channel: 'Agency Website', action: listingStatus, status: 'uncertain', retryable: false },
+    { channel: 'Property24', status: 'sent' },
+    { channel: 'Private Property', status: 'sent' },
+  ] })
+  expect(outcome.results[1].detail).toContain('No new request was sent')
+  const retry = fixture()
+  await saveListingChannelManagement(input({ draft: { ...draft, listingStatus }, listingStatus, retryResults: outcome.results }), retry.deps)
+  expect(retry.deps.sendUpdate).not.toHaveBeenCalled()
+})
+
+it('saves the property status without starting or retrying adverts when every channel is unsettled', async () => {
+  const { deps } = fixture({ checkPublication: vi.fn(async () => { throw unsettled() }) })
+  const outcome = await saveListingChannelManagement(input({ listingStatus: 'under_offer' }), deps)
+  expect(deps.saveDraft).toHaveBeenCalledTimes(1)
+  expect(deps.recordStarted).not.toHaveBeenCalled()
+  expect(deps.recordStage).not.toHaveBeenCalled()
+  expect(deps.sendUpdate).not.toHaveBeenCalled()
+  expect(outcome.ok).toBe(false)
+  expect(outcome.results.filter(row => row.status === 'uncertain')).toHaveLength(4)
+  expect(deps.recordFinished).toHaveBeenCalledWith(outcome.results, 'under_offer')
+})
+
+it('fails closed on a status-read error rather than treating it as a known unsettled request', async () => {
+  const { deps } = fixture({ checkPublication: vi.fn(async () => { throw new Error('Offline') }) })
+  await expect(saveListingChannelManagement(input({ listingStatus: 'under_offer' }), deps)).rejects.toThrow('Offline')
+  expect(deps.saveDraft).not.toHaveBeenCalled()
+  expect(deps.sendUpdate).not.toHaveBeenCalled()
+})
+
+it('retains the unsettled guard for expiry edits and explicit failed-channel retries', async () => {
+  for (const values of [{ expiryDate: '2026-12-31' }, { retryResults: [{ channel: 'Property24', action: 'under_offer', status: 'failed' }] }]) {
+    const { deps } = fixture({ checkPublication: vi.fn(async () => { throw unsettled() }) })
+    await expect(saveListingChannelManagement(input(values), deps)).rejects.toMatchObject({ code: 'LISTING_PUBLICATION_UNSETTLED' })
+    expect(deps.saveDraft).not.toHaveBeenCalled()
+    expect(deps.sendUpdate).not.toHaveBeenCalled()
+  }
+})
+
+it('checks only Property24 for an expiry edit, leaving unrelated website jobs untouched', async () => {
+  const { deps } = fixture({ checkPublication: vi.fn(async target => {
+    if (target.channel === 'Agency Website') throw unsettled()
+  }) })
+  const outcome = await saveListingChannelManagement(input({ expiryDate: '2026-12-31' }), deps)
+  expect(outcome.ok).toBe(true)
+  expect(deps.checkPublication.mock.calls.map(([target]) => target.channel)).toEqual(['Property24'])
+})

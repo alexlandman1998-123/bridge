@@ -30,6 +30,13 @@ type LeadEmailEnvelope = {
   bcc?: string;
 };
 
+export function leadAgentPlatformSender(value: string) {
+  // Resend's onboarding address is restricted to test recipients. The Arch9
+  // sender is the established production fallback used by client acknowledgements.
+  return !value || /@resend\.dev(?:>|$)/i.test(value.trim())
+    ? "Arch9 <no-reply@arch9.co.za>" : value;
+}
+
 export async function renderLeadAgentEnvelope(
   client: Client,
   job: Json,
@@ -92,13 +99,14 @@ export async function renderLeadAgentEnvelope(
   const from = await resolveAudienceEmailSender({
     audience: "internal",
     branding,
-    platformSender: text(
+    platformSender: leadAgentPlatformSender(text(
       Deno.env.get("ARCH9_RESEND_FROM_EMAIL") ||
         Deno.env.get("RESEND_FROM_EMAIL"),
-    ) || "Arch9 <no-reply@arch9.co.za>",
+    )),
   });
   const source = text(payload.leadSource) || "Manual Entry";
   const agent = job.kind === "agent";
+  const websiteManager = !agent && payload.eventKind === "new_website_enquiry_principal";
   const category = payload.rental
     ? "rental "
     : ["buyer", "seller"].includes(text(payload.leadCategory).toLowerCase())
@@ -106,16 +114,19 @@ export async function renderLeadAgentEnvelope(
     : "";
   const subject = agent
     ? `New ${category}lead: ${source}`
-    : `Lead needs attention: ${source}`;
-  const title = agent ? "A new lead just landed" : "A new lead needs your help";
+    : websiteManager ? `New website enquiry: ${source}` : `Lead needs attention: ${source}`;
+  const title = agent ? "A new lead just landed" : websiteManager ? "New website enquiry received" : "A new lead needs your help";
   const message = agent
     ? `${text(payload.leadName) || "Someone new"} is your new ${category}lead${
       source === "Manual Entry" ? "" : ` from ${source}`
     }. Their details are ready below. Take a look and say hello.`
-    : `${
+    : websiteManager ? `${text(payload.leadName) || "A buyer"} submitted a Madison Place website enquiry. Their details are saved in the development leads workspace.` : `${
       text(payload.leadName) || "A new lead"
     } needs follow-up. The agent email could not be delivered or no eligible agent is assigned. Please check the lead and make sure someone gets in touch.`;
-  const actionLink = `${appUrl.replace(/\/+$/, "")}${
+  const developmentLeadId = text(payload.developerLeadId);
+  const actionLink = /^[0-9a-f-]{36}$/i.test(developmentLeadId)
+    ? `${appUrl.replace(/\/+$/, "")}/developer/leads/${encodeURIComponent(developmentLeadId)}`
+    : `${appUrl.replace(/\/+$/, "")}${
     payload.rental ? "/agent/rentals/pipeline/leads" : "/pipeline/leads"
   }/${encodeURIComponent(job.lead_id)}`;
   const content = buildLeadOperationsNotificationEmail({
@@ -190,14 +201,17 @@ export async function dispatchLeadAgentEmails(client: Client, {
         const delivered = await send({
           apiKey,
           ...envelope,
-          idempotencyKey: `lead-agent-email:${job.id}`,
+          idempotencyKey: `lead-agent-email:${job.id}${
+            /^[a-z0-9-]{1,60}$/.test(text(job.payload_json?.deliveryRevision))
+              ? `:${job.payload_json.deliveryRevision}` : ""
+          }`,
           timeoutMs: 10_000,
         });
         providerId = delivered.ok && typeof delivered.data?.id === "string"
           ? text(delivered.data.id) || null
           : null;
         if (!delivered.ok || !providerId) {
-          throw new Error("The email provider has not confirmed acceptance.");
+          throw new Error(delivered.ok ? "provider_acceptance_missing" : `provider_http_${delivered.status || "unavailable"}`);
         }
         status = "sent";
         error = "";
@@ -205,7 +219,7 @@ export async function dispatchLeadAgentEmails(client: Client, {
     } catch (cause) {
       // Never store provider bodies, credentials or contact data in errors.
       error =
-        cause instanceof Error && /configuration|freeze/.test(cause.message)
+        cause instanceof Error && /configuration|freeze|^provider_(?:http_(?:[0-9]{3}|unavailable)|acceptance_missing)$/.test(cause.message)
           ? cause.message
           : "Email delivery is unconfirmed and will be retried.";
     }

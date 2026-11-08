@@ -1,10 +1,10 @@
+import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting.js'
 import TransactionRolePicker from './transaction/TransactionRolePicker.jsx'
 import AddressInput from './location/AddressInput'
 import './transaction/transaction-create.css'
 import TransactionListingPicker from './transaction/TransactionListingPicker.jsx'
 import { Banknote, Building2, CheckCircle2, ExternalLink, Home, Landmark, Layers3, MapPin, UserRound } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-
 import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
 import { readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
@@ -2402,9 +2402,13 @@ function AgentNewDealWizard({
       <Button
         disabled={saving}
         onClick={() => {
-          const searchValue = createdDeal.transactionReference || createdDeal.reference || createdDeal.transactionId
-          const query = searchValue ? `?search=${encodeURIComponent(searchValue)}` : ''
-          navigate(`/transactions${query}`)
+          const route = resolveTransactionWorkspaceRoute({
+            transactionId: createdDeal.transactionId,
+            unitId: createdDeal.unitId,
+            transactionReference: createdDeal.transactionReference || createdDeal.reference,
+          })
+          onClose()
+          navigate(route.path, route.state ? { state: route.state } : undefined)
         }}
       >
         Open Transaction

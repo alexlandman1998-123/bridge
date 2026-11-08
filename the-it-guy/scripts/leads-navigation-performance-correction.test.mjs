@@ -14,11 +14,12 @@ const [app, sidebar, routeLoader, listRoute, listPage, repository, workspaceRout
   readFile('src/pages/agency/agencyLeadWorkspaceTabLoader.js', 'utf8'),
 ])
 
-assert.match(app, /<BrowserRouter unstable_useTransitions=\{false\}>/)
+assert.match(app, /<BrowserRouter useTransitions=\{false\}>/)
+assert.doesNotMatch(app, /unstable_useTransitions/, 'the pinned router ignores the retired transition prop')
 assert.match(app, /const AgencyLeadListRoutePage = lazy\(loadAgencyLeadListRouteModule\)/)
 assert.match(app, /const AgencyLeadWorkspaceRoutePage = lazy\(loadAgencyLeadWorkspaceRouteModule\)/)
 assert.match(app, /<Suspense fallback=\{<LeadsRouteShell \/>\}>/)
-assert.match(app, /<Suspense fallback=\{<LeadsRouteShell detail \/>\}>/)
+assert.match(app, /<Suspense fallback=\{<LeadWorkspaceRouteLoadingShell loadStage="route_chunk_loading" \/>\}>/)
 
 assert.match(sidebar, /preloadAgencyLeadsRoute/)
 assert.match(sidebar, /shouldPreloadLeads/)
@@ -46,11 +47,11 @@ assert.match(listPage, /onFocus=\{\(\) => onLeadIntent\(row\.id\)\}/)
 
 assert.match(workspaceRoute, /const AgencyPipelinePage = lazy\(loadAgencyLeadWorkspace\)/)
 assert.doesNotMatch(workspaceRoute, /if \(activeTab === 'overview'\) return <AgencyLeadWorkspaceShellPage \/>/)
-assert.match(workspaceRoute, /fallback=\{<LeadsRouteShell detail \/>\}/)
+assert.match(workspaceRoute, /fallback=\{<LeadWorkspaceRouteLoadingShell loadStage="workspace_chunk_loading" \/>\}/)
 assert.doesNotMatch(workspaceRoute, /LeadWorkspaceHydrationShell/)
 assert.doesNotMatch(workspaceRoute, /AgencyLeadWorkspaceShellPage/, 'lead route loading must not flash the dark cached preview')
 assert.match(workspaceShell, /readAgencyLeadCoreCache\(organisationId, leadId\)/)
-assert.match(workspaceShell, /data-testid="lead-workspace-hydration-shell"/)
+assert.match(workspaceShell, /testId="lead-workspace-hydration-shell"/)
 
 assert.match(tabLoader, /export function loadLeadDocumentWorkspace/)
 assert.match(tabLoader, /if \(tabKey === 'documents'\)/)

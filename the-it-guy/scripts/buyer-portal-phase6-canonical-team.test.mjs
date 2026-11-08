@@ -11,7 +11,7 @@ test('production adapts live agent, finance, and attorney contacts into one team
   assert.match(source, /buildBuyerTeamPresentationModel\(\{[\s\S]*?source: 'production'/)
   assert.match(source, /members: teamMembers/)
   assert.match(source, /attorneyRolePlayers: attorneyRolePlayerCards/)
-  assert.match(source, /isTeam \? <BuyerTeamWorkspace model=\{effectiveWorkspace === 'seller' \? sellerTeamPresentationModel : buyerTeamPresentationModel\}/)
+  assert.match(source, /isTeam \? effectiveWorkspace === 'seller' \? <SellerTeamWorkspace[\s\S]*?: <BuyerTeamWorkspace model=\{buyerTeamPresentationModel\}/)
   assert.match(source, /teamMembers=\{buyerTeamPresentationModel\.members\}/)
   assert.doesNotMatch(source, /isTeam \? \([\s\S]{0,400}<AttorneyFirmRolePlayerCard/)
 })

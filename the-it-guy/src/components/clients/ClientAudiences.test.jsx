@@ -1,79 +1,46 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ClientAudiences from './ClientAudiences'
-import { getAudienceFilterOptions, getSavedAudiences, previewSavedAudience, saveEmailAudience } from '../../services/emailCampaignService'
-vi.mock('../../services/emailCampaignService', () => ({ getAudienceFilterOptions: vi.fn(), getSavedAudiences: vi.fn(), previewSavedAudience: vi.fn(), saveEmailAudience: vi.fn(), archiveEmailAudience: vi.fn() }))
-const rules = { operator: 'AND', rules: [{ field: 'contact_type', operator: 'in', value: ['buyer'] }] }
-const saved = { id: 'buyers', name: 'Buyers', filter_json: rules, updated_at: new Date().toISOString() }
-const contact = { id: 'first', name: 'First Buyer', email: 'first@example.test', contactType: 'buyer', area: 'Cape Town', leadStage: 'qualified', tags: ['show-day'] }
+const api = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), preview: vi.fn() }))
+vi.mock('../../lib/settingsApi', () => ({ listOrganisationUsersForWorkspace: async () => [] }))
+vi.mock('../../lib/supabaseClient', () => ({ supabase: null }))
+vi.mock('../../services/marketingAudienceService', async original => ({ ...await original(), loadMarketingAudiences: api.load, saveMarketingAudience: api.save, previewMarketingAudience: api.preview }))
+const org = '11111111-1111-4111-8111-111111111111'
+const legacy = filter => ({ id: 'saved', name: 'Saved targeting', description: '', revision: 4, created_by: 'actor', visibility: 'agency', definition: { emailFilter: filter } })
 beforeEach(() => {
-  getAudienceFilterOptions.mockResolvedValue({ preferred_area: ['Cape Town', 'Durban'], lead_stage: ['qualified'], tags: ['show-day'] })
-  getSavedAudiences.mockResolvedValue([saved])
-  previewSavedAudience.mockResolvedValue({ count: 26, contacts: [contact] })
-  saveEmailAudience.mockResolvedValue(saved)
+  api.load.mockResolvedValue({ audiences: [], actorId: 'actor', canShare: true, total: 0, subscriptionTypes: [] })
+  api.save.mockImplementation(async (_org, draft) => ({ ...draft, id: 'saved', revision: 5 }))
+  api.preview.mockResolvedValue({ matched: 0, emailEligible: 0, whatsappEligible: 0, recent: 0, rows: [], reviewHash: 'hash' })
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
-const show = () => render(<ClientAudiences organisationId="agency" userId="user" />)
 
-test('starting points create editable drafts without saving or changing contacts', async () => {
-  show()
-  fireEvent.click(await screen.findByRole('button', { name: 'Investors Investment contacts' }))
-  expect(screen.getByLabelText('Audience name').value).toBe('Investors')
-  expect(screen.getByRole('button', { name: 'Remove investor from filter 1' })).toBeTruthy()
-  expect(saveEmailAudience).not.toHaveBeenCalled()
-  await waitFor(() => expect(previewSavedAudience).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'agency', rules: { operator: 'AND', rules: [{ field: 'contact_type', operator: 'in', value: ['investor'] }] } })))
-})
-
-test('uses existing dropdown values and saves multiple selections in one filter', async () => {
-  show()
-  fireEvent.click(screen.getByRole('button', { name: 'Clients by area Choose an existing area' }))
-  const select = screen.getByLabelText('Filter 1 Preferred area')
-  await waitFor(() => expect(within(select).getByRole('option', { name: 'Cape Town' })).toBeTruthy())
-  fireEvent.change(select, { target: { value: 'Cape Town' } })
-  fireEvent.change(select, { target: { value: 'Durban' } })
+test('Clients creates a personal audience in the same library used by campaigns', async () => {
+  render(<ClientAudiences organisationId={org} userId="actor" />)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Create audience' }).disabled).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: 'Create audience' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Audience name' }), { target: { value: 'My buyers' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save audience' }))
-  await waitFor(() => expect(saveEmailAudience).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'agency', audience: expect.objectContaining({ filterJson: { operator: 'AND', rules: [{ field: 'preferred_area', operator: 'in', value: ['Cape Town', 'Durban'] }] } }) })))
+  await waitFor(() => expect(api.save).toHaveBeenCalledWith(org, expect.objectContaining({ name: 'My buyers', visibility: 'personal', definition: expect.objectContaining({ match: 'all' }) })))
 })
 
-test('matching-client view pages beyond the preview and preserves builder edits', async () => {
-  previewSavedAudience.mockImplementation(async ({ offset = 0 }) => ({ count: 26, contacts: [{ ...contact, name: offset ? 'Last Buyer' : 'First Buyer' }] }))
-  show()
-  fireEvent.click(await screen.findByRole('button', { name: 'View matching clients for Buyers' }))
-  const dialog = screen.getByRole('dialog')
-  await within(dialog).findByText('First Buyer')
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
-  await within(dialog).findByText('Last Buyer')
-  expect(previewSavedAudience).toHaveBeenLastCalledWith({ organisationId: 'agency', rules, limit: 25, offset: 25 })
-  expect(within(dialog).getByRole('button', { name: 'Next' }).disabled).toBe(true)
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close dialog' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Edit Buyers' }))
-  fireEvent.change(screen.getByLabelText('Audience name'), { target: { value: 'My draft' } })
-  const view = screen.getByRole('button', { name: 'View matching clients →' })
-  await waitFor(() => expect(view.disabled).toBe(false))
-  fireEvent.click(view)
-  await within(screen.getByRole('dialog')).findByText('First Buyer')
-  fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }))
-  expect(screen.getByLabelText('Audience name').value).toBe('My draft')
-})
-
-test('matching-client failures show a retry instead of claiming an empty audience', async () => {
-  show()
-  const view = await screen.findByRole('button', { name: 'View matching clients for Buyers' })
-  previewSavedAudience.mockRejectedValueOnce(new Error('Network unavailable'))
-  fireEvent.click(view)
-  const dialog = screen.getByRole('dialog')
-  await within(dialog).findByText('Network unavailable')
-  expect(within(dialog).queryByText('No clients match these filters.')).toBeNull()
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Try again' }))
-  await within(dialog).findByText('First Buyer')
-})
-
-test('keeps old saved values selectable even when they are absent from current contacts', async () => {
-  getSavedAudiences.mockResolvedValue([{ ...saved, filter_json: { operator: 'AND', rules: [{ field: 'tags', operator: 'in', value: ['old-tag', 'show-day'] }] } }])
-  show()
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit Buyers' }))
-  expect(screen.getByRole('button', { name: 'Remove old-tag from filter 1' })).toBeTruthy()
+test.each([{}, { area: 'Cape Town', branch_id: 'branch', assigned_user_id: 'staff', contact_ids: ['selected'] }, { operator: 'OR', rules: [{ operator: 'AND', rules: [{ field: 'tags', operator: 'in', value: ['launch'] }] }] }])('renaming imported email targeting retains its exact restrictions: %j', async filter => {
+  api.load.mockResolvedValue({ audiences: [legacy(filter)], actorId: 'actor', canShare: true, total: 1, subscriptionTypes: [] })
+  render(<ClientAudiences organisationId={org} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit', exact: true }))
+  expect(screen.getByText(/The exact saved email filters are retained/)).toBeTruthy()
+  expect(screen.queryByLabelText('Rule 1 field')).toBeNull()
+  fireEvent.change(screen.getByRole('textbox', { name: 'Audience name' }), { target: { value: 'Renamed' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save audience' }))
-  await waitFor(() => expect(saveEmailAudience).toHaveBeenCalledWith(expect.objectContaining({ audience: expect.objectContaining({ filterJson: { operator: 'AND', rules: [{ field: 'tags', operator: 'in', value: ['old-tag', 'show-day'] }] } }) })))
+  await waitFor(() => expect(api.save).toHaveBeenCalledWith(org, expect.objectContaining({ id: 'saved', revision: 4, name: 'Renamed', definition: { emailFilter: filter } })))
+})
+
+test('duplicating imported targeting creates a personal copy without changing its filters', async () => {
+  const filter = { branch_id: 'branch', contact_ids: ['selected'] }
+  api.load.mockResolvedValue({ audiences: [legacy(filter)], actorId: 'actor', canShare: true, total: 1, subscriptionTypes: [] })
+  render(<ClientAudiences organisationId={org} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Duplicate Saved targeting' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save audience' }))
+  await waitFor(() => expect(api.save).toHaveBeenCalledWith(org, expect.objectContaining({ name: 'Saved targeting copy', visibility: 'personal', definition: { emailFilter: filter } })))
+  expect(api.save.mock.calls[0][1].id).toBeUndefined()
 })

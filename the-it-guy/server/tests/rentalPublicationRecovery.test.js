@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFile } from 'node:fs/promises'
-const mocks = vi.hoisted(() => ({ p24Sync:vi.fn(),ppSync:vi.fn(),existing:false }))
+const mocks = vi.hoisted(() => ({ p24Sync:vi.fn(),ppSync:vi.fn(),existing:false,category:'rental' }))
 vi.mock('../services/property24ListingSyncService.js',() => ({ recordProperty24ListingSync:mocks.p24Sync }))
 vi.mock('../services/privatePropertyListingSyncService.js',async original => ({ ...await original(),recordPrivatePropertyListingSync:mocks.ppSync }))
 vi.mock('../services/privatePropertyAgencyConfigService.js',() => ({
@@ -10,7 +10,7 @@ vi.mock('../services/privatePropertyAgencyConfigService.js',() => ({
 }))
 vi.mock('../services/privatePropertyGoLiveReadinessService.js',() => ({ buildPrivatePropertyGoLiveReadinessReport:async()=>({ ready:true,status:'READY',environment:'sandbox',blockers:[],warnings:[],checks:[],agencyConfig:{ branchGuid:'branch' },agentMapping:{} }) }))
 vi.mock('../services/privatePropertyListingPreviewService.js',() => ({
- fetchArch9ListingForPrivatePropertyPreview:async()=>({ listing:{ listing_category:'rental' },existingSync:mocks.existing ? { property_id:'property',branch_guid:'branch' } : null }),
+ fetchArch9ListingForPrivatePropertyPreview:async()=>({ listing:{ listing_category:mocks.category },existingSync:mocks.existing ? { property_id:'property',branch_guid:'branch' } : null }),
  createPrivatePropertyArch9ListingPreview:()=>({ canPreview:true,summary:{ propertyId:'property',branchId:'branch',listingType:'Rental' },payloadPreview:{ address:{} },listingXml:'<PropertyId>property</PropertyId>' }),
 }))
 vi.mock('../services/privatePropertyListingRecoveryService.js',async original => ({ ...await original(),inspectPrivatePropertyListingRecovery:async()=>({ checked:false,blockers:[] }) }))
@@ -47,7 +47,7 @@ function query(table) {
   return builder
 }
 beforeEach(async()=>{
- vi.clearAllMocks();mocks.existing=false
+ vi.clearAllMocks();mocks.existing=false;mocks.category='rental'
  mocks.p24Sync.mockResolvedValue({sync:{private_listing_id:listingId,listing_number:123},listing:{id:listingId,property24_reference:'123',property24_status:'published'}})
  mocks.ppSync.mockResolvedValue({sync:{id:'sync'},listing:{id:listingId},arch9Status:'draft'})
  db=new PGlite()
@@ -213,4 +213,41 @@ it('withdraws a rental by saved feed identity when the public advert number is m
  expect(portal.listingStatusUpdate).toHaveBeenCalledExactlyOnceWith({branchGuid:'branch',propertyId:'property',listingType:'Rental',propertyStatus:'Inactive'})
  expect(buildReadiness).not.toHaveBeenCalled()
  expect((await db.query("select state,identity from rental_publication_attempts")).rows[0]).toMatchObject({state:'accepted',identity:{propertyId:'property',branchGuid:'branch',status:'Inactive'}})
+})
+
+// Sale submissions have no rental journal, but an unknown provider result is
+// still unsafe to retry. The durable channel job must retain that distinction.
+it.each([408, 429, 503, undefined])('keeps sale P24 submissions uncertain for an ambiguous status %s', async status => {
+ const portal=p24();portal.saveListing.mockRejectedValueOnce(Object.assign(new Error('Submission response not confirmed'),{status}))
+ const result=await applyProperty24ListingPublish({supabase:client,property24:portal,config,preview:{...preview,summary:{listingType:'Sale'}}})
+ expect(result.status).toBe('UNCERTAIN')
+ expect(result.submissionAttempt).toBeUndefined()
+ expect(portal.saveListing).toHaveBeenCalledTimes(1)
+})
+it.each([408, 429, 503, undefined])('keeps sale Private Property submissions uncertain for an ambiguous status %s', async status => {
+ mocks.category='private_sale'
+ const portal=pp();portal.updateListing.mockRejectedValueOnce(Object.assign(new Error('Submission response not confirmed'),{status}))
+ expect((await sendPP(portal)).status).toBe('UNCERTAIN')
+ expect(portal.updateListing).toHaveBeenCalledTimes(1)
+ expect((await db.query('select * from rental_publication_attempts')).rows).toHaveLength(0)
+})
+it('keeps an accepted sale Private Property submission uncertain if saving its receipt fails', async () => {
+ mocks.category='private_sale';mocks.ppSync.mockRejectedValueOnce(new Error('Database unavailable'))
+ expect((await sendPP(pp())).status).toBe('UNCERTAIN')
+})
+it('still identifies a definite sale rejection as fixable', async () => {
+ mocks.category='private_sale'
+ const portal=pp();portal.updateListing.mockRejectedValueOnce(Object.assign(new Error('Correct the suburb.'),{status:422}))
+ expect((await sendPP(portal)).status).toBe('BLOCKED')
+ const sale=p24();sale.saveListing.mockRejectedValueOnce(Object.assign(new Error('Correct the suburb.'),{status:422}))
+ expect((await applyProperty24ListingPublish({supabase:client,property24:sale,config,preview:{...preview,summary:{listingType:'Sale'}}})).status).toBe('FAILED')
+})
+
+it.each([{}, {listingNumber:0}, {listingNumber:'invalid'}])('does not confirm a sale without a usable P24 advert number: %j', async data => {
+ const portal=p24();portal.saveListing.mockResolvedValueOnce({status:200,data})
+ const result=await applyProperty24ListingPublish({supabase:client,property24:portal,config,preview:{...preview,summary:{listingType:'Sale'}}})
+ expect(result.status).toBe('UNCERTAIN')
+ expect(result.error.message).toMatch(/no usable listing number/)
+ expect(mocks.p24Sync).not.toHaveBeenCalled()
+ expect(portal.saveListing).toHaveBeenCalledTimes(1)
 })

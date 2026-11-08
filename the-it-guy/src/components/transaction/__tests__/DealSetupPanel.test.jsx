@@ -18,6 +18,7 @@ vi.mock('../DealSetupReadinessPanel.jsx', () => ({ default: () => <div>Deal read
 import DealSetupPanel from '../DealSetupPanel.jsx'
 
 const setup = {
+  revision: 'v1',
   terms: { purchaserType: 'individual', purchasePrice: 1200000, depositAmount: 100000 },
   finance: { type: 'cash', managedBy: '', cashAmount: 1100000, bondAmount: null, bank: '' },
 }
@@ -99,6 +100,7 @@ describe('agent deal setup', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Save Deal Setup' })[0])
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({
       transactionId: 'matter-1',
+      expectedUpdatedAt: 'v1',
       terms: expect.objectContaining({ purchaserType: 'trust', purchasePrice: '1350000', depositAmount: '0' }),
       finance: expect.objectContaining({ type: 'hybrid', managedBy: 'bond_originator', cashAmount: '1050000', bondAmount: '300000', bank: 'Example Bank' }),
     }))
@@ -202,4 +204,15 @@ it('offers the shared seller workflow for a linked listing without duplicating a
  expect(screen.queryByLabelText('Seller name')).toBeNull()
  expect(screen.queryByText('Current seller profile')).toBeNull()
  expect(send).not.toHaveBeenCalled()
+})
+
+
+it('shows seller-load errors on Overview and allows retry without saving',async()=>{
+ mocks.sellerLoad.mockRejectedValueOnce(Error('Seller service unavailable')).mockResolvedValueOnce(sellerContext)
+ render(<DealSetupPanel transactionId="seller-retry" canEdit sellerDetails={seller}/>);
+ expect(await screen.findByRole('button',{name:'Retry seller details'})).toBeTruthy()
+ expect(screen.getByRole('alert').textContent).toContain('Seller service unavailable')
+ fireEvent.click(screen.getByRole('button',{name:'Retry seller details'}))
+ await waitFor(()=>expect(screen.queryByRole('button',{name:'Retry seller details'})).toBeNull())
+ expect(mocks.save).not.toHaveBeenCalled()
 })

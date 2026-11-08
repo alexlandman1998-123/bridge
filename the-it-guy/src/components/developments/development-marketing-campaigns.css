@@ -1,6 +1,6 @@
 .development-marketing-campaigns { color: #244333; min-width: 0; }
 .development-marketing-campaigns button:focus-visible { outline: 2px solid #23845b; outline-offset: 4px; }
-.development-campaign-heading { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 18px; margin-bottom: 25px; }
+.development-campaign-heading { display: flex; align-items: flex-end; justify-content: flex-end; flex-wrap: wrap; gap: 18px; margin-bottom: 25px; }
 .development-campaign-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #6b8477; }
 .development-campaign-heading h3 { margin: 9px 0; font-size: clamp(25px,2.6vw,34px); line-height: 1.2; font-weight: 600; letter-spacing: -.04em; }
 .development-campaign-heading p, .development-campaign-history-heading p { margin: 0; font-size: 14px; line-height: 1.7; color: #74857d; }

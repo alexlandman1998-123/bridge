@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-09-27T06:43:20.814Z
+Generated: 2026-10-25T18:40:33.681Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,10 +12,10 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Field | Value |
 | --- | --- |
 | Status | MODULE_AUDIT_READY |
-| Local migration files | 1295 |
+| Local migration files | 1567 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 1295 |
+| Matched rows | 0 |
 | Split local/remote versions | 0 |
 | Reviewed split baseline | 0 |
 | Unreviewed split versions | 0 |
@@ -60,7 +60,7 @@ No local-only drift rows were available.
 
 | Command | Status | Notes |
 | --- | --- | --- |
-| npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
+| npx supabase migration list --linked --output-format json | failed (1) | Initialising login role... Connecting to remote database... |
 | object catalog check not run | skipped | no extracted objects |
 
 ## Next Step

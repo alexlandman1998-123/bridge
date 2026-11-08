@@ -1,4 +1,7 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
 
 -- Use the same strict international/ZA local-number rules as campaigns. Never
 -- match by suffix: two countries can have the same local subscriber number.
@@ -10,13 +13,26 @@ begin
   elsif left(phone,2)='00' then phone:=substr(phone,3);
   elsif phone ~ '^0[0-9]{9}$' then phone:='27'||substr(phone,2); end if;
   return case when phone ~ '^[1-9][0-9]{7,14}$' then phone else null end;
-end; $$;
-revoke all on function public.whatsapp_crm_phone(text) from public,anon;
-grant execute on function public.whatsapp_crm_phone(text) to authenticated,service_role;
-create index contacts_whatsapp_crm_phone on public.contacts(organisation_id,public.whatsapp_crm_phone(phone));
-create index recruitment_whatsapp_crm_phone on public.recruitment_leads(organisation_id,public.whatsapp_crm_phone(phone));
-create index leads_whatsapp_crm_contact on public.leads(organisation_id,contact_id);
-create index whatsapp_crm_conversation_phone on public.whatsapp_inbox_conversations(organisation_id,contact_phone,last_message_at desc);
+end; $$
+;
+
+revoke all on function public.whatsapp_crm_phone(text) from public,anon
+;
+
+grant execute on function public.whatsapp_crm_phone(text) to authenticated,service_role
+;
+
+create index contacts_whatsapp_crm_phone on public.contacts(organisation_id,public.whatsapp_crm_phone(phone))
+;
+
+create index recruitment_whatsapp_crm_phone on public.recruitment_leads(organisation_id,public.whatsapp_crm_phone(phone))
+;
+
+create index leads_whatsapp_crm_contact on public.leads(organisation_id,contact_id)
+;
+
+create index whatsapp_crm_conversation_phone on public.whatsapp_inbox_conversations(organisation_id,contact_phone,last_message_at desc)
+;
 
 -- This is deliberately invoked with the user's JWT, never the service client:
 -- both lead and contact RLS apply, including recruitment's separate boundary.
@@ -44,9 +60,14 @@ returns jsonb language sql stable security invoker set search_path='' as $$
         and m.status='active' and m.role in ('owner','principal','director','admin','super_admin','developer','agency_admin','agent','senior_agent','manager','branch_manager','broker','assistant')
     ) order by kind,name,"recordId" limit 51
   ) candidate;
-$$;
-revoke all on function public.whatsapp_crm_records(uuid,text,text,uuid) from public,anon,service_role;
-grant execute on function public.whatsapp_crm_records(uuid,text,text,uuid) to authenticated;
+$$
+;
+
+revoke all on function public.whatsapp_crm_records(uuid,text,text,uuid) from public,anon,service_role
+;
+
+grant execute on function public.whatsapp_crm_records(uuid,text,text,uuid) to authenticated
+;
 
 -- No CRM identifier is added to the general inbox projection. The server only
 -- reveals linked record details after re-reading them under the caller's RLS.
@@ -60,9 +81,15 @@ create table public.whatsapp_inbox_crm_links (
   linked_at timestamptz not null default now(),
   check(num_nonnulls(lead_id,recruitment_lead_id)<=1),
   foreign key(conversation_id,organisation_id) references public.whatsapp_inbox_conversations(id,organisation_id)
-);
-create index whatsapp_crm_link_lead on public.whatsapp_inbox_crm_links(organisation_id,lead_id) where lead_id is not null;
-create index whatsapp_crm_link_recruitment on public.whatsapp_inbox_crm_links(organisation_id,recruitment_lead_id) where recruitment_lead_id is not null;
+)
+;
+
+create index whatsapp_crm_link_lead on public.whatsapp_inbox_crm_links(organisation_id,lead_id) where lead_id is not null
+;
+
+create index whatsapp_crm_link_recruitment on public.whatsapp_inbox_crm_links(organisation_id,recruitment_lead_id) where recruitment_lead_id is not null
+;
+
 create table public.whatsapp_inbox_crm_link_events (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id),
@@ -72,18 +99,32 @@ create table public.whatsapp_inbox_crm_link_events (
   version integer not null,
   created_at timestamptz not null default now(),
   foreign key(conversation_id,organisation_id) references public.whatsapp_inbox_conversations(id,organisation_id)
-);
-create index whatsapp_crm_link_events_thread on public.whatsapp_inbox_crm_link_events(conversation_id,created_at desc);
-alter table public.whatsapp_inbox_crm_links enable row level security;
-alter table public.whatsapp_inbox_crm_link_events enable row level security;
-revoke all on public.whatsapp_inbox_crm_links,public.whatsapp_inbox_crm_link_events from public,anon,authenticated;
-grant all on public.whatsapp_inbox_crm_links,public.whatsapp_inbox_crm_link_events to service_role;
+)
+;
+
+create index whatsapp_crm_link_events_thread on public.whatsapp_inbox_crm_link_events(conversation_id,created_at desc)
+;
+
+alter table public.whatsapp_inbox_crm_links enable row level security
+;
+
+alter table public.whatsapp_inbox_crm_link_events enable row level security
+;
+
+revoke all on public.whatsapp_inbox_crm_links,public.whatsapp_inbox_crm_link_events from public,anon,authenticated
+;
+
+grant all on public.whatsapp_inbox_crm_links,public.whatsapp_inbox_crm_link_events to service_role
+;
 
 -- Attribute only a reply to the actual campaign message, never a phone match.
 alter table public.whatsapp_inbox_messages
   add column campaign_recipient_id uuid references public.whatsapp_campaign_recipients(id) on delete set null,
-  add column reply_to_provider_message_id text;
-create index whatsapp_inbox_campaign_receipt on public.whatsapp_inbox_messages(campaign_recipient_id) where campaign_recipient_id is not null;
+  add column reply_to_provider_message_id text
+;
+
+create index whatsapp_inbox_campaign_receipt on public.whatsapp_inbox_messages(campaign_recipient_id) where campaign_recipient_id is not null
+;
 
 create function public.whatsapp_crm_link_request(
   p_org uuid,p_actor uuid,p_action text,p_conversation uuid default null,p_kind text default null,
@@ -146,14 +187,27 @@ begin
   insert into public.whatsapp_inbox_crm_link_events(organisation_id,conversation_id,actor_user_id,previous_lead_id,previous_recruitment_lead_id,lead_id,recruitment_lead_id,version)
     values(p_org,thread.id,p_actor,previous.lead_id,previous.recruitment_lead_id,saved.lead_id,saved.recruitment_lead_id,saved.version);
   return jsonb_build_object('saved',true,'version',saved.version);
-end; $$;
-revoke all on function public.whatsapp_crm_link_request(uuid,uuid,text,uuid,text,uuid,integer,integer,text) from public,anon,authenticated;
-grant execute on function public.whatsapp_crm_link_request(uuid,uuid,text,uuid,text,uuid,integer,integer,text) to service_role;
+end; $$
+;
+
+revoke all on function public.whatsapp_crm_link_request(uuid,uuid,text,uuid,text,uuid,integer,integer,text) from public,anon,authenticated
+;
+
+grant execute on function public.whatsapp_crm_link_request(uuid,uuid,text,uuid,text,uuid,integer,integer,text) to service_role
+;
+
 -- Row locks preserve the exact CRM/membership snapshot checked under user RLS.
-grant select on public.leads,public.contacts,public.recruitment_leads to service_role;
-grant update(lead_id) on public.leads to service_role;
-grant update(contact_id) on public.contacts to service_role;
-grant update(id) on public.recruitment_leads to service_role;
+grant select on public.leads,public.contacts,public.recruitment_leads to service_role
+;
+
+grant update(lead_id) on public.leads to service_role
+;
+
+grant update(contact_id) on public.contacts to service_role
+;
+
+grant update(id) on public.recruitment_leads to service_role
+;
 
 -- Attribute a reply only when Meta supplies the ID of the actual campaign
 -- message. A phone match alone is not proof that a campaign generated a reply.
@@ -178,7 +232,14 @@ begin
     and exists(select 1 from public.whatsapp_inbox_conversations thread where thread.id=message.conversation_id and thread.organisation_id=channel.organisation_id and thread.contact_phone=p_from)
     and message.direction='inbound' and message.campaign_recipient_id is null;
   return found;
-end; $$;
-revoke all on function public.whatsapp_inbox_campaign_reply(text,text,text,text,text) from public,anon,authenticated;
-grant execute on function public.whatsapp_inbox_campaign_reply(text,text,text,text,text) to service_role;
-commit;
+end; $$
+;
+
+revoke all on function public.whatsapp_inbox_campaign_reply(text,text,text,text,text) from public,anon,authenticated
+;
+
+grant execute on function public.whatsapp_inbox_campaign_reply(text,text,text,text,text) to service_role
+;
+
+commit
+;

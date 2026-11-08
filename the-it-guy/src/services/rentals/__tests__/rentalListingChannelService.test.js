@@ -5,6 +5,26 @@ vi.mock('../../privateListingService',() => ({createPrivateListingActivity:mocks
 import { getRentalPortalStatus, updateRentalPortalStatus, loadRentalListingChannels, reconcileRentalPortalPublication, runRentalPublicationAction } from '../rentalListingChannelService'
 beforeEach(() => { vi.clearAllMocks(); mocks.session.mockResolvedValue({data:{session:{access_token:'test'}}}); mocks.activity.mockResolvedValue({id:'event'}); mocks.history.mockResolvedValue([]); vi.stubGlobal('fetch',vi.fn(async () => ({ok:true,json:async()=>({})}))) })
 afterEach(() => vi.unstubAllGlobals())
+it('retains nested rejection details from status changes instead of stringifying objects',async()=>{
+ fetch.mockResolvedValue({ok:false,status:422,json:async()=>({report:{status:'BLOCKED',error:{message:'Agency agent mapping is missing.'}}})})
+ await expect(updateRentalPortalStatus('id','private_property','Inactive')).rejects.toThrow('Agency agent mapping is missing.')
+})
+it('does not accept a nested blocked result returned with HTTP 200',async()=>{
+ fetch.mockResolvedValue({ok:true,status:200,json:async()=>({report:{status:'BLOCKED',error:{message:'The portal rejected this status.'}}})})
+ await expect(updateRentalPortalStatus('id','private_property','Inactive')).rejects.toMatchObject({message:'The portal rejected this status.',definiteRejection:true})
+})
+it('saves the actual rejection reason in publication history',async()=>{
+ await expect(runRentalPublicationAction({listingId:'id',channel:'property24',action:'publish',perform:async()=>({status:'BLOCKED',report:{preview:{technicalBlockers:['missing_agent_mapping']}}})})).rejects.toThrow(/Add agent mapping/)
+ expect(mocks.activity.mock.calls[1][0]).toMatchObject({activityType:'listing_channel_publication_failed',metadata:{error:expect.stringContaining('Add agent mapping')}})
+})
+it('reads the correct sales and rental status routes without recording a new sync for edit eligibility', async () => {
+ await getRentalPortalStatus('id','property24',{listingType:'sale',recordSync:false})
+ expect(fetch.mock.calls[0][0]).toBe('/api/property24/listings/id/status?environment=production&refresh=false')
+ await getRentalPortalStatus('id','property24',{listingType:'rental',recordSync:false})
+ expect(fetch.mock.calls[1][0]).toContain('/api/property24/rentals/id/status')
+ await getRentalPortalStatus('id','private_property',{recordSync:false})
+ expect(fetch.mock.calls[2][0]).toContain('cached=true&recordSync=false')
+})
 it('loads only stored portal status until refresh is explicitly requested',async () => {
  await getRentalPortalStatus('id','property24'); expect(fetch.mock.calls[0][0]).toContain('refresh=false')
  await getRentalPortalStatus('id','private_property'); expect(fetch.mock.calls[1][0]).toContain('cached=true')

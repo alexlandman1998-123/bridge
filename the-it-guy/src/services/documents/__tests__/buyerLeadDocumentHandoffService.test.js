@@ -12,7 +12,7 @@ const leadId = '22222222-2222-4222-8222-222222222222'
 const transactionId = '33333333-3333-4333-8333-333333333333'
 const storagePath = `organisations/${organisationId}/buyer-leads/${leadId}/buyer_id_document/id.pdf`
 
-function clientFor({ transactionLeadId = leadId, rows = [], existingDocuments = [], storageError = null } = {}) {
+function clientFor({ transactionLeadId = leadId, rows = [], existingDocuments = [], storageError = null, linkResult = { ok: true } } = {}) {
   const documents = [...existingDocuments]
   const lead = {
     lead_id: leadId,
@@ -21,6 +21,17 @@ function clientFor({ transactionLeadId = leadId, rows = [], existingDocuments = 
   }
   const client = {
     documents,
+    linkCalls: [],
+    async rpc(name, args) {
+      assert.equal(name, 'bridge_link_document_to_canonical_requirement_by_key')
+      client.linkCalls.push(args)
+      const document = documents.find(row => row.id === args.p_document_id)
+      if (linkResult.ok) {
+        document.canonical_requirement_instance_id = 'exact-request'
+        document.status = 'under_review'
+      }
+      return { data: linkResult, error: null }
+    },
     storage: { from() { return { async info() { return storageError ? { data: null, error: storageError } : { data: { size: 12 }, error: null } } } } },
     from(table) {
       let filters = []
@@ -176,4 +187,58 @@ test('direct conversion preflights every file so a missing later object cannot p
   client.storage.from = () => ({ info: async path => path.endsWith('address.pdf') ? { error: new Error('Missing') } : { data: { size: 12 } } })
   await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /No files were handed off/)
   assert.equal(client.documents.length, 0)
+})
+
+test('direct conversion validates a canonical mirror before handing off any other lead files', async () => {
+  const foreignId = '55555555-5555-4555-8555-555555555555'
+  const client = clientFor({ rows: [
+    { key: 'buyer_id_document', storageBucket: 'documents', storagePath },
+    { key: 'buyer_proof_of_address', canonicalDocumentId: foreignId, storageBucket: 'documents', storagePath: `${storagePath}.address` },
+  ], existingDocuments: [{ id: foreignId, transaction_id: '66666666-6666-4666-8666-666666666666' }] })
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /canonical|linked.*document|manual review/i)
+  assert.equal(client.documents.length, 1, 'The first staged file must not be inserted before validating the second file.')
+})
+
+test('verified canonical transaction files are reconciled without requiring a former lead folder', async () => {
+  const id = '55555555-5555-4555-8555-555555555555'
+  const path = `client-portal/${transactionId}/identity.pdf`
+  const document = { id, transaction_id: transactionId, file_bucket: 'documents', file_path: path,
+    is_client_visible: true, visibility_scope: 'shared', client_recipient_role: 'buyer', uploaded_by_party: 'buyer' }
+  const client = clientFor({ rows: [{ key: 'buyer_id_document', canonicalDocumentId: id, storageBucket: 'documents', storagePath: path }], existingDocuments: [document] })
+  const context = { transactionId, organisationId, leadId }
+  assert.equal((await reconcileStagedBuyerLeadDocuments(client, context)).summary.alreadyCanonical, 1)
+  assert.deepEqual(await promoteStagedBuyerLeadDocuments(client, context), [{ id, deduplicated: true }])
+  assert.equal(client.documents.length, 1)
+})
+
+test('a canonical mirror cannot bypass audience or Storage verification', async () => {
+  const id = '55555555-5555-4555-8555-555555555555'
+  const row = { key: 'buyer_id_document', canonicalDocumentId: id, storageBucket: 'documents', storagePath }
+  const document = { id, transaction_id: transactionId, file_bucket: 'documents', file_path: storagePath,
+    is_client_visible: true, visibility_scope: 'shared', client_recipient_role: 'buyer', uploaded_by_party: 'buyer' }
+  const context = { transactionId, organisationId, leadId }
+  await assert.rejects(promoteStagedBuyerLeadDocuments(clientFor({ rows: [row], existingDocuments: [{ ...document, client_recipient_role: 'seller' }] }), context), /manual review/)
+  await assert.rejects(promoteStagedBuyerLeadDocuments(clientFor({ rows: [row], existingDocuments: [document], storageError: new Error('denied') }), context), /could not be verified/)
+})
+
+test('new typed agent files link to one exact request awaiting review and retry without another file', async () => {
+  const staged = { key: 'buyer_id_document', requirementKey: 'buyer_id_document', source: 'agent_buyer_document_upload', storageBucket: 'documents', storagePath }
+  const client = clientFor({ rows: [staged] })
+  const context = { transactionId, organisationId, leadId }
+  await promoteStagedBuyerLeadDocuments(client, context)
+  await promoteStagedBuyerLeadDocuments(client, context)
+  assert.equal(client.documents.length, 1)
+  assert.equal(client.documents[0].canonical_requirement_instance_id, 'exact-request')
+  assert.equal(client.documents[0].status, 'under_review')
+  assert.equal(client.linkCalls.length, 2)
+  assert(client.linkCalls.every(call => call.p_document_key === 'buyer_id_document' && call.p_transaction_id === transactionId))
+})
+
+test('ambiguous request identity leaves the typed file available but unmatched', async () => {
+  const staged = { key: 'buyer_id_document', requirementKey: 'buyer_id_document', source: 'agent_buyer_document_upload', storageBucket: 'documents', storagePath }
+  const client = clientFor({ rows: [staged], linkResult: { ok: false, reason: 'ambiguous_requirement' } })
+  await promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId })
+  assert.equal(client.documents.length, 1)
+  assert.equal(client.documents[0].canonical_requirement_instance_id, undefined)
+  assert.equal(client.documents[0].status, 'uploaded')
 })

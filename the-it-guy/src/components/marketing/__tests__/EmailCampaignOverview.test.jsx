@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EmailCampaignOverview } from '../EmailCampaigns'
 vi.mock('../MarketingAudiences', () => ({ default: () => <div>Shared CRM audience library</div> }))
-const mocks = vi.hoisted(() => ({ workspace: vi.fn(), audiences: vi.fn(), preview: vi.fn(), saveAudience: vi.fn(), archiveAudience: vi.fn() }))
+const mocks = vi.hoisted(() => ({ workspace: vi.fn(), audiences: vi.fn(), preview: vi.fn(), saveAudience: vi.fn(), archiveAudience: vi.fn(), org: 'org' }))
 vi.mock('../EmailCampaignBuilder', () => ({ default: () => null }))
-vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: 'org' } } }) }))
+vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { id: mocks.org } } }) }))
 vi.mock('../../../services/emailCampaignService', () => ({ getEmailCampaignWorkspace: mocks.workspace, getAudienceFilterOptions: async () => ({ contact_type: ['buyer', 'seller'] }), getSavedAudiences: async (...args) => (await mocks.audiences(...args)) || [], previewSavedAudience: async (...args) => (await mocks.preview(...args)) || { count: 0, contacts: [] }, saveEmailAudience: mocks.saveAudience, archiveEmailAudience: mocks.archiveAudience }))
 const draft = { id: 'draft', name: 'Spring listings', status: 'draft', updated_at: '2026-10-01T12:00:00Z' }
 const sent = { id: 'sent', name: 'Buyer update', status: 'sent', sent_at: '2026-09-29T12:00:00Z' }
 const workspace = (overrides = {}) => ({ campaigns: [draft, sent], performance: [], identities: [], usage: [], billingProfile: null, dailyPerformance: [], ...overrides })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { mocks.org='org'; cleanup(); vi.clearAllMocks() })
 describe('Email campaign homepage', () => {
   it('combines search and status filters, then clears them', async () => {
     mocks.workspace.mockResolvedValue(workspace())
@@ -118,23 +118,12 @@ describe('Email campaign homepage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Overview' }))
     expect(screen.getByText('Spring listings')).toBeTruthy()
   })
-  it('opens audience management, saves a segment and archives it only after confirmation', async () => {
+  it('opens the single shared library without a second email-only catalogue', async () => {
     mocks.workspace.mockResolvedValue(workspace())
-    mocks.audiences.mockResolvedValue([{ id: 'aud', name: 'Local buyers', filter_json: { operator: 'AND', rules: [{ field: 'contact_type', operator: 'in', value: ['buyer'] }] } }])
-    mocks.preview.mockResolvedValue({ count: 12, contacts: [{ id: 'contact', name: 'Buyer Example', contactType: 'buyer' }] })
     render(<EmailCampaignOverview selectedView="audiences" />)
     expect(await screen.findByText('Shared CRM audience library')).toBeTruthy()
-    fireEvent.click(screen.getByText('Existing email-only audiences'))
-    await screen.findByText('Local buyers')
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Local buyers' }))
-    fireEvent.change(await screen.findByRole('textbox', { name: 'Audience name', exact: true }), { target: { value: 'Active buyers' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save audience' }))
-    await waitFor(() => expect(mocks.saveAudience).toHaveBeenCalledWith(expect.objectContaining({ organisationId: 'org', audience: expect.objectContaining({ id: 'aud', name: 'Active buyers', filterJson: expect.objectContaining({ rules: [expect.objectContaining({ field: 'contact_type' })] }) }) })))
-    await screen.findByText('Local buyers')
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Local buyers' }))
-    expect(mocks.archiveAudience).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Delete audience' }))
-    await waitFor(() => expect(mocks.archiveAudience).toHaveBeenCalledWith({ organisationId: 'org', audienceId: 'aud' }))
+    expect(screen.queryByText('Existing email-only audiences')).toBeNull()
+    expect(mocks.audiences).not.toHaveBeenCalled()
   })
   it('does not show setup or performance claims after a failed load', async () => {
     mocks.workspace.mockRejectedValue(new Error('Unable to load'))
@@ -146,4 +135,24 @@ describe('Email campaign homepage', () => {
     expect(screen.queryByText('No verified sender')).toBeNull()
     expect(screen.queryByText('Your first send starts the story')).toBeNull()
   })
+})
+
+it('hides the previous organisation immediately and discards late campaign responses', async () => {
+  let finishOld
+  mocks.workspace.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve })).mockResolvedValueOnce(workspace({campaigns:[{...draft,name:'New agency campaign'}]}))
+  const view=render(<EmailCampaignOverview />)
+  await waitFor(()=>expect(finishOld).toBeTypeOf('function'))
+  mocks.org='new-org';view.rerender(<EmailCampaignOverview />)
+  await screen.findByText('New agency campaign')
+  await act(async()=>finishOld(workspace()))
+  expect(screen.queryByText('Spring listings')).toBeNull()
+  expect(screen.getByText('New agency campaign')).toBeTruthy()
+})
+it('clears private campaign rows when switching workspace and the next load fails', async () => {
+  mocks.workspace.mockResolvedValueOnce(workspace()).mockRejectedValueOnce(Error('New workspace unavailable'))
+  const view=render(<EmailCampaignOverview />);await screen.findByText('Spring listings')
+  mocks.org='new-org';view.rerender(<EmailCampaignOverview />)
+  expect(screen.queryByText('Spring listings')).toBeNull()
+  await screen.findByText('New workspace unavailable')
+  expect(screen.queryByText('Spring listings')).toBeNull()
 })

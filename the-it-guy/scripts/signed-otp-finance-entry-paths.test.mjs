@@ -10,23 +10,10 @@ assert.match(apiSource, /current_main_stage: resolvedMainStage/)
 assert.match(apiSource, /onboarding_status: initialPortalReadinessStatus/)
 assert.match(lifecycleSource, /normalized\.includes\('finance'\) \|\| normalized\.includes\('bond'\)\) return 'FIN'/)
 
-assert.match(
-  pipelineSource,
-  /onboarding_status: 'signed_otp_received',\s*stage: 'Finance In Progress',\s*current_main_stage: 'FIN'/s,
-  'Buyer-lead signed OTP upload must persist the transaction in Finance.',
-)
-assert.match(
-  pipelineSource,
-  /transactionCreationOverrideReason:[\s\S]*?stage: 'Finance In Progress'/,
-  'Buyer-lead conversion must create the signed-OTP transaction directly in Finance.',
-)
-assert.doesNotMatch(
-  pipelineSource.slice(
-    pipelineSource.indexOf('async function persistBuyerOtpTransactionSnapshot'),
-    pipelineSource.indexOf('async function persistBuyerOtpTransactionAuditTrail'),
-  ),
-  /current_main_stage: 'OTP'/,
-  'The buyer-lead OTP snapshot must not leave the transaction in OTP.',
-)
-
-console.log('signed OTP finance entry-path checks passed')
+const receipt = pipelineSource.slice(pipelineSource.indexOf('async function persistBuyerOtpTransactionSnapshot'), pipelineSource.indexOf('async function persistBuyerOtpTransactionAuditTrail'))
+assert.match(pipelineSource, /creationMode: 'signed_otp_capture'/)
+assert.match(pipelineSource, /stage: 'OTP Signed'/)
+assert.match(pipelineSource, /signed_otp_saved_for_review/)
+assert.doesNotMatch(receipt, /(?:onboarding_status|stage|current_main_stage|next_action):/, 'An upload receipt must preserve saved progress until document review releases the downstream workflow.')
+assert.match(receipt, /evidenceStatus: 'awaiting_review'/)
+console.log('signed OTP entry-path checks passed: canonical review gate precedes Finance; other entry paths retain resolved workflow stages')

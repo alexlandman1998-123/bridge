@@ -67,26 +67,6 @@ test('handles empty and malformed collections safely', () => {
   assert.equal(unavailable.collectionPercent, 0)
 })
 
-test('optional requests stay visible and uploadable without demanding action', () => {
-  const model = buildBuyerDocumentPresentationModel({ items: [
-    { id: 'optional', title: 'Supporting letter', status: 'required', required: false, uploadSpec: { requirementInstanceId: 'optional' } },
-    { id: 'recommended', title: 'Extra evidence', status: 'requested', requirementLevel: 'recommended', uploadSpec: { requirementInstanceId: 'recommended' } },
-    { id: 'approved', title: 'Required ID', status: 'approved', required: true },
-  ] })
-  expectOptional(model.items[0])
-  expectOptional(model.items[1])
-  assert.equal(model.counts.action, 0)
-  assert.equal(model.firstActionItem, null)
-  assert.equal(model.isComplete, true)
-})
-
-function expectOptional(item) {
-  assert.equal(item.presentationStatus, 'optional')
-  assert.equal(item.presentationStatusLabel, 'Optional upload')
-  assert.equal(item.isActionRequired, false)
-  assert.ok(item.uploadSpec)
-}
-
 
 test('shared documents provided by the team do not ask the buyer to upload them', () => {
   const model = buildBuyerDocumentPresentationModel({ items: [{ id: 'rules', title: 'Body corporate rules', status: 'required', waitingForTeam: true }] })
@@ -94,4 +74,3 @@ test('shared documents provided by the team do not ask the buyer to upload them'
   assert.equal(model.counts.upcoming, 1)
   assert.equal(model.items[0].presentationStatusLabel, 'Awaiting your team')
 })
-

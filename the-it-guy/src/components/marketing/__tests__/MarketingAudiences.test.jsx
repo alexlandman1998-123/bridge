@@ -6,19 +6,19 @@ const mocks=vi.hoisted(()=>({load:vi.fn(),preview:vi.fn(),save:vi.fn(),archive:v
 vi.mock('../../../lib/supabaseClient',()=>({supabase:null}))
 vi.mock('../../../lib/settingsApi',()=>({listOrganisationUsersForWorkspace:async()=>[]}))
 vi.mock('../../../services/marketingAudienceService',async(importOriginal)=>({...(await importOriginal()),loadMarketingAudiences:mocks.load,previewMarketingAudience:mocks.preview,saveMarketingAudience:mocks.save,archiveMarketingAudience:mocks.archive,attachCampaignAudience:mocks.link,loadCampaignAudience:mocks.association}))
-import MarketingAudiences, { CampaignAudience } from '../MarketingAudiences'
+import MarketingAudiences, { CampaignAudience, MarketingAudiencePicker } from '../MarketingAudiences'
 const id=(n)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const org=id(1), definition={match:'all',rules:[{field:'role',operator:'in',values:['buyer']}],quietDays:0,excludeClosed:true}
 const audience={id:id(2),name:'Ready buyers',description:'Local buyer relationships',visibility:'agency',created_by:id(3),revision:1,definition}
 const library={audiences:[audience],actorId:id(3),canShare:true,total:1,subscriptionTypes:[{id:id(4),name:'Property updates'}]}
-const preview={matched:3,emailEligible:1,whatsappEligible:2,recent:1,rows:[{contact_id:id(5),name:'Jane Doe',email:'jane@example.test',role:'buyer',stage:'New Lead',area:'Cape Town',email_reason:null,whatsapp_reason:'WhatsApp permission not recorded',last_contacted_at:null}],reviewHash:'hash',revision:1,audienceId:audience.id}
+const preview={matched:3,emailEligible:1,whatsappEligible:2,recent:1,rows:[{contact_id:id(5),name:'Jane Doe',email:'jane@example.test',phone:'27821234567',role:'buyer',stage:'New Lead',area:'Cape Town',email_reason:null,whatsapp_reason:'WhatsApp permission not recorded',last_contacted_at:null}],reviewHash:'hash',revision:1,audienceId:audience.id}
 beforeEach(()=>{mocks.load.mockResolvedValue(library);mocks.preview.mockImplementation(async(args)=>args.resolve?{recipientIds:[id(20)],audienceId:audience.id,revision:1}:preview);mocks.save.mockResolvedValue(audience);mocks.association.mockResolvedValue(null)})
 afterEach(()=>{cleanup();vi.resetAllMocks()})
 it('previews a shared live audience without running per-row audience queries',async()=>{
   render(<MarketingAudiences organisationId={org} />)
   await screen.findByText('Ready buyers')
   expect(mocks.preview).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button',{name:'Preview'}))
+  fireEvent.click(screen.getByRole('button',{name:/^(Preview|Choose audience)$/}))
   await screen.findByText('Jane Doe')
   expect(screen.getByText('WhatsApp permission not recorded')).toBeTruthy()
   expect(screen.getByText('No recorded contact')).toBeTruthy()
@@ -27,9 +27,9 @@ it('previews a shared live audience without running per-row audience queries',as
 it('requires reviewed eligibility, locks the Email category and resolves again before applying',async()=>{
   const apply=vi.fn()
   render(<MarketingAudiences organisationId={org} channel="email" subscriptionId={id(4)} onApply={apply} />)
-  fireEvent.click(await screen.findByRole('button',{name:'Preview'}))
+  fireEvent.click(await screen.findByRole('button',{name:/^(Preview|Choose audience)$/}))
   await screen.findByText('Jane Doe')
-  expect(screen.getByText('Property updates')).toBeTruthy()
+  expect(screen.queryByText('Property updates')).toBeNull()
   expect(screen.queryByRole('combobox')).toBeNull()
   expect(screen.getByRole('button',{name:'Use 1 recipient'}).disabled).toBe(true)
   fireEvent.click(screen.getByRole('checkbox'))
@@ -41,7 +41,7 @@ it('keeps a changed audience out of the draft and requires another preview',asyn
   const apply=vi.fn()
   mocks.preview.mockImplementation(async(args)=>{if(args.resolve) throw new Error('Audience membership changed. Refresh and review.');return preview})
   render(<MarketingAudiences organisationId={org} channel="whatsapp" onApply={apply} />)
-  fireEvent.click(await screen.findByRole('button',{name:'Preview'}))
+  fireEvent.click(await screen.findByRole('button',{name:/^(Preview|Choose audience)$/}))
   await screen.findByText('Jane Doe')
   fireEvent.click(screen.getByRole('checkbox'))
   fireEvent.click(screen.getByRole('button',{name:'Use 2 recipients'}))
@@ -54,7 +54,7 @@ it('uses the current saved definition and revision returned by a fresh preview',
   const apply=vi.fn()
   mocks.preview.mockImplementation(async(args)=>args.resolve?{recipientIds:[id(20)],audienceId:audience.id,revision:2}:{...preview,audience:updated,revision:2})
   render(<MarketingAudiences organisationId={org} channel="whatsapp" onApply={apply} />)
-  fireEvent.click(await screen.findByRole('button',{name:'Preview'}))
+  fireEvent.click(await screen.findByRole('button',{name:/^(Preview|Choose audience)$/}))
   await screen.findByRole('heading',{name:'Updated buyers'})
   expect(screen.getByText('Contacted in 30 days')).toBeTruthy()
   fireEvent.click(screen.getByRole('checkbox'))
@@ -65,10 +65,10 @@ it('uses the current saved definition and revision returned by a fresh preview',
 it('does not allow zero recipients or an unchecked Email subscription category',async()=>{
   mocks.preview.mockResolvedValue({...preview,emailEligible:0})
   render(<MarketingAudiences organisationId={org} channel="email" onApply={vi.fn()} />)
-  fireEvent.click(await screen.findByRole('button',{name:'Preview'}))
+  fireEvent.click(await screen.findByRole('button',{name:/^(Preview|Choose audience)$/}))
   await screen.findByText('Jane Doe')
-  expect(screen.getByRole('checkbox').disabled).toBe(true)
-  expect(screen.getByRole('button',{name:'Use 0 recipients'}).disabled).toBe(true)
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect(screen.queryByRole('button',{name:'Use 0 recipients'})).toBeNull()
 })
 it('preserves spaces and comma-separated values while authoring rules and saves only definitions',async()=>{
   render(<MarketingAudiences organisationId={org} />)
@@ -84,7 +84,7 @@ it('discards previews and saved state when the agency changes',async()=>{
   let resolve
   mocks.preview.mockImplementation(()=>new Promise((done)=>{resolve=done}))
   const {rerender}=render(<MarketingAudiences organisationId={org} />)
-  fireEvent.click(await screen.findByRole('button',{name:'Preview'}))
+  fireEvent.click(await screen.findByRole('button',{name:/^(Preview|Choose audience)$/}))
   await waitFor(()=>expect(mocks.preview).toHaveBeenCalled())
   mocks.load.mockResolvedValue({...library,audiences:[],total:0})
   rerender(<MarketingAudiences organisationId={id(99)} />)
@@ -98,7 +98,7 @@ it('does not apply an in-flight recipient resolution after the library unmounts'
   const apply=vi.fn()
   mocks.preview.mockImplementation((args)=>args.resolve?new Promise(done=>{resolve=done}):Promise.resolve(preview))
   const {unmount}=render(<MarketingAudiences organisationId={org} channel="whatsapp" onApply={apply} />)
-  fireEvent.click(await screen.findByRole('button',{name:'Preview'}))
+  fireEvent.click(await screen.findByRole('button',{name:/^(Preview|Choose audience)$/}))
   await screen.findByText('Jane Doe')
   fireEvent.click(screen.getByRole('checkbox'))
   fireEvent.click(screen.getByRole('button',{name:'Use 2 recipients'}))
@@ -111,4 +111,71 @@ it('reports missing storage and preserves campaign audience notes without invent
   render(<CampaignAudience campaign={{id:id(30),organisation_id:org,audience:'First-time buyers'}} canEdit />)
   expect((await screen.findByRole('alert')).textContent).toContain('not enabled')
   expect(screen.getByText('Audience notes: First-time buyers')).toBeTruthy()
+})
+
+it('does not offer WhatsApp recipients from preserved email-only targeting', async () => {
+  const emailAudience = { ...audience, definition: { emailFilter: { branch_id: id(40), contact_ids: [id(41)] } } }
+  mocks.load.mockResolvedValue({ ...library, audiences: [emailAudience] })
+  mocks.preview.mockResolvedValue({ ...preview, audience: emailAudience, whatsappEligible: 0, rows: [{ ...preview.rows[0], whatsapp_reason: 'Email targeting only. Create a CRM audience to use WhatsApp.' }] })
+  const apply = vi.fn()
+  render(<MarketingAudiences organisationId={org} channel="whatsapp" onApply={apply} />)
+  await screen.findByText(/Email targeting only/)
+  fireEvent.click(screen.getByRole('button', { name: /^(Preview|Choose audience)$/ }))
+  await screen.findByText('Email targeting only. Create a CRM audience to use WhatsApp.')
+  expect(screen.getByRole('checkbox').disabled).toBe(true)
+  expect(screen.getByRole('button', { name: 'Use 0 recipients' }).disabled).toBe(true)
+  expect(apply).not.toHaveBeenCalled()
+})
+
+it('makes choosing and applying an audience visible before the contact table',async()=>{
+ const apply=vi.fn()
+ render(<MarketingAudiences organisationId={org} channel="email" subscriptionId={id(4)} onApply={apply}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'Choose audience'}))
+ await screen.findByText('Jane Doe')
+ const button=screen.getByRole('button',{name:'Use 1 recipient'})
+ const table=screen.getByRole('table')
+ expect(button.compareDocumentPosition(table)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+ fireEvent.click(screen.getByRole('checkbox'))
+ fireEvent.click(button)
+ await waitFor(()=>expect(apply).toHaveBeenCalledWith([id(20)],audience))
+})
+it('explains why an audience cannot be applied without a category',async()=>{
+ render(<MarketingAudiences organisationId={org} channel="email" onApply={vi.fn()}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'Choose audience'}))
+ await screen.findByText('Jane Doe')
+ expect(screen.getByRole('checkbox').disabled).toBe(true)
+})
+
+it('keeps audience navigation at the top and removes duplicate campaign preview chrome',async()=>{
+ render(<MarketingAudiences organisationId={org} channel="email" subscriptionId={id(4)} onApply={vi.fn()}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'Choose audience'}))
+ await screen.findByText('Jane Doe')
+ const back=screen.getByRole('button',{name:'All audiences'})
+ expect(back.compareDocumentPosition(screen.getByRole('heading',{name:'Shared CRM audiences'}))&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+ expect(screen.queryByRole('heading',{name:'Ready buyers'})).toBeNull()
+ expect(screen.queryByRole('button',{name:'Refresh preview'})).toBeNull()
+ expect(screen.queryByText(/Define the right people once/)).toBeNull()
+})
+
+it('keeps the recipient container free of removed helper copy',async()=>{
+ mocks.preview.mockResolvedValue({...preview,emailEligible:0,rows:[{...preview.rows[0],phone:'',email_reason:'Not a valid email marketing contact'}]})
+ render(<MarketingAudiences organisationId={org} channel="email" subscriptionId={id(4)} onApply={vi.fn()}/>)
+ fireEvent.click(await screen.findByRole('button',{name:'Choose audience'}))
+ await screen.findByText('Jane Doe')
+ expect(screen.queryByText('Use this audience in your campaign')).toBeNull()
+ expect(screen.queryByText(/No eligible recipients in this audience yet/)).toBeNull()
+ expect(screen.queryByText(/This replaces the draft/)).toBeNull()
+ expect(screen.queryByText(/Email recorded · campaign contact setup required/)).toBeNull()
+ expect(screen.queryByText(/Add their normal phone number/)).toBeNull()
+ expect(screen.getByText('jane@example.test')).toBeTruthy()
+})
+
+it('selects an audience directly and closes the picker without opening its contact preview',async()=>{
+ const select=vi.fn()
+ render(<MarketingAudiencePicker organisationId={org} channel="email" subscriptionId={id(4)} onApply={vi.fn()} onSelect={select}/>)
+ fireEvent.click(screen.getByRole('button',{name:'Choose a shared CRM audience'}))
+ fireEvent.click(await screen.findByRole('button',{name:'Choose audience',exact:true}))
+ await waitFor(()=>expect(select).toHaveBeenCalledWith(audience))
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull())
+ expect(mocks.preview).not.toHaveBeenCalled()
 })

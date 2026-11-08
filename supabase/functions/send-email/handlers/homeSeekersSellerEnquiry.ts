@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import {
   buildHomeSeekersSellerAgencyEmail,
   buildHomeSeekersSellerClientEmail,
@@ -20,19 +21,8 @@ function email(value: unknown) {
 }
 
 function hasVerifiedServiceRole(request: Request) {
-  // Supabase verifies the bearer JWT before invoking this function.
-  const token = /^Bearer (.+)$/.exec(
-    request.headers.get("authorization") || "",
-  )?.[1];
-  if (!token) return false;
-  try {
-    const claims = JSON.parse(
-      atob(token.split(".")[1].replaceAll("-", "+").replaceAll("_", "/")),
-    );
-    return claims?.role === "service_role";
-  } catch {
-    return false;
-  }
+  const key = supabaseServiceKey();
+  return Boolean(key && request.headers.get('authorization') === 'Bearer ' + key);
 }
 
 export function isHomeSeekersSellerEnquiry({

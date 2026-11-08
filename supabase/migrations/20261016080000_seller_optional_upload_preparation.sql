@@ -1,7 +1,11 @@
+-- Restored from the production migration ledger; this version is already applied.
+
 -- A current portal may display these universally optional supporting files
 -- before a legacy listing has persisted their checklist rows. Prepare only
 -- those exact targets under the existing portal link/password boundary.
-begin;
+begin
+;
+
 create or replace function public.bridge_prepare_seller_optional_document_upload(
   p_token text, p_access_token text, p_requirement_key text
 ) returns jsonb
@@ -58,9 +62,18 @@ begin
   end if;
   return to_jsonb(v_requirement);
 end;
-$function$;
-revoke all on function public.bridge_prepare_seller_optional_document_upload(text,text,text) from public;
-grant execute on function public.bridge_prepare_seller_optional_document_upload(text,text,text) to anon, authenticated;
+$function$
+;
+
+revoke all on function public.bridge_prepare_seller_optional_document_upload(text,text,text) from public
+;
+
+grant execute on function public.bridge_prepare_seller_optional_document_upload(text,text,text) to anon, authenticated
+;
+
 comment on function public.bridge_prepare_seller_optional_document_upload(text,text,text) is
-  'Token/session-scoped preparation for universally optional seller files; preserves existing request identity and retirement.';
-commit;
+  'Token/session-scoped preparation for universally optional seller files; preserves existing request identity and retirement.'
+;
+
+commit
+;

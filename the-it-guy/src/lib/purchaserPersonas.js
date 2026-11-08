@@ -394,13 +394,13 @@ function resolveStructuredPurchasers(formData = {}, purchaserType = 'individual'
   const purchaseMode = resolveBuyerPurchaseMode(formData, { purchaserType })
   const coPurchasing =
     isNaturalPersonPurchaserType(purchaserType) &&
-    (purchaseMode === 'co_purchasing' ||
+    (structured.length > 2 || purchaseMode === 'co_purchasing' ||
       STRUCTURED_PURCHASER_KEYS.some((key) => String(secondary[key] || '').trim().length > 0))
   const purchaserCount = isNaturalPersonPurchaserType(purchaserType) ? (coPurchasing ? 2 : 1) : 0
 
   return {
     mode: coPurchasing ? 'co_purchasing' : 'individual',
-    purchasers: purchaserCount === 2 ? [primary, secondary] : purchaserCount === 1 ? [primary] : [],
+    purchasers: purchaserCount === 2 ? [primary, secondary, ...structured.slice(2)] : purchaserCount === 1 ? [primary] : [],
   }
 }
 
@@ -1818,24 +1818,26 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const fundingSources = Array.isArray(formData.funding_sources) ? formData.funding_sources.filter((item) => isFilledValue(item)) : []
   const employmentType = normalizeEmploymentType(formData.employment_type)
   const parties = []
-  const primaryName = [formData.first_name, formData.last_name].filter(Boolean).join(' ').trim()
+  const primaryName = [purchaserSnapshot.purchasers[0]?.first_name ?? formData.first_name, purchaserSnapshot.purchasers[0]?.last_name ?? formData.last_name].filter(Boolean).join(' ').trim()
   if (primaryName) {
     parties.push(buildParty({ role: 'primary_purchaser', name: primaryName, purchaser: true, signatory: true }))
   }
 
-  if (isCoPurchasing(formData)) {
-    const coPurchaserName = [formData.co_first_name, formData.co_last_name].filter(Boolean).join(' ').trim()
-    if (coPurchaserName) {
-      parties.push(
-        buildParty({
-          role: 'co_purchaser',
-          name: coPurchaserName,
-          purchaser: true,
-          signatory: true,
-          relationship: 'co_purchaser',
-        }),
-      )
-    }
+  if (purchaserSnapshot.mode === 'co_purchasing') {
+    purchaserSnapshot.purchasers.slice(1).forEach((purchaser) => {
+      const coPurchaserName = [purchaser.first_name, purchaser.last_name].filter(Boolean).join(' ').trim()
+      if (coPurchaserName) {
+        parties.push(
+          buildParty({
+            role: 'co_purchaser',
+            name: coPurchaserName,
+            purchaser: true,
+            signatory: true,
+            relationship: 'co_purchaser',
+          }),
+        )
+      }
+    })
   }
 
   if (purchaserType === 'married_coc' && formData.spouse_full_name) {
@@ -2098,6 +2100,11 @@ function validateIdLike(value, label) {
   }
 }
 
+export function isBuyerSpouseContactRequired(purchaser = {}) {
+  return String(purchaser.marital_regime || '').trim().toLowerCase() === 'in_community' ||
+    normalizeYesNoChoice(purchaser.spouse_is_co_purchaser) === 'yes'
+}
+
 export function validateOnboardingSubmission(formData = {}, options = {}) {
   const flow = resolveBuyerOnboardingFlow(formData, options.transaction || {}, {
     purchaserType: options.purchaserType,
@@ -2169,7 +2176,7 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   }
 
   function validateNaturalPurchaser(purchaser, index, purchaseMode = 'individual') {
-    const buyerLabel = index === 0 ? 'Purchaser 1' : 'Purchaser 2'
+    const buyerLabel = `Purchaser ${index + 1}`
     requireField(purchaser.first_name, `${buyerLabel} First Name`)
     requireField(purchaser.last_name, `${buyerLabel} Surname`)
     requireField(purchaser.date_of_birth, `${buyerLabel} Date of Birth`)
@@ -2198,9 +2205,11 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     if (String(purchaser.marital_status || '').trim().toLowerCase() === 'married') {
       requireField(purchaser.spouse_full_name, `${buyerLabel} Spouse Full Name`)
       requireField(purchaser.spouse_identity_number, `${buyerLabel} Spouse ID Number`)
-      requireField(purchaser.spouse_email, `${buyerLabel} Spouse Email`)
+      if (isBuyerSpouseContactRequired(purchaser)) {
+        requireField(purchaser.spouse_email, `${buyerLabel} Spouse Email`)
+        requireField(purchaser.spouse_phone, `${buyerLabel} Spouse Phone`)
+      }
       validateEmailIfPresent(purchaser.spouse_email, `${buyerLabel} Spouse Email`)
-      requireField(purchaser.spouse_phone, `${buyerLabel} Spouse Phone`)
       validatePhoneIfPresent(purchaser.spouse_phone, `${buyerLabel} Spouse Phone`)
       requireYesNo(purchaser.spouse_is_co_purchaser, `${buyerLabel} Spouse Co-purchaser`)
     }
@@ -2265,12 +2274,11 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
       throw new Error('Purchaser details are required.')
     }
 
-    validateNaturalPurchaser(purchaserSnapshot.purchasers[0], 0, resolvedPurchaseMode)
+    purchaserSnapshot.purchasers.forEach((purchaser, index) => validateNaturalPurchaser(purchaser, index, resolvedPurchaseMode))
     if (resolvedPurchaseMode === 'co_purchasing') {
       if (purchaserSnapshot.purchasers.length < 2) {
         throw new Error('Purchaser 2 details are required for co-purchasing.')
       }
-      validateNaturalPurchaser(purchaserSnapshot.purchasers[1], 1, resolvedPurchaseMode)
       const ownershipShares = purchaserSnapshot.purchasers.map((purchaser, purchaserIndex) => {
         const parsedShare = normalizeNumber(purchaser.ownership_share)
         if (!Number.isFinite(parsedShare)) {

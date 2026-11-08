@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpRight, BarChart3, Eye, Globe2, Monitor, MousePointerClick, RefreshCw, Send, Smartphone, Tablet, Users } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpRight, BarChart3, Eye, Monitor, MousePointerClick, Send, Smartphone, Tablet, Users } from 'lucide-react'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import './development-website-analytics.css'
@@ -10,7 +10,8 @@ const METRICS = [
   { key: 'sessions', label: 'Sessions', icon: Users, description: 'Recorded browsing sessions' },
   { key: 'sceneViews', label: 'Views', icon: Eye, description: 'Views of development scenes' },
   { key: 'unitOpens', label: 'Property opens', icon: MousePointerClick, description: 'Times a property was opened' },
-  { key: 'enquiries', label: 'Enquiries started', icon: Send, description: 'Enquiry form starts' }
+  { key: 'enquiries', label: 'Enquiry clicks', icon: MousePointerClick, description: 'Clicks that opened an enquiry or contact channel' },
+  { key: 'submittedEnquiries', label: 'Enquiries submitted', icon: Send, description: 'Enquiries successfully saved to the leads workspace' }
 ]
 const RANKINGS = {
   units: { label: 'Popular properties', name: 'Property', value: 'opens', valueLabel: 'Opens', detail: 'shortlists', detailLabel: 'Saves' },
@@ -20,7 +21,7 @@ const RANKINGS = {
 const DEVICE_STYLE = { mobile: { icon: Smartphone, colour: '#23845b', label: 'Mobile' }, desktop: { icon: Monitor, colour: '#6b99b8', label: 'Desktop' }, tablet: { icon: Tablet, colour: '#d0b378', label: 'Tablet' } }
 const rowName = row => row.name || row.unit_number || row.id || 'Unknown'
 
-export default function DevelopmentWebsiteAnalyticsDashboard({ analytics, days, onDaysChange, onRefresh, loading, error, isDemo, hasDemo, onSourceChange }) {
+export default function DevelopmentWebsiteAnalyticsDashboard({ analytics, days, onRefresh, loading, error, isDemo, hasDemo, onSourceChange }) {
   const headingId = useId()
   const [metricKey, setMetricKey] = useState('sessions')
   const [selectedDevice, setSelectedDevice] = useState('')
@@ -56,29 +57,18 @@ export default function DevelopmentWebsiteAnalyticsDashboard({ analytics, days, 
   }
 
   return (
-    <section className="development-website-analytics" aria-labelledby={headingId} aria-busy={loading}>
-      <header className="website-heading">
-        <div><span className="website-eyebrow"><Globe2 size={15} aria-hidden="true" /> Website performance</span><h3 id={headingId}>Understand your audience.</h3><p>Explore how buyers use your development website and which properties catch their eye.</p></div>
-        <div className="website-toolbar">
-          {hasDemo ? <label className="sr-only" htmlFor={`${headingId}-source`}>Analytics data source</label> : null}
-          {hasDemo ? <Field id={`${headingId}-source`} as="select" value={isDemo ? 'demo' : 'tracked'} onChange={event => { setSelectedRow(''); setSelectedDevice(''); onSourceChange(event.target.value) }}><option value="demo">Demo data</option><option value="tracked">Tracked activity</option></Field> : null}
-          <label className="sr-only" htmlFor={`${headingId}-days`}>Analytics period</label>
-          <Field id={`${headingId}-days`} as="select" value={days} onChange={event => { setSelectedRow(''); setSelectedDevice(''); onDaysChange(Number(event.target.value)) }}>{[7, 30, 90].map(value => <option key={value} value={value}>Last {value} days</option>)}</Field>
-          <Button type="button" variant="secondary" size="sm" disabled={loading} onClick={onRefresh}><RefreshCw size={15} className={loading ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />Refresh</Button>
-        </div>
-      </header>
-
-      <div className={`website-source ${isDemo ? 'is-demo' : ''}`} role="status">
-        <span className="website-source-dot" aria-hidden="true" />
-        <span>{isDemo ? 'Demo data · Harbour Heights' : 'Tracked website activity'}<span className="website-source-note">{isDemo ? 'Illustrative figures for previewing this dashboard.' : `Recorded activity over the last ${days} days.`}</span></span>
-      </div>
-      {error ? <div role="alert" className="website-notice is-error">{error}</div> : null}
-      {unavailable ? <div className="website-notice">Website analytics are unavailable for this development. Refresh to check again.</div> : null}
-      {analytics && !loading && !count(summary.sessions) ? <div className="website-notice">No website activity recorded in this period. Choose a longer period or refresh after buyers explore the website.</div> : null}
-
+    <section className="development-website-analytics" aria-label="Website analytics" aria-busy={loading}>
       <div className="website-metrics" aria-label="Website activity metrics">
         {METRICS.map(({ key, label, icon, description }) => { const Icon = icon; return <button key={key} type="button" className={`website-metric ${key === metricKey ? 'is-active' : ''}`} aria-pressed={key === metricKey} onClick={() => setMetricKey(key)}><span className="website-metric-top"><Icon size={18} aria-hidden="true" /><ArrowUpRight size={15} aria-hidden="true" /></span><strong>{display(summary[key])}</strong><span className="website-metric-label">{label}</span><span className="website-metric-description">{description}</span></button> })}
       </div>
+
+      {hasDemo ? <div className={`website-source ${isDemo ? 'is-demo' : ''}`}>
+        <label htmlFor={`${headingId}-source`}>Analytics data source</label>
+        <Field id={`${headingId}-source`} as="select" value={isDemo ? 'demo' : 'tracked'} onChange={event => { setSelectedRow(''); setSelectedDevice(''); onSourceChange(event.target.value) }}><option value="demo">Demo data</option><option value="tracked">Tracked activity</option></Field>
+        {isDemo ? <span role="status">Demo data · Harbour Heights — illustrative figures.</span> : null}
+      </div> : null}
+      {error ? <div role="alert" className="website-notice is-error">{error} <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>Retry</Button></div> : null}
+      {unavailable ? <div className="website-notice">Website analytics are unavailable for this development.</div> : null}
 
       <div className="website-charts">
         <article className="website-panel website-activity">
@@ -87,7 +77,7 @@ export default function DevelopmentWebsiteAnalyticsDashboard({ analytics, days, 
           <div className="website-bars" aria-label="Website activity comparison">
             {METRICS.map(metric => <button type="button" key={metric.key} aria-pressed={metricKey === metric.key} onClick={() => setMetricKey(metric.key)} className={metricKey === metric.key ? 'is-active' : ''}><span className="website-bar-label"><span>{metric.label}</span><strong>{display(summary[metric.key])}</strong></span><span className="website-bar-track"><span style={{ width: loading ? '0%' : `${count(summary[metric.key]) / maximum * 100}%` }} /></span></button>)}
           </div>
-          <p className="website-chart-note">Views, opens and enquiry starts are event counts. One session can include multiple events.</p>
+          <p className="website-chart-note">Views, opens and enquiry clicks are activity counts. Submitted enquiries count saved website receipts; retries are counted once.</p>
         </article>
         <article className="website-panel">
           <div className="website-panel-heading"><div><span className="website-eyebrow">Your audience</span><h4>Where buyers browse</h4></div><Smartphone size={20} aria-hidden="true" /></div>

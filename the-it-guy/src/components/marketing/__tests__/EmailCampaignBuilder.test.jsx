@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { createEmailDocument } from '../../../../../supabase/functions/_shared/emailDocument.js'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EmailCampaignBuilder from '../EmailCampaignBuilder'
+vi.mock('../EmailAudienceCards', () => ({ default: ({ onSelect }) => <div>Audience controls<button onClick={() => onSelect({id:'reviewed-audience',revision:3,name:'Ready buyers'})}>Apply reviewed CRM recipients</button></div> }))
 vi.mock('../MarketingAudiences', () => ({ MarketingAudiencePicker: ({ onApply }) => <button onClick={() => onApply(['reviewed-contact'], { name: 'Ready buyers' })}>Apply reviewed CRM recipients</button> }))
-const mocks = vi.hoisted(() => ({ save: vi.fn(), get: vi.fn(), upload: vi.fn(), sendTest: vi.fn(), check: vi.fn(), preflight: vi.fn(), schedule: vi.fn(), aiReview: vi.fn(), aiApprove: vi.fn(), aiAction: vi.fn(), ensurePlan: vi.fn(), flagship: false }))
+const mocks = vi.hoisted(() => ({ save: vi.fn(), get: vi.fn(), upload: vi.fn(), sendTest: vi.fn(), check: vi.fn(), preflight: vi.fn(), schedule: vi.fn(), aiReview: vi.fn(), aiApprove: vi.fn(), aiAction: vi.fn(), ensurePlan: vi.fn(), flagship: false, audiencePreview: vi.fn(),revisions:vi.fn(),template:vi.fn() }))
 vi.mock('../../../services/emailCampaignPlanService', () => ({ ensureEmailCampaignPlan: mocks.ensurePlan }))
 vi.mock('../../../services/aiCampaignService', () => ({ reviewAiCampaign: mocks.aiReview, approveAiCampaign: mocks.aiApprove, aiCampaignAction: mocks.aiAction }))
 vi.mock('../../../lib/featureFlags', () => ({ get SHOW_CAMPAIGN_WORKSPACE() { return mocks.flagship } }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { name: 'Kingdom Real Estate' }, user: { email: 'agent@example.com' } } }) }))
 vi.mock('../../../services/privateListingService', () => ({ getOrganisationPrivateListings: async () => [] }))
 vi.mock('../../../services/emailCampaignAssetService', () => ({ getEmailCampaignAssets: async () => [], uploadEmailCampaignImage: mocks.upload, validateEmailCampaignImage: async () => {} }))
-vi.mock('../../../services/emailCampaignService', () => ({ saveEmailCampaign: mocks.save, getEmailDraft: mocks.get, getEmailRevisions: async () => [], previewEmailAudience: async () => 12, createEmailSender: vi.fn(), createEmailSendingDomain: vi.fn(), checkEmailCampaignContent: mocks.check, preflightEmailCampaign: mocks.preflight, refreshEmailSenderVerification: vi.fn(), saveEmailTemplate: vi.fn(), scheduleEmailCampaign: mocks.schedule, sendEmailCampaignTest: mocks.sendTest, verifyEmailSendingDomain: vi.fn() }))
+vi.mock('../../../services/emailCampaignService', () => ({ saveEmailCampaign: mocks.save, getEmailDraft: mocks.get, getEmailRevisions: mocks.revisions, previewEmailAudience: mocks.audiencePreview, createEmailSender: vi.fn(), createEmailSendingDomain: vi.fn(), checkEmailCampaignContent: mocks.check, preflightEmailCampaign: mocks.preflight, refreshEmailSenderVerification: vi.fn(), saveEmailTemplate: mocks.template, scheduleEmailCampaign: mocks.schedule, sendEmailCampaignTest: mocks.sendTest, verifyEmailSendingDomain: vi.fn() }))
 const workspace = { organisationId: 'org', userId: 'user', contacts: [], templates: [], savedAudiences: [], subscriptionTypes: [{ id: 'consent', name: 'Property updates' }], identities: [{ id: 'sender', display_name: 'Kingdom', from_email: 'hello@example.com', verification_status: 'verified' }], refresh: vi.fn() }
+vi.mock('../../../services/developmentBuyerLeadService',()=>({listBuyerLeadDevelopmentOptions:async()=>[{id:'madison',label:'Madison Place'}]}))
 const Audience = () => <div>Audience controls</div>
 it('links a quick AI email to its campaign, keeping edits made during linking and the newest saved timestamp', async () => {
   let finish
@@ -75,6 +77,7 @@ it('recovers a saved but unconfirmed link before another optimistic email write'
   await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('Property launch'))
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
   await screen.findByText('Link response unconfirmed')
+  await waitFor(() => expect(screen.getByRole('button', {name:'Save as draft'}).disabled).toBe(false))
   fireEvent.change(screen.getByLabelText('Subject line'), { target: { value: 'My newer manual wording' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2))
@@ -89,7 +92,7 @@ it('requires a reviewed AI version and displays delivery charges before explicit
   mocks.aiApprove.mockResolvedValue({})
   render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="ai-draft" onBack={() => {}} />)
   await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('AI campaign'))
-  fireEvent.click(screen.getByRole('button', { name: /2 Audience/ })); await screen.findByText('12 eligible recipients')
+  fireEvent.click(screen.getByRole('button', { name: /2 Audience/ })); await screen.findByRole('status',{name:'12 eligible recipients'})
   fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
   const approve = await screen.findByRole('button', { name: 'Approve reviewed send' })
   expect(approve.disabled).toBe(true)
@@ -105,7 +108,11 @@ it('requires a reviewed AI version and displays delivery charges before explicit
   expect(mocks.schedule).not.toHaveBeenCalled()
 })
 beforeEach(() => {
+  vi.resetAllMocks()
   mocks.flagship = false
+  mocks.revisions.mockReset().mockResolvedValue([])
+  mocks.template.mockReset().mockResolvedValue({id:'template'})
+  mocks.audiencePreview.mockReset().mockResolvedValue(12)
   mocks.ensurePlan.mockImplementation(async (_org, _user, saved) => saved)
   mocks.aiAction.mockImplementation(async (_org, action) => action === 'listings' ? { listings: [] } : { usage: [] })
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:preview') })
@@ -131,7 +138,7 @@ describe('Campaign setup', () => {
     render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="checked-draft" onBack={() => {}} />)
     await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('Designer campaign'))
     fireEvent.click(screen.getByRole('button', { name: /2 Audience/ }))
-    await screen.findByText('12 eligible recipients')
+    await screen.findByRole('status',{name:'12 eligible recipients'})
     fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Check content and hosted images' }))
     expect((await screen.findByRole('alert')).textContent).toContain('A hosted image is missing.')
@@ -153,7 +160,7 @@ describe('Campaign setup', () => {
     render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="checked-draft" onBack={() => {}} />)
     await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('Designer campaign'))
     fireEvent.click(screen.getByRole('button', { name: /2 Audience/ }))
-    await screen.findByText('12 eligible recipients')
+    await screen.findByRole('status',{name:'12 eligible recipients'})
     fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
     const send = await screen.findByRole('button', { name: 'Preflight & send' })
     expect(send.disabled).toBe(false)
@@ -170,13 +177,13 @@ describe('Campaign setup', () => {
     render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="html-draft" onBack={() => {}} />)
     await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('Designer campaign'))
     fireEvent.click(screen.getByRole('button', { name: /3 Content/ }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Upload email' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload HTML' }))
     fireEvent.change(screen.getByLabelText('Email package or HTML and images'), { target: { files: [new File(['<img src="hero.png">'], 'email.html', { type: 'text/html' }), new File(['png'], 'hero.png', { type: 'image/png' })] } })
     await screen.findByTitle('Uploaded email preview')
     expect(screen.getByLabelText('Email HTML').value).toBe(oldHtml)
     expect(mocks.upload).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Host images and replace email' }))
-    await waitFor(() => expect(screen.getByLabelText('Email HTML').value).toContain('https://images.example/hosted.png'))
+    await waitFor(() => expect(screen.getByTitle('Imported email visual preview').getAttribute('srcdoc')).toContain('https://images.example/hosted.png'))
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
     await waitFor(() => expect(mocks.save.mock.calls.some(([args]) => args.campaign.contentJson.importedEmail?.assets[0]?.id === 'hosted')).toBe(true))
@@ -216,7 +223,7 @@ describe('Campaign setup', () => {
     expect(screen.getByLabelText('Internal campaign name')).toHaveProperty('value', 'September buyers')
     fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Complete the required campaign details before continuing.')
-    expect(screen.getByText('Add a subject line before continuing.')).toBeTruthy()
+    expect(screen.queryByText('Add a subject line before continuing.')).toBeNull();expect(screen.getByLabelText('Subject line').getAttribute('aria-invalid')).toBe('true')
   })
   it('lets users return to earlier steps to fix invalid edits without calling them complete', async () => {
     mocks.save.mockResolvedValue({ id: 'draft-1' })
@@ -315,10 +322,10 @@ it('uses an explicit reviewed CRM selection and clears the campaign audience pla
   await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('Buyer launch'))
   fireEvent.click(screen.getByRole('button', { name: /2 Audience/ }))
   fireEvent.click(await screen.findByRole('button', { name: 'Apply reviewed CRM recipients' }))
-  expect(await screen.findByText('Applied 1 reviewed recipients from “Ready buyers”.')).toBeTruthy()
+  expect(await screen.findByText('Selected “Ready buyers”.')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
   await waitFor(() => expect(mocks.save).toHaveBeenCalled())
-  expect(mocks.save.mock.calls[0][0].campaign).toMatchObject({ audienceFilter: { contact_ids: ['reviewed-contact'] }, contentJson: { arch9_campaign: { id: 'plan', audience_pending: false } } })
+  expect(mocks.save.mock.calls[0][0].campaign).toMatchObject({ audienceFilter: { shared_audience_id: 'reviewed-audience', audience_revision: 3 }, contentJson: { arch9_campaign: { id: 'plan', audience_pending: false } } })
   expect(mocks.schedule).not.toHaveBeenCalled()
 })
 
@@ -331,7 +338,7 @@ it.each(['2026-11-02', '2026-02-30'])('validates a calendar date and prefills on
   fireEvent.change(screen.getByLabelText(/Send permission/), { target: { value: 'consent' } })
   fireEvent.change(screen.getByLabelText(/^From/), { target: { value: 'sender' } })
   fireEvent.click(screen.getByRole('button', { name: /2 Audience/ }))
-  await screen.findByText('12 eligible recipients')
+  await screen.findByRole('status',{name:'12 eligible recipients'})
   fireEvent.click(screen.getByRole('button', { name: /3 Content/ }))
   fireEvent.click(await screen.findByRole('button', { name: 'Saved', exact: true }))
   fireEvent.click(screen.getByRole('button', { name: 'Apply template', exact: true }))
@@ -408,18 +415,13 @@ describe('Persisted draft identity and revision', () => {
   })
 })
 
-it('opens the manual editor without claiming incomplete sender details are complete', async () => {
+it('keeps the AI assistant hidden even when an old link requests it', () => {
   mocks.flagship = true
-  mocks.save.mockReset().mockResolvedValue({ id: 'manual-draft', updated_at: '2026-10-25T10:00:00.000Z' })
   render(<EmailCampaignBuilder workspace={{ ...workspace, identities: [] }} AudienceStudio={Audience} openAiAssistant onBack={() => {}} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Continue in manual editor' }))
-  expect(await screen.findByRole('heading', { name: 'Edit content' })).toBeTruthy()
-  const details = screen.getByRole('button', { name: /1 Details Set essentials/ })
-  expect(details.textContent).not.toContain('Complete')
+  expect(screen.queryByRole('button', { name: /Create with AI/ })).toBeNull()
+  expect(screen.queryByRole('region', { name: 'AI campaign assistant' })).toBeNull()
+  expect(screen.getByRole('button', { name: /1 Details In progress/ }).getAttribute('aria-current')).toBe('step')
   expect(screen.queryByRole('button', { name: /Details Complete/ })).toBeNull()
-  expect(screen.getByRole('button', { name: /3 Content In progress/ }).getAttribute('aria-current')).toBe('step')
-  fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
-  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Complete the required campaign details before continuing.')
   expect(mocks.schedule).not.toHaveBeenCalled()
 })
 
@@ -430,11 +432,269 @@ it('reopens saved content without a configured sender while keeping actual sendi
   await waitFor(() => expect(screen.getByLabelText('Campaign title').value).toBe('Prepared listing email'))
   fireEvent.click(screen.getByRole('button', { name: /3 Content/ }))
   expect(await screen.findByLabelText('Email HTML')).toHaveProperty('value', '<p>Saved property story</p>')
-  expect(screen.getByRole('button', { name: /1 Details Set essentials/ }).textContent).not.toContain('Complete')
+  expect(screen.getByRole('button', { name: /^Details Complete$/ })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Email HTML'), { target: { value: '<p>Improved saved property story</p>' } })
   fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
-  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Complete the required campaign details before continuing.')
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Choose a ready sender through Arch9 or your own verified domain before delivery review. You can keep editing and saving your draft.')
   fireEvent.click(screen.getByRole('button', { name: /3 Content/ }))
   expect(await screen.findByLabelText('Email HTML')).toHaveProperty('value', '<p>Improved saved property story</p>')
   expect(mocks.schedule).not.toHaveBeenCalled()
+})
+
+it('clears stale recipient counts on failure and offers a working retry',async()=>{
+ mocks.get.mockResolvedValue({id:'count-check',name:'Count check',subject:'News',subscription_type_id:'consent',sender_identity_id:'sender',content_json:createEmailDocument()});mocks.save.mockResolvedValue({id:'count-check'});mocks.audiencePreview.mockRejectedValueOnce(Error('Count unavailable')).mockResolvedValueOnce(7);
+ render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="count-check" onBack={()=>{}}/>);await waitFor(()=>expect(screen.getByLabelText('Internal campaign name').value).toBe('Count check'));fireEvent.click(screen.getByRole('button',{name:/2 Audience/}));
+ await screen.findByRole('alert',{name:'Recipient count unavailable'});expect(screen.queryByRole('status',{name:'12 eligible recipients'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Retry count'}));await screen.findByRole('status',{name:'7 eligible recipients'});expect(screen.queryByRole('button',{name:'Retry count'})).toBeNull();expect(mocks.schedule).not.toHaveBeenCalled();
+})
+
+it('keeps brand edits in undo/redo, previews the rendered result and saves the exact template',async()=>{
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);mocks.get.mockResolvedValue({id:'brand-check',name:'Brand check',subject:'News',subscription_type_id:'consent',sender_identity_id:'sender',content_json:createEmailDocument({name:'Original brand'})});mocks.save.mockResolvedValue({id:'brand-check'});
+ try{render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="brand-check" onBack={()=>{}}/>);await waitFor(()=>expect(screen.getByLabelText('Internal campaign name').value).toBe('Brand check'));fireEvent.click(screen.getByRole('button',{name:/3 Content/}));fireEvent.click(await screen.findByRole('button',{name:'Manage brand'}));fireEvent.change(screen.getByLabelText('Font'),{target:{value:'Verdana'}});fireEvent.change(screen.getByLabelText('Logo URL'),{target:{value:'https://example.test/logo.png'}});fireEvent.click(screen.getByRole('button',{name:'Apply logo to headers'}));fireEvent.click(screen.getByRole('button',{name:'Close dialog'}));fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(document.querySelector('.eb-email-page img[src="https://example.test/logo.png"]')).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Redo'}));expect(document.querySelector('.eb-email-page img[src="https://example.test/logo.png"]')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Preview',exact:true}));expect(screen.getByTitle('Rendered email preview').srcdoc).toContain('font-family:Verdana');expect(screen.getByTitle('Rendered email preview').getAttribute('sandbox')).toBe('');fireEvent.click(screen.getByRole('button',{name:'Close dialog'}));fireEvent.click(screen.getByLabelText('More campaign actions'));fireEvent.click(screen.getByRole('button',{name:'Save as template'}));fireEvent.change(screen.getByLabelText('Template name'),{target:{value:'Brand template'}});fireEvent.click(screen.getByRole('button',{name:'Save template'}));await waitFor(()=>expect(mocks.template).toHaveBeenCalledWith(expect.objectContaining({organisationId:'org',template:expect.objectContaining({name:'Brand template',designJson:expect.objectContaining({globalStyles:expect.objectContaining({fontFamily:'Verdana'})})})})));expect(mocks.sendTest).not.toHaveBeenCalled();}finally{confirm.mockRestore()}
+})
+it('restores a saved revision, persists it and makes the previous content undoable',async()=>{
+ const current=createEmailDocument({name:'Current header'}),old=createEmailDocument({name:'Restored header'});mocks.get.mockResolvedValue({id:'revision-check',name:'Current revision',subject:'News',subscription_type_id:'consent',sender_identity_id:'sender',content_json:current});mocks.save.mockResolvedValue({id:'revision-check',updated_at:'2026-11-05T10:00:00Z'});mocks.revisions.mockResolvedValue([{id:'old',created_at:'2026-11-04T10:00:00Z',snapshot:{id:'revision-check',name:'Previous revision',subject:'Previous subject',content_json:old,subscription_type_id:'consent',sender_identity_id:'sender'}}]);
+ render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="revision-check" onBack={()=>{}}/>);await waitFor(()=>expect(screen.getByLabelText('Internal campaign name').value).toBe('Current revision'));fireEvent.click(screen.getByRole('button',{name:/3 Content/}));await screen.findByRole('heading',{name:'Email preview'});fireEvent.click(screen.getByLabelText('More campaign actions'));fireEvent.click(screen.getByRole('button',{name:'Revision history'}));fireEvent.click(await screen.findByRole('button',{name:/Previous revision/}));await screen.findByText('Draft revision restored.');expect(screen.getByRole('textbox',{name:'Text',exact:true}).value).toBe('Restored header');expect(mocks.save.mock.calls.at(-1)[0].campaign.contentJson.blocks[0].text).toBe('Restored header');fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(screen.getByRole('textbox',{name:'Text',exact:true}).value).toBe('Current header');expect(mocks.schedule).not.toHaveBeenCalled();
+})
+it('keeps keyboard focus inside HTML import despite its hidden file input',async()=>{
+ mocks.get.mockResolvedValue({id:'focus-check',name:'Focus check',subject:'News',content_json:createEmailDocument()});mocks.save.mockResolvedValue({id:'focus-check'});render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="focus-check" onBack={()=>{}}/>);await waitFor(()=>expect(screen.getByLabelText('Internal campaign name').value).toBe('Focus check'));fireEvent.click(screen.getByRole('button',{name:/3 Content/}));fireEvent.click(await screen.findByRole('button',{name:'Upload HTML'}));const browse=screen.getByRole('button',{name:'Browse files'}),close=screen.getByRole('button',{name:'Close dialog'});browse.focus();fireEvent.keyDown(browse,{key:'Tab'});expect(document.activeElement).toBe(close);fireEvent.keyDown(close,{key:'Tab',shiftKey:true});expect(document.activeElement).toBe(browse);
+})
+
+
+async function openReviewTest() {
+  mocks.get.mockResolvedValue({ id: 'review-tests', name: 'November property news', subject: 'Your next home', preview_text: 'New homes selected for you', sender_identity_id: 'sender', subscription_type_id: 'consent', content_json: {...createEmailDocument({ name: 'Kingdom Real Estate' }),mode:'advanced',advancedHtml:'<p>Your next home awaits.</p>'} })
+  mocks.save.mockResolvedValue({ id: 'review-tests' })
+  render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId="review-tests" onBack={() => {}} />)
+  await waitFor(() => expect(screen.getByLabelText('Internal campaign name').value).toBe('November property news'))
+  fireEvent.click(screen.getByRole('button', { name: /2 Audience/ }))
+  await screen.findByRole('status', {name:'12 eligible recipients'})
+  fireEvent.click(screen.getByRole('button', { name: /4 Review/ }))
+  await screen.findByRole('region', { name: 'Campaign review' })
+  fireEvent.click(screen.getByRole('button', {name:'Send test email'}))
+  return within(screen.getByRole('dialog'))
+}
+it('sends a review test to one recipient without scheduling the audience', async () => {
+  mocks.sendTest.mockReset().mockResolvedValue({deliveredTo:'agent@example.com'})
+  const dialog = await openReviewTest()
+  expect(dialog.getByLabelText('Second recipient (optional)').value).toBe('')
+  fireEvent.click(dialog.getByRole('button', {name:'Send test'}))
+  await dialog.findByLabelText('Test delivery results')
+  expect(mocks.sendTest).toHaveBeenCalledTimes(1)
+  expect(mocks.sendTest).toHaveBeenCalledWith(expect.objectContaining({organisationId:'org',senderIdentityId:'sender',recipientEmail:'agent@example.com',subject:'Your next home'}))
+  expect(mocks.schedule).not.toHaveBeenCalled()
+  expect(dialog.getByRole('button', {name:'Tests sent'}).disabled).toBe(true)
+})
+it('sends two separate test messages and retries only the failed recipient', async () => {
+  mocks.sendTest.mockReset().mockResolvedValueOnce({deliveredTo:'agent@example.com'}).mockRejectedValueOnce(Error('Recipient rejected')).mockResolvedValueOnce({deliveredTo:'reviewer@example.com'})
+  const dialog = await openReviewTest()
+  fireEvent.change(dialog.getByLabelText('Second recipient (optional)'), {target:{value:'reviewer@example.com'}})
+  fireEvent.click(dialog.getByRole('button', {name:'Send test'}))
+  await dialog.findByText(/reviewer@example.com: Recipient rejected/)
+  expect(dialog.getByLabelText('Test delivery results').textContent).toContain('agent@example.com')
+  expect(dialog.getByLabelText('Recipient email address').disabled).toBe(true)
+  fireEvent.click(dialog.getByRole('button', {name:'Retry remaining recipient'}))
+  await waitFor(() => expect(dialog.getByRole('button', {name:'Tests sent'}).disabled).toBe(true))
+  expect(mocks.sendTest.mock.calls.map(([payload])=>payload.recipientEmail)).toEqual(['agent@example.com','reviewer@example.com','reviewer@example.com'])
+  expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it('rejects duplicate test recipients before calling delivery', async () => {
+  mocks.sendTest.mockReset()
+  const dialog = await openReviewTest()
+  fireEvent.change(dialog.getByLabelText('Second recipient (optional)'), {target:{value:'AGENT@example.com'}})
+  fireEvent.click(dialog.getByRole('button', {name:'Send test'}))
+  expect(await dialog.findByText('Use a different email address for the second recipient.')).toBeTruthy()
+  expect(mocks.sendTest).not.toHaveBeenCalled()
+})
+it('keeps an in-flight test open and blocks repeated submission', async () => {
+  let finish
+  mocks.sendTest.mockReset().mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+  const dialog = await openReviewTest()
+  fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+  await waitFor(()=>expect(mocks.sendTest).toHaveBeenCalledTimes(1))
+  expect(dialog.getByRole('button',{name:'Close dialog'}).disabled).toBe(true)
+  fireEvent.keyDown(screen.getByRole('dialog'),{key:'Escape'})
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  fireEvent.submit(dialog.getByRole('button',{name:'Sending…'}).closest('form'))
+  expect(mocks.sendTest).toHaveBeenCalledTimes(1)
+  await act(async()=>finish({deliveredTo:'agent@example.com'}))
+  expect(dialog.getByRole('button',{name:'Close dialog'}).disabled).toBe(false)
+})
+
+it('blocks a retry when test acceptance is uncertain',async()=>{
+ mocks.sendTest.mockReset().mockRejectedValueOnce(Object.assign(Error('Response lost'),{deliveryUncertain:true}))
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+ await dialog.findByText(/Delivery could not be confirmed for agent@example.com/)
+ expect(dialog.getByRole('button',{name:'Check delivery status'}).disabled).toBe(true)
+ expect(mocks.sendTest).toHaveBeenCalledTimes(1)
+})
+it('stops remaining test recipients when the workspace changes',async()=>{
+ let finish
+ mocks.sendTest.mockReset().mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+ const dialog=await openReviewTest()
+ fireEvent.change(dialog.getByLabelText('Second recipient (optional)'),{target:{value:'second@example.com'}})
+ fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+ await waitFor(()=>expect(mocks.sendTest).toHaveBeenCalledTimes(1))
+ // Unmounting invalidates the workspace lifetime just like switching workspaces.
+ cleanup()
+ await act(async()=>finish({deliveredTo:'agent@example.com'}))
+ expect(mocks.sendTest).toHaveBeenCalledTimes(1)
+})
+it('does not schedule a changed draft after preflight completes',async()=>{
+ let finish
+ mocks.preflight.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & send'}))
+ await waitFor(()=>expect(finish).toBeTypeOf('function'))
+ fireEvent.change(screen.getByRole('textbox',{name:'Campaign title'}),{target:{value:'Changed during preflight'}})
+ await act(async()=>finish({ready:true}))
+ expect(await screen.findByText('Campaign changed during checks. Review the latest version before sending.')).toBeTruthy()
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it('does not navigate or schedule an old workspace after preflight resolves',async()=>{
+ let finish
+ mocks.preflight.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & send'}))
+ await waitFor(()=>expect(finish).toBeTypeOf('function'))
+ cleanup()
+ await act(async()=>finish({ready:true}))
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it('does not send tests after saving fails',async()=>{
+ mocks.sendTest.mockReset()
+ const dialog=await openReviewTest()
+ mocks.save.mockRejectedValueOnce(Error('Save unavailable'))
+ fireEvent.change(screen.getByRole('textbox',{name:'Campaign title'}),{target:{value:'Unsaved change'}})
+ fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+ await dialog.findByText('Save unavailable')
+ expect(mocks.sendTest).not.toHaveBeenCalled()
+})
+it('does not submit the campaign when preflight fails',async()=>{
+ mocks.preflight.mockRejectedValueOnce(Error('Checks unavailable'))
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & send'}))
+ expect(await screen.findByText('Checks unavailable')).toBeTruthy()
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it.each([false,true])('schedules the exact reviewed campaign with an explicit future time: %s',async future=>{
+ mocks.preflight.mockResolvedValueOnce({ready:true})
+ mocks.schedule.mockResolvedValueOnce({id:'review-tests'})
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ const local=new Date(Date.now()+3600000)
+ const input=new Date(local.getTime()-local.getTimezoneOffset()*60000).toISOString().slice(0,16)
+ if(future) fireEvent.change(screen.getByLabelText(/Send time/),{target:{value:input}})
+ fireEvent.click(screen.getByRole('button',{name:future?'Preflight & schedule':'Preflight & send'}))
+ await waitFor(()=>expect(mocks.schedule).toHaveBeenCalledWith('review-tests',future?new Date(input).toISOString():undefined))
+ expect(mocks.schedule).toHaveBeenCalledTimes(1)
+})
+it('rejects a past schedule before preflight or delivery',async()=>{
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.change(screen.getByLabelText(/Send time/),{target:{value:'2000-01-01T09:00'}})
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & schedule'}))
+ expect(await screen.findByText('Choose a future send time.')).toBeTruthy()
+ expect(mocks.preflight).not.toHaveBeenCalled()
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it('keeps the review open when scheduling fails',async()=>{
+ mocks.preflight.mockResolvedValueOnce({ready:true})
+ mocks.schedule.mockRejectedValueOnce(Error('Scheduling unavailable'))
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & send'}))
+ expect(await screen.findByText('Scheduling unavailable')).toBeTruthy()
+ expect(screen.getByRole('region',{name:'Campaign review'})).toBeTruthy()
+ expect(screen.getByRole('button',{name:'Preflight & send'}).disabled).toBe(false)
+})
+it('starts a deliberate new test and preserves its generation after reopening the app',async()=>{
+ mocks.sendTest.mockReset().mockResolvedValue({providerMessageId:'receipt',deliveredTo:'agent@example.com'})
+ let dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+ await dialog.findByRole('button',{name:'Tests sent'})
+ fireEvent.click(dialog.getByRole('button',{name:'Start a new test'}))
+ fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+ await waitFor(()=>expect(mocks.sendTest).toHaveBeenCalledTimes(2))
+ const generation=mocks.sendTest.mock.calls[1][0].testGeneration
+ expect(generation).not.toBe(mocks.sendTest.mock.calls[0][0].testGeneration)
+ cleanup()
+ dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Send test'}))
+ await waitFor(()=>expect(mocks.sendTest).toHaveBeenCalledTimes(3))
+ expect(mocks.sendTest.mock.calls[2][0].testGeneration).toBe(generation)
+})
+
+
+it('saves a new development campaign with its exact context and returns without sending', async () => {
+  const context = { development_id: 'harbour', development_name: 'Harbour Heights' }
+  const back = vi.fn()
+  mocks.save.mockResolvedValue({ id: 'new-development-draft', updated_at: '2026-11-05T10:00:00Z' })
+  render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} developmentContext={context} onBack={back} />)
+  expect(screen.getByLabelText('Internal campaign name').value).toBe('Harbour Heights campaign')
+  fireEvent.click(screen.getByRole('button', { name: 'Save as draft' }))
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1))
+  expect(mocks.save.mock.calls[0][0]).toMatchObject({ organisationId: 'org', userId: 'user', campaign: { developmentContext: context } })
+  fireEvent.click(screen.getByRole('button', { name: 'Email campaigns' }))
+  await waitFor(() => expect(back).toHaveBeenCalled())
+  expect(mocks.schedule).not.toHaveBeenCalled()
+  expect(mocks.sendTest).not.toHaveBeenCalled()
+})
+
+it('creates a fresh draft and continues to audience without a sender or custom domain', async () => {
+  mocks.save.mockResolvedValue({ id: 'new-no-sender' })
+  render(<EmailCampaignBuilder workspace={{ ...workspace, identities: [], domains: [] }} AudienceStudio={Audience} onBack={() => {}} />)
+  fireEvent.change(screen.getByLabelText('Subject line'), { target: { value: 'New homes' } })
+  fireEvent.change(screen.getByLabelText(/Send permission/), { target: { value: 'consent' } })
+  expect(screen.getByLabelText(/^From/).textContent).toContain('Choose later')
+  const next = screen.getByRole('button', { name: 'Continue to audience' })
+  expect(next.disabled).toBe(false)
+  fireEvent.click(next)
+  expect(await screen.findByText('Audience controls')).toBeTruthy()
+  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ campaign: expect.objectContaining({ senderIdentityId: '' }) }))
+  expect(mocks.schedule).not.toHaveBeenCalled()
+})
+
+it('opens imported emails visually and keeps the imported HTML when switching code views',async()=>{
+ const html='<html><body><h1>Madison launch</h1><img src="https://assets.example/hero.png"></body></html>'
+ mocks.get.mockResolvedValue({id:'imported',name:'Madison',subject:'Launch',subscription_type_id:'consent',content_json:{...createEmailDocument(),mode:'visual',advancedHtml:html,importedEmail:{sourceName:'launch.zip',assets:[]}}})
+ render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} campaignId='imported' onBack={()=>{}}/>)
+ await waitFor(()=>expect(screen.getByLabelText('Campaign title').value).toBe('Madison'))
+ fireEvent.click(screen.getByRole('button',{name:/3 Content/}))
+ expect((await screen.findByTitle('Imported email visual preview')).getAttribute('srcdoc')).toBe(html)
+ fireEvent.click(screen.getByRole('button',{name:'Edit HTML'}))
+ expect(screen.getByLabelText('Email HTML').value).toBe(html)
+ fireEvent.click(screen.getByRole('button',{name:'Return to visual editor'}))
+ expect(screen.getByTitle('Imported email visual preview').getAttribute('srcdoc')).toBe(html)
+})
+it('opens test-send guidance when no sender is configured rather than silently disabling the button',async()=>{
+ mocks.get.mockResolvedValue({id:'no-sender-test',name:'Test draft',subject:'Launch',subscription_type_id:'consent',content_json:createEmailDocument()})
+ render(<EmailCampaignBuilder workspace={{...workspace,identities:[]}} AudienceStudio={Audience} campaignId='no-sender-test' onBack={()=>{}}/>)
+ await waitFor(()=>expect(screen.getByLabelText('Campaign title').value).toBe('Test draft'))
+ fireEvent.click(screen.getByRole('button',{name:/3 Content/}))
+ fireEvent.click(await screen.findByRole('button',{name:'Send test',exact:true}))
+ expect(await screen.findByRole('heading',{name:'Send a test email'})).toBeTruthy()
+ expect(screen.getByRole('button',{name:'Set up sender'})).toBeTruthy()
+ expect(mocks.sendTest).not.toHaveBeenCalled()
+})
+
+it('saves a development selected from the main email creator',async()=>{
+ mocks.save.mockResolvedValue({id:'linked-email'})
+ render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} onBack={()=>{}}/>)
+ await screen.findByRole('option',{name:'Madison Place'})
+ fireEvent.change(screen.getByRole('combobox',{name:'Linked development'}),{target:{value:'madison'}})
+ fireEvent.click(screen.getByRole('button',{name:'Save as draft'}))
+ await waitFor(()=>expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({campaign:expect.objectContaining({developmentContext:{development_id:'madison',development_name:'Madison Place'}})})))
+})
+it('preselects the development entry point and saves removal without stale context',async()=>{
+ mocks.save.mockResolvedValue({id:'general-email'})
+ render(<EmailCampaignBuilder workspace={workspace} AudienceStudio={Audience} developmentContext={{development_id:'madison',development_name:'Madison Place'}} onBack={()=>{}}/>)
+ await screen.findByRole('option',{name:'Madison Place'})
+ expect(screen.getByRole('combobox',{name:'Linked development'}).value).toBe('madison')
+ fireEvent.change(screen.getByRole('combobox',{name:'Linked development'}),{target:{value:''}})
+ fireEvent.click(screen.getByRole('button',{name:'Save as draft'}))
+ await waitFor(()=>expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({campaign:expect.objectContaining({developmentContext:null})})))
+ expect(mocks.save.mock.calls.at(-1)[0].campaign.contentJson.arch9_context).toBeUndefined()
 })

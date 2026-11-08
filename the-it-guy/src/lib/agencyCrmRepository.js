@@ -90,9 +90,12 @@ function requireAgencyWorkspaceId(organisationId, service) {
 function normalizeLeadUuid(value) {
   const raw = normalizeText(value)
   if (!raw) return ''
-  if (isUuidLike(raw)) return raw
-  const withoutPrefix = raw.replace(/^lead_/i, '')
-  return isUuidLike(withoutPrefix) ? withoutPrefix : ''
+  const candidate = raw.replace(/^lead_/i, '')
+  // Imported lead IDs can be stored PostgreSQL UUIDs without RFC version or
+  // variant bits. Validate their shape, then let the scoped query verify the row.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)
+    ? candidate.toLowerCase()
+    : ''
 }
 
 function readListingLeadCandidates(row = {}) {
@@ -1857,6 +1860,38 @@ export async function deleteAgencyCrmLeadActivity(organisationId, activityId) {
     console.error('[agencyCrmRepository] delete activity failed without local fallback', error)
     throw error
   }
+}
+
+// Personal tasks are independent workspace records; they do not create lead
+// follow-up activity or require a lead/transaction relationship.
+export async function createAgencyTask(organisationId, payload = {}, { actor = null } = {}) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.createAgencyTask')
+  const taskId = normalizeNullableUuid(payload.taskId)
+  const actorId = normalizeNullableUuid(actor?.id || actor?.userId)
+  const title = normalizeText(payload.title)
+  const dueDate = normalizeText(payload.dueDate)
+  const priority = normalizeText(payload.priority) || 'Medium'
+  if (normalizeText(payload.description).length > 4000) throw new Error('Keep task notes under 4,000 characters.')
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? new Date(`${dueDate}T12:00:00Z`) : null
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(workspaceId) || !actorId || !taskId) throw new Error('Select a signed-in workspace before adding a task.')
+  if (!title || title.length > 180) throw new Error('Enter a task title of up to 180 characters.')
+  if (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dueDate) throw new Error('Choose a valid due date.')
+  if (!['Low', 'Medium', 'High'].includes(priority)) throw new Error('Choose a valid task priority.')
+  const row = { task_id: taskId, organisation_id: workspaceId, assigned_agent_id: actorId, created_by: actorId,
+    lead_id: null, transaction_id: null, title, description: normalizeText(payload.description) || null,
+    due_date: dueDate, priority, status: 'Pending' }
+  let result = await supabase.from('tasks').insert(row).select(TASK_SELECT_FIELDS).single()
+  // Reuse the same ID after an uncertain response, without inserting twice or
+  // changing a task that was already saved with different details.
+  if (result.error?.code === '23505') {
+    result = await supabase.from('tasks').select(TASK_SELECT_FIELDS).eq('organisation_id', workspaceId).eq('task_id', taskId).eq('assigned_agent_id', actorId).is('lead_id', null).single()
+  }
+  if (result.error) throw result.error
+  const saved = result.data
+  if (!saved || ['task_id', 'organisation_id', 'assigned_agent_id', 'title', 'description', 'due_date', 'priority', 'status'].some(key => saved[key] !== row[key]) || saved.lead_id) {
+    throw new Error('The saved task could not be confirmed. Reopen Tasks before trying again.')
+  }
+  return mapSupabaseTask(saved)
 }
 
 export async function createAgencyCrmLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {

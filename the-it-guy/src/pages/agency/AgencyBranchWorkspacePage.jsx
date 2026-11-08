@@ -55,6 +55,7 @@ import { navigateToRecruitment } from '../recruitment/recruitmentEntryModel'
 import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
 import { updateBranch } from '../../services/agencyBranchService'
 import { getBranchDashboardData } from '../../services/branchDashboardDataService'
+import { getPrivateListingCoverImageUrls, getListingCardImageSource } from '../../services/privateListingService'
 import { buildBranchDashboard, BRANCH_REPORTING_PERIODS, isOpenBranchTransaction } from '../../services/branchDashboardModel'
 import { buildBranchWorkspacePerformance } from '../../services/branchWorkspacePerformanceService'
 
@@ -363,23 +364,30 @@ function StaffRosterCard({ agent, onOpen, canViewFinancials = false }) {
   )
 }
 
-function BranchListingImage({ listing, alt }) {
-  const imageUrl = normalizeText(listing?.image_url || listing?.cover_image_url || listing?.imageUrl || listing?.coverImageUrl)
-  if (imageUrl) return <img src={imageUrl} alt={alt} className="h-full w-full object-cover" />
+function BranchListingImage({ source = {}, alt, onRetry }) {
+  const [fallback, setFallback] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const imageUrl = fallback ? source.fallbackSrc : source.src
+  if (imageUrl && !failed) return <img src={imageUrl} alt={alt} loading="lazy" decoding="async" className="h-full w-full object-cover" onError={() => {
+    if (!fallback && source.fallbackSrc && source.fallbackSrc !== source.src) setFallback(true)
+    else setFailed(true)
+  }} />
+  if (failed) return <div className="flex h-full items-center justify-center gap-2 bg-[#eaf0f6] text-sm text-[#60758b]"><span>Photo unavailable</span><button type="button" onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); onRetry?.() }} className="underline">Retry photo</button></div>
   return <div className="relative h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]"><div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(255,255,255,0.24),transparent_52%)]" /><span className="absolute bottom-3 left-3 rounded-full border border-white/35 bg-white/20 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white">Listing image</span></div>
 }
 
-function BranchListingCard({ listing, onOpen, assignedAgentName, canViewFinancials = false }) {
+function BranchListingCard({ listing, imageSource, photoRevision = 0, onRetryPhoto, onOpen, assignedAgentName, canViewFinancials = false }) {
   const title = listing.listing_title || listing.title || listing.formatted_address || listing.id
   const status = listing.listing_status || listing.stage || 'Active'
   const statusKey = normalizeLower(status)
   const statusDotClass = statusKey.includes('sold') ? 'bg-[#60758b]' : statusKey.includes('offer') ? 'bg-[#d79d32]' : statusKey.includes('withdrawn') ? 'bg-[#c65b51]' : 'bg-[#39a269]'
   const agentName = assignedAgentName(listing)
   const location = [listing.suburb, listing.city, listing.province].filter(Boolean).join(', ') || 'Location pending'
+  const source = imageSource || getListingCardImageSource(normalizeText(listing.image_url || listing.cover_image_url || listing.imageUrl || listing.coverImageUrl))
 
   return (
     <article onClick={onOpen} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }} role="button" tabIndex={0} className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]">
-      <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]"><BranchListingImage listing={listing} alt={title} /><div className="absolute left-3 top-3 inline-flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur"><span className={`h-2 w-2 rounded-full ${statusDotClass}`} /><span className="truncate">{formatRoleLabel(status)}</span></div></div>
+      <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]"><BranchListingImage key={`${source.src || ''}:${source.fallbackSrc || ''}:${photoRevision}`} source={source} alt={title} onRetry={onRetryPhoto} /><div className="pointer-events-none absolute left-3 top-3 inline-flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur"><span className={`h-2 w-2 rounded-full ${statusDotClass}`} /><span className="truncate">{formatRoleLabel(status)}</span></div></div>
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div><h3 className="truncate text-[1.02rem] font-semibold leading-6 text-[#142132]" title={title}>{title}</h3><p className="mt-1 truncate text-sm text-[#60758b]">{location}</p><p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{canViewFinancials ? formatCurrency(listing.asking_price || listing.estimated_value || 0) : 'Price restricted'}</p></div>
         <div className="grid grid-cols-2 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]"><span className="truncate">{formatRoleLabel(status)}</span><span className="truncate">Updated {formatDateShort(listing.updated_at || listing.created_at)}</span></div>
@@ -965,6 +973,8 @@ export default function AgencyBranchWorkspacePage() {
   const loadRequestRef = useRef(0)
   const [branchTransactions, setBranchTransactions] = useState([])
   const [branchListings, setBranchListings] = useState([])
+  const [listingPhotos, setListingPhotos] = useState({ scope: '', urls: {}, error: '' })
+  const [photoRetry, setPhotoRetry] = useState(0)
   const [leaderboard, setLeaderboard] = useState([])
   const [pendingInvites, setPendingInvites] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1170,6 +1180,24 @@ export default function AgencyBranchWorkspacePage() {
       && (!listingAttention || !normalizeText(listing.assigned_agent_id || listing.assigned_agent_email))
   }), [branchListings, listingAttention, listingSearch, listingStatus])
 
+  const photoScope = `${branch?.organisationId || ''}:${branchId}`
+  const photoRequestKey = activeTab === 'listings' && branch?.id === branchId
+    ? JSON.stringify(filteredListings.map(listing => [listing.id, listing.updated_at || ''])) : ''
+  useEffect(() => {
+    if (!photoRequestKey) return undefined
+    const ids = JSON.parse(photoRequestKey).map(([id]) => id)
+    if (!ids.length) return undefined
+    let cancelled = false
+    setListingPhotos(previous => ({ scope: photoScope, urls: previous.scope === photoScope ? previous.urls : {}, error: '' }))
+    const publish = urls => {
+      if (!cancelled) setListingPhotos(previous => previous.scope === photoScope ? { ...previous, urls: { ...previous.urls, ...urls } } : previous)
+    }
+    getPrivateListingCoverImageUrls(ids, { thumbnail: true, onCover: publish })
+      .then(publish)
+      .catch(() => { if (!cancelled) setListingPhotos(previous => previous.scope === photoScope ? { ...previous, error: 'Listing photos could not be loaded.' } : previous) })
+    return () => { cancelled = true }
+  }, [photoRequestKey, photoScope, photoRetry])
+
   const filteredLeads = useMemo(() => branchLeads.filter((lead) => {
     const stage = normalizeLower(lead.stage || lead.status)
     const haystack = normalizeLower(`${lead.lead_id || ''} ${lead.name || lead.full_name || ''} ${lead.phone || ''} ${lead.email || ''} ${lead.enquired_property_title || lead.seller_property_address || lead.property_interest || ''} ${lead.lead_source || ''} ${lead.lead_category || ''} ${lead.assigned_agent_id || ''} ${lead.status || ''} ${lead.stage || ''}`)
@@ -1295,7 +1323,8 @@ export default function AgencyBranchWorkspacePage() {
                 <select value={searchParams.get('listingStatus') || (searchParams.get('filter') === 'active' ? 'active' : '')} onChange={(event) => updateTabFilters({ listingStatus: event.target.value, filter: '' })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All statuses</option><option value="active">Active</option><option value="offer">Under offer</option><option value="sold">Sold</option><option value="withdrawn">Withdrawn</option></select>
               </div>
             </div>
-            {filteredListings.length ? <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filteredListings.map((listing) => <BranchListingCard key={listing.id} listing={listing} canViewFinancials={canViewFinancials} assignedAgentName={getListingAssignedAgent} onOpen={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />)}</div> : <EmptyState title="No listings match these filters" copy="This branch has no visible listings for the selected filters." icon={Building2} />}
+            {listingPhotos.scope === photoScope && listingPhotos.error ? <p role="alert" className="text-sm text-[#a13b35]">{listingPhotos.error} <button type="button" className="underline" onClick={() => setPhotoRetry(value => value + 1)}>Retry photos</button></p> : null}
+            {filteredListings.length ? <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filteredListings.map((listing) => <BranchListingCard key={listing.id} listing={listing} imageSource={listingPhotos.scope === photoScope && listingPhotos.urls[listing.id] ? getListingCardImageSource(listingPhotos.urls[listing.id]) : undefined} photoRevision={photoRetry} onRetryPhoto={() => setPhotoRetry(value => value + 1)} canViewFinancials={canViewFinancials} assignedAgentName={getListingAssignedAgent} onOpen={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />)}</div> : <EmptyState title="No listings match these filters" copy="This branch has no visible listings for the selected filters." icon={Building2} />}
           </section>
         ) : null}
 

@@ -11,6 +11,10 @@ import './developer-lead-documents.css'
 
 const labels = { pending: 'Required', requested: 'Required', uploaded: 'Awaiting review', under_review: 'Awaiting review', approved: 'Approved', completed: 'Complete', waived: 'Waived', not_applicable: 'Not applicable', rejected: 'Needs replacement' }
 export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId }) {
+  return <ScopedDeveloperLeadDocuments key={`${developerOrgId}:${developerLeadId}`} developerOrgId={developerOrgId} developerLeadId={developerLeadId} />
+}
+
+function ScopedDeveloperLeadDocuments({ developerOrgId, developerLeadId }) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [receipt, setReceipt] = useState('')
@@ -57,6 +61,17 @@ export default function DeveloperLeadDocuments({ developerOrgId, developerLeadId
       window.removeEventListener('itg:developer-leads-changed', recover); document.removeEventListener('visibilitychange', recover)
     }
   }, [load, result?.transactionId])
+
+  useEffect(() => {
+    const recover = () => { if (!upload.current && document.visibilityState !== 'hidden' && navigator.onLine !== false) void load() }
+    const storageChanged = event => { if (event.key === 'arch9:document-requirements-changed') recover() }
+    window.addEventListener('arch9:document-requirements-changed', recover)
+    window.addEventListener('storage', storageChanged)
+    return () => {
+      window.removeEventListener('arch9:document-requirements-changed', recover)
+      window.removeEventListener('storage', storageChanged)
+    }
+  }, [load])
 
   async function submit(event) {
     event.preventDefault()

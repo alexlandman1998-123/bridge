@@ -13,6 +13,7 @@ const Buying = lazy(() => import('./pages/HomeSeekersBuying'))
 const Property = lazy(() => import('./pages/HomeSeekersProperty'))
 const Renting = lazy(() => import('./pages/HomeSeekersRenting'))
 const Join = lazy(() => import('./pages/HomeSeekersJoin'))
+const JoinDetails = lazy(() => import('./pages/HomeSeekersJoinDetails'))
 
 class WebsiteErrorBoundary extends Component {
   state = { failed: false }
@@ -61,6 +62,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="/properties/:propertyId" element={<Property />} />
             <Route path="/renting" element={<Renting />} />
             <Route path="/join" element={<Join />} />
+            {['teams', 'referrals', 'pricing'].map(page => <Route key={page} path={`/join/${page}`} element={<JoinDetails page={page} />} />)}
             <Route path="/buy" element={<PageRedirect to="/buying" />} />
             <Route path="/sell" element={<PageRedirect to="/selling" />} />
             <Route path="/rent" element={<PageRedirect to="/renting" />} />

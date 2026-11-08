@@ -16,7 +16,7 @@ it('sets up and activates a card in the dashboard, preserving entered values aft
   fireEvent.click(screen.getByRole('button', { name: 'Activate card' }))
   await screen.findByText('Card save unavailable')
   expect(screen.getByLabelText('Display name').value).toBe('Alex Updated')
-  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Alex Updated', avatarUrl: agent.avatarUrl, buyEnabled: true }), 'active')
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Alex Updated', avatarUrl: agent.avatarUrl, buyEnabled: true, sellEnabled: true, rentEnabled: true }), 'active')
   fireEvent.click(screen.getByRole('button', { name: 'Activate card' }))
   await waitFor(() => expect(screen.queryByRole('form', { name: 'Digital card setup' })).toBeNull())
 })
@@ -27,6 +27,7 @@ it('saves a draft without activating it and rejects a card with no enquiry actio
   fireEvent.click(screen.getByRole('button', { name: 'Set up card' }))
   fireEvent.click(screen.getByLabelText('Buyer enquiries'))
   fireEvent.click(screen.getByLabelText('Seller enquiries'))
+  fireEvent.click(screen.getByLabelText('Rental enquiries'))
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
   expect(screen.getByRole('alert').textContent).toBe('Enable at least one enquiry action.')
   expect(onSave).not.toHaveBeenCalled()
@@ -66,6 +67,13 @@ it('enables a rental-only card with a custom label and preserves it when editing
   expect(screen.getByLabelText('Rental button label').value).toBe('Find a rental')
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ rentEnabled: true, buyEnabled: false, sellEnabled: false, rentalCtaLabel: 'Find a rental' }), 'active'))
+})
+
+it('shows buyer, seller and rental links together for a card with all enquiries enabled', () => {
+  render(<AgentDigitalCardPanel agent={agent} link={{ ...link, enabledIntents: ['buy', 'sell', 'rent'] }} shareUrl="https://example.test/card/alex" urls={{ buyerUrl: 'https://example.test/buy', sellerUrl: 'https://example.test/sell', rentalUrl: 'https://example.test/card/alex?intent=rent' }} />)
+  expect(screen.getByRole('link', { name: 'Buyer enquiry ↗' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Seller enquiry ↗' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Rental enquiry ↗' }).href).toContain('intent=rent')
 })
 
 it('shows copy and share in the header and passes the active card link to the existing handlers', () => {

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm --prefix the-it-guy ci --no-audit --no-fund",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 npm --prefix the-it-guy run build:home-seekers-website && node -e \"require('node:fs').cpSync('the-it-guy/.vercel/home-seekers-website/.vercel/output', '.vercel/output', { recursive: true })\"",
+  "regions": ["cpt1"]
+}

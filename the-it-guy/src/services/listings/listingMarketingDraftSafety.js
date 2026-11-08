@@ -25,3 +25,16 @@ export function getPendingListingMediaUploads(draft = {}) {
 export function hasBlockingListingMediaUploads(draft = {}) {
   return getPendingListingMediaUploads(draft).length > 0
 }
+
+export function resolvePublicListingDescription(listing = {}, onboarding = {}) {
+  if (!listing) return ''
+  const candidates = [
+    listing.marketing?.description, listing.listingPublicationData?.description,
+    listing.publicationData?.description, listing.listingDescription,
+    onboarding.listingDescription, onboarding.propertyDescription,
+    listing.propertyDetails?.description, listing.description,
+    onboarding.propertyNotes, onboarding.description,
+  ]
+  return candidates.map(value => String(value ?? '').trim()).find(value => value &&
+    !/BRIDGE_QUICK_ADD_METADATA:|^Developer listing:\s*development unit|^Development ID:\s*[0-9a-f-]+/im.test(value)) || ''
+}

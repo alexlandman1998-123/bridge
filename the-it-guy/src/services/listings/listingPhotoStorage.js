@@ -9,6 +9,7 @@ export function hasListingPhotoLoadError(media) {
 export async function refreshListingPhotoUrls(client, rows = [], { strict = false } = {}) {
   const groups = new Map()
   const result = rows.map((row) => ({ ...row }))
+  const photoNumbers = new Map(result.filter(row => row.media_type === 'image').map((row, index) => [row, index + 1]))
   for (const row of result) {
     if (row.media_type !== 'image') continue
     let bucket = row.storage_bucket
@@ -42,9 +43,11 @@ export async function refreshListingPhotoUrls(client, rows = [], { strict = fals
       for (const row of batch) {
         const item = signed.get(row.storage_path)
         if (response.error || item?.error || !item?.signedUrl) {
-          if (strict) throw new Error('Unable to refresh a rental photo viewing link. Reload or check storage access.', { cause: response.error || item?.error })
+          const label = `Photo ${photoNumbers.get(row)}${row.caption ? ` (${String(row.caption).slice(0, 100)})` : ''}`
+          const message = `${label}: Unable to refresh its private viewing link. Re-upload this photo or ask your administrator to check storage access, then check again.`
+          if (strict) throw new Error(message, { cause: response.error || item?.error })
           row.file_url = ''
-          row.mediaLoadError = 'Photo viewing link unavailable'
+          row.mediaLoadError = message
         } else row.file_url = item.signedUrl
       }
     }

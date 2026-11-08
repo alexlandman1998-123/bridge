@@ -153,4 +153,3 @@ test('an authoritative transaction checklist retains exact co-buyer slots withou
   assert.deepEqual(rows.map(row => row.canonicalRequirementInstanceId), ['primary-id', 'joint-id'])
   assert.deepEqual(rows.map(row => row.status), ['under_review', 'pending'])
 })
-

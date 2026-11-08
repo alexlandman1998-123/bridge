@@ -1,5 +1,6 @@
 import { homeSeekersPath } from './homeSeekersRoutes.js'
-import { ArrowRight, MapPin } from 'lucide-react'
+import { MapPin } from 'lucide-react'
+import { HOME_SEEKERS_MEASUREMENT_PREFERENCES_EVENT, homeSeekersPixelSurface } from './homeSeekersPixel'
 import { useHomeSeekersPageTracking } from './homeSeekersWebsiteData'
 import './HomeSeekersFooter.css'
 import HomeSeekersLoginLink from './HomeSeekersLoginLink'
@@ -12,6 +13,6 @@ export default function HomeSeekersFooter() {
       <nav aria-label="Footer navigation"><div><span>Explore</span><a href={homeSeekersPath("/selling")}>Selling</a><a href={homeSeekersPath("/buying")}>Buying</a><a href={homeSeekersPath("/renting")}>Renting</a></div><div><span>Discover</span><a href={homeSeekersPath("/about")}>About Home Seekers</a><a href={homeSeekersPath("/join")}>Join us</a><HomeSeekersLoginLink /></div></nav>
       <address><span>Start a conversation</span><a href="tel:+27128803127">+27 12 880 3127</a><a href="mailto:admin@homeseekers.co.za">admin@homeseekers.co.za</a><p><MapPin size={14} /> 786 Witdoring Avenue<br />Moreleta Park, Pretoria</p></address>
     </div>
-    <div className="hs-site-footer__bottom"><p>© 2026 Home Seekers</p><div><a href={homeSeekersPath("/about")}>Privacy</a><a href={homeSeekersPath("/about")}>POPIA</a><a href={homeSeekersPath("/guarantee#guarantee")}>Guarantee terms</a></div><span>MOVE FORWARD, FASTER.</span></div>
+    <div className="hs-site-footer__bottom"><p>© 2026 Home Seekers</p><div><a href={homeSeekersPath("/about")}>Privacy</a><a href={homeSeekersPath("/about")}>POPIA</a><a href={homeSeekersPath("/guarantee#guarantee")}>Guarantee terms</a>{homeSeekersPixelSurface() && <button type="button" onClick={() => window.dispatchEvent(new CustomEvent(HOME_SEEKERS_MEASUREMENT_PREFERENCES_EVENT))}>Tracking preferences</button>}</div><span>MOVE FORWARD, FASTER.</span></div>
   </footer>
 }

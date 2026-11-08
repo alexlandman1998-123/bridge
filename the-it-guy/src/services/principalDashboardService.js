@@ -1864,7 +1864,7 @@ async function getPrincipalDashboardDataUncached({
     () => selectedScopeAlreadyCovered
       ? []
       : safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
-    () => safeSelectByIds('seller_onboarding', 'listing_id, form_data, updated_at', [...privateListingIds], { idColumn: 'listing_id', order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('private_listing_seller_onboarding', 'private_listing_id, form_data, updated_at', [...privateListingIds], { idColumn: 'private_listing_id', order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
   ])
   const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
@@ -1881,7 +1881,7 @@ async function getPrincipalDashboardDataUncached({
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])
     .filter((row) => selectedBranchId === ALL_BRANCHES_ID || transactionIds.has(normalizeText(row.transaction_id)))
   const listingOnboardingByListingId = new Map(
-    listingOnboardingRows.map((row) => [normalizeText(row.listing_id), row]),
+    listingOnboardingRows.map((row) => [normalizeText(row.private_listing_id), row]),
   )
   const activeListings = privateListings.filter(isActivePrincipalListing)
   const pipelineValue = activeListings.reduce((sum, row) => sum + getPrincipalListingPrice(row), 0)

@@ -19,7 +19,7 @@ test('demo overview uses the canonical fixture model and progress restores the c
 
   assert.match(source, /DEMO_BUYER_JOURNEY_MODEL = buildBuyerJourneyPresentationModel/)
   assert.match(source, /progress=\{\(<DemoBuyerJourney brand=\{brand\} token=\{token\}/)
-  assert.match(source, /activeSection === 'progress' \? <ConveyancingJourneySection brand=\{brand\} \/>/)
+  assert.match(source, /activeSection === 'progress' \? <><DemoBuyerJourney[^>]+\/><ConveyancingJourneySection brand=\{brand\} \/>/)
   assert.match(source, /The conveyancing process/)
   assert.match(source, /stage\.estimatedDuration \|\| 'Timeline to be confirmed'/)
   assert.match(source, /model=\{DEMO_BUYER_JOURNEY_MODEL\}/)

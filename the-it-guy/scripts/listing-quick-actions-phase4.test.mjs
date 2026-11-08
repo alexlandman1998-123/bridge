@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import vm from 'node:vm'
 import test from 'node:test'
 import { saveListingChannelManagement } from '../src/services/listings/listingChannelManagement.js'
+import { getListingPublicationChannelKey } from '../src/services/listings/listingPublicationState.js'
 import { readFileSync } from 'node:fs'
 import { isQuickListingPortalUpdateAccepted } from '../src/services/listings/listingQuickActionDelivery.js'
 
@@ -53,7 +54,7 @@ function simpleController() {
     getWebsiteListingPublicationStatus: async () => { calls.push(['read-agency']); return { status: 'published', websiteStatus: 'published', projectionStatus: 'Published' } },
     getKingdomWebsitePublicationStatus: async () => { calls.push(['read-kingdom']); return { status: 'published', websiteStatus: 'published', projectionStatus: 'Published' } },
     getProperty24ExpiryDateError: () => '', readInitialListingChannelResults: () => [], getProperty24ActionContext: () => ({ listingNumber: 'p24-1' }),
-    saveListingChannelManagement, isQuickListingPortalUpdateAccepted, normalizeKey: value => String(value || '').toLowerCase(),
+    saveListingChannelManagement, isQuickListingPortalUpdateAccepted, getListingPublicationChannelKey, normalizeKey: value => String(value || '').toLowerCase(),
     setChannelManageBusy() {}, setDetailError() {}, setDetailMessage() {}, setAgencyWebsitePublication() {}, setKingdomWebsitePublication() {},
     setWebsiteRefreshKey() {}, setQuickListingResults() {}, setQuickListingResultAction() {},
     saveMarketingDraft: async (draft) => { calls.push(['save', { ...draft }]); return { ok: true } },

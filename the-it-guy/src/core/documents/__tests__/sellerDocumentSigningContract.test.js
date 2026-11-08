@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { SELLER_PORTAL_SIGNING_ENABLED } from '../sellerPortalSigningPolicy.js'
 import test from 'node:test'
 import {
   SELLER_DOCUMENT_SIGNING_ROUTES,
@@ -63,9 +64,9 @@ test('only the three seller pack documents offer the two signing routes', () => 
       commercialTermsConfirmed: true,
       requiredSigners,
     })
-    assert.equal(portal.ready, false)
+    assert.equal(portal.ready, SELLER_PORTAL_SIGNING_ENABLED)
     assert.equal(portal.reasons.includes('legal_approval_required'), false)
-    assert.ok(portal.reasons.includes('portal_signing_not_enabled'))
+    assert.equal(portal.reasons.includes('portal_signing_not_enabled'), !SELLER_PORTAL_SIGNING_ENABLED)
   }
   assert.equal(getSellerDocumentSigningDefinition('offer_to_purchase'), null)
   assert.equal(getSellerDocumentSigningRouteReadiness({ documentKey: 'offer_to_purchase', route: SELLER_DOCUMENT_SIGNING_ROUTES.GENERATE_DOWNLOAD, ...finalDocument }).ready, false)

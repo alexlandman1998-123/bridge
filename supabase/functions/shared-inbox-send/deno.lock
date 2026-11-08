@@ -1,8 +1,8 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@supabase/functions-js@2.118.0": "2.118.0",
-    "npm:@supabase/supabase-js@2.118.0": "2.118.0",
+    "jsr:@supabase/functions-js@*": "2.118.0",
+    "npm:@supabase/supabase-js@2": "2.118.0",
     "npm:openai@^4.52.5": "4.104.0"
   },
   "jsr": {
@@ -270,7 +270,7 @@
   },
   "workspace": {
     "dependencies": [
-      "npm:@supabase/supabase-js@2.118.0"
+      "npm:@supabase/supabase-js@2"
     ]
   }
 }

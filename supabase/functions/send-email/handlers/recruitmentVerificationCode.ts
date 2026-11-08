@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import { buildHomeSeekersRecruitmentCodeEmail } from "../content/recruitmentVerificationCode.ts";
 import {
@@ -18,7 +19,7 @@ export async function authorizeRecruitmentCodeSender(
   request: Request,
   fetchAdmin: typeof fetch = fetch,
 ) {
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const serviceKey = supabaseServiceKey() || "";
   const authorization = request.headers.get("authorization") || "";
   if (!serviceKey || !authorization.startsWith("Bearer ")) return false;
   if (authorization === `Bearer ${serviceKey}`) return true;
@@ -57,7 +58,7 @@ export async function handleHomeSeekersRecruitmentCodeEmail(
     fetchAdmin?: typeof fetch;
   },
 ) {
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const serviceKey = supabaseServiceKey() || "";
   if (
     !(await authorizeRecruitmentCodeSender(request, dependencies?.fetchAdmin))
   ) {

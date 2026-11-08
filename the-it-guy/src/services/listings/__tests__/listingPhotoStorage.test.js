@@ -48,7 +48,19 @@ test('does not fall back to expired or public links when access is denied', asyn
   await assert.rejects(refreshListingPhotoUrls(client, rows, { strict: true }), /Unable to refresh/)
   const result = await refreshListingPhotoUrls(client, rows)
   assert.equal(result[0].file_url, '')
-  assert.equal(result[0].mediaLoadError, 'Photo viewing link unavailable')
+  assert.match(result[0].mediaLoadError, /Photo 1.*Re-upload/)
+})
+
+test('a private signing failure identifies the actual photo before publishing preparation starts', async () => {
+  const secondPath = path + '-second'
+  const { client } = fixture({ data: [{ path, signedUrl: origin + '/fresh/first' }, { path: secondPath, error: 'missing' }] })
+  const rows = [
+    { listing_id: listingId, media_type: 'video', file_url: 'https://video.invalid/watch' },
+    { listing_id: listingId, media_type: 'image', file_url: expired },
+    { listing_id: listingId, media_type: 'image', caption: 'Kitchen', storage_bucket: 'documents', storage_path: secondPath },
+  ]
+  await assert.rejects(refreshListingPhotoUrls(client, rows, { strict: true }), /Photo 2 \(Kitchen\).*Re-upload this photo/)
+  assert.equal(rows[1].file_url, expired)
 })
 
 test('handles per-object signing failures and batches large galleries', async () => {

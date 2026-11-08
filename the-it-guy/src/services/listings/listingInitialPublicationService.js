@@ -12,6 +12,7 @@ const expectedUpdates = new Map()
 export function readInitialListingChannelResults(listingId) { return latestResults.get(listingId) || [] }
 function updateResults(listingId, results, merge = false) {
   if (merge) results = [...readInitialListingChannelResults(listingId).filter(row => !results.some(next => next.key === row.key)), ...results]
+  if (JSON.stringify(latestResults.get(listingId)) === JSON.stringify(results)) return
   latestResults.set(listingId, results)
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(INITIAL_LISTING_PUBLICATION_EVENT, { detail: { listingId, results } }))
 }
@@ -33,8 +34,12 @@ export async function requireSettledListingPublication(listingId, channels, depe
   const results = await refreshListingPublicationResults(listingId, dependencies)
   // The durable website job can dispatch to Kingdom as the partner fallback.
   const jobChannels = channels.map(key => key === 'kingdom_website' ? 'agency_website' : key)
-  if (results.some(row => jobChannels.includes(row.key) && ['publishing', 'uncertain'].includes(row.status))) {
-    throw new Error('The previous advertising request is still sending or not confirmed. Check status before sending again.')
+  const unsettled = results.filter(row => jobChannels.includes(row.key) && ['publishing', 'uncertain'].includes(row.status))
+  if (unsettled.length) {
+    const error = new Error('The previous advertising request is still sending or not confirmed. Check status before sending again.')
+    error.code = 'LISTING_PUBLICATION_UNSETTLED'
+    error.channels = unsettled.map(row => row.key)
+    throw error
   }
   return results
 }
@@ -115,24 +120,31 @@ export async function retryFailedListingChannels({ listingId, listingStatus, cha
 }
 
 // Resume receipts from the server on a full reload, not just SPA navigation.
-// Keep failures current too: a later request may succeed in another tab or
-// advertising control. These checks read saved receipts; they never resubmit.
+// Poll pending work quickly and unresolved receipts slowly; hidden tabs do no status work.
 export function watchInitialListingPublication(listingId, { client = supabase, interval = 2500, attentionInterval = 30000 } = {}) {
-  let stopped = false, timer, hadPending = false, readVersion = 0
+  let stopped = false, timer, hadPending = false, inFlight = false, refreshRequested = false
   async function refresh() {
-    clearTimeout(timer)
     if (stopped || !listingId || !client) return
-    const version = ++readVersion
+    if (inFlight) { refreshRequested = true; return }
+    clearTimeout(timer)
     if (typeof document !== 'undefined' && document.hidden) { timer = setTimeout(refresh, interval); return }
+    inFlight = true
     try {
-      const results = await refreshListingPublicationResults(listingId, { client, shouldApply: () => !stopped && version === readVersion })
-      if (stopped || version !== readVersion) return
+      const results = await refreshListingPublicationResults(listingId, { client, shouldApply: () => !stopped })
+      if (stopped) return
       const pending = results.some(row => row.status === 'publishing')
       if (hadPending && !pending && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('itg:listings-updated', { detail: { listingId } }))
       hadPending = pending
+      clearTimeout(timer)
       if (pending) timer = setTimeout(refresh, interval)
       else if (results.some(row => ['needs_attention', 'uncertain'].includes(row.status))) timer = setTimeout(refresh, attentionInterval)
-    } catch { if (!stopped && version === readVersion) timer = setTimeout(refresh, interval * 4) }
+    } catch { if (!stopped) timer = setTimeout(refresh, interval * 4) }
+    finally {
+      inFlight = false
+      if (refreshRequested && !stopped) {
+        refreshRequested = false; clearTimeout(timer); timer = setTimeout(refresh, 0)
+      }
+    }
   }
   void refresh()
   const requestQueued = event => {
@@ -146,7 +158,7 @@ export function watchInitialListingPublication(listingId, { client = supabase, i
     window.addEventListener?.('focus', resume)
     window.addEventListener?.('pageshow', resume)
   }
-  const visibility = () => { if (!document.hidden) resume() }
+  const visibility = () => { if (!document.hidden) void refresh() }
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
   return () => {
     stopped = true; clearTimeout(timer)

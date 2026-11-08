@@ -131,7 +131,9 @@ export function applyTransferTaxDecisionUpdate(existing = {}, update = {}, actor
     const newProof = text(update.sarsProofReference)
     next.sarsProofReference = newProof && newProof !== prior.sarsProofReference ? newProof : ''
     next.sarsStatus = next.sarsProofReference && update.sarsStatus === 'receipted' ? 'receipted' : 'not_started'
-    next.sarsQueryResponseReference = ''
+    const newQueryResponse = text(update.sarsQueryResponseReference)
+    next.sarsQueryResponseReference = newQueryResponse && newQueryResponse !== prior.sarsQueryResponseReference
+      ? newQueryResponse : ''
   }
   const changed = [
     'route', 'sellerVatRegistered', 'sellerVatNumberReference', 'buyerVatRegistered',

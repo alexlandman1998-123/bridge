@@ -56,7 +56,7 @@ async function contextPage() {
 }
 try {
   browser = await chromium.launch({ channel: 'chrome', headless: true })
-  for (const [category, label] of categories.filter(([key]) => !process.env.LISTING_DIAGNOSTIC_CATEGORY || key === process.env.LISTING_DIAGNOSTIC_CATEGORY)) {
+  for (const [category, label] of categories.filter(([key]) => process.env.LISTING_DIAGNOSTIC_MODE !== 'rental' && (!process.env.LISTING_DIAGNOSTIC_CATEGORY || key === process.env.LISTING_DIAGNOSTIC_CATEGORY))) {
     console.log(`Browser: ${category} sale`)
     const { context, page } = await contextPage()
     const editorStart = fixture.events.length
@@ -72,7 +72,7 @@ try {
         const input = page.getByRole(label.startsWith('Land size') ? 'spinbutton' : 'textbox', { name: label, exact: true })
         await input.fill(value)
         const actual = await input.inputValue()
-        check(`[UX-02] ${category}/sale ${label} preserves decimal`, () => assert.equal(actual, value))
+        check(`[UX-02] ${category}/sale ${label.replace("Land size (m²)", "Land size m²")} preserves decimal`, () => assert.equal(actual, value))
       }
       await page.getByRole('button', { name: 'Continue', exact: true }).click()
       const priceCorrection = page.getByRole('button', { name: 'Edit price', exact: true })
@@ -111,23 +111,28 @@ try {
         for (const [name, value] of Object.entries(fields)) await page.getByLabel(name, { exact: true }).fill(value)
         const before = fixture.events.length
         await page.getByRole('button', { name: 'Done', exact: true }).click()
-        await page.getByRole('button', { name: 'Continue', exact: true }).click()
+        await page.getByRole('button', { name: 'Save only', exact: true }).click()
+        await page.getByText('Changes saved in Arch9. No adverts were sent.', { exact: true }).waitFor()
+        await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
         await page.getByRole('heading', { name: 'Photos & description', exact: true }).waitFor()
-        await page.getByRole('button', { name: 'Continue', exact: true }).click()
+        await page.getByRole('button', { name: /Step .*Where to advertise/ }).click()
         await page.getByRole('heading', { name: 'Where to advertise', exact: true }).waitFor()
         const saves = fixture.events.slice(before).filter(row => ['onboarding', 'update', 'distribution'].includes(row.kind))
         if (!saves.length) throw new Error('Harness did not observe a form save request')
         check(`[UX-03] ${category}/sale specialist edits cross the save boundary`, () => {
           for (const value of Object.values(fields)) assert.ok(JSON.stringify(saves).includes(value), `New specialist value missing: ${value}`)
         })
+        // Preserve the established regression ID; saved edits now navigate by step.
         const unchangedStart = fixture.events.length
         await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
-        await page.getByRole('button', { name: 'Continue', exact: true }).click()
+        await page.getByRole('button', { name: /Step .*Where to advertise/ }).click()
         await page.getByRole('heading', { name: 'Where to advertise', exact: true }).waitFor()
         check(`[UX-11] ${category}/sale unchanged Continue avoids repeat writes`, () => assert.equal(fixture.events.slice(unchangedStart).filter(row => ['onboarding', 'update', 'distribution'].includes(row.kind)).length, 0))
         await page.getByRole('button', { name: /Step .*Photos & description/ }).click()
         await page.getByRole('textbox', { name: 'Listing description', exact: true }).fill(editedSaleDescription)
-        await page.getByRole('button', { name: 'Continue', exact: true }).click()
+        await page.getByRole('button', { name: 'Save only', exact: true }).click()
+        await page.getByText('Changes saved in Arch9. No adverts were sent.', { exact: true }).waitFor()
+        await page.getByRole('button', { name: /Step .*Where to advertise/ }).click()
         await page.getByRole('heading', { name: 'Where to advertise', exact: true }).waitFor()
         check(`[UX-03] ${category}/sale second save uses confirmed revision`, () => assert.equal(fixture.events.slice(before).filter(row => row.kind === 'onboarding').length, 2))
         await page.goto(fixture.origin + `/listings/${id}/edit?scope=property&step=features`, { waitUntil: 'domcontentloaded' })
@@ -149,16 +154,16 @@ try {
         await page.getByRole('button', { name: 'Continue', exact: true }).click()
         await page.getByRole('heading', { name: /Extra details/ }).waitFor()
       }
-      await page.getByRole('button', { name: 'Continue', exact: true }).click()
+      await page.getByRole('button', category === 'residential' ? { name: 'Continue', exact: true } : { name: /Step .*Photos & description/ }).click()
       await page.getByRole('heading', { name: 'Photos & description', exact: true }).waitFor()
       if (category === 'residential') {
         await page.locator('[name="listingDescription"]').fill(listingCase(category, 'sale').form.description)
         const photo = await (await page.request.get(fixture.origin + '/fixture/photo.png')).body()
         await page.locator('input[name="listingImages"]').setInputFiles([1, 2, 3].map(i => ({ name: `photo${i}.png`, mimeType: 'image/png', buffer: photo })))
       }
-      await page.getByRole('button', { name: 'Continue', exact: true }).click()
+      await page.getByRole('button', category === 'residential' ? { name: 'Continue', exact: true } : { name: /Step .*Where to advertise/ }).click()
       await page.getByRole('heading', { name: 'Where to advertise', exact: true }).waitFor()
-      await page.getByRole('button', { name: 'Continue', exact: true }).click()
+      await page.getByRole('button', category === 'residential' ? { name: 'Continue', exact: true } : { name: /Step .*Check & publish/ }).click()
       const saleReview = page.locator('[aria-label="Listing review details"]')
       const saleType = await saleReview.locator('dt', { hasText: /^Property type$/ }).evaluate(node => node.nextElementSibling.textContent)
       const saleArea = await saleReview.locator('dt', { hasText: /^Land size$/ }).evaluate(node => node.nextElementSibling.textContent)
@@ -214,15 +219,16 @@ try {
         await page.locator('input[name="galleryImages"]').setInputFiles([1, 2, 3].map(i => ({ name: `photo${i}.png`, mimeType: 'image/png', buffer: photo })))
         await page.getByRole('button', { name: 'Continue', exact: true }).click()
       } else {
-        await page.goto(fixture.origin + '/fixture/blank')
         await page.evaluate(async ({ form, actor, org }) => {
           const { buildRentalListingDraftStorageKey, resolveRentalWorkspaceScope } = await import('/src/services/rentals/rentalWorkspaceScope.js')
-          const key = buildRentalListingDraftStorageKey(resolveRentalWorkspaceScope({ currentWorkspace: { id: org }, profile: { id: actor }, workspaceRole: 'principal' }))
+          const captureId = window.history.state?.listingCaptureSession?.id
+          if (!captureId) throw new Error('Rental capture session was not initialized')
+          const key = buildRentalListingDraftStorageKey(resolveRentalWorkspaceScope({ currentWorkspace: { id: org }, profile: { id: actor }, workspaceRole: 'principal' })) + ':capture:' + captureId
           const { saveListingRecoveryDraft } = await import('/src/services/listings/listingDraftRecovery.js')
           localStorage.setItem(key, JSON.stringify({ activeStep: 'syndication', form }))
           await saveListingRecoveryDraft(key, { form, recovery: { activeStep: 'syndication' }, photoField: 'galleryImages' })
         }, { form, actor: fixture.actor, org: fixture.org })
-        await page.goto(fixture.origin + '/agent/rentals/listings/new', { waitUntil: 'domcontentloaded' })
+        await page.reload({ waitUntil: 'domcontentloaded' })
       }
       if (category === 'residential') {
         await page.getByRole('button', { name: 'Step 1: Property details', exact: true }).click()
@@ -271,8 +277,8 @@ try {
       await page.getByRole('button', { name: /Step.*Rent & deposit/ }).click()
       await page.getByLabel('Rental amount', { exact: true }).fill('13500.75')
       await page.getByRole('button', { name: /Step.*Check & save/ }).click()
-      const warning = await page.getByText(/Saving here does not update your public adverts/).count()
-      await page.getByRole('button', { name: 'Save rental changes', exact: true }).click()
+      const warning = await page.getByText(/(?:Choose|choose) Save only/).count()
+      await page.getByRole('button', { name: 'Save only', exact: true }).click()
       await page.getByRole('heading', { name: 'Fixture saved record' }).waitFor()
       check(`[UX-07] ${category}/rental edit clearly saves without sending`, () => { assert.ok(warning > 0); assert.equal(fixture.events.slice(beforeEdit).filter(row => row.kind === 'queue').length, 0) })
       await page.getByRole('link', { name: 'Reopen editor' }).click()

@@ -54,3 +54,21 @@ it('attaches only to the scoped campaign and confirms the association receipt',a
   expect(client.calls[1].update.organisation_id).toBeUndefined()
   await expect(attachCampaignAudience(org,campaign,audience.id,{client:clientFor(null)})).rejects.toThrow()
 })
+
+it('keeps exact email targeting in the canonical library and validates its envelope', async () => {
+  const filter = { branch_id: id(11), assigned_user_id: id(12), contact_ids: [id(13)], area: 'Cape Town', rules: [], operator: 'OR' }
+  const client = clientFor()
+  await saveMarketingAudience(org, { ...audience, name: 'Exact legacy', description: '', visibility: 'personal', definition: { emailFilter: filter } }, { client })
+  expect(client.calls[0]).toMatchObject({ table: 'marketing_audiences', update: { definition: { emailFilter: filter }, revision: 5 } })
+  expect(validateAudienceDefinition({ emailFilter: {} })).toEqual({ emailFilter: {} })
+  for (const bad of [{ emailFilter: null }, { emailFilter: [] }, { emailFilter: {}, quietDays: 0 }]) expect(() => validateAudienceDefinition(bad)).toThrow()
+})
+
+it('preserves imported metadata beyond the new CRM editor limits without truncating it', async () => {
+  const client = clientFor()
+  const draft = { name: 'L'.repeat(130), description: 'D'.repeat(700), visibility: 'personal', definition: { emailFilter: {} } }
+  await saveMarketingAudience(org, draft, { client })
+  expect(client.calls[0].insert.name).toBe(draft.name)
+  expect(client.calls[0].insert.description).toBe(draft.description)
+  await expect(saveMarketingAudience(org, { ...draft, definition: emptyAudienceDefinition() }, { client })).rejects.toThrow()
+})

@@ -1,3 +1,4 @@
+import { isPortalTransactionRegistered } from '../core/clientPortal/transactionCompletion.js'
 import AddressInput from '../components/location/AddressInput'
 import { buildListingSellerInformationModel } from '../services/listings/listingSellerInformationModel.js'
 import { DOCUMENT_IMAGE_UPLOAD_ACCEPT, DOCUMENT_IMAGE_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_HELP_TEXT, DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy.js'
@@ -127,7 +128,7 @@ import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJo
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile'
 import { isBondStatementHandoff } from '../modules/bond/application/documents/bondDocumentWorkspacePresentation.js'
-import { BUYER_DOCUMENT_CATEGORIES, buildBuyerDocumentPresentationModel, resolveBuyerDocumentCategory, resolveBuyerDocumentStatus } from '../core/clientPortal/buyerDocumentPresentationModel'
+import { BUYER_DOCUMENT_CATEGORIES, buildBuyerDocumentPresentationModel, resolveBuyerDocumentCategory } from '../core/clientPortal/buyerDocumentPresentationModel'
 import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
@@ -3425,8 +3426,12 @@ function getBuyerMobileDocumentCategory(item = {}) {
 }
 
 function getBuyerMobileDocumentBucket(document = {}) {
-  const status = resolveBuyerDocumentStatus(document)
-  return status === 'upcoming' ? 'review' : status
+  const status = normalizePortalStatus(document?.status || document?.requiredDocumentStatus || document?.required_document_status)
+  if (document?.actionRequired || ['required', 'requested', 'rejected', 'missing', 'outstanding'].includes(status)) return 'action'
+  if (document?.reviewRequired || ['uploaded', 'under_review', 'received', 'reviewed', 'pending_review'].includes(status)) return 'review'
+  if (document?.satisfied || ['approved', 'completed', 'verified', 'signed'].includes(status)) return 'approved'
+  if (document?.linkedDocument || document?.hasUploadedDocument || document?.uploaded) return 'review'
+  return document?.uploadSpec ? 'action' : 'review'
 }
 
 function resolveBuyerMobileDocumentUploadTarget(document = {}) {
@@ -3811,16 +3816,14 @@ function BuyerMobilePortal({
     counts.all += 1
     counts[bucket] += 1
     return counts
-  }, { action: 0, review: 0, approved: 0, optional: 0, all: 0 })
+  }, { action: 0, review: 0, approved: 0, all: 0 })
   const buyerDocumentFilters = [
     { key: 'action', label: 'Pending', count: buyerDocumentCounts.action },
     { key: 'review', label: 'Review', count: buyerDocumentCounts.review },
     { key: 'approved', label: 'Approved', count: buyerDocumentCounts.approved },
     { key: 'all', label: 'All', count: buyerDocumentCounts.all },
   ]
-  const activeBuyerDocumentFilter = buyerDocumentFilter === 'action' && !buyerDocumentCounts.action && buyerDocumentCounts.optional
-    ? 'all'
-    : buyerDocumentFilters.some((filter) => filter.key === buyerDocumentFilter)
+  const activeBuyerDocumentFilter = buyerDocumentFilters.some((filter) => filter.key === buyerDocumentFilter)
     ? buyerDocumentFilter
     : 'action'
   const visibleBuyerDocuments = buyerDocumentItems
@@ -4413,7 +4416,7 @@ function BuyerMobilePortal({
               description={buyerDocumentLoadError
                 ? 'Your secure document room could not be loaded.'
                 : buyerDocumentCounts.action
-                ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? ' needs' : 's need'} action.`
+                ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
                 : 'Review uploaded and approved purchase documents from your team.'}
             />
             {buyerDocumentLoadError ? (
@@ -4452,20 +4455,16 @@ function BuyerMobilePortal({
                     uploadingDocumentKey &&
                     (uploadingDocumentKey === target.uploadingKey || uploadingDocumentKey === target.requirementKey),
                 )
-                const Icon = bucket === 'approved' ? CheckCircle2 : bucket === 'review' ? Clock3 : bucket === 'optional' ? FileText : UploadCloud
+                const Icon = bucket === 'approved' ? CheckCircle2 : bucket === 'review' ? Clock3 : UploadCloud
                 const statusClasses = bucket === 'approved'
                   ? 'bg-[#eefbf3] text-[#1f7a46]'
                   : bucket === 'review'
                     ? 'bg-[#fff7e8] text-[#a76012]'
-                    : bucket === 'optional'
-                      ? 'bg-[#f2f4f7] text-[#667085]'
                     : 'bg-[#fff1f1] text-[#b42318]'
                 const statusLabel = bucket === 'approved'
                   ? 'Approved'
                   : bucket === 'review'
                     ? 'Awaiting review'
-                    : bucket === 'optional'
-                      ? 'Optional upload'
                     : item.status === 'rejected'
                       ? 'Rejected'
                       : 'Upload required'
@@ -7682,6 +7681,7 @@ function ClientPortal() {
   const navigate = useNavigate()
   const [portal, setPortal] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [buyerPortalLoadRecoveryScope, setBuyerPortalLoadRecoveryScope] = useState('')
   const [hydratingPortal, setHydratingPortal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -7756,7 +7756,6 @@ function ClientPortal() {
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const portalLoadRequestRef = useRef(0)
-  const [buyerPortalLoadRecoveryScope, setBuyerPortalLoadRecoveryScope] = useState('')
   const [sellerOverviewStats, setSellerOverviewStats] = useState(null)
   const portalDetailsRefreshRef = useRef({ scope: null, at: 0 })
   const portalMessageRequestRef = useRef(null)
@@ -7884,6 +7883,7 @@ function ClientPortal() {
     setSellerPortalPasswordFeedback('')
     setSellerPortalRecoveryNotice('')
     setSellerPortalRecoveryRequesting(false)
+    setSellerPortalPasswordSaving(false)
     setSellerPortalPasswordForm({ password: '', confirmPassword: '', termsAccepted: false })
     setSellerPortalTermsConfig(getSellerPortalActivationTermsConfig())
   }, [token])
@@ -7921,9 +7921,10 @@ function ClientPortal() {
   }, [isDemoRoute, location.pathname, navigate, token])
 
   const loadPortal = useCallback(async ({ background = false, sellerPortalAccessTokenOverride = '' } = {}) => {
+    const loadScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== loadScope) return false
     const loadRequestId = portalLoadRequestRef.current + 1
     portalLoadRequestRef.current = loadRequestId
-    const loadScope = portalLoadScopeRef.current
     const isCurrentLoad = () => portalLoadRequestRef.current === loadRequestId && portalLoadScopeRef.current === loadScope
 
     if (!token) {
@@ -7976,7 +7977,7 @@ function ClientPortal() {
             : getClientPortalWorkspaceData(token, portalDataWorkspace, {
                 // Seller overview cards need the complete authorised document
                 // and appointment snapshot on every reconciliation.
-                mode: isSellerPortalToken ? 'full' : 'core',
+                mode: isSellerPortalToken || !['', 'overview', 'progress'].includes(String(requestedSection || '').toLowerCase()) ? 'full' : 'core',
                 sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
               }),
           { phase: 'background', timeoutMs: CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS },
@@ -8024,7 +8025,6 @@ function ClientPortal() {
     try {
       setLoading(true)
       setError('')
-      setBuyerPortalLoadRecoveryScope('')
       setDocumentActionError('')
       const readCore = () => withClientPortalLoadTimeout(
         isDemoRoute
@@ -8035,15 +8035,16 @@ function ClientPortal() {
             }),
         { phase: 'core', timeoutMs: CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS },
       )
-      const coreData = await (!isDemoRoute && !isSellerPortalToken
-        ? recoverBuyerPortalLoad(readCore, { isCurrent: isCurrentLoad })
-        : readCore())
+      const coreData = !isDemoRoute && !isSellerPortalToken
+        ? await recoverBuyerPortalLoad(readCore, { isCurrent: isCurrentLoad })
+        : await readCore()
       if (!isCurrentLoad()) return
       portalContextsRef.current = {
         contexts: coreData?.portalContext?.contexts || [],
         hasBuyingContext: coreData?.portalContext?.hasBuyingContext !== false,
         hasSellingContext: Boolean(coreData?.portalContext?.hasSellingContext),
       }
+      setBuyerPortalLoadRecoveryScope('')
       setWorkspaceData(coreData)
       setPortal(coreData?.legacyPortalData || null)
       setSellerPortalAuth(null)
@@ -8070,14 +8071,20 @@ function ClientPortal() {
         })
         return
       }
+      if (!isDemoRoute && !isSellerPortalToken) {
+        setPortal(null)
+        setWorkspaceData(null)
+        setBuyerPortalLoadRecoveryScope(isTransientBuyerPortalReadError(coreError) ? loadScope : '')
+        setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your portal.'))
+        setLoading(false)
+        setHydratingPortal(false)
+        return
+      }
       // A slow request does not prove session expiry. Keep the saved seller
       // session; only the explicit auth-required branch above can clear it.
       if (!hasCoreData) {
         setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your portal.'))
-        if (!isDemoRoute && !isSellerPortalToken && isTransientBuyerPortalReadError(coreError)) {
-          setBuyerPortalLoadRecoveryScope(loadScope)
-        }
-        if ((!isDemoRoute && !isSellerPortalToken) || isClientPortalLoadTimeoutError(coreError)) {
+        if (isClientPortalLoadTimeoutError(coreError)) {
           setPortal(null)
           setWorkspaceData(null)
           setLoading(false)
@@ -8135,7 +8142,7 @@ function ClientPortal() {
         setLoading(false)
       }
     }
-  }, [isDemoRoute, isSellerPortalToken, portalDataWorkspace, sellerPortalAccessToken, token])
+  }, [isDemoRoute, isSellerPortalToken, portalDataWorkspace, requestedSection, sellerPortalAccessToken, token])
 
   const handleSellerPortalPasswordChange = useCallback((field, value) => {
     setSellerPortalPasswordForm((previous) => ({
@@ -8147,24 +8154,32 @@ function ClientPortal() {
   }, [])
 
   const handleSellerPortalRecoveryRequest = useCallback(async () => {
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
+    if (!isCurrentResponse()) return
     try {
       setSellerPortalRecoveryRequesting(true)
       setSellerPortalPasswordFeedback('')
       setSellerPortalRecoveryNotice('')
       const recoveryToken = String(sellerPortalAuth?.stablePortalToken || token || '').trim()
       const result = await requestSellerPortalPasswordRecovery(recoveryToken)
+      if (!isCurrentResponse()) return
       setSellerPortalRecoveryNotice(
         result?.message || 'If this portal can be recovered, a password reset email will arrive shortly.',
       )
     } catch (recoveryError) {
+      if (!isCurrentResponse()) return
       setSellerPortalPasswordFeedback(recoveryError?.message || 'Password recovery is temporarily unavailable.')
     } finally {
-      setSellerPortalRecoveryRequesting(false)
+      if (isCurrentResponse()) setSellerPortalRecoveryRequesting(false)
     }
-  }, [sellerPortalAuth?.stablePortalToken, token])
+  }, [portalDataWorkspace, sellerPortalAccessToken, sellerPortalAuth?.stablePortalToken, token])
 
   const handleSellerPortalPasswordSubmit = useCallback(async (event) => {
     event.preventDefault()
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
+    if (!isCurrentResponse()) return
     const password = String(sellerPortalPasswordForm.password || '')
     const confirmPassword = String(sellerPortalPasswordForm.confirmPassword || '')
     const passwordSet = Boolean(sellerPortalAuth?.passwordSet)
@@ -8193,10 +8208,12 @@ function ClientPortal() {
         let termsConfigForAcceptance = sellerPortalTermsConfig
         try {
           termsConfigForAcceptance = await fetchSellerPortalActivationTermsConfig()
+          if (!isCurrentResponse()) return
           setSellerPortalTermsConfig(termsConfigForAcceptance)
         } catch (termsError) {
           console.warn('[client-portal] Seller portal terms config refresh skipped before activation', termsError)
         }
+        if (!isCurrentResponse()) return
         await recordSellerPortalActivationTerms({
           token,
           acceptance: buildSellerPortalActivationTermsAcceptance({
@@ -8206,11 +8223,15 @@ function ClientPortal() {
           }),
         })
       }
+      if (!isCurrentResponse()) return
       const session = recoveryMode
         ? await completeSellerPortalPasswordRecovery({ token, password })
         : passwordSet
           ? await verifySellerPortalPassword({ token, password })
           : await setSellerPortalPassword({ token, password })
+      if (!isCurrentResponse()) return
+      setSellerPortalPasswordSaving(false)
+      setSellerPortalRecoveryRequesting(false)
       const accessToken = session?.accessToken || getStoredSellerPortalAccessToken(token)
       const stablePortalToken = String(session?.stablePortalToken || '').trim()
       const stablePortalPath = String(session?.stablePortalPath || '').trim()
@@ -8226,11 +8247,12 @@ function ClientPortal() {
         await loadPortal({ sellerPortalAccessTokenOverride: accessToken })
       }
     } catch (passwordError) {
+      if (!isCurrentResponse()) return
       setSellerPortalPasswordFeedback(passwordError?.message || 'Unable to open your seller portal right now.')
     } finally {
-      setSellerPortalPasswordSaving(false)
+      if (isCurrentResponse()) setSellerPortalPasswordSaving(false)
     }
-  }, [loadPortal, navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, sellerPortalTermsConfig, token])
+  }, [loadPortal, portalDataWorkspace, sellerPortalAccessToken, navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, sellerPortalTermsConfig, token])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {
@@ -8309,22 +8331,20 @@ function ClientPortal() {
     [],
   )
 
+  const buyerPortalReconnecting = !isDemoRoute && !isSellerPortalToken && !portal
+    && !loading && !hydratingPortal && Boolean(buyerPortalLoadRecoveryScope)
+    && buyerPortalLoadRecoveryScope === portalLoadScopeRef.current
+  usePortalWorkspaceRefresh({
+    enabled: buyerPortalReconnecting,
+    onRefresh: () => loadPortal(),
+    pollingIntervalMs: 45_000,
+    scopeKey: `${token}:${portalDataWorkspace}`,
+  })
+
   useEffect(() => {
     void loadPortal()
     return () => { portalLoadRequestRef.current += 1 }
   }, [loadPortal])
-
-  // Recover initial buyer entry on reconnect, focus, or a bounded polling
-  // interval even when no transaction snapshot has loaded yet.
-  const buyerPortalReconnecting = !isDemoRoute && !isSellerPortalToken && !portal &&
-    Boolean(buyerPortalLoadRecoveryScope && buyerPortalLoadRecoveryScope === portalLoadScopeRef.current)
-  usePortalWorkspaceRefresh({
-    enabled: buyerPortalReconnecting && !loading && !hydratingPortal,
-    onRefresh: () => loadPortal(),
-    pollingIntervalMs: 45_000,
-    refreshOnMount: false,
-    scopeKey: `${token}:${portalDataWorkspace}`,
-  })
 
   useEffect(() => {
     setGuidedBondApplicationSuppressed(false)
@@ -9035,8 +9055,12 @@ function ClientPortal() {
 
   async function handleSubmitIssue(event) {
     event.preventDefault()
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
+    const formElement = event.currentTarget
     if (!ensurePortalSectionEnabled('snags')) return
-    const file = event.currentTarget.photo?.files?.[0] || null
+    const file = formElement.photo?.files?.[0] || null
 
     try {
       setSaving(true)
@@ -9058,24 +9082,30 @@ function ClientPortal() {
           ? { ...previous, issues: [nextIssue, ...(Array.isArray(previous.issues) ? previous.issues : [])] }
           : previous)
         setIssueForm({ category: ISSUE_CATEGORIES[0], description: '', location: '', priority: '' })
-        event.currentTarget.reset()
+        formElement.reset()
         return
       }
       await submitClientIssue({ token, ...issueForm, photoFile: file })
+      if (!isCurrentResponse()) return
       setIssueForm({ category: ISSUE_CATEGORIES[0], description: '', location: '', priority: '' })
-      event.currentTarget.reset()
+      formElement.reset()
       await loadPortal()
     } catch (submitError) {
+      if (!isCurrentResponse()) return
       setError(submitError.message)
     } finally {
-      setSaving(false)
+      if (isCurrentResponse()) setSaving(false)
     }
   }
 
   async function handleSubmitAlteration(event) {
     event.preventDefault()
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
+    const formElement = event.currentTarget
     if (!ensurePortalSectionEnabled('alterations')) return
-    const file = event.currentTarget.referenceImage?.files?.[0] || null
+    const file = formElement.referenceImage?.files?.[0] || null
 
     try {
       setSaving(true)
@@ -9097,17 +9127,19 @@ function ClientPortal() {
           ? { ...previous, alterations: [nextAlteration, ...(Array.isArray(previous.alterations) ? previous.alterations : [])] }
           : previous)
         setAlterationForm({ title: '', category: '', description: '', budgetRange: '', preferredTiming: '' })
-        event.currentTarget.reset()
+        formElement.reset()
         return
       }
       await submitAlterationRequest({ token, ...alterationForm, referenceImageFile: file })
+      if (!isCurrentResponse()) return
       setAlterationForm({ title: '', category: '', description: '', budgetRange: '', preferredTiming: '' })
-      event.currentTarget.reset()
+      formElement.reset()
       await loadPortal()
     } catch (submitError) {
+      if (!isCurrentResponse()) return
       setError(submitError.message)
     } finally {
-      setSaving(false)
+      if (isCurrentResponse()) setSaving(false)
     }
   }
 
@@ -9158,6 +9190,9 @@ function ClientPortal() {
   }
 
   async function submitPortalMessage(message) {
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
     const commentText = String(message || '').trim()
     if (!commentText) return { ok: false, error: 'Write a message before sending it.' }
 
@@ -9194,16 +9229,18 @@ function ClientPortal() {
         sellerPortalAccessToken,
         commandId: portalMessageRequestRef.current.commandId,
       })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       portalMessageRequestRef.current = null
       setCommentDraft('')
       await loadPortal()
       return { ok: true }
     } catch (submitError) {
+      if (!isCurrentResponse()) return { ok: false, scopeChanged: true }
       const error = submitError?.message || 'Unable to send your message right now.'
       setError(error)
       return { ok: false, error }
     } finally {
-      setSaving(false)
+      if (isCurrentResponse()) setSaving(false)
     }
   }
 
@@ -9213,6 +9250,9 @@ function ClientPortal() {
   }
 
   async function handleUploadRequiredDocument(documentKey, file, options = {}) {
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
     if (effectiveWorkspace !== 'seller' && isBondStatementHandoff({ key: documentKey, canonicalDocumentType: options.documentType })) {
       return { ok: false, error: 'Use the secure bank-statement handoff in Bond Application. Your consultant’s connection is not set up yet.' }
     }
@@ -9273,7 +9313,7 @@ function ClientPortal() {
             documentRequestId: options.documentRequestId || null,
             category: options.category || 'Seller Document',
             documentType: options.documentType || documentKey,
-            onProgress: options.onProgress,
+            onProgress: update => { if (isCurrentResponse()) options.onProgress?.(update) },
             ...(await getSellerPortalSignedUploadReference(sellerOnboardingFormData, requiredDocumentKey)),
           })
         : await uploadClientPortalDocument({
@@ -9284,8 +9324,9 @@ function ClientPortal() {
             documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
             documentRequestId: options.documentRequestId || null,
             file,
-            onProgress: options.onProgress,
+            onProgress: update => { if (isCurrentResponse()) options.onProgress?.(update) },
           })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       applyUploadedPortalDocument(uploaded, { requiredDocumentKey: documentKey })
       if (isReservationProofUpload) {
         setReservationProofUploadFeedback({
@@ -9296,6 +9337,7 @@ function ClientPortal() {
       void loadPortal({ background: true })
       return { ok: true, document: uploaded }
     } catch (uploadError) {
+      if (!isCurrentResponse()) return { ok: false, scopeChanged: true }
       if (effectiveWorkspace === 'seller' && isSellerPortalSessionExpiredError(uploadError)) {
         clearSellerPortalAccessToken(token)
         setSellerPortalAccessToken('')
@@ -9316,7 +9358,7 @@ function ClientPortal() {
       }
       return { ok: false, error: uploadError.message || 'Upload failed. Please try again.' }
     } finally {
-      setUploadingDocumentKey('')
+      if (isCurrentResponse()) setUploadingDocumentKey('')
     }
   }
 
@@ -9418,7 +9460,8 @@ function ClientPortal() {
 
     const normalizedAction = String(action || '').trim().toLowerCase()
     const pendingKey = `${appointmentId}:${normalizedAction}`
-    const responseScope = portalLoadScopeRef.current
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
     try {
       setError('')
       setAppointmentFeedback('')
@@ -9505,6 +9548,9 @@ function ClientPortal() {
   }
 
   async function handleUploadReservationDepositProof(file) {
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
     if (!file) {
       return
     }
@@ -9548,6 +9594,7 @@ function ClientPortal() {
         documentType: 'reservation_deposit_pop',
         file,
       })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       applyUploadedPortalDocument(uploaded, {
         requiredDocumentKey: reservationProofRequirement?.key || 'reservation_deposit_proof',
       })
@@ -9557,13 +9604,14 @@ function ClientPortal() {
       })
       void loadPortal({ background: true })
     } catch (uploadError) {
+      if (!isCurrentResponse()) return { ok: false, scopeChanged: true }
       setError(uploadError.message)
       setReservationProofUploadFeedback({
         tone: 'error',
         message: 'Upload failed. Please try again.',
       })
     } finally {
-      setUploadingDocumentKey('')
+      if (isCurrentResponse()) setUploadingDocumentKey('')
     }
   }
 
@@ -9587,8 +9635,6 @@ function ClientPortal() {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(resolvedOpeningKey)
-      if (!targetWindow) throw new Error('Unable to open this document. Please allow a new tab or pop-ups and try again.')
-      targetWindow.opener = null
       if (isDemoMode) {
         const demoMarkup = `
           <!doctype html>
@@ -9612,7 +9658,11 @@ function ClientPortal() {
           </html>
         `
         const demoUrl = URL.createObjectURL(new Blob([demoMarkup], { type: 'text/html;charset=utf-8' }))
-        targetWindow.location.replace(demoUrl)
+        if (targetWindow) {
+          targetWindow.location.href = demoUrl
+        } else if (typeof window !== 'undefined') {
+          window.open(demoUrl, '_blank', 'noopener,noreferrer')
+        }
         window.setTimeout(() => URL.revokeObjectURL(demoUrl), 15000)
         return
       }
@@ -9636,9 +9686,12 @@ function ClientPortal() {
       if (access?.available !== true || !signedUrl) {
         throw new Error(access?.message || 'The final signed document is still being securely published.')
       }
-      if (targetWindow.closed) throw new Error('The document tab was closed. Please try opening the document again.')
-      targetWindow.location.replace(signedUrl)
       recordPortalDocumentAccess()
+      if (targetWindow) {
+        targetWindow.location.href = signedUrl
+      } else if (typeof window !== 'undefined') {
+        window.open(signedUrl, '_blank', 'noopener,noreferrer')
+      }
     } catch (openError) {
       const message = openError.message || 'Unable to open this final signed document right now.'
       if (targetWindow && !targetWindow.closed) {
@@ -9691,13 +9744,10 @@ function ClientPortal() {
       return
     }
 
-    const targetWindow = openPortalDocumentWindow('Opening document')
     try {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(String(document?.file_path || document?.url || document?.id || 'opening'))
-      if (!targetWindow) throw new Error('Unable to open this document. Please allow a new tab or pop-ups and try again.')
-      targetWindow.opener = null
       const openDirectUrl = Boolean(document?.openDirectUrl && document?.url)
       const signedUrl = openDirectUrl
         ? document.url
@@ -9719,13 +9769,9 @@ function ClientPortal() {
       if (!signedUrl) {
         throw new Error('Unable to open this document right now.')
       }
-      if (targetWindow.closed) throw new Error('The document tab was closed. Please try opening the document again.')
-      targetWindow.location.replace(signedUrl)
+      window.open(signedUrl, '_blank', 'noopener,noreferrer')
       recordPortalDocumentAccess()
     } catch (openError) {
-      if (targetWindow && !targetWindow.closed) {
-        writePortalDocumentWindowMessage(targetWindow, { title: 'Document unavailable', message: openError.message, tone: 'error' })
-      }
       setDocumentActionError(openError.message || 'Unable to open this document right now.')
     } finally {
       setOpeningDocumentPath('')
@@ -9881,7 +9927,7 @@ function ClientPortal() {
           error: '',
         }))
         const result = await fetchClientPortalMatterFinancialAccounts({
-          token,
+          token,sellerAccessToken:sellerPortalAccessToken,
           workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
         })
         if (!active) return
@@ -9911,9 +9957,12 @@ function ClientPortal() {
     return () => {
       active = false
     }
-  }, [effectiveWorkspace, portal?.transaction?.id, token])
+  }, [effectiveWorkspace, portal?.transaction?.id, sellerPortalAccessToken, token])
 
   const handleUploadMatterAccountProof = useCallback(async ({ account, file, amount, paidOn, reference, notes, requestId } = {}) => {
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
     const accountId = account?.id || ''
     if (!accountId) {
       setMatterProofUploadFeedback({ accountId: '', tone: 'error', message: 'Choose the account this payment proof belongs to.' })
@@ -9928,7 +9977,7 @@ function ClientPortal() {
       setUploadingMatterProofAccountId(accountId)
       setMatterProofUploadFeedback({ accountId, tone: '', message: '' })
       const result = await uploadClientPortalMatterFinancialProof({
-        token,
+        token,sellerAccessToken:sellerPortalAccessToken,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
         accountId,
         file,
@@ -9938,10 +9987,12 @@ function ClientPortal() {
         notes,
         requestId,
       })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       const refreshed = await fetchClientPortalMatterFinancialAccounts({
-        token,
+        token,sellerAccessToken:sellerPortalAccessToken,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
       })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       setMatterAccountsState({
         accounts: refreshed.accounts || [],
         summary: refreshed.summary || null,
@@ -9957,6 +10008,7 @@ function ClientPortal() {
       })
       return { ok: true }
     } catch (proofError) {
+      if (!isCurrentResponse()) return { ok: false, scopeChanged: true }
       setMatterProofUploadFeedback({
         accountId,
         tone: 'error',
@@ -9964,11 +10016,14 @@ function ClientPortal() {
       })
       return { ok: false }
     } finally {
-      setUploadingMatterProofAccountId('')
+      if (isCurrentResponse()) setUploadingMatterProofAccountId('')
     }
-  }, [effectiveWorkspace, token])
+  }, [effectiveWorkspace, portalDataWorkspace, sellerPortalAccessToken, token])
 
   const handleUploadMatterRequestDocument = useCallback(async ({ account, request, file, amount, documentDate, reference, notes } = {}) => {
+    const responseScope = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
+    if (portalLoadScopeRef.current !== responseScope) return { ok: false, scopeChanged: true }
+    const isCurrentResponse = () => portalLoadScopeRef.current === responseScope
     const accountId = account?.id || ''
     const requestId = request?.id || ''
     if (!accountId || !requestId) {
@@ -9984,7 +10039,7 @@ function ClientPortal() {
       setUploadingMatterRequestId(requestId)
       setMatterRequestUploadFeedback({ requestId, tone: '', message: '' })
       const result = await uploadClientPortalMatterFinancialRequestDocument({
-        token,
+        token,sellerAccessToken:sellerPortalAccessToken,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
         accountId,
         requestId,
@@ -9994,10 +10049,12 @@ function ClientPortal() {
         reference,
         notes,
       })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       const refreshed = await fetchClientPortalMatterFinancialAccounts({
-        token,
+        token,sellerAccessToken:sellerPortalAccessToken,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
       })
+      if (!isCurrentResponse()) return { ok: true, scopeChanged: true }
       setMatterAccountsState({
         accounts: refreshed.accounts || [],
         summary: refreshed.summary || null,
@@ -10013,6 +10070,7 @@ function ClientPortal() {
       })
       return { ok: true }
     } catch (requestUploadError) {
+      if (!isCurrentResponse()) return { ok: false, scopeChanged: true }
       setMatterRequestUploadFeedback({
         requestId,
         tone: 'error',
@@ -10020,9 +10078,20 @@ function ClientPortal() {
       })
       return { ok: false }
     } finally {
-      setUploadingMatterRequestId('')
+      if (isCurrentResponse()) setUploadingMatterRequestId('')
     }
-  }, [effectiveWorkspace, token])
+  }, [effectiveWorkspace, portalDataWorkspace, sellerPortalAccessToken, token])
+
+  // Pending work belongs to one link/workspace/session. Its late completion
+  // cannot clear the next portal's state, so start that scope with clean controls.
+  useEffect(() => {
+    setUploadingDocumentKey('')
+    setUploadingMatterProofAccountId('')
+    setUploadingMatterRequestId('')
+    setMyDetailsSavingSection('')
+    setBondApplicationSaving(false)
+    setSaving(false)
+  }, [token, portalDataWorkspace, sellerPortalAccessToken])
 
   useEffect(() => {
     if (!portal) return
@@ -10076,12 +10145,12 @@ function ClientPortal() {
     return (
       <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#f1d4cf] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
-          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">{buyerPortalReconnecting ? 'Reconnecting to your portal' : 'We could not load your client portal'}</h1>
+          <h1 className="text-[1.2rem] font-semibold tracking-[-0.02em] text-[#142132]">We could not load your client portal</h1>
           <p className="mt-2 text-sm leading-6 text-[#b42318]">
-            {buyerPortalReconnecting ? 'Your connection was interrupted. We are reconnecting automatically.' : error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
+            {error || 'Your portal link may be invalid, expired, or temporarily unavailable.'}
           </p>
           <p className="mt-1 text-sm leading-6 text-[#5f7288]">
-            {buyerPortalReconnecting ? 'You can leave this page open. Your portal will appear when the connection returns.' : 'Please retry now. If loading continues to fail, contact your property representative for help. A temporary loading failure does not mean you need a new secure link.'}
+            Please retry now. If loading continues to fail, contact your property representative for help. A temporary loading failure does not mean you need a new secure link.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
@@ -11276,9 +11345,7 @@ function ClientPortal() {
   const stageAgeDays = getDaysElapsed(stageUpdatedAt)
   const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
   const stageUpdatedDateLabel = formatShortPortalDate(stageUpdatedAt)
-  const transactionCompleted =
-    ['completed', 'registered', 'closed'].includes(normalizePortalStatus(portal?.transaction?.status || '')) &&
-    mainStage === 'REG'
+  const transactionCompleted = isPortalTransactionRegistered(portal?.transaction)
   const workspaceEducationalContent = workspaceData?.educationalContent || {}
   const stageEducation = workspaceEducationalContent?.currentStage || {}
   const rolePlayerGuidance = Array.isArray(workspaceEducationalContent?.rolePlayerGuidance)
@@ -11700,13 +11767,15 @@ function ClientPortal() {
     portal?.listing?.title,
     portal?.transaction?.property_address,
     portal?.transaction?.propertyAddress,
+    portal?.transaction?.property_address_line_1,
     portal?.unit?.display_name,
     portal?.unit?.unit_label,
     'Property purchase',
   )
   const unitLabel = portalProfile?.isDevelopmentBuyerPortal
     ? (portal?.unit?.unit_number ? `Unit ${portal.unit.unit_number}` : 'Unit')
-    : pickFirstText(portal?.unit?.unit_label, portal?.unit?.unit_number, portal?.transaction?.property_description, 'Residential sale')
+    : pickFirstText(portal?.unit?.unit_label, portal?.unit?.unit_number, portal?.transaction?.property_description,
+      [portal?.transaction?.suburb, portal?.transaction?.city, portal?.transaction?.province].filter(Boolean).join(', '), 'Residential sale')
   const buyerName = portal?.buyer?.name || 'Client'
   const clientFirstName = String(buyerName || 'Client').trim().split(/\s+/)[0] || 'Client'
   const buyerInitial = String(buyerName || 'C').trim().charAt(0).toUpperCase() || 'C'

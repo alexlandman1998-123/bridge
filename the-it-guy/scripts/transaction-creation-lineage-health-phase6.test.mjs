@@ -95,3 +95,13 @@ assert.match(contractSource, /Transaction Creation Lineage Health - Phase 6/, 'w
 assert.match(phaseDoc, /accepted-offer conversion, reused conversion, manual override, or missing lineage/, 'Phase 6 docs should name the visible creation modes')
 
 console.log('Transaction creation lineage health Phase 6 checks passed.')
+
+const captureTransaction = { id: 'tx-paper', listing_id: 'listing-paper', originating_buyer_lead_id: 'lead-paper', creation_idempotency_key: 'paper-identity', routing_profile_json: { signedOtpCapture: { source: 'signed_buyer_otp', leadId: 'lead-paper', listingId: 'listing-paper', capturedBy: 'agent-paper', storagePath: 'saved-paper.pdf', legalReviewApproved: false } } }
+const captureLineage = resolveMvpTransactionCreationLineage({ transaction: captureTransaction })
+assert.equal(captureLineage.confirmed, true)
+assert.equal(captureLineage.mode, 'signed_otp_capture')
+assert.equal(captureLineage.override, null)
+assert.equal(captureLineage.signedOtpCapture.legalReviewApproved, false)
+const mismatchedCapture = resolveMvpTransactionCreationLineage({ transaction: { ...captureTransaction, listing_id: 'different-property' } })
+assert.equal(mismatchedCapture.confirmed, false)
+assert(mismatchedCapture.issues.includes('signed_otp_source_mismatch'))

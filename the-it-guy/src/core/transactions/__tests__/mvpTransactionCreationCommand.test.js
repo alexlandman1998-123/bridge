@@ -96,3 +96,10 @@ assert.throws(
 }
 
 console.log('mvp transaction creation command tests passed')
+
+{
+  const captureArgs = { routingProfile, organisationId: 'org-1', leadId: 'lead-1', assignedAgentId: 'agent-1', requireAcceptedOffer: false, creationMode: 'signed_otp_capture' }
+  const first = prepareMvpTransactionCreationCommand({ ...captureArgs, listingId: 'listing-1' })
+  assert.equal(first.idempotencyKey, prepareMvpTransactionCreationCommand({ ...captureArgs, listingId: 'listing-1' }).idempotencyKey)
+  assert.notEqual(first.idempotencyKey, prepareMvpTransactionCreationCommand({ ...captureArgs, listingId: 'listing-2' }).idempotencyKey)
+}

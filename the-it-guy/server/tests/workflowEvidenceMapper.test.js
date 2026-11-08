@@ -4,7 +4,7 @@ import { createServer } from 'vite'
 const server = await createServer({
   root: process.cwd(),
   logLevel: 'silent',
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null, hmr: false },
 })
 
 function buildMockClient(seed = {}) {

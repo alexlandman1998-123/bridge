@@ -52,6 +52,11 @@ async function upsertProperty24ListingSync(client, syncPayload) {
     }
   }
 
+  if (error?.code === '23505' && String(error.message || '').includes('property24_listing_syncs_number_environment_uidx')) {
+    throw Object.assign(new Error(`Property24 returned advert ${syncPayload.listing_number}, which is already linked to another Arch listing. The new unit was not linked. Reconcile this reference with Property24 before submitting again.`), {
+      code: 'property24_reference_collision', listingNumber: syncPayload.listing_number,
+    })
+  }
   if (error) throw error
   return { data, warning: null }
 }

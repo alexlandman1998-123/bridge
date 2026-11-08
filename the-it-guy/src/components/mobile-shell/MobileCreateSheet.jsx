@@ -1,5 +1,5 @@
 import { Check, Plus, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { addOfflineDraft } from '../../services/mobileProductivityService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 import { MobileCard } from './MobileShellStates'
@@ -36,15 +36,6 @@ export function MobileDraftCard({ draft, actionLabel = 'Pending sync' }) {
 export default function MobileCreateSheet({ open = false, type = '', route = '', onClose, onSaved, copyOverrides = null, draftContext = null }) {
   const baseConfig = getMobileCreateConfig(type)
   const config = baseConfig ? { ...baseConfig, ...copyOverrides } : null
-
-  useEffect(() => {
-    if (!open || typeof document === 'undefined') return undefined
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [open])
 
   if (!open || !config) return null
 
@@ -99,6 +90,9 @@ function MobileCreateSheetForm({ config, type, route, onClose, onSaved, draftCon
       onClick={onClose}
     >
       <form
+        role="dialog"
+        aria-modal="true"
+        aria-label={config.title}
         className="mx-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_24px_64px_rgba(15,23,42,0.28)]"
         onClick={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}

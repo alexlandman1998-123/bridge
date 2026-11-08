@@ -22,7 +22,8 @@ export default function DevelopmentVisualAnalyticsPanel({ analytics }) {
     [Users, "Buyer sessions", summary.sessions],
     [Eye, "Scene views", summary.sceneViews],
     [MousePointerClick, "Properties opened", summary.unitOpens],
-    [Send, "Enquiries started", summary.enquiries],
+    [MousePointerClick, "Enquiry clicks", summary.enquiries],
+    [Send, "Enquiries submitted", summary.submittedEnquiries],
   ];
   return (
     <section className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] xl:col-span-2">
@@ -37,7 +38,7 @@ export default function DevelopmentVisualAnalyticsPanel({ analytics }) {
           </p>
         </div>
         <span className="rounded-full bg-[#eaf7ef] px-3 py-1 text-xs font-semibold text-[#168a57]">
-          {Number(summary.enquiryRate) || 0}% session-to-enquiry
+          {Number(summary.enquiryRate) || 0}% session-to-enquiry click
         </span>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -60,7 +61,7 @@ export default function DevelopmentVisualAnalyticsPanel({ analytics }) {
           rows={analytics.scenes}
           valueKey="views"
           detailKey="enquiries"
-          detailLabel="enquiries"
+          detailLabel="enquiry clicks"
           empty="No scene views yet."
         />
         <Ranking

@@ -1,3 +1,4 @@
+import { recentDeveloperLeads } from './mobileDeveloperMarketingService.js'
 import { getAgentDemoTransactionRowsFromStorage } from '../lib/agentDemoTransactionStorage.js'
 import { resolveMobileRoleCategory, usesOrganisationMobileAttention } from '../config/mobileShell'
 import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../domains/reporting/api.js'
@@ -664,7 +665,7 @@ async function loadMobileDashboardSnapshot({ workspace, organisation }) {
     ] : buildResidentialSummaryCards({ category, metrics, taskCount: today.counts.followUps ?? '—' }),
     activeWork: activeWork.slice(0, 5),
     transactions: activeWork,
-    ...(category === 'developer' ? { newLeads: leadResult.status === 'fulfilled' ? leadResult.value : [], newLeadsAvailable: leadResult.status === 'fulfilled' } : {}),
+    ...(category === 'developer' ? { newLeads: leadResult.status === 'fulfilled' ? recentDeveloperLeads(leadResult.value) : [], newLeadsAvailable: leadResult.status === 'fulfilled' } : {}),
     developments,
     units,
     today,

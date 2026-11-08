@@ -147,3 +147,14 @@ describe('attorney matter team access', () => {
     )).resolves.toBe(false)
   })
 })
+
+ describe('matter access service failures',()=>{
+  it('propagates a database timeout instead of declaring the matter inaccessible',async()=>{
+    mocks.client.rpc=vi.fn(async()=>({data:null,error:{code:'57014',message:'canceling statement due to statement timeout'}}))
+    await expect(canAccessAttorneyMatter('tx','firm')).rejects.toMatchObject({code:'57014'})
+  })
+  it('retains an explicit negative permission decision',async()=>{
+    mocks.client.rpc=vi.fn(async()=>({data:false,error:null}))
+    await expect(canAccessAttorneyMatter('tx','firm')).resolves.toBe(false)
+  })
+ })

@@ -1,10 +1,10 @@
+import { activeCapturedRequirement } from './participantRequirementActivity.js'
 import { evaluateMvpOnboardingGate } from './mvpOnboardingGate.js'
 import { resolveMvpLaunchRolePlan } from './mvpLaunchRoles.js'
 
 export const MVP_OTP_GATE_VERSION = 'arch9_mvp_otp_gate_v1'
 
 const key = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-const CAPTURED_REQUIREMENT_STATUSES = new Set(['captured', 'assigned', 'complete', 'completed', 'verified', 'satisfied'])
 
 function participantKeys(participant = {}) {
   const metadata = participant.metadata || participant.metadata_json || {}
@@ -16,12 +16,9 @@ function participantKeys(participant = {}) {
   return roleType ? [roleType] : []
 }
 
-function capturedRequirementKeys(participantRequirements = []) {
+function capturedRequirementKeys(participantRequirements = [], participants = []) {
   return (Array.isArray(participantRequirements) ? participantRequirements : [])
-    .filter((requirement) => (
-      CAPTURED_REQUIREMENT_STATUSES.has(key(requirement.status)) ||
-      Boolean(requirement.participantId || requirement.participant_id)
-    ))
+    .filter(requirement => activeCapturedRequirement(requirement, participants))
     .map((requirement) => key(requirement.roleKey || requirement.role_key))
     .filter(Boolean)
 }
@@ -32,7 +29,7 @@ export function evaluateMvpOtpGate({ routingProfile = {}, participants = [], par
   const active = new Set((participants || [])
     .filter((participant) => !['removed', 'inactive', 'declined', 'expired'].includes(key(participant.status || 'active')))
     .flatMap(participantKeys))
-  for (const roleKey of capturedRequirementKeys(participantRequirements)) active.add(roleKey)
+  for (const roleKey of capturedRequirementKeys(participantRequirements, participants)) active.add(roleKey)
   const missing = rolePlan.requiredByOtp.filter((role) => !active.has(role.key))
   const blockers = [
     ...onboarding.blockers,

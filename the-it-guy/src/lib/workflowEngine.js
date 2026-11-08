@@ -261,7 +261,7 @@ async function evaluateRequirement({ organisationId = '', leadId = '', transacti
   const scopedTransactionId = toNullableUuid(transactionId)
 
   if (!scopedOrganisationId) {
-    return { ok: true, skipped: true, reason: 'workflow_requires_database_organisation', requirement, stage }
+    return { ok: requirement.type !== 'document', skipped: true, reason: 'workflow_requires_database_organisation', requirement, stage }
   }
 
   if (requirement.type === 'appointment' && requirement.key === 'completed_viewing') {
@@ -298,54 +298,37 @@ async function evaluateRequirement({ organisationId = '', leadId = '', transacti
   }
 
   if (requirement.type === 'document' && ['otp_document_uploaded', 'offer_document_uploaded'].includes(requirement.key)) {
-    const documentTypes = Array.isArray(requirement.documentTypes) && requirement.documentTypes.length
-      ? requirement.documentTypes
-      : ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']
-    const acceptedStatuses = Array.isArray(requirement.acceptedStatuses) && requirement.acceptedStatuses.length
-      ? requirement.acceptedStatuses
-      : ['uploaded', 'under_review', 'approved', 'accepted', 'completed']
-
-    const documentResults = []
-    if (scopedTransactionId) {
-      const documentResult = await queryExists('documents', (query) =>
-        query
-          .eq('organisation_id', scopedOrganisationId)
-          .eq('transaction_id', scopedTransactionId)
-          .in('document_type', documentTypes)
-          .in('status', acceptedStatuses)
-      )
-      documentResults.push({ ...documentResult, source: 'documents' })
-      if (documentResult.ok) return { ...documentResult, requirement, stage }
-    }
-
-    const legacyOfferStatuses = Array.isArray(requirement.legacyOfferStatuses) && requirement.legacyOfferStatuses.length
-      ? requirement.legacyOfferStatuses
-      : ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction']
-    const legacyOfferResult = await queryExists('offers', (query) =>
-      query
-        .eq('organisation_id', scopedOrganisationId)
-        .eq('buyer_lead_id', scopedLeadId)
-        .in('status', legacyOfferStatuses)
-    )
-    documentResults.push({ ...legacyOfferResult, source: 'offers_legacy_compatibility' })
-    if (legacyOfferResult.ok) {
-      return {
-        ...legacyOfferResult,
-        requirement,
-        stage,
-        compatibilityMode: 'legacy_offer_record',
+    const leadRead = await supabase.from('leads').select('lead_id, organisation_id, converted_transaction_id, raw_enquiry_payload')
+      .eq('organisation_id', scopedOrganisationId).eq('lead_id', scopedLeadId).maybeSingle()
+    if (leadRead.error || !leadRead.data) return { ok: false, reason: 'signed_otp_evidence_unavailable', requirement, stage }
+    const savedLead = leadRead.data
+    const linkedTransactionId = scopedTransactionId || toNullableUuid(savedLead.converted_transaction_id)
+    if (linkedTransactionId) {
+      const transactionRead = await supabase.from('transactions').select('id, organisation_id, originating_lead_id, originating_buyer_lead_id')
+        .eq('id', linkedTransactionId).eq('organisation_id', scopedOrganisationId).maybeSingle()
+      if (transactionRead.error || !transactionRead.data || ![transactionRead.data.originating_lead_id, transactionRead.data.originating_buyer_lead_id].includes(scopedLeadId)) {
+        return { ok: false, reason: 'signed_otp_transaction_mismatch', requirement, stage }
+      }
+      // Documents inherit their organisation through the verified transaction;
+      // the current documents table has no organisation_id column.
+      const documentsRead = await supabase.from('documents').select('id, document_type, status, file_path, metadata')
+        .eq('transaction_id', linkedTransactionId)
+        .in('document_type', ['uploaded_otp', 'signed_otp', 'buyer_otp', 'signed_offer'])
+        .in('status', ['uploaded', 'under_review', 'approved', 'accepted', 'completed']).limit(20)
+      if (documentsRead.error) return { ok: false, reason: 'signed_otp_evidence_unavailable', requirement, stage }
+      if ((documentsRead.data || []).some(document => normalizeText(document.file_path))) {
+        return { ok: true, source: 'documents', requirement, stage }
       }
     }
-
-    const skipped = documentResults.length > 0 && documentResults.every((result) => result.skipped)
-    return {
-      ok: false,
-      skipped,
-      reason: skipped ? 'offer_document_evidence_unavailable' : 'offer_document_missing',
-      requirement,
-      stage,
-      evidenceResults: documentResults,
-    }
+    // A physical OTP may be captured before the transaction is created. Read
+    // its durable lead record, rather than trusting the caller's draft flags.
+    let raw = savedLead.raw_enquiry_payload || {}
+    if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch { raw = {} } }
+    const staged = [raw.buyerOtpDocument, ...(Array.isArray(raw.buyerOtpDocuments) ? raw.buyerOtpDocuments : [])]
+    const hasSignedFile = staged.some(document => document?.metadata?.signedByAllPartiesConfirmed === true &&
+      normalizeText(document.storagePath).startsWith(`buyer-otp-documents/${scopedOrganisationId}/${scopedLeadId}/uploaded_otp/`) &&
+      normalizeText(document.storageBucket) === 'documents' && normalizeText(document.listingId))
+    return { ok: hasSignedFile, source: 'saved_buyer_lead', reason: hasSignedFile ? null : 'offer_document_missing', requirement, stage }
   }
 
   if (requirement.type === 'transaction' && requirement.key === 'transaction_created') {
@@ -450,9 +433,13 @@ export async function validateBuyerStageTransition({
   const actorRole = resolveActorRole(actor)
 
   if (!scopedLeadId) return { allowed: false, reason: 'Lead is required before moving workflow stage.' }
-  if (currentStage === nextStage) return { allowed: false, reason: 'This buyer lead is already in that workflow stage.' }
   if (['attorney', 'bond_originator', 'conveyancer'].includes(actorRole)) {
     return { allowed: false, reason: 'This role cannot move buyer workflow stages.' }
+  }
+
+  if (currentStage === nextStage) return {
+    allowed: true, unchanged: true, fromStage: currentStage, toStage: nextStage,
+    fromStageKey: currentStageKey, toStageKey: nextStageKey, requirements: [],
   }
 
   const allowedTargetKeys = getBuyerProcessAllowedNextStageKeys(currentStageKey, {
@@ -491,7 +478,7 @@ export async function validateBuyerStageTransition({
       requirement,
     })
     requirementResults.push(result)
-    if (!result.ok && !result.skipped && !overrideAllowed) {
+    if (!result.ok && (!result.skipped || requirement.type === 'document') && !overrideAllowed) {
       await recordWorkflowAudit({
         organisationId,
         leadId: scopedLeadId,
@@ -508,7 +495,9 @@ export async function validateBuyerStageTransition({
 
   let canonicalGate = null
   const scopedTransactionId = normalizeText(transactionId || lead?.convertedTransactionId || lead?.convertedDealId)
-  if (isSupabaseConfigured && supabase && scopedTransactionId) {
+  if (isSupabaseConfigured && supabase && scopedTransactionId && ![BUYER_PROCESS_STAGE_KEYS.offer, BUYER_PROCESS_STAGE_KEYS.transaction].includes(nextStageKey)) {
+    // Lead milestones record already-saved evidence. Transaction progression
+    // continues to enforce its own legal and document review gates.
     canonicalGate = await canAdvanceWorkflowStage({
       contextType: 'transaction',
       contextId: scopedTransactionId,
@@ -518,11 +507,9 @@ export async function validateBuyerStageTransition({
       client: supabase,
       override: overrideAllowed,
     }).catch((error) => ({
-      allowed: true,
-      can_advance: true,
-      skipped: true,
-      reason: null,
-      warning: null,
+      allowed: false,
+      can_advance: false,
+      reason: 'Transaction readiness could not be checked. Please retry.',
       error: error?.message || 'canonical_gate_evaluation_failed',
     }))
     if (canonicalGate?.allowed === false && !overrideAllowed) {
@@ -830,6 +817,8 @@ export async function transitionBuyerLeadStage({
   if (!validation.allowed) {
     throw new Error(validation.reason || 'Workflow transition is blocked.')
   }
+
+  if (validation.unchanged) return { leadId: scopedLeadId, stage: validation.toStage, stageKey: validation.toStageKey, alreadyAtStage: true, validation }
 
   const nextStage = validation.toStage
   await updateAgencyCrmLeadRecord(organisationId, scopedLeadId, {

@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
@@ -41,12 +42,12 @@ async function parseRequest(req: Request) {
   return parsed as JsonRecord;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withApiCredentials(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse(405, { error: "Method not allowed.", code: "method_not_allowed" });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const serviceRoleKey = supabaseServiceKey() || "";
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(503, { error: "This quote service is temporarily unavailable.", code: "service_unavailable" });
   }
@@ -110,4 +111,4 @@ Deno.serve(async (req) => {
   }
 
   return jsonResponse(200, { accepted: data?.success === true, state: data?.state || decision });
-});
+}));

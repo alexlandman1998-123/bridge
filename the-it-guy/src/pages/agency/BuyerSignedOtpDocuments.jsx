@@ -1,7 +1,7 @@
 import { FileText, Upload } from 'lucide-react'
 import Button from '../../components/ui/Button'
 
-export default function BuyerSignedOtpDocuments({ documents = [], busy = false, onUpload, onOpen }) {
+export default function BuyerSignedOtpDocuments({ documents = [], busy = false, progress = null, onUpload, onOpen }) {
   return (
     <section className="rounded-[24px] border border-[#dbe7f2] bg-white p-5 sm:p-6" data-testid="buyer-signed-otp-documents">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -10,7 +10,7 @@ export default function BuyerSignedOtpDocuments({ documents = [], busy = false, 
           <p className="mt-1 text-sm text-[#60758b]">Upload the OTP signed by all required parties, or open a saved copy.</p>
         </div>
         <Button type="button" onClick={onUpload} disabled={busy}>
-          <Upload className="h-4 w-4" />{busy ? 'Uploading OTP…' : 'Upload signed OTP'}
+          <Upload className="h-4 w-4" />{busy ? progress?.stage === 'complete' ? 'Finishing deal…' : 'Uploading OTP…' : 'Upload signed OTP'}
         </Button>
       </div>
       {documents.length ? <ul className="mt-4 divide-y divide-[#edf3f8] border-t border-[#edf3f8]">

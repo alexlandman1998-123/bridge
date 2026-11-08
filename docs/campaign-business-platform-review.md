@@ -1,14 +1,31 @@
-# Business promotion in Arch9 — review, 26 October 2026
+# Business promotion in Arch9 — production update, 27 October 2026
 
-The subsequent combined source catch-up is recorded in [the October 25–26 main review](october-25-26-main-catch-up.md). Its source and deployment evidence supersede the earlier Campaigns-only candidate identifiers below.
+Later follow-up: the primary app now uses commit
+`6efabd81a41b8bfa53a01736d3a3a3d4045770cf`, adding the connected-mailbox Inbox
+screens/backend and the confirmed blank-email lead-access fix. The owner deferred
+background worker hosting; paid AI remains off. See the
+[follow-up release](../output/remaining-mail-ai-access-20261027/release-review.md).
 
 The primary Arch9 workspace now contains a wider agent marketing workflow. It
 starts with the agent's business goal and connects saved content, audiences,
-channel review, attributed enquiries and CRM follow-up. An isolated release
-candidate passed the Vercel production build and 17 hosted asset/API checks.
-The Campaigns database and Edge changes have not been activated in production.
+channel review, attributed enquiries and CRM follow-up. The Campaigns release is
+now live in the primary app, after an identified logical backup was successfully
+restored and the recovery gate locked. Sixteen exact migrations (fourteen Campaigns
+changes and two rental defaults/backfill changes), four isolated Edge artifacts
+and app commit `c90a5b5004016102c227c8d365928949e48ff961` were deployed. All 23 hosted
+checks passed before promotion and again on the live release. The latest
+back-button/Madison fixes, existing WhatsApp scheduling and email automations were
+retained. Rental enquiries are enabled on all 120 existing agent cards and future
+defaults; Kevin's public card and rental dialog passed a live browser check.
 
-## What agents can review locally
+The release record, exact production identities, rollback baseline and verification
+limits are in [the 27 October evidence](../output/campaign-catchup-production-20261027/release-review.md).
+Paid AI remains disabled pending provider credentials, an enabled reviewed model
+and agency budgets. Sender/provider permissions still govern actual delivery.
+No customer campaign, email, WhatsApp or social post was sent during verification.
+The separate connected-mailbox Inbox receiving/sending rollout remains local.
+
+## Available agent workflow
 
 | Agent outcome | Implemented behaviour |
 | --- | --- |
@@ -72,7 +89,7 @@ The focused commands, logs, release manifest and task-only source patch are in
 fixture are in `output/playwright/campaign-business-20261025/`. The local review
 server is `http://127.0.0.1:4194`; `/review/crm` shows the CRM Follow-up studio.
 
-## Activation work and verified account state
+## Historical activation review — 25–26 October 2026
 
 Read-only checks identified production as `isdowlnollckzvltkasn` (Arch9 SaaS).
 The migration guard passed. A production CLI dry run against an isolated release

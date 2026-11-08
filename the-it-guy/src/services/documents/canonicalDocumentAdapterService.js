@@ -552,6 +552,8 @@ function requestedFromRole(instance = {}) {
 
 function transactionRequiredFromRole(instance = {}) {
   const role = requestedFromRole(instance)
+  // Agency staff own these requirements; the legacy enum calls this role agent.
+  if (['agency_admin', 'agency_owner', 'transaction_coordinator'].includes(role)) return 'agent'
   // The compatibility table accepts the general attorney role; canonical
   // instances and document requests retain the specific attorney assignment.
   if (['transfer_attorney', 'transferring_attorney', 'bond_attorney', 'cancellation_attorney'].includes(role)) {

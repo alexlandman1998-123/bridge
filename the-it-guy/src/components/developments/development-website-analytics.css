@@ -12,7 +12,7 @@
 .website-source-note { display: inline; margin-left: 12px; font-weight: 400; }
 .website-notice { margin: 0 0 20px; padding: 16px; background: #f3f6f4; border: 1px solid #dce7df; border-radius: 13px; font-size: 13px; line-height: 1.6; color: #536d60; }
 .website-notice.is-error { background: #fff4ef; border-color: #edcfc2; color: #a1482b; }
-.website-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; margin-bottom: 22px; }
+.website-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 15px; margin-bottom: 22px; }
 .website-metric { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; padding: 22px; border: 1px solid #dfe7e2; border-radius: 18px; background: white; text-align: left; color: #2c5943; box-shadow: 0 7px 24px #173e2804; transition: background .18s, border-color .18s; }
 .website-metric:hover { border-color: #a5c7b4; background: #f8fbf9; }
 .website-metric.is-active { background: #173f30; border-color: #173f30; color: #b9e1c9; }

@@ -65,13 +65,17 @@ function metric(value, previous, { available = true, note = '' } = {}) {
 function buildLeadSeries(leads, period) {
   const days = Array.from({ length: period.days }, (_, index) => {
     const date = new Date(period.start.getTime() + (index * DAY))
-    return { date: isoDay(date), totalLeads: 0, qualifiedLeads: null }
+    return { date: isoDay(date), totalLeads: 0, qualifiedLeads: null, sources: {} }
   })
   const byDay = new Map(days.map((row) => [row.date, row]))
   for (const lead of leads) {
     const key = isoDay(lead.created_at)
     const row = byDay.get(key)
-    if (row) row.totalLeads += 1
+    if (row) {
+      row.totalLeads += 1
+      const source = normaliseMarketingLeadSource(lead.lead_source)
+      row.sources[source.key] = (row.sources[source.key] || 0) + 1
+    }
   }
   return days
 }
@@ -193,6 +197,18 @@ export async function getMarketingOverviewDashboard({ organisationId = '', range
     { key: 'private-property', label: 'Private Property', volume: leadSources.find((row) => row.key === 'private_property')?.count || 0, volumeLabel: 'Imported leads', engagement: '—', leads: leadSources.find((row) => row.key === 'private_property')?.count || 0, costPerLead: null, connected: leadSources.some((row) => row.key === 'private_property'), note: leadSources.some((row) => row.key === 'private_property') ? '' : 'Not connected' },
     { key: 'digital-business-cards', label: 'Digital business cards', volume: digitalCardPerformance.views, volumeLabel: 'Card views', engagement: `${number(digitalCardPerformance.engagement)} actions`, leads: digitalCardPerformance.leads, costPerLead: null, connected: digitalCardPerformance.connected, note: digitalCardPerformance.note },
   ]
+  const recentCampaignRows = campaigns.slice(0, 5)
+  const thumbnailById = new Map()
+  if (recentCampaignRows.length) {
+    try {
+      const previews = await supabase.from('email_campaigns').select('id,content_json').eq('organisation_id', orgId).in('id', recentCampaignRows.map((campaign) => campaign.id)).limit(5)
+      if (!previews.error) for (const campaign of previews.data || []) {
+        const blocks = Array.isArray(campaign.content_json?.blocks) ? campaign.content_json.blocks : []
+        const urls = blocks.flatMap((block) => block.type === 'image' ? [block.src] : block.type === 'property' && Array.isArray(block.listings) ? block.listings.map((listing) => listing.image) : [])
+        thumbnailById.set(campaign.id, urls.find((url) => typeof url === 'string' && /^https?:\/\//i.test(url.trim()))?.trim() || '')
+      }
+    } catch { /* Thumbnails are optional; reporting remains available. */ }
+  }
   return {
     period, configured: true,
     summary: {
@@ -204,7 +220,7 @@ export async function getMarketingOverviewDashboard({ organisationId = '', range
     },
     leadsOverTime: buildLeadSeries(inPeriod, period), leadSources, channelPerformance,
     websitePerformance: { connected: Boolean(websiteAnalytics), error: websiteAnalyticsError, websiteLeads: websiteLeadCount, series: websiteSeries, topPages },
-    recentCampaigns: campaigns.slice(0, 5).map((campaign) => ({ ...campaign, channel: 'Email', audience: readAudience(campaign), performance: campaignPerformance.get(campaign.id) || {} })),
+    recentCampaigns: recentCampaignRows.map((campaign) => ({ ...campaign, thumbnailUrl: thumbnailById.get(campaign.id) || '', channel: 'Email', audience: readAudience(campaign), performance: campaignPerformance.get(campaign.id) || {} })),
     recentLeads: inPeriod.slice(0, 5).map((lead) => ({ id: lead.lead_id, name: displayLead(lead), source: normaliseMarketingLeadSource(lead.lead_source), enquiry: text(lead.property_interest) || 'General enquiry', createdAt: lead.created_at, stage: text(lead.stage || lead.status) })),
   }
 }

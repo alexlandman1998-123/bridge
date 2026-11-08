@@ -13,7 +13,6 @@ import './mobile-lead-workspace.css'
 const text = (value) => String(value ?? '').trim()
 const labels = { otp: 'OTP', property24: 'Property24', private_property: 'Private Property', developer_direct: 'Developer direct', agency_introduced: 'Agency introduced', developer_led: 'Developer led', agent_led: 'Agent led' }
 const onboardingStepLabels = { lead_not_qualified: 'Qualify the buyer', buyer_name_missing: 'Buyer full name is required', buyer_contact_missing: 'Add buyer email or phone', development_missing: 'Link a development', unit_missing: 'Select a preferred unit', lead_missing: 'Save the lead' }
-const statusActionTitles = { contacted: 'Contact the buyer', qualified: 'Qualify the buyer', viewing: 'Arrange a viewing', onboarding_submitted: 'Confirm onboarding submission', otp: 'Upload signed OTP' }
 function label(value) {
   const saved = text(value)
   const words = saved.replaceAll('_', ' ')
@@ -53,20 +52,14 @@ export default function MobileDeveloperLeadWorkspace({ lead: input, brandStyle =
   const budget = budgetLabel(lead)
   const interest = text(lead.unitTypeInterest) || text(lead.protectedSummary)
   const journeyStages = buildDeveloperLeadJourneyStages(lead, journeyOverrides)
-  const nextAction = getDeveloperLeadNextAction(lead)
-  const primaryAction = getDeveloperLeadPrimaryAction(lead)
+  const nextAction = getDeveloperLeadNextAction(lead, { overrides: journeyOverrides })
+  const primaryAction = getDeveloperLeadPrimaryAction(lead, { overrides: journeyOverrides })
   const savedNextAction = text(lead.nextActionNote)
   const onboardingStarted = ['onboarding_sent', 'onboarding_submitted', 'otp', 'converted'].includes(lead.leadStatus)
   const onboardingSteps = protectedContact || onboardingStarted ? [] : buildDeveloperLeadTransactionHandoff(lead).blockers.map((step) => ({ ...step, title: onboardingStepLabels[step.code] || step.message }))
-  const actionTitle = primaryAction.key === 'update_status' ? statusActionTitles[primaryAction.status] || nextAction.label
-    : primaryAction.key === 'select_unit' ? 'Choose a preferred unit'
-      : primaryAction.key === 'complete_setup' ? 'Prepare buyer onboarding'
-        : lead.leadStatus === 'onboarding_sent' ? 'Awaiting buyer onboarding' : nextAction.label
-  const actionHint = lead.leadStatus === 'onboarding_sent' ? 'The buyer has the onboarding link.'
-    : lead.leadStatus === 'onboarding_submitted' ? 'Continue in the onboarding context.'
-      : ['otp', 'converted'].includes(lead.leadStatus) ? 'Continue with finance, transfer and registration.'
-        : protectedContact ? 'Buyer details unlock after agency handover.'
-          : primaryAction.key === 'send_onboarding' ? 'Buyer details and unit are ready.' : ''
+  const actionTitle = nextAction.label
+  const actionHint = nextAction.helper
+
   const facts = [
     ['Reference', reference],
     ['Source', label(lead.leadSource)],
@@ -108,10 +101,9 @@ export default function MobileDeveloperLeadWorkspace({ lead: input, brandStyle =
       {savedNextAction && <div className="mobile-lead-saved-follow-up"><span>Follow-up</span><p>{savedNextAction}</p></div>}
       {onboardingSteps.length > 0 && <div className="mobile-lead-onboarding-steps"><div className="mobile-lead-onboarding-heading"><span>Before onboarding</span><span>{onboardingSteps.length} remaining</span></div><ul aria-label="Before onboarding">{onboardingSteps.map((step) => <li key={step.code}><span aria-hidden="true" className="mobile-lead-onboarding-dot" /><span>{step.title}</span></li>)}</ul></div>}
       <div className="mobile-lead-workflow-actions">
-        {primaryAction.key === 'open_transaction' && primaryAction.transactionId ? <Link className="mobile-lead-primary-action" to={`/mobile/transaction/${encodeURIComponent(primaryAction.transactionId)}`}>{primaryAction.label}</Link>
-          : primaryAction.key === 'complete_setup' ? null
-            : <button type="button" className="mobile-lead-primary-action" disabled={primaryAction.disabled || Boolean(actionState.pending) || actionState.refreshRequired || !onAction} onClick={() => primaryAction.key === 'select_unit' ? setUnitPickerOpen(true) : onAction(primaryAction)}>{actionState.pending && actionState.pending !== 'copy_onboarding' ? 'Updating…' : primaryAction.label}</button>}
-        {!protectedContact && <button type="button" disabled={Boolean(actionState.pending) || actionState.refreshRequired || !onAction} onClick={() => onAction({ key: 'copy_onboarding' })}>{actionState.pending === 'copy_onboarding' ? 'Copying…' : 'Copy Buyer Onboarding Link'}</button>}
+        {primaryAction.key === 'open_transaction' && primaryAction.transactionId ? <Link className="mobile-lead-primary-action" to={`/transactions/${encodeURIComponent(primaryAction.transactionId)}${primaryAction.targetTab ? `?tab=${primaryAction.targetTab}` : ""}`}>{primaryAction.label}</Link>
+          : <button type="button" className="mobile-lead-primary-action" disabled={primaryAction.disabled || Boolean(actionState.pending) || actionState.refreshRequired || !onAction} onClick={() => primaryAction.key === 'select_unit' ? setUnitPickerOpen(true) : onAction(primaryAction)}>{actionState.pending && actionState.pending !== 'copy_onboarding' ? 'Updating…' : primaryAction.label}</button>}
+        {!protectedContact && lead.leadStatus !== 'lost' && <button type="button" disabled={Boolean(actionState.pending) || actionState.refreshRequired || !onAction} onClick={() => onAction({ key: 'copy_onboarding' })}>{actionState.pending === 'copy_onboarding' ? 'Copying…' : 'Copy Buyer Onboarding Link'}</button>}
       </div>
       {unitPickerOpen && !protectedContact && <MobileLeadUnitPicker key={lead.primaryDevelopmentId} developmentId={lead.primaryDevelopmentId} preferredUnitId={lead.preferredUnitId} pending={Boolean(actionState.pending)} refreshRequired={actionState.refreshRequired} onSave={(preferredUnitId) => onAction({ key: 'save_unit', preferredUnitId })} onClose={() => setUnitPickerOpen(false)} />}
       {actionState.error && <p className="mobile-lead-action-error" role="alert">{actionState.error}</p>}
@@ -123,7 +115,7 @@ export default function MobileDeveloperLeadWorkspace({ lead: input, brandStyle =
 
     {(text(lead.qualificationNote) || text(lead.privateNotes)) && <details className="mobile-lead-section mobile-lead-extra-details"><summary>Notes<ChevronDown size={18} aria-hidden="true" /></summary><div className="mobile-lead-notes-body">{text(lead.qualificationNote) && <div className="mobile-lead-note"><h3>Qualification</h3><p>{lead.qualificationNote}</p></div>}{text(lead.privateNotes) && <div className="mobile-lead-note"><h3>Private notes</h3><p>{lead.privateNotes}</p></div>}</div></details>}
 
-    {lead.convertedTransactionId && <Link className="mobile-lead-linked-transaction" to={`/mobile/transaction/${encodeURIComponent(lead.convertedTransactionId)}`}><span><small>Linked transaction</small><strong>Open transaction</strong></span><ArrowUpRight size={20} aria-hidden="true" /></Link>}
+    {lead.convertedTransactionId && <Link className="mobile-lead-linked-transaction" to={`/transactions/${encodeURIComponent(lead.convertedTransactionId)}`}><span><small>Linked transaction</small><strong>Open transaction</strong></span><ArrowUpRight size={20} aria-hidden="true" /></Link>}
     {facts.length > 0 && <details className="mobile-lead-section mobile-lead-extra-details"><summary>Lead details<ChevronDown size={18} aria-hidden="true" /></summary><dl className="mobile-lead-facts">{facts.map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl></details>}
   </div>
 }

@@ -87,6 +87,10 @@ try {
   await db.query('update leads set source_channel=$1,raw_enquiry_payload=$2 where lead_id=$3',['website',JSON.stringify({utm:{utm_source:'facebook',utm_medium:'paid_social',utm_campaign:'lyle-launch'},context:{pageUrl:'https://thelyle.co.za/?token=secret',referrer:'https://facebook.com/?email=secret'}}),leadA])
   await db.query('update leads set raw_enquiry_payload=$1 where lead_id=$2',[JSON.stringify({attribution:{utmSource:'google',utmMedium:'cpc',utmCampaign:'harbour-launch'}}),leadB])
   await db.exec(await readFile(new URL('../../supabase/migrations/20261009131638_agency_client_utm_attribution.sql', import.meta.url),'utf8'))
+  const stage4 = await readFile(new URL('../../supabase/migrations/20261105192633_client_engagement_history.sql', import.meta.url),'utf8')
+  const triggerAt = stage4.indexOf('create or replace function arch9_client_private.client_attribution_trigger()')
+  assert.ok(triggerAt >= 0)
+  await db.exec(stage4.slice(triggerAt, stage4.indexOf('$$;',triggerAt)+3))
   let a = await profileFor('lead',leadA), b = await profileFor('lead',leadB)
   const summary = async (id, actor=owner) => (await asActor(actor,'select agency_client_attribution_summary($1) value',[id])).rows[0].value
   const attributionPage = async (id, actor=owner, before=null, limit=101) => (await asActor(actor,'select * from agency_client_attribution_page($1,$2,$3,$4)',[id,before?.occurred_at || null,before?.id || null,limit])).rows

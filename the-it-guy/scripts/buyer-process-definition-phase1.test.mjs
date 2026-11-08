@@ -186,6 +186,7 @@ const evidenceKeys = [
 {
   assert.deepEqual(getBuyerProcessAllowedNextStageKeys('Captured'), [
     BUYER_PROCESS_STAGE_KEYS.contacted,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ])
@@ -193,10 +194,10 @@ const evidenceKeys = [
   assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualified'), false)
   assert.equal(canTransitionBuyerProcessStage('Contacted', 'Qualified'), true)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Transaction Setup'), true)
-  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), false)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), true)
   assert.equal(canTransitionBuyerProcessStage('Buyer onboarding submitted', 'Offer'), true)
   assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction'), true)
-  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), false)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Buyer onboarding sent', 'Buyer onboarding submitted', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Transaction', 'Buyer documents uploaded', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Lost', 'Captured'), false)

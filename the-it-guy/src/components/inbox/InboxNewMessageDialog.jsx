@@ -1,0 +1,19 @@
+import { useState } from 'react'
+import { ArrowLeft, ArrowUpRight, CheckCheck, Mail, Search } from 'lucide-react'
+import Modal from '../ui/Modal'
+import InboxChannelIcon from './InboxChannelIcon'
+import './InboxNewMessageDialog.css'
+
+function ChannelArtwork({ channel }) {
+ return <div className={`inbox-message-art inbox-message-art-${channel}`} aria-hidden="true"><span className="inbox-message-art-orbit"/><div className="inbox-message-art-paper"><span/><span/><span/></div><div className="inbox-message-art-symbol">{channel==='email'?<Mail size={38} strokeWidth={1.4}/>:<InboxChannelIcon channel="whatsapp"/>}</div><div className="inbox-message-art-bubble">{channel==='email'?<ArrowUpRight size={17}/>:<CheckCheck size={18}/>}</div></div>
+}
+export default function InboxNewMessageDialog({onClose,onEmail,emailDisabled,emailHint,conversations=[],onWhatsApp}) {
+ const [channel,setChannel]=useState(''),[search,setSearch]=useState('')
+ const rows=conversations.filter(row=>`${row.name} ${row.address}`.toLowerCase().includes(search.trim().toLowerCase()))
+ return <Modal open title={channel?'WhatsApp message':'New message'} subtitle={channel?'Choose a conversation from your connected business numbers.':'How would you like to get in touch?'} className="inbox-new-message-dialog" onClose={onClose}>
+ {channel?<><button type="button" className="inbox-message-back" onClick={()=>setChannel('')}><ArrowLeft size={14}/>All channels</button><label className="inbox-message-contact-search"><Search size={16}/><input aria-label="Find WhatsApp conversation" placeholder="Search name or number" value={search} onChange={event=>setSearch(event.target.value)}/></label><div className="inbox-message-contacts">{rows.map(row=><button type="button" key={row.id} onClick={()=>onWhatsApp(row.id)}><span className="inbox-message-contact-icon"><InboxChannelIcon channel="whatsapp"/></span><span><strong>{row.name||row.address}</strong><small>{row.address}</small></span><ArrowUpRight size={16}/></button>)}</div>{!rows.length&&<p className="inbox-message-empty">{conversations.length?'No matching conversations.':'No WhatsApp conversations are available yet.'}</p>}<p className="inbox-message-footnote">New-number conversations are not available here yet. Existing chats use your connected business number.</p></>:<div className="inbox-message-channel-grid">
+ <button type="button" className="inbox-message-channel" disabled={emailDisabled} title={emailHint} onClick={onEmail}><ChannelArtwork channel="email"/><div><strong>Email<ArrowUpRight size={16}/></strong><p>Write an email from your connected mailbox.</p>{emailDisabled&&<small>{emailHint}</small>}</div></button>
+ <button type="button" className="inbox-message-channel" onClick={()=>setChannel('whatsapp')}><ChannelArtwork channel="whatsapp"/><div><strong>WhatsApp<ArrowUpRight size={16}/></strong><p>Message a contact in an existing business chat.</p></div></button>
+ </div>}
+ </Modal>
+}

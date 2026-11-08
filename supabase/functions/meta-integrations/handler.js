@@ -1,3 +1,4 @@
+import { handleChatImport } from './chatImport.js'
 import { campaignFacebookSource, publicCampaignFacebookPost } from '../_shared/campaignFacebookPost.js'
 import { finishWhatsAppAuthorization, startBusinessAppSync } from './businessAppOnboarding.js'
 import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
@@ -5,8 +6,6 @@ import { handleCrmLink } from './crmLinks.js'
 import { handleInboxMessaging } from './inboxMessaging.js'
 import { handleAutomations } from './automations.js'
 import { handleAudiences, handleCampaignRoutes } from './audiences.js'
-import { handleInstagramPosts } from './instagramPosts.js'
-import { inspectInstagramPhoto, signInstagramPhotos } from '../_shared/instagramListing.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
 const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,onboarding_mode,business_app_session,business_app_connected_at'
@@ -48,9 +47,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!isUuid(org)) throw new Error('Choose an organisation workspace.')
     const actor=await authorize(authorization,org)
     if(!actor?.userId) throw new Error('Active staff membership is required.')
-    if(['instagram_accounts','instagram_listing_options','instagram_listing_posts','preview_instagram_post','publish_instagram_post','refresh_instagram_post'].includes(action)) {
-      return handleInstagramPosts({db,actor,org,action,payload,graph,decrypt,config,loadListing,assertPublishable,inspectPhoto:inspectPhoto||((url,photo)=>inspectInstagramPhoto(url,config.storageOrigin,fetch,photo)),photoLinks:photoLinks||((actor,photos)=>signInstagramPhotos(actor.userDb,photos,config.storageOrigin)),authorize,authorization,now})
-    }
+    if(action==='import_chat_export') return handleChatImport({db,actor,org,payload,hash})
     if(['audience_list','audience_save','audience_preview','audience_archive','audience_options'].includes(action))return handleAudiences({db,actor,org,action,payload})
     if(['meta_routes_list','meta_routes_save','meta_routes_disable'].includes(action))return handleCampaignRoutes({db,actor,org,action,payload})
     if(action==='campaign_reply_status')return result(db.rpc('whatsapp_campaign_reply_status',{p_org:org,p_actor:actor.userId,p_conversation:payload.conversationId}))
@@ -84,7 +81,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       const posts=[],pageSize=200
       for(let offset=0;;offset+=pageSize) {
         const batch=await result(db.from('meta_listing_posts')
-          .select('id,listing_id,status,published_at').eq('organisation_id',org).eq('platform','facebook')
+          .select('id,listing_id,status,published_at').eq('organisation_id',org)
           .order('id').range(offset,offset+pageSize-1)) || []
         if(!batch.length) break
         const ids=[...new Set(batch.map(post=>post.listing_id))]
@@ -261,14 +258,14 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       let job
       if(action==='publish_post') {
         if(!isUuid(payload.postId)) throw new Error('Preview the listing post first.')
-        job=await result(db.from('meta_listing_posts').select('*').eq('id',payload.postId).eq('organisation_id',org).eq('platform','facebook').eq('created_by',actor.userId).maybeSingle())
+        job=await result(db.from('meta_listing_posts').select('*').eq('id',payload.postId).eq('organisation_id',org).eq('created_by',actor.userId).maybeSingle())
         if(!job) throw new Error('Post preview not found. Prepare a new preview.')
       }
       const listingId=job?.listing_id||payload.listingId
       if(!isUuid(listingId)) throw new Error('Choose a saved listing.')
       const loaded=await loadListing(actor,org,listingId)
       if(!loaded?.listing) throw new Error('You do not have access to this listing.')
-      if(action==='listing_posts') return {posts:await result(db.from('meta_listing_posts').select(safePosts).eq('organisation_id',org).eq('listing_id',listingId).eq('platform','facebook').order('created_at',{ascending:false}).limit(10))}
+      if(action==='listing_posts') return {posts:await result(db.from('meta_listing_posts').select(safePosts).eq('organisation_id',org).eq('listing_id',listingId).order('created_at',{ascending:false}).limit(10))}
       await assertPublishable(actor,org,listingId)
       const connection=await page(org,job?.connection_id||payload.connectionId)
       if(!canPublishPage(connection)) throw new Error('Reconnect this Facebook Page with Page posting permission and a profile that can create Page content.')

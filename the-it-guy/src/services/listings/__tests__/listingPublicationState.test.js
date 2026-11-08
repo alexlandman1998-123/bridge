@@ -44,6 +44,36 @@ test('snapshot differences identify exact changed fields', () => {
   assert.deepEqual(diffListingPublicationSnapshots(current, published).map((change) => change.key), ['description', 'price'])
 })
 
+test('an address-display-only edit remains pending independently on each portal', () => {
+  const hidden = buildListingPublicationSnapshot({ ...baseDraft, exactAddressVisibility: 'hide_street_address' })
+  const visible = buildListingPublicationSnapshot({ ...baseDraft, exactAddressVisibility: 'show_exact_address' })
+  const states = deriveListingPublicationStates([
+    { activity_type: 'listing_channel_publication_accepted', created_at: '2026-11-07T12:00:00Z', metadata: { channel: 'Property24', snapshot: visible } },
+    { activity_type: 'listing_channel_publication_accepted', created_at: '2026-11-07T11:00:00Z', metadata: { channel: 'Private Property', snapshot: hidden } },
+  ], visible)
+  assert.equal(states.property24.changeCount, 0)
+  assert.deepEqual(states.private_property.changes.map(change => change.key), ['exactAddressVisibility'])
+  assert.equal(states.private_property.changes[0].currentValue, 'Show full street address')
+  assert.deepEqual(diffListingPublicationSnapshots(hidden, visible).map(change => change.key), ['exactAddressVisibility'])
+})
+
+test('older publication receipts cannot conceal a request to show the address', () => {
+  const legacy = { ...buildListingPublicationSnapshot(baseDraft), version: 2 }
+  delete legacy.exactAddressVisibility
+  assert.deepEqual(diffListingPublicationSnapshots(buildListingPublicationSnapshot(baseDraft), legacy).map(change => change.key), ['exactAddressVisibility'])
+  assert.deepEqual(diffListingPublicationSnapshots(buildListingPublicationSnapshot({ ...baseDraft, exactAddressVisibility: 'show_exact_address' }), legacy).map(change => change.key), ['exactAddressVisibility'])
+})
+
+test('a channel receipt without a content snapshot leaves its address display unconfirmed', () => {
+  const current = buildListingPublicationSnapshot({ ...baseDraft, exactAddressVisibility: 'show_exact_address' })
+  const states = deriveListingPublicationStates([
+    { activity_type: 'listing_channel_publication_accepted', created_at: '2026-11-07T12:00:00Z', metadata: { channel: 'Property24' } },
+  ], current)
+  assert.deepEqual(states.property24.changes.map(change => change.key), ['exactAddressVisibility'])
+  assert.equal(states.property24.changes[0].previousValue, 'Previous setting not recorded')
+  assert.equal(states.private_property.changeCount, 0, 'a channel with no advert has no pending update')
+})
+
 test('publishing an accepted seller lead does not create a portal content change', () => {
   const current = buildListingPublicationSnapshot(baseDraft)
   for (const status of ['seller_lead', 'mandate_signed']) {

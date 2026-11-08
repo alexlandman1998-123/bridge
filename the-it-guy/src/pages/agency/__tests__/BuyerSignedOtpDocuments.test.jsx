@@ -18,3 +18,8 @@ it('opens the saved document and prevents a second upload while busy', () => {
   expect(onOpen).toHaveBeenCalledWith(document)
   expect(screen.getByRole('button', { name: 'Uploading OTP…' }).disabled).toBe(true)
 })
+it('distinguishes a saved file from deal follow-up work', () => {
+  render(<BuyerSignedOtpDocuments busy progress={{ stage: 'complete' }} onUpload={vi.fn()} onOpen={vi.fn()} />)
+  expect(screen.getByRole('button', { name: 'Finishing deal…' }).disabled).toBe(true)
+  expect(screen.queryByRole('button', { name: 'Uploading OTP…' })).toBeNull()
+})

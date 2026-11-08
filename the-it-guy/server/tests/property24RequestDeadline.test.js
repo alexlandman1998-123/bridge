@@ -1,0 +1,33 @@
+import { afterEach, expect, it, vi } from 'vitest'
+import { createProperty24Client } from '../services/property24Client.js'
+const response = (status, data = {}) => ({ ok: status === 200, status, headers: { get: () => 'application/json' }, json: async () => data })
+const client = fetchImpl => createProperty24Client({ username: 'fixture', password: 'fixture', fetchImpl, timeoutMs: 1000, transientRetryDelayMs: 100 })
+afterEach(() => vi.useRealTimers())
+it('shares the original deadline across a transient GET retry', async () => {
+ vi.useFakeTimers()
+ const fetch = vi.fn()
+  .mockImplementationOnce(() => new Promise(resolve => setTimeout(() => resolve(response(503)), 700)))
+  .mockImplementationOnce((_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })))))
+ const result = client(fetch).request('/deadline').catch(error => error)
+ await vi.advanceTimersByTimeAsync(1000)
+ expect((await result).message).toMatch(/timed out after 1000ms/)
+ expect(fetch).toHaveBeenCalledTimes(2)
+ expect(vi.getTimerCount()).toBe(0)
+})
+it('does not wait for a retry that cannot fit inside the deadline', async () => {
+ vi.useFakeTimers()
+ const fetch = vi.fn(() => new Promise(resolve => setTimeout(() => resolve(response(503)), 950)))
+ const result = client(fetch).request('/deadline').catch(error => error)
+ await vi.advanceTimersByTimeAsync(950)
+ expect((await result).status).toBe(503)
+ expect(fetch).toHaveBeenCalledTimes(1)
+ expect(vi.getTimerCount()).toBe(0)
+})
+it('never retries a write and never swallows an aborted response body', async () => {
+ const fetch = vi.fn(async () => response(503))
+ await expect(client(fetch).request('/save', { method: 'POST', body: {} })).rejects.toMatchObject({ status: 503 })
+ expect(fetch).toHaveBeenCalledTimes(1)
+ const aborted = vi.fn(async () => ({ ...response(200), json: async () => { throw Object.assign(new Error('Aborted body'), { name: 'AbortError' }) } }))
+ await expect(client(aborted).request('/save', { method: 'POST', body: {} })).rejects.toThrow(/timed out/)
+ expect(aborted).toHaveBeenCalledTimes(1)
+})

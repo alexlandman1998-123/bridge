@@ -1,16 +1,25 @@
+-- Restored from the production migration ledger; this version is already applied.
+
 -- Meta recruitment enquiries use the existing management-only recruitment pipeline.
 -- Preserve property-lead ingestion and the full recruitment journey guards.
-begin;
+begin
+;
 
 -- Bound duplicate lookups to Meta references, including checks across tenants.
 create index leads_meta_leadgen_lookup_idx on public.leads(source_reference_id,organisation_id)
-  where source_reference_id like 'meta-leadgen:%';
+  where source_reference_id like 'meta-leadgen:%'
+;
 
-alter table public.meta_lead_ads_forms drop constraint meta_lead_ads_forms_lead_type_check;
+alter table public.meta_lead_ads_forms drop constraint meta_lead_ads_forms_lead_type_check
+;
+
 alter table public.meta_lead_ads_forms add constraint meta_lead_ads_forms_lead_type_check
-  check (lead_type in ('buyer','seller','recruitment'));
+  check (lead_type in ('buyer','seller','recruitment'))
+;
+
 alter table public.meta_lead_ads_forms add constraint meta_recruitment_form_routing_check
-  check (lead_type <> 'recruitment' or (branch_id is null and assigned_agent_id is null));
+  check (lead_type <> 'recruitment' or (branch_id is null and assigned_agent_id is null))
+;
 
 create function public.meta_lead_form_routing_guard() returns trigger
 language plpgsql security invoker set search_path='' as $$
@@ -20,19 +29,31 @@ begin
     raise exception 'Complete the historical import before changing this form routing';
   end if;
   return new;
-end; $$;
-revoke all on function public.meta_lead_form_routing_guard() from public,anon,authenticated;
+end; $$
+;
+
+revoke all on function public.meta_lead_form_routing_guard() from public,anon,authenticated
+;
+
 create trigger meta_lead_form_routing_guard before update on public.meta_lead_ads_forms
-  for each row execute function public.meta_lead_form_routing_guard();
+  for each row execute function public.meta_lead_form_routing_guard()
+;
 
 alter table public.recruitment_leads
   add column meta_leadgen_id text unique,
-  add column meta_source_json jsonb not null default '{}' check (jsonb_typeof(meta_source_json)='object');
-alter table public.recruitment_leads drop constraint recruitment_leads_intake_channel_check;
+  add column meta_source_json jsonb not null default '{}' check (jsonb_typeof(meta_source_json)='object')
+;
+
+alter table public.recruitment_leads drop constraint recruitment_leads_intake_channel_check
+;
+
 alter table public.recruitment_leads add constraint recruitment_leads_intake_channel_check
-  check (intake_channel in ('manual','public_link','website','private_link','meta_lead_ad'));
+  check (intake_channel in ('manual','public_link','website','private_link','meta_lead_ad'))
+;
+
 alter table public.recruitment_leads add constraint recruitment_meta_source_check
-  check ((meta_leadgen_id is not null) = (intake_channel='meta_lead_ad'));
+  check ((meta_leadgen_id is not null) = (intake_channel='meta_lead_ad'))
+;
 
 create function public.recruitment_meta_source_guard() returns trigger
 language plpgsql security invoker set search_path='' as $$
@@ -49,10 +70,15 @@ begin
     end if;
   end if;
   return new;
-end; $$;
-revoke all on function public.recruitment_meta_source_guard() from public,anon,authenticated;
+end; $$
+;
+
+revoke all on function public.recruitment_meta_source_guard() from public,anon,authenticated
+;
+
 create trigger a0_recruitment_meta_source_guard before insert or update on public.recruitment_leads
-  for each row execute function public.recruitment_meta_source_guard();
+  for each row execute function public.recruitment_meta_source_guard()
+;
 
 create or replace function public.recruitment_lead_stamp() returns trigger language plpgsql security invoker set search_path = '' as $$
 declare event_type text; submitting boolean;
@@ -95,7 +121,8 @@ begin
   new.details_json := jsonb_set(new.details_json,'{onboardingCaptured}',to_jsonb(new.application_submitted_at is not null or coalesce(tg_op = 'UPDATE' and old.details_json->>'onboardingCaptured' = 'true',false)));
   return new;
 end;
-$$;
+$$
+;
 
 create or replace function public.recruitment_joining_guard() returns trigger language plpgsql security invoker set search_path='' as $$
 declare item jsonb:=new.joining_json; origin jsonb; matches jsonb; choice text; invitation public.invites%rowtype;
@@ -190,7 +217,8 @@ begin
   new.joining_json:=item;
   return new;
 end;
-$$;
+$$
+;
 
 create or replace function public.meta_ingest_lead_ad(
   p_leadgen_id text, p_organisation_id uuid, p_page_id text, p_form_id text,
@@ -267,8 +295,8 @@ begin
     case when v_source='historical' then 'Facebook '||initcap(v_lead_type)||' Lead Ad imported' else 'Facebook '||initcap(v_lead_type)||' Lead Ad received' end,
     v_occurred_at,'New');
   return v_lead_id;
-end $$;
-
+end $$
+;
 
 alter table public.meta_lead_ads_events
   add column recruitment_lead_id uuid,
@@ -276,19 +304,28 @@ alter table public.meta_lead_ads_events
   add constraint meta_event_recruitment_tenant_fk foreign key (organisation_id,recruitment_lead_id)
     references public.recruitment_leads(organisation_id,id) on delete set null (recruitment_lead_id),
   add constraint meta_event_destination_check check (crm_lead_id is null or recruitment_lead_id is null),
-  add constraint meta_event_recruitment_type_check check (recruitment_lead_id is null or lead_type='recruitment');
+  add constraint meta_event_recruitment_type_check check (recruitment_lead_id is null or lead_type='recruitment')
+;
+
 create index meta_events_recruitment_lookup_idx on public.meta_lead_ads_events(organisation_id,recruitment_lead_id)
-  where recruitment_lead_id is not null;
+  where recruitment_lead_id is not null
+;
+
 update public.meta_lead_ads_events e set lead_type=coalesce(
   (select l.lead_type from public.leads l where l.lead_id=e.crm_lead_id),
-  (select f.lead_type from public.meta_lead_ads_forms f where f.id=e.form_mapping_id),'buyer');
-drop policy if exists meta_lead_ads_events_member_read on public.meta_lead_ads_events;
+  (select f.lead_type from public.meta_lead_ads_forms f where f.id=e.form_mapping_id),'buyer')
+;
+
+drop policy if exists meta_lead_ads_events_member_read on public.meta_lead_ads_events
+;
+
 create policy meta_lead_ads_events_member_read on public.meta_lead_ads_events for select to authenticated using (
   public.bridge_is_active_member(organisation_id) and (lead_type <> 'recruitment' or exists (
     select 1 from public.organisation_users m where m.organisation_id=meta_lead_ads_events.organisation_id
       and m.user_id=(select auth.uid()) and m.status='active' and m.role in ('principal','admin','super_admin')
   ))
-);
+)
+;
 
 -- Typed destination keeps event links correct even if the form is reclassified during a retry.
 create function public.meta_ingest_lead_ad_routed(
@@ -349,10 +386,18 @@ begin
     jsonb_build_object('notes','Facebook Recruitment Lead Ad: ' || mapping.form_name || coalesce(' · Campaign: ' || nullif(p_payload->>'campaign_name',''),'') || case when p_ingestion_source='historical' then ' (historical import)' else '' end))
   returning id into lead_id;
   return jsonb_build_object('lead_type','recruitment','crm_lead_id',null,'recruitment_lead_id',lead_id);
-end; $$;
-revoke all on function public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) from public,anon,authenticated;
-grant execute on function public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) to service_role;
--- Explicit server grants also support projects with opt-in Data API privileges.
-grant select on public.meta_lead_ads_connections,public.meta_lead_ads_forms,public.meta_lead_ads_imports,public.leads to service_role;
+end; $$
+;
 
-commit;
+revoke all on function public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) from public,anon,authenticated
+;
+
+grant execute on function public.meta_ingest_lead_ad_routed(text,uuid,text,text,text,text,text,jsonb,text,timestamptz,uuid) to service_role
+;
+
+-- Explicit server grants also support projects with opt-in Data API privileges.
+grant select on public.meta_lead_ads_connections,public.meta_lead_ads_forms,public.meta_lead_ads_imports,public.leads to service_role
+;
+
+commit
+;

@@ -16,6 +16,12 @@ import {
   normalizeListingChannelReference,
 } from '../listingMarketingChannelPresentation.js'
 
+test('observed Sold is displayed without retaining stale live visibility', () => {
+  const display = buildListingChannelPublicationDisplay({ key: 'private_property', label: 'Private Property', externalStatus: 'sold', live: true, lifecycleOnly: true })
+  assert.equal(display.statusLabel, 'Sold')
+  assert.equal(display.status, 'not_published')
+})
+
 test('website preparation steps are explained while actual publication blockers stay actionable', () => {
   const steps = [
     'Publish the listing projection before enabling the agency-website channel.',

@@ -1,38 +1,41 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createPrivateListingActivity, getPrivateListingActivity } from '../privateListingService'
 import { RENTAL_PORTAL_STATUSES } from './rentalListingChannelModel'
+import { listingPortalFailureMessage } from '../listings/listingChannelUpdateState.js'
 
-async function call(listingId, channel, action, { body, refresh = false, allowUncertain = false } = {}) {
+async function call(listingId, channel, action, { body, refresh = false, allowUncertain = false, listingType = 'rental', recordSync = true } = {}) {
   if (!listingId) throw new Error('Save the rental listing before managing its channels.')
   if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before managing rental listing channels.')
   const token = (await supabase.auth.getSession()).data?.session?.access_token
   if (!token) throw new Error('Sign in again before managing rental listing channels.')
-  const query = channel === 'property24' ? `environment=production&refresh=${refresh}` : `environment=production&cached=${!refresh}&recordSync=true`
-  const path = channel === 'property24' ? `property24/rentals` : 'private-property/listings'
+  const query = channel === 'property24' ? `environment=production&refresh=${refresh}` : `environment=production&cached=${!refresh}&recordSync=${recordSync}`
+  const path = channel === 'property24' ? `property24/${listingType === 'rental' ? 'rentals' : 'listings'}` : 'private-property/listings'
   const response = await fetch(`/api/${path}/${encodeURIComponent(listingId)}/${action}?${query}`, {
     method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(payload.message || payload.error || 'Rental channel request failed.')
+    const error = new Error(listingPortalFailureMessage(payload, 'Rental channel request failed. Check requirements for details.'))
     error.definiteRejection = [400,401,403,404,422].includes(response.status) && payload.status !== 'UNCERTAIN' && payload.report?.status !== 'UNCERTAIN'
     throw error
   }
   if (!allowUncertain && (payload.status === 'UNCERTAIN' || payload.report?.status === 'UNCERTAIN')) {
-    const error = new Error(payload.message || payload.report?.error?.message || 'The portal request outcome is unconfirmed. Reconcile it before sending again.')
+    const error = new Error(listingPortalFailureMessage(payload, 'The portal request outcome is unconfirmed. Reconcile it before sending again.'))
     error.outcomeUncertain = true
     throw error
   }
-  if (payload.status === 'FAILED' || payload.status === 'BLOCKED' || payload.report?.status === 'FAILED' || payload.update?.confirmed === false) {
-    throw new Error(payload.message || payload.update?.message || 'The portal did not confirm this change. Refresh its status before retrying.')
+  if (payload.status === 'FAILED' || payload.status === 'BLOCKED' || payload.report?.status === 'FAILED' || payload.report?.status === 'BLOCKED' || payload.update?.confirmed === false) {
+    const error = new Error(listingPortalFailureMessage(payload, 'The portal did not confirm this change. Refresh its status before retrying.'))
+    error.definiteRejection = ['FAILED', 'BLOCKED'].includes(payload.status) || ['FAILED', 'BLOCKED'].includes(payload.report?.status)
+    throw error
   }
   return payload
 }
 
-export function getRentalPortalStatus(listingId, channel, { refresh = false } = {}) {
+export function getRentalPortalStatus(listingId, channel, { refresh = false, listingType = 'rental', recordSync = true } = {}) {
   if (!RENTAL_PORTAL_STATUSES[channel]) throw new Error('Unsupported rental listing channel.')
-  return call(listingId, channel, 'status', { refresh,allowUncertain:true })
+  return call(listingId, channel, 'status', { refresh, listingType, recordSync, allowUncertain:true })
 }
 
 export function reconcileRentalPortalPublication(listingId,channel) {
@@ -75,11 +78,11 @@ export async function runRentalPublicationAction({ listingId, channel, action, s
   try {
     result = await perform()
     if (result?.status === 'UNCERTAIN' || result?.report?.status === 'UNCERTAIN') {
-      const error = new Error(result?.message || result?.report?.error?.message || result?.report?.nextStep || 'The portal outcome is unconfirmed. Reconcile before sending again.')
+      const error = new Error(listingPortalFailureMessage(result, 'The portal outcome is unconfirmed. Reconcile before sending again.'))
       error.outcomeUncertain = true
       throw error
     }
-    if (result?.status === 'FAILED' || result?.status === 'BLOCKED' || result?.report?.status === 'FAILED' || result?.report?.status === 'BLOCKED') { const error = new Error('The portal did not accept this request.'); error.definiteRejection = true; throw error }
+    if (result?.status === 'FAILED' || result?.status === 'BLOCKED' || result?.report?.status === 'FAILED' || result?.report?.status === 'BLOCKED') { const error = new Error(listingPortalFailureMessage(result, 'The portal did not accept this request. Check requirements for details.')); error.definiteRejection = true; throw error }
   } catch (error) {
     try { await recordRentalPublicationEvent(listingId,channel,error.definiteRejection ? withdrawal ? 'withdrawal_failed' : 'failed' : 'uncertain',{ action,error:error.message }) } catch { /* Retain the provider error. */ }
     throw error

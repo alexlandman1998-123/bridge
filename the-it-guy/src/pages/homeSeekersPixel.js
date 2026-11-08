@@ -3,6 +3,7 @@ import { homeSeekersRecruitmentOrganisationId } from './recruitment/recruitmentD
 // Public advertising identifier supplied for homeseeker.co.za on 17 October 2026.
 export const HOME_SEEKERS_META_PIXEL_ID = '2613784669083210'
 export const HOME_SEEKERS_MEASUREMENT_CONSENT_EVENT = 'home-seekers-measurement-consent'
+export const HOME_SEEKERS_MEASUREMENT_PREFERENCES_EVENT = 'home-seekers-measurement-preferences'
 const consentKey = 'home-seekers-marketing-consent-v1'
 const eventsKey = 'home-seekers-meta-events-v1'
 const states = new WeakMap()

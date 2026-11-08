@@ -15,7 +15,7 @@ function buildDashboardCardDraft(agent = {}, link = null) {
     buyerCtaLabel: text(link?.buyerCtaLabel) || 'I am looking to buy',
     sellerCtaLabel: text(link?.sellerCtaLabel) || 'I am looking to sell',
     rentalCtaLabel: text(link?.rentalCtaLabel) || 'I am looking to rent',
-    rentEnabled: (link?.enabledIntents || []).includes('rent'),
+    rentEnabled: (link?.enabledIntents || ['buy', 'sell', 'rent']).includes('rent'),
     buyEnabled: (link?.enabledIntents || ['buy', 'sell']).includes('buy'),
     sellEnabled: (link?.enabledIntents || ['buy', 'sell']).includes('sell'),
   }

@@ -1294,7 +1294,7 @@ export async function createProperty24ApiResponse({
         maxImages: resolvedConfig.maxImages,
         photosChanged: resolvedConfig.photosChanged,
         convertImagesToJpeg: true,
-        loadImageBytes: false,
+        loadImageBytes: true,
       }), resolvedConfig)
       const report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: false })
       return buildJsonResponse(200, {
@@ -1351,7 +1351,7 @@ export async function createProperty24ApiResponse({
         maxImages: resolvedConfig.maxImages,
         photosChanged: resolvedConfig.photosChanged,
         convertImagesToJpeg: true,
-        loadImageBytes: false,
+        loadImageBytes: true,
       }), resolvedConfig)
       const report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: false })
       return buildJsonResponse(200, {

@@ -664,6 +664,8 @@ export function createProperty24ListingPlan({
     categoryPayload.specialistFacts,
     categoryContract.category,
   ), rentalMapping.property24Description)
+  const savedProperty = (listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}).property || {}
+  const noTransferDuty = (listing.noTransferDuty ?? listing.no_transfer_duty ?? savedProperty.no_transfer_duty ?? savedProperty.noTransferDuty) === true
   const suburbId = resolveSuburbId(catalogMapping, listing, publication, options)
   const { property24AgentId, contactAgentIds, sourceReference } = resolveAgentMapping(agentMapping, listing, options)
   const mediaRows = normalizeMediaRows(media)
@@ -777,6 +779,7 @@ export function createProperty24ListingPlan({
         status,
         price: price || 0,
         isPOA,
+        noTransferCost: noTransferDuty,
         listingVisibility: 'Public',
         expiryDate,
         description,
@@ -785,6 +788,12 @@ export function createProperty24ListingPlan({
         ...(video.matterportSpaceId ? { matterportSpaceId: video.matterportSpaceId } : {}),
         photos: previewPhotos,
         propertyInfo,
+        ...(() => {
+          const property = (listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}).property || {}
+          const complexName = firstText(property.complexName, listing.complex_name, listing.complexName)
+          const unitNumber = firstText(property.unitNumber, listing.unit_number, listing.unitNumber)
+          return complexName || unitNumber ? { complexInfo: { ...(complexName ? { complexName } : {}), ...(unitNumber ? { unitNumber } : {}) } } : {}
+        })(),
         propertyFeatures,
         ...(Object.keys(categoryPayload.commercialInfo).length ? { commercialInfo: categoryPayload.commercialInfo } : {}),
         ...(tags.length ? { tags } : {}),

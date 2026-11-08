@@ -21,3 +21,12 @@ test('campaign grouping requires the exact recipient and never merges unrelated 
   expect(activityDirection(response)).toBe('incoming')
   expect(activityDirection(opened)).toBe('outgoing')
 })
+
+
+test('real message directions and failures remain separate from campaign tracking', () => {
+  const received = { ...event, event_type: 'engagement.email.inbound', communication_direction: 'inbound' }
+  const failed = { ...event, id: 'failed', event_type: 'engagement.whatsapp.failed', communication_direction: 'outbound' }
+  expect(activityDirection(received)).toBe('incoming')
+  expect(activityDirection(failed)).toBe('outgoing')
+  expect(groupActivity([received, failed]).every(group => !group.campaign)).toBe(true)
+})

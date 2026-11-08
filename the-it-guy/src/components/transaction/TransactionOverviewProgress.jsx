@@ -14,7 +14,7 @@ export default function TransactionOverviewProgress({ workflows = [], dealSummar
   const panel = 'min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'
   const immediate = selectImmediateWorkflow(workflows)
   const status = STATUS[immediate.status] || STATUS.unknown
-  const targetLabel = { deal_setup: 'Deal Setup', finance: 'Finance', transfer: 'Conveyancing' }[immediate.target]
+  const targetLabel = { deal_setup: 'Deal Setup', documents: 'Documents', finance: 'Finance', transfer: 'Conveyancing' }[immediate.target]
   return <section className="grid items-stretch gap-4 xl:grid-cols-2" aria-label="Transaction progress and deal summary">
     <article data-overview-panel="progress" aria-busy={loading} className="flex min-h-[232px] min-w-0 flex-col rounded-2xl border border-[#124b38] bg-[#124b38] p-5 shadow-sm">
       <header className="flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-100"><span className="rounded-full bg-white/15 p-2"><Activity size={16} aria-hidden="true" /></span>Current progress</h2><span className={`rounded-md px-2 py-1 text-[11px] font-medium ${status.tone}`}>{loading ? 'Loading' : status.label}</span></header>

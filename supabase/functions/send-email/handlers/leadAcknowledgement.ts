@@ -1,9 +1,10 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient, type SupabaseClient } from "supabase";
 import {
   type LeadEnquiryKind,
   resolveLeadEnquiryKind,
 } from "../services/leadAcknowledgementContext.ts";
-import { createTenantQualificationLink } from "../services/tenantQualificationLink.ts";
+import { createLeadQualificationLink } from "../services/tenantQualificationLink.ts";
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
   buildLeadAcknowledgementEmailHtml,
@@ -133,9 +134,9 @@ export async function renderLeadAcknowledgementEnvelope(
     normalizeText(payload.organisationId || payload.organisation_id),
     normalizeText(payload.leadId || payload.lead_id),
   );
-  if (enquiryKind === "rental") {
+  if (enquiryKind === "rental" || enquiryKind === "sale") {
     try {
-      content.viewingAvailabilityUrl = await createTenantQualificationLink(
+      content.viewingAvailabilityUrl = await createLeadQualificationLink(
         supabase,
         {
           organisationId: normalizeText(
@@ -148,9 +149,10 @@ export async function renderLeadAcknowledgementEnvelope(
           agentName: content.agentName,
           agentEmail: content.agentEmail,
         },
+        enquiryKind,
       );
     } catch {
-      throw new Error("Unable to create the tenant qualification link.");
+      throw new Error("Unable to create the qualification and viewing-time link.");
     }
   }
   const html = buildLeadAcknowledgementEmailHtml({
@@ -204,7 +206,7 @@ export async function handleLeadAcknowledgementEmail(
     return jsonResponse(400, { error: "Missing required field: to" });
   }
   const url = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const key = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const key = normalizeText(supabaseServiceKey());
   const client = url && key
     ? createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },

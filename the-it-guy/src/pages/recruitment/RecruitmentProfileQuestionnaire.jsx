@@ -34,9 +34,14 @@ function PackagePreference({value, onChange, error}) {
     <small id="recruitment-package-error" className="recruitment-signup__error">{error || ''}</small>
   </fieldset>
 }
-export default function RecruitmentProfileQuestionnaire({ applicant, endpoint, token, preview = false, enhanced = false, homeSeekers = enhanced, submissionKey, onSaved, onBusy, onClose, closeRequestRef, onReviewChange }) {
+export default function RecruitmentProfileQuestionnaire({ applicant, endpoint, token, preview = false, enhanced = false, homeSeekers = enhanced, submissionKey, onSaved, onBusy, onClose, closeRequestRef, onReviewChange, calculatorContext = null }) {
   const needsPreference = homeSeekers && applicant.profile?.complete === true && !homeSeekersPackageOptions.some(([key])=>key===applicant.profile.answers?.packagePreference)
-  const [answers,setAnswers] = useState(()=>initialRecruitmentProfile(applicant))
+  const [answers,setAnswers] = useState(()=>{
+    const saved = initialRecruitmentProfile(applicant)
+    const sales = calculatorContext?.inputs?.sales
+    if (homeSeekers && !saved.propertiesSold && /^\d{1,3}$/.test(String(sales ?? ''))) saved.propertiesSold = String(sales)
+    return saved
+  })
   const [page,setPage] = useState(needsPreference?3:applicant.profile?.page || 0)
   const [revision,setRevision] = useState(applicant.profileRevision || 0)
   const [reviewEdit,setReviewEdit] = useState(false)

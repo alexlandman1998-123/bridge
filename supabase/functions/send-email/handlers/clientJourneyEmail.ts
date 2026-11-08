@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   buildClientJourneyEmail,
@@ -28,7 +29,7 @@ export async function handleClientJourneyEmail(
   req: Request,
   payload: ClientJourneyPayload,
 ) {
-  const serviceKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceKey = normalizeText(supabaseServiceKey());
   if (!serviceKey || req.headers.get("authorization") !== `Bearer ${serviceKey}`) {
     return jsonResponse(403, { error: "Service access is required." });
   }

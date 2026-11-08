@@ -1,6 +1,5 @@
 import { isRetiredDocumentFunction, DOCUMENT_GENERATOR_RETIRED_CODE, DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../core/documents/documentGeneratorRetirement.js'
 import { createClient } from '@supabase/supabase-js'
-import { createClientPortalReadFetch } from './clientPortalReadRecovery.js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}
 const processEnv = typeof globalThis !== 'undefined' && globalThis?.process?.env ? globalThis.process.env : {}
@@ -643,19 +642,17 @@ export function createScopedSupabaseClient(headers = {}) {
 
   const scopedClient = createClient(supabaseUrl, supabaseKey, {
     auth: {
-      // Even an in-memory GoTrue client acquires a browser lock by storageKey.
-      // Portal capabilities must never share the signed-in agent's Auth lock.
-      // A random, non-secret key also isolates separate portal clients/tabs.
-      storageKey: `arch9:scoped-auth:${globalThis.crypto?.randomUUID?.() || `${Date.now()}:${Math.random()}`}`,
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
     global: {
-      headers: Object.fromEntries(normalizedEntries),
-      ...(normalizedEntries.some(([key]) => key === 'x-bridge-client-portal-token')
-        ? { fetch: createClientPortalReadFetch() }
-        : {}),
+      // Auth's default uses this casing. A second lowercase key would combine
+      // the anonymous key and scoped user token into an invalid Bearer header.
+      headers: Object.fromEntries(normalizedEntries.map(([key, value]) => [
+        key === 'authorization' ? 'Authorization' : key,
+        value,
+      ])),
     },
   })
   scopedClientCache.set(cacheKey, scopedClient)

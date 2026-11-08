@@ -10,6 +10,7 @@ import {
 const DEFINITION = getBuyerProcessDefinition({})
 const STAGE_ORDER = Object.freeze([...DEFINITION.activeStageKeys])
 const STAGE_LABELS = Object.freeze(Object.fromEntries(DEFINITION.stages.map(stage => [stage.key, stage.label])))
+const SUBMITTED_ONBOARDING_STATUSES = new Set(['submitted', 'complete', 'completed', 'client_onboarding_complete', 'buyer_onboarding_submitted', 'awaiting_signed_otp'])
 const token = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 
 export function summarizeBuyerJourneyDocuments(rows = [], { ready = true } = {}) {
@@ -25,7 +26,10 @@ export function summarizeBuyerJourneyDocuments(rows = [], { ready = true } = {})
 }
 
 export function hasBuyerOnboardingSubmittedEvidence({ status = '', onboarding = {}, transaction = {} } = {}) {
-  return ['submitted', 'complete', 'completed', 'client_onboarding_complete', 'buyer_onboarding_submitted', 'awaiting_signed_otp'].includes(token(status)) ||
+  const statuses = Array.isArray(status) ? status : [status]
+  return statuses.some(value => SUBMITTED_ONBOARDING_STATUSES.has(token(value))) ||
+    SUBMITTED_ONBOARDING_STATUSES.has(token(onboarding.status)) ||
+    SUBMITTED_ONBOARDING_STATUSES.has(token(transaction.onboarding_status)) ||
     Boolean(onboarding.submitted_at || onboarding.submittedAt || transaction.onboarding_completed_at)
 }
 

@@ -1,8 +1,19 @@
-begin;
-alter table public.whatsapp_inbox_messages add column request_json jsonb,add column template_json jsonb;
-create index whatsapp_inbox_history_page on public.whatsapp_inbox_messages(organisation_id,conversation_id,event_at desc,id desc);
-create index whatsapp_inbox_list_page on public.whatsapp_inbox_conversations(organisation_id,(coalesce(last_message_at,created_at)) desc,id desc);
-create index whatsapp_inbox_unread on public.whatsapp_inbox_conversations(organisation_id,assigned_user_id,last_message_at desc) where unread_count>0;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
+
+alter table public.whatsapp_inbox_messages add column request_json jsonb,add column template_json jsonb
+;
+
+create index whatsapp_inbox_history_page on public.whatsapp_inbox_messages(organisation_id,conversation_id,event_at desc,id desc)
+;
+
+create index whatsapp_inbox_list_page on public.whatsapp_inbox_conversations(organisation_id,(coalesce(last_message_at,created_at)) desc,id desc)
+;
+
+create index whatsapp_inbox_unread on public.whatsapp_inbox_conversations(organisation_id,assigned_user_id,last_message_at desc) where unread_count>0
+;
 
 create function public.whatsapp_inbox_page(p_org uuid,p_actor uuid,p_action text,p_conversation uuid default null,p_before_at timestamptz default null,p_before_id uuid default null,p_search text default '',p_known jsonb default '[]')
 returns jsonb language plpgsql security invoker set search_path='' as $$
@@ -38,7 +49,8 @@ begin
   else raise exception 'Unknown history action'; end if;
   if jsonb_array_length(items)>50 then cursor:=jsonb_build_object('at',items->49->'page_at','id',items->49->'id');items:=items-50; end if;
   return coalesce(context,'{}')||jsonb_build_object(case when p_action='list' then 'conversations' else 'messages' end,items,'nextCursor',cursor,'visibleIds',visible);
-end; $$;
+end; $$
+;
 
 create table public.whatsapp_inbox_permissions (
   conversation_id uuid primary key,organisation_id uuid not null references public.organisations(id),
@@ -46,19 +58,35 @@ create table public.whatsapp_inbox_permissions (
   recorded_by uuid references auth.users(id) on delete set null,version integer not null default 1,
   foreign key(conversation_id,organisation_id) references public.whatsapp_inbox_conversations(id,organisation_id),
   check(status<>'opted_in' or (nullif(trim(source),'') is not null and consent_at is not null and (opted_out_at is null or consent_at>opted_out_at)))
-);
-create index whatsapp_inbox_permissions_org on public.whatsapp_inbox_permissions(organisation_id);
-create index whatsapp_inbox_permissions_recorder on public.whatsapp_inbox_permissions(recorded_by);
+)
+;
+
+create index whatsapp_inbox_permissions_org on public.whatsapp_inbox_permissions(organisation_id)
+;
+
+create index whatsapp_inbox_permissions_recorder on public.whatsapp_inbox_permissions(recorded_by)
+;
+
 create table public.whatsapp_inbox_permission_events (
   id uuid primary key default gen_random_uuid(),organisation_id uuid not null references public.organisations(id),conversation_id uuid not null,
   snapshot jsonb not null,created_at timestamptz not null default now(),
   foreign key(conversation_id,organisation_id) references public.whatsapp_inbox_conversations(id,organisation_id)
-);
-create index whatsapp_inbox_permission_events_thread on public.whatsapp_inbox_permission_events(conversation_id,created_at desc);
-create index whatsapp_inbox_permission_events_org on public.whatsapp_inbox_permission_events(organisation_id,created_at desc);
+)
+;
+
+create index whatsapp_inbox_permission_events_thread on public.whatsapp_inbox_permission_events(conversation_id,created_at desc)
+;
+
+create index whatsapp_inbox_permission_events_org on public.whatsapp_inbox_permission_events(organisation_id,created_at desc)
+;
+
 create function public.whatsapp_inbox_permission_audit() returns trigger language plpgsql security invoker set search_path='' as $$
-begin insert into public.whatsapp_inbox_permission_events(organisation_id,conversation_id,snapshot) values(new.organisation_id,new.conversation_id,to_jsonb(new));return new;end; $$;
-create trigger whatsapp_inbox_permission_audit after insert or update on public.whatsapp_inbox_permissions for each row execute function public.whatsapp_inbox_permission_audit();
+begin insert into public.whatsapp_inbox_permission_events(organisation_id,conversation_id,snapshot) values(new.organisation_id,new.conversation_id,to_jsonb(new));return new;end; $$
+;
+
+create trigger whatsapp_inbox_permission_audit after insert or update on public.whatsapp_inbox_permissions for each row execute function public.whatsapp_inbox_permission_audit()
+;
+
 create function public.whatsapp_inbox_permission(p_org uuid,p_actor uuid,p_conversation uuid,p_action text default 'read',p_version integer default null,p_assignment_version integer default null,p_source text default null,p_consent_at timestamptz default null)
 returns jsonb language plpgsql security invoker set search_path='' as $$
 declare context jsonb; current_permission public.whatsapp_inbox_permissions%rowtype;
@@ -75,7 +103,8 @@ begin
       on conflict(conversation_id) do update set status=excluded.status,source=excluded.source,consent_at=excluded.consent_at,opted_out_at=excluded.opted_out_at,recorded_by=excluded.recorded_by,version=excluded.version returning * into current_permission;
   end if;
   return jsonb_build_object('permission',case when current_permission.conversation_id is null then null else to_jsonb(current_permission) end);
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_inbox_optout(p_phone_id text,p_waba_id text,p_from text,p_at timestamptz) returns boolean language plpgsql security invoker set search_path='' as $$
 declare thread public.whatsapp_inbox_conversations%rowtype;
@@ -87,7 +116,8 @@ begin
     on conflict(conversation_id) do update set status='opted_out',opted_out_at=excluded.opted_out_at,recorded_by=null,version=whatsapp_inbox_permissions.version+1
     where excluded.opted_out_at>=coalesce(whatsapp_inbox_permissions.consent_at,'-infinity') and excluded.opted_out_at>coalesce(whatsapp_inbox_permissions.opted_out_at,'-infinity');
   return found;
-end; $$;
+end; $$
+;
 
 create table public.whatsapp_inbox_uploads (
   id uuid primary key,organisation_id uuid not null references public.organisations(id),conversation_id uuid not null,channel_id uuid not null,
@@ -95,9 +125,15 @@ create table public.whatsapp_inbox_uploads (
   provider_media_id text,mime_type text not null,filename text not null,ownership_version integer not null,
   expires_at timestamptz not null default now()+interval '1 day',created_at timestamptz not null default now(),
   foreign key(conversation_id,organisation_id,channel_id) references public.whatsapp_inbox_conversations(id,organisation_id,channel_id)
-);
-create index whatsapp_inbox_uploads_thread on public.whatsapp_inbox_uploads(organisation_id,conversation_id);
-create index whatsapp_inbox_uploads_creator on public.whatsapp_inbox_uploads(created_by);
+)
+;
+
+create index whatsapp_inbox_uploads_thread on public.whatsapp_inbox_uploads(organisation_id,conversation_id)
+;
+
+create index whatsapp_inbox_uploads_creator on public.whatsapp_inbox_uploads(created_by)
+;
+
 create function public.whatsapp_inbox_claim(
   p_org uuid,p_actor uuid,p_conversation uuid,p_request uuid,p_intent jsonb,p_assignment_version integer,p_sender_version integer,
   p_upload boolean default false,p_type text default null,p_body text default '',p_media jsonb default '{}',p_upload_id uuid default null,p_template jsonb default null,p_at timestamptz default now()
@@ -144,19 +180,37 @@ begin
   insert into public.whatsapp_inbox_messages(id,organisation_id,conversation_id,channel_id,direction,message_type,body_text,media_json,template_json,request_json,delivery_status,event_at,created_by)
     values(p_request,p_org,thread.id,sender.id,'outbound',p_type,left(p_body,16000),p_media,p_template,p_intent,'sending',p_at,p_actor) returning * into message;
   return jsonb_build_object('claimed',true,'message',to_jsonb(message));
-end; $$;
+end; $$
+;
 
-alter table public.whatsapp_inbox_permissions enable row level security;
-alter table public.whatsapp_inbox_permission_events enable row level security;
-alter table public.whatsapp_inbox_uploads enable row level security;
-revoke all on public.whatsapp_inbox_permissions,public.whatsapp_inbox_permission_events,public.whatsapp_inbox_uploads from public,anon,authenticated;
-grant all on public.whatsapp_inbox_permissions,public.whatsapp_inbox_permission_events,public.whatsapp_inbox_uploads to service_role;
+alter table public.whatsapp_inbox_permissions enable row level security
+;
+
+alter table public.whatsapp_inbox_permission_events enable row level security
+;
+
+alter table public.whatsapp_inbox_uploads enable row level security
+;
+
+revoke all on public.whatsapp_inbox_permissions,public.whatsapp_inbox_permission_events,public.whatsapp_inbox_uploads from public,anon,authenticated
+;
+
+grant all on public.whatsapp_inbox_permissions,public.whatsapp_inbox_permission_events,public.whatsapp_inbox_uploads to service_role
+;
+
 -- FOR SHARE requires a column UPDATE privilege; consent records are not changed.
-grant select,update(id) on public.whatsapp_marketing_contacts to service_role;
+grant select,update(id) on public.whatsapp_marketing_contacts to service_role
+;
+
 revoke all on function public.whatsapp_inbox_permission_audit(),public.whatsapp_inbox_page(uuid,uuid,text,uuid,timestamptz,uuid,text,jsonb),
   public.whatsapp_inbox_permission(uuid,uuid,uuid,text,integer,integer,text,timestamptz),public.whatsapp_inbox_optout(text,text,text,timestamptz),
-  public.whatsapp_inbox_claim(uuid,uuid,uuid,uuid,jsonb,integer,integer,boolean,text,text,jsonb,uuid,jsonb,timestamptz) from public,anon,authenticated;
+  public.whatsapp_inbox_claim(uuid,uuid,uuid,uuid,jsonb,integer,integer,boolean,text,text,jsonb,uuid,jsonb,timestamptz) from public,anon,authenticated
+;
+
 grant execute on function public.whatsapp_inbox_page(uuid,uuid,text,uuid,timestamptz,uuid,text,jsonb),
   public.whatsapp_inbox_permission(uuid,uuid,uuid,text,integer,integer,text,timestamptz),public.whatsapp_inbox_optout(text,text,text,timestamptz),
-  public.whatsapp_inbox_claim(uuid,uuid,uuid,uuid,jsonb,integer,integer,boolean,text,text,jsonb,uuid,jsonb,timestamptz) to service_role;
-commit;
+  public.whatsapp_inbox_claim(uuid,uuid,uuid,uuid,jsonb,integer,integer,boolean,text,text,jsonb,uuid,jsonb,timestamptz) to service_role
+;
+
+commit
+;

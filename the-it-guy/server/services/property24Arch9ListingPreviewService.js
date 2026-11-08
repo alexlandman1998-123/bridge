@@ -1,14 +1,7 @@
 import { readListingAdvertisingExpiry } from './listingAdvertisingExpiry.js'
 import { refreshListingPhotoUrls } from '../../src/services/listings/listingPhotoStorage.js'
-import { execFile } from 'node:child_process'
-import fs from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
-import { promisify } from 'node:util'
 import { createProperty24ListingPlan } from './property24ListingMapper.js'
-
-const execFileAsync = promisify(execFile)
-let sharpImportPromise = null
+import { prepareProperty24PublishingPhoto, PROPERTY24_PHOTO_PREPARATION_VERSION, PROPERTY24_PHOTO_GALLERY_TARGET, PROPERTY24_PHOTO_SOURCE_LIMIT } from './property24PhotoPreparation.js'
 
 export function normalizeProperty24PreviewText(value = '') {
   return String(value || '').trim()
@@ -236,52 +229,6 @@ function guessMimeTypeFromUrl(url = '') {
   return 'image/jpeg'
 }
 
-function shouldConvertProperty24ImageToJpeg(contentType = '') {
-  const type = normalizeProperty24PreviewText(contentType).toLowerCase()
-  return Boolean(type && type !== 'image/jpeg' && type !== 'image/jpg')
-}
-
-async function loadSharpImageConverter() {
-  if (!sharpImportPromise) {
-    sharpImportPromise = import('sharp')
-      .then((module) => module.default || module)
-      .catch(() => null)
-  }
-  return sharpImportPromise
-}
-
-async function convertImageBufferToJpegWithSips(buffer) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'property24-image-'))
-  const inputPath = path.join(tempDir, 'input')
-  const outputPath = path.join(tempDir, 'output.jpg')
-  try {
-    await fs.writeFile(inputPath, buffer)
-    await execFileAsync('/usr/bin/sips', ['-s', 'format', 'jpeg', inputPath, '--out', outputPath])
-    return await fs.readFile(outputPath)
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true })
-  }
-}
-
-async function convertImageBufferToJpeg(buffer) {
-  const sharp = await loadSharpImageConverter()
-  if (typeof sharp === 'function') {
-    return sharp(buffer)
-      .rotate()
-      .jpeg({ quality: 90 })
-      .toBuffer()
-  }
-
-  try {
-    return await convertImageBufferToJpegWithSips(buffer)
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      throw new Error('Image conversion failed because sharp is unavailable and macOS sips is not installed.')
-    }
-    throw error
-  }
-}
-
 function parseSupabaseStorageLocation(url = '') {
   const text = normalizeProperty24PreviewText(url)
   if (!text) return null
@@ -333,14 +280,34 @@ async function readDownloadBody(download) {
 
 async function downloadImageBytes({ url, fetchImpl, storageClient }) {
   try {
-    const response = await fetchImpl(url)
+    const response = await fetchImpl(url, { signal: AbortSignal.timeout(30_000) })
     if (!response.ok) throw new Error(`Image download failed with ${response.status}.`)
+    if (Number(response.headers?.get?.('content-length')) > PROPERTY24_PHOTO_SOURCE_LIMIT) throw new Error('Original photo exceeds the processing size limit.')
+    let arrayBuffer
+    if (response.body?.getReader) {
+      const reader = response.body.getReader()
+      const chunks = []
+      let length = 0
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          length += value.byteLength
+          if (length > PROPERTY24_PHOTO_SOURCE_LIMIT) throw new Error('Original photo exceeds the processing size limit.')
+          chunks.push(value)
+        }
+        arrayBuffer = Buffer.concat(chunks, length)
+      } finally { await reader.cancel().catch(() => {}) }
+    } else arrayBuffer = await response.arrayBuffer()
     return {
-      arrayBuffer: await response.arrayBuffer(),
+      arrayBuffer,
       contentType: normalizeProperty24PreviewText(response.headers?.get?.('content-type')),
       source: 'url',
     }
   } catch (urlError) {
+    if (urlError.message === 'Original photo exceeds the processing size limit.') {
+      throw Object.assign(new Error('This original is too large to process safely. Contact support for help preparing it; the original has not been changed.'), { code: 'PHOTO_SOURCE_TOO_LARGE' })
+    }
     const storageLocation = parseSupabaseStorageLocation(url)
     if (!storageClient || !storageLocation) throw urlError
     const { data, error } = await storageClient.storage
@@ -351,6 +318,7 @@ async function downloadImageBytes({ url, fetchImpl, storageClient }) {
         `Supabase storage download failed for ${storageLocation.bucket}/${storageLocation.objectPath}: ${formatErrorMessage(error)}`,
       )
     }
+    if (Number(data?.size) > PROPERTY24_PHOTO_SOURCE_LIMIT) throw Object.assign(new Error('This original is too large to process safely. Contact support for help preparing it; the original has not been changed.'), { code: 'PHOTO_SOURCE_TOO_LARGE' })
     const body = await readDownloadBody(data)
     return {
       ...body,
@@ -360,147 +328,85 @@ async function downloadImageBytes({ url, fetchImpl, storageClient }) {
 }
 
 export async function loadProperty24ImageBytesForPreview({
-  media = [],
-  fetchImpl = globalThis.fetch,
-  storageClient = null,
-  storageBaseUrl = '',
-  maxImages = null,
-  maxBytesPerImage = 10 * 1024 * 1024,
-  maxTotalImageBytes = 60_000_000,
-  convertImagesToJpeg = false,
+  media = [], fetchImpl = globalThis.fetch, storageClient = null, storageBaseUrl = '',
+  maxImages = null, maxBytesPerImage = 10 * 1024 * 1024, maxTotalImageBytes = 60_000_000,
 } = {}) {
-  if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required to load image bytes.')
-  const safeMaxImages = Number.isFinite(Number(maxImages)) && Number(maxImages) > 0
-    ? Math.floor(Number(maxImages))
-    : null
+  if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required to prepare listing photos.')
+  if (!(maxBytesPerImage > 0) || !(maxTotalImageBytes > 0)) throw new Error('Photo size allowances must be positive.')
   const rows = Array.isArray(media) ? media : []
-  const indexedMedia = rows
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => isProperty24ImageMedia(item) && getMediaUrl(item))
+  const indexedMedia = rows.map((item, index) => ({ item, index }))
+    .filter(({ item }) => isProperty24ImageMedia(item))
     .sort((left, right) => {
-      const leftCover = Boolean(left.item.is_cover ?? left.item.isCover)
-      const rightCover = Boolean(right.item.is_cover ?? right.item.isCover)
-      if (leftCover !== rightCover) return leftCover ? -1 : 1
-      const leftOrder = Number(left.item.sort_order ?? left.item.sortOrder ?? left.index) || 0
-      const rightOrder = Number(right.item.sort_order ?? right.item.sortOrder ?? right.index) || 0
-      return leftOrder - rightOrder
+      const cover = Number(Boolean(right.item.is_cover ?? right.item.isCover)) - Number(Boolean(left.item.is_cover ?? left.item.isCover))
+      return cover || (Number(left.item.sort_order ?? left.item.sortOrder ?? left.index) || 0) - (Number(right.item.sort_order ?? right.item.sortOrder ?? right.index) || 0)
     })
-  const allImageIndexes = indexedMedia
-    .filter(({ item }) => normalizeProperty24PreviewText(item.media_type || item.mediaType || 'image').toLowerCase() === 'image')
-  const imageIndexes = safeMaxImages ? allImageIndexes.slice(0, safeMaxImages) : allImageIndexes
-  const floorPlanIndexes = indexedMedia
-    .filter(({ item }) => normalizeProperty24PreviewText(item.media_type || item.mediaType).toLowerCase() === 'floor_plan')
-    .slice(0, 5)
-  const selectedIndexes = [...imageIndexes, ...floorPlanIndexes]
-    .sort((left, right) => indexedMedia.indexOf(left) - indexedMedia.indexOf(right))
-
-  const results = []
-  const nextMedia = rows.map((item) => ({ ...item }))
+  const imageCount = indexedMedia.filter(({ item }) => String(item.media_type || item.mediaType || 'image').toLowerCase() === 'image').length
+  const photoNumbers = new Map([...indexedMedia]
+    .sort((left, right) => (Number(left.item.sort_order ?? left.item.sortOrder ?? left.index) || 0) - (Number(right.item.sort_order ?? right.item.sortOrder ?? right.index) || 0))
+    .map(({ index }, position) => [index, position + 1]))
+  const planCount = indexedMedia.length - imageCount
+  const selectionError = Number(maxImages) > 0 && imageCount > Math.floor(Number(maxImages))
+    ? `The selected photo limit excludes part of this ${imageCount}-photo gallery. Include the whole gallery before publishing.`
+    : planCount > 5 ? 'This publishing process permits at most five floor plan images per submission. Remove the extra floor plans from this submission before publishing.' : ''
+  const galleryBudget = Math.min(maxTotalImageBytes, PROPERTY24_PHOTO_GALLERY_TARGET)
+  const targetBytes = Math.floor(Math.min(maxBytesPerImage, 512_000, galleryBudget / Math.max(1, indexedMedia.length)))
+  const nextMedia = rows.map(item => {
+    const copy = { ...item }
+    if (isProperty24ImageMedia(item)) for (const key of ['bytes', 'base64', 'base64Bytes', 'base64_bytes']) delete copy[key]
+    return copy
+  })
+  const results = new Array(indexedMedia.length)
   let totalImageBytes = 0
-
   async function prepareImage({ item, index }) {
     const url = getMediaUrl(item)
-    const storageLocation = parseSupabaseStorageLocation(url)
-    const storageHostMismatch = (() => {
-      try {
-        const configuredOrigin = normalizeProperty24PreviewText(storageBaseUrl) ? new URL(storageBaseUrl).origin : ''
-        return Boolean(configuredOrigin && storageLocation?.origin && configuredOrigin !== storageLocation.origin)
-      } catch {
-        return false
-      }
-    })()
+    const photoNumber = photoNumbers.get(index)
+    const photoLabel = `Photo ${photoNumber}${item.caption || item.name ? ` (${String(item.caption || item.name).slice(0, 100)})` : ''}`
+    let downloaded = false
     try {
+      if (selectionError) throw new Error(selectionError)
+      if (!url) throw new Error('This photo has no saved file. Upload it again, save the listing, then check again.')
       const download = await downloadImageBytes({ url, fetchImpl, storageClient })
-      const downloadedBuffer = Buffer.from(download.arrayBuffer)
-      const originalByteLength = downloadedBuffer.byteLength
-      if (originalByteLength > maxBytesPerImage) {
-        throw new Error(`Image is ${originalByteLength} bytes, above the ${maxBytesPerImage} byte safety limit.`)
-      }
-      const originalContentType = normalizeProperty24PreviewText(download.contentType) || guessMimeTypeFromUrl(url)
-      const convertToJpeg = convertImagesToJpeg && shouldConvertProperty24ImageToJpeg(originalContentType)
-      let finalBuffer = downloadedBuffer
-      let contentType = originalContentType
-      let conversionError = ''
-      if (convertToJpeg) {
-        try {
-          finalBuffer = await convertImageBufferToJpeg(downloadedBuffer)
-          contentType = 'image/jpeg'
-        } catch (error) {
-          conversionError = formatErrorMessage(error)
-        }
-      }
-      if (finalBuffer.byteLength > maxBytesPerImage) {
-        throw new Error(`Image is ${finalBuffer.byteLength} bytes after conversion, above the ${maxBytesPerImage} byte safety limit.`)
-      }
-      return { finalBuffer, result: {
-        index,
-        status: 'LOADED',
-        sourceUrl: sanitizeUrl(url),
-        mimeContentType: contentType,
-        byteLength: finalBuffer.byteLength,
-        ...(convertToJpeg && !conversionError
-          ? { convertedToJpeg: true, originalMimeContentType: originalContentType, originalByteLength }
-          : {}),
-        ...(conversionError
-          ? { conversionFailedOriginalUsed: true, conversionError, originalMimeContentType: originalContentType }
-          : {}),
-        source: download.source,
-        ...(storageHostMismatch ? { storageHostMismatch: true } : {}),
+      downloaded = true
+      const original = Buffer.isBuffer(download.arrayBuffer) ? download.arrayBuffer : Buffer.from(download.arrayBuffer)
+      const prepared = await prepareProperty24PublishingPhoto(original, targetBytes)
+      return { buffer: prepared.buffer, result: {
+        index, photoNumber, photoLabel, mediaId: item.id || null, status: 'LOADED',
+        sourceUrl: sanitizeUrl(url), source: download.source, mimeContentType: 'image/jpeg',
+        byteLength: prepared.buffer.byteLength, originalByteLength: original.byteLength,
+        originalMimeContentType: normalizeProperty24PreviewText(download.contentType) || guessMimeTypeFromUrl(url),
+        convertedToJpeg: prepared.originalFormat !== 'jpeg', publishingCopy: true,
+        width: prepared.width, height: prepared.height, quality: prepared.quality,
+        ...(storageBaseUrl && parseSupabaseStorageLocation(url)?.origin && new URL(storageBaseUrl).origin !== parseSupabaseStorageLocation(url).origin ? { storageHostMismatch: true } : {}),
       } }
     } catch (error) {
-      return { result: {
-        index,
-        status: 'FAILED',
-        sourceUrl: sanitizeUrl(url),
-        message: error.message,
-        ...(storageHostMismatch ? { storageHostMismatch: true } : {}),
-      } }
+      return { result: { index, photoNumber, photoLabel, mediaId: item.id || null, status: 'FAILED',
+        sourceUrl: sanitizeUrl(url), message: `${photoLabel}: ${downloaded || selectionError || !url || error.code === 'PHOTO_SOURCE_TOO_LARGE' ? error.message : 'The saved file could not be downloaded. Check the photo, retry the check, or upload it again.'}` } }
     }
   }
-
-  // Overlap network waits without flooding storage or retaining an entire
-  // gallery of raw buffers. Apply the byte budget in cover/gallery order,
-  // regardless of which download finishes first.
-  for (let offset = 0; offset < selectedIndexes.length; offset += 2) {
-    const prepared = await Promise.all(selectedIndexes.slice(offset, offset + 2).map(prepareImage))
-    for (const { finalBuffer, result } of prepared) {
-      if (result.status === 'FAILED') {
-        results.push(result)
-        continue
+  // Keep at most two originals/decoders in flight, replacing each completed job
+  // immediately so one slow file cannot leave the other slot idle. Store by
+  // gallery position rather than completion order; originals stay untouched.
+  let nextIndex = 0
+  async function prepareNext() {
+    while (nextIndex < indexedMedia.length) {
+      const position = nextIndex++
+      const { buffer, result } = await prepareImage(indexedMedia[position])
+      if (result.status === 'LOADED') {
+        totalImageBytes += buffer.byteLength
+        nextMedia[result.index] = { ...nextMedia[result.index], bytes: buffer.toString('base64'), mimeContentType: 'image/jpeg', mime_content_type: 'image/jpeg' }
       }
-      if (totalImageBytes + finalBuffer.byteLength > maxTotalImageBytes) {
-        results.push({
-          index: result.index,
-          status: 'SKIPPED',
-          sourceUrl: result.sourceUrl,
-          message: `Adding this image would exceed the ${maxTotalImageBytes}-byte Property24 image budget.`,
-          byteLength: finalBuffer.byteLength,
-        })
-        continue
-      }
-      totalImageBytes += finalBuffer.byteLength
-      nextMedia[result.index] = {
-        ...nextMedia[result.index],
-        bytes: finalBuffer.toString('base64'),
-        mimeContentType: result.mimeContentType,
-        mime_content_type: result.mimeContentType,
-      }
-      results.push(result)
+      results[position] = result
     }
   }
-
-  return {
-    media: nextMedia,
-    summary: {
-      requested: results.filter((result) => result.status !== 'SKIPPED').length,
-      loaded: results.filter((result) => result.status === 'LOADED').length,
-      failed: results.filter((result) => result.status === 'FAILED').length,
-      convertedToJpeg: results.filter((result) => result.convertedToJpeg).length,
-      skipped: Math.max(0, rows.filter(isProperty24ImageMedia).length - selectedIndexes.length) + results.filter((result) => result.status === 'SKIPPED').length,
-      totalImageBytes,
-    },
-    results,
-  }
+  await Promise.all(Array.from({ length: Math.min(2, indexedMedia.length) }, prepareNext))
+  return { media: nextMedia, results, summary: {
+    preparationVersion: PROPERTY24_PHOTO_PREPARATION_VERSION,
+    requested: indexedMedia.length, loaded: results.filter(row => row.status === 'LOADED').length,
+    failed: results.filter(row => row.status === 'FAILED').length, skipped: 0,
+    convertedToJpeg: results.filter(row => row.convertedToJpeg).length,
+    publishingCopies: results.filter(row => row.publishingCopy).length,
+    totalImageBytes, galleryBudget, targetBytesPerPhoto: targetBytes,
+  } }
 }
 
 function sanitizeUrl(value = '') {

@@ -1,5 +1,11 @@
-begin;
-alter table public.meta_whatsapp_authorizations add column coexistence boolean not null default false;
+-- Restored from the production migration ledger; this version is already applied.
+
+begin
+;
+
+alter table public.meta_whatsapp_authorizations add column coexistence boolean not null default false
+;
+
 alter table public.organisation_communication_channels
   add column onboarding_mode text not null default 'cloud_api' check(onboarding_mode in ('cloud_api','coexistence')),
   add column business_app_session uuid,
@@ -7,14 +13,21 @@ alter table public.organisation_communication_channels
   add column business_app_history_progress integer not null default 0 check(business_app_history_progress between 0 and 100),
   add column business_app_history_state text not null default 'none' check(business_app_history_state in ('none','receiving','complete','declined','failed')),
   add column business_app_contacts_received_at timestamptz,
-  add column business_app_state_at timestamptz;
-alter table public.whatsapp_inbox_conversations add column content_version bigint not null default 0,add column contact_name_source text not null default 'profile' check(contact_name_source in ('profile','business_app'));
+  add column business_app_state_at timestamptz
+;
+
+alter table public.whatsapp_inbox_conversations add column content_version bigint not null default 0,add column contact_name_source text not null default 'profile' check(contact_name_source in ('profile','business_app'))
+;
+
 alter table public.whatsapp_inbox_messages
   add column message_origin text not null default 'cloud_api' check(message_origin in ('cloud_api','business_app','history')),
   add column live_received boolean not null default false,
   add column edited_at timestamptz,
-  add column revoked_at timestamptz;
-update public.whatsapp_inbox_messages set live_received=true where direction='inbound';
+  add column revoked_at timestamptz
+;
+
+update public.whatsapp_inbox_messages set live_received=true where direction='inbound'
+;
 
 create table public.whatsapp_business_app_requests (
   channel_id uuid not null,organisation_id uuid not null references public.organisations(id),session_id uuid not null,
@@ -23,15 +36,25 @@ create table public.whatsapp_business_app_requests (
   created_by uuid references auth.users(id) on delete set null,provider_request_id text,error_message text,created_at timestamptz not null default now(),
   primary key(channel_id,session_id,sync_type),
   foreign key(channel_id,organisation_id) references public.organisation_communication_channels(id,organisation_id)
-);
-create index whatsapp_business_app_requests_org on public.whatsapp_business_app_requests(organisation_id);
-create index whatsapp_business_app_requests_actor on public.whatsapp_business_app_requests(created_by);
+)
+;
+
+create index whatsapp_business_app_requests_org on public.whatsapp_business_app_requests(organisation_id)
+;
+
+create index whatsapp_business_app_requests_actor on public.whatsapp_business_app_requests(created_by)
+;
+
 create table public.whatsapp_business_app_contacts (
   channel_id uuid not null,organisation_id uuid not null references public.organisations(id),phone text not null,
   name text not null default '',removed boolean not null default false,event_at timestamptz not null,
   primary key(channel_id,phone),foreign key(channel_id,organisation_id) references public.organisation_communication_channels(id,organisation_id)
-);
-create index whatsapp_business_app_contacts_org on public.whatsapp_business_app_contacts(organisation_id);
+)
+;
+
+create index whatsapp_business_app_contacts_org on public.whatsapp_business_app_contacts(organisation_id)
+;
+
 create table public.whatsapp_business_app_events (
   id uuid primary key default gen_random_uuid(),channel_id uuid not null,organisation_id uuid not null references public.organisations(id),session_id uuid not null,
   event_hash text not null check(event_hash ~ '^[0-9a-f]{64}$'),field text not null check(field in ('history','smb_app_state_sync','smb_message_echoes','messages')),
@@ -39,16 +62,25 @@ create table public.whatsapp_business_app_events (
   attempts integer not null default 0,lease_token uuid,lease_until timestamptz,next_attempt_at timestamptz not null default now(),last_error text,
   created_at timestamptz not null default now(),updated_at timestamptz not null default now(),
   unique(channel_id,session_id,event_hash),foreign key(channel_id,organisation_id) references public.organisation_communication_channels(id,organisation_id)
-);
-create index whatsapp_business_app_events_due on public.whatsapp_business_app_events(next_attempt_at,created_at) where status in ('queued','processing');
-create index whatsapp_business_app_events_channel on public.whatsapp_business_app_events(organisation_id,channel_id,session_id,status);
+)
+;
+
+create index whatsapp_business_app_events_due on public.whatsapp_business_app_events(next_attempt_at,created_at) where status in ('queued','processing')
+;
+
+create index whatsapp_business_app_events_channel on public.whatsapp_business_app_events(organisation_id,channel_id,session_id,status)
+;
+
 create table public.whatsapp_business_app_mutations (
   channel_id uuid not null,organisation_id uuid not null references public.organisations(id),original_message_id text not null,
   contact_phone text not null,direction text not null check(direction in ('inbound','outbound')),action text not null check(action in ('edit','revoke')),
   event_at timestamptz not null,message_type text not null,body_text text not null default '',media_json jsonb not null default '{}',
   primary key(channel_id,original_message_id),foreign key(channel_id,organisation_id) references public.organisation_communication_channels(id,organisation_id)
-);
-create index whatsapp_business_app_mutations_org on public.whatsapp_business_app_mutations(organisation_id);
+)
+;
+
+create index whatsapp_business_app_mutations_org on public.whatsapp_business_app_mutations(organisation_id)
+;
 
 -- Imports are provider observations, never a new staff send. Browser roles have
 -- no table writes or executable import functions.
@@ -65,7 +97,8 @@ begin
   select * into thread from public.whatsapp_inbox_conversations where id=new.conversation_id and organisation_id=new.organisation_id for update;
   if thread.id is null or not (admin or coalesce(thread.assigned_user_id=new.created_by,false)) then raise exception 'Conversation assignment changed. Refresh your inbox' using errcode='42501'; end if;
   return new;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_apply_mutation(p_channel uuid,p_message text) returns void language plpgsql security invoker set search_path='' as $$
 declare mutation public.whatsapp_business_app_mutations%rowtype; message public.whatsapp_inbox_messages%rowtype; changed boolean:=false;
@@ -85,7 +118,8 @@ begin
   if message.id=(select id from public.whatsapp_inbox_messages where conversation_id=message.conversation_id and organisation_id=message.organisation_id order by event_at desc,id desc limit 1) then
     update public.whatsapp_inbox_conversations set last_message_preview=case when mutation.action='revoke' then '[Message deleted]' else left(coalesce(nullif(mutation.body_text,''),'['||mutation.message_type||']'),240) end where id=message.conversation_id;
   end if;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_ingest(p_phone_id text,p_waba_id text,p_contact text,p_message_id text,p_at timestamptz,p_direction text,p_type text,p_body text,p_media jsonb,p_name text,p_source text,p_status text default 'sent')
 returns uuid language plpgsql security invoker set search_path='' as $$
@@ -133,9 +167,12 @@ begin
     last_message_preview=case when last_message_at is null or p_at>=last_message_at then case when saved.revoked_at is not null then '[Message deleted]' else left(coalesce(nullif(saved.body_text,''),'['||saved.message_type||']'),240) end else last_message_preview end,
     last_message_at=greatest(last_message_at,p_at),content_version=content_version+case when (prior.id is null and (origin='history' or p_at<thread.last_message_at)) or (prior.id is not null and ((prior.message_type='media_placeholder' and saved.message_type<>'media_placeholder') or (nullif(prior.media_json->>'id','') is null and nullif(saved.media_json->>'id','') is not null))) then 1 else 0 end,updated_at=now() where id=thread.id;
   return thread.id;
-end; $$;
+end; $$
+;
+
 create or replace function public.whatsapp_inbox_receive(p_phone_id text,p_waba_id text,p_from text,p_message_id text,p_at timestamptz,p_body text,p_type text,p_media jsonb,p_name text)
-returns uuid language sql security invoker set search_path='' as $$ select public.whatsapp_business_app_ingest(p_phone_id,p_waba_id,p_from,p_message_id,p_at,'inbound',p_type,p_body,p_media,p_name,'cloud_api','received'); $$;
+returns uuid language sql security invoker set search_path='' as $$ select public.whatsapp_business_app_ingest(p_phone_id,p_waba_id,p_from,p_message_id,p_at,'inbound',p_type,p_body,p_media,p_name,'cloud_api','received'); $$
+;
 
 create function public.whatsapp_business_app_contact(p_phone_id text,p_waba_id text,p_contact text,p_name text,p_removed boolean,p_at timestamptz) returns boolean language plpgsql security invoker set search_path='' as $$
 declare sender public.organisation_communication_channels%rowtype; changed boolean;
@@ -151,7 +188,8 @@ begin
     where channel_id=sender.id and contact_phone=p_contact and (not p_removed or contact_name_source='business_app'); end if;
   update public.organisation_communication_channels set business_app_contacts_received_at=greatest(business_app_contacts_received_at,p_at) where id=sender.id;
   return changed;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_mutate(p_phone_id text,p_waba_id text,p_contact text,p_direction text,p_original text,p_at timestamptz,p_action text,p_type text,p_body text,p_media jsonb) returns boolean language plpgsql security invoker set search_path='' as $$
 declare sender public.organisation_communication_channels%rowtype;
@@ -166,7 +204,8 @@ begin
         and (excluded.action='revoke' or excluded.event_at>whatsapp_business_app_mutations.event_at);
   perform public.whatsapp_business_app_apply_mutation(sender.id,p_original);
   return true;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_enqueue(p_phone_id text,p_waba_id text,p_field text,p_payload jsonb,p_hash text) returns boolean language plpgsql security invoker set search_path='' as $$
 declare sender public.organisation_communication_channels%rowtype;
@@ -177,7 +216,8 @@ begin
   if octet_length(p_payload::text)>25165824 then raise exception 'Phone app update is too large'; end if;
   insert into public.whatsapp_business_app_events(channel_id,organisation_id,session_id,event_hash,field,payload_json) values(sender.id,sender.organisation_id,sender.business_app_session,p_hash,p_field,p_payload) on conflict(channel_id,session_id,event_hash) do nothing;
   return true;
-end; $$;
+end; $$
+;
 
 -- Authorizations and number ownership are committed together after provider
 -- verification. A suspended member or competing workspace cannot win the save.
@@ -206,7 +246,8 @@ begin
   if session.coexistence then update public.whatsapp_inbox_conversations set last_inbound_at=null where channel_id=sender.id; end if;
   update public.meta_whatsapp_authorizations set consumed_at=now(),token_ciphertext=null where state_hash=session.state_hash;
   return jsonb_build_object('sender',to_jsonb(sender));
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_claim_request(p_org uuid,p_actor uuid,p_sender uuid,p_version integer,p_type text,p_session uuid) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare sender public.organisation_communication_channels%rowtype; admin boolean; prior public.whatsapp_business_app_requests%rowtype;
@@ -221,7 +262,8 @@ begin
   if sender.business_app_connected_at is null or sender.business_app_connected_at<now()-interval '24 hours' then raise exception 'The initial sync period expired. Reconnect this number through Meta'; end if;
   insert into public.whatsapp_business_app_requests(channel_id,organisation_id,session_id,sync_type,status,created_by) values(sender.id,p_org,sender.business_app_session,p_type,'processing',p_actor);
   return jsonb_build_object('claimed',true);
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_status(p_org uuid,p_actor uuid,p_sender uuid,p_retry boolean default false,p_version integer default null) returns jsonb language plpgsql security invoker set search_path='' as $$
 declare sender public.organisation_communication_channels%rowtype; admin boolean; requests jsonb; pending bigint; failed bigint; history text;
@@ -238,7 +280,8 @@ begin
   history:=case when sender.business_app_history_state='complete' and pending>0 then 'receiving' when failed>0 then 'failed' when sender.business_app_history_state<>'none' then sender.business_app_history_state
     when requests->'history'->>'status'='requested' then 'requested' when requests->'history'->>'status' in ('processing','unknown') then 'unconfirmed' when requests->'history'->>'status'='failed' then 'failed' else 'not_started' end;
   return jsonb_build_object('history',history,'progress',sender.business_app_history_progress,'contactsReceivedAt',sender.business_app_contacts_received_at,'pendingUpdates',pending,'failedUpdates',failed,'requests',requests);
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_account(p_waba_id text,p_phone text,p_event text,p_at timestamptz,p_reason text default '') returns integer language plpgsql security invoker set search_path='' as $$
 declare changed integer;
@@ -254,7 +297,8 @@ begin
       and (nullif(p_phone,'') is null or regexp_replace(display_phone_number,'[^0-9]','','g')=p_phone)
       and p_at>=coalesce(date_trunc('second',business_app_connected_at),'-infinity') and (p_at>coalesce(business_app_state_at,'-infinity') or (p_at=business_app_state_at and p_event<>'ACCOUNT_RECONNECTED' and connection_status='connected'));
   get diagnostics changed=row_count;return changed;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_claim_event() returns setof public.whatsapp_business_app_events language plpgsql security invoker set search_path='' as $$
 declare event_id uuid;
@@ -266,7 +310,8 @@ begin
     order by e.created_at,e.id limit 1 for update of e skip locked;
   if event_id is null then return; end if;
   return query update public.whatsapp_business_app_events set status='processing',lease_token=gen_random_uuid(),lease_until=now()+interval '90 seconds',attempts=attempts+1,updated_at=now() where id=event_id returning *;
-end; $$;
+end; $$
+;
 
 create function public.whatsapp_business_app_process(p_id uuid,p_token uuid,p_items jsonb,p_next integer,p_done boolean) returns boolean language plpgsql security invoker set search_path='' as $$
 declare job public.whatsapp_business_app_events%rowtype; sender public.organisation_communication_channels%rowtype; item jsonb;
@@ -293,9 +338,12 @@ begin
   end loop;
   update public.whatsapp_business_app_events set cursor_position=p_next,status=case when p_done then 'processed' else 'queued' end,payload_json=case when p_done then '{}'::jsonb else payload_json end,attempts=0,lease_token=null,lease_until=null,next_attempt_at=now(),last_error=null,updated_at=now() where id=job.id;
   return true;
-end; $$;
+end; $$
+;
+
 create function public.whatsapp_business_app_fail(p_id uuid,p_token uuid) returns void language plpgsql security invoker set search_path='' as $$
-begin update public.whatsapp_business_app_events set status=case when attempts>=5 then 'failed' else 'queued' end,next_attempt_at=now()+interval '30 seconds'*least(16,power(2,attempts)::integer),lease_token=null,lease_until=null,last_error='Saved phone app update could not be processed.',updated_at=now() where id=p_id and lease_token=p_token and status='processing';end; $$;
+begin update public.whatsapp_business_app_events set status=case when attempts>=5 then 'failed' else 'queued' end,next_attempt_at=now()+interval '30 seconds'*least(16,power(2,attempts)::integer),lease_token=null,lease_until=null,last_error='Saved phone app update could not be processed.',updated_at=now() where id=p_id and lease_token=p_token and status='processing';end; $$
+;
 
 -- Include provenance and deletion state without exposing the send intent.
 create or replace function public.whatsapp_inbox_page(p_org uuid,p_actor uuid,p_action text,p_conversation uuid default null,p_before_at timestamptz default null,p_before_id uuid default null,p_search text default '',p_known jsonb default '[]')
@@ -325,18 +373,36 @@ begin
   else raise exception 'Unknown history action'; end if;
   if jsonb_array_length(items)>50 then cursor:=jsonb_build_object('at',items->49->'page_at','id',items->49->'id');items:=items-50; end if;
   return coalesce(context,'{}')||jsonb_build_object(case when p_action='list' then 'conversations' else 'messages' end,items,'nextCursor',cursor,'visibleIds',visible);
-end; $$;
+end; $$
+;
 
-alter table public.whatsapp_business_app_requests enable row level security;
-alter table public.whatsapp_business_app_contacts enable row level security;
-alter table public.whatsapp_business_app_events enable row level security;
-alter table public.whatsapp_business_app_mutations enable row level security;
-revoke all on public.whatsapp_business_app_requests,public.whatsapp_business_app_contacts,public.whatsapp_business_app_events,public.whatsapp_business_app_mutations from public,anon,authenticated;
-grant all on public.whatsapp_business_app_requests,public.whatsapp_business_app_contacts,public.whatsapp_business_app_events,public.whatsapp_business_app_mutations to service_role;
-revoke all on function public.whatsapp_finish_authorization(uuid,uuid,text,text,text,jsonb,text),public.whatsapp_business_app_apply_mutation(uuid,text),public.whatsapp_business_app_ingest(text,text,text,text,timestamptz,text,text,text,jsonb,text,text,text),public.whatsapp_business_app_contact(text,text,text,text,boolean,timestamptz),public.whatsapp_business_app_mutate(text,text,text,text,text,timestamptz,text,text,text,jsonb),public.whatsapp_business_app_enqueue(text,text,text,jsonb,text),public.whatsapp_business_app_claim_request(uuid,uuid,uuid,integer,text,uuid),public.whatsapp_business_app_status(uuid,uuid,uuid,boolean,integer),public.whatsapp_business_app_account(text,text,text,timestamptz,text),public.whatsapp_business_app_claim_event(),public.whatsapp_business_app_process(uuid,uuid,jsonb,integer,boolean),public.whatsapp_business_app_fail(uuid,uuid) from public,anon,authenticated;
-grant execute on function public.whatsapp_finish_authorization(uuid,uuid,text,text,text,jsonb,text),public.whatsapp_business_app_apply_mutation(uuid,text),public.whatsapp_business_app_ingest(text,text,text,text,timestamptz,text,text,text,jsonb,text,text,text),public.whatsapp_business_app_contact(text,text,text,text,boolean,timestamptz),public.whatsapp_business_app_mutate(text,text,text,text,text,timestamptz,text,text,text,jsonb),public.whatsapp_business_app_enqueue(text,text,text,jsonb,text),public.whatsapp_business_app_claim_request(uuid,uuid,uuid,integer,text,uuid),public.whatsapp_business_app_status(uuid,uuid,uuid,boolean,integer),public.whatsapp_business_app_account(text,text,text,timestamptz,text),public.whatsapp_business_app_claim_event(),public.whatsapp_business_app_process(uuid,uuid,jsonb,integer,boolean),public.whatsapp_business_app_fail(uuid,uuid) to service_role;
+alter table public.whatsapp_business_app_requests enable row level security
+;
 
-create schema if not exists private;
+alter table public.whatsapp_business_app_contacts enable row level security
+;
+
+alter table public.whatsapp_business_app_events enable row level security
+;
+
+alter table public.whatsapp_business_app_mutations enable row level security
+;
+
+revoke all on public.whatsapp_business_app_requests,public.whatsapp_business_app_contacts,public.whatsapp_business_app_events,public.whatsapp_business_app_mutations from public,anon,authenticated
+;
+
+grant all on public.whatsapp_business_app_requests,public.whatsapp_business_app_contacts,public.whatsapp_business_app_events,public.whatsapp_business_app_mutations to service_role
+;
+
+revoke all on function public.whatsapp_finish_authorization(uuid,uuid,text,text,text,jsonb,text),public.whatsapp_business_app_apply_mutation(uuid,text),public.whatsapp_business_app_ingest(text,text,text,text,timestamptz,text,text,text,jsonb,text,text,text),public.whatsapp_business_app_contact(text,text,text,text,boolean,timestamptz),public.whatsapp_business_app_mutate(text,text,text,text,text,timestamptz,text,text,text,jsonb),public.whatsapp_business_app_enqueue(text,text,text,jsonb,text),public.whatsapp_business_app_claim_request(uuid,uuid,uuid,integer,text,uuid),public.whatsapp_business_app_status(uuid,uuid,uuid,boolean,integer),public.whatsapp_business_app_account(text,text,text,timestamptz,text),public.whatsapp_business_app_claim_event(),public.whatsapp_business_app_process(uuid,uuid,jsonb,integer,boolean),public.whatsapp_business_app_fail(uuid,uuid) from public,anon,authenticated
+;
+
+grant execute on function public.whatsapp_finish_authorization(uuid,uuid,text,text,text,jsonb,text),public.whatsapp_business_app_apply_mutation(uuid,text),public.whatsapp_business_app_ingest(text,text,text,text,timestamptz,text,text,text,jsonb,text,text,text),public.whatsapp_business_app_contact(text,text,text,text,boolean,timestamptz),public.whatsapp_business_app_mutate(text,text,text,text,text,timestamptz,text,text,text,jsonb),public.whatsapp_business_app_enqueue(text,text,text,jsonb,text),public.whatsapp_business_app_claim_request(uuid,uuid,uuid,integer,text,uuid),public.whatsapp_business_app_status(uuid,uuid,uuid,boolean,integer),public.whatsapp_business_app_account(text,text,text,timestamptz,text),public.whatsapp_business_app_claim_event(),public.whatsapp_business_app_process(uuid,uuid,jsonb,integer,boolean),public.whatsapp_business_app_fail(uuid,uuid) to service_role
+;
+
+create schema if not exists private
+;
+
 create function private.run_whatsapp_business_app_worker() returns jsonb language plpgsql security definer set search_path='' as $$
 declare project_url text; service_key text; headers jsonb; request_id bigint;
 begin
@@ -349,12 +415,23 @@ begin
   if left(service_key,10)<>'sb_secret_' then headers:=headers||jsonb_build_object('Authorization','Bearer '||service_key); end if;
   select net.http_post(url:=rtrim(project_url,'/')||'/functions/v1/whatsapp-business-app-worker',headers:=headers,body:='{}'::jsonb,timeout_milliseconds:=90000) into request_id;
   return jsonb_build_object('scheduled',true,'request_id',request_id);
-end; $$;
-revoke all on function private.run_whatsapp_business_app_worker() from public,anon,authenticated;
-grant usage on schema private to service_role;
-grant execute on function private.run_whatsapp_business_app_worker() to service_role;
+end; $$
+;
+
+revoke all on function private.run_whatsapp_business_app_worker() from public,anon,authenticated
+;
+
+grant usage on schema private to service_role
+;
+
+grant execute on function private.run_whatsapp_business_app_worker() to service_role
+;
+
 do $$ begin
   if to_regclass('cron.job') is not null then perform cron.schedule('whatsapp-business-app-worker','* * * * *','select private.run_whatsapp_business_app_worker();');
   else raise notice 'Enable pg_cron and pg_net, then schedule private.run_whatsapp_business_app_worker() every minute.'; end if;
-end; $$;
-commit;
+end; $$
+;
+
+commit
+;

@@ -1,5 +1,13 @@
 # Inbox mail worker
 
+8 November release reconciliation: Render confirms that the connected-mail worker
+is live in the Arch9 workspace, using commit
+`37567dad831b4647c784e9070db815d482b32df9` and one Frankfurt instance.
+Its runtime source matches this release candidate. The reviewed Render Blueprint
+is retained beside the worker. Recent logs show completed receiving batches.
+This verifies hosting and worker activity, not a new provider connection or test
+email delivery; the dedicated-provider acceptance checks below still apply.
+
 This is the primary transaction workspace's receiving and sending process. Run it as one
 long-lived Node 22+ service with outbound HTTPS and secure IMAP (TCP 993). It does
 not run in a browser, Vercel request handler, or Supabase Edge Function. One process

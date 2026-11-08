@@ -32,6 +32,21 @@ async function open() {
   await waitFor(() => expect(screen.getByLabelText('New document name').disabled).toBe(false))
 }
 
+test('a checklist row opens its existing request directly and uploads without creating a duplicate request', async () => {
+  const command = { commandId: 'direct-upload', action: 'upload', contextId: 'transaction', payload: { fileName: 'identity.pdf' } }
+  prepareDocumentRequirementUpload.mockResolvedValue(command)
+  render(<DocumentRequirementManager {...props} presentation="dialog" open initialSelectedRequirementId={row.id} />)
+  const input = await screen.findByLabelText('Upload file')
+  expect(screen.getByLabelText('Existing requirement').value).toBe(row.id)
+  expect(screen.queryByLabelText('New document name')).toBeNull()
+  const file = new File(['synthetic'], 'identity.pdf', { type: 'application/pdf' })
+  fireEvent.change(input, { target: { files: [file] } })
+  fireEvent.click(screen.getByRole('button', { name: 'Upload file' }))
+  await screen.findByText(/Uploaded. Linked views/)
+  expect(prepareDocumentRequirementUpload.mock.calls[0][1]).toMatchObject({ requirementId: row.id, expectedRevision: 7 })
+  expect(executeDocumentRequirementCommand).not.toHaveBeenCalled()
+})
+
 test('adds a named seller requirement to the handed-over transaction and clears confirmed recovery', async () => {
   await open()
   fireEvent.change(screen.getByLabelText('New document name'), { target: { value: 'SARS correspondence' } })
@@ -376,4 +391,3 @@ test('buyer controls show legacy client-owned requirements from the linked trans
   fireEvent.change(select, { target: { value: row.id } })
   expect(screen.getByLabelText('Upload file')).toBeTruthy()
 })
-

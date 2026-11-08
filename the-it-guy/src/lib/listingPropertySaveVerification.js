@@ -44,6 +44,7 @@ export function verifyListingPropertySave(form = {}, listing = {}) {
     textCheck('city', 'city / town', form.city, firstDefined(listing.city, details.city)),
     textCheck('province', 'province', form.province, firstDefined(listing.province, details.province)),
     textCheck('postalCode', 'postal code', form.postalCode, firstDefined(listing.postalCode, details.postalCode)),
+    textCheck('exactAddressVisibility', 'street address display', form.exactAddressVisibility, firstDefined(listing.exactAddressVisibility, details.exactAddressVisibility)),
     textCheck('propertyType', 'property type', form.propertyType, firstDefined(listing.propertyType, details.propertyType)),
     textCheck('propertyStructureType', 'ownership scheme', form.propertyStructureType, listing.propertyStructureType),
     textCheck('estateName', 'estate / HOA name', form.estateName, firstDefined(listing.estateName, canonical.estateName, canonical.estate_name)),
@@ -93,6 +94,7 @@ export function verifyListingPropertyPersistenceCopies({ form = {}, listing = {}
     // Address copies may use different formats and are optional on portals.
     // Continue saving them, but do not make their verification a save gate.
     ...verifyListingPropertySave(listingVerificationForm, listing).mismatches,
+    textCheck('exactAddressVisibility', 'street address display (onboarding)', form.exactAddressVisibility, onboardingForm.exactAddressVisibility),
     textCheck('propertyType', 'property type (onboarding)', form.propertyType, onboardingForm.propertyType),
     textCheck('propertyStructureType', 'ownership scheme (onboarding)', form.propertyStructureType, firstDefined(onboardingForm.propertyStructureType, onboardingForm.ownershipStructure)),
     numberCheck('listingPrice', 'listing price (onboarding)', form.listingPrice, onboardingForm.askingPrice),

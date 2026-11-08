@@ -5,7 +5,6 @@ import { homeSeekersPixelSurface, setHomeSeekersMeasurementConsent } from './hom
 const ffcRunnerFee = 700
 const ffcPpraFee = 640
 export const recruitmentPricing = Object.freeze({ monthlyFee: 9000, dealFundedMonthlyFee: 10000, upfrontAnnualFee: 100000, transactionFee: 1500, ffcRunnerFee, ffcPpraFee, ffcTransferFee: ffcRunnerFee + ffcPpraFee, averageSalePrice: 1500000, commissionRate: 0.05, traditionalSplit: 0.3, balloonMonthlyFee: 8500, balloonSplit: 0.1, balloonCommissionRate: 0.06, capMonthlyFee: 950, capSplit: 0.29, annualCap: 150000, capRoyalty: 0.04, referralMonthlyCredit: 750, referralLimit: 12 })
-
 export const recruitmentPaymentOptions = Object.freeze([
   Object.freeze({ id: 'deals', title: 'Post Paid', amount: recruitmentPricing.dealFundedMonthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.dealFundedMonthlyFee, copy: 'Your monthly fee builds up as a balance and is deducted when your deals register. A maximum of 50% of any one deal goes towards that balance, so you retain at least half of each cheque.', note: 'Solo agents only.' }),
   Object.freeze({ id: 'monthly', title: 'Prepaid', amount: recruitmentPricing.monthlyFee, period: '/ month', annualFee: 12 * recruitmentPricing.monthlyFee, copy: 'Your R9,000 monthly subscription is collected by debit order on the 1st of every month, in advance. Your subscription is settled separately from your deals, with no brokerage commission split.', note: 'The standard option. Pay monthly, in advance.' }),

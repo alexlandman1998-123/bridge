@@ -46,6 +46,19 @@ assert.equal(deriveListingChannelUpdateStates([verified, event('listing_under_of
 assert.equal(deriveListingChannelUpdateStates([], [{ channel: 'Property24', status: 'failed' }], 'sold').Property24.action, 'sold')
 assert.equal(deriveListingChannelUpdateStates([]).Property24, null)
 
+const uncertainResult = { channel: 'Agency Website', action: 'under_offer', status: 'uncertain', detail: 'No new request was sent; check the earlier request.' }
+const uncertainUpdate = event('listing_under_offer', '2026-10-28T07:00:00Z', { channelResults: [uncertainResult] })
+const olderWebsiteSuccess = event('listing_sold', '2026-10-26T07:00:00Z', { channelResults: [{ channel: 'Agency Website', status: 'sent' }] })
+for (const channelState of [
+  deriveListingChannelUpdateStates([olderWebsiteSuccess, uncertainUpdate])['Agency Website'],
+  deriveListingChannelUpdateStates([olderWebsiteSuccess], [uncertainResult], 'under_offer')['Agency Website'],
+]) {
+  assert.equal(channelState.status, 'needs_attention')
+  assert.equal(channelState.action, 'under_offer')
+  assert.equal(channelState.retriable, false, 'an unknown outcome must never become a failed-channel retry')
+  assert.equal(channelState.detail, uncertainResult.detail)
+}
+
 const page = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 assert.match(page, /getPrivateListingActivity\(listingId, \{ requireAvailable: true \}\)/)
 assert.doesNotMatch(page, /contextTitle: property24Update/)

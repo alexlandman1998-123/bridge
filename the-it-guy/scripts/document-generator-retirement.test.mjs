@@ -38,8 +38,10 @@ test('all retired endpoints refuse requests without database, storage or rendere
   const config = read('../../supabase/config.toml')
   for (const name of RETIRED_DOCUMENT_FUNCTIONS) {
     const entry = read(`../../supabase/functions/${name}/index.ts`)
-    assert.match(entry, /Deno\.serve\(retiredDocumentGenerator\)/)
-    assert.equal((entry.match(/import /g) || []).length, 1)
+    assert.match(entry, /Deno\.serve\((?:withApiCredentials\()?retiredDocumentGenerator\)?\)/)
+    const wrapped = entry.includes('withApiCredentials')
+    assert.equal((entry.match(/import /g) || []).length, wrapped ? 2 : 1)
+    if (wrapped) assert.match(entry, /from ["']\.\.\/_shared\/apiCredentials\.ts["']/)
     assert.match(config, new RegExp(`\\[functions\\.${name}\\]\\s+enabled = false`))
     for (const method of ['GET', 'POST']) {
       const response = retiredDocumentGenerator(new Request(`https://example.test/${name}`, { method }))

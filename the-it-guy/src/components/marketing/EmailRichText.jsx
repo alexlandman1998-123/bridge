@@ -9,9 +9,12 @@ export default function EmailRichText({ block, onChange }) {
   const editor = useRef(null);
   const selection = useRef(null);
   useEffect(() => {
-    if (editor.current && document.activeElement !== editor.current)
-      editor.current.innerHTML =
-        block.richText || escapeHtml(block.text || "").replace(/\n/g, "<br>");
+    const node=editor.current,next=block.richText ? sanitizeRichText(block.richText) : escapeHtml(block.text || "").replace(/\n/g,"<br>");
+    if(node&&node.innerHTML!==next){
+      const focused=document.activeElement===node;
+      node.innerHTML=next;selection.current=null;
+      if(focused){const range=document.createRange();range.selectNodeContents(node);range.collapse(false);const current=window.getSelection();current.removeAllRanges();current.addRange(range);selection.current=range.cloneRange()}
+    }
   }, [block.id, block.richText, block.text]);
   const remember = () => {
     const range = window.getSelection();
@@ -54,6 +57,7 @@ export default function EmailRichText({ block, onChange }) {
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
+          aria-label="Bold selected text"
           onClick={() => insert("strong")}
         >
           Bold
@@ -61,6 +65,7 @@ export default function EmailRichText({ block, onChange }) {
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
+          aria-label="Italic selected text"
           onClick={() => insert("em")}
         >
           Italic
@@ -68,6 +73,7 @@ export default function EmailRichText({ block, onChange }) {
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
+          aria-label="Link selected text"
           onClick={() => {
             const url = window.prompt(
               "Link destination (https://… or mailto:…)",

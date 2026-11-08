@@ -72,7 +72,9 @@ const leadsPageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPip
 assert.match(leadsPageSource, /selectedLeadUnifiedTimeline/)
 assert.match(leadsPageSource, /<LeadActivityWorkspace/)
 assert.match(leadsPageSource, /onLogActivity=\{\(\) => openActivityComposer\('activity'\)\}/)
-assert.match(leadsPageSource, /activityQuickTypes = \['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'\]/)
+const activityWorkspaceSource = await fs.readFile(new URL('../src/components/lead-activity/LeadActivityWorkspace.jsx', import.meta.url), 'utf8')
+assert.match(activityWorkspaceSource, /onLogActivity/)
+assert.match(activityWorkspaceSource, /label: 'Call'/)
 assert.match(leadsPageSource, /onSubmit=\{handleUnifiedActivitySubmit\}/)
 assert.match(leadsPageSource, /createAgencyCrmLeadActivity/)
 

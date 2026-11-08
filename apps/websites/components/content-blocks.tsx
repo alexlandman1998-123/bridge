@@ -1,5 +1,6 @@
 import { LeadForm } from '@/components/lead-form'
 import { Fragment } from 'react'
+import Image from 'next/image'
 import { FeaturedPropertyCarousel } from '@/components/featured-property-carousel'
 import { PropertyCard } from '@/components/property-card'
 import { HomeSearch } from '@/components/home-search'
@@ -36,7 +37,7 @@ function LatestBlogPosts({ posts, site }: { posts: PublicBlogPost[]; site: Resol
   const latestPosts = posts.slice(0, 3)
   if (!latestPosts.length) return null
 
-  return <section className="latest-blog-section" id="blog"><div className="content-shell"><div className="section-heading"><div><h2>Latest from {site.name}</h2></div><a href="/blog">View all articles <span aria-hidden="true">→</span></a></div><div className="latest-blog-grid">{latestPosts.map((post) => <a href={`/blog/${post.slug}`} key={post.id} className="latest-blog-card">{post.coverImageUrl ? <img src={post.coverImageUrl} alt={post.coverImageAlt || ''} /> : null}<div><p>{post.authorName || site.name}</p><h3>{post.title}</h3>{post.summary ? <span>{post.summary}</span> : null}<b>Read article <span aria-hidden="true">→</span></b></div></a>)}</div></div></section>
+  return <section className="latest-blog-section" id="blog"><div className="content-shell"><div className="section-heading"><div><h2>Latest from {site.name}</h2></div><a href="/blog">View all articles <span aria-hidden="true">→</span></a></div><div className="latest-blog-grid">{latestPosts.map((post) => <a href={`/blog/${post.slug}`} key={post.id} className="latest-blog-card">{post.coverImageUrl ? <Image src={post.coverImageUrl} alt={post.coverImageAlt || ''} width={900} height={600} sizes="(max-width: 760px) 85vw, 33vw" /> : null}<div><p>{post.authorName || site.name}</p><h3>{post.title}</h3>{post.summary ? <span>{post.summary}</span> : null}<b>Read article <span aria-hidden="true">→</span></b></div></a>)}</div></div></section>
 }
 
 type LwpJournalStory = { id: string; href: string; category: string; title: string; summary: string; imageUrl?: string; imageClass?: string }

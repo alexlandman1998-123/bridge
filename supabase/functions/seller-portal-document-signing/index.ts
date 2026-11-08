@@ -1,3 +1,4 @@
+import { supabaseServiceKey, supabasePublishableKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 // deno-lint-ignore no-import-prefix no-unversioned-import
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
@@ -578,12 +579,12 @@ async function reject(req: Request, admin: AdminClient, url: string, anonKey: st
   return respond(200, result.data);
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return respond(405, { error: "Method not allowed." });
   const url = text(Deno.env.get("SUPABASE_URL"));
-  const serviceKey = text(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
-  const anonKey = text(Deno.env.get("SUPABASE_ANON_KEY"));
+  const serviceKey = text(supabaseServiceKey());
+  const anonKey = text(supabasePublishableKey());
   if (!url || !serviceKey || !anonKey) return respond(500, { error: "Signing service is unavailable." });
   const admin = createAdmin(url, serviceKey);
   try {
@@ -602,4 +603,4 @@ Deno.serve(async (req: Request) => {
   } catch {
     return respond(500, { error: "Unable to process this signing request." });
   }
-});
+}));

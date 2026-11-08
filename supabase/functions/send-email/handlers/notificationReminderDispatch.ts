@@ -1,3 +1,4 @@
+import { supabaseServiceKey } from "../../_shared/apiCredentials.ts";
 import { createClient } from "supabase";
 import {
   renderBridgeCta,
@@ -137,7 +138,7 @@ function toPositiveInteger(value: unknown, fallback: number, max: number) {
 function createServiceRoleClient() {
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+    supabaseServiceKey(),
   );
   if (!supabaseUrl || !serviceRoleKey) return null;
   return createClient(supabaseUrl, serviceRoleKey, {

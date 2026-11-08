@@ -6,6 +6,7 @@ const transactionPage = await readFile(new URL('../src/pages/AttorneyTransaction
 const transactionFacade = await readFile(new URL('../src/lib/transactionWorkspaceApi.js', import.meta.url), 'utf8')
 const leadRepository = await readFile(new URL('../src/lib/agencyCrmRepository.js', import.meta.url), 'utf8')
 const buyerLoader = await readFile(new URL('../src/pages/agency/buyerLeadWorkspaceDataLoader.js', import.meta.url), 'utf8')
+assert.match(transactionApi.match(/const TRANSACTION_ROUTE_CORE_SELECT\s*=\s*\n\s*'([^']+)'/)[1], /onboarding_status, onboarding_completed_at/, 'The initial transaction screen must carry the saved OTP review and onboarding state.')
 
 assert.match(
   transactionApi,

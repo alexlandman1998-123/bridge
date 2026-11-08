@@ -3,6 +3,7 @@ const ROLES = {
   bond_attorney: 'Bond attorney', cancellation_attorney: 'Cancellation attorney',
 }
 const STATES = {
+  awaiting_otp_review: 'Uploaded OTP awaiting review',
   unassigned: 'Destination needed', nominated: 'Organisation nominated', invited: 'Partner invited', conflicting: 'Conflicting destinations',
   awaiting_finance_owner: 'Awaiting finance ownership', not_required: 'Not required', awaiting_buyer_onboarding: 'Awaiting buyer onboarding', awaiting_signed_otp: 'Awaiting signed OTP', ready: 'Ready for instruction',
   not_invited: 'Not invited', pending: 'Invitation pending', accepted: 'Accepted', declined: 'Declined', expired: 'Invitation expired',
@@ -21,6 +22,7 @@ const EXCEPTIONS = {
 
 const DISPATCH = { waiting: 'Waiting for readiness', pending: 'Queued for background delivery', failed: 'Delivery needs attention', blocked: 'Handoff blocked', sent: 'Dispatched' }
 const DISPATCH_REASONS = {
+  awaiting_otp_review: 'Review the uploaded signed OTP in Documents. The saved file does not need to be uploaded again.',
   retirement_review_required: 'Review the existing bond work before releasing the replacement handoff.',
   organisation_contact_missing: 'Add an organisation email address or an active organisation administrator.',
   attorney_firm_not_linked: 'Link the selected organisation to its attorney firm.',

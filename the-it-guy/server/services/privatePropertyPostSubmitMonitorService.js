@@ -228,7 +228,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
       events: matchingEvents,
       responseSummary: summarizeResponse(eventResponse, 'GetListingEventFeedByBranch'),
     }
-    report.status = ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING'
+    report.status = ['inactive', 'removed', 'sold', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : ['active', 'under_offer'].includes(externalStatus) ? 'ACTIVATED' : 'PENDING'
     report.externalStatus = externalStatus
     report.checks = [
       { name: 'listing_status', status: privatePropertyStatus ? 'PASS' : 'BLOCKED' },
@@ -261,7 +261,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
         privatePropertyListingUrl: activeMatch?.listingUrl || '',
         privatePropertyStatus,
         externalStatus,
-        isOnPortal: externalStatus === 'active',
+        isOnPortal: ['active', 'under_offer'].includes(externalStatus),
         eventType: latestEvent?.listingFeedEventType || latestEvent?.eventType || '',
         eventStatus: latestEvent?.eventStatus || '',
         eventDescription: latestEvent?.eventDescription || '',
@@ -315,8 +315,7 @@ export async function readPrivatePropertyStoredStatus({ client, listingId, envir
   return {
     cached: true, generatedAt: data?.last_checked_at || '', externalStatus,
     propertyId: data?.property_id || '', branchGuid: data?.branch_guid || '', listingType: data?.listing_type || '',
-
-    status: data?.last_error || ['inactive', 'removed', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : externalStatus === 'active' ? 'ACTIVATED' : 'PENDING',
+    status: data?.last_error || ['inactive', 'removed', 'sold', 'paused', 'failed'].includes(externalStatus) ? 'ATTENTION_REQUIRED' : ['active', 'under_offer'].includes(externalStatus) ? 'ACTIVATED' : 'PENDING',
     statusProbe: { privatePropertyRef: data?.private_property_ref || '' },
     publication: { submittedAt: data?.submitted_at || '', lastSyncedAt: data?.last_successful_sync_at || '', lastError: data?.last_error || '' },
     safety: { privatePropertyApiCalled: false, databaseWritten: false },

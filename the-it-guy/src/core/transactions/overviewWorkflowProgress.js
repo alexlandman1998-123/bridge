@@ -22,8 +22,12 @@ function summary(steps, fallbackStatus) {
     owner: ROLE[step.ownerRole] || '' }
 }
 
-export function buildOverviewWorkflowProgress({ transactionId, rollup } = {}) {
+export function buildOverviewWorkflowProgress({ transactionId, rollup, transaction = null, onboardingStatus = transaction?.onboarding_status || '' } = {}) {
   const sameMatter = Boolean(transactionId && rollup?.transactionId === transactionId)
+  if(transaction?.id===transactionId && ['completed','archived'].includes(transaction.lifecycle_state) && transaction.registered_at && transaction.completed_at){
+    return [{key:'complete',label:'Transaction',detail:'Transaction completed',status:'complete',owner:''}]
+  }
+
   const workflows = sameMatter && rollup.usedLegacyFallback === false ? rollup.workflows || {} : {}
   const financeCandidates = Object.entries(workflows).filter(([key, item]) => key.startsWith('finance_') && item?.required !== false)
   const finance = financeCandidates.length === 1 ? financeCandidates[0][1] : null
@@ -32,6 +36,9 @@ export function buildOverviewWorkflowProgress({ transactionId, rollup } = {}) {
     { key: 'finance', label: 'Finance', target: 'finance', workflow: finance, workflowKey: financeCandidates.length === 1 ? financeCandidates[0][0] : null },
   ].map(({ workflow, workflowKey, ...row }) => ({ ...row, isActive: sameMatter && Boolean(workflowKey) && rollup.activeWorkflowKey === workflowKey,
     ...summary((workflow?.requiredSteps || []).filter(step => step.required !== false), workflow?.status) }))
+  if (sameMatter && onboardingStatus === 'signed_otp_uploaded_for_review') {
+    Object.assign(commercial[0], { detail: 'Review uploaded signed OTP', status: 'waiting', owner: 'Document reviewer', target: 'documents', isActive: true })
+  }
   const legal = sameMatter ? rollup.transactionJourneySnapshot?.legalJourney : null
   const source = legal?.status === 'ready' ? legal.snapshot : null
   const valid = source?.transactionId === transactionId && Number.isSafeInteger(source.revision) && source.revision >= 0 &&
@@ -52,7 +59,7 @@ export function buildOverviewWorkflowProgress({ transactionId, rollup } = {}) {
 
 export function selectImmediateWorkflow(workflows = []) {
   const outstanding = workflows.filter(row => row.status !== 'complete')
-  return outstanding.find(row => row.isActive) || outstanding[0] || (workflows.length
+  return outstanding.find(row => row.isActive) || outstanding[0] || workflows.find(row => row.key === 'complete' && row.status === 'complete') || (workflows.length
     ? { key: 'complete', label: 'Workflows', detail: 'All applicable steps complete', status: 'complete' }
     : { key: 'unknown', label: 'Transaction', detail: 'Saved progress not available', status: 'unknown' })
 }

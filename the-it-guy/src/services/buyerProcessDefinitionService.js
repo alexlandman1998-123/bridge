@@ -216,26 +216,31 @@ const BUYER_PROCESS_STAGES = Object.freeze([
 const DEFAULT_BUYER_STAGE_TRANSITIONS = Object.freeze({
   [BUYER_PROCESS_STAGE_KEYS.captured]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.contacted,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.contacted]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.qualified,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.qualified]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.viewing,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.viewing]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSubmitted,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),

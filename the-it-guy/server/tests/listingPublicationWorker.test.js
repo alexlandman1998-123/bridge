@@ -9,6 +9,7 @@ test('worker commits independent receipts, retains uncertain responses, and does
  }}
  const result=await runListingPublicationJobs({client,dispatch:async job=>{calls.push(job.id);if(job.channel==='property24')throw new Error('Connection lost');return job.channel==='private_property'?{status:422,body:{message:'Fix address'}}:{status:200,body:{publication:{status:'published'}}}}})
  assert.deepEqual(result.map(row=>row.state),['uncertain','failed','accepted']);assert.equal(calls.length,3)
+ assert.match(updates[0].message,/Connection lost/)
  assert.deepEqual(updates.map(row=>row.state),['uncertain','failed','accepted']);assert.equal(activities.length,3)
  assert.ok(activities.every(row=>Number.isFinite(row.metadata.processingMs)))
 })
@@ -32,6 +33,29 @@ test('never mistakes a blocked response or server failure for accepted publicati
  assert.equal(publicationJobOutcome({status:200,body:{report:{status:'BLOCKED'}}}).state,'failed')
  assert.equal(publicationJobOutcome({status:200,body:{status:'UNCERTAIN'}}).state,'uncertain')
  assert.equal(publicationJobOutcome({status:503,body:{}}).state,'uncertain')
+})
+
+test('background publication keeps nested portal rejection and all relevant readiness reasons',()=>{
+ assert.match(publicationJobOutcome({status:422,body:{report:{status:'FAILED',error:{message:'Agent does not belong to the agency.'}}}}).message,/Agent does not belong to the agency/)
+ const blocked=publicationJobOutcome({status:422,body:{report:{status:'BLOCKED',preview:{dataBlockers:['missing_monthly_rent'],technicalBlockers:['missing_agent_mapping']}}}})
+ assert.equal(blocked.state,'failed')
+ assert.match(blocked.message,/Add monthly rent/)
+ assert.match(blocked.message,/Add agent mapping/)
+ assert.match(blocked.message,/Check requirements/)
+ assert.doesNotMatch(blocked.message,/Channel needs attention|\[object Object\]/)
+})
+
+test('background publication keeps actionable photo errors ahead of generic blockers',()=>{
+ const outcome=publicationJobOutcome({status:422,body:{report:{status:'BLOCKED',preview:{technicalBlockers:['listing_photo_preparation_failed'],imageByteLoad:{results:[{status:'FAILED',message:'Photo 12 (Kitchen) cannot be read. Replace this photo and check again.'}]}}}}})
+ assert.match(outcome.message,/Photo 12 \(Kitchen\).*Replace this photo/)
+ assert.doesNotMatch(outcome.message,/listing_photo_preparation_failed/)
+})
+
+test('missing failure details explain the diagnostic step and uncertain errors remain uncertain',()=>{
+ assert.match(publicationJobOutcome({status:422,body:{error:{code:'UNKNOWN'}}}).message,/no detailed reason.*Check requirements/)
+ const uncertain=publicationJobOutcome({status:503,body:{report:{error:{message:'Portal connection timed out.'}}}})
+ assert.equal(uncertain.state,'uncertain')
+ assert.match(uncertain.message,/timed out.*Check the channel before submitting again/)
 })
 
 test('website dispatch keeps a safe cause for failed responses without retrying or leaking response data',async()=>{

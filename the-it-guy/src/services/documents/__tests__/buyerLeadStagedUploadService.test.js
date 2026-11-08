@@ -30,3 +30,21 @@ test('a definite lead save rejection can remove only the new unlinked object',as
  const f=fixture({failure:{code:'42501',message:'Not permitted'},commits:false})
  await assert.rejects(f.run(),error=>error.code==='42501');assert.equal(f.state.deletes,1);assert.equal(f.state.rows.length,0)
 })
+
+
+test('OTP aliases use the same recovery protocol and never reupload after a lost acknowledgement', async () => {
+  const state = { uploads: 0, saves: 0, document: null }
+  const client = { auth: { getUser: async () => ({ data: { user: { id: 'assigned-agent' } } }) }, from() {
+    const query = { select() { return query }, eq() { return query }, maybeSingle: async () => ({ data: { raw_enquiry_payload: { buyerOtpDocument: state.document } } }) }; return query
+  } }
+  const args = { client, organisationId: 'org', leadId: crypto.randomUUID(), documentKey: 'uploaded_otp', recoveryScope: ['exact-property'], storageBuckets: ['documents'], file: new File(['%PDF-1.4 synthetic signed OTP'], 'signed.pdf', { type: 'application/pdf', lastModified: 12 }), path: 'buyer-otp-documents/org/lead/uploaded_otp/signed.pdf',
+    upload: async path => { state.uploads++; return { storageBucket: 'documents', storagePath: path } },
+    buildDocument: stored => ({ ...stored, key: 'uploaded_otp', listingId: 'exact-property' }),
+    readRows: lead => [lead.raw_enquiry_payload.buyerOtpDocument].filter(Boolean),
+    save: async document => { state.saves++; state.document = document; throw new TypeError('Connection lost after saving') },
+  }
+  const first = await uploadStagedBuyerLeadDocument(args), retried = await uploadStagedBuyerLeadDocument(args)
+  assert.equal(first.storagePath, retried.storagePath)
+  assert.equal(state.uploads, 1); assert.equal(state.saves, 1)
+  assert.equal(retried.listingId, 'exact-property')
+})

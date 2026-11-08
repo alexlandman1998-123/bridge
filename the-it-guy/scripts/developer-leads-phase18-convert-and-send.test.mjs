@@ -25,15 +25,12 @@ assert.match(scripts['verify:developer-module'] || '', /test:developer-module-ph
 for (const token of [
   'DEVELOPER_LEAD_PHASE18_CONTRACT',
   'convertDeveloperLeadToTransactionAndSendOnboarding',
-  'buildDeveloperLeadTransactionHandoff',
-  'createTransactionFromWizard',
   'getOrCreateTransactionOnboarding',
   'recordBuyerOnboardingSent',
   "invokeEdgeFunction('send-email'",
   "type: 'client_onboarding'",
   'manualBuyerOnboardingDelivery',
   "lead_status: buyerOnboardingDelivered ? 'onboarding_sent' : 'qualified'",
-  'allowEarlyLeadStatus: manualDelivery && !sendBuyerOnboarding',
   'converted_transaction_id',
   'buyer_onboarding_sent',
   'developer_lead_activity',
@@ -42,8 +39,8 @@ for (const token of [
   assert.match(conversionSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
 
-assert.match(conversionSource, /if \(!handoff\.eligible\)/)
-assert.match(conversionSource, /agency-fed|handover|eligible|blockers/i)
+assert.match(conversionSource, /if \(!existingTransactionId\) throw new Error/)
+assert.doesNotMatch(conversionSource, /createTransactionFromWizard/)
 assert.doesNotMatch(conversionSource, /security\s+definer/i)
 assert.doesNotMatch(conversionSource, /service_role|sb_secret_/i)
 
@@ -73,8 +70,9 @@ for (const token of [
 }
 
 assert.match(appSource, /path="\/developer\/leads\/:developerLeadId"/)
-assert.match(pageSource, /navigate\(`\/developer\/leads\/\$\{leadId\}`\)/)
-assert.match(pageSource, /navigate\(`\/transactions\/\$\{normalizedTransactionId\}`\)/)
+assert.match(pageSource, /resolveDevelopmentLeadWorkspaceUrl\(lead, workspaceOrgId\)/)
+assert.match(pageSource, /navigate\(`\/transactions\/\$\{normalizedTransactionId\}/)
+assert.match(pageSource, /\['onboarding', 'documents'\]\.includes\(targetTab\)/)
 assert.match(pageSource, /event\.stopPropagation\(\)/)
 
 assert.match(handoffSource, /preferredUnitId/)
@@ -102,8 +100,8 @@ console.log(JSON.stringify({
   version: 'developer_leads_phase18_convert_and_send_v1',
   ready: true,
   coveredSurfaces: [
-    'guarded lead conversion action',
-    'developer sale transaction creation',
+    'pre-OTP transaction creation blocked',
+    'existing transaction onboarding only',
     'buyer onboarding token generation',
     'buyer onboarding email trigger',
     'lead conversion backlink',

@@ -1,3 +1,4 @@
+import { isPortalTransactionRegistered } from '../core/clientPortal/transactionCompletion.js'
 import { normalizeFinanceManagedBy } from '../core/transactions/financeType.js'
 
 function normalizeValue(value = '') {
@@ -603,6 +604,9 @@ const BOND_PATTERN = /(bond|mortgage|home loan|payslip|income|bank statement|ban
 export function getBondApplicationActions(context = {}) {
   const workspace = parseWorkspace(context)
   if (workspace === 'selling') return []
+  // Registration supersedes an unfinished portal intake draft. Retain other
+  // action sources so explicit post-registration requests remain visible.
+  if (isPortalTransactionRegistered(context.transaction)) return []
 
   const financeType = normalizeFinanceType(context?.finance?.type || context?.transaction?.finance_type || '')
   if (!isBondFinanceType(financeType)) return []
@@ -852,6 +856,13 @@ export function getPassiveStatusActions(context = {}) {
   const blockingCount = toArray(context?.actions).filter((action) => action?.blocking).length
   if (blockingCount > 0) return []
 
+  if(isPortalTransactionRegistered(context.transaction))return [createAction({
+    id:'registration_complete',type:'informational',category:'informational',
+    title:context.transaction?.lifecycle_state==='completed'?'Transaction completed':'Registration completed',
+    description:'Registration is complete. Your documents and transaction history remain available.',
+    priority:'informational',status:'completed',blocking:false,actionLabel:'View documents',actionRoute:'documents',
+    metadata:{workspaceScope:workspace},notificationEligible:false,
+  })]
   const mainStage = normalizeValue(context?.lifecycle?.mainStage || context?.transaction?.current_main_stage)
   if (mainStage === 'fin') {
     return [

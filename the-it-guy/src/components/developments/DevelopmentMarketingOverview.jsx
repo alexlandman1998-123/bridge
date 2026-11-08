@@ -53,22 +53,22 @@ function ListingCard({ listing, users, onOpen }) {
   )
 }
 
-export default function DevelopmentMarketingOverview({ listings = EMPTY_ROWS, organisationUsers = EMPTY_ROWS, onOpenListing }) {
+export default function DevelopmentMarketingOverview({ developmentId, websitePublished, listings = EMPTY_ROWS, organisationUsers = EMPTY_ROWS, onOpenListing }) {
   const [days, setDays] = useState(30)
   const [retry, setRetry] = useState(0)
   const gallery = useRef(null)
-  const key = JSON.stringify([days, listings.map(listing => [listing.organisationId, listing.id, listing.updatedAt])])
+  const key = JSON.stringify([developmentId, websitePublished, days, listings.map(listing => [listing.organisationId, listing.id, listing.updatedAt])])
   const [request, setRequest] = useState({ key: '', retry: -1, loading: true, data: null, error: '' })
   const current = request.key === key ? { ...request, loading: request.retry !== retry, error: request.retry !== retry ? '' : request.error } : { loading: true, data: null, error: '' }
   useEffect(() => {
     const controller = new AbortController()
-    loadDevelopmentListingPerformance(listings, days, controller.signal).then(data => {
+    loadDevelopmentListingPerformance(listings, days, controller.signal, { developmentId, websitePublished }).then(data => {
       if (!controller.signal.aborted) setRequest({ key, retry, loading: false, data, error: '' })
     }).catch(() => {
       if (!controller.signal.aborted) setRequest(previous => ({ key, retry, loading: false, data: previous.key === key ? previous.data : null, error: 'Listing performance could not be loaded.' }))
     })
     return () => controller.abort()
-  }, [listings, days, retry, key])
+  }, [developmentId, websitePublished, listings, days, retry, key])
   const data = current.data
   const value = (available, count) => current.loading && !data ? '…' : available ? number.format(count) : '—'
   const cards = [

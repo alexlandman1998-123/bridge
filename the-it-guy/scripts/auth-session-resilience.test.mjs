@@ -18,7 +18,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /trackAuthMetric\('logout_requested',[\s\S]*?await supabase\.auth\.signOut\(\)/,
+  /trackAuthMetric\('logout_requested',[\s\S]*?await supabase\.auth\.signOut\(/,
   'logout intent must be recorded before the session is revoked',
 )
 
@@ -33,5 +33,9 @@ assert.match(
   /metricEvent === 'signed_out' && !logoutRequestedRef\.current[\s\S]*?storePendingAuthDiagnostic\('unexpected_signed_out'\)/,
   'unexpected sign-outs should survive locally until the next authenticated telemetry write',
 )
+
+const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+assert.doesNotMatch(app, /INACTIVITY_TIMEOUT|createSessionInactivityMonitor|performSecurityLogout|sessionTimeoutWarning|security=1/, 'the app must not time out or warn an idle signed-in user')
+assert.doesNotMatch(source, /startSessionActivityTracking|automaticLogout/, 'auth must not retain an inactivity logout path')
 
 console.log('auth session resilience contract ok')

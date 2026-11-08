@@ -14,6 +14,7 @@ export function buildTransactionFeeInvoiceDraftModel({
   if (!['agent', 'attorney'].includes(billingParty)) throw new Error('The recorded billing party must be agent or attorney.')
   return {
     reference,
+    testInvoice: /^TEST(?:[-\s]|$)/i.test(reference),
     transactionId: text(transactionId),
     issuer: text(organisationName, 'Organisation details to be confirmed'),
     billedTo: billingParty === 'attorney' ? 'Attorney, as recorded for this transaction' : 'Agent, as recorded for this transaction',
@@ -32,7 +33,7 @@ export async function downloadTransactionFeeInvoiceDraft(values = {}) {
   document.text('TRANSACTION FEE INVOICE COPY', 18, 22)
   document.setFontSize(10)
   document.setTextColor('#5b6573')
-  document.text('Finance-reviewed copy. The accounting-system invoice reference remains the source of truth.', 18, 30)
+  document.text(model.testInvoice ? 'CONTROLLED TEST ONLY - NOT PAYABLE. No payment is required.' : 'Finance-reviewed copy. The accounting-system invoice reference remains the source of truth.', 18, 30)
   document.setTextColor('#202938')
   const rows = [
     ['Issued by', model.issuer],

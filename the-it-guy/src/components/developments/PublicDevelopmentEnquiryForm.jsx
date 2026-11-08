@@ -1,5 +1,7 @@
 import { ArrowRight, CheckCircle2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { supabase } from "../../lib/supabaseClient.js";
 
 const text = (value) => String(value || "").trim();
 
@@ -28,9 +30,9 @@ function contactUrl(baseUrl, developmentName, form, reservationUnit) {
   return "";
 }
 
-export default function PublicDevelopmentEnquiryForm({ developmentName, agency, enquiry, tone = "dark", reservationUnit = null, estatePresentation = false, onSimulateReservation }) {
-  const paymentDemo = Boolean(reservationUnit && onSimulateReservation);
+export default function PublicDevelopmentEnquiryForm({ developmentName, agency, enquiry, tone = "dark", reservationUnit = null, estatePresentation = false }) {
   const isLight = tone === "light";
+  const savesToWorkspace = estatePresentation && !reservationUnit;
   const fieldClass = isLight
     ? "border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 focus:border-slate-800"
     : "border-white/20 bg-white text-[#14352c] placeholder:text-[#819087] focus:border-white";
@@ -45,6 +47,12 @@ export default function PublicDevelopmentEnquiryForm({ developmentName, agency, 
     return { name: "", email: "", phone: "", message: reservationUnit ? `I would like to reserve unit ${reservationUnit.unitNumber} at ${developmentName}.` : "", interest: reservationUnit ? "Reserve a unit" : interest };
   });
   const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [website, setWebsite] = useState("");
+  const request = useRef(null);
+  const submitLock = useRef(false);
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
   useEffect(() => {
     const setInterest = (event) => {
@@ -54,11 +62,29 @@ export default function PublicDevelopmentEnquiryForm({ developmentName, agency, 
     window.addEventListener("arch9:development-enquiry-interest", setInterest);
     return () => window.removeEventListener("arch9:development-enquiry-interest", setInterest);
   }, [developmentName]);
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
-    if (paymentDemo) {
-      if (!event.currentTarget.reportValidity()) return;
-      if (!onSimulateReservation(reservationUnit.id)) setStatus("This unit is no longer available. Please choose another residence.");
+    if (savesToWorkspace) {
+      if (submitLock.current || saved) return;
+      if (!consent) { setStatus("Please agree that the sales team may contact you."); return; }
+      const payload = { ...form, consent, website };
+      const signature = JSON.stringify(payload);
+      if (request.current?.signature !== signature) request.current = { signature, id: crypto.randomUUID() };
+      submitLock.current = true;
+      setSaving(true); setStatus("");
+      try {
+        if (!supabase) throw new Error("Enquiries are temporarily unavailable. Please try again shortly.");
+        const { data, error } = await supabase.functions.invoke("madison-enquiries", { body: { ...payload, requestId: request.current.id } });
+        if (error) {
+          let message = "Your enquiry could not be saved. Please try again; your details are still here.";
+          try { message = (await error.context.json()).error || message; } catch { /* Keep the actionable default. */ }
+          throw new Error(message);
+        }
+        if (data?.saved !== true || !data.reference) throw new Error("Your enquiry was not confirmed. Please try again.");
+        setSaved(true);
+        setStatus(`Thank you. Your enquiry has been received. Reference: ${data.reference}. The Samlin sales team will contact you.`);
+      } catch (error) { setStatus(error.message || "Your enquiry could not be saved. Please try again."); }
+      finally { submitLock.current = false; setSaving(false); }
       return;
     }
     const destination = contactUrl(enquiry, developmentName, form, reservationUnit);
@@ -81,16 +107,19 @@ export default function PublicDevelopmentEnquiryForm({ developmentName, agency, 
       </div> : null}
       {reservationUnit && !estatePresentation ? <p className="mt-4 text-sm leading-6">Reservation request for unit <strong>{reservationUnit.unitNumber}</strong>. The sales team will confirm availability and the next steps.</p> : null}
       <div className={`mt-5 grid gap-3 sm:grid-cols-2${estatePresentation ? " estate-enquiry-form__fields" : ""}`}>
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Full name<input required name="name" value={form.name} onChange={update("name")} placeholder="Your name" className={`h-11 rounded-lg border px-3 text-sm outline-none ring-0 ${fieldClass}`} /></label>
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Email address<input required type="email" name="email" value={form.email} onChange={update("email")} placeholder="you@email.com" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Phone number<input required type="tel" name="phone" value={form.phone} onChange={update("phone")} placeholder="Your number" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
-        {!(estatePresentation && reservationUnit) ? <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>I’m interested in<select name="interest" value={form.interest} onChange={update("interest")} className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`}><option>{developmentName}</option><option>Reserve a unit</option><option>Viewing options</option><option>Pricing and availability</option></select></label> : null}
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Full name<input required disabled={saving || saved} name="name" value={form.name} onChange={update("name")} placeholder="Your name" className={`h-11 rounded-lg border px-3 text-sm outline-none ring-0 ${fieldClass}`} /></label>
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Email address<input required disabled={saving || saved} type="email" name="email" value={form.email} onChange={update("email")} placeholder="you@email.com" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Phone number<input required disabled={saving || saved} type="tel" name="phone" value={form.phone} onChange={update("phone")} placeholder="Your number" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
+        {!(estatePresentation && reservationUnit) ? <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>I’m interested in<select disabled={saving || saved} name="interest" value={form.interest} onChange={update("interest")} className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`}><option>{developmentName}</option><option>Reserve a unit</option><option>Viewing options</option><option>Pricing and availability</option></select></label> : null}
       </div>
-      <label className={`mt-3 grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>How can we help?<textarea name="message" value={form.message} onChange={update("message")} rows="3" placeholder="Tell us what you’d like to know." className={`resize-none rounded-lg border px-3 py-2.5 text-sm outline-none ${fieldClass}`} /></label>
-      {status ? <p role={paymentDemo ? "alert" : "status"} className={`mt-4 flex items-start gap-2 text-sm leading-5 ${isLight ? "text-slate-800" : "text-white/90"}`}>{!paymentDemo ? <CheckCircle2 size={17} className="mt-0.5 shrink-0" /> : null}{status}</p> : null}
-      {paymentDemo ? <p className="estate-reservation-demo__notice">Demo payment · No money will be charged. This reserves the unit only in this browser session.</p> : null}
-      <button type="submit" className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--development-accent)] px-5 text-sm font-semibold text-[#14352c] transition hover:brightness-105">{paymentDemo ? "Pay R10,000" : reservationUnit ? "Send reservation request" : "Send enquiry"} <ArrowRight size={17} /></button>
-      <p className={`mt-3 text-xs leading-5 ${isLight ? "text-slate-600" : "text-white/60"}`}>{paymentDemo ? "Your details are used only for this demo and are not sent to the sales team." : `By sending, you agree that the ${agency} sales team may contact you about ${developmentName}.`}</p>
+      <label className={`mt-3 grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>How can we help?<textarea disabled={saving || saved} maxLength={4000} name="message" value={form.message} onChange={update("message")} rows="3" placeholder="Tell us what you’d like to know." className={`resize-none rounded-lg border px-3 py-2.5 text-sm outline-none ${fieldClass}`} /></label>
+      {savesToWorkspace ? <>
+        <label className="mt-4 flex items-start gap-2 text-xs leading-5"><input type="checkbox" required checked={consent} disabled={saving || saved} onChange={event => setConsent(event.target.checked)} />I agree that the Samlin sales team may contact me about Madison Place.</label>
+        <div hidden aria-hidden="true"><label>Website<input name="website" tabIndex={-1} autoComplete="off" value={website} onChange={event => setWebsite(event.target.value)} /></label></div>
+      </> : null}
+      {status ? <p role="status" className={`mt-4 flex items-start gap-2 text-sm leading-5 ${isLight ? "text-slate-800" : "text-white/90"}`}>{(!savesToWorkspace || saved) ? <CheckCircle2 size={17} className="mt-0.5 shrink-0" /> : null}{status}</p> : null}
+      <button type="submit" disabled={saving || saved} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--development-accent)] px-5 text-sm font-semibold text-[#14352c] transition hover:brightness-105">{saving ? "Sending enquiry…" : saved ? "Enquiry received" : reservationUnit ? "Send reservation request" : "Send enquiry"} <ArrowRight size={17} /></button>
+      <p className={`mt-3 text-xs leading-5 ${isLight ? "text-slate-600" : "text-white/60"}`}>{`By sending, you agree that the ${agency} sales team may contact you about ${developmentName}.`}</p>
     </form>
   );
 }

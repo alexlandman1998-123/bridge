@@ -1809,8 +1809,12 @@ async function assertTransferTaxGateBeforeLodgement(client, { transactionId, lan
       .eq('subprocess_id', lane.id),
   ])
   if (stepsResult.error) throw stepsResult.error
+  const profile = transaction.routing_profile_json || {}
   assertTransferTaxLodgementReadiness({
-    transferTaxDecision: transaction.routing_profile_json?.transferTaxDecision || transaction.routing_profile_json?.transfer_tax_decision || {},
+    transferTaxDecision: profile.transferTaxDecision || profile.transfer_tax_decision || {},
+    scenarioProfile: profile.scenarioProfile || {},
+    propertyConditions: profile.propertyConditions || profile.mvpProfile?.propertyConditions || null,
+    profile: { ...profile, ...(profile.mvpProfile || {}) },
     steps: stepsResult.data || [],
   })
 }

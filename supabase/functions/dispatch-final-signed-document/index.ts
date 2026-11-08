@@ -1,3 +1,4 @@
+import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 import {
@@ -36,16 +37,8 @@ function projectRefFromSupabaseUrl(url: string) {
   }
 }
 function isServiceRoleProjectJwt({ bearer, serviceKey, supabaseUrl }: { bearer: string; serviceKey: string; supabaseUrl: string }) {
-  const token = text(bearer);
-  if (!token) return false;
-  if (token === serviceKey) return true;
-  const claims = decodeJwtPayload(token);
-  const expectedRef = projectRefFromSupabaseUrl(supabaseUrl);
-  const expiresAt = Number(claims.exp);
-  return text(claims.role) === "service_role" &&
-    text(claims.iss) === "supabase" &&
-    (!expectedRef || text(claims.ref) === expectedRef) &&
-    (!Number.isFinite(expiresAt) || expiresAt > Math.floor(Date.now() / 1000));
+  // A decoded JWT payload cannot establish service authority.
+  return Boolean(serviceKey && bearer && bearer.trim() === serviceKey);
 }
 function resolveAppBaseUrl() {
   return text(
@@ -56,12 +49,12 @@ function resolveAppBaseUrl() {
   ).replace(/\/$/, "");
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(withApiCredentials(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return response(405, { success: false, error: "Method not allowed." });
   try {
     const url = Deno.env.get("SUPABASE_URL") || "";
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const serviceKey = supabaseServiceKey() || "";
     if (!url || !serviceKey) return response(500, { success: false, error: "Missing Supabase configuration." });
     const bearer = text(req.headers.get("authorization")).replace(/^Bearer\s+/i, "");
     if (!isServiceRoleProjectJwt({ bearer, serviceKey, supabaseUrl: url })) return response(403, { success: false, error: "Service-role delivery authority is required.", errorCode: "FINAL_DELIVERY_FORBIDDEN" });
@@ -298,4 +291,4 @@ Deno.serve(async (req: Request) => {
     console.error("dispatch-final-signed-document failed", error);
     return response(500, { success: false, error: "Final signed document delivery failed.", errorCode: "FINAL_DELIVERY_FAILED" });
   }
-});
+}));

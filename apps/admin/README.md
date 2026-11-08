@@ -16,7 +16,8 @@ VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
 ```
 
-Never put a Supabase service-role key in this app. Browser apps must only use the anon key.
+`VITE_SUPABASE_ANON_KEY` accepts a Supabase publishable key (`sb_publishable_...`)
+or a legacy anon JWT. Never put a Supabase secret or service-role key in this app.
 
 ## Vercel setup
 

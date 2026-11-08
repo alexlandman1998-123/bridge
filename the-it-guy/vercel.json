@@ -1,10 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 npm run lint && npm test && npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
   "regions": [
     "cpt1"
   ],
   "functions": {
+    "api/property24/listings/**/*.js": {
+      "maxDuration": 300
+    },
+    "api/property24/rentals/**/*.js": {
+      "maxDuration": 300
+    },
     "api/property24/leads/sync.js": {
       "maxDuration": 300
     },
@@ -45,7 +51,7 @@
     },
     {
       "path": "/api/property24/statistics/sync",
-      "schedule": "15 2 * * *"
+      "schedule": "15 * * * *"
     },
     {
       "path": "/api/cron/private-property-event-reconciliation",
@@ -65,6 +71,12 @@
     }
   ],
   "redirects": [
+    {
+      "source": "/development/madison-place-abcf1b8a",
+      "has": [{ "type": "host", "value": "madisonplace.co.za" }],
+      "destination": "/",
+      "permanent": false
+    },
     {
       "source": "/join",
       "destination": "https://admin.arch9.co.za/join",
@@ -150,6 +162,11 @@
   ],
   "rewrites": [
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "madisonplace.co.za" }],
+      "destination": "/api/public/development-page?slug=madison-place-abcf1b8a"
+    },
+    {
       "source": "/development/:slug",
       "destination": "/api/public/development-page?slug=:slug"
     },
@@ -161,10 +178,5 @@
       "source": "/((?!api/|assets/|brand/|favicon(?:-[^/]+)?\\.(?:png|svg|ico)|apple-touch-icon\\.png|icon-(?:192|512|maskable-512)\\.png|manifest\\.webmanifest|push-sw\\.js|arch9-launch-preview\\.png|vite\\.svg).*)",
       "destination": "/index.html"
     }
-  ],
-  "git": {
-    "deploymentEnabled": {
-      "main": false
-    }
-  }
+  ]
 }

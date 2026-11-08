@@ -51,7 +51,13 @@ export function getLocalClientPreview(profileData, {
     client: { ...original, totalTransactions: transactions.length, activeTransactions: 2, completedTransactions: 1, latestStage: transactions[0].stageLabel, latestMatterReference: transactions[0].reference, lastActivityAt: events[0].occurred_at },
     transactions,
     preview: {
-      activity: { available: true, events, nextCursor: null },
+      activity: { available: true, events, nextCursor: null, engagementSummary: {
+        available: true, lastContact: { at: at(24), actorName: 'Jamie Smit', channel: 'email', direction: 'outbound' }, pendingFollowUps: 2,
+        conversations: [
+          { id: 'preview-email-thread', channel: 'email', assignedName: 'Jamie Smit', status: 'waiting_on_client', lastActivityAt: at(24) },
+          { id: 'preview-whatsapp-thread', channel: 'whatsapp', assignedName: 'Sam Example', status: 'open', lastActivityAt: at(48) },
+        ], visibleOnly: true,
+      } },
       sources: { available: true, touches, nextCursor: null, summary: { firstTouch: touches.at(-1), latestTouch: touches[0], enquiryCount: 4, taggedEnquiryCount: 4 } },
       campaigns: { available: true, campaigns, nextCursor: null, summary: { campaignCount: 4, sentCount: 3, deliveredCount: 3, openedCount: 2, clickedCount: 1, respondedCount: 1 } },
     },

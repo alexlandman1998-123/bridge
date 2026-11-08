@@ -2,9 +2,10 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { fetchDeveloperLeadDocuments, uploadDeveloperLeadDocument, createDeveloperLeadDocumentSignedUrl } from '../developerLeadDocumentsService.js'
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), workspace: vi.fn(), upload: vi.fn(), invalidate: vi.fn(), sign: vi.fn(), lead: null, onboarding: null, detail: null }))
+const mocks = vi.hoisted(() => ({ from: vi.fn(), workspace: vi.fn(), upload: vi.fn(), invalidate: vi.fn(), sign: vi.fn(), contextRead: vi.fn(), lead: null, onboarding: null, detail: null }))
 vi.mock('../../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from } }))
 vi.mock('../../../lib/transactionWorkspaceApi.js', () => ({ fetchTransactionDocumentsWorkspace: mocks.workspace, uploadDocument: mocks.upload, invalidateTransactionWorkspaceCoreCache: mocks.invalidate, createTransactionDocumentSignedUrl: mocks.sign }))
+vi.mock('../documentRequirementReadService.js', async importOriginal => ({ ...await importOriginal(), readDocumentRequirementContext: mocks.contextRead }))
 const context = { developerOrgId: 'org-one', developerLeadId: 'lead-one' }
 const file = () => new File(['persisted buyer evidence'], 'Buyer ID.pdf', { type: 'application/pdf' })
 const requirement = (id = 'req-one', status = 'pending') => ({ id, status, document_definition_key: 'buyer_id_document', pack_key: 'buyer_identity_fica', requested_from_role: 'buyer', visible_to_roles: ['developer', 'buyer'], uploadable_by_roles: ['developer', 'buyer'], document_definitions: { key: 'buyer_id_document', display_label: 'Buyer ID' } })
@@ -18,6 +19,11 @@ beforeEach(() => {
     return query
   })
   mocks.workspace.mockImplementation(async () => structuredClone(mocks.detail))
+  mocks.contextRead.mockImplementation(async () => {
+    const projection = mocks.detail.canonicalDocumentProjection
+    if (!projection || !Array.isArray(projection.requirements)) throw new Error('The shared document requirements could not be loaded. Please retry.')
+    return { contextType: 'transaction', contextId: projection.transactionId, requirements: structuredClone(projection.requirements), documents: structuredClone([...projection.documents, ...mocks.detail.documents]) }
+  })
   mocks.invalidate.mockResolvedValue(undefined)
   mocks.upload.mockImplementation(async (payload) => {
     const document = { id: 'saved-one', transaction_id: payload.transactionId, name: payload.file.name, file_path: 'transaction-tx-one/saved.pdf', file_bucket: 'documents', document_type: payload.documentType, canonical_requirement_instance_id: payload.canonicalRequirementInstanceId, source: payload.source, status: 'uploaded', is_client_visible: payload.isClientVisible, visibility_scope: payload.visibilityScope, client_recipient_role: payload.clientRecipientRole, uploaded_by_party: payload.uploadedByParty, url: 'https://storage.example.test/saved.pdf' }
@@ -140,4 +146,53 @@ it('denies stale transaction, hidden document and revoked handover access before
   mocks.lead.visibility_state = 'protected'
   await expect(createDeveloperLeadDocumentSignedUrl({ ...context, transactionId: 'tx-one', documentId: saved.id })).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
   expect(mocks.sign).not.toHaveBeenCalled()
+})
+
+
+it('includes legacy client-owned custom buyer slots while explicit seller ownership takes priority', async () => {
+  mocks.detail.canonicalDocumentProjection.requirements.push({ ...requirement('legacy-custom'), document_definition_key: null, document_definitions: null, custom_label: 'Buyer authority', requested_from_role: 'client' })
+  mocks.detail.canonicalDocumentProjection.requirements.push({ ...requirement('seller-with-buyer-type'), requested_from_role: 'seller' })
+  const model = await fetchDeveloperLeadDocuments(context)
+  expect(model.requirements.map(row => row.id)).toEqual(['req-one', 'legacy-custom'])
+  expect(model.requirements.find(row => row.id === 'legacy-custom').canUpload).toBe(true)
+})
+
+it.each([
+  ['buyer', { source_lead_id: 'buyer-one' }, { originating_buyer_lead_id: 'buyer-two' }],
+  ['missing buyer origin', { source_lead_id: 'buyer-one' }, {}],
+  ['development', { primary_development_id: 'dev-one' }, { development_id: 'dev-two' }],
+  ['unit', { preferred_unit_id: 'unit-one' }, { unit_id: 'unit-two' }],
+  ['organisation', {}, { organisation_id: 'foreign-org' }],
+])('rejects a persisted link with a conflicting %s before reading private files', async (_kind, lead, transaction) => {
+  Object.assign(mocks.lead, lead)
+  Object.assign(mocks.detail.transaction, transaction)
+  await expect(fetchDeveloperLeadDocuments(context)).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+  expect(mocks.workspace).not.toHaveBeenCalled()
+})
+
+it('refuses cross-transaction checklist rows and files before exposing a stale projection', async () => {
+  mocks.detail.canonicalDocumentProjection.requirements[0].transaction_id = 'other-tx'
+  await expect(fetchDeveloperLeadDocuments(context)).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+  delete mocks.detail.canonicalDocumentProjection.requirements[0].transaction_id
+  mocks.detail.documents.push({ id: 'foreign', transaction_id: 'other-tx', is_client_visible: true, visibility_scope: 'shared', client_recipient_role: 'buyer' })
+  await expect(fetchDeveloperLeadDocuments(context)).rejects.toMatchObject({ code: 'lead_documents_access_denied' })
+})
+
+it('reads custom requirements from the shared context rather than the legacy projection catalogue join', async () => {
+  mocks.contextRead.mockResolvedValueOnce({ contextType: 'transaction', contextId: 'tx-one', requirements: [{ ...requirement('custom-slot'), document_definition_key: null, document_definitions: null, custom_label: 'Buyer authority' }], documents: [] })
+  const result = await fetchDeveloperLeadDocuments(context)
+  expect(mocks.contextRead).toHaveBeenCalledWith(expect.any(Object), { contextType: 'transaction', contextId: 'tx-one' })
+  expect(result.requirements.map(row => row.id)).toEqual(['custom-slot'])
+})
+it('uses current review state and keeps removed slots and previous files out of the active view', async () => {
+  const current = { id: 'current-file', transaction_id: 'tx-one', name: 'ID.pdf', file_path: 'id.pdf', canonical_requirement_instance_id: 'req-one', is_current_evidence: true, review_status: 'approved' }
+  mocks.detail.documents.push(current, { ...current, id: 'previous-file', is_current_evidence: false })
+  mocks.detail.canonicalDocumentProjection.requirements[0].status = 'rejected'
+  const result = await fetchDeveloperLeadDocuments(context)
+  expect(result.documents.map(row => row.id)).toEqual(['current-file'])
+  expect(result.documents[0].review_status).toBe('rejected')
+  mocks.detail.canonicalDocumentProjection.requirements[0].applicability_override = 'removed'
+  mocks.detail.documents.forEach(row => { row.applicability_override = 'removed' })
+  expect((await fetchDeveloperLeadDocuments(context)).requirements).toEqual([])
+  expect((await fetchDeveloperLeadDocuments(context)).documents).toEqual([])
 })

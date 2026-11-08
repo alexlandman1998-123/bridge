@@ -1,6 +1,10 @@
-begin;
+-- Restored from the production migration ledger; this version is already applied.
 
-alter table public.whatsapp_campaigns add column scheduled_at timestamptz;
+begin
+;
+
+alter table public.whatsapp_campaigns add column scheduled_at timestamptz
+;
 
 -- Only explicitly confirmed campaigns receive a job. Existing unfinished sends
 -- remain untouched until a member chooses Resume in campaign results.
@@ -15,13 +19,26 @@ create table public.whatsapp_campaign_jobs (
   last_error text,
   updated_at timestamptz not null default now(),
   foreign key (organisation_id,campaign_id) references public.whatsapp_campaigns(organisation_id,id) on delete cascade
-);
-create index whatsapp_campaign_jobs_due_idx on public.whatsapp_campaign_jobs(scheduled_for, campaign_id) where status in ('queued','running');
-alter table public.whatsapp_campaign_jobs enable row level security;
-create policy whatsapp_campaign_jobs_read on public.whatsapp_campaign_jobs for select to authenticated using (public.bridge_is_active_member(organisation_id));
-revoke all on public.whatsapp_campaign_jobs from public, anon, authenticated;
-grant select on public.whatsapp_campaign_jobs to authenticated;
-grant all on public.whatsapp_campaign_jobs to service_role;
+)
+;
+
+create index whatsapp_campaign_jobs_due_idx on public.whatsapp_campaign_jobs(scheduled_for, campaign_id) where status in ('queued','running')
+;
+
+alter table public.whatsapp_campaign_jobs enable row level security
+;
+
+create policy whatsapp_campaign_jobs_read on public.whatsapp_campaign_jobs for select to authenticated using (public.bridge_is_active_member(organisation_id))
+;
+
+revoke all on public.whatsapp_campaign_jobs from public, anon, authenticated
+;
+
+grant select on public.whatsapp_campaign_jobs to authenticated
+;
+
+grant all on public.whatsapp_campaign_jobs to service_role
+;
 
 -- Keep existing view columns in their original order; append schedule metadata.
 create or replace view public.whatsapp_campaign_performance with (security_invoker = true) as
@@ -47,7 +64,8 @@ select c.id,c.organisation_id,c.name,c.sender_id,c.template,c.parameter_values,c
 from public.whatsapp_campaigns c
 left join public.whatsapp_campaign_recipients r on r.campaign_id = c.id
 left join public.whatsapp_campaign_jobs j on j.campaign_id = c.id
-group by c.id,j.campaign_id;
+group by c.id,j.campaign_id
+;
 
 create function public.whatsapp_campaign_enqueue(p_id uuid,p_org uuid,p_revision integer,p_template jsonb,p_messages jsonb)
 returns uuid language plpgsql security invoker set search_path = '' as $$
@@ -61,7 +79,8 @@ begin
   insert into public.whatsapp_campaign_jobs(campaign_id,organisation_id,scheduled_for) values(p_id,p_org,coalesce(c.scheduled_at,now()));
   update public.whatsapp_campaigns set sent_at=null where id=p_id;
   return p_id;
-end $$;
+end $$
+;
 
 create function public.whatsapp_campaign_job_control(p_id uuid,p_org uuid,p_action text)
 returns void language plpgsql security invoker set search_path = '' as $$
@@ -84,7 +103,8 @@ begin
   if p_action='cancel' then
     update public.whatsapp_campaign_recipients set status='skipped',error_message='Campaign cancelled before sending.',updated_at=now() where campaign_id=p_id and status='queued';
   end if;
-end $$;
+end $$
+;
 
 create function public.whatsapp_campaign_jobs_claim(p_limit integer default 3)
 returns setof public.whatsapp_campaign_jobs language plpgsql security invoker set search_path = '' as $$
@@ -104,11 +124,14 @@ begin
       where campaign_id=c.id and status in ('queued','running') and (lease_until is null or lease_until < now()) returning *;
     if found then update public.whatsapp_campaigns set sent_at=coalesce(sent_at,now()),updated_at=now() where id=c.id; end if;
   end loop;
-end $$;
+end $$
+;
 
 -- An old browser cannot bypass scheduled times or a paused/cancelled job. The
 -- optional token keeps the legacy no-job claim compatible during deployment.
-drop function public.whatsapp_campaign_claim(uuid,uuid);
+drop function public.whatsapp_campaign_claim(uuid,uuid)
+;
+
 create function public.whatsapp_campaign_claim(p_id uuid,p_org uuid,p_token uuid default null)
 returns setof public.whatsapp_campaign_recipients language plpgsql security invoker set search_path = '' as $$
 declare r public.whatsapp_campaign_recipients; person public.whatsapp_marketing_contacts; j public.whatsapp_campaign_jobs;
@@ -128,7 +151,8 @@ begin
     return;
   end if;
   return query update public.whatsapp_campaign_recipients set status='processing',attempted_at=now(),updated_at=now() where id=r.id returning *;
-end $$;
+end $$
+;
 
 create function public.whatsapp_campaign_job_finish(p_id uuid,p_org uuid,p_token uuid,p_error text default null)
 returns void language plpgsql security invoker set search_path = '' as $$
@@ -137,14 +161,20 @@ begin
     when exists(select 1 from public.whatsapp_campaign_recipients r where r.campaign_id=p_id and r.status='queued') then 'queued' else 'completed' end,
     last_error=left(p_error,1000),lease_token=null,lease_until=null,updated_at=now()
     where campaign_id=p_id and organisation_id=p_org and status='running' and lease_token=p_token;
-end $$;
+end $$
+;
 
-revoke all on function public.whatsapp_campaign_enqueue(uuid,uuid,integer,jsonb,jsonb),public.whatsapp_campaign_job_control(uuid,uuid,text),public.whatsapp_campaign_jobs_claim(integer),public.whatsapp_campaign_claim(uuid,uuid,uuid),public.whatsapp_campaign_job_finish(uuid,uuid,uuid,text) from public,anon,authenticated;
-grant execute on function public.whatsapp_campaign_enqueue(uuid,uuid,integer,jsonb,jsonb),public.whatsapp_campaign_job_control(uuid,uuid,text),public.whatsapp_campaign_jobs_claim(integer),public.whatsapp_campaign_claim(uuid,uuid,uuid),public.whatsapp_campaign_job_finish(uuid,uuid,uuid,text) to service_role;
+revoke all on function public.whatsapp_campaign_enqueue(uuid,uuid,integer,jsonb,jsonb),public.whatsapp_campaign_job_control(uuid,uuid,text),public.whatsapp_campaign_jobs_claim(integer),public.whatsapp_campaign_claim(uuid,uuid,uuid),public.whatsapp_campaign_job_finish(uuid,uuid,uuid,text) from public,anon,authenticated
+;
+
+grant execute on function public.whatsapp_campaign_enqueue(uuid,uuid,integer,jsonb,jsonb),public.whatsapp_campaign_job_control(uuid,uuid,text),public.whatsapp_campaign_jobs_claim(integer),public.whatsapp_campaign_claim(uuid,uuid,uuid),public.whatsapp_campaign_job_finish(uuid,uuid,uuid,text) to service_role
+;
 
 -- Reuse the project's existing Vault names and minute scheduler. No provider
 -- credentials are stored in job rows, SQL text or browser-visible configuration.
-create schema if not exists private;
+create schema if not exists private
+;
+
 create function private.run_whatsapp_campaign_worker()
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare project_url text; service_key text; request_id bigint; headers jsonb;
@@ -161,16 +191,26 @@ begin
   if left(service_key,10) <> 'sb_secret_' then headers := headers || jsonb_build_object('Authorization','Bearer ' || service_key); end if;
   select net.http_post(url:=rtrim(project_url,'/') || '/functions/v1/whatsapp-campaign-worker',headers:=headers,body:='{}'::jsonb,timeout_milliseconds:=90000) into request_id;
   return jsonb_build_object('scheduled',true,'request_id',request_id);
-end $$;
-revoke all on function private.run_whatsapp_campaign_worker() from public,anon,authenticated;
-grant usage on schema private to service_role;
-grant execute on function private.run_whatsapp_campaign_worker() to service_role;
+end $$
+;
+
+revoke all on function private.run_whatsapp_campaign_worker() from public,anon,authenticated
+;
+
+grant usage on schema private to service_role
+;
+
+grant execute on function private.run_whatsapp_campaign_worker() to service_role
+;
+
 do $$ begin
   if to_regclass('cron.job') is not null then
     perform cron.schedule('whatsapp-campaign-worker','* * * * *','select private.run_whatsapp_campaign_worker();');
   else
     raise notice 'Enable pg_cron and pg_net, then schedule private.run_whatsapp_campaign_worker() every minute.';
   end if;
-end $$;
+end $$
+;
 
-commit;
+commit
+;

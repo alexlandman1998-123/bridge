@@ -4,9 +4,9 @@ import { stagedBuyerLeadDocumentRows } from './buyerLeadDocumentHandoffService.j
 
 // Keep the immutable object reference across uncertain lead saves. The lead is
 // the durable owner until conversion, so a lost response must never delete bytes.
-export async function uploadStagedBuyerLeadDocument({ client, organisationId, leadId, documentKey, file, path, upload, buildDocument, save, onProgress }) {
-  return runRecoverableDocumentUpload({ client, scope: ['buyer_lead', organisationId, leadId, documentKey], file,
-    onProgress, storageBuckets: DOCUMENTS_BUCKET_CANDIDATES, storageResult: bucket => ({ storageBucket: bucket }),
+export async function uploadStagedBuyerLeadDocument({ client, organisationId, leadId, documentKey, file, path, upload, buildDocument, save, onProgress, recoveryScope = [], storageBuckets = DOCUMENTS_BUCKET_CANDIDATES, readRows = stagedBuyerLeadDocumentRows }) {
+  return runRecoverableDocumentUpload({ client, scope: ['buyer_lead', organisationId, leadId, documentKey, ...recoveryScope], file,
+    onProgress, storageBuckets, storageResult: bucket => ({ storageBucket: bucket }),
     toSavedReceipt: result => result.data,
     run: async attempt => {
       const objectPath = attempt.path(path)
@@ -15,7 +15,7 @@ export async function uploadStagedBuyerLeadDocument({ client, organisationId, le
       const read = async () => {
         const result = await client.from('leads').select('raw_enquiry_payload').eq('organisation_id', organisationId).eq('lead_id', leadId).maybeSingle()
         if (result.error) throw result.error
-        const row = stagedBuyerLeadDocumentRows(result.data).find(candidate =>
+        const row = readRows(result.data).find(candidate =>
           (candidate.storagePath || candidate.storage_path) === objectPath &&
           (candidate.storageBucket || candidate.storage_bucket) === stored.storageBucket)
         return row ? { data: row } : null

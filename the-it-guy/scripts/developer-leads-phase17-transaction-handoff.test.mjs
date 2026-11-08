@@ -30,7 +30,7 @@ const readyLead = {
   leadOwner: 'developer',
   leadStatus: 'qualified',
   visibilityState: 'full',
-  reservationState: 'none',
+  reservationState: 'reserved',
   primaryDevelopmentId: 'development-1',
   preferredUnitId: 'unit-1',
   buyerFullName: 'Alex Buyer',
@@ -71,7 +71,8 @@ const reservedLead = buildDeveloperLeadTransactionHandoff({
   reservationState: 'reserved',
 })
 assert.equal(reservedLead.eligible, true)
-assert.equal(reservedLead.handoff.status.stage, 'Deposit Paid')
+assert.equal(reservedLead.handoff.status.stage, 'Reserved')
+assert.equal(reservedLead.handoff.finance.reservationStatus, 'pending')
 assert.equal(reservedLead.handoff.status.mainStage, 'DEP')
 
 const allowedTransactionStages = [

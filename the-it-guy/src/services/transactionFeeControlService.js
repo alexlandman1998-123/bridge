@@ -19,7 +19,7 @@ export function buildTransactionFeeControlPayload({
     throw new Error('Choose whether the transaction fee will be billed to the agent or attorney.')
   }
   if (consentAndFeeTermsConfirmed !== true) {
-    throw new Error('Confirm that the transaction-fee terms and consent form are included before uploading the OTP.')
+    throw new Error('Confirm that the transaction-fee terms and consent form are included with the signed OTP.')
   }
 
   return {

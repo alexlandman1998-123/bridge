@@ -26,13 +26,13 @@ const post = (headers: Record<string,string> = {apikey:opaque}, body = '{}') => 
 });
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), {status,headers:{'Content-Type':'application/json'}});
 
-Deno.test('Exact modern/default/named and legacy keys work without authorizing forged JWT claims', async () => {
+Deno.test('Exact modern/default/named keys work without authorizing retired keys or forged JWT claims', async () => {
   configure();
   let reads = 0;
   globalThis.fetch = (async (input,init) => {
     const url = new URL(String(input));
     assert(init?.method === 'GET' && url.searchParams.get('status') === 'eq.queued','Dispatch must preserve queued-only reads');
-    assert(new Headers(init?.headers).get('apikey') === legacy,'Database client uses its configured service credential');
+    assert(new Headers(init?.headers).get('apikey') === opaque,'Database client uses its configured modern service credential');
     reads++;
     return response([]);
   }) as typeof fetch;
@@ -40,13 +40,13 @@ Deno.test('Exact modern/default/named and legacy keys work without authorizing f
     const accepted: Array<Record<string,string>> = [
       {apikey:opaque},{apikey:'sb_secret_named_test'},
       {apikey:opaque,Authorization:`Bearer ${opaque}`},
-      {Authorization:`Bearer ${legacy}`},{apikey:legacy,Authorization:`Bearer ${legacy}`},
     ];
     for (const headers of accepted) {
       const result = await handler(post(headers));
       assert(result.status === 200 && (await result.json()).ok,'Configured service credentials must run an empty batch');
     }
-    assert(reads === 10,'Empty queues must never create CRM rows or call email');
+    assert(reads === 6,'Empty queues must never create CRM rows or call email');
+    assert((await handler(post({apikey:legacy,Authorization:`Bearer ${legacy}`}))).status === 401,'Retired service credentials must fail before queue access');
     const forged = `eyJhbGciOiJub25lIn0.${btoa('{"role":"service_role"}')}.forged`;
     const denied: Array<Record<string,string>> = [
       {},{apikey:'sb_secret_unknown'},{apikey:'sb_publishable_public'},
@@ -57,9 +57,9 @@ Deno.test('Exact modern/default/named and legacy keys work without authorizing f
     for (const headers of denied) assert((await handler(post(headers))).status === 403,'Unknown or conflicting credentials must fail before queue access');
     for (const value of ['broken-json',JSON.stringify([opaque])]) {
       Deno.env.set('SUPABASE_SECRET_KEYS',value);
-      assert((await handler(post())).status === 403,'Invalid secret registers must fail closed');
+      assert((await handler(post())).status === 503,'Invalid secret registers must fail closed');
     }
-    assert(reads === 10,'Denied requests must never reach a queue or provider');
+    assert(reads === 6,'Denied requests must never reach a queue or provider');
   } finally { restore(); }
 });
 
@@ -87,21 +87,24 @@ Deno.test('Health reads queued/due counts and never claims, creates CRM records 
   } finally { restore(); }
 });
 
-Deno.test('Invalid methods, bodies, modes and missing internal JWT credentials cannot dispatch', async () => {
+Deno.test('Invalid methods, bodies, modes and missing worker credentials cannot dispatch', async () => {
   configure();
   let calls = 0;
-  globalThis.fetch = (async () => { calls++; throw new Error('Unexpected queue or email access'); }) as typeof fetch;
+  globalThis.fetch = (async () => { calls++; return response([]); }) as typeof fetch;
   try {
     assert((await handler(new Request('https://worker.example.test'))).status === 405,'Only POST is supported');
     for (const body of ['null','[]','{broken','{"mode":"helth"}']) {
       assert((await handler(post({apikey:opaque},body))).status === 400,'Invalid input must not fall through to dispatch');
     }
     Deno.env.delete('SUPABASE_SERVICE_ROLE_KEY');
-    assert((await handler(post())).status === 500,'An opaque caller key cannot replace the internal send-email JWT');
+    assert((await handler(post())).status === 200,'Modern configured service keys remain sufficient after legacy retirement');
+    Deno.env.delete('SUPABASE_SECRET_KEYS');
+    assert((await handler(post())).status === 403,'Missing service credentials must deny dispatch');
+    configure();
     Deno.env.set('SUPABASE_SERVICE_ROLE_KEY',legacy);
     Deno.env.delete('SUPABASE_URL');
     assert((await handler(post())).status === 500,'Missing project configuration must block work');
-    assert(calls === 0,'All validation failures must occur before queue access');
+    assert(calls === 2,'Only the valid modern-key request may read the two queues');
   } finally { restore(); }
 });
 
@@ -122,7 +125,7 @@ Deno.test('Dispatch bounds integer batches and preserves scheduled-only reminder
   } finally { restore(); }
 });
 
-for (const successful of [true,false]) Deno.test(`Reminder delivery uses the internal JWT and records ${successful ? 'provider success without resending' : 'failure without marking sent'}`, async () => {
+for (const successful of [true,false]) Deno.test(`Reminder delivery uses the configured service key and records ${successful ? 'provider success without resending' : 'failure without marking sent'}`, async () => {
   configure();
   const updates: Array<Record<string,unknown>> = [];
   let sendCalls = 0;
@@ -132,7 +135,7 @@ for (const successful of [true,false]) Deno.test(`Reminder delivery uses the int
     if (url.pathname === '/functions/v1/send-email') {
       sendCalls++;
       const headers = new Headers(init?.headers);
-      assert(headers.get('apikey') === legacy && headers.get('Authorization') === `Bearer ${legacy}`,'The caller opaque key must never be forwarded to the JWT-protected email function');
+      assert(headers.get('apikey') === opaque && headers.get('Authorization') === `Bearer ${opaque}`,'Internal email delivery must use the configured default service key');
       const body = JSON.parse(String(init?.body));
       assert(body.idempotencyKey === 'fixture-reminder-id' && body.originalMessage === 'Fixture show day is happening this morning.','Preserve the original reminder identity and content');
       return successful ? response({emailId:'fixture-provider-receipt'}) : response({error:'fixture email rejection'},403);

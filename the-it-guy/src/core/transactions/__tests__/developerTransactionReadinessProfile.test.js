@@ -189,3 +189,13 @@ test('row readiness surfaces handover blockers for registered development rows',
   assert.equal(profile.nextAction.targetMenu, 'handover')
   assert.equal(profile.healthTone, 'danger')
 })
+
+
+test('registration preparation never activates post-registration handover', () => {
+ const profile=buildProfile({transaction:{stage:'Registration Preparation',current_main_stage:'XFER'},operations:{handover:{status:'in_progress'},developmentSettings:{handover_enabled:true}}});
+ assert.equal(profile.actionQueue.some(a=>a.id==='handover_blockers'),false);
+});
+test('a saved development_name is recognised by row readiness without asking for setup again', () => {
+ const profile=buildDeveloperTransactionReadinessProfileFromRow({transaction:{transaction_type:'developer_sale',development_name:'Harbour Heights',buyer_name:'Buyer',onboarding_status:'Complete'}});
+ assert.equal(profile.actionQueue.some(a=>a.id==='developer_relationship_setup'),false);
+});

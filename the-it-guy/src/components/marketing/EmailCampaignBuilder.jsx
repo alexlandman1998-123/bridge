@@ -1,6 +1,9 @@
+import EmailAudienceCards from './EmailAudienceCards'
+import Arch9CampaignSenderForm from "./Arch9CampaignSenderForm";
 import { validCalendarDate } from '../../services/marketingCalendarModel';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  RefreshCw, UsersRound, FileUp,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -43,13 +46,13 @@ import {
 import EmailVisualEditor from "./EmailVisualEditor";
 import EmailCampaignImages from "./EmailCampaignImages";
 import EmailCampaignImport from "./EmailCampaignImport";
+import ImportedEmailEditor from "./ImportedEmailEditor";
+import EmailDevelopmentSelector from "./EmailDevelopmentSelector";
 import { inspectCampaignEmail } from "../../../../supabase/functions/_shared/emailContent.js";
 import "./EmailCampaignBuilder.css";
-import AiCampaignAssistant from './AiCampaignAssistant';
 import { reviewAiCampaign, approveAiCampaign } from '../../services/aiCampaignService';
 import { ensureEmailCampaignPlan } from '../../services/emailCampaignPlanService';
 
-const MarketingAudiencePicker = lazy(() => import("./MarketingAudiences").then((module) => ({ default: module.MarketingAudiencePicker })));
 const STEPS = ["Details", "Audience", "Content", "Review"];
 const fromRow = (row, brand) => ({
   id: row.id,
@@ -65,7 +68,7 @@ const fromRow = (row, brand) => ({
   replyToEmail: row.reply_to_email || "",
   contentJson:
     row.content_json?.version === 1
-      ? normalizeDocument(row.content_json)
+      ? normalizeDocument(row.content_json.importedEmail && row.content_json.advancedHtml ? {...row.content_json,mode:"advanced"} : row.content_json)
       : {
           ...createEmailDocument(brand),
           mode: "advanced",
@@ -91,9 +94,6 @@ const keepCampaignReference = (next, current) => {
 };
 export default function EmailCampaignBuilder({
   initialListingId,
-  initialObjective,
-  initialEventId,
-  openAiAssistant = false,
   initialScheduleDate,
   workspace,
   AudienceStudio,
@@ -126,18 +126,26 @@ export default function EmailCampaignBuilder({
   const [draft, setDraft] = useState(() => ({ ...blank(brand), ...(developmentContext ? { name: `${developmentContext.development_name} campaign`, developmentContext } : {}) }));
   const [ready, setReady] = useState(!campaignId);
   const [step, setStep] = useState(0);
+  const [importCodeView,setImportCodeView]=useState(false);
   const [saveState, setSaveState] = useState("Changes not saved");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [aiReview, setAiReview] = useState(null);
   const [audienceCount, setAudienceCount] = useState(null);
+  const [audienceError,setAudienceError]=useState(''),[audienceAttempt,setAudienceAttempt]=useState(0);
   const [listings, setListings] = useState([]);
   const [modal, setModal] = useState("");
   const [previewHtml, setPreviewHtml] = useState("");
   const [checkedContent, setCheckedContent] = useState(null);
   const [testEmail, setTestEmail] = useState(authState?.user?.email || "");
   const [testRecipient, setTestRecipient] = useState("");
+  const [secondTestEmail, setSecondTestEmail] = useState("");
+  const [testAccepted, setTestAccepted] = useState([]);
+  const [testUncertain, setTestUncertain] = useState([]);
+  const testGenerationKey = `arch9:campaign-test:${organisationId}:${authState?.user?.id || userId}:${campaignId || draft.clientId}`;
+  const [testGeneration, setTestGeneration] = useState(() => { try { return localStorage.getItem(testGenerationKey) || 'initial'; } catch { return 'initial'; } });
+  const allTestsAccepted = Boolean(testEmail.trim()) && [testEmail, secondTestEmail].map(email => email.trim().toLowerCase()).filter(Boolean).every(email => testAccepted.includes(email));
   const [templateName, setTemplateName] = useState("");
   const [senderName, setSenderName] = useState(brand.name);
   const [senderEmail, setSenderEmail] = useState("");
@@ -153,6 +161,9 @@ export default function EmailCampaignBuilder({
   const [revisions, setRevisions] = useState([]);
   const [history, setHistory] = useState({ past: [], future: [] });
   const dialogRef = useRef(null);
+  const busyRef = useRef(false);
+  const actionLock = useRef(null);
+  busyRef.current = busy;
   const draftRef = useRef(draft);
   const persisted = useRef("");
   const saving = useRef(null);
@@ -163,11 +174,16 @@ export default function EmailCampaignBuilder({
   const invalidateLifetime = useCallback(() => { lifetime.current++ }, []);
   useEffect(() => {
     invalidateLifetime();
+    actionLock.current = null;
+    setModal("");
+    setTestAccepted([]);
+    setTestUncertain([]);
+    try { setTestGeneration(localStorage.getItem(testGenerationKey) || 'initial'); } catch { setTestGeneration('initial'); }
     saving.current = null;
     linkPending.current = false;
     pendingLinkSave.current = null;
     return invalidateLifetime;
-  }, [organisationId, userId, campaignId, invalidateLifetime]);
+  }, [organisationId, userId, campaignId, invalidateLifetime, testGenerationKey]);
   const loadedId = useRef("");
   const nameInput = useRef(null);
   const sender = identities.find(
@@ -210,7 +226,7 @@ export default function EmailCampaignBuilder({
     )
       ? "Choose a send permission category."
       : "",
-    senderIdentityId: !sender ? "Select a verified, active sender." : "",
+    senderIdentityId: !sender ? "Choose your sender or set up sending through Arch9." : sender.sender_mode === "arch9" && !workspace.platformSender?.ready ? "Arch9 campaign sending is awaiting activation." : "",
   };
   const detailsReady = !Object.values(missing).some(Boolean);
   const draftDetailsReady = !missing.name && !missing.subject && !missing.subscriptionTypeId;
@@ -223,7 +239,7 @@ export default function EmailCampaignBuilder({
   const contentKey = JSON.stringify([organisationId, draft.contentJson, draft.previewText, draft.senderIdentityId]);
   const serverContentCheck = checkedContent?.key === contentKey ? checkedContent.report : null;
   const compatibilityWarnings = [...new Set([...localContentCheck.warnings, ...(serverContentCheck?.warnings || [])])];
-  const completedSteps = [detailsReady, Number(audienceCount) > 0, !contentIssues.length, false];
+  const completedSteps = [draftDetailsReady, Number(audienceCount) > 0, !contentIssues.length, false];
   const update = (patch) => {
     setAiReview(null);
     setDraft((d) => ({ ...d, ...patch }));
@@ -238,12 +254,12 @@ export default function EmailCampaignBuilder({
     const dialog = dialogRef.current;
     const focusable = () => [
       ...dialog.querySelectorAll(
-        'button:not(:disabled), input, select, textarea, [tabindex="0"]',
+        'button:not(:disabled), input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
       ),
-    ];
+    ].filter(node=>!node.closest('[hidden]')&&!node.matches(':disabled'));
     focusable()[0]?.focus();
     const keydown = (event) => {
-      if (event.key === "Escape") setModal("");
+      if (event.key === "Escape" && !(modal === "test" && busyRef.current)) setModal("");
       if (event.key === "Tab") {
         const nodes = focusable();
         const first = nodes[0];
@@ -342,7 +358,7 @@ export default function EmailCampaignBuilder({
   const audienceKey = JSON.stringify(draft.audienceFilter);
   useEffect(() => {
     let active = true;
-    setAudienceCount(null);
+    setAudienceCount(null);setAudienceError('');
     if (draft.subscriptionTypeId && organisationId)
       previewEmailAudience({
         organisationId,
@@ -353,12 +369,12 @@ export default function EmailCampaignBuilder({
           if (active) setAudienceCount(count);
         })
         .catch((e) => {
-          if (active) setError(e.message);
+          if (active) setAudienceError(e.message||'Recipient count could not be checked.');
         });
     return () => {
       active = false;
     };
-  }, [organisationId, draft.subscriptionTypeId, audienceKey]);
+  }, [organisationId, draft.subscriptionTypeId, audienceKey,audienceAttempt]);
   const persist = useCallback(async () => {
     if (saving.current) {
       await saving.current;
@@ -461,6 +477,9 @@ export default function EmailCampaignBuilder({
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [saveState]);
   const run = async (action) => {
+    if (actionLock.current) return;
+    const token = {};
+    actionLock.current = token;
     const scope = lifetime.current;
     setBusy(true);
     setError("");
@@ -470,13 +489,14 @@ export default function EmailCampaignBuilder({
     } catch (e) {
       if (scope === lifetime.current) setError(e.message || "Please try again.");
     } finally {
+      if (actionLock.current === token) actionLock.current = null;
       if (scope === lifetime.current) setBusy(false);
     }
   };
   const go = async (next) => {
     if (next <= step) { setStep(next); setError(""); return; }
     if ((next === 3 && !detailsReady) || (next === 1 && !draftDetailsReady)) {
-      setError("Complete the required campaign details before continuing.");
+      setError(!draftDetailsReady ? "Complete the required campaign details before continuing." : "Choose a ready sender through Arch9 or your own verified domain before delivery review. You can keep editing and saving your draft.");
       setStep(0);
       return;
     }
@@ -543,9 +563,16 @@ export default function EmailCampaignBuilder({
         onChange={(e) => update({ [key]: e.target.value })}
       />
       {help && <small>{help}</small>}
-      {missing[key] && <small className="eb-validation">{missing[key]}</small>}
+      {key !== "subject" && missing[key] && <small className="eb-validation">{missing[key]}</small>}
     </label>
   );
+  const openTest = () => {
+    setNotice("");
+    setError("");
+    setTestAccepted([]);
+    setTestUncertain([]);
+    setModal("test");
+  };
   const openPreview = () => {
     setPreviewHtml(
       mergeEmail(html, {
@@ -561,19 +588,22 @@ export default function EmailCampaignBuilder({
     <div className="eb-builder">
       <header className="eb-header">
         <div>
-          <button className="eb-back" onClick={leave}>
+          <button className="eb-back" disabled={busy} onClick={leave}>
             <ArrowLeft size={15} />
             Email campaigns
           </button>
           <div className="eb-title-row">
             <input
               aria-label="Campaign title"
+              disabled={busy && step === 3}
               maxLength={180}
+              size={Math.min(24, Math.max(4, draft.name.length))}
               value={draft.name}
               onChange={(e) => update({ name: e.target.value })}
             />
             <button
               aria-label="Edit campaign name"
+              disabled={busy}
               onClick={() => {
                 setStep(0);
                 requestAnimationFrame(() => nameInput.current?.focus());
@@ -589,8 +619,8 @@ export default function EmailCampaignBuilder({
         </div>
         <div className="eb-header-actions">
           {step === 2 && (
-            <>
-              <button onClick={() => setModal("import")}>Upload email</button>
+            <div className="eb-edit-tools" role="group" aria-label="Email editing tools">
+              <button className="eb-upload-tool" onClick={() => setModal("import")}><FileUp size={16}/>Upload HTML</button>
               <button
                 aria-label="Undo"
                 onClick={undo}
@@ -610,18 +640,17 @@ export default function EmailCampaignBuilder({
                 Preview
               </button>
               <button
-                disabled={!sender || busy}
-                onClick={() => {
-                  setNotice("");
-                  setModal("test");
-                }}
+                disabled={busy}
+                onClick={openTest}
               >
                 <Send size={16} />
                 Send test
               </button>
-            </>
+            </div>
           )}
           <button
+            className="eb-save-draft-tool"
+            aria-label="Save as draft"
             disabled={busy || !ready}
             onClick={() =>
               void run(async () => {
@@ -631,7 +660,7 @@ export default function EmailCampaignBuilder({
             }
           >
             <Save size={16} />
-            Save as draft
+            Save draft
           </button>
           {step === 2 && (
             <button
@@ -673,7 +702,6 @@ export default function EmailCampaignBuilder({
           </details>
         </div>
       </header>
-      {ready && <AiCampaignAssistant key={`${organisationId}:${userId}`} organisationId={organisationId} draft={draft} listings={listings} persist={persist} onApply={(patch) => { update({ ...patch, ...(patch.contentJson ? { contentJson: keepCampaignReference(patch.contentJson, draft.contentJson) } : {}) }); if (patch.contentJson) setStep(2) }} initialListingId={initialListingId} initialObjective={initialObjective} initialEventId={initialEventId} initiallyOpen={openAiAssistant} agencyName={brand.name} subscriptionTypes={subscriptionTypes} onPermissionChange={(subscriptionTypeId) => update({ subscriptionTypeId })} onContinueManual={() => { setStep(2); setError('') }} />}
       {draft.contentJson.arch9_campaign?.id && onOpenMarketingCampaign && (
         <div className="eb-linked-campaign">
           <p>This email is linked to your marketing campaign. Delivery and engagement results appear there.</p>
@@ -736,20 +764,21 @@ export default function EmailCampaignBuilder({
                   "Internal campaign name",
                   "name",
                   "September buyer update",
-                  "Only visible to your team.",
+                  "",
                 )}
+                <EmailDevelopmentSelector organisationId={organisationId} value={draft.developmentContext} onChange={developmentContext=>{const contentJson={...draft.contentJson};delete contentJson.arch9_context;update({developmentContext,contentJson})}}/>
                 {field(
                   "Subject line",
                   "subject",
                   "Homes worth seeing this week",
-                  "Aim for a concise subject, ideally under 80 characters.",
+                  "",
                   80,
                 )}
                 {field(
                   "Preview text",
                   "previewText",
                   "Your next home could be in this week’s selection…",
-                  "Shown beside the subject line in many inboxes.",
+                  "",
                   140,
                 )}
                 <label className="eb-field">
@@ -770,10 +799,6 @@ export default function EmailCampaignBuilder({
                       </option>
                     ))}
                   </select>
-                  <small>
-                    Only contacts with consent for this category can be
-                    included.
-                  </small>
                   {missing.subscriptionTypeId && (
                     <small className="eb-validation">
                       {missing.subscriptionTypeId}
@@ -781,7 +806,7 @@ export default function EmailCampaignBuilder({
                   )}
                 </label>
                 <label className="eb-field">
-                  From
+                  From (optional while drafting)
                   <select
                     value={draft.senderIdentityId}
                     onChange={(e) =>
@@ -793,7 +818,7 @@ export default function EmailCampaignBuilder({
                       })
                     }
                   >
-                    <option value="">Select a sender</option>
+                    <option value="">Choose later — Arch9 or your own domain</option>
                     {identities.map((s) => (
                       <option
                         value={s.id}
@@ -803,25 +828,20 @@ export default function EmailCampaignBuilder({
                           Boolean(s.sending_paused_at)
                         }
                       >
-                        {s.display_name} &lt;{s.from_email}&gt; ·{" "}
-                        {s.sending_paused_at ? "Paused" : s.verification_status}
+                        {s.display_name}{s.sender_mode === 'arch9' ? ' via Arch9' : ''} &lt;{s.from_email}&gt; ·{" "}
+                        {s.sending_paused_at ? "Paused" : s.sender_mode === "arch9" && !workspace.platformSender?.ready ? "Awaiting activation" : s.verification_status}
                       </option>
                     ))}
                   </select>
-                  {missing.senderIdentityId && (
-                    <small className="eb-validation">
-                      {missing.senderIdentityId}
-                    </small>
-                  )}
+                  <small>Choose a sender now or continue creating your email. A ready sender is required before delivery review.</small>
                 </label>
                 {!sender && (
                   <div className="eb-attention">
                     <Mail size={22} />
                     <div>
-                      <strong>Verify a sender before sending</strong>
+                      <strong>Choose how to send</strong>
                       <p>
-                        A verified sender improves deliverability and is
-                        required before this campaign can be scheduled.
+                        Send through Arch9 without setting up your own domain, or connect your own verified sender. Replies go to your chosen inbox.
                       </p>
                       <button onClick={() => setModal("sender")}>
                         Set up sender
@@ -839,7 +859,7 @@ export default function EmailCampaignBuilder({
                     ["Subject line", draft.subject.trim()],
                     ["Preview text", draft.previewText.trim()],
                     ["Consent category", draft.subscriptionTypeId],
-                    ["Verified sender", sender],
+                    ["Sending account", sender && !missing.senderIdentityId],
                   ].map(([label, complete]) => (
                     <div
                       className={`eb-check ${complete ? "is-complete" : ""}`}
@@ -882,45 +902,23 @@ export default function EmailCampaignBuilder({
             </div>
           )}
           {step === 1 && (
-            <section className="eb-basics eb-contained">
-              <span className="eb-eyebrow">AUDIENCE</span>
-              <h1>Choose who hears from you</h1>
-              <p>
-                Only eligible, consented contacts are included. Duplicates and
-                suppressed addresses are excluded.
-              </p>
+            <section className="eb-basics eb-audience">
               {draft.contentJson.arch9_campaign?.audience_pending && <div className="wa-info-panel"><h3>Choose an audience for this campaign</h3><p>No recipients are selected yet. Choose contacts or filters below.</p><button type="button" className="wa-secondary-button" onClick={() => update({ audienceFilter: {}, contentJson: { ...draft.contentJson, arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } })}>Use all eligible contacts</button></div>}
-              <Suspense fallback={<p role="status">Opening shared audiences…</p>}><MarketingAudiencePicker key={organisationId} organisationId={organisationId} channel="email" subscriptionId={draft.subscriptionTypeId} onApply={(ids, audience) => {
-                update({ audienceFilter: { contact_ids: ids }, contentJson: { ...draft.contentJson, ...(draft.contentJson.arch9_campaign ? { arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } : {}) } });
-                setNotice(`Applied ${ids.length} reviewed recipients from “${audience.name}”.`);
-              }} /></Suspense>
-              <AudienceStudio
-                audienceFilter={draft.audienceFilter}
-                onChange={(audienceFilter) => update({ audienceFilter: draft.contentJson.arch9_campaign?.audience_pending ? { ...audienceFilter, contact_ids: (audienceFilter.contact_ids || []).filter((id) => id !== "00000000-0000-0000-0000-000000000000") } : audienceFilter, contentJson: draft.contentJson.arch9_campaign?.audience_pending ? { ...draft.contentJson, arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } : draft.contentJson })}
-                contacts={contacts}
-                savedAudiences={savedAudiences}
-                organisationId={organisationId}
-                userId={userId}
-                onRefresh={refresh}
-                setNotice={setNotice}
-                setError={setError}
-              />
-              <div className="eb-attention">
-                <strong>
-                  {audienceCount === null
-                    ? "Calculating eligible recipients…"
-                    : `${audienceCount} eligible recipients`}
-                </strong>
-              </div>
+              <EmailAudienceCards organisationId={organisationId} subscriptionId={draft.subscriptionTypeId} audienceFilter={draft.audienceFilter} onSelect={audience=>{
+                update({audienceFilter:{shared_audience_id:audience.id,audience_revision:audience.revision},contentJson:{...draft.contentJson,...(draft.contentJson.arch9_campaign?{arch9_campaign:{...draft.contentJson.arch9_campaign,audience_pending:false}}:{})}});
+                setNotice(`Selected “${audience.name}”.`);
+              }}/>
+              <div className="eb-recipient-summary" role={audienceError?'alert':'status'} aria-label={audienceError?'Recipient count unavailable':audienceCount===null?'Checking recipients':`${audienceCount} eligible recipients`} aria-live="polite"><div>{audienceCount===null&&!audienceError?<RefreshCw size={19} className="is-loading"/>:<UsersRound size={19}/>}<strong>{audienceError?'Unable to check recipients':audienceCount===null?'Checking recipients…':audienceCount.toLocaleString('en-ZA')}</strong>{!audienceError&&<span>{audienceCount===null?'Updating your selection':audienceCount===1?'eligible recipient':'eligible recipients'}</span>}</div>{audienceError?<button type="button" onClick={()=>setAudienceAttempt(attempt=>attempt+1)}>Retry count</button>:null}</div>
             </section>
           )}
           {step === 2 &&
-            (draft.contentJson.mode === "advanced" ? (
+            (draft.contentJson.mode === "advanced" && draft.contentJson.importedEmail && !importCodeView ? <ImportedEmailEditor html={draft.contentJson.advancedHtml || ''} onChange={advancedHtml=>changeDocument({...draft.contentJson,advancedHtml})} onEditHtml={()=>setImportCodeView(true)}/> : draft.contentJson.mode === "advanced" ? (
               <section className="eb-basics">
                 <div className="eb-canvas-heading">
                   <h2>Advanced HTML</h2>
                   <button
                     onClick={() => {
+                      if(draft.contentJson.importedEmail){setImportCodeView(false);return}
                       if (
                         window.confirm(
                           "Return to the preserved visual layout? Manual HTML changes will remain in revision history.",
@@ -935,7 +933,7 @@ export default function EmailCampaignBuilder({
                     Return to visual editor
                   </button>
                 </div>
-                <p>Use Upload email to import a designer’s HTML and host its images.</p>
+                <p>Use Upload HTML to import your email and host its images.</p>
                 <label className="eb-field">
                   Email HTML
                   <textarea
@@ -976,9 +974,11 @@ export default function EmailCampaignBuilder({
               />
             ))}
           {step === 3 && (
-            <section className="eb-basics eb-contained">
-              <span className="eb-eyebrow">READY FOR DELIVERY</span>
-              <h1>Review your campaign</h1>
+            <section className="eb-review" aria-label="Campaign review">
+              <div className="eb-review-heading"><div><h1>Review your campaign</h1><p>Check the details, send a test, then choose when to deliver.</p></div>
+                <button onClick={openPreview}><Eye size={17} />Preview email</button>
+              </div>
+              <div className="eb-review-layout"><div className="eb-review-card"><h2>Campaign details</h2>
               <div className="eb-review-grid">
                 {[
                   [
@@ -986,6 +986,8 @@ export default function EmailCampaignBuilder({
                     `${sender?.display_name || ""} <${sender?.from_email || ""}>`,
                   ],
                   ["Subject", draft.subject],
+                  ["Preview text", draft.previewText || "Not added"],
+                  ["Replies to", draft.replyToEmail || sender?.reply_to_email || sender?.from_email || "—"],
                   [
                     "Send permission",
                     subscriptionTypes.find(
@@ -1000,20 +1002,18 @@ export default function EmailCampaignBuilder({
                   </div>
                 ))}
               </div>
-              <button onClick={openPreview}>
-                <Eye size={17} />
-                Preview email
-              </button>
+              </div><aside className="eb-review-card eb-review-test"><div className="eb-review-icon"><Send size={22} /></div><h2>Try it in your inbox</h2><p>Send the final email to one or two test recipients before your campaign goes out.</p><button className="eb-primary" disabled={busy} onClick={openTest}><Send size={16} />Send test email</button><small>Tests are excluded from campaign totals.</small></aside></div>
+              <div className="eb-review-card eb-review-delivery"><h2>Delivery</h2>
               <label className="eb-field">
                 Send time (optional)
                 <input
                   type="datetime-local"
+                  disabled={busy}
                   value={scheduledFor}
                   onChange={(e) => { setScheduledFor(e.target.value); setAiReview(null); }}
                 />
                 <small>
-                  Leave blank to queue immediately. Sender, consent, content and
-                  audience are checked again before scheduling.
+                  Leave blank to send now. Times use your device’s local timezone.
                 </small>
               </label>
               {draft.contentJson.ai_campaign && <section aria-label="AI campaign sending approval">
@@ -1033,7 +1033,7 @@ export default function EmailCampaignBuilder({
                   {issue}
                 </p>
               ))}
-              <section className="eb-content-check" aria-label="Email content checks">
+              </div><section className="eb-content-check eb-review-card" aria-label="Email content checks">
                 <h2>Email content checks</h2>
                 <p>{serverContentCheck ? serverContentCheck.ready ? "Server content and hosted image checks passed." : "Resolve these issues before sending." : "Hosted images will be checked again before scheduling and delivery."}</p>
                 <button disabled={busy || contentIssues.length > 0} onClick={() => void run(async () => {
@@ -1086,7 +1086,7 @@ export default function EmailCampaignBuilder({
             </div>
             <div>
               {step > 0 && (
-                <button onClick={() => void go(step - 1)}>Back</button>
+                <button disabled={busy} onClick={() => void go(step - 1)}>Back</button>
               )}
               {step < 3 ? (
                 <button
@@ -1110,13 +1110,19 @@ export default function EmailCampaignBuilder({
                   }
                   onClick={() =>
                     void run(async () => {
-                      if (
-                        scheduledFor &&
-                        new Date(scheduledFor).getTime() <= Date.now()
-                      )
-                        throw new Error("Choose a future send time.");
+                      const scope = lifetime.current;
+                      const reviewed = JSON.stringify(draftRef.current);
+                      const sendAt = scheduledFor ? new Date(scheduledFor).getTime() : null;
+                      if (scheduledFor && (!Number.isFinite(sendAt) || sendAt <= Date.now())) throw new Error("Choose a future send time.");
                       const id = await persist();
+                      if (scope !== lifetime.current) return;
+                      // Saving can add canonical metadata; later edits still require a new review.
+                      if (JSON.stringify({...draftRef.current,id:draft.id,updatedAt:draft.updatedAt}) !== JSON.stringify({...JSON.parse(reviewed),id:draft.id,updatedAt:draft.updatedAt})) throw new Error("Campaign changed while saving. Review the latest version before sending.");
+                      const savedVersion = JSON.stringify(draftRef.current);
                       const preflight = await preflightEmailCampaign(id);
+                      if (scope !== lifetime.current) return;
+                      if (savedVersion !== JSON.stringify(draftRef.current)) throw new Error("Campaign changed during checks. Review the latest version before sending.");
+                      if (sendAt !== null && sendAt <= Date.now()) throw new Error("Choose a future send time.");
                       if (preflight.contentCheck) setCheckedContent({ key: contentKey, report: preflight.contentCheck });
                       if (!preflight.ready)
                         throw new Error(
@@ -1132,6 +1138,7 @@ export default function EmailCampaignBuilder({
                           ? new Date(scheduledFor).toISOString()
                           : undefined,
                       );
+                      if (scope !== lifetime.current) return;
                       persisted.current = JSON.stringify(draftRef.current);
                       setSaveState("Saved");
                       onBack();
@@ -1161,6 +1168,7 @@ export default function EmailCampaignBuilder({
             <button
               className="eb-modal-close"
               aria-label="Close dialog"
+              disabled={modal === "test" && busy}
               onClick={() => setModal("")}
             >
               <X size={20} />
@@ -1177,6 +1185,7 @@ export default function EmailCampaignBuilder({
             )}
             {modal === "import" && <EmailCampaignImport key={organisationId} organisationId={organisationId} onImported={({ html: importedHtml, manifest }) => {
               changeDocument({ ...draft.contentJson, mode: "advanced", advancedHtml: importedHtml, importedEmail: manifest });
+              setImportCodeView(false);
               setModal("");
               setNotice("Email imported. Its images are hosted and ready for preview.");
             }} />}
@@ -1207,40 +1216,69 @@ export default function EmailCampaignBuilder({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (busy) return;
+                  if (missing.senderIdentityId) return setError(missing.senderIdentityId);
                   if (contentIssues.length) return setError(contentIssues[0]);
+                  const recipients = [testEmail, secondTestEmail].map((email) => email.trim().toLowerCase()).filter(Boolean);
+                  if (!recipients.length || recipients.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return setError("Enter one or two valid test email addresses.");
+                  if (new Set(recipients).size !== recipients.length) return setError("Use a different email address for the second recipient.");
+                  if (recipients.every(email => testAccepted.includes(email) || testUncertain.includes(email))) return;
+                  const scope = lifetime.current;
                   void run(async () => {
                     await persist();
-                    const result = await sendEmailCampaignTest({
+                    const failures = [];
+                    for (const recipientEmail of recipients.filter((email) => !testAccepted.includes(email) && !testUncertain.includes(email))) {
+                      if (scope !== lifetime.current) return;
+                      try {
+                        await sendEmailCampaignTest({
                       organisationId,
                       senderIdentityId: draft.senderIdentityId,
+                      campaignId: lastId.current,
                       subject: draft.subject,
                       html,
                       contentJson: draft.contentJson,
                       previewText: draft.previewText,
-                      recipientEmail: testEmail,
+                      replyToEmail: draft.replyToEmail,
+                      recipientEmail,
+                      testGeneration,
                       previewRecipientId: testRecipient || undefined,
-                    });
-                    setNotice(
-                      `Test accepted for delivery to ${result.deliveredTo}. Excluded from campaign analytics and recipient totals.`,
-                    );
+                        });
+                        if (scope !== lifetime.current) return;
+                        setTestAccepted((accepted) => [...new Set([...accepted, recipientEmail])]);
+                      } catch (failure) {
+                        if (scope !== lifetime.current) return;
+                        if (failure.deliveryUncertain) setTestUncertain((emails) => [...new Set([...emails, recipientEmail])]);
+                        failures.push(`${recipientEmail}: ${failure.message || "Test could not be confirmed. Check your inbox before retrying."}`);
+                      }
+                    }
+                    if (failures.length) throw new Error(failures.join(" "));
+                    setNotice("Test email accepted for delivery. Tests are excluded from campaign totals.");
                   });
                 }}
               >
                 <h2>Send a test email</h2>
-                <p>Preview the real email output before scheduling.</p>
+                <p>Send to one or two addresses. Your campaign audience will not be contacted.</p>
+                {missing.senderIdentityId&&<div role="status"><p>{missing.senderIdentityId}</p><button type="button" onClick={()=>setModal('sender')}>Set up sender</button></div>}
+                {contentIssues.length>0&&<div role="status"><p>Fix these content issues before sending a test:</p><ul>{contentIssues.map(issue=><li key={issue}>{issue}</li>)}</ul></div>}
                 <label className="eb-field">
                   Recipient email address
                   <input
                     type="email"
                     required
                     value={testEmail}
+                    disabled={busy || testAccepted.includes(testEmail.trim().toLowerCase()) || testUncertain.includes(testEmail.trim().toLowerCase())}
                     onChange={(e) => setTestEmail(e.target.value)}
                   />
+                </label>
+                <label className="eb-field">
+                  Second recipient (optional)
+                  <input type="email" value={secondTestEmail} disabled={busy || testAccepted.includes(secondTestEmail.trim().toLowerCase()) || testUncertain.includes(secondTestEmail.trim().toLowerCase())} onChange={(e) => setSecondTestEmail(e.target.value)} />
                 </label>
                 <label className="eb-field">
                   Personalise as
                   <select
                     value={testRecipient}
+                    disabled={busy || testAccepted.length > 0}
                     onChange={(e) => setTestRecipient(e.target.value)}
                   >
                     <option value="">Fallback recipient</option>
@@ -1252,8 +1290,17 @@ export default function EmailCampaignBuilder({
                   </select>
                 </label>
                 {contentIssues.length > 0 && <p role="alert">{contentIssues[0]}</p>}
-                <button className="eb-primary" disabled={busy || !sender || contentIssues.length > 0}>
-                  {busy ? "Sending…" : "Send test"}
+                {testUncertain.length > 0 && <p className="eb-error" role="alert">Delivery could not be confirmed for {testUncertain.join(", ")}. Check these inboxes before starting a new test. These addresses will not be retried here.</p>}
+                {testAccepted.length > 0 && <ul className="eb-test-results" aria-label="Test delivery results" role="status">{testAccepted.map((email) => <li key={email}><CheckCircle2 size={16} /><span>{email}<small>Accepted for delivery</small></span></li>)}</ul>}
+                {(allTestsAccepted || testUncertain.length > 0 || error) && <button type="button" disabled={busy} onClick={() => {
+                  try {
+                    const generation = crypto.randomUUID();
+                    localStorage.setItem(testGenerationKey, generation);
+                    setTestGeneration(generation); setTestAccepted([]); setTestUncertain([]); setError(''); setNotice('New test started. Previous test receipts are preserved.');
+                  } catch { setError('Allow browser storage before starting another test. Your previous request remains protected.'); }
+                }}>Start a new test</button>}
+                <button className="eb-primary" disabled={busy || Boolean(missing.senderIdentityId) || contentIssues.length > 0 || allTestsAccepted || [testEmail, secondTestEmail].map(email => email.trim().toLowerCase()).filter(Boolean).every(email => testAccepted.includes(email) || testUncertain.includes(email))}>
+                  {busy ? "Sending…" : allTestsAccepted ? "Tests sent" : testUncertain.length ? "Check delivery status" : testAccepted.length ? "Retry remaining recipient" : "Send test"}
                 </button>
               </form>
             )}
@@ -1295,7 +1342,8 @@ export default function EmailCampaignBuilder({
             )}
             {modal === "sender" && (
               <>
-                <h2>Set up your sending domain</h2>
+                <Arch9CampaignSenderForm key={`${organisationId}:${identities.find(identity => identity.sender_mode === 'arch9')?.id || 'new'}`} organisationId={organisationId} identity={identities.find(identity => identity.sender_mode === 'arch9')} platformSender={workspace.platformSender} disabled={busy} onSaved={refresh} />
+                <h2>Use your own sending domain</h2>
                 <p>
                   Add your agency domain once. We will generate the DNS records
                   your administrator needs to publish before a sender can be
@@ -1553,6 +1601,8 @@ export default function EmailCampaignBuilder({
                       void run(async () => {
                         await persist();
                         const restored = { ...fromRow(revision.snapshot, brand), id: lastId.current, updatedAt: draftRef.current.updatedAt };
+                        const previousDocument=draftRef.current.contentJson;
+                        setHistory(h=>({past:[...h.past.slice(-49),previousDocument],future:[]}));
                         update(restored);
                         draftRef.current = restored;
                         await persist();

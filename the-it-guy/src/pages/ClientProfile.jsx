@@ -1,3 +1,4 @@
+import ClientOrganiser from '../components/clients/ClientOrganiser'
 import { Activity, ArrowLeft, BriefcaseBusiness, Building2, Clock3, LayoutDashboard, Link2, Mail, Megaphone, Phone, Scale, ShieldCheck, User2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -122,10 +123,13 @@ function getProfileCopy(role) {
       transactionLabel: 'Transactions',
       transactionSubtitle: 'All development-linked deals where this client appears in your portfolio.',
       snapshotLabel: 'portfolio item',
+      profileLabel: 'Client Workspace',
+      notFoundDescription: 'This client is not visible in your current workspace.',
+      emptyDescription: 'Enquiries and contact history stay here before a transaction is opened.',
     }
   }
 
-  if (role === 'agent') {
+  if (['agent', 'developer'].includes(role)) {
     return {
       transactionLabel: 'Transactions',
       transactionSubtitle: 'All active deals where this client appears in your agent workspace.',
@@ -283,7 +287,7 @@ function ClientProfile() {
       setManualAttorneyParties(readAttorneyManualParties())
     }
 
-    if (role === 'agent') {
+    if (['agent', 'developer'].includes(role)) {
       try {
         setLoading(true)
         setError('')
@@ -321,7 +325,7 @@ function ClientProfile() {
         const { fetchDashboardOverview } = await loadReportingApi()
         const overview = await fetchDashboardOverview({ developmentId: null })
         transactionRows = overview?.rows || []
-      } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {
+      } else if ((['agent', 'developer'].includes(role) || role === 'attorney' || role === 'bond_originator') && profile?.id) {
         transactionRows = await fetchTransactionsByParticipantSummary({
           userId: profile.id,
           roleType: role,
@@ -348,11 +352,11 @@ function ClientProfile() {
   useEffect(() => { setActiveTab('overview'); setPreviewEnabled(true) }, [clientId, role])
 
   const profileData = useMemo(
-    () => (role === 'agent' ? agentProfileData || getAgentClientProfile(agentClients, clientId) : getAttorneyClientProfile(rows, clientId, role === 'attorney' ? manualAttorneyParties : [])),
+    () => (['agent', 'developer'].includes(role) ? agentProfileData || getAgentClientProfile(agentClients, clientId) : getAttorneyClientProfile(rows, clientId, role === 'attorney' ? manualAttorneyParties : [])),
     [agentClients, agentProfileData, clientId, manualAttorneyParties, role, rows],
   )
   const copy = useMemo(() => getProfileCopy(role), [role])
-  const localPreview = useMemo(() => role === 'agent' ? getLocalClientPreview(profileData) : null, [profileData, role])
+  const localPreview = useMemo(() => ['agent', 'developer'].includes(role) ? getLocalClientPreview(profileData) : null, [profileData, role])
   const isAttorneyProfile = role === 'attorney'
 
   if (loading) {
@@ -395,7 +399,7 @@ function ClientProfile() {
     : client.statusLabel
   const complianceKey = client.complianceKey || 'clear'
   const complianceLabel = client.complianceLabel || client.complianceStatus || 'Clear'
-  const isAgentProfile = role === 'agent'
+  const isAgentProfile = ['agent', 'developer'].includes(role)
   const workspaceTabs = [
     { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={17} aria-hidden="true" /> },
     { key: 'transactions', label: copy.tabLabel || 'Transactions', icon: <BriefcaseBusiness size={17} aria-hidden="true" /> },
@@ -537,9 +541,9 @@ function ClientProfile() {
             </div>
           </div>
 
-          {activeTab === 'activity' && role === 'agent' ? <ClientActivityPanel client={client} previewData={preview?.activity} onChanged={async () => { invalidateAgentClientDirectoryCache(); await loadData() }} /> : null}
-          {activeTab === 'sources' && role === 'agent' ? <ClientAttributionPanel client={client} previewData={preview?.sources} /> : null}
-          {activeTab === 'campaigns' && role === 'agent' ? <ClientCampaignPanel client={client} previewData={preview?.campaigns} onChanged={async () => { invalidateAgentClientDirectoryCache(); await loadData() }} /> : null}
+          {activeTab === 'activity' && ['agent', 'developer'].includes(role) ? <ClientActivityPanel client={client} previewData={preview?.activity} onChanged={async () => { invalidateAgentClientDirectoryCache(); await loadData() }} /> : null}
+          {activeTab === 'sources' && ['agent', 'developer'].includes(role) ? <ClientAttributionPanel client={client} previewData={preview?.sources} /> : null}
+          {activeTab === 'campaigns' && ['agent', 'developer'].includes(role) ? <ClientCampaignPanel client={client} previewData={preview?.campaigns} onChanged={async () => { invalidateAgentClientDirectoryCache(); await loadData() }} /> : null}
 
           {activeTab === 'overview' ? (
             isAgentProfile ? (
@@ -559,6 +563,7 @@ function ClientProfile() {
                     ))}
                   </dl>
                 </section>
+                <section className="client-shared-tools"><h2>Tags & property enquiries</h2><ClientOrganiser key={`tags:${client.identityId}`} client={client} section="tags"/><ClientOrganiser key={`enquiries:${client.identityId}`} client={client} section="enquiries"/></section>
                 <ClientEnquiryHistoryPanel key={`${client.organisationId}:${client.identityId}`} client={client} />
                 <div className="grid min-w-0 items-stretch gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
                   <ClientIdentityPanel client={client} clients={agentClients} onChanged={async (identityId) => { invalidateAgentClientDirectoryCache(); if (clientId === `client:${identityId}`) await loadData(); else navigate(`/clients/${encodeURIComponent(`client:${identityId}`)}`, { replace: true, state: location.state }) }} />
