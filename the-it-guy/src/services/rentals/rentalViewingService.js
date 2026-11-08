@@ -1,6 +1,6 @@
 import { createPrivateListingActivity, getPrivateListingActivity } from '../privateListingService'
 import { listRentalListingsForAgent } from './rentalListingDraftService'
-import { findRentalViewingOutcomeActivity, findScheduledRentalViewingActivity, RENTAL_VIEWING_OUTCOMES } from './rentalViewingModel'
+import { findRentalViewingOutcomeActivity, findScheduledRentalViewingActivity, rentalViewingActivityId, RENTAL_VIEWING_OUTCOMES } from './rentalViewingModel'
 
 export const RENTAL_VIEWING_ACTIVITY_VERSION = 'arch9_rental_viewing_activity_v2'
 const text = (value) => String(value ?? '').trim()
@@ -41,7 +41,13 @@ export async function createRentalViewing(form = {}, context = {}) {
   const existingActivities = await getPrivateListingActivity(text(form.listingId), { requireAvailable: true })
   const existing = findScheduledRentalViewingActivity(existingActivities, form.tenantLeadId, startsAt)
   if (existing) return { id: text(existing.id), listingId: text(form.listingId), ...(existing.metadata || existing.metadata_json || {}) }
-  const activity = await createPrivateListingActivity({ privateListingId: text(form.listingId), activityType: 'rental_viewing_scheduled', activityTitle: 'Rental viewing scheduled', activityDescription: text(form.note) || 'Rental viewing scheduled.', performedBy: context.assignedAgentId || null, visibility: 'internal', metadata: { captureVersion: RENTAL_VIEWING_ACTIVITY_VERSION, tenantLeadId: text(form.tenantLeadId), tenantName: text(form.tenantName), startsAt, note: text(form.note), status: 'scheduled' } })
+  let activity
+  try { activity = await createPrivateListingActivity({ activityId: await rentalViewingActivityId('scheduled', form.listingId, form.tenantLeadId, startsAt), privateListingId: text(form.listingId), activityType: 'rental_viewing_scheduled', activityTitle: 'Rental viewing scheduled', activityDescription: text(form.note) || 'Rental viewing scheduled.', performedBy: context.assignedAgentId || null, visibility: 'internal', metadata: { captureVersion: RENTAL_VIEWING_ACTIVITY_VERSION, tenantLeadId: text(form.tenantLeadId), tenantName: text(form.tenantName), startsAt, note: text(form.note), status: 'scheduled' } }) } catch (error) {
+    if (error?.code !== '23505') throw error
+    const saved = findScheduledRentalViewingActivity(await getPrivateListingActivity(text(form.listingId), { requireAvailable: true }), form.tenantLeadId, startsAt)
+    if (!saved) throw new Error('The viewing save could not be confirmed. Refresh before retrying.')
+    return { id: text(saved.id), listingId: text(form.listingId), ...(saved.metadata || saved.metadata_json || {}) }
+  }
   if (!activity?.id) throw new Error('Unable to schedule the rental viewing.')
   return { id: text(activity.id), listingId: text(form.listingId), ...(activity.metadata || {}) }
 }
@@ -59,7 +65,15 @@ export async function recordRentalViewingOutcome(viewing = {}, outcome = '', not
     if (recorded !== normalizedOutcome) throw new Error('This viewing already has a different recorded outcome.')
     return { ...viewing, outcome: recorded, outcomeNote: text((existing.metadata || existing.metadata_json || {}).note) }
   }
-  const activity = await createPrivateListingActivity({ privateListingId: text(viewing.listingId), activityType: 'rental_viewing_outcome', activityTitle: 'Rental viewing outcome recorded', activityDescription: text(note) || `Viewing marked ${normalizedOutcome}.`, performedBy: context.assignedAgentId || null, visibility: 'internal', metadata: { captureVersion: RENTAL_VIEWING_ACTIVITY_VERSION, viewingId: text(viewing.id), tenantLeadId: text(viewing.tenantLeadId), outcome: normalizedOutcome, note: text(note), recordedAt: new Date().toISOString() } })
+  let activity
+  try { activity = await createPrivateListingActivity({ activityId: await rentalViewingActivityId('outcome', viewing.listingId, viewing.id), privateListingId: text(viewing.listingId), activityType: 'rental_viewing_outcome', activityTitle: 'Rental viewing outcome recorded', activityDescription: text(note) || `Viewing marked ${normalizedOutcome}.`, performedBy: context.assignedAgentId || null, visibility: 'internal', metadata: { captureVersion: RENTAL_VIEWING_ACTIVITY_VERSION, viewingId: text(viewing.id), tenantLeadId: text(viewing.tenantLeadId), outcome: normalizedOutcome, note: text(note), recordedAt: new Date().toISOString() } }) } catch (error) {
+    if (error?.code !== '23505') throw error
+    const saved = findRentalViewingOutcomeActivity(await getPrivateListingActivity(text(viewing.listingId), { requireAvailable: true }), viewing.id)
+    if (!saved) throw new Error('The viewing outcome could not be confirmed. Refresh before retrying.')
+    const result = saved.metadata || saved.metadata_json || {}
+    if (text(result.outcome) !== normalizedOutcome) throw new Error('This viewing already has a different recorded outcome.')
+    return { ...viewing, outcome: normalizedOutcome, outcomeNote: text(result.note) }
+  }
   if (!activity?.id) throw new Error('Unable to record the rental viewing outcome.')
   return { ...viewing, outcome: normalizedOutcome, outcomeNote: text(note) }
 }

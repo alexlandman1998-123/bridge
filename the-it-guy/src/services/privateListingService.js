@@ -6798,10 +6798,13 @@ export async function createPrivateListingActivity(payload = {}) {
   if (hasMissingTableCache('private_listing_activity')) return null
   const privateListingId = normalizeUuid(payload.privateListingId)
   if (!privateListingId) throw new Error('privateListingId is required.')
+  const activityId = payload.activityId ? normalizeUuid(payload.activityId) : null
+  if (payload.activityId && !activityId) throw new Error('A valid listing activity identity is required.')
 
   const insert = await client
     .from('private_listing_activity')
     .insert({
+      ...(activityId ? { id: activityId } : {}),
       private_listing_id: privateListingId,
       activity_type: normalizeNullableText(payload.activityType),
       activity_title: normalizeNullableText(payload.activityTitle),

@@ -44,3 +44,29 @@ it('gives a useful invalid-time error before reading or writing', async () => {
   await expect(createRentalViewing({ ...form, startsAt: 'invalid' })).rejects.toThrow('valid rental viewing date')
   expect(api.history).not.toHaveBeenCalled()
 })
+function primaryKeyStore(initial = []) {
+  const saved = new Map(initial.map(row => [row.id, row]))
+  api.history.mockImplementation(async () => [...saved.values()])
+  api.create.mockImplementation(async payload => {
+    if (saved.has(payload.activityId)) throw Object.assign(new Error('Duplicate primary key'), { code: '23505' })
+    const row = { id: payload.activityId, activity_type: payload.activityType, metadata: payload.metadata }
+    saved.set(row.id, row)
+    return row
+  })
+  return saved
+}
+it('concurrent agents scheduling the same tenant and instant recover one saved viewing', async () => {
+  const saved = primaryKeyStore()
+  const results = await Promise.all([createRentalViewing(form), createRentalViewing({ ...form, startsAt: '2026-11-09T12:00:00+02:00' })])
+  expect(results[0].id).toBe(results[1].id)
+  expect(saved.size).toBe(1)
+  expect(api.create.mock.calls[0][0].activityId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+})
+it('concurrent conflicting outcomes retain one result and explain the conflict', async () => {
+  const viewing = { id: 'view', ...form }
+  const saved = primaryKeyStore([{ id: viewing.id, activity_type: 'rental_viewing_scheduled', metadata: form }])
+  const results = await Promise.allSettled([recordRentalViewingOutcome(viewing, 'attended'), recordRentalViewingOutcome(viewing, 'cancelled')])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.find(result => result.status === 'rejected').reason.message).toContain('different recorded outcome')
+  expect(saved.size).toBe(2)
+})
