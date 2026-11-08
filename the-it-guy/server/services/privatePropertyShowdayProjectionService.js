@@ -13,7 +13,7 @@ async function record({ client, event, sync, listingSync, active, error = '' } =
   if (writeError) throw writeError
 }
 
-export async function runPrivatePropertyShowdayProjection({ client, secrets = process.env, createPrivateProperty = createPrivatePropertyClient } = {}) {
+export async function runPrivatePropertyShowdayProjection({ client, secrets = process.env, createPrivateProperty = createPrivatePropertyClient, deadlineAt = Infinity } = {}) {
   if (!client) throw new Error('Supabase client is required.')
   const [eventsResult, existingResult, listingSyncResult, configResult] = await Promise.all([
     client.from('marketing_events').select('id,organisation_id,subject_id,status,starts_at,ends_at,description,updated_at').eq('event_type', 'show_day').eq('subject_type', 'listing').in('status', ['upcoming', 'cancelled', 'completed']),
@@ -33,6 +33,7 @@ export async function runPrivatePropertyShowdayProjection({ client, secrets = pr
     if (!config) { reports.push({ eventId: event.id, status: 'BLOCKED', reason: 'production_connection_not_active' }); continue }
     const shouldBeActive = activeEvent(event)
     if (previous && previous.active === shouldBeActive && previous.source_updated_at === event.updated_at && !previous.last_error) { reports.push({ eventId: event.id, status: 'UNCHANGED' }); continue }
+    if (Date.now() + 30_000 >= deadlineAt) { reports.push({ eventId: event.id, status: 'DEFERRED', reason: 'Time allowance reached; no update sent. This event will resume on the next run.' }); continue }
     try {
       const credentials = await resolvePrivatePropertyCredentials({ client, config, secrets })
       if (credentials.missingSecrets.length) throw new Error(`Missing runtime secret: ${credentials.missingSecrets.join(', ')}`)
@@ -45,6 +46,6 @@ export async function runPrivatePropertyShowdayProjection({ client, secrets = pr
       reports.push({ eventId: event.id, status: 'FAILED', error: error.message || 'Show day update failed.' })
     }
   }
-  const failed = reports.filter((report) => ['FAILED', 'BLOCKED'].includes(report.status))
+  const failed = reports.filter((report) => ['FAILED', 'BLOCKED', 'DEFERRED'].includes(report.status))
   return { version: PRIVATE_PROPERTY_SHOWDAY_PROJECTION_SERVICE_VERSION, phase: 'private-property-phase4-showday-projection', generatedAt: new Date().toISOString(), status: failed.length ? 'ATTENTION_REQUIRED' : 'COMPLETE', processed: reports.filter((report) => report.status === 'SYNCED').length, reports }
 }

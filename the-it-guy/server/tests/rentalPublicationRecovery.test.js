@@ -251,3 +251,12 @@ it.each([{}, {listingNumber:0}, {listingNumber:'invalid'}])('does not confirm a 
  expect(mocks.p24Sync).not.toHaveBeenCalled()
  expect(portal.saveListing).toHaveBeenCalledTimes(1)
 })
+
+it('keeps a confirmed under-offer Private Property advert on portal during reconciliation', async () => {
+ const attempt=await beginRentalPublicationAttempt({client,listingId,channel:'private_property',environment:'sandbox',operation:'status_update',identity:{propertyId:'property',branchGuid:'branch',listingType:'Rental',existed:true,status:'PendingOffer'},payload:{propertyStatus:'PendingOffer'}})
+ await updateRentalPublicationAttempt(client,attempt,{state:'uncertain',receipt:{accepted:true,reference:'T12345'}})
+ const portal=pp();portal.getListingStatus.mockResolvedValue({data:'<GetListingStatusResult>PendingOffer</GetListingStatusResult>'})
+ expect((await reconcileRentalPrivatePropertyPublication({client,listingId,environment:'sandbox',secrets:{},privateProperty:portal})).status).toBe('RECONCILED')
+ expect(mocks.ppSync).toHaveBeenLastCalledWith(expect.objectContaining({externalStatus:'under_offer',isOnPortal:true}))
+ expect(portal.updateListing).not.toHaveBeenCalled()
+})

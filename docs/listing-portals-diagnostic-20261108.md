@@ -1,5 +1,61 @@
 # Property24 and Private Property listing diagnostic — 8 November 2026
 
+## Preventive follow-up after production reconciliation — 8 November 2026
+
+**Current status: fixes isolated locally; production unchanged in this task.** This follow-up supersedes the earlier release-status statements below. The earlier listing work was subsequently included in the production reconciliation. Current main/base is `963beff01957e338f4cf330f495105fd29247153`; its primary-app source matches deployed commit `13972f32d4e7404cd3d50053f864023f3fb8a7ce`. The live primary app is READY on deployment `dpl_F5JP3gBYvPp4gjFxVVCQWp51bDdN`. New work is on `codex/listing-prevention-20261108` in an isolated worktree, preserving unrelated bond and website edits.
+
+### Additional preventable defects fixed
+
+| Finding | Result of this follow-up |
+| --- | --- |
+| Private Property swallowed interrupted response bodies after receiving HTTP headers. A failed read could become an empty successful status/feed. | Body-read failures now propagate. Timeouts retain uncertainty; there is no automatic repeat of possible mutations. |
+| A refreshed private photo retained its previous `mediaLoadError`, so a recovered file could stay blocked. | Successful renewal clears the recovered photo's flag without mutating caller data. Storage denial remains a blocker. |
+| Expiry receipts discarded provider explanations and treated pending rental requests/nested unconfirmed outcomes as definite failures. | Expiry receipts retain bounded, redacted provider explanations and keep ambiguous requests protected as uncertain. |
+| Private Property reconciliation marked under-offer adverts as off-portal. | A confirmed under-offer advert remains on-portal, consistent with ordinary status handling. |
+| Photo limits applied separately to each download; a long gallery or stalled storage fallback could outlast the listing worker. | The gallery has one 120-second preparation allowance, including storage fallback/decoding waits. It retains two workers, ordering and all original files. Timeout fails the entire readiness check with a photo-specific explanation; no partial gallery is submitted. |
+| Private Property feed/show-day cron had a 60-second ceiling while doing multiple sequential provider operations. Production error clusters include historical timeouts on this route and the listing worker. | This cron uses the same 300-second ceiling as listing publication, with a shared 240-second work allowance and 30-second reserve before starting more provider work. Deferred feeds retain checkpoints; deferred show days are not marked synced or sent. Existing eligible work resumes on the next tick. |
+| Show-day updates trusted HTTP 200 without checking the SOAP business result. | Empty, negative and unacknowledged responses fail; positive acknowledgements are required before recording success. |
+
+Scope: primary app capture, save/reopen, media, readiness, publication, expiry, status recovery and portal feeds. No database migration, Edge Function, public-website or admin source change is required. The new function duration can increase permitted runtime for that cron; deployment approval includes this configuration change.
+
+### Production evidence and exceptions for the coming week
+
+Read-only production target: `isdowlnollckzvltkasn`.
+
+- No queued/processing/dispatching publication job was older than ten minutes at inspection.
+- Both enabled production Private Property feed connections were approved and recently checked. Production syncs contain 16 active, two under-offer and eight inactive adverts; the six previously reconciled records retain their resolved states, and no production sync is submitted or unknown. These are saved status observations, not a fresh public-page certification of every advert.
+- No saved channel expiry falls in the next seven days. This does not establish that external portal dates or unsaved expiry choices are correct.
+- Three rental withdrawal journals remain uncertain from 3 November. **Fresh read-only `GetListingStatus` and `GetListingsDetails` calls verified all three exact existing identities as Inactive:** `rr4801805`, `rr4812937`, `rr4789012`. No provider or database write occurred. A guarded repair is prepared to reconcile only these three receipt rows, retaining payload digests, original identities and existing receipt evidence. It refuses stale proof (30 minutes), changed rows or inconsistent syncs. It must be refreshed and approved before execution.
+- Three older website publication requests remain uncertain. One has a saved published projection older than the uncertain request; two have no current website projection. Neither an old published row nor absence establishes the outcome of that later request. They are not safe to replay blindly.
+- One old failed Property24 request still contains only “Channel needs attention.” The same advert is recorded on-portal, with a later check. This does not establish whether the failed content update took effect. Its lost historical reason cannot be reconstructed or relabelled as success.
+- Some active internal listings have no `listing_media` image rows. Internal activation is not proof of portal readiness; the existing readiness checks must continue to block incomplete adverts. No blanket photo, status or mandate backfill was attempted.
+- Historical runtime error clusters list listing-publication and Private Property reconciliation timeouts, last seen 7 November. The cluster's first occurrence predates the requested week, so its count is not presented as a clean seven-day total. The current deployed revision had no error/warning runtime log lines in the inspected window. A wider raw-log query timed out; this limitation is preserved.
+
+### Provider contract comparison
+
+Fresh HTTPS retrieval succeeded for the [Property24 v55 definition](https://api.property24.com/swagger/v55-listing/docs) and [Private Property WSDL](https://services.privateproperty.co.za/AgentImport/AgentImport.asmx?WSDL). Private Property's WSDL is byte-identical to the stored fixture. Property24 has two changed description fields; its structural request/response contracts and parameters match after excluding descriptions. These checks do not certify private partner agreements, agency entitlements, credentials, catalogue choices or delivery of a new live advert. Provider mutations remain mocked in automated tests.
+
+### Verification
+
+- **1,470 tests passed across 161 listing/rental Vitest files.** The initial broader run found an unconfigured local test connection and an upload test assuming that a lost reply could not recover immediately. Those fixtures were corrected without changing the affected production workflows. The final full selection passes with no skipped tests.
+- **196 focused Node checks passed**, including all seven property categories, both transaction modes and both portal contracts; changed/unchanged galleries, job claims/access isolation, failure receipts, the new gallery deadline, expiry safeguards, interrupted SOAP responses, show-day acknowledgements and deferred feed checkpoints.
+- **98 publication browser assertions passed** across all seven categories and both sale/rental modes, including partial failure, reload, targeted retry, narrow screens and lost responses. A full matrix plus an isolated agricultural-sale rerun supplies the final per-journey evidence. Initial fixture races assumed that status buttons remained present after automatic confirmation and that all channel requests finished together; the corrected harness waits for the original action, accepts automatic confirmation only with the exact receipt visible, and still forbids resends.
+- **14 additional capture/recovery assertions passed** across sale and rental journeys: offline saving, restored capture sessions, interrupted photo upload, same-record retry, fresh-browser reopen and conflicting remote edits. The old harness was updated for the optional sales step, explicit capture-session restoration and private draft creation during sales photo upload. A new unrelated capture remains separate. These checks used the final sale rerun and the verified rental journey; failed exploratory runs are retained.
+- The prepared three-row withdrawal repair passed local PGlite checks: only the exact three receipts change, an unrelated row is preserved, and a changed target causes a full transaction rollback. It has not run against production.
+- Scoped ESLint and whitespace checks pass. No full local production build was attempted because of the machine's memory limits and prior build failure. A cloud build remains necessary before promotion.
+
+Browser providers, accounts and storage responses are local fixtures; rental saving exercises local PostgreSQL. Actual provider status reads for the three withdrawals are separately evidenced. No new advert, withdrawal, reactivation, email, migration, production code promotion or data repair was performed.
+
+### Release and approval scope
+
+Release the isolated listing commit to the primary `bridge` app only, including its API bundles and the one cron-duration configuration. **Zero migrations and zero Edge deployments.** Use a cloud build, inspect READY/build output, then verify authenticated sale/rental routes and read-only status/permission checks before promoting. Recovery is the prior primary-app deployment; preserve all correct portal identities and receipts.
+
+A separate, optional production-data approval is needed for `output/listing-prevention-20261108/withdrawal-repair-prepared.sql`, affecting exactly three verified inactive withdrawal receipt rows. Re-read the provider immediately before applying and retain the before snapshot; no advert or listing data changes are included. The three website requests and old Property24 update require targeted investigation, not automatic retries or receipt deletion. Any live publish/update/withdraw acceptance requires named, explicitly approved test listings and channels.
+
+`AGENTS.md` requires current-task approval for production deployment, remote data changes and publishing. This review prepares the fixes and evidence; it cannot promise a fault-free week or certify an unperformed live submission. Evidence and the exact release manifest are in `output/listing-prevention-20261108/`.
+
+## Earlier diagnostic and release preparation (historical)
+
 > **Follow-up completed on 8 November:** both updated browser journeys now pass on the isolated release candidate (14 checks). A further 394 candidate automated checks and scoped lint passed. The six Private Property records were matched against their saved portal identities and reconciled under the user’s explicit follow-up instruction: four active and two under offer, with no portal writes. The original findings below are the historical diagnostic; the remaining approval steps and exact release scope are in [the isolated release approval packet](../output/listing-release-20261108/APPROVAL.md). Cloud build and promotion have not been performed.
 
 Owner: the primary Arch9 transaction workspace (`the-it-guy/`), including its provider API routes, background publication worker and listing screens. Public property websites and the admin application were not changed. The previously prepared WhatsApp release remains separate.

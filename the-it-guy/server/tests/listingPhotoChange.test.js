@@ -103,3 +103,37 @@ test('Property24 status polling preserves the last submitted gallery evidence', 
   assert.equal(state.sync.last_payload_summary.photoListingNumber, '1234567')
   assert.equal(state.photos(await state.build({ environment: 'exdev', loadImageBytes: true })), null)
 })
+
+
+test('one gallery deadline bounds slow downloads and retains every failed photo without starting later downloads', async () => {
+ const {loadProperty24ImageBytesForPreview}=await import('../services/property24Arch9ListingPreviewService.js')
+ const media=Array.from({length:8},(_,i)=>({id:`photo-${i}`,media_type:'image',file_url:`https://images.example/photo-${i}.jpg`,sort_order:i}))
+ const requests=[]
+ const keepAlive=setTimeout(()=>{},2000)
+ try {
+  const result=await loadProperty24ImageBytesForPreview({media,timeoutMs:30,fetchImpl:(_url,{signal})=>new Promise((_,reject)=>{
+   requests.push(signal)
+   signal.addEventListener('abort',()=>reject(signal.reason),{once:true})
+  })})
+  assert.equal(requests.length,2)
+  assert.ok(requests.every(signal=>signal.aborted))
+  assert.equal(result.summary.failed,8)
+  assert.equal(result.summary.loaded,0)
+  assert.equal(result.summary.skipped,0)
+  assert.equal(result.media.length,8)
+  assert.ok(result.results.every(row=>/gallery took too long.*no photos will be omitted/.test(row.message)))
+  assert.ok(result.media.every(row=>!row.bytes))
+ } finally {clearTimeout(keepAlive)}
+})
+
+test('one gallery deadline also bounds an unresponsive private storage fallback', async () => {
+ const {loadProperty24ImageBytesForPreview}=await import('../services/property24Arch9ListingPreviewService.js')
+ let downloads=0
+ const keepAlive=setTimeout(()=>{},2000)
+ try {
+  const result=await loadProperty24ImageBytesForPreview({timeoutMs:30,media:[{media_type:'image',file_url:'https://example.supabase.co/storage/v1/object/sign/documents/private-listings/listing/photo.jpg?token=fixture'}],fetchImpl:async()=>{throw new Error('URL failed')},storageClient:{storage:{from:()=>({download:()=>{downloads++;return new Promise(()=>{})}})}}})
+  assert.equal(downloads,1)
+  assert.equal(result.summary.failed,1)
+  assert.match(result.results[0].message,/gallery took too long/)
+ } finally {clearTimeout(keepAlive)}
+})

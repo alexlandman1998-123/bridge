@@ -13,6 +13,9 @@ it('recovers an unacknowledged lease transfer without duplicate bytes and report
   const f = fixture(), progress = vi.fn(), put = f.storage.upload.getMockImplementation()
   f.storage.upload.mockImplementationOnce(async path => { await put(path); throw new TypeError('Response lost') })
   let receipt
+  // The first read is unavailable after the lost PUT response, so recovery
+  // must preserve a receipt until the subsequent existence check succeeds.
+  f.storage.createSignedUrl.mockResolvedValueOnce({ error: { status: 503 } })
   try { await uploadRentalLeaseDocument({ workspace: f.workspace, file: f.file }, { client: f.client, onProgress: progress }) } catch (cause) { receipt = cause.uploadReceipt }
   expect(receipt).toBeTruthy()
   const saved = await uploadRentalLeaseDocument({ workspace: f.workspace, file: f.file, receipt }, { client: f.client, onProgress: progress })

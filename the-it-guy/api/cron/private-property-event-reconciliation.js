@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { runPrivatePropertyEventReconciliation } from '../../server/services/privatePropertyEventReconciliationService.js'
 import { runPrivatePropertyShowdayProjection } from '../../server/services/privatePropertyShowdayProjectionService.js'
 
-export const config = { maxDuration: 60 }
+export const config = { maxDuration: 300 }
 
 function json(response, status, body) { response.statusCode = status; response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(body)) }
 
@@ -15,7 +15,10 @@ export default async function handler(request, response) {
   if (!supabaseUrl || !serviceRoleKey) return json(response, 503, { error: 'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.' })
   try {
     const client = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
-    const [report, showdays] = await Promise.all([runPrivatePropertyEventReconciliation({ client }), runPrivatePropertyShowdayProjection({ client })])
+    // Leave time to save receipts and return before the platform deadline.
+    // Deferred work retains its feed checkpoint and resumes on the next tick.
+    const deadlineAt = Date.now() + 240_000
+    const [report, showdays] = await Promise.all([runPrivatePropertyEventReconciliation({ client, deadlineAt }), runPrivatePropertyShowdayProjection({ client, deadlineAt })])
     const status = report.status === 'ATTENTION_REQUIRED' || showdays.status === 'ATTENTION_REQUIRED' ? 'ATTENTION_REQUIRED' : 'COMPLETE'
     return json(response, status === 'ATTENTION_REQUIRED' ? 207 : 200, { ...report, status, showdays })
   } catch (error) {

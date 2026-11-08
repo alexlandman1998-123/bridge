@@ -50,7 +50,7 @@ async function updateCheckpoint({ client, config, continuationKey } = {}) {
   if (error) throw error
 }
 
-async function reconcileConfig({ client, config, secrets, createPrivateProperty = createPrivatePropertyClient } = {}) {
+async function reconcileConfig({ client, config, secrets, createPrivateProperty = createPrivatePropertyClient, deadlineAt = Infinity } = {}) {
   const credentials = await resolvePrivatePropertyCredentials({ client, config, secrets })
   const guid = branchGuid(config)
   if (!guid || credentials.missingSecrets.length) {
@@ -82,6 +82,9 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
     if (referenceForEvent(event) && (!previousReference || (Date.parse(event.eventDate) || 0) > (Date.parse(previousReference.eventDate) || 0))) referenceEvents.set(id, event)
   }
   for (const event of latestByProperty.values()) {
+    if (Date.now() + 30_000 >= deadlineAt) {
+      return { configId: config.id, status: 'DEFERRED', checkpoint, continuationKey: checkpoint, processed: results.length, reason: 'Time allowance reached; feed checkpoint retained for the next run.' }
+    }
     const propertyId = eventPropertyId(event)
     const sync = byPropertyId.get(propertyId)
     if (!sync) continue
@@ -130,20 +133,24 @@ async function reconcileConfig({ client, config, secrets, createPrivateProperty 
   return { configId: config.id, branchGuid: guid, status: 'COMPLETE', checkpoint, continuationKey: continuationKey || checkpoint, eventCount: events.length, staleEventCount, repairedReferenceCount, processed: results.length, unmatchedEventCount: [...latestByProperty.keys()].filter((id) => !byPropertyId.has(id)).length, results }
 }
 
-export async function runPrivatePropertyEventReconciliation({ client, secrets = process.env, createPrivateProperty = createPrivatePropertyClient } = {}) {
+export async function runPrivatePropertyEventReconciliation({ client, secrets = process.env, createPrivateProperty = createPrivatePropertyClient, deadlineAt = Infinity } = {}) {
   if (!client) throw new Error('Supabase client is required.')
   const { data, error } = await client.from('private_property_agency_configs').select('*').eq('environment', 'production').eq('enabled', true).in('status', ['approved', 'active'])
   if (error) throw error
   const configs = (data || []).filter(activeConfig)
   const reports = []
   for (const config of configs) {
+    if (Date.now() + 30_000 >= deadlineAt) {
+      reports.push({ configId: config.id, status: 'DEFERRED', processed: 0, reason: 'Time allowance reached; this connection will resume on the next run.' })
+      continue
+    }
     try {
-      reports.push(await reconcileConfig({ client, config, secrets, createPrivateProperty }))
+      reports.push(await reconcileConfig({ client, config, secrets, createPrivateProperty, deadlineAt }))
     } catch (error) {
       reports.push({ configId: config.id, branchGuid: branchGuid(config) || null, status: 'FAILED', processed: 0, error: error.message || 'Private Property event reconciliation failed.' })
     }
   }
-  const failed = reports.filter((report) => ['FAILED', 'BLOCKED'].includes(report.status))
+  const failed = reports.filter((report) => ['FAILED', 'BLOCKED', 'DEFERRED'].includes(report.status))
   return {
     version: PRIVATE_PROPERTY_EVENT_RECONCILIATION_SERVICE_VERSION,
     phase: 'private-property-phase3-event-reconciliation',

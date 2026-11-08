@@ -89,7 +89,7 @@ export async function reconcileRentalPrivatePropertyPublication({ client,listing
     }
     const reference = extractPrivatePropertyXmlTag(details,'Ref') || attempt.receipt?.reference || ''
     const sync = await recordPrivatePropertyListingSync({ client,listingId,environment,propertyId:identity.propertyId,branchGuid:identity.branchGuid,
-      listingType:identity.listingType || 'Rental',privatePropertyRef:reference,externalStatus,isOnPortal:externalStatus==='active',
+      listingType:identity.listingType || 'Rental',privatePropertyRef:reference,externalStatus,isOnPortal:['active','under_offer'].includes(externalStatus),
       responseSummary:{ reconciledAttemptId:attempt.id },submittedAt:attempt.started_at })
     if (!sync.sync?.id || sync.externalLinkWarning) throw new Error('Local Private Property details could not be repaired.')
     await updateRentalPublicationAttempt(client,attempt,{ state:'reconciled',receipt:{ ...attempt.receipt,reference,reconciled:true },last_error:null })

@@ -104,3 +104,14 @@ test('persisted gallery rows still surface a failed image viewing link without c
   assert.equal(hasListingPhotoLoadError([{ media_type: 'video', mediaLoadError: 'Unavailable' }]), false)
   assert.equal(hasListingPhotoLoadError([{ media_type: 'image', file_url: 'https://example.test/photo.jpg' }]), false)
 })
+
+
+test('clears only the recovered photo error after storage recovers, without mutating the caller', async () => {
+ const failed = fixture({error:{message:'temporary storage outage'}})
+ const rows=await refreshListingPhotoUrls(failed.client,[{listing_id:listingId,media_type:'image',file_url:expired,caption:'Kitchen'}])
+ assert.equal(hasListingPhotoLoadError(rows),true)
+ const recovered=await refreshListingPhotoUrls(fixture().client,rows,{strict:true})
+ assert.equal(hasListingPhotoLoadError(recovered),false)
+ assert.ok(recovered[0].file_url)
+ assert.equal(hasListingPhotoLoadError(rows),true)
+})

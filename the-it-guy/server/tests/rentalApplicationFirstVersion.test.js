@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { handlePublicRentalApplication } from '../services/publicRentalApplicationApi.js'
 import { readFileSync } from 'node:fs'
-import { beforeAll, afterAll, expect, it } from 'vitest'
+import { beforeAll, afterAll, expect, it, vi } from 'vitest'
+vi.mock('../../src/lib/supabaseClient.js', async original => ({ ...await original(), isSupabaseConfigured: true, supabase: null }))
 import { rentalTenantApplicationDatabase, org, lead, actor, listing } from './fixtures/rentalTenantApplicationDatabase.js'
 import { rentalOnboardingClient } from './fixtures/rentalOnboardingClient.js'
 import { ensureRentalListingVacancy } from '../../src/services/rentals/rentalListingInventoryRepository.js'

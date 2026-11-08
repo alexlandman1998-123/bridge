@@ -24,6 +24,9 @@
     "api/cron/listing-publication.js": {
       "maxDuration": 300
     },
+    "api/cron/private-property-event-reconciliation.js": {
+      "maxDuration": 300
+    },
     "api/listings/publication-jobs.js": {
       "maxDuration": 300
     }

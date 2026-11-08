@@ -1,3 +1,4 @@
+import { runPrivatePropertyShowdayProjection } from '../server/services/privatePropertyShowdayProjectionService.js'
 import { runPrivatePropertyEventReconciliation } from '../server/services/privatePropertyEventReconciliationService.js'
 import { createRecoveryPortal } from './fixtures/private-property-recovery.mjs'
 import { updatePrivatePropertyListingStatus } from '../server/services/privatePropertyListingStatusUpdateService.js'
@@ -539,3 +540,32 @@ assert.equal(packageJson.scripts['private-property:post-submit-monitor'], 'node 
 assert.equal(packageJson.scripts['test:private-property-go-live-phase5-post-submit-monitor'], 'node scripts/private-property-phase11-post-submit-monitor.test.mjs')
 
 console.log('Private Property go-live phase 5 post-submit monitor contract passed')
+
+// Reaching the cron budget never advances a cursor or sends a deferred update.
+const deferredFeedClient=createFakeClient(cronTables)
+const deferredFeed=await runPrivatePropertyEventReconciliation({client:deferredFeedClient,secrets,deadlineAt:Date.now(),createPrivateProperty:()=>{throw Error('No provider call after the budget')}})
+assert.equal(deferredFeed.status,'ATTENTION_REQUIRED')
+assert.equal(deferredFeed.reports[0].status,'DEFERRED')
+assert.deepEqual(deferredFeedClient.operations,[])
+const duringFeedClient=createFakeClient(cronTables)
+const realNow=Date.now, beginning=realNow()
+try {
+ const duringFeed=await runPrivatePropertyEventReconciliation({client:duringFeedClient,secrets,deadlineAt:beginning+60000,createPrivateProperty:()=>({getListingEventFeedByBranch:async()=>{
+  const result=await createPortal({active:true}).getListingEventFeedByBranch({})
+  Date.now=()=>beginning+60000
+  return result
+ }})})
+ assert.equal(duringFeed.reports[0].status,'DEFERRED')
+ assert.equal(duringFeed.processedEventCount,0)
+ assert.deepEqual(duringFeedClient.operations,[],'an incomplete feed must retain its original checkpoint')
+}finally{Date.now=realNow}
+const deferredShowdayClient=createFakeClient({...cronTables,marketing_events:[{id:'event',event_type:'show_day',subject_type:'listing',subject_id:listingId,organisation_id:agencyConfig.organisation_id,status:'upcoming',starts_at:'2099-12-01',updated_at:'2026-11-08'}],private_property_listing_syncs:[{...cronTables.private_property_listing_syncs[0],is_on_portal:true}],private_property_showday_syncs:[]})
+const deferredShowdays=await runPrivatePropertyShowdayProjection({client:deferredShowdayClient,secrets,deadlineAt:Date.now(),createPrivateProperty:()=>{throw Error('No show-day request after the budget')}})
+assert.equal(deferredShowdays.status,'ATTENTION_REQUIRED')
+assert.equal(deferredShowdays.reports[0].status,'DEFERRED')
+assert.equal(deferredShowdays.processed,0)
+assert.deepEqual(deferredShowdayClient.operations,[])
+
+const cronDuration=(await import('../api/cron/private-property-event-reconciliation.js')).config.maxDuration
+assert.equal(cronDuration,300)
+assert.equal(JSON.parse(read('vercel.json')).functions['api/cron/private-property-event-reconciliation.js'].maxDuration,cronDuration)
