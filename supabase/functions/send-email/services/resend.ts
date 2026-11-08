@@ -66,7 +66,7 @@ export async function sendViaResendApi({
   const timeoutId = controller
     ? setTimeout(() => controller.abort("resend_request_timeout"), timeoutMs)
     : null;
-  let response: Response;
+  let response: Response | undefined;
 
   try {
     response = await fetch("https://api.resend.com/emails", {
@@ -88,13 +88,28 @@ export async function sendViaResendApi({
       }),
       signal: controller?.signal,
     });
+    // The deadline includes the response body, which can stall after headers.
+    const data = await response.json();
+    if (!response.ok) {
+      return { ok: false as const, status: response.status, error: data };
+    }
+    if (typeof data?.id !== "string" || !data.id.trim()) {
+      return {
+        ok: false as const,
+        status: response.status,
+        error: { message: "Resend acceptance could not be confirmed: missing email receipt." },
+      };
+    }
+    return { ok: true as const, status: response.status, data };
   } catch (error) {
     return {
       ok: false as const,
-      status: null,
+      status: response?.status ?? null,
       error: {
-        message: error instanceof DOMException && error.name === "AbortError"
+        message: controller?.signal.aborted
           ? `Resend request timed out after ${timeoutMs}ms.`
+          : response
+          ? `Resend returned an unreadable response with status ${response.status}. Email acceptance could not be confirmed.`
           : error instanceof Error
           ? error.message
           : "Resend request failed before a response was returned.",
@@ -103,23 +118,4 @@ export async function sendViaResendApi({
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
-
-  const data = await response.json().catch(() => ({
-    message:
-      `Resend returned a non-JSON response with status ${response.status}.`,
-  }));
-
-  if (!response.ok) {
-    return {
-      ok: false as const,
-      status: response.status,
-      error: data,
-    };
-  }
-
-  return {
-    ok: true as const,
-    status: response.status,
-    data,
-  };
 }

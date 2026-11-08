@@ -1,4 +1,5 @@
 import { useTransactionPartnerOptions } from '../hooks/useTransactionPartnerOptions.js'
+import { getTransactionCreationIssues } from '../core/transactions/transactionCreationLifecycle.js'
 import { captureBankAttorneyAppointment } from '../services/bankAttorneyAppointmentService.js'
 import { prepareSellerWorkspaceDelivery } from '../services/transactionSellerDeliveryService.js'
 import { transactionSellerDirectoryPeople } from '../core/transactions/transactionSellerDirectory.js'
@@ -16184,6 +16185,7 @@ function AttorneyTransactionDetail() {
     bondOriginatorEmail: '',
     matterOwner: '',
   })
+  const [lifecycleActionNotice, setLifecycleActionNotice] = useState('')
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false)
   const [registrationDraft, setRegistrationDraft] = useState({
     registrationDate: '',
@@ -16210,6 +16212,16 @@ function AttorneyTransactionDetail() {
     reasonRequired: true,
   })
   const [reasonDraft, setReasonDraft] = useState('')
+  useEffect(function resetLifecycleActionState() {
+    setSaving(false)
+    setLifecycleActionNotice('')
+    setRegistrationModalOpen(false)
+    setRegistrationDraft({ registrationDate: '', titleDeedNumber: '', registrationConfirmationDocumentId: '' })
+    setRegistrationValidation({ loading: false, canMarkRegistered: false, blockers: [] })
+    setConfirmDialog(previous => ({ ...previous, open: false }))
+    setReasonDialog(previous => ({ ...previous, open: false }))
+    setReasonDraft('')
+  }, [currentMatterAccessKey])
   const [onboardingModalOpen, setOnboardingModalOpen] = useState(false)
   const [onboardingActionMessage, setOnboardingActionMessage] = useState('')
   const [onboardingActionBusy, setOnboardingActionBusy] = useState(false)
@@ -17398,6 +17410,7 @@ function AttorneyTransactionDetail() {
   )
   const transactionEvents = data?.transactionEvents ?? EMPTY_ARRAY
   const setupHealth = data?.setupHealth || data?.newTransactionSetupHealth || null
+  const creationIssues = getTransactionCreationIssues(transaction || {})
   const documentRequests = data?.documentRequests ?? EMPTY_ARRAY
   const additionalDocumentRequests = useMemo(
     () =>
@@ -18955,6 +18968,7 @@ function AttorneyTransactionDetail() {
       activeViewerPermissions={{ canEditFinanceWorkflow: canEditBondHybridFinanceWorkflow }}
       loadingAction={bondHybridFinanceActionLoading}
       onSubmitBankApplication={(payload) => void handleAddBondHybridApplication(payload)}
+      onTrackerChanged={async () => { await refreshBondHybridFinanceWorkflow(); await loadData({ background: true }) }}
       onUpdateBankApplication={(application, payload) => void handleUpdateBondHybridApplication(application.id, payload)}
       onCaptureBondOffer={(payload) => void handleAddBondHybridQuote(payload)}
       onAcceptOffer={(offer) => void handleApproveBondHybridQuote(offer.id)}
@@ -22459,106 +22473,88 @@ function AttorneyTransactionDetail() {
   ])
 
   async function handleRunRegistration() {
-    if (!transaction?.id) {
-      return
-    }
-
+    if (!transaction?.id) return
+    const actionScope = currentMatterAccessKey
+    const actionTransactionId = transaction.id
     try {
       setSaving(true)
       setError('')
-      await markTransactionRegistered({
-        transactionId: transaction.id,
+      setLifecycleActionNotice('')
+      const result = await markTransactionRegistered({
+        transactionId: actionTransactionId,
         registrationDate: registrationDraft.registrationDate || null,
         titleDeedNumber: registrationDraft.titleDeedNumber,
         registrationConfirmationDocumentId: registrationDraft.registrationConfirmationDocumentId || null,
       })
-      setRegistrationModalOpen(false)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
+      if (liveMatterScopeRef.current === actionScope) {
+        setRegistrationModalOpen(false)
+        setLifecycleActionNotice(result?.lifecycleWarnings?.join(' ') || 'Registration saved.')
+      }
+      window.dispatchEvent(new CustomEvent('itg:transaction-updated', { detail: { transactionId: actionTransactionId } }))
     } catch (registrationError) {
-      setError(registrationError.message || 'Unable to mark this transaction as Registered.')
-      await refreshRegistrationValidation()
+      if (liveMatterScopeRef.current === actionScope) {
+        setError(registrationError.message || 'Unable to confirm registration. Refresh before trying again.')
+        await refreshRegistrationValidation()
+      }
     } finally {
-      setSaving(false)
+      if (liveMatterScopeRef.current === actionScope) setSaving(false)
     }
   }
 
   async function handleConfirmAction(action) {
-    if (!transaction?.id) {
-      return
-    }
-
+    if (!transaction?.id) return
+    const actionScope = currentMatterAccessKey
+    const actionTransactionId = transaction.id
     try {
       setSaving(true)
       setError('')
-
-      if (action === 'complete') {
-        const completion = await getCompletionBlockers(transaction.id)
-        if (!completion?.canMarkCompleted) {
-          throw new Error((completion?.blockers || []).map((item) => item.label).join(' • ') || 'Completion requirements are not met.')
-        }
-        await markTransactionCompleted(transaction.id)
-      } else if (action === 'unarchive') {
-        await unarchiveTransactionLifecycle(transaction.id)
-      } else {
-        throw new Error('Unsupported action.')
+      setLifecycleActionNotice('')
+      let result
+      if (action === 'complete') result = await markTransactionCompleted(actionTransactionId)
+      else if (action === 'unarchive') result = await unarchiveTransactionLifecycle(actionTransactionId)
+      else throw new Error('Unsupported action.')
+      if (liveMatterScopeRef.current === actionScope) {
+        setConfirmDialog({ open: false, title: '', description: '', action: '' })
+        setLifecycleActionNotice(result?.lifecycleWarnings?.join(' ') || (action === 'complete' ? 'Transaction completed.' : 'Transaction restored.'))
       }
-
-      setConfirmDialog({ open: false, title: '', description: '', action: '' })
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      await loadData()
+      window.dispatchEvent(new CustomEvent('itg:transaction-updated', { detail: { transactionId: actionTransactionId } }))
     } catch (actionError) {
-      setError(actionError.message || 'Unable to complete lifecycle action.')
+      if (liveMatterScopeRef.current === actionScope) setError(actionError.message || 'Unable to confirm this change. Refresh before trying again.')
     } finally {
-      setSaving(false)
+      if (liveMatterScopeRef.current === actionScope) setSaving(false)
     }
   }
 
   async function handleSubmitReasonAction() {
-    if (!transaction?.id) {
-      return
-    }
-
+    if (!transaction?.id) return
+    const actionScope = currentMatterAccessKey
+    const actionTransactionId = transaction.id
+    const action = reasonDialog.action
     const reasonValue = reasonDraft.trim()
     if (reasonDialog.reasonRequired && !reasonValue) {
       setError('Reason is required for this action.')
       return
     }
-
     try {
       setSaving(true)
       setError('')
-      if (reasonDialog.action === 'undo_registration') {
-        await undoTransactionRegistration({
-          transactionId: transaction.id,
-          reason: reasonValue,
-        })
-      } else if (reasonDialog.action === 'archive') {
-        await archiveTransactionLifecycle({
-          transactionId: transaction.id,
-          reason: reasonValue,
-        })
-      } else if (reasonDialog.action === 'cancel') {
-        await cancelTransactionLifecycle({
-          transactionId: transaction.id,
-          reason: reasonValue,
-        })
-      } else {
-        throw new Error('Unsupported action.')
+      setLifecycleActionNotice('')
+      let result
+      if (action === 'undo_registration') result = await undoTransactionRegistration({ transactionId: actionTransactionId, reason: reasonValue })
+      else if (action === 'archive') result = await archiveTransactionLifecycle({ transactionId: actionTransactionId, reason: reasonValue })
+      else if (action === 'cancel') result = await cancelTransactionLifecycle({ transactionId: actionTransactionId, reason: reasonValue })
+      else throw new Error('Unsupported action.')
+      if (liveMatterScopeRef.current === actionScope) {
+        setReasonDialog(previous => ({ ...previous, open: false }))
+        setReasonDraft('')
+        setLifecycleActionNotice(result?.lifecycleWarnings?.join(' ') || 'Transaction change saved.')
       }
-
-      setReasonDialog((previous) => ({ ...previous, open: false }))
-      setReasonDraft('')
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      if (['archive', 'cancel'].includes(reasonDialog.action)) {
-        navigate(workspaceBackPath, { replace: true })
-        return
-      }
-      await loadData()
+      window.dispatchEvent(new CustomEvent('itg:transaction-updated', { detail: { transactionId: actionTransactionId } }))
+      if (liveMatterScopeRef.current === actionScope && ['archive', 'cancel'].includes(action)) navigate(workspaceBackPath, { replace: true })
     } catch (actionError) {
-      setError(actionError.message || 'Unable to apply lifecycle action.')
+      if (liveMatterScopeRef.current === actionScope) setError(actionError.message || 'Unable to confirm this change. Refresh before trying again.')
     } finally {
-      setSaving(false)
+      if (liveMatterScopeRef.current === actionScope) setSaving(false)
     }
   }
 
@@ -23347,6 +23343,15 @@ function AttorneyTransactionDetail() {
       )}
     >
       <div className="space-y-6">
+        {lifecycleActionNotice ? <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{lifecycleActionNotice}</p> : null}
+        {['incomplete', 'initializing'].includes(transaction?.creation_status) ? (
+          <section role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <h2 className="font-semibold">Transaction setup needs attention</h2>
+            <p>The transaction is saved, but its setup has not finished. Review the outstanding steps before continuing.</p>
+            {creationIssues.length ? <ul className="mt-2 space-y-1">{creationIssues.map(issue => <li key={issue.key}><strong>{issue.label}:</strong> {issue.message}</li>)}</ul>
+              : <p className="mt-2">Ask the transaction owner to check the buyer details, professional allocations and required documents.</p>}
+          </section>
+        ) : null}
         {workspaceRole === 'attorney' && activeWorkspaceMenu !== 'transfer' && legalTaskReturnContext ? (
           <section className="flex flex-col gap-3 rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" role="status">
             <div className="min-w-0">
@@ -26308,6 +26313,7 @@ function AttorneyTransactionDetail() {
         )}
       >
         <div className="grid gap-4">
+          {error ? <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p> : null}
           <div className="grid gap-3 md:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-label font-semibold uppercase text-textMuted">Registration Date</span>
@@ -26377,6 +26383,7 @@ function AttorneyTransactionDetail() {
         open={confirmDialog.open}
         title={confirmDialog.title}
         description={confirmDialog.description}
+        errorMessage={error}
         confirmLabel={confirmDialog.action === 'unarchive' ? 'Unarchive' : 'Mark Completed'}
         variant={confirmDialog.action === 'unarchive' ? 'default' : 'destructive'}
         confirming={saving}
@@ -26903,6 +26910,7 @@ function AttorneyTransactionDetail() {
             placeholder="Add context for this lifecycle action..."
           />
         </label>
+        {error ? <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p> : null}
       </Modal>
     </>
   )

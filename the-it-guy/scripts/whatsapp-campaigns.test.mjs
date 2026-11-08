@@ -35,7 +35,7 @@ test('static templates and phone validation', () => {
 test('unauthenticated/inactive/foreign users cannot access data or Meta', async () => {
   let touched = false
   const handler = createCampaignHandler({ db: { from() { touched = true; throw Error('no') } }, authorize: async () => null, meta: async () => { touched = true } })
-  for (const action of ['workspace', 'templates', 'save', 'save_contact', 'opt_out', 'preflight', 'prepare', 'dispatch', 'resume', 'pause', 'cancel', 'detail']) await assert.rejects(handler({ organisationId: '00000000-0000-0000-0000-000000000001', action }, ''), /active membership/)
+  for (const action of ['workspace', 'templates', 'save', 'save_contact', 'opt_out', 'preflight', 'prepare', 'dispatch', 'resume', 'pause', 'cancel', 'detail', 'tracking_link']) await assert.rejects(handler({ organisationId: '00000000-0000-0000-0000-000000000001', action }, ''), /active membership/)
   assert.equal(touched, false)
 })
 test('PostgreSQL tenant isolation, atomic prepare, claims, opt-outs and callback ordering', async () => {
@@ -290,4 +290,17 @@ test('browser closes after prepare: worker leases prevent duplicates, lost respo
     await applyWhatsAppCampaignWebhook(sqlClient(db), stop)
     assert.equal((await db.query('select consent_status from whatsapp_marketing_contacts where id=$1', [c1])).rows[0].consent_status, 'opted_in', 'an old STOP retry cannot undo a later, explicit opt-in')
   } finally { await db.close() }
+})
+
+test('tracked links respect campaign visibility, safe destinations and Meta template integrity', async () => {
+ const org='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222'
+ let accessible=false;const writes=[]
+ const row={id,organisation_id:org,template:structuredClone(template)}
+ const query=data=>{const q={select:()=>q,eq:()=>q,single:async()=>({data}),maybeSingle:async()=>({data})};return q}
+ const handler=createCampaignHandler({db:{from:()=>query(row),rpc:async(name,args)=>{writes.push({name,args});return {data:{token:'capability-123456789012345678901234'}}}},authorize:async()=>({userId:id,userDb:{from:()=>query(accessible?{id}:null)}}),meta:async()=>{throw Error('Tracking must never modify Meta templates')},functionBaseUrl:'https://fixture.test/functions/v1'})
+ const payload={organisationId:org,campaignId:id,action:'tracking_link',targetUrl:'https://agency.test/property'}
+ await assert.rejects(handler(payload,''),/workspace access/);assert.equal(writes.length,0)
+ accessible=true
+ for(const targetUrl of ['javascript:alert(1)','https://user:password@agency.test/','file:///private'])await assert.rejects(handler({...payload,targetUrl},''),/HTTP/)
+ const result=await handler(payload,'');assert.match(result.url,/marketing-click\?token=/);assert.equal(result.templateUrl,'https://fixture.test/functions/v1/marketing-click?token={{1}}');assert.equal(result.buttonValue,'capability-123456789012345678901234');assert.equal(writes[0].args.p_campaign_id,id);assert.deepEqual(row.template,template)
 })

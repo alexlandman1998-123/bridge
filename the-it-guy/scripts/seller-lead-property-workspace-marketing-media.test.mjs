@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { matchRoutes } from 'react-router-dom'
 
-const source = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+// The profile form is lazy, while its canonical save controller stays in the page.
+const source = (await Promise.all(['AgencyPipelinePage.jsx', 'SellerLeadProfileDialog.jsx'].map(name =>
+  readFile(new URL(`../src/pages/agency/${name}`, import.meta.url), 'utf8'),
+))).join('\n')
 const draftService = await readFile(new URL('../src/services/sellerLeadDraftListingService.js', import.meta.url), 'utf8')
 
 const focusedPropertyOnly = process.argv.includes('--property-title-only') || process.argv.includes('--property-profile-only')

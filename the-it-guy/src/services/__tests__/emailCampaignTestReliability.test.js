@@ -48,3 +48,9 @@ it('still marks acceptance uncertain when an SDK error response body was consume
  supabase.functions.invoke.mockResolvedValue({error:Object.assign(Error('Provider unavailable'),{context})})
  await expect(sendEmailCampaignTest(payload)).rejects.toMatchObject({deliveryUncertain:true,message:'Provider unavailable'})
 })
+
+it('distinguishes a known provider rejection from an uncertain delivery when receipt storage fails', async () => {
+ const context = new Response(JSON.stringify({error:'Provider rejected the sender; saving its rejection failed.',deliveryUncertain:false}),{status:503})
+ supabase.functions.invoke.mockResolvedValue({error:Object.assign(Error('Function HTTP failure'),{context})})
+ await expect(sendEmailCampaignTest(payload)).rejects.toMatchObject({deliveryUncertain:false,message:expect.stringContaining('Provider rejected')})
+})

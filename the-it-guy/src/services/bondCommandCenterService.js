@@ -1507,7 +1507,7 @@ function getNextAction(row = {}) {
 
   if (stageKey === 'bond_app') return 'Buyer onboarding pending'
   if (stageKey === 'docs') return getDocumentMissingCount(row) > 0 ? 'Collect latest payslip' : 'Review submitted application'
-  if (stageKey === 'submission') return 'Submit to banks'
+  if (stageKey === 'submission') return 'Record bank submission'
   if (stageKey === 'feedback') return bank ? `Awaiting ${bank} feedback` : 'Awaiting bank feedback'
   if (stageKey === 'approval') return 'Prepare approval pack'
   return 'No next action'

@@ -1,5 +1,6 @@
 import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import { ARCH9_CAMPAIGN_DOMAIN } from "../_shared/emailCampaignSender.js";
+import { sendingDomainState, sendingDomainTracking } from "../_shared/emailSendingDomain.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.49.9";
 
@@ -9,7 +10,7 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 // Domain callbacks preserve verification; suppressed mail is a terminal outcome.
-const requiredEvents = ["email.delivered", "email.bounced", "email.complained", "email.opened", "email.clicked", "email.suppressed", "domain.created", "domain.updated", "domain.deleted"];
+const requiredEvents = ["email.sent", "email.delivery_delayed", "email.failed", "email.delivered", "email.bounced", "email.complained", "email.opened", "email.clicked", "email.suppressed", "domain.created", "domain.updated", "domain.deleted"];
 const text = (value: unknown) => String(value || "").trim();
 const json = (status: number, body: Record<string, unknown>) => new Response(JSON.stringify(body), {
   status, headers: { ...cors, "content-type": "application/json", "cache-control": "no-store" },
@@ -81,7 +82,7 @@ Deno.serve(withApiCredentials(async (req) => {
     const subscribed = Array.isArray(webhook?.events) ? webhook.events.map(text) : [];
     const checks = checksFrom({
       provider: true,
-      "sender-domain": Boolean(domain) && domain.id === providerId && text(domain.name).toLowerCase() === ARCH9_CAMPAIGN_DOMAIN && domain.status === "verified",
+      "sender-domain": Boolean(domain) && domain.id === providerId && text(domain.name).toLowerCase() === ARCH9_CAMPAIGN_DOMAIN && sendingDomainState(domain).status === "verified",
       "campaign-sending": sharedEnabled && Boolean(providerId),
       "campaign-capacity": budgetReady,
       webhook: webhook?.status === "enabled" && normaliseUrl(webhook?.endpoint) === callbackUrl && requiredEvents.every(event => subscribed.includes(event)),
@@ -89,7 +90,7 @@ Deno.serve(withApiCredentials(async (req) => {
       "webhook-auth": unsigned.status === 401,
       billing: text(Deno.env.get("RESEND_BILLING_CONFIRMED")).toLowerCase() === "true",
     });
-    return json(200, { ...base, ready: checks.every(check => check.ok), checks });
+    return json(200, { ...base, tracking: domain ? sendingDomainTracking(domain) : null, ready: checks.every(check => check.ok), checks });
   } catch {
     return json(502, { ...base, ready: false, checks: checksFrom(), error: "Unable to check the campaign platform configuration." });
   }

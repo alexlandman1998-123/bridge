@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import HeaderBar from '../HeaderBar.jsx'
@@ -60,4 +60,20 @@ it('puts the lead name first and shows the recorded platform logo with a safe im
   fireEvent.error(logo)
   expect(document.querySelector('.notification-lead-source img')).toBeNull()
   expect(screen.getByText('Property24')).toBeTruthy()
+})
+
+it('pauses automatic notification queries while hidden and refreshes when visible again', async () => {
+  vi.useFakeTimers()
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+  try {
+    mount()
+    await act(async () => vi.advanceTimersByTimeAsync(600000))
+    expect(mocks.read).not.toHaveBeenCalled()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(mocks.read).toHaveBeenCalledTimes(1)
+  } finally {
+    cleanup(); vi.useRealTimers()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+  }
 })

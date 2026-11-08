@@ -3295,7 +3295,7 @@ export async function createBondBranch(payload = {}, context = {}, workspaceId =
   ])
   const regionId = normalizeText(payload.regionId || payload.region_id)
   assertCanCreateBranch({ ...context, workspaceId: safeWorkspaceId }, { regions, branches: existingBranches, consultants: users }, regionId)
-  await assertWorkspaceEntitlementLimit({
+  if (!options.forceLocal) await assertWorkspaceEntitlementLimit({
     workspaceId: safeWorkspaceId,
     workspaceType: WORKSPACE_TYPES.bondOriginator,
     workspaceKind: getContextWorkspaceKind(context),
@@ -3596,7 +3596,7 @@ export async function createBondConsultant(payload = {}, context = {}, workspace
     normalizeLower(consultant.email) === normalizeLower(validated.email) &&
     ['active', 'invited', 'pending'].includes(normalizeLower(consultant.status || (consultant.active === false ? 'inactive' : 'active'))),
   )
-  if (!existingSeat) {
+  if (!existingSeat && !options.forceLocal) {
     await assertWorkspaceEntitlementLimit({
       workspaceId: safeWorkspaceId,
       workspaceType: WORKSPACE_TYPES.bondOriginator,

@@ -19,7 +19,7 @@ test('public tracking excludes previews, embedded pages and automation without c
   assert.equal(websiteAnalyticsRpc(site), 'home_seekers_public_dashboard_analytics')
   assert.equal(websiteAnalyticsRpc('another-site'), 'website_dashboard_analytics')
   assert.equal(homeSeekersPreviewUrl('https://homeseeker.co.za/?campaign=test#home'), 'https://homeseeker.co.za/?campaign=test&arch9_preview=1#home')
-  assert.equal(homeSeekersPreviewUrl('https://another-agency.example/'), 'https://another-agency.example/')
+  assert.equal(homeSeekersPreviewUrl('https://another-agency.example/'), 'https://another-agency.example/?arch9_preview=1')
 })
 
 test('visits expire after inactivity rather than counting every page as another visit', () => {

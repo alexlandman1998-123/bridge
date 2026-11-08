@@ -120,7 +120,7 @@ Deno.serve(withApiCredentials(async (req: Request) => {
   // unmatched early events and atomically applies event, recipient and safety
   // suppression changes. Any storage error asks Resend to retry the whole event.
   let campaignProcessed = false;
-  if (providerMessageId && ["email.delivered", "email.opened", "email.clicked", "email.bounced", "email.complained", "email.suppressed"].includes(eventType)) {
+  if (providerMessageId && ["email.sent", "email.delivered", "email.delivery_delayed", "email.opened", "email.clicked", "email.bounced", "email.complained", "email.failed", "email.suppressed"].includes(eventType)) {
     const receipt = await supabase.rpc("email_campaign_record_provider_event", {
       p_event_id: providerEventId, p_provider_id: providerMessageId,
       p_event_type: eventType, p_payload: payload,

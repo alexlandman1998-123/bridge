@@ -227,6 +227,11 @@ function buildMockClient(seed = {}) {
   return {
     state,
     calls,
+    async rpc(name, args) {
+      calls.push({ action: 'rpc', name, args })
+      assert.equal(name, 'bridge_notify_transaction_roles', 'unexpected workflow command in the classification fixture')
+      return { data: 0, error: null }
+    },
     auth: {
       async getSession() {
         return { data: { session: { user: { id: 'user-bond-1' } } }, error: null }

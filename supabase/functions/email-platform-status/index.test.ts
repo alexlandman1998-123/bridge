@@ -4,8 +4,8 @@ Deno.serve = ((fn: typeof handler) => { handler = fn; }) as typeof Deno.serve;
 await import('./index.ts');
 Deno.serve = serve;
 const assert = (ok: unknown, message: string) => { if (!ok) throw new Error(message); };
-const events = ['email.delivered','email.bounced','email.complained','email.opened','email.clicked','email.suppressed','domain.created','domain.updated','domain.deleted'];
-for (const scenario of ['ready','pagination','non-executive','wrong-domain','wrong-id','pending-domain','missing-domain','disabled-sending','zero-budget','budget-error','missing-suppressed','missing-domain-events','disabled-webhook','wrong-secret','unsigned-accepted','provider-error']) {
+const events = ['email.sent','email.delivery_delayed','email.failed','email.delivered','email.bounced','email.complained','email.opened','email.clicked','email.suppressed','domain.created','domain.updated','domain.deleted'];
+for (const scenario of ['ready','pagination','non-executive','wrong-domain','wrong-id','pending-domain','provider-sending-disabled','missing-domain','disabled-sending','zero-budget','budget-error','missing-suppressed','missing-domain-events','disabled-webhook','wrong-secret','unsigned-accepted','provider-error']) {
   Deno.test(`campaign platform readiness: ${scenario}`, async () => {
     const settings: Record<string,string> = {
       SUPABASE_URL:'https://status.example.test',SUPABASE_PUBLISHABLE_KEYS:'{"default":"sb_publishable_fixture"}',SUPABASE_SECRET_KEYS:'{"default":"sb_secret_fixture"}',
@@ -24,7 +24,7 @@ for (const scenario of ['ready','pagination','non-executive','wrong-domain','wro
         if (url.endsWith('/auth/v1/user')) return Response.json({id:'executive-user'});
         if (url.endsWith('/rpc/arch9_admin_access_level')) return Response.json({level:scenario==='non-executive'?'viewer':'executive'});
         if (url.includes('/email_campaign_account_limits?')) return scenario==='budget-error'?Response.json({message:'unavailable'},{status:500}):Response.json({enabled:true,daily_limit:scenario==='zero-budget'?0:100,monthly_limit:500});
-        if (url.endsWith('/domains/campaign-domain')) return scenario==='provider-error'?Response.json({},{status:429}):Response.json({id:scenario==='wrong-id'?'foreign-id':'campaign-domain',name:scenario==='wrong-domain'?'different.test':'updates.arch9.co.za',status:scenario==='pending-domain'?'pending':'verified'});
+        if (url.endsWith('/domains/campaign-domain')) return scenario==='provider-error'?Response.json({},{status:429}):Response.json({id:scenario==='wrong-id'?'foreign-id':'campaign-domain',name:scenario==='wrong-domain'?'different.test':'updates.arch9.co.za',status:scenario==='pending-domain'?'pending':'verified',capabilities:{sending:scenario==='provider-sending-disabled'?'disabled':'enabled'}});
         if (url.includes('/webhooks?')) {
           assert(options.method == null || options.method==='GET','Status must never change provider settings');
           if (scenario==='pagination' && !url.includes('after=')) return Response.json({data:[{id:'earlier',endpoint:'https://other.example.test',status:'enabled'}],has_more:true});

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import usePortalWorkspaceRefresh from '../../hooks/usePortalWorkspaceRefresh'
 import { Link } from 'react-router-dom'
 import { MessageCircle } from 'lucide-react'
 import { metaIntegrationRequest } from '../../services/metaIntegrationService'
@@ -6,18 +7,20 @@ import { metaIntegrationRequest } from '../../services/metaIntegrationService'
 export default function WhatsAppUnread({ organisationId, viewerId, membership, role, enabled=true }) {
   const identity=[viewerId,role,membership?.role,membership?.workspaceRole,membership?.workspace_role,membership?.organisationRole,membership?.organisation_role,membership?.status,membership?.membershipStatus].filter(Boolean).join(':')
   const scope=`${organisationId}:${identity}`
-  const [state,setState]=useState({scope:'',count:0,error:false}),generation=useRef(0)
-  const invalidate=useCallback(()=>{generation.current++},[])
+  const [state,setState]=useState({scope:'',count:0,error:false}),generation=useRef(0),pending=useRef(null)
+  const invalidate=useCallback(()=>{generation.current++;pending.current=null},[])
   const refresh=useCallback(async()=>{
-    if(!enabled||!organisationId||!viewerId)return
+    if(!enabled||!organisationId||!viewerId||document.hidden||navigator.onLine===false||pending.current?.scope===scope)return
+    const request={scope};pending.current=request
     const current=++generation.current
     try{const data=await metaIntegrationRequest(organisationId,'inbox_notifications');if(generation.current===current)setState({scope,count:Number(data.unreadCount)||0,error:false})}
     catch{if(generation.current===current)setState({scope,count:0,error:true})}
+    finally{if(pending.current===request)pending.current=null}
   },[enabled,organisationId,viewerId,scope])
+  usePortalWorkspaceRefresh({ enabled: Boolean(enabled && organisationId && viewerId), onRefresh: refresh, scopeKey: scope, refreshOnMount: true, pollingIntervalMs: 30000, debounceMs: 100 })
   useEffect(()=>{
-    const initial=window.setTimeout(()=>void refresh(),0);const timer=window.setInterval(()=>{if(!document.hidden)void refresh()},30000)
-    window.addEventListener('focus',refresh);window.addEventListener('arch9:whatsapp-read',refresh)
-    return()=>{invalidate();window.clearTimeout(initial);window.clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('arch9:whatsapp-read',refresh)}
+    window.addEventListener('arch9:whatsapp-read',refresh)
+    return()=>{invalidate();window.removeEventListener('arch9:whatsapp-read',refresh)}
   },[refresh,invalidate])
   if(!enabled||!organisationId||!viewerId)return null
   const current=state.scope===scope?state:{count:0,error:false}

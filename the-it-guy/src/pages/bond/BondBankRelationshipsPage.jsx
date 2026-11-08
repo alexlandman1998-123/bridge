@@ -361,7 +361,7 @@ function CommandSection({ eyebrow, title, description, action, children, classNa
     <section className={`rounded-[22px] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200/60 ${className}`}>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          {eyebrow ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{eyebrow}</p> : null}
+          {eyebrow && !title ? <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{eyebrow}</p> : null}
           <h2 className="mt-1 text-xl font-semibold text-slate-950">{title}</h2>
           {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
         </div>
@@ -1228,11 +1228,11 @@ function BankPanelModal({ draft, setDraft, systemBanks = [], panelRows = [], onC
 function BankPanelManagementView({ panelRows = [], systemBanks = [], canManage = false, openEditor, deactivateBank, refresh, notice }) {
   return (
     <>
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header className="ui-workspace-header">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Relationship Configuration</p>
+
           <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">Manage Bank Panel</h1>
-          <p className="mt-1 text-sm text-slate-500">Control which banks your originator organisation works with.</p>
+
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={refresh} className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50">
@@ -1343,10 +1343,10 @@ function BankPanelManagementView({ panelRows = [], systemBanks = [], canManage =
 function BankProfilesView({ profiles = [], notice }) {
   return (
     <>
-      <header>
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Relationship Profiles</p>
+      <header className="ui-workspace-header">
+
         <h1 className="mt-1 text-3xl font-bold tracking-normal text-slate-950">Bank Profiles</h1>
-        <p className="mt-1 text-sm text-slate-500">Configured bank relationships, contacts, health and executive ownership.</p>
+
       </header>
       {notice ? <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">{notice}</p> : null}
       <CommandSection eyebrow="Profiles" title="Bank Relationship Profiles" description="Open a bank profile to manage contacts, escalations and relationship activity.">
@@ -2192,8 +2192,8 @@ export default function BondBankRelationshipsPage() {
 
   if (state.error) {
     return (
-      <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8">
-        <div className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <main className="min-w-0 w-full text-slate-950">
+        <div className="min-w-0 w-full rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h1 className="text-2xl font-semibold text-slate-950">Bank Relationships</h1>
           <p className="mt-3 text-sm text-slate-600">{state.error}</p>
         </div>
@@ -2202,14 +2202,14 @@ export default function BondBankRelationshipsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-8">
+    <main className="min-w-0 w-full text-slate-950">
+      <div className="min-w-0 w-full space-y-6">
         {state.workspace ? (
-          <header className="flex flex-wrap items-start justify-between gap-4">
+          <header className="ui-workspace-header">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Bank Workspace</p>
+
               <h1 className="mt-2 text-3xl font-semibold text-slate-950">{state.workspace.bank.name}</h1>
-              <p className="mt-1 text-sm text-slate-500">Relationship workspace, contacts, escalations and application activity.</p>
+
             </div>
             <Link className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" to="/bond/banks">All Banks</Link>
           </header>

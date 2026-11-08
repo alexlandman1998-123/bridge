@@ -1,4 +1,5 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory.js'
+import { AGENCY_CRM_UPDATED_EVENT, getAgencyCrmUpdateDetail } from '../../lib/agencyCrmUpdateBus.js'
 
 const DEFAULT_CACHE_TTL_MS = 60000
 const pendingLoads = new Map()
@@ -52,9 +53,22 @@ function mergeSeedWithJourneyEnrichment(seedSnapshot = {}, enrichment = {}) {
   }
 }
 
-export function clearBuyerLeadWorkspaceDataLoaderCache() {
-  pendingLoads.clear()
-  completedLoads.clear()
+export function clearBuyerLeadWorkspaceDataLoaderCache(organisationId = '', leadId = '') {
+  const workspaceId = normalizeText(organisationId)
+  const leadKey = workspaceKey(workspaceId, leadId)
+  for (const cache of [pendingLoads, completedLoads]) {
+    for (const key of cache.keys()) {
+      if (!workspaceId || (leadKey ? key === leadKey : key.startsWith(`${workspaceId}:`))) cache.delete(key)
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => clearBuyerLeadWorkspaceDataLoaderCache())
+  window.addEventListener(AGENCY_CRM_UPDATED_EVENT, (event) => {
+    const update = getAgencyCrmUpdateDetail(event)
+    clearBuyerLeadWorkspaceDataLoaderCache(update.organisationId, update.leadId)
+  })
 }
 
 export function loadBuyerLeadWorkspaceData({
@@ -85,7 +99,7 @@ export function loadBuyerLeadWorkspaceData({
         .then((enrichment) => mergeSeedWithJourneyEnrichment(seedSnapshot, enrichment))
       : fetchWorkspace(organisationId, leadId))
     .then((snapshot) => {
-      if (isBuyerSnapshot(snapshot)) {
+      if (pendingLoads.get(key) === request && isBuyerSnapshot(snapshot)) {
         completedLoads.set(key, { snapshot, completedAt: Number(now()) })
       }
       return snapshot

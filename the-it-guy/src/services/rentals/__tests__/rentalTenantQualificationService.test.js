@@ -35,6 +35,8 @@ beforeEach(() => {
   raw = {
     leadId: 'lead',
     contactId: 'contact',
+    organisationId: 'org',
+    updatedAt: '2026-11-08T10:00:00Z',
     assignedAgentId: 'agent',
     budget: 11000,
     areaInterest: 'Pretoria',
@@ -93,6 +95,7 @@ it('saves and rehydrates all tenant answers through the CRM metadata and screeni
     'org',
     'lead',
     expect.objectContaining({ budget: 10000, areaInterest: 'Newlands' }),
+    { expectedUpdatedAt: '2026-11-08T10:00:00Z' },
   )
   expect(createAgencyCrmLeadActivity).toHaveBeenCalledTimes(1)
 })

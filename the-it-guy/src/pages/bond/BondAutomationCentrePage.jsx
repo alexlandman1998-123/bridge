@@ -198,8 +198,8 @@ export default function BondAutomationCentrePage() {
   const Shell = isSettingsEmbedded ? 'div' : 'main'
   const shellClassName = isSettingsEmbedded
     ? 'space-y-6 text-slate-950'
-    : 'min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8'
-  const contentClassName = isSettingsEmbedded ? 'space-y-6' : 'mx-auto max-w-[1440px] space-y-8'
+    : 'min-w-0 w-full text-slate-950'
+  const contentClassName = isSettingsEmbedded ? 'space-y-6' : 'min-w-0 w-full space-y-6'
 
   const state = useMemo(() => {
     try {
@@ -253,7 +253,7 @@ export default function BondAutomationCentrePage() {
   if (state.error) {
     return (
       <Shell className={shellClassName}>
-        <div className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="min-w-0 w-full rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h1 className="text-2xl font-semibold text-slate-950">Automation & Rules</h1>
           <p className="mt-3 text-sm text-slate-600">{state.error}</p>
         </div>
@@ -264,11 +264,11 @@ export default function BondAutomationCentrePage() {
   return (
     <Shell className={shellClassName}>
       <div className={contentClassName}>
-        <header className="flex flex-wrap items-start justify-between gap-4">
+        <header className="ui-workspace-header">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Bond Originator</p>
+
             <h1 className="mt-2 text-3xl font-semibold text-slate-950">Automation & Rules</h1>
-            <p className="mt-1 text-sm text-slate-500">Decision rules, workflow actions, and automation intelligence</p>
+
           </div>
           <button type="button" onClick={refresh} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             <RefreshCw className="h-4 w-4" aria-hidden="true" />

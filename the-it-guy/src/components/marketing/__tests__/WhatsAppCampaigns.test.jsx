@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CreateWhatsAppCampaign, WhatsAppCampaignDetail, WhatsAppCampaignOverview } from '../WhatsAppCampaigns'
 vi.mock('../MarketingAudiences', () => ({ default: () => <div>Shared CRM audience library</div>, MarketingAudiencePicker: ({ onApply }) => <button onClick={() => onApply(['contact-one'], { name: 'Ready buyers' })}>Apply reviewed CRM recipients</button> }))
@@ -297,4 +297,21 @@ it('applies a reviewed shared audience to the WhatsApp draft without preparing o
   const saved=mocks.request.mock.calls.find((call)=>call[1]==='save')[2].campaign
   expect(saved.contact_ids).toEqual(['contact-one'])
   expect(mocks.request.mock.calls.some((call)=>['prepare','dispatch'].includes(call[1]))).toBe(false)
+})
+
+it('pauses automatic campaign result checks while hidden and reconciles on visibility', async () => {
+  vi.useFakeTimers()
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+  mocks.request.mockResolvedValue({ campaign: detailCampaign, recipients: [] })
+  try {
+    render(<WhatsAppCampaignDetail campaignId="sent-one" onBack={vi.fn()} />)
+    await act(async () => vi.advanceTimersByTimeAsync(600000))
+    expect(mocks.request).not.toHaveBeenCalled()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(mocks.request).toHaveBeenCalledTimes(1)
+  } finally {
+    cleanup(); vi.useRealTimers()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+  }
 })

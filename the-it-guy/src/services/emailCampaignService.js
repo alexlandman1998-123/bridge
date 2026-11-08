@@ -4,14 +4,15 @@ import { supabase } from '../lib/supabaseClient'
 const clean = (value) => String(value || '').trim()
 const normalizeEmail = (value) => clean(value).toLowerCase()
 
-async function emailSetupError(error) {
+async function emailSetupError(error, fallback = '') {
   // Function HTTP failures carry the actionable message in their response body.
   // Keep it visible so an agency can resolve DNS, ownership or limit errors.
   try {
     const payload = await error.context?.clone().json()
-    if (typeof payload?.error === 'string') return new Error(payload.error)
+    const message = [payload?.error, payload?.message, payload?.error?.message].find(value => typeof value === 'string' && value.trim())
+    if (message) return new Error(message, { cause: error })
   } catch { /* Fall back to the original network error. */ }
-  return error
+  return fallback ? new Error(fallback, { cause: error }) : error
 }
 
 function normalizeTags(tags = []) {
@@ -141,22 +142,34 @@ export async function loadEmailContactChoices(organisationId) {
   }
 }
 
+async function allEmailRows(query) {
+  const rows = []
+  for (let offset = 0; ; offset += 500) {
+    const result = await query().range(offset, offset + 499)
+    if (result.error) return { data: null, error: result.error }
+    rows.push(...(result.data || []))
+    if ((result.data || []).length < 500) return { data: rows, error: null }
+  }
+}
+
 export async function getEmailCampaignWorkspace(organisationId) {
   if (!organisationId) return { campaigns: [], performance: [], identities: [], domains: [], contacts: [], subscriptionTypes: [], deliverability: [], templates: [], savedAudiences: [], usage: [], billingProfile: null, dailyPerformance: [], categoryPerformance: [] }
+  const reportingMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).slice(0, 7)
+  const usageSince = new Date(`${reportingMonth}-01T00:00:00+02:00`).toISOString()
   const [campaigns, performance, identities, domains, contacts, subscriptionTypes, deliverability, templates, savedAudiences, usage, billingProfile, dailyPerformance, categoryPerformance] = await Promise.all([
-    supabase.from('email_campaigns').select('*, email_sender_identities(display_name,from_email,reply_to_email)').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
-    supabase.from('email_campaign_performance').select('*').eq('organisation_id', organisationId),
-    supabase.from('email_sender_identities').select('*').eq('organisation_id', organisationId).order('verification_status'),
-    supabase.from('email_sending_domains').select('*').eq('organisation_id', organisationId).order('created_at', { ascending: false }),
+    allEmailRows(() => supabase.from('email_campaigns').select('*, email_sender_identities(display_name,from_email,reply_to_email)').eq('organisation_id', organisationId).order('updated_at', { ascending: false }).order('id')),
+    allEmailRows(() => supabase.from('email_campaign_performance').select('*').eq('organisation_id', organisationId).order('campaign_id')),
+    allEmailRows(() => supabase.from('email_sender_identities').select('*').eq('organisation_id', organisationId).order('verification_status').order('id')),
+    allEmailRows(() => supabase.from('email_sending_domains').select('*').eq('organisation_id', organisationId).order('created_at', { ascending: false }).order('id')),
     loadEmailContactChoices(organisationId),
-    supabase.from('email_subscription_types').select('*').eq('organisation_id', organisationId).eq('is_active', true).order('display_order'),
-    supabase.from('email_deliverability_health').select('*').eq('organisation_id', organisationId),
-    supabase.from('email_templates').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
-    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).is('archived_at', null).order('updated_at', { ascending: false }),
-    supabase.from('email_usage_records').select('*').eq('organisation_id', organisationId).order('created_at', { ascending: false }).limit(100),
+    allEmailRows(() => supabase.from('email_subscription_types').select('*').eq('organisation_id', organisationId).eq('is_active', true).order('display_order').order('id')),
+    allEmailRows(() => supabase.from('email_deliverability_health').select('*').eq('organisation_id', organisationId).order('sender_identity_id')),
+    allEmailRows(() => supabase.from('email_templates').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }).order('id')),
+    allEmailRows(() => supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).is('archived_at', null).order('updated_at', { ascending: false }).order('id')),
+    allEmailRows(() => supabase.from('email_usage_records').select('*').eq('organisation_id', organisationId).gte('created_at', usageSince).order('created_at', { ascending: false }).order('id')),
     supabase.from('email_billing_profiles').select('*').eq('organisation_id', organisationId).maybeSingle(),
     supabase.from('email_campaign_daily_performance').select('*').eq('organisation_id', organisationId).order('metric_date', { ascending: false }).limit(30),
-    supabase.from('email_campaign_category_performance').select('*').eq('organisation_id', organisationId).order('recipients', { ascending: false }),
+    allEmailRows(() => supabase.from('email_campaign_category_performance').select('*').eq('organisation_id', organisationId).order('recipients', { ascending: false }).order('subscription_type_id')),
   ])
   for (const result of [campaigns, performance, identities, domains, contacts, subscriptionTypes, deliverability, templates, savedAudiences, usage, billingProfile, dailyPerformance, categoryPerformance]) if (result.error) throw result.error
   const platformStatus = await supabase.rpc('email_campaign_platform_sender_status', { p_organisation_id: organisationId })
@@ -232,12 +245,24 @@ export async function preflightEmailCampaign(campaignId) {
   const contentCheck = await checkEmailCampaignContent(campaignId)
   const { data, error } = await supabase.rpc('email_campaign_preflight', { p_campaign_id: campaignId })
   if (error) throw error
-  return { ...data, ready: Boolean(data?.ready && contentCheck.ready), contentCheck, checks: [...(data?.checks || []), { key: 'content', ok: contentCheck.ready }] }
+  if (typeof data?.ready !== 'boolean' || !Array.isArray(data.checks) || !data.checks.length || data.checks.some(check => typeof check?.ok !== 'boolean')) {
+    throw new Error('Sending readiness could not be confirmed. Refresh the campaign and try again.')
+  }
+  const messages = {
+    sender: 'Choose a verified, active sender and check its sending domain in Email settings.',
+    subscription: 'Choose an active email subscription category.',
+    policy: 'Organisation sending is paused or not approved. Check the sending controls in Email settings.',
+    audience: 'There are no eligible recipients. Check the selected audience, consent and subscription category.',
+    account: 'Arch9 sending capacity is unavailable. Check Email settings or contact your workspace administrator.',
+  }
+  const failed = data.checks.filter(check => !check.ok)
+  const issues = [...new Set([...contentCheck.errors, ...failed.map(check => messages[check.key] || 'A sending readiness check failed. Refresh the campaign and try again.')])]
+  return { ...data, ready: data.ready && contentCheck.ready && !failed.length, issues, contentCheck, checks: [...data.checks, { key: 'content', ok: contentCheck.ready }] }
 }
 
 export async function checkEmailCampaignContent(campaignId) {
   const { data, error } = await supabase.functions.invoke('email-campaign-content-check', { body: { campaignId } })
-  if (error) throw new Error('Email content checking is unavailable. Ask your workspace administrator to enable it, then try again.')
+  if (error) throw await emailSetupError(error, 'Email content checking is unavailable. Ask your workspace administrator to enable it, then try again.')
   if (data?.error) throw new Error(data.error)
   if (!data || typeof data.ready !== 'boolean' || !Array.isArray(data.errors) || !Array.isArray(data.warnings)) throw new Error('The email content check could not be confirmed. Try again before sending.')
   return data
@@ -281,7 +306,7 @@ export async function sendEmailCampaignTest(payload) {
     const status = error.context?.status
     let details = null
     try { details = await error.context?.clone?.().json() } catch { /* Some SDK/network responses have already consumed their body. */ }
-    failure.deliveryUncertain = details?.deliveryUncertain === true || !(status >= 400 && status < 500 && status !== 408)
+    failure.deliveryUncertain = typeof details?.deliveryUncertain === 'boolean' ? details.deliveryUncertain : !(status >= 400 && status < 500 && status !== 408)
     throw failure
   }
   if (data?.error) throw Object.assign(new Error(data.error), { deliveryUncertain: true })
@@ -352,16 +377,36 @@ export async function getClientSharedAudienceMemberships({ organisationId, clien
   return data || []
 }
 
-export async function getEmailCampaignAnalytics(campaignId) {
-  if (!campaignId) return { recipients: [], events: [], links: [], audit: [] }
-  const [recipients, events, links, audit] = await Promise.all([
-    supabase.from('email_campaign_recipients').select('id,email,recipient_snapshot,status,error_reason,sent_at,delivered_at,opened_at,clicked_at,bounced_at').eq('campaign_id', campaignId).order('created_at', { ascending: false }),
-    supabase.from('email_events').select('id,recipient_id,event_type,url,occurred_at').eq('campaign_id', campaignId).order('occurred_at', { ascending: false }).limit(500),
-    supabase.from('email_campaign_link_performance').select('*').eq('campaign_id', campaignId).order('unique_clickers', { ascending: false }),
+export async function getEmailCampaignAnalytics(campaignId, { page = 0, query = '' } = {}) {
+  if (!campaignId) return { recipients: [], events: [], links: [], audit: [], delivery: null, recipientCount: 0, page: 0, pageSize: 50 }
+  const pageSize = 50
+  const currentPage = Math.max(0, Math.trunc(Number(page) || 0))
+  const term = clean(query).replace(/[^\p{L}\p{N}@. +_-]/gu, ' ').slice(0, 100).replaceAll('_', '\\_')
+  let recipientsQuery = supabase.from('email_campaign_recipient_activity').select('*', { count: 'exact' }).eq('campaign_id', campaignId)
+  if (term) recipientsQuery = recipientsQuery.or(`email.ilike.%${term}%,status.ilike.%${term}%,recipient_snapshot->>full_name.ilike.%${term}%`)
+  const [recipients, links, audit, delivery, outcomes] = await Promise.all([
+    recipientsQuery.order('created_at', { ascending: false }).order('id').range(currentPage * pageSize, (currentPage + 1) * pageSize - 1),
+    supabase.from('email_campaign_link_performance').select('*').eq('campaign_id', campaignId).order('unique_clickers', { ascending: false }).limit(100),
     supabase.from('email_campaign_audit_events').select('*').eq('campaign_id', campaignId).order('created_at', { ascending: false }).limit(30),
+    supabase.rpc('email_campaign_delivery_status', { p_campaign_id: campaignId }),
+    supabase.from('marketing_campaign_outcomes').select('*').eq('channel', 'email').eq('campaign_id', campaignId).maybeSingle(),
   ])
-  for (const result of [recipients, events, links, audit]) if (result.error) throw result.error
-  return { recipients: recipients.data || [], events: events.data || [], links: links.data || [], audit: audit.data || [] }
+  for (const result of [recipients, links, audit, outcomes]) if (result.error) throw result.error
+  const rows = recipients.data || []
+  return { recipients: rows, events: rows.filter(row => row.latest_event_at).map(row => ({ recipient_id: row.id, event_type: row.latest_event_type, occurred_at: row.latest_event_at, url: row.latest_event_url, engagement_class: row.latest_engagement_class })),
+    links: links.data || [], audit: audit.data || [], outcomes: outcomes.data || { leads: 0, appointments: 0, transactions: 0, registered: 0 }, recipientCount: recipients.count ?? rows.length, page: currentPage, pageSize,
+    delivery: delivery?.error || typeof delivery?.data?.state !== 'string' ? null : delivery.data }
+}
+
+export async function exportEmailCampaignRecipients(campaignId) {
+  if (!campaignId) throw new Error('Choose a campaign to export.')
+  const result = await allEmailRows(() => supabase.from('email_campaign_recipient_activity')
+    .select('id,email,status,error_reason,sent_at,delivered_at,opened_at,clicked_at,latest_event_type,latest_event_at,latest_engagement_class')
+    .eq('campaign_id', campaignId).order('created_at').order('id'))
+  if (result.error) throw result.error
+  const columns = ['email','status','error_reason','sent_at','delivered_at','opened_at','clicked_at','latest_event_type','latest_event_at','latest_engagement_class']
+  const cell = value => { let text = String(value ?? ''); if (/^[\s]*[=+@-]/.test(text) || /^[\t\r]/.test(text)) text = "'" + text; return '"' + text.replaceAll('"','""') + '"' }
+  return [columns.map(cell).join(','), ...result.data.map(row => columns.map(key => cell(row[key])).join(','))].join('\r\n')
 }
 
 export async function getEmailDraft(organisationId, id) {

@@ -3,7 +3,7 @@
   --inbox-muted: #657883;
   --inbox-border: #e1e8ec;
   --inbox-accent: #176b50;
-  width: 100%; max-width: 1240px; margin: 0 auto; padding: 28px 36px 48px;
+  min-width: 0; width: 100%; max-width: none; margin: 0; padding: 0 0 24px;
   color: var(--inbox-ink); font-size: 14px; line-height: 1.5;
 }
 .revo-channel-settings *, .revo-channel-settings *::before, .revo-channel-settings *::after { box-sizing: border-box; }
@@ -35,7 +35,7 @@
 .revo-channel-settings .inbox-mailbox-list strong { font-size: 13px; font-weight: 600; }
 .revo-channel-settings .inbox-mailbox-list :is(span,small) { font-size: 11px; color: var(--inbox-muted); }
 .revo-channel-settings .inbox-mailbox-list small { display: flex; align-items: center; gap: 5px; }
-.revo-channel-settings .inbox-mailbox-detail { min-width: 0; padding: 24px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #182b3603; }
+.revo-channel-settings .inbox-mailbox-detail { min-width: 0; padding: 0 0 24px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #182b3603; }
 .revo-channel-settings .inbox-account-heading { align-items: flex-start; margin-bottom: 22px; }
 .revo-channel-settings .inbox-account-identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .revo-channel-settings .inbox-account-identity > div { min-width: 0; }
@@ -96,7 +96,7 @@
   .revo-channel-settings .inbox-mailbox-list { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 600px) {
-  .revo-channel-settings { padding: 20px 16px 32px; }
+  .revo-channel-settings { padding: 0 0 24px; }
   .revo-channel-settings h1 { font-size: 25px; }
   .revo-channel-settings .inbox-settings-page-icon { display: none; }
   .revo-channel-settings .inbox-page-tabs { gap: 0; justify-content: space-between; }

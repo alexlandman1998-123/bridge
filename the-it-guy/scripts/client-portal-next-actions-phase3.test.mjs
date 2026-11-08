@@ -40,7 +40,7 @@ test('rejected required documents produce one reupload action', () => {
   assert.equal(reuploadActions[0].actionRoute, 'documents')
 })
 
-test('bond finance asks buyer to complete the bond application when not started', () => {
+test('bond tracker does not require the buyer to start an application', () => {
   const actions = generateClientPortalNextActions({
     workspaceMode: 'buying',
     onboarding: { status: 'submitted' },
@@ -56,11 +56,8 @@ test('bond finance asks buyer to complete the bond application when not started'
   })
 
   const ids = actionIds(actions)
-  assert.equal(ids.has('bond_application_required'), true)
-  const action = actions.find((item) => item.id === 'bond_application_required')
-  assert.equal(action.blocking, true)
-  assert.equal(action.actionLabel, 'Complete Bond Application')
-  assert.equal(action.actionRoute, 'bond_application')
+  assert.equal(ids.has('bond_application_required'), false)
+  assert.equal(actions.some(item => item.actionRoute === 'bond_application'), false)
 })
 
 test('client-managed bond finance skips originator bond application actions', () => {
@@ -97,7 +94,7 @@ test('client-managed bond finance skips originator bond application actions', ()
   assert.equal(financeAction.metadata.financeManagedBy, 'client')
 })
 
-test('combination finance treats bond documents and application as buyer actions', () => {
+test('combination finance retains document requests without requiring an application', () => {
   const actions = generateClientPortalNextActions({
     workspaceMode: 'buying',
     onboarding: { status: 'submitted' },
@@ -124,14 +121,12 @@ test('combination finance treats bond documents and application as buyer actions
   })
 
   const ids = actionIds(actions)
-  assert.equal(ids.has('bond_application_in_progress'), true)
+  assert.equal(ids.has('bond_application_in_progress'), false)
   assert.equal(ids.has('bond_finance_documents_required'), true)
-  const bondAction = actions.find((item) => item.id === 'bond_application_in_progress')
-  assert.equal(bondAction.actionLabel, 'Complete Bond Application')
-  assert.equal(bondAction.actionRoute, 'bond_application')
+  assert.equal(actions.some(item => item.actionRoute === 'bond_application'), false)
 })
 
-test('submitted bond application is informational, not blocking', () => {
+test('historical application state does not create a mandatory buyer task', () => {
   const actions = generateClientPortalNextActions({
     workspaceMode: 'buying',
     onboarding: { status: 'submitted' },
@@ -153,9 +148,7 @@ test('submitted bond application is informational, not blocking', () => {
 
   assert.equal(actions.some((action) => action.id === 'bond_application_required'), false)
   const reviewAction = actions.find((action) => action.id === 'bond_application_under_review')
-  assert.equal(Boolean(reviewAction), true)
-  assert.equal(reviewAction.blocking, false)
-  assert.equal(reviewAction.notificationEligible, false)
+  assert.equal(Boolean(reviewAction), false)
 })
 
 console.log('client portal next actions phase 3 tests passed')
@@ -204,6 +197,6 @@ test('registration supersedes stale bond intake without hiding later requests', 
     }
     const active = generateClientPortalNextActions({ workspaceMode: 'buying',
       onboarding: { status: 'submitted' }, transaction: { finance_type }, bondApplication: { status: 'draft' } })
-    assert.equal(active.some(action => action.id === 'bond_application_required'), true)
+    assert.equal(active.some(action => action.id === 'bond_application_required'), false)
   }
 })

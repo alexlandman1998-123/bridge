@@ -304,13 +304,28 @@ function isCompletedIngestionLog(log) {
   return Boolean(log?.lead_id) && ['assigned', 'processed', 'duplicate'].includes(log.status)
 }
 
+function leadNotificationIssue(result, label, missingRecipient = false) {
+  const data = result?.data
+  if (!result?.error && !data?.error && data?.ok !== false && !data?.needsAttention
+    && !['needs_attention', 'waiting_recipient'].includes(data?.deliveryStatus) && !missingRecipient) return ''
+  const reason = data?.reason
+  const detail = reason === 'provider_http_403'
+    ? 'The email provider rejected delivery (403). Check the sending account and sender permissions.'
+    : reason === 'provider_http_429'
+      ? 'The email provider rate limit was reached. Check delivery history before retrying.'
+      : missingRecipient || data?.deliveryStatus === 'waiting_recipient'
+        ? 'A valid, eligible recipient email is required.'
+        : 'Delivery could not be confirmed. Check delivery history and recipient details before retrying.'
+  return `${label}: ${detail}`
+}
+
 function leadNotificationWarning(notifications, assignedAgentId = '') {
   if (!notifications) return ''
   const failures = [
-    notifications.acknowledgement?.error ? 'buyer acknowledgement' : '',
-    notifications.operations?.error || (assignedAgentId && notifications.operations?.data?.reason === 'missing_agent_email') ? 'agent notification' : '',
+    leadNotificationIssue(notifications.acknowledgement, 'Client acknowledgement'),
+    leadNotificationIssue(notifications.operations, 'Agent notification', assignedAgentId && notifications.operations?.data?.reason === 'missing_agent_email'),
   ].filter(Boolean)
-  return failures.length ? `Delivery needs review: ${failures.join(' and ')} failed.` : ''
+  return failures.length ? `Lead saved. Delivery needs review. ${failures.join(' ')}` : ''
 }
 
 function assignedTaskAgentId(assignment, lead) {

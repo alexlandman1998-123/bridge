@@ -21,9 +21,11 @@ again, and a confirmed pre-provider pause can retry safely. **Start a new test**
 creates an explicit new intent. No message bodies or provider secrets are stored
 in the receipt table. Never delete these receipts as a retry mechanism.
 
-This consolidation is local. See the
-[release scope](../output/email-production-readiness-20261105/release-scope.json)
-and review in that directory for activation prerequisites and verification.
+The consolidation and prepared reliability backend were released during the
+8 November production reconciliation. Bulk sending is still disabled pending
+domain authentication and account budgets. The subsequent
+[email diagnostic](../docs/domain-and-bulk-email-diagnostic-20261108.md) records
+the new isolated fixes, checks and live activation decisions.
 
 ## Session and property-save production fixes — 28 October 2026
 

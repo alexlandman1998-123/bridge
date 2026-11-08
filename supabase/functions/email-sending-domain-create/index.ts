@@ -1,5 +1,5 @@
 import { isArch9Domain } from "../_shared/emailCampaignSender.js";
-import { sendingDomainRecords as records, findSendingDomain, refreshSendingDomain } from "../_shared/emailSendingDomain.ts";
+import { sendingDomainRecords as records, findSendingDomain, refreshSendingDomain, sendingDomainState } from "../_shared/emailSendingDomain.ts";
 import { supabasePublishableKey, supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -21,13 +21,6 @@ function normaliseDomain(value: unknown) {
     return "";
   }
   return domain;
-}
-
-function providerStatus(value: unknown) {
-  const status = text(value).toLowerCase();
-  if (status === "verified") return "verified";
-  if (status === "failed") return "failed";
-  return "pending";
 }
 
 function domainResponse(domain: Record<string, any>, created: boolean) {
@@ -88,7 +81,7 @@ Deno.serve(withApiCredentials(async (req) => {
     }
     if (domain?.verification_status === "disabled") return json(409, { error: "This sending domain is disabled." });
     if (domain?.provider_domain_id) {
-      const existing = await fetch(`https://api.resend.com/domains/${encodeURIComponent(domain.provider_domain_id)}`, { headers: { authorization: `Bearer ${resendKey}` } });
+      const existing = await fetch(`https://api.resend.com/domains/${encodeURIComponent(domain.provider_domain_id)}`, { headers: { authorization: `Bearer ${resendKey}` }, signal: AbortSignal.timeout(15000) });
       if (!existing.ok && existing.status !== 404) return json(502, { error: "The email provider could not check this domain. Try again shortly." });
       if (existing.ok) {
         await refreshSendingDomain({ db, domain, resendKey, fetcher: async () => existing });
@@ -135,14 +128,20 @@ Deno.serve(withApiCredentials(async (req) => {
     const detailsResponse = await fetch(`https://api.resend.com/domains/${encodeURIComponent(text(providerDomain.id))}`, {
       headers: { authorization: `Bearer ${resendKey}` }, signal: AbortSignal.timeout(15000),
     });
-    const details = detailsResponse.ok ? await detailsResponse.json().catch(() => providerDomain) : providerDomain;
+    const details = detailsResponse.ok ? await detailsResponse.json().catch(() => null) : null;
+    if (!details || text(details.id) !== text(providerDomain.id) || text(details.name).toLowerCase() !== domainName) {
+      const message = "Domain connected, but its current verification and DNS records could not be confirmed. Recheck verification before changing DNS or sending.";
+      const saved = await db.from("email_sending_domains").update({ provider_domain_id: text(providerDomain.id), verification_status: "pending", verified_at: null, last_provider_error: message }).eq("id", domain.id);
+      if (saved.error) throw saved.error;
+      return json(502, { error: message });
+    }
     const now = new Date().toISOString();
-    const status = providerStatus(details?.status || providerDomain?.status);
+    const { status, error: providerError } = sendingDomainState(details);
     const updated = await db.from("email_sending_domains").update({
       provider_domain_id: text(providerDomain.id),
       verification_status: status,
       dns_records: records(details?.records || providerDomain?.records),
-      last_provider_error: null,
+      last_provider_error: providerError,
       verification_requested_at: now,
       last_checked_at: now,
       verified_at: status === "verified" ? now : null,

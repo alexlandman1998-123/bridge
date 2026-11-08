@@ -2,6 +2,76 @@
 
 8 November 2026 · Primary Arch9 app, shared Supabase endpoints and existing public website domains.
 
+## Follow-up after the production reconciliation — 8 November, 16:30 UTC
+
+This section supersedes the pre-release status below for **bulk email**. The earlier website-domain findings and missing-routine findings are historical; do not treat them as a fresh production audit. The preceding release applied the prepared reliability migrations/functions. This follow-up checked the updated primary app and shared email backend. Its new fixes are isolated on `codex/email-marketing-diagnostic-20261108`, based on `963beff01957e338f4cf330f495105fd29247153`; remote main was still that revision when checked. These follow-up fixes have **not** been deployed, and no live email, DNS change or provider mutation was made.
+
+### Confirmed live blockers
+
+Read-only evidence from Arch9 SaaS (`isdowlnollckzvltkasn`):
+
+- The shared campaign account is disabled, with daily and monthly limits both zero. Organisation limits cannot override this account stop.
+- `homeseekers.co.za` and its custom sender are marked failed. The latest stored provider check is 22 October. Current public DNS still differs from those cached requirements: the DKIM key differs, `send` points at Forge, its SPF/MX identify Forge, and `rsend` points at `rsend-euw1.forge.rmta.net`. This confirms a mismatch with cached requirements, not which provider should own these names. Current Resend records must be fetched before proposing exact DNS edits. An existing DMARC monitoring record is present.
+- There are 19 draft campaigns, no dispatch jobs and no durable test receipts. There is no delivery history here that establishes bulk sending works live.
+- All five previously missing reliability routines now exist. The worker cron is active every five minutes. The inspected 24-hour window had 287 successful and one failed scheduler run; 287 actual worker HTTP requests returned 200. Successful empty polling is not email delivery.
+- Provider credentials/webhook/billing readiness could not be independently certified: no Resend connector or local provider credentials were available. The primary Vercel environment contains no matching Resend/campaign configuration; the sending functions run on Supabase, whose secret values were not retrieved. Do not interpret this as proof that Supabase secrets are missing.
+
+### Bugs fixed in this isolated follow-up
+
+1. Content checks discarded specific server failures and incorrectly blamed administrator activation. The UI now retains actionable DNS, permissions and provider messages. Preflight lists each failed sender/category/policy/audience/account check, rejects malformed responses and never treats contradictory checks as ready.
+2. Imported HTML previews omitted the footer that actual delivery adds. Preview now uses the delivery renderer, shows sender details and the personal-unsubscribe explanation, personalises the content and retains an empty iframe sandbox. A preview never supplies a real unsubscribe token.
+3. A saved sender could appear ready while its linked domain was pending. Review and tests now require current local sender/domain readiness while permitting draft editing and saving. A blocked Review explains the domain issue.
+4. Provider DNS verification alone was accepted even when sending capability was disabled. Custom-domain refresh, the Arch9 sender refresh and executive readiness now reject that state. Existing responses without a capabilities field remain compatible.
+5. Recovery after a lost domain-create response could trust a stale domain-list status when the detail request failed. It now retains the provider ID as pending and clearly requires re-verification; mismatched IDs/names cannot become ready. Existing-domain calls have a timeout.
+6. Definitive provider test rejections appeared as uncertain delivery, hiding the real reason. Definitive 4xx responses now display the redacted rejection, persist a rejected receipt and explicitly report that delivery is not uncertain. Ambiguous responses/timeouts remain protected against duplicate sends. A sending-control storage outage reports unavailability rather than falsely claiming quota exhaustion.
+7. Regex tracking missed unquoted/encoded links and could alter Outlook HTML. Tracking now uses the existing HTML parser, decodes destinations correctly and replaces only the href attribute. Final personalised content is checked before tracking can mask a bad URL. Tokens are reused within each campaign batch, reducing repeated database writes while keeping recipient capabilities separate. Optional tracking-storage failures retain valid original destinations.
+8. Campaign reports did not show why dispatch was waiting. A new authenticated, tenant-scoped read-only RPC returns a small delivery-status summary without exposing queue leases, provider payloads or account quotas. Reports show pause/capacity/failure reasons, retain recipient evidence if status is unavailable, and refresh once per action.
+
+Owning product: the primary app (`the-it-guy/`) and shared email Supabase layer. Public websites, admin, Inbox, WhatsApp, transactional mail and unrelated bond edits are outside this follow-up.
+
+### Verification of the follow-up
+
+| Check | Result |
+| --- | --- |
+| Final six focused Vitest files | 217 tests passed |
+| Full service-to-database-to-worker journey included above | Passed: HTML/image import, save, consent preflight, schedule, both sender modes, mocked provider acceptance, callbacks, clicks, reports, unsubscribe and cross-organisation denial |
+| Domain helpers/create recovery, sender verification, executive readiness and signed webhook checks | 39 Deno tests passed, each file in a separate process |
+| New delivery-status PostgreSQL routine | 14 checks passed, including anonymous/cross-tenant denial and restricted output |
+| Existing organisation isolation, sender options and test-receipt database checks rerun with new migration | All three scripts passed |
+| Existing email database/contracts baseline | All 14 scripts passed |
+| Seven affected deployed endpoint entry points | Deno check passed |
+| Scoped ESLint | Zero errors; six existing component warnings |
+| Browser through real components/services with isolated synthetic provider/storage responses | HTML upload/save/preview, saved audience, pending-domain block, explicit failed preflight, definitive test rejection, queue reason and refresh passed |
+| Browser delivery report at 390px | Document and report width 390px; waiting reason visible |
+| Whitespace/conflict checks | Passed |
+
+The broader initial marketing selection exposed two existing WhatsApp sync wording failures (783 other tests passed). Those failures are unrelated to email and were not hidden or repaired as part of this task. Initial new-test selector failures were corrected; final email checks pass. Deno endpoint tests replace global environment/fetch, so they were verified in separate processes to avoid mock interference.
+
+Provider writes were mocked and database writes used local PGlite. Browser fixtures use synthetic storage/account responses; the separate integration journey exercises actual SQL and handlers. No authenticated live send, inbox authentication-header inspection or cross-client rendering certification occurred. A full local production build was not attempted because this limited-memory machine previously exhausted its 1536 MB heap; an isolated cloud build remains necessary before promotion.
+
+Evidence is in `output/email-marketing-diagnostic-20261108/`, with browser snapshots and screenshots in `output/playwright/email-marketing-20261108/`. The reproducible local fixture is `the-it-guy/scripts/email-marketing-browser-fixture.mjs` (loopback only, no credentials).
+
+### Exact release and activation decisions
+
+The isolated code release contains **one append-only migration**, `20261108160845_email_campaign_delivery_diagnostics.sql`, the primary app, and these seven endpoint bundles: `email-sending-domain-create`, `email-sending-domain-verify`, `email-sender-verification`, `email-platform-status`, `email-campaign-test`, `email-campaign-worker`, `resend-webhook`. Shared imports require redeploying unchanged entry points as listed. No public-site or admin deployment is needed.
+
+Before any approved production database change, follow `docs/database-release-runbook.md`: confirm project identity, run the guard and recovery checks, inspect the exact pending dry-run scope, and stop on unexpected migrations. Apply the reviewed migration before the app; deploy all seven bundles from the same commit; build the primary app in the cloud, inspect the build result, and verify authenticated status, permissions and queue explanations before promotion. Keep account sending disabled during deployment. Recovery: redeploy the prior app/function revision; this additive read-only RPC may remain in place. No receipt deletion or queue replay is a rollback procedure.
+
+Separate approvals needed to activate sending:
+
+1. Approve deploying this isolated code/schema release to Arch9 SaaS and the primary app. This task requested diagnostics/fixes, so the preceding task's production approval does not cover this new release.
+2. Confirm the intended sending domain and provider arrangement. Fetch the **current** provider records, then approve exact DNS changes or a dedicated sending subdomain; preserve existing inbox/provider records. No record replacement is pre-approved here.
+3. Approve the account daily/monthly recipient budgets, provider costs and enabling the account. No budget numbers have been invented. If the shared Arch9 sender is desired, verify its dedicated domain and `ARCH9_CAMPAIGN_RESEND_DOMAIN_ID`, enable `ARCH9_CAMPAIGN_SENDING_ENABLED`, verify provider/webhook credentials and required delivery/domain events, and confirm billing through `RESEND_BILLING_CONFIRMED`. Custom senders still require the shared account budget.
+4. Name an approved test recipient and consented small pilot audience. Send a real test, inspect SPF/DKIM/DMARC alignment and Reply-To, confirm delivered callbacks, then run the pilot through scheduling, unsubscribe and suppression before broader sending. Provider acceptance alone is not delivery or inbox placement.
+
+These remote steps require current-task approval under `AGENTS.md`: “Never run a command that applies migrations, writes remote data, sends email, publishes listings, or promotes a deployment without the user's explicit approval in the current task.” The code fixes and reviewable release scope are complete; live activation remains blocked by the configuration and acceptance work above.
+
+Provider references checked: [Resend domain status and sending capabilities](https://resend.com/docs/api-reference/domains/get-domain), [email idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys), [Gmail authentication and unsubscribe requirements](https://support.google.com/a/answer/81126).
+
+## Historical diagnostic before the preceding production release
+
+The remainder preserves the earlier review as evidence; its deployment and missing-routine statements describe that earlier point in time.
+
 ## Outcome
 
 Local fixes and focused automated checks pass. **Production is not ready for a full bulk-email acceptance test.** No application or Edge deployment, database push, DNS edit, domain activation/removal or email send was performed.

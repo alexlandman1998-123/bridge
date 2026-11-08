@@ -1,3 +1,5 @@
+import { AGENCY_CRM_UPDATED_EVENT, getAgencyCrmUpdateDetail } from '../../lib/agencyCrmUpdateBus.js'
+
 const LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX = 'arch9:lead-workspace-snapshot'
 const leadWorkspaceSnapshotCache = new Map()
 
@@ -90,6 +92,28 @@ export function seedAgencyLeadWorkspaceSnapshot(organisationId = '', leadId = ''
   return written
 }
 
-export function clearAgencyLeadWorkspaceSnapshotCache() {
-  leadWorkspaceSnapshotCache.clear()
+export function clearAgencyLeadWorkspaceSnapshotCache(organisationId = '') {
+  const workspaceId = normalizeText(organisationId)
+  const prefix = `${LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX}:${workspaceId ? `${workspaceId}:` : ''}`
+  for (const key of leadWorkspaceSnapshotCache.keys()) {
+    if (key.startsWith(prefix)) leadWorkspaceSnapshotCache.delete(key)
+  }
+  if (typeof window === 'undefined') return
+  try {
+    const keys = []
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const key = window.sessionStorage.key(index)
+      if (key?.startsWith(prefix)) keys.push(key)
+    }
+    keys.forEach((key) => window.sessionStorage.removeItem(key))
+  } catch {
+    // Restricted session storage must not prevent in-memory invalidation.
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => clearAgencyLeadWorkspaceSnapshotCache())
+  window.addEventListener(AGENCY_CRM_UPDATED_EVENT, (event) => {
+    clearAgencyLeadWorkspaceSnapshotCache(getAgencyCrmUpdateDetail(event).organisationId)
+  })
 }

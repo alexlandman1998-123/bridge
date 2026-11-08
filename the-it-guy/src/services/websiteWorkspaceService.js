@@ -58,7 +58,7 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
     published_revision_id: connection.published_revision_id || null,
     updated_at: connection.site_updated_at || null,
   }
-  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult, leadsResult, blogPostsResult, mediaAssetsResult, websiteListingsResult] = await Promise.all([
+  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult, leadsResult, blogPostsResult, mediaAssetsResult, websiteListingsResult, measurementResult] = await Promise.all([
     supabase.from('website_domains').select('id, hostname, domain_kind, status, is_primary, dns_instructions, verified_at, created_at, updated_at').eq('website_site_id', site.id).order('created_at'),
     supabase.from('website_site_revisions').select('id, revision_number, status, brand_json, source_revision_id, content_fingerprint, published_at, published_by, archived_at, updated_at').eq('website_site_id', site.id).order('revision_number', { ascending: false }),
     supabase.from('website_pages').select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks, revision_id, updated_at').eq('website_site_id', site.id).order('page_kind').order('slug'),
@@ -69,6 +69,7 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
     supabase.from('website_blog_posts').select('id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, content_blocks, author_name, status, lifecycle_status, scheduled_for, published_at, seo_title, seo_description, created_at, updated_at').eq('website_site_id', site.id).order('updated_at', { ascending: false }),
     supabase.from('website_media_assets').select('id, website_site_id, storage_path, public_url, alt_text, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }),
     supabase.rpc('website_blog_available_listings', { p_website_site_id: site.id }),
+    websiteAnalyticsRpc(site.id) === 'website_dashboard_analytics' ? supabase.from('website_measurement_events').select('occurred_at').eq('website_site_id',site.id).order('occurred_at',{ascending:false}).limit(1) : Promise.resolve({ data: null, error: null }),
   ])
   if (domainsResult.error) throw domainsResult.error
   if (revisionsResult.error) throw revisionsResult.error
@@ -104,7 +105,7 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
     publicationEvents: eventsResult.data || [],
     managementEvents: managementEventsResult.data || [],
     publicationReadiness,
-    analytics: analyticsResult.data || null,
+    analytics: analyticsResult.data ? { ...analyticsResult.data, measurement: websiteAnalyticsRpc(site.id) === 'website_dashboard_analytics' ? { collector: 'public-v2', lastSuccessAt: measurementResult.data?.[0]?.occurred_at || null, unavailable: Boolean(measurementResult.error) } : { collector: 'homeseekers-public-v1' } } : null,
     analyticsError: analyticsResult.error?.message || '',
     websiteLeads: leadsResult.data || [],
     websiteLeadsError: leadsResult.error?.message || '',

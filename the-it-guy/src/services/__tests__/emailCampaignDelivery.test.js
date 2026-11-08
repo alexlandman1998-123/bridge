@@ -833,3 +833,69 @@ it('returns a controlled error when durable receipt storage is unreachable',asyn
  db.rpc.mockImplementation(async(name,args)=>{if(name==='email_campaign_test_claim')throw Error('Storage unreachable');return original(name,args)})
  expect((await test()).status).toBe(503);expect(providerCalls()).toHaveLength(0)
 })
+
+it.each([400, 401, 403, 422])('shows definitive test rejection without treating it as an uncertain send: %s', async status => {
+  const standard = fetcher.getMockImplementation()
+  fetcher.mockImplementation(async (url, options) => url === 'https://api.resend.com/emails' ? Response.json({ message: 'The sending domain is not verified.' }, { status }) : standard(url, options))
+  const response = await test()
+  expect(response.status).toBe(422)
+  expect(await response.json()).toMatchObject({ error: expect.stringContaining('sending domain is not verified'), deliveryUncertain: false })
+  expect([...testReceipts.values()][0].status).toBe('rejected')
+  expect(providerCalls()).toHaveLength(1)
+})
+it.each([408, 409, 429, 500])('keeps ambiguous provider outcomes protected from duplicate tests: %s', async status => {
+  const standard = fetcher.getMockImplementation(), requestId = 'e'.repeat(64)
+  fetcher.mockImplementation(async (url, options) => url === 'https://api.resend.com/emails' ? Response.json({ message: 'Provider pending' }, { status }) : standard(url, options))
+  expect((await test({ requestId })).status).toBe(502)
+  expect((await test({ requestId })).status).toBe(409)
+  expect(providerCalls()).toHaveLength(1)
+})
+it('stops a custom-domain send when provider sending is disabled despite verified DNS', async () => {
+  const standard = fetcher.getMockImplementation()
+  fetcher.mockImplementation(async (url, options) => String(url).includes('/domains/') ? Response.json({ id: 'provider-domain', name: 'example.com', status: 'verified', capabilities: { sending: 'disabled' }, records: [] }) : standard(url, options))
+  expect((await test()).status).toBe(400)
+  await worker()
+  expect(providerCalls()).toHaveLength(0)
+})
+
+it('tracks decoded and unquoted HTML destinations without corrupting query parameters or Outlook markup', async () => {
+ state.tables.email_campaigns[0].content_json.advancedHtml = '<p>News</p><a href="https://example.com/news?one=1&#38;two=2">First</a><a href=https://example.com/news?one=1&amp;two=2>Second</a><!--[if mso]><a href="https://example.com/outlook">Outlook</a><![endif]--><!-- <a href="https://example.com/unused">Comment only</a> -->'
+ expect((await worker()).status).toBe(200)
+ const links = state.tables.email_campaign_links
+ expect(links.map(link => link.target_url)).toEqual(['https://example.com/news?one=1&two=2', 'https://example.com/outlook'])
+ const payload = JSON.parse(providerCalls()[0][1].body)
+ expect(payload.html).toContain('<!--[if mso]><a href="https://project.supabase.co/functions/v1/email-campaign-track')
+ expect(payload.html).toContain('https://example.com/unused')
+ expect(payload.html).not.toContain('href=https://example.com/news')
+})
+it('stores each campaign link once per worker batch while keeping recipient tracking separate', async () => {
+ addSecondRecipient()
+ expect((await worker()).status).toBe(200)
+ expect(providerCalls()).toHaveLength(2)
+ expect(state.tables.email_campaign_links).toHaveLength(1)
+ const payloads = providerCalls().map(([,options]) => JSON.parse(options.body))
+ expect(payloads[0].html).toContain('&amp;r=recipient&amp;')
+ expect(payloads[1].html).toContain('&amp;r=second-recipient&amp;')
+})
+it('retains the original valid destination if optional tracking storage is unavailable', async () => {
+ state.eligibilityError = 'email_campaign_links'
+ expect((await worker()).status).toBe(200)
+ const payload = JSON.parse(providerCalls()[0][1].body)
+ expect(payload.html).toContain('href="https://example.com/news?x=1&amp;y=2"')
+ expect(payload.html).not.toContain('email-campaign-track?')
+})
+
+it('reports a send-control storage outage separately from a genuine quota rejection', async () => {
+ state.rpcError = 'email_reserve_send'
+ const response = await test()
+ expect(response.status).toBe(503)
+ expect(await response.json()).toMatchObject({ error: expect.stringContaining('Sending controls are unavailable'), deliveryUncertain: false })
+ expect(providerCalls()).toHaveLength(0)
+})
+it('redacts the provider key from a definite rejection message', async () => {
+ const standard=fetcher.getMockImplementation()
+ fetcher.mockImplementation(async(url,options)=>url==='https://api.resend.com/emails'?Response.json({message:'Rejected resend-test-key'},{status:403}):standard(url,options))
+ const body=await (await test()).json()
+ expect(body.error).toContain('[redacted]')
+ expect(body.error).not.toContain('resend-test-key')
+})

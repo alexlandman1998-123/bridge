@@ -3,7 +3,7 @@ export const HOME_SEEKERS_PUBLIC_HOSTS = ['homeseeker.co.za', 'www.homeseeker.co
 export function homeSeekersPreviewUrl(value) {
   try {
     const url = new URL(value)
-    if (!HOME_SEEKERS_PUBLIC_HOSTS.includes(url.hostname)) return value
+    if (!['http:', 'https:'].includes(url.protocol)) return value
     url.searchParams.set('arch9_preview', '1')
     return url.href
   } catch { return value }
@@ -21,7 +21,7 @@ export function homeSeekersBrowserIsPublic(browser, navigator) {
     if (new URLSearchParams(location.search).has('arch9_preview')) browser.sessionStorage.setItem('home-seekers-internal-preview', '1')
     internalSession = browser.sessionStorage.getItem('home-seekers-internal-preview') === '1'
   } catch { /* Host and frame checks still apply without browser storage. */ }
-  return !internalSession && isHomeSeekersPublicTraffic({ hostname: location.hostname, pathname: location.pathname,
+  return navigator.doNotTrack !== '1' && browser.doNotTrack !== '1' && !internalSession && isHomeSeekersPublicTraffic({ hostname: location.hostname, pathname: location.pathname,
     search: location.search, embedded: browser.self !== browser.top, automated: navigator.webdriver === true })
 }
 

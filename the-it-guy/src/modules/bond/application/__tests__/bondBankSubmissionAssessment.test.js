@@ -25,7 +25,7 @@ it('invalidates review after changes and never treats optional marketing or docu
   input.reviewContext.review.current = true; input.reviewContext.review.submission_id = 'old'
   expect(assessBondBankSubmission(input).ready).toBe(false)
 })
-it('keeps a complete reviewed application blocked when approvals or the live pilot are missing', () => {
+it('disables signing methods while allowing originator tracking', () => {
   const input = fixture()
   input.releaseGate = getBondSubmissionReleaseGate()
   expect(assessBondBankSubmission(input)).toMatchObject({ ready: false, applicationComplete: true, status: 'release_blocked' })
@@ -63,7 +63,7 @@ import { fetchBondSubmissionReleaseGate } from '../../../../services/bondSubmiss
 it('ignores browser approval flags and keeps the server release endpoint read-only', () => {
   const res = { setHeader() {}, status(code) { this.code = code; return this }, json(body) { this.body = body; return body } }
   handler({ method: 'GET', query: { approved: true }, body: { ready: true } }, res)
-  expect(res.body.ready).toBe(false)
+  expect(res.body).toMatchObject({ ready: true, mode: 'originator_tracker', signingEnabled: false, statementServiceRequired: false, methods: { online: false, wet_ink_upload: false, manual_tracking: true } })
   handler({ method: 'POST', body: { ready: true } }, res)
   expect(res.code).toBe(405)
 })

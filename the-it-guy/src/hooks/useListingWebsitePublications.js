@@ -1,10 +1,10 @@
 import { useEffect, useReducer, useState } from 'react'
-import { getWebsiteListingPublicationStatus } from '../services/websiteListingPublicationService'
+import { getWebsiteListingPublicationStatuses } from '../services/websiteListingPublicationService'
 
 const EMPTY_STATUSES = {}
 
 // Publication reads use the existing membership-guarded RPC. They enrich cards
-// after rendering, with bounded concurrency rather than blocking the stock list.
+// after rendering, in bounded batches rather than blocking the stock list.
 export default function useListingWebsitePublications(listings, scope) {
   const [revision, refresh] = useReducer((value) => value + 1, 0)
   const [snapshot, setSnapshot] = useState({ key: '', statuses: {} })
@@ -23,19 +23,21 @@ export default function useListingWebsitePublications(listings, scope) {
     let cursor = 0
     const rows = JSON.parse(rowsKey)
     const statuses = {}
-    async function worker() {
+    async function loadBatches() {
       while (!cancelled && cursor < rows.length) {
-        const [id] = rows[cursor++]
+        const ids = rows.slice(cursor, cursor + 100).map(([id]) => id)
+        cursor += ids.length
         try {
-          statuses[id] = await getWebsiteListingPublicationStatus(id)
+          const batch = await getWebsiteListingPublicationStatuses(ids)
+          for (const id of ids) statuses[id] = batch[id] || null
         } catch {
           // An inaccessible or failed read must never become a live badge.
-          statuses[id] = null
+          for (const id of ids) statuses[id] = null
         }
         if (!cancelled) setSnapshot({ key, statuses: { ...statuses } })
       }
     }
-    if (scope) void Promise.all(Array.from({ length: Math.min(4, rows.length) }, worker))
+    if (scope) void loadBatches()
     return () => { cancelled = true }
   }, [key, rowsKey, scope])
 

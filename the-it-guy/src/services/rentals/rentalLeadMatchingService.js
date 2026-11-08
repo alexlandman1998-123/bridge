@@ -1,14 +1,13 @@
 import { createAgencyCrmLeadActivity } from '../../lib/agencyCrmRepository'
 import { buildRentalLeadListingMatches } from './rentalLeadMatchingModel'
 import { listRentalListingsForAgent } from './rentalListingDraftService'
-import { listRentalLeads } from './rentalLeadService'
+import { getRentalLeadWorkspace } from './rentalLeadService'
 import { buildRentalListingQueryOptions } from './rentalWorkspaceScope'
 
 const text = (value) => String(value ?? '').trim()
 
 export async function listRentalLeadMatches(organisationId, leadId, scope = {}) {
-  const leads = await listRentalLeads(organisationId, scope)
-  const lead = leads.find((item) => item.id === text(leadId))
+  const { lead } = await getRentalLeadWorkspace(organisationId, text(leadId), scope)
   if (!lead || lead.role !== 'tenant') throw new Error('Choose a tenant lead available in your current scope.')
   const listingScope = {
     ...scope,

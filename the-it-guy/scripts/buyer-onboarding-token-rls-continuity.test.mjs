@@ -320,14 +320,13 @@ assert.match(
   /async\s+function\s+recordBuyerOnboardingProjectionFailureMarker\s*\([\s\S]*logTransactionEventIfPossible[\s\S]*catch\s*\(\s*markerError\s*\)/,
   'buyer onboarding recovery marker logging must never create another client-facing failure',
 )
+assert.doesNotMatch(saveOnboardingSource, /await processWorkflowEvidenceIfPossible\(/, 'token-bound submission must leave staff workflow audit to the atomic snapshot RPC')
 for (const eventType of [
   'buyer_onboarding_required_documents_projection_failed',
   'buyer_onboarding_platform_fee_consent_projection_failed',
   'buyer_onboarding_information_sheet_projection_failed',
   'buyer_onboarding_roleplayer_projection_failed',
-  'buyer_onboarding_workflow_evidence_projection_failed',
   'buyer_onboarding_awaiting_signed_otp_projection_failed',
-  'buyer_onboarding_finance_event_projection_failed',
 ]) {
   assert.match(
     saveOnboardingSource,

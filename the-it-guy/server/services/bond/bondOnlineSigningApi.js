@@ -1,8 +1,5 @@
-import { createBondOnlineSigningService } from './bondOnlineSigningService.js'
-// This production constructor intentionally has no provider, persistence or
-// approval dependencies. Connecting a reviewed provider requires a server-side
-// change and scoped repository integration, not an environment/browser flag.
-const productionSigning = createBondOnlineSigningService()
+// Tracker mode has no signing provider or signing actions.
+const productionSigning = { availability: () => ({ available: false, code: 'bond_signing_disabled', message: 'Bond signing is disabled. Your originator tracks progress and documents in Arch9.' }) }
 export async function createBondOnlineSigningResponse({ method = 'GET', body = {}, headers = {} } = {}, service = productionSigning) {
   const response = (status, data) => ({ status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }, body: data })
   if (method === 'GET') return response(200, service.availability())

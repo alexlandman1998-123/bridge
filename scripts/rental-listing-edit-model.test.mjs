@@ -46,6 +46,7 @@ const listing = {
     },
     rentalInfo: {
       monthlyRent: 18500,
+      rentalPriceFrequency: 'monthly',
       depositAmount: 37000,
       depositRequirement: 'Two months deposit',
       depositMultiplier: 2,
@@ -84,7 +85,7 @@ assert.equal(form.inspectionNotes, 'Access via security.')
 assert.equal(form.mandateEndDate, '2026-12-31')
 
 const invalidErrors = validateRentalListingEditForm({ ...form, monthlyRent: '' }, { organisationId: 'org-1' })
-assert.ok(invalidErrors.includes('Monthly rent is required.'))
+assert.ok(invalidErrors.includes('Enter a rental amount greater than zero.'))
 assert.deepEqual(validateRentalListingEditForm(form, { organisationId: 'org-1' }), [])
 
 const editedForm = {

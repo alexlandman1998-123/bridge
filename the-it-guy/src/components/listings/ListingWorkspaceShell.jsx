@@ -113,8 +113,8 @@ export function ListingWorkspaceShell({
   className,
 }) {
   return (
-    <main className={cn('mx-auto w-full max-w-[1480px] px-6 py-6', className)}>
-      <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <main className={cn('min-w-0 w-full', className)}>
+      <header className="ui-workspace-header mb-6">
         <div className="min-w-0">
           {badge ? <div className="mb-2">{badge}</div> : null}
           {title ? (

@@ -126,6 +126,7 @@ async function transactionSellerFixture({ multi = false, linked = true } = {}) {
   await db.exec(readFileSync(new URL('../../../supabase/migrations/20260829195657_seller_onboarding_link_fast_prepare.sql', import.meta.url), 'utf8'))
   await db.exec(readFileSync(new URL('../../../supabase/migrations/20261011065947_transaction_seller_atomic_saves.sql', import.meta.url), 'utf8'))
   await db.exec(readFileSync(new URL('../../../supabase/migrations/20261011073408_seller_current_profile_alignment.sql', import.meta.url), 'utf8'))
+  await db.exec(readFileSync(new URL('../../../supabase/migrations/20261108171920_seller_invitation_preparation_delivery_state.sql', import.meta.url), 'utf8'))
   await actor(db, 'authenticated', agentA)
   return db
 }

@@ -1,4 +1,5 @@
 import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { requireEmailDeliveryReceipt } from './emailDeliveryReceipt'
 import {
   TRANSACTION_BUYER_DELIVERY_ACTIONS,
   buildTransactionBuyerDeliveryPayload,
@@ -100,6 +101,7 @@ export async function prepareBuyerOnboardingNotification({
     }
   }
 
+  let deliveryReceipt = ''
   try {
     const response = await invokeEdgeFunction('send-email', {
       body: buildTransactionBuyerDeliveryPayload({
@@ -110,10 +112,16 @@ export async function prepareBuyerOnboardingNotification({
         action: TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding,
       }),
     })
-    if (response?.error || response?.data?.error) throw response.error || new Error(response.data.error)
+    deliveryReceipt = requireEmailDeliveryReceipt(response, 'Buyer onboarding')
     const sentItem = await updateNotificationOutboxStatus({ eventId: emailItem.id, status: 'sent', provider: 'send-email' })
     return { attempted: true, sent: true, suppressed: false, handoffRequired: false, mode, outbox: [sentItem] }
   } catch (error) {
+    // Provider acceptance must survive a failed local status write. Re-sending
+    // here could deliver a duplicate invitation to the buyer.
+    if (deliveryReceipt) {
+      return { attempted: true, sent: true, suppressed: false, handoffRequired: false, mode, outbox: [emailItem],
+        warning: 'Buyer onboarding email was accepted, but its delivery record could not be updated. Check delivery history before sending again.', receiptError: error }
+    }
     const failedItem = await updateNotificationOutboxStatus({
       eventId: emailItem.id,
       status: 'failed',

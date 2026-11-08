@@ -64,3 +64,11 @@ it('keeps synthetic workflow checks from emailing a real agent or looking up ano
   expect(client.from).not.toHaveBeenCalled()
   expect(send).not.toHaveBeenCalled()
 })
+
+it('reports terminal queue attention without treating a healthy queued email as a failure', async () => {
+  const attention = await notifyNewLeadAssignedAgent(input, { send: vi.fn().mockResolvedValue({ data: { ok: true, sent: false, needsAttention: true, deliveryStatus: 'needs_attention', reason: 'provider_http_403' } }) })
+  expect(attention.error.message).toMatch(/review/)
+  const pending = await notifyNewLeadAssignedAgent(input, { send: vi.fn().mockResolvedValue({ data: { ok: true, sent: false, queued: true, deliveryStatus: 'pending' } }) })
+  expect(pending.error).toBeUndefined()
+  expect(pending.data.queued).toBe(true)
+})

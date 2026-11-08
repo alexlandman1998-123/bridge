@@ -26,3 +26,14 @@ export function writeAgencyLeadCoreCache(organisationId, leadId, data) {
 export function deleteAgencyLeadCoreCache(organisationId, leadId) {
   leadCoreCache.delete(cacheKey(organisationId, leadId))
 }
+
+export function clearAgencyLeadCoreCache(organisationId = '') {
+  const prefix = String(organisationId || '').trim()
+  for (const key of leadCoreCache.keys()) {
+    if (!prefix || key.startsWith(`${prefix}:`)) leadCoreCache.delete(key)
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => clearAgencyLeadCoreCache())
+}

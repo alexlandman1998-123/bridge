@@ -14,8 +14,8 @@ const payload = {
 async function withEnvironment(run: () => Promise<void>) {
   const keys = {
     SUPABASE_URL: "https://fixture.test",
-    SUPABASE_SERVICE_ROLE_KEY: "fixture-service",
-    SUPABASE_ANON_KEY: "fixture-anon",
+    SUPABASE_SERVICE_ROLE_KEY: "sb_secret_fixture_service",
+    SUPABASE_ANON_KEY: "sb_publishable_fixture_anon",
   };
   const previous = Object.fromEntries(
     Object.keys(keys).map((key) => [key, Deno.env.get(key)]),
@@ -89,7 +89,7 @@ Deno.test("new lead requests read the saved queue status and cannot choose recip
       p_organisation_id: payload.organisationId,
       p_lead_id: payload.leadId,
     });
-    equal(f.calls[0].key, "fixture-anon");
+    equal(f.calls[0].key, "sb_publishable_fixture_anon");
   }));
 Deno.test("missing authentication, inaccessible leads and missing queue evidence never fall back to sending", () =>
   withEnvironment(async () => {
@@ -128,7 +128,7 @@ Deno.test("only a service dispatcher with a real website receipt retains direct 
       metadata: { dispatchContract: "website-lead-dispatch-v1" },
     };
     const service = new Request("https://fixture.test", {
-      headers: { authorization: "Bearer fixture-service" },
+      headers: { authorization: "Bearer sb_secret_fixture_service" },
     });
     equal(
       await leadAgentEmailQueueResponse(
@@ -177,7 +177,7 @@ Deno.test("client intro callers can only inspect the saved queue, including trus
   withEnvironment(async () => {
     const f = fixture({ receipt: true });
     const request = new Request("https://fixture.test", {
-      headers: { authorization: "Bearer fixture-service" },
+      headers: { authorization: "Bearer sb_secret_fixture_service" },
     });
     const input = {
       ...payload,

@@ -8358,7 +8358,7 @@ function AgentListings({ mobileEditor = false } = {}) {
     return (
       <form className={`${streamlinedSales ? 'sales-capture-form space-y-3' : 'space-y-5'} pb-6 ${mobileEditor ? 'mobile-listing-editor' : ''}`} onSubmit={(event) => { event.preventDefault(); if (isFinalCreateListingStep || immediateAdvertEdit) void handleSaveListing(event); else void goToNextCreateListingStep() }} noValidate>
         <header className={`flex flex-wrap items-start justify-between gap-3 ${streamlinedSales ? 'sales-capture-close' : ''}`}>
-          {mobileEditor ? <div className="mobile-listing-editor-intro"><p>{isDeveloperWorkspace ? 'Development portfolio' : 'Property portfolio'}</p><h1>{isEditListingWorkspace ? 'Edit listing' : 'New listing'}</h1><span>Save your progress. Finish when you’re ready.</span></div> : isEditListingWorkspace ? (
+          {mobileEditor ? <div className="mobile-listing-editor-intro"><h1>{isEditListingWorkspace ? 'Edit listing' : 'New listing'}</h1></div> : isEditListingWorkspace ? (
             <div>
               <div className="text-sm font-semibold text-[#607387]">
                 <button type="button" className="transition hover:text-[#142132]" onClick={() => navigate('/listings')}>Listings</button>

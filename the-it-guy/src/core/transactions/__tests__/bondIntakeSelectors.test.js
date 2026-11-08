@@ -66,6 +66,12 @@ try {
     'hybrid transaction with no bond app awaits buyer application',
   )
 
+  assert.equal(isBondFinanceType({ finance_type: 'cash' }, { form_data: { purchase_finance_type: 'bond' } }), false, 'current cash finance overrides an old onboarding bond answer')
+  assert.equal(isBondFinanceType({}, { form_data: { purchase_finance_type: 'bond' } }), true, 'saved buyer finance remains a fallback when the transaction is unset')
+  assert.equal(getDocumentReadinessSummary({ documentRequests: [{ category: 'finance', title: 'Optional income', is_required: false, status: 'requested' }] }).requiredCount, 0)
+  assert.equal(getDocumentReadinessSummary({ documentRequests: [{ id: 'proof', category: 'finance', status: 'approved' }], documents: [{ document_request_id: 'proof', status: 'approved', archived_at: '2026-11-08' }] }).isComplete, false)
+  assert.equal(getDocumentReadinessSummary({ documentRequests: [{ id: 'proof', category: 'finance', status: 'uploaded' }], documents: [{ document_request_id: 'proof', status: 'rejected' }] }).isComplete, false)
+  assert.equal(getBondIntakeStatus({ transaction: { finance_type: 'cash', bond_assignment_status: 'awaiting_buyer_onboarding' }, rolePlayers: [{ role_type: 'bond_originator', status: 'selected' }] }), BOND_INTAKE_STATUSES.NOT_BOND_RELEVANT)
   const draftInput = {
     transaction: { finance_type: 'bond' },
     onboardingFormData: {

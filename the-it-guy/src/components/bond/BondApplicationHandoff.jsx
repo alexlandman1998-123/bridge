@@ -39,7 +39,7 @@ function DocumentReview({ request, transactionId, onChanged }) {
   </article>
 }
 
-export default function BondApplicationHandoff({ item, onChanged }) {
+export default function BondApplicationHandoff({ item, onChanged, trackingOnly = true }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [instruction, setInstruction] = useState('')
@@ -58,12 +58,12 @@ export default function BondApplicationHandoff({ item, onChanged }) {
   }
   const openCorrections = (data?.corrections || []).filter((r) => !['resolved', 'withdrawn', 'cancelled', 'superseded'].includes(r.status))
   return <section className="mt-4 space-y-3 border-t border-slate-200 pt-4 text-sm text-slate-700">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-slate-900">Document review and application corrections</h3><Link className={buttonClass} to={`/transactions/${encodeURIComponent(item.transactionId)}`}>Open application and downloads</Link></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-slate-900">Documents and follow-ups</h3><Link className={buttonClass} to={`/bond/files/${encodeURIComponent(item.transactionId)}?tab=finance`}>Open bond tracker</Link></div>
     {error ? <p role="alert" className="text-red-800">{error} <button className={buttonClass} onClick={() => void load()}>Retry</button></p> : null}
     {!data && !error ? <p>Loading review requests…</p> : null}
     {data?.requests?.map((request) => <DocumentReview key={`${request.id}-${request.documentId}`} request={request} transactionId={item.transactionId} onChanged={changed} />)}
     {data && !data.requests?.length ? <p>No document requests yet.</p> : null}
-    {data?.corrections?.map((request) => <article key={request.id} className="space-y-2 rounded-xl bg-amber-50 p-3"><p className="font-semibold">Application correction · {label(request.status)}</p><p>{request.instruction}</p><p className="text-xs">Requested {date(request.createdAt)}{request.resolvedAt ? ` · Reviewed ${date(request.resolvedAt)}` : ''}</p>{openCorrections.includes(request) ? <><p>A new signed application version must be completed before you can accept these corrections.</p><button className={buttonClass} disabled={busy} onClick={() => void correction('resolve', request.id)}>Accept corrected signed application</button></> : null}</article>)}
-    {data && !openCorrections.length ? <form onSubmit={(e) => { e.preventDefault(); void correction('request') }} className="space-y-2"><label className="grid gap-1 font-semibold">Request an application correction<textarea required maxLength={4000} value={instruction} onChange={(e) => setInstruction(e.target.value)} className="rounded-lg border border-slate-300 p-2 font-normal" placeholder="Describe the answers that need correcting. This instruction is visible to the buyer." /></label><p className="text-xs">This reopens the application and requires a new signed version. Use document requests above for supporting files.</p><button className={buttonClass} disabled={busy || !instruction.trim()}>Request correction</button></form> : null}
+    {!trackingOnly && data?.corrections?.map((request) => <article key={request.id} className="space-y-2 rounded-xl bg-amber-50 p-3"><p className="font-semibold">Application correction · {label(request.status)}</p><p>{request.instruction}</p><p className="text-xs">Requested {date(request.createdAt)}{request.resolvedAt ? ` · Reviewed ${date(request.resolvedAt)}` : ''}</p>{openCorrections.includes(request) ? <><p>A new signed application version must be completed before you can accept these corrections.</p><button className={buttonClass} disabled={busy} onClick={() => void correction('resolve', request.id)}>Accept corrected signed application</button></> : null}</article>)}
+    {!trackingOnly && data && !openCorrections.length ? <form onSubmit={(e) => { e.preventDefault(); void correction('request') }} className="space-y-2"><label className="grid gap-1 font-semibold">Request an application correction<textarea required maxLength={4000} value={instruction} onChange={(e) => setInstruction(e.target.value)} className="rounded-lg border border-slate-300 p-2 font-normal" placeholder="Describe the answers that need correcting. This instruction is visible to the buyer." /></label><p className="text-xs">This reopens the application and requires a new signed version. Use document requests above for supporting files.</p><button className={buttonClass} disabled={busy || !instruction.trim()}>Request correction</button></form> : null}
   </section>
 }

@@ -36,7 +36,7 @@ async function withLocalDatabase(
     },
   );
   Deno.env.set("SUPABASE_URL", `http://127.0.0.1:${fixture.addr.port}`);
-  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "local-dispatch-fixture-key");
+  Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "sb_secret_local_dispatch_fixture");
   try {
     await run(calls);
   } finally {
@@ -54,7 +54,7 @@ const request = (body: unknown, authorized = true) =>
     headers: {
       "Content-Type": "application/json",
       ...(authorized
-        ? { Authorization: "Bearer local-dispatch-fixture-key" }
+        ? { Authorization: "Bearer sb_secret_local_dispatch_fixture" }
         : {}),
     },
     body: JSON.stringify(body),

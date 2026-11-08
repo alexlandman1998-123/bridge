@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { createTransactionCreationLifecycle, requiresTransactionBuyerPortal, setTransactionCreationStepOutcome } from '../src/core/transactions/transactionCreationLifecycle.js'
 
 const root = process.cwd()
 const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 const migrationSource = readFileSync(
-  resolve(root, '../supabase/migrations/20260831120130_support_private_property_buyer_portals.sql'),
+  resolve(root, '../supabase/migrations/20260831125407_support_private_property_buyer_portals.sql'),
   'utf8',
 )
 
@@ -24,7 +25,23 @@ assert.doesNotMatch(
 const creationStart = apiSource.indexOf('export async function createTransactionFromWizard')
 const creationEnd = apiSource.indexOf('\nexport async function ', creationStart + 1)
 const creationSource = apiSource.slice(creationStart, creationEnd)
-assert.match(creationSource, /portalSetupRequired:\s*\['developer_sale', 'private_property'\]\.includes\(transactionType\)/)
+assert.match(creationSource, /portalSetupRequired:\s*requiresTransactionBuyerPortal\(\{ transactionType, buyerId: buyer\?\.id, allowIncomplete, skipClientPortalSetup \}\)/)
+const decision = creationSource.slice(creationSource.indexOf('  let creationLifecycle ='), creationSource.indexOf('  const initialCreationLifecyclePatch ='))
+const portalStart = creationSource.indexOf('  try {', creationSource.indexOf("recordSetupWarning('seller_handoff'"))
+const portal = creationSource.slice(portalStart, creationSource.indexOf('  const incompleteCreationSteps =', portalStart))
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+const preparePortal = new AsyncFunction('scope', `with(scope){${decision};let clientPortalLink=null;${portal};return creationLifecycle.steps.portal_setup}`)
+for (const transactionType of ['developer_sale', 'private_property']) {
+  for (const [allowIncomplete, buyer] of [[true,null],[true,{id:'buyer'}],[false,{id:'buyer'}],[false,null]]) {
+    let portalCalls=0
+    const step = await preparePortal({ transactionType, allowIncomplete, buyer, skipClientPortalSetup:false,
+      expectedAttorneyAssignments:0, expectedBondOriginatorAssignments:0, createTransactionCreationLifecycle, requiresTransactionBuyerPortal, setTransactionCreationStepOutcome,
+      transactionPayload:{development_id:transactionType==='developer_sale'?'development':null,unit_id:transactionType==='developer_sale'?'unit':null},transaction:{id:'transaction'},
+      recordSetupWarning(){},getOrCreateClientPortalLink:async()=>{portalCalls++;if(!buyer)throw new Error('Buyer is required');return{token:'local-token'}} })
+    assert.equal(portalCalls,allowIncomplete&&!buyer?0:1)
+    assert.equal(step.status,allowIncomplete&&!buyer?'not_required':buyer?'complete':'failed')
+  }
+}
 assert.match(creationSource, /developmentId:\s*transactionPayload\.development_id/)
 assert.match(creationSource, /unitId:\s*transactionPayload\.unit_id/)
 

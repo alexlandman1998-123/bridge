@@ -2,9 +2,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import BondSubmissionPackPanel, { BondSubmissionPackWorkspace } from '../../../../components/bond/BondSubmissionPackPanel.jsx'
-const mocks = vi.hoisted(() => ({ load: vi.fn(), download: vi.fn(), queue: vi.fn(), review: vi.fn() }))
+const mocks = vi.hoisted(() => ({ load: vi.fn(), download: vi.fn(), queue: vi.fn(), review: vi.fn(), record: vi.fn(), receipt: vi.fn(), revoke: vi.fn() }))
 vi.mock('../../../../services/bondSubmissionPackService.js', () => ({ getBondSubmissionPackService: async () => ({ load: mocks.load, download: mocks.download, review: mocks.review }) }))
-vi.mock('../../../../lib/api.js', () => ({ fetchBondSubmissionPackQueue: mocks.queue }))
+vi.mock('../../../../lib/api.js', () => ({ fetchBondSubmissionPackQueue: mocks.queue, recordManualBondSubmission: mocks.record, recordBondStatementReceipt: mocks.receipt, revokeBondStatementReceipt: mocks.revoke }))
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const plan = { submission: { submission_version: 2 }, ready: false, rows: [{ key: 'bank', title: 'Bank statements', status: 'Secure handoff not connected', external: true, included: [] }, { key: 'id', title: 'Identity document', status: 'Approved', included: ['id'] }] }
 it('offers three separate downloads with incomplete and statement-handoff guidance', async () => {
@@ -13,7 +13,7 @@ it('offers three separate downloads with incomplete and statement-handoff guidan
   fireEvent.click(screen.getByText('Check pack and downloads'))
   await screen.findByText('Signed application PDF')
   expect(screen.getByText(/Incomplete/)).toBeTruthy()
-  expect(screen.getByText(/receipt is unverified/)).toBeTruthy()
+  expect(screen.getByText(/Bank statements stay in the agreed external channel/)).toBeTruthy()
   fireEvent.click(screen.getByText('Signed application PDF'))
   await screen.findByRole('status')
   expect(mocks.download).toHaveBeenCalledWith('tx', 'application')
@@ -50,4 +50,37 @@ it('records explicit consultant review while leaving release blockers visible', 
   await screen.findByText(/Review recorded for this version/)
   expect(mocks.review.mock.calls[0][1]).toMatchObject({ submissionId: 'sub', contextHash: 'hash', checks: { applicationChecked: true, documentsChecked: true, signaturesChecked: true, bankFormsChecked: true } })
   expect(screen.getByText('Live pilot pending')).toBeTruthy()
+})
+
+it('records only an explicitly confirmed external submission against the displayed version and authorised bank', async () => {
+ const ready = { ...plan, ready: true, rows: [], snapshot: { selectedBanks: ['FNB'] }, reviewContext: { contextHash: 'current-hash', review: { current: true } }, submission: { id: 'current-submission', submission_version: 3 }, manualContext: { submissions: [] } }
+ mocks.load.mockResolvedValue(ready); mocks.record.mockResolvedValue({ id: 'record' })
+ render(<BondSubmissionPackPanel transactionId="transaction-1" />)
+ fireEvent.click(screen.getByText('Check pack and downloads'))
+ const submit=await screen.findByRole('button', {name:'Record external submission'})
+ expect(submit.disabled).toBe(true)
+ fireEvent.change(screen.getByLabelText('Authorised bank'), { target: {value:'FNB'} })
+ fireEvent.change(screen.getByLabelText('Actual submission date'), { target: {value:'2026-11-01'} })
+ fireEvent.change(screen.getByLabelText('Bank reference'), { target: {value:'BANK-REF-123'} })
+ expect(mocks.record).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByLabelText(/I sent this signed version/))
+ expect(submit.disabled).toBe(false)
+ fireEvent.click(submit)
+ await waitFor(() => expect(mocks.record).toHaveBeenCalledOnce())
+ await waitFor(()=>expect(screen.getByLabelText(/I sent this signed version/).checked).toBe(false))
+ expect(mocks.record.mock.calls[0][0]).toMatchObject({ transactionId:'transaction-1',submissionId:'current-submission',contextHash:'current-hash',bankId:'FNB',bankName:'FNB',reference:'BANK-REF-123' })
+})
+it('confirms statement receipt for one exact requirement and signed version, without uploading statement bytes', async () => {
+ mocks.load.mockResolvedValue({...plan,submission:{id:'signed-v2',submission_version:2}})
+ mocks.receipt.mockResolvedValue({})
+ render(<BondSubmissionPackPanel transactionId="tx" />)
+ fireEvent.click(screen.getByText('Check pack and downloads'))
+ const confirm=await screen.findByRole('button',{name:'Confirm statements received'})
+ fireEvent.change(screen.getByLabelText('Date received'),{target:{value:'2026-11-01'}})
+ fireEvent.change(screen.getByLabelText('External channel reference'),{target:{value:'Secure channel receipt 001'}})
+ expect(confirm.disabled).toBe(true)
+ fireEvent.click(screen.getByLabelText(/I received and checked every page/))
+ fireEvent.click(confirm)
+ await waitFor(()=>expect(mocks.receipt).toHaveBeenCalledOnce())
+ expect(mocks.receipt.mock.calls[0][0]).toMatchObject({transactionId:'tx',submissionId:'signed-v2',requirementKey:'bank',reference:'Secure channel receipt 001'})
 })

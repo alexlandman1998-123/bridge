@@ -211,7 +211,7 @@ function NewApplicationsEmptyState() {
     <BondSectionCard
       eyebrow="Intake"
       title="Pipeline"
-      description="Bond and Hybrid buyer onboarding records will appear here until they are ready for review."
+      description="Accept a Bond or Hybrid referral and help the buyer complete their application and documents."
     >
       <div className="rounded-[20px] border border-dashed border-[#d8e2ec] bg-[#fbfdff] px-5 py-7 text-center">
         <p className="text-lg font-semibold text-[#142132]">No new bond applications</p>
@@ -313,6 +313,11 @@ function getConsultantOptions(currentUser = {}, item = {}) {
 function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
   const sourceRow = item.sourceRow || {}
   const openRow = () => onRowClick(sourceRow)
+  const openDocuments = () => {
+    const id = sourceRow.transaction?.id || sourceRow.id
+    if (!id) return openRow()
+    onRowClick({ ...sourceRow, openHref: `/bond/files/${encodeURIComponent(id)}?tab=finance` })
+  }
   const financeHandoff = item.financeHandoff || {}
   const handoffHighlights = [
     ...(Array.isArray(financeHandoff.topMissingItems) ? financeHandoff.topMissingItems : []),
@@ -326,7 +331,7 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
   const userCanDecline = canDeclineBondIntake(currentUser)
   const acceptDisabledTitle = item.canAccept
     ? 'Accept this application.'
-    : 'Buyer application and documents must be complete before acceptance.'
+    : 'Confirm an open bond referral and its current assignment.'
 
   return (
     <article className="rounded-[20px] border border-[#dbe5f0] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.035)]">
@@ -419,19 +424,19 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
             </button>
             <button
               type="button"
-              disabled
-              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#8aa0b6] opacity-70"
+              onClick={openRow}
+              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#17324d]"
             >
               <Bell size={14} />
-              Remind Buyer
+              Buyer details
             </button>
             <button
               type="button"
-              disabled
-              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#8aa0b6] opacity-70"
+              onClick={openDocuments}
+              className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#17324d]"
             >
               <FilePlus2 size={14} />
-              Request Documents
+              Documents and requests
             </button>
             {item.canAccept ? (
               <button
@@ -448,8 +453,7 @@ function NewApplicationCard({ item, currentUser, onRowClick, onAction }) {
             {userCanAssign && item.canAccept ? (
               <button
                 type="button"
-                disabled={item.intakeStatus !== BOND_INTAKE_STATUSES.READY_FOR_REVIEW}
-                title={item.intakeStatus === BOND_INTAKE_STATUSES.READY_FOR_REVIEW ? 'Assign this application.' : 'Application must be ready for review before assignment.'}
+                title="Assign ownership of this referral."
                 onClick={() => onAction('assign', item)}
                 className="inline-flex h-9 items-center justify-center gap-1 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#17324d] transition enabled:hover:border-[#c5d5e6] disabled:cursor-not-allowed disabled:text-[#8aa0b6] disabled:opacity-70"
               >

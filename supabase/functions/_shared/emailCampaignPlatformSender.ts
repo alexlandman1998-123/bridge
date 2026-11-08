@@ -1,4 +1,5 @@
 import { ARCH9_CAMPAIGN_DOMAIN, ARCH9_CAMPAIGN_EMAIL } from './emailCampaignSender.js';
+import { sendingDomainState, recordSendingDomainTracking } from './emailSendingDomain.ts';
 
 // Dedicated campaign configuration. Never fall back to transactional sender
 // variables or a domain/address supplied by the browser.
@@ -22,5 +23,7 @@ export async function refreshPlatformCampaignSender({ db, env, resendKey, fetche
   if (!response.ok) throw new Error('The Arch9 campaign sender could not be verified. Try again shortly.');
   const domain = await response.json();
   if (domain.id !== providerId || String(domain.name || '').toLowerCase() !== ARCH9_CAMPAIGN_DOMAIN) return save('failed');
-  return save(domain.status === 'verified' ? 'verified' : ['failed', 'temporary_failure'].includes(domain.status) ? 'failed' : 'pending');
+  const state = await save(sendingDomainState(domain).status);
+  const tracking = await recordSendingDomainTracking(db, null, providerId, domain);
+  return { ...state, tracking };
 }

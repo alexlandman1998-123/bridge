@@ -28,6 +28,7 @@ const form = {
   coveredParking: '1',
   openParking: '0',
   monthlyRent: '18500',
+  rentalPriceFrequency: 'monthly',
   depositAmount: '37000',
   depositRequirement: 'Two months deposit required',
   depositMultiplier: '2',
@@ -100,9 +101,9 @@ assert.match(notes, /Monthly rent: R18500/)
 assert.match(notes, /Utilities: Prepaid electricity/)
 assert.match(notes, /Rental excludes: Prepaid electricity/)
 
-assert.deepEqual(
-  validateRentalListingDraftForm({ ...form, propertyAddress: '', monthlyRent: '', availableFrom: '' }, { organisationId: 'org-1' }),
-  [],
-)
+const missingBasics = validateRentalListingDraftForm({ ...form, propertyAddress: '', monthlyRent: '', availableFrom: '' }, { organisationId: 'org-1' })
+assert.ok(missingBasics.includes('Property address is required.'))
+assert.ok(missingBasics.includes('Enter a rental amount greater than zero.'))
+assert.ok(validateRentalListingDraftForm({ ...form, rentalPriceFrequency: '' }, { organisationId: 'org-1' }).includes('Rental price frequency is required.'))
 
 console.log('rental listing draft model tests passed')

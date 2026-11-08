@@ -1,12 +1,13 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { refreshSendingDomain, sendingDomainRecords } from "./emailSendingDomain.ts";
+import { refreshSendingDomain, sendingDomainRecords, sendingDomainTracking } from "./emailSendingDomain.ts";
 const domain = { id: "domain", domain_name: "updates.agency.co.za", provider_domain_id: "provider", verification_status: "pending" };
 Deno.test("provider verification is saved through the atomic, service-only status function", async () => {
   const calls: any[] = [];
   const db = { rpc: (name: string, args: any) => { calls.push({ name, args }); return { error: null }; } };
   const fetcher = (() => Promise.resolve(Response.json({ id: "provider", name: domain.domain_name, status: "verified", records: [] }))) as typeof fetch;
   assertEquals(await refreshSendingDomain({ db, domain, resendKey: "test", fetcher }), "verified");
-  assertEquals(calls, [{ name: "email_apply_domain_status", args: { p_domain_id: "domain", p_status: "verified", p_records: [], p_error: null } }]);
+  assertEquals(calls[0], { name: "email_apply_domain_status", args: { p_domain_id: "domain", p_status: "verified", p_records: [], p_error: null } });
+  assertEquals(calls[1].name, "email_record_tracking_status");
 });
 Deno.test("stale events cannot verify a different provider domain and storage failures propagate", async () => {
   const db = { rpc: () => ({ error: new Error("storage unavailable") }) };
@@ -22,7 +23,7 @@ Deno.test("disabled domains are preserved and DNS record priorities stay accurat
 
 Deno.test("a deleted provider domain invalidates the cached proof", async () => {
   let saved: any;
-  const db = { rpc: (_name: string, args: any) => { saved = args; return { error: null }; } };
+  const db = { rpc: (_name: string, args: any) => { if (_name === "email_apply_domain_status") saved = args; return { error: null }; } };
   assertEquals(await refreshSendingDomain({ db, domain, resendKey: "test", fetcher: (() => Promise.resolve(new Response(null, { status: 404 }))) as typeof fetch }), "failed");
   assertEquals(saved.p_status, "failed");
 });
@@ -41,4 +42,21 @@ Deno.test('provider domain lookup fails closed on provider failure or incomplete
   for (const response of [new Response('{}',{status:503}),Response.json({data:[],has_more:true})]) {
     await assertRejects(() => findSendingDomain({name:domain.domain_name,resendKey:'fixture',fetcher:(()=>Promise.resolve(response)) as typeof fetch}));
   }
+});
+
+Deno.test("DNS proof cannot enable a provider domain whose sending capability is disabled", async () => {
+  let saved: any;
+  const db = { rpc: (_name: string, args: any) => { if (_name === "email_apply_domain_status") saved = args; return { error: null }; } };
+  const fetcher = (() => Promise.resolve(Response.json({ id: "provider", name: domain.domain_name, status: "verified", capabilities: { sending: "disabled", receiving: "enabled" }, records: [] }))) as typeof fetch;
+  assertEquals(await refreshSendingDomain({ db, domain, resendKey: "test", fetcher }), "failed");
+  assertEquals(saved.p_status, "failed");
+  assertEquals(saved.p_error.includes("Sending is disabled"), true);
+});
+
+Deno.test('tracking readiness distinguishes disabled, pending, verified and unknown provider settings', () => {
+  assertEquals(sendingDomainTracking({}).openStatus,'unknown');
+  assertEquals(sendingDomainTracking({open_tracking:false}).openStatus,'disabled');
+  assertEquals(sendingDomainTracking({open_tracking:true,tracking_subdomain:'links',records:[{record:'Tracking',status:'not_started'}]}).openStatus,'pending');
+  const ready=sendingDomainTracking({open_tracking:true,click_tracking:false,tracking_subdomain:'links',records:[{record:'Tracking',status:'verified'}]});
+  assertEquals(ready.openStatus,'ready');assertEquals(ready.clickStatus,'disabled');
 });

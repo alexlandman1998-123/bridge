@@ -1,39 +1,17 @@
-import { BrainCircuit, ChevronRight, Sparkles, TrendingUp } from 'lucide-react'
+import { ChevronRight, Sparkles, TrendingUp } from 'lucide-react'
 import { formatCurrency } from './formatters'
 
 export function IntelligenceShell({ title, subtitle, children }) {
-  return (
-    <main className="intelligence-shell space-y-6 rounded-[30px] border border-[#d9e5f2] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f8fd_48%,#edf3fa_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] lg:p-8">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-[1.6rem] font-semibold tracking-[-0.03em] text-[#142132] lg:text-[1.9rem]">Attorney Intelligence (Beta)</h1>
-          <p className="mt-2 max-w-3xl text-[0.95rem] leading-7 text-[#607389]">
-            AI-powered growth, revenue, and market intelligence for conveyancing firms.
-          </p>
-          <div className="mt-3 flex flex-wrap items-start content-start gap-2.5">
-            <span className="inline-flex shrink-0 items-center self-start whitespace-nowrap rounded-full border border-[#d8e5f3] bg-[#f7fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#5b738f]">
-              Preview Mode — simulated intelligence for demonstration
-            </span>
-            <span className="inline-flex shrink-0 items-center self-start gap-1.5 whitespace-nowrap rounded-full border border-[#cae8d7] bg-[#f2fcf7] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#2f7f58]">
-              <BrainCircuit size={13} /> Arch9 AI Active
-            </span>
-          </div>
-        </div>
-
-        <article className="w-full max-w-[280px] rounded-2xl border border-[#dbe8f5] bg-white/80 px-4 py-4 shadow-[0_14px_28px_rgba(15,23,42,0.07)] backdrop-blur sm:w-auto">
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6d839d]">Intelligence Layer</p>
-          <p className="mt-2 text-[1.35rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</p>
-          <p className="mt-1 text-[0.83rem] leading-6 text-[#637a92]">{subtitle}</p>
-        </article>
-      </header>
-
-      {children}
-
-      <footer className="rounded-2xl border border-[#dce7f4] bg-white/80 px-4 py-3 text-[0.8rem] text-[#62768d]">
-        Simulated intelligence preview. Data shown for demonstration purposes only.
-      </footer>
-    </main>
-  )
+  return <main className="intelligence-shell min-w-0 w-full space-y-6">
+    <header className="ui-workspace-header">
+      <div className="min-w-0">
+        <h1>{title || 'Attorney intelligence'}</h1>
+        {subtitle ? <p className="mt-2 text-sm leading-6 text-textMuted">{subtitle}</p> : null}
+        <span className="mt-3 inline-flex rounded-full border border-[#d8e5f3] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#5b738f]">Preview · simulated data</span>
+      </div>
+    </header>
+    {children}
+  </main>
 }
 
 export function IntelligenceKpiCard({ label, value, subtext, tone = 'blue' }) {

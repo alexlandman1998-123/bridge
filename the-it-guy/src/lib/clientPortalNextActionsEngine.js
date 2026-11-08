@@ -86,10 +86,6 @@ function resolveFinanceManagedBy(context = {}) {
   )
 }
 
-function isOriginatorManagedFinanceContext(context = {}) {
-  return resolveFinanceManagedBy(context) === 'bond_originator'
-}
-
 function actionRouteFromCategory(category = '') {
   const normalized = normalizeValue(category)
   if (normalized === 'onboarding') return 'details'
@@ -124,30 +120,6 @@ function createAction(partial = {}) {
 
 function parseWorkspace(context = {}) {
   return normalizeValue(context?.workspaceMode || context?.portalContext?.workspace || 'shared')
-}
-
-function parseBondApplication(context = {}) {
-  const formData = context?.portalData?.onboardingFormData?.formData || context?.portalData?.formData || {}
-  const candidates = [
-    context?.bondApplication,
-    context?.portalData?.bondApplication,
-    context?.portalData?.bond_application,
-    formData?.bond_application,
-    context?.transaction?.bond_application,
-  ]
-  return candidates.find((candidate) => candidate && typeof candidate === 'object') || null
-}
-
-function normalizeBondApplicationStatus(value = '') {
-  const normalized = normalizeValue(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  if (!normalized) return 'not_started'
-  if (['not_started', 'new', 'draft'].includes(normalized)) return 'not_started'
-  if (['in_progress', 'started', 'saved'].includes(normalized)) return 'in_progress'
-  if (['submitted', 'sent', 'sent_to_originator', 'submitted_to_originator', 'submitted_to_banks'].includes(normalized)) return 'submitted'
-  if (['under_review', 'review', 'application_in_progress', 'feedback_received'].includes(normalized)) return 'under_review'
-  if (['approved', 'approval', 'buyer_approved', 'quote_received'].includes(normalized)) return 'approved'
-  if (['declined', 'rejected'].includes(normalized)) return 'declined'
-  return normalized
 }
 
 function parseRequirementLabel(requirement = {}) {
@@ -601,102 +573,9 @@ export function getOtpActions(context = {}) {
 const PROOF_OF_FUNDS_PATTERN = /(proof of funds|source of funds|deposit proof|deposit)/i
 const BOND_PATTERN = /(bond|mortgage|home loan|payslip|income|bank statement|bank statements|financial statement|application form|approval letter|bank approval|lender approval|finance approval)/i
 
-export function getBondApplicationActions(context = {}) {
-  const workspace = parseWorkspace(context)
-  if (workspace === 'selling') return []
-  // Registration supersedes an unfinished portal intake draft. Retain other
-  // action sources so explicit post-registration requests remain visible.
-  if (isPortalTransactionRegistered(context.transaction)) return []
-
-  const financeType = normalizeFinanceType(context?.finance?.type || context?.transaction?.finance_type || '')
-  if (!isBondFinanceType(financeType)) return []
-  const financeManagedBy = resolveFinanceManagedBy(context)
-  if (!isOriginatorManagedFinanceContext(context)) return []
-
-  const application = parseBondApplication(context)
-  const status = normalizeBondApplicationStatus(
-    application?.status ||
-      context?.transaction?.bond_application_status ||
-      context?.transaction?.finance_status ||
-      '',
-  )
-  const submittedAt = application?.submitted_at || application?.submittedAt || context?.transaction?.submitted_to_banks_at || null
-
-  if (!application || status === 'not_started') {
-    return [
-      createAction({
-        id: 'bond_application_required',
-        type: 'bond_application_required',
-        category: 'finance',
-        title: 'Complete your bond application',
-        description: 'Your bond application still needs to be completed before it can be shared with the bond originator or banks.',
-        priority: 'high',
-        status: 'pending',
-        blocking: true,
-        actionLabel: 'Complete Bond Application',
-        actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
-      }),
-    ]
-  }
-
-  if (status === 'in_progress') {
-    return [
-      createAction({
-        id: 'bond_application_in_progress',
-        type: 'bond_application_required',
-        category: 'finance',
-        title: 'Finish your bond application',
-        description: 'Your bond application has been started but still needs to be submitted.',
-        priority: 'high',
-        status: 'pending',
-        blocking: true,
-        actionLabel: 'Complete Bond Application',
-        actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
-      }),
-    ]
-  }
-
-  if (status === 'declined') {
-    return [
-      createAction({
-        id: 'bond_application_declined',
-        type: 'bond_application_attention_required',
-        category: 'finance',
-        title: 'Bond application needs attention',
-        description: 'Your bond application has been marked declined. Review the finance section or contact your transaction team for next steps.',
-        priority: 'high',
-        status: 'pending',
-        blocking: false,
-        actionLabel: 'Complete Bond Application',
-        actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
-      }),
-    ]
-  }
-
-  if (status === 'submitted' || status === 'under_review') {
-    return [
-      createAction({
-        id: 'bond_application_under_review',
-        type: 'awaiting_internal_review',
-        category: 'finance',
-        title: 'Bond application under review',
-        description: submittedAt
-          ? 'Your bond application has been submitted and is being reviewed.'
-          : 'Your bond application is with the finance team.',
-        priority: 'informational',
-        status: 'under_review',
-        blocking: false,
-        actionLabel: 'View application',
-        actionRoute: 'bond_application',
-        metadata: { workspaceScope: 'buying', bondApplicationStatus: status, financeManagedBy },
-        notificationEligible: false,
-      }),
-    ]
-  }
-
+export function getBondApplicationActions() {
+  // The originator owns the tracker. Buyer tasks come from explicit document
+  // requests and offer decisions, not a mandatory application/signing process.
   return []
 }
 

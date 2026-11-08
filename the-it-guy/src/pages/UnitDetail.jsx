@@ -6610,6 +6610,7 @@ function UnitDetail() {
       loadingAction={bondHybridFinanceActionLoading}
       onUploadDocument={(payload) => void handleUploadFinanceWorkspaceDocument(payload)}
       onSubmitBankApplication={(payload) => void handleSubmitFinanceBankApplication(payload)}
+      onTrackerChanged={async () => { window.dispatchEvent(new Event('itg:transaction-updated')); await loadDetail() }}
       onUpdateBankApplication={(application, payload) => void handleUpdateFinanceBankApplication(application, payload)}
       onCaptureBondOffer={(payload) => void handleCaptureFinanceBondOffer(payload)}
       onAcceptOffer={(offer) => void handleAcceptFinanceBondOffer(offer)}

@@ -211,7 +211,7 @@ export async function dispatchLeadAgentEmails(client: Client, {
           ? text(delivered.data.id) || null
           : null;
         if (!delivered.ok || !providerId) {
-          throw new Error(delivered.ok ? "provider_acceptance_missing" : `provider_http_${delivered.status || "unavailable"}`);
+          throw new Error(delivered.ok || (delivered.status && delivered.status >= 200 && delivered.status < 300) ? "provider_acceptance_missing" : `provider_http_${delivered.status || "unavailable"}`);
         }
         status = "sent";
         error = "";
@@ -221,7 +221,7 @@ export async function dispatchLeadAgentEmails(client: Client, {
       error =
         cause instanceof Error && /configuration|freeze|^provider_(?:http_(?:[0-9]{3}|unavailable)|acceptance_missing)$/.test(cause.message)
           ? cause.message
-          : "Email delivery is unconfirmed and will be retried.";
+          : "Email delivery is unconfirmed. Check delivery history; automatic retries stop when the job needs attention.";
     }
     const completed = await Promise.resolve(
       client.rpc("lead_agent_email_complete", {

@@ -159,7 +159,7 @@ assert.deepEqual(
   'agent save should only apply fields changed in the open draft',
 )
 assert.match(agencyPipelineSource, /fetchAgencyCrmLeadRouteHydrationSeed\(organisationId, selectedLead\.leadId\)/)
-assert.match(agencyPipelineSource, /buildBuyerQualificationDraftPatch\(buyerQualificationForm, buyerQualificationBaselineRef\.current\)/)
+assert.match(agencyPipelineSource, /buildBuyerQualificationDraftPatch\(qualificationDraft, qualificationBaseline\)/)
 
 const partialSafeSnapshot = buildBuyerQualificationIntake(
   {

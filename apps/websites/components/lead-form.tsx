@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useRef, useState } from 'react'
+import { browserWebsiteMeasurement } from '@/lib/measurement'
 import { AddressInput } from './address-input'
 
 type LeadPurpose = 'general_enquiry' | 'valuation_request' | 'campaign_enquiry' | 'newsletter_signup'
@@ -53,6 +54,7 @@ export function LeadForm({ propertyId, pageId, purpose, variant = 'default', pri
           privacyAccepted: form.get('privacyAccepted') === 'on',
           marketingConsent: form.get('marketingConsent') === 'on',
           pageUrl: window.location.href,
+          measurement: browserWebsiteMeasurement(),
           referrer: document.referrer || undefined,
           idempotencyKey: idempotencyKey.current,
         }),

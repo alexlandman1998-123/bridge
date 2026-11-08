@@ -12,7 +12,7 @@ export const fetchBondApplicationPortalOriginatorDocumentContinuity = async () =
 export const fetchBondApplicationExternalSubmissions = async () => ({ items: [{ exportPackageId: pkg.exportPackageId, records: read().records }] })
 export const fetchBondApplicationHandoff = async () => read()
 export const fetchBondApplicationBuyerNotices = async () => ({ documents: read().requests, corrections: read().corrections })
-const assessment = () => ({ status: read().requests.some((r) => !['accepted','withdrawn'].includes(r.status)) || read().corrections.some((r) => r.status !== 'resolved') ? 'blocked' : 'ready', blockers: [] })
+const assessment = () => ({ status: 'ready', mode: 'originator_tracker', label: 'Tracking available', blockers: [] })
 export const fetchBondApplicationSubmissionReadiness = async () => ({ items: [{ exportPackageId: pkg.exportPackageId, assessment: assessment() }] })
 export const assessBondApplicationSubmissionReadiness = async () => assessment()
 export async function reviewBondApplicationHandoffDocument({ requestId, action, feedback }) {
@@ -31,8 +31,7 @@ export async function updateBondApplicationCorrection({ action, instruction }) {
 }
 export async function recordBondApplicationExternalSubmission(values) {
   const state = read()
-  if (values.expectedSubmissionId !== state.currentVersion.id) throw new Error('The signed application changed. Refresh and confirm which version was submitted.')
-  state.records.push({ id: `record-${state.records.length+1}`, status: 'recorded', lenderNames: values.lenderNames, externalReference: values.externalReference, submittedAt: values.submittedAt, submittedBy: 'Test originator', version: { submissionVersion: 1, applicationRevision: 1, snapshotHash: 'synthetic-version-hash' } }); write(state)
+  state.records.push({ id: `record-${state.records.length+1}`, status: 'recorded', lenderNames: values.lenderNames, externalReference: values.externalReference, submittedAt: values.submittedAt, submittedBy: 'Test originator', mode: 'originator_tracker' }); write(state)
 }
 export const issueBondApplicationPortalAccessLinkForOriginator = async () => { throw new Error('Email/access issuance is disabled in offline verification.') }
 export const revokeBondApplicationPortalAccessLinkForOriginator = issueBondApplicationPortalAccessLinkForOriginator
@@ -46,3 +45,33 @@ export async function fetchBondApplicationDownloadContext() {
   const snapshotHash = await hashBondApplicationSnapshot(snapshot)
   return { transactionId: 'transaction-1', draftSnapshot: snapshot, submission: { id: 'signed-1', transaction_id: 'transaction-1', status: 'submitted', signed_at: '2026-09-01T10:00:00Z', snapshot_json: snapshot, snapshot_hash: snapshotHash, submission_version: 1, signed_document_id: 'document-1' }, documents: [{ id: 'document-1', transaction_id: 'transaction-1', file_path: 'synthetic-signed.pdf', status: 'uploaded' }], readiness: { ready: true, stage: 'bank_submission', issues: [] }, documentChecklist: { items: [] } }
 }
+
+export const fetchBondWetInkReviewQueue = async () => []
+export const readBondWetInkReviewOriginal = async () => { throw new Error('No signed original in this fixture.') }
+export const reviewBondWetInkSignedCopy = readBondWetInkReviewOriginal
+export const fetchBondSubmissionPackQueue = async () => []
+
+// Current tracker fixture: no application or signing setup exists.
+const manualRead = () => JSON.parse(localStorage.getItem('bond-verification-manual') || 'null') || { mode: 'originator_tracker', canEdit: true, applicationId: null, requirements: [], submissions: [] }
+const manualWrite = data => localStorage.setItem('bond-verification-manual', JSON.stringify(data))
+export const fetchBondTrackerContext = async () => manualRead()
+export async function requestManualBondDocument({ requestId, title, instruction }) {
+ const data=manualRead();data.applicationId='document-workspace';data.requirements.push({id:requestId,key:'request-'+requestId,title,instruction,canonicalId:'canonical-'+requestId,document:null});manualWrite(data)
+}
+export async function reviewManualBondDocument({requirementId,documentId,expectedPath,action}) {
+ const data=manualRead(),item=data.requirements.find(row=>row.id===requirementId)
+ if(!item || item.document?.id!==documentId || item.document?.file_path!==expectedPath) throw new Error('Upload changed. Refresh.')
+ item.document.status=action==='approve'?'approved':'rejected';manualWrite(data)
+}
+export function simulateManualBuyerEvent() {
+ const data=manualRead();for(const item of data.requirements)item.document={id:'doc-'+item.id,name:item.title+'.pdf',file_path:'synthetic-support.pdf',status:'uploaded'};manualWrite(data)
+}
+export async function recordBondTrackerSubmission({bankName,submittedAt,reference,notes}) {
+ const data=manualRead()
+ if(!data.submissions.some(row=>row.bank_name===bankName && row.submitted_at===submittedAt && row.reference===reference))data.submissions.push({id:'bank-'+data.submissions.length,bank_name:bankName,submitted_at:submittedAt,reference,notes,status:'submitted'})
+ manualWrite(data)
+}
+export async function fetchBuyerBondTrackerContext() {
+ const data=manualRead();return {mode:'originator_tracker',submissions:data.submissions.map(row=>({bankName:row.bank_name,submittedAt:row.submitted_at,reference:row.reference,status:row.status})),requiredDocuments:data.requirements.map(row=>({id:row.id,document_key:row.key,document_label:row.title,status:row.document?.status||'requested',uploaded_document_id:row.document?.id,notes:row.instruction})),documents:data.requirements.flatMap(row=>row.document?[row.document]:[])}
+}
+export async function uploadBuyerBondApplicationRuntimeDocument(){return {ok:true}}

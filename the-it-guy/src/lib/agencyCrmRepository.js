@@ -906,6 +906,21 @@ async function resolveListingDerivedLeadRow(workspaceId, routeUuid) {
   return { lead: null, listing, reason: 'listing_without_lead_row' }
 }
 
+// Opt-in for rental workspaces: PostgREST caps a response even without a
+// limit. Continue to an empty page so a lower server cap cannot hide records.
+async function readAgencyCrmPages(read, paginate, identityColumn) {
+  if (!paginate) return read()
+  const rows = []
+  for (let page = 0; page < 200; page += 1) {
+    const result = await read().order(identityColumn, { ascending: true }).range(rows.length, rows.length + 499)
+    if (result.error) return { ...result, data: null }
+    if (!Array.isArray(result.data)) return { data: null, error: new Error('CRM records could not be confirmed. Refresh to retry.') }
+    if (!result.data.length) return { ...result, data: rows }
+    rows.push(...result.data)
+  }
+  return { data: null, error: new Error('This rental workspace is too large to load completely. Contact support rather than relying on incomplete totals.') }
+}
+
 export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listAgencyCrmLeadContacts')
   if (!isSupabaseConfigured || !supabase) {
@@ -917,34 +932,32 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
 
   const emptyResult = { data: [], error: null }
   const contactPromise = includePrimaryRecords
-    ? supabase
+    ? readAgencyCrmPages(() => supabase
       .from('contacts')
       .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
       .eq('organisation_id', workspaceId)
-      .order('updated_at', { ascending: false })
+      .order('updated_at', { ascending: false }), options.paginatePrimaryRecords === true, 'contact_id')
     : Promise.resolve(emptyResult)
   const activityPromise = includeRelatedRecords
-    ? supabase
+    ? readAgencyCrmPages(() => supabase
       .from('lead_activities')
       .select(LEAD_ACTIVITY_SELECT_FIELDS)
       .eq('organisation_id', workspaceId)
-      .order('activity_date', { ascending: false })
+      .order('activity_date', { ascending: false }), options.paginateRelatedRecords === true, 'activity_id')
     : Promise.resolve(emptyResult)
   const taskPromise = includeRelatedRecords
-    ? supabase
+    ? readAgencyCrmPages(() => supabase
       .from('tasks')
       .select(TASK_SELECT_FIELDS)
       .eq('organisation_id', workspaceId)
-      .order('updated_at', { ascending: false })
+      .order('updated_at', { ascending: false }), options.paginateRelatedRecords === true, 'task_id')
     : Promise.resolve(emptyResult)
   const leadPromise = includePrimaryRecords
-    ? selectLeadsWithCompatibility((fields) =>
-      supabase
+    ? selectLeadsWithCompatibility((fields) => readAgencyCrmPages(() => supabase
         .from('leads')
         .select(fields)
         .eq('organisation_id', workspaceId)
-        .order('updated_at', { ascending: false }),
-    )
+        .order('updated_at', { ascending: false }), options.paginatePrimaryRecords === true, 'lead_id'))
     : Promise.resolve(emptyResult)
 
   const [leadResult, contactResult, activityResult, taskResult] = await Promise.all([

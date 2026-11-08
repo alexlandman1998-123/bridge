@@ -11,8 +11,8 @@ export function normalizeBondApplicationDocumentStatus(value) {
   if (['accepted', 'approved', 'verified', 'complete', 'completed'].includes(status)) return 'accepted'
   if (['uploaded', 'received'].includes(status)) return 'uploaded'
   if (['under_review', 'pending_review', 'review', 'pending'].includes(status)) return 'uploaded_pending_review'
-  if (['rejected', 'reupload_required', 'replacement_required', 'needs_replacement', 'invalid'].includes(status)) return 'rejected'
-  if (['not_required', 'inactive', 'cancelled', 'canceled', 'superseded'].includes(status)) return 'not_currently_required'
+  if (['rejected', 'declined', 'failed', 'upload_failed', 'reupload_required', 'needs_reupload', 'replacement_required', 'needs_replacement', 'invalid'].includes(status)) return 'rejected'
+  if (['not_required', 'inactive', 'cancelled', 'canceled', 'withdrawn', 'superseded', 'expired', 'deleted', 'archived'].includes(status)) return 'not_currently_required'
   return 'missing'
 }
 
@@ -20,11 +20,16 @@ export function isBuyerVisibleDocument(document = {}) {
   const role = normalizeKey(document.uploaded_by_role || document.uploadedByRole || document.required_from_role || document.requiredFromRole)
   const party = normalizeKey(document.uploaded_by_party || document.uploadedByParty || document.requested_from || document.requestedFrom)
   const scope = normalizeKey(document.visibility_scope || document.visibilityScope)
+  const recipient = normalizeKey(document.client_recipient_role || document.clientRecipientRole)
   const category = normalizeKey(document.category || document.group_key || document.groupKey)
-  if (role && !['client', 'buyer', 'primary_applicant', 'co_applicant', 'surety'].includes(role)) return false
+  // Uploader and audience are separate: staff may upload buyer evidence.
+  const buyerAudience = document.is_client_visible === true || document.clientVisible === true ||
+    ['client', 'buyer', 'shared'].includes(scope) || ['buyer', 'client', 'primary_applicant', 'co_applicant', 'surety'].includes(party)
+  if (role && !['client', 'buyer', 'primary_applicant', 'co_applicant', 'surety'].includes(role) && !buyerAudience) return false
   if (party && !['buyer', 'client', 'primary_applicant', 'co_applicant', 'surety'].includes(party)) return false
   if (category.includes('seller') || category.includes('attorney')) return false
-  if (scope && ['internal', 'admin', 'seller'].includes(scope)) return false
+  if (scope && ['internal', 'internal_only', 'admin', 'admin_only', 'seller', 'professional_shared', 'shared_role_players'].includes(scope)) return false
+  if (recipient && !['buyer', 'client', 'both', 'all', 'shared'].includes(recipient)) return false
   if (document.is_client_visible === false || document.clientVisible === false) return false
   return true
 }
@@ -45,7 +50,8 @@ export function isDocumentAccepted(document = {}) {
 export function isDocumentUploaded(document = {}) {
   const status = documentStatus(document)
   if (['rejected', 'not_currently_required'].includes(status)) return false
-  return ['accepted', 'uploaded', 'uploaded_pending_review'].includes(status) || Boolean(document.id || document.file_path || document.storage_path)
+  if (['missing', 'requested', 'pending_upload', 'awaiting_upload', 'uploading', 'draft', 'failed'].includes(normalizeKey(document.status))) return false
+  return ['accepted', 'uploaded', 'uploaded_pending_review'].includes(status) || Boolean(document.file_path || document.storage_path)
 }
 
 export function getBondApplicationDocumentBuyerStatus({ requirement, matchedDocuments = [] } = {}) {

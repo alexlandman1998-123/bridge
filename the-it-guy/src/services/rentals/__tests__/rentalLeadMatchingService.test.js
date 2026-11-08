@@ -1,16 +1,16 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { listRentalLeadMatches, recordRentalLeadListingShortlist } from '../rentalLeadMatchingService'
 import { listRentalListingsForAgent } from '../rentalListingDraftService'
-import { listRentalLeads } from '../rentalLeadService'
+import { getRentalLeadWorkspace } from '../rentalLeadService'
 import { createAgencyCrmLeadActivity } from '../../../lib/agencyCrmRepository'
 vi.mock('../rentalListingDraftService', () => ({ listRentalListingsForAgent: vi.fn() }))
-vi.mock('../rentalLeadService', () => ({ listRentalLeads: vi.fn() }))
+vi.mock('../rentalLeadService', () => ({ getRentalLeadWorkspace: vi.fn() }))
 vi.mock('../../../lib/agencyCrmRepository', () => ({ createAgencyCrmLeadActivity: vi.fn() }))
 const lead = { id: 'tenant', role: 'tenant', desiredArea: 'Newlands', monthlyBudget: 11000, bedrooms: 2 }
 const listing = { id: 'home', listingTitle: 'Saved apartment', suburb: 'Newlands', monthlyRent: 10000, bedrooms: 2 }
 beforeEach(() => {
   vi.clearAllMocks()
-  listRentalLeads.mockResolvedValue([lead])
+  getRentalLeadWorkspace.mockResolvedValue({ lead })
   listRentalListingsForAgent.mockResolvedValue([listing])
   createAgencyCrmLeadActivity.mockResolvedValue({ activityId: 'activity' })
 })
@@ -24,7 +24,7 @@ it.each([
   expect(result.matches[0]).toMatchObject({ score: 100, budgetMatch: true, bedroomMatch: true, locationMatch: true })
 })
 it('does not read listings when the lead is outside scope or is a landlord', async () => {
-  listRentalLeads.mockResolvedValue([{ id: 'tenant', role: 'landlord' }])
+  getRentalLeadWorkspace.mockResolvedValue({ lead: { id: 'tenant', role: 'landlord' } })
   await expect(listRentalLeadMatches('org', 'tenant', {})).rejects.toThrow('Choose a tenant lead')
   expect(listRentalListingsForAgent).not.toHaveBeenCalled()
 })

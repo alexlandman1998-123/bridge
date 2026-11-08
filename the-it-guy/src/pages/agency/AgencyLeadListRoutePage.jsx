@@ -42,7 +42,10 @@ function loadSettingsActions() {
   if (!settingsActionsPromise) {
     settingsActionsPromise = import('../../lib/settingsApi').then((module) => ({
       listOrganisationUsersForWorkspace: module.listOrganisationUsersForWorkspace,
-    }))
+    })).catch((error) => {
+      settingsActionsPromise = null
+      throw error
+    })
   }
   return settingsActionsPromise
 }
@@ -134,6 +137,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const [records, setRecords] = useState(EMPTY_RECORDS)
   const [landingMetricLeads, setLandingMetricLeads] = useState([])
   const [agents, setAgents] = useState([])
+  const [directoryRefresh, setDirectoryRefresh] = useState(0)
   const [category, setCategory] = useState('buyer')
   const [filters, setFilters] = useState({ ...DEFAULT_AGENCY_LEAD_FILTERS })
   const [viewMode, setViewMode] = useState('table')
@@ -244,6 +248,7 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const loadLeads = useCallback(async ({ forceRefresh = false, requestedPage = page } = {}) => {
     const requestId = ++loadRequestRef.current
     setRefreshing(true)
+    if (forceRefresh) setDirectoryRefresh((value) => value + 1)
     setError('')
     try {
       let workspaceId = normalizeText(organisationId || resolveWorkspaceId({ currentWorkspace, currentMembership, workspace }))
@@ -280,19 +285,6 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
       setLoading(false)
       void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0, totalLeadCount: primary?.totalCount || 0, page: requestedPage } })
 
-      if (isPrincipal && !scopedAgent) {
-        void loadSettingsActions()
-          .then(({ listOrganisationUsersForWorkspace }) => listOrganisationUsersForWorkspace({ organisationId: workspaceId }))
-          .then((organisationUsers) => {
-            if (requestId !== loadRequestRef.current) return
-            const mappedAgents = (Array.isArray(organisationUsers) ? organisationUsers : []).map(mapAgent).filter((agent) => agent.id)
-            setAgents(mappedAgents.length ? mappedAgents : [currentAgent])
-          })
-          .catch(() => {
-            // The current user remains a safe assignment fallback when the
-            // optional directory request is unavailable.
-          })
-      }
       void performanceRef.current?.recordCheckpoint({ checkpoint: 'background_settled', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', deferredRelatedRecords: true, directoryDeferred: isPrincipal } })
     } catch (loadError) {
       if (requestId !== loadRequestRef.current) return
@@ -307,6 +299,23 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
     void loadLeads({ requestedPage: page })
     return () => { loadRequestRef.current += 1 }
   }, [loadLeads, page])
+
+  // Directory membership does not change when paging or typing in lead search.
+  // Refresh remains an explicit retry path if this optional read fails.
+  useEffect(() => {
+    if (!isPrincipal || scopedAgent || !organisationId) return undefined
+    let cancelled = false
+    setAgents([])
+    void loadSettingsActions()
+      .then(({ listOrganisationUsersForWorkspace }) => listOrganisationUsersForWorkspace({ organisationId }))
+      .then((organisationUsers) => {
+        if (cancelled) return
+        const mappedAgents = (Array.isArray(organisationUsers) ? organisationUsers : []).map(mapAgent).filter((agent) => agent.id)
+        setAgents(mappedAgents)
+      })
+      .catch(() => { /* Keep the current user as the safe assignment fallback. */ })
+    return () => { cancelled = true }
+  }, [directoryRefresh, isPrincipal, organisationId, scopedAgent])
 
   const listModel = useMemo(() => buildAgencyLeadListModel({
     leads: records.leads,

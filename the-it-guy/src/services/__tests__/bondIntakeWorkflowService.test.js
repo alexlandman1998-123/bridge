@@ -58,10 +58,21 @@ function makeUser(overrides = {}) {
   }
 }
 
-function createMockClient() {
+function createMockClient({ transactionUpdateMissing = false, applicationCount = 1 } = {}) {
   const calls = []
   const client = {
     calls,
+    async rpc(name, args) {
+      calls.push({ action: 'rpc', name, args })
+      assert.equal(name, 'bridge_save_bond_intake_assignment')
+      if (transactionUpdateMissing) return { data: null, error: new Error('This application could not be updated.') }
+      const applications = Array.from({ length: Math.max(1, applicationCount) }, (_, index) => ({ id: `bond-application-${index + 1}`, ...args.p_application_changes }))
+      if (!applications.length) return { data: null, error: new Error('The originator referral record is missing.') }
+      // Record the intended atomic changes for the existing field-mapping assertions.
+      calls.push({ table: 'transactions', action: 'update', payload: args.p_transaction_changes })
+      for (const application of applications) calls.push({ table: 'transaction_bond_applications', action: 'update', value: application.id, payload: args.p_application_changes })
+      return { data: { transaction: { id: args.p_transaction, ...args.p_transaction_changes }, applications }, error: null }
+    },
     from(table) {
       return {
         upsert(payload) {
@@ -99,7 +110,7 @@ function createMockClient() {
                 select() {
                   return {
                     maybeSingle() {
-                      return Promise.resolve({ data: { id: value, ...payload }, error: null })
+                      return Promise.resolve({ data: table === 'transactions' && transactionUpdateMissing ? null : { id: value, ...payload }, error: null })
                     },
                   }
                 },
@@ -131,7 +142,7 @@ function createMockClient() {
             then(resolve) {
               calls.push({ table, action: 'select', columns, filters: query.filters })
               if (table === 'transaction_bond_applications') {
-                resolve({ data: [{ id: 'bond-application-1', assigned_organisation_id: 'bond-org-1' }], error: null })
+                resolve({ data: Array.from({ length: applicationCount }, (_, index) => ({ id: `bond-application-${index + 1}`, assigned_organisation_id: 'bond-org-1' })), error: null })
                 return
               }
               resolve({ data: [], error: null })
@@ -168,6 +179,7 @@ try {
   assert.equal(acceptResult.message, 'Application accepted and moved to My Applications.')
   assert.equal(acceptClient.calls.some((call) => call.table === 'transaction_role_players' && call.action === 'upsert'), true)
   assert.equal(acceptClient.calls.some((call) => call.table === 'transaction_events' && call.payload?.event_type === 'BOND_APPLICATION_ACCEPTED'), true)
+  assert.equal(acceptClient.calls.filter(call => call.action === 'rpc' && call.name === 'bridge_save_bond_intake_assignment').length, 1)
   const acceptTransactionUpdate = acceptClient.calls.find((call) => call.table === 'transactions' && call.action === 'update')
   assert.equal(acceptTransactionUpdate.payload.bond_assignment_status, 'consultant_assigned')
   assert.equal(acceptTransactionUpdate.payload.primary_bond_consultant_user_id, 'user-consultant-1')
@@ -179,26 +191,33 @@ try {
   assert.equal(acceptBondApplicationUpdate.payload.scope_metadata.source, 'accepted_from_intake')
   assert.equal(acceptBondApplicationUpdate.payload.assignment_source, 'accepted_from_intake')
 
-  await assert.rejects(
-    () => acceptBondIntakeApplication({
-      row: makeReadyRow({ onboardingFormData: null, documentRequests: [], documents: [] }),
-      user: makeUser(),
-      client: createMockClient(),
-    }),
-    /complete before acceptance/,
-  )
+  for (const row of [
+    makeReadyRow({ onboardingFormData: null, documentRequests: [], documents: [] }),
+    makeReadyRow({ transaction: { onboarding_completed_at: null, otp_status: 'not_signed' }, documentRequests: [{ id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' }], documents: [] }),
+  ]) {
+    const db = createMockClient()
+    await acceptBondIntakeApplication({ row, user: makeUser(), client: db })
+    assert.equal(db.calls.some(call => call.table === 'transactions' && call.payload?.bond_assignment_status === 'consultant_assigned'), true)
+    assert.equal(db.calls.some(call => call.payload?.status === 'submitted'), false, 'accepting ownership must not invent a bank submission')
+  }
+  for (const transaction of [{ registered_at: '2026-11-01' }, { finance_type: 'cash' }, { lifecycle_state: 'cancelled' }]) {
+    await assert.rejects(() => acceptBondIntakeApplication({ row: makeReadyRow({ transaction }), user: makeUser(), client: createMockClient() }), /cannot be accepted/)
+  }
 
-  await assert.rejects(
-    () => acceptBondIntakeApplication({
-      row: makeReadyRow({
-        documentRequests: [{ id: 'req-bank', category: 'finance', title: 'Bank statement', status: 'requested' }],
-        documents: [],
-      }),
-      user: makeUser(),
-      client: createMockClient(),
-    }),
-    /complete before acceptance/,
-  )
+  const staleClient = createMockClient({ transactionUpdateMissing: true })
+  await assert.rejects(() => acceptBondIntakeApplication({ row: readyRow, user: makeUser(), client: staleClient }), /could not be updated/)
+  assert.equal(staleClient.calls.some(call => call.table === 'transaction_role_players' && call.action === 'upsert'), false)
+  assert.equal(staleClient.calls.some(call => call.table === 'transaction_events' && call.payload?.event_type === 'BOND_APPLICATION_ACCEPTED'), false)
+  const foreignClient = createMockClient()
+  await assert.rejects(() => acceptBondIntakeApplication({ row: readyRow, transactionId: 'another-deal', user: makeUser(), client: foreignClient }), /application changed/)
+  assert.equal(foreignClient.calls.some(call => ['update','upsert','insert'].includes(call.action)), false)
+  const galleryClient = createMockClient({ applicationCount: 12 })
+  await acceptBondIntakeApplication({ row: readyRow, user: makeUser(), client: galleryClient })
+  const allAssignments = galleryClient.calls.filter(call => call.table === 'transaction_bond_applications' && call.action === 'update')
+  assert.equal(allAssignments.length, 12)
+  assert.equal(Object.hasOwn(allAssignments[0].payload, 'assignment_rule_id'), true)
+  assert.equal(Object.hasOwn(allAssignments[0].payload, 'assignment_method'), true)
+  assert.equal(Object.hasOwn(allAssignments[0].payload, 'bond_assignment_rule_id'), false)
 
   const acceptedRow = makeReadyRow({
     transaction: {

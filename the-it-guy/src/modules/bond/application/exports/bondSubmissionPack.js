@@ -33,7 +33,7 @@ export function buildBondSubmissionPackPlan(context = {}) {
   const rows = (documentChecklist.items || []).filter(item => item.requirement?.active !== false).map(item => {
     const requirement = item.requirement || {}
     const title = requirement.title || requirement.key || 'Supporting document'
-    if (statement(requirement)) return { key: requirement.key, title, participantRole: requirement.participantRole, status: 'Secure handoff not connected', included: [], outstanding: true, external: true, blocking: requirement.required !== false && requirement.requiredBefore !== 'requested_after_originator_review' }
+    if (statement(requirement)) return { key: requirement.key, title, participantRole: requirement.participantRole, status: item.externalVerified ? 'Received and checked through external channel' : 'Awaiting consultant confirmation of external receipt', receipt: item.externalReceipt || null, included: [], outstanding: !item.externalVerified, external: true, blocking: requirement.required !== false && requirement.requiredBefore !== 'requested_after_originator_review' }
     const approved = [...new Set((item.documents || []).map(doc => String(doc.id)))].map(id => lookup.get(id)).filter(doc => doc && !excluded.has(String(doc.id)) && isBuyerVisibleDocument(doc) && isDocumentAccepted(doc) && current(doc) && doc.transaction_id === transactionId && (doc.file_path || doc.storage_path))
     for (const doc of approved) {
       const existing = files.get(String(doc.id))
@@ -51,7 +51,8 @@ export function buildBondSubmissionPackPlan(context = {}) {
     return { ...entry, archivePath: `supporting-documents/${String(index + 1).padStart(3, '0')}-${name.toLowerCase().endsWith(extension.toLowerCase()) ? name : name + extension}` }
   })
   const ready = readiness?.stage === 'bank_submission' && readiness.ready === true && !(readiness.issues || []).length && rows.every(row => !row.outstanding || row.blocking === false)
-  const plan = { transactionId, submission, snapshot: structuredClone(snapshot), original, originalEvidence: wetInk ? originalEvidence : null, files: entries, rows, ready, issues: readiness?.issues || [], documentChanges: buildBondDocumentChangeRegister(snapshot, documentChecklist), filename: `bond-application-${safeName(transactionId)}-v${submission.submission_version || snapshot.submissionVersion || 1}` }
+  const plan = { transactionId, submission, snapshot: structuredClone(snapshot), original, originalEvidence: wetInk ? originalEvidence : null, files: entries, rows, ready, issues: [...(readiness?.issues || []), ...(context.manualContext?.blockers || [])], documentChanges: buildBondDocumentChangeRegister(snapshot, documentChecklist), filename: `bond-application-${safeName(transactionId)}-v${submission.submission_version || snapshot.submissionVersion || 1}` }
+  plan.manualContext = context.manualContext
   plan.reviewContext = context.reviewContext
   plan.releaseGate = context.releaseGate
   plan.assessment = assessBondBankSubmission({ plan, reviewContext: context.reviewContext, releaseGate: context.releaseGate })
@@ -87,12 +88,12 @@ export async function createBondSubmissionPack({ plan, output, loadFile, renderC
     archive[entry.archivePath] = file.bytes
     index.push({ path: entry.archivePath, documentId: entry.id, requirements: entry.requirements, bytes: file.bytes.length, sha256: file.sha256 })
   }
-  const checklist = { formatVersion: 'bond-submission-pack-v1', reference: plan.snapshot.reviewedVersion?.reference || plan.filename, submissionId: plan.submission.id, submissionVersion: plan.submission.submission_version, signedAt: plan.submission.signed_at, snapshotHash: plan.submission.snapshot_hash, generatedAt, ready: plan.ready, consultantReview: plan.reviewContext?.review || null, releaseVersion: plan.releaseGate?.version || null, rows: plan.rows, issues: plan.issues, files: plan.files.map(entry => ({ path: entry.archivePath, documentId: entry.id, requirements: entry.requirements, ...index.find(file => file.documentId === entry.id) })), documentChanges: plan.documentChanges, statementHandoff: 'not_connected' }
+  const checklist = { formatVersion: 'bond-submission-pack-v1', reference: plan.snapshot.reviewedVersion?.reference || plan.filename, submissionId: plan.submission.id, submissionVersion: plan.submission.submission_version, signedAt: plan.submission.signed_at, snapshotHash: plan.submission.snapshot_hash, generatedAt, ready: plan.ready, consultantReview: plan.reviewContext?.review || null, releaseVersion: plan.releaseGate?.version || null, rows: plan.rows, issues: plan.issues, files: plan.files.map(entry => ({ path: entry.archivePath, documentId: entry.id, requirements: entry.requirements, ...index.find(file => file.documentId === entry.id) })), documentChanges: plan.documentChanges, statementHandoff: 'manual_external' }
   const pdf = await renderChecklist(checklist)
   if (output === 'checklist') return { bytes: pdf, filename: `${plan.filename}-checklist.pdf`, type: 'application/pdf' }
   archive['pack-checklist.pdf'] = pdf
   archive['document-index.json'] = strToU8(JSON.stringify(checklist, null, 2))
-  archive['READ-ME.txt'] = strToU8(`${plan.ready ? 'Ready for bank submission' : 'INCOMPLETE - resolve the checklist before bank submission'}\nDownload the accepted signed application separately.\nOnly approved current supporting files are included.\nBank statements are excluded. Secure consultant handoff is not connected; receipt is unverified.\nThis download does not send anything to a bank.\nApplication reference: ${checklist.reference}`)
+  archive['READ-ME.txt'] = strToU8(`${plan.ready ? 'Ready for bank submission' : 'INCOMPLETE - resolve the checklist before bank submission'}\nDownload the accepted signed application separately.\nOnly approved current supporting files are included.\nBank statement files are excluded. Their separately confirmed external receipt is shown on the checklist.\nThis download does not send anything to a bank.\nApplication reference: ${checklist.reference}`)
   if (Object.values(archive).reduce((sum, bytes) => sum + bytes.length, 0) > BOND_DOWNLOAD_LIMITS.totalBytes) throw new Error('The completed pack exceeds 100 MB.')
   return { bytes: zipSync(archive, { level: 0 }), filename: `${plan.filename}-supporting.zip`, type: 'application/zip' }
 }

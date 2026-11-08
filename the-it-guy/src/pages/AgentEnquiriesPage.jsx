@@ -39,7 +39,7 @@ import {
   LEAD_ASSIGNMENT_QUEUES,
 } from '../services/leadAssignmentService'
 
-const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
+const pageShell = 'flex min-w-0 w-full flex-col gap-6'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 
 const SOURCE_OPTIONS = [
@@ -807,11 +807,9 @@ export default function AgentEnquiriesPage() {
 
   return (
     <main className={pageShell}>
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <header className="ui-workspace-header">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Agent Workspace</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-[-0.045em] text-slate-950">Enquiries</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-500">Operational review for external lead ingestion logs, duplicates, failures, unresolved listings, and safe retries.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => { setImportLeadCategory(''); setImportOpen(true) }} disabled={!organisationId} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:bg-slate-300">
@@ -825,7 +823,7 @@ export default function AgentEnquiriesPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <SummaryCard label="New" value={summary.newCount} icon={ClipboardList} tone="blue" />
         <SummaryCard label="Processed" value={summary.processed} icon={CheckCircle2} tone="emerald" />
         <SummaryCard label="Failed" value={summary.failed} icon={AlertTriangle} tone="rose" />

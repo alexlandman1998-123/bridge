@@ -17,20 +17,23 @@ export function emailCampaignClient({ db, before, user }) {
       } catch (error) { return { data: null, error } }
     },
     from(table) {
-      let operation = 'select', values, columns = '*', conflict, max, single = false
+      let operation = 'select', values, columns = '*', conflict, max, offset = 0, exact = false, single = false
       const filters = [], orders = []
+      let anyFilters = []
       const run = async () => {
         try {
           await before()
           const params = []
           const parameter = value => { params.push(value); return `$${params.length}` }
-          const where = () => filters.length ? ` where ${filters.map(([key,operator,value]) => `t.${identifier(key)} ${operator === 'in' ? `= any(${parameter(value)})` : `${operator} ${parameter(value)}`}`).join(' and ')}` : ''
-          let sql
+          const where = () => (filters.length || anyFilters.length) ? ` where ${[...filters.map(([key,operator,value]) => `t.${identifier(key)} ${operator === 'in' ? `= any(${parameter(value)})` : `${operator} ${parameter(value)}`}`), ...(anyFilters.length ? ['('+anyFilters.map(([field,pattern]) => `${field === 'recipient_snapshot->>full_name' ? `t."recipient_snapshot"->>'full_name'` : `t.${identifier(field)}`} ilike ${parameter(pattern)}`).join(' or ')+')'] : [])].join(' and ')}` : ''
+          let sql, count
           if (operation === 'select') {
             const embedded = columns.includes('email_sender_identities(')
             sql = `select t.*${embedded ? ',to_jsonb(i) as email_sender_identities' : ''} from public.${identifier(table)} t${embedded ? ' left join email_sender_identities i on i.id=t.sender_identity_id' : ''}${where()}`
+            if (exact) count = Number((await db.query(`select count(*) n from (${sql}) counted`,params)).rows[0].n)
             if (orders.length) sql += ` order by ${orders.map(([key,ascending]) => `t.${identifier(key)} ${ascending ? 'asc' : 'desc'}`).join(',')}`
             if (max) sql += ` limit ${Number(max)}`
+            if (offset) sql += ` offset ${Number(offset)}`
           } else if (operation === 'update') {
             sql = `update public.${identifier(table)} t set ${Object.entries(values).map(([key,value]) => `${identifier(key)}=${parameter(value)}`).join(',')}${where()} returning t.*`
           } else {
@@ -40,14 +43,16 @@ export function emailCampaignClient({ db, before, user }) {
             sql += ' returning *'
           }
           const result = await db.query(sql,params)
-          return { data: single ? result.rows[0] || null : result.rows, error: single === 'required' && !result.rows[0] ? { code: 'PGRST116' } : null }
+          return { count, data: single ? result.rows[0] || null : result.rows, error: single === 'required' && !result.rows[0] ? { code: 'PGRST116' } : null }
         } catch (error) { return { data: null, error } }
       }
       const query = {
-        select(value = '*') { columns = value; return query },
+        select(value = '*', options = {}) { columns = value; exact = options.count === 'exact'; return query },
         eq(key,value) { filters.push([key,'=',value]); return query },
+        or(expression) { anyFilters = expression.split(',').map(part => part.split('.ilike.')); if (anyFilters.some(([field]) => !['email','status','recipient_snapshot->>full_name'].includes(field))) throw Error('Unsupported fixture search'); return query },
         in(key,value) { filters.push([key,'in',value]); return query },
         order(key,{ascending = true} = {}) { orders.push([key,ascending]); return query },
+        range(first,last) { offset = first; max = last - first + 1; return query },
         limit(value) { max = value; return query },
         insert(value) { operation = 'insert'; values = value; return query },
         upsert(value,options) { operation = 'insert'; values = value; conflict = options?.onConflict; return query },

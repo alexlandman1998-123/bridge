@@ -12,6 +12,7 @@ export default function BondSectionCard({
   padded = true,
 }) {
   const hasHeader = eyebrow || title || description || action
+  const showEyebrow = eyebrow && !title
 
   return (
     <section
@@ -30,13 +31,13 @@ export default function BondSectionCard({
           )}
         >
           <div className="min-w-0">
-            {eyebrow ? (
+            {showEyebrow ? (
               <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#75879b]">
                 {eyebrow}
               </p>
             ) : null}
             {title ? (
-              <h2 className={cn('mt-2 text-[1.15rem] font-semibold tracking-normal text-[#142132]', eyebrow ? '' : 'mt-0')}>
+              <h2 className="text-[1.15rem] font-semibold tracking-normal text-[#142132]">
                 {title}
               </h2>
             ) : null}

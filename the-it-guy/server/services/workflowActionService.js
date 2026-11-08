@@ -1,4 +1,5 @@
 import { requireClient } from '../../src/services/attorneyFirmServiceShared.js'
+import { commitTransactionLifecycle } from '../../src/services/transactionLifecycleCommitService.js'
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
 import { buildRegistrationReadinessBlockers, buildRegistrationReadinessShortcut } from '../../src/core/transactions/registrationReadinessShortcut.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
@@ -467,6 +468,26 @@ export async function runWorkflowAction({
   }
 
   let previousStepStatus = null
+  if (descriptor?.actionKey === 'MARK_REGISTERED') {
+    const receipt = await commitTransactionLifecycle(client, {
+      transactionId, action: 'register', registrationDate: payload.registrationDate || null,
+      titleDeedNumber: payload.titleDeedNumber || null,
+      confirmationDocumentId: payload.registrationConfirmationDocumentId || null,
+    })
+    let refreshed
+    const warnings = []
+    try {
+      refreshed = await publishWorkflowChanged({ transactionId, client, actorRole, now: nowIso,
+        reasonCode: 'WORKFLOW_ACTION_MARK_REGISTERED', triggerType: 'workflow_action', triggerId: 'MARK_REGISTERED',
+        createdBy: userId || null, source: payload.source || 'user_action', extraFields: { stage_date: nowIso } })
+    } catch {
+      warnings.push({ code: 'WORKFLOW_REFRESH_PENDING', message: 'Registration is saved, but the workflow view could not be refreshed. Refresh before making another change.' })
+    }
+    return { success: true, allowed: true, blocked: false, actionKey: 'MARK_REGISTERED', receipt,
+      warning: warnings[0] || null, warnings, outOfSequence: false,
+      rollup: refreshed?.rollup || currentRollup, compatibility: refreshed?.compatibility || null }
+  }
+
   if (descriptor?.workflowKey && descriptor?.stepKey) {
     const existingStep = (state.stepsByWorkflowKey?.[descriptor.workflowKey] || []).find((step) => step.step_key === descriptor.stepKey) || null
     previousStepStatus = existingStep?.status || null
@@ -544,8 +565,9 @@ export async function runWorkflowAction({
     source: `workflow_action:${normalizeText(actionKey).toUpperCase()}`,
   })
   if (Object.keys(actionTransactionFields).length) {
-    const transactionUpdate = await client.from('transactions').update(actionTransactionFields).eq('id', transactionId)
+    const transactionUpdate = await client.from('transactions').update(actionTransactionFields).eq('id', transactionId).select('id').maybeSingle()
     if (transactionUpdate.error) throw transactionUpdate.error
+    if (transactionUpdate.data?.id !== transactionId) throw new Error('This transaction change could not be confirmed. Refresh and check your access before trying again.')
   }
 
   await logTransactionWorkflowEvent(

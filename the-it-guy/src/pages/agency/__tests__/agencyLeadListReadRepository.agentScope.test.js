@@ -1,22 +1,29 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from '../agencyLeadAgentScope'
-import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords } from '../agencyLeadListReadRepository'
+import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords, preloadAgencyLeadCoreRecord } from '../agencyLeadListReadRepository'
 import { buildAgencyLeadLandingMetrics } from '../agencyLeadListModel'
-const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false }))
+const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false, beforeRespond: null, requestHeaders: [] }))
 vi.mock('../../../lib/supabaseClient', async () => {
   const { createClient } = await import('@supabase/supabase-js')
   return {
     isSupabaseConfigured: true,
-    supabase: createClient('http://localhost:55555', 'local-test-key', { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: async (input) => {
+    supabase: createClient('http://localhost:55555', 'local-test-key', { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: async (input, init) => {
       const url = new URL(String(input))
       fixture.urls.push(url)
+      fixture.requestHeaders.push(init?.headers)
+      if (fixture.beforeRespond) {
+        const respond = fixture.beforeRespond
+        fixture.beforeRespond = null
+        await respond()
+      }
       if (url.pathname.endsWith('/developer_leads')) {
         const ids = url.searchParams.get('source_lead_id').slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
         return new Response(JSON.stringify(fixture.developerLinks.filter((row) => ids.includes(row.source_lead_id))), { headers: { 'Content-Type': 'application/json' } })
       }
       if (url.pathname.endsWith('/private_listings')) return new Response(JSON.stringify(fixture.listings), { headers: { 'Content-Type': 'application/json' } })
       if (url.pathname.endsWith('/contacts')) {
-        const ids = url.searchParams.get('contact_id').slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
+        const predicate = url.searchParams.get('contact_id')
+        const ids = predicate.startsWith('eq.') ? [predicate.slice(3)] : predicate.slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
         const rows = fixture.contacts.filter((row) => ids.includes(row.contact_id) && `eq.${row.organisation_id}` === url.searchParams.get('organisation_id'))
         return new Response(JSON.stringify(rows), { headers: { 'Content-Type': 'application/json' } })
       }
@@ -24,6 +31,7 @@ vi.mock('../../../lib/supabaseClient', async () => {
       if (fixture.legacy && url.searchParams.get('select').includes('assigned_user_id')) return new Response(JSON.stringify({ code: '42703', message: 'column assigned_user_id does not exist' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
       const organisationId = url.searchParams.get('organisation_id').slice(3)
       let rows = fixture.leads.filter((row) => row.organisation_id === organisationId)
+      if (url.searchParams.get('lead_id')) rows = rows.filter(row => `eq.${row.lead_id}` === url.searchParams.get('lead_id'))
       const predicate = url.searchParams.get('or')
       if (predicate) {
         const terms = [...predicate.matchAll(/(assigned_user_id|assigned_agent_id|assigned_agent_email)\.eq\.("(?:\\.|[^"\\])*")/g)].map(([, key, value]) => [key, JSON.parse(value)])
@@ -44,6 +52,8 @@ const makeLead = (index, assigned = a) => ({ lead_id: `lead-${index}`, organisat
 beforeEach(() => {
   invalidateAgencyLeadListCache()
   fixture.urls = []
+  fixture.requestHeaders = []
+  fixture.beforeRespond = null
   fixture.legacy = false
   fixture.contacts = []
   fixture.developerLinks = []
@@ -223,4 +233,100 @@ it('routes development-linked buyers before pagination and preserves the same le
   expect(second.leads).toHaveLength(1)
   expect((await listAgencyLeadListRecords(org, { category: 'buyer', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })).totalCount).toBe(55)
   expect(fixture.urls.filter((url) => url.pathname.endsWith('/developer_leads')).every((url) => url.searchParams.get('or').includes(`source_agency_org_id.eq.${org}`))).toBe(true)
+})
+
+it('loads contacts only for the visible page when not searching and reuses that batch', async () => {
+  fixture.leads = Array.from({ length: 401 }, (_, i) => ({ ...makeLead(i), contact_id: `contact-${i}` }))
+  fixture.contacts = fixture.leads.map((lead, i) => ({ contact_id: lead.contact_id, organisation_id: org, first_name: `Contact ${i}`, last_name: 'Buyer' }))
+  const options = { category: 'buyer', includeRelatedRecords: false, pageSize: 25 }
+  const first = await listAgencyLeadListRecords(org, options)
+  expect(first.totalCount).toBe(401)
+  expect(first.contacts).toHaveLength(25)
+  const contactQueries = () => fixture.urls.filter((url) => url.pathname.endsWith('/contacts'))
+  expect(contactQueries()).toHaveLength(1)
+  expect(contactQueries()[0].searchParams.get('contact_id').slice(4, -1).split(',')).toHaveLength(25)
+  await listAgencyLeadListRecords(org, options)
+  expect(contactQueries()).toHaveLength(1)
+  const second = await listAgencyLeadListRecords(org, { ...options, page: 1 })
+  expect(second.contacts).toHaveLength(25)
+  expect(contactQueries()).toHaveLength(2)
+  expect(second.contacts.every((contact) => !first.contacts.some((other) => other.contactId === contact.contactId))).toBe(true)
+  await listAgencyLeadListRecords(org, { ...options, filters: { source: 'No such source' } })
+  expect(contactQueries()).toHaveLength(2)
+})
+
+
+it('shares simultaneous snapshot reads without an extra database count scan', async () => {
+  fixture.leads = Array.from({ length: 1001 }, (_, i) => makeLead(i))
+  const [first, second] = await Promise.all([
+    listAgencyLeadLandingMetrics(org), listAgencyLeadLandingMetrics(org),
+  ])
+  expect(first).toBe(second)
+  const indexes = fixture.urls.flatMap((url, index) => url.pathname.endsWith('/leads') ? [index] : [])
+  expect(indexes).toHaveLength(2)
+  const prefer = (index) => new Headers(fixture.requestHeaders[index]).get('prefer') || ''
+  expect(prefer(indexes[0])).not.toContain('count=exact')
+  expect(prefer(indexes[1])).not.toContain('count=exact')
+  expect(first.leads).toHaveLength(1001)
+})
+
+it('does not repopulate a cache invalidated while its request is still running', async () => {
+  let release
+  const blocked = new Promise((resolve) => { release = resolve })
+  fixture.beforeRespond = () => blocked
+  const old = listAgencyLeadLandingMetrics(org)
+  await vi.waitFor(() => expect(fixture.urls).toHaveLength(1))
+  invalidateAgencyLeadListCache(org)
+  release()
+  await old
+  fixture.leads.push(makeLead(999))
+  expect((await listAgencyLeadLandingMetrics(org)).leads).toHaveLength(67)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
+})
+
+
+it('keeps a newer explicit refresh cached when an older read completes afterward', async () => {
+  let release
+  fixture.beforeRespond = () => new Promise((resolve) => { release = resolve })
+  const old = listAgencyLeadLandingMetrics(org)
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+  const fresh = await listAgencyLeadLandingMetrics(org, { forceRefresh: true })
+  fixture.leads.push(makeLead(999))
+  release()
+  await old
+  expect(await listAgencyLeadLandingMetrics(org)).toBe(fresh)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
+})
+
+
+it('counts a complete thousand-row boundary without a database count or losing the final page', async () => {
+  fixture.leads = Array.from({ length: 1000 }, (_, i) => makeLead(i))
+  const metrics = await listAgencyLeadLandingMetrics(org)
+  expect(metrics.totalCount).toBe(1000)
+  expect(metrics.leads).toHaveLength(1000)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
+})
+
+it('reuses the visible category lead and contact on intent without repeating core/link/contact reads', async () => {
+  fixture.leads = [{ ...makeLead(1), contact_id: 'saved-contact' }]
+  fixture.contacts = [{ contact_id: 'saved-contact', organisation_id: org, first_name: 'Saved', last_name: 'Buyer' }]
+  const page = await listAgencyLeadListRecords(org, { category: 'buyer', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })
+  const requestCount = fixture.urls.length
+  const core = await preloadAgencyLeadCoreRecord(org, page.leads[0].leadId)
+  expect(core.lead).toBe(page.leads[0])
+  expect(core.contact).toBe(page.contacts[0])
+  expect(core.source).toBe('primary-cache')
+  expect(fixture.urls).toHaveLength(requestCount)
+})
+
+it('still fetches a complete core when the visible list has not loaded its contact', async () => {
+  fixture.leads = [{ ...makeLead(1), contact_id: 'missing-contact' }]
+  await listAgencyLeadListRecords(org, { category: 'buyer', includeRelatedRecords: false, pageSize: 25 })
+  fixture.contacts = [{ contact_id: 'missing-contact', organisation_id: org, first_name: 'Fresh', last_name: 'Contact' }]
+  const requestCount = fixture.urls.length
+  const core = await preloadAgencyLeadCoreRecord(org, 'lead-1')
+  expect(core.source).toBe('remote-core')
+  expect(core.contact.firstName).toBe('Fresh')
+  expect(fixture.urls.length).toBeGreaterThan(requestCount)
+  expect(fixture.urls.at(-1).searchParams.get('organisation_id')).toBe(`eq.${org}`)
 })

@@ -26,7 +26,7 @@ export async function notifyNewLeadAssignedAgent(input, { client = supabase, sen
     const payload = buildNewLeadAgentNotification({ ...input, lead })
     if (!payload) return { data: { skipped: true, reason: 'missing_agent_email' }, error: null }
     const result = await send('send-email', { body: payload, client })
-    if (result.error || result.data?.error || result.data?.ok === false) return { data: result.data, error: result.error || new Error('Agent notification delivery failed.') }
+    if (result.error || result.data?.error || result.data?.ok === false || result.data?.needsAttention || ['needs_attention', 'waiting_recipient'].includes(result.data?.deliveryStatus)) return { data: result.data, error: result.error || new Error('Agent notification needs review. Check the delivery history and the assigned agent’s active email address.') }
     return result
   } catch (error) {
     return { data: null, error }

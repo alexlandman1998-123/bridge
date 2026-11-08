@@ -16,6 +16,8 @@ import {
   UploadCloud,
   UserRound,
 } from 'lucide-react'
+import { lazy, Suspense } from 'react'
+const BondManualWorkflow = lazy(() => import('../bond/BondManualWorkflow.jsx'))
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import { buildTransactionFinanceWorkspace } from '../../services/transactionFinanceService'
@@ -430,7 +432,7 @@ function FinanceDocumentList({ rows = [], emptyMessage = 'No finance documents u
   )
 }
 
-function ApplicationsSection({
+function ApplicationsSection({ allowSubmission = true,
   rows = [],
   overview = false,
   canManage = false,
@@ -530,7 +532,7 @@ function ApplicationsSection({
         <EmptyState message="No bank applications submitted yet." />
       )}
 
-      {canManage ? (
+      {canManage && allowSubmission ? (
         <form
           className="rounded-[8px] border border-[#e5ecf4] bg-[#fbfdff] p-3"
           onSubmit={(event) => {
@@ -574,7 +576,7 @@ function ApplicationsSection({
             />
           </div>
           <div className="mt-3 flex justify-end">
-            <Button type="submit" size="sm" disabled={loadingAction === 'add_application'}>Submit bank application</Button>
+            <Button type="submit" size="sm" disabled={loadingAction === 'add_application'}>Record external submission</Button>
           </div>
         </form>
       ) : null}
@@ -1768,6 +1770,7 @@ function BondWorkflowWorkspace({
             overview={overviewOnly}
             rows={workspace.bond.applications}
             canManage={workspace.permissions.canManageApplications}
+            allowSubmission={!workspace.originatorManagedFinance}
             loadingAction={loadingAction}
             onSubmit={onSubmitBankApplication}
             onUpdateStatus={(row, status) => onUpdateBankApplication?.(row, { status })}
@@ -1893,6 +1896,7 @@ function FinanceCommandCenter({
   loadingAction = '',
   onUploadDocument,
   onSubmitBankApplication,
+  onTrackerChanged,
   onUpdateBankApplication,
   onCaptureBondOffer,
   onAcceptOffer,
@@ -2045,6 +2049,10 @@ function FinanceCommandCenter({
     </SectionCard>
   )
 
+  const manualBondWorkflow = hasBondWorkflow && workspace.permissions.canManageApplications && ['bond_originator', 'admin', 'internal_admin'].includes(viewerRole) && transaction.id
+    ? <Suspense fallback={<p role="status">Loading bond workflow…</p>}><BondManualWorkflow key={transaction.id} transactionId={transaction.id} onChanged={onTrackerChanged} /></Suspense>
+    : null
+
   const activeFinanceWorkspace =
     activeWorkspaceKey === 'requests' ? (
       <FinanceRequestsPage
@@ -2157,6 +2165,7 @@ function FinanceCommandCenter({
           canProxyFinanceWorkflow={workspace.permissions.canProxyFinanceWorkflow}
         />
       ) : null}
+      {manualBondWorkflow}
       {simplifiedFinanceWorkspace}
     </div>
   )

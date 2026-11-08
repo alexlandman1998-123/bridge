@@ -232,8 +232,8 @@ try {
     }
     assert.match(privateListingServiceSource, /bridge_upload_private_listing_seller_document/, 'seller portal uploads should use the seller document RPC')
     assert.match(privateListingServiceSource, /private_listing_documents/, 'seller portal uploads should persist into private listing documents')
-    assert.match(privateListingServiceSource, /status: 'uploaded'/, 'seller portal uploads should mark documents uploaded')
-    assert.match(privateListingServiceSource, /updatePrivateListingRequirementStatus\(matchedRequirement\.id, 'uploaded'\)/, 'seller portal uploads should mark matched requirements uploaded')
+    assert.match(privateListingServiceSource, /rpc\.data\?\.document\?\.id/, 'seller portal uploads require a linked server document receipt')
+    assert.match(privateListingServiceSource, /canonically_linked.*pending_transaction_link/, 'seller uploads require the atomic Document Trust linking result')
     assert.match(
       sharedWorkspaceSource,
       /if \(id === 'generate_mandate'\)[\s\S]*market listing is not created by preparing a mandate/,
@@ -422,8 +422,8 @@ try {
   assert.ok(workspaceSource.includes('Export Activity'), 'seller activity should expose a future-safe export action')
   assert.match(privateListingServiceSource, /bridge_upload_private_listing_seller_document/, 'seller portal uploads should use the seller document RPC')
   assert.match(privateListingServiceSource, /private_listing_documents/, 'seller portal uploads should persist into private listing documents')
-  assert.match(privateListingServiceSource, /status: 'uploaded'/, 'seller portal uploads should mark documents uploaded')
-  assert.match(privateListingServiceSource, /updatePrivateListingRequirementStatus\(matchedRequirement\.id, 'uploaded'\)/, 'seller portal uploads should mark matched requirements uploaded')
+  assert.match(privateListingServiceSource, /rpc\.data\?\.document\?\.id/, 'seller portal uploads require a linked server document receipt')
+  assert.match(privateListingServiceSource, /canonically_linked.*pending_transaction_link/, 'seller uploads require the atomic Document Trust linking result')
   assert.ok(workspaceSource.includes('function LeadOfferTransactionConversionPanel'), 'onboarding / OTP workspace should expose accepted-offer transaction conversion')
   assert.ok(workspaceSource.includes('createTransactionFromAcceptedCanonicalOffer'), 'accepted offers should convert through the canonical transaction service')
   assert.ok(workspaceSource.includes('buyer_lead_offer_conversion'), 'buyer onboarding should be sent from the lead offer conversion flow')
@@ -468,9 +468,12 @@ try {
   }
 
   const appointmentServiceSource = await readFile(new URL('../src/lib/agencyPipelineService.js', import.meta.url), 'utf8')
-  assert.ok(appointmentServiceSource.includes("const normalizedStatus = normalizeLowerText(notificationSource.status)"), 'confirmed appointment creation should normalize notification status before routing')
-  assert.ok(appointmentServiceSource.includes("? 'appointment_confirmed'"), 'confirmed appointment creation should notify as confirmed')
-  assert.ok(appointmentServiceSource.includes(": 'appointment_confirmation_required'"), 'requested appointment creation should ask for confirmation')
+  assert.match(appointmentServiceSource, /await saveAppointmentCommand\(/, 'appointment creation must use the atomic scheduling command')
+  assert.match(appointmentServiceSource, /verifiedSaved\.mutationReplayed/, 'a replay must not duplicate post-save lead actions')
+  const notificationMigration = await readFile(new URL('../../supabase/migrations/20261008184511_calendar_durable_notifications.sql', import.meta.url), 'utf8')
+  assert.match(notificationMigration, /when 'confirmed' then 'confirmed'/, 'confirmed appointment delivery is queued durably')
+  assert.match(notificationMigration, /when 'requested' then 'invite'/, 'requested appointment delivery is queued durably')
+
 
   const buyerOfferSource = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
   assert.ok(buyerOfferSource.includes('conditions.buyerName || invite?.buyerLeadName'), 'buyer offer link should prefill the buyer name from offer context')

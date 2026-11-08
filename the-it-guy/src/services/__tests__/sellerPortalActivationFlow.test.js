@@ -39,3 +39,26 @@ it('requires a usable invite token before sending anything', async () => {
   await expect(activateSellerPortalForListing(input)).rejects.toThrow(/invitation link/)
   expect(mocks.email).not.toHaveBeenCalled()
 })
+
+it.each([
+  { ok: false }, { ok: true }, { ok: true, emailId: null },
+  { ok: true, queued: true, deliveryId: 'queued' }, { ok: true, sent: false, suppressed: true },
+  { ok: true, emailId: 'receipt', needsAttention: true }, { error: { message: 'Sender is unavailable' } },
+])('never claims invitation delivery for an unconfirmed response: %j', async data => {
+  mocks.email.mockResolvedValue({ data })
+  await expect(activateSellerPortalForListing(input)).rejects.toThrow()
+  expect(mocks.activity).not.toHaveBeenCalled()
+  expect(mocks.update).not.toHaveBeenCalled()
+})
+it('accepts the production provider receipt contract', async () => {
+  mocks.email.mockResolvedValue({ data: { ok: true, emailId: 'provider-receipt', deliveryId: 'delivery' } })
+  expect((await activateSellerPortalForListing(input)).ok).toBe(true)
+})
+
+it('seller lead invitation preparation defers workflow status until delivery is confirmed', async () => {
+  mocks.onboarding.mockResolvedValue({ stablePortalToken: 'stable-fixture-token' })
+  mocks.email.mockResolvedValue({ data: { ok: true, sent: false } })
+  await expect(activateSellerPortalForListing({ ...input, activationSource: 'seller_lead' })).rejects.toThrow(/not confirmed/)
+  expect(mocks.onboarding).toHaveBeenCalledWith(input.listingId, expect.objectContaining({ deferStatusTransition: true }))
+  expect(mocks.update).not.toHaveBeenCalled()
+})

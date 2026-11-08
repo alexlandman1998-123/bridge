@@ -18,7 +18,7 @@ const contact = {
 async function configured(run: () => Promise<void>) {
   const keys = ["SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY", "SUPABASE_URL"];
   const previous = keys.map((key) => Deno.env.get(key));
-  keys.forEach((key) => Deno.env.set(key, "fixture-private-key"));
+  keys.forEach((key) => Deno.env.set(key, "sb_secret_fixture_private_key"));
   Deno.env.set("SUPABASE_URL", "https://project.supabase.co");
   try {
     await run();
@@ -116,7 +116,7 @@ function fixture(
         };
     },
   };
-  const request = (authorization = "Bearer fixture-private-key") =>
+  const request = (authorization = "Bearer sb_secret_fixture_private_key") =>
     new Request("https://sample.co.za", { headers: { authorization } });
   const run = (
     payload = { leadId } as Record<string, unknown>,
@@ -199,7 +199,7 @@ Deno.test("matching server credentials avoid an extra Auth request", () =>
     let calls = 0;
     const allowed = await authorizeRecruitmentCodeSender(
       new Request("https://sample.co.za", {
-        headers: { authorization: "Bearer fixture-private-key" },
+        headers: { authorization: "Bearer sb_secret_fixture_private_key" },
       }),
       (async () => {
         calls++;

@@ -1,4 +1,4 @@
-import { buildReminderEmail } from "./notificationReminderDispatch.ts";
+import { buildReminderEmail, isObsoleteBondApplicationReminder } from "./notificationReminderDispatch.ts";
 
 function assertIncludes(source: string, expected: string, message?: string) {
   if (!source.includes(expected)) {
@@ -14,6 +14,23 @@ const branding = {
   supportEmail: "support@example.test",
   supportPhone: "+27 21 000 0000",
 };
+
+Deno.test("tracker keeps manual progress links and suppresses scheduled application-completion nudges", () => {
+  const event = { id: "tracker", automation_key: "bond_application_portal_completion_reminder", organisation_id: null };
+  if (!isObsoleteBondApplicationReminder(event) ||
+    !isObsoleteBondApplicationReminder({ ...event, trigger_type: "scheduled_reminder" }) ||
+    isObsoleteBondApplicationReminder({ ...event, metadata_json: { deliveryKind: "manual" } }) ||
+    isObsoleteBondApplicationReminder({ ...event, trigger_type: "manual_send" }) ||
+    isObsoleteBondApplicationReminder({ ...event, automation_key: "buyer_onboarding_reminder" })) {
+    throw new Error("Only obsolete application-completion reminders should be suppressed.");
+  }
+  const content = buildReminderEmail({ ...event, subject: "Complete your bond application", message_preview: "Sign and complete now", payload_json: { accessToken: "tracker-link" } }, new Request("https://functions.example.test/send-email", { headers: { origin: "https://app.example.test" } }), branding);
+  if (content.subject !== "View your bond progress" || /Sign and complete|Complete your bond application/i.test(content.html + content.text)) {
+    throw new Error("Historical queued links must use current tracker wording.");
+  }
+  assertIncludes(content.html, "View bond progress");
+  assertIncludes(content.text, "tracker-link");
+});
 
 Deno.test("lead SLA reminder template uses branded reminder shell", () => {
   const { html, text } = buildReminderEmail(

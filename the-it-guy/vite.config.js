@@ -482,6 +482,9 @@ export default defineConfig({
           if (normalizedId.includes('vite/preload-helper') || normalizedId.includes('commonjsHelpers.js')) {
             return 'vendor-runtime'
           }
+          // Keep the extracted read boundary separate from the legacy API.
+          // Its dependencies do not import that facade, so the chunk stays acyclic.
+          if (normalizedId.endsWith('/src/domains/developments/readApi.js') || normalizedId.endsWith('/src/lib/api/shared/readHelpers.js')) return 'development-read-api'
           // Reuse the same permission registry across the shell and lazy workspaces.
           if (normalizedId.endsWith('/src/auth/permissions/permissionRegistry.js')) return 'permission-registry'
           if (!normalizedId.includes('node_modules')) return undefined

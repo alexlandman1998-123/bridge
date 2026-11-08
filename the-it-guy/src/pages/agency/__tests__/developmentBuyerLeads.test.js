@@ -163,3 +163,47 @@ describe('shared development buyer journey', () => {
     expect(model.stages.find((stage) => stage.key === 'development_selection').done).toBe(false)
   })
 })
+
+it('loads large sets of development lead links in bounded parallel batches without changing order or scope', async () => {
+  const id = (number) => `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`
+  const leads = Array.from({ length: 401 }, (_, index) => ({ ...buyer, leadId: id(index + 1000), listingId: id(index + 2000) }))
+  let active = 0, maximum = 0
+  const pending = [], requests = []
+  const client = createClient('http://localhost:55555', 'local-test-key', {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: async (input) => {
+      const url = new URL(String(input))
+      requests.push(url)
+      active += 1
+      maximum = Math.max(maximum, active)
+      await new Promise((resolve) => pending.push(() => { active -= 1; resolve() }))
+      const links = url.pathname.endsWith('/developer_leads')
+      const ids = url.searchParams.get(links ? 'source_lead_id' : 'id').slice(4, -1).split(',').map(id => id.replaceAll('"', ''))
+      const rows = ids.flatMap((id) => links
+        ? [{ developer_lead_id: `new-${id}`, source_lead_id: id, primary_development_id: developmentId }, { developer_lead_id: `old-${id}`, source_lead_id: id, primary_development_id: developmentId }]
+        : [{ id, development_id: developmentId }])
+      return new Response(JSON.stringify(rows), { headers: { 'Content-Type': 'application/json' } })
+    } },
+  })
+  const result = enrichDevelopmentBuyerLeads(org, leads, { client })
+  // Flush SDK async headers/fetch setup, without timing assertions.
+  for (let turn = 0; turn < 20 && pending.length < 4; turn += 1) await new Promise(resolve => setTimeout(resolve, 0))
+  expect(pending).toHaveLength(4)
+  expect(requests.some(url => url.pathname.endsWith('/private_listings'))).toBe(true)
+  pending.splice(0).reverse().forEach(resolve => resolve())
+  for (let turn = 0; turn < 20 && pending.length < 2; turn += 1) await new Promise(resolve => setTimeout(resolve, 0))
+  expect(pending).toHaveLength(2)
+  pending.splice(0).forEach(resolve => resolve())
+  const enriched = await result
+  expect(maximum).toBe(4)
+  expect(requests).toHaveLength(6)
+  expect(enriched.map(lead => lead.leadId)).toEqual(leads.map(lead => lead.leadId))
+  expect(enriched.every(lead => lead.developmentId === developmentId && lead.developmentLeadContext.developerLeadId === `new-${lead.leadId}`)).toBe(true)
+  for (const url of requests) {
+    if (url.pathname.endsWith('/developer_leads')) {
+      expect(url.searchParams.get('or')).toBe(`(developer_org_id.eq.${org},source_agency_org_id.eq.${org})`)
+      expect(url.searchParams.get('order')).toBe('updated_at.desc')
+    } else expect(url.searchParams.get('organisation_id')).toBe(`eq.${org}`)
+    expect(url.searchParams.get('select')).not.toMatch(/email|phone|private_details/)
+  }
+})

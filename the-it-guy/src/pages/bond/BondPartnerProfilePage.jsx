@@ -1627,7 +1627,7 @@ function AttributionSection({ attribution, campaignPerformance, listingAttributi
 
 function LoadingSkeleton() {
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-0 py-8">
+    <div className="flex min-w-0 w-full flex-col gap-6 py-4">
       <div className="h-36 animate-pulse rounded-[16px] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.05)]" />
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((item) => (
@@ -2168,8 +2168,8 @@ export default function BondPartnerProfilePage() {
 
   return (
     <main className="min-h-full bg-[#f6f8fb] text-[#10243a]">
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-0 py-8">
-        <PageCard>
+      <div className="flex min-w-0 w-full flex-col gap-6 py-4">
+        <PageCard className="ui-workspace-header !block">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 gap-4">
               {partner.logo_url ? (
@@ -2180,9 +2180,7 @@ export default function BondPartnerProfilePage() {
                 </div>
               )}
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7b8fa7]">Agency Partner Profile</p>
-                <h1 className="mt-3 text-4xl font-semibold tracking-[-0.01em] text-[#10243a]">{partner.name || 'Partner organisation'}</h1>
-                <p className="mt-3 max-w-3xl text-base leading-7 text-[#60758d]">Relationship overview and partner network foundation</p>
+                <h1 className="break-words text-3xl font-semibold tracking-[-0.01em] text-[#10243a]">{partner.name || 'Partner organisation'}</h1>
               </div>
             </div>
             <div className="flex flex-wrap gap-3">

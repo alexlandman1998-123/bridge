@@ -127,8 +127,9 @@ function LoadingState({ copy = 'Loading conveyancing operations...' }) {
 
 function PageHeader({ currentUser, metrics, lastUpdated }) {
   return (
-    <header className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-      <div className="flex justify-end">
+    <header className="ui-workspace-header">
+      <h1>My work</h1>
+      <div className="flex min-w-0 justify-end">
         <div className="flex flex-col gap-3 lg:items-end">
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
@@ -663,8 +664,8 @@ function AttorneyOperationsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f7fb] px-3 py-4 sm:px-5 lg:px-6">
-      <div className="mx-auto grid max-w-[1680px] gap-4">
+    <main className="min-w-0 w-full">
+      <div className="grid min-w-0 w-full grid-cols-1 gap-6">
         {error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
             {error}

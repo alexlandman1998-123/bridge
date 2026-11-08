@@ -140,7 +140,7 @@ it('shows unknown progress as unavailable and recovers the journey on refresh', 
   mocks.read.mockResolvedValueOnce({ ...detail, journeyAvailable: false, journey: buildDeveloperJourneySnapshot({ transaction: { id: 'tx-one' } }) })
   const { container } = setup()
   await act(async () => {})
-  expect(screen.getAllByText('Not available')).toHaveLength(5)
+  expect(screen.getAllByText('Unknown')).toHaveLength(5)
   expect(container.querySelector('[data-complete="true"]')).toBeNull()
   expect(screen.getByText(/Progress could not be loaded/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Refresh workspace' }))

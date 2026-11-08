@@ -3,7 +3,9 @@ import { campaignSenderDetails } from "../_shared/emailCampaignSender.js";
 import { refreshPlatformCampaignSender } from "../_shared/emailCampaignPlatformSender.ts";
 import { refreshSendingDomain } from "../_shared/emailSendingDomain.ts";
 import { supabaseServiceKey } from "../_shared/apiCredentials.ts";
+import { signCampaignDestination } from "../_shared/emailCampaignTracking.ts";
 import { escapeHtml } from "../_shared/emailDocument.js";
+import { visitEmailHtml } from "../_shared/emailHtmlAssets.js";
 import { inspectEmailHtml, renderCampaignDelivery } from "../_shared/emailContent.js";
 import { checkCampaignContent } from "../_shared/emailCampaignContentCheck.ts";
 import { checkCampaignSourceFreshness } from "../_shared/emailCampaignSourceFreshness.js";
@@ -28,21 +30,48 @@ async function failQueuedCampaign(db: any, job: any, reason: string) {
   if (!result.data) throw new Error("Dispatch lease is no longer owned by this worker.");
 }
 
-async function trackLinks(db: any, html: string, campaign: any, recipient: any, functionBaseUrl: string) {
-  const links = new Map<string, string>();
-  const rewritten = html.replace(/(<a\b[^>]*\bhref\s*=\s*["'])(https?:\/\/[^"'\s>]+)(["'][^>]*>)/gi, (match, prefix, target, suffix) => {
-    if (/\/(?:email\/unsubscribe|email-unsubscribe)\b/i.test(target)) return match;
-    const decodedTarget = target.replace(/&amp;/g, "&");
-    const key = `${campaign.id}:${decodedTarget}`;
-    links.set(key, decodedTarget);
-    return `${prefix}__ARCH9_TRACK_${key}__${suffix}`;
+async function trackLinks(db: any, html: string, campaign: any, recipient: any, functionBaseUrl: string, tokens: Map<string, string>, signingSecret: string) {
+  const edits: { start: number; end: number; target: string }[] = [];
+  visitEmailHtml(html, (node: any, { offset }: { offset: number }) => {
+    if (node.tagName !== "a") return;
+    const href = node.attrs?.find((attribute: any) => attribute.name === "href")?.value;
+    const location = node.sourceCodeLocation?.attrs?.href;
+    if (!location || !/^(?:https?:)?\/\//i.test(href || "")) return;
+    let target: string;
+    try { target = new URL(href.startsWith("//") ? `https:${href}` : href).href; } catch { return; }
+    if (/\/(?:email\/unsubscribe|email-unsubscribe)\b/i.test(new URL(target).pathname)) return;
+    edits.push({ start: offset + location.startOffset, end: offset + location.endOffset, target });
   });
-  let output = rewritten;
-  for (const [key, target] of links) {
-    const { data, error } = await db.from("email_campaign_links").upsert({ organisation_id: campaign.organisation_id, campaign_id: campaign.id, target_url: target }, { onConflict: "campaign_id,target_url" }).select("tracking_token").single();
-    if (error || !data?.tracking_token) { output = output.split(`__ARCH9_TRACK_${key}__`).join(escapeHtml(target)); continue; }
-    const trackingUrl = `${functionBaseUrl}?l=${encodeURIComponent(data.tracking_token)}&r=${encodeURIComponent(recipient.id)}&t=${encodeURIComponent(recipient.tracking_token)}`;
-    output = output.split(`__ARCH9_TRACK_${key}__`).join(escapeHtml(trackingUrl));
+  // Share stable link tokens across the batch; recipient capabilities are added
+  // separately. Bound the cache even for unusually large personalised emails.
+  const links = new Map<string, string>();
+  for (const target of new Set(edits.map(edit => edit.target))) {
+    let token = tokens.get(target);
+    if (!token) {
+      const { data, error } = await db.from("email_campaign_links").upsert({ organisation_id: campaign.organisation_id, campaign_id: campaign.id, target_url: target }, { onConflict: "campaign_id,target_url" }).select("tracking_token").single();
+      if (error || !data?.tracking_token) continue;
+      token = data.tracking_token;
+      if (tokens.size < 500) tokens.set(target, token!);
+    }
+    let destination = target;
+    let attributionToken: string | undefined;
+    // Only append attribution to a published website owned by this agency.
+    try {
+      const attribution = await db.rpc('marketing_create_attribution_link', { p_channel: 'email', p_campaign_id: campaign.id, p_recipient_id: recipient.id, p_target_url: target });
+      if (attribution.error) throw attribution.error;
+      attributionToken = attribution.data?.token;
+      if (attribution.data?.firstParty && attribution.data?.token) {
+        const url = new URL(target); url.searchParams.set('arch9_attribution', attribution.data.token); if (url.href.length <= 4096) destination = url.href;
+      }
+    } catch { console.warn('email_campaign_tracking.attribution_unavailable'); }
+    const signature = await signCampaignDestination(signingSecret, { l: token!, r: recipient.id, t: recipient.tracking_token, u: destination, c: campaign.id, o: campaign.organisation_id, a: attributionToken });
+    const query = new URLSearchParams({ l: token!, r: recipient.id, t: recipient.tracking_token, ...signature });
+    links.set(target, `${functionBaseUrl}?${query}`);
+  }
+  let output = html;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    const link = links.get(edit.target);
+    if (link) output = output.slice(0, edit.start) + `href="${escapeHtml(link)}"` + output.slice(edit.end);
   }
   return output;
 }
@@ -153,6 +182,7 @@ return async (req: Request) => {
         .select("id,email,recipient_snapshot,send_attempts,tracking_token,status").eq("campaign_id", campaign.id)
         .in("status", ["queued", "sending"]).order("send_attempts", { ascending: false }).order("created_at").limit(batchLimit));
       let sourceStopped = false;
+      const linkTokens = new Map<string, string>();
       for (const recipient of recipients || []) {
         // Recheck suppressions immediately before the provider call. This closes
         // the race between audience snapshot and a one-click unsubscribe.
@@ -189,9 +219,14 @@ return async (req: Request) => {
           await updateJob(db, job, { last_error: "Waiting for sending capacity or an organisation sending control. Queued recipients are retained." });
           break;
         }
-        const unsubscribeUrl = `${url.replace(/\/$/, "")}/functions/v1/email-unsubscribe?token=${encodeURIComponent(text(preference?.unsubscribe_token))}`;
+        const unsubscribeUrl = `${url.replace(/\/$/, "")}/functions/v1/email-unsubscribe?token=${encodeURIComponent(text(preference?.unsubscribe_token))}&r=${encodeURIComponent(recipient.id)}&t=${encodeURIComponent(recipient.tracking_token)}`;
         const output = renderCampaignDelivery(campaign, { ...context, unsubscribeUrl }, { ...recipient.recipient_snapshot, agency_name: recipient.recipient_snapshot?.agency_name || identity?.display_name });
-        const html = await trackLinks(db, output.html, campaign, recipient, `${url.replace(/\/$/, "")}/functions/v1/email-campaign-track`);
+        const renderedCheck = inspectEmailHtml(output.html);
+        if (!renderedCheck.ready) {
+          await checked(db.from("email_campaign_recipients").update({ status: "failed", error_reason: renderedCheck.errors[0] }).eq("id", recipient.id));
+          continue;
+        }
+        const html = await trackLinks(db, output.html, campaign, recipient, `${url.replace(/\/$/, "")}/functions/v1/email-campaign-track`, linkTokens, text(env("EMAIL_CAMPAIGN_LINK_SIGNING_SECRET")) || key);
         const finalCheck = inspectEmailHtml(html);
         if (!finalCheck.ready) {
           await checked(db.from("email_campaign_recipients").update({ status: "failed", error_reason: finalCheck.errors[0] }).eq("id", recipient.id));

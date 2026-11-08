@@ -1,6 +1,5 @@
 import AddressInput from '../../../../components/location/AddressInput'
 import { isAddressFieldKey } from '../../../../components/location/addressInputModel'
-import { getDocumentUploadPolicy } from '../../../../lib/documentUploadPolicy.js'
 import BondOnlineSigningPanel from './BondOnlineSigningPanel.jsx'
 import { MARITAL_STATUS_OPTIONS, MARITAL_REGIME_OPTIONS } from '../../../../lib/buyerOnboardingFlowContract.js'
 import BondApplicationStageProgress from '../workspace/BondApplicationStageProgress.jsx'
@@ -35,7 +34,6 @@ import {
   calculateAdditionalIncomeTotal,
   calculateMonthlyCommitmentTotal,
 } from '../flow/bondApplicationDerivedValues.js'
-const documentUploadPolicy = getDocumentUploadPolicy({ surface: 'bank_statement' })
 
 
 const ZAR = new Intl.NumberFormat('en-ZA', {
@@ -996,7 +994,6 @@ export function IncomeBankScreen({ state, updateRepeatableGroup, issues = [] }) 
   const account = accounts.find(item => item.legacyKey === 'primary') || accounts[0]
   const knownBank = INCOME_BANKS.find(name => name.toLowerCase() === String(account?.bankName || '').replace(/_/g, ' ').toLowerCase())
   const [otherBank, setOtherBank] = useState(Boolean(account?.bankName && !knownBank))
-  const [statementFiles, setStatementFiles] = useState([])
   const selfEmployed = EMPLOYMENT_TYPE_VALUES.selfEmployed.includes(state.participants.primaryApplicant.employment?.occupation_status)
   function setBank(bankName) {
     const next = { ...(account || {}), legacyKey: 'primary', bankName }
@@ -1016,33 +1013,7 @@ export function IncomeBankScreen({ state, updateRepeatableGroup, issues = [] }) 
         ? 'Provide your latest 6 consecutive months of personal bank statements. If you use a business bank account, also provide the latest 6 consecutive months of business statements.'
         : 'Provide your latest 3 consecutive months of bank statements for the account where you receive your salary or main income.'}</p>
       <p className="text-sm leading-6 text-[#61748a]">Include every page for the full period. You can provide one combined statement or separate monthly statements.</p>
-      <div className="space-y-3 rounded-xl border border-dashed border-[#cfdcea] bg-[#fbfdff] p-4">
-        <label htmlFor="guided-bank-statement-files" className="block text-sm font-semibold text-[#21384d]">Choose bank statements</label>
-        <input
-          id="guided-bank-statement-files"
-          type="file" title={documentUploadPolicy.helpText}
-          multiple
-          accept={documentUploadPolicy.accept}
-          aria-describedby="guided-bank-statement-selection-note"
-          className="block min-h-11 w-full text-sm text-[#61748a] file:mr-3 file:min-h-11 file:rounded-xl file:border-0 file:bg-[#35546c] file:px-4 file:text-sm file:font-semibold file:text-white"
-          onChange={(event) => {
-            const selected = Array.from(event.target.files || [])
-            setStatementFiles((current) => [...current, ...selected.filter((file) => !current.some((existing) => existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified))])
-            event.target.value = ''
-          }}
-        />
-        <span className="block text-xs font-normal text-slate-500">{documentUploadPolicy.helpText}</span>
-        <p id="guided-bank-statement-selection-note" className="text-xs leading-5 text-[#61748a]">PDF, JPG or PNG. Selected files stay in this browser session on this screen; they have not been sent or saved to your application.</p>
-        {statementFiles.length ? <ul className="space-y-2" aria-label="Selected bank statements">
-          {statementFiles.map((file, index) => <li key={`${file.name}-${file.size}-${file.lastModified}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#dbe5ef] bg-white p-3">
-            <div className="min-w-0"><p className="break-all text-sm font-medium text-[#21384d]">{file.name}</p><p className="text-xs text-[#61748a]">Selected · not sent</p></div>
-            <button type="button" onClick={() => setStatementFiles((current) => current.filter((_, position) => position !== index))} aria-label={`Remove ${file.name}`} className="min-h-11 px-3 text-xs font-semibold text-[#b5472d]">Remove</button>
-          </li>)}
-        </ul> : null}
-        <button type="button" disabled aria-describedby="guided-bank-statement-delivery-note" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#9aa9b8] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed"><UploadCloud size={16} aria-hidden="true" />Send statements to bond consultant</button>
-        <p id="guided-bank-statement-delivery-note" className="text-sm leading-6 text-[#61748a]" role="status">Sending will be available here once your bond consultant’s secure upload connection is set up. No files have been sent.</p>
-      </div>
-      <p className="text-xs leading-5 text-[#61748a]">Bank statements contain sensitive financial information. This selector does not upload files to Arch9. Your consultant’s secure connection is needed to send them directly and keep only their status here.</p>
+      <p role="status" className="rounded-xl bg-[#f5f8fb] p-4 text-sm leading-6 text-[#61748a]">Provide statements through the channel agreed with your bond consultant if requested. Your originator can track progress without a connected statement service.</p>
     </section>
     <p className="text-xs leading-5 text-[#61748a]">Existing loans and credit accounts are collected in the next debt questions.</p>
   </div>
@@ -1141,7 +1112,7 @@ function CurrentScreen({
   return <TransitionScreen reason={handoffReason} />
 }
 
-export default function GuidedBondApplication({
+export function BondApplicationCapture({
   showHandoffNotices = true,
   portal,
   token,
@@ -1149,6 +1120,8 @@ export default function GuidedBondApplication({
   requiredDocuments = [],
   documents = [],
   additionalRequirements = [],
+  externalReceipts = [],
+  submissionId = null,
   preview = false,
   onReconcileDocumentRequirements,
   onUploadRequiredDocument,
@@ -1180,6 +1153,8 @@ export default function GuidedBondApplication({
     requiredDocuments,
     documents,
     additionalRequirements,
+    externalReceipts,
+    submissionId,
     onReconcileDocumentRequirements,
     saveLatestApplication: controller.saveCurrent,
     onUploadRequiredDocument,
@@ -1319,4 +1294,11 @@ export default function GuidedBondApplication({
       </footer>
     </section>
   )
+}
+
+
+// Public bond entry points are trackers. Retain the old capture renderer for
+// historical data tests; it is not a signing route in the active application.
+export default function GuidedBondApplication({ onOpenDocuments, onBackToPortal }) {
+  return <section className="space-y-4 rounded-2xl border bg-white p-5"><h2 className="text-lg font-semibold">Bond progress tracker</h2><p className="text-sm">Your bond originator records bank submissions, feedback and progress in Arch9. Signing a bond application here is not required.</p>{onOpenDocuments ? <button type="button" className="min-h-11 rounded-xl border px-4 text-sm font-semibold" onClick={onOpenDocuments}>Open documents</button> : null}{onBackToPortal ? <button type="button" className="min-h-11 rounded-xl border px-4 text-sm font-semibold" onClick={onBackToPortal}>Back to portal</button> : null}</section>
 }

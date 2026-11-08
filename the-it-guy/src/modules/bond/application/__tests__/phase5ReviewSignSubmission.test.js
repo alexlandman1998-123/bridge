@@ -265,6 +265,7 @@ function runJourneyStageGateTests() {
   })
   const missingProgress = calculateBondApplicationDocumentProgress(missingChecklist)
   const blocked = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentProgress: missingProgress,
     missingDocuments: missingChecklist.items.filter((item) => item.status !== 'satisfied').map((item) => ({ title: item.requirement.title })),
@@ -278,6 +279,7 @@ function runJourneyStageGateTests() {
   const checklist = completeChecklist(state)
   const documentProgress = calculateBondApplicationDocumentProgress(checklist)
   const readyToSubmit = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentProgress,
     selectedBankIds: ['FNB', 'Standard Bank'],
@@ -287,6 +289,7 @@ function runJourneyStageGateTests() {
   assert.ok(readyToSubmit.stages.find((stage) => stage.key === 'documents').done)
 
   const awaitingQuotes = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentProgress,
     submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
@@ -296,6 +299,7 @@ function runJourneyStageGateTests() {
 
   const quote = { id: 'quote-1', bankName: 'FNB', interestRate: 10.75 }
   const needsGrantAcceptance = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentProgress,
     submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
@@ -305,6 +309,7 @@ function runJourneyStageGateTests() {
   assert.equal(needsGrantAcceptance.nextActions[0].key, 'compare_and_accept_offer')
 
   const needsInstruction = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentProgress,
     submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
@@ -315,6 +320,7 @@ function runJourneyStageGateTests() {
   assert.equal(needsInstruction.nextActions[0].key, 'issue_attorney_instruction')
 
   const complete = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentProgress,
     submissionRows: [{ bankName: 'FNB', submittedAt: '2026-07-20T10:00:00.000Z', status: 'submitted' }],
@@ -331,6 +337,7 @@ function runJourneyStageGateTests() {
   const preApprovalChecklist = completeChecklist(preApprovalState)
   const preApprovalProgress = calculateBondApplicationDocumentProgress(preApprovalChecklist)
   const preApprovalNeedsProvider = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationState: preApprovalState,
     applicationViewModel: {
       canonical: { intent: BOND_APPLICATION_INTENTS.preApproval },
@@ -356,6 +363,7 @@ function runJourneyStageGateTests() {
   assert.equal(preApprovalNeedsProvider.stages.some((stage) => stage.key === BOND_APPLICATION_JOURNEY_STAGE_KEYS.instruction), false)
 
   const preApprovalReadyToSubmit = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationState: preApprovalState,
     documentProgress: preApprovalProgress,
     selectedBankIds: ['FNB'],
@@ -365,6 +373,7 @@ function runJourneyStageGateTests() {
   assert.equal(preApprovalReadyToSubmit.nextActions[0].key, 'submit_pre_approval')
 
   const preApprovalSubmitted = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationState: setPath(preApprovalState, 'application.preApproval.status', BOND_APPLICATION_PRE_APPROVAL_STATUSES.submitted),
     documentProgress: preApprovalProgress,
   })
@@ -372,6 +381,7 @@ function runJourneyStageGateTests() {
   assert.equal(preApprovalSubmitted.nextActions[0].key, 'capture_pre_approval_outcome')
 
   const preApprovalApproved = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Historical capture/signing contract; the active default is the tracker.
     applicationState: setPath(preApprovalState, 'application.preApproval.status', BOND_APPLICATION_PRE_APPROVAL_STATUSES.approved),
     documentProgress: preApprovalProgress,
   })

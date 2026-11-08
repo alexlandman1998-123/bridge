@@ -56,6 +56,11 @@ export function clearBuyerOfferWorkspaceDataLoaderCache() {
   completedLoads.clear()
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => clearBuyerOfferWorkspaceDataLoaderCache())
+  window.addEventListener('itg:agency-crm-updated', () => clearBuyerOfferWorkspaceDataLoaderCache())
+}
+
 export function loadBuyerOfferWorkspaceData({
   organisationId = '',
   leadId = '',
@@ -99,7 +104,9 @@ export function loadBuyerOfferWorkspaceData({
         offers: Array.isArray(result.offers) ? result.offers : [],
         sessions: Array.isArray(result.sessions) ? result.sessions : [],
       }
-      completedLoads.set(key, { result: normalizedResult, completedAt: Number(now()) })
+      if (pendingLoads.get(key) === request) {
+        completedLoads.set(key, { result: normalizedResult, completedAt: Number(now()) })
+      }
       return normalizedResult
     })
     .finally(() => {

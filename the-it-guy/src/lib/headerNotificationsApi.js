@@ -6,7 +6,10 @@ const CACHE_TTL_MS = 15_000
 const HEADER_NOTIFICATION_FETCH_LIMIT = 100
 let cachedResult = null
 let cachedAt = 0
-let inFlight = null
+const inFlight = new Map()
+let cachedKey = null
+let latestRequestKey = null
+let cacheGeneration = 0
 
 function isMissingTable(error) {
   const code = String(error?.code || '').toUpperCase()
@@ -105,12 +108,15 @@ async function currentUserId() {
 }
 
 export async function fetchMyNotifications({ limit = 25, unreadOnly = false, userId: suppliedUserId = null } = {}) {
-  if (!unreadOnly && cachedResult && Date.now() - cachedAt < CACHE_TTL_MS) return cachedResult
-  if (!unreadOnly && inFlight) return inFlight
+  const userId = String(suppliedUserId || '').trim() || await currentUserId()
+  if (!userId) return { notifications: [], unreadCount: 0 }
+  const displayLimit = Math.min(HEADER_NOTIFICATION_FETCH_LIMIT, Math.max(1, Number(limit) || 25))
+  const key = JSON.stringify([userId, displayLimit, Boolean(unreadOnly)])
+  if (cachedKey === key && cachedResult && Date.now() - cachedAt < CACHE_TTL_MS) return cachedResult
+  if (inFlight.has(key)) return inFlight.get(key)
+  latestRequestKey = key
+  const generation = cacheGeneration
   const loader = async () => {
-    const displayLimit = Math.max(1, Number(limit) || 25)
-    const userId = String(suppliedUserId || '').trim() || await currentUserId()
-    if (!userId) return { notifications: [], unreadCount: 0 }
     let list = supabase
       .from('transaction_notifications')
       .select(SELECT)
@@ -169,16 +175,17 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
     }
   }
   const request = loader()
-  if (!unreadOnly) inFlight = request
+  inFlight.set(key, request)
   try {
     const result = await request
-    if (!unreadOnly) {
+    if (!unreadOnly && latestRequestKey === key && generation === cacheGeneration) {
+      cachedKey = key
       cachedResult = result
       cachedAt = Date.now()
     }
     return result
   } finally {
-    if (!unreadOnly && inFlight === request) inFlight = null
+    if (inFlight.get(key) === request) inFlight.delete(key)
   }
 }
 
@@ -192,6 +199,8 @@ export async function markNotificationRead(notificationId) {
     if (isMissingTable(result.error)) return null
     throw result.error
   }
+  cacheGeneration += 1
+  inFlight.clear()
   cachedResult = null
   return result.data ? normalize(result.data) : null
 }
@@ -205,6 +214,8 @@ export async function markAllNotificationsRead() {
     if (isMissingTable(result.error)) return 0
     throw result.error
   }
+  cacheGeneration += 1
+  inFlight.clear()
   cachedResult = null
   return (result.data || []).length
 }

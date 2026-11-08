@@ -1,6 +1,7 @@
 import { createHmac } from 'crypto'
 import { NextResponse } from 'next/server'
 import { normalizeHostname } from '@/lib/site-repository'
+import { normaliseMeasurement } from '@/lib/measurement'
 import { normalizeWebsiteLeadIntent } from '@/lib/lead-intent'
 import { getServerSupabase } from '@/lib/supabase-server'
 
@@ -28,6 +29,7 @@ type LeadBody = {
   pageUrl?: unknown
   referrer?: unknown
   idempotencyKey?: unknown
+  measurement?: unknown
   companyWebsite?: unknown
 }
 
@@ -75,6 +77,7 @@ function attribution(request: Request, body: LeadBody, host: string) {
   const referrer = safeUrl(body.referrer)
   const pageMatchesSite = page && normalizeHostname(page.host) === host
   return {
+    measurement: pageMatchesSite ? normaliseMeasurement(body.measurement) : undefined,
     pagePath: pageMatchesSite ? page.pathname.slice(0, 2048) : undefined,
     referrer: referrer ? `${referrer.origin}${referrer.pathname}`.slice(0, 2048) : undefined,
     utmSource: pageMatchesSite ? text(page.searchParams.get('utm_source'), 160) : undefined,

@@ -10,7 +10,7 @@ export const RENTAL_OVERVIEW_TABS = Object.freeze([
   { key: 'activity', label: 'Activity' },
 ])
 
-export function buildRentalListingOverview({ listing = {}, leads = [], applications = [], activity = [], documents = [], requirements = [], tenancies = [], mandates = [], documentMatrix, issues = [], now = Date.now() } = {}) {
+export function buildRentalListingOverview({ listing = {}, leads = [], applications = [], activity = [], documents = [], requirements = [], tenancies = [], mandates = [], documentMatrix, issues = [], issueDetails = [], now = Date.now() } = {}) {
   const listingId = text(listing.id)
   const outcomes = new Map()
   activity.filter((item) => item.activity_type === 'rental_viewing_outcome').sort((a, b) => text(b.created_at).localeCompare(text(a.created_at))).forEach((item) => {
@@ -33,7 +33,7 @@ export function buildRentalListingOverview({ listing = {}, leads = [], applicati
   const start = timestamp(listedAt)
   const savedProgress = documentMatrix ? rentalListingDocumentProgress(documentMatrix, now) : null
   return {
-    issues, leads: linkedLeads, applications, legacyApplications, activity, documents, requirements, documentMatrix: documentMatrix || { landlords: [], tenants: [], issues: [] }, tenant, mandates,
+    issues, issueDetails, leads: linkedLeads, applications, legacyApplications, activity, documents, requirements, documentMatrix: documentMatrix || { landlords: [], tenants: [], issues: [] }, tenant, mandates,
     leadCount: issues.includes('Overview') || issues.includes('Leads') || issues.includes('Applications') || issues.includes('Viewings & activity') ? null : new Set([...referencedLeads, ...linkedLeads.map((lead) => text(lead.id))]).size,
     newLeadCount: linkedLeads.filter((lead) => timestamp(lead.createdAt) >= now - 7 * 86400000).length,
     viewingCount: issues.includes('Overview') || issues.includes('Viewings & activity') ? null : viewings.length,

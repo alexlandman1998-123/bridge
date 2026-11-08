@@ -298,6 +298,17 @@ export function WhatsAppCampaignDetail({ campaignId, onBack, onOpenMarketingCamp
   const scope = useCampaignScope(org)
   return <CampaignDetail key={`${scope}:${campaignId}`} org={org} campaignId={campaignId} onBack={onBack} onOpenMarketingCampaign={onOpenMarketingCampaign} onEdit={onEdit} />
 }
+function CampaignTrackingLink({ org, campaignId }) {
+  const [targetUrl, setTargetUrl] = useState('')
+  const [link, setLink] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  return <section className="wa-form-card"><h2>Campaign link</h2><form onSubmit={async event => {
+    event.preventDefault(); setBusy(true); setError(''); setLink(null)
+    try { const result = await whatsappCampaignRequest(org, 'tracking_link', { campaignId, targetUrl }); setLink(result) }
+    catch (cause) { setError(cause.message || 'Unable to create a tracked link.') } finally { setBusy(false) }
+  }}><label className="wa-field-label"><span>Destination URL</span><input required type="url" maxLength={4096} value={targetUrl} onChange={event => { setTargetUrl(event.target.value); setLink(null) }} /></label><button className="wa-secondary-button" type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create tracked link'}</button></form>{link && <>{[['Tracked URL',link.url],['URL pattern for Meta approval',link.templateUrl],['URL button variable value',link.buttonValue]].map(([label,value]) => <label className="wa-field-label" key={label}><span>{label}</span><input readOnly value={value} onFocus={event => event.target.select()} /></label>)}</>}<p>Approve the URL pattern in Meta, then use only the button variable value in that template’s URL field. Templates with a different base URL require review. Published websites belonging to this organisation also record subsequent enquiries.</p><ErrorNotice>{error}</ErrorNotice></section>
+}
 function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEdit }) {
   const [detail, setDetail] = useState(null)
   const [error, setError] = useState('')
@@ -315,7 +326,22 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
     } catch (err) { if (alive.current) setError(err.message) }
     finally { refreshInFlight.current = false; if (alive.current) setRefreshing(false) }
   }, [org, campaignId])
-  useEffect(() => { alive.current = true; void refresh(); const timer = setInterval(() => { void refresh() }, 10000); return () => { alive.current = false; clearInterval(timer) } }, [refresh])
+  useEffect(() => {
+    alive.current = true
+    const refreshVisible = () => { if (document.visibilityState !== 'hidden' && navigator.onLine !== false) void refresh() }
+    refreshVisible()
+    const timer = setInterval(refreshVisible, 10000)
+    window.addEventListener('online', refreshVisible)
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      alive.current = false
+      clearInterval(timer)
+      window.removeEventListener('online', refreshVisible)
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
+  }, [refresh])
   const control = async (action) => {
     setBusy(true); setError('')
     try { await whatsappCampaignRequest(org, action, { campaignId }); await refresh() } catch (err) { if (alive.current) setError(err.message) } finally { if (alive.current) setBusy(false) }
@@ -364,6 +390,8 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
       <section className="wa-detail-summary" aria-label="Campaign results summary">
         {summary.map(([icon, label, value, note]) => <article key={label}><div><span>{label}</span>{icon}</div><strong>{fmt(value)}</strong><small>{note}</small></article>)}
       </section>
+      <section className="wa-form-card" aria-label="Campaign engagement"><h2>Tracked engagement</h2>{detail.campaign.engagement ? <><div className="email-review">{[['replies','Attributed reply recipients'],['reply_rate','Attributed reply rate'],['tracked_clicks','Link clicks'],['leads','Attributed leads'],['appointments','Appointments created'],['transactions','Transactions'],['registered','Registered']].map(([key,label]) => <div key={key}><span>{label}</span><strong>{key === 'reply_rate' ? delivered ? `${Math.round(Number(detail.campaign.engagement.replies || 0) * 100 / delivered)}%` : '—' : key !== 'replies' && !detail.campaign.engagement.tracked_links ? 'Not tracked' : fmt(detail.campaign.engagement[key])}</strong></div>)}</div><small>Reply rates use delivered messages and require a reply to this campaign message. Clicks exclude known automation and are not unique people. Outcomes follow recorded enquiries within 30 days of a tracked link; revenue is not measured.</small></> : <p>Engagement reporting is unavailable.</p>}</section>
+      <CampaignTrackingLink org={org} campaignId={campaignId} />
       {detail.campaign.display_status === 'scheduled' ? <aside className="wa-notice wa-detail-pending"><p>Scheduled for {date(detail.campaign.scheduled_at)} ({localTimeZone}). Arch9 will send in the background.</p></aside> : detail.campaign.delivery_state === 'cancelled' ? <aside className="wa-notice wa-detail-pending"><p>Remaining messages were cancelled.</p></aside> : queued > 0 ? <aside className="wa-notice wa-detail-pending"><div><strong>{queued} {queued === 1 ? 'recipient is' : 'recipients are'} waiting</strong><p>{detail.campaign.delivery_state === 'paused' ? 'Delivery is paused.' : detail.campaign.delivery_state ? 'Sending continues in the background. You can close this page.' : 'Resume to send the remaining recipients in the background.'}</p>{detail.campaign.delivery_error ? <p role="alert">{detail.campaign.delivery_error}</p> : null}</div>{!['cancelled', 'completed'].includes(detail.campaign.delivery_state) ? <div className="wa-inline-actions"><button type="button" className="wa-primary-button" disabled={busy} onClick={() => void control(!detail.campaign.delivery_state || detail.campaign.delivery_state === 'paused' ? 'resume' : 'pause')}>{!detail.campaign.delivery_state || detail.campaign.delivery_state === 'paused' ? 'Resume sending' : 'Pause sending'}</button>{detail.campaign.delivery_state ? <button type="button" className="wa-secondary-button" disabled={busy} onClick={() => void control('cancel')}>Cancel remaining messages</button> : null}</div> : null}{detail.campaign.delivery_state ? <small>Messages already in progress may finish after pausing or cancelling.</small> : null}</aside> : null}
       <section className="wa-campaigns-panel wa-results wa-detail-results" aria-labelledby="wa-recipient-results-title">
         <div className="wa-detail-results-heading"><h2 id="wa-recipient-results-title">Recipient results</h2><span>{fmt(recipients.length)} {recipients.length === 1 ? 'recipient' : 'recipients'}</span></div>

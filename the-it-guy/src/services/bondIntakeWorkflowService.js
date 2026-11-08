@@ -446,7 +446,7 @@ export function canDeclineBondIntake(user = {}) {
 export function canAcceptBondIntake(user = {}, row = {}) {
   if (!canMutateBondIntake(user)) return false
   const summary = getBondIntakeSummary(getBondIntakeInput(row, user))
-  return summary.intakeStatus === BOND_INTAKE_STATUSES.READY_FOR_REVIEW
+  return summary.canAccept
 }
 
 export async function fetchBondConsultantOptions({ user = {}, client = null } = {}) {
@@ -615,7 +615,10 @@ async function updateByIdWithMissingColumnFallback(client, table, id, payload = 
   let remainingPayload = compactObject(payload)
   while (Object.keys(remainingPayload).length) {
     const result = await client.from(table).update(remainingPayload).eq('id', id).select(select).maybeSingle()
-    if (!result.error) return result.data || null
+    if (!result.error) {
+      if (!result.data) throw new Error('This application could not be updated. Refresh the file and check your assignment before retrying.')
+      return result.data
+    }
 
     const missingColumn = Object.keys(remainingPayload).find((key) => isMissingColumnError(result.error, key))
     if (!missingColumn) throw result.error
@@ -721,111 +724,68 @@ async function upsertRolePlayerMarker(client, {
   throw result.error
 }
 
-async function persistAcceptedAssignment(client, {
-  transactionId,
-  actor,
-  assignee,
-  action,
-  assignmentDecision = {},
-}) {
-  const now = new Date().toISOString()
-  const source = action === 'assign' ? 'assigned_from_intake' : 'accepted_from_intake'
-  const scope = resolveAssignmentScope({ actor, assignee })
-  const decision = assignmentDecision || {}
-  return updateByIdWithMissingColumnFallback(
-    client,
-    'transactions',
-    transactionId,
-    {
-      assigned_bond_originator_email:
-        decision.source === 'rule' && assignee.id && !assignee.email
-          ? null
-          : assignee.email || (decision.source === 'manual' ? actor.email : null) || null,
-      bond_originator:
-        decision.source === 'rule'
-          ? assignee.name || null
-          : assignee.name || actor.name || null,
-      bond_workspace_id: scope.organisationId,
-      bond_region_id: scope.regionId,
-      bond_workspace_unit_id: scope.workspaceUnitId,
-      primary_bond_consultant_user_id: scope.userId,
-      bond_assignment_rule_id: decision.ruleId || null,
-      bond_assignment_method: decision.source === 'rule' ? decision.method : null,
-      finance_managed_by: 'bond_originator',
-      bond_assignment_status: 'consultant_assigned',
-      bond_assignment_source: source,
-      finance_status: 'Accepted by bond originator',
-      last_meaningful_activity_at: now,
-      updated_at: now,
-    },
-    'id, assigned_bond_originator_email, bond_originator, primary_bond_consultant_user_id, bond_assignment_status, bond_assignment_source, bond_assignment_rule_id, bond_assignment_method, finance_status, updated_at',
-  )
-}
-
-async function persistBondApplicationAssignment(client, {
-  transactionId,
-  actor,
-  assignee,
-  action,
-  assignmentDecision = {},
-}) {
+async function persistIntakeAssignmentAtomically(client, { transactionId, actor, assignee, action, assignmentDecision = {} }) {
   const now = new Date().toISOString()
   const source = action === 'assign' ? 'assigned_from_intake' : 'accepted_from_intake'
   const decision = assignmentDecision || {}
   const scope = decision.scope || resolveAssignmentScope({ actor, assignee })
-  const lookup = await client
-    .from('transaction_bond_applications')
-    .select('id, assigned_organisation_id')
-    .eq('transaction_id', transactionId)
-    .limit(10)
-
-  if (lookup.error) {
-    if (isMissingTableError(lookup.error, 'transaction_bond_applications') || isPermissionDeniedError(lookup.error)) return []
-    throw lookup.error
+  const lookup = await client.from('transaction_bond_applications').select('id, assigned_organisation_id').eq('transaction_id', transactionId)
+  if (lookup.error) throw lookup.error
+  if ((lookup.data || []).some(row => scope.organisationId && normalizeText(row.assigned_organisation_id) !== normalizeText(scope.organisationId))) {
+    await assertWorkspaceEntitlementLimit({ workspaceId: scope.organisationId, workspaceType: WORKSPACE_TYPES.bondOriginator, workspaceKind: actor.workspaceKind || assignee.workspaceKind || assignee.workspace_kind, entitlementKey: ENTITLEMENT_KEYS.monthlyBondApplications })
   }
-
-  const updates = []
-  for (const row of lookup.data || []) {
-    if (scope.organisationId && normalizeText(row.assigned_organisation_id) !== normalizeText(scope.organisationId)) {
-      await assertWorkspaceEntitlementLimit({
-        workspaceId: scope.organisationId,
-        workspaceType: WORKSPACE_TYPES.bondOriginator,
-        workspaceKind: actor.workspaceKind || assignee.workspaceKind || assignee.workspace_kind,
-        entitlementKey: ENTITLEMENT_KEYS.monthlyBondApplications,
-      })
-    }
-    updates.push(await updateByIdWithMissingColumnFallback(
-      client,
-      'transaction_bond_applications',
-      row.id,
-      {
-        assigned_organisation_id: scope.organisationId,
-        assigned_region_id: scope.regionId,
-        assigned_workspace_unit_id: scope.workspaceUnitId,
-        assigned_branch_id: scope.branchId,
-        assigned_team_id: scope.teamId,
-        assigned_user_id: scope.userId,
-        bond_assignment_rule_id: decision.ruleId || null,
-        bond_assignment_method: decision.source === 'rule' ? decision.method : null,
-        scope_level: scope.scopeLevel,
-        scope_metadata: compactObject({
-          source,
-          action,
-          sourceType: decision.source || null,
-          ruleId: decision.ruleId || null,
-          method: decision.source === 'rule' ? decision.method : null,
-          assignedBy: actor.id || null,
-          assignedAt: now,
-        }),
-        assignment_status: scope.userId ? 'consultant_assigned' : 'organisation_queue',
-        assignment_source: source,
-        updated_by: actor.id || null,
-        updated_at: now,
-      },
-      'id',
-    ))
+  const transactionChanges = {
+    assigned_bond_originator_email:
+      decision.source === 'rule' && assignee.id && !assignee.email
+        ? null
+        : assignee.email || (decision.source === 'manual' ? actor.email : null) || null,
+    bond_originator:
+      decision.source === 'rule'
+        ? assignee.name || null
+        : assignee.name || actor.name || null,
+    bond_workspace_id: scope.organisationId,
+    bond_region_id: scope.regionId,
+    bond_workspace_unit_id: scope.workspaceUnitId,
+    primary_bond_consultant_user_id: scope.userId,
+    bond_assignment_rule_id: decision.ruleId || null,
+    bond_assignment_method: decision.source === 'rule' ? decision.method : null,
+    finance_managed_by: 'bond_originator',
+    bond_assignment_status: 'consultant_assigned',
+    bond_assignment_source: source,
+    finance_status: 'Accepted by bond originator',
+    last_meaningful_activity_at: now,
+    updated_at: now,
   }
-  return updates
+  const applicationChanges = {
+    assigned_organisation_id: scope.organisationId,
+    assigned_region_id: scope.regionId,
+    assigned_workspace_unit_id: scope.workspaceUnitId,
+    assigned_branch_id: scope.branchId,
+    assigned_team_id: scope.teamId,
+    assigned_user_id: scope.userId,
+    assignment_rule_id: decision.ruleId || null,
+    assignment_method: decision.source === 'rule' ? decision.method : null,
+    scope_level: scope.scopeLevel,
+    scope_metadata: compactObject({
+      source,
+      action,
+      sourceType: decision.source || null,
+      ruleId: decision.ruleId || null,
+      method: decision.source === 'rule' ? decision.method : null,
+      assignedBy: actor.id || null,
+      assignedAt: now,
+    }),
+    assignment_status: scope.userId ? 'consultant_assigned' : 'organisation_queue',
+    assignment_source: source,
+    updated_by: actor.id || null,
+    updated_at: now,
+  }
+  const result = await client.rpc('bridge_save_bond_intake_assignment', {
+    p_transaction: transactionId, p_transaction_changes: transactionChanges, p_application_changes: applicationChanges,
+  })
+  if (result.error) throw result.error
+  if (!result.data?.transaction || !Array.isArray(result.data.applications) || !result.data.applications.length) throw new Error('This referral could not be updated. Refresh the file and check your assignment before retrying.')
+  return result.data
 }
 
 function getReferralAgencyOrganisationId(row = {}) {
@@ -884,13 +844,17 @@ async function persistDecline(client, { transactionId, reason }) {
 
 function assertReady(row = {}, user = {}) {
   const summary = getBondIntakeSummary(getBondIntakeInput(row, user))
-  if (summary.intakeStatus !== BOND_INTAKE_STATUSES.READY_FOR_REVIEW) {
-    throw new Error('Buyer application and documents must be complete before acceptance.')
+  if (!summary.canAccept) {
+    throw new Error('This referral cannot be accepted. Confirm originator-managed bond finance, an open deal and its current assignment.')
   }
 }
 
 function getTransactionId(row = {}, explicitTransactionId = '') {
-  const transactionId = normalizeText(explicitTransactionId || row?.transaction?.id || row?.id)
+  const rowId = normalizeText(row?.transaction?.id || row?.id)
+  if (explicitTransactionId && rowId && normalizeText(explicitTransactionId) !== rowId) {
+    throw new Error('The application changed. Refresh the file before accepting or assigning it.')
+  }
+  const transactionId = normalizeText(explicitTransactionId || rowId)
   if (!transactionId) {
     throw new Error('Transaction is required.')
   }
@@ -909,21 +873,10 @@ export async function acceptBondIntakeApplication({ row = {}, transactionId = ''
   const resolvedAssignee = assignmentDecision.assignee
   const id = getTransactionId(row, transactionId)
 
+  const { transaction, applications: assignedApplications } = await persistIntakeAssignmentAtomically(db, {
+    transactionId: id, actor, assignee: resolvedAssignee, action: 'accept', assignmentDecision,
+  })
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'accept', note })
-  const transaction = await persistAcceptedAssignment(db, {
-    transactionId: id,
-    actor,
-    assignee: resolvedAssignee,
-    action: 'accept',
-    assignmentDecision,
-  })
-  const assignedApplications = await persistBondApplicationAssignment(db, {
-    transactionId: id,
-    actor,
-    assignee: resolvedAssignee,
-    action: 'accept',
-    assignmentDecision,
-  })
   await snapshotAcceptedReferralTerms(db, {
     applications: assignedApplications,
     row,
@@ -958,21 +911,10 @@ export async function assignBondIntakeApplication({ row = {}, transactionId = ''
   const resolvedAssignee = assignmentDecision.assignee
   const id = getTransactionId(row, transactionId)
 
+  const { transaction, applications: assignedApplications } = await persistIntakeAssignmentAtomically(db, {
+    transactionId: id, actor, assignee: resolvedAssignee, action: 'assign', assignmentDecision,
+  })
   await upsertRolePlayerMarker(db, { transactionId: id, actor, assignee: resolvedAssignee, action: 'assign', note })
-  const transaction = await persistAcceptedAssignment(db, {
-    transactionId: id,
-    actor,
-    assignee: resolvedAssignee,
-    action: 'assign',
-    assignmentDecision,
-  })
-  const assignedApplications = await persistBondApplicationAssignment(db, {
-    transactionId: id,
-    actor,
-    assignee: resolvedAssignee,
-    action: 'assign',
-    assignmentDecision,
-  })
   await snapshotAcceptedReferralTerms(db, {
     applications: assignedApplications,
     row,

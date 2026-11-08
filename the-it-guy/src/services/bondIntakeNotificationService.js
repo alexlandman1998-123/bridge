@@ -827,12 +827,12 @@ function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata
       activity: `Bond application declined${reason ? `: ${reason}` : '.'}`,
     },
     [BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO]: {
-      title: 'Complete your bond application',
-      subject: 'Complete your bond application',
-      buyerSubject: 'Complete your bond application',
-      message: `${buyer} has been asked to complete the online bond application for ${property}. ${consultantName} remains the assigned bond contact.`,
-      buyerMessage: `${consultantName} and the ${organisationName} team are ready to process your bond application. Complete the online application so your information can be reviewed and prepared for submission.`,
-      activity: `Bond application completion email sent to buyer. ${consultantName} introduced as Bond Originator.`,
+      title: 'View your bond progress',
+      subject: 'View your bond progress',
+      buyerSubject: 'View your bond progress',
+      message: `${buyer} can view bond progress for ${property}. ${consultantName} remains the assigned bond contact.`,
+      buyerMessage: `${consultantName} and the ${organisationName} team are ready to process your bond application. View progress and provide any documents your originator requests.`,
+      activity: `Bond progress is available in the buyer workspace. ${consultantName} introduced as Bond Originator.`,
     },
   }
   return copy[eventType] || copy[BOND_NOTIFICATION_EVENTS.BOND_INTAKE_STARTED]
@@ -1018,22 +1018,34 @@ async function sendEmailIfAllowed({ eventType, transactionId, recipient, copy, m
   })
     ? appendFinanceReadinessToEmailMessage(baseMessage, metadata.financeReadinessHandoff)
     : baseMessage
-  const result = await invokeEmailFunction('send-email', {
-    client,
-    body: {
-      type: eventType === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO ? 'bond_originator_buyer_intro' : 'bond_intake_notification',
-      transactionId,
-      to: recipient.email,
-      recipientName: recipient.name,
-      subject: isBuyer && copy.buyerSubject ? copy.buyerSubject : copy.subject,
-      title: copy.title,
-      message,
-      metadata,
-    },
-  })
+  let result
+  try {
+    result = await invokeEmailFunction('send-email', {
+      client,
+      body: {
+        type: eventType === BOND_NOTIFICATION_EVENTS.BUYER_BOND_ORIGINATOR_INTRO ? 'bond_originator_buyer_intro' : 'bond_intake_notification',
+        transactionId,
+        to: recipient.email,
+        recipientName: recipient.name,
+        subject: isBuyer && copy.buyerSubject ? copy.buyerSubject : copy.subject,
+        title: copy.title,
+        message,
+        metadata,
+      },
+    })
+  } catch (error) {
+    return { sent: false, queued: false, suppressed: false, unconfirmed: true, error }
+  }
+  const response = result?.data || {}
+  const sent = !result?.error && response.ok !== false && response.sent === true && !response.suppressed && !response.queued
+  const queued = !result?.error && response.ok !== false && response.queued === true && !response.suppressed
+  const suppressed = !sent && !queued && !result?.error && response.suppressed === true
   return {
-    sent: !result?.error,
-    error: result?.error || null,
+    sent,
+    queued,
+    suppressed,
+    unconfirmed: !sent && !queued && !suppressed,
+    error: result?.error || (!sent && !queued && !suppressed ? new Error('Email acceptance is unconfirmed. Check delivery history before retrying.') : null),
   }
 }
 
@@ -1369,7 +1381,9 @@ export async function notifyBondIntakeEvent({
     supplementaryActivities,
     notifications,
     emails: emailResults,
-    emailSuppressed: !allowEmail,
+    emailSuppressed: !allowEmail || (emailResults.length > 0 && emailResults.every(result => result.suppressed)),
+    emailQueued: emailResults.some(result => result.queued),
+    emailSent: emailResults.some(result => result.sent),
     recipients: selectedRecipients,
   }
 }

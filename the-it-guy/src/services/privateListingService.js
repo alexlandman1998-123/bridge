@@ -5090,7 +5090,7 @@ export async function ensureSellerPortalActivationRecord(
     ownership_structure: normalizeNullableText(existingQuery.data?.ownership_structure),
     marital_regime: normalizeNullableText(existingQuery.data?.marital_regime),
     form_data: nextFormData,
-    status: existingQuery.data?.status || 'sent',
+    status: existingQuery.data?.status || 'not_started',
     seller_portal_activation_source: activationSource,
     seller_portal_status: existingQuery.data?.seller_portal_password_hash ? 'activated' : 'invitation_pending',
     seller_portal_invitation_created_by: normalizeUuid(performedBy),
@@ -5120,10 +5120,6 @@ export async function ensureSellerPortalActivationRecord(
       .single()
   }
   if (upsert.error) throw upsert.error
-
-  await updatePrivateListing(listing.id, {
-    sellerOnboardingStatus: listing.sellerOnboardingStatus === 'completed' ? 'completed' : 'sent',
-  }, { includeRequirementsAndDocuments: false }).catch(() => null)
 
   await createPrivateListingActivity({
     privateListingId: listing.id,
@@ -6802,10 +6798,13 @@ export async function createPrivateListingActivity(payload = {}) {
   if (hasMissingTableCache('private_listing_activity')) return null
   const privateListingId = normalizeUuid(payload.privateListingId)
   if (!privateListingId) throw new Error('privateListingId is required.')
+  const activityId = payload.activityId ? normalizeUuid(payload.activityId) : null
+  if (payload.activityId && !activityId) throw new Error('A valid listing activity identity is required.')
 
   const insert = await client
     .from('private_listing_activity')
     .insert({
+      ...(activityId ? { id: activityId } : {}),
       private_listing_id: privateListingId,
       activity_type: normalizeNullableText(payload.activityType),
       activity_title: normalizeNullableText(payload.activityTitle),
@@ -6868,11 +6867,16 @@ export async function getPrivateListingActivity(listingId, { requireAvailable = 
   return query.data || []
 }
 
-export async function getPrivateListingDocumentRequirements(listingId) {
+function unavailableListingDocumentRows(requireAvailable, label) {
+  if (requireAvailable) throw new Error(`${label} are unavailable in this environment. Contact support to check the database setup.`)
+  return []
+}
+
+export async function getPrivateListingDocumentRequirements(listingId, { requireAvailable = false } = {}) {
   const client = requireClient()
-  if (hasMissingTableCache('private_listing_document_requirements')) return []
+  if (hasMissingTableCache('private_listing_document_requirements')) return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   const reqState = getSelectFallbackState('private_listing_document_requirements')
-  if (reqState?.reason === 'schemaIncompatible') return []
+  if (reqState?.reason === 'schemaIncompatible') return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await runSelectWithFallback(
@@ -6886,21 +6890,21 @@ export async function getPrivateListingDocumentRequirements(listingId) {
   )
   if (query.missingTable) {
     rememberMissingTable('private_listing_document_requirements')
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   }
-  if (query.schemaIncompatible) return []
+  if (query.schemaIncompatible) return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   if (query.error) {
     if (!isMissingColumnError(query.error)) throw query.error
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing document requirements')
   }
   return normalizeRequirementRows(query.data)
 }
 
-export async function getPrivateListingDocuments(listingId) {
+export async function getPrivateListingDocuments(listingId, { requireAvailable = false } = {}) {
   const client = requireClient()
-  if (hasMissingTableCache('private_listing_documents')) return []
+  if (hasMissingTableCache('private_listing_documents')) return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   const docState = getSelectFallbackState('private_listing_documents')
-  if (docState?.reason === 'schemaIncompatible') return []
+  if (docState?.reason === 'schemaIncompatible') return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await runSelectWithFallback(
@@ -6914,12 +6918,12 @@ export async function getPrivateListingDocuments(listingId) {
   )
   if (query.missingTable) {
     rememberMissingTable('private_listing_documents')
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   }
-  if (query.schemaIncompatible) return []
+  if (query.schemaIncompatible) return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   if (query.error) {
     if (!isMissingColumnError(query.error)) throw query.error
-    return []
+    return unavailableListingDocumentRows(requireAvailable, 'Listing documents')
   }
   return enrichPrivateListingDocumentRows(client, query.data)
 }

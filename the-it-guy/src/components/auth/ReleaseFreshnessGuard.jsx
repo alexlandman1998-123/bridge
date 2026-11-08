@@ -25,13 +25,18 @@ export default function ReleaseFreshnessGuard() {
 
     let cancelled = false
     let timerId = null
+    let inFlight = false
+    const controller = new AbortController()
 
     async function checkReleaseFreshness() {
+      if (cancelled || inFlight || document.visibilityState === 'hidden' || navigator.onLine === false) return
       const loadedReleaseId = getLoadedReleaseId()
       if (!loadedReleaseId) return
+      inFlight = true
       try {
         const response = await fetch(`/release-manifest.json?release_check=${Date.now()}`, {
           cache: 'no-store',
+          signal: controller.signal,
           headers: { Accept: 'application/json' },
         })
         if (!response.ok) return
@@ -48,7 +53,9 @@ export default function ReleaseFreshnessGuard() {
         const nextUrl = buildReleaseRefreshUrl()
         window.location.replace(nextUrl || window.location.href)
       } catch (error) {
-        console.debug('[RELEASE] freshness check skipped', error)
+        if (!cancelled) console.debug('[RELEASE] freshness check skipped', error)
+      } finally {
+        inFlight = false
       }
     }
 
@@ -61,9 +68,12 @@ export default function ReleaseFreshnessGuard() {
       if (document.visibilityState === 'visible') void checkReleaseFreshness()
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('online', handleVisibilityChange)
 
     return () => {
       cancelled = true
+      controller.abort()
+      window.removeEventListener('online', handleVisibilityChange)
       if (timerId) window.clearInterval(timerId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }

@@ -235,10 +235,8 @@ export default function SettingsAccountPage({ section = 'profile' }) {
   return (
     <div className={settingsPageClass}>
       {showSecurity ? (
-        <div>
-          <p className="text-sm font-medium text-[#718198]">Settings / Security</p>
+        <div className="ui-workspace-header">
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-[#142132]">Security</h1>
-          <p className="mt-1 text-base text-[#6b7d93]">Keep your Arch9 account secure with a strong, unique password.</p>
         </div>
       ) : (
         <SettingsPageHeader

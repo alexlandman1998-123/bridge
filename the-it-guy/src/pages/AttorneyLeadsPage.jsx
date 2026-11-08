@@ -1451,9 +1451,9 @@ export default function AttorneyLeadsPage() {
   }
 
   return (
-    <section className="w-full px-3 py-4 sm:px-5 sm:py-5">
-      <div className="mx-auto w-full max-w-[1500px]">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <section className="min-w-0 w-full">
+      <div className="min-w-0 w-full">
+        <header className="ui-workspace-header">
           <div>
             <h1 className="text-3xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
           </div>

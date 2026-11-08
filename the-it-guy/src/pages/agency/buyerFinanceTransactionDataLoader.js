@@ -42,6 +42,11 @@ export function clearBuyerFinanceTransactionDataLoaderCache() {
   completedLoads.clear()
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => clearBuyerFinanceTransactionDataLoaderCache())
+  window.addEventListener('itg:agency-crm-updated', () => clearBuyerFinanceTransactionDataLoaderCache())
+}
+
 export function loadBuyerFinanceTransactionData({
   organisationId = '',
   leadId = '',
@@ -77,7 +82,9 @@ export function loadBuyerFinanceTransactionData({
     .then(() => fetchDiagnostic(payload))
     .then((diagnostic) => {
       const normalizedDiagnostic = diagnostic && typeof diagnostic === 'object' ? diagnostic : null
-      completedLoads.set(key, { diagnostic: normalizedDiagnostic, completedAt: Number(now()) })
+      if (pendingLoads.get(key) === request) {
+        completedLoads.set(key, { diagnostic: normalizedDiagnostic, completedAt: Number(now()) })
+      }
       return normalizedDiagnostic
     })
     .finally(() => {

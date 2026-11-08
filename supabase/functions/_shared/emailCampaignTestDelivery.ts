@@ -24,13 +24,14 @@ export async function deliverCampaignTest({ db, organisationId, actorId, identit
   const reservationKey = `test:${receipt.id}`;
   try {
     const reservation = await db.rpc("email_reserve_send", { p_organisation_id: organisationId, p_identity_id: identityId, p_key: reservationKey, p_actor_id: actorId, p_test: true });
-    if (reservation.error || !reservation.data || await acquireCampaignSendSlot(db, { p_organisation_id: organisationId, p_identity_id: identityId, p_key: reservationKey, p_email: recipientEmail, p_actor_id: actorId }, sleep) !== "send") {
+    if (reservation.error) throw reservation.error;
+    if (!reservation.data || await acquireCampaignSendSlot(db, { p_organisation_id: organisationId, p_identity_id: identityId, p_key: reservationKey, p_email: recipientEmail, p_actor_id: actorId }, sleep) !== "send") {
       await complete("rejected");
       return response(429, { error: "Test sending is paused or a sending limit was reached. Resolve the issue before starting a new test." });
     }
   } catch {
     await complete("rejected").catch(() => false);
-    return response(503, { error: "Sending controls are unavailable. No provider request was made.", deliveryUncertain: true });
+    return response(503, { error: "Sending controls are unavailable. No provider request was made.", deliveryUncertain: false });
   }
   let result: Response;
   try {
@@ -45,6 +46,12 @@ export async function deliverCampaignTest({ db, organisationId, actorId, identit
   if (result.ok && typeof data.id === "string" && data.id.trim()) {
     if (!await complete("accepted", data.id).catch(() => false)) return uncertain();
     return response(200, { deliveredTo: recipientEmail, providerMessageId: data.id });
+  }
+  if (result.status >= 400 && result.status < 500 && ![408, 409, 429].includes(result.status)) {
+    const reason = typeof data?.message === "string" ? data.message.split(resendKey).join("[redacted]").replace(/[\r\n\u0000-\u001f]/g, " ").slice(0, 500) : `HTTP ${result.status}`;
+    const error = `The email provider rejected this test: ${reason}`;
+    const recorded = await complete("rejected").catch(() => false);
+    return response(recorded ? 422 : 503, { error: recorded ? error : `${error} Arch9 could not save the rejection; try again when storage is available.`, deliveryUncertain: false });
   }
   await complete("uncertain").catch(() => false);
   await recordCampaignBackoff(db, result).catch(() => {});

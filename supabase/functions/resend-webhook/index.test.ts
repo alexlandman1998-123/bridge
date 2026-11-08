@@ -74,7 +74,7 @@ async function campaignFixture(eventType: string, run: (request: () => Promise<R
  }
 }
 
-for(const type of ['email.delivered','email.opened','email.clicked','email.bounced','email.complained','email.suppressed']){
+for(const type of ['email.sent','email.delivery_delayed','email.failed','email.delivered','email.opened','email.clicked','email.bounced','email.complained','email.suppressed']){
  Deno.test(`Campaign ${type} retries repair storage before shared audit deduplication`,async()=>{
   await campaignFixture(type,async(request,state)=>{
    state.failApply=true;
@@ -116,6 +116,7 @@ Deno.test('domain callbacks update only the matching custom or platform verifica
    if(url.includes('/email_sending_domains?'))return json(url.includes('provider_domain_id=eq.custom-id')?{id:'custom-row',domain_name:'updates.customer.co.za',provider_domain_id:'custom-id'}:null);
    if(url.endsWith('/rpc/email_apply_domain_status')){const body=JSON.parse(options.body);assert(body.p_domain_id==='custom-row','Custom callback must use its matched row');changes.push('custom');return json(null);}
    if(url.endsWith('/rpc/email_campaign_apply_platform_status')){const body=JSON.parse(options.body);assert(body.p_provider_domain_id==='platform-id','Platform callback must use the server-configured ID');changes.push(`platform:${body.p_status}`);return json(null);}
+   if(url.endsWith('/rpc/email_record_tracking_status'))return json(null);
    if(url.endsWith('/domains/platform-id'))return json({id:'platform-id',name:'updates.arch9.co.za',status:'verified'});
    throw new Error(`Unexpected fixture request: ${url}`);
   })as typeof fetch;

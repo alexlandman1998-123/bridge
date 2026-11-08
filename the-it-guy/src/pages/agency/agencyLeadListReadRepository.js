@@ -1,10 +1,11 @@
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from './agencyLeadAgentScope'
-import { buildAgencyLeadListModel } from './agencyLeadListModel'
+import { buildAgencyLeadListModel, selectAgencyLeadCategoryRecords } from './agencyLeadListModel'
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
 import { enrichDevelopmentBuyerLeads } from '../../services/developmentBuyerLeadService.js'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import {
   deleteAgencyLeadCoreCache,
+  clearAgencyLeadCoreCache,
   readAgencyLeadCoreCache,
   writeAgencyLeadCoreCache,
 } from './agencyLeadCoreCache'
@@ -26,7 +27,9 @@ const PRIMARY_RECORDS_CACHE_TTL_MS = 60_000
 const primaryRecordsCache = new Map()
 const landingMetricsCache = new Map()
 const leadCoreRequestCache = new Map()
+const contactRecordsCache = new Map()
 let compatibleLeadFields = null
+let cacheRevision = 0
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -56,7 +59,7 @@ function isUnavailable(error) {
   return status === 403 || code === '42501' || code === '42P01' || code === 'PGRST205' || message.includes('permission denied') || message.includes('row-level security') || message.includes('does not exist')
 }
 
-async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageSize = 0, agentScope = null } = {}) {
+async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageSize = 0, agentScope = null, includeCount = true } = {}) {
   const fieldSets = [
     LEAD_FIELDS_ASSIGNMENT,
     LEAD_FIELDS_LOCATION,
@@ -71,7 +74,7 @@ async function selectCompatibleLeads(workspaceId, leadId = '', { page = 0, pageS
     : fieldSets
   let result = { data: [], error: null }
   for (const fields of candidates) {
-    let query = supabase.from('leads').select(fields, { count: leadId ? undefined : 'exact' }).eq('organisation_id', workspaceId)
+    let query = supabase.from('leads').select(fields, { count: leadId || !includeCount ? undefined : 'exact' }).eq('organisation_id', workspaceId)
     if (!leadId && agentScope) query = query.or(agencyLeadAgentFilter(agentScope, fields))
     query = leadId
       ? query.eq('lead_id', leadId).limit(1).maybeSingle()
@@ -220,6 +223,8 @@ async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0
     if (cached?.promise) return cached.promise
   }
 
+  const revision = cacheRevision
+  const entry = { expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS }
   const promise = selectCompatibleLeads(workspaceId, '', { page: normalizedPage, pageSize: normalizedPageSize, agentScope })
     .then(async (leads) => {
       if (leads.error && !isUnavailable(leads.error)) throw leads.error
@@ -236,20 +241,18 @@ async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0
         page: normalizedPage,
         pageSize: normalizedPageSize || leadRows.length,
       }
-      primaryRecordsCache.set(cacheKey, {
+      if (revision === cacheRevision && primaryRecordsCache.get(cacheKey) === entry) primaryRecordsCache.set(cacheKey, {
       data,
       expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS,
     })
     return data
   }).catch((error) => {
-    primaryRecordsCache.delete(cacheKey)
+    if (primaryRecordsCache.get(cacheKey) === entry) primaryRecordsCache.delete(cacheKey)
     throw error
   })
 
-  primaryRecordsCache.set(cacheKey, {
-    promise,
-    expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS,
-  })
+  entry.promise = promise
+  primaryRecordsCache.set(cacheKey, entry)
   return promise
 }
 
@@ -261,62 +264,102 @@ async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false, agen
     if (cached?.promise) return cached.promise
   }
 
+  const revision = cacheRevision
+  const entry = { expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS }
   const promise = (async () => {
+    // We already read every row for legacy category inference. Count those rows
+    // instead of executing a second RLS-filtered scan via count=exact.
     const pageSize = 1000
     const leads = []
     let page = 0
-    let totalCount = 0
     let hasMore = true
     while (hasMore) {
-      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize, agentScope })
+      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize, agentScope, includeCount: false })
       if (result.error && !isUnavailable(result.error)) throw result.error
       const rows = Array.isArray(result.data) ? result.data : []
-      totalCount = Number(result.count || totalCount || rows.length)
       leads.push(...rows.map(mapLead))
       page += 1
-      hasMore = Boolean(rows.length && rows.length === pageSize && leads.length < totalCount)
+      hasMore = rows.length === pageSize
     }
-    const data = { leads: await enrichDevelopmentBuyerLeads(workspaceId, leads), totalCount: Number(totalCount || leads.length), source: 'remote' }
-    landingMetricsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+    const data = { leads: await enrichDevelopmentBuyerLeads(workspaceId, leads), totalCount: leads.length, source: 'remote' }
+    if (revision === cacheRevision && landingMetricsCache.get(cacheKey) === entry) landingMetricsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
     return data
   })().catch((error) => {
-    landingMetricsCache.delete(cacheKey)
+    if (landingMetricsCache.get(cacheKey) === entry) landingMetricsCache.delete(cacheKey)
     throw error
   })
 
-  landingMetricsCache.set(cacheKey, { promise, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+  entry.promise = promise
+  landingMetricsCache.set(cacheKey, entry)
   return promise
 }
 
 async function fetchCategoryRecords(workspaceId, { category, forceRefresh = false, agentScope = null } = {}) {
   // The summary already reads every lead in this scope. Use that same snapshot
   // to filter before paging, including legacy records whose category is inferred.
+  const revision = cacheRevision
   const snapshot = await fetchLandingMetricLeads(workspaceId, { forceRefresh, agentScope })
   const cacheKey = `${workspaceId}:category:${category}` + (agentScope ? `:agent:${JSON.stringify(agentScope)}` : '')
   const cached = readFreshCache(primaryRecordsCache, cacheKey)
   if (!forceRefresh && cached?.data?.metricLeads === snapshot.leads) return cached.data
 
-  const leads = buildAgencyLeadListModel({ leads: snapshot.leads, category }).rows.map((row) => row.raw)
-  const contactIds = [...new Set(leads.map((lead) => lead.contactId).filter(Boolean))]
-  const contacts = []
-  // Bound the URL size and stay below the API row limit when searching names.
-  for (let offset = 0; offset < contactIds.length; offset += 200) {
-    const result = await supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).in('contact_id', contactIds.slice(offset, offset + 200))
-    if (result.error && !isUnavailable(result.error)) throw result.error
-    contacts.push(...(Array.isArray(result.data) ? result.data.map(mapContact) : []))
-  }
-  const data = { leads, contacts, metricLeads: snapshot.leads, totalCount: leads.length }
-  primaryRecordsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+  const leads = selectAgencyLeadCategoryRecords(snapshot.leads, category)
+  const data = { leads, metricLeads: snapshot.leads, totalCount: leads.length }
+  if (revision === cacheRevision) primaryRecordsCache.set(cacheKey, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
   return data
 }
 
+async function fetchLeadContacts(workspaceId, leads, { forceRefresh = false } = {}) {
+  const contactIds = [...new Set(leads.map((lead) => lead.contactId).filter(Boolean))].sort()
+  const contacts = []
+  // Bound request URLs. Reuse both completed and in-flight batches during paging/search.
+  for (let offset = 0; offset < contactIds.length; offset += 200) {
+    const batch = contactIds.slice(offset, offset + 200)
+    const key = `${workspaceId}:${batch.join(',')}`
+    const cached = !forceRefresh && readFreshCache(contactRecordsCache, key)
+    if (cached) {
+      contacts.push(...(cached.data || await cached.promise))
+      continue
+    }
+    const entry = { expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS }
+    entry.promise = (async () => {
+      const result = await supabase.from('contacts').select(CONTACT_FIELDS).eq('organisation_id', workspaceId).in('contact_id', batch)
+      if (result.error && !isUnavailable(result.error)) throw result.error
+      const rows = Array.isArray(result.data) ? result.data.map(mapContact) : []
+      if (contactRecordsCache.get(key) === entry) entry.data = rows
+      return rows
+    })().catch((error) => {
+      if (contactRecordsCache.get(key) === entry) contactRecordsCache.delete(key)
+      throw error
+    })
+    contactRecordsCache.set(key, entry)
+    contacts.push(...await entry.promise)
+  }
+  return contacts
+}
+
 function findLeadCoreInPrimaryCache(workspaceId, leadId) {
-  const cached = readFreshCache(primaryRecordsCache, workspaceId)?.data
-  if (!cached) return null
-  const lead = cached.leads.find((row) => normalizeText(row?.leadId) === leadId)
-  if (!lead) return null
-  const contact = cached.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) || null
-  return { lead, contact, source: 'primary-cache' }
+  // Category/paged browsing already fetched this lead and its visible contact.
+  // Reuse that complete pair on intent instead of repeating core/link/contact
+  // requests merely because the list cache has a more specific key.
+  for (const key of primaryRecordsCache.keys()) {
+    if (key !== workspaceId && !key.startsWith(`${workspaceId}:`)) continue
+    const cached = readFreshCache(primaryRecordsCache, key)?.data
+    const lead = cached?.leads?.find((row) => normalizeText(row?.leadId) === leadId)
+    if (!lead) continue
+    const contactId = normalizeText(lead.contactId)
+    let contact = (cached.contacts || []).find((row) => normalizeText(row?.contactId) === contactId) || null
+    if (contactId && !contact) {
+      for (const contactKey of contactRecordsCache.keys()) {
+        if (!contactKey.startsWith(`${workspaceId}:`)) continue
+        contact = readFreshCache(contactRecordsCache, contactKey)?.data?.find((row) => normalizeText(row?.contactId) === contactId) || null
+        if (contact) break
+      }
+    }
+    // An incomplete list row must still take the full guarded core-read path.
+    if (!contactId || contact) return { lead, contact, source: 'primary-cache' }
+  }
+  return null
 }
 
 export function readCachedAgencyLeadCoreRecord(organisationId, leadId) {
@@ -358,13 +401,14 @@ export async function preloadAgencyLeadCoreRecord(organisationId, leadId) {
       if (contactResult.error && !isUnavailable(contactResult.error)) throw contactResult.error
       contact = contactResult.data ? mapContact(contactResult.data) : null
     }
-    const data = writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, { lead, contact, source: 'remote-core' })
-    seedAgencyLeadWorkspaceSnapshot(workspaceId, resolvedLeadId, data, 'remote_core')
+    const data = { lead, contact, source: 'remote-core' }
+    if (leadCoreRequestCache.get(cacheKey) === promise) {
+      writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, data)
+      seedAgencyLeadWorkspaceSnapshot(workspaceId, resolvedLeadId, data, 'remote_core')
+    }
     return data
-  }).catch((error) => {
-    throw error
   }).finally(() => {
-    leadCoreRequestCache.delete(cacheKey)
+    if (leadCoreRequestCache.get(cacheKey) === promise) leadCoreRequestCache.delete(cacheKey)
   })
 
   leadCoreRequestCache.set(cacheKey, promise)
@@ -377,12 +421,18 @@ export function preloadAgencyLeadListRecords(organisationId) {
 }
 
 export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
+  cacheRevision += 1
   const workspaceId = normalizeText(organisationId)
   if (!workspaceId) {
+    clearAgencyLeadCoreCache()
     primaryRecordsCache.clear()
     landingMetricsCache.clear()
     leadCoreRequestCache.clear()
+    contactRecordsCache.clear()
     return
+  }
+  for (const key of contactRecordsCache.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) contactRecordsCache.delete(key)
   }
   for (const key of primaryRecordsCache.keys()) {
     if (key === workspaceId || key.startsWith(`${workspaceId}:`)) primaryRecordsCache.delete(key)
@@ -394,10 +444,16 @@ export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   if (resolvedLeadId) {
     deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
     leadCoreRequestCache.delete(`${workspaceId}:${resolvedLeadId}`)
+  } else {
+    clearAgencyLeadCoreCache(workspaceId)
+    for (const key of leadCoreRequestCache.keys()) {
+      if (key.startsWith(`${workspaceId}:`)) leadCoreRequestCache.delete(key)
+    }
   }
 }
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => invalidateAgencyLeadListCache())
   window.addEventListener(AGENCY_CRM_UPDATED_EVENT, (event) => {
     const update = getAgencyCrmUpdateDetail(event)
     invalidateAgencyLeadListCache(update.organisationId, update.leadId)
@@ -441,9 +497,11 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
 
   const leadActivities = Array.isArray(activities.data) ? activities.data.map(mapActivity) : []
   const mappedTasks = Array.isArray(tasks.data) ? tasks.data.map(mapTask) : []
+  const searchContacts = category && includePrimaryRecords && options.filters?.search
+    ? await fetchLeadContacts(workspaceId, primary.leads, options) : []
   const rows = category && includePrimaryRecords ? buildAgencyLeadListModel({
-    leads: primary.leads, contacts: primary.contacts, activities: leadActivities, tasks: mappedTasks,
-    category, filters: options.filters,
+    leads: primary.leads, contacts: searchContacts, activities: leadActivities, tasks: mappedTasks,
+    category, filters: options.filters, includePresentation: false,
   }).rows : null
   const totalCount = rows ? rows.length : Number(primary.totalCount || 0)
   const pageSize = rows ? Math.max(0, Math.round(Number(options.pageSize) || 0)) : Number(primary.pageSize || 0)
@@ -451,10 +509,11 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
   const page = rows ? (pageSize ? Math.min(requestedPage, Math.max(0, Math.ceil(totalCount / pageSize) - 1)) : 0) : Number(primary.page || 0)
   const leads = rows ? (pageSize ? rows.slice(page * pageSize, (page + 1) * pageSize) : rows).map((row) => row.raw) : primary.leads
   const pageContactIds = new Set(leads.map((lead) => lead.contactId))
+  const contacts = rows ? (options.filters?.search ? searchContacts : await fetchLeadContacts(workspaceId, leads, options)) : primary.contacts
 
   return {
     leads,
-    contacts: rows ? primary.contacts.filter((contact) => pageContactIds.has(contact.contactId)) : primary.contacts,
+    contacts: rows ? contacts.filter((contact) => pageContactIds.has(contact.contactId)) : primary.contacts,
     leadActivities,
     tasks: mappedTasks,
     totalCount,

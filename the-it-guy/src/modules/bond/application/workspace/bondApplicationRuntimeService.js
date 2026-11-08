@@ -14,8 +14,17 @@ async function rpc(client, name, args) {
 }
 
 export function buildBuyerBondApplicationRuntimeState(context, { hydrate = true } = {}) {
-  const state = buildBondApplicationState({ transaction: { id: context.application.transactionId }, onboardingFormData: { formData: { bond_application: context.draft || {} } } })
+  const state = buildBondApplicationState({ transaction: { ...context.transaction, id: context.application.transactionId }, onboardingFormData: { formData: { ...context.onboardingFormData?.formData, bond_application: context.draft || {} } } })
   state.application.transactionId = context.application.transactionId
+  // A compatibility draft is not proof of a signed normalized submission.
+  if (context.application.status) {
+    state.meta.status = context.application.status
+    state.legacySubmission.status = context.application.status
+    if (context.application.status !== 'submitted') {
+      state.meta.submittedAt = ''
+      state.legacySubmission.submittedAt = ''
+    }
+  }
   if (!hydrate) return state
   const shared = context.sharedSections || {}
   const mappings = { application_finance: 'finance', buyer_entity: 'buyerEntity', selected_banks: 'selectedBankIds', shared_property_summary: 'property', pre_approval: 'preApproval' }
@@ -24,7 +33,7 @@ export function buildBuyerBondApplicationRuntimeState(context, { hydrate = true 
   }
   state.application.intent = shared.application_intent?.intent || state.application.intent
   state.application.applicantStructure = shared.applicant_structure?.applicantStructure || state.application.applicantStructure
-  state.application.requiresSurety = shared.applicant_structure?.requiresSurety || state.application.requiresSurety
+  state.application.requiresSurety = shared.applicant_structure?.requiresSurety ?? state.application.requiresSurety
   state.participants.primaryApplicant = mergeParticipantSectionsToParticipant(context.primarySections || {}, state.participants.primaryApplicant)
   // Reinterpret the persisted answers with the same conditional rules as the UI.
   return buildBondApplicationState({ transaction: { id: context.application.transactionId }, onboardingFormData: { formData: { bond_application: toLegacyBondApplication(state) } } })
@@ -37,6 +46,10 @@ export function createBuyerBondApplicationRuntimeService({ client, validateFile,
   }
   return {
     load,
+    async start() {
+      const context = await rpc(client, 'bridge_start_buyer_bond_application')
+      return { ...context, draft: toLegacyBondApplication(buildBuyerBondApplicationRuntimeState(context)) }
+    },
     async save({ draft, expectedRevision }) {
       const context = await load()
       const state = buildBuyerBondApplicationRuntimeState({ ...context, draft }, { hydrate: false })

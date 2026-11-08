@@ -11,6 +11,11 @@ export const TRANSACTION_CREATION_CRITICAL_STEPS = Object.freeze([
 
 const TERMINAL_STEP_STATUSES = new Set(['complete', 'failed', 'not_required'])
 
+export function requiresTransactionBuyerPortal({ transactionType, buyerId, allowIncomplete = false, skipClientPortalSetup = false } = {}) {
+  return !skipClientPortalSetup && ['developer_sale', 'private_property'].includes(transactionType)
+    && !(allowIncomplete && !buyerId)
+}
+
 function text(value) {
   return String(value ?? '').trim()
 }
@@ -92,6 +97,33 @@ export function getTransactionCreationIncompleteSteps(lifecycle) {
   return TRANSACTION_CREATION_CRITICAL_STEPS.filter((stepKey) => {
     const step = lifecycle?.steps?.[stepKey]
     return step?.required !== false && step?.status !== 'complete'
+  })
+}
+
+const SETUP_STEP_LABELS = {
+  attorney_assignment: 'Transfer attorney allocation',
+  bond_originator_assignment: 'Bond originator allocation',
+  onboarding_snapshot: 'Buyer onboarding details',
+  requirement_generation: 'Required document checklist',
+  seller_handoff: 'Seller details and documents',
+  portal_setup: 'Buyer and seller portal access',
+}
+
+export function getTransactionCreationIssues(transaction = {}) {
+  if (!['incomplete', 'initializing'].includes(transaction.creation_status)) return []
+  const steps = transaction.creation_steps || {}
+  const recorded = transaction.creation_error?.incompleteSteps || []
+  const keys = TRANSACTION_CREATION_CRITICAL_STEPS.filter(key => {
+    const step = steps[key]
+    return step ? step.required !== false && !['complete', 'not_required'].includes(step.status) : recorded.includes(key)
+  })
+  return keys.map(key => {
+    const error = steps[key]?.error
+    const code = text(error?.code)
+    const message = code === '42501' ? 'Your permissions blocked this setup step. Ask the transaction owner to check access.'
+      : ['PGRST205', '42P01', '42703'].includes(code) ? 'The required setup service is unavailable. Ask support to review this transaction.'
+        : text(error?.message).slice(0, 400) || 'This step has not finished. Ask the transaction owner to review it.'
+    return { key, label: SETUP_STEP_LABELS[key], message }
   })
 }
 

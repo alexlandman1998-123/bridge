@@ -1,3 +1,4 @@
+import { requireEmailDeliveryReceipt } from './emailDeliveryReceipt'
 import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
 import {
   getClientAccessPolicyMessage,
@@ -173,14 +174,13 @@ export async function activateSellerPortalForListing({
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
+  const preflightSellerEmail = normalizeText(
+    sellerContactEmail || listing?.seller?.email || listing?.sellerEmail || listing?.seller_email ||
+    listing?.sellerOnboarding?.formData?.sellerEmail || listing?.sellerOnboarding?.form_data?.sellerEmail ||
+    listing?.sellerOnboarding?.formData?.email || listing?.sellerOnboarding?.form_data?.email,
+  ).toLowerCase()
+  assertSellerPortalActivationContact({ sellerEmail: preflightSellerEmail })
   if (source !== SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead) {
-    const preflightSellerEmail = normalizeText(
-      sellerContactEmail ||
-        listing?.seller?.email ||
-        listing?.sellerEmail ||
-        listing?.seller_email,
-    ).toLowerCase()
-    assertSellerPortalActivationContact({ sellerEmail: preflightSellerEmail })
     const sellerAccessPolicy = resolveSellerAccessPolicy({
       ...listing,
       listingId: listing.id,
@@ -202,6 +202,7 @@ export async function activateSellerPortalForListing({
         sellerContactEmail,
         sellerContactPhone,
         performedBy,
+        deferStatusTransition: true,
       })
     : await ensureSellerPortalActivationRecord(listing.id, {
         activationSource: source,
@@ -269,9 +270,7 @@ export async function activateSellerPortalForListing({
       subject: preview.subject,
     },
   })
-  if (emailResponse?.error || emailResponse?.data?.error) {
-    throw emailResponse.error || new Error(emailResponse.data.error)
-  }
+  requireEmailDeliveryReceipt(emailResponse, 'Seller portal invitation')
 
   const onboardingStatuses = [
     listing.sellerOnboardingStatus,

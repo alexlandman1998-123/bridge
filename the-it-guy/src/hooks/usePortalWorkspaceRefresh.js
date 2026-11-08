@@ -26,7 +26,8 @@ export default function usePortalWorkspaceRefresh({
   useEffect(() => { refreshRef.current = onRefresh }, [onRefresh])
 
   useEffect(() => {
-    const canRefresh = () => enabled
+    let active = true
+    const canRefresh = () => active && enabled
       && document.visibilityState !== 'hidden'
       && navigator.onLine !== false
     setStatus({
@@ -38,7 +39,6 @@ export default function usePortalWorkspaceRefresh({
     })
     if (!enabled) return undefined
 
-    let active = true
     let inFlight = false
     let queuedReason = ''
     let debounceTimer = null
@@ -47,7 +47,9 @@ export default function usePortalWorkspaceRefresh({
     const refresh = async (reason) => {
       if (!canRefresh()) return
       if (inFlight) {
-        queuedReason = reason
+        // A timer tick adds no new evidence while the same read is pending.
+        // Keep only a real focus/reconnect event for a trailing refresh.
+        if (reason !== 'listing_poll') queuedReason = reason
         return
       }
       inFlight = true
@@ -87,7 +89,7 @@ export default function usePortalWorkspaceRefresh({
     }
 
     const schedule = (reason) => {
-      if (!canRefresh()) return
+      if (!canRefresh() || (inFlight && reason === 'listing_poll')) return
       if (debounceTimer) window.clearTimeout(debounceTimer)
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null
