@@ -70,6 +70,15 @@ export function getAgencyLeadCategory(row = {}) {
   return inferLeadCategoryFromRecord(row, 'buyer')
 }
 
+// Keep category inference in one place for both paging and presentation.
+export function selectAgencyLeadCategoryRecords(leads = [], category = 'buyer') {
+  return leads.filter((lead) => {
+    if (isRentalCrmLead(lead)) return false
+    const archived = isAgencyLeadArchived(lead)
+    return category === 'archived' ? archived : !archived && getAgencyLeadCategory(lead) === category
+  })
+}
+
 export function getAgencyLeadColumns(category = 'buyer') {
   if (category === 'development') {
     return DEVELOPMENT_LEAD_STAGES.map(([id, label, description]) => ({ id, label, stageValue: label, description }))
@@ -165,7 +174,7 @@ function getNextOpenTask(tasks = []) {
     .sort((left, right) => new Date(left?.dueDate || left?.createdAt || 0) - new Date(right?.dueDate || right?.createdAt || 0))[0]
 }
 
-export function buildAgencyLeadListModel({ leads = [], contacts = [], activities = [], tasks = [], category = 'buyer', filters = {} } = {}) {
+export function buildAgencyLeadListModel({ leads = [], contacts = [], activities = [], tasks = [], category = 'buyer', filters = {}, includePresentation = true } = {}) {
   const salesLeads = leads.filter((lead) => !isRentalCrmLead(lead))
   const resolvedFilters = { ...DEFAULT_AGENCY_LEAD_FILTERS, ...filters }
   const contactById = buildContactById(contacts)
@@ -175,26 +184,39 @@ export function buildAgencyLeadListModel({ leads = [], contacts = [], activities
 
   for (const lead of salesLeads) {
     if (isAgencyLeadArchived(lead)) categoryCounts.archived += 1
-    else categoryCounts[getAgencyLeadCategory(lead)] = (categoryCounts[getAgencyLeadCategory(lead)] || 0) + 1
+    else {
+      const leadCategory = getAgencyLeadCategory(lead)
+      categoryCounts[leadCategory] = (categoryCounts[leadCategory] || 0) + 1
+    }
   }
 
+  const lifecycleByLead = new Map()
+  const nextTaskByLead = new Map()
+  const lifecycleFor = (lead) => {
+    if (!lifecycleByLead.has(lead)) lifecycleByLead.set(lead, resolveAgencyLeadListLifecycle(lead))
+    return lifecycleByLead.get(lead)
+  }
+  const nextTaskFor = (lead) => {
+    if (!nextTaskByLead.has(lead)) nextTaskByLead.set(lead, getNextOpenTask(tasksByLead.get(leadIdOf(lead)) || []))
+    return nextTaskByLead.get(lead)
+  }
+  const search = normalizeKey(resolvedFilters.search)
   const filtered = salesLeads.filter((lead) => {
     const archived = isAgencyLeadArchived(lead)
     const leadCategory = getAgencyLeadCategory(lead)
     if (category === 'archived' ? !archived : archived || leadCategory !== category) return false
     const contact = contactById.get(normalizeText(lead?.contactId)) || {}
-    const presentation = resolveAgencyLeadListLifecycle(lead)
-    const openTask = getNextOpenTask(tasksByLead.get(leadIdOf(lead)) || [])
-    const searchValue = [
+    const openTask = search ? nextTaskFor(lead) : null
+    const searchValue = search ? [
       getLeadName(lead, contact), contact?.phone, contact?.email, lead?.phone, lead?.email,
       lead?.leadSource, lead?.assignedAgentName, lead?.assignedAgentEmail,
       lead?.sellerPropertyAddress, lead?.enquiredPropertyTitle, lead?.enquiredPropertyAddress,
       lead?.propertyInterest, lead?.areaInterest, lead?.suburb, lead?.city,
       openTask?.title, openTask?.description,
-    ].join(' ').toLowerCase()
-    const searchMatches = !resolvedFilters.search || searchValue.includes(normalizeKey(resolvedFilters.search))
+    ].join(' ').toLowerCase() : ''
+    const searchMatches = !resolvedFilters.search || searchValue.includes(search)
     const sourceMatches = resolvedFilters.source === 'all' || normalizeKey(lead?.leadSource) === normalizeKey(resolvedFilters.source)
-    const stageMatches = resolvedFilters.stage === 'all' || [presentation.label, lead?.stage, lead?.status]
+    const stageMatches = resolvedFilters.stage === 'all' || [lifecycleFor(lead).label, lead?.stage, lead?.status]
       .some((value) => normalizeKey(value) === normalizeKey(resolvedFilters.stage))
     const agentMatches = resolvedFilters.agent === 'all' || [lead?.assignedAgentId, lead?.assignedUserId, lead?.assignedAgentEmail]
       .some((value) => normalizeKey(value) === normalizeKey(resolvedFilters.agent))
@@ -203,25 +225,26 @@ export function buildAgencyLeadListModel({ leads = [], contacts = [], activities
 
   filtered.sort((left, right) => {
     if (resolvedFilters.sort === 'stage') {
-      return resolveAgencyLeadListLifecycle(left).label.localeCompare(resolveAgencyLeadListLifecycle(right).label)
+      return lifecycleFor(left).label.localeCompare(lifecycleFor(right).label)
     }
     if (resolvedFilters.sort === 'next_follow_up') {
-      const leftTask = getNextOpenTask(tasksByLead.get(leadIdOf(left)) || [])
-      const rightTask = getNextOpenTask(tasksByLead.get(leadIdOf(right)) || [])
+      const leftTask = nextTaskFor(left)
+      const rightTask = nextTaskFor(right)
       return new Date(leftTask?.dueDate || 8640000000000000) - new Date(rightTask?.dueDate || 8640000000000000)
     }
     return new Date(right?.updatedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.createdAt || 0)
   })
 
+  if (!includePresentation) return { rows: filtered.map((raw) => ({ raw })), categoryCounts }
+
   const rows = filtered.map((lead) => {
     const id = leadIdOf(lead)
     const contact = contactById.get(normalizeText(lead?.contactId)) || {}
     const leadActivities = activitiesByLead.get(id) || []
-    const leadTasks = tasksByLead.get(id) || []
     const latestActivity = [...leadActivities]
       .sort((left, right) => new Date(right?.activityDate || right?.createdAt || 0) - new Date(left?.activityDate || left?.createdAt || 0))[0]
-    const nextTask = getNextOpenTask(leadTasks)
-    const lifecycle = resolveAgencyLeadListLifecycle(lead)
+    const nextTask = nextTaskFor(lead)
+    const lifecycle = lifecycleFor(lead)
     const property = getPropertyPresentation(lead)
     return {
       id,

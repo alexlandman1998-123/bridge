@@ -1,6 +1,8 @@
+import * as developmentReads from '../domains/developments/api.js'
 let apiPromise = null
 const call = async (method, ...args) => {
-  apiPromise ||= import('./api')
+  if (Object.hasOwn(developmentReads, method)) return developmentReads[method](...args)
+  apiPromise ||= import('./api').catch(error => { apiPromise = null; throw error })
   const api = await apiPromise
   return api[method](...args)
 }

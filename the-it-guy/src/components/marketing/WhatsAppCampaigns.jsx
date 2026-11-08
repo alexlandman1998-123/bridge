@@ -315,7 +315,22 @@ function CampaignDetail({ org, campaignId, onBack, onOpenMarketingCampaign, onEd
     } catch (err) { if (alive.current) setError(err.message) }
     finally { refreshInFlight.current = false; if (alive.current) setRefreshing(false) }
   }, [org, campaignId])
-  useEffect(() => { alive.current = true; void refresh(); const timer = setInterval(() => { void refresh() }, 10000); return () => { alive.current = false; clearInterval(timer) } }, [refresh])
+  useEffect(() => {
+    alive.current = true
+    const refreshVisible = () => { if (document.visibilityState !== 'hidden' && navigator.onLine !== false) void refresh() }
+    refreshVisible()
+    const timer = setInterval(refreshVisible, 10000)
+    window.addEventListener('online', refreshVisible)
+    window.addEventListener('focus', refreshVisible)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      alive.current = false
+      clearInterval(timer)
+      window.removeEventListener('online', refreshVisible)
+      window.removeEventListener('focus', refreshVisible)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
+  }, [refresh])
   const control = async (action) => {
     setBusy(true); setError('')
     try { await whatsappCampaignRequest(org, action, { campaignId }); await refresh() } catch (err) { if (alive.current) setError(err.message) } finally { if (alive.current) setBusy(false) }

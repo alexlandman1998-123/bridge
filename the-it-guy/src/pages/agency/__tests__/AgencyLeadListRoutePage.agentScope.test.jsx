@@ -217,3 +217,19 @@ it('captures a development enquiry as a buyer with a development link and no uni
   fireEvent.click(within(dialog).getByRole('button', { name: 'Create Lead' }))
   await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(org, expect.objectContaining({ leadCategory: 'buyer', rawEnquiryPayload: { development_id: 'development-1' }, listingId: '', contact: expect.objectContaining({ contactType: 'buyer' }), assignedUserId: agent.userId }), { actor: expect.objectContaining({ id: actorId }) }))
 })
+
+
+it('keeps the principal directory loaded while searching and paging, with an explicit refresh retry', async () => {
+  mocks.list.mockImplementation(async (_, options) => ({ leads: [{ ...buyer, leadId: `page-${options.page}`, name: `Page ${options.page + 1} buyer` }], contacts: [], totalCount: 26 }))
+  show(null)
+  await screen.findAllByText('Page 1 buyer')
+  await waitFor(() => expect(mocks.directory).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+  await screen.findAllByText('Page 2 buyer')
+  expect(mocks.directory).toHaveBeenCalledTimes(1)
+  fireEvent.change(screen.getByPlaceholderText('Search leads, addresses or names...'), { target: { value: 'Page' } })
+  await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(org, expect.objectContaining({ filters: expect.objectContaining({ search: 'Page' }) })))
+  expect(mocks.directory).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() => expect(mocks.directory).toHaveBeenCalledTimes(2))
+})

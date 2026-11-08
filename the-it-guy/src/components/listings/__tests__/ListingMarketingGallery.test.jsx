@@ -64,3 +64,13 @@ it('shows broken photos and allows retry without losing their IDs or reorder pos
   expect(handlers.onRetry).toHaveBeenCalledOnce()
   expect(screen.queryByRole('alert')).toBeNull()
 })
+
+it('keeps all 95 gallery photos and their controls while deferring offscreen image downloads', () => {
+  const images = Array.from({ length: 95 }, (_, index) => ({ id: String(index), url: `/photo-${index}.jpg` }))
+  render(<ListingMarketingGallery {...props({ images })} />)
+  const rendered = screen.getAllByRole('img')
+  expect(rendered).toHaveLength(95)
+  expect(rendered[0].getAttribute('loading')).toBe('eager')
+  expect(rendered.slice(1).every((image) => image.getAttribute('loading') === 'lazy' && image.getAttribute('decoding') === 'async')).toBe(true)
+  expect(screen.getByRole('button', { name: 'Remove photo 95' })).toBeTruthy()
+})

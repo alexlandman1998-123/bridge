@@ -51,7 +51,7 @@ export default function ListingMarketingGallery({ images, coverImageId, title, s
               <div key={image.id} className={`shrink-0 overflow-hidden rounded-[14px] border bg-white ${cover ? 'w-[440px] max-w-[68vw] border-[#1f4f78]' : 'w-[220px] border-[#dbe6f2]'}`}>
                 <div className="relative h-[184px] bg-[#eef4fa]">
                   {image.url && !failedImages.includes(image.url)
-                    ? <img src={image.url} alt={`${title} — photo ${index + 1}`} className="h-full w-full object-cover" onError={() => setFailedImages(previous => [...new Set([...previous, image.url])])} />
+                    ? <img src={image.url} alt={`${title} — photo ${index + 1}`} loading={index === 0 ? 'eager' : 'lazy'} decoding="async" width={cover ? 440 : 220} height={184} className="h-full w-full object-cover" onError={() => setFailedImages(previous => [...new Set([...previous, image.url])])} />
                     : <div className="grid h-full place-items-center text-sm text-[#607387]">Photo unavailable</div>}
                   {cover ? <span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span> : null}
                 </div>

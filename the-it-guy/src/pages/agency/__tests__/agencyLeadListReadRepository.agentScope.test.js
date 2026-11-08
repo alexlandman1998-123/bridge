@@ -2,14 +2,20 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from '../agencyLeadAgentScope'
 import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords } from '../agencyLeadListReadRepository'
 import { buildAgencyLeadLandingMetrics } from '../agencyLeadListModel'
-const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false }))
+const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false, beforeRespond: null, requestHeaders: [] }))
 vi.mock('../../../lib/supabaseClient', async () => {
   const { createClient } = await import('@supabase/supabase-js')
   return {
     isSupabaseConfigured: true,
-    supabase: createClient('http://localhost:55555', 'local-test-key', { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: async (input) => {
+    supabase: createClient('http://localhost:55555', 'local-test-key', { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: async (input, init) => {
       const url = new URL(String(input))
       fixture.urls.push(url)
+      fixture.requestHeaders.push(init?.headers)
+      if (fixture.beforeRespond) {
+        const respond = fixture.beforeRespond
+        fixture.beforeRespond = null
+        await respond()
+      }
       if (url.pathname.endsWith('/developer_leads')) {
         const ids = url.searchParams.get('source_lead_id').slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
         return new Response(JSON.stringify(fixture.developerLinks.filter((row) => ids.includes(row.source_lead_id))), { headers: { 'Content-Type': 'application/json' } })
@@ -44,6 +50,8 @@ const makeLead = (index, assigned = a) => ({ lead_id: `lead-${index}`, organisat
 beforeEach(() => {
   invalidateAgencyLeadListCache()
   fixture.urls = []
+  fixture.requestHeaders = []
+  fixture.beforeRespond = null
   fixture.legacy = false
   fixture.contacts = []
   fixture.developerLinks = []
@@ -223,4 +231,67 @@ it('routes development-linked buyers before pagination and preserves the same le
   expect(second.leads).toHaveLength(1)
   expect((await listAgencyLeadListRecords(org, { category: 'buyer', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })).totalCount).toBe(55)
   expect(fixture.urls.filter((url) => url.pathname.endsWith('/developer_leads')).every((url) => url.searchParams.get('or').includes(`source_agency_org_id.eq.${org}`))).toBe(true)
+})
+
+it('loads contacts only for the visible page when not searching and reuses that batch', async () => {
+  fixture.leads = Array.from({ length: 401 }, (_, i) => ({ ...makeLead(i), contact_id: `contact-${i}` }))
+  fixture.contacts = fixture.leads.map((lead, i) => ({ contact_id: lead.contact_id, organisation_id: org, first_name: `Contact ${i}`, last_name: 'Buyer' }))
+  const options = { category: 'buyer', includeRelatedRecords: false, pageSize: 25 }
+  const first = await listAgencyLeadListRecords(org, options)
+  expect(first.totalCount).toBe(401)
+  expect(first.contacts).toHaveLength(25)
+  const contactQueries = () => fixture.urls.filter((url) => url.pathname.endsWith('/contacts'))
+  expect(contactQueries()).toHaveLength(1)
+  expect(contactQueries()[0].searchParams.get('contact_id').slice(4, -1).split(',')).toHaveLength(25)
+  await listAgencyLeadListRecords(org, options)
+  expect(contactQueries()).toHaveLength(1)
+  const second = await listAgencyLeadListRecords(org, { ...options, page: 1 })
+  expect(second.contacts).toHaveLength(25)
+  expect(contactQueries()).toHaveLength(2)
+  expect(second.contacts.every((contact) => !first.contacts.some((other) => other.contactId === contact.contactId))).toBe(true)
+  await listAgencyLeadListRecords(org, { ...options, filters: { source: 'No such source' } })
+  expect(contactQueries()).toHaveLength(2)
+})
+
+
+it('shares simultaneous snapshot reads and counts the complete scope only once', async () => {
+  fixture.leads = Array.from({ length: 1001 }, (_, i) => makeLead(i))
+  const [first, second] = await Promise.all([
+    listAgencyLeadLandingMetrics(org), listAgencyLeadLandingMetrics(org),
+  ])
+  expect(first).toBe(second)
+  const indexes = fixture.urls.flatMap((url, index) => url.pathname.endsWith('/leads') ? [index] : [])
+  expect(indexes).toHaveLength(2)
+  const prefer = (index) => new Headers(fixture.requestHeaders[index]).get('prefer') || ''
+  expect(prefer(indexes[0])).toContain('count=exact')
+  expect(prefer(indexes[1])).not.toContain('count=exact')
+  expect(first.leads).toHaveLength(1001)
+})
+
+it('does not repopulate a cache invalidated while its request is still running', async () => {
+  let release
+  const blocked = new Promise((resolve) => { release = resolve })
+  fixture.beforeRespond = () => blocked
+  const old = listAgencyLeadLandingMetrics(org)
+  await vi.waitFor(() => expect(fixture.urls).toHaveLength(1))
+  invalidateAgencyLeadListCache(org)
+  release()
+  await old
+  fixture.leads.push(makeLead(999))
+  expect((await listAgencyLeadLandingMetrics(org)).leads).toHaveLength(67)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
+})
+
+
+it('keeps a newer explicit refresh cached when an older read completes afterward', async () => {
+  let release
+  fixture.beforeRespond = () => new Promise((resolve) => { release = resolve })
+  const old = listAgencyLeadLandingMetrics(org)
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+  const fresh = await listAgencyLeadLandingMetrics(org, { forceRefresh: true })
+  fixture.leads.push(makeLead(999))
+  release()
+  await old
+  expect(await listAgencyLeadLandingMetrics(org)).toBe(fresh)
+  expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
 })

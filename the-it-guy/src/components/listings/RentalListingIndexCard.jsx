@@ -1,3 +1,4 @@
+import ListingCardImage from './ListingCardImage'
 import { ArrowRight, CalendarDays, MoreVertical, Trash2, X } from 'lucide-react'
 import ListingLiveChannels from './ListingLiveChannels'
 import { formatRentalIndexStatusLabel } from '../../services/rentals/rentalListingIndexModel'
@@ -23,19 +24,6 @@ function formatDate(value) {
   }).format(date)
 }
 
-function ListingCardImage({ src = '', alt = '' }) {
-  if (src) return <img src={src} alt={alt} className="h-full w-full object-cover" />
-
-  return (
-    <div className="relative h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(255,255,255,0.24),transparent_52%)]" />
-      <div className="absolute bottom-3 left-3 rounded-full border border-white/35 bg-white/20 px-2.5 py-1 text-[0.68rem] font-semibold uppercase text-white">
-        Listing image
-      </div>
-    </div>
-  )
-}
-
 function RentalAgentAvatar({ row = {} }) {
   const name = row.assignedAgentName || ''
   const source = name || 'Rental'
@@ -53,7 +41,7 @@ function RentalAgentAvatar({ row = {} }) {
   )
 }
 
-export default function RentalListingIndexCard({ row, liveChannels, onOpen, menuOpen, onMenu, onDelete, onWithdraw, actions = null }) {
+export default function RentalListingIndexCard({ row, liveChannels, onOpen, menuOpen, onMenu, onDelete, onWithdraw, actions = null, imageSource = { src: row.imageUrl }, priority = false }) {
   const facts = [
     row.bedrooms !== null && row.bedrooms !== undefined ? `${row.bedrooms} Beds` : '',
     row.bathrooms !== null && row.bathrooms !== undefined ? `${row.bathrooms} Baths` : '',
@@ -62,12 +50,13 @@ export default function RentalListingIndexCard({ row, liveChannels, onOpen, menu
 
   return (
     <article
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
       onClick={onOpen}
       className="group flex h-full cursor-pointer flex-col rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
     >
       <div className="relative h-[132px] w-full border-b border-[#e5edf6]">
         <div className="absolute inset-0 overflow-hidden rounded-t-[8px]">
-          <ListingCardImage src={row.imageUrl} alt={row.title} />
+          <ListingCardImage key={`${imageSource.src || ''}:${imageSource.fallbackSrc || ''}`} {...imageSource} alt={row.title} priority={priority} />
         </div>
         {!liveChannels.length ? (
           <span className="absolute left-3 top-3 max-w-[calc(100%-4.5rem)] truncate rounded-full border border-[#c6d8ea] bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-[#1f4f78] shadow-sm">

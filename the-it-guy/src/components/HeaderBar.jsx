@@ -1043,7 +1043,7 @@ function HeaderBar({ onLogout, user }) {
     let fallbackTimeoutId = null
 
     const refreshNotifications = () => {
-      if (!active) return
+      if (!active || document.visibilityState === 'hidden' || navigator.onLine === false) return
       void loadNotifications()
     }
 
@@ -1051,6 +1051,8 @@ function HeaderBar({ onLogout, user }) {
       if (!active) return
       refreshNotifications()
       intervalId = window.setInterval(refreshNotifications, 45000)
+      document.addEventListener('visibilitychange', refreshNotifications)
+      window.addEventListener('online', refreshNotifications)
     }
 
     // The dashboard gets first use of the main thread and network. The bell
@@ -1064,6 +1066,8 @@ function HeaderBar({ onLogout, user }) {
 
     return () => {
       active = false
+      document.removeEventListener('visibilitychange', refreshNotifications)
+      window.removeEventListener('online', refreshNotifications)
       if (intervalId !== null) window.clearInterval(intervalId)
       if (idleCallbackId !== null && typeof window.cancelIdleCallback === 'function') {
         window.cancelIdleCallback(idleCallbackId)

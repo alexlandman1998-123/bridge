@@ -1,3 +1,4 @@
+import { getListingCardImageSource } from '../../services/privateListingService'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   CheckCircle2,
@@ -215,10 +216,12 @@ export default function RentalListingsPage() {
             </div>
           ) : filteredRows.length ? (
             <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {filteredRows.map((row) => (
+              {filteredRows.map((row, index) => (
                 <RentalListingIndexCard
                   key={row.id}
                   row={row}
+                  imageSource={getListingCardImageSource(row.imageUrl)}
+                  priority={index < 4}
                   liveChannels={getListingLiveChannels({ ...row, bridgeListingStatus: row.websiteStatus }, websitePublications[row.id])}
                   onOpen={() => navigate(`/agent/rentals/listings/${encodeURIComponent(row.id)}${row.isCaptureDraft ? '/edit' : ''}`)}
                   menuOpen={menuId === row.id}
