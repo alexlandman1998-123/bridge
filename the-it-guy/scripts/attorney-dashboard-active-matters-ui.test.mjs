@@ -20,7 +20,7 @@ for (const token of [
 
 for (const token of [
   'export function mapMatterToActiveMatterCard',
-  'getAttorneyStageDefinitionsForLane',
+  'buildMatterListProgress',
   'resolveMatterCardWorkflowProgress',
   'resolveMatterCardStatus',
   'resolveMatterCardContext',

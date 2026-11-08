@@ -39,7 +39,6 @@ export function BuyerPortalOverviewHero({
   journeyCompletionSummary = '',
   timeInStageLabel = 'Recently',
   stageUpdatedDateLabel = 'Recently',
-  attentionEyebrow = 'Needs your attention',
   attentionTitle = 'No action needed right now',
   attentionDescription = 'Your team will post the next step here.',
   attentionRequired = false,
@@ -60,18 +59,17 @@ export function BuyerPortalOverviewHero({
 
   return (
     <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] xl:items-stretch">
-      <div className="rounded-[18px] border border-[#dbe5ec] bg-white px-5 py-5 shadow-[0_8px_24px_rgba(15,23,42,0.035)] sm:px-6 xl:col-span-2">
+      <header className="ui-workspace-header xl:col-span-2">
         <h1 className="text-[1.6rem] font-semibold leading-tight tracking-[-0.035em] text-[#102a2b] sm:text-[2rem]">
           Welcome, {welcomeName}.
         </h1>
-      </div>
+      </header>
       <div className="flex min-w-0 flex-col">
         <div className="flex flex-1 items-stretch">
           <article className="flex h-full min-h-[240px] w-full flex-1 flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">{attentionEyebrow}</p>
-                <h2 className="mt-2 text-[1.35rem] font-semibold leading-tight tracking-[-0.03em] text-[#102032]">{attentionTitle}</h2>
+                <h2 className="text-[1.35rem] font-semibold leading-tight tracking-[-0.03em] text-[#102032]">{attentionTitle}</h2>
               </div>
               <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${
                 attentionRequired ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]' : 'border-[#cfe8d8] bg-[#f2fbf5] text-[#1f7d44]'

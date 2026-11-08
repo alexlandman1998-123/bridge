@@ -1,5 +1,5 @@
 export const settingsPageClass =
-  'mx-auto w-full max-w-[1440px] space-y-6'
+  'min-w-0 w-full space-y-6'
 export const settingsCardClass = 'rounded-[14px] border border-[#e1e8ef] bg-white p-5'
 export const settingsGridClass = 'grid gap-4 md:grid-cols-2'
 export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'
@@ -19,14 +19,12 @@ function getAlertToneClasses(tone) {
   return 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]'
 }
 
-export function SettingsPageHeader({ actions }) {
-  if (!actions) return null
-
-  return (
-    <div className="flex justify-end">
-      <div className="flex shrink-0 items-center gap-3">{actions}</div>
-    </div>
-  )
+export function SettingsPageHeader({ title = '', description = '', actions = null }) {
+  if (!title && !actions) return null
+  return <header className="ui-workspace-header">
+    {title ? <div className="min-w-0"><h1>{title}</h1>{description ? <p className="mt-2 text-sm text-textMuted">{description}</p> : null}</div> : null}
+    {actions ? <div className="flex flex-wrap items-center justify-end gap-3">{actions}</div> : null}
+  </header>
 }
 
 export function SettingsSectionCard({ title, description, actions, className = '', children }) {

@@ -61,8 +61,7 @@ export default function SellerListingMarketingPage({ listing = {}, channels = []
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.45fr)]">
         <article className="min-w-0 rounded-[20px] border border-[#dbe5ef] bg-white p-5 sm:p-7">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">Listing details</p>
-          <h1 className="mt-2 break-words text-2xl font-semibold leading-tight tracking-[-0.04em] text-[#102032] sm:text-3xl">{listing.headline || listing.title || 'Your property'}</h1>
+          <h1 className="break-words text-2xl font-semibold leading-tight tracking-[-0.04em] text-[#102032] sm:text-3xl">{listing.headline || listing.title || 'Your property'}</h1>
           {listing.headline && listing.headline !== listing.title ? <p className="mt-2 text-sm leading-6 text-[#64748b]">{listing.title}</p> : null}
           {facts.length ? <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-5 border-y border-[#e4ebf2] py-5 sm:[grid-template-columns:repeat(var(--fact-count),minmax(0,1fr))]" style={{ '--fact-count': facts.length }}>{facts.map(([value, label]) => <div key={label} className="min-w-0"><dt className="text-xs text-[#64748b]">{label}</dt><dd className="mt-1 text-lg font-semibold text-[#123f3a]">{value}</dd></div>)}</dl> : null}
           <h2 className="mt-6 text-base font-semibold text-[#102032]">About the property</h2>

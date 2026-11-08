@@ -856,11 +856,9 @@ export default function SettingsUsersPage() {
 
   return (
     <div className={settingsPageClass}>
-      <div className="flex flex-col gap-4 rounded-[18px] border border-[#e1e8ef] bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="ui-workspace-header">
         <div>
-          <p className="text-sm text-[#718198]">Organisation settings</p>
           <h1 className="mt-2 text-2xl font-medium tracking-[-0.025em] text-[#142132]">Team & access</h1>
-          <p className="mt-1 text-base text-[#6b7d93]">Invite your team and manage the access they need.</p>
         </div>
         {canEdit ? <Button type="button" onClick={() => setShowInvitePanel(true)}><UserPlus size={18} className="mr-2" />Invite user</Button> : null}
       </div>

@@ -246,7 +246,7 @@ function HeaderMeta({ icon: Icon, label, value }) {
 
 function ConsultantHeader({ consultant, metrics, capacity, canManage }) {
   return (
-    <header className="rounded-[20px] border border-[#dfe7ef] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.045)]">
+    <header className="ui-workspace-header">
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#64748b]">
@@ -260,7 +260,7 @@ function ConsultantHeader({ consultant, metrics, capacity, canManage }) {
             <h1 className="text-[32px] font-bold leading-none tracking-[-0.02em] text-[#07142b]">{consultant.name}</h1>
             <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${statusTone(consultant.status || 'Active')}`}>{consultant.status || 'Active'}</span>
           </div>
-          <p className="mt-2 text-base font-semibold text-[#31475d]">Consultant Performance Centre</p>
+
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <HeaderMeta icon={Building2} label="Branch" value={consultant.branchName || 'Unassigned'} />
             <HeaderMeta icon={Target} label="Region" value={consultant.regionName || 'Unassigned'} />
@@ -795,7 +795,7 @@ export default function BondConsultantPerformancePage() {
 
   return (
     <main className="min-h-screen bg-[#f5f8fb] px-4 py-6 text-[#142132] sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
+      <div className="min-w-0 w-full space-y-6">
         <ConsultantHeader consultant={model.consultant} metrics={model.metrics} capacity={model.capacity} canManage={canManage} />
         <ConsultantTabs activeTab={activeTab} onChange={setTab} />
         <KpiRow metrics={model.metrics} trend={model.trend} />

@@ -21,7 +21,7 @@ import {
   getLeadAnalyticsDashboard,
 } from '../services/leadAnalyticsService'
 
-const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
+const pageShell = 'flex min-w-0 w-full flex-col gap-6'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 
 function normalizeText(value) {
@@ -344,11 +344,9 @@ function AgentReportingPage() {
 
   return (
     <main className={pageShell}>
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <header className="ui-workspace-header">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Management Reporting</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-[-0.045em] text-slate-950">Lead Analytics</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Source, lead, requirement, match, viewing, offer, and transaction visibility without exports or spreadsheet work.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {analytics ? <ExportButtons analytics={analytics} /> : null}

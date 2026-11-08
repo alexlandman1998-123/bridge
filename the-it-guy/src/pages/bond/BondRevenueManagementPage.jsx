@@ -669,7 +669,7 @@ export default function BondRevenueManagementPage() {
 
   if (state.error) {
     return (
-      <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8">
+      <main className="min-w-0 w-full text-slate-950">
         <div className="mx-auto max-w-4xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="text-2xl font-semibold text-slate-950">Commercial Control Centre</h1>
           <p className="mt-3 text-sm text-slate-600">{state.error}</p>
@@ -679,9 +679,9 @@ export default function BondRevenueManagementPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-8">
-        <header className="flex flex-wrap items-start justify-between gap-5">
+    <main className="min-w-0 w-full text-slate-950">
+      <div className="min-w-0 w-full space-y-6">
+        <header className="ui-workspace-header">
           <div>
             <h1 className="text-3xl font-semibold tracking-normal text-slate-950">Commercial Control Centre</h1>
           </div>

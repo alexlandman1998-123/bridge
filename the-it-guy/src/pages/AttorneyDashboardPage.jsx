@@ -1045,6 +1045,7 @@ function AttorneyDashboardPage() {
 
   return (
     <section className={shellClass}>
+      <header className="ui-workspace-header"><h1>Firm overview</h1></header>
       {error ? <div className={`${surfaceClass} p-4`}><p className="text-sm text-red-700">{error}</p></div> : null}
 
       <KpiCards stats={stats} performance={performance} />

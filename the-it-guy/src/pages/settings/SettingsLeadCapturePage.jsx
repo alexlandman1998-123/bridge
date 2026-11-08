@@ -877,7 +877,7 @@ export default function SettingsLeadCapturePage({ section = 'meta', embedded = f
 
   return (
     <div className={settingsPageClass}>
-      {!showDigitalCards && !embedded ? <header className="flex flex-wrap items-center justify-between gap-4">
+      {!showDigitalCards && !embedded ? <header className="ui-workspace-header">
         <div><h1 className="text-2xl font-semibold tracking-tight text-[#162334]">Facebook &amp; Instagram</h1><p className="mt-1 text-sm leading-6 text-[#6b7d93]">Connect your Facebook Page to share listings and capture enquiries.</p></div>
         <Button variant="secondary" onClick={load} disabled={saving}><RefreshCw size={16} />Refresh</Button>
       </header> : null}

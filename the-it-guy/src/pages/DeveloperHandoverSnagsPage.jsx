@@ -131,10 +131,9 @@ function DeveloperHandoverSnagsPage() {
   if (loading) return <div className="p-6 text-sm text-slate-500">Loading development handovers and snags…</div>
 
   return (
-    <main className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <section className="flex flex-col gap-4 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+    <main className="min-w-0 w-full space-y-6">
+      <section className="ui-workspace-header">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Developer workspace</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Handover &amp; Snags</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Schedule handovers and monitor snag resolution for active development-sale units. Resale and private-sale work is excluded.</p>
         </div>

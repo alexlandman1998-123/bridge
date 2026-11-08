@@ -1,7 +1,6 @@
 import {
   Banknote,
   Building2,
-  Calculator,
   CheckCircle2,
   Clipboard,
   FileText,
@@ -365,17 +364,10 @@ function ConveyancingCostCalculatorPage() {
   }
 
   return (
-    <section className="grid w-full max-w-none gap-5 px-3 py-4 sm:px-4 lg:px-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <section className="grid min-w-0 w-full gap-6">
+      <header className="ui-workspace-header">
         <div className="min-w-0">
-          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 shadow-sm">
-            <Calculator size={14} />
-            Conveyancing
-          </div>
           <h1 className="mt-3 text-2xl font-semibold text-slate-950 sm:text-3xl">Cost Calculator</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            Draft transfer and bond registration estimates for buyer collections, firm recovery and matter conversations.
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <a className={softButtonClass} href={SARS_TRANSFER_DUTY_SOURCE_URL} target="_blank" rel="noreferrer">

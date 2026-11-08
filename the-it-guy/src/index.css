@@ -617,7 +617,7 @@
   }
 
   .ui-content-container {
-    @apply w-full max-w-none px-4 py-0 md:px-6 xl:px-8;
+    @apply min-w-0 w-full max-w-none px-4 py-0 md:px-6 xl:px-8;
   }
 
   .ui-content-container-dashboard {
@@ -625,7 +625,15 @@
   }
 
   .ui-content-container-edge {
-    @apply w-full max-w-none px-2 py-0 md:px-3 xl:px-4;
+    @apply min-w-0 w-full max-w-none px-4 py-0 md:px-6 xl:px-8;
+  }
+
+  /* The shell owns workspace width; dialogs and inner reading panels keep their limits. */
+  .ui-content-container > :where(main, section, div):not([role='dialog']):not([aria-modal='true']) {
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
   }
 
   .ui-page-scroll {
@@ -976,9 +984,30 @@
     @apply text-secondary text-textMuted;
   }
 
-  .ui-page-header {
-    @apply flex flex-col gap-4 md:flex-row md:items-end md:justify-between;
+  .ui-page-header,
+  .ui-workspace-header {
+    @apply min-w-0 flex flex-col gap-4 rounded-[18px] border border-borderDefault p-5 md:flex-row md:items-center md:justify-between md:p-6;
+    background: linear-gradient(120deg, #ffffff 15%, #f1f7f4 100%);
+    box-shadow: var(--shadow-surface);
+    text-align: left;
   }
+
+  .ui-workspace-header h1,
+  .ui-page-header h1 {
+    margin-top: 0;
+    font-size: clamp(1.5rem, 1.1rem + 0.65vw, 2rem);
+    line-height: 1.2;
+    letter-spacing: -0.035em;
+    overflow-wrap: anywhere;
+  }
+
+  .ui-workspace-header > *,
+  .ui-page-header > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .ui-workspace-header > :only-child { width: 100%; }
 
   .ui-page-title {
     @apply text-page-title font-semibold text-textStrong;

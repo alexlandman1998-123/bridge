@@ -3124,9 +3124,6 @@ function SellerWelcomeHero({
         <h1 className="text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
           Welcome, {sellerFirstName}
         </h1>
-        <p className="mt-2 max-w-3xl text-[1rem] font-medium leading-7 text-[#35546c]">
-          Track your property sale from mandate to registration.
-        </p>
         <div className="mt-5 space-y-1.5 text-sm leading-6 text-[#51657b]">
           {sellerAddressLines.line1 ? (
             <p>
@@ -6517,7 +6514,7 @@ function SellerCompliancePackCard({
               event.target.value = ''
             }}
           />
-        
+
         </label>
 <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
       )
@@ -6673,7 +6670,7 @@ function SellerCompliancePackCard({
                     event.target.value = ''
                   }}
                 />
-              
+
               </label>
 <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
             ) : null}
@@ -13075,7 +13072,7 @@ function ClientPortal() {
 
   return (
     <MatterConversationAccess.Provider value={{ token, sellerSession: sellerPortalAccessToken }}><main
-      className="min-h-screen bg-[#f3f6fb] text-[#142132]"
+      className="client-workspace min-h-screen bg-[#f3f6fb] text-[#142132]"
       data-buyer-portal-release={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.phase}
       data-buyer-portal-aligned={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.releaseLabel}
       data-buyer-portal-source={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.source}
@@ -13436,19 +13433,10 @@ function ClientPortal() {
             </div>
           </div>
 
-          <div className="space-y-6 px-3 py-5 md:px-4 md:py-8 xl:px-5">
+          <div className="min-w-0 space-y-6 px-4 py-5 md:px-6 md:py-6 xl:px-8">
             {hideSellerWorkspaceHeader || effectiveWorkspace !== 'seller' ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
               <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
-              <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
-                This is your secure purchase portal. Your updates, documents, and next steps are kept in one place so
-                you can always see what is happening.
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
-                {effectiveWorkspace === 'seller'
-                  ? 'Track your sale from onboarding through mandate, signed OTP, and transfer with clear progress updates.'
-                  : 'Track your purchase from onboarding to registration with clear stage-by-stage guidance.'}
-              </p>
             </section>
             )}
 
@@ -13456,9 +13444,6 @@ function ClientPortal() {
             <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
-                  <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
-                    Selling Workspace
-                  </span>
                   <h1 className="mt-3 text-[1.75rem] font-semibold tracking-[-0.04em] text-[#142132]">
                     {hasSellingContext ? 'Property Sale Journey' : 'Thinking of selling your property?'}
                   </h1>
@@ -15597,7 +15582,7 @@ function ClientPortal() {
                                 event.target.value = ''
                               }}
                               />
-                          
+
                           </label>
 <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                         ) : null}
@@ -15724,7 +15709,7 @@ function ClientPortal() {
                                 event.target.value = ''
                               }}
                             />
-                          
+
                           </label>
 <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span></>
                         ) : (

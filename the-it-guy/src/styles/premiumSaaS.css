@@ -43,9 +43,9 @@ body {
 }
 
 .ui-content-container,
-.ui-content-container-dashboard {
-  /* Keep the content visually close to the navigation without crowding it. */
-  padding-inline: clamp(0.375rem, 0.55vw, 0.625rem);
+.ui-content-container-dashboard,
+.ui-content-container-edge {
+  padding-inline: clamp(1rem, 2vw, 2rem);
 }
 
 .ui-shell-header,
@@ -204,6 +204,11 @@ body {
   font-size: 2rem;
   line-height: 1.12;
   letter-spacing: -0.035em;
+}
+
+.ui-page-header .ui-page-title {
+  font-size: clamp(1.5rem, 1.1rem + 0.65vw, 2rem);
+  line-height: 1.2;
 }
 
 .ui-section-title {
@@ -611,8 +616,9 @@ body {
   }
 
   .ui-content-container,
-  .ui-content-container-dashboard {
-    padding-inline: 0.5rem;
+  .ui-content-container-dashboard,
+  .ui-content-container-edge {
+    padding-inline: 1rem;
   }
 
   .ui-page-title,

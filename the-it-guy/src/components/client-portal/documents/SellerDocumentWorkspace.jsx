@@ -117,7 +117,6 @@ function SellerDocumentWorkspace({
   onOpenDocument = null,
   errorMessage = '',
   onPrimaryUploadAction = null,
-  eyebrow = 'Seller Portal',
   description = 'Upload and track the documents needed for your property sale.',
   stillNeededDescription = 'These outstanding required documents are still blocking progress.',
   allCompleteMessage = 'All required documents have been uploaded.',
@@ -151,11 +150,10 @@ function SellerDocumentWorkspace({
   return (
     <section className="w-full space-y-6">
       {!hideHeader ? (
-        <header className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
+        <header className="ui-workspace-header">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{eyebrow}</p>
-              <h2 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#142132] sm:text-[2.125rem]">Documents</h2>
+              <h2 className="text-2xl font-semibold tracking-[-0.035em] text-[#142132]">Documents</h2>
               <p className="mt-2 text-[0.97rem] leading-7 text-[#5f7288]">{description}</p>
             </div>
             <button

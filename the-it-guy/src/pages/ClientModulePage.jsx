@@ -489,11 +489,8 @@ function ClientModulePage() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-[760px]">
             <h1 className="text-[1.95rem] font-semibold tracking-[-0.05em] text-[#142132] sm:text-[2.05rem]">
-              Welcome to your transaction workspace
+              Your transaction
             </h1>
-            <p className="mt-2 max-w-[640px] text-[0.96rem] leading-7 text-[#61778f]">
-              Everything you need for this purchase now lives in one place: progress, documents, handover updates, and any follow-up items your team needs from you.
-            </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <article className="min-w-[240px] flex-1 rounded-[18px] border border-[#dbe5ef] bg-white/88 px-4 py-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
                 <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Property</span>

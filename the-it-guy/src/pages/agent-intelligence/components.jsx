@@ -15,7 +15,7 @@ function toneClasses(tone = 'blue') {
 
 export function IntelligenceShell({ children }) {
   return (
-    <main className="space-y-6 rounded-[28px] border border-[#d9e5f2] bg-[radial-gradient(circle_at_top,#ffffff_0%,#f4f8fd_48%,#edf3fa_100%)] p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)] lg:p-7">
+    <main className="min-w-0 w-full space-y-6">
       <div className="flex justify-end">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d7e5f3] bg-[#f7fbff] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#5b738f]">
           <BrainCircuit size={12} />
@@ -29,7 +29,7 @@ export function IntelligenceShell({ children }) {
 
 export function IntelligencePageHeader({ title, description, filters = {} }) {
   return (
-    <header className="rounded-3xl border border-[#dbe7f3] bg-white/85 p-5 shadow-[0_14px_30px_rgba(15,23,42,0.06)]">
+    <header className="ui-workspace-header">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-[1.45rem] font-semibold tracking-[-0.03em] text-[#142132] lg:text-[1.7rem]">{title}</h1>

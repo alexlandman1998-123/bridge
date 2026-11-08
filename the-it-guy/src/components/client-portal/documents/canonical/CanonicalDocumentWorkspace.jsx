@@ -134,14 +134,12 @@ function CanonicalDocumentWorkspace({
 
   return (
     <section className="space-y-5">
-      <div className="rounded-[28px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+      <div className="ui-workspace-header">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Document Data Room</p>
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#142132]">Transaction readiness documents</h2>
-            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">Grouped by document packs, blockers, review status, and the workflow gates each item affects.</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#142132]">Documents</h2>
           </div>
-          <div className="grid min-w-[280px] grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-4">
+          <div className="grid min-w-0 w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:w-auto">
             <MiniMetric label="Overall" value={`${model.readiness.overall.percentComplete}%`} tone={model.readiness.overall.ready ? 'good' : 'warn'} />
             <MiniMetric label="Packs" value={model.packs.length} />
             <MiniMetric label="Blockers" value={model.criticalMissing.length} tone={model.criticalMissing.length ? 'bad' : 'good'} />

@@ -51,6 +51,7 @@ export default function PremiumBondDashboard({ snapshot = {}, canConfigureTarget
   const [applicationFilter, setApplicationFilter] = useState('all')
   const activeApps = applications.filter((item) => applicationFilter === 'all' || (applicationFilter === 'at_banks' ? item.submittedBanks > 0 && !item.approvedBanks : item.approvedBanks > 0))
   return <div className="bond-dashboard space-y-5 rounded-[22px] bg-[#f8fafb] p-1 sm:p-2">
+    <header className="ui-workspace-header"><h1>Bond dashboard</h1></header>
     <section aria-label="Pipeline metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <BondSectionCard className="min-w-0 rounded-[16px] border-[#e5eaee] p-5 shadow-[0_7px_20px_rgba(15,23,42,.03)]">
         <Metric value={snapshot.dashboardApplications ? applications.length : active.value} label="Active applications" detail="Current open applications" icon={BriefcaseBusiness} />

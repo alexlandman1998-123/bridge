@@ -120,10 +120,10 @@ export default function BuyerProfilePage() {
   if (error && !buyer) return <p className="rounded-2xl border border-[#f3d2cc] bg-[#fef3f2] p-4 text-sm text-[#b42318]">{error}</p>
 
   return (
-    <section className="mx-auto max-w-6xl space-y-5">
+    <section className="min-w-0 w-full space-y-6">
       <Button variant="ghost" className="px-0" onClick={() => navigate('/clients')}><ArrowLeft size={16} />Back to clients</Button>
-      <header className="flex flex-col gap-4 rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)] md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-4"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-[#eef5ff] text-[#2f6fed]"><UserRound size={27} /></span><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#74869b]">Reusable Buyer Profile</p><h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{buyer?.name}</h1><p className="mt-1 text-sm text-[#60758d]">Profile data and FICA documents are retained once and reused across transactions.</p></div></div>
+      <header className="ui-workspace-header">
+        <div className="flex items-center gap-4"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-[#eef5ff] text-[#2f6fed]"><UserRound size={27} /></span><div><h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{buyer?.name}</h1><p className="mt-1 text-sm text-[#60758d]">Details and FICA documents are reused across your transactions.</p></div></div>
         <Button onClick={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction', { detail: { buyerId: buyer?.id } }))}><BriefcaseBusiness size={16} />Create transaction</Button>
       </header>
 

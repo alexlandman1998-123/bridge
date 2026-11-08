@@ -61,7 +61,7 @@ export default function RevoSharedInboxSettingsPage() {
   }
   return <main className="revo-channel-settings">
     <Link className="inbox-settings-back" to="/inbox"><ArrowLeft size={15} aria-hidden="true" /> Back to inbox</Link>
-    <header className="inbox-settings-page-heading"><div><span className="inbox-settings-eyebrow">WORKSPACE SETTINGS</span><h1>Inbox settings</h1><p>Your accounts, your team, one connected inbox.</p></div><span className="inbox-settings-page-icon"><Settings2 size={23} aria-hidden="true" /></span></header>
+    <header className="ui-workspace-header inbox-settings-page-heading"><div><h1>Inbox settings</h1></div><span className="inbox-settings-page-icon"><Settings2 size={23} aria-hidden="true" /></span></header>
     <div className="inbox-page-tabs" role="tablist" aria-label="Inbox settings sections">{tabs.map(([value, label, icon], index) => <button key={value} id={`inbox-tab-${value}`} type="button" role="tab" aria-selected={tab === value} aria-controls={`inbox-panel-${value}`} tabIndex={tab === value ? 0 : -1} onClick={() => activateTab(value)} onKeyDown={event => selectTab(event, index)}>{icon}{label}</button>)}</div>
     <section id={`inbox-panel-${emailTab}`} role="tabpanel" aria-labelledby={`inbox-tab-${emailTab}`} hidden={tab === 'whatsapp'}>
       <EmailMailboxSettings organisationId={organisation?.id} userId={user?.id} tab={emailTab} showTabs={false} />

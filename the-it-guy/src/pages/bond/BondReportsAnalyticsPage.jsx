@@ -646,15 +646,13 @@ export default function BondReportsAnalyticsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 sm:px-5 lg:px-8">
-      <div className="mx-auto max-w-[1440px] space-y-8">
-        <header className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+    <main className="min-w-0 w-full text-slate-950">
+      <div className="min-w-0 w-full space-y-6">
+        <header className="ui-workspace-header">
           <div>
-            <p className="text-sm font-semibold uppercase text-slate-500">Reports · Analytics</p>
+
             <h1 className="mt-2 text-4xl font-semibold text-slate-950">National Bond Originator Command Centre</h1>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-              Executive analytics across revenue, applications, banks, partners, developments, regions, and forecast risk.
-            </p>
+
           </div>
           <div className="flex flex-wrap gap-3">
             <button type="button" onClick={() => createExecutiveReport('PDF')} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
