@@ -23,18 +23,38 @@ export async function enrichDevelopmentBuyerLeads(organisationId, leads = [], { 
   const buyers = leads.filter((lead) => inferLeadCategoryFromRecord(lead, 'buyer') === 'buyer')
   const leadIds = uniqueIds(buyers.map((lead) => lead.leadId || lead.lead_id))
   const listingIds = uniqueIds(buyers.flatMap((lead) => [lead.listingId || lead.listing_id, lead.enquiredListingId || lead.enquired_listing_id]))
-  const links = []
-  const listings = []
+  // Independent linkage reads share a small worker pool; preserve batch order
+  // so the newest matching developer link remains the first choice.
+  const requests = []
   for (let offset = 0; offset < leadIds.length; offset += 200) {
-    links.push(...rows(await client.from('developer_leads')
+    const ids = leadIds.slice(offset, offset + 200)
+    requests.push({ kind: 'links', load: () => client.from('developer_leads')
       .select('developer_lead_id, source_lead_id, primary_development_id, preferred_unit_id, reservation_state, reservation_expires_at, lead_status')
       .or(`developer_org_id.eq.${organisationId},source_agency_org_id.eq.${organisationId}`)
-      .in('source_lead_id', leadIds.slice(offset, offset + 200)).order('updated_at', { ascending: false })))
+      .in('source_lead_id', ids).order('updated_at', { ascending: false }) })
   }
   for (let offset = 0; offset < listingIds.length; offset += 200) {
-    listings.push(...rows(await client.from('private_listings').select('id, development_id')
-      .eq('organisation_id', organisationId).in('id', listingIds.slice(offset, offset + 200))))
+    const ids = listingIds.slice(offset, offset + 200)
+    requests.push({ kind: 'listings', load: () => client.from('private_listings').select('id, development_id')
+      .eq('organisation_id', organisationId).in('id', ids) })
   }
+  const results = new Array(requests.length)
+  let cursor = 0
+  let failed = false
+  async function worker() {
+    while (!failed && cursor < requests.length) {
+      const index = cursor++
+      try {
+        results[index] = rows(await requests[index].load())
+      } catch (error) {
+        failed = true
+        throw error
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, requests.length) }, worker))
+  const links = results.flatMap((result, index) => requests[index].kind === 'links' ? result : [])
+  const listings = results.flatMap((result, index) => requests[index].kind === 'listings' ? result : [])
   const listingById = new Map(listings.map((listing) => [listing.id, listing]))
   const linksByLeadId = new Map()
   for (const link of links) {

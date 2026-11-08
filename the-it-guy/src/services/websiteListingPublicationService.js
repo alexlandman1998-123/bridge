@@ -30,6 +30,43 @@ export async function getWebsiteListingPublicationStatus(listingId, { includePar
   return describePublication(publication)
 }
 
+// Only stock-card enrichment uses batches. Mutation routing always performs a
+// fresh single-listing read through getWebsiteListingPublicationStatus below.
+export async function getWebsiteListingPublicationStatuses(listingIds, { includePartner = true } = {}) {
+  const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
+  if (!ids.length) return {}
+  if (ids.length > 100 || ids.some((id) => !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id))) {
+    throw new Error('Request at most 100 saved listing IDs for website status.')
+  }
+  const client = requirePublicationClient(ids[0])
+  const statuses = Object.fromEntries(ids.map((id) => [id, null]))
+  const { data, error } = await client.rpc('website_get_listing_publication_statuses', {
+    p_listing_ids: ids, p_include_partner: includePartner,
+  })
+  if (error) {
+    // Rolling releases can briefly reach a database without the additive RPC.
+    // Preserve the old guarded path only for a missing function, not a denial
+    // or network failure (which would multiply already failing requests).
+    if (!['PGRST202', '42883'].includes(error.code)) throw error
+    let cursor = 0
+    async function worker() {
+      while (cursor < ids.length) {
+        const id = ids[cursor++]
+        try { statuses[id] = await getWebsiteListingPublicationStatus(id, { includePartner }) }
+        catch { statuses[id] = null }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker))
+    return statuses
+  }
+  for (const row of Array.isArray(data) ? data : []) {
+    if (!Object.hasOwn(statuses, row?.listing_id) || !row.publication || typeof row.publication !== 'object' || Array.isArray(row.publication)) continue
+    if (row.partner === true && (!includePartner || row.publication.available !== true || !row.publication.websiteSiteId)) continue
+    statuses[row.listing_id] = describePublication(row.publication, row.partner === true)
+  }
+  return statuses
+}
+
 export async function setWebsiteListingPublication(listingId, action, { includePartner = true } = {}) {
   const client = requirePublicationClient(listingId)
   const safeAction = String(action || '').trim().toLowerCase()

@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { ImagePlus } from 'lucide-react'
 
 export default function ListingCardImage({ src = '', fallbackSrc = '', alt = '', priority = false }) {
+  return <ListingCardImageContent key={JSON.stringify([src, fallbackSrc])} src={src} fallbackSrc={fallbackSrc} alt={alt} priority={priority} />
+}
+
+function ListingCardImageContent({ src, fallbackSrc, alt, priority }) {
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   const [usingFallback, setUsingFallback] = useState(false)

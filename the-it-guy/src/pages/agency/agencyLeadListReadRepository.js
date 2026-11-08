@@ -5,6 +5,7 @@ import { enrichDevelopmentBuyerLeads } from '../../services/developmentBuyerLead
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import {
   deleteAgencyLeadCoreCache,
+  clearAgencyLeadCoreCache,
   readAgencyLeadCoreCache,
   writeAgencyLeadCoreCache,
 } from './agencyLeadCoreCache'
@@ -338,12 +339,27 @@ async function fetchLeadContacts(workspaceId, leads, { forceRefresh = false } = 
 }
 
 function findLeadCoreInPrimaryCache(workspaceId, leadId) {
-  const cached = readFreshCache(primaryRecordsCache, workspaceId)?.data
-  if (!cached) return null
-  const lead = cached.leads.find((row) => normalizeText(row?.leadId) === leadId)
-  if (!lead) return null
-  const contact = cached.contacts.find((row) => normalizeText(row?.contactId) === normalizeText(lead?.contactId)) || null
-  return { lead, contact, source: 'primary-cache' }
+  // Category/paged browsing already fetched this lead and its visible contact.
+  // Reuse that complete pair on intent instead of repeating core/link/contact
+  // requests merely because the list cache has a more specific key.
+  for (const key of primaryRecordsCache.keys()) {
+    if (key !== workspaceId && !key.startsWith(`${workspaceId}:`)) continue
+    const cached = readFreshCache(primaryRecordsCache, key)?.data
+    const lead = cached?.leads?.find((row) => normalizeText(row?.leadId) === leadId)
+    if (!lead) continue
+    const contactId = normalizeText(lead.contactId)
+    let contact = (cached.contacts || []).find((row) => normalizeText(row?.contactId) === contactId) || null
+    if (contactId && !contact) {
+      for (const contactKey of contactRecordsCache.keys()) {
+        if (!contactKey.startsWith(`${workspaceId}:`)) continue
+        contact = readFreshCache(contactRecordsCache, contactKey)?.data?.find((row) => normalizeText(row?.contactId) === contactId) || null
+        if (contact) break
+      }
+    }
+    // An incomplete list row must still take the full guarded core-read path.
+    if (!contactId || contact) return { lead, contact, source: 'primary-cache' }
+  }
+  return null
 }
 
 export function readCachedAgencyLeadCoreRecord(organisationId, leadId) {
@@ -385,13 +401,14 @@ export async function preloadAgencyLeadCoreRecord(organisationId, leadId) {
       if (contactResult.error && !isUnavailable(contactResult.error)) throw contactResult.error
       contact = contactResult.data ? mapContact(contactResult.data) : null
     }
-    const data = writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, { lead, contact, source: 'remote-core' })
-    seedAgencyLeadWorkspaceSnapshot(workspaceId, resolvedLeadId, data, 'remote_core')
+    const data = { lead, contact, source: 'remote-core' }
+    if (leadCoreRequestCache.get(cacheKey) === promise) {
+      writeAgencyLeadCoreCache(workspaceId, resolvedLeadId, data)
+      seedAgencyLeadWorkspaceSnapshot(workspaceId, resolvedLeadId, data, 'remote_core')
+    }
     return data
-  }).catch((error) => {
-    throw error
   }).finally(() => {
-    leadCoreRequestCache.delete(cacheKey)
+    if (leadCoreRequestCache.get(cacheKey) === promise) leadCoreRequestCache.delete(cacheKey)
   })
 
   leadCoreRequestCache.set(cacheKey, promise)
@@ -407,6 +424,7 @@ export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   cacheRevision += 1
   const workspaceId = normalizeText(organisationId)
   if (!workspaceId) {
+    clearAgencyLeadCoreCache()
     primaryRecordsCache.clear()
     landingMetricsCache.clear()
     leadCoreRequestCache.clear()
@@ -426,10 +444,16 @@ export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   if (resolvedLeadId) {
     deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
     leadCoreRequestCache.delete(`${workspaceId}:${resolvedLeadId}`)
+  } else {
+    clearAgencyLeadCoreCache(workspaceId)
+    for (const key of leadCoreRequestCache.keys()) {
+      if (key.startsWith(`${workspaceId}:`)) leadCoreRequestCache.delete(key)
+    }
   }
 }
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('bridge:workspace-scoped-cache-cleared', () => invalidateAgencyLeadListCache())
   window.addEventListener(AGENCY_CRM_UPDATED_EVENT, (event) => {
     const update = getAgencyCrmUpdateDetail(event)
     invalidateAgencyLeadListCache(update.organisationId, update.leadId)

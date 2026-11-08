@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { agencyLeadAgentFilter, agencyLeadAgentScope } from '../agencyLeadAgentScope'
-import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords } from '../agencyLeadListReadRepository'
+import { invalidateAgencyLeadListCache, listAgencyLeadLandingMetrics, listAgencyLeadListRecords, preloadAgencyLeadCoreRecord } from '../agencyLeadListReadRepository'
 import { buildAgencyLeadLandingMetrics } from '../agencyLeadListModel'
 const fixture = vi.hoisted(() => ({ urls: [], leads: [], contacts: [], developerLinks: [], listings: [], legacy: false, beforeRespond: null, requestHeaders: [] }))
 vi.mock('../../../lib/supabaseClient', async () => {
@@ -22,7 +22,8 @@ vi.mock('../../../lib/supabaseClient', async () => {
       }
       if (url.pathname.endsWith('/private_listings')) return new Response(JSON.stringify(fixture.listings), { headers: { 'Content-Type': 'application/json' } })
       if (url.pathname.endsWith('/contacts')) {
-        const ids = url.searchParams.get('contact_id').slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
+        const predicate = url.searchParams.get('contact_id')
+        const ids = predicate.startsWith('eq.') ? [predicate.slice(3)] : predicate.slice(4, -1).split(',').map((id) => id.replace(/^"|"$/g, ''))
         const rows = fixture.contacts.filter((row) => ids.includes(row.contact_id) && `eq.${row.organisation_id}` === url.searchParams.get('organisation_id'))
         return new Response(JSON.stringify(rows), { headers: { 'Content-Type': 'application/json' } })
       }
@@ -30,6 +31,7 @@ vi.mock('../../../lib/supabaseClient', async () => {
       if (fixture.legacy && url.searchParams.get('select').includes('assigned_user_id')) return new Response(JSON.stringify({ code: '42703', message: 'column assigned_user_id does not exist' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
       const organisationId = url.searchParams.get('organisation_id').slice(3)
       let rows = fixture.leads.filter((row) => row.organisation_id === organisationId)
+      if (url.searchParams.get('lead_id')) rows = rows.filter(row => `eq.${row.lead_id}` === url.searchParams.get('lead_id'))
       const predicate = url.searchParams.get('or')
       if (predicate) {
         const terms = [...predicate.matchAll(/(assigned_user_id|assigned_agent_id|assigned_agent_email)\.eq\.("(?:\\.|[^"\\])*")/g)].map(([, key, value]) => [key, JSON.parse(value)])
@@ -303,4 +305,28 @@ it('counts a complete thousand-row boundary without a database count or losing t
   expect(metrics.totalCount).toBe(1000)
   expect(metrics.leads).toHaveLength(1000)
   expect(fixture.urls.filter((url) => url.pathname.endsWith('/leads'))).toHaveLength(2)
+})
+
+it('reuses the visible category lead and contact on intent without repeating core/link/contact reads', async () => {
+  fixture.leads = [{ ...makeLead(1), contact_id: 'saved-contact' }]
+  fixture.contacts = [{ contact_id: 'saved-contact', organisation_id: org, first_name: 'Saved', last_name: 'Buyer' }]
+  const page = await listAgencyLeadListRecords(org, { category: 'buyer', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })
+  const requestCount = fixture.urls.length
+  const core = await preloadAgencyLeadCoreRecord(org, page.leads[0].leadId)
+  expect(core.lead).toBe(page.leads[0])
+  expect(core.contact).toBe(page.contacts[0])
+  expect(core.source).toBe('primary-cache')
+  expect(fixture.urls).toHaveLength(requestCount)
+})
+
+it('still fetches a complete core when the visible list has not loaded its contact', async () => {
+  fixture.leads = [{ ...makeLead(1), contact_id: 'missing-contact' }]
+  await listAgencyLeadListRecords(org, { category: 'buyer', includeRelatedRecords: false, pageSize: 25 })
+  fixture.contacts = [{ contact_id: 'missing-contact', organisation_id: org, first_name: 'Fresh', last_name: 'Contact' }]
+  const requestCount = fixture.urls.length
+  const core = await preloadAgencyLeadCoreRecord(org, 'lead-1')
+  expect(core.source).toBe('remote-core')
+  expect(core.contact.firstName).toBe('Fresh')
+  expect(fixture.urls.length).toBeGreaterThan(requestCount)
+  expect(fixture.urls.at(-1).searchParams.get('organisation_id')).toBe(`eq.${org}`)
 })
