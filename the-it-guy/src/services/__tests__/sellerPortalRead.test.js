@@ -23,16 +23,18 @@ describe('seller portal read recovery', () => {
     expect(client.rpc).toHaveBeenCalledTimes(1)
   })
 
-  it('aborts hanging requests and stops after one retry', async () => {
+  it('aborts hanging requests within one total deadline without starting a fresh timeout', async () => {
     vi.useFakeTimers()
     const signals = []
     const query = { then: () => {}, abortSignal: signal => { signals.push(signal); return query } }
     const client = { rpc: vi.fn(() => query) }
+    const started = Date.now()
     const pending = readSellerPortalRpc(client, 'secure_reader', {}, { timeoutMs: 50 })
     const rejection = expect(pending).rejects.toMatchObject({ code: '57014' })
     await vi.runAllTimersAsync()
     await rejection
-    expect(client.rpc).toHaveBeenCalledTimes(2)
+    expect(client.rpc).toHaveBeenCalledTimes(1)
+    expect(Date.now() - started).toBe(50)
     expect(signals.every(signal => signal.aborted)).toBe(true)
   })
 

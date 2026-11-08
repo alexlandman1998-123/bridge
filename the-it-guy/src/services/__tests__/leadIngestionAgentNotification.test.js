@@ -48,7 +48,7 @@ it('does not lose the final agent alert when the customer acknowledgement throws
   const result = await createOrUpdateLeadFromEnquiry({ ...request, email: 'buyer@example.com' }, options)
   expect(result.ok).toBe(true)
   expect(fixture.send).toHaveBeenCalledTimes(1)
-  expect(result.warning).toMatch(/buyer acknowledgement/)
+  expect(result.warning).toMatch(/Client acknowledgement/)
 })
 it('does not send a new-lead alert when matching an existing lead, and retains reassignment alerts', async () => {
   fixture.reused = true
@@ -63,4 +63,34 @@ it('does not reassign or email a previously completed external enquiry', async (
   expect(result.status).toBe('duplicate')
   expect(fixture.assign).not.toHaveBeenCalled()
   expect(fixture.send).not.toHaveBeenCalled()
+})
+
+it.each(['operations', 'acknowledgement'])('keeps the saved lead and reports delivery attention for %s', async kind => {
+  const reply = { data: { ok: true, sent: false, needsAttention: true, deliveryStatus: 'needs_attention' }, error: null }
+  if (kind === 'operations') fixture.send.mockResolvedValue(reply)
+  else fixture.acknowledge.mockResolvedValue(reply)
+  const result = await createOrUpdateLeadFromEnquiry({ ...request, email: 'buyer@example.com' }, options)
+  expect(result.ok).toBe(true)
+  expect(result.warning).toMatch(/Lead saved.*Delivery needs review/)
+  expect(fixture.send).toHaveBeenCalledTimes(1)
+})
+it('does not warn for normal durable queued acknowledgements and staff alerts', async () => {
+  const reply = { data: { ok: true, sent: false, queued: true, deliveryStatus: 'pending' }, error: null }
+  fixture.send.mockResolvedValue(reply)
+  fixture.acknowledge.mockResolvedValue(reply)
+  const result = await createOrUpdateLeadFromEnquiry({ ...request, email: 'buyer@example.com' }, options)
+  expect(result.ok).toBe(true)
+  expect(result.warning || '').not.toMatch(/Delivery needs review/)
+})
+
+it('explains a known provider rejection without exposing arbitrary provider content', async () => {
+  fixture.send.mockResolvedValue({ data: { ok: true, needsAttention: true, reason: 'provider_http_403' } })
+  const result = await createOrUpdateLeadFromEnquiry(request, options)
+  expect(result.warning).toMatch(/provider rejected delivery \(403\).*sender permissions/)
+})
+it('surfaces a recipient waiting state while leaving a normal queued state alone', async () => {
+  fixture.send.mockResolvedValue({ data: { ok: true, queued: true, deliveryStatus: 'waiting_recipient' } })
+  const result = await createOrUpdateLeadFromEnquiry(request, options)
+  expect(result.ok).toBe(true)
+  expect(result.warning).toMatch(/valid, eligible recipient/)
 })

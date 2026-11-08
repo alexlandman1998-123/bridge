@@ -1,3 +1,4 @@
+import { requireBuyerOnboardingDelivery } from '../../services/emailDeliveryReceipt'
 import { normalizeFinanceType } from '../../core/transactions/financeType.js'
 import { getBuyerNextActionCompletion, checkBuyerNextActionEvidence, buildBuyerNextBestActionButtons } from '../../services/buyerNextActionCompletionService.js'
 
@@ -31032,12 +31033,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
           note: resolvedNote,
         },
       })
-      const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
-      if (onboardingEmailError) {
-        throw typeof onboardingEmailError === 'string'
-          ? new Error(onboardingEmailError)
-          : onboardingEmailError
-      }
+      requireBuyerOnboardingDelivery(onboardingEmail, resolvedIntakePreference)
     }
 
     const onboardingLink = normalizeText(
@@ -31061,7 +31057,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     await recordBuyerLeadActivity({
       organisationId,
       leadId: selectedLead.leadId,
-      activityType: transactionContext.existing ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
+      activityType: onboardingEmail?.data?.manualHandoff ? 'Buyer Onboarding Prepared' : transactionContext.existing ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
       activityNote: onboardingEmail?.data?.manualHandoff
         ? `Buyer onboarding prepared for transaction ${transactionContext.transactionId} using ${getClientIntakePreferenceLabel(resolvedIntakePreference)}.`
         : `Buyer onboarding sent for transaction ${transactionContext.transactionId}.`,
@@ -32399,20 +32395,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
           acceptedOffer?.conditions?.deliveryMode ||
           offerLinkForm.clientIntakePreference,
         )
-        const onboardingEmail = await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'client_onboarding',
-            transactionId,
-            source: 'accepted_offer_conversion',
-            deliveryMode: intakePreference,
-            buyerName: selectedLeadContactName,
-          },
-        })
-        const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
-        if (onboardingEmailError) {
-          onboardingSendWarning = typeof onboardingEmailError === 'string'
-            ? onboardingEmailError
-            : onboardingEmailError?.message || 'Buyer onboarding email could not be sent.'
+        try {
+          const onboardingEmail = await invokeEdgeFunction('send-email', {
+            body: {
+              type: 'client_onboarding',
+              transactionId,
+              source: 'accepted_offer_conversion',
+              deliveryMode: intakePreference,
+              buyerName: selectedLeadContactName,
+            },
+          })
+          requireBuyerOnboardingDelivery(onboardingEmail, intakePreference)
+        } catch (deliveryError) {
+          onboardingSendWarning = deliveryError?.message || 'Buyer onboarding email could not be confirmed.'
         }
       }
       if (transactionId) {
@@ -32431,13 +32426,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         await recordBuyerLeadActivity({
           organisationId,
           leadId: acceptedOffer?.buyerLeadId || offer?.buyerLeadId || selectedLead?.leadId,
-          activityType: reusedTransaction ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
+          activityType: onboardingSendWarning ? 'Buyer Onboarding Delivery Warning' : manualHandoff ? 'Buyer Onboarding Prepared' : reusedTransaction ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
           activityNote: onboardingSendWarning
             ? `Buyer onboarding email attempted for transaction ${transactionId}, but delivery needs attention: ${onboardingSendWarning}`
             : manualHandoff
               ? `${reusedTransaction ? 'Buyer onboarding reopened' : 'Buyer onboarding prepared'} for transaction ${transactionId} using ${intakeLabel}.`
               : `${reusedTransaction ? 'Buyer onboarding resent' : 'Buyer onboarding sent'} for transaction ${transactionId}.`,
-          outcome: onboardingSendWarning ? 'Delivery Warning' : 'Sent',
+          outcome: onboardingSendWarning ? 'Delivery Warning' : manualHandoff ? 'Prepared' : 'Sent',
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         }).catch(() => null)
       }

@@ -873,6 +873,7 @@ export async function handleClientOnboardingEmail(
     subject,
     html,
     text,
+    timeoutMs: 10_000,
   });
 
   if (!emailResult.ok) {

@@ -47,15 +47,18 @@ Deno.test("preview delivery requires service role and the allowlisted recipient"
   const keys = [
     "HOME_SEEKERS_SELLER_PREVIEW_RECIPIENT",
     "RESEND_API_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
   ];
   const previous = keys.map((key) => Deno.env.get(key));
   const originalFetch = globalThis.fetch;
   let sends = 0;
   Deno.env.set(keys[0], "alexlandman1998@gmail.com");
   Deno.env.set(keys[1], "resend-test");
-  const serviceRoleToken = `Bearer ${btoa('{"alg":"HS256"}')}.${
+  Deno.env.set(keys[2], "sb_secret_fixture_preview");
+  const forgedServiceRoleToken = `Bearer ${btoa('{"alg":"HS256"}')}.${
     btoa('{"role":"service_role"}')
   }.test-signature`;
+  const serviceRoleToken = "Bearer sb_secret_fixture_preview";
   globalThis.fetch = () => {
     sends++;
     return Promise.resolve(Response.json({ id: `preview-${sends}` }));
@@ -72,6 +75,11 @@ Deno.test("preview delivery requires service role and the allowlisted recipient"
       payload,
     );
     assert(unauthorized.status === 403);
+    const forged = await handleHomeSeekersSellerEmailPreview(
+      new Request("https://example.org", { headers: { authorization: forgedServiceRoleToken } }), payload,
+    );
+    assert(forged.status === 403);
+
     const anonToken = `Bearer ${btoa('{"alg":"HS256"}')}.${
       btoa('{"role":"anon"}')
     }.test-signature`;
@@ -158,7 +166,7 @@ Deno.test("managed seller intros leave website principal delivery independent", 
   const originalFetch = globalThis.fetch;
   const recipients: unknown[] = [];
   globalThis.fetch = async (_url, options) => {
-    recipients.push(JSON.parse(String(options?.body)).to);
+    recipients.push(JSON.parse(String((options as { body?: unknown })?.body)).to);
     return Response.json({ id: "principal-receipt" });
   };
   try {

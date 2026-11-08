@@ -9635,6 +9635,8 @@ function ClientPortal() {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(resolvedOpeningKey)
+      if (!targetWindow) throw new Error('Please allow pop-ups or new tabs to open this document, then try again.')
+      targetWindow.opener = null
       if (isDemoMode) {
         const demoMarkup = `
           <!doctype html>
@@ -9686,12 +9688,9 @@ function ClientPortal() {
       if (access?.available !== true || !signedUrl) {
         throw new Error(access?.message || 'The final signed document is still being securely published.')
       }
+      if (targetWindow.closed) throw new Error('The document tab was closed. Open the document again to retry.')
+      targetWindow.location.replace(signedUrl)
       recordPortalDocumentAccess()
-      if (targetWindow) {
-        targetWindow.location.href = signedUrl
-      } else if (typeof window !== 'undefined') {
-        window.open(signedUrl, '_blank', 'noopener,noreferrer')
-      }
     } catch (openError) {
       const message = openError.message || 'Unable to open this final signed document right now.'
       if (targetWindow && !targetWindow.closed) {
@@ -9744,10 +9743,14 @@ function ClientPortal() {
       return
     }
 
+    // Reserve the tab during the click gesture, before requesting a fresh URL.
+    const targetWindow = openPortalDocumentWindow('Opening document')
     try {
       setError('')
       setDocumentActionError('')
       setOpeningDocumentPath(String(document?.file_path || document?.url || document?.id || 'opening'))
+      if (!targetWindow) throw new Error('Please allow pop-ups or new tabs to open this document, then try again.')
+      targetWindow.opener = null
       const openDirectUrl = Boolean(document?.openDirectUrl && document?.url)
       const signedUrl = openDirectUrl
         ? document.url
@@ -9769,10 +9772,13 @@ function ClientPortal() {
       if (!signedUrl) {
         throw new Error('Unable to open this document right now.')
       }
-      window.open(signedUrl, '_blank', 'noopener,noreferrer')
+      if (targetWindow.closed) throw new Error('The document tab was closed. Open the document again to retry.')
+      targetWindow.location.replace(signedUrl)
       recordPortalDocumentAccess()
     } catch (openError) {
-      setDocumentActionError(openError.message || 'Unable to open this document right now.')
+      const message = openError.message || 'Unable to open this document right now.'
+      if (targetWindow && !targetWindow.closed) writePortalDocumentWindowMessage(targetWindow, { title: 'Document unavailable', message, tone: 'error' })
+      setDocumentActionError(message)
     } finally {
       setOpeningDocumentPath('')
     }

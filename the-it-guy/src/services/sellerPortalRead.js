@@ -5,6 +5,7 @@ const transient = (error) => ['57014', '08006', '08001', '53300'].includes(error
 // Read-only RPCs may recover once. Authentication and schema failures must
 // reach the caller unchanged; never substitute a public/table reader.
 export async function readSellerPortalRpc(client, name, args, { timeoutMs = 10000 } = {}) {
+  const deadline = Date.now() + timeoutMs
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController()
     let timer
@@ -16,17 +17,19 @@ export async function readSellerPortalRpc(client, name, args, { timeoutMs = 1000
           timer = setTimeout(() => {
             controller.abort()
             reject(Object.assign(new Error('Seller portal read timed out.'), { code: '57014' }))
-          }, timeoutMs)
+          }, Math.max(0, deadline - Date.now()))
         }),
       ])
       if (result.error && !['42501', 'PGRST301', 'PGRST202'].includes(result.error.code)
-        && transient(result.error) && attempt === 0) {
+        && transient(result.error) && attempt === 0 && deadline - Date.now() > 400) {
+        clearTimeout(timer)
         await new Promise(resolve => setTimeout(resolve, 400))
         continue
       }
       return result
     } catch (error) {
-      if (['42501', 'PGRST301', 'PGRST202'].includes(error?.code) || !transient(error) || attempt === 1) throw error
+      if (['42501', 'PGRST301', 'PGRST202'].includes(error?.code) || !transient(error) || attempt === 1 || deadline - Date.now() <= 400) throw error
+      clearTimeout(timer)
       await new Promise(resolve => setTimeout(resolve, 400))
     } finally {
       clearTimeout(timer)

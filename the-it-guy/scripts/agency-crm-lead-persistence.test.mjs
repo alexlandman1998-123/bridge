@@ -91,6 +91,7 @@ try {
       assignedAgent: {
         id: assignedUserId,
         email: 'casey@example.com',
+        branchId,
       },
     },
     { id: actorId, email: 'actor@example.com' },
@@ -105,6 +106,10 @@ try {
   assert.equal(resolvedScope.createdBy, actorId)
   assert.equal(resolvedScope.assignedAgent.userId, assignedUserId)
   assert.equal(resolvedScope.assignedAgent.branchId, branchId)
+
+  const missingEmailScope = await resolveLeadScopeContext(organisationId, { assignedAgent: { id: assignedUserId } }, { id: actorId }, async () => ({ user_id: assignedUserId, email: 'casey@example.com', branch_id: branchId }))
+  assert.equal(missingEmailScope.branchId, branchId)
+  assert.equal(missingEmailScope.assignedAgent.email, 'casey@example.com')
 
   const reconciled = reconcileAgencyPipelineSnapshot(organisationId, {
     leads: [{

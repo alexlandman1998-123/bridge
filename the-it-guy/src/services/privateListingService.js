@@ -5090,7 +5090,7 @@ export async function ensureSellerPortalActivationRecord(
     ownership_structure: normalizeNullableText(existingQuery.data?.ownership_structure),
     marital_regime: normalizeNullableText(existingQuery.data?.marital_regime),
     form_data: nextFormData,
-    status: existingQuery.data?.status || 'sent',
+    status: existingQuery.data?.status || 'not_started',
     seller_portal_activation_source: activationSource,
     seller_portal_status: existingQuery.data?.seller_portal_password_hash ? 'activated' : 'invitation_pending',
     seller_portal_invitation_created_by: normalizeUuid(performedBy),
@@ -5120,10 +5120,6 @@ export async function ensureSellerPortalActivationRecord(
       .single()
   }
   if (upsert.error) throw upsert.error
-
-  await updatePrivateListing(listing.id, {
-    sellerOnboardingStatus: listing.sellerOnboardingStatus === 'completed' ? 'completed' : 'sent',
-  }, { includeRequirementsAndDocuments: false }).catch(() => null)
 
   await createPrivateListingActivity({
     privateListingId: listing.id,

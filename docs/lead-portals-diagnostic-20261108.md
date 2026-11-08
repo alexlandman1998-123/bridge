@@ -1,0 +1,54 @@
+# Buyer and seller leads and portals — 8 November 2026
+
+Prepared in `codex/lead-portals-diagnostic-20261108`, based on remote main `963beff01957e338f4cf330f495105fd29247153`. Remote main was checked again after testing and had not advanced. This release is **not deployed**. No production records, passwords, invitations, provider settings or migration history were changed, and no emails were sent.
+
+The owning product is the primary Arch9 transaction application (`the-it-guy/`), with a correction to the shared email transport and one Supabase migration. The public websites, admin console, existing bond edits and the separately prepared email/listing releases are outside this release.
+
+| Reproduced issue | Correction |
+| --- | --- |
+| Buyer lead actions, buyer notification preparation and seller activation could treat an incomplete or unsuccessful response as an invitation sent. | Require a provider acceptance receipt before recording success. Pending, skipped, suppressed and attention states do not advance digital onboarding. Explicit assisted and hard-copy handoffs remain supported. |
+| Accepted-offer conversion could report failure after saving the transaction if invitation transport threw. | Retain the saved transaction and show a delivery warning. A confirmed buyer email also remains confirmed if recording its local receipt fails, avoiding a misleading failed-send retry. |
+| Seller invitation preparation could mark onboarding sent before email acceptance. | Preparation retains the existing status; new activation records start `not_started`. Seller-lead preparation defers its transition. The new migration corrects the same default for a new record in the guarded SQL preparation path, preserving permissions and revision checks. |
+| The email worker cleared its deadline after receiving headers, so reading a stalled response body could wait indefinitely. A malformed successful response could also count as accepted. | Keep the deadline through response parsing, reject missing provider receipts and bound buyer onboarding provider calls to ten seconds. Ambiguous acceptance stays unconfirmed. |
+| Portal document downloads opened a tab after awaiting a fresh URL, allowing popup blocking and false access records. Final signed downloads also recorded success for blocked or closed tabs. | Reserve the tab during the click, clear its opener, preserve the buyer token/bucket or seller token/session, navigate only an open tab and record access afterward. Show errors in the portal and reserved tab; retry remains possible. |
+| Lead ingestion ignored durable queue attention and recipient-waiting states. Generic stored worker errors promised retries even after attention became terminal. | Preserve the saved lead, return a delivery-review warning, explain known provider 403/rate-limit and recipient problems, and distinguish normal pending work. New generic worker messages explain that automatic retries stop at attention. Historical error rows are unchanged. |
+| Seller reads could consume two full ten-second timeouts plus backoff. | Share one deadline across the existing retry. Access-denied and missing-reader errors still fail immediately; no public reader fallback was added. |
+
+The older focused checks were reconciled with the current implementation: optional branch lookup, the actual Private Property migration filename, the current lead route/loading shell and property enquiry UI, atomic document-link receipts, durable appointment notifications and server-owned onboarding audit. Credential fixtures now use modern test keys, and the preview test explicitly rejects a forged service-role JWT. No runtime authentication rule was relaxed. The buyer and seller browser fixtures were repaired for the current router, isolated transport, stylesheet and service contracts.
+
+Verification completed:
+
+- **688 app tests in 88 files passed**, with one worker. The pre-change baseline was 649 tests in 86 files.
+- **125 Node/database/workflow tests in 26 files passed**, serially. These include real local PostgreSQL execution for lead outbox claims, frozen requests, retry limits, current recipients, tenant access, seller/buyer capture, uploads and the new migration. The new migration test checks a new deferred record, stale revision rejection, outsider denial, unchanged explicit non-deferred behavior, repeat application and anonymous execution denial.
+- **142 Deno tests in 22 files passed**, run in separate processes. Coverage includes the shared transport, lead and website dispatchers, document requirements, transaction handoffs, invitation recipient guards and the other consumers affected by the shared transport.
+- Browser checks passed against synthetic local transport and PostgreSQL: buyer save/reopen, concurrent-save rejection with entries retained and mobile width; seller save/reopen, forced projection failure, rollback, retained entries and successful retry; **25 portal access/password component assertions** for both workspaces, blocked/closed tabs, rejected signing, fresh/final documents, password visibility, sign-in/recovery feedback and mobile width.
+- Both changed screens passed syntax checks. The existing deferred-route bundle check and `git diff --check` passed. The React review found no added hooks, subscriptions, heavy dependencies or render-time network requests.
+
+A full local production build and full migration-chain replay were not run on the limited-memory machine. A successful release build is still required before promotion. Browser fixtures verify production components/handlers with local boundaries; they do not establish hosted Auth, Storage, provider acceptance or mailbox delivery. No live client login, recovery email or upload was attempted.
+
+Production was inspected read-only, principally at **17:00 UTC / 19:00 SAST on 8 November**:
+
+| Observation | Meaning / next action |
+| --- | --- |
+| 20 Property24 and 6 Private Property enquiries in seven days were processed. | Ingestion is receiving these sources; processing is separate from email acceptance. |
+| 199 non-demo-flagged staff notification jobs need attention. | These are jobs, not 199 distinct leads: 195 have old unconfirmed-delivery messages, three record `provider_http_403`, and one has an ineligible frozen recipient. Do not assume the unconfirmed jobs were never delivered. |
+| Eight agent jobs and one client intro wait for recipients. | Verify the active assignee/recipient and email address before recovery. |
+| 18 buyer and two seller records with New Lead status are unassigned. | Review routing and intended ownership; no agents were selected automatically during this audit. |
+| Of 137 non-demo seller onboarding records, 14 have passwords, seven have expired pending invitations and none are currently locked. | Reissue a fresh invite to an approved current recipient where needed. Keep the existing expiry and single-use protections. |
+| 13 recent seller access checks report expired or consumed invitations. | This is a security rejection, not evidence that every seller portal is broken. This event table is not comprehensive buyer/Auth telemetry. |
+| Zero lead/contact organisation mismatches and zero orphaned seller onboarding records. | No corresponding production data repair was indicated by those checks. |
+| Both inspected lead cron schedules are active; no failed scheduler runs in 24 hours, latest observed 17:10 UTC. | Scheduler success does not prove per-job delivery; the worker can acknowledge a batch containing failed jobs. |
+
+The provider 403 cause is not established by the safe queue error alone. It requires checking the provider account, sending permission and verified sender against provider-side evidence. There is no basis to change a domain, rotate a key or replay customer emails blindly.
+
+The release contains **13 production files: nine primary-app files, three Edge/shared transport files and one migration**. Exact file hashes and the import-derived Edge scope are in `output/lead-portals-diagnostic-20261108/release-manifest.json`. The migration is `20261108171920_seller_invitation_preparation_delivery_state.sql`. It makes no historical data changes and fails closed if the expected preparation definition has changed.
+
+The shared transport is packaged into these eleven Edge Functions: `send-email`, `lead-agent-email-dispatcher`, `seller-portal-password-recovery`, `seller-portal-document-signing`, `document-requirement-dispatcher`, `dispatch-final-signed-document`, `transaction-handoff-dispatch-worker`, `madison-reservations`, `recruitment-approval-dispatcher`, `recruitment-contact-dispatcher` and `recruitment-submission-dispatcher`. Their shared dependency is explicit; unrelated product implementations were not edited.
+
+**Approval needed to make this live:** release this isolated branch to the primary Vercel project `prj_rbfXykMU6mU1eECbc0lJS9sPspmp` / `app.arch9.co.za`, apply only the named migration to Supabase production `isdowlnollckzvltkasn`, and redeploy the eleven dependent Edge Functions. Before execution, run the production target guard and recovery lock, review the exact CLI dry-run scope with `--skip-vault`, and stop if it includes any unreviewed migration. Apply the migration before the dependent app code, require a successful release build, then verify the ledger, guarded function/permissions, security advisor, function versions and production route. This follows the temporary direct-production checklist in `docs/database-release-runbook.md`; staging drift alone is not a blocker in the pilot.
+
+That release approval does **not** authorize replaying historical jobs, changing credentials, assigning leads or emailing clients. After provider/recipient review, obtain approval for the exact repair records and a controlled buyer/seller invitation test with named recipients. Old frozen requests outside the safe provider retry window must not be reset and resent using expired idempotency assumptions. Unconfirmed acceptance must be reconciled against provider history first. Expired invitations need a recipient-reviewed fresh invitation, not an expiry bypass.
+
+`AGENTS.md` explicitly requires current-task approval before commands that apply migrations, write remote data, send email or promote a deployment. The current task authorizes diagnosis and fixes, so release and live repairs remain pending. Rollback is a previous verified app/Edge deployment; the new preparation default is backward compatible and need not be reverted. Any database reversal would use a separate forward migration, never editing migration history.
+
+Machine-readable evidence, complete test logs, browser acceptance and the release manifest are retained under `output/lead-portals-diagnostic-20261108/`. No customer tokens, password hashes, service credentials or exported customer files are included.

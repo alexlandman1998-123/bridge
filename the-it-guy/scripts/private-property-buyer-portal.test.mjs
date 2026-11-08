@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 const root = process.cwd()
 const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 const migrationSource = readFileSync(
-  resolve(root, '../supabase/migrations/20260831120130_support_private_property_buyer_portals.sql'),
+  resolve(root, '../supabase/migrations/20260831125407_support_private_property_buyer_portals.sql'),
   'utf8',
 )
 
@@ -24,7 +24,7 @@ assert.doesNotMatch(
 const creationStart = apiSource.indexOf('export async function createTransactionFromWizard')
 const creationEnd = apiSource.indexOf('\nexport async function ', creationStart + 1)
 const creationSource = apiSource.slice(creationStart, creationEnd)
-assert.match(creationSource, /portalSetupRequired:\s*\['developer_sale', 'private_property'\]\.includes\(transactionType\)/)
+assert.match(creationSource, /portalSetupRequired:\s*!skipClientPortalSetup && \['developer_sale', 'private_property'\]\.includes\(transactionType\)/)
 assert.match(creationSource, /developmentId:\s*transactionPayload\.development_id/)
 assert.match(creationSource, /unitId:\s*transactionPayload\.unit_id/)
 

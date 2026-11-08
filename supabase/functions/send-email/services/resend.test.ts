@@ -110,3 +110,29 @@ Deno.test("sendViaResendApi suppresses controlled test bcc recipients", async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+Deno.test("sendViaResendApi bounds response-body reading, not only response headers", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => new Response(new ReadableStream({
+    start(controller) { init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true }); },
+  }), { status: 200 })) as typeof fetch;
+  try {
+    const result = await sendViaResendApi({ apiKey: "fixture", from: "sender@arch9.co.za", to: "buyer@arch9.co.za", subject: "Fixture", html: "<p>Fixture</p>", timeoutMs: 20 });
+    assertEquals(result.ok, false);
+    assertEquals(result.status, 200);
+    if (!result.ok) assertEquals(result.error.message, "Resend request timed out after 20ms.");
+  } finally { globalThis.fetch = originalFetch; }
+});
+Deno.test("sendViaResendApi requires a valid provider receipt and rejects unreadable success responses", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const body of ["{}", '{"id":" "}', '{"id":123}', 'null', '<html>Gateway</html>']) {
+      globalThis.fetch = (async () => new Response(body, { status: 200 })) as typeof fetch;
+      const result = await sendViaResendApi({ apiKey: "fixture", from: "sender@arch9.co.za", to: "buyer@arch9.co.za", subject: "Fixture", html: "<p>Fixture</p>", timeoutMs: 100 });
+      assertEquals(result.ok, false);
+    }
+    globalThis.fetch = (async () => new Response('{"message":"sender rejected"}', { status: 403 })) as typeof fetch;
+    const denied = await sendViaResendApi({ apiKey: "fixture", from: "sender@arch9.co.za", to: "buyer@arch9.co.za", subject: "Fixture", html: "<p>Fixture</p>" });
+    assertEquals(denied.ok, false); assertEquals(denied.status, 403);
+  } finally { globalThis.fetch = originalFetch; }
+});
