@@ -18,7 +18,7 @@ assert.doesNotMatch(detailRoute, /<Pipeline/, 'lead details should bypass the le
 
 assert.match(route, /const AgencyPipelinePage = lazy\(loadAgencyLeadWorkspace\)/)
 assert.doesNotMatch(route, /if \(activeTab === 'overview'\) return <AgencyLeadWorkspaceShellPage \/>/)
-assert.match(route, /fallback=\{<AgencyLeadWorkspaceShellPage loadingTab=\{activeTab !== 'overview'\} \/>\}/)
+assert.match(route, /fallback=\{<LeadWorkspaceRouteLoadingShell loadStage="workspace_chunk_loading" \/>\}/)
 assert.match(loader, /import\('\.\/AgencyPipelinePage'\)/)
 assert.match(route, /key=\{`lead-workspace:\$\{location\.pathname\}`\}/)
 assert.match(route, /initialViewMode="leads"/)
@@ -50,5 +50,26 @@ const bundle = await build({
 const bundleInputs = Object.keys(bundle.metafile.inputs)
 assert.ok(bundleInputs.some((file) => file.endsWith('AgencyPipelinePage.jsx')), 'workspace bundle should retain the mature agency controller')
 assert.equal(bundleInputs.some((file) => file.endsWith('/Pipeline.jsx')), false, 'workspace bundle must exclude the legacy Pipeline module')
+
+// Inspect what opening a workspace actually downloads, following static imports
+// while leaving user-opened dialogs and tools behind their dynamic boundaries.
+const controller = Object.entries(bundle.metafile.outputs).find(([, output]) => output.entryPoint?.endsWith('AgencyPipelinePage.jsx'))
+assert.ok(controller, 'workspace controller should retain its own chunk')
+const initialInputs = new Set()
+const visited = new Set()
+function visit(file) {
+  const key = bundle.metafile.outputs[file] ? file : Object.keys(bundle.metafile.outputs).find(key => resolve(root, key) === resolve(root, file))
+  if (!key || visited.has(key)) return
+  visited.add(key)
+  const output = bundle.metafile.outputs[key]
+  Object.keys(output.inputs).forEach(input => initialInputs.add(input))
+  output.imports.filter(item => item.kind === 'import-statement' && !item.external).forEach(item => visit(item.path))
+}
+visit(controller[0])
+for (const component of ['WorkspaceCalendar', 'DocumentRequirementManager', 'SellerMandateDetailsEditor', 'BuyerQualificationDialog']) {
+  assert.equal([...initialInputs].some(file => file.endsWith(`/${component}.jsx`)), false, `${component} must load only when opened`)
+}
+assert.equal([...initialInputs].some(file => file.endsWith('/privateListingService.js')), false,
+  'listing actions and matching must not pull the full listing service into the opening workspace')
 
 console.log(`seller leads workspace entry phase 4 checks passed (${bundleInputs.length} bundle inputs, no legacy Pipeline module)`)

@@ -46,16 +46,16 @@ assert.doesNotMatch(
   'privateListingService should not statically import documentPacketsApi',
 )
 
-assert.match(
+assert.doesNotMatch(
   privateListingSource,
   /import\(['"]\.\.\/core\/documents\/packetService['"]\)/,
-  'privateListingService should dynamically import packetService',
+  'privateListingService must not restore the retired packet generator',
 )
 
-assert.match(
+assert.doesNotMatch(
   privateListingSource,
   /import\(['"]\.\.\/lib\/documentPacketsApi['"]\)/,
-  'privateListingService should dynamically import documentPacketsApi',
+  'privateListingService must not restore the retired packet generation actions',
 )
 
 assert.doesNotMatch(

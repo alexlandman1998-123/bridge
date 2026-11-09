@@ -20,7 +20,9 @@ export default function RecruitmentRouteAccess({ session, logout, pendingInviteP
     if (session?.user && !applicantGate.checking && !applicantGate.error && !applicantGate.required) return <Navigate to="/dashboard" replace />
     return <><HomeSeekersMeasurement /><Suspense fallback={createElement(Loading, { label: 'Opening My Profile' })}><AppErrorBoundary scope="applicant-setup" title="My Profile failed to load" brandName="Home Seekers" fallbackPath="/applicant/my-profile" fallbackLabel="My Profile"><RecruitmentApplicantSetupPage /></AppErrorBoundary></Suspense></>
   }
-  if (applicantGate.checking) return createElement(Loading, { label: 'Checking workspace access' })
+  if (applicantGate.checking) return createElement(Loading, { label: applicantGate.recovering
+    ? 'Reconnecting to your workspace'
+    : applicantGate.slow ? 'The connection is taking longer. Checking workspace access' : 'Checking workspace access' })
   if (applicantGate.error) return <main className="flex min-h-dvh items-center justify-center bg-[#f4f7f6] px-5 py-12">
     <section role="alert" className="w-full max-w-md rounded-2xl border border-[#dce6e0] bg-white p-7 shadow-sm">
       <p className="text-sm font-semibold text-[#17644c]">Arch9</p>

@@ -32,3 +32,32 @@ it('does not fall back on network or permission errors',async()=> {
  expect((await checkRecruitmentApplicantGate(db,'user-1',preview)).error).toBe(true)
  expect(db.from).not.toHaveBeenCalled()
 })
+it.each([null, undefined, 'false', 0, {}, []])('rejects a malformed successful access verdict: %j', async data => {
+ const db = { rpc: async () => ({ data, error: null }) }
+ expect(await checkRecruitmentApplicantGate(db,'user-1')).toEqual({ required: false, error: true, retryable: false })
+})
+it.each([
+ {status:503,error:{code:'PGRST003'}},
+ {status:502,error:{message:'gateway unavailable'}},
+ {status:408,error:{}},
+ {status:0,error:{code:'',message:'Failed to fetch'}},
+ {status:500,error:{code:'57014'}},
+])('classifies transient failures for bounded recovery: %j',async result=> {
+ const db={rpc:async()=>result}
+ expect(await checkRecruitmentApplicantGate(db,'user-1')).toEqual({required:false,error:true,retryable:true})
+})
+it.each([
+ {status:401,error:{}}, {status:403,error:{}},
+ {status:503,error:{code:'42501'}}, {status:503,error:{code:'PGRST202'}},
+ {status:503,error:{code:'PGRST301'}}, {status:400,error:{code:'42P01'}},
+])('keeps permission and configuration failures closed without automatic retries: %j',async result=> {
+ const db={rpc:async()=>result}
+ expect(await checkRecruitmentApplicantGate(db,'user-1')).toEqual({required:false,error:true,retryable:false})
+})
+it('forwards the cancellation signal to the real access RPC',async()=> {
+ const signal=new AbortController().signal
+ const abortSignal=vi.fn(async()=>({data:false,error:null}))
+ const db={rpc:vi.fn(()=>({abortSignal}))}
+ expect(await checkRecruitmentApplicantGate(db,'user-1',{signal})).toEqual({required:false,error:false})
+ expect(abortSignal).toHaveBeenCalledWith(signal)
+})

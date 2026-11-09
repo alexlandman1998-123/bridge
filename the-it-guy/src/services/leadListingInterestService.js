@@ -2,7 +2,6 @@ import { createAgencyCrmLeadActivity, listAgencyCrmLeadContacts } from '../lib/a
 import { createAppointmentAsync } from '../lib/agencyPipelineService'
 import { listCanonicalOffersForLead } from '../lib/buyerLifecycleService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { getAgentPrivateListingSummaries } from './privateListingService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -299,6 +298,7 @@ async function enrichInterests(organisationId = '', rows = []) {
 export async function listSearchablePrivateListings({ organisationId = '', search = '', status = 'all', minPrice = '', maxPrice = '' } = {}) {
   const normalizedOrgId = nullableUuid(organisationId)
   if (!normalizedOrgId) return []
+  const { getAgentPrivateListingSummaries } = await import('./privateListingService')
   const rows = await getAgentPrivateListingSummaries('', {
     organisationId: normalizedOrgId,
     includeAllOrganisationListings: true,

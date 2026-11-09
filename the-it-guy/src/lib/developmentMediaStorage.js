@@ -70,6 +70,41 @@ function cacheFor(client) {
 
 const keyFor = ({ bucket, path }) => `${bucket}/${path}`
 
+// Viewing derivatives stay separate from editable/saved media references.
+// Only the cover is transformed; documents, plans and downloads keep originals.
+export async function resolveDevelopmentCoverImage(client, source, developmentId, width = 1600) {
+  const reference = developmentMediaReference(client, source, developmentId, { allowPublic: true })
+  if (!reference) return source
+  const size = [640, 1024, 1600].find(value => value >= width) || 1600
+  const transform = { width: size, quality: 70, resize: 'contain' }
+  const state = cacheFor(client)
+  const generation = state.generation
+  const key = `cover:${size}:${source}`
+  const cached = state.entries.get(key)
+  if (cached?.expiresAt > Date.now()) return cached.url
+  if (state.pending.has(key)) return state.pending.get(key)
+  const pending = Promise.resolve().then(async () => {
+    let url = source
+    try {
+      const storage = client.storage.from(reference.bucket)
+      const result = new URL(source).pathname.startsWith('/storage/v1/object/public/')
+        ? storage.getPublicUrl(reference.path, { transform })
+        : await storage.createSignedUrl(reference.path, SIGNED_URL_SECONDS, { transform })
+      if (!result.error && result.data?.signedUrl) url = result.data.signedUrl
+      else if (!result.error && result.data?.publicUrl) url = result.data.publicUrl
+    } catch { /* Keep the existing cover when resizing is unavailable. */ }
+    if (generation !== state.generation) return ''
+    state.entries.delete(key)
+    state.entries.set(key, { url, expiresAt: Date.now() + (url === source ? 60_000 : CACHE_MS) })
+    while (state.entries.size > MAX_CACHE_ENTRIES) state.entries.delete(state.entries.keys().next().value)
+    return url
+  }).finally(() => {
+    if (state.pending.get(key) === pending) state.pending.delete(key)
+  })
+  state.pending.set(key, pending)
+  return pending
+}
+
 function documentReference(client, row, developmentId) {
   const bucket = text(row.storage_bucket || row.storageBucket) || 'documents'
   const path = text(row.storage_path || row.storagePath)

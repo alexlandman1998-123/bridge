@@ -1,6 +1,5 @@
 import { buildSellerLeadListingPrefill, readSellerLeadListingCapture } from '../lib/sellerLeadListingPrefill.js'
 import { isUnconvertedSellerLeadIntake } from '../lib/sellerLeadListingBoundary.js'
-import { createPrivateListing, getPrivateListing, updatePrivateListing, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData } from './privateListingService'
 import { updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 
 const text = value => String(value ?? '').trim()
@@ -19,6 +18,7 @@ export function hasSellerLeadDraftAddress({ lead = {}, listing = {} } = {}) {
 }
 
 export async function createSellerLeadDraftListing({ organisationId, lead, contact = {}, listing = null, currentAgent = {} }, dependencies = {}) {
+  const { createPrivateListing, getPrivateListing, updatePrivateListing, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData } = await import('./privateListingService')
   const api = { createPrivateListing, getPrivateListing, updatePrivateListing, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, updateAgencyCrmLeadRecord, ...dependencies }
   const leadId = text(lead.leadId || lead.id)
   const listingId = text(listing?.id || listing?.sourceListing?.id || lead.listingId || lead.listing_id)

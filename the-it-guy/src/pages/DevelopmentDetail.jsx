@@ -5,6 +5,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentConfigurationWorkspace from '../components/developments/DevelopmentConfigurationWorkspace.jsx'
 import DevelopmentSectionMenu from '../components/developments/DevelopmentSectionMenu.jsx'
+import DevelopmentCoverImage from '../components/developments/DevelopmentCoverImage.jsx'
 import DevelopmentChannelStatistics from '../components/developments/DevelopmentChannelStatistics.jsx'
 import { DevelopmentLeadAgent, DevelopmentLeadPropertyImage, DevelopmentLeadSource } from '../components/developments/DevelopmentLeadVisuals.jsx'
 import DevelopmentLeadsKanban, { DevelopmentLeadViewSwitch } from '../components/developments/DevelopmentLeadsKanban.jsx'
@@ -7129,15 +7130,7 @@ function DevelopmentDetail() {
           <div className="relative min-h-[360px] overflow-hidden rounded-[28px] border border-[#203c35]/40 bg-[#0b211d] shadow-[0_28px_70px_rgba(15,23,42,0.22)]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(40,134,86,0.45),transparent_34%),linear-gradient(135deg,#0b211d_0%,#142f32_52%,#071316_100%)]" aria-hidden />
             {developmentHeroImageUrl ? (
-              <img
-                src={developmentHeroImageUrl}
-                alt=""
-                className="absolute inset-0 h-full w-full object-cover"
-                loading="eager"
-                onError={event => {
-                  event.currentTarget.style.display = 'none'
-                }}
-              />
+              <DevelopmentCoverImage src={developmentHeroImageUrl} developmentId={developmentId} />
             ) : null}
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,18,15,0.78)_0%,rgba(4,18,15,0.50)_54%,rgba(4,18,15,0.34)_100%)]" aria-hidden />
             <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(4,18,15,0.62)_0%,rgba(4,18,15,0.28)_46%,rgba(4,18,15,0.08)_100%)]" aria-hidden />

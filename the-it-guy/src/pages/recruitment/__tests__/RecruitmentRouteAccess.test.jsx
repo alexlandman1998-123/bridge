@@ -39,6 +39,15 @@ it('waits for the applicant decision before mounting the workspace', () => {
   expect(screen.getByRole('status').textContent).toBe('Checking workspace access')
   expect(mounted).not.toHaveBeenCalled()
 })
+it.each([
+ [{checking:true,slow:true},'The connection is taking longer. Checking workspace access'],
+ [{checking:true,recovering:true,error:true},'Reconnecting to your workspace'],
+])('keeps workspace providers unmounted throughout slow checks and recovery', (gate,label) => {
+  useRecruitmentApplicantGate.mockReturnValue(gate)
+  open()
+  expect(screen.getByRole('status').textContent).toBe(label)
+  expect(mounted).not.toHaveBeenCalled()
+})
 it('keeps failed checks closed and offers working retry and sign out actions', () => {
   useRecruitmentApplicantGate.mockReturnValue({ error: true, retry })
   open()

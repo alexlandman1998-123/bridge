@@ -4,11 +4,9 @@ import { normalizeFinanceType } from '../../core/transactions/financeType.js'
 import { getBuyerNextActionCompletion, checkBuyerNextActionEvidence, buildBuyerNextBestActionButtons } from '../../services/buyerNextActionCompletionService.js'
 
 import { mergeAppointmentClients, toggleAppointmentClient } from '../../components/appointments/appointmentPeopleModel'
-import WorkspaceCalendar from '../../components/appointments/WorkspaceCalendar'
 
 import { getSellerDocumentDisplayGroupKey } from '../../lib/sellerDocumentExperienceModel.js'
 import { createSellerLeadDraftListing, hasSellerLeadDraftAddress } from '../../services/sellerLeadDraftListingService'
-import DocumentRequirementManager from '../../components/documents/DocumentRequirementManager.jsx'
 import DocumentUploadProgress from '../../components/documents/DocumentUploadProgress.jsx'
 import { createDocumentUploadProgress, withDocumentUploadDeadline } from '../../lib/documentUploadLifecycle.js'
 import { readDocumentRequirementContext, mergeDocumentRequirementRows, watchDocumentRequirementContext } from '../../services/documents/documentRequirementReadService.js'
@@ -29,8 +27,6 @@ import { resolveAppointmentSchedule } from '../../core/appointments/appointmentT
 import usePipelineAppointments from '../../hooks/usePipelineAppointments'
 import { createCoalescedRefresh } from '../../lib/coalescedRefresh'
 import useSellerOnboardingCompletionPolling from '../../hooks/useSellerOnboardingCompletionPolling'
-import { prepareSellerMandateReviewPreview } from '../../lib/sellerMandateReviewPreview.js'
-import SellerMandateDetailsEditor from '../../components/documents/SellerMandateDetailsEditor.jsx'
 import { getSellerMandatePreparationIssues, readSellerMandateTerms } from '../../lib/sellerMandateCapture.js'
 import { saveListingSellerCanonicalUpdate } from '../../services/listings/listingSellerCanonicalUpdateService.js'
 import { buildListingSellerCanonicalUpdate } from "../../services/listings/listingSellerCanonicalUpdateModel.js"
@@ -51,7 +47,6 @@ import JourneyStageOverrideActions from '../../components/journey/JourneyStageOv
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import BuyerQualificationFields from '../../components/leads/BuyerQualificationFields.jsx'
-import BuyerQualificationDialog from '../../components/leads/BuyerQualificationDialog.jsx'
 
 import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
 import BuyerSignedOtpDocuments from './BuyerSignedOtpDocuments'
@@ -93,7 +88,6 @@ import {
 } from '../../lib/sellerLeadManualCaptureModel'
 import { createListingSellerProfileBuilderDraft, getListingSellerFormData } from "../../lib/listingSellerProfileBuilderModel"
 import { buildSellerSubject } from '../../lib/sellerSubjectModel'
-import { downloadHtmlDocumentPdf } from '../../lib/htmlDocumentPdf'
 import { buildSellerFicaScope } from '../../lib/sellerFicaScopeModel'
 import { getSellerProfileNarrativeNotes } from '../../lib/sellerLeadProfileNotesModel'
 import { needsSellerOwnershipSetup, resolveSellerInformationEditMode } from '../../lib/sellerOwnershipSetupRouting'
@@ -186,7 +180,6 @@ import {
   recordSellerOnboardingReview,
   SELLER_ONBOARDING_REVIEW_STATUS,
 } from '../../core/documents/sellerOnboardingReview'
-import { createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack } from '../../core/documents/sellerOnboardingManualSigningPack'
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy'
 import { SELLER_PORTAL_SIGNING_ENABLED } from '../../core/documents/sellerPortalSigningPolicy'
@@ -368,12 +361,18 @@ const BuyerLeadAppointmentsWorkspace = lazy(loadBuyerAppointmentsWorkspace)
 const KingstonsSellerAppointmentsWorkspace = lazy(loadSellerAppointmentsWorkspace)
 const SellerFicaVerification = lazy(() => import('../../components/compliance/SellerFicaVerification'))
 const BuyerFicaVerification = lazy(() => import('../../components/compliance/BuyerFicaVerification'))
+const WorkspaceCalendar = lazy(() => import('../../components/appointments/WorkspaceCalendar'))
+const DocumentRequirementManager = lazy(() => import('../../components/documents/DocumentRequirementManager.jsx'))
+const SellerMandateDetailsEditor = lazy(() => import('../../components/documents/SellerMandateDetailsEditor.jsx'))
+const BuyerQualificationDialog = lazy(() => import('../../components/leads/BuyerQualificationDialog.jsx'))
 function createDeferredAction(loadModule, actionName) {
   return async (...args) => {
     const module = await loadModule()
     return module[actionName](...args)
   }
 }
+const prepareSellerMandateReviewPreview = createDeferredAction(() => import('../../lib/sellerMandateReviewPreview.js'), 'prepareSellerMandateReviewPreview')
+const downloadHtmlDocumentPdf = createDeferredAction(() => import('../../lib/htmlDocumentPdf'), 'downloadHtmlDocumentPdf')
 let transactionApiActionsPromise = null
 function loadTransactionApiActions() {
   if (!transactionApiActionsPromise) {
@@ -12730,6 +12729,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     [reloadRecords],
   )
 
+  const needsCanvassingContext = !isLeadWorkspaceRoute || Boolean(routeLeadRecord?.canvassingProspectId)
   const reloadCanvassingStore = useCallback(async (orgId = organisationId) => {
     if (!orgId) {
       setCanvassingStore({
@@ -12764,15 +12764,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   }, [organisationId])
 
   useEffect(() => {
-    if (!organisationId || loading || typeof window === 'undefined') return undefined
+    if (!organisationId || loading || !needsCanvassingContext || typeof window === 'undefined') return undefined
     const timer = window.setTimeout(() => {
       void reloadCanvassingStore(organisationId)
     }, 750)
     return () => window.clearTimeout(timer)
-  }, [loading, organisationId, reloadCanvassingStore])
+  }, [loading, needsCanvassingContext, organisationId, reloadCanvassingStore])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined
+    if (!needsCanvassingContext || typeof window === 'undefined') return undefined
     const handleCanvassingRefresh = (event) => {
       const eventOrgId = normalizeText(event?.detail?.organisationId)
       if (eventOrgId && organisationId && eventOrgId !== organisationId) return
@@ -12788,7 +12788,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       window.removeEventListener(CANVASSING_UPDATED_EVENT, handleCanvassingRefresh)
       window.removeEventListener('storage', handleStorage)
     }
-  }, [organisationId, reloadCanvassingStore])
+  }, [needsCanvassingContext, organisationId, reloadCanvassingStore])
 
   useEffect(() => {
     recordsRefreshMountedRef.current = true
@@ -28018,6 +28018,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       },
       generatedAt: now,
     })
+    const { createSellerOnboardingManualSigningPack, createSellerOnboardingSigningCopyPack } = await import('../../core/documents/sellerOnboardingManualSigningPack')
     const reviewedSigningPack = digitalKeys.length
       ? createSellerOnboardingManualSigningPack({
           existing: formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack,
@@ -33442,7 +33443,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
 
       {isCalendarMode ? (
         <section className="space-y-4" data-testid="agent-calendar-ready" aria-busy={calendarAppointmentLoad.status === 'loading'}>
-          <WorkspaceCalendar
+          <Suspense fallback={<LoadingSkeleton />}><WorkspaceCalendar
             key={`${organisationId}:${profile?.id || currentAgent.id}`}
             organisationId={organisationId} viewerKey={profile?.id || currentAgent.id}
             appointmentLoad={calendarAppointmentLoad}
@@ -33458,7 +33459,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
             hasSnapshot={calendarAppointmentLoad.hasSnapshot}
             resolveListingLabel={resolveAppointmentListingLabel}
             resolveAgentName={id => id ? agentOptions.find(agent => [agent.id, agent.userId, agent.email].some(key => normalizeKey(key) === normalizeKey(id)))?.name || '' : ''}
-          />
+          /></Suspense>
         </section>
       ) : isPrincipal && principalView === 'reporting' ? (
         <section className="space-y-4">
@@ -39884,7 +39885,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                         </>
                       }}
                     />
-                    <DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadDocumentContext.contextType} contextId={selectedLeadDocumentContext.contextId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} presentation="dialog" open={leadDocumentManagerOpen} initialSelectedRequirementId={leadDocumentManagerRequirementId} onClose={() => setLeadDocumentManagerOpen(false)} />
+                    {leadDocumentManagerOpen ? <Suspense fallback={<LoadingSkeleton />}><DocumentRequirementManager client={isSupabaseConfigured ? supabase : null} contextType={selectedLeadDocumentContext.contextType} contextId={selectedLeadDocumentContext.contextId} party={selectedLeadIsSeller ? 'seller' : 'buyer'} presentation="dialog" open initialSelectedRequirementId={leadDocumentManagerRequirementId} onClose={() => setLeadDocumentManagerOpen(false)} /></Suspense> : null}
                     </Suspense>
                     )}
                     {!selectedLeadIsSeller ? <input ref={agentBuyerDocumentUploadInputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={agentBuyerDocumentUploading} onChange={(event) => void uploadAgentBuyerLeadDocument(event)} /> : null}
@@ -40516,7 +40517,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
               ) : null}
             </div>
           ) : null}
-          {sellerGeneratedDocumentSelection(sellerOnboardingDocumentRoutes).includes('mandate') ? <SellerMandateDetailsEditor value={sellerSigningPackTerms} allowExtendedCapture={false} captureReadOnly ownershipType={getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing).sellerLegalType} onChange={setSellerSigningPackTerms} /> : null}
+          {sellerGeneratedDocumentSelection(sellerOnboardingDocumentRoutes).includes('mandate') ? <Suspense fallback={<LoadingSkeleton />}><SellerMandateDetailsEditor value={sellerSigningPackTerms} allowExtendedCapture={false} captureReadOnly ownershipType={getSellerLeadReviewFormData(selectedLead, selectedLeadLinkedListing).sellerLegalType} onChange={setSellerSigningPackTerms} /></Suspense> : null}
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
             <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
             <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'}</span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
@@ -40679,8 +40680,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         </div>
       </Modal>
 
-      <BuyerQualificationDialog
-        open={buyerQualificationDialog.open && Boolean(selectedLead) && !selectedLeadIsSeller}
+      {buyerQualificationDialog.open && selectedLead && !selectedLeadIsSeller ? <Suspense fallback={<LoadingSkeleton />}><BuyerQualificationDialog
+        open
         buyerName={selectedLeadDisplayName}
         form={buyerQualificationForm}
         onChange={updateBuyerQualificationField}
@@ -40688,7 +40689,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         onSubmit={(event) => void handleSaveBuyerQualification(event, { complete: true })}
         saving={isLeadDetailSaving}
         error={buyerQualificationDialog.error}
-      />
+      /></Suspense> : null}
 
       <Modal
         open={Boolean(manualSellerOnboarding)}
