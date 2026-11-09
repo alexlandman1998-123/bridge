@@ -1,6 +1,7 @@
 {
   "description": "Local fixture and source contracts for the retired API, domain reads, workflow loading and request measurements. No live environment scripts or production build.",
   "native": [
+    "scripts/agent-bundle-budget.test.mjs",
     "../scripts/active-user-facing-rls-gaps.test.mjs",
     "../scripts/buyers-rls-developer-insert.test.mjs",
     "../scripts/development-organisation-relationship-foundation.test.mjs",

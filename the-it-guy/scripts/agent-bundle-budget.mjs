@@ -9,7 +9,6 @@ const BUDGETS = Object.freeze({
   // The combined 9–11 October seller/document/client screens measure 153.7 KiB
   // gzip. Keep a small allowance while retaining the existing JavaScript limits.
   globalCssGzip: 155 * KIB,
-  legacyApiGzip: 325 * KIB,
 })
 
 function matchingFile(files, pattern, label) {
@@ -60,13 +59,15 @@ function assertWithinBudget(label, actual, budget) {
 const files = await readdir(DIST_ASSETS)
 const entryFile = matchingFile(files, /^index-[^.]+\.js$/, 'entry JavaScript')
 const cssFile = matchingFile(files, /^index-[^.]+\.css$/, 'global CSS')
-const apiFile = matchingFile(files, /^api-[^.]+\.js$/, 'legacy API')
+const legacyApiFiles = files.filter((file) => /^api-[^.]+\.js$/.test(file))
+if (legacyApiFiles.length) {
+  throw new Error(`Retired legacy API assets must remain absent: ${legacyApiFiles.join(', ')}`)
+}
 const clientsFile = matchingFile(files, /^Clients-[^.]+\.js$/, 'Clients route')
 
-const [entryGzip, cssGzip, apiGzip, clientsBytes] = await Promise.all([
+const [entryGzip, cssGzip, clientsBytes] = await Promise.all([
   gzipBytes(entryFile),
   gzipBytes(cssFile),
-  gzipBytes(apiFile),
   stat(path.join(DIST_ASSETS, clientsFile)).then((value) => value.size),
 ])
 const clientDependencies = await staticDependencyClosure(clientsFile)
@@ -74,7 +75,6 @@ const legacyApiOnClientsPath = [...clientDependencies].find((file) => /^api-[^.]
 
 assertWithinBudget('Entry JavaScript', entryGzip, BUDGETS.entryJavaScriptGzip)
 assertWithinBudget('Global CSS', cssGzip, BUDGETS.globalCssGzip)
-assertWithinBudget('Legacy API chunk', apiGzip, BUDGETS.legacyApiGzip)
 if (legacyApiOnClientsPath) {
   throw new Error(`Clients statically depends on ${legacyApiOnClientsPath}; load legacy mutations only after an explicit action.`)
 }
@@ -83,7 +83,7 @@ console.log(JSON.stringify({
   status: 'passed',
   entry: { file: entryFile, gzipBytes: entryGzip },
   globalCss: { file: cssFile, gzipBytes: cssGzip },
-  legacyApi: { file: apiFile, gzipBytes: apiGzip },
+  legacyApi: { retired: true, assetCount: legacyApiFiles.length },
   clients: {
     file: clientsFile,
     bytes: clientsBytes,
