@@ -109,3 +109,34 @@ test('reviewing an uncertain send preserves its delivery truth and does not disp
   await claim(id(851),'New message');assert.equal((await db.query('select count(*)::integer n from whatsapp_inbox_messages where direction=\'outbound\'')).rows[0].n,2)
  }finally{await db.close()}
 })
+test('historical chats return to active work after a live outgoing message and mentions use the right view',async()=>{
+ const db=await setup();try{
+  await db.query("update organisation_communication_channels set onboarding_mode='coexistence' where id=$1",[sender])
+  const ingest=async(key,direction,source,at)=> (await db.query("select whatsapp_business_app_ingest('100','200','27821110000',$1,$2,$3,'text',$1,'{}','Fixture history',$4,'sent') id",[key,at,direction,source])).rows[0].id
+  const chat=await ingest('history-only','inbound','history',new Date(Date.now()-86400000*3).toISOString())
+  assert.equal((await page(db,admin)).counts.all,0);assert.equal((await page(db,admin)).counts.history,1)
+  const report=await command(db,admin,'report');assert.equal(report.open,0);assert.equal(report.unassigned,0)
+  await command(db,agent,'take',chat,{assignmentVersion:(await page(db,agent,'thread',chat)).conversation.assignment_version})
+  await command(db,agent,'note',chat,{requestId:id(950),body:'Imported context for management',mentions:[admin]})
+  assert.equal((await page(db,admin,'notifications')).notificationView,'history')
+  await ingest('new-phone-app-reply','outbound','business_app',new Date().toISOString())
+  const active=await page(db,admin);assert.equal(active.counts.all,1);assert.equal(active.counts.history,0);assert.equal(active.conversations[0].historical,false)
+  assert.equal((await page(db,admin,'notifications')).notificationView,'all');assert.equal((await command(db,admin,'report')).open,1)
+  const fresh=await command(db,agent,'create',null,{phone:'27821110001',senderId:sender})
+  await command(db,agent,'note',fresh.conversation.id,{requestId:id(951),body:'New contact handover',mentions:[admin]})
+  const notification=await page(db,admin,'notifications');assert.equal(notification.notificationConversationId,fresh.conversation.id);assert.equal(notification.notificationView,'all')
+  const owned=(await page(db,agent,'thread',fresh.conversation.id)).conversation;await command(db,agent,'state',owned.id,{assignmentVersion:owned.assignment_version,state:'snoozed',until:new Date(Date.now()+3600000).toISOString()});assert.equal((await page(db,admin,'notifications')).notificationView,'snoozed')
+ }finally{await db.close()}
+})
+test('optional routing ignores imported history and balances only active work',async()=>{
+ const db=await setup();try{
+  await db.query("update organisation_communication_channels set onboarding_mode='coexistence' where id=$1",[sender])
+  const history=async n=>(await db.query("select whatsapp_business_app_ingest('100','200',$1,$2,now()-interval '3 days','inbound','text','Imported history','{}','Fixture','history','sent') id",[`2782222${String(n).padStart(4,'0')}`,`history-routing-${n}`])).rows[0].id
+  for(let n=0;n<10;n++){const chat=await history(n);await db.query('update whatsapp_inbox_conversations set assigned_user_id=$1 where id=$2',[agent,chat])}
+  await command(db,peer,'create',null,{phone:'27823330000',senderId:sender})
+  const settings=(await command(db,admin,'settings')).settings;await command(db,admin,'save_settings',null,{version:settings.version,responseMinutes:60,autoAssign:true})
+  const imported=await history(20);assert.equal((await page(db,admin,'thread',imported)).conversation.assigned_user_id,null)
+  const live=await incoming(db,'workload routing fixture');assert.equal((await page(db,admin,'thread',live)).conversation.assigned_user_id,agent)
+  assert.equal((await command(db,admin,'report')).open,2)
+ }finally{await db.close()}
+})

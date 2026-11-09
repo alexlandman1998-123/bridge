@@ -29,6 +29,7 @@ export async function fixture({workspace=false}={}){
     await db.exec('alter table organisation_users add column first_name text,add column last_name text,add column email text;');
     await db.exec(readFileSync(new URL('../../../supabase/migrations/20261103193901_whatsapp_personal_number_assignment_guard.sql',import.meta.url),'utf8'));
     await db.exec(readFileSync(new URL('../../../supabase/migrations/20261109184918_whatsapp_inbox_workspace_reliability.sql',import.meta.url),'utf8'));
+    await db.exec(readFileSync(new URL('../../../supabase/migrations/20261109195248_whatsapp_inbox_active_work_classification.sql',import.meta.url),'utf8'));
   }
   return db
 }
