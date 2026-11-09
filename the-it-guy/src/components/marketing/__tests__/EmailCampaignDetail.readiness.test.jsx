@@ -11,7 +11,7 @@ import { EmailCampaignDetail } from '../EmailCampaigns'
 beforeEach(() => {
   vi.clearAllMocks()
   api.workspace.mockResolvedValue({ campaigns: [{ id: 'campaign', name: 'The Lyle', status: 'draft' }], performance: [] })
-  api.analytics.mockResolvedValue({ recipients: [], events: [], links: [], audit: [] })
+  api.analytics.mockResolvedValue({ recipients: [], events: [], links: [], audit: [], delivery: { state: 'draft' } })
 })
 afterEach(cleanup)
 it('finishes an inaccessible campaign lookup with a useful access message', async () => {

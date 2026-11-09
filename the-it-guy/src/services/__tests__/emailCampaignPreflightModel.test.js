@@ -14,3 +14,6 @@ it('retains exact content and provider reasons without repeating them', () => {
 it('gives a retry instruction when an older server omits check details', () => {
   expect(emailCampaignPreflightFailure()).toContain('Refresh and run the checks again')
 })
+it('retains the current server readiness issues after merging the older campaign UI', () => {
+  expect(emailCampaignPreflightFailure({ issues: ['The verified sender domain has expired.'] })).toBe('The verified sender domain has expired.')
+})

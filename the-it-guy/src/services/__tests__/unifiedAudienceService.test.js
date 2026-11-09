@@ -28,7 +28,7 @@ test('legacy compatibility writes require a loaded revision and archive the same
 test('new saved selections carry the loaded audience revision', async () => {
   api.rpc.mockImplementation(async name => ({ data: name === 'email_campaign_can_send' ? false : { ready: false } }))
   api.from.mockImplementation(table => {
-    const q = { select() { return q }, eq() { return q }, is() { return q }, order() { return q }, limit() { return q }, range() { return q }, maybeSingle: async () => ({ data: null }), then(resolve) { return Promise.resolve({ data: table === 'email_saved_audiences' ? [{ id: 'saved', revision: 4, filter_json: {} }] : [] }).then(resolve) } }
+    const q = { select() { return q }, eq() { return q }, gte() { return q }, is() { return q }, order() { return q }, limit() { return q }, range() { return q }, maybeSingle: async () => ({ data: null }), then(resolve) { return Promise.resolve({ data: table === 'email_saved_audiences' ? [{ id: 'saved', revision: 4, filter_json: {} }] : [] }).then(resolve) } }
     return q
   })
   const workspace = await getEmailCampaignWorkspace(org)

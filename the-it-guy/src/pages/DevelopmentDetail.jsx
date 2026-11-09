@@ -2192,7 +2192,21 @@ function DevelopmentDetail() {
   const [routingInviteSaving, setRoutingInviteSaving] = useState('')
   const [externalAgentModalOpen, setExternalAgentModalOpen] = useState(false)
 
-  const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'developer' || role === 'internal_admin'
+  const managementScope = `${developmentId}:${profile?.id || profile?.userId || ''}:${currentWorkspace?.id || ''}:${currentMembership?.workspaceRole || currentMembership?.workspace_role || role}`
+  const [managementAccess, setManagementAccess] = useState({ scope: '', allowed: false, error: '' })
+  useEffect(() => {
+    let active = true
+    if (isSupabaseConfigured && developmentId) {
+      void import('../services/developmentManagementAccessService.js')
+        .then(({ getDevelopmentManagementAccess }) => getDevelopmentManagementAccess(developmentId))
+        .then(allowed => { if (active) setManagementAccess({ scope: managementScope, allowed, error: '' }) })
+        .catch(cause => { if (active) setManagementAccess({ scope: managementScope, allowed: false, error: cause.message }) })
+    }
+    return () => { active = false }
+  }, [developmentId, managementScope])
+  const canManageDevelopment = isSupabaseConfigured
+    ? managementAccess.scope === managementScope && managementAccess.allowed
+    : can(PERMISSIONS.editDevelopments) || role === 'developer' || role === 'internal_admin'
   const canCreateTransactions = can(PERMISSIONS.manageDeveloperTransactions) || role === 'attorney'
   const canEditMarketing = canManageDevelopment || role === 'agent'
   const canEditDevelopmentLeads = can(PERMISSIONS.editLeads) || role === 'developer' || role === 'internal_admin'
@@ -7017,6 +7031,7 @@ function DevelopmentDetail() {
   return (
     <section className="min-w-0 max-w-full overflow-x-hidden pb-12 lg:pb-16">
       <div className="flex min-w-0 flex-col">
+        {managementAccess.scope === managementScope && managementAccess.error ? <p role="alert" className="mt-4 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{managementAccess.error}</p> : null}
         {error ? <p className="mt-4 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
         {feedback ? <p className="mt-4 rounded-[16px] border border-[#d6ece0] bg-[#edfdf3] px-5 py-4 text-sm text-[#1c7d45]">{feedback}</p> : null}
 
