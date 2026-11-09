@@ -135,7 +135,8 @@ it('keeps an unconfirmed provider result visible and does not automatically resu
   fireEvent.click(screen.getByRole('button',{name:'Send message'}))
   await screen.findByText(/The send result is unconfirmed/)
   expect(mocks.request).toHaveBeenCalledTimes(1)
-  expect(screen.getByLabelText('Reply').value).toBe('')
+  expect(screen.getByLabelText('Reply').value).toBe('Check delivery')
+  expect(screen.getByRole('button',{name:'Check message'})).toBeTruthy()
 })
 
 const row=(id,time)=>({id,event_at:time,last_message_at:time,body_text:id})
@@ -229,6 +230,7 @@ it('clears unread badges immediately on membership changes and ignores a delayed
   const view=render(node('principal'))
   await screen.findByRole('link',{name:'WhatsApp, 9 unread messages'})
   act(()=>window.dispatchEvent(new Event('focus')))
+  await waitFor(()=>expect(mocks.request).toHaveBeenCalledTimes(2))
   view.rerender(node('agent'))
   expect(screen.queryByText('9')).toBeNull()
   await screen.findByRole('link',{name:'WhatsApp messages unavailable'})

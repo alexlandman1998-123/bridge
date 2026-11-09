@@ -1,8 +1,8 @@
 import { supabaseServiceKey, withApiCredentials } from "../_shared/apiCredentials.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
-import { applyWhatsAppCampaignWebhook } from "../_shared/whatsappCampaignWebhook.js";
-import { applyWhatsAppInboxWebhook } from "../_shared/metaIntegrationCore.js";
+import {verifyWebhookSignature} from "../_shared/whatsappWebhookSignature.js";
+import { runWhatsAppWebhookRecovery } from "../_shared/whatsappWebhookRecovery.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,24 +30,6 @@ function jsonResponse(status: number, body: JsonRecord, extraHeaders: Record<str
   });
 }
 
-function hexDecode(value: string) {
-  if (value.length % 2 !== 0) throw new Error("Invalid hex signature.");
-  const bytes = new Uint8Array(value.length / 2);
-  for (let index = 0; index < value.length; index += 2) {
-    bytes[index / 2] = Number.parseInt(value.slice(index, index + 2), 16);
-  }
-  return bytes;
-}
-
-function constantTimeEqual(left: Uint8Array, right: Uint8Array) {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left[index] ^ right[index];
-  }
-  return difference === 0;
-}
-
 async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -58,30 +40,6 @@ async function sha256Hex(value: string) {
   ).join("");
 }
 
-async function verifyWebhookSignature(
-  body: string,
-  signatureHeader: string,
-  secret: string,
-) {
-  const normalized = text(signatureHeader);
-  if (!normalized || !normalized.startsWith("sha256=")) {
-    return false;
-  }
-  const provided = normalized.replace(/^sha256=/i, "");
-  const key = new TextEncoder().encode(secret);
-  const expected = await crypto.subtle.sign(
-    "HMAC",
-    await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
-    new TextEncoder().encode(body),
-  );
-  const expectedHex = Array.from(new Uint8Array(expected)).map((byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-  const actualBytes = hexDecode(provided);
-  const expectedBytes = hexDecode(expectedHex);
-  return constantTimeEqual(actualBytes, expectedBytes);
-}
-
 function createSupabaseClient() {
   const url = text(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = text(supabaseServiceKey());
@@ -89,53 +47,6 @@ function createSupabaseClient() {
   return createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-function mapMetaStatus(status: string) {
-  const normalized = text(status).toLowerCase();
-  if (normalized === "read") return "read";
-  if (normalized === "delivered") return "delivered";
-  if (normalized === "sent") return "sent";
-  if (normalized === "failed") return "failed";
-  return "";
-}
-
-function extractFailureReason(item: JsonRecord) {
-  if (Array.isArray(item.errors) && item.errors.length > 0) {
-    const first = item.errors[0] as JsonRecord;
-    return `${String(first.code || "")}: ${text(first.title) || text((first.error_data as JsonRecord)?.details) || "Delivery failed"}`;
-  }
-  return text(item.error);
-}
-
-function readStatusTimestamp(item: JsonRecord, status: string) {
-  const normalizedStatus = text(status).toLowerCase();
-  const statusValue = normalizedStatus || text(item.status).toLowerCase();
-  const timestamp = text(item.timestamp);
-  let eventAt = new Date().toISOString();
-  const unixSeconds = Number(timestamp);
-  if (Number.isFinite(unixSeconds) && unixSeconds > 0) {
-    const candidate = new Date(unixSeconds * 1000);
-    if (!Number.isNaN(candidate.getTime())) {
-      eventAt = candidate.toISOString();
-    }
-  }
-  if (statusValue === "failed") {
-    return {
-      status: "failed",
-      failed_at: eventAt,
-      error_message: extractFailureReason(item),
-      updated_at: new Date().toISOString(),
-    };
-  }
-  const now = new Date().toISOString();
-  if (statusValue === "read") return { status: "read", read_at: eventAt, updated_at: now };
-  if (statusValue === "delivered") return {
-    status: "delivered",
-    delivered_at: eventAt,
-    updated_at: now,
-  };
-  return { status: normalizedStatus || "sent", sent_at: eventAt, updated_at: now };
 }
 
 Deno.serve(withApiCredentials(async (req) => {
@@ -167,7 +78,10 @@ Deno.serve(withApiCredentials(async (req) => {
     return jsonResponse(405, { error: "Method not allowed." });
   }
 
-  const rawBody = await req.text();
+  if(Number(req.headers.get('content-length')||0)>20*1024*1024)return jsonResponse(413,{error:'Webhook too large.'});
+  const reader=req.body?.getReader();let rawBody='';let size=0;
+  const decoder=new TextDecoder();
+  if(reader)try{for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>20*1024*1024)return jsonResponse(413,{error:'Webhook too large.'});rawBody+=decoder.decode(chunk.value,{stream:true});}rawBody+=decoder.decode();}finally{await reader.cancel();}
   if (!rawBody) {
     return jsonResponse(400, { error: "Empty webhook payload." });
   }
@@ -195,104 +109,13 @@ Deno.serve(withApiCredentials(async (req) => {
     return jsonResponse(400, { error: "Invalid webhook JSON." });
   }
 
-  // Apply idempotent campaign callbacks before audit deduplication so retries
-  // can recover a database failure without losing delivery or opt-out events.
+  // Persist verified ingress before applying any business side effects. A crash
+  // or provider retry can safely resume the same idempotent event.
+  const hash = await sha256Hex(rawBody);
+  const saved = await supabase.rpc('whatsapp_webhook_enqueue', {p_hash:hash,p_payload:payload});
+  if(saved.error) return jsonResponse(503,{error:'Webhook storage unavailable. Retry required.'});
   try {
-    await applyWhatsAppCampaignWebhook(supabase, payload);
-    await applyWhatsAppInboxWebhook(supabase, payload);
-  } catch {
-    return jsonResponse(500, { error: "Campaign webhook processing failed. Retry required." });
-  }
-  const webhookEventId = await sha256Hex(rawBody);
-
-  const auditInsert = await supabase.from("notification_provider_webhook_events")
-    .insert({
-      provider: "meta",
-      provider_event_id: webhookEventId || "unknown",
-      event_type: "message_status",
-      provider_message_id: null,
-      payload_json: payload,
-      processing_status: "received",
-    })
-    .select("id")
-    .single();
-
-  if (auditInsert.error && text(auditInsert.error?.code) === "23505") {
-    return jsonResponse(200, { received: true, duplicate: true });
-  }
-  if (auditInsert.error) {
-    return jsonResponse(500, { error: "Failed to record webhook payload." });
-  }
-
-  const entries = Array.isArray(payload.entry) ? payload.entry as JsonRecord[] : [];
-  let processed = false;
-  let lastError = "";
-  let providerMessageId = "";
-  const now = new Date().toISOString();
-
-  for (const entry of entries) {
-    const changes = Array.isArray(entry.changes)
-      ? entry.changes as JsonRecord[]
-      : [];
-    for (const change of changes) {
-      const changeValue = (change.value || {}) as JsonRecord;
-      const statuses = Array.isArray(changeValue.statuses)
-        ? changeValue.statuses as JsonRecord[]
-        : [];
-      for (const statusItem of statuses) {
-        const mappedStatus = mapMetaStatus(text(statusItem.status));
-        providerMessageId = text(statusItem.id);
-        if (!providerMessageId || !mappedStatus) {
-          continue;
-        }
-
-        const patch = readStatusTimestamp(statusItem, mappedStatus);
-        const deliveryQuery = await supabase
-          .from("communication_deliveries")
-          .update(patch)
-          .eq("provider", "meta")
-          .eq("channel", "whatsapp")
-          .eq("provider_message_id", providerMessageId)
-          .select("id, notification_event_id")
-          .maybeSingle();
-
-        if (deliveryQuery.error || !deliveryQuery.data) {
-          lastError = "No matching delivery found for webhook message id.";
-          continue;
-        }
-
-        if (deliveryQuery.data.notification_event_id) {
-          const eventPatch: JsonRecord = {
-            status: patch.status,
-            updated_at: now,
-          };
-          if (patch.sent_at) eventPatch.sent_at = patch.sent_at;
-          if (patch.delivered_at) eventPatch.delivered_at = patch.delivered_at;
-          if (patch.read_at) eventPatch.read_at = patch.read_at;
-          if (patch.failed_at) eventPatch.failed_at = patch.failed_at;
-          if (patch.error_message) eventPatch.error_message = patch.error_message;
-          await supabase.from("notification_events")
-            .update(eventPatch)
-            .eq("id", deliveryQuery.data.notification_event_id);
-        }
-        processed = true;
-      }
-    }
-  }
-
-  await supabase
-    .from("notification_provider_webhook_events")
-    .update({
-      processing_status: processed ? "processed" : "ignored",
-      processed_at: now,
-      processing_error: lastError || null,
-    })
-    .eq("id", auditInsert.data.id);
-
-  return jsonResponse(200, {
-    received: true,
-    processed,
-    providerMessageId: providerMessageId || null,
-    error: lastError || null,
-  });
+    const result = await runWhatsAppWebhookRecovery(supabase,{hash,limit:3});
+    return jsonResponse(result.failed?503:200,{received:true,...result});
+  } catch { return jsonResponse(503,{error:'Verified event saved. Processing will retry.'}); }
 }));

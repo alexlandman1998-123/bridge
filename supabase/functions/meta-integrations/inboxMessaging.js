@@ -4,16 +4,18 @@ import { decodeInboxAttachment, inboxTemplateFields } from '../_shared/whatsappI
 
 const safeMessage = row => row && Object.fromEntries(['id','conversation_id','direction','message_type','body_text','media_json','delivery_status','error_message','event_at','created_at','created_by','template_json'].map(key=>[key,row[key]]))
 const safeUpload = row => row && ({ id:row.id,status:row.status,filename:row.filename,mimeType:row.mime_type })
-const result = async query => { const {data,error}=await query;if(error)throw new Error(error.message);return data }
+const result = async query => { const {data,error}=await query;if(error)throw Object.assign(new Error(error.message),{code:error.code});return data }
 
 export async function handleInboxMessaging({ db,actor,org,action,payload,conversation,channel,senderToken,graph,uploadMedia,hash,now }) {
   const rpc = (name,fields) => result(db.rpc(name,{p_org:org,p_actor:actor.userId,...fields}))
   if (['inbox_page','message_page','inbox_notifications'].includes(action)) {
     const cursor=payload.cursor
+    if(payload.channelId&&!isUuid(payload.channelId))throw new Error('Choose a valid inbox number.')
     if (cursor && (!isUuid(cursor.id)||!Number.isFinite(Date.parse(cursor.at)))) throw new Error('Invalid history cursor.')
     if(payload.knownIds&&(!Array.isArray(payload.knownIds)||payload.knownIds.length>1000||!payload.knownIds.every(isUuid)))throw new Error('Invalid conversation cache.')
+    if(payload.knownVersions&&(typeof payload.knownVersions!=='object'||Array.isArray(payload.knownVersions)||Object.keys(payload.knownVersions).length>1000||!Object.entries(payload.knownVersions).every(([id,at])=>isUuid(id)&&Number.isFinite(Date.parse(at)))))throw new Error('Invalid conversation versions.')
     if (action==='message_page'&&!isUuid(payload.conversationId)) throw new Error('Choose a conversation.')
-    const data=await rpc('whatsapp_inbox_page',{p_action:action==='inbox_page'?'list':action==='message_page'?'thread':'notifications',p_conversation:payload.conversationId||null,p_before_at:cursor?.at||null,p_before_id:cursor?.id||null,p_search:text(payload.search),p_known:payload.knownIds||[]})
+    const data=await rpc('whatsapp_workspace_page',{p_action:action==='inbox_page'?'list':action==='message_page'?'thread':'notifications',p_conversation:payload.conversationId||null,p_before_at:cursor?.at||null,p_before_id:cursor?.id||null,p_search:text(payload.search),p_known:payload.knownIds||[],p_view:text(payload.view)||'all',p_channel:payload.channelId||null,p_versions:payload.knownVersions||{}})
     return data.conversation?{...data,conversation:{...data.conversation,canReply:canReply(data.conversation,now().getTime())}}:data
   }
   const thread=await conversation(org,actor,payload.conversationId)

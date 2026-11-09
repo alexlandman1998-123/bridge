@@ -14,21 +14,27 @@ import useWhatsAppHistory from '../../hooks/useWhatsAppHistory'
 import { metaIntegrationRequest } from '../../services/metaIntegrationService'
 import { WhatsAppCampaignReplyNotice } from '../marketing/MetaCampaignRoutes'
 import WhatsAppCrmLink from '../marketing/WhatsAppCrmLink'
-import WhatsAppMessageComposer from '../marketing/WhatsAppMessageComposer'
+import WhatsAppConversationWork from './WhatsAppConversationWork'
+import WhatsAppMessageMedia from './WhatsAppMessageMedia'
 
 const date=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):''
 // The same authorised reader is used by the combined Inbox and Marketing.
-export default function WhatsAppConversationReader({ workspace, conversationId: selectedId, onChanged, onBack, revision, compact = false, detailsWidth = 24, onDetailsResize, onDetailsMove, onDetailsReset, initialReply = '', onReplyChange, className='flex min-h-[500px] min-w-0 flex-col' }) {
+export default function WhatsAppConversationReader({ workspace, conversationId: selectedId, onChanged, onBack, revision, compact = false, acknowledge = !compact, detailsWidth = 24, onDetailsResize, onDetailsMove, onDetailsReset, initialReply = '', onReplyChange, className='flex min-h-[500px] min-w-0 flex-col' }) {
   const org=workspace.organisationId,scope=workspace.accessScope||org
   const selectionKey=`${scope}:${selectedId}`,active=useRef(selectionKey);active.current=selectionKey
   useEffect(()=>{active.current=selectionKey;return()=>{active.current=null}},[selectionKey])
-  const detail=useWhatsAppHistory({organisationId:org,accessScope:scope,conversationId:selectedId,thread:true})
+  const [visible,setVisible]=useState(false)
+  const detail=useWhatsAppHistory({organisationId:org,accessScope:scope,conversationId:selectedId,thread:true,enabled:!compact||(acknowledge&&visible)})
   const [busy,setBusy]=useState(''),[error,setError]=useState(''),[contactOpen,setContactOpen]=useState(false),[contactTab,setContactTab]=useState('overview'),[crmAction,setCrmAction]=useState('')
   const contactBody=useRef(null)
   useEffect(()=>{if(contactBody.current)contactBody.current.scrollTop=0},[contactOpen,contactTab,selectionKey])
-  const history=useRef(null),newestMessage=detail.rows[0]?.id
-  useEffect(()=>{if(compact&&history.current)history.current.scrollTop=history.current.scrollHeight},[compact,selectedId,newestMessage])
-  const contactInfo=useInboxContactContext({organisationId:compact?org:'',accessScope:scope,conversationId:compact?selectedId:''})
+  const history=useRef(null),reader=useRef(null),pinned=useRef(true),lastHeight=useRef(0),lastNewest=useRef(''),newestMessage=detail.rows[0]?.id
+  const [atBottom,setAtBottom]=useState(true)
+  useEffect(()=>{const node=reader.current;if(!node)return undefined;const update=()=>setVisible(!document.hidden&&node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0);const observer=typeof IntersectionObserver==='function'?new IntersectionObserver(entries=>setVisible(entries[0].isIntersecting&&!document.hidden)):null;observer?.observe(node);update();document.addEventListener('visibilitychange',update);window.addEventListener('resize',update);return()=>{observer?.disconnect();document.removeEventListener('visibilitychange',update);window.removeEventListener('resize',update)}},[selectedId])
+  useEffect(()=>{const node=history.current;if(!node)return;if(pinned.current)node.scrollTop=node.scrollHeight;else if(lastNewest.current===newestMessage)node.scrollTop+=Math.max(0,node.scrollHeight-lastHeight.current);lastHeight.current=node.scrollHeight;lastNewest.current=newestMessage},[newestMessage,detail.rows.length])
+  const through=detail.rows.reduce((latest,message)=>String(message.created_at||'')>latest?message.created_at:latest,'')
+  useEffect(()=>{if(!acknowledge||!visible||!atBottom||!through||detail.error)return undefined;let cancelled=false;metaIntegrationRequest(org,'inbox_work',{operation:'read',conversationId:selectedId,fields:{through}}).then(()=>{if(!cancelled)window.dispatchEvent(new Event('arch9:whatsapp-read'))}).catch(()=>{});return()=>{cancelled=true}},[acknowledge,visible,atBottom,through,detail.error,org,selectedId])
+  const contactInfo=useInboxContactContext({organisationId:compact&&contactOpen?org:'',accessScope:scope,conversationId:compact?selectedId:''})
   const [pendingOrganiser,setPendingOrganiser]=useState(null)
   const [organiserRevision,setOrganiserRevision]=useState(0)
   const pendingSaving=useRef(false)
@@ -46,21 +52,13 @@ export default function WhatsAppConversationReader({ workspace, conversationId: 
     try{await metaIntegrationRequest(org,action,{conversationId:selectedId,assignmentVersion:detail.conversation.assignment_version,...fields});if(key===active.current){await detail.refresh();void onChanged?.()}}
     catch(failure){if(key===active.current){setError(failure.message);await detail.refresh()}}finally{if(key===active.current)setBusy('')}
   }
-  async function download(message) {
-    const key=selectionKey;setBusy(message.id);setError('')
-    try{
-      const file=await metaIntegrationRequest(org,'media',{messageId:message.id});if(key!==active.current)return
-      const bytes=Uint8Array.from(atob(file.base64),char=>char.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:file.mimeType})),anchor=document.createElement('a')
-      anchor.href=url;anchor.download=(message.media_json?.filename||`whatsapp-${message.message_type}`).replace(/[^a-zA-Z0-9._-]/g,'_');anchor.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000)
-    }catch(failure){if(key===active.current)setError(failure.message)}finally{if(key===active.current)setBusy('')}
-  }
   const current=detail.conversation
   const conversationTools=current ? <>
         {!compact&&<WhatsAppConversationAssignment workspace={workspace} conversation={current} busy={Boolean(busy)} onAssign={id=>void update('assign_conversation',{assignedUserId:id})}/>}
         <WhatsAppCampaignReplyNotice key={`${selectionKey}:${current.last_message_at}:${current.assignment_version}`} organisationId={org} conversationId={current.id} accessScope={scope}/>{!compact&&<WhatsAppCrmLink key={`crm:${selectionKey}:${current.assignment_version}`} organisationId={org} accessScope={scope} conversationId={selectedId} assignmentVersion={current.assignment_version} onChanged={contactInfo.refresh}/>}
   </> : null
   return (
-      <section className={`${className} ${compact ? `wa-clean-reader ${contactOpen ? 'wa-contact-open' : ''}` : ''}`} style={compact ? {'--wa-contact-width': `clamp(240px, ${detailsWidth}cqw, 480px)`} : undefined} aria-label="WhatsApp conversation reader">{!selectedId?<div className="m-auto p-10 text-center text-slate-500"><MessageCircle className="mx-auto mb-3"/><p>Select a conversation to read and reply.</p></div>:detail.loading?<p role="status" className="p-6">Loading messages…</p>:detail.error?<p role="alert" className="p-6 text-red-800">{detail.error}</p>:current?<>
+      <section ref={reader} className={`${className} ${compact ? `wa-clean-reader ${contactOpen ? 'wa-contact-open' : ''}` : ''}`} style={compact ? {'--wa-contact-width': `clamp(240px, ${detailsWidth}cqw, 480px)`} : undefined} aria-label="WhatsApp conversation reader">{!selectedId||(compact&&!acknowledge)?<div className="m-auto p-10 text-center text-slate-500"><MessageCircle className="mx-auto mb-3"/><p>Select a conversation to read and reply.</p></div>:detail.loading?<p role="status" className="p-6">Loading messages…</p>:detail.error&&!detail.rows.length?<p role="alert" className="p-6 text-red-800">{detail.error}</p>:current?<>
         {compact ? <header className="wa-chat-header">
           {onBack&&<button type="button" className="revo-icon revo-mobile-back" aria-label="Back to conversations" onClick={onBack}><ArrowLeft size={18}/></button>}
           <button type="button" className="wa-contact-trigger" aria-label={`Open contact details for ${current.contact_name||current.contact_phone}`} aria-expanded={contactOpen} onClick={()=>{setContactTab('overview');setContactOpen(value=>!value)}}>
@@ -75,22 +73,28 @@ export default function WhatsAppConversationReader({ workspace, conversationId: 
         {detail.sender?.display_phone_number&&<p className="border-b px-4 py-2 text-xs text-slate-600">Replying from {detail.sender.display_phone_number}</p>}
         {compact ? <details className="revo-whatsapp-tools"><summary>Conversation details</summary>{conversationTools}</details> : conversationTools}
         </>}
-        <div ref={history} className={compact ? "wa-chat-history" : "max-h-[55vh] flex-1 space-y-4 overflow-auto bg-slate-50 p-5"} aria-label="Conversation messages">
+        <div className="wa-sending-identity"><strong>From {detail.sender?.display_phone_number||'Business number unavailable'}</strong><span>{current.canReply?(Number.isFinite(Date.parse(current.last_inbound_at))?`Reply window closes ${date(new Date(Date.parse(current.last_inbound_at)+86400000).toISOString())}`:'Reply window open'):'Approved template required'}</span></div>
+        {detail.error&&<p role="alert" className="wa-connection-warning">Updates are unavailable. Sending is paused until this conversation refreshes. {detail.error}</p>}
+        <div ref={history} onScroll={()=>{const node=history.current;pinned.current=node.scrollHeight-node.scrollTop-node.clientHeight<40;setAtBottom(pinned.current)}} className={compact ? "wa-chat-history" : "max-h-[55vh] flex-1 space-y-4 overflow-auto bg-slate-50 p-5"} aria-label="Conversation messages">
           {detail.nextCursor&&<Button variant="secondary" disabled={detail.loadingOlder} onClick={()=>void detail.loadOlder()}>{detail.loadingOlder?'Loading…':'Load older messages'}</Button>}
           {[...detail.rows].reverse().map(message=><article key={message.id} className={compact ? `wa-chat-bubble ${message.direction}` : `max-w-[90%] rounded-xl border p-3 sm:max-w-[80%] ${message.direction==='outbound'?'ml-auto border-green-200 bg-green-50':'border-slate-200 bg-white'}`} title={compact && message.message_origin==='history' ? (message.media_json?.manualImport ? 'Imported chat export' : 'Imported WhatsApp history') : undefined}>
-            {!compact&&<p className="mb-1 text-xs font-semibold text-slate-600">{message.direction==='outbound'?message.message_origin==='business_app'?'WhatsApp Business app':message.message_origin==='history'?'Imported history':message.created_by===workspace.currentUserId?'You':'Your team':current.contact_name||'Customer'}</p>}
+            {<p className="wa-message-author mb-1 text-xs font-semibold text-slate-600">{message.direction==='outbound'?message.message_origin==='business_app'?'WhatsApp Business app':message.message_origin==='history'?'Imported history':message.created_by===workspace.currentUserId?'You':workspace.assignees?.find(person=>person.id===message.created_by)?.name||'Your team':current.contact_name||'Customer'}</p>}
             {message.revoked_at?<p className="text-sm italic text-slate-500">Message deleted in WhatsApp</p>:<>
               {message.template_json&&<p className="mb-2 text-xs">Template: {message.template_json.name} · {message.template_json.language}</p>}
-              {message.body_text?<p className="whitespace-pre-wrap break-words text-sm">{message.body_text}</p>:<p className="text-sm capitalize">{message.message_type==='media_placeholder'?'Media not supplied by Meta':message.message_type==='unsupported'?'Message not supplied by Meta. Check WhatsApp Business on your phone.':message.message_type}</p>}
-              {message.media_json?.id&&<Button variant="ghost" size="sm" className="mt-2" disabled={Boolean(busy)} onClick={()=>void download(message)}><Download size={14}/>{message.media_json.filename||`Download ${message.message_type}`}</Button>}
+              {message.media_json?.replyTo&&<small>Reply to an earlier message</small>}
+              {message.media_json?.reaction&&<p>Reaction {message.media_json.reaction.emoji||'removed'} to an earlier message</p>}
+              {message.media_json?.location&&<p>{message.media_json.location.name}<br/>{message.media_json.location.address}{message.media_json.location.latitude!=null&&message.media_json.location.longitude!=null&&<a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${message.media_json.location.latitude},${message.media_json.location.longitude}`)}`} target="_blank" rel="noreferrer">Open shared location</a>}</p>}
+              {message.media_json?.contacts?.map((contact,index)=><div key={index}><strong>{contact.name||'Shared contact'}</strong>{contact.phones.map(phone=><p key={phone}>{phone}</p>)}</div>)}
+              {message.body_text?<p className="whitespace-pre-wrap break-words text-sm">{message.body_text}</p>:<p className="text-sm capitalize">{message.message_type==='media_placeholder'?'Media not supplied by Meta':['unsupported','errors'].includes(message.message_type)?'Message not supplied by Meta. Check WhatsApp Business on your phone.':message.message_type}</p>}
+              {message.media_json?.id&&<WhatsAppMessageMedia organisationId={org} message={message}/>}
             </>}
             {!compact&&message.message_origin==='history'&&<p className="mt-2 text-[11px] text-slate-500">{message.media_json?.manualImport ? 'Imported chat export' : 'Imported WhatsApp history'}</p>}
-            <p className={compact ? "wa-message-time" : "mt-2 text-[11px] text-slate-500"}>{date(message.event_at)} · {message.delivery_status==='unknown'?'Unconfirmed':message.delivery_status}{message.edited_at&&!message.revoked_at?' · Edited in WhatsApp':''}</p>
+            <p className={compact ? "wa-message-time" : "mt-2 text-[11px] text-slate-500"}>{date(message.event_at)} · {message.delivery_status==='unknown'?'Unconfirmed':message.delivery_status}{message.edited_at&&!message.revoked_at?' · Edited in WhatsApp':''}{message.reviewed_at?' · Delivery reviewed':''}</p>
             {message.error_message&&<p className="mt-1 text-xs text-red-800">{message.error_message}</p>}
           </article>)}
         </div>
         {error&&<p role="alert" className="px-4 pt-3 text-sm text-red-800">{error}</p>}
-        <WhatsAppMessageComposer key={`composer:${selectionKey}:${current.assignment_version}`} organisationId={org} conversation={current} initialBody={initialReply} compact={compact} onDraftChange={onReplyChange} onSent={async()=>{await detail.refresh();void onChanged?.()}}/>
+        <WhatsAppConversationWork key={`work:${selectionKey}:${current.assignment_version}`} workspace={workspace} conversation={current} canSend={detail.canSend??Boolean(workspace.canManage||current.assigned_user_id===workspace.currentUserId)} connectionReady={!detail.error&&!detail.sender?.last_error_message&&detail.sender?.connection_status!=='disconnected'&&detail.sender?.connection_status!=='pending'} unconfirmed={detail.rows.find(message=>message.direction==='outbound'&&['unknown','sending'].includes(message.delivery_status)&&!message.reviewed_at&&message.manual_send)} visible={visible&&acknowledge} compact={compact} initialReply={initialReply} onReplyChange={onReplyChange} onChanged={async()=>{await detail.refresh();void onChanged?.()}}/>
         {compact&&contactOpen&&onDetailsResize&&<div className="wa-contact-divider"><InboxPanelDivider panel="details" value={detailsWidth} onResize={onDetailsResize} onMove={onDetailsMove} onReset={onDetailsReset}/></div>}
         {compact&&contactOpen&&<aside className="wa-contact-panel" aria-label="Contact information" onKeyDown={event=>{if(event.key==='Escape')setContactOpen(false)}}>
           <header><h2>Contact details</h2><button type="button" className="revo-icon" aria-label="Close contact details" onClick={()=>setContactOpen(false)}><X size={18}/></button></header>

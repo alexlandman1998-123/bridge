@@ -1,14 +1,14 @@
 import { handleChatImport } from './chatImport.js'
 import { campaignFacebookSource, publicCampaignFacebookPost } from '../_shared/campaignFacebookPost.js'
 import { finishWhatsAppAuthorization, startBusinessAppSync } from './businessAppOnboarding.js'
-import { META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
+import { META_ADMIN_ROLES, META_STAFF_ROLES, canPublishPage, canReply, isMetaId, isUuid, publicListingPost, text } from '../_shared/metaIntegrationCore.js'
 import { handleCrmLink } from './crmLinks.js'
 import { handleInboxMessaging } from './inboxMessaging.js'
 import { handleAutomations } from './automations.js'
 import { handleAudiences, handleCampaignRoutes } from './audiences.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
-const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,onboarding_mode,business_app_session,business_app_connected_at'
+const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,last_checked_at,onboarding_mode,business_app_session,business_app_connected_at'
 const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tasks,last_error_message'
 const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
@@ -47,6 +47,11 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(!isUuid(org)) throw new Error('Choose an organisation workspace.')
     const actor=await authorize(authorization,org)
     if(!actor?.userId) throw new Error('Active staff membership is required.')
+    if(action==='inbox_work') {
+      const operations=['work','read','take','state','note','draft','presence','settings','save_settings','availability','report','create','retry_receiving','review_send'];
+      if(!operations.includes(payload.operation))throw new Error('Choose an inbox operation.');
+      return result(db.rpc('whatsapp_workspace_command',{p_org:org,p_actor:actor.userId,p_action:payload.operation,p_conversation:payload.conversationId||null,p_fields:payload.fields||{}}));
+    }
     if(action==='import_chat_export') return handleChatImport({db,actor,org,payload,hash})
     if(['audience_list','audience_save','audience_preview','audience_archive','audience_options'].includes(action))return handleAudiences({db,actor,org,action,payload})
     if(['meta_routes_list','meta_routes_save','meta_routes_disable'].includes(action))return handleCampaignRoutes({db,actor,org,action,payload})
@@ -65,13 +70,13 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     }
     if(action==='workspace') {
       let senderQuery=db.from('organisation_communication_channels').select(safeSender).eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp')
-      if(!actor.isAdmin) senderQuery=senderQuery.eq('owner_user_id',actor.userId)
+      if(!actor.isAdmin) senderQuery=senderQuery.or(`owner_user_id.eq.${actor.userId},owner_user_id.is.null`)
       const [senders,pages,members]=await Promise.all([
         result(senderQuery.order('created_at')),
         result(db.from('meta_lead_ads_connections').select(safePage).eq('organisation_id',org).order('connected_at')),
-        actor.isAdmin?result(db.from('organisation_users').select('user_id,first_name,last_name,email,role').eq('organisation_id',org).eq('status','active')):[],
+        result(db.from('organisation_users').select(actor.isAdmin?'user_id,first_name,last_name,email,role':'user_id,first_name,last_name,role').eq('organisation_id',org).eq('status','active')),
       ])
-      const assignees=(members||[]).filter(m=>META_STAFF_ROLES.includes(m.role)).map(m=>({id:m.user_id,name:[m.first_name,m.last_name].filter(Boolean).join(' ')||m.email||'Team member'}))
+      const assignees=(members||[]).filter(m=>META_STAFF_ROLES.includes(m.role)).map(m=>({id:m.user_id,canOversee:META_ADMIN_ROLES.includes(m.role),name:[m.first_name,m.last_name].filter(Boolean).join(' ')||m.email||'Team member'}))
       return {senders:senders||[],pages:(pages||[]).map(p=>({...p,canPost:canPublishPage(p)})),canManage:actor.isAdmin,canConnectOwn:Boolean(actor.canConnectOwn),currentUserId:actor.userId,assignees}
     }
     // Calendar's post type is explicitly Facebook and routes to a listing.
@@ -143,7 +148,9 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
         try { await graph(token,`${row.phone_number_id}/register`,{messaging_product:'whatsapp',pin:text(payload.pin)}) }
         catch { throw new Error('Meta could not register this number. Check the PIN and phone verification in WhatsApp Manager, then check the connection before retrying.') }
       }
-      const phone=await graph(token,`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status,is_on_biz_app,platform_type`)
+      let phone
+      try {phone=await graph(token,`${row.phone_number_id}?fields=id,status,display_phone_number,code_verification_status,is_on_biz_app,platform_type`)}
+      catch(error){await result(db.from('organisation_communication_channels').update({last_checked_at:now().toISOString(),last_error_message:'Meta connection check failed. Review permissions or reconnect this number.'}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version));throw new Error('Meta connection check failed. Review permissions or reconnect this number.')}
       if(text(phone.id)!==row.phone_number_id)throw new Error('Meta did not confirm the selected WhatsApp number.')
       const sender=await result(db.from('organisation_communication_channels').update({connection_status:(row.onboarding_mode==='coexistence'?phone.is_on_biz_app===true&&phone.platform_type==='CLOUD_API':phone.status==='CONNECTED')?'connected':'pending',last_checked_at:now().toISOString(),last_error_message:null}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select(safeSender).single())
       return {sender}
@@ -160,34 +167,8 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       return {...data,conversation:{...data.conversation,canReply:canReply(data.conversation,now().getTime())}}
     }
     if(action==='reply') {
-      const row=await conversation(org,actor,payload.conversationId),body=text(payload.message),id=text(payload.requestId)
-      if(!isUuid(id)||!body||body.length>4096) throw new Error('Write a reply of 1 to 4,096 characters.')
-      const previous=await result(db.from('whatsapp_inbox_messages').select('id,conversation_id,body_text,delivery_status,created_by').eq('id',id).eq('organisation_id',org).maybeSingle())
-      if(previous) {
-        if(previous.conversation_id!==row.id||previous.body_text!==body||previous.created_by!==actor.userId) throw new Error('This reply identifier was already used for a different message.')
-        return {message:previous}
-      }
-      if(!canReply(row,now().getTime())) throw new Error('The 24-hour reply window has closed. Use an approved WhatsApp template campaign to contact this person.')
-      const sender=await channel(org,row.channel_id)
-      if(sender.connection_status!=='connected') throw new Error('Reconnect the WhatsApp sender before replying.')
-      const sentAt=now().toISOString()
-      const insert=await db.from('whatsapp_inbox_messages').insert({id,organisation_id:org,conversation_id:row.id,channel_id:row.channel_id,direction:'outbound',message_type:'text',body_text:body,delivery_status:'sending',event_at:sentAt,created_by:actor.userId})
-      if(insert.error?.code==='23505') {
-        const receipt=await result(db.from('whatsapp_inbox_messages').select('id,conversation_id,body_text,delivery_status,created_by').eq('id',id).eq('organisation_id',org).maybeSingle())
-        if(!receipt||receipt.conversation_id!==row.id||receipt.body_text!==body||receipt.created_by!==actor.userId) throw new Error('This reply identifier was already used for a different message.')
-        return {message:receipt}
-      }
-      if(insert.error) throw new Error(insert.error.message)
-      try {
-        const response=await graph(await senderToken(sender),`${sender.phone_number_id}/messages`,{messaging_product:'whatsapp',to:row.contact_phone,type:'text',text:{body},biz_opaque_callback_data:`arch9-inbox:${id}`})
-        const messageId=text(response.messages?.[0]?.id)
-        if(!messageId) throw new Error('Meta did not confirm this reply. Check its status before sending again.')
-        await result(db.rpc('whatsapp_inbox_status',{p_phone_id:sender.phone_number_id,p_waba_id:sender.waba_id,p_message_id:messageId,p_callback:`arch9-inbox:${id}`,p_status:'sent',p_at:now().toISOString(),p_error:null}))
-        await result(db.from('whatsapp_inbox_conversations').update({last_message_at:sentAt,last_message_preview:body.slice(0,240),updated_at:now().toISOString()}).eq('id',row.id).eq('organisation_id',org).lte('last_message_at',sentAt))
-      } catch(error) {
-        await db.from('whatsapp_inbox_messages').update({delivery_status:error.definitive?'failed':'unknown',error_message:error.definitive?text(error.message).slice(0,500):'The send result is unconfirmed. Check delivery before sending again.'}).eq('id',id).eq('organisation_id',org).eq('delivery_status','sending')
-      }
-      return {message:await result(db.from('whatsapp_inbox_messages').select(safeMessages).eq('id',id).eq('organisation_id',org).single())}
+      const thread=await conversation(org,actor,payload.conversationId);
+      return handleInboxMessaging({db,actor,org,action:'send_message',payload:{...payload,kind:'text',assignmentVersion:payload.assignmentVersion??thread.assignment_version},conversation,channel,senderToken,graph,uploadMedia,hash,now});
     }
     if(action==='media') {
       if(!isUuid(payload.messageId)) throw new Error('Choose a message attachment.')

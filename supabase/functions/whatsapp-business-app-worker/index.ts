@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.55.0'
 import { authorizeCampaignWorker } from '../whatsapp-campaign-worker/authorization.js'
+import {runWhatsAppWebhookRecovery} from '../_shared/whatsappWebhookRecovery.js'
 import { createBusinessAppWorker } from './worker.js'
 const json=(status:number,body:unknown)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})
 Deno.serve(async request=>{
@@ -9,6 +10,6 @@ Deno.serve(async request=>{
   try{const values=JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}');if(values&&typeof values==='object'&&!Array.isArray(values))secrets=Object.values(values).filter((value):value is string=>typeof value==='string'&&value.startsWith('sb_secret_'))}catch{ /* Invalid configuration never authorizes a worker. */ }
   if(!await authorizeCampaignWorker(request,{legacy:key,secrets}))return json(401,{error:'Worker authorization required.'})
   if(!key||!url)return json(503,{error:'Worker configuration is incomplete.'})
-  try{return json(200,await createBusinessAppWorker({db:createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}})})())}
+  try{const db=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});const recovery=await runWhatsAppWebhookRecovery(db);const sync=await createBusinessAppWorker({db})();await db.rpc('whatsapp_workspace_cleanup',{});return json(200,{...sync,recovery})}
   catch{return json(500,{error:'Phone app synchronization could not be processed.'})}
 })

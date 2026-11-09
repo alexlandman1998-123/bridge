@@ -8322,3 +8322,35 @@ counts, tab filtering, marketing destinations and keyboard navigation). The
 separate full `AgencyPipelinePage.calendarRefresh` regression run was stopped
 after an unusually long local run and remains unverified. No full production
 build or hosted calendar/provider verification was performed for this change.
+
+### WhatsApp Inbox workspace reliability
+
+The canonical inbox is `/inbox?channel=whatsapp`. Number setup uses the same
+WhatsApp settings component from Inbox and Settings, including personal/shared
+ownership, phone-app coexistence and sync readiness. Connecting or importing a
+number does not grant recipient messaging permission.
+
+`20261109184918_whatsapp_inbox_workspace_reliability.sql` adds actor-specific read
+watermarks, a shared claim queue, bounded server search/counts, private drafts,
+internal notes/mentions, presence, follow-up states, optional workload routing,
+availability, preferences and operational reporting. History reads do not mark
+messages read. The visible reader explicitly acknowledges the displayed
+watermark. Drafts expire after 30 days; customer messages remain preserved.
+
+Verified webhooks are persisted before processing, leased and checkpointed in
+batches of 25 observations. The existing phone-app worker also recovers verified
+receiving failures. Only signed events enter recovery; raw payloads never enter
+browser queries. Failed/uncertain manual sends retain their draft and receipt;
+new manual sends are blocked until an uncertain attempt is explicitly reviewed.
+Reviewing never changes delivery truth or sends another message. Manual-send
+limits exclude campaign and automation intents.
+
+Focused acceptance: run `node --test --test-concurrency=1
+scripts/whatsapp-inbox-workspace.test.mjs scripts/whatsapp-webhook-recovery.test.mjs
+scripts/meta-integrations.test.mjs scripts/whatsapp-system-diagnostic.test.mjs`
+from this package, plus the WhatsApp history, composer, work, settings and shared
+inbox Vitest files with one worker. Provider sends are simulated in these tests;
+real-provider acceptance must be recorded separately. Capture existing functions
+and Edge bundles before release, apply only the reviewed migration, deploy the
+worker/webhook/Meta bundles and then the corresponding app. The legacy
+`super-task` webhook is replaced by a reversible HTTP 410 tombstone.

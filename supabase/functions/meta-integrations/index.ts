@@ -22,7 +22,7 @@ Deno.serve(withApiCredentials(async req=>{
     async function graph(token:string,path:string,payload?:unknown) {
       const response=await fetch(`https://graph.facebook.com/${graphVersion}/${path}`,{method:payload===undefined?'GET':'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(payload===undefined?{}:{body:JSON.stringify(payload)}),signal:AbortSignal.timeout(15000)});
       const body=await response.json();
-      if(!response.ok||body.error) throw Object.assign(new Error(`Meta: ${String(body.error?.message||'Request failed').split(token).join('[redacted]').slice(0,500)}`),{definitive:response.status>=400&&response.status<500});
+      if(!response.ok||body.error) throw Object.assign(new Error(`Meta: ${String(body.error?.message||'Request failed').split(token).join('[redacted]').slice(0,500)}`),{definitive:response.status>=400&&response.status<500,status:response.status});
       return body;
     }
     const handler=createMetaIntegrationHandler({db,graph,encrypt:encryptMetaToken,decrypt:decryptMetaToken,
@@ -32,7 +32,7 @@ Deno.serve(withApiCredentials(async req=>{
         const form=new FormData();form.set('messaging_product','whatsapp');form.set('type',file.mimeType);form.set('file',new Blob([new Uint8Array(file.bytes).buffer],{type:file.mimeType}),file.filename);
         const response=await fetch(`https://graph.facebook.com/${graphVersion}/${phoneId}/media`,{method:'POST',headers:{Authorization:`Bearer ${token}`},body:form,signal:AbortSignal.timeout(30000)});
         const body=await response.json();
-        if(!response.ok||body.error)throw Object.assign(new Error('Meta could not upload this attachment.'),{definitive:response.status>=400&&response.status<500});
+        if(!response.ok||body.error)throw Object.assign(new Error('Meta could not upload this attachment.'),{definitive:response.status>=400&&response.status<500,status:response.status});
         return body;
       },
       authorize:async(authorization:string,org:string)=>{
@@ -102,7 +102,7 @@ Deno.serve(withApiCredentials(async req=>{
         }
         if(!response?.ok||!response.body) throw new Error('The attachment could not be downloaded.');
         const mime=(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
-        if(!/^(image\/(jpeg|png|webp|gif)|audio\/(mpeg|ogg|mp4|wav)|video\/mp4|application\/pdf|text\/plain)$/.test(mime)) throw new Error('This attachment format cannot be downloaded from the inbox yet.');
+        if(!/^(image\/(jpeg|png|webp|gif)|audio\/(aac|amr|mpeg|ogg|mp4|wav|x-m4a)|video\/mp4|application\/pdf|text\/plain)$/.test(mime)) throw new Error('This attachment format cannot be downloaded from the inbox yet.');
         const reader=response.body.getReader(),chunks:Uint8Array[]=[]; let size=0;
         try{for(;;){const item=await reader.read();if(item.done)break;size+=item.value.length;if(size>8*1024*1024)throw new Error('Inbox downloads are limited to 8 MB.');chunks.push(item.value);}}finally{await reader.cancel();}
         const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}

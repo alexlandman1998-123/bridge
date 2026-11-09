@@ -1,0 +1,9 @@
+import {useEffect,useRef,useState} from 'react'
+import {metaIntegrationRequest} from '../../services/metaIntegrationService'
+export default function WhatsAppMessageMedia({organisationId,message}){
+ const [url,setUrl]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),active=useRef(true),blobUrl=useRef('')
+ useEffect(()=>{active.current=true;return()=>{active.current=false;if(blobUrl.current)URL.revokeObjectURL(blobUrl.current)}},[])
+ async function load(download=false){if(busy)return;setBusy(true);setError('');try{let next=url;if(!next){const file=await metaIntegrationRequest(organisationId,'media',{messageId:message.id});if(!active.current)return;const bytes=Uint8Array.from(atob(file.base64),char=>char.charCodeAt(0));next=URL.createObjectURL(new Blob([bytes],{type:file.mimeType}));blobUrl.current=next;setUrl(next)}if(download){const anchor=document.createElement('a');anchor.href=next;anchor.download=(message.media_json.filename||`whatsapp-${message.message_type}`).replace(/[^a-zA-Z0-9._-]/g,'_');anchor.click()}}catch(cause){if(active.current)setError(cause.message)}finally{if(active.current)setBusy(false)}}
+ const type=message.message_type
+ return <div className="wa-message-media">{url&&type==='image'?<a href={url} target="_blank" rel="noreferrer"><img src={url} alt={message.body_text||'WhatsApp attachment'}/></a>:url&&type==='audio'?<audio controls preload="metadata" src={url} aria-label="WhatsApp voice note"/>:url&&type==='video'?<video controls preload="metadata" src={url}/>:null}{!url&&['image','audio','video'].includes(type)&&<button type="button" disabled={busy} onClick={()=>void load()}>{busy?'Loading…':type==='audio'?'Play voice note':type==='image'?'Preview image':'Play video'}</button>}<button type="button" disabled={busy} onClick={()=>void load(true)}>{message.media_json.filename||`Download ${type}`}</button>{error&&<p role="alert">{error}</p>}</div>
+}

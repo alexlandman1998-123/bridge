@@ -3,7 +3,7 @@ import { invokeEdgeFunction } from '../lib/supabaseClient'
 export async function metaIntegrationRequest(organisationId, action, fields = {}) {
   if (!organisationId) throw new Error('Choose an organisation workspace.')
   const response = await invokeEdgeFunction('meta-integrations', { body: { ...fields, organisationId, action } })
-  if (response?.error) throw new Error(response.error.message || 'The Meta integration service could not be reached.')
+  if (response?.error) throw Object.assign(new Error(response.error.message || 'The Meta integration service could not be reached.'), {status:response.error.context?.status})
   if (response?.data?.error) throw new Error(response.data.error)
   if (!response?.data) throw new Error('The Meta integration service returned no data.')
   return response.data

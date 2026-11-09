@@ -61,7 +61,11 @@ export function inboundWhatsApp(message, value, entry) {
     p_phone_id: text(value.metadata?.phone_number_id), p_waba_id: text(entry.id), p_from: from,
     p_message_id: text(message.id), p_at: at.toISOString(), p_type: type,
     p_body: text(message.text?.body || attachment.caption || message.button?.text || message.interactive?.button_reply?.title || message.interactive?.list_reply?.title).slice(0,16000),
-    p_media: ['image','document','audio','video','sticker'].includes(type) ? { id: text(attachment.id), mimeType: text(attachment.mime_type), filename: text(attachment.filename), caption: text(attachment.caption) } : {},
+    p_media: { ...(['image','document','audio','video','sticker'].includes(type) ? { id: text(attachment.id), mimeType: text(attachment.mime_type), filename: text(attachment.filename), caption: text(attachment.caption) } : {}),
+      ...(type==='location'?{location:{name:text(attachment.name).slice(0,200),address:text(attachment.address).slice(0,500),latitude:Number.isFinite(attachment.latitude)&&Math.abs(attachment.latitude)<=90?attachment.latitude:null,longitude:Number.isFinite(attachment.longitude)&&Math.abs(attachment.longitude)<=180?attachment.longitude:null}}:{}),
+      ...(type==='contacts'?{contacts:(Array.isArray(message.contacts)?message.contacts:[]).slice(0,10).map(contact=>({name:text(contact.name?.formatted_name).slice(0,200),phones:(contact.phones||[]).slice(0,3).map(phone=>text(phone.phone).slice(0,30))}))}:{}),
+      ...(type==='reaction'?{reaction:{emoji:text(attachment.emoji).slice(0,32),messageId:text(attachment.message_id).slice(0,500)}}:{}),
+      ...(message.context?.id?{replyTo:text(message.context.id).slice(0,500)}:{}) },
     p_name: text(contact?.profile?.name).slice(0,160),
   }
 }

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, Facebook, Instagram, Mail, MessageCircle, ShieldCheck } from 'lucide-react'
 import Modal from '../ui/Modal'
-import { launchWhatsAppSignup, metaIntegrationRequest, prepareFacebookSdk } from '../../services/metaIntegrationService'
+const SettingsWhatsAppPage=lazy(()=>import('../../pages/settings/SettingsWhatsAppPage'))
 import { configureImapMailbox, createMailbox, loadEmailMailboxSettings } from '../../modules/sharedInbox/mailboxService'
 import { configureSmtpMailbox } from '../../modules/sharedInbox/outgoingMailService'
 import { startRevoGoogleWorkspaceInboxAuthorization, startRevoMicrosoftInboxAuthorization } from '../../modules/revo/sharedInbox/connectionCore'
@@ -11,76 +11,7 @@ function Intro({ title, children }) { return <div className="inbox-setup-intro">
 function Steps({ current, labels }) { return <ol className="inbox-setup-steps" aria-label="Connection steps">{labels.map((label,index)=><li key={label} aria-current={index===current?'step':undefined} className={index<current?'is-complete':index===current?'is-current':''}><span className="inbox-setup-step-number" aria-hidden="true">{index<current?<Check size={15}/>:index+1}</span><span className="inbox-setup-step-label">{label}</span></li>)}</ol> }
 function Result({ title, children, onDone }) { return <div className="inbox-setup-result"><span><Check size={24}/></span><h2>{title}</h2><p>{children}</p><button type="button" className="inbox-setup-primary" onClick={onDone}>Back to Inbox<ArrowRight size={15}/></button></div> }
 
-function WhatsAppSetup({ workspace, onConnected }) {
-  const [session, setSession] = useState(null)
-  const [selectedPhone, setSelectedPhone] = useState('')
-  const [sender, setSender] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const alive = useRef(true), lock = useRef(false), controller = useRef(null)
-  useEffect(() => { alive.current = true; return () => { alive.current = false; controller.current?.abort() } }, [])
-  // The active Meta endpoint permits administrators to manage connections.
-  const allowed = workspace.canManage
-  async function prepare() {
-    if (lock.current || !allowed) return
-    lock.current = true; setBusy(true); setError('')
-    try {
-      const intent = await metaIntegrationRequest(workspace.organisationId, 'begin_whatsapp', { coexistence: true })
-      const sdk = await prepareFacebookSdk(intent.appId, intent.graphVersion)
-      if (alive.current) { setSession({ intent, sdk, coexistence: true }); setSelectedPhone('') }
-    } catch (cause) { if (alive.current) setError(cause.message) }
-    finally { lock.current = false; if (alive.current) setBusy(false) }
-  }
-  async function connect() {
-    if (lock.current || !session || (session.phones && !session.phones.some(phone => phone.id === selectedPhone))) return
-    lock.current = true; setBusy(true); setError(''); controller.current = new AbortController()
-    try {
-      const result = session.phones
-        ? await metaIntegrationRequest(workspace.organisationId, 'finish_whatsapp', { state: session.intent.state, wabaId: session.wabaId, phoneNumberId: selectedPhone })
-        : await launchWhatsAppSignup({ ...session, organisationId: workspace.organisationId, signal: controller.current.signal })
-      if (!alive.current) return
-      if (result.requiresPhoneSelection) {
-        if (!Array.isArray(result.phones) || !result.phones.length) throw new Error('No eligible WhatsApp Business numbers were returned. Check the account selected in Meta, then try again.')
-        setSession(old => ({ ...old, phones: result.phones, wabaId: result.wabaId })); return
-      }
-      if (!result.sender?.id) throw new Error('Meta did not confirm a number. Check your connection before trying again.')
-      setSender(result.sender); setNotice(result.syncWarning || '')
-      void Promise.resolve().then(() => workspace.refresh()).catch(() => { if (alive.current) setNotice('Number linked. Refresh the Inbox to load its latest status.') })
-    } catch (cause) { if (alive.current) { setError(cause.message); setSession(null) } }
-    finally { lock.current = false; if (alive.current) setBusy(false) }
-  }
-  async function checkConnection() {
-    if (lock.current || !sender) return
-    lock.current = true; setBusy(true); setError('')
-    try {
-      const result = await metaIntegrationRequest(workspace.organisationId, 'health_sender', { senderId: sender.id })
-      if (!result.sender?.id) throw new Error('The connection status could not be confirmed. Try checking again.')
-      if (alive.current) setSender(result.sender)
-    } catch (cause) { if (alive.current) setError(cause.message) }
-    finally { lock.current = false; if (alive.current) setBusy(false) }
-  }
-  const connected = sender?.connection_status === 'connected'
-  return <>
-    <Steps current={sender ? 2 : session ? 1 : 0} labels={['Your number', 'Connect with Meta', 'Confirm connection']} />
-    {!allowed ? <p role="alert">An organisation administrator must connect a WhatsApp number.</p>
-      : connected ? <Result title="WhatsApp connected" onDone={onConnected}>{sender.display_phone_number} is connected to this organisation. Keep WhatsApp Business open on your phone while contacts and shared history sync.{notice && ` ${notice}`}</Result>
-      : sender ? <>
-        <div className="inbox-setup-account"><MessageCircle size={20}/><div><strong>{sender.display_phone_number || 'WhatsApp Business'}</strong><small>Waiting for Meta confirmation</small></div></div>
-        <p className="inbox-setup-hint">Finish any verification requested in Meta. Your number will appear as connected once Meta confirms it.</p>
-        <button type="button" className="inbox-setup-primary" disabled={busy} onClick={() => void checkConnection()}>{busy ? 'Checking…' : 'Check connection'}</button>
-      </> : session ? <>
-        <div className="inbox-setup-note"><ShieldCheck size={18}/><p>Choose your business account and existing number in Meta. Keep your phone nearby and choose Share chats when prompted.</p></div>
-        {session.phones && <label>WhatsApp number<select value={selectedPhone} disabled={busy} onChange={event => setSelectedPhone(event.target.value)}><option value="">Choose number</option>{session.phones.map(phone => <option key={phone.id} value={phone.id}>{phone.displayPhoneNumber || phone.display_phone_number || phone.id}</option>)}</select></label>}
-        <button type="button" className="inbox-setup-primary" disabled={busy || Boolean(session.phones && !selectedPhone)} onClick={() => void connect()}>{busy ? 'Waiting for Meta…' : session.phones ? 'Connect selected number' : 'Continue with Meta'}<ArrowRight size={15}/></button>
-      </> : <>
-        <div className="inbox-setup-account"><MessageCircle size={22}/><div><strong>Connect your WhatsApp Business number</strong><small>Keep using the WhatsApp Business app on your phone.</small></div></div>
-        <p className="inbox-setup-hint">Have your phone ready. You’ll choose your existing business number securely in Meta and connect it to this organisation.</p>
-        <button type="button" className="inbox-setup-primary" disabled={busy || workspace.loading} onClick={() => void prepare()}>{busy ? 'Preparing…' : 'Continue'}<ArrowRight size={15}/></button>
-      </>}
-    {error && <p role="alert" className="inbox-setup-error">{error}</p>}
-  </>
-}
+function WhatsAppSetup({onConnected}) { return <Suspense fallback={<p role="status">Loading WhatsApp setup…</p>}><SettingsWhatsAppPage embedded onConnected={onConnected}/></Suspense> }
 
 function EmailSetup({ organisationId, userId, onConnected }) {
   const [data,setData]=useState(null),[provider,setProvider]=useState('google_workspace'),[address,setAddress]=useState(''),[label,setLabel]=useState(''),[access,setAccess]=useState('private'),[mailbox,setMailbox]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')

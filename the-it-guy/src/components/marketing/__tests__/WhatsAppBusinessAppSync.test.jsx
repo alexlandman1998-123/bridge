@@ -65,9 +65,9 @@ it('binds the phone-app option before starting authorization and provides number
  })
  mocks.launch.mockResolvedValue({requiresPhoneSelection:true,wabaId:'200',phones:[{id:'102',displayPhoneNumber:'+27 82 333 4444'},{id:'103',displayPhoneNumber:'+27 82 555 6666'}]})
  render(wrap(<SettingsWhatsAppPage/>))
- fireEvent.click(screen.getByLabelText('I already use this number in the WhatsApp Business phone app.'))
- fireEvent.click(screen.getByRole('button',{name:'Connect my WhatsApp'}))
- await screen.findByText(/Connecting for: You/)
+ fireEvent.click(screen.getByRole('button',{name:'Add number'}))
+ fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}))
+ await screen.findByText(/Connecting for: My inbox/)
  expect(mocks.request).toHaveBeenCalledWith('agency-one','begin_whatsapp',{ownerUserId:'agent-one',coexistence:true})
  fireEvent.click(screen.getByRole('button',{name:'Continue with Meta'}))
  const select=await screen.findByLabelText('WhatsApp number')
@@ -80,6 +80,7 @@ it('binds the phone-app option before starting authorization and provides number
 it('does not offer a registration PIN for a pending phone-app number',async()=>{
  mocks.senders=[{...sender,connection_status:'pending'}]
  render(wrap(<SettingsWhatsAppPage/>))
+ fireEvent.click(screen.getByRole('button',{name:'Connection and sync details'}))
  await screen.findByText('WhatsApp Business phone app sync')
  expect(screen.queryByRole('button',{name:'Activate number'})).toBeNull()
  expect(screen.queryByLabelText('Registration PIN')).toBeNull()

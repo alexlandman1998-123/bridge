@@ -30,3 +30,21 @@ it('clears old organisation rows and ignores late responses after switching acce
  await act(async()=>{current.resolve({conversations:[{id:'org-b-chat',last_message_at:'2026-11-03'}]});await current.promise;old.resolve({conversations:[{id:'private-old'}]});await old.promise})
  expect(hook.result.current.rows.map(row=>row.id)).toEqual(['org-b-chat'])
 })
+it('passes full-history search and queue filters to the server without marking the thread read',async()=>{
+ metaIntegrationRequest.mockResolvedValue({conversations:[],counts:{all:10000}})
+ const hook=renderHook(()=>useWhatsAppHistory({...options,search:'floor plan',view:'mine',channelId:'sender'}))
+ await waitFor(()=>expect(hook.result.current.loading).toBe(false))
+ expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','inbox_page',expect.objectContaining({search:'floor plan',view:'mine',channelId:'sender'}))
+ expect(metaIntegrationRequest.mock.calls.some(call=>call[1]==='inbox_work')).toBe(false)
+})
+it('keeps existing history after a transient outage and clears it immediately after access denial',async()=>{
+ metaIntegrationRequest.mockResolvedValueOnce({conversations:[{id:'allowed',last_message_at:'2026-11-09'}],visibleIds:['allowed']}).mockRejectedValueOnce(Error('Network timeout')).mockRejectedValueOnce(Object.assign(Error('Membership revoked'),{status:403}))
+ const hook=renderHook(()=>useWhatsAppHistory(options));await waitFor(()=>expect(hook.result.current.rows).toHaveLength(1))
+ await act(()=>hook.result.current.refresh());expect(hook.result.current.rows).toHaveLength(1);expect(hook.result.current.error).toBe('Network timeout')
+ await act(()=>hook.result.current.refresh());expect(hook.result.current.rows).toEqual([])
+})
+it('does not request a hidden optional conversation until enabled',async()=>{
+ metaIntegrationRequest.mockResolvedValue({messages:[]})
+ const hook=renderHook(props=>useWhatsAppHistory({...options,thread:true,conversationId:'thread',enabled:props.enabled}),{initialProps:{enabled:false}})
+ expect(metaIntegrationRequest).not.toHaveBeenCalled();hook.rerender({enabled:true});await waitFor(()=>expect(metaIntegrationRequest).toHaveBeenCalledTimes(1))
+})

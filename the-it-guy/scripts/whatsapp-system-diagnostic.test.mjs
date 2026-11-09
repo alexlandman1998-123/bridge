@@ -34,10 +34,10 @@ test('automation distinguishes uncertain sends, explicit rejection and revoked a
  }
 })
 test('Meta routes inbox, audiences and automations to actor-scoped handlers',async()=>{
- const calls=[];const db={rpc:async(name,args)=>{calls.push({name,args});return {data:name==='whatsapp_staff_is_admin'?true:name==='whatsapp_inbox_page'?{conversations:[]}:name==='whatsapp_automation_rules_request'?{rules:[]}:{audiences:[]},error:null}}}
+ const calls=[];const db={rpc:async(name,args)=>{calls.push({name,args});return {data:name==='whatsapp_staff_is_admin'?true:name==='whatsapp_workspace_page'?{conversations:[]}:name==='whatsapp_automation_rules_request'?{rules:[]}:{audiences:[]},error:null}}}
  const handle=createMetaIntegrationHandler({db,authorize:async()=>({userId:user,isAdmin:true})})
  for(const action of ['inbox_page','automation_list','audience_list'])await handle({organisationId:org,action},'Bearer test')
- assert.ok(calls.some(c=>c.name==='whatsapp_inbox_page'));assert.ok(calls.some(c=>c.name==='whatsapp_automation_rules_request'))
+ assert.ok(calls.some(c=>c.name==='whatsapp_workspace_page'));assert.ok(calls.some(c=>c.name==='whatsapp_automation_rules_request'))
  assert.ok(calls.every(c=>c.args.p_org===org&&c.args.p_actor===user))
 })
 test('webhook records STOP and campaign replies; storage failures request redelivery',async()=>{
