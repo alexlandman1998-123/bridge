@@ -32,3 +32,21 @@ export function documentRequirementParty(row) {
   if (['vendor', 'selling_client'].includes(role)) return 'seller'
   return role
 }
+
+// null permits legacy type matching; false is an explicit conflicting link.
+export function matchDocumentRequirementLink(document = {}, requirement = {}) {
+  const legacyId = document.requirement_id || document.requirementId
+  const canonicalId = document.canonical_requirement_instance_id || document.canonicalRequirementInstanceId
+  if (!legacyId && !canonicalId) return null
+  if (legacyId && legacyId !== (requirement.id || requirement.requirement_id || requirement.requirementId)) return false
+  const targetCanonicalId = requirement.canonical_requirement_instance_id || requirement.canonicalRequirementInstanceId ||
+    (requirement.context_type ? requirement.id : '')
+  if (canonicalId && canonicalId !== targetCanonicalId) return false
+  return true
+}
+
+export function isDocumentRequirementRequired(requirement = {}) {
+  if (requirement.required === false || requirement.is_required === false || requirement.isRequired === false) return false
+  const level = String(requirement.requirement_level || requirement.requirementLevel || '').trim().toLowerCase()
+  return !['optional', 'recommended'].includes(level)
+}

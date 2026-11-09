@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -14,7 +15,7 @@ const workspaceService = fs.readFileSync(path.join(root, 'src/services/workspace
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8')
 const inviteResolver = fs.readFileSync(path.join(root, 'src/pages/InviteResolver.jsx'), 'utf8')
 const agencyBranchWorkspacePage = fs.readFileSync(path.join(root, 'src/pages/agency/AgencyBranchWorkspacePage.jsx'), 'utf8')
-const api = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const api = readDomainApiSource()
 const agentInviteService = fs.readFileSync(path.join(root, 'src/lib/agentInviteService.js'), 'utf8')
 const attorneyFirmInvitations = fs.readFileSync(path.join(root, 'src/services/attorneyFirmInvitations.js'), 'utf8')
 

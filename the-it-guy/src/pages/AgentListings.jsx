@@ -40,11 +40,7 @@ import {
 } from '../core/documents/documentStartRules'
 import { fetchTransactionsByParticipantSummary } from '../domains/reporting/api.js'
 import { useWorkspace } from '../context/WorkspaceContext'
-import {
-  fetchAssignedDevelopmentIdsForRole,
-  fetchDevelopmentOptions,
-  fetchUnitsForTransactionSetup,
-} from '../lib/api'
+import { fetchAssignedDevelopmentIdsForRole, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../domains/developments/selectionReadApi.js'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'

@@ -1,6 +1,48 @@
 import { expect, test } from 'vitest'
 import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter, buildDocumentCenter } from '../clientPortalWorkspaceService.js'
 
+test('legacy portal links never substitute a same-type file belonging to another request', () => {
+  const centre = buildDocumentCenter({
+    requiredDocuments: [{ id: 'wanted', key: 'buyer_id_document', label: 'ID', status: 'required' }],
+    additionalDocumentRequests: [{ id: 'request-one', title: 'ID', documentKey: 'buyer_id_document', requestedFrom: 'buyer', visibility: 'client_visible', requestedDocumentId: 'missing-file' }],
+    documents: [{ id: 'wrong-file', document_type: 'buyer_id_document', requirement_id: 'other', status: 'approved' }],
+  }, 'buying')
+  expect(centre.items.find(row => row.sourceType === 'required_document' && row.sourceId === 'buyer_id_document')).toMatchObject({ hasUploadedDocument: false, linkedDocument: null })
+  expect(centre.items.find(row => row.sourceId === 'request-one')).toMatchObject({ hasUploadedDocument: false, linkedDocument: null })
+})
+
+test('explicit legacy links take priority over the first same-type upload', () => {
+  const centre = buildDocumentCenter({
+    requiredDocuments: [{ id: 'wanted', key: 'buyer_id_document', label: 'ID', status: 'required' }],
+    documents: [
+      { id: 'wrong', document_type: 'buyer_id_document', requirement_id: 'other' },
+      { id: 'right', document_type: 'buyer_id_document', requirement_id: 'wanted' },
+    ],
+  }, 'buying')
+  expect(centre.requiredDocuments.find(row => row.id === 'wanted').uploadedDocumentId).toBe('right')
+})
+
+test('canonical portals never show another requirement’s satisfier or a superseded file as current', () => {
+  const requirement = { id: 'wanted', context_type: 'transaction', document_definition_key: 'buyer_id_document', status: 'pending', uploadable_by_roles: ['buyer'] }
+  const history = { id: 'old', canonical_requirement_instance_id: 'wanted', is_current_evidence: false }
+  const current = { id: 'new', canonical_requirement_instance_id: 'wanted', is_current_evidence: true }
+  const project = (extra, documents) => buildCanonicalBuyerDocumentCenter({ requirements: [{ ...requirement, ...extra }], documents }).requiredDocuments[0]
+  expect(project({}, [history, current]).linkedDocument.id).toBe('new')
+  expect(project({}, [history]).linkedDocument).toBeNull()
+  expect(project({ satisfied_by_document_id: 'missing' }, [current]).linkedDocument).toBeNull()
+  expect(project({ satisfied_by_document_id: 'wrong' }, [{ id: 'wrong', canonical_requirement_instance_id: 'other' }]).linkedDocument).toBeNull()
+})
+
+test('optional and recommended legacy requirements do not block the portal checklist', () => {
+  const centre = buildDocumentCenter({ requiredDocuments: [
+    { id: 'optional', key: 'optional_attachment', label: 'Optional attachment', requirement_level: 'optional' },
+    { id: 'recommended', key: 'recommended_attachment', label: 'Recommended attachment', requirementLevel: 'recommended' },
+  ] }, 'buying')
+  const rows = centre.items.filter(row => ['optional_attachment', 'recommended_attachment'].includes(row.sourceId))
+  expect(rows).toHaveLength(2)
+  expect(rows.every(row => row.required === false)).toBe(true)
+})
+
 test('seller portal retains custom requirements and suppresses removed checklist defaults', () => {
   const centre = buildDocumentCenter({
     requiredDocuments: [{ id: 'legacy-title', key: 'seller_title_deed', label: 'Title deed', visibility: 'seller_visible', status: 'required' }],
@@ -149,4 +191,14 @@ test('a buyer-visible document supplied by the team remains visible without bloc
   expect(centre.summary.total).toBe(1)
   expect(centre.summary.blocking).toBe(0)
   expect(centre.summary.outstanding).toBe(0)
+})
+
+test('withdrawn and replaced files disappear from normal portal lists and cannot satisfy a legacy request', () => {
+  const old={id:'old',name:'Old ID',document_type:'buyer_id_document',requirement_id:'wanted',canonical_requirement_instance_id:'wanted',is_current_evidence:false}
+  const portal=buildDocumentCenter({requiredDocuments:[{id:'wanted',key:'buyer_id_document',label:'ID',status:'required'}],documents:[old]},'buying')
+  expect(portal.uploadedDocuments).toHaveLength(0)
+  expect(portal.requiredDocuments.find(row=>row.id==='wanted').uploadedDocumentId).toBeFalsy()
+  const canonical=buildCanonicalBuyerDocumentCenter({requirements:[{id:'wanted',document_definition_key:'buyer_id_document',status:'pending',satisfied_by_document_id:null}],documents:[old]})
+  expect(canonical.uploadedDocuments).toHaveLength(0)
+  expect(canonical.requiredDocuments[0].linkedDocument).toBeNull()
 })

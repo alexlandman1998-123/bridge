@@ -1,17 +1,18 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 
 const repoRoot = process.cwd()
 const migrationPath = path.join(repoRoot, '../supabase/migrations/202607180035_attorney_accounting_phase7_document_requests.sql')
-const apiPath = path.join(repoRoot, 'src/lib/api.js')
+
 const attorneyPanelPath = path.join(repoRoot, 'src/components/AttorneyMatterAccountsPanel.jsx')
 const clientPanelPath = path.join(repoRoot, 'src/components/client-portal/ClientPortalMatterAccountsPanel.jsx')
 const clientPortalPath = path.join(repoRoot, 'src/pages/ClientPortal.jsx')
 const readinessPath = path.join(repoRoot, 'src/core/attorneyAccounting/matterAccountReadiness.js')
 
 const migrationSource = fs.readFileSync(migrationPath, 'utf8')
-const apiSource = fs.readFileSync(apiPath, 'utf8')
+const apiSource = readDomainApiSource()
 const attorneyPanelSource = fs.readFileSync(attorneyPanelPath, 'utf8')
 const clientPanelSource = fs.readFileSync(clientPanelPath, 'utf8')
 const clientPortalSource = fs.readFileSync(clientPortalPath, 'utf8')

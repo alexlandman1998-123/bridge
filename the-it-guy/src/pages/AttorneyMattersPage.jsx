@@ -46,11 +46,8 @@ import { getAttorneyMatterListSnapshot } from '../services/attorneyMatterListSna
 import { getAttorneyMatterSnapshotRolloutStatus } from '../services/attorneyMatterSnapshotRolloutService'
 import { getAttorneyDashboardMetricPage } from '../services/attorneyDashboardMetricPage'
 import { trackTelemetryEvent } from '../services/observability/telemetry'
-import {
-  acceptAttorneyIncomingMatterInstruction,
-  declineAttorneyIncomingMatterInstruction,
-  fetchTransactionEvents,
-} from '../lib/api'
+import { acceptAttorneyIncomingMatterInstruction, declineAttorneyIncomingMatterInstruction } from '../domains/attorney/instructionApi.js'
+import { fetchTransactionEvents } from '../domains/transactions/activityReadApi.js'
 import {
   fetchDocumentPacket,
   requestPersistedPdfAccess,

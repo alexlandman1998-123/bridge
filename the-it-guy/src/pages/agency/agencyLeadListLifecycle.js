@@ -1,5 +1,6 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory.js'
-import { getDevelopmentLeadStage, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
+import { getDevelopmentBuyerSavedStage, isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
+import { readSellerOnboardingSignals } from '../../services/sellerOnboardingJourneySignals.js'
 
 export const BUYER_LEAD_LIST_STAGES = Object.freeze([
   ['captured', 'Captured', 'Buyer lead has been captured and is ready for first contact.'],
@@ -86,13 +87,22 @@ export function resolveAgencyLeadListLifecycle(lead = {}) {
   if (category !== 'seller') {
     const stage = getBuyerLeadListStage(rawStage)
     if (isDevelopmentBuyerLead(lead)) {
-      const developmentStage = getDevelopmentLeadStage(rawStage, stage.key)
+      const developmentStage = getDevelopmentBuyerSavedStage(lead, rawStage, stage.key)
       return { key: developmentStage.key, label: developmentStage.label, columnId: developmentStage.key, category: 'development' }
     }
     return { key: stage.key, label: stage.label, columnId: stage.key, category }
   }
 
-  const sellerKey = SELLER_ALIASES[token] || ''
+  let sellerKey = SELLER_ALIASES[token] || ''
+  // CRM stage can lag behind the saved seller invitation/submission. Use the
+  // workspace's journey rules for onboarding instead of leaving those leads
+  // under New Lead. Later stages still need their separate listing/mandate
+  // evidence, which this lightweight list does not load.
+  if (!token || ['new_lead', 'contacted', 'seller_onboarding_sent', 'seller_onboarding_submitted'].includes(sellerKey)) {
+    const onboarding = readSellerOnboardingSignals({ lead })
+    if (onboarding.submitted) sellerKey = 'seller_onboarding_submitted'
+    else if (onboarding.sent && (onboarding.pending || sellerKey !== 'seller_onboarding_submitted')) sellerKey = 'seller_onboarding_sent'
+  }
   return {
     key: sellerKey || token || 'new_lead',
     label: SELLER_LABELS[sellerKey] || sellerFallbackLabel(token, rawStage),

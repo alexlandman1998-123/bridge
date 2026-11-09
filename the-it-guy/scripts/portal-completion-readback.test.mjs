@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import {isPortalTransactionRegistered} from '../src/core/clientPortal/transactionCompletion.js'
 import {getPassiveStatusActions} from '../src/lib/clientPortalNextActionsEngine.js'
@@ -11,7 +12,7 @@ assert.equal(isPortalTransactionRegistered({lifecycle_state:'cancelled',register
 assert.equal(getPassiveStatusActions({transaction:{lifecycle_state:'completed'},actions:[{blocking:true}]}).length,0)
 console.log('Portal completion uses persisted registration facts, preserves blocking actions and rejects preparation/cancelled cases.')
 
-const api=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+const api=await readDomainApiSource()
 const saved={id:'matter',property_address_line_1:'17 Test Street',city:'Johannesburg',province:'Gauteng',
   lifecycle_state:'completed',registered_at:'2026-11-05',completed_at:'2026-11-05',stage:'Reserved'}
 for(const name of ['fetchClientPortalCoreByToken','fetchClientPortalByToken']){

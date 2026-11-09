@@ -3,10 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
-import {
-  acceptDeveloperPartnerInvitationByToken,
-  fetchDeveloperPartnerInvitation,
-} from '../lib/api'
+import { acceptDeveloperPartnerInvitationByToken, fetchDeveloperPartnerInvitation } from '../domains/partners/agreementApi.js'
 import { clearPendingPartnerInvitePath, rememberPendingPartnerInvitePath } from '../lib/pendingPartnerInvite'
 
 function normalizeText(value = '') {

@@ -936,7 +936,7 @@ export async function createTransactionFromLeadOverride({
   async function withBuyerDocumentHandoff(result) {
     if (!result?.persisted || !result?.transactionId || !isUuidLike(nextLeadId)) return result
     try {
-      const { prepareBuyerOnboardingDocumentWorkspace } = await import('./api')
+      const { prepareBuyerOnboardingDocumentWorkspace } = await import('../domains/onboarding/tokenApi.js')
       await prepareBuyerOnboardingDocumentWorkspace(result.transactionId)
       await promoteStagedBuyerLeadDocuments(supabase, {
         transactionId: result.transactionId,

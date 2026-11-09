@@ -19,12 +19,8 @@ import { MAIN_STAGE_LABELS, STAGES, getClientStageExplainer, getMainStageFromDet
 import { getTransactionRoleLabel } from '../core/transactions/roleConfig'
 import { buildClientSafeExternalWorkspace, getExternalRolePresentation } from '../core/transactions/externalWorkspaceAdapter'
 import { DOCUMENT_VAULT_GROUP_DEFINITIONS, getGroupByKey, inferGroupKeyFromDocument } from '../core/documents/documentVaultArchitecture'
-import {
-  fetchExternalTransactionPortal,
-  updateExternalTransactionWorkflowStep,
-  updateExternalTransactionWorkspace,
-  uploadExternalDocument,
-} from '../lib/api'
+import { fetchExternalTransactionPortal, updateExternalTransactionWorkflowStep, updateExternalTransactionWorkspace } from '../domains/access/externalApi.js'
+import { uploadExternalDocument } from '../domains/documents/uploadWorkflow.js'
 
 const UPDATE_TYPE_META = {
   operational: { label: 'Operational', tone: 'neutral' },

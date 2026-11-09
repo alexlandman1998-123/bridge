@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../helpers/domainApiSource.mjs'
 import { build } from 'esbuild'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -10,7 +11,7 @@ import {transactionBuyerCaptureFixture} from './transaction-buyer-capture-databa
 const {db}=await transactionBuyerCaptureFixture()
 await actor(db,'authenticated',agentA)
 const transport = `export const supabase={rpc:async(name,params)=>{const response=await fetch('/rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,params})});return response.json()}};export const isSupabaseConfigured=true;export const invokeEdgeFunction=()=>{throw new Error('Email delivery is disabled in the isolated fixture')};export const createScopedSupabaseClient=()=>{throw new Error('Unexpected scoped client')};export const DOCUMENTS_BUCKET_CANDIDATES=[];export const DOCUMENTS_BUCKET='documents';export const BRANDING_BUCKET='branding';export const BRANDING_BUCKET_CANDIDATES=[];export const PROFILE_AVATAR_BUCKET='avatars';export const PROFILE_AVATAR_BUCKET_CANDIDATES=[];export const clearSupabaseLocalAuthState=()=>{};export const isUserFromSubClaimMissingError=()=>false;export const isUnsupportedJwtAlgorithmError=()=>false;export const getEdgeFunctionInvokeError=(result)=>result?.error||null;export const assertEdgeFunctionSuccess=()=>{throw new Error('Unexpected email delivery')};`
-const apiSource = await readFile(new URL('../../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const apiExports = [...apiSource.matchAll(/export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)/g)].map(match => match[1])
 const disabledApi = [...new Set(apiExports)].map(name => `export const ${name}=()=>{throw new Error('Unexpected API call in isolated buyer capture: ${name}')};`).join('\n')
 const built = await build({ entryPoints: [new URL('./transaction-buyer-capture-browser.jsx', import.meta.url).pathname], bundle: true, write: false, outfile: 'buyer-capture-preview.js', format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'import.meta.env': '{}', 'process.env.NODE_ENV': '"development"' }, plugins: [{ name: 'isolated-transaction-buyer', setup(bundle) {

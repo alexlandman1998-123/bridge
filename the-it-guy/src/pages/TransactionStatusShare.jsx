@@ -5,7 +5,7 @@ import TransactionLifecycleProgress from '../components/TransactionLifecycleProg
 import TransactionProgressPanel from '../components/TransactionProgressPanel'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
-import { fetchTransactionStatusByToken } from '../lib/api'
+import { fetchTransactionStatusByToken } from '../domains/transactions/statusShareApi.js'
 import { MAIN_STAGE_LABELS, getClientStageExplainer } from '../lib/stages'
 
 function formatDateTime(value) {

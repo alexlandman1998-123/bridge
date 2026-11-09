@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -61,7 +62,7 @@ assert.equal(resolvedLandingSpecificColours.accentColour, '#CEAC69')
 const files = {
   settingsPage: await readFile(new URL('../src/pages/settings/SettingsOrganisationPage.jsx', import.meta.url), 'utf8'),
   settingsApi: await readFile(new URL('../src/lib/settingsApi.js', import.meta.url), 'utf8'),
-  buyerApi: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  buyerApi: await readDomainApiSource(),
   sellerService: await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
   clientOnboarding: await readFile(new URL('../src/pages/ClientOnboarding.jsx', import.meta.url), 'utf8'),
   sellerOnboarding: await readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8'),

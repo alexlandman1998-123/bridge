@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {PGlite} from '@electric-sql/pglite'
@@ -69,7 +70,7 @@ try{
  assert.equal((await db.query(`select completed_at::text ts from transactions where id='${id(8)}'`)).rows[0].ts,historicalCompletedAt)
  await db.exec(`update transactions set lifecycle_state='active' where id='${id(8)}'`)
  await assert.rejects(()=>db.exec(`update transactions set lifecycle_state='completed' where id='${id(8)}'`),/Attorney financial closeout/)
- const api=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+ const api=await readDomainApiSource()
  const start=api.indexOf('function isRegistrationConfirmationDocument('),end=api.indexOf('\nfunction buildRegistrationBlockers',start)
  // The next function is lifecycle-context loading in some versions; isolate by its closing brace.
  const fn=api.slice(start,api.indexOf('\n}',start)+2)

@@ -47,12 +47,8 @@ import {
   isBuyerSpouseContactRequired as isSpouseContactRequired,
   validateOnboardingSubmission,
 } from '../lib/purchaserPersonas'
-import {
-  fetchClientOnboardingByToken,
-  resolveOnboardingWhatsAppContacts,
-  saveClientOnboardingDraft,
-  submitClientOnboarding,
-} from '../lib/api'
+import { fetchClientOnboardingByToken, saveClientOnboardingDraft, submitClientOnboarding } from '../domains/onboarding/tokenApi.js'
+import { resolveOnboardingWhatsAppContacts } from '../domains/transactions/contactRead.js'
 import { getDemoBuyerOnboardingPayload, isBuyerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
 import { resolveProspectDemoConfig } from '../lib/prospectDemoConfig'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'

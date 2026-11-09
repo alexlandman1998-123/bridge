@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../the-it-guy/scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -5,7 +6,7 @@ const migration = await readFile(
   new URL('../supabase/migrations/202608130003_buyers_member_insert_rls_repair.sql', import.meta.url),
   'utf8',
 )
-const api = await readFile(new URL('../the-it-guy/src/lib/api.js', import.meta.url), 'utf8')
+const api = await readDomainApiSource()
 const clientsPage = await readFile(new URL('../the-it-guy/src/pages/Clients.jsx', import.meta.url), 'utf8')
 
 assert.match(migration, /create policy buyers_select_member_scope[\s\S]*public\.bridge_is_active_member\(organisation_id\)/)

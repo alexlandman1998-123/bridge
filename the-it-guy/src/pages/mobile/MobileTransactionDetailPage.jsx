@@ -17,7 +17,7 @@ import {
   MobileStatusChip,
   MobileTopBar,
 } from '../../components/mobile/ExecutiveMobileUi'
-import { fetchTransactionById } from '../../lib/api'
+import { fetchTransactionById } from '../../domains/transactions/detailReadApi.js'
 import {
   buildActivityFeedItems,
   buildExecutiveStageState,

@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFile} from 'node:fs/promises'
-const source=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=await readDomainApiSource()
 const a=source.indexOf('async function syncTransactionBondCloseoutDocuments('),b=source.indexOf('\nasync function ensureTransactionBondCloseout',a)
 const sync=new Function('buildDefaultDevelopmentBondDocuments','normalizeDevelopmentBondDocumentRow','isMissingSchemaError','normalizeBondCloseoutDocumentRow','getSignedUrl',source.slice(a,b)+';return syncTransactionBondCloseoutDocuments')(
  ()=>[{key:'statement',requiredForCloseOut:true,label:'Statement'}],v=>v,()=>false,v=>v,async path=>'signed:'+path)

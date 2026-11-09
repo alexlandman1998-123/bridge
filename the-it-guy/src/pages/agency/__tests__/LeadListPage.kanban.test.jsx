@@ -5,8 +5,37 @@ import { afterEach, expect, it, vi } from 'vitest'
 import LeadListPage from '../LeadListPage'
 import LeadCreateDialog from '../../../components/leads/LeadCreateDialog'
 import { buildAgencyLeadListModel } from '../agencyLeadListModel'
+import { getSellerJourneyStage } from '../../../services/sellerJourneyService'
 
 afterEach(cleanup)
+
+it.each([
+  ['New Lead', 'in_progress', 'seller_onboarding_sent'],
+  ['Contacted', 'sent', 'seller_onboarding_sent'],
+  ['New Lead', 'submitted', 'seller_onboarding_submitted'],
+  ['Onboarding Submitted', 'in_progress', 'seller_onboarding_sent'],
+])('places a seller with stale %s and onboarding %s in the same stage as the journey', (stage, sellerOnboardingStatus, expectedKey) => {
+  const lead = { leadId: 'seller', name: 'Seller', leadCategory: 'seller', stage, status: stage, sellerOnboardingStatus }
+  const journey = getSellerJourneyStage({ lead })
+  const model = buildAgencyLeadListModel({ leads: [lead], category: 'seller' })
+  expect(journey.key).toBe(expectedKey)
+  expect(model.rows[0]).toMatchObject({ stage: journey.label, columnId: journey.key })
+  render(<LeadListPage category="seller" viewMode="kanban" kanbanColumns={model.columns} />)
+  expect(within(screen.getByRole('region', { name: journey.label })).getByRole('button', { name: 'Open lead Seller' })).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'New Lead' })).queryByRole('button', { name: 'Open lead Seller' })).toBeNull()
+  expect(buildAgencyLeadListModel({ leads: [lead], category: 'seller', filters: { stage: journey.label } }).rows).toHaveLength(1)
+  expect(buildAgencyLeadListModel({ leads: [lead], category: 'seller', filters: { stage: 'New Lead' } }).rows).toHaveLength(0)
+})
+
+it('moves the card when onboarding is updated and keeps a genuinely new seller under New Lead', () => {
+  const lead = { leadId: 'seller', name: 'Seller', leadCategory: 'seller', stage: 'New Lead', sellerOnboardingStatus: 'not_started' }
+  const board = (row) => buildAgencyLeadListModel({ leads: [row], category: 'seller' })
+  const ui = render(<LeadListPage category="seller" viewMode="kanban" kanbanColumns={board(lead).columns} />)
+  expect(within(screen.getByRole('region', { name: 'New Lead' })).getByRole('button', { name: 'Open lead Seller' })).toBeTruthy()
+  ui.rerender(<LeadListPage category="seller" viewMode="kanban" kanbanColumns={board({ ...lead, sellerOnboardingToken: 'test-invitation', sellerOnboardingStatus: 'in_progress' }).columns} />)
+  expect(within(screen.getByRole('region', { name: 'Onboarding Sent' })).getByRole('button', { name: 'Open lead Seller' })).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'New Lead' })).queryByRole('button', { name: 'Open lead Seller' })).toBeNull()
+})
 it('shows development sales guidance only in the development flow', () => {
   const { rerender } = render(<LeadListPage category="development" viewMode="kanban" />)
   expect(screen.getByTestId('development-sales-flow').textContent).toContain('unit selection and reservation')

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../src/lib/documentUploadRecovery.js'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -387,7 +388,7 @@ await test('the actual review handler preserves successful review when refresh f
 })
 
 await test('the actual upload API retains a committed file after a lost response and recovers it without uploading again', async () => {
-  const source = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+  const source = await readDomainApiSource()
   const start = source.indexOf('export async function uploadDocument(')
   const body = source.slice(start, source.indexOf('\nexport async function listOrphanedTransactionDocumentObjects', start)).replace(/^export /, '').trim()
   let loseResponse = true, uploads = 0, deletes = 0

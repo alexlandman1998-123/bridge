@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -83,7 +84,7 @@ function buildFixtureModel(audience) {
 }
 
 function buildReport() {
-  const apiSource = read('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const portalSource = read('src/services/clientPortalWorkspaceService.js')
   const laneSource = read('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js')
   const modelSource = read('src/core/documents/documentRequestContainerModel.js')

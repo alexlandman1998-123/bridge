@@ -40,6 +40,7 @@ export function isDevelopmentBuyerLead(lead = {}) {
 export function getDevelopmentLeadStage(value = '', fallbackKey = 'captured') {
   const key = token(value)
   const aliases = {
+    new: 'captured', converted: 'transaction',
     viewing_presentation: 'viewing', unit_selection_reservation: DEVELOPMENT_SELECTION_STAGE,
     unit_selection: DEVELOPMENT_SELECTION_STAGE, unit_reservation: DEVELOPMENT_SELECTION_STAGE,
     reserved: DEVELOPMENT_SELECTION_STAGE, reservation: DEVELOPMENT_SELECTION_STAGE,
@@ -61,4 +62,15 @@ export function getDevelopmentBuyerReservationEvidence(lead = {}, now = Date.now
   const expiresAt = context.reservationExpiresAt || lead.reservationExpiresAt || lead.reservation_expires_at
   const expired = reservationState === 'expired' || (reservationState === 'reserved' && Boolean(expiresAt) && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now))
   return { unitSelected, reservationState, expired, reserved: unitSelected && !expired && ['reserved', 'converted'].includes(reservationState) }
+}
+
+
+// The development link owns early progress and reservation; later CRM stages
+// retain the evidence saved by onboarding, OTP and transaction workflows.
+export function getDevelopmentBuyerSavedStage(lead = {}, persistedStage = '', fallbackKey = 'captured') {
+  const stage = getDevelopmentLeadStage(persistedStage, fallbackKey)
+  const linkedStatus = lead.developmentLeadContext?.leadStatus
+  return linkedStatus && ['captured', 'contacted', 'qualified', 'viewing', DEVELOPMENT_SELECTION_STAGE].includes(stage.key)
+    ? getDevelopmentLeadStage(linkedStatus)
+    : stage
 }

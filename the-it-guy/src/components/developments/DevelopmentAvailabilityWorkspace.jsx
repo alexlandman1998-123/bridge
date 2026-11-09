@@ -224,6 +224,7 @@ export default function DevelopmentAvailabilityWorkspace({
   onSaveUnitPrice,
   onEditUnit,
   onChangeUnitStatus,
+  onReserveUnit,
   unitStatusOptions = [],
   unitStatusSaving = false,
   inventoryManagement = null,
@@ -677,8 +678,8 @@ export default function DevelopmentAvailabilityWorkspace({
   function renderUnitDetails() {
     if (!selectedUnit) return null;
     return (
-      <div ref={unitDetailsContent} className="mx-auto max-w-[1280px] p-4 sm:p-8 lg:p-10">
-        <header className="relative overflow-hidden rounded-[24px] bg-[#102e2b] p-5 text-white sm:p-8">
+      <div ref={unitDetailsContent} className="mx-auto p-4 sm:p-6">
+        <header className="relative overflow-hidden rounded-[20px] bg-[#102e2b] p-5 text-white sm:p-6">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(69,160,124,0.35),transparent_65%)]" aria-hidden="true" />
           <div className="relative grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.6fr)]">
             <div className="min-w-0">
@@ -686,7 +687,7 @@ export default function DevelopmentAvailabilityWorkspace({
                 <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#a6d5bf]"><Home size={16} aria-hidden="true" />Selected unit</span>
                 <StatusPill status={selectedUnit.inventoryStatus} />
               </div>
-              <h3 className="mt-5 break-words text-[2rem] font-semibold leading-tight tracking-[-0.045em] text-white sm:text-[2.75rem]">Unit {selectedUnit.displayNumber}</h3>
+              <h3 className="mt-3 break-words text-[1.65rem] font-semibold leading-tight tracking-[-0.045em] text-white sm:text-[2rem]">Unit {selectedUnit.displayNumber}</h3>
               <p className="mt-2 break-words text-base font-medium leading-6 text-[#e0eee8]">{selectedUnit.displayType}</p>
               <p className="mt-3 flex items-start gap-2 text-sm leading-6 text-[#abc5ba]"><MapPin size={16} className="mt-1 shrink-0" aria-hidden="true" />{selectedUnit.location}</p>
             </div>
@@ -697,7 +698,7 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
           </div>
         </header>
-        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)]">
+        <div className="mt-4 grid items-start gap-4 md:grid-cols-2">
           <section className="min-w-0 rounded-[22px] border border-[#dce7e0] bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#243d56]">Unit at a glance</h4>
@@ -733,6 +734,7 @@ export default function DevelopmentAvailabilityWorkspace({
               </div>
             </div>
             <div className="mt-6 rounded-[16px] border border-[#e0e9e3] bg-[#f7faf8] p-4 text-sm leading-6 text-[#60758d]"><strong className="block font-semibold text-[#29425e]">Reservation default:</strong><p className="mt-1">{reservationDepositConfigured ? reservationDepositSummary || "No reservation deposit required" : "No reservation deposit required"}</p></div>
+            {onReserveUnit && ["available", "reserved"].includes(selectedUnit.inventoryStatus) && !selectedUnit.currentTransactionId ? <Button type="button" className="mt-4 w-full" disabled={controlSaving} onClick={() => { setUnitDetailsOpen(false); onReserveUnit(selectedUnit); }}><Users size={16} />{selectedUnit.inventoryStatus === 'reserved' ? 'View reservation' : 'Reserve for a buyer'}</Button> : null}
             {canMoveToUnreleased ? <Button type="button" variant="secondary" className="mt-4 w-full border-[#d7e3dc] text-[#285f47]" disabled={controlSaving} onClick={() => { setUnitDetailsOpen(false); setReleaseConfirmationOpen(true); }}>Move to unreleased</Button> : null}
             {controlMessage ? <p role="status" className="mt-4 rounded-xl bg-[#edf7f0] px-4 py-3 text-sm font-semibold text-[#167044]">{controlMessage}</p> : null}
             {controlError ? <p role="alert" className="mt-4 rounded-xl bg-[#fff3f0] px-4 py-3 text-sm font-semibold text-[#b74334]">{controlError}</p> : null}
@@ -1543,7 +1545,7 @@ export default function DevelopmentAvailabilityWorkspace({
       open={unitDetailsOpen && Boolean(selectedUnit)}
       onClose={() => setUnitDetailsOpen(false)}
       title="Unit workspace"
-      className="fixed inset-0 !m-0 h-dvh !max-h-[100dvh] !w-screen !max-w-none !rounded-none !border-0 [&_.ui-modal-body]:bg-[#f5f8f6] [&_.ui-modal-body]:p-0 [&_.ui-modal-head]:px-5 [&_.ui-modal-head]:py-4 sm:[&_.ui-modal-head]:px-8 [&_.ui-modal-footer]:px-5 [&_.ui-modal-footer]:py-4 sm:[&_.ui-modal-footer]:px-8"
+      className="!max-w-[1040px] !max-h-[90dvh] !rounded-[24px] [&_.ui-modal-body]:bg-[#f5f8f6] [&_.ui-modal-body]:p-0 [&_.ui-modal-head]:px-5 [&_.ui-modal-head]:py-4 sm:[&_.ui-modal-head]:px-8 [&_.ui-modal-footer]:px-5 [&_.ui-modal-footer]:py-4 sm:[&_.ui-modal-footer]:px-8"
       footer={
         <div className="mx-auto flex w-full max-w-[1200px] items-center justify-between gap-3">
           <Button type="button" variant="secondary" size="sm" disabled={controlSaving || selectedUnitIndex <= 0} onClick={() => navigateUnit(-1)}><ArrowLeft size={16} aria-hidden="true" /><span className="hidden sm:inline">Previous unit</span><span className="sm:hidden">Previous</span></Button>

@@ -1,15 +1,12 @@
-import {
-  canUserAccessTransaction,
-  createTransactionFromWizard,
-  createTransactionEvent,
-  fetchTransactionById,
-  fetchTransactionEvents,
-  fetchTransactionsByParticipant,
-  fetchTransactionsData,
-  getAccessibleTransactionIdsForUser,
-  saveTransaction,
-  uploadDocument,
-} from '../../lib/api'
+import { canUserAccessTransaction, getAccessibleTransactionIdsForUser } from '../../domains/access/transactionApi.js'
+import { createTransactionFromWizard } from '../../domains/transactions/creationApi.js'
+import { createTransactionEvent } from '../../domains/transactions/eventActions.js'
+import { fetchTransactionById } from '../../domains/transactions/detailReadApi.js'
+import { fetchTransactionsByParticipant } from '../../domains/transactions/detailApi.js'
+import { saveTransaction } from '../../domains/transactions/saveWorkflow.js'
+import { uploadDocument } from '../../domains/documents/uploadWorkflow.js'
+import { fetchTransactionEvents } from '../../domains/transactions/activityReadApi.js'
+import { fetchTransactionsData } from '../../domains/transactions/listReadApi.js'
 import { mapTransactionDetailToCanonical, mapUnitRowToCanonicalTransaction } from './contract'
 import { mapAttorneyTransferStageToDetailedStage } from './attorneySelectors'
 

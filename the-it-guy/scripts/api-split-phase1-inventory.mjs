@@ -28,19 +28,6 @@ async function filesUnder(directory) {
   return nested.flat()
 }
 
-function exportedNames(source) {
-  const names = new Set()
-  for (const match of source.matchAll(/^export\s+(?:async\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)|^export\s+const\s+([A-Za-z_$][\w$]*)/gmu)) {
-    names.add(match[1] || match[2])
-  }
-  for (const match of source.matchAll(/^export\s*\{([\s\S]*?)\}\s*(?:from\s*['"][^'"]+['"])?\s*$/gmu)) {
-    for (const item of match[1].split(',')) {
-      const name = item.trim().split(/\s+as\s+/u).at(-1)?.trim()
-      if (name) names.add(name)
-    }
-  }
-  return [...names].sort()
-}
 
 function domainFor(name) {
   const rules = [
@@ -74,8 +61,8 @@ function importedApiNames(source) {
   return [...names].sort()
 }
 
-const [apiSource, sourceFiles] = await Promise.all([readFile(apiPath, 'utf8'), filesUnder(sourceDirectory)])
-const exports = exportedNames(apiSource)
+const [contractSource, sourceFiles] = await Promise.all([readFile(resolve(appDirectory, 'src/lib/api/__tests__/fixtures/domain-api-contract.json'), 'utf8'), filesUnder(sourceDirectory)])
+const exports = Object.keys(JSON.parse(contractSource).exports).sort()
 const callers = []
 for (const path of sourceFiles) {
   if (path === apiPath) continue
@@ -103,7 +90,7 @@ const sourceCoupledFiles = scriptSources
   .sort()
 const result = {
   version: 'api_split_phase1_inventory_v1',
-  api: 'src/lib/api.js',
+  api: 'domain-owned capabilities (src/lib/api.js retired)',
   exportCount: exports.length,
   exportSurfaceSha256,
   exportSurfaceBaseline: API_SPLIT_EXPORT_SURFACE_BASELINE,

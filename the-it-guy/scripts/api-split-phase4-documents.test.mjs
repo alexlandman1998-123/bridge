@@ -1,3 +1,4 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 import { resolve } from 'node:path'
@@ -12,7 +13,7 @@ const server = await createServer({
 
 try {
   const documents = await server.ssrLoadModule('/src/domains/documents/api.js')
-  const legacy = await server.ssrLoadModule('/src/lib/api.js')
+  const legacy = await loadDomainCapabilitiesWithServer(server)
   assert.equal(legacy.generateOtpDocumentFromTemplate, documents.generateOtpDocumentFromTemplate)
 
   await assert.rejects(

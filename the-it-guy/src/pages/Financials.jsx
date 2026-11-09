@@ -10,12 +10,7 @@ import Field from '../components/ui/Field'
 import MetricCard from '../components/ui/MetricCard'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
-import {
-  fetchAttorneyFinancials,
-  fetchTransactionFinancialRecord,
-  saveTransactionFinancialRecord,
-  uploadTransactionFinancialInvoice,
-} from '../lib/api'
+import { fetchAttorneyFinancials, fetchTransactionFinancialRecord, saveTransactionFinancialRecord, uploadTransactionFinancialInvoice } from '../domains/finance/accountsApi.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import {
   completeTransactionFeeInvoice,

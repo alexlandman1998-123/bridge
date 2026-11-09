@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
@@ -5,7 +6,7 @@ const migration = readFileSync(
   new URL('../../supabase/migrations/20260827083108_normalize_transaction_participant_statuses.sql', import.meta.url),
   'utf8',
 )
-const api = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const api = readDomainApiSource()
 const participantPayloadStart = api.indexOf('async function ensureRoleplayerTransactionParticipant')
 const participantPayloadEnd = api.indexOf('function attorneyAssignmentTypeForRoleplayer', participantPayloadStart)
 const participantPayload = api.slice(participantPayloadStart, participantPayloadEnd)

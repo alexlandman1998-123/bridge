@@ -216,8 +216,7 @@ export function buildAgencyLeadListModel({ leads = [], contacts = [], activities
     ].join(' ').toLowerCase() : ''
     const searchMatches = !resolvedFilters.search || searchValue.includes(search)
     const sourceMatches = resolvedFilters.source === 'all' || normalizeKey(lead?.leadSource) === normalizeKey(resolvedFilters.source)
-    const stageMatches = resolvedFilters.stage === 'all' || [lifecycleFor(lead).label, lead?.stage, lead?.status]
-      .some((value) => normalizeKey(value) === normalizeKey(resolvedFilters.stage))
+    const stageMatches = resolvedFilters.stage === 'all' || normalizeKey(lifecycleFor(lead).label) === normalizeKey(resolvedFilters.stage)
     const agentMatches = resolvedFilters.agent === 'all' || [lead?.assignedAgentId, lead?.assignedUserId, lead?.assignedAgentEmail]
       .some((value) => normalizeKey(value) === normalizeKey(resolvedFilters.agent))
     return searchMatches && sourceMatches && stageMatches && agentMatches

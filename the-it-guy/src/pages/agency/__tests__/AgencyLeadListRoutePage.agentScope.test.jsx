@@ -126,6 +126,22 @@ it('keeps the scope when paging and refreshing the allocated leads', async () =>
   fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
   await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(org, expect.objectContaining({ page: 1, forceRefresh: true, scopedAgent: agent })))
 })
+it('does not claim a seller moved backwards when saved onboarding still determines its column', async () => {
+  leads = [{ ...seller, stage: 'New Lead', status: 'New Lead', sellerOnboardingStatus: 'in_progress' }]
+  show()
+  await screen.findByRole('tab', { name: 'Seller Leads 1' })
+  fireEvent.click(screen.getByRole('tab', { name: 'Seller Leads 1' }))
+  await screen.findAllByText('Sam Seller')
+  fireEvent.click(screen.getByRole('button', { name: 'Kanban' }))
+  const card = within(screen.getByRole('region', { name: 'Onboarding Sent' })).getByRole('button', { name: 'Open lead Sam Seller' })
+  fireEvent.drop(screen.getByRole('region', { name: 'New Lead' }), { dataTransfer: { getData: () => 'seller-1' } })
+  await screen.findByText(/Saved seller onboarding is Onboarding Sent/)
+  expect(card).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'New Lead' })).queryByRole('button', { name: 'Open lead Sam Seller' })).toBeNull()
+  expect(mocks.update).not.toHaveBeenCalled()
+  expect(mocks.audit).not.toHaveBeenCalled()
+})
+
 it('moves an allocated lead using the normal Kanban stage action', async () => {
   show()
   await screen.findAllByText('Jane Buyer')

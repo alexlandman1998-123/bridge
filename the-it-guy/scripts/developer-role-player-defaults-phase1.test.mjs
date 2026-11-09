@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   addDevelopmentModal: await readFile(
     new URL('../src/components/AddDevelopmentModal.jsx', import.meta.url),
     'utf8',
@@ -38,18 +39,8 @@ assert(
   'buyer-appointed approval should normalize to false when buyer appointments are disabled',
 )
 
-for (const requiredModalCopy of [
-  'Transfer Attorney',
-  'Bond Originator',
-  'Buyer may use own bond originator',
-  'Approve buyer-appointed originators',
-  'Auto-invite selected bond originator',
-  'Transaction Behaviour',
-]) {
-  assert(
-    files.addDevelopmentModal.includes(requiredModalCopy),
-    `AddDevelopmentModal should expose ${requiredModalCopy}`,
-  )
+for (const token of ['Sales setup', "role: 'transfer_attorney'", "role: 'bond_originator'", 'DevelopmentPartnerSetupCard', 'rolePlayerDefaults,']) {
+  assert(files.addDevelopmentModal.includes(token), `Development creation must retain ${token}`)
 }
 
 for (const requiredDetailCopy of [
@@ -60,7 +51,7 @@ for (const requiredDetailCopy of [
   'Buyer may use own bond originator',
   'Approve buyer-appointed originators',
   'Auto-invite selected bond originator',
-  'Save updates only reservation and transaction defaults.',
+  'Save updates only reservation and unit defaults.',
 ]) {
   assert(
     files.developmentDetail.includes(requiredDetailCopy),
@@ -71,7 +62,7 @@ for (const requiredDetailCopy of [
 assert(
   files.developmentDetail.includes('rolePlayerDefaults') &&
     files.developmentDetail.includes('stakeholderTeams: {') &&
-    files.developmentDetail.includes('Reservation & deposit settings updated.'),
+    files.developmentDetail.includes('Configuration saved.'),
   'DevelopmentDetail should save role-player defaults with reservation and deposit feedback',
 )
 

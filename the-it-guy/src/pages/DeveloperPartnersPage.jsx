@@ -17,17 +17,10 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
-import {
-  acceptDeveloperPartnerRelationship,
-  activateDeveloperPartnerAgreement,
-  fetchDeveloperPartnerInviteOptions,
-  fetchDeveloperPartnersWorkspace,
-  generateDeveloperPartnerAgreement,
-  sendDeveloperPartnerInvitation,
-  setDeveloperCanonicalPartnerDefault,
-  setDeveloperPartnerDefault,
-  waiveDeveloperPartnerAgreement,
-} from '../lib/api'
+import { acceptDeveloperPartnerRelationship, activateDeveloperPartnerAgreement, fetchDeveloperPartnerInviteOptions, generateDeveloperPartnerAgreement, setDeveloperPartnerDefault, waiveDeveloperPartnerAgreement } from '../domains/partners/agreementApi.js'
+import { fetchDeveloperPartnersWorkspace } from '../domains/partners/readApi.js'
+import { sendDeveloperPartnerInvitation } from '../domains/partners/invitationActions.js'
+import { setDeveloperCanonicalPartnerDefault } from '../domains/transactions/detailApi.js'
 import {
   acceptPartnerInvitation,
   createPartnerInvitation,

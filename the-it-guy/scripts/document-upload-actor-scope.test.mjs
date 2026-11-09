@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFileSync} from 'node:fs'
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=readDomainApiSource()
 const start=source.indexOf('  let client = requireClient()',source.indexOf('export async function uploadDocument('))
-const end=source.indexOf('  const filePolicy =',start)
+const end=source.indexOf('  const attorneyLaneMetadata =',start)
 const prepare=new (Object.getPrototypeOf(async function(){}).constructor)('requireClient','assertActiveTransactionForDocumentUpload','resolveActiveProfileContext','createScopedSupabaseClient','transactionId',source.slice(start,end)+'\nreturn client')
 let session={user:{id:'professional'},access_token:'controlled-professional-token'}
 const original={auth:{getSession:async()=>({data:{session}})}}

@@ -1,9 +1,10 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const migrationPath = resolve(root, '..', 'supabase/migrations/202607080004_developer_partner_invite_bind_partner_org.sql')
-const apiPath = resolve(root, 'src/lib/api.js')
+
 const pagePath = resolve(root, 'src/pages/DeveloperPartnerInvitePage.jsx')
 const appPath = resolve(root, 'src/App.jsx')
 const pendingPath = resolve(root, 'src/lib/pendingPartnerInvite.js')
@@ -11,7 +12,7 @@ const authPath = resolve(root, 'src/pages/Auth.jsx')
 const authCallbackPath = resolve(root, 'src/pages/AuthCallback.jsx')
 
 const migration = readFileSync(migrationPath, 'utf8')
-const api = readFileSync(apiPath, 'utf8')
+const api = readDomainApiSource()
 const page = readFileSync(pagePath, 'utf8')
 const app = readFileSync(appPath, 'utf8')
 const pending = readFileSync(pendingPath, 'utf8')
@@ -19,7 +20,7 @@ const auth = readFileSync(authPath, 'utf8')
 const authCallback = readFileSync(authCallbackPath, 'utf8')
 
 function assertIncludes(source, needle, message) {
-  if (!source.includes(needle)) {
+  if (!source.replace(/\s+/g, '').replace(/,\)/g, ')').includes(needle.replace(/\s+/g, '').replace(/,\)/g, ')'))) {
     throw new Error(message)
   }
 }
@@ -68,8 +69,15 @@ assertIncludes(page, 'rememberPendingPartnerInvitePath(returnPath)', 'invite pag
 assertIncludes(page, 'clearPendingPartnerInvitePath(returnPath)', 'invite page should clear the pending invite after acceptance')
 assertIncludes(page, 'autoAcceptAttemptedRef', 'developer invite page should support one-shot auto accept after onboarding')
 
-assertIncludes(pending, "safePath.startsWith('/developer/partner-invite/')", 'pending helper should recognise developer partner invites')
-assertIncludes(pending, "safePath.startsWith('/partners/invite/')", 'pending helper should recognise organisation partner invites')
+const matcherSource = pending.match(/export function isPartnerInviteReturnPath\(path = ''\) \{[\s\S]*?\n\}/)?.[0]
+if (!matcherSource) throw new Error('Pending invite path validation is missing')
+const isPartnerInviteReturnPath = new Function(`${matcherSource.replace('export ', '')}; return isPartnerInviteReturnPath`)()
+for (const route of ['/developer/partner-invite/token', '/partners/invite/token?accept=1', '/transaction-invite/token']) {
+  if (!isPartnerInviteReturnPath(route)) throw new Error(`Expected a valid invite route: ${route}`)
+}
+for (const route of ['https://example.test/partners/invite/token', '//example.test/partners/invite/token', '/partners/invite/', '/partners/invite/token/extra']) {
+  if (isPartnerInviteReturnPath(route)) throw new Error(`Rejected invite route was accepted: ${route}`)
+}
 assertIncludes(pending, "url.searchParams.set('accept', '1')", 'pending helper should support auto-accept resume paths')
 assertIncludes(app, 'readPendingPartnerInvitePath()', 'app should resume pending partner invites after onboarding')
 assertIncludes(app, 'buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)', 'app should auto-accept pending partner invites after onboarding')

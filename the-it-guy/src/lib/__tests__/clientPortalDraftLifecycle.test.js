@@ -1,7 +1,8 @@
+import { readDomainApiSource } from '../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+
 import test from 'node:test'
-const source = readFileSync(new URL('../api.js', import.meta.url), 'utf8')
+const source = readDomainApiSource()
 const start = source.indexOf('async function upsertClientPortalOnboardingForm(')
 const end = source.indexOf('\nexport async function saveClientPortalOnboardingDraft', start)
 function fixture(status, recordStatus = 'submitted') {

@@ -1,11 +1,7 @@
 import DocumentAccessButton from './documents/DocumentAccessButton.jsx'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  fetchTransactionAttorneyCloseout,
-  saveTransactionAttorneyCloseout,
-  uploadTransactionAttorneyCloseoutDocument,
-} from '../lib/api'
+import { fetchTransactionAttorneyCloseout, saveTransactionAttorneyCloseout, uploadTransactionAttorneyCloseoutDocument } from '../domains/attorney/closeoutApi.js'
 import DocumentUploadStatus from './documents/DocumentUploadStatus'
 
 const currency = new Intl.NumberFormat('en-ZA', {

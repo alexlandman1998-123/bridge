@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -110,7 +111,7 @@ const missingFactsTransaction = {
 }
 
 {
-  const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+  const apiSource = readDomainApiSource()
   assert.match(apiSource, /export async function runTransactionRoutingProfileBackfill/, 'API should expose the Phase 6 routing backfill runner.')
   assert.match(apiSource, /dryRun = true/, 'Routing backfill should default to dry-run.')
   assert.match(apiSource, /eventType: 'RoutingProfileBackfilled'/, 'Routing backfill should audit applied updates.')

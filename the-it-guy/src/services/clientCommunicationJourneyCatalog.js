@@ -474,7 +474,7 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ctaDestination: 'Activity feed only',
     sourceFiles: [
       'src/services/clientPortalActivityFeedService.js',
-      'src/lib/api.js',
+      'src/domains/documents/uploadWorkflow.js',
     ],
     duplicateRisk: 'Low-level operational updates become noisy if promoted to email.',
     nextAction: 'Keep as explicit activity-only guardrail in the workspace.',
@@ -591,11 +591,11 @@ const CLIENT_COMMUNICATION_JOURNEY_ITEMS = Object.freeze([
     category: CLIENT_COMMUNICATION_CATEGORIES.INTRODUCTION,
     label: 'Introduce bond originator',
     trigger: 'Accepted bond or hybrid transaction has assigned originator',
-    cta: 'Complete bond application',
+    cta: 'View bond progress',
     automationKey: 'bond_originator_buyer_intro',
     communicationTypes: ['bond_originator_buyer_intro'],
     status: CLIENT_COMMUNICATION_IMPLEMENTATION_STATUS.EXISTING,
-    notes: 'Dedicated buyer bond application completion email exists and is invoked by bond intake orchestration.',
+    notes: 'Buyer bond progress email opens the portal tracker and requested documents; bank processing remains with the originator.',
   }),
   item({
     key: 'bond_documents_required',

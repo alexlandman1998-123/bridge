@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const pageSource = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
 const workflowServiceSource = fs.readFileSync(path.join(root, 'src/services/attorneyWorkflow/attorneyWorkflowLaneService.js'), 'utf8')
 const planSyncMigration = fs.readFileSync(

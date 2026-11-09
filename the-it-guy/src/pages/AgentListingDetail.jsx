@@ -183,7 +183,7 @@ import {
   OFFER_WORKFLOW_RETIRED_MESSAGE,
 } from '../core/offers/offerWorkflowRetirement'
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
-import { fetchDevelopmentsData } from '../lib/api'
+import { fetchDevelopmentsData } from '../domains/developments/portfolioReadApi.js'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import SellerOnboardingAgentReviewPanel from '../components/onboarding/SellerOnboardingAgentReviewPanel'
 import { sellerOnboardingDraftPublicationBlocker } from '../core/documents/sellerOnboardingDraftComparison.js'

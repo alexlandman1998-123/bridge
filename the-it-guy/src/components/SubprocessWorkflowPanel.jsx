@@ -1,7 +1,9 @@
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
-import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
+import { buildWorkflowStepComment, parseWorkflowStepComment } from '../domains/transactions/subprocessApi.js'
+import { SUBPROCESS_STEP_STATUSES } from '../core/transactions/roleConfig'
+import { uploadDocument } from '../domains/documents/uploadWorkflow.js'
 import { getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 import ConfirmDialog from './ui/ConfirmDialog'
 

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -9,7 +10,6 @@ const mandateClientPath = path.resolve('src/lib/generateMandateDocument.js')
 const onboardingLinksPath = path.resolve('src/lib/onboardingLinks.js')
 const privateListingServicePath = path.resolve('src/services/privateListingService.js')
 const appointmentNotificationServicePath = path.resolve('src/services/appointmentNotificationService.js')
-const apiPath = path.resolve('src/lib/api.js')
 
 const pipelineSource = fs.readFileSync(pipelinePath, 'utf8')
 const pipelineWrapperSource = fs.readFileSync(pipelineWrapperPath, 'utf8')
@@ -18,7 +18,7 @@ const mandateClientSource = fs.readFileSync(mandateClientPath, 'utf8')
 const onboardingLinksSource = fs.readFileSync(onboardingLinksPath, 'utf8')
 const privateListingServiceSource = fs.readFileSync(privateListingServicePath, 'utf8')
 const appointmentNotificationServiceSource = fs.readFileSync(appointmentNotificationServicePath, 'utf8')
-const apiSource = fs.readFileSync(apiPath, 'utf8')
+const apiSource = readDomainApiSource()
 
 assert.doesNotMatch(
   pipelineSource,
@@ -34,7 +34,7 @@ assert.match(
 
 assert.match(
   pipelineSource,
-  /import\(['"]\.\.\/\.\.\/lib\/api['"]\)/,
+  /import\(['"]\.\.\/\.\.\/domains\/transactions\/discussionApi\.js['"]\)/,
   'AgencyPipelinePage should load transaction API actions through a dynamic import',
 )
 
@@ -53,13 +53,13 @@ assert.doesNotMatch(
 assert.match(
   pipelineWrapperSource,
   /let pipelineApiActionsPromise = null/,
-  'Pipeline wrapper should cache deferred legacy API imports',
+  'Pipeline wrapper should cache deferred creation workflow',
 )
 
 assert.match(
   pipelineWrapperSource,
-  /import\(['"]\.\.\/lib\/api['"]\)/,
-  'Pipeline wrapper should dynamically import legacy API actions',
+  /import\(['"]\.\.\/domains\/transactions\/creationApi\.js['"]\)/,
+  'Pipeline wrapper should dynamically import the owning creation workflow',
 )
 
 assert.doesNotMatch(
@@ -70,8 +70,8 @@ assert.doesNotMatch(
 
 assert.match(
   onboardingLinksSource,
-  /import\(['"]\.\/api['"]\)/,
-  'onboardingLinks should dynamically import onboarding API actions',
+  /import\(['"]\.\.\/domains\/onboarding\/workflow\.js['"]\)/,
+  'onboardingLinks should dynamically import the owning onboarding workflow',
 )
 
 assert.doesNotMatch(
@@ -127,5 +127,7 @@ assert.match(
   /export\s+\{\s*generateMandateDocumentFromTemplate\s*\}\s+from\s+['"]\.\/generateMandateDocument['"]/,
   'api.js should preserve the existing generateMandateDocumentFromTemplate export',
 )
+
+assert.match(pipelineSource, /transactionApiActionsPromise = Promise\.resolve\(/, 'Lead actions must select their domain at call time rather than preload all workflow modules.')
 
 console.log('pipeline api deferral phase 4 checks passed')

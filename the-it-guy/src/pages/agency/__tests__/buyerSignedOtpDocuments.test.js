@@ -9,6 +9,7 @@ assert.equal(getBuyerSignedOtpDocuments({ uploads: [saved, { key: 'proof_of_addr
 assert.equal(getBuyerSignedOtpDocuments({ lead: { raw_enquiry_payload: JSON.stringify({ buyerOfferDocument: { url: 'https://example.invalid/otp.pdf' } }) } }).length, 1)
 assert.equal(getBuyerSignedOtpDocuments({ lead: { buyerOtpDocument: { url: 'javascript:alert(1)' } } }).length, 0)
 assert.equal(getBuyerSignedOtpDocuments({ lead: { rawEnquiryPayload: '{broken' } }).length, 0)
+assert.equal(getBuyerSignedOtpDocuments({ lead: { raw_enquiry_payload: { buyer_otp_documents: [{ key: 'uploaded_otp', storage_bucket: 'documents', storage_path: 'saved/signed.pdf' }] } } }).length, 1, 'historical snake-case OTP lists remain available')
 for (const tab of ['offer', 'offers', 'otp', 'onboarding_otp', 'buyer_onboarding_otp']) {
   assert.equal(normalizeBuyerWorkspaceTab(tab), 'documents')
   assert.equal(resolveAgencyLeadWorkspaceTab(`?tab=${tab}`), 'documents')

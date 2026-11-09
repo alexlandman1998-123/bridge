@@ -37,11 +37,12 @@ const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 let pipelineApiActionsPromise = null
 function loadPipelineApiActions() {
   if (!pipelineApiActionsPromise) {
-    pipelineApiActionsPromise = import('../lib/api').then((api) => ({
-      createTransactionFromWizard: api.createTransactionFromWizard,
-      fetchDevelopmentOptions: api.fetchDevelopmentOptions,
-      fetchUnitsData: api.fetchUnitsData,
-    }))
+    pipelineApiActionsPromise = Promise.resolve({
+      createTransactionFromWizard: async (...args) => {
+        const api = await import('../domains/transactions/creationApi.js')
+        return api.createTransactionFromWizard(...args)
+      },
+    })
   }
   return pipelineApiActionsPromise
 }
@@ -367,7 +368,7 @@ function LegacyPipeline() {
     try {
       setError('')
       setLoading(true)
-      const { fetchDevelopmentOptions } = await loadPipelineApiActions()
+      const { fetchDevelopmentOptions } = await import('../domains/developments/selectionReadApi.js')
       const options = await fetchDevelopmentOptions()
       setDevelopmentOptions(options)
       setPrivateListingOptions(readPrivateListings())
@@ -426,7 +427,7 @@ function LegacyPipeline() {
       }
 
       try {
-        const { fetchUnitsData } = await loadPipelineApiActions()
+        const { fetchUnitsData } = await import('../domains/transactions/listReadApi.js')
         const rows = await fetchUnitsData({
           developmentId: form.developmentId,
           stage: 'all',
@@ -449,7 +450,7 @@ function LegacyPipeline() {
       }
 
       try {
-        const { fetchUnitsData } = await loadPipelineApiActions()
+        const { fetchUnitsData } = await import('../domains/transactions/listReadApi.js')
         const rows = await fetchUnitsData({
           developmentId: convertForm.developmentId,
           stage: 'all',

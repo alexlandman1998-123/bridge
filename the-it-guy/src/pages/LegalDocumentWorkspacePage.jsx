@@ -48,11 +48,9 @@ import {
   updateDocumentPacket,
 } from '../lib/documentPacketsApi'
 import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
-import {
-  fetchTransactionById,
-  finalizeCanonicalPhysicalSignedOtpWorkflow,
-  runCanonicalDocumentRequestRequirementRecalculation,
-} from '../lib/api'
+import { fetchTransactionById } from '../domains/transactions/detailReadApi.js'
+import { finalizeCanonicalPhysicalSignedOtpWorkflow } from '../domains/clientPortal/signingApi.js'
+import { runCanonicalDocumentRequestRequirementRecalculation } from '../domains/documents/buyerReadinessApi.js'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings, listOrganisationPreferredPartners } from '../lib/settingsApi'

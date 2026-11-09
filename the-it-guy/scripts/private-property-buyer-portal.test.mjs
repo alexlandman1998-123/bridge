@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createTransactionCreationLifecycle, requiresTransactionBuyerPortal, setTransactionCreationStepOutcome } from '../src/core/transactions/transactionCreationLifecycle.js'
 
 const root = process.cwd()
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const migrationSource = readFileSync(
   resolve(root, '../supabase/migrations/20260831125407_support_private_property_buyer_portals.sql'),
   'utf8',

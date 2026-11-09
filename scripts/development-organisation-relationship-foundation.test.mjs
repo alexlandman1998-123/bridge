@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../the-it-guy/scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -7,7 +8,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const migrationPath = resolve(repositoryRoot, 'supabase/migrations/20260901110612_development_organisation_relationship_foundation.sql')
 const apiPath = resolve(repositoryRoot, 'the-it-guy/src/lib/api.js')
 const migration = readFileSync(migrationPath, 'utf8')
-const api = readFileSync(apiPath, 'utf8')
+const api = readDomainApiSource()
 
 function expect(fragment, message) {
   assert.match(migration, fragment, message)

@@ -1,7 +1,8 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 
 function sourceBetween(source, startNeedle, endNeedle) {
@@ -85,26 +86,13 @@ const projectionContracts = [
     repairHelper: 'processBuyerAppointedBondOriginatorRequest',
   },
   {
-    projection: 'workflow_evidence',
-    eventType: 'buyer_onboarding_workflow_evidence_projection_failed',
-    saveHelper: 'processWorkflowEvidenceIfPossible',
-    catchName: 'workflowEvidenceError',
-    repairHelper: 'processWorkflowEvidenceIfPossible',
-  },
-  {
     projection: 'awaiting_signed_otp',
     eventType: 'buyer_onboarding_awaiting_signed_otp_projection_failed',
     saveHelper: 'markTransactionAwaitingSignedOtp',
     catchName: 'otpProjectionError',
     repairHelper: 'markTransactionAwaitingSignedOtp',
   },
-  {
-    projection: 'finance_event',
-    eventType: 'buyer_onboarding_finance_event_projection_failed',
-    saveHelper: 'finance_type_selected',
-    catchName: 'financeEventError',
-    repairHelper: 'finance_type_selected',
-  },
+
 ]
 
 assert.equal(
@@ -112,6 +100,10 @@ assert.equal(
   'node scripts/buyer-onboarding-projection-recovery-contract.test.mjs',
   'Phase 4 contract test must be addressable as an npm script',
 )
+
+// The secure snapshot RPC owns the completion audit. Browser-token submit
+// must not replay privileged workflow or finance event writes.
+assert.doesNotMatch(saveOnboardingSource, /await processWorkflowEvidenceIfPossible\(|await logTransactionEventIfPossible\(/)
 
 const validationIndex = saveOnboardingSource.indexOf("isPlatformFeeConsentAccepted(formDataForPersistence, 'buyer')")
 const snapshotIndex = saveOnboardingSource.indexOf('syncOnboardingTransactionFinanceSnapshot')

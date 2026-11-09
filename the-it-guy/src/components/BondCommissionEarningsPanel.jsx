@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchBondCommissionDashboard } from '../lib/api'
+import { fetchBondCommissionDashboard } from '../domains/bond/closeoutApi.js'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',

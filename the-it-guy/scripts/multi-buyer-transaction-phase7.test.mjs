@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -14,7 +15,7 @@ function test(name, fn) {
   }
 }
 
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const recoveryContractSource = await readFile(
   new URL('../scripts/buyer-onboarding-projection-recovery-contract.test.mjs', import.meta.url),
   'utf8',

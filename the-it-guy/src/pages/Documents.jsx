@@ -1,6 +1,9 @@
 import { DOCUMENT_UPLOAD_HELP_TEXT, validateDocumentUploadFile } from '../lib/documentUploadPolicy.js'
 import { AlertTriangle, Building2, Download, FileSignature, FileUp, FolderKanban, RotateCcw, UserCircle2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import CompanyDocuments from '../components/documents/CompanyDocuments.jsx'
+import DocumentUploadProgress from '../components/documents/DocumentUploadProgress.jsx'
+import { describeDocumentUploadFailure, refreshAfterSavedDocumentUpload } from '../lib/documentUploadLifecycle.js'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -9,18 +12,18 @@ import SearchInput from '../components/ui/SearchInput'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { buildSellerMandateDocumentModel } from '../core/documents/sellerMandateInformationModel'
-import {
-  deleteDevelopmentDocument,
-  fetchDevelopmentDetail,
-  fetchDevelopmentOptions,
-  fetchDocumentsByUnit,
-  fetchTransactionsByParticipant,
-  saveDevelopmentDocument,
-  uploadDocument,
-} from '../lib/api'
+import { uploadDocument } from '../domains/documents/uploadWorkflow.js'
+import { deleteDevelopmentDocument, saveDevelopmentDocument, uploadDevelopmentDocumentAsset } from '../lib/developmentDetailApi'
+import { fetchDevelopmentOptions } from '../domains/developments/selectionReadApi.js'
+import { fetchDocumentWorkspacePage } from '../domains/documents/workspaceReadApi.js'
+import { useDocumentClientWorkspace } from '../domains/documents/useDocumentClientWorkspace.js'
+import { fetchDevelopmentDocuments } from '../domains/developments/readApi.js'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy'
+import { createScopedReadCache, watchScopedReadInvalidation } from '../lib/scopedReadCache.js'
+import { createCoalescedRefresh } from '../lib/coalescedRefresh.js'
+import { markRouteMilestone } from '../lib/performanceTrace.js'
 
 const HUB_SECTIONS = [
   { key: 'client', label: 'Client Documents' },
@@ -50,19 +53,6 @@ const DEVELOPMENT_DOC_TYPES = [
   { value: 'other', label: 'Other Supporting Documents' },
 ]
 
-const COMPANY_DOC_TYPES = [
-  'Company Registration Documents',
-  'CIPC Documents',
-  'Tax Clearance / SARS Documents',
-  'VAT Registration',
-  'B-BBEE Certificate',
-  'Bank Confirmation Letter',
-  'Director IDs',
-  'Resolution Documents',
-  'Standard Company Profile',
-  'Standard Legal / Compliance Documents',
-]
-
 function formatDate(value) {
   if (!value) return 'Not set'
   const parsed = new Date(value)
@@ -90,22 +80,6 @@ function statusBadgeClass(status) {
   return 'border-[#e8edf4] bg-[#f9fbfd] text-[#6b7d93]'
 }
 
-function describeDocumentUploadFailure(error) {
-  const message = String(error?.message || error?.error || '').trim()
-  const code = String(error?.code || '').trim().toLowerCase()
-  const searchable = `${code} ${message}`.toLowerCase()
-
-  if (searchable.includes('permission') || searchable.includes('access denied') || searchable.includes('rls') || code === '42501') {
-    return 'You do not have permission to attach this document to this transaction.'
-  }
-  if (searchable.includes('storage') || searchable.includes('bucket') || searchable.includes('network')) {
-    return 'Document storage is unavailable right now. Your file was not attached; retry when the connection is restored.'
-  }
-  if (searchable.includes('file type') || searchable.includes('mime') || searchable.includes('file size') || searchable.includes('too large')) {
-    return message || 'This file does not meet the document upload requirements.'
-  }
-  return message || 'The document could not be attached. Your file is still available to retry.'
-}
 
 function inferClientCategory(requirement) {
   const source = `${requirement?.label || ''} ${requirement?.key || ''}`.toLowerCase()
@@ -145,42 +119,6 @@ function getMandateLifecycleLabel(document = {}) {
   )
 }
 
-function getCompanyDocsStorageKey(profileId) {
-  const normalizedProfileId = String(profileId || '').trim()
-  if (!normalizedProfileId) return ''
-  return `itg:developer-company-docs:v1:${normalizedProfileId}`
-}
-
-function readCompanyDocs(profileId) {
-  if (typeof window === 'undefined') return []
-  const storageKey = getCompanyDocsStorageKey(profileId)
-  if (!storageKey) return []
-  try {
-    const raw = window.localStorage.getItem(storageKey)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writeCompanyDocs(profileId, rows) {
-  if (typeof window === 'undefined') return
-  const storageKey = getCompanyDocsStorageKey(profileId)
-  if (!storageKey) return
-  window.localStorage.setItem(storageKey, JSON.stringify(rows))
-}
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('Unable to read file.'))
-    reader.readAsDataURL(file)
-  })
-}
-
 function buildDevelopmentContextOptions(workspaces = []) {
   const developmentMap = new Map()
   const privateOptions = []
@@ -211,20 +149,34 @@ function buildDevelopmentContextOptions(workspaces = []) {
 }
 
 function Documents() {
-  const { workspace, role, profile } = useWorkspace()
+  const { workspace, role, profile, currentWorkspace, currentMembership } = useWorkspace()
+  const documentScope = `${profile?.id || ''}:${role}:${workspace.id}:${currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id || currentMembership?.organisationId || currentMembership?.organisation_id || ''}:${currentMembership?.workspaceRole || currentMembership?.workspace_role || currentMembership?.organisationRole || currentMembership?.role || ''}`
+  const referenceData = useMemo(() => createScopedReadCache({ scopeKey: documentScope }), [documentScope])
+  const indexCacheRef = useRef(null)
+  const indexRequestRef = useRef(0)
+  const [nextCursor, setNextCursor] = useState(null)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [section, setSection] = useState('client')
-  const [unitWorkspaces, setUnitWorkspaces] = useState([])
-  const [developmentOptions, setDevelopmentOptions] = useState([])
+  const [unitIndex, setUnitIndex] = useState({ scope: '', rows: [] })
+  const unitWorkspaces = useMemo(() => unitIndex.scope === documentScope ? unitIndex.rows : [], [unitIndex, documentScope])
+  const setUnitWorkspaces = useCallback(rows => setUnitIndex({ scope: documentScope, rows }), [documentScope])
+  const [developmentIndex, setDevelopmentIndex] = useState({ scope: '', rows: [] })
+  const developmentOptions = developmentIndex.scope === documentScope ? developmentIndex.rows : []
+  const setDevelopmentOptions = useCallback(rows => setDevelopmentIndex({ scope: documentScope, rows }), [documentScope])
   const [selectedContextKey, setSelectedContextKey] = useState('all')
   const [selectedClientTransactionId, setSelectedClientTransactionId] = useState('all')
   const [selectedDevelopmentId, setSelectedDevelopmentId] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [uploadingKey, setUploadingKey] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(null)
+  const [developmentFile, setDevelopmentFile] = useState(null)
   const [uploadFailures, setUploadFailures] = useState({})
   const [error, setError] = useState('')
+  const [baseError, setBaseError] = useState('')
 
   const [developmentDetail, setDevelopmentDetail] = useState(null)
+  const [includeDevelopmentHistory, setIncludeDevelopmentHistory] = useState(false)
   const [developmentDocumentsLoading, setDevelopmentDocumentsLoading] = useState(false)
   const [savingDevelopmentDocument, setSavingDevelopmentDocument] = useState(false)
   const [developmentDocumentForm, setDevelopmentDocumentForm] = useState({
@@ -235,72 +187,79 @@ function Documents() {
     fileUrl: '',
   })
 
-  const [companyDocuments, setCompanyDocuments] = useState([])
-  const [companyDocumentForm, setCompanyDocumentForm] = useState({
-    id: '',
-    title: '',
-    category: COMPANY_DOC_TYPES[0],
-    status: 'uploaded',
-    fileName: '',
-    fileUrl: '',
-  })
-
   const scopedRoleType =
     role === 'agent' ? 'agent' : role === 'bond_originator' ? 'bond_originator' : role === 'attorney' ? 'attorney' : null
 
-  const loadBaseData = useCallback(async () => {
-    if (!isSupabaseConfigured) {
-      setLoading(false)
-      return
+  const loadBaseData = useCallback(async ({ append = false, force = false } = {}) => {
+    const request = ++indexRequestRef.current
+    if (!isSupabaseConfigured || section === 'company') { setLoading(false); setBaseError(''); return }
+    if (indexCacheRef.current?.scope !== documentScope) {
+      indexCacheRef.current = { scope: documentScope, rows: [], loaded: false, nextCursor: null, options: null, organisationId: '' }
+      setUnitWorkspaces([])
+      setDevelopmentOptions([])
+      setNextCursor(null)
     }
-
+    const cache = indexCacheRef.current
     try {
       setError('')
-      setLoading(true)
-      const settings = await fetchOrganisationSettings().catch(() => null)
-      const scopedOrganisationId = String(settings?.organisation?.id || '').trim()
-      const [unitRows, developmentRows] = await Promise.all([
-        fetchDocumentsByUnit({
-          developmentId: workspace.id === 'all' ? null : workspace.id,
-          organisationId: scopedOrganisationId || null,
-        }),
-        fetchDevelopmentOptions({ organisationId: scopedOrganisationId || null }),
-      ])
-
-      let filteredRows = unitRows
-      if (scopedRoleType && profile?.id) {
-        const participantRows = await fetchTransactionsByParticipant({ userId: profile.id, roleType: scopedRoleType })
-        const allowedTransactionIds = new Set(participantRows.map((item) => item?.transaction?.id).filter(Boolean))
-        filteredRows = unitRows.filter((item) => allowedTransactionIds.has(item?.transaction?.id))
+      setBaseError('')
+      if (append) setLoadingMore(true)
+      else setLoading(true)
+      if (!cache.organisationId) {
+        const contextOrganisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id
+        const settings = contextOrganisationId ? null : await fetchOrganisationSettings()
+        cache.organisationId = String(contextOrganisationId || settings?.organisation?.id || '').trim()
+        if (!cache.organisationId) throw new Error('An organisation is required to load documents.')
       }
-
-      setUnitWorkspaces(filteredRows)
-      setDevelopmentOptions(developmentRows)
-      setSelectedContextKey('all')
-      setSelectedClientTransactionId('all')
-      const workspaceDevelopmentId = workspace.id !== 'all' && developmentRows.some((row) => row.id === workspace.id)
-        ? workspace.id
-        : ''
-      const initialDevelopmentId = workspaceDevelopmentId || developmentRows[0]?.id || ''
-      setSelectedDevelopmentId(initialDevelopmentId)
-    } catch (loadError) {
-      setError(loadError.message || 'Unable to load documents.')
+      if (request !== indexRequestRef.current) return
+      if (section === 'development') {
+        const options = cache.options && Date.now() - cache.optionsLoadedAt < 30_000 ? cache.options : await fetchDevelopmentOptions({ organisationId: cache.organisationId })
+        if (request !== indexRequestRef.current) return
+        cache.options = options
+        cache.optionsLoadedAt = Date.now()
+        setDevelopmentOptions(options)
+        const preferred = workspace.id !== 'all' && options.some(row => row.id === workspace.id) ? workspace.id : ''
+        setSelectedDevelopmentId(current => preferred || (options.some(row => row.id === current) ? current : options[0]?.id || ''))
+        return
+      }
+      if (!cache.loaded || append || force || Date.now() - cache.loadedAt >= 30_000) {
+        const page = await fetchDocumentWorkspacePage({ organisationId: cache.organisationId,
+          developmentId: workspace.id === 'all' ? null : workspace.id,
+          userId: profile?.id || '', roleType: scopedRoleType, afterUnitId: append ? cache.nextCursor : null, referenceData })
+        if (request !== indexRequestRef.current) return
+        cache.rows = append ? [...cache.rows, ...page.rows] : page.rows
+        cache.nextCursor = page.nextCursor
+        cache.loaded = true
+        cache.loadedAt = Date.now()
+      }
+      setUnitWorkspaces(cache.rows)
+      setNextCursor(cache.nextCursor)
+    } catch (cause) {
+      if (request === indexRequestRef.current) setBaseError(cause.message || 'Unable to load documents.')
     } finally {
-      setLoading(false)
+      if (request === indexRequestRef.current) { setLoading(false); setLoadingMore(false) }
     }
-  }, [profile?.id, scopedRoleType, workspace.id])
+  }, [currentWorkspace?.id, currentWorkspace?.organisationId, currentWorkspace?.organisation_id, documentScope, profile?.id, scopedRoleType, section, setDevelopmentOptions, setUnitWorkspaces, workspace.id, referenceData])
 
+  useEffect(() => {
+    setSelectedContextKey('all')
+    setSelectedClientTransactionId('all')
+    setSelectedDevelopmentId('')
+    setDevelopmentDetail(null)
+    setDevelopmentFile(null)
+    setDevelopmentDocumentForm({ id: '', documentType: 'other', title: '', description: '', fileUrl: '' })
+  }, [documentScope])
   useEffect(() => {
     void loadBaseData()
+    return () => { indexRequestRef.current += 1 }
   }, [loadBaseData])
 
-  useEffect(() => {
-    setCompanyDocuments(readCompanyDocs(profile?.id || ''))
-  }, [profile?.id])
+
 
   useEffect(() => {
+    let active = true
     async function loadDevelopmentDetailData() {
-      if (section !== 'development' || !selectedDevelopmentId) {
+      if (section !== 'development' || !selectedDevelopmentId || developmentIndex.scope !== documentScope || !developmentIndex.rows.some(row => row.id === selectedDevelopmentId)) {
         setDevelopmentDetail(null)
         return
       }
@@ -308,17 +267,20 @@ function Documents() {
       try {
         setError('')
         setDevelopmentDocumentsLoading(true)
-        const detail = await fetchDevelopmentDetail(selectedDevelopmentId)
-        setDevelopmentDetail(detail)
+        setDevelopmentDetail(null)
+        const documents = await fetchDevelopmentDocuments(selectedDevelopmentId, { includeHistory: includeDevelopmentHistory })
+        const detail = { documents, scope: documentScope, developmentId: selectedDevelopmentId }
+        if (active) setDevelopmentDetail(detail)
       } catch (loadError) {
-        setError(loadError.message || 'Unable to load development documents.')
+        if (active) setError(loadError.message || 'Unable to load development documents.')
       } finally {
-        setDevelopmentDocumentsLoading(false)
+        if (active) setDevelopmentDocumentsLoading(false)
       }
     }
 
     void loadDevelopmentDetailData()
-  }, [section, selectedDevelopmentId])
+    return () => { active = false }
+  }, [section, selectedDevelopmentId, includeDevelopmentHistory, documentScope, developmentIndex])
 
   const clientContextOptions = useMemo(() => buildDevelopmentContextOptions(unitWorkspaces), [unitWorkspaces])
 
@@ -333,9 +295,6 @@ function Documents() {
     let rows = unitWorkspaces
     if (selectedContext?.kind === 'development') {
       rows = rows.filter((item) => String(item?.development?.id || '') === selectedContext.developmentId)
-      if (selectedClientTransactionId !== 'all') {
-        rows = rows.filter((item) => String(item?.transaction?.id || '') === selectedClientTransactionId)
-      }
     }
 
     if (selectedContext?.kind === 'private') {
@@ -358,10 +317,10 @@ function Documents() {
 
       return haystack.includes(query)
     })
-  }, [searchTerm, selectedClientTransactionId, selectedContext, unitWorkspaces])
+  }, [searchTerm, selectedContext, unitWorkspaces])
 
   const clientOptionsForDevelopment = useMemo(() => {
-    if (selectedContext?.kind !== 'development') return []
+    if (selectedContext?.kind === 'private') return []
     return clientScopedRows
       .map((row) => ({
         value: String(row?.transaction?.id || ''),
@@ -371,7 +330,7 @@ function Documents() {
   }, [clientScopedRows, selectedContext?.kind])
 
   useEffect(() => {
-    if (selectedContext?.kind !== 'development') {
+    if (selectedContext?.kind === 'private') {
       setSelectedClientTransactionId('all')
       return
     }
@@ -382,7 +341,34 @@ function Documents() {
     }
   }, [clientOptionsForDevelopment, selectedClientTransactionId, selectedContext?.kind])
 
-  const selectedClientWorkspace = useMemo(() => clientScopedRows[0] || null, [clientScopedRows])
+  const selectedClientIndexRow = useMemo(() => {
+    if (section !== 'client') return null
+    const id = selectedContext?.kind === 'private' ? selectedContext.transactionId : selectedClientTransactionId
+    return id === 'all' ? null : clientScopedRows.find(row => row.transaction?.id === id) || null
+  }, [clientScopedRows, section, selectedClientTransactionId, selectedContext])
+  const clientWorkspace = useDocumentClientWorkspace(selectedClientIndexRow, documentScope, referenceData)
+  const selectedClientWorkspace = clientWorkspace.data
+  const referenceRefreshRef = useRef(null)
+  useEffect(() => {
+    referenceRefreshRef.current = async type => {
+      if (!type.includes('document-requirements')) {
+        if (indexCacheRef.current?.scope === documentScope) { indexCacheRef.current.loaded = false; indexCacheRef.current.options = null }
+        await loadBaseData({ force: true })
+      }
+      await clientWorkspace.refresh({ force: true })
+    }
+  }, [documentScope, loadBaseData, clientWorkspace.refresh])
+  useEffect(() => {
+    const refresh = createCoalescedRefresh({ minIntervalMs: 200 })
+    const stop = watchScopedReadInvalidation(referenceData, { onInvalidate(type) {
+      void refresh.run(documentScope, () => referenceRefreshRef.current?.(type)).catch(() => {})
+    } })
+    return () => { stop(); refresh.cancel() }
+  }, [referenceData, documentScope])
+  const indexReady = unitIndex.scope === documentScope && !loading && !baseError
+  useEffect(() => {
+    if (section === 'client' && indexReady) markRouteMilestone('interactive_ready')
+  }, [section, indexReady])
 
   const clientMandateDocuments = useMemo(() => {
     const mandateRows = (selectedClientWorkspace?.documents || [])
@@ -421,8 +407,9 @@ function Documents() {
     try {
       setUploadingKey(item.key)
       setError('')
-      await uploadDocument({
+      const saved = await uploadDocument({
         transactionId: workspaceRow.transaction.id,
+        onProgress: setUploadProgress,
         file,
         category: item.label || 'General',
         requiredDocumentKey: item.key || null,
@@ -432,7 +419,7 @@ function Documents() {
         delete next[item.key]
         return next
       })
-      await loadBaseData()
+      await refreshAfterSavedDocumentUpload(saved, clientWorkspace.refresh, setError)
     } catch (uploadError) {
       const message = describeDocumentUploadFailure(uploadError)
       setUploadFailures((current) => ({
@@ -455,19 +442,27 @@ function Documents() {
     try {
       setSavingDevelopmentDocument(true)
       setError('')
-      await saveDevelopmentDocument({
+      if (!developmentFile && !developmentDocumentForm.fileUrl.trim()) throw new Error('Choose a document file or enter its HTTPS link before saving.')
+      const fields = {
         developmentId: selectedDevelopmentId,
         documentId: developmentDocumentForm.id || null,
         documentType: developmentDocumentForm.documentType,
         title: developmentDocumentForm.title,
         description: developmentDocumentForm.description,
-        fileUrl: developmentDocumentForm.fileUrl,
-      })
+      }
+      const saved = developmentFile
+        ? await uploadDevelopmentDocumentAsset({ ...fields, file: developmentFile, onProgress: setUploadProgress })
+        : await saveDevelopmentDocument({ ...fields, documentId: null, supersedesDocumentId: fields.documentId, fileUrl: developmentDocumentForm.fileUrl })
       setDevelopmentDocumentForm({ id: '', documentType: 'other', title: '', description: '', fileUrl: '' })
-      const detail = await fetchDevelopmentDetail(selectedDevelopmentId)
-      setDevelopmentDetail(detail)
+      setDevelopmentFile(null)
+      await refreshAfterSavedDocumentUpload(saved, async () => {
+        const documents = await fetchDevelopmentDocuments(selectedDevelopmentId, { includeHistory: includeDevelopmentHistory })
+        const detail = { documents, scope: documentScope, developmentId: selectedDevelopmentId }
+        setDevelopmentDetail(detail)
+      }, setError)
     } catch (saveError) {
-      setError(saveError.message || 'Unable to save development document.')
+      setError(describeDocumentUploadFailure(saveError))
+      if (developmentFile) setUploadProgress({ stage: 'failed', fileName: developmentFile.name, message: describeDocumentUploadFailure(saveError) })
     } finally {
       setSavingDevelopmentDocument(false)
     }
@@ -478,78 +473,18 @@ function Documents() {
       setSavingDevelopmentDocument(true)
       setError('')
       await deleteDevelopmentDocument(documentId)
-      const detail = await fetchDevelopmentDetail(selectedDevelopmentId)
-      setDevelopmentDetail(detail)
+      setDevelopmentDetail((current) => current ? { ...current, documents: current.documents.filter((item) => item.id !== documentId) } : current)
+      try {
+        const documents = await fetchDevelopmentDocuments(selectedDevelopmentId, { includeHistory: includeDevelopmentHistory })
+        const detail = { documents, scope: documentScope, developmentId: selectedDevelopmentId }
+        setDevelopmentDetail(detail)
+      } catch {
+        setError('Document removed, but the list could not be refreshed. Reopen the development to see the latest list.')
+      }
     } catch (deleteError) {
       setError(deleteError.message || 'Unable to remove document.')
     } finally {
       setSavingDevelopmentDocument(false)
-    }
-  }
-
-  async function handleCompanyFileUpload(file) {
-    if (!file) return
-    try {
-      validateDocumentUploadFile(file, { surface: 'company_document' })
-      const dataUrl = await readFileAsDataUrl(file)
-      setCompanyDocumentForm((previous) => ({
-        ...previous,
-        fileName: file.name,
-        fileUrl: dataUrl,
-      }))
-    } catch (uploadError) {
-      setError(uploadError.message)
-    }
-  }
-
-  function handleSaveCompanyDocument(event) {
-    event.preventDefault()
-    if (!companyDocumentForm.title.trim()) {
-      setError('Company document title is required.')
-      return
-    }
-
-    const now = new Date().toISOString()
-    const next = {
-      id: companyDocumentForm.id || `company_doc_${Date.now()}`,
-      title: companyDocumentForm.title.trim(),
-      category: companyDocumentForm.category,
-      status: companyDocumentForm.status || 'uploaded',
-      fileName: companyDocumentForm.fileName || 'Document file',
-      fileUrl: companyDocumentForm.fileUrl || '',
-      updatedAt: now,
-      createdAt: companyDocumentForm.id
-        ? companyDocuments.find((item) => item.id === companyDocumentForm.id)?.createdAt || now
-        : now,
-    }
-
-    const rows = companyDocumentForm.id
-      ? companyDocuments.map((item) => (item.id === companyDocumentForm.id ? next : item))
-      : [next, ...companyDocuments]
-
-    setCompanyDocuments(rows)
-    writeCompanyDocs(profile?.id || '', rows)
-    setCompanyDocumentForm({ id: '', title: '', category: COMPANY_DOC_TYPES[0], status: 'uploaded', fileName: '', fileUrl: '' })
-    setError('')
-  }
-
-  function handleEditCompanyDocument(item) {
-    setCompanyDocumentForm({
-      id: item.id,
-      title: item.title,
-      category: item.category,
-      status: item.status,
-      fileName: item.fileName,
-      fileUrl: item.fileUrl,
-    })
-  }
-
-  function handleDeleteCompanyDocument(documentId) {
-    const rows = companyDocuments.filter((item) => item.id !== documentId)
-    setCompanyDocuments(rows)
-    writeCompanyDocs(profile?.id || '', rows)
-    if (companyDocumentForm.id === documentId) {
-      setCompanyDocumentForm({ id: '', title: '', category: COMPANY_DOC_TYPES[0], status: 'uploaded', fileName: '', fileUrl: '' })
     }
   }
 
@@ -565,7 +500,7 @@ function Documents() {
 
   const groupedClientChecklist = useMemo(() => groupChecklistByCategory(clientChecklistRows), [clientChecklistRows])
 
-  const developmentDocuments = useMemo(() => developmentDetail?.documents || [], [developmentDetail?.documents])
+  const developmentDocuments = useMemo(() => developmentDetail?.scope === documentScope && developmentDetail?.developmentId === selectedDevelopmentId ? developmentDetail.documents : [], [developmentDetail, documentScope, selectedDevelopmentId])
 
   const developmentDocumentGroups = useMemo(() => {
     const grouped = {}
@@ -585,9 +520,11 @@ function Documents() {
         </p>
       ) : null}
 
+      <DocumentUploadProgress progress={uploadProgress} />
       {error ? (
-        <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p>
+        <p role="alert" className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p>
       ) : null}
+      {baseError ? <div role="alert" className="rounded-[16px] border border-[#f3d2cc] bg-white p-5"><p>{baseError}</p><Button variant="secondary" onClick={() => void loadBaseData({ force: true })}>Retry document workspaces</Button></div> : null}
 
       {loading ? (
         <LoadingSkeleton lines={10} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />
@@ -617,6 +554,14 @@ function Documents() {
 
           {section === 'client' ? (
             <>
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#60758c]">
+                <p>{unitWorkspaces.length} unit workspaces loaded. Choose a client to view their documents.</p>
+                {selectedClientIndexRow ? <Button variant="secondary" disabled={clientWorkspace.loading} onClick={() => void clientWorkspace.refresh()}>Refresh client documents</Button> : null}
+                {nextCursor !== null ? <Button variant="secondary" disabled={loadingMore} onClick={() => void loadBaseData({ append: true })}>{loadingMore ? 'Loading more…' : 'Load more clients'}</Button> : null}
+              </div>
+              {clientWorkspace.loading ? <p role="status">Loading client documents…</p> : null}
+              {clientWorkspace.error ? <div role="alert"><p>{clientWorkspace.error}</p><Button onClick={() => void clientWorkspace.refresh()}>Retry client documents</Button></div> : null}
+
               <section className="rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
                 <FilterBar>
                   <FilterBarGroup className="gap-4 lg:flex-none">
@@ -638,9 +583,9 @@ function Documents() {
                         as="select"
                         value={selectedClientTransactionId}
                         onChange={(event) => setSelectedClientTransactionId(event.target.value)}
-                        disabled={selectedContext?.kind !== 'development'}
+                        disabled={selectedContext?.kind === 'private'}
                       >
-                        <option value="all">{selectedContext?.kind === 'development' ? 'All buyers in development' : 'Client selected from property context'}</option>
+                        <option value="all">{selectedContext?.kind === 'private' ? 'Client selected from property context' : 'Choose a client / buyer'}</option>
                         {clientOptionsForDevelopment.map((option) => (
                           <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
@@ -654,7 +599,7 @@ function Documents() {
                       <SearchInput
                         value={searchTerm}
                         onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder="Search by client, unit, property, or stage"
+                        placeholder="Search loaded clients, units, properties or stages"
                       />
                     </div>
                   </FilterBarGroup>
@@ -891,7 +836,7 @@ function Documents() {
                 </section>
               ) : (
                 <section className="rounded-[22px] border border-[#dde4ee] bg-white px-6 py-8 text-sm text-[#6b7d93] shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                  No client document context matches the selected filters.
+                  {clientScopedRows.length ? 'Choose a client / buyer to view their document checklist.' : 'No client document context matches the selected filters.'}
                 </section>
               )}
             </>
@@ -911,6 +856,7 @@ function Documents() {
                         ))}
                       </Field>
                     </label>
+                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeDevelopmentHistory} onChange={event => setIncludeDevelopmentHistory(event.target.checked)} />Show protected history</label>
                   </FilterBarGroup>
                 </FilterBar>
               </section>
@@ -918,7 +864,7 @@ function Documents() {
               <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <section className="rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
                   <SectionHeader
-                    title={developmentDetail?.development?.name || 'Development Documents'}
+                    title={developmentOptions.find((item) => item.id === selectedDevelopmentId)?.name || 'Development Documents'}
                     copy="NHBRC, plans, approvals, legal assets, marketing packs, and support documents."
                     actions={
                       <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
@@ -944,7 +890,7 @@ function Documents() {
                                 <div key={item.id} className="flex flex-col gap-2 rounded-[12px] border border-[#dfe8f3] bg-white px-3 py-2 md:flex-row md:items-center md:justify-between">
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-semibold text-[#142132]">{item.title}</p>
-                                    <p className="mt-1 text-xs text-[#6b7d93]">{item.description || 'No description'} • {formatDate(item.uploadedAt || item.createdAt)}</p>
+                                    <p className="mt-1 text-xs text-[#6b7d93]">{item.archivedAt ? 'Protected history · ' : ''}{item.description || 'No description'} • {formatDate(item.uploadedAt || item.createdAt)}</p>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     {item.fileUrl ? (
@@ -957,7 +903,9 @@ function Documents() {
                                       size="sm"
                                       variant="secondary"
                                       className="text-xs"
-                                      onClick={() =>
+                                      disabled={savingDevelopmentDocument || Boolean(item.archivedAt)}
+                                      onClick={() => {
+                                        setDevelopmentFile(null)
                                         setDevelopmentDocumentForm({
                                           id: item.id,
                                           documentType: item.documentType || 'other',
@@ -965,11 +913,11 @@ function Documents() {
                                           description: item.description || '',
                                           fileUrl: item.fileUrl || '',
                                         })
-                                      }
+                                      }}
                                     >
                                       Replace
                                     </Button>
-                                    <Button size="sm" variant="ghost" className="text-xs" onClick={() => void handleDeleteDevelopmentDoc(item.id)} disabled={savingDevelopmentDocument}>
+                                    <Button size="sm" variant="ghost" className="text-xs" onClick={() => void handleDeleteDevelopmentDoc(item.id)} disabled={savingDevelopmentDocument || Boolean(item.archivedAt)}>
                                       Remove
                                     </Button>
                                   </div>
@@ -1021,6 +969,20 @@ function Documents() {
                       />
                     </label>
                     <label className="grid gap-2">
+                      <span className="text-sm font-semibold">Document file</span>
+                      <input type="file" accept={DOCUMENT_UPLOAD_ACCEPT} disabled={savingDevelopmentDocument} onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (!file) return
+                        try {
+                          validateDocumentUploadFile(file, { surface: 'development_asset' })
+                          setDevelopmentFile(file)
+                          setError('')
+                        } catch (fileError) { setError(describeDocumentUploadFailure(fileError)) }
+                        event.target.value = ''
+                      }} />
+                      {developmentFile ? <span className="text-xs">Selected: {developmentFile.name}</span> : null}
+                    </label>
+                    <label className="grid gap-2">
                       <span className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">File URL</span>
                       <Field
                         value={developmentDocumentForm.fileUrl}
@@ -1037,7 +999,7 @@ function Documents() {
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => setDevelopmentDocumentForm({ id: '', documentType: 'other', title: '', description: '', fileUrl: '' })}
+                          onClick={() => { setDevelopmentFile(null); setDevelopmentDocumentForm({ id: '', documentType: 'other', title: '', description: '', fileUrl: '' }) }}
                         >
                           Cancel
                         </Button>
@@ -1049,124 +1011,9 @@ function Documents() {
             </section>
           ) : null}
 
-          {section === 'company' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-              <section className="rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                <SectionHeader
-                  title="Company Documents"
-                  copy="Company registration, compliance, finance, governance, and profile documents."
-                  actions={
-                    <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
-                      {companyDocuments.length} files
-                    </span>
-                  }
-                />
-
-                {companyDocuments.length ? (
-                  <div className="mt-5 space-y-3">
-                    {companyDocuments.map((item) => (
-                      <article key={item.id} className="flex flex-col gap-3 rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[#142132]">{item.title}</p>
-                          <p className="mt-1 text-xs text-[#6b7d93]">{item.category} • {item.fileName || 'No file name'} • {formatDate(item.updatedAt || item.createdAt)}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(item.status)}`}>
-                            {normalizeLabel(item.status)}
-                          </span>
-                          {item.fileUrl ? (
-                            <a href={item.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-[10px] border border-[#dbe6f2] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#35546c]">
-                              <Download size={12} />
-                              Download
-                            </a>
-                          ) : null}
-                          <Button size="sm" variant="secondary" className="text-xs" onClick={() => handleEditCompanyDocument(item)}>Replace</Button>
-                          <Button size="sm" variant="ghost" className="text-xs" onClick={() => handleDeleteCompanyDocument(item.id)}>Remove</Button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-5 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-6 text-sm text-[#6b7d93]">
-                    No company documents uploaded yet.
-                  </div>
-                )}
-              </section>
-
-              <section className="rounded-[22px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-                <SectionHeader title={companyDocumentForm.id ? 'Replace Company Document' : 'Upload Company Document'} />
-                <form className="mt-4 space-y-3" onSubmit={handleSaveCompanyDocument}>
-                  <label className="grid gap-2">
-                    <span className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Document Category</span>
-                    <Field
-                      as="select"
-                      value={companyDocumentForm.category}
-                      onChange={(event) => setCompanyDocumentForm((previous) => ({ ...previous, category: event.target.value }))}
-                    >
-                      {COMPANY_DOC_TYPES.map((item) => (
-                        <option key={item} value={item}>{item}</option>
-                      ))}
-                    </Field>
-                  </label>
-
-                  <label className="grid gap-2">
-                    <span className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Title</span>
-                    <Field
-                      value={companyDocumentForm.title}
-                      onChange={(event) => setCompanyDocumentForm((previous) => ({ ...previous, title: event.target.value }))}
-                      placeholder="e.g. CIPC Registration"
-                    />
-                  </label>
-
-                  <label className="grid gap-2">
-                    <span className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</span>
-                    <Field
-                      as="select"
-                      value={companyDocumentForm.status}
-                      onChange={(event) => setCompanyDocumentForm((previous) => ({ ...previous, status: event.target.value }))}
-                    >
-                      <option value="uploaded">Uploaded</option>
-                      <option value="pending_review">Pending Review</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </Field>
-                  </label>
-
-                  <label className="grid gap-2">
-                    <span className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Upload File</span>
-                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfcfe] px-3 py-2 text-sm font-semibold text-[#35546c]">
-                      <FileUp size={14} />
-                      {companyDocumentForm.fileName ? `Selected: ${companyDocumentForm.fileName}` : 'Choose file'}
-                      <input
-                        type="file" title={DOCUMENT_UPLOAD_HELP_TEXT} accept={DOCUMENT_UPLOAD_ACCEPT}
-                        className="hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0]
-                          void handleCompanyFileUpload(file)
-                          event.target.value = ''
-                        }}
-                      />
-                    </label>
-                    <span className="block text-xs font-normal text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</span>
-                  </label>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="submit" size="sm">{companyDocumentForm.id ? 'Save Replacement' : 'Upload Document'}</Button>
-                    {companyDocumentForm.id ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setCompanyDocumentForm({ id: '', title: '', category: COMPANY_DOC_TYPES[0], status: 'uploaded', fileName: '', fileUrl: '' })}
-                      >
-                        Cancel
-                      </Button>
-                    ) : null}
-                  </div>
-                </form>
-              </section>
-            </section>
-          ) : null}
+          {section === 'company' ? <CompanyDocuments key={documentScope} actorId={profile?.id || ''}
+            organisationId={currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id || ''}
+            organisationName={currentWorkspace?.name || currentWorkspace?.organisationName || ''} /> : null}
 
           {!loading && !unitWorkspaces.length && section === 'client' ? (
             <section className="rounded-[22px] border border-dashed border-[#d8e2ee] bg-white px-6 py-8 text-sm text-[#6b7d93] shadow-[0_12px_28px_rgba(15,23,42,0.06)]">

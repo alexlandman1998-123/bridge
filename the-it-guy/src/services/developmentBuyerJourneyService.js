@@ -1,6 +1,6 @@
 import { buildBuyerJourneyAlignmentModel } from './buyerJourneyAlignmentService.js'
 import { normalizeBuyerProcessStageKey } from './buyerProcessDefinitionService.js'
-import { DEVELOPMENT_SELECTION_STAGE, getDevelopmentLeadStage, getDevelopmentBuyerReservationEvidence, isDevelopmentBuyerLead } from '../core/leads/developmentBuyerLead.js'
+import { DEVELOPMENT_SELECTION_STAGE, getDevelopmentBuyerSavedStage, getDevelopmentBuyerReservationEvidence, isDevelopmentBuyerLead } from '../core/leads/developmentBuyerLead.js'
 
 export function assertDevelopmentBuyerTransactionReady({ lead, onboardingSubmitted, signedOtpComplete } = {}) {
   if (!isDevelopmentBuyerLead(lead || {})) return
@@ -22,7 +22,7 @@ export function buildDevelopmentBuyerJourneyModel({ lead = {}, ...options } = {}
   const evidence = { ...options.evidence }
   // A linked setup/onboarding context is not a completed development sale.
   evidence.transactionCreated = Boolean(evidence.transactionCreated && reserved && evidence.buyerOnboardingSubmitted && evidence.offerComplete)
-  const persistedStageKey = getDevelopmentLeadStage(options.persistedStage, normalizeBuyerProcessStageKey(options.persistedStage)).key
+  const persistedStageKey = getDevelopmentBuyerSavedStage(lead, options.persistedStage, normalizeBuyerProcessStageKey(options.persistedStage)).key
   const selectionStage = persistedStageKey === DEVELOPMENT_SELECTION_STAGE
   const model = buildBuyerJourneyAlignmentModel({
     ...options,

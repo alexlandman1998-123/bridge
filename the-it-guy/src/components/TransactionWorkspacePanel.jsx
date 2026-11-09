@@ -1,6 +1,6 @@
 import { Copy, ExternalLink, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { TRANSACTION_ROLE_LABELS, TRANSACTION_ROLE_TYPES } from '../lib/api'
+import { TRANSACTION_ROLE_LABELS, TRANSACTION_ROLE_TYPES } from '../core/transactions/roleConfig'
 
 const INVITE_ROLE_OPTIONS = [
   { value: 'attorney', label: 'Attorney / Conveyancer' },

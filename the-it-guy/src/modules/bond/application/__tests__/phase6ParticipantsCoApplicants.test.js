@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -261,6 +262,7 @@ async function runParticipantJourneyGateTests() {
     includeCoApplicant: true,
   })
   const blocked = buildBondApplicationJourneyModel({
+    trackerOnly: false, // Explicit historical capture gate; the active default tracks bank progress.
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 6, completedRequired: 6 },
     selectedBankIds: ['bank-a'],
@@ -277,6 +279,7 @@ async function runParticipantJourneyGateTests() {
     readyAt: '2026-07-28T12:00:00.000Z',
   }))
   const ready = buildBondApplicationJourneyModel({
+    trackerOnly: false,
     applicationViewModel: { application: { createdAtDisplay: '19 Jul 2026' } },
     documentHealthSummary: { submissionReady: true, missingCount: 0, totalRequired: 6, completedRequired: 6 },
     selectedBankIds: ['bank-a'],
@@ -370,7 +373,7 @@ function runMigrationAndSourceTests() {
   assert.equal(migration.includes('bond_application_sureties'), false)
   assert.equal(migration.includes('transaction_bond_applications'), false)
 
-  const apiSource = readFile('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   assert.ok(apiSource.includes('hashBondApplicationParticipantToken'))
   assert.ok(apiSource.includes('inviteClientPortalBondApplicationCoApplicant'))
   assert.ok(apiSource.includes('prepareClientPortalJointBondApplicationSubmission'))

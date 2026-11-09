@@ -1,3 +1,5 @@
+import { assertRetiredDocumentEndpoint } from './helpers/retiredDocumentContracts.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
@@ -14,30 +16,10 @@ for (const token of [
   'signingOrder',
 ]) assert.match(contract, new RegExp(token))
 
-const edge = fs.readFileSync('../supabase/functions/resolve-signer-token/index.ts', 'utf8')
-for (const token of [
-  'SIGNING_SESSION_CONTRACT',
-  'SIGNING_DOCUMENT_BINDING_CONTRACT',
-  'signingSession',
-  'sessionId',
-  'exactVersionBound: true',
-  'pdfPath',
-  'pdfSha256',
-  'signingOrderResult',
-]) assert.match(edge, new RegExp(token))
-assert.match(edge, /signingSession,[\s\S]+session:/)
-assert.match(edge, /versionId: String\(version\.id/)
-assert.match(edge, /documentId: normalizeText\(version\.rendered_document_id\)/)
-
-const api = fs.readFileSync('src/lib/api.js', 'utf8')
-const otpStart = api.indexOf('export async function fetchClientOtpSigningByToken')
-const otpEnd = api.indexOf('export async function submitClientOtpSignature', otpStart)
-const otpSigning = api.slice(otpStart, otpEnd)
-assert.match(otpSigning, /buildCanonicalSigningSession/)
-assert.match(otpSigning, /type: 'otp'/)
-assert.match(otpSigning, /role: 'purchaser_1'/)
-assert.match(otpSigning, /exactVersionBound: true/)
-assert.match(otpSigning, /signingSession,/)
+// The reusable session contract remains, but public legacy signing is retired.
+await assertRetiredDocumentEndpoint('resolve-signer-token')
+const otpSigning = readDomainApiSource()
+assert.match(otpSigning, /export async function fetchClientOtpSigningByToken[\s\S]*?throw new Error\(PHASE0_LEGACY_OTP_SIGNING_DISABLED\)/)
 
 const client = fs.readFileSync('src/lib/externalSigningApi.js', 'utf8')
 assert.match(client, /assertCanonicalSigningSession/)

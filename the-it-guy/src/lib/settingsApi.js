@@ -74,10 +74,6 @@ const PARTNER_ROUTING_DEMO_MODE = Boolean(
     (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
 )
 
-async function loadDevelopmentApi() {
-  return import('./api')
-}
-
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailEnabled: true,
   emailMentions: true,
@@ -5282,7 +5278,7 @@ export async function saveDevelopmentConfiguration(input = {}) {
   assertOrganisationAdminAccess(context, 'update development settings')
 
   if (!input.id) {
-    const { createDevelopment } = await loadDevelopmentApi()
+    const { createDevelopment } = await import('../domains/developments/detailActions.js')
     const created = await createDevelopment({
       name: input.name,
       plannedUnits: input.plannedUnits,
@@ -5304,11 +5300,10 @@ export async function saveDevelopmentConfiguration(input = {}) {
     }
   }
 
-  const {
-    fetchDevelopmentAttorneyConfig,
-    saveDevelopmentAttorneyConfig,
-    updateDevelopmentSettings,
-  } = await loadDevelopmentApi()
+  const [{ fetchDevelopmentAttorneyConfig }, { saveDevelopmentAttorneyConfig, updateDevelopmentSettings }] = await Promise.all([
+    import('../domains/developments/configurationApi.js'),
+    import('../domains/developments/configurationActions.js'),
+  ])
 
   const { error: developmentError } = await client
     .from('developments')

@@ -1,3 +1,4 @@
+import { rentalLeadDisplayStageLabel } from '../../services/rentals/rentalLeadJourneyProjection.js';
 import RentalLeadActionsMenu from './RentalLeadActionsMenu';
 import { recordRentalLeadOutcome } from '../../services/rentals/rentalLeadOutcomeService';
 import { RENTAL_LEAD_LOST_REASONS } from '../../services/rentals/rentalLeadOutcomeModel';
@@ -116,7 +117,7 @@ function RentalLeadAction({
 }) {
   const nextStage = getNextRentalLeadStage(lead);
   const needsReview = rentalLeadNeedsReview(lead);
-  const label = needsReview ? 'Review lead' : nextStage
+  const label = lead.journeyAhead ? 'Open rental journey' : needsReview ? 'Review lead' : nextStage
     ? nextStage === 'viewing_scheduled' ? 'Schedule viewing'
       : nextStage === 'mandate_signed' ? 'Record signed mandate'
         : nextStage === 'listing_created' ? lead.relationships?.listingId ? 'Finish listing handoff' : 'Create listing'
@@ -131,7 +132,7 @@ function RentalLeadAction({
       disabled={advancing || disabled}
       onClick={(event) => {
         event.stopPropagation();
-        needsReview ? onReview(lead) : nextStage ? onAdvance(lead, nextStage) : onTerminalAction(lead)
+        (needsReview || lead.journeyAhead) ? onReview(lead) : nextStage ? onAdvance(lead, nextStage) : onTerminalAction(lead)
       }}
       className={`inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#c6d8ea] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff] disabled:opacity-60 ${compact ? "h-9" : "min-h-10"}`}
     >
@@ -470,7 +471,7 @@ function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
   }
   async function handleAdvance(lead, toStage) {
     if (advancePending.current || busy) return;
-    if (role === 'closed' || rentalLeadNeedsReview(lead) || getNextRentalLeadStage(lead) !== toStage) {
+    if (role === 'closed' || lead.journeyAhead || rentalLeadNeedsReview(lead) || getNextRentalLeadStage(lead) !== toStage) {
       setError('Move an active lead to its next stage only. Open the lead to review its saved journey.');
       return;
     }
@@ -690,9 +691,9 @@ function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
               <div className="mt-3 space-y-3">{column.cards.map((lead) => <article
                 key={lead.id}
                 data-rental-control="lead-kanban-card"
-                draggable={!busy && role !== 'closed' && !rentalLeadNeedsReview(lead) && Boolean(getNextRentalLeadStage(lead))}
+                draggable={!busy && role !== 'closed' && !lead.journeyAhead && !rentalLeadNeedsReview(lead) && Boolean(getNextRentalLeadStage(lead))}
                 onDragStart={(event) => {
-                  if (busy || role === 'closed' || rentalLeadNeedsReview(lead) || !getNextRentalLeadStage(lead)) { event.preventDefault(); return; }
+                  if (busy || role === 'closed' || lead.journeyAhead || rentalLeadNeedsReview(lead) || !getNextRentalLeadStage(lead)) { event.preventDefault(); return; }
                   event.dataTransfer.setData('text/plain', JSON.stringify({ id: lead.id, scopeKey }));
                   event.dataTransfer.effectAllowed = 'move';
                   setDraggingId(lead.id);
@@ -743,8 +744,8 @@ function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
                     </div></div></td>
                     <td className="px-4 py-3"><button type="button" data-rental-control="lead-contact" onClick={() => openLeadWorkspace(lead)} title={lead.name} className="block max-w-full truncate text-left text-sm font-semibold text-[#142132] hover:text-[#1f4f78] hover:underline">{lead.name}</button><p title={lead.phone || lead.email} className="mt-1 truncate text-xs text-[#60758b]">{lead.phone || lead.email || "No contact details"}</p></td>
                     <td className="px-4 py-3"><LeadSourceBrand source={lead.source || "Manual"} /></td>
-                    <td className="px-4 py-3"><div className="max-w-full overflow-hidden" title={lead.stageLabel}><StagePill stage={lead.stageLabel} /></div></td>
-                    <td className="px-4 py-3"><p title={lead.nextAction} className="truncate text-sm font-semibold text-[#142132]">{role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.nextAction}</p><p title={lead.assignedAgentName} className="mt-1 truncate text-xs text-[#60758b]">{lead.assignedAgentName || "Unassigned"}</p></td>
+                    <td className="px-4 py-3"><div className="max-w-full overflow-hidden" title={rentalLeadDisplayStageLabel(lead)}><StagePill stage={rentalLeadDisplayStageLabel(lead)} /></div></td>
+                    <td className="px-4 py-3"><p title={lead.nextAction} className="truncate text-sm font-semibold text-[#142132]">{role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.journeyAhead ? "Open rental journey" : lead.nextAction}</p><p title={lead.assignedAgentName} className="mt-1 truncate text-xs text-[#60758b]">{lead.assignedAgentName || "Unassigned"}</p></td>
                     <td className="px-3 py-3"><RentalLeadActionsMenu lead={lead} onOpen={openLeadWorkspace} onLost={startMarkLost} disabled={outcomeSaving} /></td>
                   </tr>
                 )) : <tr><td colSpan="6" className="px-5 py-14 text-center"><p className="font-semibold text-[#20364d]">No {role} leads yet</p><p className="mt-1 text-sm text-[#60758b]">Create a lead or adjust your search to populate this rental pipeline.</p></td></tr>}
@@ -776,7 +777,7 @@ function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
                     <span
                       className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone(lead.stage)}`}
                     >
-                      {lead.stageLabel}
+                      {rentalLeadDisplayStageLabel(lead)}
                     </span>
                   </div>
                   <div className="mt-3 border-y border-[#edf2f7] py-3">
@@ -788,7 +789,7 @@ function RentalLeadListWorkspace({ scopeKey, scope, workspace }) {
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-xs text-[#60758b]">
-                        {role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.nextAction}
+                        {role === "closed" ? `Outcome: ${lead.outcome?.status || "closed"}` : lead.journeyAhead ? "Open rental journey" : lead.nextAction}
                       </p>
                       <p title={lead.assignedAgentName} className="mt-1 truncate text-xs font-semibold text-[#142132]">
                         {lead.assignedAgentName}

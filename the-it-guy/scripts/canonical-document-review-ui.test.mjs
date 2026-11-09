@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const attorneyDetailSource = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
 const reviewMigrationSource = fs.readFileSync(
   path.join(root, '../supabase/migrations/202605250016_canonical_document_browser_review_lifecycle_rpc.sql'),

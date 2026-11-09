@@ -7,7 +7,7 @@ import AgentWorkspaceListings from '../AgentWorkspaceListings.jsx'
 import { buildAgentDevelopmentCards, splitAgentListings } from '../agentWorkspaceListingsModel.js'
 const mocks = vi.hoisted(() => ({ covers: vi.fn(), assigned: vi.fn(), options: vi.fn() }))
 vi.mock('../../../services/privateListingService', () => ({ getPrivateListingCoverImageUrls: mocks.covers, getListingCardImageSource: (src) => ({ src }) }))
-vi.mock('../../../lib/api', () => ({ fetchAssignedDevelopmentIdsForRole: mocks.assigned, fetchDevelopmentOptions: mocks.options }))
+vi.mock('../../../domains/developments/selectionReadApi.js', () => ({ fetchAssignedDevelopmentIdsForRole: mocks.assigned, fetchDevelopmentOptions: mocks.options }))
 vi.mock('../../../hooks/useListingWebsitePublications', () => ({ default: () => ({}) }))
 const org = '11111111-1111-4111-8111-111111111111'
 const user = '22222222-2222-4222-8222-222222222222'

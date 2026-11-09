@@ -1,3 +1,5 @@
+import { assertRetiredDocumentEndpoint } from './helpers/retiredDocumentContracts.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
@@ -26,7 +28,7 @@ for (const token of [
   'SimpleSigningActionCard',
 ]) assert.match(simpleSigningShell, new RegExp(token.replace(/[?.()]/g, '\\$&')))
 
-const api = fs.readFileSync('src/lib/api.js', 'utf8')
+const api = readDomainApiSource()
 for (const token of [
   'resolveLatestSignedOtpDocumentForTransaction',
   'OTP_DOCUMENT_TYPES.signedFinal',
@@ -34,13 +36,8 @@ for (const token of [
   'signedOtpPdfUrl',
 ]) assert.match(api, new RegExp(token.replace(/[.]/g, '\\.')))
 
-const resolver = fs.readFileSync('../supabase/functions/resolve-signer-token/index.ts', 'utf8')
-assert.match(resolver, /\["sent", "viewed", "signed"\]/)
-assert.match(resolver, /if \(!signerAlreadyCompleted\)/)
-assert.match(resolver, /SIGNING_COMPLETION_CONTRACT/)
-assert.match(resolver, /buildFinalArtifactAccessDescriptor/)
-assert.doesNotMatch(resolver, /const finalSignedUrl\b/)
-assert.match(resolver, /completion,/)
+await assertRetiredDocumentEndpoint('resolve-signer-token')
+await assertRetiredDocumentEndpoint('retry-final-document-completion')
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 assert.ok(pkg.scripts?.['test:document-generator-phase-j3'])

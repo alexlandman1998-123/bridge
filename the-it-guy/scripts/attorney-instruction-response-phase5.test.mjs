@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -5,7 +6,7 @@ import { resolve } from 'node:path'
 const root = process.cwd()
 const [actionsSource, apiSource, migrationSource] = await Promise.all([
   readFile(resolve(root, 'src/services/attorneyIncomingMatterInstructionActions.js'), 'utf8'),
-  readFile(resolve(root, 'src/lib/api.js'), 'utf8'),
+  readDomainApiSource(),
   readFile(resolve(root, '../supabase/migrations/202607140013_attorney_instruction_response_phase5.sql'), 'utf8'),
 ])
 

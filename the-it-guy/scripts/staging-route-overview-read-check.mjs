@@ -1,3 +1,4 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
 // Read-only staging acceptance: real application route reader, cold cache.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -10,7 +11,7 @@ for (const key of ['VITE_SUPABASE_URL','VITE_SUPABASE_ANON_KEY','VITE_SUPABASE_K
 const server=await createServer({configFile:false,envFile:false,logLevel:'silent',server:{middlewareMode:true}})
 try {
   const {supabase}=await server.ssrLoadModule('/src/lib/supabaseClient.js')
-  const api=await server.ssrLoadModule('/src/lib/api.js')
+  const api=await loadDomainCapabilitiesWithServer(server)
   const {fetchSharedMatterJourney}=await server.ssrLoadModule('/src/services/sharedMatterJourneyReader.js')
   const admin=createClient(env.VITE_SUPABASE_URL,env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}})
   const id='b27fc192-b5ff-471b-9da5-902409f78116'

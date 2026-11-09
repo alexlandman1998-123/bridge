@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   newTransactionWizard: await readFile(new URL('../src/components/NewTransactionWizard.jsx', import.meta.url), 'utf8'),
   agentNewDealWizard: await readFile(new URL('../src/components/AgentNewDealWizard.jsx', import.meta.url), 'utf8'),
   schema: await readFile(new URL('../sql/schema.sql', import.meta.url), 'utf8'),

@@ -86,3 +86,89 @@ test('waiting for another tab is bounded before any upload or save', async () =>
     else delete globalThis.navigator
   }
 })
+
+test('file preparation and verified actor lookup start together, and retries reuse only immutable file digests', async () => {
+  let reads = 0, checks = 0, releaseRead
+  let actor = 'first-actor'
+  const file = new File(['immutable'], 'identity.pdf', { type: 'application/pdf' })
+  const originalRead = file.arrayBuffer.bind(file)
+  file.arrayBuffer = async () => { reads++; await new Promise(resolve => { releaseRead = resolve }); return originalRead() }
+  const actors = []
+  const client = { auth: { getUser: async () => { checks++; return { data: { user: { id: actor } } } } } }
+  const options = { client, file, scope: ['parallel-preparation', crypto.randomUUID()], run: async attempt => { actors.push(attempt.fileFingerprint); return { id: 'saved' } } }
+  const first = runRecoverableDocumentUpload(options)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(reads, 1)
+  assert.equal(checks, 1, 'sign-in starts while file read is pending')
+  releaseRead()
+  await first
+  actor = 'second-actor'
+  await runRecoverableDocumentUpload(options)
+  assert.equal(reads, 1)
+  assert.equal(checks, 2, 'authorisation is always rechecked')
+  assert.equal(actors[0], actors[1])
+})
+
+test('unreadable files emit failure, and a later retry rereads the file', async () => {
+  const file = new File(['recoverable'], 'cloud-file.pdf', { type: 'application/pdf' })
+  const originalRead = file.arrayBuffer.bind(file)
+  let reads = 0, runs = 0
+  const events = []
+  file.arrayBuffer = async () => { if (++reads === 1) throw new Error('Download this file from cloud storage first.'); return originalRead() }
+  const options = { file, scope: ['read-failure', crypto.randomUUID()], onProgress: event => events.push(event), run: async () => { runs++; return { id: 'saved' } } }
+  await assert.rejects(runRecoverableDocumentUpload(options), /cloud storage/)
+  assert.equal(events.at(-1).stage, 'failed')
+  assert.equal(runs, 0)
+  await runRecoverableDocumentUpload(options)
+  assert.equal(reads, 2)
+  assert.equal(runs, 1)
+})
+
+test('a failed identity check terminates the indicator and never starts an upload', async () => {
+  const events = []
+  await assert.rejects(runRecoverableDocumentUpload({ file: new File(['a'], 'file.pdf'), scope: ['auth-failure'],
+    client: { auth: { getUser: async () => ({ error: new Error('Sign in again.') }) } },
+    onProgress: event => events.push(event), run: () => assert.fail('must not upload') }), /Sign in again/)
+  assert.equal(events.at(-1).stage, 'failed')
+})
+
+test('concurrent duplicate clicks finish both indicators with one upload operation', async () => {
+  const file = new File(['one upload'], 'duplicate.pdf')
+  const events = [[], []]
+  let runs = 0, release
+  const options = { file, scope: ['duplicate-progress', crypto.randomUUID()], run: async () => { runs++; await new Promise(resolve => { release = resolve }); return { id: 'saved' } } }
+  const first = runRecoverableDocumentUpload({ ...options, onProgress: event => events[0].push(event) })
+  const second = runRecoverableDocumentUpload({ ...options, onProgress: event => events[1].push(event) })
+  while (!release) await new Promise(resolve => setImmediate(resolve))
+  release()
+  await Promise.all([first, second])
+  assert.equal(runs, 1)
+  assert.equal(events[0].at(-1).stage, 'complete')
+  assert.equal(events[1].at(-1).stage, 'complete')
+})
+
+test('uncertain saves retain recovery guidance instead of claiming the file was not attached', async () => {
+  const { describeDocumentUploadFailure, refreshAfterSavedDocumentUpload } = await import('../documentUploadLifecycle.js')
+  const message = describeDocumentUploadFailure(Object.assign(new Error('Storage network failure'),{code:'document_save_unconfirmed',retained:true}))
+  assert.match(message,/check the saved record/)
+  assert.doesNotMatch(message,/not attached|not saved/)
+  let warning
+  const saved={id:'saved',saved:true}
+  assert.equal(await refreshAfterSavedDocumentUpload(saved,async()=>{throw new Error('Offline')},value=>{warning=value}),saved)
+  assert.match(warning,/Document saved/)
+  assert.match(describeDocumentUploadFailure({code:'42501',message:'Permission denied'}),/workspace manager/)
+})
+
+test('a timed-out file read stops progress and can be read again on retry', async () => {
+  const file=new File(['available after cloud download'],'cloud.pdf')
+  const read=file.arrayBuffer.bind(file)
+  let calls=0
+  file.arrayBuffer=async()=> ++calls===1 ? new Promise(()=>{}) : read()
+  const events=[]
+  const options={file,scope:['file-read-timeout',crypto.randomUUID()],timeouts:{preparing:10},onProgress:event=>events.push(event),run:async()=>({id:'saved'})}
+  await assert.rejects(runRecoverableDocumentUpload(options),/available on this device/)
+  assert.equal(events.at(-1).stage,'failed')
+  await runRecoverableDocumentUpload(options)
+  assert.equal(calls,2)
+  assert.equal(events.at(-1).stage,'complete')
+})

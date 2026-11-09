@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFile} from 'node:fs/promises'
-const source=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=await readDomainApiSource()
 const a=source.indexOf('async function ensureTransactionAttorneyCloseout('),b=source.indexOf('\nfunction buildAttorneyCloseoutViewModel',a)
 let persist,allowed=false,writes=0
 const existing={id:'closeout',transaction_id:'tx',responsible_attorney_firm_id:'firm',actual_billed_amount:15000,close_out_status:'closed'}

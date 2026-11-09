@@ -1,3 +1,5 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -11,7 +13,7 @@ process.env.VITE_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dashboardSource = readFileSync(path.join(PROJECT_ROOT, 'src/pages/Dashboard.jsx'), 'utf8')
-const apiSource = readFileSync(path.join(PROJECT_ROOT, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const originalFetch = globalThis.fetch
 const requests = []
 let participantResponseMode = 'missing-columns'
@@ -159,7 +161,7 @@ const server = await createServer({
 })
 
 try {
-  const { getAccessibleTransactionIdsForUser } = await server.ssrLoadModule('/src/lib/api.js')
+  const { getAccessibleTransactionIdsForUser } = await loadDomainCapabilitiesWithServer(server)
 
   assert.match(
     dashboardSource,

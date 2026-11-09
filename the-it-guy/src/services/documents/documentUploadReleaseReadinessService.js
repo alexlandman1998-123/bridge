@@ -8,21 +8,21 @@ export const DOCUMENT_UPLOAD_RELEASE_SCENARIOS = Object.freeze([
 // Inventory from the platform persistence audit. Each variant needs its own
 // observations: a buyer finance proof cannot certify a required-document flow.
 export const DOCUMENT_UPLOAD_RELEASE_MATRIX = Object.freeze([
-  {"id": "buyer", "label": "Buyer portal required/requested documents and finance proofs", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["required", "requested", "financeProof", "financeRequest"]},
-  {"id": "buyerOnboarding", "label": "Buyer onboarding required documents", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["required"]},
+  {"id": "buyer", "label": "Buyer portal required/requested documents and finance proofs", "owner": "primary workspace", "source": "src/domains/clientPortal/documentApi.js", "variants": ["required", "requested", "financeProof", "financeRequest"]},
+  {"id": "buyerOnboarding", "label": "Buyer onboarding required documents", "owner": "primary workspace", "source": "src/domains/onboarding/tokenApi.js", "variants": ["required"]},
   {"id": "seller", "label": "Seller portal required documents and reviewed signed copies", "owner": "primary workspace", "source": "src/services/privateListingService.js", "variants": ["required", "reviewedSigned"]},
   {"id": "listing", "label": "Agent listing seller documents and manual offer/mandate evidence", "owner": "primary workspace", "source": "src/services/privateListingService.js", "variants": ["seller", "manualOffer", "mandate"]},
-  {"id": "transaction", "label": "Agent/internal shared transaction and finance uploads", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["shared", "finance"]},
+  {"id": "transaction", "label": "Agent/internal shared transaction and finance uploads", "owner": "primary workspace", "source": "src/domains/documents/uploadWorkflow.js", "variants": ["shared", "finance"]},
   {"id": "lead", "label": "Agent buyer/seller lead packs, OTP offer and formal valuation attachments", "owner": "primary workspace", "source": "src/pages/agency/AgencyPipelinePage.jsx", "variants": ["buyerPack", "sellerPack", "otp", "valuation"]},
   {"id": "developerLead", "label": "Developer buyer lead documents", "owner": "primary workspace", "source": "src/services/documents/developerLeadDocumentsService.js", "variants": ["buyer"]},
   {"id": "attorneyVersions", "label": "Attorney evidence, drafts, final/signed versions and requested uploads", "owner": "primary workspace", "source": "src/services/documents/attorneyDocumentPersistence.js", "variants": ["evidence", "draft", "final", "version", "requested"]},
-  {"id": "attorney", "label": "Attorney closeout documents", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["closeout"]},
-  {"id": "bond", "label": "Bond closeout documents", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["closeout"]},
+  {"id": "attorney", "label": "Attorney closeout documents", "owner": "primary workspace", "source": "src/domains/attorney/closeoutApi.js", "variants": ["closeout"]},
+  {"id": "bond", "label": "Bond closeout documents", "owner": "primary workspace", "source": "src/domains/bond/closeoutApi.js", "variants": ["closeout"]},
   {"id": "bondApplication", "label": "Buyer bond application supporting documents", "owner": "primary workspace", "source": "src/modules/bond/application/workspace/bondApplicationRuntimeService.js", "variants": ["supporting"]},
   {"id": "bondWetInk", "label": "Bond wet-ink signed PDFs", "owner": "primary workspace", "source": "src/services/bondWetInkSigningService.js", "variants": ["signedPdf"]},
-  {"id": "external", "label": "External transaction/role-player document portal", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["rolePlayer"]},
+  {"id": "external", "label": "External transaction/role-player document portal", "owner": "primary workspace", "source": "src/domains/documents/uploadWorkflow.js", "variants": ["rolePlayer"]},
   {"id": "developer", "label": "Developer document portal", "owner": "primary workspace", "source": "src/services/developerDocumentPortalService.js", "variants": ["portal"]},
-  {"id": "developmentAssets", "label": "Development marketing/supporting document assets", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["supporting"]},
+  {"id": "developmentAssets", "label": "Development marketing/supporting document assets", "owner": "primary workspace", "source": "src/domains/developments/documentActions.js", "variants": ["supporting"]},
   {"id": "rental", "label": "Rental applicant document collection and multi-file packs", "owner": "primary workspace", "source": "server/services/rentalApplicationDocumentUpload.js", "variants": ["single", "multiFile"]},
   {"id": "rentalAgent", "label": "Agent uploads on behalf of rental applicants", "owner": "primary workspace", "source": "server/services/rentalApplicationAgentDocumentApi.js", "variants": ["onBehalf"]},
   {"id": "rentalLandlord", "label": "Rental landlord onboarding and signed evidence", "owner": "primary workspace", "source": "server/services/rentalLandlordOnboardingApi.js", "variants": ["supporting", "signed"]},
@@ -34,7 +34,7 @@ export const DOCUMENT_UPLOAD_RELEASE_MATRIX = Object.freeze([
   {"id": "signedPackets", "label": "Physical signed legal packets and digital signature assets", "owner": "primary workspace", "source": "src/lib/documentPacketsApi.js", "variants": ["physicalSigned", "signatureAsset"]},
   {"id": "recruitment", "label": "Recruitment documents, contract templates, signed contracts and onboarding evidence", "owner": "primary workspace", "source": "src/services/recruitmentService.js", "variants": ["applicant", "template", "signedContract", "onboarding"]},
   {"id": "fic", "label": "FIC compliance policy PDFs", "owner": "primary workspace", "source": "src/services/branchFicTrainingService.js", "variants": ["policyPdf"]},
-  {"id": "partner", "label": "Partner/bond partner supporting document stores", "owner": "primary workspace", "source": "src/lib/api.js", "variants": ["partner", "bondPartner"]}
+  {"id": "partner", "label": "Partner/bond partner supporting document stores", "owner": "primary workspace", "source": "src/domains/partners/agreementApi.js", "variants": ["partner", "bondPartner"]}
 ].map((surface) => Object.freeze({ ...surface, variants: Object.freeze(surface.variants) })))
 
 export const DOCUMENT_UPLOAD_REQUIRED_MIGRATIONS = Object.freeze([

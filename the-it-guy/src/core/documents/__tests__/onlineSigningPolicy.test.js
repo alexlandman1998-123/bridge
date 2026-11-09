@@ -88,20 +88,23 @@ test('staff pages and the shared Edge Function client contain no seller mandate 
 })
 
 test('seller lead signing UI retains the retired route guard while showing the separately gated portal option', async () => {
-  const [listingPage, pipelinePage] = await Promise.all([
+  const [listingPage, pipelinePage, onboardingDialog, sellerDocumentWorkflow] = await Promise.all([
     readFile(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../../../pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../../../pages/agency/LeadSellerOnboardingReviewDialog.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../sellerDocumentWorkflow.js', import.meta.url), 'utf8'),
   ])
 
-  assert.match(pipelinePage, /Sign digitally · send private links/)
-  assert.match(pipelinePage, /Sign physically · upload original/)
+  assert.match(sellerDocumentWorkflow, /'digital_pack', 'Generate and send for signature'/)
+  assert.match(sellerDocumentWorkflow, /'manual_upload', 'Generate and download'/)
+  assert.match(onboardingDialog, /SELLER_DOCUMENT_ACTIONS\.map/)
   assert.match(pipelinePage, /sendSellerDocumentForSignature/)
-  assert.match(listingPage, /Wet-ink signatures required/)
+  assert.match(pipelinePage, /Wet-ink signatures required/)
   assert.doesNotMatch(listingPage, /Send signing link/)
-  assert.match(listingPage, /Send for signature/)
-  assert.match(pipelinePage, /Send for signature/)
+  assert.match(listingPage, /sendSellerDocumentForSignature\(listingRecord.id, documentKey\)/)
+  assert.match(pipelinePage, /sendSellerDocumentForSignature\(selectedLeadLinkedListingId, documentKey\)/)
   assert.match(listingPage, /!SELLER_PORTAL_SIGNING_ENABLED/)
-  assert.match(pipelinePage, /!SELLER_PORTAL_SIGNING_ENABLED/)
+  assert.match(onboardingDialog, /!SELLER_PORTAL_SIGNING_ENABLED/)
 })
 
 test('the signing retirement migration revokes open sessions without erasing evidence', async () => {

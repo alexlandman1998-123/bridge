@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -9,7 +10,7 @@ const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 
 const readProjectFile = (relativePath) => readFileSync(path.join(PROJECT_ROOT, relativePath), 'utf8')
 
-const apiSource = readProjectFile('src/lib/api.js')
+const apiSource = readDomainApiSource()
 const clientOnboardingSource = readProjectFile('src/pages/ClientOnboarding.jsx')
 
 assert.equal(
@@ -73,7 +74,7 @@ assert.match(
 )
 assert.match(
   apiSource,
-  /const financeManagedBy = deriveOnboardingFinanceManagedBy\(\{ formData, transaction \}\)[\s\S]*?finance_managed_by: financeManagedBy,/,
+  /const financeManagedBy = deriveOnboardingFinanceManagedBy\(\{\s*formData,\s*transaction,?\s*\}\)[\s\S]*?finance_managed_by: financeManagedBy,/,
   'transaction finance snapshot sync should persist finance_managed_by',
 )
 assert.match(

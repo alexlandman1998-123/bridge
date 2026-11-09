@@ -6,6 +6,18 @@ import {
 import { buildCanonicalBuyerDocumentCenter, buildCanonicalSellerDocumentCenter } from '../../clientPortalWorkspaceService.js'
 import { mergeProjectedDocuments, projectMatterDocumentRequirements } from '../transactionDocumentProjection.js'
 
+test('generated evidence cannot complete a requirement or override an explicit current file', () => {
+  const requirement = { id: 'signed-slot', context_type: 'transaction', context_id: 'transaction-1',
+    document_definition_key: 'signed_otp', status: 'pending', visible_to_roles: ['agent'], uploadable_by_roles: ['agent'] }
+  const file = { id: 'draft', canonical_requirement_instance_id: 'signed-slot', document_type: 'signed_otp', file_path: 'otp.pdf' }
+  const model = (extra, files) => buildCanonicalDocumentWorkspaceModel({ role: 'agent', requirements: [{ ...requirement, ...extra }], documentCenter: { uploadedDocuments: files } }).requirements[0]
+  expect(model({}, [file])).toMatchObject({ status: 'uploaded', hasLinkedDocument: true })
+  expect(model({ satisfied_by_document_id: 'not-returned' }, [file])).toMatchObject({ status: 'pending', hasLinkedDocument: false })
+  expect(model({ satisfied_by_document_id: 'draft' }, [{ ...file, canonical_requirement_instance_id: 'different-slot' }])).toMatchObject({ hasLinkedDocument: false })
+  expect(model({}, [{ ...file, canonical_requirement_instance_id: 'different-slot' }])).toMatchObject({ hasLinkedDocument: false })
+  expect(model({}, [{ ...file, is_current_evidence: false }])).toMatchObject({ hasLinkedDocument: false })
+})
+
 test('generic client visibility is scoped to the party asked to provide the document', () => {
   expect(getCanonicalRoleProjectionPolicy({
     role: 'buyer',

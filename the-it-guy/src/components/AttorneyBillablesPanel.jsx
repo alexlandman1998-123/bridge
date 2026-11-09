@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchAttorneyBillablesDashboard } from '../lib/api'
+import { fetchAttorneyBillablesDashboard } from '../domains/attorney/closeoutApi.js'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { CLIENT_ISSUE_STATUSES, signOffClientIssue, updateClientIssueStatus } from '../lib/api'
+import { CLIENT_ISSUE_STATUSES } from '../domains/shared/constants.js'
+import { signOffClientIssue, updateClientIssueStatus } from '../domains/clientPortal/residentApi.js'
 
 function formatDate(timestamp) {
   if (!timestamp) {

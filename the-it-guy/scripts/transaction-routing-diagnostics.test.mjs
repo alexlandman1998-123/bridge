@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -113,7 +114,7 @@ function assertIncludes(values, expected, message) {
 }
 
 {
-  const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+  const apiSource = readDomainApiSource()
   for (const column of [
     'property_tenure',
     'seller_has_existing_bond',

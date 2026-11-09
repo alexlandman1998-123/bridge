@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFileSync} from 'node:fs'
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=readDomainApiSource()
 const start=source.indexOf('export async function createOrGetBondHybridFinanceWorkflow(')
 const end=source.indexOf('\nexport async function updateBondHybridFinanceStage',start)
 const initialize=new Function('requireClient','isBondFinanceType','resolveActiveProfileContext','BOND_HYBRID_FINANCE_WORKFLOW_TYPE','isMissingTableError','isMissingSchemaError',source.slice(start,end).replace('export ','')+';return createOrGetBondHybridFinanceWorkflow')(

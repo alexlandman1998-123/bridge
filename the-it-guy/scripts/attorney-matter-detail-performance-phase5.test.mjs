@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const [apiSource, permissionsSource, detailSource, permissionHookSource] = await Promise.all([
-  readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  readDomainApiSource(),
   readFile(new URL('../src/lib/attorneyPermissions.js', import.meta.url), 'utf8'),
   readFile(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/hooks/useAttorneyPermissions.js', import.meta.url), 'utf8'),

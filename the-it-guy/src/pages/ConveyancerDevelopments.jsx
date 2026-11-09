@@ -17,7 +17,9 @@ import SectionHeader from '../components/ui/SectionHeader'
 import { buildAttorneyDemoRows, buildBondDemoRows } from '../core/transactions/attorneyMockData'
 import { getAttorneyOperationalState } from '../core/transactions/attorneySelectors'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDevelopmentOptions, fetchDevelopmentsData, fetchTransactionsByParticipant } from '../lib/api'
+import { fetchTransactionsByParticipant } from '../domains/transactions/detailApi.js'
+import { fetchDevelopmentOptions } from '../domains/developments/selectionReadApi.js'
+import { fetchDevelopmentsData } from '../domains/developments/portfolioReadApi.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 function formatRelativeDate(value) {

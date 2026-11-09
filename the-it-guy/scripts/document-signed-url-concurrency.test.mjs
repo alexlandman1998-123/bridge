@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
-const source=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+const source=await readFile(new URL('../src/domains/documents/listReadApi.js',import.meta.url),'utf8')
 const start=source.indexOf('async function enrichDocuments(')
-const end=source.indexOf('\nfunction normalizeSharedDocumentRow',start)
+const end=source.indexOf('\nexport function normalizeSharedDocumentRow',start)
 let active=0,peak=0,calls=0
 const enrich=Function('getSignedUrl','isCanonicalFinalSignedDocumentRow','toClientPortalFinalSignedDocumentDescriptor',source.slice(start,end)+';return enrichDocuments')(
  async path=>{active++;calls++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,path==='file-0'?10:1));active--;return 'signed:'+path},

@@ -21,6 +21,7 @@ function clientFor({ transactionLeadId = leadId, rows = [], existingDocuments = 
   }
   const client = {
     documents,
+    lead,
     linkCalls: [],
     async rpc(name, args) {
       assert.equal(name, 'bridge_link_document_to_canonical_requirement_by_key')
@@ -77,6 +78,70 @@ test('promotes a staged buyer file once without completing a requirement', async
   assert.equal(client.documents[0].is_client_visible, true)
   assert.equal(client.documents[0].canonical_requirement_instance_id, undefined)
   assert.equal(client.documents[0].upload_idempotency_key, buyerLeadDocumentIdempotencyKey({ leadId, bucket: 'documents', path: storagePath }))
+})
+
+test('an OTP saved before transaction creation joins the shared transaction room and exact checklist once', async () => {
+  const otp = { key: 'uploaded_otp', source: 'agent_otp_upload', storageBucket: 'documents', storagePath: `buyer-otp-documents/${organisationId}/${leadId}/uploaded_otp/signed.pdf`, fileName: 'signed.pdf' }
+  const client = clientFor()
+  client.lead.raw_enquiry_payload = { buyerOtpDocument: otp, buyerOtpDocuments: [otp] }
+  const context = { transactionId, organisationId, leadId }
+  const before = await reconcileStagedBuyerLeadDocuments(client, context)
+  assert.equal(before.summary.needsHandoff, 1)
+  assert.equal(client.documents.length, 0)
+  assert.equal(client.linkCalls.length, 0)
+  await promoteStagedBuyerLeadDocuments(client, context)
+  await promoteStagedBuyerLeadDocuments(client, context)
+  assert.equal(client.documents.length, 1)
+  assert.equal(client.documents[0].file_path, otp.storagePath)
+  assert.equal(client.documents[0].document_type, 'signed_otp')
+  assert.equal(client.documents[0].source, 'agent_otp_upload')
+  assert.equal(client.documents[0].client_recipient_role, null, 'shared OTP must remain available to both client parties')
+  assert.equal(client.documents[0].is_client_visible, true)
+  assert.equal(client.documents[0].status, 'under_review', 'upload must not approve the agreement')
+  assert.equal(client.linkCalls[0].p_document_key, 'signed_otp')
+  assert.equal((await reconcileStagedBuyerLeadDocuments(client, context)).summary.alreadyCanonical, 1)
+})
+
+test('recognises historical snake-case OTP references and existing shared OTP documents without making copies', async () => {
+  const otp = { document_type: 'uploaded_otp', source: 'agent_otp_upload', storage_bucket: 'documents', storage_path: `buyer-otp-documents/${organisationId}/${leadId}/uploaded_otp/signed.pdf` }
+  const saved = { id: 'existing-otp', transaction_id: transactionId, file_path: otp.storage_path, file_bucket: 'documents', source: 'agent_otp_upload', document_type: 'uploaded_otp', visibility_scope: 'shared', is_client_visible: true, client_recipient_role: null, uploaded_by_party: 'buyer' }
+  const client = clientFor({ existingDocuments: [saved] })
+  client.lead.raw_enquiry_payload = JSON.stringify({ buyer_otp_documents: [otp] })
+  await promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId })
+  assert.equal(client.documents.length, 1)
+  assert.equal(client.linkCalls[0].p_document_id, saved.id)
+})
+
+test('does not broaden an OTP with a conflicting audience or accept another lead storage path', async () => {
+  const otp = { key: 'uploaded_otp', source: 'agent_otp_upload', storageBucket: 'documents', storagePath: `buyer-otp-documents/${organisationId}/${leadId}/uploaded_otp/signed.pdf` }
+  const client = clientFor({ existingDocuments: [{ id: 'private-otp', transaction_id: transactionId, file_bucket: 'documents', file_path: otp.storagePath, source: 'agent_otp_upload', document_type: 'uploaded_otp', visibility_scope: 'internal', is_client_visible: false, uploaded_by_party: 'buyer' }] })
+  client.lead.raw_enquiry_payload = { buyerOtpDocuments: [otp] }
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /manual audience review/)
+  client.lead.raw_enquiry_payload = { buyerOtpDocuments: [{ ...otp, storagePath: `buyer-otp-documents/${organisationId}/another-lead/uploaded_otp/signed.pdf` }] }
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /invalid storage location/)
+  assert.equal(client.documents.length, 1)
+  assert.equal(client.linkCalls.length, 0)
+})
+
+test('surfaces an ambiguous OTP checklist instead of reporting a completed handoff', async () => {
+  const otp = { key: 'uploaded_otp', source: 'agent_otp_upload', storageBucket: 'documents', storagePath: `buyer-otp-documents/${organisationId}/${leadId}/uploaded_otp/signed.pdf` }
+  const client = clientFor({ linkResult: { ok: false, reason: 'ambiguous_requirement' } })
+  client.lead.raw_enquiry_payload = { buyerOtpDocument: otp }
+  await assert.rejects(promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId }), /signed OTP checklist requirement needs review/)
+  assert.equal(client.documents.length, 1, 'the saved file stays available for review and retry')
+  assert.equal(client.documents[0].status, 'uploaded')
+})
+
+test('carries historical OTP versions without replacing the current reviewed checklist evidence', async () => {
+  const otp = name => ({ key: 'uploaded_otp', source: 'agent_otp_upload', storageBucket: 'documents', storagePath: `buyer-otp-documents/${organisationId}/${leadId}/uploaded_otp/${name}.pdf` })
+  const older = otp('older'), current = otp('current')
+  const saved = { id: 'current-document', transaction_id: transactionId, file_bucket: 'documents', file_path: current.storagePath, source: 'agent_otp_upload', document_type: 'uploaded_otp', visibility_scope: 'shared', is_client_visible: true, client_recipient_role: null, uploaded_by_party: 'buyer', canonical_requirement_instance_id: 'exact-request', status: 'approved' }
+  const client = clientFor({ existingDocuments: [saved] })
+  client.lead.raw_enquiry_payload = { buyerOtpDocument: current, buyerOtpDocuments: [older, current] }
+  await promoteStagedBuyerLeadDocuments(client, { transactionId, organisationId, leadId })
+  assert.equal(client.documents.length, 2)
+  assert.deepEqual(client.linkCalls.map(call => call.p_document_id), ['current-document'])
+  assert.equal(client.documents.find(row => row.file_path === older.storagePath).canonical_requirement_instance_id, undefined)
 })
 
 test('refuses a transaction linked to a different lead', async () => {

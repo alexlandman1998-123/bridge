@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -29,7 +30,7 @@ function read(relativePath) {
 
 function buildReport(options = {}) {
   const audit = buildDocumentRequestProfessionalPropagationAudit()
-  const apiSource = read('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const laneSource = read('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js')
   const containerSource = read('src/core/documents/documentRequestContainerModel.js')
 

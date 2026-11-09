@@ -1,4 +1,5 @@
 import Field from '../../ui/Field'
+import { documentRequestRecipientVisibility } from '../../../services/documents/attorneyDocumentRequestModel.js'
 
 export default function AttorneyDocumentRequestForm({ formId, form, onChange, onSubmit, requirementOptions = [], requestedFromOptions = [], visibilityOptions = [], disabled = false, error = '' }) {
   const selected = requirementOptions.find(option => option.id === form.canonicalRequirementInstanceId)
@@ -6,7 +7,8 @@ export default function AttorneyDocumentRequestForm({ formId, form, onChange, on
   function chooseRequirement(id) {
     const option = requirementOptions.find(item => item.id === id)
     onChange({ ...form, canonicalRequirementInstanceId: id,
-      ...(option ? { title: option.title, requestedFrom: option.requestedFrom } : {}),
+      ...(option ? { title: option.title, requestedFrom: option.requestedFrom,
+        visibility: documentRequestRecipientVisibility(option.requestedFrom, form.visibility) } : {}),
     })
   }
   return (
@@ -29,7 +31,7 @@ export default function AttorneyDocumentRequestForm({ formId, form, onChange, on
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-semibold text-textStrong">
             Requested from
-            <Field as="select" value={form.requestedFrom} disabled={Boolean(form.canonicalRequirementInstanceId)} onChange={event => onChange({ ...form, requestedFrom: event.target.value })}>
+            <Field as="select" value={form.requestedFrom} disabled={Boolean(form.canonicalRequirementInstanceId)} onChange={event => onChange({ ...form, requestedFrom: event.target.value, visibility: documentRequestRecipientVisibility(event.target.value, form.visibility) })}>
               {requestedFromOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </Field>
           </label>

@@ -9,8 +9,17 @@ afterEach(cleanup)
 const options = [{ id: 'buyer-1', title: 'Certified ID', label: 'Certified ID · Jane', requestedFrom: 'buyer' }, { id: 'seller-1', title: 'Resolution', label: 'Resolution · Seller company', requestedFrom: 'seller', disabled: true, unavailableReason: 'Request already open' }]
 function Form({ disabled = false }) {
   const [form, setForm] = useState({ title: '', requestedFrom: 'seller', visibility: 'client_visible', notes: '', priority: 'normal', dueDate: '', canonicalRequirementInstanceId: '' })
-  return <AttorneyDocumentRequestForm formId="request" form={form} onChange={setForm} onSubmit={event => event.preventDefault()} requirementOptions={options} requestedFromOptions={[{ value: 'buyer', label: 'Buyer' }, { value: 'seller', label: 'Seller' }]} visibilityOptions={[{ value: 'client_visible', label: 'Client visible' }, { value: 'internal_only', label: 'Internal' }]} disabled={disabled} />
+  return <AttorneyDocumentRequestForm formId="request" form={form} onChange={setForm} onSubmit={event => event.preventDefault()} requirementOptions={options} requestedFromOptions={[{ value: 'buyer', label: 'Buyer' }, { value: 'seller', label: 'Seller' }, { value: 'bond_originator', label: 'Bond Originator' }]} visibilityOptions={[{ value: 'client_visible', label: 'Client visible' }, { value: 'shared_role_players', label: 'Professional only' }, { value: 'internal_only', label: 'Internal' }]} disabled={disabled} />
 }
+it('a professional recipient switches to professional visibility and never overrides internal-only handling', () => {
+  render(<Form />)
+  fireEvent.change(screen.getByLabelText('Requested from'), { target: { value: 'bond_originator' } })
+  expect(screen.getByLabelText('Visibility').value).toBe('shared_role_players')
+  expect(screen.getByText(/not shown in the client portal/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'internal_only' } })
+  fireEvent.change(screen.getByLabelText('Requested from'), { target: { value: 'buyer' } })
+  expect(screen.getByLabelText('Visibility').value).toBe('internal_only')
+})
 it('chooses the named requirement, protects its recipient, and lets additional requests stay independent', () => {
   render(<Form />)
   fireEvent.change(screen.getByLabelText('Checklist requirement'), { target: { value: 'buyer-1' } })

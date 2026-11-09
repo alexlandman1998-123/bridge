@@ -26,9 +26,21 @@ const SELLER_REQUEST_FAMILIES = new Set([
   LEAD_WORKSPACE_REQUEST_FAMILIES.privateListingActivity,
 ])
 
-export function shouldLoadLeadWorkspaceRequest({ leadCategory = '', requestFamily = '' } = {}) {
+export function shouldLoadLeadWorkspaceRequest({ leadCategory = '', requestFamily = '', workspaceTab = null } = {}) {
   const category = String(leadCategory || '').trim().toLowerCase()
   const family = String(requestFamily || '').trim().toLowerCase()
+  if (workspaceTab !== null) {
+    const tab = String(workspaceTab || 'overview').trim().toLowerCase()
+    const tabs = {
+      private_listing_activity: ['activity', 'property'],
+      buyer_viewing_preferences: ['appointments', 'properties', 'buyer_profile'],
+      seller_viewing_coordination: ['appointments'],
+      offers: ['documents', 'buyer_profile', 'onboarding_otp'],
+      offer_portal_sessions: ['documents', 'buyer_profile', 'onboarding_otp'],
+      lifecycle_diagnostic: ['documents', 'buyer_profile', 'finance', 'transactions'],
+    }[family]
+    if (tabs && !tabs.includes(tab)) return false
+  }
 
   if (SHARED_REQUEST_FAMILIES.has(family)) return category === 'buyer' || category === 'seller'
   if (BUYER_REQUEST_FAMILIES.has(family)) return category === 'buyer'

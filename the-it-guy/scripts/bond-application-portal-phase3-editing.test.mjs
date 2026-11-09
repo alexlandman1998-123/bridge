@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const migration = fs.readFileSync('../supabase/migrations/20260905100908_bond_application_portal_phase3_draft_editing.sql', 'utf8')
 const portal = fs.readFileSync('src/pages/BondApplicationPortal.jsx', 'utf8')
-const api = fs.readFileSync('src/lib/api.js', 'utf8')
+const api = readDomainApiSource()
 
 assert.equal(packageJson.scripts['test:bond-application-portal-phase3'], 'node scripts/bond-application-portal-phase3-editing.test.mjs')
 assert.match(migration, /bridge_save_bond_application_portal_draft/)

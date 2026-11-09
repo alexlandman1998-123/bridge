@@ -1,10 +1,4 @@
-import {
-  dismissClientPortalNotificationById,
-  fetchClientPortalNotifications,
-  markAllClientPortalNotificationsReadByToken,
-  markClientPortalNotificationReadById,
-  upsertClientPortalNotification,
-} from '../lib/api'
+import { dismissClientPortalNotificationById, fetchClientPortalNotifications, markAllClientPortalNotificationsReadByToken, markClientPortalNotificationReadById, upsertClientPortalNotification } from '../domains/clientPortal/notificationApi.js'
 
 function normalizeValue(value = '') {
   return String(value || '').trim().toLowerCase()

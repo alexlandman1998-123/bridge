@@ -1,9 +1,10 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const detailSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 const registrySource = readFileSync(new URL('../src/pages/transaction-workspace/datasetRegistry.js', import.meta.url), 'utf8')
-const apiSource = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = readDomainApiSource()
 const partnerWorkspaceStart = apiSource.indexOf('export async function fetchTransactionPartnersWorkspace')
 const partnerWorkspaceEnd = apiSource.indexOf('export async function fetchTransactionFinanceWorkspace', partnerWorkspaceStart)
 assert.ok(partnerWorkspaceStart > -1 && partnerWorkspaceEnd > partnerWorkspaceStart)

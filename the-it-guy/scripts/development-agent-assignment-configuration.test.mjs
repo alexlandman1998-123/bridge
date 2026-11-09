@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -8,7 +9,7 @@ const __dirname = dirname(__filename)
 const root = join(__dirname, '..')
 
 const developmentDetailSource = readFileSync(join(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
-const apiSource = readFileSync(join(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const agentListingsSource = readFileSync(join(root, 'src/pages/AgentListings.jsx'), 'utf8')
 
 assert.match(

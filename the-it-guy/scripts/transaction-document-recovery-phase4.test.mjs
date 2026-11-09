@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const migration = await readFile(new URL('../../supabase/migrations/20260918195906_transaction_document_recovery_review_queue.sql', import.meta.url), 'utf8')
-const api = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const api = await readDomainApiSource()
 
 assert.match(migration, /bridge_get_transaction_document_recovery_review/)
 assert.match(migration, /documentsMissingStorage/)

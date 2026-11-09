@@ -8,7 +8,8 @@ const plan = JSON.parse(readFileSync(resolve(appRoot, 'config/api-split-extracti
 const facade = resolve(appRoot, plan.legacyFacade)
 const missingTests = API_SPLIT_CRITICAL_CONTRACTS.flatMap((contract) => contract.tests.filter((test) => !existsSync(resolve(appRoot, test))).map((test) => `${contract.name}: ${test}`))
 const checks = [
-  ['legacy compatibility facade exists', existsSync(facade)],
+  ['legacy entry point is retired', plan.retired === true && !existsSync(facade)],
+  ['domain capability contract exists', existsSync(resolve(appRoot, plan.capabilityContract))],
   ['critical contracts are registered', API_SPLIT_CRITICAL_CONTRACTS.length > 0],
   ['export baseline is pinned', Number.isInteger(API_SPLIT_EXPORT_SURFACE_BASELINE.exportCount) && /^[a-f0-9]{64}$/u.test(API_SPLIT_EXPORT_SURFACE_BASELINE.sha256)],
   ['no production activation', plan.productionActivation === false],

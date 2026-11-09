@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const apiSource = readFileSync(path.join(PROJECT_ROOT, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const notificationSource = readFileSync(path.join(PROJECT_ROOT, 'src/services/bondIntakeNotificationService.js'), 'utf8')
 const selectorSource = readFileSync(path.join(PROJECT_ROOT, 'src/core/transactions/bondIntakeSelectors.js'), 'utf8')
 

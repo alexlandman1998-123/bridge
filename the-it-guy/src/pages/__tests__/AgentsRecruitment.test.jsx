@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const api=vi.hoisted(()=>({load:vi.fn(),listJoining:vi.fn(),createAccess:vi.fn(),workspace:{role:'agent',baseRole:'agent',profile:{id:'manager',email:'manager@example.test',fullName:'Principal'},workspaceReady:true,profileLoading:false,currentMembership:{role:'principal',organisationId:'agency',workspaceType:'agency'},workspaceRole:'principal',workspaceType:'agency'}}))
 vi.mock('../../context/WorkspaceContext',()=>({useWorkspace:()=>api.workspace}))
-vi.mock('../../lib/api',()=>({saveTransaction:vi.fn()}))
+vi.mock('../../domains/transactions/saveWorkflow.js', ()=>({saveTransaction:vi.fn()}))
 vi.mock('../../lib/supabaseClient',()=>({isSupabaseConfigured:true,invokeEdgeFunction:vi.fn()}))
 vi.mock('../../lib/settingsApi',()=>({fetchOrganisationSettings:vi.fn(async()=>({organisation:{id:'agency',name:'Test Agency'},membershipRole:'principal'})),listOrganisationCommissionStructures:vi.fn(async()=>[]),deactivateOrganisationUser:vi.fn(),assignOrganisationUserCommissionProfile:vi.fn(),listOrganisationUserCommissionProfiles:vi.fn(),listOrganisationUsers:vi.fn(),updateOrganisationUserProfile:vi.fn(),updateOrganisationUserRole:vi.fn(),uploadAccountAvatar:vi.fn()}))
 vi.mock('../../modules/agency/agents/agentPerformanceDataService',()=>({loadAgentPerformanceSources:api.load}))

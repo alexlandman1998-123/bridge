@@ -1,3 +1,4 @@
+import useDevelopmentLeadRefresh from '../hooks/useDevelopmentLeadRefresh.js'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -27,7 +28,7 @@ import {
   Users,
   Zap,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { setDevelopmentLeadReservation } from '../services/developmentLeadReservationService.js'
 import { resolveDevelopmentLeadWorkspaceUrl } from '../core/developments/developmentLeadBoard.js'
@@ -61,12 +62,11 @@ import {
   buildDeveloperLeadOperationsHealth,
   summarizeDeveloperLeadOperationsHealth,
 } from '../core/developerLeads/developerLeadOperationsHealth'
-import { fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
+import { fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../domains/developments/selectionReadApi.js'
 import { listOrganisationUsers } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
 import Button from '../components/ui/Button'
-import DeveloperLeadDocuments from '../components/documents/DeveloperLeadDocuments.jsx'
 import { JOURNEY_ENTITY_TYPES } from '../core/journey/journeyStagePolicy.js'
 import { buildDeveloperLeadJourneyStages, getDeveloperLeadNextAction, getDeveloperLeadPrimaryAction } from '../core/developerLeads/developerLeadWorkspaceModel.js'
 import {
@@ -85,6 +85,9 @@ import {
   requestAgencyLeadHandover,
   updateDeveloperLeadWorkspaceSetup,
 } from '../services/developerLeadService'
+import DeferredWorkflow from '../components/ui/DeferredWorkflow.jsx'
+
+const DeveloperLeadDocuments = lazy(() => import('../components/documents/DeveloperLeadDocuments.jsx'))
 
 const EMPTY_FORM = {
   buyerFullName: '',
@@ -2418,7 +2421,9 @@ function DeveloperLeadWorkspacePanel({
 
         {activeTab === 'documents' ? (
           <div>
-            <DeveloperLeadDocuments key={`${organisationId}:${lead.developerLeadId}:${lead.convertedTransactionId || ''}`} developerOrgId={organisationId} developerLeadId={lead.developerLeadId} />
+            <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading lead documents…</p>}>
+              <DeveloperLeadDocuments key={`${organisationId}:${lead.developerLeadId}:${lead.convertedTransactionId || ''}`} developerOrgId={organisationId} developerLeadId={lead.developerLeadId} />
+            </DeferredWorkflow>
             <div className="mt-4 flex flex-wrap gap-2">
               {renderCopyOnboardingAction()}
               {renderPrimaryAction()}
@@ -2513,6 +2518,8 @@ export default function DeveloperLeadsPage() {
     void loadData()
     return () => { loadRequestId.current += 1 }
   }, [loadData])
+
+  useDevelopmentLeadRefresh(loadData, `${workspaceOrgId}:${routeDeveloperLeadId}`, !saving && !showCreateModal)
 
   useEffect(() => {
     let cancelled = false

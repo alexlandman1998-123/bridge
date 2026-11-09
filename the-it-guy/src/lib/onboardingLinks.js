@@ -1,7 +1,7 @@
 let onboardingApiPromise = null
 function loadOnboardingApi() {
   if (!onboardingApiPromise) {
-    onboardingApiPromise = import('./api').then((api) => ({
+    onboardingApiPromise = import('../domains/onboarding/workflow.js').then((api) => ({
       getOrCreateTransactionOnboarding: api.getOrCreateTransactionOnboarding,
     }))
   }

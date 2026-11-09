@@ -11,6 +11,25 @@ const canonicalId = row => value(row, 'canonicalRequirementInstanceId', 'canonic
 const normalized = text => String(text || '').trim().toLowerCase()
 const recipientRoles = new Set(['buyer', 'seller', 'developer', 'agent', 'attorney', 'bond_originator'])
 
+export function resolveAttorneyDocumentRequestRecipient(value = '') {
+  const role = normalized(value).replace(/[\s-]+/g, '_')
+  if (!role || ['client', 'purchaser', 'buying_client'].includes(role)) return 'buyer'
+  if (['vendor', 'selling_client'].includes(role)) return 'seller'
+  if (recipientRoles.has(role) || ['buyer_and_seller', 'agency', 'other'].includes(role)) return role
+  if (role.includes('buyer') && role.includes('seller')) return 'buyer_and_seller'
+  if (role.includes('buyer')) return 'buyer'
+  if (role.includes('seller')) return 'seller'
+  if (role.includes('bond')) return 'bond_originator'
+  if (role.includes('attorney') || role.includes('conveyancer')) return 'attorney'
+  return 'other'
+}
+
+export function documentRequestRecipientVisibility(recipient, visibility = '') {
+  const clientRecipient = ['buyer', 'seller', 'buyer_and_seller'].includes(resolveAttorneyDocumentRequestRecipient(recipient))
+  if (visibility === 'client_visible' && !clientRecipient) return 'shared_role_players'
+  return visibility || (clientRecipient ? 'client_visible' : 'shared_role_players')
+}
+
 export function getAttorneyRequestUploadAudience(request, selectedVisibility) {
   const recipient = normalized(value(request, 'requestedFrom', 'requested_from'))
   return {

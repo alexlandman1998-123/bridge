@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -14,7 +15,7 @@ const appRoot = path.resolve(scriptDirectory, '..')
 const repositoryRoot = path.resolve(appRoot, '..')
 const migrationPath = path.join(
   repositoryRoot,
-  'supabase/migrations/20260828195452_agent_bond_application_workspace_view.sql',
+  'supabase/migrations/20260828203604_agent_bond_application_workspace_view.sql',
 )
 
 function fixture() {
@@ -237,7 +238,7 @@ for (const forbiddenField of ['destination_payload_json', 'snapshot_json', 'pers
   assert.ok(!migration.includes(forbiddenField), `workspace RPC must not expose ${forbiddenField}`)
 }
 
-const apiSource = fs.readFileSync(path.join(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 assert.match(apiSource, /fetchAgentBondApplicationWorkspaceView\(client, canonicalTransactionId\)/)
 assert.match(apiSource, /bondApplicationWorkspace = buildAgentBondApplicationWorkspace/)
 assert.match(apiSource, /bondApplicationWorkspace,/)

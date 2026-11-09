@@ -19,26 +19,28 @@ const buyerIntroCopy = notificationSource.slice(
   copyStart,
   notificationSource.indexOf('},', copyStart) + 2,
 )
-assert.match(buyerIntroCopy, /title:\s*'Complete your bond application'/)
-assert.match(buyerIntroCopy, /subject:\s*'Complete your bond application'/)
-assert.match(buyerIntroCopy, /buyerSubject:\s*'Complete your bond application'/)
-assert.match(buyerIntroCopy, /Complete the online application/)
+assert.match(buyerIntroCopy, /title:\s*'View your bond progress'/)
+assert.match(buyerIntroCopy, /subject:\s*'View your bond progress'/)
+assert.match(buyerIntroCopy, /buyerSubject:\s*'View your bond progress'/)
+assert.match(buyerIntroCopy, /can view bond progress/)
 assert.match(buyerIntroCopy, /assigned bond contact/)
+assert.doesNotMatch(buyerIntroCopy, /Complete the online application/)
+assert.doesNotMatch(emailHandlerSource, /Complete your online bond application/)
 
 assert.match(notificationSource, /bond_originator_buyer_intro/)
 assert.match(notificationSource, /metadata\.applicationLink|applicationLink:/)
 
-assert.match(emailHandlerSource, /"Complete your bond application"/)
-assert.match(emailHandlerSource, /renderBridgeCta\("Complete Bond Application",\s*portalLink\)/)
-assert.match(emailHandlerSource, /Complete your online bond application in the buyer portal/)
-assert.match(emailHandlerSource, /Complete your bond application:/)
+assert.match(emailHandlerSource, /"View your bond progress"/)
+assert.match(emailHandlerSource, /renderBridgeCta\("View bond progress",\s*portalLink\)/)
+assert.match(emailHandlerSource, /Open the buyer portal to view bond progress/)
+assert.match(emailHandlerSource, /Open the buyer portal to view bond progress/)
 assert.doesNotMatch(emailHandlerSource, /renderBridgeCta\("View Application",\s*portalLink\)/)
 
 assert.match(catalogSource, /automationKey:\s*'bond_originator_buyer_intro'/)
-assert.match(catalogSource, /cta:\s*'Complete bond application'/)
+assert.match(catalogSource, /cta:\s*'View bond progress'/)
 
 assert.match(phase4Doc, /bond_originator_buyer_intro/)
 assert.match(phase4Doc, /metadata\.applicationLink/)
-assert.match(phase4Doc, /Complete Bond Application/)
+assert.match(phase4Doc, /View bond progress/)
 
 console.log('Bond application email plumbing Phase 4 checks passed.')

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -236,7 +237,7 @@ function runReviewAndBoundaryTests() {
   assert.ok(workspaceSource.includes('Convert to full bond application'))
   assert.ok(workspaceSource.includes('handleConvertPreApprovalToBondApplication'))
 
-  const apiSource = readFile('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   assert.ok(apiSource.includes('recordTransactionPreApprovalOutcome'))
   assert.ok(apiSource.includes('persistTransactionPreApprovalState'))
   assert.ok(apiSource.includes('pre_approval_outcome_captured'))

@@ -1,9 +1,10 @@
+import { readDomainApiSource } from '../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 
 const migration = await readFile(new URL('../../../../../supabase/migrations/20260926145705_buyer_document_unlinked_portal_projection_phase3.sql', import.meta.url), 'utf8')
-const portalApi = await readFile(new URL('../../../lib/api.js', import.meta.url), 'utf8')
+const portalApi = await readDomainApiSource()
 const workspaceService = await readFile(new URL('../canonicalDocumentWorkspaceService.js', import.meta.url), 'utf8')
 
 test('unmatched portal projection is token-scoped, buyer-only, and cannot satisfy requirements', () => {

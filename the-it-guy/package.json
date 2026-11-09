@@ -7,6 +7,7 @@
     "node": "22.x"
   },
   "scripts": {
+    "test:api-baseline": "node scripts/verify-api-baseline.mjs",
     "test:legal-workspace": "node --test scripts/legal-workspace-database.test.mjs scripts/legal-workspace-shell-review.test.mjs scripts/legal-work-documents.test.mjs scripts/legal-firm-overview.test.mjs scripts/legal-trust-pilot.test.mjs && vitest run src/modules/legal/__tests__/LegalWorkspace.test.jsx src/modules/legal/__tests__/LegalWorkDocuments.test.jsx src/modules/legal/__tests__/LegalFirmOverview.test.jsx src/modules/legal/__tests__/LegalTrustPilot.test.jsx --maxWorkers=1",
     "test:legal-matter-foundation": "node --test scripts/legal-matter-foundation.test.mjs src/modules/legal/legalMatterService.test.js",
     "test:listing-diagnostic": "node scripts/listing-diagnostic.mjs",

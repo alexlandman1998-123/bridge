@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -10,11 +11,11 @@ import {
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const REPOSITORY_ROOT = path.resolve(PROJECT_ROOT, '..')
 const identityMigration = fs.readFileSync(
-  path.join(REPOSITORY_ROOT, 'supabase/migrations/202608280001_agent_bond_application_identity.sql'),
+  path.join(REPOSITORY_ROOT, 'supabase/migrations/20260828203559_agent_bond_application_identity.sql'),
   'utf8',
 )
 const workspaceMigration = fs.readFileSync(
-  path.join(REPOSITORY_ROOT, 'supabase/migrations/20260828195452_agent_bond_application_workspace_view.sql'),
+  path.join(REPOSITORY_ROOT, 'supabase/migrations/20260828203604_agent_bond_application_workspace_view.sql'),
   'utf8',
 )
 
@@ -30,7 +31,7 @@ for (const [name, migration] of [
   assert.doesNotMatch(migration, /auth\.role\(/)
 }
 
-const apiSource = fs.readFileSync(path.join(PROJECT_ROOT, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 assert.match(apiSource, /client\.rpc\('bridge_agent_bond_application_identity'/)
 assert.match(apiSource, /client\.rpc\('bridge_agent_bond_application_workspace_view'/)
 

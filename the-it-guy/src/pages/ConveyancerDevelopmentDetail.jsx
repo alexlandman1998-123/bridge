@@ -10,7 +10,7 @@ import PageActionBar from '../components/PageActionBar'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { selectConveyancerInsights, selectConveyancerSummary } from '../core/transactions/conveyancerSelectors'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchDevelopmentDetail } from '../lib/api'
+import { fetchDevelopmentDetail } from '../domains/developments/api.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const ATTORNEY_DEVELOPMENT_TABS = [

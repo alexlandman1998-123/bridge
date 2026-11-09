@@ -47,7 +47,7 @@ async function logoData(url) {
 }
 
 export async function downloadBondApplication({ transactionId, mode, brand } = {}) {
-  const api = await import('../lib/api.js')
+  const api = await import('../domains/bond/portalApi.js')
   const { renderBondApplicationPackPdf } = await import('../modules/bond/application/exports/bondApplicationPackPdf.js')
   const context = await api.fetchBondApplicationDownloadContext({ transactionId })
   const plan = buildBondApplicationDownloadPlan({ ...context, mode })

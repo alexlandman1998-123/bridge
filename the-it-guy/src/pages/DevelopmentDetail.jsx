@@ -1,25 +1,15 @@
-import MadisonReservationWorkspace from "../components/developments/MadisonReservationWorkspace.jsx"
 import AddressInput from '../components/location/AddressInput'
 import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Building2, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, CircleDollarSign, Copy, Download, EyeOff, FileText, FolderKanban, Globe2, HandCoins, Home, ImagePlus, Mail, LandPlot, MapPin, MoreVertical, PencilLine, PieChart, Plus, Receipt, Search, ShieldCheck, Trash2, TrendingUp, Upload, UserPlus, Users, WalletCards, Workflow, XCircle } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
-import DevelopmentTransactionsWorkspace from '../components/developments/DevelopmentTransactionsWorkspace.jsx'
-import DevelopmentSnagsWorkspace from '../components/developments/DevelopmentSnagsWorkspace.jsx'
 import DevelopmentConfigurationWorkspace from '../components/developments/DevelopmentConfigurationWorkspace.jsx'
 import DevelopmentSectionMenu from '../components/developments/DevelopmentSectionMenu.jsx'
-import DevelopmentMarketingOverview from '../components/developments/DevelopmentMarketingOverview.jsx'
-import DevelopmentMarketingListings from '../components/developments/DevelopmentMarketingListings.jsx'
-import DevelopmentMarketingEvents from '../components/developments/DevelopmentMarketingEvents.jsx'
-import DevelopmentMarketingCampaigns from '../components/developments/DevelopmentMarketingCampaigns.jsx'
+import DevelopmentChannelStatistics from '../components/developments/DevelopmentChannelStatistics.jsx'
 import { DevelopmentLeadAgent, DevelopmentLeadPropertyImage, DevelopmentLeadSource } from '../components/developments/DevelopmentLeadVisuals.jsx'
 import DevelopmentLeadsKanban, { DevelopmentLeadViewSwitch } from '../components/developments/DevelopmentLeadsKanban.jsx'
 import { getDevelopmentLeadAssignedAgent, getDevelopmentLeadSourceBrand, getDevelopmentLeadUnitImage } from '../components/developments/developmentLeadVisualsModel.js'
-import DevelopmentWebsiteAnalytics from '../components/developments/DevelopmentWebsiteAnalytics'
 import DevelopmentDemandIntelligencePanel from '../components/developments/DevelopmentDemandIntelligencePanel'
-import DevelopmentProductCatalogueModal from '../components/developments/DevelopmentProductCatalogueModal'
-import DevelopmentStructureSetupModal from '../components/developments/DevelopmentStructureSetupModal'
 import Button from '../components/ui/Button'
 import Drawer from '../components/ui/Drawer'
 import Field from '../components/ui/Field'
@@ -37,18 +27,36 @@ import { buildPdfSitePlanUnitSuggestions } from '../core/developments/developmen
 import { evaluateDevelopmentSitePlanQuality } from '../core/developments/developmentSitePlanQuality'
 import { hydrateVisualMapMediaLibrary, remapVisualMapSceneViewport, retireLegacyVisualMapFields, setVisualMapPublicationStatus, updateMasterplanScene } from '../core/developments/developmentVisualMap.js'
 import { buildDevelopmentVisualPreviewReadiness } from '../core/developments/developmentVisualPreview.js'
-import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, createDevelopmentMarketingEvent, fetchDevelopmentDetail, fetchDevelopmentDocumentRequirements, saveDevelopmentDetails, saveDevelopmentDocument, saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings, upsertTransactionHandover, fetchDeveloperPartnersWorkspace, createDeveloperPartnerInvite } from '../lib/developmentDetailApi'
+import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, createDevelopmentMarketingEvent, saveDevelopmentDetails, saveDevelopmentDocument, saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings, upsertTransactionHandover, createDeveloperPartnerInvite } from '../lib/developmentDetailApi'
+import { fetchDeveloperPartnersWorkspace } from '../domains/developments/api.js'
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { markRouteMilestone } from '../lib/performanceTrace'
+import { useDevelopmentDetailData } from '../domains/developments/useDevelopmentDetailData.js'
+import { developmentDetailSectionsForTab } from '../domains/developments/detailSectionReadApi.js'
+import DevelopmentDataSection from '../components/developments/DevelopmentDataSection.jsx'
 import { invalidateTransactionsListCache } from '../lib/transactionsListApi.js'
 import { invalidateDevelopmentOptionsCache, invalidateTransactionWorkspaceCoreCache } from '../lib/developmentDetailApi'
 import { createAgencyIntroducedDeveloperLead, createDeveloperFedLead, listDeveloperLeadIntake, updateDeveloperLeadWorkspaceSetup } from '../services/developerLeadService'
 import { DEVELOPMENT_LEAD_BOARD_STAGES, getDevelopmentLeadBoardStage, resolveDevelopmentLeadBoardMove, resolveDevelopmentLeadWorkspaceUrl, isActiveDevelopmentLeadReservation } from '../core/developments/developmentLeadBoard.js'
 import { saveDevelopmentLeadBoardStage } from '../services/developmentLeadBoardService.js'
 import { setDevelopmentLeadReservation } from '../services/developmentLeadReservationService.js'
-import DevelopmentLeadReservationDialog from '../components/developments/DevelopmentLeadReservationDialog.jsx'
+import { getDevelopmentReservationReadiness } from '../core/developments/developmentReservationReadiness.js'
 import { enrichDevelopmentLeadBuyerContacts } from '../services/developmentBuyerLeadService.js'
+import DeferredWorkflow from '../components/ui/DeferredWorkflow.jsx'
+
+const MadisonReservationWorkspace = lazy(() => import('../components/developments/MadisonReservationWorkspace.jsx'))
+const DevelopmentAvailabilityWorkspace = lazy(() => import('../components/developments/DevelopmentAvailabilityWorkspace'))
+const DevelopmentTransactionsWorkspace = lazy(() => import('../components/developments/DevelopmentTransactionsWorkspace.jsx'))
+const DevelopmentSnagsWorkspace = lazy(() => import('../components/developments/DevelopmentSnagsWorkspace.jsx'))
+const DevelopmentMarketingOverview = lazy(() => import('../components/developments/DevelopmentMarketingOverview.jsx'))
+const DevelopmentMarketingListings = lazy(() => import('../components/developments/DevelopmentMarketingListings.jsx'))
+const DevelopmentMarketingEvents = lazy(() => import('../components/developments/DevelopmentMarketingEvents.jsx'))
+const DevelopmentMarketingCampaigns = lazy(() => import('../components/developments/DevelopmentMarketingCampaigns.jsx'))
+const DevelopmentWebsiteAnalytics = lazy(() => import('../components/developments/DevelopmentWebsiteAnalytics'))
+const DevelopmentProductCatalogueModal = lazy(() => import('../components/developments/DevelopmentProductCatalogueModal'))
+const DevelopmentStructureSetupModal = lazy(() => import('../components/developments/DevelopmentStructureSetupModal'))
+const DevelopmentLeadReservationDialog = lazy(() => import('../components/developments/DevelopmentLeadReservationDialog.jsx'))
 
 const DevelopmentAttorneyCommercialSetup = lazy(() => import('../components/DevelopmentAttorneyCommercialSetup'))
 const LeadCreateDialog = lazy(() => import('../components/leads/LeadCreateDialog.jsx'))
@@ -2077,21 +2085,29 @@ function DevelopmentDetail() {
   const location = useLocation()
   const { developmentId } = useParams()
   const { role, can, profile, currentWorkspace, currentMembership } = useWorkspace()
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const loadedDevelopmentIdRef = useRef('')
-  const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState(() => {
-    const requested = new URLSearchParams(location.search).get('tab')
-    return DEVELOPMENT_PRIMARY_TABS.some(tab => tab.id === requested) ? requested : 'overview'
+  const { data, setData, loading, error, setError, sections: detailSections, loadData, loadSections, setActiveSections, refreshOverviewSummary } = useDevelopmentDetailData({
+    developmentId, enabled: isSupabaseConfigured,
+    scopeKey: `${profile?.id || profile?.userId || ''}:${currentWorkspace?.id || ''}:${currentMembership?.workspaceRole || currentMembership?.workspace_role || role}`
   })
+  const tabScope = `${developmentId}:${location.search}`
+  const requestedTab = new URLSearchParams(location.search).get('tab')
+  const defaultTab = DEVELOPMENT_PRIMARY_TABS.some(tab => tab.id === requestedTab) ? requestedTab : 'overview'
+  const [tabSelection, setTabSelection] = useState(() => ({ scope: tabScope, value: defaultTab }))
+  const activeTab = tabSelection.scope === tabScope ? tabSelection.value : defaultTab
+  const setActiveTab = useCallback(value => setTabSelection(previous => ({
+    scope: tabScope,
+    value: typeof value === 'function' ? value(previous.scope === tabScope ? previous.value : defaultTab) : value
+  })), [defaultTab, tabScope])
   useEffect(() => {
     if (activeTab === 'units') setActiveTab('availability')
-  }, [activeTab])
+  }, [activeTab, setActiveTab])
   const [configurationSection, setConfigurationSection] = useState(() => {
     const requestedSection = new URLSearchParams(location.search).get('section')
     return DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(requestedSection) ? requestedSection : 'general'
   })
+  const [channelStatisticsOwner, setChannelStatisticsOwner] = useState('')
+  const channelStatisticsOpen = channelStatisticsOwner === developmentId
+  const needsWorkspaceData = activeTab !== 'overview'
   const [marketingHubSection, setMarketingHubSection] = useState('overview')
   const [marketingHubFocus, setMarketingHubFocus] = useState('')
   const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
@@ -2121,6 +2137,7 @@ function DevelopmentDetail() {
   const [unitReservationDraft, setUnitReservationDraft] = useState(null)
   const [unitReservationSaving, setUnitReservationSaving] = useState(false)
   const [unitReservationError, setUnitReservationError] = useState('')
+  const unitReservationLock = useRef(false)
   const [developmentLeadDraft, setDevelopmentLeadDraft] = useState(null)
   const [developmentLeadSavedCrm, setDevelopmentLeadSavedCrm] = useState(null)
   const developmentLeadCaptureIdentity = useRef(null)
@@ -2132,7 +2149,6 @@ function DevelopmentDetail() {
   const [unitForm, setUnitForm] = useState(DEFAULT_UNIT_FORM)
   const [bulkUnitForm, setBulkUnitForm] = useState(DEFAULT_BULK_UNIT_FORM)
   const [documentForm, setDocumentForm] = useState(DEFAULT_DOCUMENT_FORM)
-  const [developmentRequirements, setDevelopmentRequirements] = useState([])
   const [unitStatusFilter, setUnitStatusFilter] = useState('all')
   const [transactionSearch, setTransactionSearch] = useState('')
   const [transactionStageFilter, setTransactionStageFilter] = useState('all')
@@ -2226,7 +2242,7 @@ function DevelopmentDetail() {
         search: `?${params.toString()}`
       })
     },
-    [location.pathname, location.search, navigate]
+    [location.pathname, location.search, navigate, setActiveTab]
   )
 
   const openDevelopmentTab = useCallback(
@@ -2249,7 +2265,7 @@ function DevelopmentDetail() {
         search: params.toString() ? `?${params.toString()}` : ''
       })
     },
-    [location.pathname, location.search, marketingHubSection, navigate, openMarketingHubSection]
+    [location.pathname, location.search, marketingHubSection, navigate, openMarketingHubSection, setActiveTab]
   )
 
   useEffect(() => {
@@ -2271,11 +2287,11 @@ function DevelopmentDetail() {
 
     setActiveTab('marketing')
     setMarketingHubSection(nextSection)
-  }, [location.pathname, location.search, navigate])
+  }, [location.pathname, location.search, navigate, setActiveTab])
 
   useEffect(() => {
     let active = true
-    if (!developerOrganisationId) {
+    if (!needsWorkspaceData || !developerOrganisationId) {
       setPartnerWorkspace({ relationships: [], defaults: [] })
       return () => {
         active = false
@@ -2301,7 +2317,7 @@ function DevelopmentDetail() {
     return () => {
       active = false
     }
-  }, [developerOrganisationId])
+  }, [developerOrganisationId, needsWorkspaceData])
   const openDevelopmentTransactionWorkspace = useCallback(
     (record = {}) => {
       const transactionId = getDevelopmentRecordTransactionId(record)
@@ -2321,45 +2337,25 @@ function DevelopmentDetail() {
 
       navigate(route.path, route.state ? { state: route.state } : undefined)
     },
-    [data?.development?.id, navigate]
+    [data?.development?.id, navigate, setActiveTab]
   )
 
-  const loadData = useCallback(async () => {
-    if (!isSupabaseConfigured) {
-      setLoading(false)
-      return
-    }
-
-    try {
-      setError('')
-      // Preserve the complete workspace during a background refresh instead
-      // of replacing it with a full-page loading state.
-      if (loadedDevelopmentIdRef.current !== developmentId) setLoading(true)
-      const response = await fetchDevelopmentDetail(developmentId)
-      // Document requirements enrich the workspace but must not make an
-      // otherwise accessible development look missing when that optional
-      // source is temporarily unavailable.
-      const requirements = await fetchDevelopmentDocumentRequirements(developmentId).catch(requirementsError => {
-        console.warn('Could not load development document requirements:', requirementsError)
-        return []
-      })
-      setData(response)
-      setDevelopmentRequirements(requirements)
-      loadedDevelopmentIdRef.current = response?.development?.id || ''
-      markRouteMilestone('core_ready')
-      markRouteMilestone('interactive_ready')
-    } catch (loadError) {
-      setError(loadError.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [developmentId])
+  const activeDataSections = developmentDetailSectionsForTab(activeTab)
+  const activeDataSectionKey = activeDataSections.join(',')
+  const dialogDataSectionKey = unitModalOpen || bulkUnitModalOpen || productCatalogueOpen ? 'inventory,catalogue,documents' : ''
+  useEffect(() => {
+    void setActiveSections([...new Set([...activeDataSectionKey.split(','), ...dialogDataSectionKey.split(','), ...(channelStatisticsOpen ? ['inventory'] : [])].filter(Boolean))])
+  }, [activeDataSectionKey, dialogDataSectionKey, channelStatisticsOpen, setActiveSections])
+  const catalogueDialogReady = ['inventory', 'catalogue', 'documents'].every(name => detailSections[name]?.status === 'ready')
+  const activeSectionDataReady = Boolean(data) && activeDataSections.every(name => detailSections[name]?.status === 'ready')
+  useEffect(() => {
+    if (!activeSectionDataReady) return
+    markRouteMilestone('section_data_ready')
+    if (activeTab === 'overview') markRouteMilestone('interactive_ready')
+  }, [activeSectionDataReady, activeTab])
 
   useEffect(() => {
-    void loadData()
-  }, [loadData])
-
-  useEffect(() => {
+    if (!needsWorkspaceData) return
     let active = true
 
     async function loadOrganisationUsers() {
@@ -2384,9 +2380,10 @@ function DevelopmentDetail() {
     return () => {
       active = false
     }
-  }, [])
+  }, [needsWorkspaceData, currentWorkspace?.id, profile?.id])
 
   useEffect(() => {
+    if (!needsWorkspaceData) return
     let active = true
 
     async function loadDeveloperProfileDefaults() {
@@ -2407,9 +2404,10 @@ function DevelopmentDetail() {
     return () => {
       active = false
     }
-  }, [])
+  }, [needsWorkspaceData, currentWorkspace?.id, profile?.id])
 
   useEffect(() => {
+    if (!needsWorkspaceData) return
     let active = true
 
     async function loadDevelopmentLeads() {
@@ -2449,24 +2447,33 @@ function DevelopmentDetail() {
     }
 
     void loadDevelopmentLeads()
+    const handleStorage = event => { if (event.key === 'bridge:buyer-lifecycle-refresh:v1') void loadDevelopmentLeads() }
+    window.addEventListener('storage', handleStorage)
     window.addEventListener('itg:developer-leads-changed', loadDevelopmentLeads)
     return () => {
+      window.removeEventListener('storage', handleStorage)
       window.removeEventListener('itg:developer-leads-changed', loadDevelopmentLeads)
       active = false
     }
-  }, [currentWorkspace?.id, currentWorkspace?.organisationId, currentWorkspace?.organisation_id, data?.development?.id, data?.development?.organisation_id, data?.development?.organisationId, developmentId])
+  }, [currentWorkspace?.id, currentWorkspace?.organisationId, currentWorkspace?.organisation_id, data?.development?.id, data?.development?.organisation_id, data?.development?.organisationId, developmentId, needsWorkspaceData])
 
   useEffect(() => {
     function refreshDevelopment() {
       void loadData()
     }
 
+    const refreshStockFromStorage = event => {
+      if (event.key !== 'bridge:buyer-lifecycle-refresh:v1') return
+      try { if (JSON.parse(event.newValue || '{}').stockChanged) refreshDevelopment() } catch { /* Ignore unrelated malformed notifications. */ }
+    }
+    window.addEventListener('storage', refreshStockFromStorage)
     window.addEventListener('itg:listings-updated', refreshDevelopment)
     window.addEventListener('itg:transaction-created', refreshDevelopment)
     window.addEventListener('itg:transaction-updated', refreshDevelopment)
     window.addEventListener('itg:document-requirements-changed', refreshDevelopment)
     window.addEventListener('itg:developments-changed', refreshDevelopment)
     return () => {
+      window.removeEventListener('storage', refreshStockFromStorage)
       window.removeEventListener('itg:listings-updated', refreshDevelopment)
       window.removeEventListener('itg:transaction-created', refreshDevelopment)
       window.removeEventListener('itg:transaction-updated', refreshDevelopment)
@@ -2475,24 +2482,41 @@ function DevelopmentDetail() {
     }
   }, [loadData])
 
+  const formDevelopment = data?.development
+  const formProfile = data?.profile
+  const formSettings = data?.settings
+  const formStats = data?.stats
   useEffect(() => {
-    if (!data) return
-    setDetailsForm(buildDetailsForm(data))
-    setFinancialsForm(buildFinancialsForm(data.financials))
-    setReservationSettingsForm(buildReservationSettingsForm(data.settings))
-    setAgentAssignments(getDevelopmentAgentAssignments(data.settings))
+    if (!formDevelopment) return
+    setDetailsForm(buildDetailsForm({ development: formDevelopment, profile: formProfile, stats: formStats }))
+    setReservationSettingsForm(buildReservationSettingsForm(formSettings))
+    setAgentAssignments(getDevelopmentAgentAssignments(formSettings))
     setSelectedAgentUserId('')
     setManualAgentDraft({ name: '', email: '' })
     setIsEditingGeneralDetails(false)
     setIsEditingSellerDetails(false)
     setIsEditingReservationSettings(false)
     setIsEditingFinancialsSection(false)
-    const nextReservationForm = buildReservationSettingsForm(data.settings)
+    const nextReservationForm = buildReservationSettingsForm(formSettings)
     const reservationNeedsSetup = nextReservationForm.enabledByDefault && validateReservationSettingsForm(nextReservationForm).length > 0
     setReservationSettingsExpanded(previous => previous || reservationNeedsSetup)
-  }, [data])
+  }, [formDevelopment, formProfile, formSettings, formStats])
+
+  useEffect(() => {
+    if (data?.financials !== undefined) setFinancialsForm(buildFinancialsForm(data.financials))
+  }, [data?.financials])
+
+  useEffect(() => {
+    if (data?.documents === undefined) return
+    setDetailsForm(previous => ({
+      ...previous,
+      marketing: buildMarketingForm(data.profile, data.development, data.documents)
+    }))
+  }, [data?.documents, data?.profile, data?.development])
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
+  const overviewSummary = data?.overviewSummary
+  const configuredUnitCount = overviewSummary?.totalUnits ?? rows.length
   const routingPartnerOptions = useMemo(() => {
     const developmentScopeId = data?.development?.id || ''
     const isInScope = (item = {}) => {
@@ -2640,27 +2664,32 @@ function DevelopmentDetail() {
       }
     }
 
-    const totalUnits = allUnitIds.size || Number(data?.stats?.totalUnits || 0)
-    const soldThroughUnits = registeredUnitIds.size + inProgressUnitIds.size
+    const totalUnits = overviewSummary?.totalUnits ?? (allUnitIds.size || Number(data?.stats?.totalUnits || 0))
+    const availableCount = overviewSummary?.available ?? availableUnitIds.size
+    const inProgressCount = overviewSummary?.inProgress ?? inProgressUnitIds.size
+    const registeredCount = overviewSummary?.registered ?? registeredUnitIds.size
+    revenueSecuredValue = overviewSummary?.registeredValue ?? revenueSecuredValue
+    pipelineValue = overviewSummary?.pipelineValue ?? pipelineValue
+    const soldThroughUnits = registeredCount + inProgressCount
     const soldPercent = totalUnits > 0 ? (soldThroughUnits / totalUnits) * 100 : 0
 
     return [
       {
         label: 'Available Units',
-        value: formatNumber(availableUnitIds.size),
+        value: formatNumber(availableCount),
         meta: `of ${formatNumber(totalUnits)} total`,
         icon: Home
       },
       {
         label: 'Units In Progress',
-        value: formatNumber(inProgressUnitIds.size),
+        value: formatNumber(inProgressCount),
         meta: 'Transaction capture needed',
         icon: Workflow
       },
       {
         label: 'Registered Unit Value',
         value: currency.format(revenueSecuredValue),
-        meta: `from ${formatNumber(registeredUnitIds.size)} registered unit${registeredUnitIds.size === 1 ? '' : 's'}`,
+        meta: `from ${formatNumber(registeredCount)} registered unit${registeredCount === 1 ? '' : 's'}`,
         icon: CircleDollarSign
       },
       {
@@ -2676,13 +2705,14 @@ function DevelopmentDetail() {
         icon: TrendingUp
       }
     ]
-  }, [data?.stats?.totalUnits, rows])
+  }, [data?.stats?.totalUnits, overviewSummary, rows])
 
   const developmentMetrics = useMemo(() => selectPortfolioMetrics(rows, { totalDevelopmentsOverride: 1 }), [rows])
   const developmentStageDistribution = useMemo(() => selectStageDistribution(rows), [rows])
   const developmentBottleneckSummary = useMemo(() => selectDealBottleneckSummary(rows), [rows])
   const developmentPerformance = useMemo(() => selectDevelopmentPerformance(rows)[0] || null, [rows])
   const developmentTrackerStageCounts = useMemo(() => {
+    if (overviewSummary) return overviewSummary.stageCounts
     const counts = {
       AVAIL: 0,
       DEP: 0,
@@ -2698,13 +2728,13 @@ function DevelopmentDetail() {
       counts[stageKey] = Number(counts[stageKey] || 0) + 1
     })
     return counts
-  }, [rows])
+  }, [overviewSummary, rows])
   const developmentTrackerMetrics = useMemo(() => {
     const available = Number(developmentTrackerStageCounts.AVAIL || 0)
     const inProgress = Number(developmentTrackerStageCounts.DEP || 0) + Number(developmentTrackerStageCounts.OTP || 0) + Number(developmentTrackerStageCounts.FIN || 0) + Number(developmentTrackerStageCounts.ATTY || 0) + Number(developmentTrackerStageCounts.XFER || 0)
     const registered = Number(developmentTrackerStageCounts.REG || 0)
     const sold = inProgress + registered
-    const totalUnits = rows.length || Number(developmentMetrics.totalUnits || 0)
+    const totalUnits = overviewSummary?.totalUnits ?? (rows.length || Number(developmentMetrics.totalUnits || 0))
 
     return {
       totalUnits,
@@ -2714,7 +2744,7 @@ function DevelopmentDetail() {
       unitsSold: sold,
       sellThroughPercent: totalUnits > 0 ? (sold / totalUnits) * 100 : 0
     }
-  }, [developmentMetrics.totalUnits, developmentTrackerStageCounts, rows.length])
+  }, [developmentMetrics.totalUnits, developmentTrackerStageCounts, overviewSummary, rows.length])
   const financeMix = useMemo(() => {
     const segments = selectFinanceMix(rows)
     const totalCount = segments.reduce((sum, item) => sum + item.count, 0)
@@ -2880,7 +2910,7 @@ function DevelopmentDetail() {
     }
   }, [rows])
 
-  const recentActivity = useMemo(() => buildRecentActivity(rows), [rows])
+  const recentActivity = useMemo(() => buildRecentActivity(data?.overviewRecentRows || rows), [data?.overviewRecentRows, rows])
   const floorplanTitleByDocumentId = useMemo(() => {
     const map = new Map()
     ;(data?.documents || []).forEach(document => {
@@ -2967,7 +2997,7 @@ function DevelopmentDetail() {
   const numericUnitNumbers = useMemo(() => unitRows.map(unit => Number.parseInt(String(unit?.unitNumber || unit?.unit_number || '').trim(), 10)).filter(value => Number.isFinite(value)), [unitRows])
   const suggestedBulkStartNumber = useMemo(() => (numericUnitNumbers.length ? Math.max(...numericUnitNumbers) + 1 : 1), [numericUnitNumbers])
   const expectedUnitCount = Number(detailsForm.totalUnitsExpected || 0)
-  const remainingPlannedUnits = Math.max(expectedUnitCount - unitRows.length, 0)
+  const remainingPlannedUnits = Math.max(expectedUnitCount - configuredUnitCount, 0)
 
   const filteredUnits = useMemo(() => {
     const selectedStatus = getDevelopmentUnitStatusOption(unitStatusFilter)
@@ -3862,7 +3892,14 @@ function DevelopmentDetail() {
     return items.slice(0, 4)
   }, [data?.attorneyConfig?.attorneyFirmName, data?.bondConfig?.bondOriginatorName, developmentBottleneckSummary.leadLabel, developmentBottleneckSummary.totalFlagged, developmentTrackerMetrics.totalUnits, developmentTrackerMetrics.unitsAvailable, effectiveTargetMargin, financeMix.bondShare])
 
-  const overviewBottlenecks = useMemo(() => selectBottlenecks(rows).slice(0, 3), [rows])
+  const overviewBottlenecks = useMemo(() => data?.overviewAttentionRows
+    ? data.overviewAttentionRows.map(row => ({
+        transactionId: row.transaction?.id, unitId: row.unit.id, unitNumber: row.unit.unitNumber,
+        stageKey: row.mainStage, stageLabel: DEVELOPER_FUNNEL_STAGES.find(stage => stage.key === row.mainStage)?.label || row.mainStage,
+        daysInStage: row.daysInStage ?? Math.max(0, Math.floor((Date.now() - new Date(row.transaction?.updated_at || row.transaction?.created_at)) / 86400000)),
+        nextAction: row.transaction?.next_action || 'Open the transaction to review its next step.'
+      }))
+    : selectBottlenecks(rows).slice(0, 3), [data?.overviewAttentionRows, rows])
 
   const transactionPipelineItems = useMemo(() => {
     const counts = developmentTrackerStageCounts || {}
@@ -3920,7 +3957,15 @@ function DevelopmentDetail() {
       blocked: 0
     }
 
-    rows.forEach(row => {
+    if (overviewSummary) {
+      const stages = overviewSummary.stageCounts
+      counts.available = stages.AVAIL || 0
+      counts.reserved = stages.DEP || 0
+      counts.sold = (stages.OTP || 0) + (stages.FIN || 0) + (stages.ATTY || 0)
+      counts.transferred = stages.XFER || 0
+      counts.registered = stages.REG || 0
+      counts.blocked = stages.BLOCKED || 0
+    } else rows.forEach(row => {
       const stageKey = resolveDevelopmentTrackerMainStage(row)
       if (stageKey === 'REG') {
         counts.registered += 1
@@ -3937,7 +3982,7 @@ function DevelopmentDetail() {
       }
     })
 
-    const total = rows.length || 0
+    const total = overviewSummary?.totalUnits ?? rows.length
     const colors = {
       available: '#22c55e',
       reserved: '#eab308',
@@ -3972,18 +4017,18 @@ function DevelopmentDetail() {
         share: total ? (counts[item.key] / total) * 100 : 0
       }))
     }
-  }, [rows])
+  }, [overviewSummary, rows])
 
   const developmentHealthItems = useMemo(() => {
-    const unitsConfigured = unitRows.length > 0 && remainingPlannedUnits === 0
+    const unitsConfigured = configuredUnitCount > 0 && remainingPlannedUnits === 0
     const hasLocation = Boolean(locationLine || detailsForm.address)
-    const attorneyConnected = Boolean(data?.attorneyConfig?.attorneyFirmName || rows.some(row => String(row?.transaction?.attorney || '').trim()))
-    const bondOriginatorConnected = Boolean(data?.bondConfig?.bondOriginatorName || rows.some(row => String(row?.transaction?.bond_originator || '').trim()))
+    const attorneyConnected = Boolean(data?.attorneyConfig?.attorneyFirmName || overviewSummary?.attorneyConnected || rows.some(row => String(row?.transaction?.attorney || '').trim()))
+    const bondOriginatorConnected = Boolean(data?.bondConfig?.bondOriginatorName || overviewSummary?.bondOriginatorConnected || rows.some(row => String(row?.transaction?.bond_originator || '').trim()))
     const defaultsConfigured = reservationSettingsForm.defaultTransferAttorneySource !== 'none' && reservationSettingsForm.defaultBondOriginatorSource !== 'none'
     const sellerDetails = normalizeSellerDetailsForm(detailsForm.sellerDetails)
     const primarySellerSignatory = sellerDetails.signatories[0] || {}
     const sellerDetailsConfigured = Boolean(String(sellerDetails.legalName || '').trim() && String(primarySellerSignatory.fullName || '').trim() && String(primarySellerSignatory.signingCapacity || primarySellerSignatory.role || '').trim())
-    const onboardingAttentionCount = rows.filter(row => {
+    const onboardingAttentionCount = overviewSummary?.onboardingAttentionCount ?? rows.filter(row => {
       if (!row?.transaction?.id) return false
       const status = String(row?.transaction?.onboarding_status || row?.onboarding?.status || '')
         .trim()
@@ -3994,8 +4039,8 @@ function DevelopmentDetail() {
     return [
       {
         label: 'Units configured',
-        detail: unitsConfigured ? `All ${formatNumber(unitRows.length)} units are configured` : unitRows.length ? `${formatNumber(remainingPlannedUnits)} planned units still need stock rows` : 'No units configured yet',
-        tone: unitsConfigured ? 'success' : unitRows.length ? 'warning' : 'danger'
+        detail: unitsConfigured ? `All ${formatNumber(configuredUnitCount)} units are configured` : configuredUnitCount ? `${formatNumber(remainingPlannedUnits)} planned units still need stock rows` : 'No units configured yet',
+        tone: unitsConfigured ? 'success' : configuredUnitCount ? 'warning' : 'danger'
       },
       {
         label: 'Transaction defaults',
@@ -4028,7 +4073,7 @@ function DevelopmentDetail() {
         tone: hasLocation ? 'success' : 'danger'
       }
     ]
-  }, [data?.attorneyConfig?.attorneyFirmName, data?.bondConfig?.bondOriginatorName, detailsForm.address, detailsForm.sellerDetails, locationLine, remainingPlannedUnits, reservationSettingsForm.defaultBondOriginatorSource, reservationSettingsForm.defaultTransferAttorneySource, rows, unitRows.length])
+  }, [data?.attorneyConfig?.attorneyFirmName, data?.bondConfig?.bondOriginatorName, detailsForm.address, detailsForm.sellerDetails, locationLine, remainingPlannedUnits, reservationSettingsForm.defaultBondOriginatorSource, reservationSettingsForm.defaultTransferAttorneySource, rows, configuredUnitCount, overviewSummary])
 
   function setMarketingField(sectionKey, fieldKey, value) {
     setDetailsForm(previous => {
@@ -5084,11 +5129,18 @@ function DevelopmentDetail() {
 
   async function handleUnitSave(event) {
     event.preventDefault()
+    const reserving = unitForm.status === 'Reserved' && selectedUnitRow?.status !== 'Reserved'
+    if (reserving && !selectedUnitRow) { setError('Save the new unit as Available, then reserve it for a buyer.'); return }
+    if (selectedUnitRow && unitForm.status !== selectedUnitRow.status && developmentLeads.some(lead => lead.preferredUnitId === selectedUnitRow.id && ['reserved', 'expired'].includes(lead.reservationState))) {
+      setError('Release the buyer’s reservation before changing this unit’s status.')
+      return
+    }
     try {
       setUnitSaving(true)
       setFeedback('')
       const savedUnit = await saveDevelopmentUnit({
         ...unitForm,
+        status: reserving ? selectedUnitRow.status : unitForm.status,
         developmentId: data.development.id,
         listPrice: unitForm.listPrice === '' ? 0 : unitForm.listPrice,
         currentPrice: unitForm.currentPrice === '' ? null : unitForm.currentPrice,
@@ -5101,7 +5153,7 @@ function DevelopmentDetail() {
         unitTypeId: unitForm.unitTypeId || null,
         catalogueFloorplanId: unitForm.catalogueFloorplanId || null
       })
-      const needsTransaction = requiresDevelopmentTransaction(unitForm.status) && !selectedUnitRow?.currentTransactionId
+      const needsTransaction = unitForm.status !== 'Reserved' && requiresDevelopmentTransaction(unitForm.status) && !selectedUnitRow?.currentTransactionId
       if (needsTransaction) {
         await createTransactionForUnitStatus(
           {
@@ -5117,6 +5169,11 @@ function DevelopmentDetail() {
       setUnitModalOpen(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
+      if (reserving) {
+        setUnitReservationError('')
+        setUnitReservationDraft({ unitId: savedUnit.id || selectedUnitRow.id, leadId: '' })
+        setFeedback('Unit details saved. Choose the buyer to confirm its reservation.')
+      }
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -5479,6 +5536,7 @@ function DevelopmentDetail() {
         },
         transactionPatch: Object.prototype.hasOwnProperty.call(patch, 'salesPrice') ? { sales_price: nextSalesPrice, purchase_price: nextSalesPrice } : null
       })
+      await refreshOverviewSummary()
       setFeedback(feedbackLabel)
     } catch (saveError) {
       setError(saveError.message)
@@ -5614,20 +5672,33 @@ function DevelopmentDetail() {
   }
 
   async function handleDevelopmentReservation(input) {
-    if (unitReservationSaving) return
+    if (!canManageDevelopment || unitReservationLock.current) return
+    unitReservationLock.current = true
     setUnitReservationSaving(true)
     setUnitReservationError('')
     setError('')
+    let saved = false
     try {
+      const buyer = developmentLeads.find(lead => lead.developerLeadId === input.developerLeadId)
+      const unit = unitRows.find(unit => unit.id === input.unitId)
+      if (developmentLeadsLoading || developmentLeadsError) throw new Error('Refresh buyer leads before changing the reservation.')
+      const readiness = getDevelopmentReservationReadiness({ lead: buyer, unit, leads: developmentLeads, developmentId })
+      if (input.reserved !== false && (!readiness.canReserve || readiness.blockers.length)) throw new Error(readiness.blockers[0] || 'This reservation is already confirmed.')
       await setDevelopmentLeadReservation(input)
-      await loadData()
-      await refreshUnitStatusViews()
+      saved = true
       setUnitReservationDraft(null)
       setFeedback(input.reserved === false ? 'Unit reservation released.' : 'Unit reserved for the buyer.')
+      await loadData()
+      await refreshUnitStatusViews()
     } catch (reservationError) {
-      setUnitReservationError(reservationError.message || 'The reservation could not be saved.')
-      if (!unitReservationDraft) setError(reservationError.message || 'The reservation could not be saved.')
+      if (saved) {
+        setError('The reservation was saved. Refresh this development to load the latest stock and buyer details.')
+      } else {
+        setUnitReservationError(reservationError.message || 'The reservation could not be saved.')
+        if (!unitReservationDraft) setError(reservationError.message || 'The reservation could not be saved.')
+      }
     } finally {
+      unitReservationLock.current = false
       setUnitReservationSaving(false)
     }
   }
@@ -5636,14 +5707,15 @@ function DevelopmentDetail() {
     if (!canManageDevelopment || unitStatusChangeLock.current) return
     const statusOption = getDevelopmentUnitStatusOption(nextStatus)
     const nextStatusValue = statusOption.value || 'Available'
+    if (!unit.currentTransactionId && nextStatusValue === 'Reserved') {
+      const holder = developmentLeads.find(lead => lead.preferredUnitId === unit.id && ['reserved', 'expired'].includes(lead.reservationState) && !lead.convertedTransactionId)
+      setUnitReservationError('')
+      setUnitReservationDraft({ unitId: unit.id, leadId: holder?.developerLeadId || '' })
+      return
+    }
     if (nextStatusValue === getDevelopmentUnitStatusOption(unit.status).value) return
     if (unit.currentTransactionId && ['Available', 'Not Released'].includes(nextStatusValue)) {
       setError('Release or cancel the linked transaction before returning this unit to available or unreleased stock.')
-      return
-    }
-    if (!unit.currentTransactionId && nextStatusValue === 'Reserved') {
-      setUnitReservationError('')
-      setUnitReservationDraft({ unitId: unit.id, leadId: '' })
       return
     }
     if (!unit.currentTransactionId && requiresDevelopmentTransaction(nextStatusValue)) {
@@ -5691,6 +5763,7 @@ function DevelopmentDetail() {
   }
 
   async function refreshUnitStatusViews(transactionId) {
+    await refreshOverviewSummary()
     invalidateTransactionsListCache()
     await invalidateDevelopmentOptionsCache()
     if (transactionId) await invalidateTransactionWorkspaceCoreCache(transactionId)
@@ -5765,11 +5838,16 @@ function DevelopmentDetail() {
     setDevelopmentLeadCreateOpen(true)
   }
 
-  async function handleCreateDevelopmentBuyerLead(form) {
-    if (!canEditDevelopmentLeads || developmentLeadCaptureLock.current) return
+  async function handleCreateDevelopmentBuyerLead(form, { reservation = false } = {}) {
+    if (!canEditDevelopmentLeads || developmentLeadCaptureLock.current) {
+      if (reservation) throw new Error('Buyer creation is unavailable or already saving.')
+      return
+    }
+    if (!developmentLeadCaptureIdentity.current) developmentLeadCaptureIdentity.current = { leadId: crypto.randomUUID(), contactId: crypto.randomUUID(), developerLeadId: crypto.randomUUID() }
     developmentLeadCaptureLock.current = true
     setDevelopmentLeadCreateSaving(true)
     setDevelopmentLeadCreateError('')
+    if (reservation) setDevelopmentLeadDraft(form)
     try {
       const { createDevelopmentBuyerLead } = await import('../services/developmentBuyerLeadCaptureService.js')
       const organisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id
@@ -5786,9 +5864,11 @@ function DevelopmentDetail() {
       developmentLeadCaptureIdentity.current = null
       setDevelopmentLeadSavedCrm(null)
       setFeedback('Lead created and linked to this development and the main Development Leads list.')
-      window.dispatchEvent(new Event('itg:developments-changed'))
+      if (!reservation) window.dispatchEvent(new Event('itg:developments-changed'))
+      return result.developerLead
     } catch (createError) {
       setDevelopmentLeadCreateError(createError.message || 'Unable to create the development lead.')
+      if (reservation) throw createError
     } finally {
       setDevelopmentLeadCreateSaving(false)
       developmentLeadCaptureLock.current = false
@@ -6231,7 +6311,9 @@ function DevelopmentDetail() {
   }
 
   function renderMarketingHubOverview() {
-    return <DevelopmentMarketingOverview developmentId={data.development.id} websitePublished={Boolean(marketingForm.listingConfiguration.publicVisibility && marketingForm.listingConfiguration.marketingStatus === 'live')} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+    return <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading marketing overview…</p>}>
+      <DevelopmentMarketingOverview developmentId={data.development.id} websitePublished={Boolean(marketingForm.listingConfiguration.publicVisibility && marketingForm.listingConfiguration.marketingStatus === 'live')} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+    </DeferredWorkflow>
   }
 
   function renderMarketingAssetSection({ title, description, items, documentType, emptyMessage }) {
@@ -6362,18 +6444,22 @@ function DevelopmentDetail() {
   }
 
   function renderMarketingEventsSection() {
-    return <DevelopmentMarketingEvents
-      key={data.development.id}
-      events={marketingEventRecords}
-      organisationUsers={organisationUsers}
-      canManage={canManageDevelopment}
-      saving={marketingEventSaving}
-      onCreate={handleMarketingEventCreate}
-    />
+    return <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading marketing events…</p>}>
+      <DevelopmentMarketingEvents
+        key={data.development.id}
+        events={marketingEventRecords}
+        organisationUsers={organisationUsers}
+        canManage={canManageDevelopment}
+        saving={marketingEventSaving}
+        onCreate={handleMarketingEventCreate}
+      />
+    </DeferredWorkflow>
   }
 
   function renderMarketingListingsSection() {
-    return <DevelopmentMarketingListings canManage={canEditMarketing} onCreateListing={() => navigate(`/listings/new?developmentId=${encodeURIComponent(data.development.id)}`, { state: { returnTo: `${location.pathname}?tab=marketing&marketingSection=listings` } })} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+    return <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading marketing listings…</p>}>
+      <DevelopmentMarketingListings canManage={canEditMarketing} onCreateListing={() => navigate(`/listings/new?developmentId=${encodeURIComponent(data.development.id)}`, { state: { returnTo: `${location.pathname}?tab=marketing&marketingSection=listings` } })} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+    </DeferredWorkflow>
   }
 
   function renderMarketingBrandSection() {
@@ -6454,7 +6540,9 @@ function DevelopmentDetail() {
           {marketingForm.listingConfiguration.publicVisibility ? <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handleUnpublishDevelopmentMarketing()}>Unpublish website</Button> : null}
         </div> : null}
       </div>
-      <DevelopmentWebsiteAnalytics key={data.development.id} development={data.development} />
+      <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading website analytics…</p>}>
+        <DevelopmentWebsiteAnalytics key={data.development.id} development={data.development} />
+      </DeferredWorkflow>
     </div>
     if (marketingHubSection === 'media') return (
       <div className="space-y-5">
@@ -6462,7 +6550,9 @@ function DevelopmentDetail() {
         {renderMarketingAssetSection({ title: 'Floor Plans', description: 'Floor plans and site plans already attached to this development.', items: marketingAssetGroups.find(group => group.key === 'plans')?.items || [], documentType: 'floorplan', emptyMessage: 'Upload a floor plan or site plan to make it available here.' })}
       </div>
     )
-    if (marketingHubSection === 'campaigns') return <DevelopmentMarketingCampaigns key={`${currentWorkspace?.id || ''}:${data.development.id}`} development={data.development} organisationUsers={organisationUsers} canManage={canManageDevelopment} />
+    if (marketingHubSection === 'campaigns') return <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading marketing campaigns…</p>}>
+      <DevelopmentMarketingCampaigns key={`${currentWorkspace?.id || ''}:${data.development.id}`} development={data.development} organisationUsers={organisationUsers} canManage={canManageDevelopment} />
+    </DeferredWorkflow>
     if (marketingHubSection === 'events') return renderMarketingEventsSection()
     return renderMarketingHubOverview()
   }
@@ -7142,8 +7232,21 @@ function DevelopmentDetail() {
           </div>
         </section>
 
+        <DevelopmentDataSection names={activeDataSections} sections={detailSections} onRetry={() => void loadSections(activeDataSections)}>
         {activeTab === 'overview' ? (
           <section className="mt-5 grid gap-5">
+            <details key={developmentId} className="rounded-[18px] border border-[#dde4ee] bg-white p-4" onToggle={event => {
+              const open = event.currentTarget.open
+              setChannelStatisticsOwner(open ? developmentId : '')
+              if (open) void loadSections(['inventory'])
+            }}>
+              <summary className="cursor-pointer text-sm font-semibold text-[#35546c]">Listing channel statistics</summary>
+              {channelStatisticsOpen ? <DevelopmentDataSection names={['inventory']} sections={detailSections} onRetry={() => void loadSections(['inventory'])}>
+                <DevelopmentChannelStatistics developmentId={data.development.id}
+                  websitePublished={Boolean(marketingForm.listingConfiguration.publicVisibility && marketingForm.listingConfiguration.marketingStatus === 'live')}
+                  listings={linkedListingRows} />
+              </DevelopmentDataSection> : null}
+            </details>
             <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
               <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <div className="mb-5 flex items-center justify-between gap-3">
@@ -7204,7 +7307,7 @@ function DevelopmentDetail() {
               <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <div className="mb-5 flex items-center justify-between gap-3">
                   <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Transactions Requiring Attention</h3>
-                  <span className={['inline-flex min-w-7 items-center justify-center rounded-full px-2 py-1 text-xs font-semibold', overviewBottlenecks.length ? 'bg-[#fee2e2] text-[#dc2626]' : 'bg-[#edf9f1] text-[#09833d]'].join(' ')}>{formatNumber(overviewBottlenecks.length)}</span>
+                  <span className={['inline-flex min-w-7 items-center justify-center rounded-full px-2 py-1 text-xs font-semibold', overviewBottlenecks.length ? 'bg-[#fee2e2] text-[#dc2626]' : 'bg-[#edf9f1] text-[#09833d]'].join(' ')}>{formatNumber(overviewSummary?.attentionCount ?? overviewBottlenecks.length)}</span>
                 </div>
                 {overviewBottlenecks.length ? (
                   <div className="grid gap-3">
@@ -9187,307 +9290,314 @@ function DevelopmentDetail() {
 
         {activeTab === 'availability' ? (
           <>
-            {canManageDevelopment && marketingForm.listingConfiguration.listingSlug === 'madison-place-abcf1b8a' ? <MadisonReservationWorkspace key={data.development.id} developmentId={data.development.id} onChanged={() => window.dispatchEvent(new Event('itg:developments-changed'))} /> : null}
-            <DevelopmentAvailabilityWorkspace
-              units={unitRows}
-              structureNodes={data?.structureNodes || []}
-              productCatalogue={data?.productCatalogue}
-              role={role}
-              canManageInventory={canManageDevelopment}
-              canCreateTransactions={canCreateTransactions}
-              buyerLeads={developmentLeadRows}
-              reservationDepositConfigured={reservationDepositConfigured}
-              reservationDepositSummary={reservationDepositSummary}
-              sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
-              visualMap={marketingForm.mediaLibrary.visualMap}
-              sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
-              sitePlanViewport={marketingForm.mediaLibrary.sitePlanViewport}
-              sitePlanNotShownUnitIds={marketingForm.mediaLibrary.sitePlanNotShownUnitIds}
-              sitePlanQuality={sitePlanQuality}
-              sitePlanSuggestions={sitePlanSuggestions}
-              sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
-              sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
-              onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
-              onSaveVisualMap={handleAvailabilityVisualMapSave}
-              onSaveSitePlanViewport={(viewport, map) => void handleAvailabilitySitePlanViewportSave(viewport, map)}
-              onSaveSitePlanNotShownUnits={unitIds => void handleAvailabilitySitePlanNotShownUnitsSave(unitIds)}
-              onUploadSitePlan={event => void handleAvailabilitySitePlanUpload(event)}
-              onUploadVisualAssets={handleVisualAssetUpload}
-              onApplySitePlanSuggestions={suggestions => void handleApplySitePlanSuggestions(suggestions)}
-              onDiscardSitePlanSuggestions={(unitIds = []) =>
-                setSitePlanSuggestions(current => {
-                  if (!Array.isArray(unitIds) || !unitIds.length) return {}
-                  return Object.fromEntries(Object.entries(current || {}).filter(([unitId]) => !unitIds.includes(unitId)))
-                })
-              }
-              onPreviewPublicSitePlan={handlePreviewPublicListing}
-              onOpenSitePlanPublicationControls={() => openMarketingHubSection('public-page')}
-              onEditUnit={unit => openUnitModal(unit)}
-              onChangeUnitStatus={(unit, status) => void handleUnitStatusQuickChange(unit, status)}
-              unitStatusOptions={DEVELOPMENT_UNIT_STATUS_OPTIONS}
-              unitStatusSaving={unitSaving}
-              onSetReleaseState={(unit, status) => handleUnitStatusQuickChange(unit, status)}
-              onCreateTransaction={unit => openDevelopmentTransactionWizard({ unitId: unit.id })}
-              onOpenTransaction={unit => openDevelopmentTransactionWorkspace(unit)}
-              onCreateBuyerLead={handleAvailabilityCreateLead}
-              onLeadAction={handleAvailabilityLeadAction}
-              onSaveUnitPrice={(unit, salesPrice) =>
-                handleUnitQuickSave(
-                  unit,
-                  { salesPrice },
-                  {
-                    field: 'availabilityPrice',
-                    feedbackLabel: `Unit ${unit.unitNumber || unit.unit_number || ''} price updated.`
-                  }
-                )
-              }
-              inventoryManagement={
-                <details className="rounded-[22px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
-                  <summary className="cursor-pointer text-sm font-semibold text-[#35546c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1f7a5a]">Manage units</summary>
-                  <section className="mt-4">
-                    <section className={CARD_SHELL}>
-                      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                        <div>
-                          <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Manage development units</h3>
-                          <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Add units, organise stock, and update unit records.</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <Field as="select" className="min-w-[180px]" value={unitStatusFilter} onChange={event => setUnitStatusFilter(event.target.value)}>
-                            <option value="all">All statuses</option>
-                            {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </Field>
-                          <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
-                            <Plus size={15} />
-                            Add Bulk
-                          </Button>
-                          {canManageDevelopment ? (
-                            <>
-                              <Button variant="secondary" className="whitespace-nowrap" onClick={() => setProductCatalogueOpen(true)}>
-                                <FolderKanban size={15} />
-                                Product Catalogue
-                              </Button>
-                              <Button variant="secondary" className="whitespace-nowrap" onClick={() => setStructureSetupOpen(true)}>
-                                <Building2 size={15} />
-                                Structure Setup
-                              </Button>
-                            </>
-                          ) : null}
-                          <Button className="whitespace-nowrap" onClick={() => openUnitModal()}>
-                            <Plus size={15} />
-                            Add Unit
-                          </Button>
-                        </div>
-                      </div>
-
-                      {remainingPlannedUnits > 0 ? (
-                        <div className="mb-5 flex flex-col gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="min-w-0">
-                            <strong className="block text-sm font-semibold text-[#142132]">Populate planned stock faster</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                              This development is set to {formatNumber(expectedUnitCount)} expected units and currently has {formatNumber(unitRows.length)} in the stock master.
-                              {` ${formatNumber(remainingPlannedUnits)} still need to be created.`}
-                            </p>
+            {canManageDevelopment && marketingForm.listingConfiguration.listingSlug === 'madison-place-abcf1b8a' ? <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading reservations…</p>}>
+              <MadisonReservationWorkspace key={data.development.id} developmentId={data.development.id} onChanged={() => window.dispatchEvent(new Event('itg:developments-changed'))} />
+            </DeferredWorkflow> : null}
+            <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading availability…</p>}>
+              <DevelopmentAvailabilityWorkspace
+                units={unitRows}
+                structureNodes={data?.structureNodes || []}
+                productCatalogue={data?.productCatalogue}
+                role={role}
+                canManageInventory={canManageDevelopment}
+                canCreateTransactions={canCreateTransactions}
+                buyerLeads={developmentLeadRows}
+                reservationDepositConfigured={reservationDepositConfigured}
+                reservationDepositSummary={reservationDepositSummary}
+                sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
+                visualMap={marketingForm.mediaLibrary.visualMap}
+                sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
+                sitePlanViewport={marketingForm.mediaLibrary.sitePlanViewport}
+                sitePlanNotShownUnitIds={marketingForm.mediaLibrary.sitePlanNotShownUnitIds}
+                sitePlanQuality={sitePlanQuality}
+                sitePlanSuggestions={sitePlanSuggestions}
+                sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
+                sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
+                onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
+                onSaveVisualMap={handleAvailabilityVisualMapSave}
+                onSaveSitePlanViewport={(viewport, map) => void handleAvailabilitySitePlanViewportSave(viewport, map)}
+                onSaveSitePlanNotShownUnits={unitIds => void handleAvailabilitySitePlanNotShownUnitsSave(unitIds)}
+                onUploadSitePlan={event => void handleAvailabilitySitePlanUpload(event)}
+                onUploadVisualAssets={handleVisualAssetUpload}
+                onApplySitePlanSuggestions={suggestions => void handleApplySitePlanSuggestions(suggestions)}
+                onDiscardSitePlanSuggestions={(unitIds = []) =>
+                  setSitePlanSuggestions(current => {
+                    if (!Array.isArray(unitIds) || !unitIds.length) return {}
+                    return Object.fromEntries(Object.entries(current || {}).filter(([unitId]) => !unitIds.includes(unitId)))
+                  })
+                }
+                onPreviewPublicSitePlan={handlePreviewPublicListing}
+                onOpenSitePlanPublicationControls={() => openMarketingHubSection('public-page')}
+                onEditUnit={unit => openUnitModal(unit)}
+                onReserveUnit={unit => void handleUnitStatusQuickChange(unit, 'Reserved')}
+                onChangeUnitStatus={(unit, status) => void handleUnitStatusQuickChange(unit, status)}
+                unitStatusOptions={DEVELOPMENT_UNIT_STATUS_OPTIONS}
+                unitStatusSaving={unitSaving}
+                onSetReleaseState={(unit, status) => handleUnitStatusQuickChange(unit, status)}
+                onCreateTransaction={unit => openDevelopmentTransactionWizard({ unitId: unit.id })}
+                onOpenTransaction={unit => openDevelopmentTransactionWorkspace(unit)}
+                onCreateBuyerLead={handleAvailabilityCreateLead}
+                onLeadAction={handleAvailabilityLeadAction}
+                onSaveUnitPrice={(unit, salesPrice) =>
+                  handleUnitQuickSave(
+                    unit,
+                    { salesPrice },
+                    {
+                      field: 'availabilityPrice',
+                      feedbackLabel: `Unit ${unit.unitNumber || unit.unit_number || ''} price updated.`
+                    }
+                  )
+                }
+                inventoryManagement={
+                  <details className="rounded-[22px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+                    <summary className="cursor-pointer text-sm font-semibold text-[#35546c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1f7a5a]">Manage units</summary>
+                    <section className="mt-4">
+                      <section className={CARD_SHELL}>
+                        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                          <div>
+                            <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Manage development units</h3>
+                            <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Add units, organise stock, and update unit records.</p>
                           </div>
-                          <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
-                            <Plus size={15} />
-                            Populate Remaining Units
-                          </Button>
-                        </div>
-                      ) : null}
-
-                      {filteredUnits.length ? (
-                        <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4]">
-                          <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-[#e8eef5]">
-                              <thead className="bg-[#f8fafc]">
-                                <tr>
-                                  {['Block', 'Unit', 'Purchaser', 'Status', 'Sales Price', 'Handover Date', 'Floorplan'].map(heading => (
-                                    <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
-                                      {heading}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#edf2f7] bg-white">
-                                {filteredUnits.map(unit => (
-                                  <tr key={unit.id} className="transition hover:bg-[#f8fbff]">
-                                    <td className="px-5 py-4 align-middle">
-                                      <input
-                                        className={`${UNIT_QUICK_FIELD_CLASS} max-w-[120px]`}
-                                        defaultValue={unit.block || ''}
-                                        placeholder="Block"
-                                        disabled={unitQuickSavingKey === `${unit.id}:block`}
-                                        aria-label={`Update block for unit ${unit.unitNumber}`}
-                                        onClick={event => event.stopPropagation()}
-                                        onBlur={event => {
-                                          const nextBlock = event.target.value.trim()
-                                          if (nextBlock === String(unit.block || '').trim()) return
-                                          void handleUnitQuickSave(
-                                            unit,
-                                            { block: nextBlock },
-                                            {
-                                              field: 'block',
-                                              feedbackLabel: `Unit ${unit.unitNumber} block updated.`
-                                            }
-                                          )
-                                        }}
-                                      />
-                                    </td>
-                                    <td className="px-5 py-4 align-middle">
-                                      <button type="button" className="group inline-flex min-w-[118px] items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm font-semibold text-[#173149] transition hover:bg-[#eef8f2] hover:text-[#167044] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e8b67]" onClick={() => openUnitModal(unit)} aria-label={`Open Unit ${unit.unitNumber || 'details'} for editing`}>
-                                        <span>{unit.unitNumber || 'Unnamed unit'}</span>
-                                        <PencilLine size={14} className="text-[#7d8fa3] transition group-hover:text-[#167044]" />
-                                      </button>
-                                      <span className="mt-1 block pl-2.5 text-[0.68rem] font-medium text-[#8292a4]">Open details</span>
-                                    </td>
-                                    <td className="px-5 py-4 text-sm text-[#44576d]">
-                                      {unit.currentTransactionId ? (
-                                        <button
-                                          type="button"
-                                          className="max-w-[220px] truncate text-left text-sm font-semibold text-[#1f4f76] hover:text-[#0f6c43]"
-                                          title={unit.buyerName || 'Open linked transaction'}
-                                          onClick={() =>
-                                            openDevelopmentTransactionWorkspace({
-                                              transactionId: unit.currentTransactionId,
-                                              unitId: unit.id,
-                                              unitNumber: unit.unitNumber,
-                                              title: unit.buyerName || `Unit ${unit.unitNumber}`
-                                            })
-                                          }>
-                                          {unit.buyerName || 'Open linked transaction'}
-                                        </button>
-                                      ) : (
-                                        <div className="flex flex-col items-start gap-1.5">
-                                          <span>No purchaser assigned</span>
-                                          {requiresDevelopmentTransaction(unit.status) ? (
-                                            <button type="button" className="text-xs font-semibold text-[#1f7a43] hover:text-[#0f5f32]" onClick={() => void handleUnitTransactionRecovery(unit)}>
-                                              Capture transaction
-                                            </button>
-                                          ) : null}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="px-5 py-4" onClick={event => event.stopPropagation()}>
-                                      <div className="grid min-w-[180px] gap-1.5">
-                                        <Field
-                                          as="select"
-                                          className={`h-10 rounded-full border px-3 py-1 text-xs font-semibold ${getDevelopmentUnitStatusPillClassName(unit.status)}`}
-                                          value={getDevelopmentUnitStatusOption(unit.status).value}
-                                          disabled={unitStatusSavingId === unit.id}
-                                          aria-label={`Update status for unit ${unit.unitNumber}`}
-                                          onMouseDown={event => event.stopPropagation()}
-                                          onClick={event => event.stopPropagation()}
-                                          onChange={event => {
-                                            event.stopPropagation()
-                                            void handleUnitStatusQuickChange(unit, event.target.value)
-                                          }}>
-                                          {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
-                                            <option key={option.value} value={option.value}>
-                                              {option.label}
-                                            </option>
-                                          ))}
-                                        </Field>
-                                        {!unit.currentTransactionId && !isAvailableDevelopmentUnitStatus(unit.status) ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Manual / external</span> : unit.currentTransactionId ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#1f7a43]">Transaction linked</span> : null}
-                                      </div>
-                                    </td>
-                                    <td className="px-5 py-4 align-middle">
-                                      <input
-                                        className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px] font-medium text-[#44576d]`}
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        defaultValue={Number.isFinite(Number(unit.salesPrice)) ? Number(unit.salesPrice) : ''}
-                                        placeholder="0"
-                                        disabled={unitQuickSavingKey === `${unit.id}:salesPrice`}
-                                        aria-label={`Update sales price for unit ${unit.unitNumber}`}
-                                        onClick={event => event.stopPropagation()}
-                                        onBlur={event => {
-                                          const nextValue = event.target.value
-                                          const currentValue = Number.isFinite(Number(unit.salesPrice)) ? String(Number(unit.salesPrice)) : ''
-                                          if (String(nextValue || '') === currentValue) return
-                                          void handleUnitQuickSave(
-                                            unit,
-                                            { salesPrice: nextValue },
-                                            {
-                                              field: 'salesPrice',
-                                              feedbackLabel: `Unit ${unit.unitNumber} sales price updated.`
-                                            }
-                                          )
-                                        }}
-                                      />
-                                    </td>
-                                    <td className="px-5 py-4 align-middle">
-                                      <input
-                                        className={`${UNIT_QUICK_FIELD_CLASS} max-w-[160px] font-medium text-[#44576d]`}
-                                        type="date"
-                                        defaultValue={normalizeDateInput(unit.handover?.handoverDate || '')}
-                                        disabled={!unit.currentTransactionId || unitQuickSavingKey === `${unit.id}:handoverDate`}
-                                        aria-label={`Update handover date for unit ${unit.unitNumber}`}
-                                        title={unit.currentTransactionId ? 'Update handover date' : 'Handover date is available once a transaction is linked'}
-                                        onClick={event => event.stopPropagation()}
-                                        onChange={event => {
-                                          void handleUnitHandoverDateQuickChange(unit, event.target.value)
-                                        }}
-                                      />
-                                    </td>
-                                    <td className="px-5 py-4 align-middle">
-                                      <Field
-                                        as="select"
-                                        className="h-10 min-w-[190px] rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-[#44576d] hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white"
-                                        value={unit.floorplanId || ''}
-                                        disabled={unitQuickSavingKey === `${unit.id}:floorplanId`}
-                                        aria-label={`Update floorplan for unit ${unit.unitNumber}`}
-                                        onClick={event => event.stopPropagation()}
-                                        onChange={event => {
-                                          void handleUnitQuickSave(
-                                            unit,
-                                            { floorplanId: event.target.value || null },
-                                            {
-                                              field: 'floorplanId',
-                                              feedbackLabel: `Unit ${unit.unitNumber} floorplan updated.`
-                                            }
-                                          )
-                                        }}>
-                                        <option value="">No floorplan assigned</option>
-                                        {floorplanDocumentOptions.map(item => (
-                                          <option key={item.id} value={item.id}>
-                                            {item.title}
-                                          </option>
-                                        ))}
-                                      </Field>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
-                          <p className="text-sm text-[#6b7d93]">No units added yet.</p>
-                          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Field as="select" className="min-w-[180px]" value={unitStatusFilter} onChange={event => setUnitStatusFilter(event.target.value)}>
+                              <option value="all">All statuses</option>
+                              {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Field>
                             <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
+                              <Plus size={15} />
                               Add Bulk
                             </Button>
-                            <Button variant="secondary" className="whitespace-nowrap" onClick={() => openUnitModal()}>
+                            {canManageDevelopment ? (
+                              <>
+                                <Button variant="secondary" className="whitespace-nowrap" onClick={() => setProductCatalogueOpen(true)}>
+                                  <FolderKanban size={15} />
+                                  Product Catalogue
+                                </Button>
+                                <Button variant="secondary" className="whitespace-nowrap" onClick={() => setStructureSetupOpen(true)}>
+                                  <Building2 size={15} />
+                                  Structure Setup
+                                </Button>
+                              </>
+                            ) : null}
+                            <Button className="whitespace-nowrap" onClick={() => openUnitModal()}>
+                              <Plus size={15} />
                               Add Unit
                             </Button>
                           </div>
                         </div>
-                      )}
+
+                        {remainingPlannedUnits > 0 ? (
+                          <div className="mb-5 flex flex-col gap-3 rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-0">
+                              <strong className="block text-sm font-semibold text-[#142132]">Populate planned stock faster</strong>
+                              <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                                This development is set to {formatNumber(expectedUnitCount)} expected units and currently has {formatNumber(unitRows.length)} in the stock master.
+                                {` ${formatNumber(remainingPlannedUnits)} still need to be created.`}
+                              </p>
+                            </div>
+                            <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
+                              <Plus size={15} />
+                              Populate Remaining Units
+                            </Button>
+                          </div>
+                        ) : null}
+
+                        {filteredUnits.length ? (
+                          <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4]">
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-[#e8eef5]">
+                                <thead className="bg-[#f8fafc]">
+                                  <tr>
+                                    {['Block', 'Unit', 'Purchaser', 'Status', 'Sales Price', 'Handover Date', 'Floorplan'].map(heading => (
+                                      <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                                        {heading}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#edf2f7] bg-white">
+                                  {filteredUnits.map(unit => (
+                                    <tr key={unit.id} className="transition hover:bg-[#f8fbff]">
+                                      <td className="px-5 py-4 align-middle">
+                                        <input
+                                          className={`${UNIT_QUICK_FIELD_CLASS} max-w-[120px]`}
+                                          defaultValue={unit.block || ''}
+                                          placeholder="Block"
+                                          disabled={unitQuickSavingKey === `${unit.id}:block`}
+                                          aria-label={`Update block for unit ${unit.unitNumber}`}
+                                          onClick={event => event.stopPropagation()}
+                                          onBlur={event => {
+                                            const nextBlock = event.target.value.trim()
+                                            if (nextBlock === String(unit.block || '').trim()) return
+                                            void handleUnitQuickSave(
+                                              unit,
+                                              { block: nextBlock },
+                                              {
+                                                field: 'block',
+                                                feedbackLabel: `Unit ${unit.unitNumber} block updated.`
+                                              }
+                                            )
+                                          }}
+                                        />
+                                      </td>
+                                      <td className="px-5 py-4 align-middle">
+                                        <button type="button" className="group inline-flex min-w-[118px] items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm font-semibold text-[#173149] transition hover:bg-[#eef8f2] hover:text-[#167044] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e8b67]" onClick={() => openUnitModal(unit)} aria-label={`Open Unit ${unit.unitNumber || 'details'} for editing`}>
+                                          <span>{unit.unitNumber || 'Unnamed unit'}</span>
+                                          <PencilLine size={14} className="text-[#7d8fa3] transition group-hover:text-[#167044]" />
+                                        </button>
+                                        <span className="mt-1 block pl-2.5 text-[0.68rem] font-medium text-[#8292a4]">Open details</span>
+                                      </td>
+                                      <td className="px-5 py-4 text-sm text-[#44576d]">
+                                        {unit.currentTransactionId ? (
+                                          <button
+                                            type="button"
+                                            className="max-w-[220px] truncate text-left text-sm font-semibold text-[#1f4f76] hover:text-[#0f6c43]"
+                                            title={unit.buyerName || 'Open linked transaction'}
+                                            onClick={() =>
+                                              openDevelopmentTransactionWorkspace({
+                                                transactionId: unit.currentTransactionId,
+                                                unitId: unit.id,
+                                                unitNumber: unit.unitNumber,
+                                                title: unit.buyerName || `Unit ${unit.unitNumber}`
+                                              })
+                                            }>
+                                            {unit.buyerName || 'Open linked transaction'}
+                                          </button>
+                                        ) : (
+                                          <div className="flex flex-col items-start gap-1.5">
+                                            <span>No purchaser assigned</span>
+                                            {requiresDevelopmentTransaction(unit.status) ? (
+                                              <button type="button" className="text-xs font-semibold text-[#1f7a43] hover:text-[#0f5f32]" onClick={() => void handleUnitTransactionRecovery(unit)}>
+                                                Capture transaction
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-5 py-4" onClick={event => event.stopPropagation()}>
+                                        <div className="grid min-w-[180px] gap-1.5">
+                                          <Field
+                                            as="select"
+                                            className={`h-10 rounded-full border px-3 py-1 text-xs font-semibold ${getDevelopmentUnitStatusPillClassName(unit.status)}`}
+                                            value={getDevelopmentUnitStatusOption(unit.status).value}
+                                            disabled={unitStatusSavingId === unit.id}
+                                            aria-label={`Update status for unit ${unit.unitNumber}`}
+                                            onMouseDown={event => event.stopPropagation()}
+                                            onClick={event => event.stopPropagation()}
+                                            onChange={event => {
+                                              event.stopPropagation()
+                                              void handleUnitStatusQuickChange(unit, event.target.value)
+                                            }}>
+                                            {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </Field>
+                                          {!unit.currentTransactionId && !isAvailableDevelopmentUnitStatus(unit.status) ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Manual / external</span> : unit.currentTransactionId ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#1f7a43]">Transaction linked</span> : null}
+                                        </div>
+                                      </td>
+                                      <td className="px-5 py-4 align-middle">
+                                        <input
+                                          className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px] font-medium text-[#44576d]`}
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          defaultValue={Number.isFinite(Number(unit.salesPrice)) ? Number(unit.salesPrice) : ''}
+                                          placeholder="0"
+                                          disabled={unitQuickSavingKey === `${unit.id}:salesPrice`}
+                                          aria-label={`Update sales price for unit ${unit.unitNumber}`}
+                                          onClick={event => event.stopPropagation()}
+                                          onBlur={event => {
+                                            const nextValue = event.target.value
+                                            const currentValue = Number.isFinite(Number(unit.salesPrice)) ? String(Number(unit.salesPrice)) : ''
+                                            if (String(nextValue || '') === currentValue) return
+                                            void handleUnitQuickSave(
+                                              unit,
+                                              { salesPrice: nextValue },
+                                              {
+                                                field: 'salesPrice',
+                                                feedbackLabel: `Unit ${unit.unitNumber} sales price updated.`
+                                              }
+                                            )
+                                          }}
+                                        />
+                                      </td>
+                                      <td className="px-5 py-4 align-middle">
+                                        <input
+                                          className={`${UNIT_QUICK_FIELD_CLASS} max-w-[160px] font-medium text-[#44576d]`}
+                                          type="date"
+                                          defaultValue={normalizeDateInput(unit.handover?.handoverDate || '')}
+                                          disabled={!unit.currentTransactionId || unitQuickSavingKey === `${unit.id}:handoverDate`}
+                                          aria-label={`Update handover date for unit ${unit.unitNumber}`}
+                                          title={unit.currentTransactionId ? 'Update handover date' : 'Handover date is available once a transaction is linked'}
+                                          onClick={event => event.stopPropagation()}
+                                          onChange={event => {
+                                            void handleUnitHandoverDateQuickChange(unit, event.target.value)
+                                          }}
+                                        />
+                                      </td>
+                                      <td className="px-5 py-4 align-middle">
+                                        <Field
+                                          as="select"
+                                          className="h-10 min-w-[190px] rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-medium text-[#44576d] hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white"
+                                          value={unit.floorplanId || ''}
+                                          disabled={unitQuickSavingKey === `${unit.id}:floorplanId`}
+                                          aria-label={`Update floorplan for unit ${unit.unitNumber}`}
+                                          onClick={event => event.stopPropagation()}
+                                          onChange={event => {
+                                            void handleUnitQuickSave(
+                                              unit,
+                                              { floorplanId: event.target.value || null },
+                                              {
+                                                field: 'floorplanId',
+                                                feedbackLabel: `Unit ${unit.unitNumber} floorplan updated.`
+                                              }
+                                            )
+                                          }}>
+                                          <option value="">No floorplan assigned</option>
+                                          {floorplanDocumentOptions.map(item => (
+                                            <option key={item.id} value={item.id}>
+                                              {item.title}
+                                            </option>
+                                          ))}
+                                        </Field>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-8 text-center">
+                            <p className="text-sm text-[#6b7d93]">No units added yet.</p>
+                            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                              <Button variant="secondary" className="whitespace-nowrap" onClick={openBulkUnitModal}>
+                                Add Bulk
+                              </Button>
+                              <Button variant="secondary" className="whitespace-nowrap" onClick={() => openUnitModal()}>
+                                Add Unit
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </section>
                     </section>
-                  </section>
-                </details>
-              }
-            />
+                  </details>
+                }
+              />
+            </DeferredWorkflow>
           </>
         ) : null}
 
-        {activeTab === 'snags' ? <DevelopmentSnagsWorkspace key={data?.development?.id || developmentId} developmentId={data?.development?.id || developmentId} /> : null}
+        {activeTab === 'snags' ? <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading snags…</p>}>
+          <DevelopmentSnagsWorkspace key={data?.development?.id || developmentId} developmentId={data?.development?.id || developmentId} />
+        </DeferredWorkflow> : null}
 
         {activeTab === 'leads' ? (
           <section className="mt-4">
@@ -9643,28 +9753,30 @@ function DevelopmentDetail() {
 
         {activeTab === 'transactions' ? (
           <section className="mt-4">
-            <DevelopmentTransactionsWorkspace
-              rows={transactionRows}
-              search={transactionSearch}
-              onSearchChange={setTransactionSearch}
-              stageFilter={transactionStageFilter}
-              onStageChange={setTransactionStageFilter}
-              stages={Array.from(new Set([...allDevelopmentTransactionRows.map(row => String(row?.transaction?.stage || '').trim()).filter(Boolean), ...DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => option.value)]))}
-              developmentName={data?.development?.name || ''}
-              coverImageUrl={developmentHeroImageUrl}
-              onCreateTransaction={openDevelopmentTransactionWizard}
-              onOpenTransaction={row => {
-                if (!row?.transaction?.id && row?.unit?.id) {
-                  void handleUnitTransactionRecovery(row.unit)
-                } else if (getDevelopmentRecordTransactionId(row) || row.unit?.id) {
-                  openDevelopmentTransactionWorkspace(row)
-                }
-              }}
-              unlinkedCount={unlinkedProgressedUnits.length}
-              backfillSaving={unitTransactionBackfillSaving}
-              backfillProgress={unitTransactionBackfillProgress}
-              onBackfill={() => void handleUnitTransactionBackfill()}
-            />
+            <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading transactions…</p>}>
+              <DevelopmentTransactionsWorkspace
+                rows={transactionRows}
+                search={transactionSearch}
+                onSearchChange={setTransactionSearch}
+                stageFilter={transactionStageFilter}
+                onStageChange={setTransactionStageFilter}
+                stages={Array.from(new Set([...allDevelopmentTransactionRows.map(row => String(row?.transaction?.stage || '').trim()).filter(Boolean), ...DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => option.value)]))}
+                developmentName={data?.development?.name || ''}
+                coverImageUrl={developmentHeroImageUrl}
+                onCreateTransaction={openDevelopmentTransactionWizard}
+                onOpenTransaction={row => {
+                  if (!row?.transaction?.id && row?.unit?.id) {
+                    void handleUnitTransactionRecovery(row.unit)
+                  } else if (getDevelopmentRecordTransactionId(row) || row.unit?.id) {
+                    openDevelopmentTransactionWorkspace(row)
+                  }
+                }}
+                unlinkedCount={unlinkedProgressedUnits.length}
+                backfillSaving={unitTransactionBackfillSaving}
+                backfillProgress={unitTransactionBackfillProgress}
+                onBackfill={() => void handleUnitTransactionBackfill()}
+              />
+            </DeferredWorkflow>
           </section>
         ) : null}
 
@@ -9849,8 +9961,28 @@ function DevelopmentDetail() {
         ) : null}
 
         {activeTab === 'bond_originators' ? renderBondOriginatorConfiguration() : null}
+        </DevelopmentDataSection>
 
-        {unitReservationDraft ? <DevelopmentLeadReservationDialog key={`${unitReservationDraft.leadId}:${unitReservationDraft.unitId}`} leads={developmentLeads} units={rows.map(row => row.unit || row)} initialLeadId={unitReservationDraft.leadId} initialUnitId={unitReservationDraft.unitId} saving={unitReservationSaving} error={unitReservationError} onClose={() => setUnitReservationDraft(null)} onReserve={input => void handleDevelopmentReservation(input)} onCreateLead={() => { setUnitReservationDraft(null); openDevelopmentLeadCapture() }} /> : null}
+        {unitReservationDraft ? <DeferredWorkflow fallback={<Modal open onClose={() => setUnitReservationDraft(null)} title="Reserve a unit"><p role="status" className="p-4 text-sm text-[#60758c]">Loading reservation…</p></Modal>}>
+          <DevelopmentLeadReservationDialog
+            key={`${unitReservationDraft.leadId}:${unitReservationDraft.unitId}`}
+            leads={developmentLeads} units={unitRows} developmentId={developmentId} developmentName={data.development.name}
+            initialLeadId={unitReservationDraft.leadId} initialUnitId={unitReservationDraft.unitId}
+            leadsLoading={developmentLeadsLoading} leadsError={developmentLeadsError}
+            saving={unitReservationSaving} error={unitReservationError} captureReadOnly={Boolean(developmentLeadSavedCrm)} initialCreateDraft={developmentLeadDraft}
+            canCreateLead={canEditDevelopmentLeads} canEditLead={canMoveDevelopmentLead}
+            onClose={() => setUnitReservationDraft(null)} onReserve={handleDevelopmentReservation}
+            onCreateLead={form => handleCreateDevelopmentBuyerLead(form, { reservation: true })}
+            onChangeStage={async (id, targetKey) => {
+              const lead = developmentLeads.find(item => item.developerLeadId === id)
+              if (!lead || !canMoveDevelopmentLead(lead)) throw new Error('You do not have permission to change this buyer’s stage.')
+              const saved = await saveDevelopmentLeadBoardStage({ lead, targetKey })
+              setDevelopmentLeads(current => current.map(item => item.developerLeadId === id ? { ...item, ...saved } : item))
+              return saved
+            }}
+            onOpenLead={(id, stageKey) => { setUnitReservationDraft(null); openDevelopmentLeadWorkspace(id, stageKey === 'development_selection' ? 'development' : ['buyer_onboarding_sent', 'buyer_onboarding_submitted', 'offer', 'transaction'].includes(stageKey) ? 'onboarding_otp' : 'overview') }}
+          />
+        </DeferredWorkflow> : null}
         <Modal open={emailComposeOpen} onClose={emailSending ? undefined : closeDocumentEmailComposer} title="Send Document via Email" subtitle="Compose an email for the selected development document. Arch9 will prefill the document context and file link." className="max-w-[640px]">
           <form className="space-y-4" onSubmit={handleSendDocumentEmail}>
             <div className="rounded-[16px] border border-[#dbe7f3] bg-[#f8fbff] px-4 py-3">
@@ -9989,7 +10121,7 @@ function DevelopmentDetail() {
           </div>
         </Modal>
 
-        {unitModalOpen ? (
+        {unitModalOpen && catalogueDialogReady ? (
           <Drawer open={unitModalOpen} onClose={() => setUnitModalOpen(false)} title={unitForm.id ? `Unit ${unitForm.unitNumber || ''}`.trim() : 'Add Unit'} subtitle="Manage stock master details on the right while keeping the units table in context." widthClassName="max-w-[680px]">
             <form className="stack-form" onSubmit={handleUnitSave}>
               {selectedUnitRow ? (
@@ -10310,7 +10442,7 @@ function DevelopmentDetail() {
           </Drawer>
         ) : null}
 
-        {bulkUnitModalOpen ? (
+        {bulkUnitModalOpen && catalogueDialogReady ? (
           <Modal open={bulkUnitModalOpen} onClose={() => setBulkUnitModalOpen(false)} title="Add Units In Bulk" subtitle="Generate multiple stock master rows in one action. Use the planned-unit gap to populate the development faster." className="development-unit-modal max-w-5xl">
             <form className="grid gap-5" onSubmit={handleBulkUnitSave}>
               <section className="rounded-[20px] border border-[#dbe7f3] bg-[#f8fbff] p-4">
@@ -10727,8 +10859,17 @@ function DevelopmentDetail() {
             </form>
           </Modal>
         ) : null}
-        <DevelopmentStructureSetupModal open={structureSetupOpen} onClose={() => setStructureSetupOpen(false)} onSave={handleStructureSetupSave} saving={structureSetupSaving} />
-        <DevelopmentProductCatalogueModal key={`${productCatalogueOpen}-${data?.development?.id || ''}`} open={productCatalogueOpen} onClose={() => setProductCatalogueOpen(false)} onSave={handleProductCatalogueSave} saving={productCatalogueSaving} catalogue={data?.productCatalogue} documents={floorplanDocumentOptions} />
+        {(unitModalOpen || bulkUnitModalOpen || productCatalogueOpen) && !catalogueDialogReady ? (
+          <Modal open onClose={() => { setUnitModalOpen(false); setBulkUnitModalOpen(false); setProductCatalogueOpen(false) }} title="Loading unit setup">
+            <DevelopmentDataSection names={['inventory', 'catalogue', 'documents']} sections={detailSections} onRetry={() => void loadSections(['inventory', 'catalogue', 'documents'])} />
+          </Modal>
+        ) : null}
+        <DeferredWorkflow active={structureSetupOpen} keepMounted fallback={<Modal open onClose={() => setStructureSetupOpen(false)} title="Set up development structure"><p role="status" className="p-4 text-sm text-[#60758c]">Loading development structure…</p></Modal>}>
+          <DevelopmentStructureSetupModal open={structureSetupOpen} onClose={() => setStructureSetupOpen(false)} onSave={handleStructureSetupSave} saving={structureSetupSaving} />
+        </DeferredWorkflow>
+        <DeferredWorkflow active={productCatalogueOpen && catalogueDialogReady} keepMounted fallback={<Modal open onClose={() => setProductCatalogueOpen(false)} title="Product catalogue"><p role="status" className="p-4 text-sm text-[#60758c]">Loading product catalogue…</p></Modal>}>
+          <DevelopmentProductCatalogueModal key={`${productCatalogueOpen}-${data?.development?.id || ''}`} open={productCatalogueOpen && catalogueDialogReady} onClose={() => setProductCatalogueOpen(false)} onSave={handleProductCatalogueSave} saving={productCatalogueSaving} catalogue={data?.productCatalogue} documents={floorplanDocumentOptions} />
+        </DeferredWorkflow>
       </div>
     </section>
   )

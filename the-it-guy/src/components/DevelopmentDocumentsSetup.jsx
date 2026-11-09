@@ -1,10 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import {
-  createDevelopmentDocumentRequirement,
-  deleteDevelopmentDocumentRequirement,
-  fetchDevelopmentDocumentRequirements,
-} from '../lib/api'
+import { createDevelopmentDocumentRequirement, deleteDevelopmentDocumentRequirement } from '../lib/developmentDetailApi'
+import { fetchDevelopmentDocumentRequirements } from '../domains/developments/api.js'
 
 function DevelopmentDocumentsSetup({ developmentId, items, onItemsChange }) {
   const [label, setLabel] = useState('')

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -15,7 +16,7 @@ const files = {
     'utf8',
   ),
   unitDetail: await readFile(new URL('../src/pages/UnitDetail.jsx', import.meta.url), 'utf8'),
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   workflowActions: await readFile(
     new URL('../server/services/workflowActionAvailabilityService.js', import.meta.url),
     'utf8',

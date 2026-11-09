@@ -55,7 +55,7 @@ export function resolveBuyerLeadDocumentTarget(documentKey, {
   const roleplayerKey = roleplayerKind ? ROLEPLAYER_DOCUMENT_TARGETS[roleplayerKind] : null
   const target = roleplayerKind
     ? roleplayerKey ? { documentKey: roleplayerKey, requestKey: roleplayerKey, subjectScope: 'person' } : null
-    : DOCUMENT_TARGETS[sourceKey] || null
+    : DOCUMENT_TARGETS[sourceKey] || (['signed_otp', 'buyer_otp'].includes(sourceKey) ? DOCUMENT_TARGETS.uploaded_otp : null)
   const normalizedFinance = normalize(financeType)
   const normalizedPurchaser = normalize(purchaserType)
   const normalizedRole = normalize(partyRole)

@@ -80,6 +80,17 @@ it('opens the clicked Kanban lead workspace without updating its stage', async (
   expect(mocks.outcome).not.toHaveBeenCalled()
 })
 
+it('shows application progress in its journey column and opens the workspace without changing the saved lead stage', async () => {
+  await openBoard([lead('submitted', 'tenant', 'new', { journeyStage: 'application_submitted', journeyStageLabel: 'Application submitted', journeyAhead: true })])
+  const card = screen.getByRole('region', { name: 'Application submitted', exact: true })
+  expect(within(card).getByRole('button', { name: 'Open lead Diagnostic submitted' })).toBeTruthy()
+  expect(boardCards()[0].draggable).toBe(false)
+  expect(within(screen.getByRole('region', { name: 'New', exact: true })).queryByText('Diagnostic submitted')).toBeNull()
+  fireEvent.click(within(card).getByRole('button', { name: 'Open rental journey' }))
+  expect(await screen.findByText('Diagnostic lead workspace')).toBeTruthy()
+  expect(mocks.advance).not.toHaveBeenCalled()
+})
+
 it('moves a dragged card through the guarded next-stage service and offers accessible actions', async () => {
   mocks.advance.mockResolvedValue(lead('one', 'tenant', 'contacted'))
   await openBoard([lead('one')])

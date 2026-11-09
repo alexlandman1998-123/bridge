@@ -1,5 +1,6 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,8 +10,8 @@ const bundleDir = await mkdtemp(path.join(tmpdir(), 'client-portal-canonical-doc
 const entryPath = path.join(bundleDir, 'entry.mjs')
 const bundlePath = path.join(bundleDir, 'bundle.mjs')
 const servicePath = path.join(process.cwd(), 'src/services/clientPortalWorkspaceService.js')
-const apiPath = path.join(process.cwd(), 'src/lib/api.js')
-const apiSource = await readFile(apiPath, 'utf8')
+
+const apiSource = await readDomainApiSource()
 
 await writeFile(
   entryPath,

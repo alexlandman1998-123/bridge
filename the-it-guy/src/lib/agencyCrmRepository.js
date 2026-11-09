@@ -1016,7 +1016,7 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
   }
 }
 
-export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seedSnapshot = null } = {}) {
+export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seedSnapshot = null, includeRelatedRecords = true, relatedLimit = null } = {}) {
   const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.fetchAgencyCrmLeadWorkspace')
   const leadUuid = normalizeLeadUuid(leadId)
   if (!leadUuid) {
@@ -1032,6 +1032,16 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seed
   }
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is required before loading agency CRM lead data.')
+  }
+
+  const readRelated = (table, fields, order, resolvedLeadId) => {
+    if (!includeRelatedRecords) return Promise.resolve({ data: [], error: null })
+    let query = supabase.from(table).select(fields).eq('organisation_id', workspaceId).eq('lead_id', resolvedLeadId)
+    query = table === 'tasks' && relatedLimit !== null
+      ? query.neq('status', 'Completed').order('due_date', { ascending: true, nullsFirst: false }).order('task_id')
+      : query.order(order, { ascending: false })
+    if (relatedLimit !== null) query = query.limit(Math.max(1, Math.min(50, Number(relatedLimit) || 3)))
+    return query
   }
 
   const seededLead = !seedSnapshot?.routeCoreOnly && (Array.isArray(seedSnapshot?.leads) ? seedSnapshot.leads : []).find((lead) => (
@@ -1052,18 +1062,8 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seed
         .eq('contact_id', contactId)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null })
-    const activityPromise = supabase
-      .from('lead_activities')
-      .select(LEAD_ACTIVITY_SELECT_FIELDS)
-      .eq('organisation_id', workspaceId)
-      .eq('lead_id', resolvedLeadId)
-      .order('activity_date', { ascending: false })
-    const taskPromise = supabase
-      .from('tasks')
-      .select(TASK_SELECT_FIELDS)
-      .eq('organisation_id', workspaceId)
-      .eq('lead_id', resolvedLeadId)
-      .order('updated_at', { ascending: false })
+    const activityPromise = readRelated('lead_activities', LEAD_ACTIVITY_SELECT_FIELDS, 'activity_date', resolvedLeadId)
+    const taskPromise = readRelated('tasks', TASK_SELECT_FIELDS, 'updated_at', resolvedLeadId)
 
     const [contactResult, activityResult, taskResult] = await Promise.all([contactPromise, activityPromise, taskPromise])
     const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
@@ -1080,6 +1080,9 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seed
       leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
       tasks: Array.isArray(taskResult.data) && !taskBlocked ? taskResult.data.map(mapSupabaseTask) : [],
       source: 'remote-progressive-enrichment',
+      relatedRecordsStatus: includeRelatedRecords ? 'ready' : 'deferred',
+      relatedRecordsLimit: relatedLimit,
+      openingWorkspace: relatedLimit === 3,
       leadWorkspaceStatus: 'ready',
       leadWorkspaceReason: 'seed_snapshot_enrichment',
       requestedLeadId: leadUuid,
@@ -1130,18 +1133,8 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seed
       .eq('contact_id', contactId)
       .maybeSingle()
     : Promise.resolve({ data: null, error: null })
-  const activityPromise = supabase
-    .from('lead_activities')
-    .select(LEAD_ACTIVITY_SELECT_FIELDS)
-    .eq('organisation_id', workspaceId)
-    .eq('lead_id', resolvedLeadId)
-    .order('activity_date', { ascending: false })
-  const taskPromise = supabase
-    .from('tasks')
-    .select(TASK_SELECT_FIELDS)
-    .eq('organisation_id', workspaceId)
-    .eq('lead_id', resolvedLeadId)
-    .order('updated_at', { ascending: false })
+  const activityPromise = readRelated('lead_activities', LEAD_ACTIVITY_SELECT_FIELDS, 'activity_date', resolvedLeadId)
+  const taskPromise = readRelated('tasks', TASK_SELECT_FIELDS, 'updated_at', resolvedLeadId)
 
   const [contactResult, activityResult, taskResult] = await Promise.all([contactPromise, activityPromise, taskPromise])
   const contactBlocked = contactResult.error && (isPermissionDeniedError(contactResult.error) || isMissingSchemaOrTableError(contactResult.error))
@@ -1157,6 +1150,9 @@ export async function fetchAgencyCrmLeadWorkspace(organisationId, leadId, { seed
     leadActivities: Array.isArray(activityResult.data) && !activityBlocked ? activityResult.data.map(mapSupabaseLeadActivity) : [],
     tasks: Array.isArray(taskResult.data) && !taskBlocked ? taskResult.data.map(mapSupabaseTask) : [],
     source: 'remote',
+    relatedRecordsStatus: includeRelatedRecords ? 'ready' : 'deferred',
+    relatedRecordsLimit: relatedLimit,
+    openingWorkspace: relatedLimit === 3,
     leadWorkspaceStatus,
     leadWorkspaceReason,
     requestedLeadId: leadUuid,

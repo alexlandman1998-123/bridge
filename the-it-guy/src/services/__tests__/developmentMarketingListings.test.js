@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { readDomainApiSource } from '../../../scripts/helpers/domainApiSource.mjs'
+
 import { expect, it } from 'vitest'
-const source = readFileSync(new URL('../../lib/api.js', import.meta.url), 'utf8')
+const source = readDomainApiSource()
 it('reads linked drafts and active listings from the shared listing table, excluding archived and unrelated records', async () => {
   const records = [
     { id: 'new-draft', development_id: 'dev', listing_status: 'seller_lead', is_active: false },

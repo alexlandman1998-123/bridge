@@ -73,11 +73,13 @@ export function mergeDocumentRequirementRows(legacyRows = [], snapshot, { party 
   ]
 }
 
-export function mergeDocumentEvidence(legacyRows = [], snapshot) {
+export function mergeDocumentEvidence(legacyRows = [], snapshot, { includeHistory = false } = {}) {
   const owned = new Set(snapshot.requirements.map(row => row.id))
   const byPath = new Map()
   for (const row of [...legacyRows.filter(row => !owned.has(requirementLinkId(row))), ...snapshot.documents]) {
-    // Retain previous versions as history, but not as the current checklist file.
+    // Historical bytes remain available to an explicit history view. Normal
+    // lead/workspace lists must not resurrect withdrawn or replaced evidence.
+    if (!includeHistory && (row.is_current_evidence === false || row.applicability_override === 'removed')) continue
     const identity = row.id || `${row.file_bucket || 'documents'}:${row.file_path}`
     byPath.set(identity, row)
   }

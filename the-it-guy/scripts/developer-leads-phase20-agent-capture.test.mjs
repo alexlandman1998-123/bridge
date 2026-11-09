@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -6,7 +7,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agentListingsSource = readFileSync(resolve(appRoot, 'src/pages/AgentListings.jsx'), 'utf8')
 const developerLeadServiceSource = readFileSync(resolve(appRoot, 'src/services/developerLeadService.js'), 'utf8')
-const apiSource = readFileSync(resolve(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const docsSource = readFileSync(resolve(appRoot, 'docs/developer-leads-phase20-agent-capture.md'), 'utf8')
 const phase5Source = readFileSync(resolve(appRoot, 'scripts/developer-module-phase5-release-readiness.test.mjs'), 'utf8')
 const phase6Source = readFileSync(resolve(appRoot, 'scripts/developer-module-phase6-post-rollout-monitoring.mjs'), 'utf8')

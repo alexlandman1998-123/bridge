@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -5,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pageSource = fs.readFileSync(path.join(root, 'src/pages/TransactionRoutingRolloutPage.jsx'), 'utf8')
-const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const appSource = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8')
 const rolesSource = fs.readFileSync(path.join(root, 'src/lib/roles.js'), 'utf8')
 const sidebarSource = fs.readFileSync(path.join(root, 'src/components/Sidebar.jsx'), 'utf8')

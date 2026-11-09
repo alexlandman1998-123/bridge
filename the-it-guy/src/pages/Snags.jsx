@@ -8,7 +8,7 @@ import SearchInput from '../components/ui/SearchInput'
 import Button from '../components/ui/Button'
 import { ViewToggle } from '../components/ui/FilterBar'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet'
-import { fetchDeveloperSnagsData, updateClientIssueStatus } from '../lib/api'
+import { fetchDeveloperSnagsData, updateClientIssueStatus } from '../domains/clientPortal/residentApi.js'
 import { MOCK_DATA_ENABLED, sortByNewest } from '../lib/mockData'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 

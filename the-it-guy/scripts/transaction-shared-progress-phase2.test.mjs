@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -5,7 +6,7 @@ const migration = await readFile('../supabase/migrations/202607190002_transactio
 const service = await readFile('src/services/transactionSharedProgressService.js', 'utf8')
 const attorneyService = await readFile('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', 'utf8')
 const checklistService = await readFile('src/services/transactionOperationalChecklistService.js', 'utf8')
-const api = await readFile('src/lib/api.js', 'utf8')
+const api = await readDomainApiSource()
 const readModel = await readFile('src/services/transactionWorkflowReadModelService.js', 'utf8')
 
 assert.match(migration, /create table if not exists public\.transaction_shared_progress/i)

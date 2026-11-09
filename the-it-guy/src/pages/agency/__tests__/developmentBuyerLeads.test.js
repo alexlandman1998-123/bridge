@@ -207,3 +207,25 @@ it('loads large sets of development lead links in bounded parallel batches witho
     expect(url.searchParams.get('select')).not.toMatch(/email|phone|private_details/)
   }
 })
+
+
+it('shows the saved development reservation and early-stage edits on the main development lead list', () => {
+  for (const [leadStatus, expected] of [['contacted', 'Contacted'], ['reserved', 'Unit Selection & Reservation']]) {
+    const model = buildAgencyLeadListModel({ leads: [{ ...buyer, developmentId, stage: 'New Lead', developmentLeadContext: { leadStatus } }], category: 'development' })
+    expect(model.rows[0].stage).toBe(expected)
+    expect(model.rows[0].id).toBe(leadId)
+  }
+  const advanced = buildAgencyLeadListModel({ leads: [{ ...buyer, developmentId, stage: 'Offer to purchase signed', developmentLeadContext: { leadStatus: 'reserved' } }], category: 'development' })
+  expect(advanced.rows[0].stage).toBe('Offer to purchase signed')
+})
+
+
+it('uses the same saved reservation in the buyer journey even when the CRM stage has not caught up', () => {
+  const saved = { ...buyer, developmentId, stage: 'New Lead', developmentLeadContext: { leadStatus: 'reserved', preferredUnitId: 'unit', reservationState: 'reserved' } }
+  const model = buildDevelopmentBuyerJourneyModel({ lead: saved, persistedStage: saved.stage })
+  expect(model.currentStageKey).toBe('buyer_onboarding_sent')
+  expect(model.stages.find(stage => stage.key === 'development_selection').done).toBe(true)
+  expect(model.stages.find(stage => stage.key === 'buyer_onboarding_submitted').done).toBe(false)
+  expect(model.stages.find(stage => stage.key === 'offer').done).toBe(false)
+  expect(model.stages.find(stage => stage.key === 'transaction').done).toBe(false)
+})

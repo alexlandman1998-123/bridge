@@ -3,12 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Button from './ui/Button'
 import Field from './ui/Field'
-import {
-  EXTERNAL_ACCESS_ROLES,
-  createExternalAccessLink,
-  fetchExternalAccessLinks,
-  revokeExternalAccessLink,
-} from '../lib/api'
+import { EXTERNAL_ACCESS_ROLES } from '../core/transactions/roleConfig'
+import { createExternalAccessLink, fetchExternalAccessLinks, revokeExternalAccessLink } from '../domains/access/externalApi.js'
 import { getTransactionRoleLabel } from '../core/transactions/roleConfig'
 
 function ExternalAccessPanel({ transactionId, buyerId, buyerEmail, disabled = false, onLinksChange = null }) {

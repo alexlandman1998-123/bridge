@@ -1,19 +1,7 @@
-import {
-  addBondApplication,
-  addBondQuote,
-  approveBondQuote,
-  declineBondQuote,
-  markFinanceDocumentsReviewed,
-  markFinanceInstructionSent,
-  recordBondGrantMilestone,
-  recordBondOfferDecision,
-  updateBondApplication,
-  updateBondQuote,
-  updateTransactionFinanceBlockerStatus,
-  uploadClientPortalFinanceDocument,
-  uploadTransactionFinanceDocument,
-  verifyProofOfFunds,
-} from '../lib/api'
+import { addBondApplication, addBondQuote, approveBondQuote, declineBondQuote, markFinanceInstructionSent, recordBondGrantMilestone, recordBondOfferDecision, updateBondApplication, updateBondQuote } from '../domains/bond/financeWorkflow.js'
+import { markFinanceDocumentsReviewed, updateTransactionFinanceBlockerStatus, verifyProofOfFunds } from '../domains/documents/workspaceApi.js'
+import { uploadClientPortalFinanceDocument } from '../domains/clientPortal/documentApi.js'
+import { uploadTransactionFinanceDocument } from '../domains/documents/uploadWorkflow.js'
 import {
   BOND_HYBRID_FINANCE_STAGE_LABELS,
   buildBondHybridFinanceStageSteps,

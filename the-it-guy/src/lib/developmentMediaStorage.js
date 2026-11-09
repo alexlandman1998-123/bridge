@@ -13,12 +13,13 @@ function validPath(path, developmentId) {
     !path.includes('\\') && !Array.from(path).some((character) => character.charCodeAt(0) < 32)
 }
 
-export function developmentMediaReference(client, value, developmentId) {
+export function developmentMediaReference(client, value, developmentId, { allowPublic = false } = {}) {
   try {
     const url = new URL(text(value))
     if (url.origin !== new URL(client.supabaseUrl).origin) return null
-    const match = url.pathname.match(/^\/storage\/v1\/object\/(sign|authenticated)\/([^/]+)\/(.+)$/)
+    const match = url.pathname.match(/^\/storage\/v1\/object\/(sign|authenticated|public)\/([^/]+)\/(.+)$/)
     if (!match) return null
+    if (match[1] === 'public' && !allowPublic) return null
     const bucket = decodeURIComponent(match[2])
     const path = decodeURIComponent(match[3])
     if (!bucket || /[/\\]/.test(bucket) || !developmentId || !validPath(path, developmentId)) return null

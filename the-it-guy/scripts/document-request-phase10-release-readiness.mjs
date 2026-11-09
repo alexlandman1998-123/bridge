@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -153,7 +154,7 @@ function buildReport(options = {}) {
   const policySource = read('src/core/documents/documentRequestCanonicalPolicy.js')
   const containerSource = read('src/core/documents/documentRequestContainerModel.js')
   const clientPortalSource = read('src/pages/ClientPortal.jsx')
-  const apiSource = read('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const privateListingSource = read('src/services/privateListingService.js')
   const buyerCleanupSource = read('src/services/documents/buyerDocumentCanonicalCleanupService.js')
   const sellerCleanupSource = read('src/services/documents/sellerDocumentCanonicalCleanupService.js')

@@ -9,17 +9,16 @@ import useWhatsAppHistory from '../../hooks/useWhatsAppHistory'
 import { useMetaWorkspace } from '../../hooks/useMetaWorkspace'
 import { whatsAppInboxChannel, whatsAppInboxConversation } from '../../modules/sharedInbox/combinedInbox'
 import InboxThreadMessages from '../../components/inbox/InboxThreadMessages.jsx'
-import { INBOX_DEMO_CONVERSATIONS } from '../../modules/sharedInbox/demoConversations'
 import useInboxPanelWidths from '../../modules/sharedInbox/useInboxPanelWidths'
 import InboxPanelDivider from '../../components/InboxPanelDivider'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ExternalLink, PanelRightClose, PanelRightOpen, ArrowLeft, RefreshCw, CalendarDays, CheckCircle2, Clock3, FileText, Inbox, Mail, MessageCircle, Search, RotateCcw, FlaskConical } from 'lucide-react'
+import { ExternalLink, PanelRightClose, PanelRightOpen, ArrowLeft, RefreshCw, CalendarDays, CheckCircle2, Clock3, FileText, Inbox, Mail, MessageCircle, Search, RotateCcw } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { createRevoInboxWorkflowRequest, isSharedInboxSchemaUnavailable, loadRevoInbox, loadRevoInboxChannels, markRevoInboxConversationRead, saveRevoInboxPrivateMessage, updateRevoInboxConversation } from '../../modules/revo/sharedInbox/revoSharedInboxService'
+import { createRevoInboxWorkflowRequest, loadRevoInbox, loadRevoInboxChannels, markRevoInboxConversationRead, saveRevoInboxPrivateMessage, updateRevoInboxConversation } from '../../modules/revo/sharedInbox/revoSharedInboxService'
 import { REVO_INBOX_VIEWS as VIEWS, resolveRevoInboxView } from '../../modules/revo/sharedInbox/sharedInboxViews'
 import './RevoSharedInboxPage.css'
 
@@ -54,13 +53,10 @@ export default function RevoSharedInboxPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [data, setData] = useState({ conversations: [], messages: [], activity: [], associations: [] })
   const [mode, setMode] = useState('loading')
-  const [sampleMode, setSampleMode] = useState(null)
-  const [samples, setSamples] = useState(() => structuredClone(INBOX_DEMO_CONVERSATIONS))
-  const isSample = sampleMode ?? (mode === 'preview')
   const whatsAppWorkspace = useMetaWorkspace()
   const whatsAppOrg = whatsAppWorkspace.organisationId === organisation?.id ? organisation.id : ''
-  const whatsApp = useWhatsAppHistory({ organisationId: isSample ? '' : whatsAppOrg, accessScope: whatsAppWorkspace.accessScope })
-  const whatsAppRows = !isSample && whatsAppOrg ? whatsApp.rows : EMPTY_ROWS
+  const whatsApp = useWhatsAppHistory({ organisationId: whatsAppOrg, accessScope: whatsAppWorkspace.accessScope })
+  const whatsAppRows = whatsAppOrg ? whatsApp.rows : EMPTY_ROWS
   const whatsAppSenders = whatsAppOrg ? whatsAppWorkspace.senders : EMPTY_ROWS
   const shellRef = useRef(null)
   const { widths, resize, reset } = useInboxPanelWidths()
@@ -105,17 +101,12 @@ export default function RevoSharedInboxPage() {
       setMode('live')
     } catch (error) {
       if (version !== requestVersion.current) return
-      if (isSharedInboxSchemaUnavailable(error) || /not configured/i.test(text(error?.message))) {
-        setMode('preview')
-        setSelectedId((current) => current || INBOX_DEMO_CONVERSATIONS[0].id)
-        return
-      }
       setMode('error')
       setNotice(text(error?.message) || 'Unable to load the inbox.')
     }
   }, [organisation?.id])
 
-  useEffect(() => { conversationLimit.current = 100; setLoadingOlder(false); setSampleMode(null); setSamples(structuredClone(INBOX_DEMO_CONVERSATIONS)); setMode('loading'); setData({ conversations: [], messages: [], activity: [], associations: [] }); setChannels([]); setSelectedId(''); setWork({}); setInboxId('all'); setNotice(''); void load(); return () => { requestVersion.current += 1 } }, [load])
+  useEffect(() => { conversationLimit.current = 100; setLoadingOlder(false); setMode('loading'); setData({ conversations: [], messages: [], activity: [], associations: [] }); setChannels([]); setSelectedId(''); setWork({}); setInboxId('all'); setNotice(''); void load(); return () => { requestVersion.current += 1 } }, [load])
   useEffect(() => {
     if (!popup) return undefined
     const onClose = () => setPopup(null)
@@ -138,13 +129,9 @@ export default function RevoSharedInboxPage() {
     window.addEventListener('arch9:whatsapp-read', refreshWhatsApp)
     return () => window.removeEventListener('arch9:whatsapp-read', refreshWhatsApp)
   }, [refreshWhatsApp])
-  useEffect(() => {
-    if (import.meta.env.DEV && mode === 'live' && !whatsApp.loading && !whatsAppWorkspace.loading && !whatsApp.error && !whatsAppWorkspace.error && !data.conversations.length && !whatsAppRows.length) setSampleMode(current => current === null ? true : current)
-  }, [mode, whatsApp.loading, whatsAppWorkspace.loading, whatsAppWorkspace.error, whatsApp.error, data.conversations.length, whatsAppRows.length])
   const refreshInbox = () => { void load(); void refreshWhatsApp(); void whatsAppWorkspace.refresh() }
 
   const conversations = useMemo(() => {
-    if (isSample) return samples.map(item => ({ ...item, assignedUserId: item.assignedUserId ?? (item.assignedTo === 'You' ? user?.id : null) }))
     return [...data.conversations, ...whatsAppRows.map(row => whatsAppInboxConversation(row, whatsAppSenders))].map((item) => ({
       ...item,
       name: item.contactName || item.contactAddress,
@@ -155,47 +142,34 @@ export default function RevoSharedInboxPage() {
       unread: false,
       messages: data.messages.filter((message) => message.conversationId === item.id),
     }))
-  }, [data, isSample, samples, user?.id, whatsAppRows, whatsAppSenders])
-  const inboxes = useMemo(() => isSample ? [
-    { id: 'preview-email', channel: 'email', address: 'team@agency.example', displayName: 'Email', connectionStatus: 'sample' },
-    { id: 'preview-whatsapp', channel: 'whatsapp', address: '+27 11 555 0100', displayName: 'WhatsApp', connectionStatus: 'sample' },
-  ] : [...channels, ...whatsAppSenders.map(whatsAppInboxChannel)], [channels, isSample, whatsAppSenders])
-  const scoped = useMemo(() => conversations.filter((item) => inboxId === 'all' || (isSample ? item.channelAddress === inboxes.find((channel) => channel.id === inboxId)?.address : item.channelId === inboxId)), [conversations, inboxId, inboxes, isSample])
+  }, [data, user?.id, whatsAppRows, whatsAppSenders])
+  const inboxes = useMemo(() => [...channels, ...whatsAppSenders.map(whatsAppInboxChannel)], [channels, whatsAppSenders])
+  const scoped = useMemo(() => conversations.filter((item) => inboxId === 'all' || item.channelId === inboxId), [conversations, inboxId])
   const visible = useMemo(() => scoped.filter((item) => matchesView(item, view, user?.id)
     && (channelFilter === 'all' || item.channel === channelFilter)
     && `${item.name} ${item.address} ${item.subject} ${item.preview}`.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : sort === 'unread' ? (b.unreadCount || Number(b.unread)) - (a.unreadCount || Number(a.unread)) : sort === 'oldest' ? (Date.parse(a.lastMessageAt) || 0) - (Date.parse(b.lastMessageAt) || 0) : (Date.parse(b.lastMessageAt) || 0) - (Date.parse(a.lastMessageAt) || 0)), [scoped, query, user?.id, view, channelFilter, sort])
   const selected = visible.find((item) => item.id === selectedId) || visible[0] || null
-  const draftKey = `${organisation?.id}:${isSample ? 'sample' : 'live'}:${selected?.id}:${composerMode}`
+  const draftKey = `${organisation?.id}:live:${selected?.id}:${composerMode}`
   const draft = work[draftKey] || ''
   const countFor = (key) => scoped.filter((item) => matchesView(item, key, user?.id)).length
-  const selectedAssociations = (isSample ? [] : data.associations).filter((item) => item.conversationId === selected?.id)
-  const isLive = mode === 'live' && !isSample
-  const canWork = isLive || isSample
+  const selectedAssociations = data.associations.filter((item) => item.conversationId === selected?.id)
+  const isLive = mode === 'live'
+  const canWork = isLive
   const detailsVisible = Boolean(selected && selected.source !== 'meta_whatsapp' && !detailsCollapsed)
   const messageCount = selected?.messages.length || 0
   useEffect(() => {
     const history = shellRef.current?.querySelector('.revo-history')
     if (history) history.scrollTop = history.scrollHeight
-  }, [selected?.id, messageCount, isSample])
+  }, [selected?.id, messageCount])
   const movePanel = (panel, clientX) => {
     const rect = shellRef.current?.getBoundingClientRect()
     if (!rect?.width) return
     const percent = (panel === 'list' ? clientX - rect.left : rect.right - clientX) / rect.width * 100
     resize(panel, percent)
   }
-  const toggleSamples = () => {
-    setSampleMode(!isSample)
-    setSelectedId(''); setQuery(''); setInboxId('all'); setChannelFilter('all'); setMobileReader(false); setNotice('')
-    if (popup && !popup.closed) popup.close(); setPopup(null)
-  }
-
   const performUpdate = async (patch, successMessage, selectedConversation = selected) => {
-    if (selectedConversation && isSample) {
-      setSamples(current => current.map(item => item.id === selectedConversation.id ? { ...item, ...patch, ...(patch.assignedUserId !== undefined ? { assignedTo: patch.assignedUserId === user?.id ? 'You' : 'Unassigned' } : {}) } : item))
-      setNotice('Sample conversation updated in this session.'); return
-    }
-    if (!selectedConversation || !isLive) { setNotice('This preview becomes operational after the shared inbox database update is applied.'); return }
+    if (!selectedConversation || !isLive) { setNotice('Connect a live inbox before updating conversations.'); return }
     if (saveLock.current) return
     saveLock.current = true
     setSaving(true)
@@ -206,12 +180,7 @@ export default function RevoSharedInboxPage() {
     } catch (error) { setNotice(text(error?.message) || 'The conversation could not be updated.') } finally { saveLock.current = false; setSaving(false) }
   }
   const savePrivateWork = async (selectedConversation = selected, body = draft, type = composerMode, workKey = draftKey) => {
-    if (selectedConversation && isSample) {
-      if (!body.trim()) return
-      setSamples(current => current.map(item => item.id === selectedConversation.id ? { ...item, messages: [...item.messages, { id: crypto.randomUUID(), direction: 'internal', messageType: type, bodyText: body, occurredAt: new Date().toISOString() }] } : item))
-      setWork(current => ({ ...current, [workKey]: '' })); setNotice(type === 'note' ? 'Sample note saved in this session.' : 'Sample draft saved in this session. Nothing was sent.'); return
-    }
-    if (!selectedConversation || !isLive) { setNotice('This preview becomes operational after the shared inbox database update is applied.'); return }
+    if (!selectedConversation || !isLive) { setNotice('Connect a live inbox before updating conversations.'); return }
     if (saveLock.current) return
     saveLock.current = true
     setSaving(true)
@@ -227,7 +196,6 @@ export default function RevoSharedInboxPage() {
     setMobileReader(true)
     setNotice('')
     const conversation = conversations.find((item) => item.id === conversationId)
-    if (isSample) { setSamples(current => current.map(item => item.id === conversationId ? { ...item, unread: false, unreadCount: 0 } : item)); return }
     if (!isLive || conversation?.source === 'meta_whatsapp' || !conversation?.unreadCount) return
     try {
       await markRevoInboxConversationRead({ organisationId: organisation.id, conversationId })
@@ -262,11 +230,11 @@ export default function RevoSharedInboxPage() {
   const handleEmailQueued = (result,copiedDraft)=>{if(result){if(copiedDraft&&['queued','preparing','submitting','accepted','uncertain'].includes(result.status)){const key=`${organisation.id}:live:${copiedDraft.conversationId}:draft`;setWork(current=>current[key]===copiedDraft.body?{...current,[key]:''}:current)}setNotice(result.status==='queued'?'Email queued. Check outgoing email for provider acceptance.':'Email request found in outgoing email.');if(result.conversationId)setSelectedId(result.conversationId)}void load()}
   const renderReader = (selected) => {
     const whatsAppDraftKey = `${organisation?.id}:live:${selected?.id}:whatsapp`
-    if (selected?.source === 'meta_whatsapp' && !isSample) return <WhatsAppConversationReader key={`${whatsAppWorkspace.accessScope}:${selected.providerConversationId}`} workspace={whatsAppWorkspace} conversationId={selected.providerConversationId} className="revo-whatsapp-reader" compact detailsWidth={widths.details} onDetailsResize={value => resize('details', value)} onDetailsMove={clientX => movePanel('details', clientX)} onDetailsReset={reset} initialReply={work[whatsAppDraftKey] || ''} onReplyChange={value => setWork(current => ({ ...current, [whatsAppDraftKey]: value }))} onChanged={refreshWhatsApp} revision={data} onBack={() => setMobileReader(false)} />
-    const readerKey = `${organisation?.id}:${isSample ? 'sample' : 'live'}:${selected?.id}:${composerMode}`
+    if (selected?.source === 'meta_whatsapp') return <WhatsAppConversationReader key={`${whatsAppWorkspace.accessScope}:${selected.providerConversationId}`} workspace={whatsAppWorkspace} conversationId={selected.providerConversationId} className="revo-whatsapp-reader" compact detailsWidth={widths.details} onDetailsResize={value => resize('details', value)} onDetailsMove={clientX => movePanel('details', clientX)} onDetailsReset={reset} initialReply={work[whatsAppDraftKey] || ''} onReplyChange={value => setWork(current => ({ ...current, [whatsAppDraftKey]: value }))} onChanged={refreshWhatsApp} revision={data} onBack={() => setMobileReader(false)} />
+    const readerKey = `${organisation?.id}:live:${selected?.id}:${composerMode}`
     const draft = work[readerKey] || ''
     const setDraft = (value) => setWork((current) => ({ ...current, [readerKey]: value }))
-    const selectedActivity = (isSample ? [] : data.activity).filter((item) => item.conversationId === selected?.id)
+    const selectedActivity = data.activity.filter((item) => item.conversationId === selected?.id)
     return selected ? <section className={`revo-thread ${selected.channel === 'email' ? 'revo-email-reader' : ''}`} aria-label="Conversation reader">
     <header><div><button className="revo-icon revo-mobile-back" type="button" aria-label="Back to conversations" onClick={() => { setMobileReader(false); setDetailsCollapsed(true) }}><ArrowLeft size={18} /></button><div className="revo-avatar revo-avatar-small" aria-hidden="true"><InboxChannelIcon channel={selected.channel}/></div><div><h2>{selected.name}</h2><p>{selected.channel === 'whatsapp' ? 'WhatsApp' : 'Email'} · {selected.address}</p></div></div><div>
       {isLive && detailsCollapsed && <button className="inbox-create-lead-button" type="button" disabled={saving} onClick={() => setCreateLeadOpen(true)}>Create lead</button>}
@@ -284,10 +252,9 @@ export default function RevoSharedInboxPage() {
   return <main className="revo-inbox-page" aria-label="Inbox">
     {setupScope && setupScope === whatsAppWorkspace.accessScope && <InboxAccountSetup key={setupScope} open onClose={() => setSetupScope(null)} workspace={whatsAppWorkspace} userId={user?.id} onConnected={refreshInbox} />}
     {notice ? <p className="revo-notice" role="status">{notice}</p> : null}
-    {!isSample && (whatsApp.error || whatsAppWorkspace.error) ? <p className="revo-notice" role="alert">WhatsApp conversations could not be loaded: {whatsApp.error || whatsAppWorkspace.error}</p> : null}
-    {isSample ? <div className="inbox-sample-notice"><span><FlaskConical size={15} /><strong>Sample inbox</strong> · Fictional conversations. Changes stay in this session.</span><button type="button" onClick={toggleSamples}>Back to live inbox</button></div> : null}
+    {(whatsApp.error || whatsAppWorkspace.error) ? <p className="revo-notice" role="alert">WhatsApp conversations could not be loaded: {whatsApp.error || whatsAppWorkspace.error}</p> : null}
     <section ref={shellRef} style={{ '--inbox-list-weight': `${widths.list}fr`, '--inbox-details-weight': `${widths.details}fr`, '--inbox-reader-weight': `${100 - widths.list - (detailsVisible ? widths.details : 0)}fr` }} className={`revo-inbox-shell ${detailsVisible ? 'inbox-details-visible' : 'revo-details-collapsed'} ${mobileReader ? 'revo-mobile-reader' : ''}`} aria-label="Shared inbox">
-      <section className="revo-list" aria-label="Conversations"><header><div className="revo-list-toolbar"><InboxAccountPicker onAdd={() => setSetupScope(whatsAppWorkspace.accessScope)} accounts={inboxes} value={inboxId} onChange={(id) => { setInboxId(id); setMobileReader(false) }} />{!isSample && organisation?.id && <InboxEmailActions key={`${organisation.id}:${user?.id}:create`} organisationId={organisation.id} userId={user?.id} createOnly whatsAppConversations={conversations.filter(row=>row.channel==='whatsapp'&&row.status!=='spam')} onWhatsApp={id=>{setInboxId('all');setChannelFilter('whatsapp');setQuery('');setView(conversations.find(row=>row.id===id)?.status==='closed'?'closed':'all');void selectConversation(id)}} initialChannelId={inboxId} onQueued={handleEmailQueued} />}<button className="revo-icon inbox-reset-layout" type="button" onClick={reset} aria-label="Reset panel widths" title="Reset panel widths"><RotateCcw size={16} /></button><button className="revo-icon" type="button" onClick={refreshInbox} aria-label="Refresh inbox" title="Refresh inbox"><RefreshCw size={17} /></button></div><label className="revo-search"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" aria-label="Search conversations" /></label><div className="revo-list-filters"><select aria-label="Conversation view" value={view} onChange={(event) => { setView(event.target.value); setMobileReader(false) }}>{VIEWS.map((item) => <option key={item.key} value={item.key}>{item.label} ({countFor(item.key)})</option>)}</select><select aria-label="Filter by channel" value={channelFilter} onChange={(event) => { setChannelFilter(event.target.value); setMobileReader(false) }}><option value="all">All channels</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option></select></div><div className="revo-list-summary"><span aria-live="polite">{visible.length} {visible.length === 1 ? 'conversation' : 'conversations'}</span><select aria-label="Sort conversations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="latest">Latest first</option><option value="oldest">Oldest first</option><option value="unread">Unread first</option><option value="name">Name A–Z</option></select></div></header><div>{mode === 'loading' && !visible.length ? <p className="revo-empty"><Clock3 size={22} />Loading conversations</p> : visible.map((item) => <button type="button" className={`revo-row revo-row-${item.channel} ${item.id === selected?.id ? 'selected' : ''}`} aria-pressed={item.id === selected?.id} key={item.id} onClick={() => void selectConversation(item.id)}><span className="revo-row-avatar" aria-hidden="true"><InboxChannelIcon channel={item.channel}/></span><span><span><strong>{item.name}</strong><time>{item.updated}</time></span><em>{item.subject || 'No subject'}</em><small>{item.preview || 'No message preview'}</small><small className="revo-row-meta"><ChannelIcon channel={item.channel} />{item.assignedTo} · {statusLabel(item.status)}</small></span>{item.unreadCount || item.unread ? <i aria-label={`${item.unreadCount || 1} unread messages`}>{item.unreadCount || 1}</i> : null}</button>)}{!isSample && (data.hasMore || whatsApp.nextCursor) && <div className="revo-empty"><small>Search and counts cover loaded conversations.</small><button type="button" disabled={loadingOlder || whatsApp.loadingOlder} onClick={async () => { setLoadingOlder(true); try { if (data.hasMore) { conversationLimit.current += 100; await load() } if (whatsApp.nextCursor) await whatsApp.loadOlder() } finally { setLoadingOlder(false) } }}>{loadingOlder ? 'Loading…' : 'Load older conversations'}</button></div>}{mode !== 'loading' && !whatsApp.loading && !visible.length ? <p className="revo-empty"><Inbox size={22} />{mode === 'error' ? 'Inbox could not be loaded. Try refreshing.' : 'No conversations match these filters.'}</p> : null}</div></section>
+      <section className="revo-list" aria-label="Conversations"><header><div className="revo-list-toolbar"><InboxAccountPicker onAdd={() => setSetupScope(whatsAppWorkspace.accessScope)} accounts={inboxes} value={inboxId} onChange={(id) => { setInboxId(id); setMobileReader(false) }} />{organisation?.id && <InboxEmailActions key={`${organisation.id}:${user?.id}:create`} organisationId={organisation.id} userId={user?.id} createOnly whatsAppConversations={conversations.filter(row=>row.channel==='whatsapp'&&row.status!=='spam')} onWhatsApp={id=>{setInboxId('all');setChannelFilter('whatsapp');setQuery('');setView(conversations.find(row=>row.id===id)?.status==='closed'?'closed':'all');void selectConversation(id)}} initialChannelId={inboxId} onQueued={handleEmailQueued} />}<button className="revo-icon inbox-reset-layout" type="button" onClick={reset} aria-label="Reset panel widths" title="Reset panel widths"><RotateCcw size={16} /></button><button className="revo-icon" type="button" onClick={refreshInbox} aria-label="Refresh inbox" title="Refresh inbox"><RefreshCw size={17} /></button></div><label className="revo-search"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" aria-label="Search conversations" /></label><div className="revo-list-filters"><select aria-label="Conversation view" value={view} onChange={(event) => { setView(event.target.value); setMobileReader(false) }}>{VIEWS.map((item) => <option key={item.key} value={item.key}>{item.label} ({countFor(item.key)})</option>)}</select><select aria-label="Filter by channel" value={channelFilter} onChange={(event) => { setChannelFilter(event.target.value); setMobileReader(false) }}><option value="all">All channels</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option></select></div><div className="revo-list-summary"><span aria-live="polite">{visible.length} {visible.length === 1 ? 'conversation' : 'conversations'}</span><select aria-label="Sort conversations" value={sort} onChange={(event) => setSort(event.target.value)}><option value="latest">Latest first</option><option value="oldest">Oldest first</option><option value="unread">Unread first</option><option value="name">Name A–Z</option></select></div></header><div>{mode === 'loading' && !visible.length ? <p className="revo-empty"><Clock3 size={22} />Loading conversations</p> : visible.map((item) => <button type="button" className={`revo-row revo-row-${item.channel} ${item.id === selected?.id ? 'selected' : ''}`} aria-pressed={item.id === selected?.id} key={item.id} onClick={() => void selectConversation(item.id)}><span className="revo-row-avatar" aria-hidden="true"><InboxChannelIcon channel={item.channel}/></span><span><span><strong>{item.name}</strong><time>{item.updated}</time></span><em>{item.subject || 'No subject'}</em><small>{item.preview || 'No message preview'}</small><small className="revo-row-meta"><ChannelIcon channel={item.channel} />{item.assignedTo} · {statusLabel(item.status)}</small></span>{item.unreadCount || item.unread ? <i aria-label={`${item.unreadCount || 1} unread messages`}>{item.unreadCount || 1}</i> : null}</button>)}{(data.hasMore || whatsApp.nextCursor) && <div className="revo-empty"><small>Search and counts cover loaded conversations.</small><button type="button" disabled={loadingOlder || whatsApp.loadingOlder} onClick={async () => { setLoadingOlder(true); try { if (data.hasMore) { conversationLimit.current += 100; await load() } if (whatsApp.nextCursor) await whatsApp.loadOlder() } finally { setLoadingOlder(false) } }}>{loadingOlder ? 'Loading…' : 'Load older conversations'}</button></div>}{mode !== 'loading' && !whatsApp.loading && !visible.length ? <p className="revo-empty"><Inbox size={22} />{mode === 'error' ? 'Inbox could not be loaded. Try refreshing.' : 'No conversations match these filters.'}</p> : null}</div></section>
       <InboxPanelDivider panel="list" value={widths.list} onResize={value => resize('list', value)} onMove={clientX => movePanel('list', clientX)} onReset={reset} />
       {reader}
       {detailsVisible && <InboxPanelDivider panel="details" value={widths.details} onResize={value => resize('details', value)} onMove={clientX => movePanel('details', clientX)} onReset={reset} />}

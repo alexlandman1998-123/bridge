@@ -81,3 +81,50 @@ it('evicts transaction and development caches and notifies the existing subscrib
   expect(dependencies.invalidateDevelopmentOptionsCache).toHaveBeenCalledTimes(2)
   expect(dependencies.window.dispatchEvent.mock.calls[1][0].type).toBe('itg:developments-changed')
 })
+
+
+function reservationSetup(overrides = {}) {
+  const lead = { developerLeadId: 'buyer', leadStatus: 'qualified' }
+  const dependencies = {
+    canManageDevelopment: true, unitReservationLock: { current: false },
+    developmentLeads: [lead], unitRows: [unit], developmentId: 'development',
+    developmentLeadsLoading: false, developmentLeadsError: '', unitReservationDraft: { unitId: unit.id },
+    getDevelopmentReservationReadiness: () => ({ canReserve: true, blockers: [] }),
+    setDevelopmentLeadReservation: vi.fn(async () => ({})), loadData: vi.fn(async () => {}), refreshUnitStatusViews: vi.fn(async () => {}),
+    setUnitReservationSaving: vi.fn(), setUnitReservationError: vi.fn(), setUnitReservationDraft: vi.fn(), setError: vi.fn(), setFeedback: vi.fn(),
+    ...overrides,
+  }
+  return { ...dependencies, run: bindFunction('handleDevelopmentReservation', 'async function handleUnitStatusQuickChange', dependencies) }
+}
+it('confirms one durable buyer reservation before closing and reconciling all stock views', async () => {
+  const context = reservationSetup()
+  await context.run({ developerLeadId: 'buyer', unitId: unit.id })
+  expect(context.setDevelopmentLeadReservation).toHaveBeenCalledExactlyOnceWith({ developerLeadId: 'buyer', unitId: unit.id })
+  expect(context.setUnitReservationDraft).toHaveBeenCalledWith(null)
+  expect(context.loadData).toHaveBeenCalledOnce()
+  expect(context.refreshUnitStatusViews).toHaveBeenCalledOnce()
+  expect(context.setFeedback).toHaveBeenCalledWith('Unit reserved for the buyer.')
+})
+it('keeps a failed reservation open and does not announce success', async () => {
+  const context = reservationSetup({ setDevelopmentLeadReservation: vi.fn(async () => { throw Error('Stock changed') }) })
+  await context.run({ developerLeadId: 'buyer', unitId: unit.id })
+  expect(context.setUnitReservationError).toHaveBeenCalledWith('Stock changed')
+  expect(context.setUnitReservationDraft).not.toHaveBeenCalled()
+  expect(context.setFeedback).not.toHaveBeenCalled()
+})
+it('does not invite resubmission after a saved reservation when only the refresh fails', async () => {
+  const context = reservationSetup({ refreshUnitStatusViews: vi.fn(async () => { throw Error('Read failed') }) })
+  await context.run({ developerLeadId: 'buyer', unitId: unit.id })
+  expect(context.setUnitReservationDraft).toHaveBeenCalledWith(null)
+  expect(context.setError).toHaveBeenCalledWith(expect.stringContaining('reservation was saved'))
+  expect(context.setUnitReservationError).not.toHaveBeenCalledWith('Read failed')
+})
+it('blocks stale readiness and concurrent duplicate commands before writing anything', async () => {
+  const blocked = reservationSetup({ getDevelopmentReservationReadiness: () => ({ canReserve: false, blockers: ['Existing buyer hold'] }) })
+  await blocked.run({ developerLeadId: 'buyer', unitId: unit.id })
+  expect(blocked.setDevelopmentLeadReservation).not.toHaveBeenCalled()
+  expect(blocked.setUnitReservationError).toHaveBeenCalledWith('Existing buyer hold')
+  const locked = reservationSetup({ unitReservationLock: { current: true } })
+  await locked.run({ developerLeadId: 'buyer', unitId: unit.id })
+  expect(locked.setDevelopmentLeadReservation).not.toHaveBeenCalled()
+})

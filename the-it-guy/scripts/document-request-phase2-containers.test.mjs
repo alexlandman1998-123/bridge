@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -7,7 +8,7 @@ import {
 } from '../src/core/documents/documentRequestContainerModel.js'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-const apiSource = fs.readFileSync('src/lib/api.js', 'utf8')
+const apiSource = readDomainApiSource()
 const portalSource = fs.readFileSync('src/services/clientPortalWorkspaceService.js', 'utf8')
 const modelSource = fs.readFileSync('src/core/documents/documentRequestContainerModel.js', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase2-containers.mjs', 'utf8')

@@ -14,7 +14,7 @@ vi.mock('../supabaseClient', () => ({ isSupabaseConfigured: true, supabase: {
 } }))
 vi.mock('../envValidation', () => ({ isUnsafeFallbackAllowed: () => false }))
 vi.mock('../mvpPilotCreationFreeze.js', () => ({ assertMvpPilotCreationAllowed: () => {} }))
-vi.mock('../api', () => ({ prepareBuyerOnboardingDocumentWorkspace: (...args) => fixture.prepare(...args) }))
+vi.mock('../../domains/onboarding/tokenApi.js', () => ({ prepareBuyerOnboardingDocumentWorkspace: (...args) => fixture.prepare(...args) }))
 vi.mock('../../services/documents/buyerLeadDocumentHandoffService.js', () => ({ promoteStagedBuyerLeadDocuments: (...args) => fixture.handoff(...args) }))
 import { createTransactionFromLeadOverride } from '../transactionLifecycleService.js'
 

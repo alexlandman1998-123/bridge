@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -120,7 +121,7 @@ const migrationPath = path.join(
   'supabase/migrations/20260828203724_bond_application_idempotent_document_reconciliation.sql',
 )
 const migration = fs.readFileSync(migrationPath, 'utf8')
-const apiSource = fs.readFileSync(path.join(workspaceRoot, 'the-it-guy/src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 for (const column of [
   'requirement_identity',
   'requirement_identity_version',

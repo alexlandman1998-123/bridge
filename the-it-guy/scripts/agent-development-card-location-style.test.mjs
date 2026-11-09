@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const agentListingsSource = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readFile(new URL('../src/domains/developments/selectionReadApi.js', import.meta.url), 'utf8')
 
 for (const requiredLocationFallback of [
   'resolveDevelopmentLocation',

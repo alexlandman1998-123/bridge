@@ -5,7 +5,9 @@ import SummaryCards from '../components/SummaryCards'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SearchInput from '../components/ui/SearchInput'
-import { fetchDevelopmentDetail, fetchDevelopmentsData, upsertTransactionHandover } from '../lib/api'
+import { upsertTransactionHandover } from '../domains/clientPortal/residentApi.js'
+import { fetchDevelopmentsData } from '../domains/developments/portfolioReadApi.js'
+import { fetchDevelopmentDetail } from '../domains/developments/api.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const COMPLETE_HANDOVER_STATUSES = new Set(['completed', 'closed', 'registered'])

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -121,7 +122,7 @@ const buyerAgencySource = read('src/lib/purchaserPersonas.js')
 const attorneyResolverSource = read('src/services/attorneyWorkflow/attorneyDocumentRequirementsResolver.js')
 const canonicalAdapterSource = read('src/services/documents/canonicalDocumentAdapterService.js')
 const transactionDocumentSource = read('src/services/documents/transactionCanonicalDocumentRequirementService.js')
-const apiSource = read('src/lib/api.js')
+const apiSource = readDomainApiSource()
 
 const groups = {
   buyerOnboardingTriggers: extractBuyerOnboardingDocumentTriggers(buyerOnboardingSource),

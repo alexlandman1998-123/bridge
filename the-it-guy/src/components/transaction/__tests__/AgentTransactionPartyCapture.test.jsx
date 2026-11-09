@@ -6,9 +6,13 @@ import { listOrganisationPreferredPartners } from '../../../lib/settingsApi.js'
 import AgentNewDealWizard from '../../AgentNewDealWizard.jsx'
 import { readAgentPrivateListings } from '../../../lib/agentListingStorage.js'
 import { ensureTransactionCaptureInvitations } from '../../../services/transactionCaptureHandoffService.js'
-import { createTransactionFromWizard, uploadDocument } from '../../../lib/api.js'
+import { createTransactionFromWizard } from '../../../domains/transactions/creationApi.js'
+import { uploadDocument } from '../../../domains/documents/uploadWorkflow.js'
 
-vi.mock('../../../lib/api.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/developments/selectionReadApi.js', () => ({ fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/developments/selectionReadApi.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/transactions/creationApi.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/documents/uploadWorkflow.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
 vi.mock('../../../services/transactionCaptureHandoffService.js', () => ({ ensureTransactionCaptureInvitations: vi.fn(async () => []) }))
 vi.mock('../../../services/transactionHandoffRegisterService.js', () => ({ readTransactionHandoffRegister: vi.fn(async () => ({ items: [] })) }))
 vi.mock('../../../services/documents/transactionCanonicalDocumentRequirementService.js', () => ({ fetchTransactionDocumentRequirementsByTransactionIds: vi.fn(async () => ({ 'saved-deal': [] })) }))

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -12,7 +13,7 @@ const actionMigration = readFileSync(
   resolve(root, '../supabase/migrations/20260927091054_unify_transaction_document_actions_phase4.sql'),
   'utf8',
 )
-const api = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const api = readDomainApiSource()
 const portal = readFileSync(resolve(root, 'src/pages/ClientPortal.jsx'), 'utf8')
 
 const uploadFunction = api.slice(

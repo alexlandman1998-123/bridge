@@ -1,3 +1,5 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -379,7 +381,7 @@ async function main() {
     vite = await createServer({ root: process.cwd(), mode: 'staging', logLevel: 'silent', server: browserReadback ? {host:'127.0.0.1',port:5184,strictPort:true} : { middlewareMode: true } })
     if(browserReadback)await vite.listen()
     const supabaseModule = await vite.ssrLoadModule('/src/lib/supabaseClient.js')
-    const api = await vite.ssrLoadModule('/src/lib/api.js')
+    const api = await loadDomainCapabilitiesWithServer(vite)
     const portalWorkspace = await vite.ssrLoadModule('/src/services/clientPortalWorkspaceService.js')
     const sellerService = await vite.ssrLoadModule('/src/services/privateListingService.js')
     const developerPortal = await vite.ssrLoadModule('/src/services/developerDocumentPortalService.js')
@@ -695,7 +697,7 @@ function runContractChecks() {
     path.resolve(process.cwd(), '../supabase/migrations/20260831125411_complete_agent_seller_handoff.sql'),
     'utf8',
   )
-  const api = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/api.js'), 'utf8')
+  const api = readDomainApiSource()
   const lifecycle = fs.readFileSync(
     path.resolve(process.cwd(), 'src/core/transactions/transactionCreationLifecycle.js'),
     'utf8',

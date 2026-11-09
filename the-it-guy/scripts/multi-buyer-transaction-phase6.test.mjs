@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -16,7 +17,7 @@ function test(name, fn) {
   }
 }
 
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const clientOnboardingSource = await readFile(new URL('../src/pages/ClientOnboarding.jsx', import.meta.url), 'utf8')
 const edgeClientOnboardingSource = await readFile(
   new URL('../../supabase/functions/send-email/handlers/clientOnboarding.ts', import.meta.url),

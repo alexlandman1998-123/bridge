@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
@@ -61,9 +62,9 @@ assert.deepEqual(insufficientEvidence.failedChecks.map((check) => check.id), ['o
 
 const dashboardSource = readFileSync(new URL('../src/services/attorneyDashboard.js', import.meta.url), 'utf8')
 assert.match(dashboardSource, /reasonCode: 'snapshot_rpc_available'/)
-assert.match(dashboardSource, /reasonCode: 'snapshot_rpc_unavailable'/)
+assert.match(dashboardSource, /reasonCode: snapshotResult\.error \? 'snapshot_rpc_unavailable' : 'snapshot_rpc_returned_empty'/)
 
-const apiSource = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = readDomainApiSource()
 assert.match(apiSource, /fallbackId: COMPATIBILITY_FALLBACK_IDS\.transactionMutationMissingColumns/)
 assert.match(apiSource, /usedFallback: retry\.removedColumns\.length > 0/)
 assert.match(apiSource, /reasonCode: retry\.removedColumns\.length \? 'schema_columns_omitted' : 'canonical_schema_supported'/)

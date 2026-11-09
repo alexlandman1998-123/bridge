@@ -19,9 +19,12 @@ const bundle = await build({
   entryPoints: [resolve(root, 'src/pages/agency/agencyLeadListLifecycle.js')],
   bundle: true,
   write: false,
+  metafile: true,
   format: 'esm',
   platform: 'node',
 })
+assert.equal(Object.keys(bundle.metafile.inputs).some((file) => /sellerJourneyService\.js|supabaseClient\.js|jspdf|html2pdf/.test(file)), false,
+  'seller list lifecycle must share pure onboarding evidence without loading workspace, database or PDF code')
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`
 const lifecycle = await import(moduleUrl)
 

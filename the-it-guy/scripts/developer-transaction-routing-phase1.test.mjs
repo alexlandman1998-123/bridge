@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -96,7 +97,7 @@ assert.ok(
 )
 assert.match(
   newTransactionWizard,
-  /navigate\(`\/transactions\$\{query\}`\)/,
+  /const route = resolveTransactionWorkspaceRoute\(\{[\s\S]*?transactionId: createdTransaction\.transactionId[\s\S]*?navigate\(route\.path/,
   'Agent fallback search should open the transactions route, not units.',
 )
 
@@ -116,18 +117,14 @@ assert.ok(
 
 const developmentDetailSource = readSource('src/pages/DevelopmentDetail.jsx')
 assert.ok(
-  developmentDetailSource.includes("const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'performance')") &&
+  developmentDetailSource.includes("const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter(tab => tab.id !== 'performance')") &&
     developmentDetailSource.includes('DEVELOPMENT_PRIMARY_TABS.map'),
   'Development page should show Transactions in the top tab strip and remove the obsolete Performance tab.',
 )
 
-const apiSource = readSource('src/lib/api.js')
-assert.ok(
-  apiSource.includes('const allTransactionRows = await fetchTransactionsListSummary({') &&
-    apiSource.includes('activeTransactionsOnly: false') &&
-    apiSource.includes('transactionRows: transactionRowsWithDocumentSummary.sort('),
-  'Development detail should load every transaction linked to the development, including inactive history.',
-)
+const apiSource = readDomainApiSource()
+assert.match(apiSource, /fetchTransactionsListSummary\(\{ developmentId, activeTransactionsOnly: true \}\)/, 'Opening development stock should load the scoped active transaction summary')
+assert.match(apiSource, /transactionRows: transactionRowsWithDocumentSummary\.sort\(/)
 assert.ok(
   apiSource.includes('function resolveDevelopmentSettingsAssignedAgent(settings = {})') &&
     apiSource.includes('const developmentAssignedAgent =') &&

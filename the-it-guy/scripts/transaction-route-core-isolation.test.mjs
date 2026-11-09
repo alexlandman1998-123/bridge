@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { createServer } from 'vite'
 import { hydrateMatterPropertyContext } from '../src/services/matterPropertyContext.js'
 import { resolveSectionalTitleIdentity } from '../src/services/portalCanonicalFieldFallbacks.js'
-const source = readFileSync('src/lib/api.js','utf8')
+const source = readFileSync('src/domains/transactions/workspaceReadApi.js','utf8')
 const start = source.indexOf('async function buildTransactionWorkspaceShellFromTransaction(')
 const end = source.indexOf('\nexport async function fetchTransactionCoreById', start)
 const factory = new Function('hydrateMatterPropertyContext', 'normalizeStage', 'normalizeMainStage', 'resolveAttorneyOperationalStageKey',
@@ -26,11 +27,16 @@ assert.ok(page.includes('Retry matter'))
 assert.ok(page.includes('if (resetMatterScopeRef.current === currentMatterAccessKey) return'))
 assert.ok(page.includes('if (liveMatterScopeRef.current !== loadScope) return null'))
 assert.ok(page.includes('void fetchTransactionPropertyContextById(matterId)'), 'Header property data hydrates independently after route verification')
-const workspaceApi = await import('../src/lib/transactionWorkspaceApi.js')
-assert.equal(typeof workspaceApi.fetchTransactionPropertyContextById, 'function', 'The lazy workspace API must expose the header’s property lookup')
+const server = await createServer({ configFile: false, root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
+try {
+  const workspaceApi = await server.ssrLoadModule('/src/lib/transactionWorkspaceApi.js')
+  assert.equal(typeof workspaceApi.fetchTransactionPropertyContextById, 'function', 'The workspace API must expose the header’s property lookup')
+} finally {
+  await server.close()
+}
 
 const propertyStart = source.indexOf('export async function fetchTransactionPropertyContextById(')
-const propertyEnd = source.indexOf('\nexport async function getTransactionRollup', propertyStart)
+const propertyEnd = source.length // The focused read module ends with property-context hydration.
 assert.ok(propertyStart > 0 && propertyEnd > propertyStart)
 const propertyFactory = new Function('fetchTransactionRouteCoreById', 'hydrateMatterPropertyContext', 'requireClient',
   `${source.slice(propertyStart, propertyEnd).replace(/^export /, '')}; return fetchTransactionPropertyContextById`)

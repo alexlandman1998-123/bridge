@@ -46,12 +46,24 @@ test('does not parse a cached URL into a durable storage identity', async () => 
 })
 
 function apiAction(name, client) {
-  const source = readFileSync(new URL('../api.js', import.meta.url), 'utf8')
+  const module = name === 'getSignedUrl' ? '../../domains/documents/listReadApi.js'
+    : name === 'createClientPortalDocumentSignedUrl' ? '../../domains/clientPortal/documentApi.js'
+      : '../../domains/documents/projectionApi.js'
+  const source = readFileSync(new URL(module, import.meta.url), 'utf8')
   const start = source.indexOf(`async function ${name}(`)
   assert.ok(start > 0)
   const body = source.slice(start, source.indexOf('\n}\n', start) + 2)
-  return Function('createFreshDocumentSignedUrl', 'requireClient', 'DOCUMENTS_BUCKET_CANDIDATES', 'isStorageBucketNotFoundError', `return (${body})`)(createFreshDocumentSignedUrl, () => client, ['documents', 'alternate'], (error) => error?.code === 'bucket_missing')
+  return Function('createFreshDocumentSignedUrl', 'requireClient', 'DOCUMENTS_BUCKET_CANDIDATES', 'isStorageBucketNotFoundError', 'requireClientPortalTokenClient', 'resolveClientPortalLinkByToken', `return (${body})`)(createFreshDocumentSignedUrl, () => client, ['documents', 'alternate'], (error) => error?.code === 'bucket_missing', () => client, async () => ({}))
 }
+
+test('buyer portal signing uses its token-scoped client and does not substitute a different bucket', async () => {
+  const { client, calls } = fixture([{ error: { code: '403', message: 'Portal access revoked' } }, { data: { signedUrl: 'https://wrong-bucket' } }])
+  const action = apiAction('createClientPortalDocumentSignedUrl', client)
+  await assert.rejects(action({ token: 'portal-token', filePath: 'tenant/id.pdf', fileBucket: 'documents' }), { code: '403' })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].bucket, 'documents')
+  assert.deepEqual(calls[0].args, ['tenant/id.pdf', 60, undefined])
+})
 
 test('the actual API action forwards authenticated download requests through the fresh resolver', async () => {
   const { client, calls } = fixture([{ data: { signedUrl: 'https://storage/fresh' } }])

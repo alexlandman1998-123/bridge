@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
@@ -46,7 +47,7 @@ for (const marker of [
   includes(layout, marker, `Commercial access blocked UI should include ${marker}`)
 }
 
-const api = await read('../src/lib/api.js')
+const api = await readDomainApiSource()
 for (const marker of [
   'commercial_access_request',
   'CommercialAccessRequested',

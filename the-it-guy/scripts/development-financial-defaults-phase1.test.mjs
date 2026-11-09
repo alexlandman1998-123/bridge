@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   addDevelopmentModal: await readFile(new URL('../src/components/AddDevelopmentModal.jsx', import.meta.url), 'utf8'),
   developmentDetail: await readFile(new URL('../src/pages/DevelopmentDetail.jsx', import.meta.url), 'utf8'),
   schema: await readFile(new URL('../sql/schema.sql', import.meta.url), 'utf8'),
@@ -32,10 +33,10 @@ assert(
 )
 
 assert(
-  files.addDevelopmentModal.includes('Transaction Defaults') &&
+  files.addDevelopmentModal.includes('Sales setup') &&
     files.addDevelopmentModal.includes('Reservation deposit applies') &&
     files.addDevelopmentModal.includes('Amount Type') &&
-    files.addDevelopmentModal.includes('Deposit treatment and alteration cost treatment are set on each transaction'),
+    files.addDevelopmentModal.includes('reservation_deposit_payable_to: transactionDefaults.reservationDepositPayableTo'),
   'AddDevelopmentModal should ask the practical transaction default questions',
 )
 

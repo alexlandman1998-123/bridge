@@ -21,7 +21,7 @@ import {
   MobileStatusChip,
   MobileTransactionCard,
 } from '../../components/mobile/ExecutiveMobileUi'
-import { fetchDevelopmentDetail } from '../../lib/api'
+import { fetchDevelopmentDetail } from '../../domains/developments/api.js'
 import {
   currencyFormatter,
   formatPercent,

@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-const source = readFileSync(new URL('../api.js', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../../domains/documents/requirementReadModel.js', import.meta.url), 'utf8')
 const body = source.slice(
-  source.indexOf('async function fetchTransactionRequiredDocumentsByTransactionIdsLegacy('),
-  source.indexOf('\nfunction buildRequiredChecklistFromRows('),
-)
+  source.indexOf('export async function fetchTransactionRequiredDocumentsByTransactionIdsLegacy('),
+  source.indexOf('\nexport function buildRequiredChecklistFromRows('),
+).replace(/^export /, '')
 const read = new Function(
   'isOptionalRelationKnownMissing', 'isMissingColumnError',
   'rememberMissingOptionalRelation', 'normalizeRequiredDocumentRows',

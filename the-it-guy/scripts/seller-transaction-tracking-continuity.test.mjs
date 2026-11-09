@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
 
 const workspaceSource = await readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 const privateListingSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const migration = await readFile(
   new URL('../../supabase/migrations/202607230002_seller_transaction_tracking_continuity.sql', import.meta.url),
   'utf8',

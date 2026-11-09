@@ -1,3 +1,4 @@
+import { assertRetiredDocumentEndpoint } from './helpers/retiredDocumentContracts.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
@@ -20,48 +21,10 @@ for (const token of [
   assert.match(migration, new RegExp(token.replace(/[()]/g, '\\$&')))
 assert.match(migration, /revoke all[\s\S]+from public,anon,authenticated/i)
 
-const renderer = fs.readFileSync('../supabase/functions/generate-mandate/index.ts', 'utf8')
-const preRender = renderer.indexOf(
-  'assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_render")',
-)
-const prePersist = renderer.indexOf(
-  'assertGenerationLeaseFenceI5(supabase, packetId, generationAttemptId, "pre_persist")',
-  preRender,
-)
-const upload = renderer.indexOf('.upload(', prePersist)
-assert.ok(
-  preRender > 0 && prePersist > preRender && upload > prePersist,
-  'renderer must fence before rendering and immediately before upload',
-)
-assert.match(renderer, /GENERATION_LEASE_FENCE_REJECTED/)
-assert.match(renderer, /generationFence:/)
+// The old renderer is now unreachable; its stronger boundary is HTTP 410.
+await assertRetiredDocumentEndpoint('generate-mandate')
 
-const packetService = fs.readFileSync('src/core/documents/packetService.js', 'utf8')
-const timeout = packetService.indexOf("if (failureCode === 'GENERATION_TIMEOUT')")
-const fenceFailure = packetService.indexOf("if (failureCode === 'GENERATION_LEASE_FENCE_REJECTED')", timeout)
-const preflightFailure = packetService.indexOf("if (failureCode === 'GENERATION_PREFLIGHT_BLOCKED')", fenceFailure)
-const failedRenderHandling = packetService.indexOf('// A failed render is never a generated legal document.', preflightFailure)
-const failedRenderPersistence = packetService.indexOf('const failedVersion = await recordGenerationFailure', failedRenderHandling)
-const timeoutBranch = packetService.slice(timeout, fenceFailure)
-assert.match(timeoutBranch, /deferGenerationLeaseRelease = true/)
-assert.match(timeoutBranch, /generation_result_ambiguous/)
-assert.doesNotMatch(timeoutBranch, /recordGenerationFailure|releaseDocumentPacketGenerationLease/)
-assert.ok(
-  fenceFailure > timeout &&
-    preflightFailure > fenceFailure &&
-    failedRenderHandling > preflightFailure &&
-    failedRenderPersistence > failedRenderHandling,
-  'renderer fence rejection must stop generation before failed-render persistence',
-)
-assert.match(packetService.slice(fenceFailure, preflightFailure), /safeToRetry: false/)
-assert.match(packetService.slice(failedRenderHandling), /recordGenerationFailure/)
-assert.doesNotMatch(packetService, /previewOnlyGeneration/)
-assert.doesNotMatch(packetService, /continuing with a generated preview-only draft/)
-assert.match(packetService, /This generation attempt is no longer active\. Refresh the packet before trying again\./)
-assert.match(packetService, /!deferGenerationLeaseRelease/)
-
-const api = fs.readFileSync('src/lib/api.js', 'utf8')
-const mandateApi = api.slice(api.indexOf('export async function generateMandateDocumentFromTemplate'))
+const mandateApi = fs.readFileSync('src/lib/generateMandateDocument.js', 'utf8')
 assert.match(mandateApi, /invocationError\.code = String\(error\.code \|\| 'EDGE_INVOCATION_FAILED'\)/)
 const supabaseClient = fs.readFileSync('src/lib/supabaseClient.js', 'utf8')
 assert.match(supabaseClient, /payload\?\.errorCode \|\| payload\?\.error_code \|\| payload\?\.code/)

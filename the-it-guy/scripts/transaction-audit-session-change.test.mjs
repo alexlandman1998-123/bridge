@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFile} from 'node:fs/promises'
-const source=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=await readDomainApiSource()
 const a=source.indexOf('async function logTransactionEventIfPossible'),b=source.indexOf('  const insertPayload =',a)
 const prefix=source.slice(a,b)
 let reads=0,writes=0,current=null

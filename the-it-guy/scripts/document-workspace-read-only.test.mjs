@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const source = readFileSync('src/services/documents/transactionCanonicalDocumentRequirementService.js', 'utf8')
@@ -20,8 +21,10 @@ assert.equal(writes, 0, 'Reading a workspace must not reconcile/write projection
 assert.equal((await resolve({ transactionId: 'empty', readOnly: true })).skipped, true)
 await resolve({ transactionId: 'matter' })
 assert.equal(writes, 1, 'Explicit sync keeps its mutation path')
-const api = readFileSync('src/lib/api.js', 'utf8')
+const api = readDomainApiSource()
 assert.match(api, /maybeResolveTransactionDocumentRequirements\(\{[\s\S]*?readOnly: !sync/)
 const page = readFileSync('src/pages/AttorneyTransactionDetail.jsx', 'utf8')
-assert.match(page, /includeDatasets: \['workflow', 'activity'\]/)
+assert.match(page, /const loadDocumentsWorkspace = useCallback/)
+assert.match(page, /activeWorkspaceMenu === 'documents'/)
+assert.match(page, /onChange=\{loadDocumentsWorkspace\}/)
 console.log('Workspace projection reads are read-only; explicit sync and refresh deduplication preserved')

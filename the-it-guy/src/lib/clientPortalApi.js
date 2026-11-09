@@ -1,12 +1,48 @@
-let portalApiPromise = null
+const workflowLoaders = {
+  resolveClientPortalQuotePdf: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalOriginatorFinanceByToken: () => import('../domains/clientPortal/originatorFinanceRead.js'),
+  cancelClientPortalBondApplicationSubmission: () => import('../domains/bond/portalApi.js'),
+  createClientPortalDocumentSignedUrl: () => import('../domains/clientPortal/documentApi.js'),
+  fetchClientPortalAttorneyLaneUpdatesByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalBankApplicationsByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchSellerTransferJourneyUpdatesByToken: () => import('../domains/transactions/detailApi.js'),
+  fetchClientPortalBondApplicationSubmission: () => import('../domains/bond/portalApi.js'),
+  fetchClientPortalNormalizedBondApplication: () => import('../domains/bond/portalApi.js'),
+  fetchBondApplicationPortalProjection: () => import('../domains/bond/portalApi.js'),
+  fetchBondApplicationPortalDraft: () => import('../domains/bond/portalApi.js'),
+  fetchBondApplicationPortalDocumentContinuity: () => import('../domains/bond/portalApi.js'),
+  fetchBondApplicationBuyerNotices: () => import('../domains/bond/portalApi.js'),
+  fetchClientPortalByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalCanonicalDocumentProjection: () => import('../domains/clientPortal/documentApi.js'),
+  fetchTransactionCanonicalDocumentProjection: () => import('../domains/documents/projectionApi.js'),
+  fetchClientPortalContextsByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalCoreByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalJourneySnapshotByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalMandatePacketSummaryByToken: () => import('../domains/clientPortal/workspaceApi.js'),
+  fetchClientPortalMatterFinancialAccounts: () => import('../domains/finance/accountsApi.js'),
+  inviteClientPortalBondApplicationCoApplicant: () => import('../domains/bond/portalApi.js'),
+  reconcileClientPortalBondDocumentRequirements: () => import('../domains/clientPortal/documentApi.js'),
+  resolveClientPortalFinalSignedDocumentAccess: () => import('../domains/clientPortal/documentApi.js'),
+  respondToClientPortalAppointment: () => import('../domains/clientPortal/workspaceApi.js'),
+  saveClientPortalOnboardingDraft: () => import('../domains/clientPortal/workspaceApi.js'),
+  saveBondApplicationPortalDraft: () => import('../domains/bond/portalApi.js'),
+  submitAlterationRequest: () => import('../domains/clientPortal/residentApi.js'),
+  submitClientIssue: () => import('../domains/clientPortal/residentApi.js'),
+  submitClientPortalComment: () => import('../domains/clientPortal/workspaceApi.js'),
+  submitClientPortalBondApplicationHtmlSignature: () => import('../domains/bond/portalApi.js'),
+  submitClientSellerInterestRequest: () => import('../domains/clientPortal/workspaceApi.js'),
+  submitServiceReview: () => import('../domains/clientPortal/residentApi.js'),
+  uploadClientPortalDocument: () => import('../domains/clientPortal/documentApi.js'),
+  uploadClientPortalMatterFinancialProof: () => import('../domains/finance/accountsApi.js'),
+  uploadClientPortalMatterFinancialRequestDocument: () => import('../domains/finance/accountsApi.js'),
+}
 
 export function preloadClientPortalApi() {
-  portalApiPromise ||= import('./api')
-  return portalApiPromise
+  return workflowLoaders.fetchClientPortalCoreByToken()
 }
 
 async function call(method, ...args) {
-  const api = await preloadClientPortalApi()
+  const api = await workflowLoaders[method]()
   return api[method](...args)
 }
 

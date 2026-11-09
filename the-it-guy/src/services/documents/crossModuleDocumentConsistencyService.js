@@ -1372,7 +1372,7 @@ export function buildCrossModuleDocumentLiveTouchpointRows({
       documentKey: requirement.document_key,
       entityType: 'transaction',
       entityId: requirement.transaction_id,
-      sourceTable: 'transaction_document_requirements',
+      sourceTable: requirement.sourceTable || 'transaction_document_requirements',
       expectedCanonicalDocumentKey,
       context: {
         groupKey: requirement.debug_group_key || requirement.group_key,
@@ -1472,7 +1472,13 @@ async function safeSelectRows(client, {
   query = query.limit(Math.max(1, Math.min(normalizeNumber(limit, 100), 500)))
 
   const result = await query
-  if (!result?.error) return result?.data || []
+  if (!result?.error) {
+    const rows = result?.data || []
+    if (rows.length >= Math.max(1, Math.min(normalizeNumber(limit, 100), 500))) {
+      queryWarnings.push({ table, code: 'audit_scope_limit_reached', message: `The ${table} read reached its row limit. Narrow the scope before treating this audit as complete.` })
+    }
+    return rows
+  }
   if (isMissingTableError(result.error, table) || isMissingColumnError(result.error)) {
     queryWarnings.push(buildQueryWarning(table, result.error))
     return []
@@ -1605,6 +1611,18 @@ export async function fetchCrossModuleDocumentConsistencySnapshot({
       queryWarnings,
     })
     : []
+  const requiredDocumentRows = scopedTransactionIds.length
+    ? await safeSelectRows(client, {
+      table: 'transaction_required_documents',
+      filters: [{ column: 'transaction_id', values: scopedTransactionIds }],
+      limit: maxRows,
+      queryWarnings,
+    })
+    : []
+  transactionDocumentRequirements.push(...requiredDocumentRows.map(row => ({
+    ...row, sourceTable: 'transaction_required_documents',
+    document_name: row.document_label, requested_from: row.required_from_role,
+  })))
   const transactionDocuments = scopedTransactionIds.length
     ? await safeSelectRows(client, {
       table: 'documents',
@@ -1616,7 +1634,7 @@ export async function fetchCrossModuleDocumentConsistencySnapshot({
   const listingDocuments = scopedListingIds.length
     ? await safeSelectRows(client, {
       table: 'documents',
-      filters: [{ column: 'private_listing_id', values: scopedListingIds }],
+      filters: [{ column: 'related_entity_type', value: 'private_listing' }, { column: 'related_entity_id', values: scopedListingIds }],
       limit: maxRows,
       queryWarnings,
     })
@@ -1641,9 +1659,12 @@ export async function fetchCrossModuleDocumentConsistencySnapshot({
     generatedAt,
     touchpoints: liveRows.touchpoints,
   })
+  const status = queryWarnings.length && audit.status === 'healthy' ? 'attention' : audit.status
 
   return {
     ...audit,
+    status,
+    coverageComplete: queryWarnings.length === 0,
     source: 'live_workspace',
     organisationId: normalizedOrganisationId,
     scopedListingIds,
@@ -1652,6 +1673,8 @@ export async function fetchCrossModuleDocumentConsistencySnapshot({
     queryWarnings,
     summary: {
       ...audit.summary,
+      status,
+      coverageComplete: queryWarnings.length === 0,
       source: 'live_workspace',
       queryWarningCount: queryWarnings.length,
       scopedListingCount: scopedListingIds.length,

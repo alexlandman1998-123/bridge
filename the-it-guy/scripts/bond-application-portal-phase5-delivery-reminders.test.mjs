@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(here, '..')
 const repoRoot = path.resolve(appRoot, '..')
 const migration = await readFile(path.join(repoRoot, 'supabase/migrations/20260905101931_bond_application_portal_phase5_delivery_reminders.sql'), 'utf8')
-const api = await readFile(path.join(appRoot, 'src/lib/api.js'), 'utf8')
+const api = await readDomainApiSource()
 const page = await readFile(path.join(appRoot, 'src/pages/bond/BondApplicationActionCentrePage.jsx'), 'utf8')
 const dispatcher = await readFile(path.join(repoRoot, 'supabase/functions/send-email/handlers/notificationReminderDispatch.ts'), 'utf8')
 

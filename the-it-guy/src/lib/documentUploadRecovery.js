@@ -6,6 +6,29 @@ import { createDocumentUploadProgressReporter, DOCUMENT_UPLOAD_TIMEOUTS, withDoc
 // credentials, document contents, or a saved row: recovery must recheck access.
 const operations = new Map()
 const receipts = new Map()
+// File objects are immutable. Cache only their digest, never their contents or
+// authorisation, so a retry avoids rereading a large file without trusting an
+// earlier actor. Failed reads must be retried rather than cached forever.
+const fileDigests = new WeakMap()
+async function readFileDigest(file) {
+  let bytes
+  try { bytes = await file.arrayBuffer() } catch (cause) {
+    throw Object.assign(new Error(`${file.name || 'This document'} could not be read. Download it from cloud storage to this device or choose another readable copy, then retry.`), { code: 'document_file_unreadable', cause })
+  }
+  return crypto.subtle.digest('SHA-256', bytes)
+}
+function digestFile(file) {
+  if (!file.arrayBuffer || !globalThis.crypto?.subtle) return null
+  if (typeof File === 'undefined' || !(file instanceof File)) {
+    return readFileDigest(file)
+  }
+  if (!fileDigests.has(file)) {
+    const digest = Promise.resolve().then(() => readFileDigest(file))
+      .catch(error => { if (fileDigests.get(file) === digest) fileDigests.delete(file); throw error })
+    fileDigests.set(file, digest)
+  }
+  return fileDigests.get(file)
+}
 const prefix = 'arch9:document-upload:v2:'
 
 export function isDefiniteUploadSaveRejection(error) {
@@ -19,27 +42,28 @@ export function isDefiniteUploadSaveRejection(error) {
     Boolean(error?.cause && isDefiniteUploadSaveRejection(error.cause))
 }
 
-function recoveryStorage() {
+function recoveryStorage(storageOverride) {
+  if (storageOverride !== undefined) return storageOverride
   try { return globalThis.localStorage || null } catch { return null }
 }
 
-function readReceipt(key) {
-  const stored = recoveryStorage()?.getItem(key)
+function readStoredReceipt(key, storageOverride) {
+  const stored = recoveryStorage(storageOverride)?.getItem(key)
   if (stored) {
     try { return JSON.parse(stored) } catch { throw new Error('Upload recovery information could not be read. Contact support before uploading this file again.') }
   }
   return receipts.get(key) || {}
 }
 
-function writeReceipt(key, receipt) {
+function writeStoredReceipt(key, receipt, storageOverride) {
   receipts.set(key, receipt)
-  const storage = recoveryStorage()
+  const storage = recoveryStorage(storageOverride)
   if (storage) storage.setItem(key, JSON.stringify(receipt))
 }
 
-function forgetReceipt(key) {
+function forgetStoredReceipt(key, storageOverride) {
   receipts.delete(key)
-  recoveryStorage()?.removeItem(key)
+  recoveryStorage(storageOverride)?.removeItem(key)
 }
 
 function unconfirmed(cause) {
@@ -63,30 +87,40 @@ export async function readSavedUploadByPath(client, { table = 'documents', colum
   return result.data ? { data: result.data, error: null } : null
 }
 
-export async function runRecoverableDocumentUpload({ client, scope, file, run, toSavedReceipt = savedReceipt, storageBuckets = ['documents'], storageResult = bucket => bucket, recoverStorage = null, monitorSurface = null, onProgress = null, timeouts = {} }) {
-  const report = createDocumentUploadProgressReporter(onProgress)
+export async function runRecoverableDocumentUpload({ client, scope, file, run, toSavedReceipt = savedReceipt, storageBuckets = ['documents'], storageResult = bucket => bucket, recoverStorage = null, monitorSurface = null, onProgress = null, timeouts = {}, receiptStorage = undefined }) {
+  const readReceipt = key => readStoredReceipt(key, receiptStorage)
+  const writeReceipt = (key, receipt) => writeStoredReceipt(key, receipt, receiptStorage)
+  const forgetReceipt = key => forgetStoredReceipt(key, receiptStorage)
+  const emit = createDocumentUploadProgressReporter(onProgress)
+  let lastStage
+  const report = (stage, message, detail) => { lastStage = stage; return emit(stage, message, detail) }
   const limits = { ...DOCUMENT_UPLOAD_TIMEOUTS, ...timeouts }
   report('preparing', '', { fileName: file?.name })
+  try {
   // Commercial metadata-only records do not upload a Storage object.
-  if (!file) return run({ path: value => value, upload: upload => upload(), persist: async ({ save }) => { const result = await save(); if (result?.error) throw result.error; return result } })
+  if (!file) return await run({ path: value => value, upload: upload => upload(), persist: async ({ save }) => { const result = await save(); if (result?.error) throw result.error; return result } })
   // Content, target and audience are part of the identity. Different files with
   // identical names/metadata must never recover one another's saved record.
-  const fileDigest = file.arrayBuffer && globalThis.crypto?.subtle
-    ? await withDocumentUploadDeadline(async () => crypto.subtle.digest('SHA-256', await file.arrayBuffer()), { timeoutMs: limits.preparing })
-    : null
+  const [fileDigest, actor] = await Promise.all([
+    withDocumentUploadDeadline(() => digestFile(file), { timeoutMs: limits.preparing, message: 'This file could not be read in time. Check that it is available on this device, then retry.' }),
+    (async () => {
+      if (!client?.auth?.getUser) return ''
+      const result = await withDocumentUploadDeadline(() => client.auth.getUser(), { timeoutMs: limits.preparing, message: 'Your sign-in could not be checked in time. Please retry.' })
+      // Token-scoped public portals intentionally have no Auth session. Every
+      // attempt still verifies its actor; failed lookups never share retry keys.
+      if (result.error && result.error.name !== 'AuthSessionMissingError') throw result.error
+      return result.data?.user?.id || ''
+    })(),
+  ])
   const hex = bytes => Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
-  let actor = ''
-  if (client?.auth?.getUser) {
-    const result = await withDocumentUploadDeadline(() => client.auth.getUser(), { timeoutMs: limits.preparing, message: 'Your sign-in could not be checked in time. Please retry.' })
-    // Token-scoped public portals intentionally have no Auth session. A
-    // failed identity lookup for a signed-in user must not change the retry key.
-    if (result.error && result.error.name !== 'AuthSessionMissingError') throw result.error
-    actor = result.data?.user?.id || ''
-  }
   const identity = JSON.stringify([scope, actor, file.name, file.size, file.type, file.lastModified, fileDigest ? hex(fileDigest) : ''])
   if (!globalThis.crypto?.subtle) throw new Error('Secure upload recovery is unavailable in this browser.')
   const key = prefix + hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity)))
-  if (operations.has(key)) return operations.get(key)
+  if (operations.has(key)) {
+    const result = await operations.get(key)
+    report('complete', 'Uploaded', { document: result, fileName: file.name, warnings: result?.persistenceWarnings || [] })
+    return result
+  }
   const execute = async () => {
     const state = readReceipt(key)
     let confirmed = null
@@ -274,4 +308,9 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
   const operation = globalThis.navigator?.locks?.request ? acquireAndExecute() : execute()
   operations.set(key, operation)
   try { return await operation } finally { operations.delete(key) }
+  } catch (error) {
+    if (lastStage === 'preparing' && error?.code === 'document_upload_timeout' && file) fileDigests.delete(file)
+    if (lastStage !== 'failed' && lastStage !== 'complete') report('failed', error?.message || '', { fileName: file?.name, error })
+    throw error
+  }
 }

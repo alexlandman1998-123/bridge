@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import { buildCanonicalSellerOnboardingPayload } from '../src/services/documents/sellerOnboardingFactTransformer.js'
 import { buildSpecialistSalesFacts, getSpecialistSalesListingSchema } from '../src/services/listings/specialistSalesListingSchema.js'
 import { buildListingSellerInformationModel } from '../src/services/listings/listingSellerInformationModel.js'
@@ -676,7 +677,7 @@ async function transactionSellerContextAfterActor(db) {
 }
 
 test('the transaction API routes seller-only saves through the guarded command before any table writes', async () => {
-  const source = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+  const source = readDomainApiSource()
   const start = source.indexOf('export async function updateTransactionStakeholderContacts(')
   const body = source.slice(start, source.indexOf('\nexport ', start + 10)).replace('export async function', 'async function')
   const client = { from() { throw new Error('unguarded table access') } }

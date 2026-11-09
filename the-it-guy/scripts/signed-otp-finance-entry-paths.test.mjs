@@ -1,7 +1,8 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const pipelineSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 const lifecycleSource = await readFile(new URL('../src/lib/transactionLifecycleService.js', import.meta.url), 'utf8')
 

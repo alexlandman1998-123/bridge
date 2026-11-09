@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,7 +8,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 
 const auditSource = fs.readFileSync(path.join(root, 'docs/attorney-documents-workspace-phase-1-audit.md'), 'utf8')
 const attorneyDetailSource = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
 const matterModelSource = fs.readFileSync(path.join(root, 'src/services/documents/matterDocumentWorkspaceModel.js'), 'utf8')
-const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const transactionRequirementServiceSource = fs.readFileSync(
   path.join(root, 'src/services/documents/transactionCanonicalDocumentRequirementService.js'),
   'utf8',
@@ -73,7 +74,7 @@ assert.match(
 )
 assert.match(
   matterModelSource,
-  /toArray\(requiredDocumentChecklist\)\.map\(\(requirement\) => \{[\s\S]*linkedDocument[\s\S]*normalizeDocumentCommandStatus\(requirement\?\.status[\s\S]*hasDocument:\s*Boolean\(linkedDocument \|\| uploadedDocumentId\)/,
+  /toArray\(requiredDocumentChecklist\)[\s\S]*\.map\(\(requirement\) => \{[\s\S]*linkedDocument[\s\S]*normalizeDocumentCommandStatus\(resolveRequirementReviewStatus\(requirement, linkedDocument\)[\s\S]*hasDocument:\s*Boolean\(linkedDocument \|\| uploadedDocumentId\)/,
   'required documents without linked uploads should keep missing/requested status semantics',
 )
 assert.match(

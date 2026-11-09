@@ -7,7 +7,7 @@ import {
   validateUserState,
   validateWorkspaceStateById,
 } from '../services/validation/validationEngine'
-import { getWorkflowEngineHealth } from '../lib/api'
+import { getWorkflowEngineHealth } from '../domains/transactions/progressApi.js'
 import { listOrganisationPartnerRoutingRules } from '../lib/settingsApi'
 import { getRecentOperationalEvents, getAuditMetrics } from '../services/observability/auditMetrics'
 import { deploymentHealthCheck, getOperationalHealthSummary } from '../services/observability/systemHealth'

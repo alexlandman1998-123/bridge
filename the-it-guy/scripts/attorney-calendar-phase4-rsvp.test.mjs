@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -11,7 +12,7 @@ const root = resolve(import.meta.dirname, '..')
 const migration = readFileSync(resolve(root, '../supabase/migrations/202607180047_attorney_calendar_phase4_rsvp_lifecycle.sql'), 'utf8')
 const page = readFileSync(resolve(root, 'src/pages/AppointmentRsvpPage.jsx'), 'utf8')
 const operations = readFileSync(resolve(root, 'src/services/attorneyOperations.js'), 'utf8')
-const api = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const api = readDomainApiSource()
 const liveMode = process.argv.includes('--live')
 
 for (const token of [

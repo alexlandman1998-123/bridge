@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -112,7 +113,7 @@ function runDraftConstructionContract() {
 
 function runPersistenceAndSubmissionContract() {
   const clientPortalSource = readFile('src/pages/ClientPortal.jsx')
-  const apiSource = readFile('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const persistenceSource = readFile('src/modules/bond/application/bondApplicationPersistence.js')
   const validationSource = readFile('src/modules/bond/application/bondApplicationValidation.js')
   const persistSource = sliceFunction(clientPortalSource, 'async function persistBondApplicationDraft')
@@ -212,7 +213,7 @@ function runUnitDetailOffersGrantAndWorkflowContract() {
   assertContains(clientPortalSource, "activeBondApplicationTab === 'offers'")
   assertContains(clientPortalSource, "activeBondApplicationTab === 'grant'")
 
-  const apiSource = readFile('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const upsertSource = sliceFunction(apiSource, 'async function upsertClientPortalOnboardingForm')
   assert.equal(upsertSource.includes('addBondApplication'), false)
   assert.equal(upsertSource.includes('ensureBondApplicationWorkspaceRecord'), false)

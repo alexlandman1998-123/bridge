@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import BondSubmissionPackPanel, { BondSubmissionPackWorkspace } from '../../../../components/bond/BondSubmissionPackPanel.jsx'
 const mocks = vi.hoisted(() => ({ load: vi.fn(), download: vi.fn(), queue: vi.fn(), review: vi.fn(), record: vi.fn(), receipt: vi.fn(), revoke: vi.fn() }))
 vi.mock('../../../../services/bondSubmissionPackService.js', () => ({ getBondSubmissionPackService: async () => ({ load: mocks.load, download: mocks.download, review: mocks.review }) }))
-vi.mock('../../../../lib/api.js', () => ({ fetchBondSubmissionPackQueue: mocks.queue, recordManualBondSubmission: mocks.record, recordBondStatementReceipt: mocks.receipt, revokeBondStatementReceipt: mocks.revoke }))
+vi.mock('../../../../domains/bond/runtimeApi.js', () => ({ fetchBondSubmissionPackQueue: mocks.queue, recordManualBondSubmission: mocks.record, recordBondStatementReceipt: mocks.receipt, revokeBondStatementReceipt: mocks.revoke }))
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const plan = { submission: { submission_version: 2 }, ready: false, rows: [{ key: 'bank', title: 'Bank statements', status: 'Secure handoff not connected', external: true, included: [] }, { key: 'id', title: 'Identity document', status: 'Approved', included: ['id'] }] }
 it('offers three separate downloads with incomplete and statement-handoff guidance', async () => {

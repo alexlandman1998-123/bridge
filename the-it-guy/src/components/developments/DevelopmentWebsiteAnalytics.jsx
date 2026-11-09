@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchDevelopmentVisualAnalytics } from '../../lib/developmentDetailApi'
+import { fetchDevelopmentVisualAnalytics } from '../../domains/developments/api.js'
 import { buildHarbourHeightsWebsiteAnalyticsDemo, isHarbourHeightsAnalyticsDemo } from '../../core/developments/harbourHeightsWebsiteAnalyticsDemo'
 import DevelopmentWebsiteAnalyticsDashboard from './DevelopmentWebsiteAnalyticsDashboard'
 

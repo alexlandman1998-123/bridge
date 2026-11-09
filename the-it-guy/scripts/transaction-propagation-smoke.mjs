@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
@@ -1063,7 +1064,7 @@ async function main() {
   const { createServer } = await import('vite')
   const vite = await createServer({ logLevel: 'error', server: { middlewareMode: true }, appType: 'custom' })
   const { supabase } = await vite.ssrLoadModule('/src/lib/supabaseClient.js')
-  const { createTransactionFromWizard, saveTransactionRoleplayerSelections } = await vite.ssrLoadModule('/src/lib/api.js')
+  const { createTransactionFromWizard, saveTransactionRoleplayerSelections } = await loadDomainCapabilitiesWithServer(vite)
   if (!supabase) throw new Error('Frontend Supabase client is not configured.')
 
   let report

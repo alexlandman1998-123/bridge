@@ -4,7 +4,6 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const attorneyOperations = readFileSync(resolve(root, 'src/services/attorneyOperations.js'), 'utf8')
-const api = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
 
 for (const token of [
   "import { checkAppointmentSchedulingIntegrityAsync } from '../lib/agencyPipelineService'",
@@ -16,7 +15,9 @@ for (const token of [
 }
 
 const conflictCheckIndex = attorneyOperations.indexOf('const schedulingIntegrity = await checkAppointmentSchedulingIntegrityAsync(')
-const appointmentInsertIndex = attorneyOperations.indexOf("let appointmentResult = await client\n    .from('appointments')\n    .insert(insertPayload)")
+const appointmentInsertIndex = attorneyOperations.indexOf("client.rpc('create_attorney_appointment_invite'")
+assert.match(attorneyOperations, /p_appointment: insertPayload, p_participants: participantRows/)
+assert.match(attorneyOperations, /confirmed\?\.appointment\?\.appointment_id !== appointmentId/)
 assert.ok(conflictCheckIndex > -1, 'Attorney invite creation must run scheduling integrity checks.')
 assert.ok(appointmentInsertIndex > -1, 'Attorney invite creation must persist appointments.')
 assert.ok(
@@ -24,21 +25,18 @@ assert.ok(
   'Attorney invite conflicts must be blocked before the appointment row is inserted.',
 )
 
-for (const token of [
-  "if (normalizedAction === 'reschedule')",
-  'Please choose a preferred date and time for the reschedule request.',
-  'Please choose a preferred date and time in the future.',
-]) {
-  assert.ok(api.includes(token), `Client portal reschedule validation should include ${token}`)
+// Exercise current token-bound responses: bad dates cannot reach persistence.
+const { respondToPortalAppointment } = await import('../src/services/clientAppointmentResponseService.js')
+const calls = []
+const client = { async rpc(name, args) { calls.push({ name, args }); return { data: { appointmentId: 'fixture', transactionId: 'transaction', participantId: 'buyer', rsvpStatus: args.p_status, status: 'confirmed' }, error: null } } }
+const input = { token: 'fixture-token', appointmentId: 'fixture', action: 'reschedule', expectedStart: '2099-01-01T10:00:00Z' }
+for (const preferredDateTime of [null, 'invalid', '2000-01-01T10:00:00Z']) {
+  await assert.rejects(respondToPortalAppointment(client, { ...input, preferredDateTime }), /future/)
 }
-
-const clientValidationIndex = api.indexOf("if (normalizedAction === 'reschedule')")
-const appointmentQueryIndex = api.indexOf('const appointmentQuery = await client')
-assert.ok(clientValidationIndex > -1, 'Client portal reschedules must be validated.')
-assert.ok(appointmentQueryIndex > -1, 'Client portal appointment lookup must still run after validation.')
-assert.ok(
-  clientValidationIndex < appointmentQueryIndex,
-  'Client portal reschedule validation should happen before DB mutation work begins.',
-)
+assert.equal(calls.length, 0)
+await respondToPortalAppointment(client, { ...input, preferredDateTime: '2099-01-02T10:00:00Z' })
+assert.equal(calls.length, 1)
+assert.equal(calls[0].name, 'bridge_respond_client_portal_appointment')
+assert.equal(calls[0].args.p_status, 'Proposed New Time')
 
 console.log('appointment Phase 1 stop-bad-appointments contract passed')

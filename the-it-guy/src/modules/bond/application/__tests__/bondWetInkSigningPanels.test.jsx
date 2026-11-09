@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import BondWetInkSigningPanel from '../guided/BondWetInkSigningPanel.jsx'
 import BondWetInkReviewQueue from '../../../../components/bond/BondWetInkReviewQueue.jsx'
 const mocks = vi.hoisted(() => ({ queue: vi.fn(), read: vi.fn(), review: vi.fn(), download: vi.fn() }))
-vi.mock('../../../../lib/api.js', () => ({ fetchBondWetInkReviewQueue: mocks.queue, readBondWetInkReviewOriginal: mocks.read, reviewBondWetInkSignedCopy: mocks.review }))
+vi.mock('../../../../domains/bond/runtimeApi.js', () => ({ fetchBondWetInkReviewQueue: mocks.queue, readBondWetInkReviewOriginal: mocks.read, reviewBondWetInkSignedCopy: mocks.review }))
 vi.mock('../../../../lib/clientPortalApi.js', () => ({ cancelBuyerBondWetInkSigning: vi.fn(), uploadBuyerBondWetInkSignedCopy: vi.fn(), renderBuyerBondWetInkSigningPdf: vi.fn(), readBuyerBondWetInkOriginal: vi.fn() }))
 vi.mock('../../../../services/bondWetInkSigningService.js', () => ({ downloadBondSigningBytes: mocks.download }))
 const now = new Date().toISOString()

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
@@ -27,7 +28,7 @@ assert.match(
   'authenticated users need table privileges for subprocess step bootstrapping.',
 )
 
-const apiSource = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = readDomainApiSource()
 assert.match(
   apiSource,
   /message\.includes\('row-level security'\)/,

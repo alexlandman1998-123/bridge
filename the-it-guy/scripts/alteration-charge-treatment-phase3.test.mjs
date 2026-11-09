@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   panel: await readFile(new URL('../src/components/AlterationRequestsPanel.jsx', import.meta.url), 'utf8'),
   unitDetail: await readFile(new URL('../src/pages/UnitDetail.jsx', import.meta.url), 'utf8'),
   schema: await readFile(new URL('../sql/schema.sql', import.meta.url), 'utf8'),

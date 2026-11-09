@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -41,7 +42,7 @@ assertIncludes(bondOrganisationService, 'ENTITLEMENT_KEYS.maxUsers', 'bond consu
 const bondIntakeService = readFileSync(resolve(root, 'the-it-guy/src/services/bondIntakeWorkflowService.js'), 'utf8')
 assertIncludes(bondIntakeService, 'ENTITLEMENT_KEYS.monthlyBondApplications', 'bond intake assignment enforcement')
 
-const apiService = readFileSync(resolve(root, 'the-it-guy/src/lib/api.js'), 'utf8')
+const apiService = readDomainApiSource()
 assertIncludes(apiService, 'ENTITLEMENT_KEYS.monthlyBondApplications', 'roleplayer propagation enforcement')
 
 const server = await createServer({

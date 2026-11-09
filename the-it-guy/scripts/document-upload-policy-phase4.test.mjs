@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
@@ -32,7 +33,7 @@ assert.throws(
   /too large/,
 )
 
-const apiSource = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = readDomainApiSource()
 const privateListingSource = readFileSync(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 
 assert.match(apiSource, /validateDocumentUploadFile\(file,/, 'transaction and portal upload paths should use shared validation')

@@ -1,8 +1,17 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
+const cacheSource = await readFile(new URL('../src/lib/api/shared/schemaReadCompatibility.js', import.meta.url), 'utf8')
+const requirementReadSource = await readFile(new URL('../src/domains/documents/requirementReadModel.js', import.meta.url), 'utf8')
+const readinessReadSource = await readFile(new URL('../src/domains/transactions/readinessReadApi.js', import.meta.url), 'utf8')
+const activityReadSource = await readFile(new URL('../src/domains/transactions/activityReadApi.js', import.meta.url), 'utf8')
+const optionalGuardSources = apiSource + requirementReadSource + readinessReadSource + activityReadSource
 const pageSource = await readFile(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
+const datasetRegistrySource = await readFile(new URL('../src/pages/transaction-workspace/datasetRegistry.js', import.meta.url), 'utf8')
+const datasetSources = (await Promise.all(['documents', 'activity', 'partners', 'finance', 'workflow'].map(name =>
+  readFile(new URL(`../src/pages/transaction-workspace/datasets/${name}.js`, import.meta.url), 'utf8')))).join('\n')
 
 const loaderStart = apiSource.indexOf('export async function fetchTransactionDocumentsWorkspace')
 const loaderEnd = apiSource.indexOf('async function resolveTransactionWorkspaceReadContext', loaderStart)
@@ -32,7 +41,8 @@ for (const excludedCall of [
   assert.doesNotMatch(loaderSource, new RegExp(excludedCall), `focused loader must not hydrate ${excludedCall}`)
 }
 
-assert.match(pageSource, /fetchTransactionDocumentsWorkspace\(requestedTransactionId, \{ hydrationContext \}\)/)
+assert.match(pageSource, /loadTransactionWorkspaceDataset\('documents', requestedTransactionId, \{ hydrationContext \}\)/)
+assert.match(datasetSources, /fetchTransactionDocumentsWorkspace\(transactionId, options\)/)
 assert.match(pageSource, /__documentsHydrated: true/)
 assert.match(pageSource, /!data\.__isShell/, 'empty route shells must not masquerade as hydrated document datasets')
 assert.match(pageSource, /activeWorkspaceMenu !== 'documents'/)
@@ -47,11 +57,13 @@ for (const loaderName of [
   'fetchTransactionWorkflowWorkspace',
 ]) {
   assert.match(apiSource, new RegExp(`export async function ${loaderName}`), `${loaderName} must be exported`)
-  assert.match(pageSource, new RegExp(loaderName), `${loaderName} must be wired into the transaction workspace`)
+  assert.match(datasetSources, new RegExp(loaderName), `${loaderName} must be wired into the transaction workspace dataset`)
 }
 assert.match(pageSource, /const loadWorkspaceDataset = useCallback/)
 assert.match(pageSource, /\['stakeholders', 'parties'\]\.includes\(activeWorkspaceMenu\)/)
 assert.match(pageSource, /\['today', 'tasks', 'transfer'\]\.includes\(activeWorkspaceMenu\)/)
+assert.match(datasetRegistrySource, /tabId === 'stakeholders' \|\| tabId === 'parties'/)
+assert.match(datasetRegistrySource, /tabId === 'today' \|\| tabId === 'tasks' \|\| tabId === 'transfer'/)
 assert.match(apiSource, /getTransactionFinanceWorkflow\(canonicalTransactionId, \{ client, createIfMissing: false \}\)/)
 
 console.log('transaction lazy workspace dataset checks passed')
@@ -61,7 +73,7 @@ assert.match(apiSource, /options\.hydrationContext \|\| await resolveTransaction
 assert.match(pageSource, /const requestWorkspaceHydrationContext = useCallback/)
 assert.match(pageSource, /workspaceHydrationContextRef\.current = \{ key: contextKey, promise, value: null \}/)
 assert.match(pageSource, /fetchTransactionById\(transactionId, \{ hydrationContext \}\)/)
-assert.match(pageSource, /fetchTransactionDocumentsWorkspace\(requestedTransactionId, \{ hydrationContext \}\)/)
+assert.match(pageSource, /loadTransactionWorkspaceDataset\('documents', requestedTransactionId, \{ hydrationContext \}\)/)
 assert.match(pageSource, /workspaceHydrationContextRef\.current = \{ key: '', promise: null, value: null \}/)
 
 console.log('transaction hydration context cache checks passed')
@@ -70,16 +82,16 @@ assert.match(pageSource, /background && !fullRefresh && backgroundRefreshHandler
 assert.match(pageSource, /return backgroundRefreshHandlerRef\.current\(\{ reason: refreshReason \|\| 'legacy_background_refresh' \}\)/)
 assert.match(pageSource, /const refreshTransactionDatasets = useCallback/)
 assert.match(pageSource, /const refreshActiveWorkspaceDataset = useCallback/)
-assert.match(pageSource, /refreshTransactionDatasets\(\['documents', 'activity'\], \{ reason: 'document_request_created' \}\)/)
-assert.match(pageSource, /refreshTransactionDatasets\(\['workflow', 'activity'\], \{ reason: 'workflow_mutation' \}\)/)
-assert.match(pageSource, /refreshActiveWorkspaceDataset\(\{ reason: `live:\$\{reason\}` \}\)/)
+assert.match(pageSource, /refreshTransactionDatasets\(\['documents', 'workflow', 'activity'\], \{ reason: 'document_request_created' \}\)/)
+assert.match(pageSource, /refreshAttorneyMutationWorkspace\('workflow_mutation'\)/)
+assert.match(pageSource, /refreshActiveWorkspaceDataset\(\{\s*reason: `live:\$\{reason\}`,?\s*\}\)/)
 
 console.log('transaction targeted background refresh checks passed')
 
-assert.match(apiSource, /const knownMissingOptionalRelations = new Set\(\)/)
-assert.match(apiSource, /function rememberMissingOptionalRelation\(relationName, error\)/)
-assert.match(apiSource, /export function getKnownMissingOptionalRelations\(\)/)
-assert.match(apiSource, /export function resetKnownMissingOptionalRelations\(\)/)
+assert.match(cacheSource, /const knownMissingOptionalRelations = new Set\(\)/)
+assert.match(cacheSource, /function rememberMissingOptionalRelation\(relationName, error\)/)
+assert.match(cacheSource, /export function getKnownMissingOptionalRelations\(\)/)
+assert.match(cacheSource, /export function resetKnownMissingOptionalRelations\(\)/)
 for (const relationName of [
   'transaction_subprocesses',
   'transaction_proxy_updates',
@@ -91,13 +103,10 @@ for (const relationName of [
   'transaction_referral_incentive_events',
   'appointments',
 ]) {
-  assert.match(apiSource, new RegExp(`isOptionalRelationKnownMissing\\('${relationName}'\\)`), `${relationName} must have a negative-cache guard`)
-  assert.match(apiSource, new RegExp(`rememberMissingOptionalRelation\\('${relationName}'`), `${relationName} must register confirmed absence`)
+  assert.match(optionalGuardSources, new RegExp(`isOptionalRelationKnownMissing\\('${relationName}'\\)`), `${relationName} must have a negative-cache guard`)
+  assert.match(optionalGuardSources, new RegExp(`rememberMissingOptionalRelation\\('${relationName}'`), `${relationName} must register confirmed absence`)
 }
-const optionalCacheSource = apiSource.slice(
-  apiSource.indexOf('const knownMissingOptionalRelations'),
-  apiSource.indexOf('function isMissingColumnError'),
-)
+const optionalCacheSource = cacheSource.slice(0, cacheSource.indexOf('export const knownMissingSchemaColumns'))
 assert.doesNotMatch(optionalCacheSource, /isPermissionDeniedError/, 'permission failures must not enter the missing-relation cache')
 
 console.log('optional relation negative-cache checks passed')

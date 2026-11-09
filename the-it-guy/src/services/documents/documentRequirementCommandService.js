@@ -32,6 +32,7 @@ export async function executeDocumentRequirementCommand(client, command) {
   if (result?.saved !== true || result.commandId !== commandId || !result.requirement?.id) throw unconfirmed()
   if (requirementId && result.requirement.id !== requirementId) throw unconfirmed()
   if (action === 'upload' && !uuid.test(result.uploadId || '')) throw unconfirmed()
+  if (action === 'withdraw' && (result.requirement.satisfied_by_document_id || result.requirement.latest_upload_id || result.uploadId !== payload.documentId)) throw unconfirmed()
   notifyDocumentRequirementContextChanged(result.refreshContexts)
   return result
 }

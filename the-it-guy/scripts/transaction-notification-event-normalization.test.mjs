@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFile} from 'node:fs/promises'
-const source=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=await readDomainApiSource()
 const start=source.indexOf('async function notifyRolesForTransaction('),end=source.indexOf('  if (!isMissingFunctionError(receipt.error',start)
 let payload
 const run=Function('normalizeEventType','normalizeNotificationType',source.slice(start,end)+'};return notifyRolesForTransaction')(

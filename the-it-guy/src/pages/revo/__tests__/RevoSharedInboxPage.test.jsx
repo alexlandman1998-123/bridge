@@ -79,24 +79,30 @@ it('supports dragging panel dividers and clamps excessive widths', async () => {
  vi.unstubAllGlobals()
  localStorage.clear()
 })
-it('shows labelled sample threads when inbox storage is not configured', async () => {
+it('shows a loading error instead of fictional conversations when inbox storage is unavailable', async () => {
  api.load.mockRejectedValue(new Error('Supabase is not configured'))
  render(<MemoryRouter initialEntries={['/inbox']}><RevoSharedInboxPage /></MemoryRouter>)
- await screen.findByRole('button', { name: /Lerato Mokoena/ })
- expect(screen.getByText(/Fictional conversations/)).toBeTruthy()
- fireEvent.click(screen.getByRole('button', { name: 'Back to live inbox' }))
- expect(screen.queryByRole('button', { name: /Lerato Mokoena/ })).toBeNull()
+ await screen.findByText('Supabase is not configured')
+ expect(screen.getByText('Inbox could not be loaded. Try refreshing.')).toBeTruthy()
+ expect(document.querySelectorAll('.revo-row')).toHaveLength(0)
+ expect(screen.queryByText(/Fictional conversations/)).toBeNull()
  expect(api.save).not.toHaveBeenCalled()
+ expect(api.update).not.toHaveBeenCalled()
 })
-it('starts an empty development inbox with samples and respects returning to live data', async () => {
+it('keeps an empty development inbox empty after refresh and organisation changes', async () => {
  api.load.mockResolvedValue({ conversations: [], messages: [], activity: [], associations: [] })
- render(<MemoryRouter initialEntries={['/inbox']}><RevoSharedInboxPage /></MemoryRouter>)
- await screen.findByRole('button', { name: /Lerato Mokoena/ })
- fireEvent.click(screen.getByRole('button', { name: 'Back to live inbox' }))
- expect(screen.queryByRole('button', { name: /Lerato Mokoena/ })).toBeNull()
+ const ui = render(<MemoryRouter initialEntries={['/inbox']}><RevoSharedInboxPage /></MemoryRouter>)
+ await screen.findByText('No conversations match these filters.')
+ expect(document.querySelectorAll('.revo-row')).toHaveLength(0)
  fireEvent.click(screen.getByRole('button', { name: 'Refresh inbox' }))
  await waitFor(() => expect(api.load).toHaveBeenCalledTimes(2))
- expect(screen.queryByRole('button', { name: /Lerato Mokoena/ })).toBeNull()
+ expect(document.querySelectorAll('.revo-row')).toHaveLength(0)
+ api.org = 'other-agency'
+ ui.rerender(<MemoryRouter initialEntries={['/inbox']}><RevoSharedInboxPage /></MemoryRouter>)
+ await waitFor(() => expect(api.load).toHaveBeenCalledWith('other-agency', { conversationLimit: 100 }))
+ await screen.findByText('No conversations match these filters.')
+ expect(document.querySelectorAll('.revo-row')).toHaveLength(0)
+ expect(screen.queryByText(/Fictional conversations/)).toBeNull()
 })
 
 it('never copies an internal note into the email reply composer',async()=>{

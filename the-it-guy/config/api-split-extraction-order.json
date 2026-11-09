@@ -1,13 +1,20 @@
 {
   "version": 1,
-  "strategy": "compatibility-facade-and-feature-flags",
+  "strategy": "domain-owned-apis-with-lazy-actions",
   "legacyFacade": "src/lib/api.js",
   "rules": [
-    "keep existing export names, arguments, return shapes, errors, and authentication behavior unchanged during move-only extraction",
-    "extract one domain per release train",
-    "enable a feature flag only after contract and staging smoke evidence pass",
-    "rollback by disabling the domain flag and retaining the facade export"
+    "Keep public names, arguments, return shapes, errors and authentication behavior unchanged during structural extraction.",
+    "Keep runtime imports of the retired src/lib/api.js entry point at zero.",
+    "Load optional workflows from their owning module on intent.",
+    "Validate declaration preservation, public capability availability, domain boundaries and focused behavior tests before release."
   ],
-  "order": ["reporting", "documents", "developments", "transactions"],
-  "productionActivation": false
+  "order": [
+    "reporting",
+    "documents",
+    "developments",
+    "transactions"
+  ],
+  "productionActivation": false,
+  "retired": true,
+  "capabilityContract": "src/lib/api/__tests__/fixtures/domain-api-contract.json"
 }

@@ -13,6 +13,7 @@ import { assertRentalLeadAssignee, isRentalLeadVisibleInScope } from './rentalLe
 import { verifyRentalLeadHandoff } from './rentalLeadHandoffService'
 import { appendRentalLeadWorkflowEvidence, buildRentalLeadWorkflowEvidence } from './rentalLeadWorkflowEvidenceModel'
 import { getRentalLeadOutcome, isRentalLeadOperational } from './rentalLeadOutcomeModel'
+import { enrichRentalLeadJourneyViews } from './rentalLeadJourneyReadService.js'
 import {
   getRentalLeadNextAction,
   getRentalLeadStageLabel,
@@ -110,11 +111,12 @@ export async function listRentalLeads(organisationId, options = {}) {
     throw new Error('Rental leads could not be loaded. Check your access and refresh to try again.')
   }
   const contacts = new Map((records.contacts || []).map((contact) => [text(contact.contactId), contact]))
-  return (records.leads || [])
+  const leads = (records.leads || [])
     .filter(isRentalLead)
     .filter((lead) => options.includeClosed === true || isRentalLeadOperational(lead))
     .filter((lead) => isRentalLeadVisibleInScope(lead, options))
     .map((lead) => buildRentalLeadView(lead, contacts.get(text(lead.contactId))))
+  return enrichRentalLeadJourneyViews(organisationId, leads)
 }
 
 export async function getRentalLeadWorkspace(organisationId, leadId, options = {}) {

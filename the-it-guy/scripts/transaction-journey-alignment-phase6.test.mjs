@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -6,7 +7,7 @@ const root = new URL('../', import.meta.url)
 const read = (path) => readFile(new URL(path, root), 'utf8')
 
 test('token-scoped journey projection always uses external-safe audience copy', async () => {
-  const source = await read('src/lib/api.js')
+  const source = await readDomainApiSource()
 
   assert.match(source, /function fetchTokenScopedTransactionJourneySnapshot\(client, transactionId\)/)
   assert.match(source, /actorRole: 'external_share'/)
@@ -15,7 +16,7 @@ test('token-scoped journey projection always uses external-safe audience copy', 
 })
 
 test('external transaction workspace returns and renders the canonical snapshot', async () => {
-  const apiSource = await read('src/lib/api.js')
+  const apiSource = await readDomainApiSource()
   const pageSource = await read('src/pages/ExternalTransactionPortal.jsx')
 
   assert.match(apiSource, /fetchExternalTransactionWorkspace[\s\S]*?transactionJourneySnapshotPromise = fetchTokenScopedTransactionJourneySnapshot/)
@@ -27,7 +28,7 @@ test('external transaction workspace returns and renders the canonical snapshot'
 })
 
 test('public status share returns and renders the same canonical journey', async () => {
-  const apiSource = await read('src/lib/api.js')
+  const apiSource = await readDomainApiSource()
   const pageSource = await read('src/pages/TransactionStatusShare.jsx')
 
   assert.match(apiSource, /fetchTransactionStatusByToken[\s\S]*?transactionJourneySnapshotPromise = fetchTokenScopedTransactionJourneySnapshot/)

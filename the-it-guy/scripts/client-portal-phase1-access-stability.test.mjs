@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
@@ -9,7 +10,7 @@ const privateListingService = await fs.readFile(new URL('../src/services/private
 const workspaceService = await fs.readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 const clientPortalPage = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 const passwordGate = await fs.readFile(new URL('../src/components/client-portal/SellerPortalPasswordGate.jsx', import.meta.url), 'utf8')
-const api = await fs.readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const api = await readDomainApiSource()
 
 const payloadFunction = migration.match(
   /create or replace function public\.bridge_private_listing_seller_portal_payload\([\s\S]*?\n\$\$;/,

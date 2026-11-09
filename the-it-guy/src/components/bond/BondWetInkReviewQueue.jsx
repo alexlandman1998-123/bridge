@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchBondWetInkReviewQueue, readBondWetInkReviewOriginal, reviewBondWetInkSignedCopy } from '../../lib/api.js'
+import { fetchBondWetInkReviewQueue, readBondWetInkReviewOriginal, reviewBondWetInkSignedCopy } from '../../domains/bond/runtimeApi.js'
 import { downloadBondSigningBytes } from '../../services/bondWetInkSigningService.js'
 
 const button = 'min-h-11 rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50'

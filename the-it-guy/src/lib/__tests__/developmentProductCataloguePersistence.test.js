@@ -1,13 +1,11 @@
+import { readDomainDeclarationSource } from '../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+
 import test from 'node:test'
 
 // Exercise the real catalogue writer/reader with isolated row storage. No
 // hosted database, credentials, or network are used by these checks.
-const api = await readFile(new URL('../api.js', import.meta.url), 'utf8')
-const start = api.indexOf('async function fetchDevelopmentProductCatalogue(')
-const end = api.indexOf('\nexport async function updateDevelopmentTransactionSalesPrice(', start)
-const source = api.slice(start, end).replace('export async function', 'async function')
+const source = readDomainDeclarationSource('fetchDevelopmentProductCatalogue', 'saveDevelopmentProductCatalogue')
 
 function fixture() {
   const tables = new Map(), calls = []

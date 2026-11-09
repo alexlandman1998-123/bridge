@@ -1,14 +1,5 @@
+import { readDomainDeclarationSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-
-const api = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
-
-function functionBody(source, name) {
-  const start = source.indexOf(`export async function ${name}(`)
-  assert.notEqual(start, -1, `${name} should exist`)
-  const nextExport = source.indexOf('\nexport async function ', start + 1)
-  return source.slice(start, nextExport === -1 ? source.length : nextExport)
-}
 
 const requiredOriginFields = [
   'transaction_type',
@@ -21,8 +12,8 @@ const requiredOriginFields = [
 ]
 
 for (const functionName of ['fetchClientPortalByToken', 'fetchClientPortalCoreByToken']) {
-  const body = functionBody(api, functionName)
-  const primarySelect = body.match(/\.select\(\s*'([^']+)'/)?.[1] || ''
+  const body = readDomainDeclarationSource(functionName)
+  const primarySelect = [...body.matchAll(/\.select\(\s*((?:'[^']*'\s*\+?\s*)+)/g)][0]?.[1].replace(/'\s*\+\s*'/g, '').replace(/^'|'$/g, '') || ''
 
   for (const field of requiredOriginFields) {
     assert.match(

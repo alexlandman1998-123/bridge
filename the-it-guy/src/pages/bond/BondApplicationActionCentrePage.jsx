@@ -5,19 +5,7 @@ import usePortalWorkspaceRefresh from '../../hooks/usePortalWorkspaceRefresh.js'
 import BondApplicationHandoff from '../../components/bond/BondApplicationHandoff'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageShell from '../../components/bond/BondPageShell'
-import {
-  createBondOriginatorWorkspaceDocumentRequest,
-  fetchBondApplicationOriginatorActionCentre,
-  fetchBondApplicationPortalOriginatorDocumentContinuity,
-  fetchBondApplicationSubmissionReadiness,
-  fetchBondApplicationExternalSubmissions,
-  fetchBondApplicationPortalDeliveryActionCentre,
-  issueBondApplicationPortalAccessLinkForOriginator,
-  revokeBondApplicationPortalAccessLinkForOriginator,
-  sendBondApplicationPortalDeliveryForOriginator,
-  assessBondApplicationSubmissionReadiness,
-  recordBondApplicationExternalSubmission,
-} from '../../lib/api'
+import { createBondOriginatorWorkspaceDocumentRequest, fetchBondApplicationOriginatorActionCentre, fetchBondApplicationPortalOriginatorDocumentContinuity, fetchBondApplicationSubmissionReadiness, fetchBondApplicationExternalSubmissions, fetchBondApplicationPortalDeliveryActionCentre, issueBondApplicationPortalAccessLinkForOriginator, revokeBondApplicationPortalAccessLinkForOriginator, sendBondApplicationPortalDeliveryForOriginator, assessBondApplicationSubmissionReadiness, recordBondApplicationExternalSubmission } from '../../domains/bond/portalApi.js'
 import { buildBondApplicationPortalAccessPath } from '../../lib/bondApplicationPortalAccessLink'
 
 const DOCUMENT_TYPES = [

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -5,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const developmentTabsSource = detailSource.match(/const DEVELOPMENT_TABS = \[[\s\S]*?\n\]/)?.[0] || ''
 
 assert.match(

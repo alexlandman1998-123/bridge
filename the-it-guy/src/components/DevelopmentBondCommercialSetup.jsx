@@ -3,11 +3,9 @@ import Button from './ui/Button'
 import Field from './ui/Field'
 import Modal from './ui/Modal'
 import { financeTypeShortLabel, normalizeFinanceType } from '../core/transactions/financeType'
-import {
-  fetchDevelopmentBondConfig,
-  fetchDevelopmentBondReconciliationReport,
-  saveDevelopmentBondConfig,
-} from '../lib/api'
+import { fetchDevelopmentBondReconciliationReport } from '../domains/bond/closeoutApi.js'
+import { saveDevelopmentBondConfig } from '../lib/developmentDetailApi'
+import { fetchDevelopmentBondConfig } from '../domains/developments/api.js'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',

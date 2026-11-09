@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFileSync} from 'node:fs'
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=readDomainApiSource()
 const creation=source.slice(source.indexOf('export async function createTransactionFromWizard'))
 const start=creation.indexOf('  const creationSession ='),end=creation.indexOf('  const actorRole =',start)
 assert.ok(start>=0&&end>start)

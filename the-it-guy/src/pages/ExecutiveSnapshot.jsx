@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { fetchExecutiveSnapshotByToken } from '../lib/api'
+import { fetchExecutiveSnapshotByToken } from '../domains/reporting/shareApi.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 const currency = new Intl.NumberFormat('en-ZA', {

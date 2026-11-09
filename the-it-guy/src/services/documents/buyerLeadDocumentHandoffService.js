@@ -16,11 +16,24 @@ function rawPayload(value) {
 
 export function stagedBuyerLeadDocumentRows(lead) {
   const payload = rawPayload(lead?.raw_enquiry_payload || lead?.rawEnquiryPayload)
+  const storageKey = row => `${row?.storageBucket || row?.storage_bucket || ''}:${row?.storagePath || row?.storage_path || ''}`
+  const currentOtpKeys = new Set([payload, lead].flatMap(source => [source?.buyerOtpDocument, source?.buyer_otp_document])
+    .filter(row => row && typeof row === 'object').map(storageKey))
+  const otpReferences = [payload, lead].flatMap(source => [
+    source?.buyerOtpDocument, source?.buyer_otp_document,
+    ...(Array.isArray(source?.buyerOtpDocuments) ? source.buyerOtpDocuments : []),
+    ...(Array.isArray(source?.buyer_otp_documents) ? source.buyer_otp_documents : []),
+    ...[source?.buyerOfferDocument, source?.buyer_offer_document,
+      ...(Array.isArray(source?.buyerOfferDocuments) ? source.buyerOfferDocuments : []),
+      ...(Array.isArray(source?.buyer_offer_documents) ? source.buyer_offer_documents : []),
+    ].filter(row => row && resolveBuyerLeadDocumentTarget(row.key || row.documentType || row.document_type).documentDefinitionKey === 'signed_otp'),
+  ]).filter(row => row && typeof row === 'object').map(row => ({ ...row, _buyerOtpReference: true }))
   const rows = [
     ...(Array.isArray(payload.agentUploadedBuyerDocuments) ? payload.agentUploadedBuyerDocuments : []),
     ...(Array.isArray(payload.agent_uploaded_buyer_documents) ? payload.agent_uploaded_buyer_documents : []),
     ...(Array.isArray(lead?.agentUploadedBuyerDocuments) ? lead.agentUploadedBuyerDocuments : []),
     ...(Array.isArray(lead?.agent_uploaded_buyer_documents) ? lead.agent_uploaded_buyer_documents : []),
+    ...otpReferences,
   ]
   const byPath = new Map()
   rows.filter((row) => row && typeof row === 'object').forEach((row, index) => {
@@ -32,14 +45,27 @@ export function stagedBuyerLeadDocumentRows(lead) {
       byPath.set(pathKey, row)
       return
     }
-    const documentKey = (item) => String(item.key || item.documentType || item.document_type || '').trim()
+    const documentKey = (item) => {
+      const key = String(item.key || item.documentType || item.document_type || '').trim()
+      return resolveBuyerLeadDocumentTarget(key).documentDefinitionKey || key
+    }
     const canonicalId = (item) => String(item.canonicalDocumentId || item.canonical_document_id || '').trim()
     const conflicting = previous._reconciliationConflict ||
       (documentKey(previous) && documentKey(row) && documentKey(previous) !== documentKey(row)) ||
       canonicalId(previous) !== canonicalId(row)
     byPath.set(pathKey, conflicting ? { ...row, _reconciliationConflict: true } : row)
   })
-  return [...byPath.values()]
+  const result = [...byPath.values()].map(row => ({ ...row }))
+  const otpRows = result.filter(isSharedOtpUpload)
+  for (const row of otpRows) {
+    // Carry every saved version into the document room, but only the explicitly
+    // current OTP may satisfy its checklist. Older uploads must not replace
+    // the latest reviewed agreement merely because a handoff is retried.
+    row._buyerOtpCurrent = currentOtpKeys.size === 1
+      ? currentOtpKeys.has(storageKey(row))
+      : currentOtpKeys.size === 0 && otpRows.length === 1
+  }
+  return result
 }
 
 function assertStagedFile(row, { organisationId, leadId }) {
@@ -49,6 +75,7 @@ function assertStagedFile(row, { organisationId, leadId }) {
     `organisations/${organisationId}/buyer-leads/${leadId}/`,
     `buyer-agent-documents/${organisationId}/${leadId}/`,
   ]
+  if (isSharedOtpUpload(row)) prefixes.push(`buyer-otp-documents/${organisationId}/${leadId}/`)
   if (!DOCUMENTS_BUCKET_CANDIDATES.includes(bucket) || !path || !prefixes.some((prefix) => path.startsWith(prefix)) || path.includes('/../')) {
     throw new Error('A staged buyer document has an invalid storage location.')
   }
@@ -59,10 +86,18 @@ export function buyerLeadDocumentIdempotencyKey({ leadId, bucket, path }) {
   return `buyer-lead:${leadId}:${bucket}:${path}`
 }
 
-function existingBuyerDocument(row) {
+function isSharedOtpUpload(row) {
+  return resolveBuyerLeadDocumentTarget(row?.key || row?.documentType || row?.document_type).documentDefinitionKey === 'signed_otp' &&
+    (row?._buyerOtpReference === true || row?.source === 'agent_otp_upload')
+}
+
+function existingBuyerDocument(row, stagedRow = {}) {
   return row && row.is_client_visible === true &&
     String(row.visibility_scope || '').toLowerCase() === 'shared' &&
-    String(row.client_recipient_role || '').toLowerCase() === 'buyer' &&
+    (isSharedOtpUpload(stagedRow)
+      ? !String(row.client_recipient_role || '').trim() && row.source === 'agent_otp_upload' &&
+        resolveBuyerLeadDocumentTarget(row.document_type).documentDefinitionKey === 'signed_otp'
+      : String(row.client_recipient_role || '').toLowerCase() === 'buyer') &&
     String(row.uploaded_by_party || '').toLowerCase() === 'buyer'
 }
 
@@ -81,7 +116,7 @@ export function buildBuyerLeadDocumentReconciliationPlan({ lead, documents = [],
         (bucket && (document.file_bucket || 'documents') !== bucket)) {
         return { ...base, status: 'manual_review', reason: 'missing_or_mismatched_canonical_document' }
       }
-      return existingBuyerDocument(document)
+      return existingBuyerDocument(document, row)
         ? { ...base, status: 'already_canonical', documentId: canonicalId }
         : { ...base, status: 'manual_review', reason: 'existing_document_not_buyer_visible' }
     }
@@ -105,7 +140,7 @@ export function buildBuyerLeadDocumentReconciliationPlan({ lead, documents = [],
       return { ...base, status: 'manual_review', reason: 'missing_or_mismatched_canonical_document' }
     }
     if (existing) {
-      return existingBuyerDocument(existing)
+      return existingBuyerDocument(existing, row)
         ? { ...base, status: 'already_canonical', documentId: String(existing.id) }
         : { ...base, status: 'manual_review', reason: 'existing_document_not_buyer_visible' }
     }
@@ -141,7 +176,7 @@ export async function reconcileStagedBuyerLeadDocuments(client, context = {}, { 
   if (leadResult.error) throw leadResult.error
   if (!leadResult.data) throw new Error('The source buyer lead could not be read.')
   const documentsResult = await client.from('documents')
-    .select('id, transaction_id, file_bucket, file_path, upload_idempotency_key, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+    .select('id, transaction_id, file_bucket, file_path, upload_idempotency_key, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party, source, document_type')
     .eq('transaction_id', transactionId)
   if (documentsResult.error) throw documentsResult.error
   const plan = buildBuyerLeadDocumentReconciliationPlan({
@@ -200,13 +235,13 @@ export async function promoteStagedBuyerLeadDocuments(client, {
     const canonicalId = String(row.canonicalDocumentId || row.canonical_document_id || '').trim()
     if (canonicalId) {
       const existing = await client.from('documents')
-        .select('id, transaction_id, file_bucket, file_path, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+        .select('id, transaction_id, file_bucket, file_path, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party, source, document_type')
         .eq('id', canonicalId).eq('transaction_id', transactionId).maybeSingle()
       if (existing.error) throw existing.error
       const document = existing.data
       const path = String(row.storagePath || row.storage_path || '').trim()
       const bucket = String(row.storageBucket || row.storage_bucket || '').trim()
-      if (!existingBuyerDocument(document) ||
+      if (!existingBuyerDocument(document, row) ||
         (path && document.file_path !== path) ||
         (bucket && (document.file_bucket || 'documents') !== bucket)) {
         throw new Error('A previously linked buyer document needs manual review before handoff.')
@@ -230,8 +265,9 @@ export async function promoteStagedBuyerLeadDocuments(client, {
     // New typed agent uploads carry an explicit request identity. Let the
     // server resolve one active exact key; historical/untyped or ambiguous
     // evidence stays unmatched for review, with no approval inferred.
-    if (row.source === 'agent_buyer_document_upload' && explicitKey === sourceKey) {
-      const target = resolveBuyerLeadDocumentTarget(explicitKey)
+    const sharedOtp = isSharedOtpUpload(row)
+    if (sharedOtp && row._buyerOtpCurrent || !sharedOtp && row.source === 'agent_buyer_document_upload' && explicitKey === sourceKey) {
+      const target = resolveBuyerLeadDocumentTarget(sharedOtp ? sourceKey : explicitKey)
       if (target.documentDefinitionKey) {
         const linked = await client.rpc('bridge_link_document_to_canonical_requirement_by_key', {
           p_document_id: id, p_transaction_id: transactionId, p_document_key: target.documentDefinitionKey,
@@ -239,6 +275,7 @@ export async function promoteStagedBuyerLeadDocuments(client, {
           p_metadata: { source: 'buyer_lead_document_handoff', buyerLeadId: leadId },
         })
         if (linked.error) throw linked.error
+        if (sharedOtp && linked.data?.ok !== true) throw new Error('The OTP file is saved on the transaction, but its signed OTP checklist requirement needs review. Refresh the transaction documents before retrying.')
       }
     }
     outcomes.push({ id, deduplicated })
@@ -247,24 +284,25 @@ export async function promoteStagedBuyerLeadDocuments(client, {
     if (row._reconciliationConflict) throw new Error('Conflicting buyer lead document metadata needs manual review.')
     const canonicalId = String(row.canonicalDocumentId || row.canonical_document_id || '').trim()
     if (canonicalId) {
-      outcomes.push({ id: verifiedCanonicalDocuments.get(canonicalId).id, deduplicated: true })
+      if (isSharedOtpUpload(row)) await recordOutcome(row, verifiedCanonicalDocuments.get(canonicalId).id, true)
+      else outcomes.push({ id: verifiedCanonicalDocuments.get(canonicalId).id, deduplicated: true })
       continue
     }
     const { bucket, path } = assertStagedFile(row, { organisationId, leadId })
     const idempotencyKey = buyerLeadDocumentIdempotencyKey({ leadId, bucket, path })
-    const existing = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+    const existing = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party, source, document_type')
       .eq('transaction_id', transactionId).eq('upload_idempotency_key', idempotencyKey).maybeSingle()
     if (existing.error) throw existing.error
     if (existing.data?.id) {
-      if (!existingBuyerDocument(existing.data)) throw new Error('An existing buyer document needs manual audience review.')
+      if (!existingBuyerDocument(existing.data, row)) throw new Error('An existing buyer document needs manual audience review.')
       await recordOutcome(row, existing.data.id, true)
       continue
     }
-    const existingPath = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+    const existingPath = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party, source, document_type')
       .eq('transaction_id', transactionId).eq('file_bucket', bucket).eq('file_path', path).maybeSingle()
     if (existingPath.error) throw existingPath.error
     if (existingPath.data) {
-      if (!existingBuyerDocument(existingPath.data)) throw new Error('A document at this path needs manual audience review.')
+      if (!existingBuyerDocument(existingPath.data, row)) throw new Error('A document at this path needs manual audience review.')
       await recordOutcome(row, existingPath.data.id, true)
       continue
     }
@@ -279,24 +317,24 @@ export async function promoteStagedBuyerLeadDocuments(client, {
       name: String(row.uploadedFileName || row.fileName || row.label || 'Buyer document').slice(0, 255),
       file_path: path,
       file_bucket: bucket,
-      category: 'Buyer',
+      category: isSharedOtpUpload(row) ? 'otp' : 'Buyer',
       document_type: target.documentDefinitionKey || target.sourceKey || 'buyer_document',
       status: 'uploaded',
       visibility_scope: 'shared',
       is_client_visible: true,
-      client_recipient_role: 'buyer',
+      client_recipient_role: isSharedOtpUpload(row) ? null : 'buyer',
       uploaded_by_party: 'buyer',
-      source: 'agent_buyer_document_upload',
+      source: isSharedOtpUpload(row) ? 'agent_otp_upload' : 'agent_buyer_document_upload',
       upload_idempotency_key: idempotencyKey,
       // The server links explicit identities below; an insert never completes
       // a request or approves this new evidence.
     }).select('id').single()
     if (insert.error?.code === '23505') {
-      const duplicate = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party')
+      const duplicate = await client.from('documents').select('id, is_client_visible, visibility_scope, client_recipient_role, uploaded_by_party, source, document_type')
         .eq('transaction_id', transactionId).eq('upload_idempotency_key', idempotencyKey).maybeSingle()
       if (duplicate.error) throw duplicate.error
       if (duplicate.data?.id) {
-        if (!existingBuyerDocument(duplicate.data)) throw new Error('An existing buyer document needs manual audience review.')
+        if (!existingBuyerDocument(duplicate.data, row)) throw new Error('An existing buyer document needs manual audience review.')
         await recordOutcome(row, duplicate.data.id, true)
         continue
       }

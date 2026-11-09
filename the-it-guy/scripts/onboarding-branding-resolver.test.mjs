@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -132,14 +133,14 @@ import {
 }
 
 const files = {
-  buyerApi: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  buyerApi: await readDomainApiSource(),
   sellerService: await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
   sellerBrandingApi: await readFile(new URL('../server/services/sellerOnboardingBrandingApi.js', import.meta.url), 'utf8'),
 }
 
 assert.match(files.buyerApi, /\.from\('organisation_settings'\)[\s\S]*\.select\('settings_json'\)/)
 assert.match(files.buyerApi, /resolveOnboardingBranding\([\s\S]*agencyBranding,[\s\S]*settingsBranding,[\s\S]*settingsJson,[\s\S]*organisation,[\s\S]*transaction,[\s\S]*development,[\s\S]*\)/)
-assert.match(files.sellerService, /resolveOnboardingBranding\(\s*branding,\s*settingsBranding,\s*settings,\s*\{/)
+assert.match(files.sellerService, /resolveOnboardingBranding\(\s*branding,\s*settingsBranding,\s*settings,\s*organisationBranding,\s*\{/)
 assert.match(files.sellerService, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, portalPayload\.listing\)/)
 assert.match(files.sellerService, /mergeSellerOnboardingBrandingSnapshots\(initialBranding, publicBranding\)/)
 assert.match(files.sellerBrandingApi, /resolveOnboardingBranding\(\s*branding,\s*settingsBranding,\s*settings,\s*\{/)

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 
 const read = (path) => fs.readFileSync(path, 'utf8')
 const between = (source, start, end = '') => {
@@ -12,7 +13,8 @@ const between = (source, start, end = '') => {
 const resolver = read('../supabase/functions/_shared/finalSignedArtifactAccess.ts')
 const endpoint = read('../supabase/functions/resolve-final-signed-document-access/index.ts')
 const clientAccess = read('src/core/documents/finalSignedArtifactAccess.js')
-const clientApi = read('src/lib/api.js')
+const documentReads = read('src/domains/documents/listReadApi.js')
+const clientApi = readDomainApiSource() + '\n' + documentReads
 const sellerApi = read('src/services/privateListingService.js')
 const sellerWorkspace = read('src/services/clientPortalWorkspaceService.js')
 const clientPortal = read('src/pages/ClientPortal.jsx')
@@ -130,7 +132,7 @@ assert.match(
   'Buyer packet finalisation state must come from the trusted resolver.',
 )
 const buyerSafeDocumentRows = between(
-  clientApi,
+  documentReads,
   'async function fetchClientPortalSafeSharedDocumentRowsByTransactionIds',
   'async function loadSharedDocuments',
 )
@@ -150,7 +152,7 @@ assert.match(
   'Buyer portal must fetch normal and final document rows through separate server-side stage filters.',
 )
 const buyerSharedDocumentLoader = between(
-  clientApi,
+  documentReads,
   'async function loadSharedDocuments',
   'async function attemptPromotePendingSellerDocumentsIfPossible',
 )
@@ -189,7 +191,7 @@ assert.match(
 )
 assert.match(
   sellerApi,
-  /if \(options\?\.requirePortalAccess === true\) \{[\s\S]*?secure seller portal is temporarily unavailable[\s\S]*?const rawListing = await getPrivateListingById[\s\S]*?sanitizeSellerPortalListingFinalArtifacts\(rawListing, rawMandatePacket\)/,
+  /if \(options\?\.requirePortalAccess === true\) \{\s*throw new Error\('The secure seller portal is temporarily unavailable[\s\S]*?const apiPayload = await fetchSellerOnboardingCoreApiPayload\(normalizedToken\)[\s\S]*?return attachSellerOnboardingPayloadContext\(apiPayload\)/,
   'Seller portal fallback must fail closed rather than return an unverified raw listing payload.',
 )
 assert.match(
@@ -361,11 +363,12 @@ assert.match(
   /sellerPortalMandateAccess[\s\S]*?allowEvidenceArtifactAccess: context === "signer" \|\|[\s\S]*?sellerPortalMandateAccess/,
   'Seller mandate downloads must be able to use the verified F2 artifact before transaction publication exists.',
 )
-assert.match(
-  finalSignedGenerator,
-  /updatePayload\.final_legal_packet_id = normalizedPacketId[\s\S]*?updatePayload\.final_legal_packet_version_id = normalizedPacketVersionId[\s\S]*?updatePayload\.final_artifact_sha256 = normalizeText\(evidence\.sha256\)/,
-  'Final signed publication must stamp canonical artifact metadata onto the visible Documents row.',
-)
+assert.match(finalSignedGenerator, /withApiCredentials\(retiredDocumentGenerator\)/,
+  'The retired browser generator must not reintroduce document writes.')
+const finalPublication = read('../supabase/migrations/202607180020_final_signed_transaction_publication_f3.sql')
+assert.match(finalPublication,
+  /final_legal_packet_id=v_packet.id,final_legal_packet_version_id=v_version.id[\s\S]*?final_artifact_sha256=v_evidence.sha256/,
+  'Retained canonical publication must stamp the exact packet, version and artifact digest.')
 assert.match(
   packetApi,
   /Final signed artifacts have a stricter access contract[\s\S]*?final_signed_file_access_url = ''/,

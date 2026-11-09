@@ -10,7 +10,7 @@ vi.mock('../../../context/WorkspaceContext', () => ({ useWorkspace: () => mocks.
 vi.mock('../../../context/OrganisationContext', () => ({ useOptionalOrganisation: () => mocks.organisation }))
 vi.mock('../../../services/developerLeadService.js', () => ({ listDeveloperLeadIntake: mocks.read, updateDeveloperLeadWorkspaceSetup: mocks.update, requestAgencyLeadHandover: mocks.handover }))
 vi.mock('../../../services/developerLeadConversionService.js', () => ({ convertDeveloperLeadToTransactionAndSendOnboarding: mocks.convert }))
-vi.mock('../../../lib/api.js', () => ({ fetchDevelopmentOptions: mocks.developments, fetchUnitsForTransactionSetup: mocks.units }))
+vi.mock('../../../domains/developments/selectionReadApi.js', () => ({ fetchDevelopmentOptions: mocks.developments, fetchUnitsForTransactionSetup: mocks.units }))
 vi.mock('../../../services/journeyStageOverrideService.js', () => ({ fetchJourneyStageOverrides: mocks.journey }))
 vi.mock('../../../services/mobileProductivityService.js', () => ({ getOfflineDrafts: () => [] }))
 vi.mock('../../../components/mobile-shell/MobileCreateSheet.jsx', () => ({ default: () => null, MobileDraftCard: () => null }))

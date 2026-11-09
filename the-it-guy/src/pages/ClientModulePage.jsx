@@ -21,7 +21,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import Button from '../components/ui/Button'
-import { fetchUnitDetail } from '../lib/api'
+import { fetchUnitDetail } from '../domains/developments/unitWorkspaceApi.js'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import {
   MAIN_PROCESS_STAGES,

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
@@ -46,7 +47,7 @@ function verifySourceOwnership() {
     assert.match(read(filePath), /getAttorneyRoleLabel/)
   }
 
-  assert.match(read('src/lib/api.js'), /from '..\/constants\/attorneyRoleCatalog\.js'/)
+  assert.match(readDomainApiSource(), /from '..\/constants\/attorneyRoleCatalog\.js'/)
   assert.match(read('src/lib/profileApi.js'), /from '..\/constants\/attorneyRoleCatalog\.js'/)
   assert.match(read('src/services/permissions/attorneyPermissionService.js'), /isAttorneyProfessionalManagementRole/)
   assert.match(read('src/services/transactionAttorneyAssignments.js'), /ATTORNEY_TRANSACTION_ROLES/)

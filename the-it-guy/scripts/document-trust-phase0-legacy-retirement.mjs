@@ -9,7 +9,7 @@ const REGISTER_PATH = 'docs/document-trust-phase0-legacy-retirement.md'
 const REGISTERED_PATHS = Object.freeze([
   {
     id: 'legacy-required-document-projection',
-    path: 'src/lib/api.js',
+    path: 'src/domains/documents/requirementReadModel.js',
     evidence: 'transaction_required_documents',
   },
   {
@@ -34,7 +34,7 @@ const REGISTERED_PATHS = Object.freeze([
   },
   {
     id: 'legacy-upload-link-soft-failure',
-    path: 'src/lib/api.js',
+    path: 'src/domains/documents/uploadWorkflow.js',
     evidence: 'Canonical upload linkage skipped',
   },
 ])

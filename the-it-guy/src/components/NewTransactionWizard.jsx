@@ -14,13 +14,10 @@ import {
 } from 'lucide-react'
 import { cloneElement, isValidElement, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  createTransactionFromWizard,
-  fetchDeveloperPartnersWorkspace,
-  fetchDevelopmentOptions,
-  resolveTransactionWhatsAppContacts,
-  fetchUnitsForTransactionSetup,
-} from '../lib/api'
+import { createTransactionFromWizard } from '../domains/transactions/creationApi.js'
+import { fetchDeveloperPartnersWorkspace } from '../domains/partners/readApi.js'
+import { resolveTransactionWhatsAppContacts } from '../domains/transactions/contactRead.js'
+import { fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../domains/developments/selectionReadApi.js'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import {
   getDeveloperWorkspacePartnerOptions,

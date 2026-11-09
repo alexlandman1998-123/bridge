@@ -114,8 +114,8 @@ const services = [
   ['../../modules/commercial/services/commercialPortalApi.js', 'uploadPortalFile', 'portal'],
   ['../../modules/commercial/services/commercialOnboardingApi.js', 'uploadCommercialOnboardingPortalFile', 'portal'],
   ['../../modules/commercial/services/commercialLandlordService.js', 'uploadPortalFile', 'portal'],
-  ['../api.js', 'uploadToDocumentsBucket', 'documents'],
-  ['../api.js', 'uploadToBuyerPortalDocumentsBucket', 'documents'],
+  ['../api/shared/storage.js', 'uploadToDocumentsBucket', 'documents'],
+  ['../../domains/clientPortal/documentApi.js', 'uploadToBuyerPortalDocumentsBucket', 'documents'],
   ['../../services/privateListingService.js', 'uploadToPrivateListingDocumentsBucket', 'documents'],
 ]
 for (const [path, name, kind] of services) {

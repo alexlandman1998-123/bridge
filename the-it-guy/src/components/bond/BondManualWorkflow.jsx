@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchBondTrackerContext, recordBondTrackerSubmission, requestManualBondDocument, reviewManualBondDocument, fetchBondApplicationPackDocumentUrl } from '../../lib/api.js'
+import { fetchBondTrackerContext, fetchBondApplicationPackDocumentUrl } from '../../domains/bond/portalApi.js'
+import { recordBondTrackerSubmission, requestManualBondDocument, reviewManualBondDocument } from '../../domains/bond/runtimeApi.js'
 
 const button = 'min-h-11 rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50'
 const types = [['buyer_id_document', 'Identity document'], ['buyer_proof_of_address', 'Proof of address'], ['payslips', 'Payslips'], ['employment_contract', 'Employment contract'], ['proof_of_income', 'Proof of income'], ['proof_of_funds', 'Proof of funds'], ['tax_documents', 'Tax documents'], ['financial_statements', 'Financial statements'], ['offer_to_purchase', 'Offer to purchase'], ['assets_liabilities_statement', 'Assets and liabilities']]

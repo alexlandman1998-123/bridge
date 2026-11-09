@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -12,7 +13,7 @@ const hook = read('src/hooks/useAttorneyPermissions.js')
 const legalPermissions = read('src/services/permissions/attorneyPermissionService.js')
 const operations = read('src/services/attorneyOperations.js')
 const incomingQueue = read('src/services/attorneyIncomingMatterQueue.js')
-const api = read('src/lib/api.js')
+const api = readDomainApiSource()
 const migration = read('supabase/migrations/202607180040_attorney_professional_permission_cutover_phase7.sql', repositoryRoot)
 
 assert.match(membershipPermissions, /professional_role, practice_qualifications/)

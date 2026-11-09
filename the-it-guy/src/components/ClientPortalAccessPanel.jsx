@@ -1,12 +1,8 @@
 import { Copy, ExternalLink, Link2, ShieldX } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from './ui/Button'
-import {
-  fetchClientPortalLinks,
-  getOrCreateTransactionOnboarding,
-  getOrCreateClientPortalLink,
-  revokeClientPortalLink,
-} from '../lib/api'
+import { fetchClientPortalLinks, getOrCreateClientPortalLink, revokeClientPortalLink } from '../domains/clientPortal/accessApi.js'
+import { getOrCreateTransactionOnboarding } from '../domains/onboarding/workflow.js'
 
 async function copyTextToClipboard(text) {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {

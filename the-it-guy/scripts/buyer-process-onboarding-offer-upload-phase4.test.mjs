@@ -1,4 +1,6 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
+import { resolveBuyerLeadDocumentTarget } from '../src/core/documents/buyerLeadDocumentContract.js'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -6,7 +8,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const source = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const transactionDetailSource = readFileSync(resolve(appRoot, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
-const apiSource = readFileSync(resolve(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const agencyCrmRepositorySource = readFileSync(resolve(appRoot, 'src/lib/agencyCrmRepository.js'), 'utf8')
 
 assert.equal(
@@ -172,7 +174,7 @@ const fakeClient = { from(table) {
   } }
 } }
 const accessChecks = []
-const persistOtp = new Function('supabase', 'isSupabaseConfigured', 'normalizeText', 'isUuidLike', 'currentAgent', 'selectedLead', 'BUYER_OFFER_DOCUMENT_TYPE', 'BUYER_OFFER_DOCUMENT_LABEL', 'BUYER_OTP_DOCUMENT_TYPE', 'assertBuyerLeadTransactionDocumentContext', 'organisationId', 'selectedLeadRecordId', `${persistenceSource}; return persistBuyerOfferDocumentRow;`)(fakeClient, true, normalizeText, value => /^[0-9a-f-]{36}$/.test(value), { id: actorId }, { leadId: 'exact-lead' }, 'buyer_offer', 'Buyer Offer Document', 'uploaded_otp', async (client, scope) => { assert.equal(client, fakeClient); accessChecks.push(scope) }, 'exact-org', 'exact-lead')
+const persistOtp = new Function('resolveBuyerLeadDocumentTarget', 'supabase', 'isSupabaseConfigured', 'normalizeText', 'isUuidLike', 'currentAgent', 'selectedLead', 'BUYER_OFFER_DOCUMENT_TYPE', 'BUYER_OFFER_DOCUMENT_LABEL', 'BUYER_OTP_DOCUMENT_TYPE', 'assertBuyerLeadTransactionDocumentContext', 'organisationId', 'selectedLeadRecordId', `${persistenceSource}; return persistBuyerOfferDocumentRow;`)(resolveBuyerLeadDocumentTarget, fakeClient, true, normalizeText, value => /^[0-9a-f-]{36}$/.test(value), { id: actorId }, { leadId: 'exact-lead' }, 'buyer_offer', 'Buyer Offer Document', 'uploaded_otp', async (client, scope) => { assert.equal(client, fakeClient); accessChecks.push(scope) }, 'exact-org', 'exact-lead')
 assert.equal((await persistOtp({ storagePath: 'otp/file.pdf', storageBucket: 'documents', uploadedFileName: 'signed.pdf', documentType: 'uploaded_otp', metadata: { signedByAllPartiesConfirmed: true } }, { transactionId })).id, 'saved-otp')
 assert.deepEqual(accessChecks[0], { transactionId, organisationId: 'exact-org', leadId: 'exact-lead' })
 assert.equal(capturedOtpPayload.visibility_scope, 'shared')

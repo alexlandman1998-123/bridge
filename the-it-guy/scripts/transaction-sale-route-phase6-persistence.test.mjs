@@ -1,10 +1,11 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const appRoot = resolve(import.meta.dirname, '..')
 const migrationSource = readFileSync(resolve(appRoot, 'sql/20260823_transaction_sale_route_split.sql'), 'utf8')
-const apiSource = readFileSync(resolve(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const handoffSource = readFileSync(
   resolve(appRoot, 'src/core/developerLeads/developerLeadTransactionHandoff.js'),
   'utf8',
@@ -32,17 +33,13 @@ for (const token of [
   'lead_owner: normalizeNullableText(sourceContext.leadOwner || sourceContext.lead_owner)',
   'ownership_model: normalizeNullableText(sourceContext.ownershipModel || sourceContext.ownership_model)',
   'source_agency_org_id: normalizeNullableUuid(',
-  "isMissingColumnError(transactionResult.error, 'sale_route')",
-  "isMissingColumnError(transactionResult.error, 'lead_owner')",
-  "isMissingColumnError(transactionResult.error, 'ownership_model')",
-  "isMissingColumnError(transactionResult.error, 'source_agency_org_id')",
-  'delete fallbackPayload.sale_route',
-  'delete fallbackPayload.lead_owner',
-  'delete fallbackPayload.ownership_model',
-  'delete fallbackPayload.source_agency_org_id',
+
 ]) {
   assert.match(apiSource, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
+
+assert.match(apiSource, /retryMutationWithoutReportedMissingColumns/)
+assert.doesNotMatch(apiSource, /delete fallbackPayload\.(sale_route|lead_owner|ownership_model|source_agency_org_id)/)
 
 for (const token of [
   'leadOwner: normalizeText(lead.leadOwner)',

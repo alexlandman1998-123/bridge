@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
@@ -52,7 +53,7 @@ assert.equal(selectCurrentDevelopmentTransactionRows(null).length, 0)
 assert.equal(unitInventory.length, 31, 'current transaction filtering must remain independent of unit inventory')
 
 const [apiSource, pageSource] = await Promise.all([
-  readFile(new URL('../../../lib/api.js', import.meta.url), 'utf8'),
+  readDomainApiSource(),
   readFile(new URL('../../../pages/DevelopmentDetail.jsx', import.meta.url), 'utf8'),
 ])
 

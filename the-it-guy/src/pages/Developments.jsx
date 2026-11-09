@@ -11,15 +11,18 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import AddDevelopmentModal from '../components/AddDevelopmentModal'
 import Button from '../components/ui/Button'
 import { selectBottlenecks, selectDevelopmentPerformance, selectPortfolioMetrics } from '../core/transactions/developerSelectors'
-import { fetchDevelopmentsData } from '../lib/api'
+import { fetchDevelopmentsData } from '../domains/developments/portfolioReadApi.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
+import DeferredWorkflow from '../components/ui/DeferredWorkflow.jsx'
+import Modal from '../components/ui/Modal.jsx'
+
+const AddDevelopmentModal = lazy(() => import('../components/AddDevelopmentModal'))
 
 function toLifecycleStatus(rawStatus, summary) {
   const normalized = String(rawStatus || '').trim().toLowerCase()
@@ -661,14 +664,16 @@ function Developments() {
         </>
       ) : null}
 
-      {canCreateDevelopment ? <AddDevelopmentModal
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={() => {
-          window.dispatchEvent(new Event('itg:developments-changed'))
-          void loadData()
-        }}
-      /> : null}
+      {canCreateDevelopment ? <DeferredWorkflow active={showCreateModal} keepMounted fallback={<Modal open onClose={() => setShowCreateModal(false)} title="Add development"><p role="status" className="p-4 text-sm text-[#60758c]">Loading development creation…</p></Modal>}>
+        <AddDevelopmentModal
+          open={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={() => {
+            window.dispatchEvent(new Event('itg:developments-changed'))
+            void loadData()
+          }}
+        />
+      </DeferredWorkflow> : null}
     </section>
   )
 }

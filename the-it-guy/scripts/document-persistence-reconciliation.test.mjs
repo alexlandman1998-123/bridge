@@ -78,6 +78,30 @@ test('real Postgres snapshot preserves zero-row coverage and strips signed token
   const db=await database()
   try { const s=(await db.query(buildAuditSql(project))).rows[0].snapshot;assert.equal(s.sourceCounts.length,STORES.length);assert.equal(JSON.stringify(s).includes('token='),false);assert.equal(reconcileSnapshot(s).repairs.length,1) } finally {await db.close()}
 })
+
+test('lease-agreement uploads and their private bucket are included in reconciliation', async () => {
+  const db = await database()
+  try {
+    await db.query('insert into rental_lease_document_uploads(id,storage_bucket,storage_path) values($1,$2,$3)', [id(6), 'rental-lease-files', 'org/lease/agreement.pdf'])
+    const snapshot = (await db.query(buildAuditSql(project))).rows[0].snapshot
+    const report = reconcileSnapshot(snapshot)
+    assert.equal(snapshot.sourceCounts.find(row => row.source === 'rental_lease_document_uploads').rows, 1)
+    assert(report.findings.some(row => row.type === 'missing_object' && row.source === 'rental_lease_document_uploads'))
+  } finally { await db.close() }
+})
+
+test('workflow trace paths are not storage references, while a nested lead upload remains audited', async () => {
+  const db = await database()
+  try {
+    await db.query('insert into leads(lead_id,raw_enquiry_payload) values($1,$2::jsonb)', [id(5), JSON.stringify({
+      sourceRuleOrLegacyPath: 'agency/buyer/default-rule', document: { storagePath: 'buyer-documents/id.pdf', fileBucket: 'documents' },
+    })])
+    const snapshot = (await db.query(buildAuditSql(project))).rows[0].snapshot
+    const refs = snapshot.references.filter(ref => ref.source === 'leads')
+    assert.equal(refs.some(ref => ref.field.endsWith('sourceRuleOrLegacyPath')), false)
+    assert.equal(refs.some(ref => ref.path === 'buyer-documents/id.pdf'), true)
+  } finally { await db.close() }
+})
 test('real Postgres traverses nested recruitment buckets and packet history',async()=>{
   const db=await database()
   try {

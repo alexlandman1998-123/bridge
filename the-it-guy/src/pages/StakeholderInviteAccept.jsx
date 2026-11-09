@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { acceptStakeholderInvite } from '../lib/api'
+import { acceptStakeholderInvite } from '../domains/access/transactionApi.js'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 
 function getRoleHomePath(role) {

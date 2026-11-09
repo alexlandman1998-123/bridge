@@ -2,10 +2,8 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Image, ShieldCheck } from 'luc
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
-import {
-  acceptDevelopmentMarketingInvite,
-  fetchDevelopmentMarketingInvite,
-} from '../lib/developmentDetailApi'
+import { acceptDevelopmentMarketingInvite } from '../lib/developmentDetailApi'
+import { fetchDevelopmentMarketingInvite } from '../domains/developments/api.js'
 
 function formatDate(value) {
   if (!value) return 'Not recorded'

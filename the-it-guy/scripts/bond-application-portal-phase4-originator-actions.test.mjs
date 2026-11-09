@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const repoRoot = path.resolve(root, '..')
 const migration = await readFile(path.join(repoRoot, 'supabase/migrations/20260905101301_bond_application_portal_phase4_originator_action_centre.sql'), 'utf8')
-const api = await readFile(path.join(root, 'src/lib/api.js'), 'utf8')
+const api = await readDomainApiSource()
 const page = await readFile(path.join(root, 'src/pages/bond/BondApplicationActionCentrePage.jsx'), 'utf8')
 const routes = await readFile(path.join(root, 'src/App.jsx'), 'utf8')
 
@@ -24,7 +25,7 @@ assert.match(api, /export async function issueBondApplicationPortalAccessLinkFor
 assert.match(api, /export async function createBondOriginatorWorkspaceDocumentRequest/)
 assert.match(page, /Application action centre/)
 assert.match(page, /Request a document/)
-assert.match(page, /Email delivery is queued safely/)
+assert.match(page, /Delivery history/)
 assert.match(routes, /path="\/bond\/application-actions"/)
 
 console.log('Bond application portal Phase 4 originator action-centre checks passed.')

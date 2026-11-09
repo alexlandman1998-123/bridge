@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
@@ -44,7 +45,7 @@ for (const marker of [
   includes(usersPage, marker, `Settings users page should include Phase 8 feedback marker ${marker}`)
 }
 
-const api = await read('../src/lib/api.js')
+const api = await readDomainApiSource()
 for (const marker of [
   'commercial_access_decision',
   'CommercialAccessReviewed',

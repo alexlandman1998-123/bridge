@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
@@ -8,10 +9,7 @@ const clientPortalSource = readFileSync(
   new URL('../src/pages/ClientPortal.jsx', import.meta.url),
   'utf8',
 )
-const apiSource = readFileSync(
-  new URL('../src/lib/api.js', import.meta.url),
-  'utf8',
-)
+const apiSource = readDomainApiSource()
 
 function functionBody(source, name) {
   const start = source.indexOf(`export async function ${name}(`)

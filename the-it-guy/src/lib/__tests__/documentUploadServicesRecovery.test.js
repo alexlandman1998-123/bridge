@@ -112,6 +112,22 @@ function expectSaved(result, f) {
   assert.equal(result.persistence.recordVerified, true)
 }
 
+test('a confirmed buyer upload stays saved when its temporary preview link fails', async () => {
+  const f = fixture()
+  f.values.createClientPortalDocumentSignedUrl = async () => { throw new Error('Preview service unavailable') }
+  const upload = extract('../../domains/clientPortal/documentApi.js', 'uploadClientPortalDocument', f.values)
+  const input = { token: f.id, file: f.file }
+  const saved = await upload(input)
+  expectSaved(saved, f)
+  assert.equal(saved.url || null, null)
+  assert.match(saved.persistenceWarnings.join(' '), /document saved/i)
+  const retry = await upload(input)
+  assert.equal(retry.id, saved.id)
+  assert.equal(f.state.uploads, 1)
+  assert.equal(f.state.saves, 1)
+  assert.equal(f.state.deletes, 0)
+})
+
 test('ordinary agent transaction upload saves without an attorney lane and recovers a lost reply', async () => {
   const f = fixture()
   let receivedScope
@@ -127,9 +143,13 @@ test('ordinary agent transaction upload saves without an attorney lane and recov
     },
     findDocumentByUploadIdempotencyKey: async () => f.state.row,
   })
-  const upload = extract('../api.js', 'uploadDocument', f.values)
-  const input = { transactionId: f.id, file: f.file, category: 'General' }
+  const upload = extract('../../domains/documents/uploadWorkflow.js', 'uploadDocument', f.values)
+  const events = []
+  const input = { transactionId: f.id, file: f.file, category: 'General', onProgress: event => events.push(event) }
   const saved = await upload(input)
+  assert(events.some(event => event.stage === 'uploading'))
+  assert(events.some(event => event.stage === 'saving'))
+  assert.equal(events.at(-1).stage, 'complete')
   assert.equal(receivedScope, null)
   assert.equal(saved.id, f.state.row.id)
   assert.equal((await upload(input)).id, saved.id)
@@ -139,14 +159,14 @@ test('ordinary agent transaction upload saves without an attorney lane and recov
 })
 
 for (const [label, path, name, parameters] of [
-  ['buyer', '../api.js', 'uploadClientPortalDocument', f => ({ token: f.id, file: f.file })],
+  ['buyer', '../../domains/clientPortal/documentApi.js', 'uploadClientPortalDocument', f => ({ token: f.id, file: f.file })],
   ['seller', '../../services/privateListingService.js', 'uploadSellerClientPortalDocument', f => ({ token: f.id, accessToken: 'session', requirementKey: 'id_copy', file: f.file })],
   ['agent listing', '../../services/privateListingService.js', 'uploadPrivateListingDocument', f => [f.id, f.file]],
   ['developer', '../../services/developerDocumentPortalService.js', 'uploadDeveloperDocumentPortalFile', f => ({ token: f.id, portalId: f.id, transactionId: f.id, file: f.file })],
   ['commercial portal', '../../modules/commercial/services/commercialPortalApi.js', 'uploadCommercialPortalDocument', f => ({ token: f.id, file: f.file })],
-  ['attorney financial register', '../api.js', 'registerMatterFinancialDocument', f => ({ accountId: f.id, transactionId: f.id, file: f.file })],
-  ['client financial proof', '../api.js', 'uploadClientPortalMatterFinancialProof', f => ({ token: f.id, accountId: f.id, file: f.file })],
-  ['client financial request', '../api.js', 'uploadClientPortalMatterFinancialRequestDocument', f => ({ token: f.id, accountId: f.id, requestId: f.id, file: f.file })],
+  ['attorney financial register', '../../domains/finance/accountsApi.js', 'registerMatterFinancialDocument', f => ({ accountId: f.id, transactionId: f.id, file: f.file })],
+  ['client financial proof', '../../domains/finance/accountsApi.js', 'uploadClientPortalMatterFinancialProof', f => ({ token: f.id, accountId: f.id, file: f.file })],
+  ['client financial request', '../../domains/finance/accountsApi.js', 'uploadClientPortalMatterFinancialRequestDocument', f => ({ token: f.id, accountId: f.id, requestId: f.id, file: f.file })],
   ['recruitment', '../../services/recruitmentService.js', 'uploadRecruitmentDocument', f => [f.id, { id: f.id, documents_json: [] }, f.file, 'identity']],
 ]) {
   test(`${label}: actual upload action recovers a lost commit reply; retries retain one file and record`, async () => {
@@ -208,7 +228,7 @@ test('developer: actual action retains bytes when the save cannot be read and re
 
 test('buyer onboarding upload persists its actual bucket and buyer-only identity despite a lost save reply', async () => {
   const f = fixture()
-  const action = extract('../api.js', 'uploadOnboardingRequiredDocument', {
+  const action = extract('../../domains/onboarding/tokenApi.js', 'uploadOnboardingRequiredDocument', {
     ...f.values,
     requireOnboardingTokenClient: f.values.requireClient,
     resolveOnboardingTokenContext: async () => ({ transactionId: f.id, purchaserType: 'individual' }),
@@ -233,7 +253,7 @@ test('buyer onboarding upload persists its actual bucket and buyer-only identity
 
 test('buyer onboarding setup persists canonical requirements with the guarded professional creation command', async () => {
   const f = fixture(), calls = []
-  const action = extract('../api.js', 'prepareBuyerOnboardingDocumentWorkspace', {
+  const action = extract('../../domains/onboarding/tokenApi.js', 'prepareBuyerOnboardingDocumentWorkspace', {
     ...f.values,
     TRANSACTION_CANONICAL_PERSISTENCE_MODES: { creationRpc: 'transaction_creation_rpc' },
     resolveTransactionDocumentRequirements: async input => { calls.push(input); return { canonicalSync: { instances: [{ id: 'requirement' }] }, requirements: [{ id: 'requirement' }] } },
@@ -243,9 +263,20 @@ test('buyer onboarding setup persists canonical requirements with the guarded pr
   assert.equal(calls[0].client, f.values.requireClient())
   assert.equal(calls[0].writeLegacyProjection, false)
   assert.equal(calls[0].persistenceMode, 'transaction_creation_rpc')
-  const incomplete = extract('../api.js', 'prepareBuyerOnboardingDocumentWorkspace', {
+  const incomplete = extract('../../domains/onboarding/tokenApi.js', 'prepareBuyerOnboardingDocumentWorkspace', {
     ...f.values, TRANSACTION_CANONICAL_PERSISTENCE_MODES: { creationRpc: 'transaction_creation_rpc' },
     resolveTransactionDocumentRequirements: async () => ({ canonicalSync: { instances: [] }, requirements: [] }),
   })
   await assert.rejects(incomplete(f.id), /before sharing the buyer portal/)
+})
+
+test('transaction validation and requirement-matching errors stop progress before any transfer', async () => {
+  const f=fixture(),events=[]
+  const validation=extract('../../domains/documents/uploadWorkflow.js','uploadDocument',{...f.values,validateDocumentUploadFile:()=>{throw new Error('Select a readable PDF.')}})
+  await assert.rejects(validation({transactionId:f.id,file:f.file,onProgress:event=>events.push(event)}),/readable PDF/)
+  assert.equal(events.at(-1).stage,'failed')
+  const matching=extract('../../domains/documents/uploadWorkflow.js','uploadDocument',{...f.values,resolveCanonicalRequirementTargetForUpload:async()=>{throw new Error('Reload the document checklist.')}})
+  await assert.rejects(matching({transactionId:f.id,file:f.file,onProgress:event=>events.push(event)}),/Reload the document checklist/)
+  assert.equal(events.at(-1).stage,'failed')
+  assert.equal(f.state.uploads,0)
 })

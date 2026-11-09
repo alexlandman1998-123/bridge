@@ -159,7 +159,7 @@ test('signed mandate and OTP uploads persist files and requirement links with no
 
 test('bond signing refuses before accessing clients, writing submissions or creating signing links', async () => {
   for (const name of ['prepareClientPortalBondApplicationSubmission', 'prepareClientPortalJointBondApplicationSubmission', 'createOrReuseBondApplicationSigningPacket']) {
-    const fn = vm.runInNewContext(`(${functionSource('../src/lib/api.js', name)})`, { assertBondApplicationSigningAvailable })
+    const fn = vm.runInNewContext(`(${functionSource('../src/domains/bond/portalApi.js', name)})`, { assertBondApplicationSigningAvailable })
     await assert.rejects(fn(), { code: 'bond_application_signing_unavailable' })
   }
 })

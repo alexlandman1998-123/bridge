@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const transactionApi = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const transactionApi = await readFile(new URL('../src/domains/transactions/workspaceReadApi.js', import.meta.url), 'utf8') + await readFile(new URL('../src/domains/transactions/readCache.js', import.meta.url), 'utf8')
 const transactionPage = await readFile(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 const transactionFacade = await readFile(new URL('../src/lib/transactionWorkspaceApi.js', import.meta.url), 'utf8')
 const leadRepository = await readFile(new URL('../src/lib/agencyCrmRepository.js', import.meta.url), 'utf8')
@@ -20,11 +20,11 @@ assert.match(
 )
 assert.match(
   transactionFacade,
-  /'fetchTransactionRouteCoreById'/,
+  /export \{[^}]*fetchTransactionRouteCoreById[^}]*\} from '\.\.\/domains\/transactions\/workspaceReadApi\.js'/,
   'The lazy transaction API facade must expose route-core loading.',
 )
 assert.match(transactionApi, /export function invalidateTransactionWorkspaceCoreCache\(transactionId\)/)
-assert.match(transactionFacade, /'invalidateTransactionWorkspaceCoreCache'/)
+assert.match(transactionFacade, /export \{ invalidateTransactionWorkspaceCoreCache \} from '\.\.\/domains\/transactions\/readCache\.js'/)
 assert.match(
   transactionPage,
   /const refreshAttorneyMutationWorkspace = useCallback[\s\S]*?refreshCanonicalTransactionSnapshot\([\s\S]*?refreshRollup: false[\s\S]*?refreshTransactionDatasets\(\['workflow'\]/,

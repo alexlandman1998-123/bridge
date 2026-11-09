@@ -1,13 +1,18 @@
-# API-split Phase 6: caller migration and facade retirement
+# API caller migration and entry point retirement
 
-New reporting consumers must import from `src/domains/reporting/api.js`. The legacy `src/lib/api/dashboardApi.js` remains only as a compatibility facade for external or un-migrated callers.
+`src/lib/api.js` is retired. Runtime callers import the owning feature module; the development, transaction, unit and client portal adapters select a module per operation, so one action does not preload every workflow.
 
-Run the retirement guard before merging an extraction:
+The retirement guard now requires zero imports, verifies the old file stays absent, rejects dashboard facade consumers, checks the new extraction for cycles and limits each extracted module to 4,000 source lines:
 
 ```sh
 node scripts/api-split-phase6-retirement.test.mjs
+node scripts/api-split-phase1-inventory.test.mjs
+node scripts/api-split-phase2-boundaries.test.mjs
+npx vitest run src/lib/api/__tests__/apiExtraction.contract.test.js --maxWorkers=1 --no-file-parallelism
 ```
 
-The guard permits the current legacy `src/lib/api.js` import baseline to decrease, but not increase. It rejects all new imports from the legacy dashboard facade.
+The domain contract records the owner of every historical public capability and hashes every declaration moved during final retirement. The earlier extraction contract remains in place. `scripts/helpers/domainApiSource.mjs` and `domainApiRuntime.mjs` support historical tests only; production code must not import them or restore an aggregate runtime barrel.
 
-Do not delete a facade until its imports have reached zero and its public behavior has remained stable through the production observation window.
+Keep new code under the owning domain. Keep shared read caches and invalidators bound to the same instances. Importing an action module must not send messages or mutate application data. Optional workflows run only after an explicit call.
+
+This is a local source retirement, not evidence of production rollout or measured real-user performance. Production activation still requires the normal release checks and explicit release approval.

@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-const api = fs.readFileSync('src/lib/api.js', 'utf8')
+const api = readDomainApiSource()
 const workspace = fs.readFileSync('src/services/clientPortalWorkspaceService.js', 'utf8')
 const docs = fs.readFileSync('docs/document-trust-phase4-legacy-read-retirement.md', 'utf8')
 

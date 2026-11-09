@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -5,7 +6,7 @@ import { resolve } from 'node:path'
 const appRoot = resolve(import.meta.dirname, '..')
 const repoRoot = resolve(appRoot, '..')
 
-const apiSource = readFileSync(resolve(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const clientOnboardingEmailSource = readFileSync(
   resolve(repoRoot, 'supabase/functions/send-email/handlers/clientOnboarding.ts'),
   'utf8',

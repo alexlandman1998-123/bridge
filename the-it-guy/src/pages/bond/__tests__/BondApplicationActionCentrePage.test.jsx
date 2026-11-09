@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import BondApplicationActionCentrePage from '../BondApplicationActionCentrePage.jsx'
 const api = vi.hoisted(() => Object.fromEntries(['createBondOriginatorWorkspaceDocumentRequest','fetchBondApplicationOriginatorActionCentre','fetchBondApplicationPortalOriginatorDocumentContinuity','fetchBondApplicationSubmissionReadiness','fetchBondApplicationExternalSubmissions','fetchBondApplicationHandoff','fetchBondApplicationPortalDeliveryActionCentre','issueBondApplicationPortalAccessLinkForOriginator','revokeBondApplicationPortalAccessLinkForOriginator','sendBondApplicationPortalDeliveryForOriginator','assessBondApplicationSubmissionReadiness','recordBondApplicationExternalSubmission'].map(key => [key, vi.fn()])))
-vi.mock('../../../lib/api.js', () => api)
+vi.mock('../../../domains/bond/portalApi.js', () => api)
 vi.mock('../../../components/bond/BondApplicationHandoff.jsx', () => ({ default: () => <p>Document review remains accessible</p> }))
 vi.mock('../../../components/bond/BondWetInkReviewQueue.jsx', () => ({ default: () => null }))
 vi.mock('../../../components/bond/BondSubmissionPackPanel.jsx', () => ({ BondSubmissionPackWorkspace: () => null }))

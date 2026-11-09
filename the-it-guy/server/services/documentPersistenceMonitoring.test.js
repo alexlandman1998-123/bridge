@@ -96,6 +96,14 @@ async function database(){
  for(const table of tables)await db.exec(`create table public.${table}(${Object.entries(types).map(([f,t])=>`${f} ${t}`).join(',')});`)
  await db.exec('grant usage on schema public,storage to service_role;grant select on all tables in schema public,storage to service_role;')
  await db.exec(await readFile(new URL('../../../supabase/migrations/20261008201428_document_persistence_operational_monitoring.sql',import.meta.url),'utf8'))
+ const coveragePatch=await readFile(new URL('../../../supabase/migrations/20261109104000_document_snapshot_lease_coverage.sql',import.meta.url),'utf8')
+ await db.exec(coveragePatch)
+ await db.exec(coveragePatch) // Idempotent and retains the existing service-only grants.
+ const companyMigration=await readFile(new URL('../../../supabase/migrations/20261109103955_durable_company_documents.sql',import.meta.url),'utf8')
+ const companyStart=companyMigration.indexOf('-- Include company files and retained versions')
+ const companyPatch=companyMigration.slice(companyStart,companyMigration.indexOf("notify pgrst,'reload schema'",companyStart))
+ await db.exec(companyPatch)
+ await db.exec(companyPatch) // Retains the service-only snapshot boundary on replay.
  return db
 }
 const args=(eventId,attemptId,outcome='succeeded',rateKey='a'.repeat(64))=>[eventId,attemptId,'buyer','persistence',outcome,'none',rateKey]
@@ -168,4 +176,17 @@ test('monitor CLI exports only read-only queries, refuses stale/overwritten inpu
   await writeFile(sFile,JSON.stringify({...snapshot(),capturedAt:'2020-01-01'}))
   await assert.rejects(main(['--monitor',`--project=${project}`,`--snapshot=${sFile}`,`--outcomes=${tFile}`,`--output=${output}`]),/fresh/)
  }finally{process.exitCode=previousExit;await rm(directory,{recursive:true,force:true})}
+})
+
+test('company files and retained versions are included in the service-only storage snapshot',async()=>{
+ const db=await database()
+ try{
+  await db.query("insert into company_documents(id,organisation_id,storage_bucket,storage_path) values($1,$3,'company-documents','organisation/current.pdf'),($2,$3,'company-documents','organisation/retained.pdf')",[id(701),id(702),id(703)])
+  await db.query("insert into storage.objects(id,bucket_id,name) values($1,'company-documents','organisation/current.pdf'),($2,'company-documents','organisation/retained.pdf')",[id(704),id(705)])
+  await db.exec('set role service_role')
+  const snapshot=(await db.query('select public.document_persistence_monitor_snapshot($1) value',[project])).rows[0].value
+  assert.equal(snapshot.sourceCounts.find(row=>row.source==='company_documents').rows,2)
+  assert.equal(snapshot.references.filter(row=>row.source==='company_documents').length,2)
+  assert.equal(snapshot.objects.filter(row=>row.bucket==='company-documents').length,2)
+ }finally{await db.close()}
 })

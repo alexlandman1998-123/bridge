@@ -251,7 +251,7 @@ function isExactCanonicalDocumentLink(document = {}, requirement = {}) {
     document.requirementInstanceId ||
     document.requirement_instance_id,
   )
-  if (requirementId && linkedRequirementId === requirementId) return true
+  if (linkedRequirementId) return Boolean(requirementId && linkedRequirementId === requirementId)
 
   const satisfiedArtifactIds = new Set([
     requirement.satisfied_by_document_id,
@@ -270,12 +270,19 @@ function getGeneratedDocumentForRequirement(requirement = {}, documentCenter = {
 }
 
 function getGeneratedDocumentMatchForRequirement(requirement = {}, documentCenter = {}) {
-  const allGenerated = [
+  const generatedRows = [
     ...normalizeArray(documentCenter.signedDocuments),
     ...normalizeArray(documentCenter.generatedDocuments),
     ...normalizeArray(documentCenter.uploadedDocuments).filter((document) => /signed|signature|generated|packet|mandate|otp|addendum/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)),
   ]
-  const explicitlyLinked = allGenerated.filter(document => document.is_current_evidence !== false).find((document) => isExactCanonicalDocumentLink(document, requirement))
+  const allGenerated = [...new Map(generatedRows.map(document => [document.id || document.file_path || document.storage_path || document, document])).values()]
+  const currentId = requirement.satisfied_by_document_id || requirement.latest_upload_id || requirement.satisfied_by_packet_version_id || requirement.satisfied_by_packet_id
+  if (currentId) {
+    const current = allGenerated.find(document => document.id === currentId && document.is_current_evidence !== false && isExactCanonicalDocumentLink(document, requirement))
+    return { document: current || null, linkKind: current ? 'exact' : 'unlinked' }
+  }
+  const exactCandidates = allGenerated.filter(document => document.is_current_evidence !== false && isExactCanonicalDocumentLink(document, requirement))
+  const explicitlyLinked = exactCandidates.find(document => document.is_current_evidence === true) || (exactCandidates.length === 1 ? exactCandidates[0] : null)
   if (explicitlyLinked) return { document: explicitlyLinked, linkKind: 'exact' }
 
   // Older generated/signed artifacts predate canonical_requirement_instance_id.
@@ -294,6 +301,7 @@ function getGeneratedDocumentMatchForRequirement(requirement = {}, documentCente
   if (!requirementReference.crossModuleDocumentKnown) return { document: null, linkKind: 'unlinked' }
 
   const mappedMatches = allGenerated.filter((document) => {
+    if (document.is_current_evidence === false || document.canonical_requirement_instance_id || document.canonicalRequirementInstanceId || document.requirementInstanceId || document.requirement_instance_id) return false
     const documentReference = resolveCrossModuleDocumentReference(
       document.canonicalDocumentKey ||
         document.canonical_document_key ||
@@ -317,9 +325,9 @@ function getGeneratedDocumentMatchForRequirement(requirement = {}, documentCente
 function getUploadedDocumentForRequirement(requirement = {}, documentCenter = {}) {
   const uploaded = normalizeArray(documentCenter.uploadedDocuments)
   const currentId = requirement.satisfied_by_document_id || requirement.latest_upload_id
-  if (currentId) return uploaded.find(document => document.id === currentId) || null
-  return uploaded.find(document => document.is_current_evidence === true && isExactCanonicalDocumentLink(document, requirement)) ||
-    uploaded.find(document => document.is_current_evidence !== false && isExactCanonicalDocumentLink(document, requirement)) || null
+  if (currentId) return uploaded.find(document => document.id === currentId && document.is_current_evidence !== false && isExactCanonicalDocumentLink(document, requirement)) || null
+  const candidates = uploaded.filter(document => document.is_current_evidence !== false && isExactCanonicalDocumentLink(document, requirement))
+  return candidates.find(document => document.is_current_evidence === true) || (candidates.length === 1 ? candidates[0] : null)
 }
 
 export function normalizeCanonicalRequirement(instance = {}, { documentCenter = {}, role = 'seller' } = {}) {
@@ -350,7 +358,7 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
       ? 'Resolved from one unambiguous legacy signed/generated document. Historical linking can be reconciled without changing this document.'
       : ''
   const derivedStatus = hasLinkedDocument && ['pending', 'requested'].includes(status)
-    ? (generatedDocument ? 'completed' : 'uploaded')
+    ? 'uploaded'
     : status
   const stageGates = normalizeArray(instance.stage_gates)
   const visibleToRoles = normalizeArray(instance.visible_to_roles || definition.default_visibility)

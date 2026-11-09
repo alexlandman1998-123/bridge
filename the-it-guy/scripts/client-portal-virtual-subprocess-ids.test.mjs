@@ -1,5 +1,7 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -108,7 +110,7 @@ const fakeClient = {
 }
 
 try {
-  const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+  const apiSource = await readDomainApiSource()
   const transactionDetailSource = apiSource.slice(
     apiSource.indexOf('export async function fetchTransactionById'),
     apiSource.indexOf('export async function getMissingBuyerRequirements'),
@@ -119,7 +121,7 @@ try {
     'transaction detail hydration must remain read-only and use virtual workflow rows',
   )
 
-  const { ensureTransactionSubprocesses } = await server.ssrLoadModule('/src/lib/api.js')
+  const { ensureTransactionSubprocesses } = await loadDomainCapabilitiesWithServer(server)
   const subprocesses = await ensureTransactionSubprocesses(fakeClient, TRANSACTION_ID, { createIfMissing: false })
 
   assert.deepEqual(

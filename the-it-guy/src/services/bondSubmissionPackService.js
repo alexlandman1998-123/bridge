@@ -32,7 +32,7 @@ export function createBondSubmissionPackService({ fetchContext, loadFile, render
 }
 
 export async function getBondSubmissionPackService() {
-  const api = await import('../lib/api.js')
+  const api = await Promise.all([import('../domains/bond/portalApi.js'), import('../domains/bond/runtimeApi.js')]).then(([module0, module1]) => ({ fetchBondApplicationPackDocumentUrl: module0.fetchBondApplicationPackDocumentUrl, fetchBondSubmissionPackContext: module1.fetchBondSubmissionPackContext, recordBondSubmissionConsultantReview: module1.recordBondSubmissionConsultantReview }))
   const { renderBondSubmissionChecklistPdf } = await import('../modules/bond/application/exports/bondSubmissionChecklistPdf.js')
   return createBondSubmissionPackService({
     fetchContext: async args => {

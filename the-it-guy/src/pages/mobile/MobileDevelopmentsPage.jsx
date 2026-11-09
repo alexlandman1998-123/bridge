@@ -20,7 +20,7 @@ import {
 } from '../../components/mobile/ExecutiveMobileUi'
 import { selectBottlenecks } from '../../core/transactions/developerSelectors'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { fetchDevelopmentsData } from '../../lib/api'
+import { fetchDevelopmentsData } from '../../domains/developments/portfolioReadApi.js'
 import {
   currencyFormatter,
   formatFinanceMixLabel,

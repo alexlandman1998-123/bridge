@@ -1,7 +1,8 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const apiSource = readFileSync('src/lib/api.js', 'utf8')
+const apiSource = readDomainApiSource()
 const adminRecalculationSource = readFileSync(
   'src/services/documents/documentRequestCanonicalAdminRecalculationService.js',
   'utf8',

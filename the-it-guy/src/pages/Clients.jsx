@@ -50,7 +50,22 @@ import { createAgencyCrmLeadRecord, deleteAgencyCrmLeadRecord } from '../lib/age
 let legacyClientApiPromise = null
 
 function loadLegacyClientApi() {
-  legacyClientApiPromise ||= import('../lib/api')
+  if (!legacyClientApiPromise) {
+    legacyClientApiPromise = Promise.resolve({
+      createClientRecord: async (...args) => {
+        const api = await import('../domains/transactions/developerWorkspaceActions.js')
+        return api.createClientRecord(...args)
+      },
+      fetchDashboardOverview: async (...args) => {
+        const api = await import('../domains/reporting/portfolioReadApi.js')
+        return api.fetchDashboardOverview(...args)
+      },
+      saveAttorneyMatterParty: async (...args) => {
+        const api = await import('../domains/attorney/instructionApi.js')
+        return api.saveAttorneyMatterParty(...args)
+      },
+    })
+  }
   return legacyClientApiPromise
 }
 

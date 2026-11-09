@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -125,7 +126,7 @@ test('role workspaces are wired to the canonical transaction sync projection', a
     readFile(new URL('../src/services/clientPortalActivityFeedService.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/services/bondOriginatorTransactionSyncService.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+    readDomainApiSource(),
   ])
   assert.match(syncReader, /getTransactionWorkflowReadModel/)
   assert.match(workflow, /getTransactionSyncReadModel/)

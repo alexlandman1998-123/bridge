@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { readDomainApiSource } from '../../../scripts/helpers/domainApiSource.mjs'
+
 import { expect, it, vi } from 'vitest'
-const source = readFileSync(new URL('../api.js', import.meta.url), 'utf8')
+const source = readDomainApiSource()
 function apiReadiness(scope) {
   const helpers = source.slice(source.indexOf('function getMissingCloseoutDocumentKeys('), source.indexOf('export async function getCompletionBlockers('))
   const action = source.slice(source.indexOf('export async function getCompletionBlockers('), source.indexOf('export async function markTransactionCompleted(')).replace('export ', '')

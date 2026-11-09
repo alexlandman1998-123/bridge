@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -8,11 +9,11 @@ import {
 
 const repoRoot = process.cwd()
 const followUpsPath = path.join(repoRoot, 'src/core/attorneyAccounting/matterAccountSubmissionFollowUps.js')
-const apiPath = path.join(repoRoot, 'src/lib/api.js')
+
 const attorneyPanelPath = path.join(repoRoot, 'src/components/AttorneyMatterAccountsPanel.jsx')
 
 const followUpsSource = fs.readFileSync(followUpsPath, 'utf8')
-const apiSource = fs.readFileSync(apiPath, 'utf8')
+const apiSource = readDomainApiSource()
 const attorneyPanelSource = fs.readFileSync(attorneyPanelPath, 'utf8')
 
 const sampleFollowUps = buildMatterFinancialSubmissionFollowUps(

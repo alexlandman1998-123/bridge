@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import assert from 'node:assert/strict'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readFile(new URL('../src/domains/developments/detailReadApi.js', import.meta.url), 'utf8'),
   developmentDetail: await readFile(new URL('../src/pages/DevelopmentDetail.jsx', import.meta.url), 'utf8'),
 }
 

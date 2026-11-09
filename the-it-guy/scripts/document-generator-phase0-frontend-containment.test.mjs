@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
@@ -109,7 +110,7 @@ assert.match(packetSummary, /state: packetCompleted && finalSignedFilePath/)
 assert.doesNotMatch(packetSummary, /state: finalSignedFilePath/)
 assert.match(privateListingService, /nonOverridableBlockers/)
 
-const api = fs.readFileSync('src/lib/api.js', 'utf8')
+const api = readDomainApiSource()
 for (const legacyOtpApi of [
   'sendOtpToClient',
   'fetchClientOtpSigningByToken',
@@ -131,7 +132,7 @@ assert.match(otpWorkflowMutation, /isClientVisible === true/)
 const workspacePage = fs.readFileSync('src/pages/LegalDocumentWorkspacePage.jsx', 'utf8')
 const sendCallback = workspacePage.slice(
   workspacePage.indexOf('const handleSend = useCallback'),
-  workspacePage.indexOf('const handleSignedFinalized = useCallback'),
+  workspacePage.indexOf('const handleSignedFinalized = useCallback', workspacePage.indexOf('const handleSend = useCallback')),
 )
 assert.match(sendCallback, /emailConfirmed = [\s\S]{0,160}Boolean\(emailDeliveryId\)/)
 assert.ok(
@@ -142,18 +143,7 @@ assert.match(sendCallback, /dispatchId: normalizeText\(dispatchId\)/)
 assert.doesNotMatch(sendCallback, /updateOtpDocumentWorkflowState/)
 
 const agencyPipeline = fs.readFileSync('src/pages/agency/AgencyPipelinePage.jsx', 'utf8')
-const pipelineSend = agencyPipeline.slice(
-  agencyPipeline.indexOf('async function handleSendMandateToSeller'),
-  agencyPipeline.indexOf('async function handleSelectedLeadMandatePrimaryAction'),
-)
-assert.match(pipelineSend, /emailConfirmed = [\s\S]{0,160}Boolean\(emailDeliveryId\)/)
-assert.ok(
-  pipelineSend.lastIndexOf('if (!emailConfirmed)') < pipelineSend.lastIndexOf('await updateAgencyCrmLeadRecord'),
-  'pipeline sent state must follow provider delivery confirmation',
-)
-assert.match(pipelineSend, /let dispatchId = normalizeText\(options\.dispatchId\)/)
-assert.match(pipelineSend, /dispatchId = normalizeText\(linkResult\?\.dispatchId\) \|\| dispatchId/)
-assert.match(pipelineSend, /dispatchId,/)
+assert.doesNotMatch(agencyPipeline, /async function handleSendMandateToSeller/, 'The retired pipeline signing action must stay removed')
 
 const app = fs.readFileSync('src/App.jsx', 'utf8')
 assert.match(app, /path="\/client\/:token\/otp-signing"[\s\S]{0,300}<LegacyOtpSigningRedirect/)

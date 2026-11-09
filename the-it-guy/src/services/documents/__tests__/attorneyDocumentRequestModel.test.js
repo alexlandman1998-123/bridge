@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
-import { buildAttorneyDocumentRequestRows, buildAttorneyRequestRequirementOptions, getAttorneyRequestUploadAudience } from '../attorneyDocumentRequestModel.js'
-import { reviewAttorneyMatterDocumentRequest } from '../../../lib/transactionWorkspaceApi.js'
+import { after, test } from 'node:test'
+import { createServer } from 'vite'
+import { buildAttorneyDocumentRequestRows, buildAttorneyRequestRequirementOptions, getAttorneyRequestUploadAudience, resolveAttorneyDocumentRequestRecipient, documentRequestRecipientVisibility } from '../attorneyDocumentRequestModel.js'
+const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
+after(() => server.close())
+const { reviewAttorneyMatterDocumentRequest } = await server.ssrLoadModule('/src/lib/transactionWorkspaceApi.js')
+
+test('general and client requests default to the buyer; professional requests have a professional destination', () => {
+  for (const role of ['', 'client', 'purchaser']) assert.equal(resolveAttorneyDocumentRequestRecipient(role), 'buyer')
+  assert.equal(resolveAttorneyDocumentRequestRecipient('vendor'), 'seller')
+  assert.equal(resolveAttorneyDocumentRequestRecipient('transferring_attorney'), 'attorney')
+  assert.equal(documentRequestRecipientVisibility('buyer'), 'client_visible')
+  assert.equal(documentRequestRecipientVisibility('bond_originator', 'client_visible'), 'shared_role_players')
+  assert.equal(documentRequestRecipientVisibility('seller', 'internal_only'), 'internal_only')
+})
 
 test('the matter workspace exposes the request review action', () => {
   assert.equal(typeof reviewAttorneyMatterDocumentRequest, 'function')

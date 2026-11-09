@@ -107,3 +107,50 @@ export function normalizeOptionalNumber(value) {
 
   return parsed
 }
+
+export function normalizeNullableText(value) {
+  const text = String(value || '').trim()
+  return text || null
+}
+
+export function normalizeNullableUuid(value) {
+  const text = normalizeNullableText(value)
+  return text && isUuidLike(text) ? text : null
+}
+
+export function normalizeOptionalDate(value) {
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date.toISOString().slice(0, 10)
+}
+
+export function normalizeNullableBoolean(value) {
+  if (value === true || value === false) {
+    return value
+  }
+
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+
+  if (['yes', 'y', 'true', '1'].includes(normalized)) {
+    return true
+  }
+
+  if (['no', 'n', 'false', '0'].includes(normalized)) {
+    return false
+  }
+
+  return null
+}
+
+export function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}

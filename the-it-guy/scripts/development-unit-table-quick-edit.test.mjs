@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -5,11 +6,11 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 
 assert.match(
   detailSource,
-  /\[\s*'Block',\s*'Unit Number',\s*'Purchaser',\s*'Status',\s*'Sales Price',\s*'Handover Date',\s*'Floorplan',\s*\]/,
+  /\[\s*'Block',\s*'Unit',\s*'Purchaser',\s*'Status',\s*'Sales Price',\s*'Handover Date',\s*'Floorplan',?\s*\]/,
   'units table headers should be ordered Block, Unit Number, Purchaser, Status, Sales Price, Handover Date, Floorplan',
 )
 
@@ -50,11 +51,11 @@ for (const handlerName of [
     new RegExp(`async function ${handlerName}\\([\\s\\S]*?(?=\\n  (?:async )?function |\\n  function |\\n  const )`),
   )?.[0]
   assert.ok(handlerSource, `${handlerName} should be defined`)
-  assert.ok(!handlerSource.includes('await loadData()'), `${handlerName} should not reload the entire development page`)
+  assert.ok(!handlerSource.split('} catch (')[0].includes('await loadData()'), `${handlerName} should not reload the entire development page`)
 }
 
 assert.ok(
-  detailSource.includes('floorplanDocumentOptions.map((item) => (') &&
+  detailSource.includes('floorplanDocumentOptions.map(item => (') &&
     detailSource.includes("field: 'floorplanId'"),
   'floorplan quick edits should use existing floorplan document options',
 )

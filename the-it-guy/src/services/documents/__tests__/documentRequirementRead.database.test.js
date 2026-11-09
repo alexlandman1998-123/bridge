@@ -83,6 +83,30 @@ create function bridge_transaction_scope_is_internal_user() returns boolean lang
 await db.exec(await sql('20260905091122_document_trust_phase3_role_scoped_projections'))
 await db.exec(await sql('20260927092559_transaction_document_role_projections_phase5'))
 await db.exec(await sql('20261011115118_flexible_document_requirement_read_model'))
+await db.exec(`create table development_documents(id uuid primary key default gen_random_uuid(),development_id uuid not null,
+  title text not null,version integer not null default 1,approval_status text not null default 'approved',
+  archived_at timestamptz,supersedes_document_id uuid references development_documents(id));
+  alter table development_documents enable row level security;
+  create policy development_scope on development_documents to authenticated
+    using(development_id='${org}'::uuid) with check(development_id='${org}'::uuid);
+  grant select,insert,update on development_documents to authenticated;`)
+await db.exec(`create table document_requirement_private.delivery_jobs(requirement_id uuid,status text,last_error text,provider_message_id text);`)
+// Apply the production delivery wrapper verbatim: patch its base projection,
+// while retaining delivery status and the existing invoker/security boundary.
+const delivery = await sql('20261011121724_flexible_document_request_delivery')
+await db.exec(delivery.slice(delivery.indexOf('alter function document_requirement_private.read_context(text,uuid) rename'), delivery.indexOf("notify pgrst,'reload schema'")))
+await db.exec('alter table transactions add column registration_confirmation_document_id uuid,add column registered_at timestamptz')
+await db.exec(`create table private_listing_document_requirements(id uuid primary key default gen_random_uuid(),canonical_requirement_instance_id uuid,
+  status text default 'required',assurance_state text,satisfied_by_document_id uuid,satisfaction_verified_at timestamptz,satisfaction_method text,assurance_metadata jsonb);
+create table private_listing_documents(id uuid primary key default gen_random_uuid(),requirement_id uuid,canonical_requirement_instance_id uuid,
+  promoted_document_id uuid,storage_path text,status text default 'uploaded',uploaded_at timestamptz default now(),created_at timestamptz default now(),updated_at timestamptz default now());`)
+const assurance = await sql('20261004121736_seller_document_review_runtime_reconciliation')
+await db.exec(assurance.slice(assurance.indexOf('create or replace function public.bridge_sync_private_listing_requirement_assurance_p0_4()'),
+  assurance.indexOf('create or replace function public.bridge_prevent_false_requirement_completion_p0_4()')))
+
+await db.exec(await sql('20261109085345_document_evidence_withdrawal_and_replacement'))
+await db.exec(await sql('20261109085345_document_evidence_withdrawal_and_replacement'))
+
 async function snapshot(type = 'transaction', context = transaction) {
   await db.exec('set role authenticated')
   try { return (await db.query('select bridge_document_requirement_context($1,$2) result', [type, context])).rows[0].result }
@@ -190,4 +214,113 @@ test('a second transaction linked to the same lead/listing does not inherit the 
   } finally {
     await db.exec(`create or replace function bridge_has_transaction_permission(uuid,text) returns boolean language sql as $$select $1='${transaction}'::uuid and auth.uid()='${actor}'::uuid and coalesce(current_setting('test.access',true),'allowed')<>'denied'$$;`)
   }
+})
+
+test('withdrawal is persistent and replayable across lead and transaction; bytes and reviews stay history', async () => {
+  let r = (await command()).requirement
+  r = (await upload(r)).result.requirement
+  await db.query("insert into document_requirement_context_links(requirement_instance_id,context_type,context_id) values ($1,'buyer_lead',$2) on conflict do nothing", [r.id,lead])
+  r = await row(r.id)
+  const oldId = r.satisfied_by_document_id
+  await db.query("update document_requirement_instances set status='approved' where id=$1", [r.id])
+  await db.query("insert into document_requirement_reviews(requirement_instance_id,document_id,review_status) values ($1,$2,'approved')", [r.id,oldId])
+  await db.query('insert into transaction_required_documents(canonical_requirement_instance_id,is_uploaded,uploaded_document_id,status) values ($1,true,$2,$3)', [r.id,oldId,'approved'])
+  r = await row(r.id)
+  const args = { id: randomUUID(), action: 'withdraw', requirement: r.id, revision: r.command_revision, payload: { reason: 'Wrong client file', documentId: oldId } }
+  const removed = await command(args)
+  assert.deepEqual(await command(args), removed)
+  assert.equal(removed.requirement.satisfied_by_document_id, null)
+  assert.equal(removed.requirement.latest_upload_id, null)
+  assert.equal(removed.requirement.status, 'pending')
+  for (const [type,id] of [['buyer_lead',lead],['transaction',transaction]]) {
+    const data = await snapshot(type,id)
+    const current = data.requirements.find(q => q.id===r.id)
+    assert.equal(current.satisfied_by_document_id, null)
+    assert.equal(data.documents.find(d => d.id===oldId).is_current_evidence, false)
+  }
+  assert.equal((await db.query('select is_current_evidence from documents where id=$1',[oldId])).rows[0].is_current_evidence,false)
+  assert.equal((await db.query('select is_uploaded,uploaded_document_id from transaction_required_documents where canonical_requirement_instance_id=$1',[r.id])).rows[0].uploaded_document_id,null)
+  assert.equal((await db.query('select count(*) from document_requirement_reviews where document_id=$1',[oldId])).rows[0].count,1)
+  assert.equal((await db.query('select count(*) from storage.objects where name=(select file_path from documents where id=$1)',[oldId])).rows[0].count,1)
+  const replacement = (await upload(await row(r.id))).result.requirement
+  assert.equal(replacement.status,'under_review')
+  assert.notEqual(replacement.satisfied_by_document_id,oldId)
+  assert.equal((await snapshot()).documents.find(d => d.id===oldId).is_current_evidence,false)
+})
+
+test('withdrawal rejects stale revisions, wrong files and lost access without changing the current file', async () => {
+  const r = (await upload((await command()).requirement)).result.requirement
+  await assert.rejects(change(r,'withdraw',{ reason:'Incorrect file',documentId:randomUUID() }),/current file changed/)
+  await assert.rejects(command({ action:'withdraw',requirement:r.id,revision:r.command_revision-1,payload:{reason:'Incorrect file',documentId:r.satisfied_by_document_id} }),/changed/)
+  await db.query("select set_config('test.access','denied',false)")
+  try { await assert.rejects(change(r,'withdraw',{ reason:'Incorrect file',documentId:r.satisfied_by_document_id }),/Not authorised/) }
+  finally { await db.query("select set_config('test.access','allowed',false)") }
+  assert.equal((await row(r.id)).satisfied_by_document_id,r.satisfied_by_document_id)
+})
+
+test('replacement archives the previous current file without carrying approval to new bytes', async () => {
+  let r = (await upload((await command()).requirement)).result.requirement
+  const oldId=r.satisfied_by_document_id
+  await db.query("update document_requirement_instances set status='approved' where id=$1",[r.id])
+  r=(await upload(await row(r.id))).result.requirement
+  const rows=(await db.query('select id,is_current_evidence from documents where id=any($1)',[[oldId,r.satisfied_by_document_id]])).rows
+  assert.equal(rows.find(d=>d.id===oldId).is_current_evidence,false)
+  assert.equal(rows.find(d=>d.id===r.satisfied_by_document_id).is_current_evidence,true)
+  assert.equal(r.status,'under_review')
+})
+
+test('development replacements archive atomically, preserve history and reject stale or cross-development replacements', async () => {
+  const old=randomUUID(),next=randomUUID()
+  await db.query("insert into development_documents(id,development_id,title) values ($1,$2,'Old approved document')",[old,org])
+  await db.exec('set role authenticated')
+  try {
+    await assert.rejects(db.query('insert into development_documents(development_id,title,supersedes_document_id) values ($1,null,$2)',[org,old]),/null value/)
+    assert.equal((await db.query('select archived_at from development_documents where id=$1',[old])).rows[0].archived_at,null)
+    await db.query("insert into development_documents(id,development_id,title,supersedes_document_id) values ($1,$2,'New file',$3)",[next,org,old])
+    const versions=(await db.query('select * from development_documents where id=any($1)',[[old,next]])).rows
+    assert(versions.find(d=>d.id===old).archived_at)
+    assert.equal(versions.find(d=>d.id===next).version,2)
+    assert.equal(versions.find(d=>d.id===next).approval_status,'pending_approval')
+    await assert.rejects(db.query("insert into development_documents(development_id,title,supersedes_document_id) values ($1,'Stale',$2)",[org,old]),/changed or access/)
+    await assert.rejects(db.query("insert into development_documents(development_id,title,supersedes_document_id) values ($1,'Foreign',$2)",[randomUUID(),next]),/changed or access/)
+  } finally { await db.exec('reset role') }
+})
+
+test('a selected registration proof cannot be withdrawn until its authoritative reference is replaced', async () => {
+  const r=(await upload((await command()).requirement)).result.requirement
+  await db.query('update transactions set registration_confirmation_document_id=$1,registered_at=now() where id=$2',[r.satisfied_by_document_id,transaction])
+  try {
+    await assert.rejects(change(r,'withdraw',{reason:'Correction',documentId:r.satisfied_by_document_id}),/Replace the transaction registration proof/)
+    assert.equal((await row(r.id)).satisfied_by_document_id,r.satisfied_by_document_id)
+    const replacement=(await upload(await row(r.id))).result.requirement
+    assert.notEqual(replacement.satisfied_by_document_id,r.satisfied_by_document_id)
+    assert.equal((await db.query('select is_current_evidence from documents where id=$1',[r.satisfied_by_document_id])).rows[0].is_current_evidence,true)
+  } finally { await db.query('update transactions set registration_confirmation_document_id=null,registered_at=null where id=$1',[transaction]) }
+})
+
+test('withdrawal clears the seller listing mirror and its legacy assurance trigger cannot resurrect retained bytes', async () => {
+  let r=(await upload((await command({payload:{party:'seller',label:'Seller supporting evidence'}})).requirement)).result.requirement
+  const mirror=randomUUID(),source=randomUUID(),file=r.satisfied_by_document_id
+  await db.query('insert into private_listing_document_requirements(id,canonical_requirement_instance_id) values ($1,$2)',[mirror,r.id])
+  await db.query("insert into private_listing_documents(id,requirement_id,canonical_requirement_instance_id,promoted_document_id,status) values ($1,$2,$3,$4,'approved')",[source,mirror,r.id,file])
+  assert.equal((await db.query('select status from private_listing_document_requirements where id=$1',[mirror])).rows[0].status,'approved')
+  r=await row(r.id)
+  await change(r,'withdraw',{reason:'Incorrect seller evidence',documentId:file})
+  const retained=(await db.query('select * from private_listing_documents where id=$1',[source])).rows[0]
+  assert.equal(retained.is_current_evidence,false)
+  assert.equal(retained.status,'approved','historic review is unchanged')
+  await db.query('update private_listing_documents set status=status where id=$1',[source])
+  const checklist=(await db.query('select * from private_listing_document_requirements where id=$1',[mirror])).rows[0]
+  assert.equal(checklist.status,'required')
+  assert.equal(checklist.satisfied_by_document_id,null)
+  assert.equal(checklist.assurance_state,'missing')
+})
+
+test('unchanged current-file identity does not rewrite document rows or fan out background refreshes', async () => {
+  const r=(await upload((await command()).requirement)).result.requirement
+  await db.exec(`create table test_document_update_counter(id uuid);
+    create function count_document_update() returns trigger language plpgsql as $$begin insert into test_document_update_counter values(new.id);return new;end;$$;
+    create trigger count_document_update after update on documents for each row execute function count_document_update();`)
+  await db.query('update document_requirement_instances set status=status where id=$1',[r.id])
+  assert.equal((await db.query('select count(*) from test_document_update_counter')).rows[0].count,0)
 })

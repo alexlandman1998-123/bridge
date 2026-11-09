@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
-import { assessBondApplicationSubmissionReadiness, fetchBondApplicationHandoff, fetchBondApplicationPackDocumentUrl, reviewBondApplicationHandoffDocument, updateBondApplicationCorrection } from '../../lib/api'
+import { assessBondApplicationSubmissionReadiness, fetchBondApplicationHandoff, fetchBondApplicationPackDocumentUrl, reviewBondApplicationHandoffDocument, updateBondApplicationCorrection } from '../../domains/bond/portalApi.js'
 
 const buttonClass = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50'
 const label = (value) => String(value || '').replaceAll('_', ' ')

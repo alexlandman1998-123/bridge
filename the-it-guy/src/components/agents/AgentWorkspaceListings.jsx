@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MoreVertical } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { fetchAssignedDevelopmentIdsForRole, fetchDevelopmentOptions } from '../../lib/api'
+import { fetchAssignedDevelopmentIdsForRole, fetchDevelopmentOptions } from '../../domains/developments/selectionReadApi.js'
 import { getPrivateListingCoverImageUrls, getListingCardImageSource } from '../../services/privateListingService'
 import { buildRentalListingIndexRows } from '../../services/rentals/rentalListingIndexModel'
 import { getListingLiveChannels } from '../../services/listings/listingMarketingChannelPresentation'

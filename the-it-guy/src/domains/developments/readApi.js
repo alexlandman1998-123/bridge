@@ -166,7 +166,7 @@ export async function fetchDevelopmentFinancials(developmentId) {
   })
 }
 
-export async function fetchDevelopmentDocuments(developmentId) {
+export async function fetchDevelopmentDocuments(developmentId, { includeHistory = false } = {}) {
   const client = requireClient()
 
   if (!developmentId) {
@@ -201,7 +201,8 @@ export async function fetchDevelopmentDocuments(developmentId) {
     throw error
   }
 
-  return (await refreshDevelopmentMedia(client, data || [])).map((row) => normalizeDevelopmentDocumentRow(row))
+  const visible = includeHistory ? data || [] : (data || []).filter(row => !row.archived_at)
+  return (await refreshDevelopmentMedia(client, visible)).map((row) => normalizeDevelopmentDocumentRow(row))
 }
 
 export async function fetchDevelopmentMarketingAccess(developmentId) {

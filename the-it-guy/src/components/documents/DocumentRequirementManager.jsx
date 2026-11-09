@@ -185,6 +185,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
             const changeReason = removalMode && action === 'remove' ? 'Not relevant to this matter' : reason.trim()
             if (!changeReason) throw new Error('Enter a reason for this change.')
             command.payload = { reason: changeReason }
+            if (action === 'withdraw') command.payload.documentId = selected.satisfied_by_document_id || selected.latest_upload_id
           }
         }
       }
@@ -298,6 +299,12 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
             <label className="block text-sm">{selected.latest_upload_id || selected.satisfied_by_document_id ? 'Replacement file' : 'Upload file'}<input key={selected.id} ref={fileInput} type="file" accept={DOCUMENT_UPLOAD_ACCEPT} disabled={disabled} onChange={event => setFile(event.target.files?.[0] || null)} className={inputClass} /></label>
             <p className="text-xs text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</p>
             <button type="button" disabled={disabled || !file} className={buttonClass} onClick={() => void save('upload')}>{selected.latest_upload_id || selected.satisfied_by_document_id ? 'Replace file' : 'Upload file'}</button>
+            {selected.latest_upload_id || selected.satisfied_by_document_id ? <details className="rounded-lg border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-slate-600">Remove current file</summary>
+              <p className="mt-2 text-sm text-slate-600">Removes this file from normal views in every linked workspace. The document stays required, and saved evidence and reviews remain in protected history.</p>
+              <label className="mt-2 block text-sm">Reason for removing this file<textarea value={reason} onChange={event => setReason(event.target.value)} maxLength={2000} disabled={disabled} className={inputClass} /></label>
+              <button type="button" disabled={disabled || !reason.trim()} className={`${buttonClass} mt-2 text-red-800`} onClick={() => void save('withdraw')}>Remove current file</button>
+            </details> : null}
           </> : null}
           <details className="rounded-lg border border-slate-200 p-3" open={removed || presentation !== 'dialog'}><summary className="cursor-pointer text-sm font-medium text-slate-600">{removed ? 'Restore document' : 'Remove document requirement'}</summary><div className="mt-3 space-y-3">
           <label className="block text-sm">Reason for {removed ? 'restoring' : 'removing'} this requirement<textarea value={reason} onChange={event => setReason(event.target.value)} maxLength={2000} disabled={disabled} className={inputClass} /></label>

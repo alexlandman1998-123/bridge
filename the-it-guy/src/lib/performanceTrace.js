@@ -2,9 +2,11 @@ import {
   evaluateTargetFlowPerformanceBudget,
   TARGET_FLOW_HISTORY_STORAGE_KEY,
 } from '../services/observability/targetFlowPerformanceBudget'
+import { openingRequestTrace } from '../services/observability/openingRequestTrace.js'
 
 const PERF_DEBUG_STORAGE_KEY = 'itg:perf-debug'
 const ROUTE_MILESTONE_PREFIX = 'arch9:route'
+let lastOpeningRoute = ''
 
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -27,7 +29,7 @@ function readRouteResourceSummary(startedAt = 0) {
   const requests = resources.filter((entry) => /supabase\.co\/(?:rest|auth|storage|functions)\//i.test(String(entry.name || '')))
   const fingerprints = new Map()
   requests.forEach((entry) => {
-    const key = String(entry.name || '').replace(/[?&](?:select|order|limit|offset)=[^&]*/g, '')
+    const key = String(entry.name || '')
     fingerprints.set(key, (fingerprints.get(key) || 0) + 1)
   })
   const chunks = resources.filter((entry) => entry.initiatorType === 'script' || /\.js(?:\?|$)/i.test(String(entry.name || '')))
@@ -107,6 +109,11 @@ export function markRouteMilestone(milestone = '', pathname = '') {
   performance.mark(`${ROUTE_MILESTONE_PREFIX}:${normalizedMilestone}`, {
     detail: { pathname: normalizedPath },
   })
+  if (normalizedMilestone === 'interactive_ready' && typeof window !== 'undefined') {
+    const complete = () => openingRequestTrace.usable(normalizedPath)
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(complete)
+    else complete()
+  }
 }
 
 export function bondPerfLog(label = '', startedAt = 0, payload = {}) {
@@ -129,11 +136,20 @@ export function startRouteTransitionTrace({ from = '', to = '', label = 'route-t
     startedAt: getNow(),
     routeRenderedAt: null,
   }
+  openingRequestTrace.begin(to, { force: true, timingOrigin: 'route_transition' })
 
   if (isPerformanceTracingEnabled()) console.debug(`[perf] route transition start`, window.__itgRoutePerfTrace)
 }
 
 export function markRouteRendered(pathname = '') {
+  const transition = typeof window === 'undefined' ? null : window.__itgRoutePerfTrace
+  const hasTransition = String(transition?.to || '').split('?')[0] === pathname && Number.isFinite(transition?.startedAt)
+  const cold = !lastOpeningRoute
+  if (lastOpeningRoute !== pathname) openingRequestTrace.begin(pathname, {
+    startedAt: hasTransition ? transition.startedAt : cold ? 0 : getNow(),
+    timingOrigin: hasTransition ? 'route_transition' : cold ? 'navigation_start' : 'route_render',
+  })
+  lastOpeningRoute = pathname
   markRouteMilestone('route_rendered', pathname)
   if (typeof window === 'undefined') {
     return

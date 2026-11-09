@@ -1,5 +1,6 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+
 import { reportDocumentUploadTelemetry } from '../src/lib/documentUploadObservability.js'
 
 const emitted = []
@@ -38,7 +39,7 @@ try {
   console.warn = originalWarn
 }
 
-const apiSource = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = readDomainApiSource()
 const uploadDocumentSource = apiSource.slice(apiSource.indexOf('export async function uploadDocument'))
 
 assert.ok(

@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -23,7 +24,7 @@ const attorneyTransactionDetailSource = await readFile(
   new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url),
   'utf8',
 )
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 
 test('agent transaction detail imports and renders the multi-buyer policy roster', () => {

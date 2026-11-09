@@ -8,7 +8,10 @@ import AgentNewDealWizard from '../../AgentNewDealWizard.jsx'
 import { readAgentPrivateListings } from '../../../lib/agentListingStorage.js'
 import { getPrivateListing, getAgentPrivateListingSummaries } from '../../../services/privateListingService.js'
 
-vi.mock('../../../lib/api.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/developments/selectionReadApi.js', () => ({ fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/developments/selectionReadApi.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/transactions/creationApi.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
+vi.mock('../../../domains/documents/uploadWorkflow.js', () => ({ createTransactionFromWizard: vi.fn(async () => ({ transactionId: 'saved-deal' })), uploadDocument: vi.fn(), fetchDevelopmentOptions: vi.fn(async () => []), fetchUnitsForTransactionSetup: vi.fn(async () => []) }))
 vi.mock('../../../services/transactionCaptureHandoffService.js', () => ({ ensureTransactionCaptureInvitations: vi.fn(async () => []) }))
 vi.mock('../../../services/transactionHandoffRegisterService.js', () => ({ readTransactionHandoffRegister: vi.fn(async () => ({ items: [] })) }))
 vi.mock('../../../services/documents/transactionCanonicalDocumentRequirementService.js', () => ({ fetchTransactionDocumentRequirementsByTransactionIds: vi.fn(async () => ({ 'saved-deal': [] })) }))

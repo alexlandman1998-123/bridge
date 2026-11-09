@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  getTransactionWorkflowMigrationValidation,
-  runTransactionWorkflowMigrationBackfill,
-} from '../lib/api'
+import { getTransactionWorkflowMigrationValidation, runTransactionWorkflowMigrationBackfill } from '../domains/transactions/progressApi.js'
 import { USE_WORKFLOW_ROLLUP_OVERVIEW } from '../core/transactions/transactionLifecycle'
 
 function StatCard({ label, value, tone = 'neutral' }) {

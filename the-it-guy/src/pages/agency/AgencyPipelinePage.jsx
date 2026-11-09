@@ -1,3 +1,4 @@
+import { createScopedReadCache, watchScopedReadInvalidation } from '../../lib/scopedReadCache.js'
 import { requireBuyerOnboardingDelivery } from '../../services/emailDeliveryReceipt'
 import { normalizeFinanceType } from '../../core/transactions/financeType.js'
 import { getBuyerNextActionCompletion, checkBuyerNextActionEvidence, buildBuyerNextBestActionButtons } from '../../services/buyerNextActionCompletionService.js'
@@ -340,7 +341,6 @@ import {
   loadSellerAppointmentsWorkspace,
   preloadAgencyLeadWorkspaceTab,
 } from './agencyLeadWorkspaceTabLoader'
-import { loadBuyerLeadWorkspaceData } from './buyerLeadWorkspaceDataLoader'
 import { loadBuyerOfferWorkspaceData } from './buyerOfferWorkspaceDataLoader'
 import {
   loadBuyerFinanceTransactionData,
@@ -377,7 +377,28 @@ function createDeferredAction(loadModule, actionName) {
 let transactionApiActionsPromise = null
 function loadTransactionApiActions() {
   if (!transactionApiActionsPromise) {
-    transactionApiActionsPromise = import('../../lib/api')
+    transactionApiActionsPromise = Promise.resolve({
+      addTransactionDiscussionComment: async (...args) => {
+        const api = await import('../../domains/transactions/discussionApi.js')
+        return api.addTransactionDiscussionComment(...args)
+      },
+      getOrCreateTransactionOnboarding: async (...args) => {
+        const api = await import('../../domains/onboarding/workflow.js')
+        return api.getOrCreateTransactionOnboarding(...args)
+      },
+      saveTransactionRoleplayerSelections: async (...args) => {
+        const api = await import('../../domains/access/transactionApi.js')
+        return api.saveTransactionRoleplayerSelections(...args)
+      },
+      prepareBuyerOnboardingDocumentWorkspace: async (...args) => {
+        const api = await import('../../domains/onboarding/tokenApi.js')
+        return api.prepareBuyerOnboardingDocumentWorkspace(...args)
+      },
+      uploadDocument: async (...args) => {
+        const api = await import('../../domains/documents/uploadWorkflow.js')
+        return api.uploadDocument(...args)
+      },
+    })
   }
   return transactionApiActionsPromise
 }
@@ -11674,6 +11695,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   }, [location.search])
   const isLeadWorkspaceRoute = !initialViewMode || (initialViewMode !== 'calendar' && routeLeadId.length > 0)
   const { role, profile, currentWorkspace, currentMembership, workspace } = useWorkspace()
+  const leadReadScope = `${profile?.id || ''}:${role}:${currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id || currentMembership?.organisationId || currentMembership?.organisation_id || ''}:${currentMembership?.workspaceRole || currentMembership?.workspace_role || currentMembership?.organisationRole || currentMembership?.role || ''}`
+  const leadOpeningReads = useMemo(() => createScopedReadCache({ scopeKey: leadReadScope }), [leadReadScope])
+  useEffect(() => watchScopedReadInvalidation(leadOpeningReads), [leadOpeningReads])
+  const readLeadWorkspace = useCallback((organisationId, leadId, options) => leadOpeningReads.read({
+    client: supabase, group: 'lead_opening', key: [organisationId, leadId, options.includeRelatedRecords, options.relatedLimit],
+    load: () => fetchAgencyCrmLeadWorkspace(organisationId, leadId, options), maxAgeMs: 0
+  }), [leadOpeningReads])
+
   const { branding: organisationDocumentBranding, organisation: documentOrganisation, onboarding: agencyDocumentOnboarding } = useOrganisation()
   const sellerLeadsRenderCountRef = useRef(0)
   sellerLeadsRenderCountRef.current += 1
@@ -11802,6 +11831,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   }, [recordPipelineTelemetry])
 
   const [users, setUsers] = useState([])
+  const [teamDirectoryRequested, setTeamDirectoryRequested] = useState(false)
   const [records, setRecords] = useState({
     contacts: [],
     leads: [],
@@ -12345,6 +12375,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       reloadRequestRef.current = requestId
       const localFallbackAvailable = isUnsafeFallbackAllowed()
       const snapshot = localFallbackAvailable ? getAgencyPipelineSnapshot(orgId) : createEmptyPipelineSnapshot(orgId)
+      if (isLeadWorkspaceRoute && routeLeadId) {
+        const recent = routeLeadWorkspaceTab === 'overview'
+        const history = ['activity', 'tasks'].includes(routeLeadWorkspaceTab)
+        const scoped = await trackRead(readLeadWorkspace(orgId, routeLeadId, {
+          includeRelatedRecords: recent || history, relatedLimit: recent ? 3 : null
+        }))
+        if (requestId !== reloadRequestRef.current) return
+        if (scoped.leads?.length) {
+          routeLeadWorkspaceSnapshotRef.current = { ...routeLeadWorkspaceSnapshotRef.current, ...scoped,
+            key: `${orgId}:${normalizeLeadIdentityKey(routeLeadId)}`, organisationId: orgId }
+          writeLeadWorkspaceSessionSnapshot(orgId, routeLeadId, routeLeadWorkspaceSnapshotRef.current)
+        }
+        setRecords(previous => ({ ...previous, contacts: scoped.contacts || [], leads: scoped.leads || [],
+          leadActivities: scoped.leadActivities || [], tasks: scoped.tasks || [] }))
+        if (typeof onPrimaryRecordsReady === 'function') onPrimaryRecordsReady()
+        return
+      }
       let mergedSnapshot = snapshot
       let listingOptionsForAppointments = dedupeListingOptions([
         ...buildListingOptionsFromLeads(Array.isArray(snapshot?.leads) ? snapshot.leads : []),
@@ -12643,7 +12690,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         appointmentCount: null,
       })
     },
-    [currentAgent, isPrincipal, recordSellerLeadsPerformance],
+    [currentAgent, isPrincipal, isCalendarMode, isLeadWorkspaceRoute, routeLeadId, routeLeadWorkspaceTab, recordSellerLeadsPerformance, readLeadWorkspace],
   )
 
   const reloadRecords = useCallback((orgId, options = {}) => {
@@ -12756,6 +12803,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     }
   }, [])
 
+  const detailDirectoryRequested = teamDirectoryRequested || (isLeadWorkspaceRoute && appointmentModalOpen)
   const loadContext = useCallback(async () => {
     const shouldUseBlockingLoader = !hasCompletedContextLoadRef.current
     try {
@@ -12786,7 +12834,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
           }
         : null
       const usersPromise = withPipelineTimeout(
-        listOrganisationUsers(),
+        isLeadWorkspaceRoute && routeLeadWorkspaceTab === 'overview' && !sellerAssignmentMenuOpen && !detailDirectoryRequested ? Promise.resolve([]) : listOrganisationUsers(),
         'Team directory is taking too long to load.',
       ).then(
         (value) => ({ status: 'fulfilled', value }),
@@ -12856,7 +12904,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       if (isCalendarMode) {
         await reloadRecords(storageOrgId)
       } else if (isLeadWorkspaceRoute && routeLeadId) {
-        scheduleRecordsReload(storageOrgId, 1200)
+        // The route hydration owns the opening read; no organisation-wide follow-up.
       } else {
         await new Promise((resolve) => {
           let resolved = false
@@ -12883,7 +12931,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       hasCompletedContextLoadRef.current = true
       setLoading(false)
     }
-  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentMembership, currentWorkspace, isCalendarMode, isLeadWorkspaceRoute, profile?.firstName, profile?.lastName, reloadRecords, role, routeLeadId, scheduleRecordsReload, workspace])
+  }, [currentAgent.email, currentAgent.fullName, currentAgent.id, currentMembership, currentWorkspace, isCalendarMode, isLeadWorkspaceRoute, routeLeadWorkspaceTab, sellerAssignmentMenuOpen, detailDirectoryRequested, profile?.firstName, profile?.lastName, reloadRecords, role, routeLeadId, workspace])
 
   useEffect(() => {
     void loadContext()
@@ -13222,13 +13270,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   useEffect(() => {
     if (!isLeadWorkspaceRoute || !routeLeadId || !organisationId || !isSupabaseConfigured) return
     const hydrationKey = `${organisationId}:${normalizeLeadIdentityKey(routeLeadId)}`
-    if (routeLeadHydrationRef.current === hydrationKey) return
+    const requestKey = `${hydrationKey}:${routeLeadWorkspaceTab}:${leadReadScope}`
+    if (routeLeadHydrationRef.current === requestKey) return
     let attempt = 0
     let retryTimer = null
     let cancelled = false
     let primaryHydrationReported = false
     const hydrationStartedAt = getPipelineTelemetryNow()
-    routeLeadHydrationRef.current = hydrationKey
+    routeLeadHydrationRef.current = requestKey
     const cachedRouteSnapshot = routeLeadWorkspaceSnapshotRef.current?.key === hydrationKey
       ? routeLeadWorkspaceSnapshotRef.current
       : readLeadWorkspaceSessionSnapshot(organisationId, routeLeadId)
@@ -13261,13 +13310,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       }, severity)
     }
 
-    const fetchFullRouteLeadWorkspace = (snapshot = null) => {
-      const routeLead = (Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null) || routeLeadRecordRef.current
-      const routeLeadCategory = routeLead ? resolveLeadCategoryView(routeLead) : ''
-      return routeLeadCategory === 'buyer'
-        ? loadBuyerLeadWorkspaceData({ organisationId, leadId: routeLeadId, seedSnapshot: snapshot })
-        : fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId, { seedSnapshot: snapshot })
-    }
+    const fetchFullRouteLeadWorkspace = () => readLeadWorkspace(organisationId, routeLeadId, {
+      includeRelatedRecords: ['overview', 'activity', 'tasks'].includes(routeLeadWorkspaceTab),
+      relatedLimit: routeLeadWorkspaceTab === 'overview' ? 3 : null,
+    })
 
     const mergeRouteLeadSnapshot = (snapshot) => {
       if (!snapshot?.leads?.length) return false
@@ -13379,13 +13425,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     const linkedListingHydrationKeys = new Set()
     const hydrateAndMergeLinkedListingInBackground = (snapshot, reason = 'route_lead_background_listing') => {
       const listingId = getRouteSnapshotListingId(snapshot)
-      if (!listingId) return
+      if (!listingId || routeLeadWorkspaceTab === 'overview') return
       const listingHydrationKey = `${normalizeLeadIdentityKey(routeLeadId)}:${normalizeText(listingId)}`
       if (linkedListingHydrationKeys.has(listingHydrationKey)) return
       linkedListingHydrationKeys.add(listingHydrationKey)
       void hydrateRouteLeadSnapshotLinkedListing(snapshot)
         .then((linkedSnapshot) => {
-          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+          if (cancelled || routeLeadHydrationRef.current !== requestKey) return
           // Listing hydration can finish after fresh lead/onboarding linkage.
           // Enrich the latest snapshot instead of restoring its stale seed.
           const latestSnapshot = routeLeadWorkspaceSnapshotRef.current?.key === hydrationKey
@@ -13423,12 +13469,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     }
 
     const hydrateFullLeadWorkspaceInBackground = (reason = 'route_lead_background_workspace', snapshot = null) => {
+      if (snapshot?.openingWorkspace && routeLeadWorkspaceTab === 'overview') return
       void (async () => {
         try {
           // The fast snapshot is already visible. Keep the background result
           // even if a slow connection exceeds the initial-route time budget.
           const workspaceSnapshot = await fetchFullRouteLeadWorkspace(snapshot)
-          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+          if (cancelled || routeLeadHydrationRef.current !== requestKey) return
           if (mergeRouteLeadSnapshot(workspaceSnapshot)) {
             setRouteLeadHydrationStatus('ready')
             setRouteLeadHydrationNotice('')
@@ -13464,7 +13511,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
             recordHydrationOutcome('lead_workspace_background_hydration_unavailable', { reason }, 'warning')
           }
         } catch (workspaceError) {
-          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+          if (cancelled || routeLeadHydrationRef.current !== requestKey) return
           console.warn(`[PIPELINE] lead workspace background hydration failed: ${workspaceError?.message || 'Unknown hydration error'}`, {
             reason,
             error: workspaceError,
@@ -13513,7 +13560,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         }
         if (!currentRouteLeadRecord) {
           const seedSnapshot = await withPipelineTimeout(
-            fetchAgencyCrmLeadRouteHydrationSeed(organisationId, routeLeadId),
+            fetchFullRouteLeadWorkspace(),
             'Lead workspace data is taking too long to load.',
             LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
           )
@@ -13595,6 +13642,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     reloadRecords,
     routeLeadId,
     routeLeadWorkspaceTab,
+    readLeadWorkspace,
+    leadReadScope,
   ])
 
   useEffect(() => {
@@ -13932,6 +13981,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       tasks: Array.isArray(currentSnapshot?.tasks) ? currentSnapshot.tasks : [],
       linkedListings: Array.isArray(currentSnapshot?.linkedListings) ? currentSnapshot.linkedListings : [],
     }
+    // Rewriting an equivalent pinned lead changes the memo dependency above,
+    // which can repeatedly hydrate forms and rewrite this cache again.
+    if (currentSnapshot && currentSnapshot.organisationId === nextSnapshot.organisationId &&
+      currentSnapshot.requestedLeadId === nextSnapshot.requestedLeadId &&
+      currentSnapshot.resolvedLeadId === nextSnapshot.resolvedLeadId &&
+      JSON.stringify(existingLeads) === JSON.stringify(nextSnapshot.leads)) return
     if (routeLeadWorkspaceSnapshotRef.current) {
       routeLeadWorkspaceSnapshotRef.current = {
         ...routeLeadWorkspaceSnapshotRef.current,
@@ -14496,17 +14551,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     })
     return () => { cancelled = true }
   }, [organisationId, developmentJourneyInput, selectedLeadIsSeller])
-  useEffect(() => {
-    if (!selectedLeadLinkedListingId) {
-      setSellerPortalSigningRequests([])
-      return
-    }
-    let active = true
-    listSellerPortalSigningRequests(selectedLeadLinkedListingId)
-      .then((result) => { if (active) setSellerPortalSigningRequests(result.documents || []) })
-      .catch(() => { if (active) setSellerPortalSigningRequests([]) })
-    return () => { active = false }
-  }, [selectedLeadLinkedListingId])
+  const needsSellerDocumentData = !isLeadWorkspaceRoute || leadWorkspaceTab === 'documents' || sellerOnboardingReviewModalOpen || otpQuickStartOpen
   const selectedLeadReviewFormData = useMemo(() => sellerOnboardingReviewModalOpen
     ? getSellerLeadReviewFormData(selectedLead, sellerOnboardingReviewListing || selectedLeadLinkedListing)
     : null, [sellerOnboardingReviewModalOpen, selectedLead, selectedLeadLinkedListing, sellerOnboardingReviewListing])
@@ -14528,7 +14573,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     let active = true
     setSellerPortalSigningRequests([])
     let timer = null
-    if (selectedLeadLinkedListingId && selectedLeadIsSeller) {
+    if (selectedLeadLinkedListingId && selectedLeadIsSeller && needsSellerDocumentData) {
       const refresh = () => listSellerPortalSigningRequests(selectedLeadLinkedListingId)
         .then((result) => { if (active) setSellerPortalSigningRequests(result.documents || []) })
         .catch(() => {})
@@ -14536,12 +14581,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       timer = window.setInterval(refresh, 60_000)
     }
     return () => { active = false; if (timer) window.clearInterval(timer) }
-  }, [selectedLeadLinkedListingId, selectedLeadIsSeller])
+  }, [selectedLeadLinkedListingId, selectedLeadIsSeller, needsSellerDocumentData])
 
   useEffect(() => {
     if (!selectedLeadLinkedListingId || !isSupabaseConfigured) {
       setSelectedLeadHydratedListing(null)
       setSelectedLeadDocumentHydrationStatus('idle')
+      return undefined
+    }
+
+    if (!needsSellerDocumentData) {
+      setSelectedLeadDocumentHydrationStatus('deferred')
       return undefined
     }
 
@@ -14583,11 +14633,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     return () => {
       cancelled = true
     }
-  }, [selectedLeadLinkedListingId])
+  }, [selectedLeadLinkedListingId, needsSellerDocumentData])
 
   useEffect(() => {
     const shouldLoadPrivateListingActivity = shouldLoadLeadWorkspaceRequest({
       leadCategory: selectedLeadCategory,
+      workspaceTab: isLeadWorkspaceRoute ? leadWorkspaceTab : null,
       requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.privateListingActivity,
     })
     if (!selectedLeadIdentityKey || !shouldLoadPrivateListingActivity) {
@@ -14623,6 +14674,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     }
   }, [
     isSupabaseConfigured,
+    isLeadWorkspaceRoute,
+    leadWorkspaceTab,
     selectedLeadIdentityKey,
     selectedLeadPrivateListingActivityKey,
     selectedLeadCategory,
@@ -14667,6 +14720,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
     const shouldLoadViewingPreferences = shouldLoadLeadWorkspaceRequest({
       leadCategory: selectedLeadCategory,
+      workspaceTab: isLeadWorkspaceRoute ? leadWorkspaceTab : null,
       requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.buyerViewingPreferences,
     })
     if (!workspaceId || !selectedLead || !shouldLoadViewingPreferences || !selectedLeadUuid) {
@@ -14692,13 +14746,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     } finally {
       setBuyerViewingPreferenceLinksLoading(false)
     }
-  }, [organisationId, selectedLead, selectedLeadCategory])
+  }, [organisationId, selectedLead, selectedLeadCategory, isLeadWorkspaceRoute, leadWorkspaceTab])
 
   const reloadSellerViewingCoordinationLinks = useCallback(async ({ showMessage = false } = {}) => {
     const workspaceId = normalizeWorkspaceUuid(organisationId)
     const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
     const shouldLoadSellerCoordination = shouldLoadLeadWorkspaceRequest({
       leadCategory: selectedLeadCategory,
+      workspaceTab: isLeadWorkspaceRoute ? leadWorkspaceTab : null,
       requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.sellerViewingCoordination,
     })
     if (!workspaceId || !selectedLead || !shouldLoadSellerCoordination || !selectedLeadUuid) {
@@ -14724,7 +14779,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     } finally {
       setSellerViewingCoordinationLinksLoading(false)
     }
-  }, [organisationId, selectedLead, selectedLeadCategory])
+  }, [organisationId, selectedLead, selectedLeadCategory, isLeadWorkspaceRoute, leadWorkspaceTab])
 
   const appointmentRange = useMemo(
     () => buildAppointmentReloadRange({ isCalendarMode, calendarView, calendarCursorDate }),
@@ -14734,13 +14789,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     organisationId, from: appointmentRange.from, to: appointmentRange.to,
     viewerId: currentAgent.id, includeAll: isPrincipal, agentId: isPrincipal ? '' : currentAgent.id,
     agentEmail: isPrincipal ? '' : currentAgent.email, revision: appointmentRefreshRevision,
+    enabled: !isLeadWorkspaceRoute || appointmentModalOpen,
     timeoutMs: PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
   })
   const leadAppointmentLoad = usePipelineAppointments({
     organisationId, leadId: selectedLead?.leadId || '',
     viewerId: currentAgent.id, includeAll: isPrincipal, agentId: isPrincipal ? '' : currentAgent.id,
     agentEmail: isPrincipal ? '' : currentAgent.email, revision: appointmentRefreshRevision,
-    enabled: Boolean(selectedLead?.leadId) && !isCalendarMode,
+    enabled: Boolean(selectedLead?.leadId) && !isCalendarMode && (!isLeadWorkspaceRoute || leadWorkspaceTab === 'appointments' || appointmentModalOpen),
     timeoutMs: PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS,
   })
   useEffect(() => {
@@ -15123,6 +15179,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     const buyerWorkspaceTab = resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
     const shouldLoadOffers = shouldLoadLeadWorkspaceRequest({
       leadCategory: selectedLeadCategory,
+      workspaceTab: isLeadWorkspaceRoute ? leadWorkspaceTab : null,
       requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.offers,
     }) && !OFFER_WORKFLOW_RETIRED && ['overview', 'documents', BUYER_PROFILE_WORKSPACE_TAB_KEY].includes(buyerWorkspaceTab)
     if (!organisationId || !leadId || !shouldLoadOffers) {
@@ -15196,6 +15253,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     selectedLeadContact?.lastName,
     selectedLeadContact?.phone,
     selectedLeadCategory,
+    isLeadWorkspaceRoute,
     leadWorkspaceTab,
     selectedLeadOffersRefreshTick,
   ])
@@ -15265,6 +15323,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     const buyerWorkspaceTab = resolveBuyerWorkspaceTabKey(leadWorkspaceTab)
     const shouldLoadLifecycleDiagnostic = shouldLoadLeadWorkspaceRequest({
       leadCategory: selectedLeadCategory,
+      workspaceTab: isLeadWorkspaceRoute ? leadWorkspaceTab : null,
       requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.lifecycleDiagnostic,
     }) && shouldLoadBuyerFinanceTransactionTab(buyerWorkspaceTab, { hasLinkedTransaction: Boolean(selectedLeadLinkedTransactionId) })
     if (!organisationId || !leadId || !shouldLoadLifecycleDiagnostic || (!offerId && !selectedLeadLinkedTransactionId)) {
@@ -15303,6 +15362,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   }, [
     organisationId,
     selectedLead?.leadId,
+    isLeadWorkspaceRoute,
     leadWorkspaceTab,
     selectedLeadLifecycleDiagnosticOffer?.id,
     selectedLeadLinkedTransactionId,
@@ -15437,8 +15497,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
     return () => { cancelled = true }
   }, [buyerDocumentRefreshTick, leadWorkspaceTab, organisationId, selectedLeadIsSeller, selectedLeadLinkedTransactionId, selectedLeadRecordId])
   useEffect(() => {
-    const needsBuyerJourneyDocuments = !selectedLeadIsSeller && leadWorkspaceTab === 'overview' && Boolean(selectedLeadLinkedTransactionId)
-    if ((leadWorkspaceTab !== 'documents' && !needsBuyerJourneyDocuments) || !isUuidLike(selectedLeadRecordId) || !isSupabaseConfigured) return undefined
+    if (leadWorkspaceTab !== 'documents' || !isUuidLike(selectedLeadRecordId) || !isSupabaseConfigured) return undefined
     let cancelled = false
     let generation = 0
     const load = async () => {
@@ -17709,6 +17768,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
   ])
 
   const selectedSellerNextBestActionModel = useMemo(() => {
+    if (selectedLeadLinkedListingId && selectedLeadDocumentHydrationStatus === 'deferred') {
+      return { title: 'Review seller documents', copy: 'Open Documents to verify the current signing and compliance record before choosing the next action.', actionId: 'open_documents', label: 'Review Documents', disabled: false }
+    }
     if (
       selectedLeadLinkedListingId &&
       ['idle', 'loading'].includes(selectedLeadDocumentHydrationStatus)
@@ -30268,7 +30330,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       .eq('transaction_id', transactionId).eq('file_bucket', uploadedDocument.storageBucket).eq('file_path', uploadedDocument.storagePath).maybeSingle()
     if (existing.error) throw existing.error
     if (existing.data?.id) {
-      if (existing.data.source !== 'agent_otp_upload' || existing.data.document_type !== BUYER_OTP_DOCUMENT_TYPE ||
+      if (existing.data.source !== 'agent_otp_upload' || resolveBuyerLeadDocumentTarget(existing.data.document_type).documentDefinitionKey !== 'signed_otp' ||
           existing.data.visibility_scope !== 'shared' || existing.data.is_client_visible !== true ||
           existing.data.client_recipient_role || existing.data.uploaded_by_party !== 'buyer') {
         throw new Error('This saved file has a different document audience. Open the deal documents to review it before reusing it as the shared OTP.')
@@ -34868,7 +34930,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                           ])
                         : [
                             ['Activities', selectedLeadUnifiedTimeline.length, MessageCircle],
-                            ['Appointments', selectedLeadAppointments.length, CalendarDays],
+                            ['Appointments', leadAppointmentLoad.hasSnapshot ? selectedLeadAppointments.length : '—', CalendarDays],
                             ['Onboarding', selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending', CheckSquare],
                             ['Lead Health', `${selectedLeadWorkflowHealth.percent}%`, TrendingUp],
                           ]).map(([label, value, Icon]) => (
@@ -35098,7 +35160,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
 	                            { key: 'overview', label: 'Overview', meta: '' },
 	                            { key: 'seller', label: 'Seller Profile', meta: '' },
 	                            { key: 'property', label: 'Property', meta: '' },
-	                            { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+	                            { key: 'appointments', label: 'Appointments', meta: leadAppointmentLoad.hasSnapshot ? selectedLeadAppointments.length : '—' },
 	                            { key: 'documents', label: 'Documents', meta: '' },
 	                            { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                           ].map((tab) => {
@@ -35140,7 +35202,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                         { key: 'properties', label: 'Matches', meta: selectedLeadVisibleBuyerRecommendations.length },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
                         { key: 'documents', label: 'Documents', meta: selectedBuyerDocumentReadModel.uploads.length },
-	                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+	                        { key: 'appointments', label: 'Appointments', meta: leadAppointmentLoad.hasSnapshot ? selectedLeadAppointments.length : '—' },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
                         const isActive = buyerWorkspaceVisualTab === tab.key
@@ -35459,7 +35521,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                         { key: 'properties', label: 'Matches', meta: selectedLeadVisibleBuyerRecommendations.length },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
                         { key: 'documents', label: 'Documents', meta: selectedBuyerDocumentReadModel.uploads.length },
-	                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+	                        { key: 'appointments', label: 'Appointments', meta: leadAppointmentLoad.hasSnapshot ? selectedLeadAppointments.length : '—' },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
                         const isActive = buyerWorkspaceVisualTab === tab.key
@@ -36586,6 +36648,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
                                     leadKey={normalizeLeadIdentityKey(selectedLead?.leadId)}
                                     onAssign={handleLeadReassignment}
                                     onOpened={({ startedAt, optionCount }) => {
+                                      setTeamDirectoryRequested(true)
                                       recordBuyerLeadsPerformance('assignment_menu_opened', organisationId, {
                                         optionCount,
                                         renderPhase: 'isolated_dropdown_request_animation_frame',

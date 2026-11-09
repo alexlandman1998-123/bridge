@@ -4,9 +4,11 @@ import { createHash } from 'node:crypto'
 export const STORES = [
   ['documents', [['file_path', 'file_bucket', 'documents']]],
   ['private_listing_documents', [['storage_path', null, 'documents'], ['file_url', null, 'documents']]],
+  ['company_documents', [['storage_path', 'storage_bucket', 'company-documents']]],
   ['development_documents', [['storage_path', 'storage_bucket', 'documents'], ['file_url', 'storage_bucket', 'documents']]],
   ['commercial_documents', [['file_path', 'file_bucket', 'documents']]],
   ['rental_application_documents', [['storage_path', 'storage_bucket', 'rental-application-documents']]],
+  ['rental_lease_document_uploads', [['storage_path', 'storage_bucket', 'rental-lease-files']]],
   ['rental_landlord_onboarding_documents', [['storage_path', null, 'rental-landlord-onboarding']]],
   ['transaction_attorney_closeout_documents', [['file_path', null, 'documents']]],
   ['transaction_bond_closeout_documents', [['file_path', null, 'documents']]],
@@ -39,7 +41,7 @@ const JSON_FIELDS = [
   ['recruitment_leads', 'onboarding_documents_json', 'recruitment-onboarding-documents'],
   ['legal_final_artifact_evidence', 'signature_asset_fingerprints_json', 'documents'],
 ]
-const BUCKETS = ['documents', 'legal-templates', 'rental-application-documents', 'rental-landlord-onboarding', 'bond-signed-applications', 'fic-compliance', 'recruitment-documents', 'recruitment-contracts', 'recruitment-signed-contracts', 'recruitment-onboarding-documents', 'signed-documents']
+const BUCKETS = ['company-documents', 'documents', 'legal-templates', 'rental-application-documents', 'rental-lease-files', 'rental-landlord-onboarding', 'bond-signed-applications', 'fic-compliance', 'recruitment-documents', 'recruitment-contracts', 'recruitment-signed-contracts', 'recruitment-onboarding-documents', 'signed-documents']
 const quote = value => `'${String(value).replaceAll("'", "''")}'`
 const aggregate = name => `(select coalesce(jsonb_agg(${name}), '[]'::jsonb) from ${name})`
 const pick = (alias, fields) => `jsonb_build_object(${fields.flatMap(field => [quote(field), `${alias}->${quote(field)}`]).join(', ')})`
@@ -49,6 +51,7 @@ export function buildAuditSql(projectRef) {
   const ownership = {
     documents:['transaction_id','canonical_requirement_instance_id','status'],
     private_listing_documents:['private_listing_id','canonical_requirement_instance_id','requirement_id','promoted_document_id','promoted_transaction_id','status'],
+    company_documents:['organisation_id'],
     development_documents:['development_id'],
     commercial_documents:['status'], rental_application_documents:['status'], rental_landlord_onboarding_documents:['status'],
     transaction_attorney_closeout_documents:['status'], transaction_bond_closeout_documents:['status'], bond_wet_ink_uploads:['status'],
@@ -78,7 +81,7 @@ json_roots as (${jsonRoots}), refs as (
     and child.value#>>'{}' !~* '^data:'
     and (child.value#>>'{}' !~* '^https?://' or child.value#>>'{}' ~ '/storage/v1/object/')
     and (child.value#>>'{}' ~ '/' or lower(child.key) ~ '(storage|file|signature).*path$')
-    and lower(child.key) not in ('pagepath','page_path','routepath','route_path')
+    and lower(child.key) not in ('pagepath','page_path','routepath','route_path','sourceruleorlegacypath','source_rule_or_legacy_path')
 ), reference_rows as (
   select source, coalesce(row->>'id', row->>'lead_id') as id, field, bucket, path,
     row->>'status' as status, row->>'development_id' as development_id,

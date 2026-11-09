@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest'
 import BondManualWorkflow from '../../../../components/bond/BondManualWorkflow.jsx'
 const mocks = vi.hoisted(() => ({ context: vi.fn(), record: vi.fn(), request: vi.fn(), review: vi.fn(), url: vi.fn() }))
-vi.mock('../../../../lib/api.js', () => ({ fetchBondTrackerContext: mocks.context, recordBondTrackerSubmission: mocks.record, requestManualBondDocument: mocks.request, reviewManualBondDocument: mocks.review, fetchBondApplicationPackDocumentUrl: mocks.url }))
+vi.mock('../../../../domains/bond/portalApi.js', () => ({ fetchBondTrackerContext: mocks.context, recordBondTrackerSubmission: mocks.record, requestManualBondDocument: mocks.request, reviewManualBondDocument: mocks.review, fetchBondApplicationPackDocumentUrl: mocks.url }))
+vi.mock('../../../../domains/bond/runtimeApi.js', () => ({ fetchBondTrackerContext: mocks.context, recordBondTrackerSubmission: mocks.record, requestManualBondDocument: mocks.request, reviewManualBondDocument: mocks.review, fetchBondApplicationPackDocumentUrl: mocks.url }))
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const context = {mode:'originator_tracker',canEdit:true,applicationId:null,requirements:[],submissions:[]}
 it('records progress without any application, signing, document or statement-provider setup', async () => {

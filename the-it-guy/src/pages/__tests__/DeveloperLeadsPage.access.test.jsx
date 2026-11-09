@@ -4,15 +4,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ detail: vi.fn(), list: vi.fn(), developments: vi.fn(), users: vi.fn(), units: vi.fn(), journey: vi.fn() }))
+const mocks = vi.hoisted(() => ({ detail: vi.fn(), list: vi.fn(), developments: vi.fn(), users: vi.fn(), units: vi.fn(), journey: vi.fn(), documents: vi.fn() }))
 vi.mock('../../context/WorkspaceContext', () => ({ useWorkspace: () => ({ role: 'agent', currentWorkspace: { id: 'agency-org' } }) }))
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: null }))
 vi.mock('../../services/developerLeadService', async importOriginal => ({ ...await importOriginal(), fetchDeveloperLeadIntake: mocks.detail, listDeveloperLeadIntake: mocks.list }))
-vi.mock('../../lib/api', () => ({ fetchDevelopmentOptions: mocks.developments, fetchUnitsForTransactionSetup: mocks.units }))
+vi.mock('../../domains/developments/selectionReadApi.js', () => ({ fetchDevelopmentOptions: mocks.developments, fetchUnitsForTransactionSetup: mocks.units }))
 vi.mock('../../lib/settingsApi', () => ({ listOrganisationUsers: mocks.users }))
 vi.mock('../../services/journeyStageOverrideService.js', () => ({ fetchJourneyStageOverrides: mocks.journey }))
 vi.mock('../../components/journey/JourneyStageOverrideActions', () => ({ default: () => null }))
-vi.mock('../../components/documents/DeveloperLeadDocuments.jsx', () => ({ default: () => null }))
+vi.mock('../../components/documents/DeveloperLeadDocuments.jsx', () => ({ default: mocks.documents }))
 import DeveloperLeadsPage from '../DeveloperLeadsPage.jsx'
 
 const lead = { developerLeadId: 'lead-one', developerOrgId: 'developer-org', leadOwner: 'developer', buyerFullName: 'Saved Buyer', buyerEmail: 'buyer@example.test', leadStatus: 'new', primaryDevelopmentId: 'dev-one', unitTypeInterest: 'Harbour Heights' }
@@ -24,6 +24,7 @@ beforeEach(() => {
   mocks.users.mockResolvedValue([])
   mocks.units.mockResolvedValue([])
   mocks.journey.mockResolvedValue([])
+  mocks.documents.mockImplementation(({ developerLeadId }) => <p>Documents for {developerLeadId}</p>)
 })
 afterEach(cleanup)
 
@@ -93,4 +94,22 @@ it('opens the signed OTP action in the real transaction document tab',async()=>{
  mocks.detail.mockResolvedValue({...lead,leadStatus:'onboarding_submitted',convertedTransactionId:'existing-tx'});
  setup();await screen.findByRole('heading',{name:'Saved Buyer'});
  fireEvent.click(screen.getAllByRole('button',{name:'Upload Signed OTP'})[0]);expect(await screen.findByText('Transaction workspace ?tab=documents')).toBeTruthy();
+})
+
+
+it('mounts document tools only after opening Documents and passes the owning workspace', async () => {
+  setup()
+  await screen.findByRole('heading', { name: 'Saved Buyer' })
+  expect(mocks.documents).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('tab', { name: 'Documents' }))
+  expect(await screen.findByText('Documents for lead-one')).toBeTruthy()
+  expect(mocks.documents.mock.calls.at(-1)[0]).toEqual(expect.objectContaining({ developerOrgId: 'developer-org', developerLeadId: 'lead-one' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+  expect(screen.queryByText('Documents for lead-one')).toBeNull()
+})
+
+it('loads document tools directly when the Documents workflow is requested in the URL', async () => {
+  setup('/developer/leads/lead-one?workspaceTab=documents')
+  expect(await screen.findByText('Documents for lead-one')).toBeTruthy()
+  expect(screen.getByRole('tab', { name: 'Documents' }).getAttribute('aria-selected')).toBe('true')
 })

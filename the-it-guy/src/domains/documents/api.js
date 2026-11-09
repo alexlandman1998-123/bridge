@@ -1,5 +1,5 @@
-// Canonical document-domain API. Start with operations whose public contract
-// is small and fully covered before moving upload/signing orchestration.
+// Document-domain primitives. Upload, review and signing orchestration live
+// with the owning feature workflow.
 export async function generateOtpDocumentFromTemplate({ transactionId } = {}) {
   const normalizedTransactionId = String(transactionId || '').trim()
   if (!normalizedTransactionId) {
@@ -15,7 +15,7 @@ export async function generateOtpDocumentFromTemplate({ transactionId } = {}) {
 }
 
 // The repository operation receives its infrastructure dependencies explicitly.
-// The legacy facade continues to provide those dependencies during migration.
+// Owning domain workflows provide the client, compatibility checks and audit writer.
 export async function updateDocumentClientVisibilityRecord({
   client,
   documentId,

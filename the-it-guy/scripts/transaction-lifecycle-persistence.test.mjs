@@ -1,9 +1,10 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFileSync} from 'node:fs'
+
 import {PERSISTED_TRANSACTION_LIFECYCLE_STAGES,normalizePersistedTransactionLifecycleStage} from '../src/core/transactions/transactionLifecycle.js'
 for(const stage of PERSISTED_TRANSACTION_LIFECYCLE_STAGES)assert.equal(normalizePersistedTransactionLifecycleStage(stage),stage)
 for(const stage of ['confirmed','otp','transfer','XFER','Reserved'])assert.ok(PERSISTED_TRANSACTION_LIFECYCLE_STAGES.includes(normalizePersistedTransactionLifecycleStage(stage)))
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+const source=readDomainApiSource()
 const start=source.indexOf('async function upsertTransactionLifecycleWorkflow('),end=source.indexOf('\nexport async function createOrGetTransactionLifecycle',start)
 const save=new Function('normalizePersistedTransactionLifecycleStage','PERSISTED_TRANSACTION_LIFECYCLE_STAGES','isMissingTableError','isMissingSchemaError','TRANSACTION_LIFECYCLE_STAGE_LABELS','logTransactionEventIfPossible','normalizeNullableText',source.slice(start,end)+';return upsertTransactionLifecycleWorkflow')(
  normalizePersistedTransactionLifecycleStage,PERSISTED_TRANSACTION_LIFECYCLE_STAGES,()=>false,()=>false,{},async()=>{},v=>v)

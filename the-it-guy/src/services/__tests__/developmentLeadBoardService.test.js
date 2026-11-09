@@ -25,7 +25,7 @@ describe('development board stage persistence', () => {
     expect(query.insert).not.toHaveBeenCalled()
   })
   it('requires a confirmed reservation in the database when recording Reserved', async () => {
-    const { client, query } = clientMock()
+    const { client, query } = clientMock({ data: { ...receipt, lead_status: 'reserved' }, error: null })
     await saveDevelopmentLeadBoardStage({ lead: { ...lead, reservationState: 'reserved' }, targetKey: 'development_selection', client })
     expect(query.eq).toHaveBeenCalledWith('reservation_state', 'reserved')
   })
@@ -40,4 +40,11 @@ describe('development board stage persistence', () => {
     const { client } = clientMock(undefined, { code: '42501' })
     await expect(saveDevelopmentLeadBoardStage({ lead, targetKey: 'qualified', client })).resolves.toMatchObject({ leadStatus: 'qualified' })
   })
+})
+
+
+it.each(['reserved', 'onboarding_sent', 'onboarding_submitted', 'otp', 'converted'])('does not rewind %s progress through a popup stage edit', async leadStatus => {
+  const { client } = clientMock()
+  await expect(saveDevelopmentLeadBoardStage({ lead: { ...lead, leadStatus }, targetKey: 'qualified', client })).rejects.toThrow()
+  expect(client.from).not.toHaveBeenCalled()
 })

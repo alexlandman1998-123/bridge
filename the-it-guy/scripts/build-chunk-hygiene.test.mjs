@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
@@ -7,7 +8,7 @@ async function read(path) {
 
 const appSource = await read('../src/App.jsx')
 const viteConfig = await read('../vite.config.js')
-const apiSource = await read('../src/lib/api.js')
+const apiSource = await readDomainApiSource()
 const agentDataService = await read('../src/lib/agentDataService.js')
 const attorneyMockData = await read('../src/core/transactions/attorneyMockData.js')
 const mockData = await read('../src/lib/mockData.js')

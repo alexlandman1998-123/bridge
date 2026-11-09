@@ -1,3 +1,4 @@
+import { notifyDevelopmentLeadChange } from './developmentLeadRefreshService.js'
 import { supabase } from '../lib/supabaseClient.js'
 import { normalizeDeveloperLeadStatus } from '../core/developerLeads/developerLeadContract.js'
 import { resolveDevelopmentLeadBoardMove } from '../core/developments/developmentLeadBoard.js'
@@ -9,6 +10,9 @@ export async function saveDevelopmentLeadBoardStage({ lead, targetKey, client = 
   const move = resolveDevelopmentLeadBoardMove(lead, targetKey)
   if (move.kind !== 'status') throw new Error('Complete this stage in the lead workspace.')
   const previousStatus = normalizeDeveloperLeadStatus(lead.leadStatus)
+  if (['reserved', 'onboarding_sent', 'onboarding_submitted', 'otp', 'converted'].includes(previousStatus) && ['new', 'contacted', 'qualified', 'viewing', 'lost'].includes(move.status)) {
+    throw new Error('Release the reservation or continue the buyer’s onboarding and offer in their lead workflow before moving this stage backwards.')
+  }
   let query = client.from('developer_leads')
     .update({ lead_status: move.status })
     .eq('developer_org_id', lead.developerOrgId)
@@ -17,7 +21,7 @@ export async function saveDevelopmentLeadBoardStage({ lead, targetKey, client = 
   if (move.status === 'reserved') query = query.eq('reservation_state', 'reserved')
   const { data, error } = await query.select('developer_lead_id, lead_status, updated_at').maybeSingle()
   if (error) throw error
-  if (!data) throw new Error('This lead changed or is no longer editable. Refresh the leads and try again.')
+  if (!data || data.developer_lead_id !== lead.developerLeadId || data.lead_status !== move.status) throw new Error('This lead changed or is no longer editable. Refresh the leads and try again.')
   // Activity enrichment must not report a failed move after the status has
   // already been saved. Keep the durable receipt even if activity is unavailable.
   try {
@@ -34,5 +38,6 @@ export async function saveDevelopmentLeadBoardStage({ lead, targetKey, client = 
   } catch {
     console.warn('Lead stage saved; activity could not be recorded.')
   }
+  notifyDevelopmentLeadChange({ ...lead, sourceLeadId: lead.sourceLeadId })
   return { developerLeadId: data.developer_lead_id, leadStatus: data.lead_status, updatedAt: data.updated_at }
 }

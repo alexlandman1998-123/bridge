@@ -1,10 +1,12 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
-const api = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const api = readDomainApiSource()
 const wizard = fs.readFileSync(path.join(root, 'src/components/AgentNewDealWizard.jsx'), 'utf8')
+const picker = fs.readFileSync(path.join(root, 'src/components/transaction/TransactionRolePicker.jsx'), 'utf8')
 const migration = fs.readFileSync(
   path.join(root, '../supabase/migrations/202607170001_attorney_firm_first_agent_nomination_phase4.sql'),
   'utf8',
@@ -48,18 +50,12 @@ assertApi(
 )
 
 assertWizard(/Transfer Attorney Firm/, 'the agent flow should describe the selected entity as a firm')
-assertWizard(/Use Seller-Appointed Firm/, 'the transfer appointment authority should be represented as seller-side')
-assertWizard(/Preferred Contact \(Optional\)/, 'the external firm contact should be explicitly optional')
+assertWizard(/source: transferSelection\.mode === PARTNER_MODE_AGENCY \? 'agency_preferred' : 'seller_nomination'/, 'transfer firm nomination must retain seller-side authority')
+assertWizard(/renderRolePicker\('transfer', 'Transfer conveyancer'/, 'the wizard must use the shared firm picker')
+assert.match(picker, /Allocate later/, 'firm selection may be deferred')
+
 assertWizard(
-  /This preference does not assign the matter to a person\. The firm controls its internal allocation\./,
-  'the UI should explain that a preferred contact is not the assignee',
-)
-assertWizard(
-  /Awaiting firm acceptance • Primary attorney will be assigned by the firm/,
-  'the review step should show the pending firm-first lifecycle',
-)
-assertWizard(
-  /partnerOrganisationId: selectedTransferPartner\?\.partnerOrganisationId \|\| null/,
+  /partnerOrganisationId: transferSelection\.partnerOrganisationId \|\| null/,
   'the selected connected firm organisation should propagate into transaction creation',
 )
 assertWizard(

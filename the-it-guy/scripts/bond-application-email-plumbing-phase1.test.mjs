@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -12,7 +13,7 @@ const [
   communicationCatalogSource,
   auditDoc,
 ] = await Promise.all([
-  readFile(resolve(root, 'src/lib/api.js'), 'utf8'),
+  readDomainApiSource(),
   readFile(resolve(root, 'src/services/bondIntakeNotificationService.js'), 'utf8'),
   readFile(resolve(root, '../supabase/functions/send-email/index.ts'), 'utf8'),
   readFile(resolve(root, '../supabase/functions/send-email/handlers/bondOriginatorBuyerIntro.ts'), 'utf8'),
@@ -51,11 +52,11 @@ assert.match(emailIndexSource, /bond_originator_buyer_intro/)
 assert.match(emailIndexSource, /handleBondOriginatorBuyerIntroEmail/)
 
 assert.match(buyerIntroHandlerSource, /metadata\.applicationLink/)
-assert.match(buyerIntroHandlerSource, /renderBridgeCta\("Complete Bond Application",\s*portalLink\)/)
-assert.match(buyerIntroHandlerSource, /Complete your bond application:/)
+assert.match(buyerIntroHandlerSource, /renderBridgeCta\("View bond progress",\s*portalLink\)/)
+assert.match(buyerIntroHandlerSource, /Open the buyer portal to view bond progress\./)
 
 assert.match(communicationCatalogSource, /automationKey:\s*'bond_originator_buyer_intro'/)
-assert.match(communicationCatalogSource, /cta:\s*'Complete bond application'/)
+assert.match(communicationCatalogSource, /cta:\s*'View bond progress'/)
 
 assert.match(auditDoc, /Current Flow Map/)
 assert.match(auditDoc, /metadata\.applicationLink/)

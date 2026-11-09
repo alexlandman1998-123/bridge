@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../../../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -330,7 +331,7 @@ function runViewModelAndRuntimeBoundaryCompatibility() {
 function runWorkflowSeparationInvariant() {
   const persistenceSource = readFile('src/modules/bond/application/bondApplicationPersistence.js')
   const adapterSource = readFile('src/modules/bond/application/legacy/bondApplicationLegacyAdapter.js')
-  const apiSource = readFile('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const upsertStart = apiSource.indexOf('async function upsertClientPortalOnboardingForm')
   const upsertEnd = apiSource.indexOf('\nexport async function saveClientPortalOnboardingDraft', upsertStart)
   const upsertSource = apiSource.slice(upsertStart, upsertEnd)

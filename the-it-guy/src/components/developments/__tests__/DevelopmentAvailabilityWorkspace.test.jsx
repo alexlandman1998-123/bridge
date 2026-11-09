@@ -35,3 +35,16 @@ it('keeps status controls read-only for viewers and disables edits during a save
   rerender(<DevelopmentAvailabilityWorkspace units={[unit]} canManageInventory unitStatusSaving onChangeUnitStatus={vi.fn()} unitStatusOptions={options} />)
   expect(screen.getByRole('combobox', { name: 'Update status for unit 101' }).disabled).toBe(true)
 })
+
+
+it('opens a contained unit popup and hands reservation setup to the shared buyer dialog', () => {
+  const reserve = vi.fn()
+  render(<DevelopmentAvailabilityWorkspace units={[unit]} canManageInventory onReserveUnit={reserve} />)
+  fireEvent.click(screen.getByRole('button', { name: /Unit 101 Available/ }))
+  const dialog = screen.getByRole('dialog', { name: 'Unit workspace' })
+  expect(dialog.className).not.toContain('inset-0')
+  expect(dialog.className).not.toContain('w-screen')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Reserve for a buyer' }))
+  expect(reserve).toHaveBeenCalledWith(expect.objectContaining({ id: unit.id }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

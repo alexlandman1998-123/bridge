@@ -1,3 +1,4 @@
+import useDevelopmentLeadRefresh from '../../hooks/useDevelopmentLeadRefresh.js'
 import { ArrowUpRight, Building2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -39,6 +40,7 @@ export default function MobileDeveloperLeadsPage() {
   const activeActionRef = useRef(null)
   const journeyKey = `${developerOrgId}:${selectedId}:${journeyRetry}`
   const brandStyle = getMobileBrandStyle(organisationContext, workspace)
+  useDevelopmentLeadRefresh(() => { setRetry(value => value + 1); setJourneyRetry(value => value + 1) }, developerOrgId, developer && !actionResult?.pending)
   useEffect(() => {
     scopeRef.current = actionScope
     return () => { scopeRef.current = '' }
@@ -62,7 +64,7 @@ export default function MobileDeveloperLeadsPage() {
   useEffect(() => {
     if (!developer || !developerOrgId || !developmentId || organisationContext?.loading || developmentResult?.orgId === developerOrgId) return undefined
     let active = true
-    import('../../lib/api.js').then(({ fetchDevelopmentOptions }) => fetchDevelopmentOptions({ organisationId: developerOrgId }))
+    import('../../domains/developments/selectionReadApi.js').then(({ fetchDevelopmentOptions }) => fetchDevelopmentOptions({ organisationId: developerOrgId }))
       .then((items) => { if (active) setDevelopmentResult({ orgId: developerOrgId, items }) })
       .catch(() => { if (active) setDevelopmentResult({ orgId: developerOrgId, items: [] }) })
     return () => { active = false }

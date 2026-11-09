@@ -20,6 +20,6 @@ export const API_SPLIT_CRITICAL_CONTRACTS = Object.freeze([
 // Update only as part of an intentional public API contract change—not during
 // a move-only extraction. The fingerprint is the sorted export-name list.
 export const API_SPLIT_EXPORT_SURFACE_BASELINE = Object.freeze({
-  exportCount: 380,
-  sha256: '05a290e6fda7af5bffce186db453d142a371d1c7e637ae7c2a8df542cdf58348',
+  exportCount: 429,
+  sha256: '4873161587a74fc059e4e554595a3374d72b1a0bde650f08ba40839a83c14f73',
 })

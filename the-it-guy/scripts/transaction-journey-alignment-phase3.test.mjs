@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -29,7 +30,7 @@ test('agent consumes the rollup snapshot with an explicit legacy fallback', asyn
 
 test('buyer portal fetches a token-scoped snapshot and preserves its production fallback', async () => {
   const [api, workspace, portal] = await Promise.all([
-    read('src/lib/api.js'),
+    readDomainApiSource(),
     read('src/services/clientPortalWorkspaceService.js'),
     read('src/pages/ClientPortal.jsx'),
   ])

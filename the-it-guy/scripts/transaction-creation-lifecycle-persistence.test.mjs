@@ -1,9 +1,10 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = process.cwd()
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const migrationSource = readFileSync(
   resolve(root, '../supabase/migrations/20260831125339_add_transaction_creation_lifecycle.sql'),
   'utf8',

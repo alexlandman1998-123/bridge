@@ -1,6 +1,7 @@
 import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { useState } from 'react'
-import { ALTERATION_REQUEST_STATUSES, updateAlterationRequestStatus } from '../lib/api'
+import { ALTERATION_REQUEST_STATUSES } from '../domains/shared/constants.js'
+import { updateAlterationRequestStatus } from '../domains/clientPortal/residentApi.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-ZA', {
   style: 'currency',

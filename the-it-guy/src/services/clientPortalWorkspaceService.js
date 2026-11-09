@@ -1,5 +1,5 @@
 import { mergeDocumentRequirementRows } from './documents/documentRequirementReadService.js'
-import { documentRequirementLabel, documentRequirementTypeKey } from '../core/documents/documentRequirementIdentity.js'
+import { documentRequirementLabel, documentRequirementTypeKey, isDocumentRequirementRequired, matchDocumentRequirementLink } from '../core/documents/documentRequirementIdentity.js'
 import { appointmentStartIso } from '../core/appointments/attorneyCalendarModel.js'
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
@@ -1782,9 +1782,8 @@ function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
 }
 
 function documentMatchesRequirement(document = {}, requirement = {}) {
-  const requirementId = String(requirement?.id || requirement?.requirement_id || '').trim()
-  const documentRequirementId = String(document?.requirementId || document?.requirement_id || '').trim()
-  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+  const explicitMatch = matchDocumentRequirementLink(document, requirement)
+  if (explicitMatch !== null) return explicitMatch
 
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return true
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return true
@@ -1804,9 +1803,14 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
+  uploadedDocuments = uploadedDocuments.filter(document => document.is_current_evidence !== false && document.applicability_override !== 'removed')
+  const explicitlyLinked = uploadedDocuments.filter(document => matchDocumentRequirementLink(document, requirement) === true)
+  if (explicitlyLinked.length === 1) return explicitlyLinked[0]
+  if (explicitlyLinked.length > 1) return explicitlyLinked.find(document => document.is_current_evidence === true) || null
+  const unlinkedDocuments = uploadedDocuments.filter(document => matchDocumentRequirementLink(document, requirement) === null)
   const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
   if (requirementKey) {
-    const exactDocument = (uploadedDocuments || []).find((document) => {
+    const exactDocuments = unlinkedDocuments.filter((document) => {
       const directKeys = [
         document?.requirementKey,
         document?.requirement_key,
@@ -1817,9 +1821,11 @@ function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement 
       ].map(normalizeDocumentMatchKey).filter(Boolean)
       return directKeys.includes(requirementKey)
     })
-    if (exactDocument) return exactDocument
+    if (exactDocuments.length === 1) return exactDocuments[0]
+    if (exactDocuments.length > 1) return null
   }
-  return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
+  const candidates = unlinkedDocuments.filter(document => documentMatchesRequirement(document, requirement))
+  return candidates.length === 1 ? candidates[0] : null
 }
 
 function toDisplayText(value = '', fallback = '') {
@@ -1880,8 +1886,14 @@ function findUploadedDocumentForAdditionalRequest(uploadedDocuments = [], reques
       request?.uploaded_document_id,
   )
   if (linkedDocumentId && uploadedDocumentsById.has(linkedDocumentId)) {
-    return uploadedDocumentsById.get(linkedDocumentId)
+    const document = uploadedDocumentsById.get(linkedDocumentId)
+    return document.is_current_evidence !== false && document.applicability_override !== 'removed' ? document : null
   }
+  if (linkedDocumentId) return null
+  uploadedDocuments = uploadedDocuments.filter(document => document.is_current_evidence !== false && document.applicability_override !== 'removed')
+  const linkedDocuments = uploadedDocuments.filter(document => matchDocumentRequirementLink(document, request) === true)
+  if (linkedDocuments.length === 1) return linkedDocuments[0]
+  if (linkedDocuments.length > 1) return linkedDocuments.find(document => document.is_current_evidence === true) || null
 
   const requestKey = normalizeDocumentMatchKey(
     request?.documentKey ||
@@ -1891,7 +1903,8 @@ function findUploadedDocumentForAdditionalRequest(uploadedDocuments = [], reques
       request?.title,
   )
   if (!requestKey) return null
-  return (uploadedDocuments || []).find((document) => {
+  const candidates = (uploadedDocuments || []).filter((document) => {
+    if (matchDocumentRequirementLink(document, request) !== null) return false
     const documentKey = normalizeDocumentMatchKey(
       document?.requirementKey ||
         document?.requirement_key ||
@@ -1903,7 +1916,8 @@ function findUploadedDocumentForAdditionalRequest(uploadedDocuments = [], reques
         document?.document_name,
     )
     return documentKey === requestKey
-  }) || null
+  })
+  return candidates.length === 1 ? candidates[0] : null
 }
 
 function resolveStatusWithLinkedUpload(sourceStatus = '', linkedDocument = null) {
@@ -1931,12 +1945,12 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
         : null
   const uploadedDocumentId = toDisplayText(requirement?.uploadedDocumentId || requirement?.uploaded_document_id)
   const linkedDocument =
-    embeddedLinkedDocument ||
+    (embeddedLinkedDocument && matchDocumentRequirementLink(embeddedLinkedDocument, requirement) !== false ? embeddedLinkedDocument : null) ||
     (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
   const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
   const uploadAllowed = requirement?.canUpload !== false && !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
   const openLabel = getLinkedDocumentOpenLabel(requirement, linkedDocument)
-  const required = requirement?.required !== false && requirement?.is_required !== false && requirement?.isRequired !== false
+  const required = isDocumentRequirementRequired(requirement)
 
   return {
     id: `required_${key}`,
@@ -3403,14 +3417,19 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     }
   }
 
-  const documents = Array.isArray(projection?.documents) ? projection.documents : []
+  const documents = (Array.isArray(projection?.documents) ? projection.documents : [])
+    .filter(document => document.is_current_evidence !== false && document.applicability_override !== 'removed')
   const documentsByRequirementId = new Map()
   const documentsById = new Map()
   documents.forEach((document) => {
     const documentId = String(document?.id || '').trim()
     const requirementId = String(document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId || '').trim()
     if (documentId) documentsById.set(documentId, document)
-    if (requirementId && !documentsByRequirementId.has(requirementId)) documentsByRequirementId.set(requirementId, document)
+    if (requirementId) {
+      const candidates = documentsByRequirementId.get(requirementId) || []
+      candidates.push(document)
+      documentsByRequirementId.set(requirementId, candidates)
+    }
   })
 
   const requirements = Array.isArray(projection?.requirements) ? projection.requirements : []
@@ -3418,11 +3437,16 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     const id = String(requirement?.id || '').trim()
     const definition = requirement?.document_definitions || {}
     const packKey = String(requirement?.pack_key || definition?.pack_key || '').trim()
-    const linkedDocument = documentsById.get(String(requirement?.satisfied_by_document_id || '').trim()) ||
-      documentsByRequirementId.get(id) || null
+    const satisfierId = String(requirement?.satisfied_by_document_id || '').trim()
+    const satisfier = documentsById.get(satisfierId)
+    const candidates = documentsByRequirementId.get(id) || []
+    const linkedDocument = satisfierId
+      ? (satisfier && matchDocumentRequirementLink(satisfier, { ...requirement, canonical_requirement_instance_id: id }) !== false ? satisfier : null)
+      : candidates.find(document => document.is_current_evidence === true) ||
+        (candidates.length === 1 && candidates[0].is_current_evidence !== false ? candidates[0] : null)
     const status = canonicalRequirementStatusForPortal(requirement?.status || 'required')
     const requirementLevel = normalizeValue(requirement?.requirement_level || 'required')
-    const required = !['optional', 'recommended'].includes(requirementLevel)
+    const required = isDocumentRequirementRequired(requirement)
     const terminal = ['approved', 'completed', 'waived', 'not_applicable'].includes(status)
     const uploadable = Array.isArray(requirement?.uploadable_by_roles)
       && requirement.uploadable_by_roles.some((candidate) =>
@@ -3596,7 +3620,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
           requiredDocumentsRaw,
         )
       : Array.isArray(portalData?.documents) ? portalData.documents : []),
-  ]
+  ].filter(document => document.is_current_evidence !== false && document.applicability_override !== 'removed')
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
   const downloadableDocumentsByKey = buildSellerDownloadableDocumentLookup(portalData, workspaceMode)
   const requiredDocuments = normalizeBuyerPortalRequiredDocuments(filterRequiredDocumentsByWorkspace(

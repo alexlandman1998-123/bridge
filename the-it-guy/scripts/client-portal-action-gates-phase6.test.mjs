@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
@@ -11,7 +12,7 @@ function test(name, fn) {
   }
 }
 
-const apiSource = readFileSync(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = readDomainApiSource()
 const portalSource = readFileSync(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 
 function sourceBetween(source, startNeedle, endNeedle) {

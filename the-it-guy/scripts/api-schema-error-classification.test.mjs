@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=readDomainApiSource()
 const load=name=>new Function(`return (${source.match(new RegExp(`function ${name}\\([^]*?\\n}`))[0]})`)()
 const table=load('isMissingTableError'),fn=load('isMissingFunctionError'),relationship=load('isMissingRelationshipError')
 for(const code of ['PGRST002','57014','42501']) {

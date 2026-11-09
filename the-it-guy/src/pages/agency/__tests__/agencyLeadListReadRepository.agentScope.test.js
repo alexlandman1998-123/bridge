@@ -111,6 +111,21 @@ it('quotes punctuation in email values and excludes unavailable columns', () => 
   expect(() => agencyLeadAgentFilter(scope, 'assigned_agent_id')).toThrow('linked user account')
 })
 
+it('uses saved onboarding when filtering and paging seller leads whose CRM stage is still new', async () => {
+  fixture.leads = [
+    { ...makeLead(1), lead_category: 'seller', seller_onboarding_status: 'in_progress', seller_onboarding_token: 'test-invitation' },
+    { ...makeLead(2), lead_category: 'seller', seller_onboarding_status: 'not_started' },
+    { ...makeLead(3), lead_category: 'seller', seller_onboarding_status: 'submitted' },
+  ]
+  const result = await listAgencyLeadListRecords(org, { category: 'seller', includeRelatedRecords: false, pageSize: 25, filters: { stage: 'Onboarding Sent' } })
+  expect(result.leads.map(lead => lead.leadId)).toEqual(['lead-1'])
+  expect(result.totalCount).toBe(1)
+  expect(result.leads[0].sellerOnboardingStatus).toBe('in_progress')
+  const query = fixture.urls.find(url => url.pathname.endsWith('/leads'))
+  expect(query.searchParams.get('select')).toContain('seller_onboarding_status')
+  expect(fixture.urls.some(url => url.pathname.endsWith('/private_listings'))).toBe(false)
+})
+
 it('filters the seller category before pagination using the same complete snapshot as the badge', async () => {
   fixture.leads = [...Array.from({ length: 55 }, (_, i) => makeLead(i)), { ...makeLead(99), lead_category: 'seller', seller_property_address: 'Older seller', updated_at: '2026-09-01T00:00:00Z' }]
   const result = await listAgencyLeadListRecords(org, { category: 'seller', scopedAgent: a, includeRelatedRecords: false, pageSize: 25 })

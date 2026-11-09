@@ -1,3 +1,4 @@
+import { notifyDevelopmentLeadChange } from './developmentLeadRefreshService.js'
 import { createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository.js'
 import { createAgencyIntroducedDeveloperLead, createDeveloperFedLead } from './developerLeadService.js'
 import { invalidateAgencyLeadListCache } from '../pages/agency/agencyLeadListReadRepository.js'
@@ -48,6 +49,7 @@ export async function createDevelopmentBuyerLead({ organisationId, developerOrgI
     const protectedAgencyReceipt = organisationId !== developerOrgId && !developerLead.sourceLeadId
     if (!protectedAgencyReceipt && developerLead.sourceLeadId !== crmLead.leadId) throw new Error('The development link did not retain the saved buyer identity.')
     invalidate(organisationId)
+    notifyDevelopmentLeadChange({ ...developerLead, developerOrgId, sourceAgencyOrgId: organisationId === developerOrgId ? null : organisationId, sourceLeadId: crmLead.leadId })
     // Agency-facing capture already owns this buyer. The developer-facing
     // receipt masks the source ID; retain the agency's own known CRM reference.
     return { crmLead, developerLead: { ...developerLead, sourceLeadId: crmLead.leadId, buyerFullName: input.buyerFullName, buyerEmail: text(form.email), buyerPhone: text(form.phone) } }

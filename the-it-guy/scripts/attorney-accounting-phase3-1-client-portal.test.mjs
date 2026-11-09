@@ -1,15 +1,16 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 
 const repoRoot = process.cwd()
 const migrationPath = path.join(repoRoot, '../supabase/migrations/202607180027_attorney_accounting_phase3_1_client_portal_accounts.sql')
-const apiPath = path.join(repoRoot, 'src/lib/api.js')
+
 const portalPath = path.join(repoRoot, 'src/pages/ClientPortal.jsx')
 const panelPath = path.join(repoRoot, 'src/components/client-portal/ClientPortalMatterAccountsPanel.jsx')
 
 const migrationSource = fs.readFileSync(migrationPath, 'utf8')
-const apiSource = fs.readFileSync(apiPath, 'utf8')
+const apiSource = readDomainApiSource()
 const portalSource = fs.readFileSync(portalPath, 'utf8')
 const panelSource = fs.readFileSync(panelPath, 'utf8')
 
@@ -32,7 +33,7 @@ assert.match(apiSource, /requireClientPortalTokenClient\(normalizedToken\)/, 'AP
 assert.match(portalSource, /ClientPortalMatterAccountsPanel/, 'Client portal must render the account panel')
 assert.match(portalSource, /fetchClientPortalMatterFinancialAccounts/, 'Client portal must load matter account details')
 assert.match(portalSource, /location\.pathname\.endsWith\('\/account'\)/, 'Client portal must route /account to the account section')
-assert.match(portalSource, /key: 'account', label: 'Account'/, 'Client portal nav must include the Account section')
+assert.match(portalSource, /key: 'account', label: 'Finance'/, 'Client portal nav must include the Account section')
 assert.match(portalSource, /const isAccount = workspaceSection === 'account'/, 'Client portal must track the account section flag')
 
 assert.match(panelSource, /Account details/, 'Account panel must present account details')

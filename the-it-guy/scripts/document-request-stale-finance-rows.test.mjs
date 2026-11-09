@@ -1,3 +1,4 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
@@ -165,7 +166,7 @@ const fakeClient = {
 }
 
 try {
-  const { ensureTransactionRequiredDocuments } = await server.ssrLoadModule('/src/lib/api.js')
+  const { ensureTransactionRequiredDocuments } = await loadDomainCapabilitiesWithServer(server)
   const result = await ensureTransactionRequiredDocuments(fakeClient, {
     transactionId: TRANSACTION_ID,
     purchaserType: 'married_anc',

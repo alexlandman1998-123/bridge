@@ -1,7 +1,7 @@
 import {
   getOrCreateTransactionOnboarding,
   recordBuyerOnboardingSent,
-} from '../lib/api.js'
+} from '../lib/transactionWorkspaceApi.js'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
 

@@ -429,10 +429,18 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
   return result.data || []
 }
 
-let legacyPromise
-const legacy = (method, ...args) => (legacyPromise ||= import('./api')).then((api) => api[method](...args))
-// Mutations and detail prefetches are loaded only after an explicit user action.
-export const enrichRowsWithBondIntakeContext = (rows) => legacy('enrichRowsWithBondIntakeContext', rows)
-export const deleteTransactionEverywhere = (options) => legacy('deleteTransactionEverywhere', options)
-export const prefetchUnitWorkspaceShell = (unitId) => legacy('prefetchUnitWorkspaceShell', unitId)
-export const saveDeveloperTransactionWorkspace = (options) => legacy('saveDeveloperTransactionWorkspace', options)
+const actionLoaders = {
+  enrichRowsWithBondIntakeContext: () => import('../domains/transactions/summaryReadApi.js'),
+  deleteTransactionEverywhere: () => import('../domains/transactions/deletionApi.js'),
+  prefetchUnitWorkspaceShell: () => import('../domains/developments/unitWorkspaceApi.js'),
+  saveDeveloperTransactionWorkspace: () => import('../domains/transactions/developerWorkspaceActions.js'),
+}
+const callAction = async (method, ...args) => {
+  const api = await actionLoaders[method]()
+  return api[method](...args)
+}
+
+export const enrichRowsWithBondIntakeContext = (rows) => callAction('enrichRowsWithBondIntakeContext', rows)
+export const deleteTransactionEverywhere = (options) => callAction('deleteTransactionEverywhere', options)
+export const prefetchUnitWorkspaceShell = (unitId) => callAction('prefetchUnitWorkspaceShell', unitId)
+export const saveDeveloperTransactionWorkspace = (options) => callAction('saveDeveloperTransactionWorkspace', options)

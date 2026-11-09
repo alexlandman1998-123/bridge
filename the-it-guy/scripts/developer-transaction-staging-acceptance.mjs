@@ -1,3 +1,4 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -152,7 +153,7 @@ async function main() {
 
     vite = await createServer({ root: process.cwd(), mode: 'staging', logLevel: 'silent', server: { middlewareMode: true } })
     const supabaseModule = await vite.ssrLoadModule('/src/lib/supabaseClient.js')
-    const api = await vite.ssrLoadModule('/src/lib/api.js')
+    const api = await loadDomainCapabilitiesWithServer(vite)
     const portalService = await vite.ssrLoadModule('/src/services/developerDocumentPortalService.js')
     developerClient = supabaseModule.supabase
     assert.ok(supabaseModule.isSupabaseConfigured && developerClient, 'Staging application client is unavailable.')

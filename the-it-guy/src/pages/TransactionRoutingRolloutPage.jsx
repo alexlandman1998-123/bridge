@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Play, RefreshCcw, ShieldCheck } from 'lucide-react'
-import { runTransactionRoutingProfileBackfill } from '../lib/api'
+import { runTransactionRoutingProfileBackfill } from '../domains/transactions/actionApi.js'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =

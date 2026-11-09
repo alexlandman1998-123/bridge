@@ -6,7 +6,8 @@ import TransactionListingPicker from './transaction/TransactionListingPicker.jsx
 import { Banknote, Building2, CheckCircle2, ExternalLink, Home, Landmark, Layers3, MapPin, UserRound } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
+import { createTransactionFromWizard } from '../domains/transactions/creationApi.js'
+import { fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../domains/developments/selectionReadApi.js'
 import { readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
 import {
   fetchOrganisationSettings,

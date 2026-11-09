@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -130,7 +131,7 @@ function makeFixture() {
 
 const migrationPath = path.join(
   repositoryRoot,
-  'supabase/migrations/202608280001_agent_bond_application_identity.sql',
+  'supabase/migrations/20260828203559_agent_bond_application_identity.sql',
 )
 const migration = fs.readFileSync(migrationPath, 'utf8')
 assert.match(migration, /bridge_agent_bond_application_identity/)
@@ -141,7 +142,7 @@ assert.match(migration, /package\.transaction_bond_application_id/)
 assert.match(migration, /application\.workflow_id = v_finance_workflow_id/)
 assert.match(migration, /grant execute on function public\.bridge_agent_bond_application_identity\(uuid, uuid\) to authenticated/)
 
-const apiSource = fs.readFileSync(path.join(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 assert.match(apiSource, /fetchAgentBondApplicationIdentity\(client, canonicalTransactionId\)/)
 assert.match(apiSource, /bondApplicationIdentity = buildBondApplicationIdentity/)
 assert.match(apiSource, /bondApplicationIdentity,/)

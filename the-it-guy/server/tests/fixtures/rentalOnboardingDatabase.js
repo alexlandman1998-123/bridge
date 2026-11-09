@@ -7,7 +7,7 @@ export const property = '33333333-3333-4333-8333-333333333333'
 export const unit = '44444444-4444-4444-8444-444444444444'
 export const vacancy = '55555555-5555-4555-8555-555555555555'
 export const app = '66666666-6666-4666-8666-666666666666'
-export async function rentalOnboardingDatabase() {
+export async function rentalOnboardingDatabase({ includeAtomicSubmission = false } = {}) {
   const db = new PGlite()
   await db.exec(`create role service_role; create role anon; create role authenticated; create schema auth; grant usage on schema auth to authenticated;
   create table auth.users(id uuid primary key); insert into auth.users values('${actor}');
@@ -44,5 +44,11 @@ export async function rentalOnboardingDatabase() {
     '20261007202606_rental_application_deferred_documents.sql',
   ])
     await db.exec(readFileSync(new URL(file, root), 'utf8'))
+  // Exercise the same atomic submission command used by the current public API.
+  // Keep the full command (including consent checks and grants), not a test stub.
+  if (includeAtomicSubmission) {
+    const connections = readFileSync(new URL('20261014203952_rental_tenant_application_connections.sql', root), 'utf8')
+    await db.exec(connections.slice(connections.indexOf('create function public.rental_submit_tenant_application('), connections.lastIndexOf('commit;')))
+  }
   return db
 }

@@ -1,5 +1,6 @@
 import { isRetiredDocumentFunction, DOCUMENT_GENERATOR_RETIRED_CODE, DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../core/documents/documentGeneratorRetirement.js'
 import { createClient } from '@supabase/supabase-js'
+import { createObservedSupabaseFetch } from '../services/observability/openingRequestTrace.js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}
 const processEnv = typeof globalThis !== 'undefined' && globalThis?.process?.env ? globalThis.process.env : {}
@@ -361,7 +362,8 @@ function installAuthReadSingleFlight(client) {
   return client
 }
 
-export const supabase = isSupabaseConfigured ? installAuthReadSingleFlight(createClient(supabaseUrl, supabaseKey)) : null
+const observedFetch = createObservedSupabaseFetch()
+export const supabase = isSupabaseConfigured ? installAuthReadSingleFlight(createClient(supabaseUrl, supabaseKey, { global: { fetch: observedFetch } })) : null
 const scopedClientCache = new Map()
 
 function getSupabaseProjectRef() {
@@ -645,8 +647,12 @@ export function createScopedSupabaseClient(headers = {}) {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
+      // GoTrue also uses the storage key as its lock name, even without
+      // persisted sessions. Separate capability clients from the agent lock.
+      storageKey: `arch9:scoped-auth:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`,
     },
     global: {
+      fetch: observedFetch,
       // Auth's default uses this casing. A second lowercase key would combine
       // the anonymous key and scoped user token into an invalid Bearer header.
       headers: Object.fromEntries(normalizedEntries.map(([key, value]) => [

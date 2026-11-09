@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(here, '..')
 const repoRoot = path.resolve(appRoot, '..')
 const migration = await readFile(path.join(repoRoot, 'supabase/migrations/20260905102430_bond_application_portal_phase6_document_continuity.sql'), 'utf8')
-const api = await readFile(path.join(appRoot, 'src/lib/api.js'), 'utf8')
+const api = await readDomainApiSource()
 const portalApi = await readFile(path.join(appRoot, 'src/lib/clientPortalApi.js'), 'utf8')
 const buyerPortal = await readFile(path.join(appRoot, 'src/modules/bond/application/workspace/ConnectedBuyerBondApplication.jsx'), 'utf8')
 const actionCentre = await readFile(path.join(appRoot, 'src/pages/bond/BondApplicationActionCentrePage.jsx'), 'utf8')
@@ -24,8 +25,11 @@ assert.match(migration, /never document storage coordinates or signed URLs/)
 assert.match(api, /export async function fetchBondApplicationPortalDocumentContinuity/)
 assert.match(api, /export async function fetchBondApplicationPortalOriginatorDocumentContinuity/)
 assert.match(portalApi, /fetchBondApplicationPortalDocumentContinuity/)
-assert.match(buyerPortal, /onReconcileDocumentRequirements=\{reconcile\}/)
-assert.match(buyerPortal, /reconcileBuyerBondApplicationRuntimeDocuments\(\{ \.\.\.credentials, requirements \}\)/)
+assert.match(buyerPortal, /<BuyerBondTracker key=/)
+const tracker = await readFile(path.join(appRoot, 'src/components/bond/BuyerBondTracker.jsx'), 'utf8')
+assert.match(tracker, /fetchBuyerBondTrackerContext\(\{ token, accessToken \}\)/)
+assert.match(tracker, /uploadBuyerBondApplicationRuntimeDocument/)
+assert.match(tracker, /context\.requiredDocuments/)
 assert.match(actionCentre, /Document continuity:/)
 
 console.log('Bond application portal Phase 6 document continuity checks passed.')

@@ -391,3 +391,16 @@ test('buyer controls show legacy client-owned requirements from the linked trans
   fireEvent.change(select, { target: { value: row.id } })
   expect(screen.getByLabelText('Upload file')).toBeTruthy()
 })
+
+test('removes only the current file with a durable command, exact file identity and visible retention notice', async () => {
+  const current = { ...row,status:'approved',satisfied_by_document_id:'current-file',latest_upload_id:'current-file' }
+  readDocumentRequirementContext.mockResolvedValue({requirements:[current],documents:[]})
+  executeDocumentRequirementCommand.mockResolvedValue({saved:true,requirement:{...current,status:'pending',satisfied_by_document_id:null,latest_upload_id:null}})
+  render(<DocumentRequirementManager {...props} presentation="dialog" open initialSelectedRequirementId={row.id} />)
+  await screen.findByText(/saved evidence and reviews remain in protected history/)
+  fireEvent.change(screen.getByLabelText('Reason for removing this file'),{target:{value:'Incorrect buyer file'}})
+  fireEvent.click(screen.getByRole('button',{name:'Remove current file'}))
+  await screen.findByText(/Document change saved/)
+  expect(executeDocumentRequirementCommand.mock.calls[0][1]).toMatchObject({action:'withdraw',contextType:'transaction',contextId:'transaction',requirementId:row.id,expectedRevision:7,payload:{reason:'Incorrect buyer file',documentId:'current-file'}})
+  expect(localStorage.getItem(key)).toBeNull()
+})

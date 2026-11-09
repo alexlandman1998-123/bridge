@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchDevelopmentSettings, updateDevelopmentSettings } from '../lib/api'
+import { updateDevelopmentSettings } from '../lib/developmentDetailApi'
+import { fetchDevelopmentSettings } from '../domains/developments/api.js'
 
 const SETTINGS_COPY = [
   {

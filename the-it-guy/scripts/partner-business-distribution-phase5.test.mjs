@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,7 +8,7 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'u
 
 const agentsSource = read('src/pages/Agents.jsx')
 const agentPerformanceDataSource = read('src/modules/agency/agents/agentPerformanceDataService.js')
-const apiSource = read('src/lib/api.js')
+const apiSource = readDomainApiSource()
 
 for (const token of [
   'function flattenTransactionRolePlayers',

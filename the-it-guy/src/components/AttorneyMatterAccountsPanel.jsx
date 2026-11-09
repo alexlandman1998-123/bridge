@@ -14,18 +14,8 @@ import {
   Upload,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import {
-  createMatterFinancialDocumentRequest,
-  fetchMatterFinancialAccounts,
-  publishMatterFinancialDocument,
-  recordMatterFinancialEntry,
-  reconcileMatterFinancialProofDocument,
-  registerMatterFinancialDocument,
-  reverseMatterFinancialEntry,
-  updateMatterFinancialDocumentRequestStatus,
-  updateMatterFinancialAccountPaymentInstructions,
-  updateMatterFinancialAccountPortal,
-} from '../lib/api'
+import { createMatterFinancialDocumentRequest, updateMatterFinancialDocumentRequestStatus } from '../domains/documents/requestApi.js'
+import { fetchMatterFinancialAccounts, publishMatterFinancialDocument, recordMatterFinancialEntry, reconcileMatterFinancialProofDocument, registerMatterFinancialDocument, reverseMatterFinancialEntry, updateMatterFinancialAccountPaymentInstructions, updateMatterFinancialAccountPortal } from '../domains/finance/accountsApi.js'
 import { downloadMatterFinancialStatement } from '../core/attorneyAccounting/matterAccountStatement'
 import {
   downloadMatterFinancialSubmissionPack,

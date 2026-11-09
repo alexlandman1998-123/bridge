@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -13,7 +14,7 @@ const packageJson = JSON.parse(await read('../package.json'))
 const packetApi = await read('../src/lib/documentPacketsApi.js')
 const workspace = await read('../src/components/documents/LegalDocumentWorkspace.jsx')
 const workspacePage = await read('../src/pages/LegalDocumentWorkspacePage.jsx')
-const api = await read('../src/lib/api.js')
+const api = await readDomainApiSource()
 
 assert.equal(
   packageJson.scripts?.['test:physical-signed-upload-phaseA'],

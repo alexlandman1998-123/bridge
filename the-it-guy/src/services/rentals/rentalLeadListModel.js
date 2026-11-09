@@ -1,3 +1,4 @@
+import { rentalLeadDisplayStage, rentalLeadDisplayStageLabel } from './rentalLeadJourneyProjection.js'
 import { getRentalLeadPipelineStages, getRentalLeadStageLabel, isKnownRentalLeadStage } from './rentalLeadPipelineModel.js'
 
 export const rentalLeadIsClosed = (lead) => lead.outcome?.status && lead.outcome.status !== 'open'
@@ -6,11 +7,11 @@ export const rentalLeadNeedsReview = (lead) => Boolean(lead.workflowIssue) || !i
 export function buildRentalLeadKanbanColumns(leads, role) {
   const rows = leads.filter((lead) => role === 'closed' ? rentalLeadIsClosed(lead) : !rentalLeadIsClosed(lead) && lead.role === role)
   const knownRows = rows.filter((lead) => !rentalLeadNeedsReview(lead))
-  const stages = role === 'closed' ? [...new Set(knownRows.map((lead) => lead.stage))] : getRentalLeadPipelineStages(role)
+  const stages = role === 'closed' ? [...new Set(knownRows.map(rentalLeadDisplayStage))] : [...getRentalLeadPipelineStages(role), ...['lease', 'tenancy'].filter(stage => knownRows.some(lead => rentalLeadDisplayStage(lead) === stage))]
   const columns = stages.map((stage) => ({
     stage,
-    label: getRentalLeadStageLabel(stage, role === 'closed' ? knownRows.find((lead) => lead.stage === stage)?.role : role),
-    cards: knownRows.filter((lead) => lead.stage === stage),
+    label: { lease: 'Lease', tenancy: 'Tenancy' }[stage] || getRentalLeadStageLabel(stage, role === 'closed' ? knownRows.find((lead) => rentalLeadDisplayStage(lead) === stage)?.role : role),
+    cards: knownRows.filter((lead) => rentalLeadDisplayStage(lead) === stage),
   }))
   const review = rows.filter(rentalLeadNeedsReview)
   if (review.length) columns.unshift({ stage: 'review_needed', label: 'Review needed', cards: review })
@@ -26,13 +27,13 @@ export function rentalLeadListSummary(leads, now = new Date()) {
     return lead.outcome?.status === 'won' && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
   })
   const lost = leads.filter((lead) => ['lost', 'withdrawn'].includes(lead.outcome?.status)).length
-  return { newLeads: active.filter((lead) => lead.stage === 'new').length, active: active.length, landlord: active.filter((lead) => lead.role === 'landlord').length, tenant: active.filter((lead) => lead.role === 'tenant').length, closed: leads.length - active.length, converted: converted.length, convertedLandlords: converted.filter((lead) => lead.role === 'landlord').length, convertedTenants: converted.filter((lead) => lead.role === 'tenant').length, topSource, topSourceCount, lost, lostRate: leads.length ? Math.round(lost / leads.length * 100) : 0, total: leads.length }
+  return { newLeads: active.filter((lead) => rentalLeadDisplayStage(lead) === 'new').length, active: active.length, landlord: active.filter((lead) => lead.role === 'landlord').length, tenant: active.filter((lead) => lead.role === 'tenant').length, closed: leads.length - active.length, converted: converted.length, convertedLandlords: converted.filter((lead) => lead.role === 'landlord').length, convertedTenants: converted.filter((lead) => lead.role === 'tenant').length, topSource, topSourceCount, lost, lostRate: leads.length ? Math.round(lost / leads.length * 100) : 0, total: leads.length }
 }
 export function filterRentalLeadList(leads, { role, query = '', owner = 'all', source = 'all', stage = 'all', sort = 'newest', assignedAgentId }) {
   const rows = leads.filter((lead) => (role === 'closed' ? rentalLeadIsClosed(lead) : !rentalLeadIsClosed(lead) && lead.role === role)
     && (owner === 'all' || (owner === 'unassigned' ? !lead.assignedAgentId : lead.assignedAgentId === (owner === 'mine' ? assignedAgentId : owner)))
-    && (source === 'all' || lead.source === source) && (stage === 'all' || (stage === 'review_needed' ? rentalLeadNeedsReview(lead) : lead.stage === stage))
+    && (source === 'all' || lead.source === source) && (stage === 'all' || (stage === 'review_needed' ? rentalLeadNeedsReview(lead) : rentalLeadDisplayStage(lead) === stage))
     && [lead.name, lead.focus, lead.phone, lead.email, lead.source, lead.assignedAgentName].join(' ').toLowerCase().includes(query.trim().toLowerCase()))
   const time = (value) => Date.parse(value) || 0
-  return rows.sort((a, b) => sort === 'stage' ? (a.stageLabel || a.stage).localeCompare(b.stageLabel || b.stage) : sort === 'oldest' ? time(a.createdAt) - time(b.createdAt) : time(b.createdAt) - time(a.createdAt))
+  return rows.sort((a, b) => sort === 'stage' ? (rentalLeadDisplayStageLabel(a) || a.stage).localeCompare(rentalLeadDisplayStageLabel(b) || b.stage) : sort === 'oldest' ? time(a.createdAt) - time(b.createdAt) : time(b.createdAt) - time(a.createdAt))
 }

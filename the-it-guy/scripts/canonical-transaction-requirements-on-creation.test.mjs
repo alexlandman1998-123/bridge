@@ -1,10 +1,12 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
 
 const root = process.cwd()
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
+const requirementActionsSource = readFileSync(resolve(root, 'src/domains/documents/requirementActions.js'), 'utf8')
 const resolverSource = readFileSync(resolve(root, 'src/services/documents/canonicalDocumentResolverService.js'), 'utf8')
 const transactionResolverSource = readFileSync(resolve(root, 'src/services/documents/transactionCanonicalDocumentRequirementService.js'), 'utf8')
 const adapterSource = readFileSync(resolve(root, 'src/services/documents/canonicalDocumentAdapterService.js'), 'utf8')
@@ -16,9 +18,9 @@ const migrationSource = readFileSync(
 const creationStart = apiSource.indexOf('export async function createTransactionFromWizard')
 const creationEnd = apiSource.indexOf('\nexport async function ', creationStart + 1)
 const creationSource = apiSource.slice(creationStart, creationEnd === -1 ? apiSource.length : creationEnd)
-const ensureStart = apiSource.indexOf('export async function ensureTransactionRequiredDocuments')
-const ensureEnd = apiSource.indexOf('\nexport async function ', ensureStart + 1)
-const ensureSource = apiSource.slice(ensureStart, ensureEnd === -1 ? apiSource.length : ensureEnd)
+const ensureStart = requirementActionsSource.indexOf('export async function ensureTransactionRequiredDocuments')
+const ensureEnd = requirementActionsSource.indexOf('\nexport async function ', ensureStart + 1)
+const ensureSource = requirementActionsSource.slice(ensureStart, ensureEnd === -1 ? requirementActionsSource.length : ensureEnd)
 
 assert.match(creationSource, /canonicalSourceRequired:\s*true/)
 assert.match(ensureSource, /if \(canonicalSourceRequired\)/)

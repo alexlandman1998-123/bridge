@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { TRUST_INVESTMENT_FORM_STATUSES } from '../lib/api'
+import { TRUST_INVESTMENT_FORM_STATUSES } from '../domains/shared/constants.js'
 
 function formatValue(value) {
   if (value === true) return 'Yes'

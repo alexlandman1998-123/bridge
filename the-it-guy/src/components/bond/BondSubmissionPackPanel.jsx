@@ -50,7 +50,7 @@ export function BondSubmissionPackWorkspace() {
   const refresh = async () => {
     setBusy(true); setError('')
     try {
-      const { fetchBondSubmissionPackQueue } = await import('../../lib/api.js')
+      const { fetchBondSubmissionPackQueue } = await import('../../domains/bond/runtimeApi.js')
       setItems(await fetchBondSubmissionPackQueue()); setLoaded(true)
     } catch (failure) { setItems([]); setError(failure.message || 'Could not load signed applications.') }
     finally { setBusy(false) }
@@ -104,7 +104,7 @@ function StatementReceipt({ transactionId, submissionId, row, disabled, onChange
   const run = async revoke => {
     setBusy(true); setError('')
     try {
-      const api = await import('../../lib/api.js')
+      const api = await import('../../domains/bond/runtimeApi.js')
       const args = { transactionId, submissionId, requirementKey: row.key }
       if (revoke) await api.revokeBondStatementReceipt(args)
       else await api.recordBondStatementReceipt({ ...args, receivedAt: new Date(`${date}T00:00:00`).toISOString(), reference })
@@ -135,7 +135,7 @@ function ManualBankSubmission({ transactionId, plan, disabled, onChanged }) {
   const submit = async event => {
     event.preventDefault(); setBusy(true); setError('')
     try {
-      const { recordManualBondSubmission } = await import('../../lib/api.js')
+      const { recordManualBondSubmission } = await import('../../domains/bond/runtimeApi.js')
       await recordManualBondSubmission({ transactionId, submissionId: plan.submission.id, contextHash: plan.reviewContext.contextHash, bankId, bankName: banks.find(bank => bank.id === bankId)?.name, submittedAt: new Date(`${date}T00:00:00`).toISOString(), reference })
       setConfirmed(false)
       await onChanged()

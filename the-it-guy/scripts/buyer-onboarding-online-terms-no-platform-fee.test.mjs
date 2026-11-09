@@ -1,9 +1,10 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const consentSource = await readFile(new URL('../src/lib/platformFeeConsent.js', import.meta.url), 'utf8')
 const onboardingSource = await readFile(new URL('../src/pages/ClientOnboarding.jsx', import.meta.url), 'utf8')
-const apiSource = await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8')
+const apiSource = await readDomainApiSource()
 
 const buyerConsentConfig = consentSource.match(/buyer:\s*Object\.freeze\(\{[\s\S]*?\n\s*\}\),/)
 assert.ok(buyerConsentConfig, 'buyer consent config should remain explicit')

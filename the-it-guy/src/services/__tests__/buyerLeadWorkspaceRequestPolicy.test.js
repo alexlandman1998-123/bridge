@@ -42,3 +42,10 @@ assert.equal(shouldLoadLeadWorkspaceRequest({ leadCategory: 'buyer', requestFami
 
 console.log('buyer lead workspace request policy tests passed')
 
+for (const requestFamily of buyerOnlyFamilies) {
+  assert.equal(shouldLoadLeadWorkspaceRequest({ leadCategory: 'buyer', requestFamily, workspaceTab: 'overview' }), false, `${requestFamily} must wait for its section`)
+}
+assert.equal(shouldLoadLeadWorkspaceRequest({ leadCategory: 'seller', requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.privateListingActivity, workspaceTab: 'overview' }), false)
+assert.equal(shouldLoadLeadWorkspaceRequest({ leadCategory: 'seller', requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.privateListingActivity, workspaceTab: 'activity' }), true)
+assert.equal(shouldLoadLeadWorkspaceRequest({ leadCategory: 'buyer', requestFamily: LEAD_WORKSPACE_REQUEST_FAMILIES.buyerViewingPreferences, workspaceTab: 'appointments' }), true)
+

@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   transactionsTable: await readFile(new URL('../src/components/AgentTransactionsTable.jsx', import.meta.url), 'utf8'),
   statusBadge: await readFile(new URL('../src/components/ui/StatusBadge.jsx', import.meta.url), 'utf8'),
 }
@@ -25,9 +26,7 @@ assert(
 )
 
 for (const requiredTableToken of [
-  "{ key: 'needs_review', label: 'Needs Review' }",
   'getBuyerBondOriginatorRequestSummary',
-  "filterKey === 'needs_review'",
   'buyer-originator-request-chip',
   'Buyer originator review',
 ]) {

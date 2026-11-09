@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -30,7 +31,7 @@ function read(relativePath) {
 }
 
 function buildReport(options = {}) {
-  const apiSource = read('src/lib/api.js')
+  const apiSource = readDomainApiSource()
   const privateListingSource = read('src/services/privateListingService.js')
   const clientPortalSource = read('src/pages/ClientPortal.jsx')
   const smokeAudit = buildDocumentRequestWorkspaceSmokeAudit()

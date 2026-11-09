@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { fetchClientOtpSigningByToken, submitClientOtpSignature } from '../lib/api'
+import { fetchClientOtpSigningByToken, submitClientOtpSignature } from '../domains/clientPortal/signingApi.js'
 
 function drawCanvasBackground(canvas) {
   const context = canvas.getContext('2d')

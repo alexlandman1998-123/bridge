@@ -2,19 +2,20 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import AddDevelopmentModal from '../AddDevelopmentModal.jsx'
-import { createDevelopmentWorkspace, createDeveloperPartnerInvite, fetchDeveloperPartnersWorkspace } from '../../lib/api.js'
+import { createDevelopmentWorkspace, createDeveloperPartnerInvite } from '../../lib/developmentDetailApi.js'
+import { fetchDeveloperPartnersWorkspace } from '../../domains/partners/readApi.js'
 import { sendWhatsAppNotification } from '../../lib/whatsapp'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { invokeEdgeFunction } from '../../lib/supabaseClient.js'
 import { listOrganisationUsers } from '../../lib/settingsApi.js'
 
-vi.mock('../../lib/api.js', () => ({
+vi.mock('../../lib/developmentDetailApi.js', () => ({
   createDevelopmentWorkspace: vi.fn(),
   createDeveloperPartnerInvite: vi.fn(async () => ({ id: 'partner-invite', invitationDelivery: { emailResult: { sent: true } } })),
-  fetchDeveloperAccessOptions: vi.fn(async () => []),
-  fetchDeveloperPartnersWorkspace: vi.fn(async () => ({ relationships: [], preferredPartners: [] })),
 }))
+vi.mock('../../domains/developments/accessReadApi.js', () => ({ fetchDeveloperAccessOptions: vi.fn(async () => []) }))
+vi.mock('../../domains/partners/readApi.js', () => ({ fetchDeveloperPartnersWorkspace: vi.fn(async () => ({ relationships: [], preferredPartners: [] })) }))
 vi.mock('../../lib/location/upsertArea', () => ({ upsertAreaFromAddress: vi.fn(async () => null) }))
 vi.mock('../../lib/settingsApi.js', () => ({ listOrganisationUsers: vi.fn(async () => []) }))
 vi.mock('../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, invokeEdgeFunction: vi.fn(async () => ({})) }))

@@ -1,3 +1,4 @@
+import { loadDomainCapabilitiesWithServer } from '../../../scripts/helpers/domainApiRuntime.mjs'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -244,7 +245,7 @@ function buildMockClient(seed = {}) {
 }
 
 try {
-  const api = await server.ssrLoadModule('/src/lib/api.js')
+  const api = await loadDomainCapabilitiesWithServer(server)
   const queueService = await server.ssrLoadModule('/src/services/bondOperationalQueueService.js')
   const {
     addBondApplication,

@@ -7,6 +7,7 @@ const server = await createServer({ root: process.cwd(), logLevel: 'silent', ser
 after(() => server.close())
 const { buildCanonicalDocumentWorkspaceModel } = await server.ssrLoadModule('/src/services/documents/canonicalDocumentWorkspaceService.js')
 const { projectCanonicalSellerDocumentRows } = await server.ssrLoadModule('/src/services/documents/canonicalSellerDocumentProjectionService.js')
+const { buildRequiredChecklistFromRows } = await server.ssrLoadModule('/src/domains/documents/requirementReadModel.js')
 const requirement = {
   id: 'custom-1', context_type: 'transaction', context_id: 'matter', custom_label: 'Additional SARS communication',
   requirement_origin: 'manual', document_definition_key: null, requested_from_role: 'seller', status: 'under_review',
@@ -18,6 +19,28 @@ const evidence = [
   { id: 'new-file', file_path: 'new.pdf', canonical_requirement_instance_id: requirement.id, is_current_evidence: true, status: 'under_review' },
 ]
 const snapshot = { contextType: 'transaction', contextId: 'matter', requirements: [requirement], documents: evidence, version: 4 }
+
+test('legacy transaction summaries cannot substitute another person or transaction’s same-type file', () => {
+  const row = { id: 'legacy', key: 'buyer_id_document', label: 'Buyer ID', transactionId: 'matter',
+    canonicalRequirementInstanceId: 'wanted', uploadedDocumentId: 'wrong', isUploaded: true, status: 'under_review' }
+  const wrong = { id: 'wrong', transaction_id: 'other-matter', canonical_requirement_instance_id: 'other', document_type: 'buyer_id_document', name: 'Buyer ID.pdf' }
+  const result = buildRequiredChecklistFromRows([row], [wrong])
+  assert.equal(result.summary.uploadedCount, 0)
+  assert.equal(result.checklist[0].matchedDocument, null)
+  assert.equal(result.checklist[0].evidenceUnavailable, true)
+  const right = { ...wrong, id: 'right', transaction_id: 'matter', canonical_requirement_instance_id: 'wanted' }
+  const corrected = buildRequiredChecklistFromRows([{ ...row, uploadedDocumentId: 'right' }], [wrong, right])
+  assert.equal(corrected.checklist[0].matchedDocument.id, 'right')
+  assert.equal(corrected.summary.uploadedCount, 1)
+})
+
+test('separate same-type checklist slots retain their own file and optional evidence never blocks the summary', () => {
+  const rows = ['one', 'two'].map(id => ({ id, key: 'buyer_id_document', label: 'Buyer ID', status: 'uploaded', canonicalRequirementInstanceId: id, uploadedDocumentId: `${id}-file` }))
+  const docs = rows.map(row => ({ id: row.uploadedDocumentId, canonical_requirement_instance_id: row.id, document_type: 'buyer_id_document' }))
+  const result = buildRequiredChecklistFromRows([...rows, { key: 'optional', requirement_level: 'optional' }], docs)
+  assert.equal(result.summary.totalRequired, 2)
+  assert.deepEqual(result.checklist.map(row => row.matchedDocument.id), ['one-file', 'two-file'])
+})
 
 test('shared read checks scope and shape and never converts failure into an empty checklist', async () => {
   assert.equal((await readDocumentRequirementContext({ rpc: async () => ({ data: snapshot }) }, { contextType: 'transaction', contextId: 'matter' })).version, 4)
@@ -152,4 +175,16 @@ test('an authoritative transaction checklist retains exact co-buyer slots withou
   assert.equal(rows.length, 2)
   assert.deepEqual(rows.map(row => row.canonicalRequirementInstanceId), ['primary-id', 'joint-id'])
   assert.deepEqual(rows.map(row => row.status), ['under_review', 'pending'])
+})
+
+test('normal lead evidence lists hide replaced, withdrawn and removed files; protected history is explicit', async () => {
+  const { mergeDocumentEvidence } = await import('../documentRequirementReadService.js')
+  const snapshot = { requirements: [{ id:'slot' }], documents: [
+    { id:'old',canonical_requirement_instance_id:'slot',is_current_evidence:false },
+    { id:'new',canonical_requirement_instance_id:'slot',is_current_evidence:true },
+    { id:'removed',canonical_requirement_instance_id:'slot',is_current_evidence:true,applicability_override:'removed' },
+  ] }
+  const legacy = [{ id:'old',canonical_requirement_instance_id:'slot' },{id:'unlinked'}]
+  assert.deepEqual(mergeDocumentEvidence(legacy,snapshot).map(row=>row.id),['unlinked','new'])
+  assert.deepEqual(mergeDocumentEvidence(legacy,snapshot,{includeHistory:true}).map(row=>row.id),['unlinked','old','new','removed'])
 })

@@ -10,7 +10,7 @@ let db, client
 const files = new Map()
 const storage = { from: () => ({ upload: async (path, binary, options) => { files.set(path, { size: binary.length, contentType: options.contentType }); return { data: {} } }, remove: async (paths) => { paths.forEach((path) => files.delete(path)); return {} }, info: async (path) => ({ data: files.get(path) }), createSignedUrl: async (path) => ({ data: { signedUrl: `https://local.test/private/${path}` } }), createSignedUploadUrl: async (path) => ({ data: { signedUrl: `https://local.test/${path}` } }) }) }
 beforeAll(async () => {
-  db = await rentalOnboardingDatabase()
+  db = await rentalOnboardingDatabase({ includeAtomicSubmission: true })
   await db.exec(`create function bridge_current_workspace_role(workspace_id uuid) returns text language sql as $$ select 'owner'::text $$;
     alter table rental_application_documents add column mime_type text, add column file_size_bytes integer;
     create table rental_application_access_tokens(id uuid default gen_random_uuid(),application_id uuid,token_hash text,expires_at timestamptz,revoked_at timestamptz,last_accessed_at timestamptz,subject_id text);
@@ -34,7 +34,7 @@ async function application(type = 'individual') {
   const request = (method, body) => handlePublicRentalApplication({ method, body, token, env: { SUPABASE_URL: 'https://local.test', SUPABASE_SERVICE_ROLE_KEY: 'local-only' }, clientFactory: () => client })
   expect((await request('PATCH', { action: 'confirm_context', version: 1, propertyAccepted: true, costsAccepted: true, privacyAccepted: true })).status).toBe(200)
   const result = await request('PUT', { action: 'submit', version: 2, declarationAccepted: true, consents: ['privacy', 'credit_check', 'identity_verification'] })
-  expect(result.status).toBe(200)
+  expect(result.status, JSON.stringify(result.body)).toBe(200)
   return { id, request, data, submitted: result.body.application }
 }
 const bodyFor = (application, requirement) => ({ version: application.version, subjectId: requirement.subjectId, purpose: requirement.purpose, requirementId: requirement.id, generation: requirement.generation, fileName: 'evidence.pdf', mimeType: 'application/pdf', contentBase64: Buffer.from('Local evidence').toString('base64') })

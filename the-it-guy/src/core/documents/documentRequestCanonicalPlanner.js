@@ -99,7 +99,7 @@ function toRequestPlanItem(requirement = {}, options = {}) {
     requiredLevel: requirement.level,
     visibility: requirement.visibility,
     blocker: requirement.blocker,
-    blocksStage: requestable && isBlockingLevel(requirement.level) ? requirement.blocker : null,
+    blocksStage: requestable && (isBlockingLevel(requirement.level) || pendingPolicy && requestPendingPolicy) ? requirement.blocker : null,
     sortOrder: requirement.sortOrder,
     clientVisible: isClientVisible(requirement),
     attorneyVisible: isAttorneyVisible(requirement),

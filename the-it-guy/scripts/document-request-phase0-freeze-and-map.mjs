@@ -108,7 +108,8 @@ const RUNTIME_SURFACES = Object.freeze([
     id: 'shared_request_api',
     label: 'Shared transaction document request API',
     owner: 'platform',
-    path: 'src/lib/api.js',
+    path: 'src/domains/documents/requestApi.js',
+    supportingPaths: ['src/domains/documents/requirementReadModel.js'],
     markers: ['createTransactionDocumentRequests', 'document_request_groups', 'document_requests', 'transaction_required_documents'],
     phaseRisk: 'Attorney, bond-originator, and agent requests should create shared containers rather than disconnected rows.',
   },
@@ -236,12 +237,13 @@ function readSource(relativePath) {
 }
 
 function summarizeSurface(surface) {
-  const inspected = readSource(surface.path)
-  const markerResults = surface.markers.map((marker) => ({
-    marker,
-    present: inspected.source.includes(marker),
-    line: lineNumberFor(inspected.source, marker),
-  }))
+  const sources = [surface.path, ...(surface.supportingPaths || [])].map((sourcePath) => ({ path: sourcePath, ...readSource(sourcePath) }))
+  const combinedSource = sources.map(item => item.source).join('\n')
+  const inspected = { exists: sources.every(item => item.exists), source: combinedSource, hash: `sha256:${sha256(combinedSource)}`, lineCount: sources.reduce((sum, item) => sum + item.lineCount, 0) }
+  const markerResults = surface.markers.map((marker) => {
+    const owner = sources.find(item => item.source.includes(marker))
+    return { marker, present: Boolean(owner), path: owner?.path || surface.path, line: owner ? lineNumberFor(owner.source, marker) : null }
+  })
 
   return {
     ...surface,

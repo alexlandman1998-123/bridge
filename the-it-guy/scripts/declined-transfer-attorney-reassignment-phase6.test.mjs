@@ -1,3 +1,5 @@
+import { loadDomainCapabilitiesWithServer } from './helpers/domainApiRuntime.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -5,7 +7,7 @@ import { createServer } from 'vite'
 
 const root = process.cwd()
 const [apiSource, transactionPage, migrationSource, incomingActions, incomingQueue, matterWorkspace, mattersPage] = await Promise.all([
-  readFile(resolve(root, 'src/lib/api.js'), 'utf8'),
+  readDomainApiSource(),
   readFile(resolve(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8'),
   readFile(resolve(root, '../supabase/migrations/202607170004_attorney_firm_first_reassignment_phase6.sql'), 'utf8'),
   readFile(resolve(root, 'src/services/attorneyIncomingMatterInstructionActions.js'), 'utf8'),
@@ -286,7 +288,7 @@ function createPhase6Client() {
 const server = await createServer({ root, logLevel: 'silent', server: { middlewareMode: true } })
 
 try {
-  const { reassignDeclinedTransferAttorneyInstruction } = await server.ssrLoadModule('/src/lib/api.js')
+  const { reassignDeclinedTransferAttorneyInstruction } = await loadDomainCapabilitiesWithServer(server)
   const client = createPhase6Client()
   const originalWarn = console.warn
   const originalDebug = console.debug

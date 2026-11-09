@@ -1,7 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+const source=readDomainApiSource()
 const start=source.indexOf('async function upsertTransactionParticipantsRowsWithFallback(')
 const end=source.indexOf('\nasync function ensureTransactionParticipants',start)
 const persist=new Function('normalizeRoleType','normalizeAttorneyLegalRole','normalizeTransactionParticipantAssignmentSource',

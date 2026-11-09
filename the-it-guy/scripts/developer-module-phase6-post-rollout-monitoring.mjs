@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import { readFile } from 'node:fs/promises'
 
 const RLS_POLICY_EXPECTATIONS = Object.freeze([
@@ -141,7 +142,7 @@ export async function buildDeveloperModulePhase6PostRolloutMonitoringReport() {
     ),
     wizard: await readFile(new URL('../src/components/NewTransactionWizard.jsx', import.meta.url), 'utf8'),
     unitDetail: await readFile(new URL('../src/pages/UnitDetail.jsx', import.meta.url), 'utf8'),
-    api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+    api: await readDomainApiSource(),
     workflowActions: await readFile(new URL('../server/services/workflowActionAvailabilityService.js', import.meta.url), 'utf8'),
     lifecycle: await readFile(new URL('../src/core/transactions/transactionLifecycle.js', import.meta.url), 'utf8'),
     button: await readFile(new URL('../src/components/ui/Button.jsx', import.meta.url), 'utf8'),
@@ -206,7 +207,7 @@ export async function buildDeveloperModulePhase6PostRolloutMonitoringReport() {
       /recordSetupWarning/.test(files.api) &&
       /setupWarnings,/.test(files.api) &&
       RECOVERABLE_SETUP_AREAS.every((area) => files.api.includes(`recordSetupWarning('${area}'`)),
-    'src/lib/api.js',
+    'src/domains/transactions/creationApi.js; src/domains/onboarding/workflow.js',
   ))
 
   checks.push(check(

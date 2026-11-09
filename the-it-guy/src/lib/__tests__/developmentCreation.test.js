@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { parse } from '@babel/parser'
 import { validateDevelopmentStructureNodes } from '../../core/developments/developmentStructureModel.js'
 
 // Exercise the production creation sequence with local persistence adapters.
 // These fixtures never initialise Supabase or make database writes.
-const api = await readFile(new URL('../api.js', import.meta.url), 'utf8')
-const start = api.indexOf('export async function createDevelopmentWorkspace(')
-const end = api.indexOf('\nfunction normalizeDeveloperPartnerType(', start)
-const source = api.slice(start, end).replace('export async function', 'async function')
+const api = await readFile(new URL('../../domains/developments/creationWorkflow.js', import.meta.url), 'utf8')
+const stockApi = await readFile(new URL('../../domains/developments/stockActions.js', import.meta.url), 'utf8')
+function functionSource(source, name) {
+  const node = parse(source, { sourceType: 'module' }).program.body.find((node) => node.declaration?.id?.name === name)?.declaration
+  assert.ok(node, `Missing production function ${name}`)
+  return source.slice(node.start, node.end)
+}
+const source = functionSource(api, 'createDevelopmentWorkspace')
 
 function setup(overrides = {}) {
   const calls = []
@@ -152,9 +157,7 @@ test('invalid hierarchy references are rejected before creating a development', 
 })
 
 function unitWriter() {
-  const unitStart = api.indexOf('export async function saveDevelopmentUnit(')
-  const unitEnd = api.indexOf('\nasync function fetchDevelopmentStructureNodes(', unitStart)
-  const unitSource = api.slice(unitStart, unitEnd).replace('export async function', 'async function')
+  const unitSource = functionSource(stockApi, 'saveDevelopmentUnit')
   const calls = []
   const client = { from: () => ({ upsert: (payload) => {
     calls.push(payload)

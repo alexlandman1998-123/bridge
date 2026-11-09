@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {createClient} from '@supabase/supabase-js'
+import {createObservedSupabaseFetch} from '../src/services/observability/openingRequestTrace.js'
 const source=readFileSync(new URL('../src/lib/supabaseClient.js',import.meta.url),'utf8')
 const start=source.indexOf('export function createScopedSupabaseClient('),end=source.indexOf('\nexport const __supabaseClientTestUtils',start)
-const factory=new Function('createClient','isSupabaseConfigured','supabaseUrl','supabaseKey','scopedClientCache',source.slice(start,end).replace('export function','function')+'\nreturn createScopedSupabaseClient')
+const factory=new Function('createClient','isSupabaseConfigured','supabaseUrl','supabaseKey','scopedClientCache','observedFetch',source.slice(start,end).replace('export function','function')+'\nreturn createScopedSupabaseClient')
 const calls=[],original=globalThis.fetch
 globalThis.fetch=async(input,options={})=>{
  calls.push({url:String(input),authorization:new Headers(options.headers).get('authorization')})
  return new Response(JSON.stringify({id:'verified-initiator',email:'controlled@example.test'}),{status:200,headers:{'content-type':'application/json'}})
 }
 try{
- const scoped=factory(createClient,true,'https://controlled.supabase.co','controlled-anonymous-key',new Map())
+ const scoped=factory(createClient,true,'https://controlled.supabase.co','controlled-anonymous-key',new Map(),createObservedSupabaseFetch())
  const client=scoped({authorization:'Bearer controlled-initiator-token'})
  assert.equal(scoped({Authorization:'Bearer controlled-initiator-token'}),client,'Header casing must not duplicate clients')
  const user=await client.auth.getUser()

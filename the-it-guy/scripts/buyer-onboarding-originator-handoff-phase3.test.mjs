@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -7,7 +8,7 @@ const [listingPage, transactionPage, unitDetailSource, apiSource, queueSource, m
   readFile(resolve(root, 'src/pages/AgentListingDetail.jsx'), 'utf8'),
   readFile(resolve(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8'),
   readFile(resolve(root, 'src/pages/UnitDetail.jsx'), 'utf8'),
-  readFile(resolve(root, 'src/lib/api.js'), 'utf8'),
+  readDomainApiSource(),
   readFile(resolve(root, 'src/services/bondOperationalQueueService.js'), 'utf8'),
   readFile(resolve(root, '../supabase/migrations/202607140011_buyer_onboarding_originator_handoff_phase3.sql'), 'utf8'),
 ])

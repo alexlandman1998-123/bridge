@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -13,7 +14,7 @@ import {
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const serviceSource = fs.readFileSync('src/services/documents/documentRequestProfessionalPropagationService.js', 'utf8')
-const apiSource = fs.readFileSync('src/lib/api.js', 'utf8')
+const apiSource = readDomainApiSource()
 const laneSource = fs.readFileSync('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', 'utf8')
 const docs = fs.readFileSync('docs/document-request-phase6-professional-propagation.md', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase6-professional-propagation.mjs', 'utf8')

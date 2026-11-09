@@ -1,3 +1,5 @@
+import { assertRetiredDocumentEndpoint } from './helpers/retiredDocumentContracts.mjs'
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
@@ -19,14 +21,10 @@ function assertContainsAll(source, markers, label) {
 
 const packageJson = JSON.parse(readSource('../package.json'))
 const legacyOtpRenderer = readSource('../../supabase/functions/generate-otp/index.ts')
-const canonicalRenderer = readSource('../../supabase/functions/generate-mandate/index.ts')
 const packetService = readSource('../src/core/documents/packetService.js')
-const api = readSource('../src/lib/api.js')
+const api = readDomainApiSource()
 const phase2Migration = readSource('../../supabase/migrations/202607220004_canonical_otp_signing_phase2.sql')
 const atomicRecoveryMigration = readSource('../../supabase/migrations/202607220005_canonical_otp_seal_atomic_recovery.sql')
-const sender = readSource('../../supabase/functions/send-mandate-signing-email/index.ts')
-const signerAction = readSource('../../supabase/functions/signer-signing-action/index.ts')
-const genericFinaliser = readSource('../../supabase/functions/generate-final-signed-document/index.ts')
 const retiredOtpFinaliser = readSource('../../supabase/functions/generate-final-signed-otp/index.ts')
 const workspacePage = readSource('../src/pages/LegalDocumentWorkspacePage.jsx')
 const workspace = readSource('../src/components/documents/LegalDocumentWorkspace.jsx')
@@ -42,10 +40,8 @@ assert.equal(
 
 // The old endpoint must stay a hard retirement: it used to make an unbound
 // DOCX, so no caller can use it as an alternate route into signing.
-assert.match(legacyOtpRenderer, /return jsonResponse\(410,\s*\{[\s\S]*OTP_LEGACY_RENDERER_RETIRED/)
-assert.match(legacyOtpRenderer, /CREATE_OR_REISSUE_CANONICAL_OTP_PDF/)
+await assertRetiredDocumentEndpoint('generate-otp')
 assert.doesNotMatch(legacyOtpRenderer, /\b(createClient|renderDocx|docxtemplater|PizZip)\b/i)
-assert.match(api, /OTP_LEGACY_RENDERER_RETIRED/)
 assert.doesNotMatch(api, /invokeEdgeFunction\('generate-otp'/)
 
 // Packet generation must not silently fall back to the retired endpoint.  For
@@ -116,15 +112,8 @@ assert.ok(
   'generic failure persistence must remain after the OTP recovery escape hatch.',
 )
 
-// The actual renderer—not the browser—owns C4 and D1/D2/D3 sealing.
-assertContainsAll(canonicalRenderer, [
-  'createAndSealCanonicalOtpVersion',
-  'bridge_create_and_seal_canonical_otp_pdf_phase2',
-  'canonicalOtpPdf: true',
-  'phase2-canonical-otp-pdf-v1',
-], 'canonical OTP renderer')
-assert.match(canonicalRenderer, /sealResult\.data\?\.sealed\s*!==\s*true/)
-assert.match(canonicalRenderer, /canonicalOtp:\s*canonicalOtp\s*\?\s*\{[\s\S]{0,300}sealed\s*:\s*true/)
+// Renderer retirement supersedes the old render/seal implementation.
+await assertRetiredDocumentEndpoint('generate-mandate')
 
 // I1 creation and the D1/D2/D3/C4 seal are one service-only database RPC. A
 // renderer retry must never strand an unsealed generated version or try to
@@ -155,17 +144,6 @@ assert.match(
   atomicRecoveryMigration,
   /grant execute on function public\.bridge_create_and_seal_canonical_otp_pdf_phase2\([\s\S]*?\) to service_role;/,
 )
-
-const rendererAtomicSealSection = section(
-  canonicalRenderer,
-  'async function createAndSealCanonicalOtpVersion',
-  'Deno.serve(async (req: Request) =>',
-  'canonical renderer atomic OTP path',
-)
-assert.match(rendererAtomicSealSection, /supabase\.rpc\("bridge_create_and_seal_canonical_otp_pdf_phase2"/)
-assert.doesNotMatch(rendererAtomicSealSection, /bridge_create_document_packet_version_i1/)
-assert.doesNotMatch(rendererAtomicSealSection, /"bridge_seal_canonical_otp_pdf_phase2"/)
-assert.doesNotMatch(rendererAtomicSealSection, /bridge_complete_editable_render_freeze_c4|p_success\s*:\s*false/)
 
 const sealSection = section(
   phase2Migration,
@@ -246,59 +224,11 @@ assertContainsAll(f2Section, [
   "'otpStatus', 'completed'",
 ], 'Phase 2 F2 status finalisation')
 
-// The controlled sender explicitly accepts OTP signing, requires the current
-// packet version plus a role-targeted E4 dispatch, and records provider proof
-// through the service-only Phase 2 RPC.
-assert.match(sender, /RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES/)
-assert.match(sender, /RETIRED_SELLER_MANDATE_SIGNING_EMAIL_TYPES\.has\(type\)/)
-assert.match(sender, /seller_mandate_signing_links_retired/)
-assert.match(sender, /"otp_signing"/)
-assert.match(sender, /const isOtpSigning = type === "otp_signing"/)
-assert.match(sender, /if \(isOtpSigning && \(!requestedPacketVersionId \|\| !dispatchId\)\)/)
-assert.match(sender, /const expectedPacketType = isOtpSigning \? "otp" : "mandate"/)
-assert.match(sender, /OTP_EMAIL_PACKET_NOT_DELIVERABLE/)
-assert.match(sender, /const deliveryRpc = isOtpSigning\s*\?\s*"bridge_record_otp_signing_delivery_phase2"/)
-assert.match(sender, /supabase\.rpc\(deliveryRpc,/)
-assert.doesNotMatch(sender, /OTP_FINALISATION_DISABLED_UNSAFE_RECONSTRUCTION/)
-
-// Signers may proceed for OTP only after the exact certified PDF exists; they
-// must use the generic finaliser rather than the retired OTP reconstruction.
-assertContainsAll(signerAction, [
-  'canonicalOtpPdfReady',
-  'render_input_verified',
-  'native_pdf_verified',
-  'transaction_pdf_persisted',
-  'OTP_CANONICAL_PDF_REQUIRED',
-  'const finaliserFunction = "generate-final-signed-document"',
-  'otpStatus',
-], 'signer action canonical OTP guard')
-assert.doesNotMatch(signerAction, /OTP_FINALISATION_DISABLED(?:_UNSAFE_RECONSTRUCTION)?/)
-assert.doesNotMatch(signerAction, /generate-final-signed-otp/)
-const otpGateIndex = signerAction.indexOf('const canonicalOtpPdfReady')
-const firstAssetMutationIndex = signerAction.indexOf('if (action === "upsert_asset")')
-assert.ok(otpGateIndex >= 0 && firstAssetMutationIndex > otpGateIndex, 'OTP canonical-PDF guard must run before signer asset mutation.')
-
-// The generic finaliser starts from the exact D1/D2/D3-certified PDF, checks
-// its database/document/storage linkage, then records F2.  It must never
-// rebuild OTP bytes from a DOCX or from structured data.
-assertContainsAll(genericFinaliser, [
-  'sourcePdfCertified',
-  'render_input_verified',
-  'native_pdf_verified',
-  'transaction_pdf_persisted',
-  'FINAL_SOURCE_PDF_REQUIRED',
-  'FINAL_SOURCE_PDF_LINK_INVALID',
-  'FINAL_SOURCE_PDF_UNREADABLE',
-  'FINAL_SOURCE_PDF_INTEGRITY_MISMATCH',
-  'bridge_record_final_artifact_f2',
-  'PDFDocument.load(sourcePdfBytes)',
-], 'generic finaliser certified-PDF gate')
-assert.ok(genericFinaliser.includes('supabase.storage.from(renderedFileBucket).download(renderedFilePath)'))
-assert.doesNotMatch(genericFinaliser, /OTP_FINALISATION_DISABLED(?:_UNSAFE_RECONSTRUCTION)?/)
-assert.doesNotMatch(genericFinaliser, /buildOtpStructuredFinalPdfBytes/)
-assert.doesNotMatch(genericFinaliser, /sourcePdfBytes\s*=\s*await\s+convertDocxToPdfBytes\(/)
-assert.doesNotMatch(genericFinaliser, /sourcePdfBytes\s*=\s*await\s+buildFallbackMandatePdfBytes\(/)
-assert.doesNotMatch(genericFinaliser, /sourcePdfBytes\s*=\s*lower\(packet\.packet_type\)/)
+// Public signing and finalisation endpoints are permanently retired.
+await assertRetiredDocumentEndpoint('send-mandate-signing-email')
+await assertRetiredDocumentEndpoint('resolve-signer-token')
+await assertRetiredDocumentEndpoint('signer-signing-action')
+await assertRetiredDocumentEndpoint('generate-final-signed-document')
 
 // The retired compatibility endpoint stays unavailable; the active signer
 // path above cannot call it.

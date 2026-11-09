@@ -70,6 +70,23 @@ export async function withDocumentUploadDeadline(operation, { timeoutMs = DOCUME
   } finally { clearTimeout(timer) }
 }
 
+export function describeDocumentUploadFailure(error) {
+  const message = String(error?.message || error?.error || '').trim()
+  const code = String(error?.code || '')
+  const status = Number(error?.statusCode || error?.status)
+  if (code === 'document_save_unconfirmed' || error?.retained) {
+    return 'The upload or save could not be confirmed. Keep this file selected and use Retry: Arch9 will check the saved record before sending it again.'
+  }
+  if (code.startsWith('document_file_')) return message
+  if (code === '42501' || [401, 403].includes(status) || /permission|access denied|row.level security/i.test(message)) {
+    return 'You do not have permission to attach this document here. Check your sign-in and ask your workspace manager to confirm access.'
+  }
+  if (code === 'document_upload_timeout' || error instanceof TypeError || /network|failed to fetch/i.test(message)) {
+    return 'The connection or upload step failed. Keep this file selected and retry; Arch9 will check any saved upload before sending it again.'
+  }
+  return message || 'The document could not be saved. Keep this file selected and retry. If this continues, contact your workspace manager.'
+}
+
 export async function runDocumentUploadWithLifecycle({ upload, onProgress = null } = {}) {
   if (typeof upload !== 'function') throw new Error('A document upload operation is required.')
   const report = createDocumentUploadProgressReporter(onProgress)

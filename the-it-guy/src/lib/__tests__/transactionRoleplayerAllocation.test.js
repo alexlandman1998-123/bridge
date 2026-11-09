@@ -1,9 +1,10 @@
+import { readDomainApiSource } from '../../../scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 // Exercise the actual save sequence with local adapters; no Supabase client or messages.
-const api = readFileSync(new URL('../api.js', import.meta.url), 'utf8')
+const api = readDomainApiSource()
 const saveSource = api.slice(api.indexOf('export async function saveTransactionRoleplayerSelections('), api.indexOf('\nexport async function reassignDeclinedTransferAttorneyInstruction(')).replace('export ', '')
 
 function setup({ transaction = {}, overrides = {} } = {}) {

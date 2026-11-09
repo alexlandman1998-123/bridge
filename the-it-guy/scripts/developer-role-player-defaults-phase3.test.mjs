@@ -1,8 +1,9 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  api: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
+  api: await readDomainApiSource(),
   onboarding: await readFile(new URL('../src/pages/ClientOnboarding.jsx', import.meta.url), 'utf8'),
   portal: await readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8'),
 }
@@ -33,22 +34,10 @@ assert(
   'pending buyer-appointed originator requests should notify agent/developer role players',
 )
 
-for (const requiredOnboardingToken of [
-  'rolePlayerPolicy',
-  'buyerAppointedBondOriginatorAllowed',
-  'buyerAppointedBondOriginatorRequiresApproval',
-  'Would you like to nominate your own bond originator?',
-  'Would you like help from the appointed bond originator?',
-  'Nominate Bond Originator',
-  'This request will be routed for approval before the assigned originator changes.',
-]) {
-  assert(files.onboarding.includes(requiredOnboardingToken), `ClientOnboarding should include ${requiredOnboardingToken}`)
+for (const token of ['resolveBuyerOnboardingFlow', 'ooba_assist_requested', 'bond_originator_name', 'sanitizeClientFormData']) {
+  assert(files.onboarding.includes(token), `Current buyer finance capture must retain ${token}`)
 }
-
-assert(
-  files.onboarding.includes("sectionConfig.key === 'bond_originator_support' && !buyerAppointedBondOriginatorAllowed"),
-  'buyer-appointed originator fields should be hidden when the development does not allow buyer-appointed originators',
-)
+assert(!files.onboarding.includes("sectionConfig.key === 'bond_originator_support'"), 'The removed nomination section must not return alongside current finance capture')
 
 for (const requiredPortalToken of [
   'resolveBuyerBondOriginatorRequest',

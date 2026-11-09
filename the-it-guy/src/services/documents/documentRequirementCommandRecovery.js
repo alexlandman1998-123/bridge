@@ -8,7 +8,7 @@ export function readRequirementCommand(storage, key) {
   const value = storage.getItem(key)
   if (!value) return null
   const command = JSON.parse(value)
-  if (!command?.commandId || !['add', 'remove', 'restore', 'upload'].includes(command.action) || !command.contextId
+  if (!command?.commandId || !['add', 'remove', 'restore', 'upload', 'withdraw'].includes(command.action) || !command.contextId
     || !command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) {
     throw new Error('The unfinished document change could not be read. Contact support before making another change.')
   }

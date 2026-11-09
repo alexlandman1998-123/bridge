@@ -10,7 +10,9 @@ export function getBuyerSignedOtpDocuments({ lead = {}, uploads = [], requiremen
     source?.buyerOtpDocument, source?.buyer_otp_document,
     source?.buyerOfferDocument, source?.buyer_offer_document,
     ...(Array.isArray(source?.buyerOtpDocuments) ? source.buyerOtpDocuments : []),
+    ...(Array.isArray(source?.buyer_otp_documents) ? source.buyer_otp_documents : []),
     ...(Array.isArray(source?.buyerOfferDocuments) ? source.buyerOfferDocuments : []),
+    ...(Array.isArray(source?.buyer_offer_documents) ? source.buyer_offer_documents : []),
   ])
   const rows = [...uploads, ...requirements].filter(row =>
     otpKeys.has(text(row.key || row.requirementKey || row.requirement_key || row.documentType || row.document_type).toLowerCase()),

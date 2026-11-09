@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { convertDeveloperLeadToTransactionAndSendOnboarding } from '../developerLeadConversionService.js'
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), onboarding: vi.fn(), from: vi.fn(), send: vi.fn(), recordSent: vi.fn() }))
-vi.mock('../../lib/api.js', () => ({ createTransactionFromWizard: mocks.create, getOrCreateTransactionOnboarding: mocks.onboarding, recordBuyerOnboardingSent: mocks.recordSent }))
+vi.mock('../../lib/transactionWorkspaceApi.js', () => ({ createTransactionFromWizard: mocks.create, getOrCreateTransactionOnboarding: mocks.onboarding, recordBuyerOnboardingSent: mocks.recordSent }))
 vi.mock('../../lib/supabaseClient.js', () => ({ isSupabaseConfigured: true, supabase: { from: mocks.from }, invokeEdgeFunction: mocks.send }))
 const org = '00000000-0000-4000-8000-000000000001'
 const lead = { developerLeadId: '00000000-0000-4000-8000-000000000002', developerOrgId: org }

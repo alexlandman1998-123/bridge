@@ -1,25 +1,25 @@
+import { readDomainApiSource, readDomainDeclarationSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = process.cwd()
-const apiSource = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const helperSource = readFileSync(resolve(root, 'src/lib/targetedMissingColumnRetry.js'), 'utf8')
 
-const functionStart = apiSource.indexOf('export async function createTransactionFromWizard')
-assert.notEqual(functionStart, -1, 'createTransactionFromWizard must exist')
-const nextFunction = apiSource.indexOf('\nexport async function ', functionStart + 1)
-const creationSource = apiSource.slice(functionStart, nextFunction === -1 ? apiSource.length : nextFunction)
+const creationSource = readDomainDeclarationSource('createTransactionFromWizard')
 
 assert.match(apiSource, /retryMutationWithoutReportedMissingColumns/)
 assert.match(apiSource, /const MAX_TARGETED_MISSING_COLUMN_RETRIES = 8/)
 assert.match(apiSource, /canRemoveColumn: \(column\) => !TRANSACTION_RLS_INSERT_GUARD_COLUMNS\.has/)
 assert.equal(
   (creationSource.match(/executeTransactionMutationWithTargetedColumnRetry\(\{/g) || []).length,
-  2,
-  'new inserts and existing-unit updates must share the targeted retry',
+  1,
+  'new inserts must use the targeted retry; existing active deals are rejected rather than overwritten',
 )
 
+assert.match(creationSource, /UNIT_ALREADY_HAS_ACTIVE_TRANSACTION/)
+assert.match(creationSource, /error\.existingTransactionId = activeDeal\.data\.id/)
 assert.doesNotMatch(creationSource, /minimalTransactionPayload/)
 assert.doesNotMatch(creationSource, /delete fallbackPayload\.(?:transaction_type|purchaser_type|finance_managed_by)/)
 assert.doesNotMatch(creationSource, /delete fallbackPayload\.(?:purchase_price|cash_amount|bond_amount|deposit_amount)/)

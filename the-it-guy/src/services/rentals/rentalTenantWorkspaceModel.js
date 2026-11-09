@@ -1,3 +1,4 @@
+export { TENANT_JOURNEY, tenantJourneyStage } from './rentalLeadJourneyProjection.js'
 import { isRentalListingWithinBudget } from './rentalLeadMatchingModel.js'
 
 const text = (value) => String(value ?? '').trim()
@@ -9,16 +10,6 @@ export const TENANT_WORKSPACE_TABS = [
   'Documents',
   'Appointments',
   'Activity',
-]
-export const TENANT_JOURNEY = [
-  'Captured',
-  'Contacted',
-  'Qualified',
-  'Viewing',
-  'Application pending',
-  'Application submitted',
-  'Lease',
-  'Tenancy',
 ]
 export const TENANT_QUESTIONS = [
   {
@@ -104,32 +95,6 @@ export function tenantQualificationProgress(lead = {}) {
     total: TENANT_QUESTIONS.length,
     percent: Math.round((count / TENANT_QUESTIONS.length) * 100),
   }
-}
-export function tenantJourneyStage(lead = {}, conversions = [], applications = []) {
-  if (
-    conversions.some(
-      (item) =>
-        ['active', 'notice_given', 'move_out_pending', 'closed'].includes(
-          item.status,
-        ),
-    )
-  )
-    return 7
-  if (conversions.some((item) => Array.isArray(item.rental_leases) ? item.rental_leases.length : Boolean(item.rental_leases?.id))) return 6
-  if (
-    [
-      'application_submitted',
-      'screening_pending',
-      'fica_pending',
-      'fica_complete',
-      'placement_ready',
-    ].includes(lead.stage)
-  )
-    return 5
-  if (applications.some((item) => ['submitted', 'under_review', 'approved', 'declined'].includes(item.status))) return 5
-  if (lead.stage === 'application_pending' || applications.some((item) => item.data?.onboarding?.sentAt)) return 4
-  if (['viewing_scheduled', 'viewing_completed'].includes(lead.stage)) return 3
-  return { new: 0, contacted: 1, qualified: 2 }[lead.stage] ?? 0
 }
 export function tenantBudgetMatches(lead = {}, matches = []) {
   return matches.filter(({ listing }) => isRentalListingWithinBudget(lead, listing))

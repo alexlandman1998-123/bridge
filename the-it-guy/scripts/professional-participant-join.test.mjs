@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-for (const file of ['src/lib/api.js', 'src/lib/api/dashboardTransactionSummaryApi.js']) {
+for (const file of ['src/domains/access/transactionApi.js', 'src/lib/api/dashboardTransactionSummaryApi.js']) {
   const source = readFileSync(file, 'utf8')
   const start = source.indexOf('async function fetchDirectParticipantRowsByIdentity(')
   assert.ok(start >= 0, `${file}: participant reader exists`)

@@ -32,6 +32,7 @@ for (const path of [
   'the-it-guy/src/components/client-portal/appointments/**',
   'the-it-guy/src/core/appointments/**',
   'the-it-guy/src/lib/api.js',
+  'the-it-guy/src/domains/**',
   'the-it-guy/src/lib/appointmentAvailabilityEngine.js',
   'the-it-guy/src/services/appointmentNotificationService.js',
   'the-it-guy/src/services/appointmentRescheduleService.js',

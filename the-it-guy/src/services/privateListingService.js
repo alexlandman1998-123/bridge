@@ -1,3 +1,6 @@
+import { requireClient, normalizeText, isUuidLike, normalizeUuid, isMissingTableError, isMissingSchemaError, isPermissionDeniedError } from './listings/listingReadPrimitives.js'
+import { privateCoverFallbacks } from './listings/listingCoverReadService.js'
+export { getPrivateListingCoverImageUrls } from './listings/listingCoverReadService.js'
 import { uploadSellerRequirementFile } from './documents/sellerRequirementUploadService.js'
 import { readDocumentRequirementContext } from './documents/documentRequirementReadService.js'
 import { runRecoverableDocumentUpload, readSavedUploadByPath, isDefiniteUploadSaveRejection } from '../lib/documentUploadRecovery.js'
@@ -152,12 +155,7 @@ const SELLER_PROFILE_CANONICAL_PROTECTED_FORM_DATA_KEYS = new Set([
   'uploaded_documents',
 ])
 
-function requireClient() {
-  if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
-  }
-  return supabase
-}
+
 
 function enqueueKeyedOperation(queueMap, key, operation) {
   const normalizedKey = normalizeText(key)
@@ -195,9 +193,7 @@ function requireSellerPortalStorageClient(token, accessToken = '') {
   return client
 }
 
-function normalizeText(value) {
-  return String(value || '').trim()
-}
+
 
 function stripSellerOnboardingTransferAttorneyFields(formData = {}) {
   const sellerOnboardingFormData = {
@@ -657,14 +653,9 @@ function normalizeStorageSafeName(value = '', fallback = 'asset') {
   return normalized || fallback
 }
 
-function isUuidLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
-}
 
-function normalizeUuid(value) {
-  const normalized = normalizeText(value)
-  return isUuidLike(normalized) ? normalized : null
-}
+
+
 
 function normalizeUuidList(values = []) {
   const entries = Array.isArray(values) ? values : []
@@ -800,69 +791,9 @@ async function fetchMediaRowsForListings(client, listingIds = [], { strict = fal
   return mediaByListingId
 }
 
-const privateCoverFallbacks = new Map()
 
-export async function getPrivateListingCoverImageUrls(listingIds = [], { client = requireClient(), onCover = () => {}, thumbnail = false } = {}) {
-  const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map(normalizeUuid).filter(Boolean))]
-  if (!ids.length) return {}
 
-  const coverQuery = await client
-    .from('listing_media')
-    .select('listing_id, media_type, file_url, is_cover, sort_order, storage_bucket, storage_path')
-    .in('listing_id', ids)
-    .eq('media_type', 'image')
-    .eq('is_cover', true)
-    .order('sort_order', { ascending: true })
-  if (coverQuery.error) {
-    if (
-      isMissingTableError(coverQuery.error, 'listing_media') ||
-      isMissingSchemaError(coverQuery.error) ||
-      isPermissionDeniedError(coverQuery.error)
-    ) return {}
-    throw coverQuery.error
-  }
 
-  const coverUrls = {}
-  const publishCover = async (row) => {
-    const listingId = normalizeText(row?.listing_id)
-    if (!listingId || coverUrls[listingId]) return
-    const [photo] = await refreshListingPhotoUrls(client, [row])
-    let url = normalizeText(photo?.file_url)
-    if (thumbnail && url && photo.storage_bucket && photo.storage_path) {
-      try {
-        const { data, error } = await client.storage.from(photo.storage_bucket).createSignedUrl(photo.storage_path, 3600, {
-          transform: { width: 480, height: 264, resize: 'cover', quality: 72 },
-        })
-        if (!error && data?.signedUrl) {
-          privateCoverFallbacks.set(data.signedUrl, url)
-          if (privateCoverFallbacks.size > 500) privateCoverFallbacks.delete(privateCoverFallbacks.keys().next().value)
-          url = data.signedUrl
-        }
-      } catch { /* Keep the original private link when resizing is unavailable. */ }
-    }
-    coverUrls[listingId] = url
-    onCover({ [listingId]: url })
-  }
-  const coversById = new Map()
-  for (const row of coverQuery.data || []) if (!coversById.has(row.listing_id)) coversById.set(row.listing_id, row)
-  // Resolve each card independently. Never retrieve/sign a whole gallery for its cover.
-  for (let index = 0; index < ids.length; index += 6) {
-    await Promise.all(ids.slice(index, index + 6).map(async (id) => {
-      let row = coversById.get(id)
-      if (!row) {
-        const fallback = await client.from('listing_media')
-          .select('listing_id, media_type, file_url, is_cover, sort_order, storage_bucket, storage_path')
-          .in('listing_id', [id]).eq('media_type', 'image')
-          .order('sort_order', { ascending: true }).order('id', { ascending: true }).limit(1)
-        if (fallback.error) throw fallback.error
-        row = fallback.data?.[0]
-      }
-      if (row) await publishCover(row)
-    }))
-  }
-
-  return coverUrls
-}
 
 // Covers signed with a transform retain their original private viewing fallback.
 // Other private/external URLs are never rewritten; public media uses the public transform API.
@@ -915,65 +846,11 @@ function normalizeStatus(value, allowed, fallback) {
   return allowed.includes(normalized) ? normalized : fallback
 }
 
-function isMissingTableError(error, tableName = '') {
-  if (!error) return false
-  const code = String(error.code || '').toLowerCase()
-  const message = String(error.message || '').toLowerCase()
-  const status = Number(String(error.status || error.statusCode || 0))
-  const text = String(message).toLowerCase()
-  const tableNameHint = normalizeText(tableName).toLowerCase()
-  const mentionsTable = Boolean(tableNameHint && text.includes(tableNameHint))
-  return (
-    code === '42p01' ||
-    code === 'pgrst205' ||
-    code === 'not_found' ||
-    status === 404 ||
-    text.includes('schema cache') ||
-    text.includes('could not find the table') ||
-    text.includes('relation does not exist') ||
-    (mentionsTable && (
-      text.includes('does not exist') ||
-      text.includes('not found') ||
-      text.includes('could not find') ||
-      text.includes('schema cache')
-    ))
-  )
-}
 
-function isMissingSchemaError(error) {
-  if (!error) return false
-  const code = String(error.code || '').toLowerCase()
-  const text = [
-    error.message,
-    error.details,
-    error.hint,
-  ].map((value) => String(value || '').toLowerCase()).join(' ')
-  return (
-    code === 'pgrst200' ||
-    code === 'pgrst204' ||
-    text.includes('schema cache') ||
-    text.includes('could not find') ||
-    text.includes('does not exist')
-  )
-}
 
-function isPermissionDeniedError(error) {
-  if (!error) return false
-  const code = String(error.code || '').toLowerCase()
-  const status = Number(String(error.status || error.statusCode || 0))
-  const text = [
-    error.message,
-    error.details,
-    error.hint,
-  ].map((value) => String(value || '').toLowerCase()).join(' ')
-  return (
-    code === '42501' ||
-    status === 401 ||
-    status === 403 ||
-    text.includes('permission denied') ||
-    text.includes('row-level security')
-  )
-}
+
+
+
 
 function isStatementTimeoutError(error) {
   if (!error) return false
@@ -1609,6 +1486,7 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_REQUIREMENT_SELECT_FIELDS_MIN,
 ]
 const PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS = [
+  `${PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING}, seller_signing_evidence_source, is_current_evidence`,
   `${PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING}, seller_signing_evidence_source`,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_REVIEWED_SIGNING,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS,
@@ -1981,6 +1859,7 @@ function normalizeDocumentRows(rows = []) {
       document_type: normalizeText(row?.document_type || row?.documentType || ''),
       category: normalizeText(row?.category || row?.document_category || ''),
       document_name: normalizeText(row?.document_name || row?.file_name || ''),
+      is_current_evidence: row?.is_current_evidence !== false,
       file_name: normalizeText(row?.document_name || row?.file_name || ''),
       storage_path: normalizeText(row?.storage_path || ''),
       file_url: normalizeText(row?.file_url || ''),
@@ -5438,7 +5317,7 @@ async function fetchDocumentRowsForListings(client, listingIds = []) {
   if (query.schemaIncompatible) return new Map()
   if (query.error) throw query.error
 
-  const rows = await enrichPrivateListingDocumentRows(client, query.data)
+  const rows = await enrichPrivateListingDocumentRows(client, (query.data || []).filter(row => row.is_current_evidence !== false))
   const map = new Map()
   for (const row of rows) {
     const listingId = String(row.private_listing_id || '')

@@ -11,6 +11,7 @@ const idB = '00000000-0000-4000-8000-000000000012'
 const listings = [{ id: idA, organisationId: orgA }, { id: idB, organisationId: orgB }]
 beforeEach(() => {
   mocks.reads.length = 0
+  mocks.rpc.mockReset()
   mocks.analytics.mockReset().mockImplementation(async ({ days }) => ({ windowDays: days, period: { completedDaysOnly: true, startDate: '2026-09-09', endDate: '2026-10-08' }, property24: { metrics: { views: { value: 50, available: true, complete: true, coveredDays: days } } } }))
   mocks.from.mockReset().mockImplementation(table => {
     const read = { table, scope: {}, fields: '' }
@@ -94,4 +95,25 @@ it('does not show a fabricated zero when development website analytics cannot be
  const result=await loadDevelopmentListingPerformance(listings,30,new AbortController().signal,{developmentId:idA})
  expect(result.website.statisticsUnavailable).toBe(true)
  expect(result.website.metrics.views).toMatchObject({available:false,value:null})
+})
+
+
+it('keeps portal totals separate and replaces listing website counters with the development’s saved enquiries', async () => {
+  const metric = value => ({ value, available: true, complete: true, coveredDays: 30 })
+  mocks.analytics.mockImplementation(async ({ listingId, days }) => ({
+    windowDays: days,
+    period: { completedDaysOnly: true, startDate: '2026-10-10', endDate: '2026-11-08' },
+    property24: { metrics: { views: metric(listingId === idA ? 120 : 80), contactForms: metric(3) } },
+    privateProperty: { metrics: { views: metric(listingId === idA ? 45 : 15), messages: metric(7) } },
+    website: { metrics: { views: metric(999), enquiries: metric(99) } },
+  }))
+  mocks.rpc.mockReturnValue({ abortSignal: async () => ({ data: { summary: { sceneViews: 86, enquiries: 12, submittedEnquiries: 4 } }, error: null }) })
+  const result = await loadDevelopmentListingPerformance([...listings, listings[0]], 30, new AbortController().signal, { developmentId: idA, websitePublished: true })
+  expect(result.property24.metrics.views.value).toBe(200)
+  expect(result.property24.metrics.contactForms.value).toBe(6)
+  expect(result.privateProperty.metrics.views.value).toBe(60)
+  expect(result.privateProperty.metrics.messages.value).toBe(14)
+  expect(result.website.metrics.views.value).toBe(86)
+  expect(result.website.metrics.enquiries.value).toBe(4)
+  expect(mocks.rpc).toHaveBeenCalledTimes(1)
 })

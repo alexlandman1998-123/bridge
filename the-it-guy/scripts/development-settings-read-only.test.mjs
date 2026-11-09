@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
-const start=source.indexOf('async function ensureDevelopmentSettings('),end=source.indexOf('\nexport async function ',start)
+const source=readFileSync(new URL('../src/domains/developments/configurationApi.js',import.meta.url),'utf8')
+const start=source.indexOf('async function ensureDevelopmentSettings('),end=source.indexOf('\nexport async function fetchDevelopmentSettings',start)
 const body=source.slice(start,end)
 const defaults={snag_reporting_enabled:false,alteration_requests_enabled:false,client_portal_enabled:true}
 const make=new Function('DEFAULT_DEVELOPMENT_SETTINGS','fetchDevelopmentFeatureFlags','normalizeDevelopmentSettingsRow','isMissingSchemaError','isMissingColumnError','isPermissionDeniedError',`${body};return ensureDevelopmentSettings`)

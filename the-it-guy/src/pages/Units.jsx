@@ -1959,7 +1959,7 @@ function Units() {
         <p className="rounded-[16px] border border-danger bg-dangerSoft px-5 py-4 text-sm text-danger">{error}</p>
       ) : null}
       {showInitialTransactionsLoading ? (
-        <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />
+        isTransactionsRoute ? <TransactionsRouteShell /> : <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />
       ) : null}
 
       {!error && !showInitialTransactionsLoading && isSupabaseConfigured ? (

@@ -9,7 +9,11 @@ import { getBuyerFicaDeclarationSigners } from '../../core/documents/buyerFicaDe
 import { deriveOnboardingConfiguration, validateOnboardingSubmission } from '../../lib/purchaserPersonas.js'
 
 const api = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), submit: vi.fn() }))
-vi.mock('../../lib/api', () => ({
+vi.mock('../../domains/transactions/contactRead.js', () => ({
+  fetchClientOnboardingByToken: api.load, saveClientOnboardingDraft: api.save,
+  submitClientOnboarding: api.submit, resolveOnboardingWhatsAppContacts: () => [],
+}))
+vi.mock('../../domains/onboarding/tokenApi.js', () => ({
   fetchClientOnboardingByToken: api.load, saveClientOnboardingDraft: api.save,
   submitClientOnboarding: api.submit, resolveOnboardingWhatsAppContacts: () => [],
 }))

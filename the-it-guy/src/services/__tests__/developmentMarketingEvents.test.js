@@ -1,8 +1,9 @@
+import { readDomainApiSource } from '../../../scripts/helpers/domainApiSource.mjs'
 import { readFileSync } from 'node:fs'
 import { expect, it, vi } from 'vitest'
 
 // Exercise the real API functions with an in-memory client; no events are written remotely.
-const source = readFileSync(new URL('../../domains/developments/readApi.js', import.meta.url), 'utf8') + '\n' + readFileSync(new URL('../../lib/api.js', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../../domains/developments/readApi.js', import.meta.url), 'utf8') + '\n' + readDomainApiSource()
 function setup({ eventError = null, activityError = null } = {}) {
   const stored = []
   const filters = []

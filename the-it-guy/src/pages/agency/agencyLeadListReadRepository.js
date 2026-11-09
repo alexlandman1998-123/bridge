@@ -424,6 +424,7 @@ export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   cacheRevision += 1
   const workspaceId = normalizeText(organisationId)
   if (!workspaceId) {
+    compatibleLeadFields = null
     clearAgencyLeadCoreCache()
     primaryRecordsCache.clear()
     landingMetricsCache.clear()

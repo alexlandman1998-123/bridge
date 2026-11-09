@@ -75,7 +75,7 @@ import { buildLegalOverviewSummary } from '../core/transactions/legalOverviewSum
 import MatterConversation from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
 import { refreshAfterDocumentSave } from '../services/documents/attorneyDocumentPersistence.js'
-import { buildAttorneyDocumentRequestRows, buildAttorneyRequestRequirementOptions, getAttorneyRequestUploadAudience } from '../services/documents/attorneyDocumentRequestModel.js'
+import { buildAttorneyDocumentRequestRows, buildAttorneyRequestRequirementOptions, getAttorneyRequestUploadAudience, resolveAttorneyDocumentRequestRecipient, documentRequestRecipientVisibility } from '../services/documents/attorneyDocumentRequestModel.js'
 import AttorneyDocumentRequestForm from '../components/attorney/operations/AttorneyDocumentRequestForm.jsx'
 import AttorneyMatterDocumentRequests from '../components/attorney/operations/AttorneyMatterDocumentRequests.jsx'
 import AttorneyDocumentVersions from '../components/attorney/operations/AttorneyDocumentVersions.jsx'
@@ -22664,26 +22664,14 @@ function AttorneyTransactionDetail() {
     setError('')
     setDocumentActionMessage('')
     const rawParty = normalizeDetailKey(source.requestedFrom || source.requiredFromRole || source.requestedFromRole || source.requested_from_role || source.requiredParty || '')
-    const requestedFrom = ADDITIONAL_DOCUMENT_REQUESTED_FROM_OPTIONS.some((option) => option.value === rawParty)
-      ? rawParty
-      : rawParty.includes('buyer') && rawParty.includes('seller')
-        ? 'buyer_and_seller'
-        : rawParty.includes('buyer')
-          ? 'buyer'
-          : rawParty.includes('seller')
-            ? 'seller'
-            : rawParty.includes('bond')
-              ? 'bond_originator'
-              : rawParty.includes('attorney')
-                ? 'attorney'
-                : 'other'
+    const requestedFrom = resolveAttorneyDocumentRequestRecipient(rawParty)
     setDocumentRequestForm({
       title: source.label || source.displayName || source.title || '',
       canonicalRequirementInstanceId: ['buyer', 'seller', 'developer', 'agent', 'attorney', 'bond_originator'].includes(requestedFrom)
         ? getRequirementCanonicalId(source) || ''
         : '',
       requestedFrom,
-      visibility: source.visibility || 'client_visible',
+      visibility: documentRequestRecipientVisibility(requestedFrom, source.visibility),
       notes: source.notes || `Please provide ${source.displayName || source.label || 'the requested document'} for this transfer matter.`,
       priority: source.blocksStage ? 'urgent' : 'normal',
       dueDate: '',

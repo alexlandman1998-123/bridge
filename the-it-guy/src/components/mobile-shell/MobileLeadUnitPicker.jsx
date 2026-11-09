@@ -6,7 +6,7 @@ export default function MobileLeadUnitPicker({ developmentId, preferredUnitId = 
   const [selectedId, setSelectedId] = useState(preferredUnitId)
   useEffect(() => {
     let active = true
-    import('../../lib/api.js').then(({ fetchUnitsForTransactionSetup }) => fetchUnitsForTransactionSetup(developmentId))
+    import('../../domains/developments/selectionReadApi.js').then(({ fetchUnitsForTransactionSetup }) => fetchUnitsForTransactionSetup(developmentId))
       .then((units) => { if (active) setResult({ units }) })
       .catch(() => { if (active) setResult({ error: true }) })
     return () => { active = false }

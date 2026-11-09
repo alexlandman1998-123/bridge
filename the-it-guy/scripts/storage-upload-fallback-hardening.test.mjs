@@ -71,7 +71,7 @@ const hardenedFiles = [
   'src/services/attorneyFirms.js',
   'src/lib/settingsApi.js',
   'src/lib/documentPacketsApi.js',
-  'src/lib/api.js',
+  'src/lib/api/shared/storage.js',
   'src/services/privateListingService.js',
   'src/modules/commercial/services/commercialApi.js',
   'src/modules/commercial/services/commercialLandlordService.js',

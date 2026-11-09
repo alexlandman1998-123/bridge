@@ -1,14 +1,15 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 
 const repoRoot = process.cwd()
 const reviewQueuePath = path.join(repoRoot, 'src/core/attorneyAccounting/matterAccountReviewQueue.js')
-const apiPath = path.join(repoRoot, 'src/lib/api.js')
+
 const attorneyPanelPath = path.join(repoRoot, 'src/components/AttorneyMatterAccountsPanel.jsx')
 
 const reviewQueueSource = fs.readFileSync(reviewQueuePath, 'utf8')
-const apiSource = fs.readFileSync(apiPath, 'utf8')
+const apiSource = readDomainApiSource()
 const attorneyPanelSource = fs.readFileSync(attorneyPanelPath, 'utf8')
 
 assert.match(

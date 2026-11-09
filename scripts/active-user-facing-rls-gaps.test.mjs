@@ -1,3 +1,4 @@
+import { readDomainApiSource } from '../the-it-guy/scripts/helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
@@ -9,10 +10,7 @@ const settingsApi = await readFile(
   new URL('../the-it-guy/src/lib/settingsApi.js', import.meta.url),
   'utf8',
 )
-const api = await readFile(
-  new URL('../the-it-guy/src/lib/api.js', import.meta.url),
-  'utf8',
-)
+const api = await readDomainApiSource()
 
 const expectedPolicies = [
   'appointment_resources_member_read',

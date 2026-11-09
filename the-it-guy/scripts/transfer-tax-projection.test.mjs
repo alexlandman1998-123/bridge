@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {resolveTransactionRoutingProfile} from '../src/services/transactionRoutingProfileService.js'
@@ -8,7 +9,7 @@ import {normalizeStoredTransactionType} from '../src/core/transactions/transacti
 import {normalizePurchaserType,getTransactionPurchaserTypeValue,PURCHASER_TYPES} from '../src/lib/purchaserPersonas.js'
 import {resolveTransactionFacts} from '../src/services/attorneyWorkflow/transactionFactsResolver.js'
 import {buildTransactionRoutingDiagnostics} from '../src/services/transactionRoutingDiagnosticsService.js'
-const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+const source=readDomainApiSource()
 const start=source.indexOf('function normalizeRoutingKey('),end=source.indexOf('\nexport async function saveTransactionRoutingProfile(',start)
 const normalizeNullableText=value=>value==null?null:String(value).trim()||null
 const build=new Function('normalizeFinanceType','normalizeNullableText','normalizePurchaserType','applyTransferTaxDecisionUpdate','TRANSFER_TAX_ROUTES','resolveTransactionRoutingProfile','buildMatterWorkflowPlan','resolveMatterWorkflowPlan','diffMatterWorkflowPlans','normalizeSaleStoredTransactionType','getTransactionPurchaserTypeValue',source.slice(start,end)+'\nreturn buildTransactionRoutingCorrectionPayload')(normalizeFinanceType,normalizeNullableText,normalizePurchaserType,applyTransferTaxDecisionUpdate,TRANSFER_TAX_ROUTES,resolveTransactionRoutingProfile,buildMatterWorkflowPlan,resolveMatterWorkflowPlan,diffMatterWorkflowPlans,normalizeStoredTransactionType,getTransactionPurchaserTypeValue)

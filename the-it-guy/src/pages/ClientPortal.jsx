@@ -107,7 +107,7 @@ import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
 import ClientTransferJourney from '../components/client-portal/ClientTransferJourney'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import { buildClientTransferJourneyPresentation } from '../core/clientPortal/transferJourneyPresentationModel.js'
-import { fetchClientPortalJourneySnapshotByToken } from '../lib/api'
+import { fetchClientPortalJourneySnapshotByToken } from '../domains/clientPortal/workspaceApi.js'
 import {
   buyerPortalHexToRgba as portalHexToRgba,
   createBuyerPortalTheme,

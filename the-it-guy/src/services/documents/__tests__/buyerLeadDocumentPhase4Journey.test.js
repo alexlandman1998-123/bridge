@@ -16,6 +16,12 @@ function journeyClient() {
   return {
     documents,
     lead,
+    async rpc(_name, args) {
+      const document = documents.find(row => row.id === args.p_document_id)
+      document.canonical_requirement_instance_id = 'signed-otp-requirement'
+      document.status = 'under_review'
+      return { data: { ok: true, requirementInstanceId: 'signed-otp-requirement' }, error: null }
+    },
     storage: { from() { return { async info() { return { data: { size: 256 }, error: null } } } } },
     from(table) {
       const filters = []
@@ -46,6 +52,32 @@ function journeyClient() {
 }
 
 describe('historical buyer file journey', () => {
+  it('keeps a pre-transaction OTP available on the buyer lead and shared transaction checklist after conversion', async () => {
+    const client = journeyClient()
+    const otp = { key: 'uploaded_otp', source: 'agent_otp_upload', storageBucket: 'documents', storagePath: `buyer-otp-documents/${organisationId}/${leadId}/uploaded_otp/signed.pdf`, fileName: 'signed.pdf' }
+    client.lead.raw_enquiry_payload = { buyerOtpDocument: otp, buyerOtpDocuments: [otp] }
+    const context = { transactionId, organisationId, leadId }
+    expect((await reconcileStagedBuyerLeadDocuments(client, context)).summary.needsHandoff).toBe(1)
+    expect(client.documents).toHaveLength(0)
+    await reconcileStagedBuyerLeadDocuments(client, context, { dryRun: false })
+    const agentRows = await fetchBuyerLeadCanonicalDocumentRows(client, context)
+    const agent = buildBuyerLeadDocumentReadModel({ leadRows: [otp], canonicalRows: agentRows, hasTransaction: true })
+    expect(agent.uploads).toHaveLength(1)
+    expect(agent.uploads[0]).toMatchObject({ storagePath: otp.storagePath, isCanonical: true, status: 'under_review' })
+    const document = client.documents[0]
+    for (const role of ['buyer', 'seller']) {
+      const portal = buildCanonicalBuyerDocumentCenter({ documents: [document], requirements: [{
+        id: 'signed-otp-requirement', document_definition_key: 'signed_otp', pack_key: 'sale', status: 'under_review',
+        satisfied_by_document_id: document.id, document_definitions: { display_label: 'Signed offer to purchase' },
+      }] }, '', role)
+      expect(portal.requiredDocuments[0]).toMatchObject({ hasUploadedDocument: true, status: 'under_review' })
+      expect(portal.requiredDocuments[0].linkedDocument.id).toBe(document.id)
+    }
+    await reconcileStagedBuyerLeadDocuments(client, context, { dryRun: false })
+    expect(client.documents).toHaveLength(1)
+    expect(client.lead.raw_enquiry_payload.buyerOtpDocument.storagePath).toBe(document.file_path)
+  })
+
   it('carries one staged file to the transaction, shows it to both parties, and leaves requirements outstanding', async () => {
     const client = journeyClient()
     const context = { transactionId, organisationId, leadId }

@@ -1,14 +1,15 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
-const api = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
+const api = readDomainApiSource()
 const partnerOptions = fs.readFileSync(path.join(root, 'src/lib/newTransactionPartnerOptions.js'), 'utf8')
 const wizard = fs.readFileSync(path.join(root, 'src/components/NewTransactionWizard.jsx'), 'utf8')
 const migrationPath = path.join(
   root,
-  '../supabase/migrations/20260831061302_attorney_transaction_firm_routing.sql',
+  '../supabase/migrations/20260831062331_attorney_transaction_firm_routing.sql',
 )
 const migration = fs.readFileSync(migrationPath, 'utf8')
 

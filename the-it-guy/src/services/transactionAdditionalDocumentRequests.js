@@ -1,8 +1,4 @@
-import {
-  createTransactionDocumentRequests,
-  fetchTransactionDocumentRequests,
-  updateTransactionDocumentRequestStatus,
-} from '../lib/api'
+import { createTransactionDocumentRequests, fetchTransactionDocumentRequests, updateTransactionDocumentRequestStatus } from '../domains/documents/requestApi.js'
 
 function isAdditionalDocumentRequest(request = {}) {
   const requestType = String(request?.requestType || request?.request_type || '').trim().toLowerCase()

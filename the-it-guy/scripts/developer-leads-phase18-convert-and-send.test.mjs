@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -7,7 +8,7 @@ const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'u
 const conversionSource = readFileSync(resolve(appRoot, 'src/services/developerLeadConversionService.js'), 'utf8')
 const pageSource = readFileSync(resolve(appRoot, 'src/pages/DeveloperLeadsPage.jsx'), 'utf8')
 const appSource = readFileSync(resolve(appRoot, 'src/App.jsx'), 'utf8')
-const apiSource = readFileSync(resolve(appRoot, 'src/lib/api.js'), 'utf8')
+const apiSource = readDomainApiSource()
 const handoffSource = readFileSync(resolve(appRoot, 'src/core/developerLeads/developerLeadTransactionHandoff.js'), 'utf8')
 const intakeSource = readFileSync(resolve(appRoot, 'src/services/developerLeadService.js'), 'utf8')
 const docsSource = readFileSync(resolve(appRoot, 'docs/developer-leads-phase18-convert-and-send.md'), 'utf8')

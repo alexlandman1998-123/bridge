@@ -1,6 +1,7 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
-import {readFile} from 'node:fs/promises'
-const source=await readFile(new URL('../src/lib/api.js',import.meta.url),'utf8')
+
+const source=await readDomainApiSource()
 const start=source.indexOf('function buildRegistrationBlockers(')
 const end=source.indexOf('\nexport async function ',start)
 const definition=source.slice(start,end)

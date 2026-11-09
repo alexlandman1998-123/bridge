@@ -1,3 +1,4 @@
+import useDevelopmentLeadRefresh from '../../hooks/useDevelopmentLeadRefresh.js'
 import Modal from '../../components/ui/Modal'
 import Button from '../../components/ui/Button'
 import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
@@ -11,6 +12,7 @@ import { getAgencyLeadViewPreference, saveAgencyLeadViewPreference } from '../..
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import LeadListPage from './LeadListPage'
 import { filterAgencyLeadsForAgent } from './agencyLeadAgentScope'
+import { resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle'
 import { listBuyerLeadDevelopmentOptions } from '../../services/developmentBuyerLeadService.js'
 import { isDevelopmentBuyerLead } from '../../core/leads/developmentBuyerLead.js'
 import {
@@ -300,6 +302,8 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
     return () => { loadRequestRef.current += 1 }
   }, [loadLeads, page])
 
+  useDevelopmentLeadRefresh(() => loadLeads({ forceRefresh: true }), organisationId, category === 'development' && !createDialog.open && !creating)
+
   // Directory membership does not change when paging or typing in lead search.
   // Refresh remains an explicit retry path if this optional read fails.
   useEffect(() => {
@@ -472,6 +476,13 @@ export default function AgencyLeadListRoutePage({ scopedAgent = null } = {}) {
   const handleMoveLead = async (leadId, columnId) => {
     const target = getAgencyLeadColumns(category).find((column) => column.id === columnId)
     if (!target) return
+    const lead = records.leads.find((row) => normalizeText(row?.leadId) === leadId)
+    if (!lead) return
+    const projected = resolveAgencyLeadListLifecycle({ ...lead, stage: target.stageValue, status: target.stageValue })
+    if (category === 'seller' && projected.columnId !== columnId) {
+      setError(`Saved seller onboarding is ${projected.label}. Open the seller workspace to update onboarding before moving this card to ${target.label}.`)
+      return
+    }
     const previous = records.leads
     setRecords((snapshot) => ({ ...snapshot, leads: snapshot.leads.map((lead) => normalizeText(lead?.leadId) === leadId ? { ...lead, stage: target.stageValue, status: target.stageValue, updatedAt: new Date().toISOString() } : lead) }))
     try {

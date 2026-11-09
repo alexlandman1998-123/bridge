@@ -2,11 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from './ui/Button'
 import Field from './ui/Field'
 import Modal from './ui/Modal'
-import {
-  fetchDevelopmentAttorneyConfig,
-  fetchDevelopmentAttorneyReconciliationReport,
-  saveDevelopmentAttorneyConfig,
-} from '../lib/api'
+import { fetchDevelopmentAttorneyReconciliationReport } from '../domains/attorney/closeoutApi.js'
+import { saveDevelopmentAttorneyConfig } from '../lib/developmentDetailApi'
+import { fetchDevelopmentAttorneyConfig } from '../domains/developments/api.js'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',

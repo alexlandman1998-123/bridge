@@ -1,3 +1,4 @@
+import { readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -6,7 +7,7 @@ import {
 } from '../src/services/documents/documentRequestProfessionalPropagationService.js'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-const apiSource = fs.readFileSync('src/lib/api.js', 'utf8')
+const apiSource = readDomainApiSource()
 const privateListingSource = fs.readFileSync('src/services/privateListingService.js', 'utf8')
 const clientPortalSource = fs.readFileSync('src/pages/ClientPortal.jsx', 'utf8')
 const scriptSource = fs.readFileSync('scripts/document-request-phase9-upload-linking.mjs', 'utf8')
@@ -45,24 +46,18 @@ const clientPortalUploadSource = apiSource.slice(
 )
 assert.match(
   clientPortalUploadSource,
-  /const postUploadContextPromise = \(async \(\) => \{[\s\S]*?previousReadiness = readinessSnapshot/,
-  'Buyer portal upload should capture a pre-upload readiness baseline without holding up the file upload.',
+  /attempt\.persist\([\s\S]*?bridge_upload_buyer_portal_requested_document/,
+  'Request-only uploads must use the recoverable server-owned save command.',
 )
 assert.match(
   clientPortalUploadSource,
-  /readiness = await runDocumentAutomationIfPossible\(client,/,
-  'Buyer portal upload should use the recalculated post-upload readiness.',
+  /bridge_upload_buyer_portal_document[\s\S]*?p_requirement_instance_id:[\s\S]*?p_document_request_id:/,
+  'Checklist uploads must atomically persist the exact requirement and request IDs.',
 )
-assert.match(
-  clientPortalUploadSource,
-  /checkAndNotifyBondDocumentsComplete\(/,
-  'Buyer portal upload should notify the bond originator when documents cross the complete threshold.',
-)
-assert.match(
-  clientPortalUploadSource,
-  /checkAndNotifyBondApplicationReadyForReview\(/,
-  'Buyer portal upload should notify the bond originator when a submitted application becomes ready for review.',
-)
+const atomicBuyerUpload = fs.readFileSync('../supabase/migrations/20260831125409_atomic_buyer_portal_document_upload.sql', 'utf8')
+assert.match(atomicBuyerUpload, /update public\.document_requests[\s\S]*?requested_document_id = v_document.id[\s\S]*?transaction_id = p_transaction_id/)
+assert.doesNotMatch(clientPortalUploadSource, /checkAndNotifyBondDocumentsComplete\(|checkAndNotifyBondApplicationReadyForReview\(/,
+  'Receiving a file must not claim review completion or independently replay finance notifications.')
 
 assert.match(privateListingSource, /async function linkSellerPortalDocumentRequestUpload/, 'Seller upload linker should exist.')
 assert.match(privateListingSource, /documentRequestId\s*=\s*''/, 'Seller upload should accept a documentRequestId option.')

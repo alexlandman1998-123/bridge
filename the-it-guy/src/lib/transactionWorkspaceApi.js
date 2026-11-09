@@ -1,16 +1,63 @@
-let workspaceApiPromise = null
+export { fetchTransactionCoreById, fetchTransactionRouteCoreById, fetchTransactionPropertyContextById } from '../domains/transactions/workspaceReadApi.js'
+export { invalidateTransactionWorkspaceCoreCache } from '../domains/transactions/readCache.js'
+const workflowLoaders = {
+  createTransactionEvent: () => import('../domains/transactions/eventActions.js'),
+  addAttorneyTransactionUpdate: () => import('../services/attorneyWorkflow/attorneyWorkflowLaneService.js'),
+  addTransactionDiscussionComment: () => import('../domains/transactions/discussionApi.js'),
+  addBondApplication: () => import('../domains/bond/financeWorkflow.js'),
+  addBondQuote: () => import('../domains/bond/financeWorkflow.js'),
+  approveBondQuote: () => import('../domains/bond/financeWorkflow.js'),
+  archiveTransactionLifecycle: () => import('../domains/transactions/lifecycleActions.js'),
+  cancelTransactionLifecycle: () => import('../domains/transactions/lifecycleActions.js'),
+  convertTransactionPreApprovalToBondApplication: () => import('../domains/bond/financeWorkflow.js'),
+  createTransactionDocumentRequests: () => import('../domains/documents/requestApi.js'),
+  createTransactionDocumentSignedUrl: () => import('../domains/documents/projectionApi.js'),
+  createTransactionWorkspaceHydrationContext: () => import('../domains/transactions/workspaceTabsApi.js'),
+  declineBondQuote: () => import('../domains/bond/financeWorkflow.js'),
+  fetchTransactionActivityWorkspace: () => import('../domains/transactions/workspaceTabsApi.js'),
+  fetchTransactionDocumentsWorkspace: () => import('../domains/documents/projectionApi.js'),
+  fetchTransactionFinanceWorkspace: () => import('../domains/transactions/workspaceTabsApi.js'),
+  fetchTransactionPartnersWorkspace: () => import('../domains/transactions/workspaceTabsApi.js'),
+  fetchTransactionById: () => import('../domains/transactions/detailReadApi.js'),
+  fetchTransactionWorkflowWorkspace: () => import('../domains/transactions/workspaceTabsApi.js'),
+  fetchTransactionReferralIncentive: () => import('../domains/bond/closeoutApi.js'),
+  getCompletionBlockers: () => import('../domains/transactions/lifecycleActions.js'),
+  getFinalReportData: () => import('../domains/transactions/lifecycleActions.js'),
+  getTransactionRollup: () => import('../domains/transactions/progressApi.js'),
+  getTransactionFinanceWorkflow: () => import('../domains/bond/financeRead.js'),
+  getOrCreateTransactionOnboarding: () => import('../domains/onboarding/workflow.js'),
+  getRegistrationBlockers: () => import('../domains/transactions/lifecycleActions.js'),
+  markTransactionCompleted: () => import('../domains/transactions/lifecycleActions.js'),
+  markTransactionRegistered: () => import('../domains/transactions/lifecycleActions.js'),
+  recordTransactionPreApprovalOutcome: () => import('../domains/bond/financeWorkflow.js'),
+  recordBuyerOnboardingSent: () => import('../domains/onboarding/workflow.js'),
+  reassignDeclinedTransferAttorneyInstruction: () => import('../domains/attorney/instructionApi.js'),
+  reviewCanonicalDocumentRequirement: () => import('../domains/documents/workspaceApi.js'),
+  reviewAttorneyMatterDocumentRequest: () => import('../domains/documents/requestApi.js'),
+  runWorkflowAction: () => import('../domains/transactions/actionApi.js'),
+  saveTransactionRoleplayerSelections: () => import('../domains/access/transactionApi.js'),
+  saveTransactionRoutingProfile: () => import('../domains/transactions/actionApi.js'),
+  saveTransactionReferralIncentive: () => import('../domains/bond/closeoutApi.js'),
+  transitionTransactionReferralIncentive: () => import('../domains/bond/closeoutApi.js'),
+  undoTransactionRegistration: () => import('../domains/transactions/lifecycleActions.js'),
+  unarchiveTransactionLifecycle: () => import('../domains/transactions/lifecycleActions.js'),
+  updateBondApplication: () => import('../domains/bond/financeWorkflow.js'),
+  updateBondHybridFinanceStage: () => import('../domains/bond/financeWorkflow.js'),
+  updateTransactionStakeholderContacts: () => import('../domains/access/transactionApi.js'),
+  uploadDocument: () => import('../domains/documents/uploadWorkflow.js'),
+}
 
 export function preloadTransactionWorkspaceApi() {
-  workspaceApiPromise ||= import('./api')
-  return workspaceApiPromise
+  return workflowLoaders.fetchTransactionById()
 }
 
 async function call(method, ...args) {
-  const api = await preloadTransactionWorkspaceApi()
+  const api = await workflowLoaders[method]()
   return api[method](...args)
 }
 
 const METHODS = [
+  'createTransactionEvent',
   'addAttorneyTransactionUpdate',
   'addTransactionDiscussionComment',
   'addBondApplication',
@@ -24,9 +71,6 @@ const METHODS = [
   'createTransactionWorkspaceHydrationContext',
   'declineBondQuote',
   'fetchTransactionActivityWorkspace',
-  'fetchTransactionCoreById',
-  'fetchTransactionRouteCoreById',
-  'fetchTransactionPropertyContextById',
   'fetchTransactionDocumentsWorkspace',
   'fetchTransactionFinanceWorkspace',
   'fetchTransactionPartnersWorkspace',
@@ -39,7 +83,6 @@ const METHODS = [
   'getTransactionFinanceWorkflow',
   'getOrCreateTransactionOnboarding',
   'getRegistrationBlockers',
-  'invalidateTransactionWorkspaceCoreCache',
   'markTransactionCompleted',
   'markTransactionRegistered',
   'recordTransactionPreApprovalOutcome',
@@ -63,6 +106,7 @@ const METHODS = [
 const operations = Object.fromEntries(METHODS.map((method) => [method, (...args) => call(method, ...args)]))
 
 export const {
+  createTransactionEvent,
   addAttorneyTransactionUpdate,
   addTransactionDiscussionComment,
   addBondApplication,
@@ -76,9 +120,6 @@ export const {
   createTransactionWorkspaceHydrationContext,
   declineBondQuote,
   fetchTransactionActivityWorkspace,
-  fetchTransactionCoreById,
-  fetchTransactionRouteCoreById,
-  fetchTransactionPropertyContextById,
   fetchTransactionDocumentsWorkspace,
   fetchTransactionFinanceWorkspace,
   fetchTransactionPartnersWorkspace,
@@ -91,7 +132,6 @@ export const {
   getTransactionFinanceWorkflow,
   getOrCreateTransactionOnboarding,
   getRegistrationBlockers,
-  invalidateTransactionWorkspaceCoreCache,
   markTransactionCompleted,
   markTransactionRegistered,
   recordTransactionPreApprovalOutcome,

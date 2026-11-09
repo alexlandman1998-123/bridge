@@ -6,7 +6,8 @@ const OUTPUT_PATH = 'output/bond-application-portal-phase0-boundary-audit.json'
 const REQUIRED_FILES = [
   'src/App.jsx',
   'src/pages/ClientPortal.jsx',
-  'src/lib/api.js',
+  'src/domains/bond/portalApi.js',
+  'src/domains/clientPortal/documentApi.js',
   'src/lib/buyerBondApplicationLink.js',
   'src/modules/bond/application/index.js',
   'docs/bond-application-portal-phase0-boundary-audit.md',
@@ -35,9 +36,9 @@ async function main() {
     check('src/pages/ClientPortal.jsx', 'saveClientPortalOnboardingDraft', 'embedded draft persistence is identified'),
     check('src/pages/ClientPortal.jsx', 'reconcileClientPortalBondDocumentRequirements', 'embedded canonical-document reconciliation is identified'),
     check('src/pages/ClientPortal.jsx', 'prepareClientPortalBondApplicationSubmission', 'embedded submission preparation is identified'),
-    check('src/lib/api.js', 'fetchClientPortalNormalizedBondApplication', 'isolated application read API exists'),
-    check('src/lib/api.js', 'reconcileClientPortalBondDocumentRequirements', 'isolated document reconciliation API exists'),
-    check('src/lib/api.js', 'prepareClientPortalBondApplicationSubmission', 'isolated submission API exists'),
+    check('src/domains/bond/portalApi.js', 'fetchClientPortalNormalizedBondApplication', 'isolated application read API exists'),
+    check('src/domains/clientPortal/documentApi.js', 'reconcileClientPortalBondDocumentRequirements', 'isolated document reconciliation API exists'),
+    check('src/domains/bond/portalApi.js', 'prepareClientPortalBondApplicationSubmission', 'isolated submission API exists'),
     check('src/lib/buyerBondApplicationLink.js', 'resolveBuyerBondApplicationLink', 'buyer navigation seam exists'),
     check('docs/bond-application-portal-phase0-boundary-audit.md', '## Freeze rules', 'legacy-surface freeze is documented'),
   ]
