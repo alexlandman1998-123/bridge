@@ -163,3 +163,10 @@ it('does not equate missing open observations with a verified zero open rate', a
   const stats=await screen.findByRole('region',{name:'All-time campaign statistics'})
   expect(await within(stats).findByText('Not reported')).toBeTruthy()
 })
+
+it('shows that an agent can draft but needs an authorised sending role', async () => {
+ mocks.workspace.mockResolvedValue(workspace({canSend:false}))
+ render(<EmailCampaignOverview />)
+ expect(await screen.findByText(/You can prepare and save drafts/)).toBeTruthy()
+ expect(screen.getByRole('button',{name:'Create campaign'}).disabled).toBe(false)
+})

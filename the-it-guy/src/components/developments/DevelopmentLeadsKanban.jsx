@@ -1,7 +1,6 @@
 import { ArrowUpRight, Columns3, EyeOff, GripVertical, List, LoaderCircle } from 'lucide-react'
 import { useState } from 'react'
 import { DevelopmentLeadAgent, DevelopmentLeadPropertyImage, DevelopmentLeadSource } from './DevelopmentLeadVisuals.jsx'
-import DevelopmentLeadContactDemo from './DevelopmentLeadContactDemo.jsx'
 
 export function DevelopmentLeadViewSwitch({ value, onChange }) {
   return <div className="inline-flex rounded-[14px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5" role="group" aria-label="Lead view">
@@ -26,7 +25,7 @@ export default function DevelopmentLeadsKanban({ columns = [], cards = [], onOpe
     setDropKey('')
   }
   const grouped = columns.map(column => ({ ...column, cards: cards.filter(card => card.columnKey === column.key) }))
-  return <div className="mt-5 max-w-full overflow-x-auto pb-3" role="region" aria-label="Development leads kanban" tabIndex={0}>
+  return <div className="relative mt-5 max-w-full overflow-x-auto pb-3" role="region" aria-label="Development leads kanban" tabIndex={0}>
     <div className="flex w-max min-w-full items-start gap-6">
       {grouped.map(column => <section key={column.key} aria-label={`${column.label} leads`} onDragOver={event => { if (!draggingId || movingId) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropKey(column.key) }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropKey('') }} onDrop={event => { event.preventDefault(); const id = event.dataTransfer.getData('application/x-arch9-development-lead'); if (id && id === draggingId) requestMove(id, column.key) }} className={`min-h-[220px] w-[340px] shrink-0 rounded-[18px] border p-4 transition-colors sm:w-[380px] ${dropKey === column.key ? 'border-[#48a77a] bg-[#edf8f1] ring-2 ring-[#cae8d5]' : 'border-[#e3ebf4] bg-[#f8fafc]'}`}>
         <header className="mb-4 flex items-center justify-between gap-3 px-1">
@@ -46,7 +45,7 @@ export default function DevelopmentLeadsKanban({ columns = [], cards = [], onOpe
             <p className="mt-3 text-xs text-[#6b7d93]">Last activity · {card.lastActivity}</p>
             {card.canMove && onMove ? <label className="mt-3 block"><span className="sr-only">Move {card.name} to stage</span><select aria-label={`Move ${card.name} to stage`} value="" disabled={Boolean(movingId)} onChange={event => requestMove(card.id, event.target.value)} className="min-h-10 w-full rounded-[10px] border border-[#e3ebf4] bg-[#fbfcfe] px-2.5 text-xs text-[#51667f] focus:outline-none focus:ring-2 focus:ring-[#238355]"><option value="">Move to…</option>{columns.filter(item => item.key !== card.columnKey).map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label> : null}
             <div className="mt-4 border-t border-[#edf2f7] pt-3">
-              {card.canOpen ? <div className="flex flex-col items-start gap-2"><button type="button" onClick={() => onOpen(card.id)} className="inline-flex min-h-10 items-center gap-1.5 rounded-[10px] bg-[#edf9f1] px-3 text-xs font-semibold text-[#1f7a43] hover:bg-[#dcf3e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1f7a45]">Open developer lead<ArrowUpRight size={13} aria-hidden="true" /></button><DevelopmentLeadContactDemo /></div> : <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#64748b]"><EyeOff size={13} aria-hidden="true" />{card.accessLabel}</span>}
+              {card.canOpen ? <div className="flex flex-col items-start gap-2"><button type="button" onClick={() => onOpen(card.id)} className="inline-flex min-h-10 items-center gap-1.5 rounded-[10px] bg-[#edf9f1] px-3 text-xs font-semibold text-[#1f7a43] hover:bg-[#dcf3e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1f7a45]">Open developer lead<ArrowUpRight size={13} aria-hidden="true" /></button></div> : <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#64748b]"><EyeOff size={13} aria-hidden="true" />{card.accessLabel}</span>}
             </div>
           </article>)}
           {!column.cards.length ? <p className="rounded-[12px] border border-dashed border-[#d8e2ee] px-3 py-6 text-center text-xs text-[#7b8ca2]">No leads in this stage</p> : null}

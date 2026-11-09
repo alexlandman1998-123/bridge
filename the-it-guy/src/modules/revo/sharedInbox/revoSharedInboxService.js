@@ -172,7 +172,7 @@ export async function loadRevoInbox(organisationId, { conversationLimit = 100 } 
     const offset = conversations.length, size = Math.min(100, limit + 1 - offset)
     const rows = throwIfError(await client.from('revo_inbox_conversations')
       .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
-      .eq('organisation_id', org).order('last_message_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false }).range(offset,offset+size-1)) || []
+      .eq('organisation_id', org).neq('revo_inbox_channels.provider_key', 'revo_demo_seed').order('last_message_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false }).range(offset,offset+size-1)) || []
     conversations.push(...rows)
     if (rows.length < size || conversations.length > limit) break
   }
@@ -197,6 +197,7 @@ export async function loadRevoInboxChannels(organisationId) {
     .from('revo_inbox_channels')
     .select('id, organisation_id, channel, provider_key, address, display_name, connection_status, is_default, created_at, updated_at')
     .eq('organisation_id', requireInboxOrganisationId(organisationId))
+    .neq('provider_key', 'revo_demo_seed')
     .order('channel', { ascending: true })
     .order('created_at', { ascending: true }))
   return (data || []).map(normalizeRevoInboxChannel)

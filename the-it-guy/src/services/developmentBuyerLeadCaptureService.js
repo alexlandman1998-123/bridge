@@ -7,7 +7,7 @@ const uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{
 
 // The CRM record owns the buyer identity. The developer record links that same
 // buyer into development intake; stable capture IDs let partial saves resume.
-export async function createDevelopmentBuyerLead({ organisationId, developerOrgId, developmentId, developmentName, form, actor, assignedAgent = actor, identity, savedCrmLead = null, onCrmLeadSaved }, dependencies = {}) {
+export async function createDevelopmentBuyerLead({ organisationId, developerOrgId, developmentId, developmentName, form, actor, branchId = '', assignedAgent = actor, identity, savedCrmLead = null, onCrmLeadSaved }, dependencies = {}) {
   const createCrm = dependencies.createCrm || createAgencyCrmLeadRecord
   const createDirect = dependencies.createDirect || createDeveloperFedLead
   const createIntroduced = dependencies.createIntroduced || createAgencyIntroducedDeveloperLead
@@ -18,10 +18,13 @@ export async function createDevelopmentBuyerLead({ organisationId, developerOrgI
   if (!text(form.firstName) || !text(form.lastName) || (!text(form.phone) && !text(form.email))) {
     throw new Error('Enter the buyer’s name and a phone number or email address.')
   }
+  const assignedAgentId = text(assignedAgent?.userId || assignedAgent?.id || actor.id)
+  const assignedBranchId = text(assignedAgent?.branchId || assignedAgent?.branch_id || branchId || actor.branchId)
+  if (!uuid(assignedAgentId) || (assignedBranchId && !uuid(assignedBranchId))) throw new Error('The selected agent or branch could not be confirmed. Refresh this development before creating the lead.')
   const crmLead = savedCrmLead || await createCrm(organisationId, {
     leadId: identity.leadId,
     contact: { contactId: identity.contactId, firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, notes: form.notes, contactType: 'buyer' },
-    assignedAgent, assignedUserId: assignedAgent?.id || actor.id, createdBy: actor.id,
+    assignedAgent, assignedUserId: assignedAgentId, branchId: assignedBranchId, createdBy: actor.id,
     leadCategory: 'buyer', leadDirection: 'Inbound', leadSource: form.source || 'Other',
     stage: 'New Lead', priority: 'Medium', propertyInterest: text(form.property) || text(developmentName),
     rawEnquiryPayload: { development_id: developmentId, source: 'development_leads_capture' }, notes: form.notes,
@@ -31,7 +34,7 @@ export async function createDevelopmentBuyerLead({ organisationId, developerOrgI
   invalidate(organisationId)
   const input = {
     developerOrgId, primaryDevelopmentId: developmentId, sourceLeadId: crmLead.leadId,
-    developerLeadId: identity.developerLeadId, assignedAgentId: Object.prototype.hasOwnProperty.call(form, 'assignedAgentId') ? form.assignedAgentId : assignedAgent?.id || actor.id, sourceAgentUserId: assignedAgent?.id || actor.id,
+    developerLeadId: identity.developerLeadId, assignedAgentId: Object.prototype.hasOwnProperty.call(form, 'assignedAgentId') ? form.assignedAgentId : assignedAgentId, sourceAgentUserId: assignedAgentId,
     preferredUnitId: form.preferredUnitId, interestedDevelopmentIds: form.interestedDevelopmentIds,
     unitTypeInterest: form.unitTypeInterest, budgetMin: form.budgetMin, budgetMax: form.budgetMax,
     buyerFullName: `${text(form.firstName)} ${text(form.lastName)}`,

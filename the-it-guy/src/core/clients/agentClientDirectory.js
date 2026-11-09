@@ -239,6 +239,7 @@ function createEmptyClient(source = {}) {
     identityAvailable: Boolean(source.identityAvailable),
     canManageIdentity: Boolean(source.canManageIdentity && source.identityId),
     mergedIdentityIds: source.mergedIdentityIds || [],
+    tags: source.identityTags || [],
     emails: source.identityIdentifiers?.filter((item) => item.kind === 'email').map((item) => item.value) || [],
     phones: source.identityIdentifiers?.filter((item) => item.kind === 'phone').map((item) => item.value) || [],
     name: source.identityProfile?.name || source.name || 'Unnamed contact',
@@ -332,6 +333,7 @@ function finalizeClient(client) {
     statusLabel,
     linkedRecordLabel,
     latestPropertyLabel,
+    ...(client.tags || []),
     ...client.emails,
     ...client.phones,
     ...client.linkedRecords.map((item) => `${item?.label || ''} ${item?.reference || ''}`),
@@ -847,6 +849,14 @@ export function buildAgentClientDirectory(sourceRows = [], identities = {}) {
     values.push(identifier)
     identifiersByClient.set(identifier.client_id, values)
   }
+  const tagsByClient = new Map()
+  for (const row of identities.tags || []) {
+    const profile = profilesById.get(row.client_id)
+    if (!profile || profile.organisation_id !== row.organisation_id) continue
+    const values = tagsByClient.get(row.client_id) || new Set()
+    if (normalizeText(row.tag)) values.add(normalizeLower(row.tag))
+    tagsByClient.set(row.client_id, values)
+  }
   const redirectsByClient = new Map()
   for (const profile of profiles) {
     if (!profile.merged_into) continue
@@ -865,6 +875,7 @@ export function buildAgentClientDirectory(sourceRows = [], identities = {}) {
     canManageIdentity: identities.canManage,
     mergedIdentityIds: redirectsByClient.get(identityProfile?.id) || [],
     identityIdentifiers: identifiersByClient.get(identityProfile?.id) || [],
+    identityTags: [...(tagsByClient.get(identityProfile?.id) || [])].sort(),
   })
   for (const source of sourceRows) {
     const identityProfile = resolveClientRedirect(profilesById, links.get(clientSourceKey(source)))
@@ -968,7 +979,7 @@ async function readAgentClientDirectory({ organisationId, profile, role, current
   const clients = buildDirectory(sourceRows, identities)
   const directory = {
     clients,
-    activityWarning: '',
+    activityWarning: identities.tagWarning || '',
     organisationId,
     identityAvailable: identities.available,
     canManageIdentities: identities.canManage,
@@ -982,10 +993,10 @@ async function readAgentClientDirectory({ organisationId, profile, role, current
       ...directory,
       clients: clients.map((client) => ({ ...client, lastActivityAt: latestDate(client.lastActivityAt, latest.get(client.identityId)) }))
         .sort((left, right) => toDateValue(right.lastActivityAt) - toDateValue(left.lastActivityAt)),
-    })).catch(() => ({ ...directory, activityWarning: 'Recent client activity could not load. Open the client activity timeline to retry.' }))
+    })).catch(() => ({ ...directory, activityWarning: [identities.tagWarning, 'Recent client activity could not load. Open the client activity timeline to retry.'].filter(Boolean).join(' ') }))
   }
   // Preserve existing optional-source fallbacks, but retry them on the next visit.
-  const cacheable = [transaction, buyers, listings, canvassing, usersResult].every((result) => result.status === 'fulfilled')
+  const cacheable = identities.tagsAvailable !== false && [transaction, buyers, listings, canvassing, usersResult].every((result) => result.status === 'fulfilled')
   return { directory, cacheable }
 }
 

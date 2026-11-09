@@ -109,7 +109,7 @@ const ATTORNEY_STATUS_FILTERS = [
 ]
 
 const DEFAULT_CLIENT_DIRECTORY_COPY = {
-  searchPlaceholder: 'Search clients by name, email, phone or property...',
+  searchPlaceholder: 'Search clients by name, email, phone, tag or property...',
   addLabel: 'Add New Contact',
   allAssigneesLabel: 'All Agents',
   assigneeLabel: 'Agent',

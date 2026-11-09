@@ -721,3 +721,19 @@ it('previews the delivery footer for imported HTML without exposing an unsubscri
  expect(preview.srcdoc).not.toContain('{{first_name}}')
  expect(preview.getAttribute('sandbox')).toBe('')
 })
+
+it('explains the agent sending restriction while keeping draft creation available', async () => {
+ render(<EmailCampaignBuilder workspace={{...workspace,canSend:false}} onCancel={vi.fn()} />)
+ expect(screen.getByText(/You can prepare and save drafts/)).toBeTruthy()
+ expect(screen.getByRole('textbox',{name:'Campaign title'}).disabled).toBe(false)
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})
+it('lists the concrete failed sender and audience checks instead of a generic preflight error', async () => {
+ mocks.preflight.mockResolvedValueOnce({ready:false,checks:[{key:'sender',ok:false},{key:'audience',ok:false}]})
+ const dialog=await openReviewTest()
+ fireEvent.click(dialog.getByRole('button',{name:'Close dialog'}))
+ fireEvent.click(screen.getByRole('button',{name:'Preflight & send'}))
+ expect(await screen.findByRole('alert')).toHaveProperty('textContent',expect.stringContaining('Choose a verified sender'))
+ expect(screen.getByRole('alert').textContent).toContain('No eligible recipients')
+ expect(mocks.schedule).not.toHaveBeenCalled()
+})

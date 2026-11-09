@@ -20,10 +20,11 @@ export async function loadClientIdentities(organisationId) {
     readAllRows(() => supabase.from('agency_client_identifiers').select('client_id,kind,value').eq('organisation_id', organisationId).order('id')),
     readAllRows(() => supabase.from('agency_client_links').select('client_id,source_kind,source_id').eq('organisation_id', organisationId).order('id')),
     supabase.rpc('client_identity_can_manage', { p_organisation_id: organisationId }),
+    readAllRows(() => supabase.from('agency_client_tags').select('organisation_id,client_id,tag').eq('organisation_id', organisationId).order('client_id').order('tag')),
   ])
   if (results.slice(0, 3).some((result) => missingIdentitySchema(result.error))) return { available: false, profiles: [], identifiers: [], links: [], canManage: false }
-  for (const result of results) if (result.error) throw result.error
-  return { available: true, profiles: results[0].data || [], identifiers: results[1].data || [], links: results[2].data || [], canManage: results[3].data === true }
+  for (const result of results.slice(0, 4)) if (result.error) throw result.error
+  return { available: true, profiles: results[0].data || [], identifiers: results[1].data || [], links: results[2].data || [], canManage: results[3].data === true, tags: results[4].error ? [] : results[4].data || [], tagsAvailable: !results[4].error, tagWarning: results[4].error ? `Client tags could not be loaded: ${results[4].error.message || 'check your connection and access'}. Refresh to retry.` : '' }
 }
 
 export async function saveClientIdentity(client, details) {
