@@ -1,7 +1,7 @@
 import {applyWhatsAppCampaignWebhook} from './whatsappCampaignWebhook.js'
 import {applyWhatsAppInboxWebhook} from './metaIntegrationCore.js'
 const result=async query=>{const {data,error}=await query;if(error)throw Error('WhatsApp webhook storage unavailable');return data}
-const rank={sent:1,delivered:2,read:3}
+const rank={sent:1,failed:2,delivered:3,read:4}
 export async function processVerifiedWhatsAppPayload(db,payload){
  await applyWhatsAppCampaignWebhook(db,payload)
  await applyWhatsAppInboxWebhook(db,payload)
@@ -10,7 +10,7 @@ export async function processVerifiedWhatsAppPayload(db,payload){
   const delivery=await result(db.from('communication_deliveries').select('id,status,notification_event_id').eq('provider','meta').eq('channel','whatsapp').eq('provider_message_id',item.id).maybeSingle())
   if(!delivery||(rank[delivery.status]||0)>(rank[item.status]||0)||delivery.status===item.status)continue
   const seconds=Number(item.timestamp),eventAt=Number.isFinite(seconds)&&seconds>0?new Date(seconds*1000).toISOString():new Date().toISOString()
-  const patch={status:item.status,updated_at:new Date().toISOString(),[`${item.status}_at`]:eventAt,...(item.status==='failed'?{error_message:String(item.errors?.[0]?.title||'Delivery failed').slice(0,500)}:{})}
+  const patch={status:item.status,updated_at:new Date().toISOString(),[`${item.status}_at`]:eventAt,error_message:item.status==='failed'?String(item.errors?.[0]?.title||'Delivery failed').slice(0,500):null}
   const changed=await result(db.from('communication_deliveries').update(patch).eq('id',delivery.id).eq('status',delivery.status).select('id'))
   if(changed?.length&&delivery.notification_event_id)await result(db.from('notification_events').update(patch).eq('id',delivery.notification_event_id))
  }
