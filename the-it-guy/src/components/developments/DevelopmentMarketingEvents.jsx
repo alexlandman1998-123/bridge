@@ -10,14 +10,14 @@ const timeFormat = new Intl.DateTimeFormat('en-ZA', { hour: '2-digit', minute: '
 const validDate = value => { const date = value ? new Date(value) : null; return date && Number.isFinite(date.getTime()) ? date : null }
 const typeLabel = type => type === 'launch' ? 'Launch' : 'Show day'
 const statusLabel = value => String(value || 'upcoming').replaceAll('_', ' ').replace(/^./, letter => letter.toUpperCase())
-const blankDraft = eventType => ({ eventType, title: '', startsAt: '', location: '', description: '' })
+const blankDraft = eventType => ({ requestId: crypto.randomUUID(), eventType, title: '', startsAt: '', location: '', description: '' })
 
 function organiserName(event, users) {
   const person = users.find(user => event.createdBy && [user.id, user.userId, user.user_id].includes(event.createdBy))
   return person?.fullName || person?.full_name || person?.name || [person?.firstName || person?.first_name, person?.lastName || person?.last_name].filter(Boolean).join(' ') || 'Agent not recorded'
 }
 
-export default function DevelopmentMarketingEvents({ events = [], organisationUsers = [], canManage = false, saving = false, onCreate, now }) {
+export default function DevelopmentMarketingEvents({ events = [], organisationUsers = [], canManage = false, saving = false, loading = false, loadError = '', onRetry, onCreate, onPrepareCampaign, now }) {
   const formId = useId()
   const [openedAt] = useState(Date.now)
   const [draft, setDraft] = useState(null)
@@ -43,6 +43,7 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
     finally { submitting.current = false; setSubmittingNow(false) }
   }
   function eventList(items, empty) {
+    if (!items.length && (loading || loadError)) return null
     return items.length ? <div className="development-event-list">{items.map(item => {
       const start = validDate(item.startsAt)
       const organiser = organiserName(item, organisationUsers)
@@ -51,6 +52,7 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
         <div className="development-event-content"><div className="development-event-title"><h5>{item.title}</h5><span className={`development-event-badge ${item.eventType === 'launch' ? 'is-launch' : ''}`}>{typeLabel(item.eventType)}</span><span className="development-event-status">{statusLabel(item.status)}</span></div>
           <div className="development-event-meta"><span><Clock3 size={14} aria-hidden="true" />{start ? `${dateFormat.format(start)} · ${timeFormat.format(start)}` : 'Date to be confirmed'}</span><span><MapPin size={14} aria-hidden="true" />{item.location || 'Location to be confirmed'}</span></div>
           {item.description ? <p className="development-event-notes">{item.description}</p> : null}
+          {canManage && onPrepareCampaign && !past(item) && start?.getTime() > (now ?? openedAt) && ['planning','upcoming'].includes(item.status) ? <Button type="button" variant="secondary" onClick={() => onPrepareCampaign(item)}>Prepare invitation</Button> : null}
         </div>
         <div className="development-event-organiser"><span className="development-event-avatar" aria-hidden="true"><UserRound size={18} /></span><div><span>Organised by</span><strong>{organiser}</strong></div></div>
       </article>
@@ -61,11 +63,13 @@ export default function DevelopmentMarketingEvents({ events = [], organisationUs
       <button type="button" className="development-event-action is-show-day" onClick={() => open('show_day')}><span className="development-event-action-icon"><CalendarDays size={28} aria-hidden="true" /></span><span><strong>Create show day</strong><small>Invite buyers to experience the development.</small></span><ArrowUpRight size={22} aria-hidden="true" /></button>
       <button type="button" className="development-event-action is-launch" onClick={() => open('launch')}><span className="development-event-action-icon"><PartyPopper size={28} aria-hidden="true" /></span><span><strong>Create launch</strong><small>Give your next milestone a memorable debut.</small></span><ArrowUpRight size={22} aria-hidden="true" /></button>
     </div> : null}
-    <section className="development-events-panel" aria-label="Upcoming events"><div className="development-events-section-heading"><div><span className="development-events-eyebrow">On the calendar</span><h4>Upcoming events</h4></div><span className="development-event-count">{upcoming.length}</span></div>{eventList(upcoming, 'No upcoming events. Your next show day or launch will appear here.')}</section>
-    <section className="development-events-panel" aria-label="Past events"><div className="development-events-section-heading"><div><span className="development-events-eyebrow">Event history</span><h4>Past events</h4></div><span className="development-event-count">{history.length}</span></div>{eventList(history, 'No past events yet. Completed and cancelled events will be kept here.')}</section>
+    {loading ? <p role="status">Loading development events…</p> : null}
+    {loadError ? <div role="alert" className="development-event-error"><p>Development events could not be loaded. {loadError}</p><Button type="button" variant="secondary" onClick={onRetry} disabled={loading}>Retry loading events</Button></div> : null}
+    <section className="development-events-panel" aria-label="Upcoming events"><div className="development-events-section-heading"><div><span className="development-events-eyebrow">On the calendar</span><h4>Upcoming events</h4></div><span className="development-event-count">{loading || loadError ? '—' : upcoming.length}</span></div>{eventList(upcoming, 'No upcoming events. Your next show day or launch will appear here.')}</section>
+    <section className="development-events-panel" aria-label="Past events"><div className="development-events-section-heading"><div><span className="development-events-eyebrow">Event history</span><h4>Past events</h4></div><span className="development-event-count">{loading || loadError ? '—' : history.length}</span></div>{eventList(history, 'No past events yet. Completed and cancelled events will be kept here.')}</section>
     <Modal open={Boolean(draft)} onClose={busy ? undefined : () => setDraft(null)} title={draft?.eventType === 'launch' ? 'Create launch' : 'Create show day'} subtitle="Add the details for this development event. You will be recorded as the organiser." className="development-event-modal">
       {draft ? <form id={formId} onSubmit={submit} className="development-event-form" aria-busy={busy}>
-        <label>Event title<Field value={draft.title} onChange={event => update('title', event.target.value)} placeholder={draft.eventType === 'launch' ? 'e.g. Harbour Heights launch evening' : 'e.g. Sunday at Harbour Heights'} required disabled={busy} /></label>
+        <label>Event title<Field maxLength={180} value={draft.title} onChange={event => update('title', event.target.value)} placeholder={draft.eventType === 'launch' ? 'e.g. Harbour Heights launch evening' : 'e.g. Sunday at Harbour Heights'} required disabled={busy} /></label>
         <label>Date and time<Field type="datetime-local" value={draft.startsAt} onChange={event => update('startsAt', event.target.value)} required disabled={busy} /></label>
         <label>Location<Field addressSearch value={draft.location} onChange={event => update('location', event.target.value)} placeholder="Venue or meeting point" disabled={busy} /></label>
         <label>Notes <span>(optional)</span><Field as="textarea" value={draft.description} onChange={event => update('description', event.target.value)} placeholder="Arrival details, parking or anything guests should know" rows={3} disabled={busy} /></label>

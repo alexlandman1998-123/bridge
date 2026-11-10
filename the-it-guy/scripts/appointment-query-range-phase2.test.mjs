@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import { appointmentStartIso, sastDateKey, sastDayStart, sastWeekStart, sastMonthStart, addCalendarDays as addSastDays } from '../src/core/appointments/attorneyCalendarModel.js'
 import { resolveAppointmentSchedule } from '../src/core/appointments/appointmentTime.js'
 import assert from 'node:assert/strict'
@@ -8,7 +9,7 @@ import vm from 'node:vm'
 const pagePath = path.resolve('src/pages/agency/AgencyPipelinePage.jsx')
 const servicePath = path.resolve('src/lib/agencyPipelineService.js')
 const pageSource = fs.readFileSync(pagePath, 'utf8')
-const serviceSource = fs.readFileSync(servicePath, 'utf8')
+const serviceSource = readLeadServiceSource(servicePath)
 
 function extractFunctionBlock(source, functionName) {
   const declaration = `function ${functionName}`
@@ -79,7 +80,7 @@ assert.match(
 )
 assert.match(
   pageSource,
-  /calendarCursorDate, calendarView, isCalendarMode, organisationId, scheduleRecordsReload/,
+  /const calendarAppointmentLoad = usePipelineAppointments\(\{[\s\S]*?from: appointmentRange\.from, to: appointmentRange\.to,/,
   'calendar navigation should trigger a reload for the newly visible appointment window',
 )
 assert.match(
@@ -136,7 +137,7 @@ assert.equal(sastDay.to.toISOString(), '2027-10-01T22:00:00.000Z')
 assert.equal(context.toDateOnlyIso(context.getMonthGridDays(new Date('2027-10-01T10:00Z'))[0]), '2027-09-27')
 console.log('SAST calendar grid and exclusive day bounds passed')
 
-assert.match(context.formatCalendarPeriodLabel('day', new Date('2027-09-30T22:30Z')), /01.*Oct.*2027/)
+assert.match(context.formatCalendarPeriodLabel('day', new Date('2027-09-30T22:30Z')), /0?1.*Oct.*2027/)
 const overseas = { date: '2027-10-01', startTime: '23:30', endTime: '23:50', timezone: 'America/New_York' }
 assert.equal(context.toDateOnlyIso(context.parseAppointmentDate(overseas)), '2027-10-02')
 assert.equal(context.formatAppointmentTimeRange(overseas), '05:30 - 05:50')

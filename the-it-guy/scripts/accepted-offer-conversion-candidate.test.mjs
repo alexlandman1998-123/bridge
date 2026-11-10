@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createServer } from 'vite'
@@ -26,7 +27,7 @@ try {
 } finally {
   await server.close()
 }
-const lifecycleSource = fs.readFileSync('src/lib/buyerLifecycleService.js', 'utf8')
+const lifecycleSource = readLeadServiceSource('src/lib/buyerLifecycleService.js')
 assert.match(lifecycleSource, /ensureAcceptedOfferConversionCandidate\(\{\n      organisationId: scopedOrganisationId/)
 assert.match(lifecycleSource, /ACCEPTED_OFFER_CONVERSION_CANDIDATE_BLOCKED/)
 assert.match(lifecycleSource, /ACCEPTED_OFFER_TRANSACTION_CREATE_UNCONFIRMED/)

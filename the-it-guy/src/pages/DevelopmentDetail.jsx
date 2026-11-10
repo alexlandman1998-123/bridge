@@ -1,3 +1,4 @@
+import { notifyDevelopmentLeadChange } from '../services/developmentLeadRefreshService.js'
 import AddressInput from '../components/location/AddressInput'
 import { getDocumentUploadPolicy } from '../lib/documentUploadPolicy.js'
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Building2, CalendarDays, ChevronDown, ChevronUp, CheckCircle2, CircleDollarSign, Copy, Download, EyeOff, FileText, FolderKanban, Globe2, HandCoins, Home, ImagePlus, Mail, LandPlot, MapPin, MoreVertical, PencilLine, PieChart, Plus, Receipt, Search, ShieldCheck, Trash2, TrendingUp, Upload, UserPlus, Users, WalletCards, Workflow, XCircle } from 'lucide-react'
@@ -28,7 +29,8 @@ import { buildPdfSitePlanUnitSuggestions } from '../core/developments/developmen
 import { evaluateDevelopmentSitePlanQuality } from '../core/developments/developmentSitePlanQuality'
 import { hydrateVisualMapMediaLibrary, remapVisualMapSceneViewport, retireLegacyVisualMapFields, setVisualMapPublicationStatus, updateMasterplanScene } from '../core/developments/developmentVisualMap.js'
 import { buildDevelopmentVisualPreviewReadiness } from '../core/developments/developmentVisualPreview.js'
-import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, createDevelopmentMarketingEvent, saveDevelopmentDetails, saveDevelopmentDocument, saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings, upsertTransactionHandover, createDeveloperPartnerInvite } from '../lib/developmentDetailApi'
+import { saveDevelopmentUnitStatus, saveDevelopmentUnitsBatch } from '../domains/developments/reliableWrites.js'
+import { deleteDevelopment, deleteDevelopmentDocument, applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, createDevelopmentMarketingEvent, saveDevelopmentDetails as persistDevelopmentDetails, saveDevelopmentDocument, saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset, updateDevelopmentTransactionSalesPrice, updateDevelopmentSettings, upsertTransactionHandover, createDeveloperPartnerInvite } from '../lib/developmentDetailApi'
 import { fetchDeveloperPartnersWorkspace } from '../domains/developments/api.js'
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -1895,6 +1897,8 @@ function buildDetailsForm(data) {
   const marketing = buildMarketingForm(profile, development, data?.documents)
 
   return {
+    expectedDevelopmentRevision: development.revision,
+    expectedProfileRevision: profile.revision ?? null,
     name: development.name || '',
     code: profile.code || development.code || '',
     location: profile.location || development.location || '',
@@ -2106,8 +2110,6 @@ function DevelopmentDetail() {
     const requestedSection = new URLSearchParams(location.search).get('section')
     return DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(requestedSection) ? requestedSection : 'general'
   })
-  const [channelStatisticsOwner, setChannelStatisticsOwner] = useState('')
-  const channelStatisticsOpen = channelStatisticsOwner === developmentId
   const needsWorkspaceData = activeTab !== 'overview'
   const [marketingHubSection, setMarketingHubSection] = useState('overview')
   const [marketingHubFocus, setMarketingHubFocus] = useState('')
@@ -2116,7 +2118,31 @@ function DevelopmentDetail() {
   const [marketingFeatureDraft, setMarketingFeatureDraft] = useState('')
   const [marketingHighlightDraft, setMarketingHighlightDraft] = useState('')
   const [selectedFloorplanId, setSelectedFloorplanId] = useState('')
-  const [detailsForm, setDetailsForm] = useState(DEFAULT_DETAILS_FORM)
+  const [detailsForm, setDetailsFormState] = useState(DEFAULT_DETAILS_FORM)
+  const detailsDraft = useRef({ scope: '', dirty: false, generation: 0 })
+  const setDetailsForm = useCallback(value => {
+    detailsDraft.current.dirty = true
+    detailsDraft.current.generation += 1
+    setDetailsFormState(value)
+  }, [])
+  async function saveDevelopmentDetails(id, input) {
+    const generation = detailsDraft.current.generation
+    const receipt = await persistDevelopmentDetails(id, input, { reportReceipt: true })
+    if (detailsDraft.current.scope === id) {
+      if (detailsDraft.current.generation === generation) detailsDraft.current.dirty = false
+      if (Number.isSafeInteger(receipt?.developmentRevision) && Number.isSafeInteger(receipt?.profileRevision)) {
+        setDetailsFormState(previous => ({ ...previous,
+          expectedDevelopmentRevision: receipt.developmentRevision, expectedProfileRevision: receipt.profileRevision }))
+      }
+    }
+    return receipt
+  }
+  const resetDetailsForm = useCallback(value => {
+    detailsDraft.current.dirty = false
+    detailsDraft.current.generation += 1
+    setDetailsFormState(value)
+  }, [])
+
   const [developerProfileDefaults, setDeveloperProfileDefaults] = useState(() => normalizeOrganisationDeveloperProfile())
   const [organisationUsers, setOrganisationUsers] = useState([])
   const [organisationUsersLoading, setOrganisationUsersLoading] = useState(false)
@@ -2173,6 +2199,7 @@ function DevelopmentDetail() {
   const [unitTransactionBackfillSaving, setUnitTransactionBackfillSaving] = useState(false)
   const [unitTransactionBackfillProgress, setUnitTransactionBackfillProgress] = useState({ completed: 0, total: 0 })
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
+  const bulkUnitSaveLock = useRef(false)
   const [structureSetupSaving, setStructureSetupSaving] = useState(false)
   const [productCatalogueSaving, setProductCatalogueSaving] = useState(false)
   const [documentSaving, setDocumentSaving] = useState(false)
@@ -2180,6 +2207,7 @@ function DevelopmentDetail() {
   const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
   const [sitePlanSuggestions, setSitePlanSuggestions] = useState({})
   const [marketingEventSaving, setMarketingEventSaving] = useState(false)
+  const marketingEventCreateLock = useRef(false)
   const [marketingDocumentSavingId, setMarketingDocumentSavingId] = useState('')
   const [emailComposeOpen, setEmailComposeOpen] = useState(false)
   const [emailSending, setEmailSending] = useState(false)
@@ -2344,9 +2372,11 @@ function DevelopmentDetail() {
   const activeDataSections = developmentDetailSectionsForTab(activeTab)
   const activeDataSectionKey = activeDataSections.join(',')
   const dialogDataSectionKey = unitModalOpen || bulkUnitModalOpen || productCatalogueOpen ? 'inventory,catalogue,documents' : ''
+  const statisticsDataSectionKey = activeTab === 'overview' ? 'channelStatistics' : ''
+  const eventsDataSectionKey = activeTab === 'marketing' && marketingHubSection === 'events' ? 'marketingEvents' : ''
   useEffect(() => {
-    void setActiveSections([...new Set([...activeDataSectionKey.split(','), ...dialogDataSectionKey.split(','), ...(channelStatisticsOpen ? ['inventory'] : [])].filter(Boolean))])
-  }, [activeDataSectionKey, dialogDataSectionKey, channelStatisticsOpen, setActiveSections])
+    void setActiveSections([...new Set([...activeDataSectionKey.split(','), ...dialogDataSectionKey.split(','), statisticsDataSectionKey, eventsDataSectionKey].filter(Boolean))])
+  }, [activeDataSectionKey, dialogDataSectionKey, statisticsDataSectionKey, eventsDataSectionKey, setActiveSections])
   const catalogueDialogReady = ['inventory', 'catalogue', 'documents'].every(name => detailSections[name]?.status === 'ready')
   const activeSectionDataReady = Boolean(data) && activeDataSections.every(name => detailSections[name]?.status === 'ready')
   useEffect(() => {
@@ -2489,7 +2519,9 @@ function DevelopmentDetail() {
   const formStats = data?.stats
   useEffect(() => {
     if (!formDevelopment) return
-    setDetailsForm(buildDetailsForm({ development: formDevelopment, profile: formProfile, stats: formStats }))
+    if (detailsDraft.current.scope === formDevelopment.id && detailsDraft.current.dirty) return
+    detailsDraft.current = { scope: formDevelopment.id, dirty: false, generation: detailsDraft.current.generation }
+    setDetailsFormState(buildDetailsForm({ development: formDevelopment, profile: formProfile, stats: formStats }))
     setReservationSettingsForm(buildReservationSettingsForm(formSettings))
     setAgentAssignments(getDevelopmentAgentAssignments(formSettings))
     setSelectedAgentUserId('')
@@ -2508,8 +2540,8 @@ function DevelopmentDetail() {
   }, [data?.financials])
 
   useEffect(() => {
-    if (data?.documents === undefined) return
-    setDetailsForm(previous => ({
+    if (data?.documents === undefined || detailsDraft.current.dirty) return
+    setDetailsFormState(previous => ({
       ...previous,
       marketing: buildMarketingForm(data.profile, data.development, data.documents)
     }))
@@ -2579,6 +2611,7 @@ function DevelopmentDetail() {
   }, [data?.transactionRows, rows])
   const documents = useMemo(() => data?.documents || [], [data?.documents])
   const linkedListingRows = useMemo(() => data?.listings || [], [data?.listings])
+  const overviewStatisticsListings = useMemo(() => data?.channelStatisticsListings || [], [data?.channelStatisticsListings])
   const alterations = useMemo(() => data?.alterations || [], [data?.alterations])
   const developmentLeadAccessKeys = useMemo(() => buildDevelopmentLeadAccessKeys(profile, organisationUsers), [organisationUsers, profile])
   const developmentLeadRows = useMemo(() => [...developmentLeads].sort((left, right) => new Date(right?.updatedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.createdAt || 0)), [developmentLeads])
@@ -3278,6 +3311,8 @@ function DevelopmentDetail() {
       listingStatus: marketingForm.listingOverview.listingStatus || 'draft'
     }
   }, [marketingAssetDocuments.length, marketingForm])
+  const confirmedMarketingConfiguration = data?.profile?.marketingContent?.listingConfiguration || {}
+  const marketingPublished = confirmedMarketingConfiguration.publicVisibility === true && confirmedMarketingConfiguration.marketingStatus === 'live'
   const marketingEventRecords = Array.isArray(data?.marketingEvents) ? data.marketingEvents : []
   const marketingSellingPointEntries = useMemo(() => parseSellingPointEntries(marketingForm.sellingPoints.items), [marketingForm.sellingPoints.items])
   const marketingAgencyEntries = useMemo(() => (Array.isArray(marketingForm.agencies) ? marketingForm.agencies : []).map((item, index) => normalizeMarketingAgency(item, index + 1)), [marketingForm.agencies])
@@ -4272,17 +4307,28 @@ function DevelopmentDetail() {
     }
   }
 
+  function applyConfirmedMarketing(marketingContent, receipt) {
+    const savedId = data.development.id
+    setData(previous => previous?.development?.id !== savedId ? previous : {
+      ...previous,
+      development: { ...previous.development, ...(Number.isSafeInteger(receipt?.developmentRevision) ? { revision: receipt.developmentRevision } : {}) },
+      profile: { ...previous.profile, marketingContent,
+        ...(Number.isSafeInteger(receipt?.profileRevision) ? { revision: receipt.profileRevision } : {}) },
+    })
+  }
+
   async function handlePublishDevelopmentMarketing() {
+    setFeedback('')
     const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
     const visualMapReadiness = buildDevelopmentVisualPreviewReadiness({ visualMap: normalizedMarketing.mediaLibrary.visualMap, inventory: unitRows })
     if (!visualMapReadiness.safeToPublish) {
-      setMarketingHubSection('public-page')
+      openMarketingHubSection('website')
       setError(`Fix the development visualiser before publishing: ${visualMapReadiness.errors[0]?.detail || `${visualMapReadiness.errors.length} structural checks failed.`}`)
       return
     }
     const sitePlanUrl = normalizedMarketing.mediaLibrary.sitePlanUrl || normalizedMarketing.mediaLibrary.masterplanUrl
     if (sitePlanUrl && !sitePlanQuality.ready) {
-      setMarketingHubSection('public-page')
+      openMarketingHubSection('website')
       setError(`Finish the site-plan review before publishing: ${sitePlanQuality.issueCount} placement check${sitePlanQuality.issueCount === 1 ? '' : 's'} remain.`)
       return
     }
@@ -4316,17 +4362,20 @@ function DevelopmentDetail() {
       }
     }
 
+    let published = false
     try {
       setDetailsSaving(true)
       setFeedback('')
       setError('')
-      setDetailsForm(nextDetailsForm)
-      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      const payload = buildDevelopmentDetailsPayload(nextDetailsForm)
+      const receipt = await saveDevelopmentDetails(data.development.id, payload)
+      published = true
+      applyConfirmedMarketing(payload.marketingContent, receipt)
       setFeedback(`Development marketing published at ${publicLandingUrl}${visualMapReadiness.warnings.length ? ` with ${visualMapReadiness.warnings.length} non-blocking preview warning${visualMapReadiness.warnings.length === 1 ? '' : 's'}` : ''}`)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
-      setError(saveError.message)
+      setError(published ? 'The website was published, but the latest view could not be loaded. Refresh to check the saved publication.' : saveError.message)
     } finally {
       setDetailsSaving(false)
     }
@@ -4368,17 +4417,20 @@ function DevelopmentDetail() {
         }
       }
     }
+    let unpublished = false
     try {
       setDetailsSaving(true)
       setFeedback('')
       setError('')
-      setDetailsForm(nextDetailsForm)
-      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      const payload = buildDevelopmentDetailsPayload(nextDetailsForm)
+      const receipt = await saveDevelopmentDetails(data.development.id, payload)
+      unpublished = true
+      applyConfirmedMarketing(payload.marketingContent, receipt)
       setFeedback('Public development page unpublished. Hub content remains private and unchanged.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
-      setError(saveError.message)
+      setError(unpublished ? 'The website was unpublished, but the latest view could not be loaded. Refresh to check the saved publication.' : saveError.message)
     } finally {
       setDetailsSaving(false)
     }
@@ -4412,6 +4464,8 @@ function DevelopmentDetail() {
 
     return {
       ...sourceDetailsForm,
+      expectedDevelopmentRevision: detailsForm.expectedDevelopmentRevision,
+      expectedProfileRevision: detailsForm.expectedProfileRevision,
       location: marketingOverview.locationLabel || sourceDetailsForm.location,
       address: marketingOverview.address || sourceDetailsForm.address,
       suburb: marketingOverview.suburb || sourceDetailsForm.suburb,
@@ -4726,7 +4780,7 @@ function DevelopmentDetail() {
   }
 
   function handleStartGeneralDetailsEdit() {
-    if (data) setDetailsForm(buildDetailsForm(data))
+    if (data) resetDetailsForm(buildDetailsForm(data))
     setSellerDetailsExpanded(false)
     setIsEditingSellerDetails(false)
     setGeneralDetailsExpanded(true)
@@ -4734,7 +4788,7 @@ function DevelopmentDetail() {
   }
 
   function handleStartSellerDetailsEdit() {
-    if (data) setDetailsForm(buildDetailsForm(data))
+    if (data) resetDetailsForm(buildDetailsForm(data))
     setGeneralDetailsExpanded(false)
     setIsEditingGeneralDetails(false)
     setSellerDetailsExpanded(true)
@@ -5077,14 +5131,14 @@ function DevelopmentDetail() {
 
   function handleCancelGeneralDetailsEdit() {
     if (data) {
-      setDetailsForm(buildDetailsForm(data))
+      resetDetailsForm(buildDetailsForm(data))
     }
     setIsEditingGeneralDetails(false)
   }
 
   function handleCancelSellerDetailsEdit() {
     if (data) {
-      setDetailsForm(buildDetailsForm(data))
+      resetDetailsForm(buildDetailsForm(data))
     }
     setIsEditingSellerDetails(false)
   }
@@ -5130,6 +5184,10 @@ function DevelopmentDetail() {
 
   async function handleUnitSave(event) {
     event.preventDefault()
+    if (requiresDevelopmentTransaction(unitForm.status) && unitForm.status !== 'Reserved' && !selectedUnitRow?.currentTransactionId) {
+      setError('Create the transaction from the signed OTP before moving this unit into the transaction journey.')
+      return
+    }
     const reserving = unitForm.status === 'Reserved' && selectedUnitRow?.status !== 'Reserved'
     if (reserving && !selectedUnitRow) { setError('Save the new unit as Available, then reserve it for a buyer.'); return }
     if (selectedUnitRow && unitForm.status !== selectedUnitRow.status && developmentLeads.some(lead => lead.preferredUnitId === selectedUnitRow.id && ['reserved', 'expired'].includes(lead.reservationState))) {
@@ -5141,6 +5199,7 @@ function DevelopmentDetail() {
       setFeedback('')
       const savedUnit = await saveDevelopmentUnit({
         ...unitForm,
+        ...(selectedUnitRow ? { expectedStatus: selectedUnitRow.status, transactionId: selectedUnitRow.currentTransactionId || null } : {}),
         status: reserving ? selectedUnitRow.status : unitForm.status,
         developmentId: data.development.id,
         listPrice: unitForm.listPrice === '' ? 0 : unitForm.listPrice,
@@ -5154,18 +5213,7 @@ function DevelopmentDetail() {
         unitTypeId: unitForm.unitTypeId || null,
         catalogueFloorplanId: unitForm.catalogueFloorplanId || null
       })
-      const needsTransaction = unitForm.status !== 'Reserved' && requiresDevelopmentTransaction(unitForm.status) && !selectedUnitRow?.currentTransactionId
-      if (needsTransaction) {
-        await createTransactionForUnitStatus(
-          {
-            ...savedUnit,
-            unitNumber: savedUnit.unitNumber || unitForm.unitNumber,
-            salesPrice: savedUnit.currentPrice ?? savedUnit.price ?? unitForm.currentPrice ?? unitForm.listPrice
-          },
-          unitForm.status
-        )
-      }
-      setFeedback(needsTransaction ? `Transaction created for Unit ${unitForm.unitNumber}. Complete buyer, finance and partner details in its workspace.` : unitForm.id ? 'Unit updated.' : 'Unit added to development.')
+      setFeedback(unitForm.id ? 'Unit updated.' : 'Unit added to development.')
       setUnitForm(DEFAULT_UNIT_FORM)
       setUnitModalOpen(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
@@ -5292,29 +5340,33 @@ function DevelopmentDetail() {
   }
 
   async function handleMarketingEventCreate(draft) {
-    if (!canManageDevelopment) return false
+    if (!canManageDevelopment || marketingEventCreateLock.current) return false
+    marketingEventCreateLock.current = true
     try {
       setMarketingEventSaving(true)
       setError('')
       setFeedback('')
       const startsAt = draft.startsAt ? new Date(draft.startsAt).toISOString() : null
-      await createDevelopmentMarketingEvent({
+      const saved = await createDevelopmentMarketingEvent({
         developmentId: data.development.id,
         organisationId: data.development.organisationId || data.development.organisation_id,
         developmentName: data.development.name,
-        title: draft.title,
-        eventType: draft.eventType,
-        startsAt,
-        location: draft.location,
-        description: draft.description
+        requestId: draft.requestId,
+        title: draft.title, eventType: draft.eventType, startsAt,
+        location: draft.location, description: draft.description,
       })
-      setFeedback('Marketing event created.')
-      await loadData()
+      setData(previous => previous?.development?.id !== data.development.id ? previous : {
+        ...previous, marketingEvents: [...(previous.marketingEvents || []).filter(event => event.id !== saved.id), saved],
+      })
+      setFeedback(saved.activityWarning ? 'Marketing event created. Activity history could not be updated.' : 'Marketing event created.')
+      try { await loadSections(['marketingEvents'], { refresh: true }) }
+      catch { setError('The event was created, but its list could not be refreshed. Retry loading events before creating it again.') }
       return true
     } catch (eventError) {
       setError(eventError.message)
-      return false
+      throw eventError
     } finally {
+      marketingEventCreateLock.current = false
       setMarketingEventSaving(false)
     }
   }
@@ -5475,6 +5527,10 @@ function DevelopmentDetail() {
   }
 
   async function handleUnitQuickSave(unit, patch, { field = 'unit', feedbackLabel = 'Unit updated.' } = {}) {
+    if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
+      await handleUnitStatusQuickChange(unit, patch.status)
+      return
+    }
     const saveKey = `${unit.id}:${field}`
     const nextUnitNumber = Object.prototype.hasOwnProperty.call(patch, 'unitNumber') ? String(patch.unitNumber || '').trim() : String(unit.unitNumber || '').trim()
 
@@ -5517,17 +5573,8 @@ function DevelopmentDetail() {
       const nextStatusValue = Object.prototype.hasOwnProperty.call(unitPatch, 'status') ? getDevelopmentUnitStatusOption(unitPatch.status).value || 'Available' : unit.status || 'Available'
       unitPatch.status = nextStatusValue
 
-      const savedUnit = await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, unitPatch))
+      const savedUnit = await saveDevelopmentUnit({ ...buildUnitQuickSavePayload(unit, unitPatch), expectedStatus: unit.status, transactionId: unit.currentTransactionId || null })
 
-      const statusOption = getDevelopmentUnitStatusOption(nextStatusValue)
-      if (Object.prototype.hasOwnProperty.call(patch, 'status') && unit.currentTransactionId && statusOption.lifecycleStage) {
-        await updateTransactionLifecycleStage(unit.currentTransactionId, statusOption.lifecycleStage, {
-          completed: Boolean(statusOption.completed),
-          status: statusOption.completed ? 'completed' : 'active',
-          source: 'development_unit_status_quick_update',
-          note: `Unit ${unit.unitNumber} marked ${nextStatusValue} from the development stock table.`
-        })
-      }
 
       applyUnitQuickUpdate(unit.id, {
         unitPatch: {
@@ -5724,6 +5771,7 @@ function DevelopmentDetail() {
       return
     }
     unitStatusChangeLock.current = true
+    let statusSaved = false
 
     try {
       setUnitSaving(true)
@@ -5732,20 +5780,15 @@ function DevelopmentDetail() {
       setFeedback('')
       setError('')
       const holdingLead = developmentLeads.find(lead => lead.preferredUnitId === unit.id && ['reserved', 'expired'].includes(lead.reservationState))
-      if (!unit.currentTransactionId && holdingLead && ['Available', 'Not Released'].includes(nextStatusValue)) {
-        await setDevelopmentLeadReservation({ developerLeadId: holdingLead.developerLeadId, unitId: unit.id, reserved: false })
-      }
-      const savedUnit = await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))
+      const savedUnit = await saveDevelopmentUnitStatus({
+        developmentId: data.development.id, unitId: unit.id,
+        transactionId: unit.currentTransactionId || null,
+        expectedStatus: unit.status, status: nextStatusValue,
+        reservationLeadId: !unit.currentTransactionId ? holdingLead?.developerLeadId || null : null,
+      })
 
-      if (unit.currentTransactionId && statusOption.lifecycleStage) {
-        await updateTransactionLifecycleStage(unit.currentTransactionId, statusOption.lifecycleStage, {
-          completed: Boolean(statusOption.completed),
-          status: statusOption.completed ? 'completed' : 'active',
-          source: 'development_unit_status_quick_update',
-          note: `Unit ${unit.unitNumber} marked ${nextStatusValue} from the development stock table.`
-        })
-      }
-
+      statusSaved = true
+      if (savedUnit.reservationReceipt) notifyDevelopmentLeadChange(savedUnit.reservationReceipt, { stockChanged: true })
       applyUnitQuickUpdate(unit.id, {
         unitPatch: { ...savedUnit, status: nextStatusValue },
         transactionPatch: statusOption.lifecycleStage ? { stage: statusOption.lifecycleStage } : null
@@ -5753,8 +5796,8 @@ function DevelopmentDetail() {
       await refreshUnitStatusViews(unit.currentTransactionId)
       setFeedback(`Unit ${unit.unitNumber} marked ${nextStatusValue}.`)
     } catch (saveError) {
-      await loadData()
-      setError(saveError.message)
+      try { await loadData() } catch { /* The original result determines whether the save committed. */ }
+      setError(statusSaved ? `Unit ${unit.unitNumber} was saved. Refresh to load the latest stock and transaction views.` : saveError.message)
     } finally {
       setUnitSaving(false)
       setUnitStatusSavingId('')
@@ -6037,6 +6080,7 @@ function DevelopmentDetail() {
 
   async function handleBulkUnitSave(event) {
     event.preventDefault()
+    if (bulkUnitSaveLock.current) return
 
     if (bulkUnitForm.step !== 'review') {
       handleBulkUnitNext()
@@ -6047,6 +6091,11 @@ function DevelopmentDetail() {
 
     if (!generatedRows.length) {
       setError('Generate at least one unit before creating units.')
+      return
+    }
+
+    if (generatedRows.some(row => !['Available', 'Not Released', 'Blocked'].includes(row.status || 'Available'))) {
+      setError('New units must start as Available, Not released or Blocked. Reserve them or create their transactions after adding the stock.')
       return
     }
 
@@ -6078,29 +6127,15 @@ function DevelopmentDetail() {
       return
     }
 
+    bulkUnitSaveLock.current = true
+    let batchSaved = false
     try {
       setBulkUnitSaving(true)
       setFeedback('')
       setError('')
 
-      await Promise.all(
-        generatedRows.map(row =>
-          saveDevelopmentUnit({
-            developmentId: data.development.id,
-            unitNumber: row.unitNumber,
-            unitLabel: row.unitLabel || row.unitNumber,
-            phase: row.phase,
-            block: row.block,
-            unitType: row.unitType,
-            bedrooms: row.bedrooms === '' ? null : row.bedrooms,
-            listPrice: row.listPrice === '' ? 0 : row.listPrice,
-            currentPrice: null,
-            status: row.status || 'Available',
-            vatApplicable: row.vatApplicable === '' ? null : row.vatApplicable === 'true',
-            notes: row.notes
-          })
-        )
-      )
+      await saveDevelopmentUnitsBatch(data.development.id, generatedRows)
+      batchSaved = true
 
       setFeedback(`${formatNumber(generatedRows.length)} units added to development.`)
       setBulkUnitForm(DEFAULT_BULK_UNIT_FORM)
@@ -6108,8 +6143,10 @@ function DevelopmentDetail() {
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
-      setError(saveError.message)
+      try { await loadData() } catch { /* Keep the original save failure and generated rows for retry. */ }
+      setError(batchSaved ? 'The units were saved, but the latest stock could not be loaded. Refresh before creating another batch.' : saveError.message)
     } finally {
+      bulkUnitSaveLock.current = false
       setBulkUnitSaving(false)
     }
   }
@@ -6256,7 +6293,7 @@ function DevelopmentDetail() {
     }
 
     if (hasUnsavedChanges && data) {
-      setDetailsForm(buildDetailsForm(data))
+      resetDetailsForm(buildDetailsForm(data))
       setReservationSettingsForm(buildReservationSettingsForm(data.settings))
     }
 
@@ -6313,7 +6350,7 @@ function DevelopmentDetail() {
 
   function renderMarketingHubOverview() {
     return <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading marketing overview…</p>}>
-      <DevelopmentMarketingOverview developmentId={data.development.id} websitePublished={Boolean(marketingForm.listingConfiguration.publicVisibility && marketingForm.listingConfiguration.marketingStatus === 'live')} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
+      <DevelopmentMarketingOverview developmentId={data.development.id} websitePublished={marketingPublished} listings={linkedListingRows} organisationUsers={organisationUsers} onOpenListing={listingId => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} />
     </DeferredWorkflow>
   }
 
@@ -6452,7 +6489,16 @@ function DevelopmentDetail() {
         organisationUsers={organisationUsers}
         canManage={canManageDevelopment}
         saving={marketingEventSaving}
+        loading={!detailSections.marketingEvents || detailSections.marketingEvents.status === 'loading'}
+        loadError={detailSections.marketingEvents?.status === 'error' ? detailSections.marketingEvents.error : ''}
+        onRetry={() => void loadSections(['marketingEvents'], { refresh: true })}
         onCreate={handleMarketingEventCreate}
+        onPrepareCampaign={event => {
+          const params = new URLSearchParams(location.search)
+          params.set('tab', 'marketing'); params.set('marketingSection', 'campaigns'); params.set('developmentEvent', event.id)
+          setMarketingHubSection('campaigns')
+          navigate({ pathname: location.pathname, search: `?${params}` })
+        }}
       />
     </DeferredWorkflow>
   }
@@ -6535,10 +6581,10 @@ function DevelopmentDetail() {
     if (marketingHubSection === 'overview') return renderMarketingHubOverview()
     if (marketingHubSection === 'website') return <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#dce6f2] bg-white px-4 py-3">
-        <span className="text-sm font-semibold text-[#294563]">Website: {marketingForm.listingConfiguration.publicVisibility && marketingForm.listingConfiguration.marketingStatus === 'live' ? 'Live' : 'Not published'}</span>
+        <span className="text-sm font-semibold text-[#294563]">Website: {marketingPublished ? 'Live' : 'Not published'}</span>
         {canEditMarketing ? <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handlePublishDevelopmentMarketing()}>{detailsSaving ? 'Saving…' : marketingForm.listingConfiguration.publicVisibility ? 'Publish updates' : 'Publish website'}</Button>
-          {marketingForm.listingConfiguration.publicVisibility ? <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handleUnpublishDevelopmentMarketing()}>Unpublish website</Button> : null}
+          <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handlePublishDevelopmentMarketing()}>{detailsSaving ? 'Saving…' : marketingPublished ? 'Publish updates' : 'Publish website'}</Button>
+          {marketingPublished ? <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handleUnpublishDevelopmentMarketing()}>Unpublish website</Button> : null}
         </div> : null}
       </div>
       <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading website analytics…</p>}>
@@ -6552,7 +6598,7 @@ function DevelopmentDetail() {
       </div>
     )
     if (marketingHubSection === 'campaigns') return <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading marketing campaigns…</p>}>
-      <DevelopmentMarketingCampaigns key={`${currentWorkspace?.id || ''}:${data.development.id}`} development={data.development} organisationUsers={organisationUsers} canManage={canManageDevelopment} />
+      <DevelopmentMarketingCampaigns initialEventId={new URLSearchParams(location.search).get('developmentEvent')} key={`${currentWorkspace?.id || ''}:${data.development.id}`} development={data.development} organisationUsers={organisationUsers} canManage={canManageDevelopment} />
     </DeferredWorkflow>
     if (marketingHubSection === 'events') return renderMarketingEventsSection()
     return renderMarketingHubOverview()
@@ -6605,7 +6651,7 @@ function DevelopmentDetail() {
             ['Unit Types', marketingForm.floorplans.length ? `${marketingForm.floorplans.length}` : '0', 'Active'],
             ['Assets', `${marketingAssetDocuments.length}`, 'Total'],
             ['Floorplans', `${floorplanDocumentOptions.length}`, 'Uploaded'],
-            ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus), marketingForm.listingConfiguration.publicVisibility ? 'Visible' : 'Not published']
+            ['Listing Status', toTitleLabel(marketingReadinessSummary.listingStatus), marketingPublished ? 'Visible' : 'Not published']
           ].map(([label, value, sublabel]) => (
             <article key={label} className="border-b border-[#edf2f7] px-4 py-4 sm:border-r xl:border-b-0">
               <span className="block text-[0.74rem] font-semibold uppercase tracking-[0.12em] text-[#7c8da3]">{label}</span>
@@ -7228,18 +7274,14 @@ function DevelopmentDetail() {
         <DevelopmentDataSection names={activeDataSections} sections={detailSections} onRetry={() => void loadSections(activeDataSections)}>
         {activeTab === 'overview' ? (
           <section className="mt-5 grid gap-5">
-            <details key={developmentId} className="rounded-[18px] border border-[#dde4ee] bg-white p-4" onToggle={event => {
-              const open = event.currentTarget.open
-              setChannelStatisticsOwner(open ? developmentId : '')
-              if (open) void loadSections(['inventory'])
-            }}>
-              <summary className="cursor-pointer text-sm font-semibold text-[#35546c]">Listing channel statistics</summary>
-              {channelStatisticsOpen ? <DevelopmentDataSection names={['inventory']} sections={detailSections} onRetry={() => void loadSections(['inventory'])}>
+            <div>
+              <h2 className="mb-3 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Listing channel statistics</h2>
+              <DevelopmentDataSection names={['channelStatistics']} sections={detailSections} onRetry={() => void loadSections(['channelStatistics'])}>
                 <DevelopmentChannelStatistics developmentId={data.development.id}
-                  websitePublished={Boolean(marketingForm.listingConfiguration.publicVisibility && marketingForm.listingConfiguration.marketingStatus === 'live')}
-                  listings={linkedListingRows} />
-              </DevelopmentDataSection> : null}
-            </details>
+                  websitePublished={data.channelStatisticsWebsitePublished}
+                  listings={overviewStatisticsListings} />
+              </DevelopmentDataSection>
+            </div>
             <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
               <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <div className="mb-5 flex items-center justify-between gap-3">
@@ -9270,7 +9312,7 @@ function DevelopmentDetail() {
                   <p className="mt-2 max-w-[680px] text-sm leading-6 text-[#d4e5df]">Manage listings, your development website and the assets your team shares with buyers.</p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"><Globe2 size={14} aria-hidden="true" />Website: {marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live' ? 'Live' : 'Not published'}</span>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"><Globe2 size={14} aria-hidden="true" />Website: {marketingPublished ? 'Live' : 'Not published'}</span>
                   <Button type="button" variant="secondary" onClick={() => window.open(buildPublicDevelopmentUrl(marketingForm.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)), '_blank', 'noopener,noreferrer')}><ArrowUpRight size={15} aria-hidden="true" />Preview website</Button>
                 </div>
               </div>
@@ -9283,11 +9325,11 @@ function DevelopmentDetail() {
 
         {activeTab === 'availability' ? (
           <>
-            {canManageDevelopment && marketingForm.listingConfiguration.listingSlug === 'madison-place-abcf1b8a' ? <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading reservations…</p>}>
-              <MadisonReservationWorkspace key={data.development.id} developmentId={data.development.id} onChanged={() => window.dispatchEvent(new Event('itg:developments-changed'))} />
-            </DeferredWorkflow> : null}
             <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading availability…</p>}>
               <DevelopmentAvailabilityWorkspace
+                reservationWorkspace={canManageDevelopment && marketingForm.listingConfiguration.listingSlug === 'madison-place-abcf1b8a' ? <DeferredWorkflow fallback={<p role="status" className="p-4 text-sm text-[#60758c]">Loading reservations…</p>}>
+                  <MadisonReservationWorkspace key={data.development.id} developmentId={data.development.id} onChanged={() => window.dispatchEvent(new Event('itg:developments-changed'))} />
+                </DeferredWorkflow> : null}
                 units={unitRows}
                 structureNodes={data?.structureNodes || []}
                 productCatalogue={data?.productCatalogue}
@@ -9305,7 +9347,7 @@ function DevelopmentDetail() {
                 sitePlanQuality={sitePlanQuality}
                 sitePlanSuggestions={sitePlanSuggestions}
                 sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
-                sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
+                sitePlanPubliclyVisible={marketingPublished}
                 onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
                 onSaveVisualMap={handleAvailabilityVisualMapSave}
                 onSaveSitePlanViewport={(viewport, map) => void handleAvailabilitySitePlanViewportSave(viewport, map)}
@@ -9660,11 +9702,20 @@ function DevelopmentDetail() {
               {visibleDevelopmentLeadRows.length > 0 && developmentLeadView === 'list' ? (
                 <div className="mt-5 overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-[#e8eef5]">
+                    <table aria-label={developmentLeadSection === 'reservations' ? 'Development reservations' : 'Development leads'} className={`w-full table-fixed divide-y divide-[#e8eef5] ${developmentLeadSection === 'reservations' ? 'min-w-[1200px]' : 'min-w-[1120px]'}`}>
+                      <colgroup>
+                        <col className={developmentLeadSection === 'reservations' ? 'w-[22%]' : 'w-[30%]'} />
+                        {developmentLeadSection === 'reservations' ? <col className="w-[11%]" /> : null}
+                        <col className={developmentLeadSection === 'reservations' ? 'w-[12%]' : 'w-[13%]'} />
+                        <col className={developmentLeadSection === 'reservations' ? 'w-[17%]' : 'w-[19%]'} />
+                        <col className={developmentLeadSection === 'reservations' ? 'w-[11%]' : 'w-[12%]'} />
+                        <col className="w-[13%]" />
+                        <col className={developmentLeadSection === 'reservations' ? 'w-[14%]' : 'w-[13%]'} />
+                      </colgroup>
                       <thead className="bg-[#f8fafc]">
                         <tr>
                           {['Lead', ...(developmentLeadSection === 'reservations' ? ['Reserved unit'] : []), 'Source', 'Assigned To', 'Stage', 'Last Activity', 'Access'].map(heading => (
-                            <th key={heading} className="px-5 py-3 text-left text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">
+                            <th key={heading} scope="col" className="whitespace-nowrap px-4 py-3.5 text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
                               {heading}
                             </th>
                           ))}
@@ -9688,38 +9739,38 @@ function DevelopmentDetail() {
                                 if (!canOpenLead || !lead.developerLeadId) return
                                 openDevelopmentLeadWorkspace(lead.developerLeadId)
                               }}>
-                              <td className="px-5 py-4 align-middle">
-                                <div className="flex min-w-[230px] items-center gap-4">
-                                  <DevelopmentLeadPropertyImage src={getDevelopmentLeadUnitImage(lead, rows)} fallbackSrc={developmentHeroImageUrl} name={displayName} />
-                                  <span>{canOpenLead ? <button type="button" className="block text-left text-sm font-semibold text-[#142132]" onClick={event => { event.stopPropagation(); openDevelopmentLeadWorkspace(lead.developerLeadId) }}>{displayName}</button> : <strong className="block text-sm font-semibold text-[#142132]">{displayName}</strong>}<span className="mt-1 block text-xs text-[#6b7d93]">{contactLine}</span></span>
+                              <td className="px-4 py-3 align-middle">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <DevelopmentLeadPropertyImage compact src={getDevelopmentLeadUnitImage(lead, rows)} fallbackSrc={developmentHeroImageUrl} name={displayName} />
+                                  <span className="min-w-0 flex-1">{canOpenLead ? <button type="button" className="block max-w-full break-words text-left text-sm font-semibold leading-5 text-[#142132]" onClick={event => { event.stopPropagation(); openDevelopmentLeadWorkspace(lead.developerLeadId) }}>{displayName}</button> : <strong className="block break-words text-sm font-semibold leading-5 text-[#142132]">{displayName}</strong>}<span className="mt-1 block break-all text-xs leading-5 text-[#6b7d93]">{contactLine}</span></span>
                                 </div>
                               </td>
-                              {developmentLeadSection === 'reservations' ? <td className="px-5 py-4 align-middle text-sm font-semibold text-[#142132]">{reservedUnit?.unit_number || reservedUnit?.unitNumber || 'Reserved unit'}</td> : null}
-                              <td className="px-5 py-4 align-middle">
-                                <DevelopmentLeadSource source={lead.leadSource} brand={getDevelopmentLeadSourceBrand(lead, currentWorkspace)} />
+                              {developmentLeadSection === 'reservations' ? <td className="break-words px-4 py-3 align-middle text-sm font-semibold text-[#142132]">{reservedUnit?.unit_number || reservedUnit?.unitNumber || 'Reserved unit'}</td> : null}
+                              <td className="px-4 py-3 align-middle">
+                                <DevelopmentLeadSource compact source={lead.leadSource} brand={getDevelopmentLeadSourceBrand(lead, currentWorkspace)} />
                               </td>
-                              <td className="px-5 py-4 align-middle"><DevelopmentLeadAgent agent={assignedAgent} /></td>
-                              <td className="px-5 py-4 align-top">
-                                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${stage.className}`}>{stage.label}</span>
+                              <td className="px-4 py-3 align-middle"><DevelopmentLeadAgent compact agent={assignedAgent} /></td>
+                              <td className="px-4 py-3 align-middle">
+                                <span className={`inline-flex max-w-full rounded-full border px-2.5 py-1 text-xs font-semibold leading-4 ${stage.className}`}>{stage.label}</span>
                               </td>
-                              <td className="px-5 py-4 align-top text-sm text-[#44576d]">{formatDate(lead.updatedAt || lead.createdAt)}</td>
-                              <td className="px-5 py-4 align-top">
+                              <td className="whitespace-nowrap px-4 py-3 align-middle text-sm text-[#44576d]">{formatDate(lead.updatedAt || lead.createdAt)}</td>
+                              <td className="px-4 py-3 align-middle">
                                 {canOpenLead ? (
-                                  <div className="flex flex-col items-start gap-2">
-                                    <button type="button" onClick={event => { event.stopPropagation(); openDevelopmentLeadWorkspace(lead.developerLeadId) }} className="inline-flex items-center gap-1.5 rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#1f7a43]">
+                                  <div className="flex flex-col items-start gap-1.5">
+                                    <button type="button" onClick={event => { event.stopPropagation(); openDevelopmentLeadWorkspace(lead.developerLeadId) }} className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-2.5 py-1 text-xs font-semibold text-[#1f7a43]">
                                       Open lead
-                                      <ArrowUpRight size={12} />
+                                      <ArrowUpRight size={12} className="shrink-0" />
                                     </button>
                                     {canManageDevelopment && !lead.convertedTransactionId && lead.leadStatus !== 'lost' ? <button type="button" disabled={unitReservationSaving} onClick={event => {
                                       event.stopPropagation()
                                       setUnitReservationError('')
                                       if (['reserved', 'expired'].includes(lead.reservationState)) void handleDevelopmentReservation({ developerLeadId: lead.developerLeadId, unitId: lead.preferredUnitId, reserved: false })
                                       else setUnitReservationDraft({ leadId: lead.developerLeadId, unitId: lead.preferredUnitId || '' })
-                                    }} className="text-xs font-semibold text-[#176c50]">{['reserved', 'expired'].includes(lead.reservationState) ? 'Release reservation' : 'Reserve unit'}</button> : null}
+                                    }} className="max-w-full text-left text-xs font-semibold leading-5 text-[#176c50]">{['reserved', 'expired'].includes(lead.reservationState) ? 'Release reservation' : 'Reserve unit'}</button> : null}
                                   </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#64748b]">
-                                    <EyeOff size={12} />
+                                    <EyeOff size={12} className="shrink-0" />
                                     {sourceLeadId ? 'Protected' : 'No developer lead link'}
                                   </span>
                                 )}
@@ -10690,7 +10741,7 @@ function DevelopmentDetail() {
                             status: event.target.value
                           }))
                         }>
-                        {DEVELOPMENT_UNIT_STATUS_OPTIONS.map(option => (
+                        {DEVELOPMENT_UNIT_STATUS_OPTIONS.filter(option => ['Available', 'Not Released', 'Blocked'].includes(option.value)).map(option => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>

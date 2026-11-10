@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
@@ -24,16 +25,16 @@ const offerLinkSent = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Offer Link Sent',
 })
-assert.equal(offerLinkSent.label, 'Transaction Setup')
-assert.equal(offerLinkSent.funnelStage, 'Transaction Setup')
-assert.equal(offerLinkSent.columnId, 'transaction_setup')
+assert.equal(offerLinkSent.label, 'Buyer onboarding sent')
+assert.equal(offerLinkSent.funnelStage, 'Buyer onboarding sent')
+assert.equal(offerLinkSent.columnId, 'buyer_onboarding_sent')
 
 const otpReady = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Ready to Generate OTP',
 })
 assert.equal(otpReady.columnId, 'offer')
-assert.equal(otpReady.funnelStage, 'Offer')
+assert.equal(otpReady.funnelStage, 'Offer to purchase signed')
 
 const sellerMandate = resolveLeadLifecyclePresentation({
   leadCategory: 'seller',
@@ -72,7 +73,7 @@ assert.equal(converted.columnId, 'transaction')
 assert.equal(converted.reporting.dealCreated, true)
 
 const agencyPipelineSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
-const agencyPipelineServiceSource = await fs.readFile(new URL('../src/lib/agencyPipelineService.js', import.meta.url), 'utf8')
+const agencyPipelineServiceSource = await readLeadServiceSource(new URL('../src/lib/agencyPipelineService.js', import.meta.url))
 const agentLeadsSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
 
 assert.match(agencyPipelineSource, /resolveLeadLifecyclePresentation\(lead, \{ linkedDeal/, 'pipeline/table rows should use shared lead lifecycle presentation')

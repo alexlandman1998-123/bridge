@@ -1,3 +1,8 @@
+import ListingPriceUpdateDialog from '../../components/listings/ListingPriceUpdateDialog.jsx'
+import { publishListingPriceUpdate, priceUpdateProperty24Status } from '../../services/listings/listingPriceUpdate.js'
+import { createPrivateListingActivity } from '../../services/privateListingService.js'
+import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../../services/websiteListingPublicationService.js'
+import { getKingdomWebsitePublicationStatus, setKingdomWebsitePublication } from '../../services/kingdomWebsitePublicationService.js'
 import { INITIAL_LISTING_PUBLICATION_EVENT, readInitialListingChannelResults, watchInitialListingPublication, refreshListingPublicationResults, retryFailedListingChannels, requireSettledListingPublication } from '../../services/listings/listingInitialPublicationService'
 import { buildRentalWorkspaceKey } from '../../services/rentals/rentalWorkspaceScope'
 import { getListingChannelViewUrl } from '../../services/listings/listingMarketingChannelPresentation'
@@ -994,6 +999,7 @@ function RentalTabContent({
   channelActivity = [],
   websitePublicationStates,
   onManagePortal,
+  onUpdatePrice,
   onRefreshPortal,
   portalBusy,
   publicationResults = [],
@@ -1069,6 +1075,7 @@ function RentalTabContent({
       activity={getListingChannelManageActivity(channelActivity, key)}
       historyError={channelHistoryError}
       onEdit={() => onOpenEdit('marketing')}
+      onUpdatePrice={onUpdatePrice}
     />
     return (
       <section className="space-y-5">
@@ -1077,6 +1084,7 @@ function RentalTabContent({
         <article id="listing-distribution-channels" aria-label="Listing channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] p-5">
             <h3 id="rental-listing-advertising" tabIndex={-1} className="text-base font-semibold text-[#142132]">Listing Channels</h3>
+            <Button type="button" variant="secondary" size="sm" onClick={onUpdatePrice} disabled={publicationBusy || portalBusy}>Update price</Button>
             {publicationResults.length > 0 ? <div className="flex flex-wrap gap-2">
               <button type="button" className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-sm font-semibold text-[#243d56] disabled:opacity-50" disabled={publicationBusy} onClick={onCheckAdvertising}>{publicationBusy ? 'Checking…' : 'Check status'}</button>
               {publicationResults.some(result => result.retryable) ? <button type="button" className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-sm font-semibold text-[#243d56] disabled:opacity-50" disabled={publicationBusy || publicationResults.some(result => result.status === 'publishing')} onClick={onRetryAdvertising}>Retry failed channels</button> : null}
@@ -1223,6 +1231,7 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editOpen, setEditOpen] = useState(false)
+  const [priceUpdateOpen, setPriceUpdateOpen] = useState(false)
   const [editForm, setEditForm] = useState(() => ({ ...RENTAL_LISTING_INITIAL_FORM }))
   const [editError, setEditError] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
@@ -1276,7 +1285,7 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
   const portalActionRef = useRef(false)
   const onWebsiteStatus = useCallback(value => setWebsiteStatus(value), [])
   const onKingdomStatus = useCallback(value => setKingdomStatus(value), [])
-  useEffect(() => { setWebsiteStatus(null); setKingdomStatus(null); setManagePortal('') }, [organisationId, listingId])
+  useEffect(() => { setWebsiteStatus(null); setKingdomStatus(null); setManagePortal(''); setPriceUpdateOpen(false) }, [organisationId, listingId])
   const refreshDocuments = useCallback(async () => {
     const request = ++overviewRequestRef.current
     const result = await loadRentalListingOverview(listing, rentalScope, { ...rentalScope, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' })
@@ -1538,6 +1547,58 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
       listingMutationRef.current = false
       setSavingEdit(false)
     }
+  }
+
+  async function saveAndPublishRentalPrice(values) {
+    if (listingMutationRef.current || portalActionRef.current || portalSubmissionRef.current) throw new Error('A listing update is already running.')
+    if (editOpen) throw new Error('Save or close your other rental edits before updating the price.')
+    if (portalChannels.some(channel => channel.loading || channel.loadError)) throw new Error('Load the saved channel statuses before updating the price.')
+    listingMutationRef.current = true
+    setSavingEdit(true)
+    let savedListing = listing
+    const keys = { Property24: 'property24', 'Private Property': 'private_property', 'Agency Website': 'agency_website', 'Kingdom Website': 'kingdom_website' }
+    try {
+      const [agency, kingdom] = await Promise.all([getWebsiteListingPublicationStatus(listingId, { includePartner: false }), getKingdomWebsitePublicationStatus(listingId)])
+      const livePortals = portalChannels.filter(channel => channel.reference && !['not_published','inactive','expired','removed','withdrawn'].includes(channel.status))
+      const channels = [...livePortals.map(channel => channel.key === 'property24' ? 'Property24' : 'Private Property'), ...(agency?.status === 'published' ? ['Agency Website'] : []), ...(kingdom?.status === 'published' ? ['Kingdom Website'] : [])]
+      const record = async (type, title, metadata) => {
+        const row = await createPrivateListingActivity({ privateListingId: listingId, activityType: type, activityTitle: title, visibility: 'internal', metadata })
+        if (!row?.id) throw new Error('The price update history could not be saved.')
+      }
+      const captured = buildRentalListingEditForm(listing)
+      const existingFeatures = listing.listingPublicationData?.features || listing.publicationData?.features || []
+      const original = { ...captured, selectedFeatures: [...new Set([...(captured.selectedFeatures || []), ...(Array.isArray(existingFeatures) ? existingFeatures : [])])].filter(feature => String(feature).toLowerCase().replace(/[ -]/g,'_') !== 'reduced_banner') }
+      const outcome = await publishListingPriceUpdate({ ...values, listingStatus: listing.listingStatus || listing.listing_status, activeChannels: channels, currentPrice: original.monthlyRent, currentReduced: original.showReducedBanner }, {
+        check: channel => requireSettledListingPublication(listingId, [keys[channel]]),
+        save: async change => {
+          const result = await updateRentalListingDraft(listingId, { ...original, monthlyRent: String(change.price), showReducedBanner: change.showReducedBanner }, { ...rentalScope, organisationId, assignedAgentId, performedBy: assignedAgentId })
+          savedListing = result.listing
+          if (!savedListing?.id) throw new Error('The rental price save could not be confirmed.')
+          if (mountedRef.current) { setListing(savedListing); setEditForm(buildRentalListingEditForm(savedListing)) }
+          let warning = ''
+          try { await record('listing_price_changed', 'Rental price updated', { action: 'price_update', ...change, nextPrice: change.price }) } catch { warning = 'The price is saved, but its price history needs attention.' }
+          return { ok: true, listing: savedListing, distributionSync: result.publicationResult, warning }
+        },
+        recordStarted: (targets, change) => record('listing_portal_update_started', 'Rental price update started', { action: 'price_update', ...change, nextPrice: change.price, channelResults: targets.map(channel => ({ channel, status: 'pending' })) }),
+        recordStage: (channel, stage, change, saved, error) => recordRentalPublicationEvent(listingId, keys[channel], stage, { action: 'price_update', snapshot: buildRentalPublicationSnapshot(saved?.listing || savedListing), ...(error ? { error: error.message } : {}) }),
+        send: async (channel, change) => {
+          if (channel === 'Property24') {
+            const response = await publishRentalProperty24Listing(listingId, { environment: 'production', photosChanged: false, status: priceUpdateProperty24Status({ ...change, listingStatus: listing.listingStatus || listing.listing_status }) })
+            if (response?.status !== 'SUBMITTED') throw new Error('Property24 did not confirm the rental price update.')
+          } else if (channel === 'Private Property') {
+            const response = await publishPrivatePropertyRentalListing(listingId)
+            if (response?.status !== 'SUBMITTED') throw new Error('Private Property did not confirm the rental price update.')
+          } else {
+            const response = channel === 'Agency Website' ? await setWebsiteListingPublication(listingId, 'update', { includePartner: false }) : await setKingdomWebsitePublication(listingId, 'update')
+            if (response?.status !== 'published') throw new Error(`${channel} did not confirm the rental price update.`)
+          }
+        },
+        recordFinished: (results, change) => record('listing_portal_update_retried', 'Rental price channels updated', { action: 'price_update', ...change, nextPrice: change.price, channelResults: results }),
+        onProgress: values.onProgress,
+      })
+      await loadListing({ background: true })
+      return outcome
+    } finally { listingMutationRef.current = false; if (mountedRef.current) setSavingEdit(false) }
   }
 
   async function recordWebsiteEvent(channel,event) {
@@ -1992,6 +2053,7 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
           websitePublicationStates={websitePublicationStates}
           channelHistoryError={channelData.errors?.activity || ''}
           channelActivity={channelData.activity || []}
+          onUpdatePrice={() => setPriceUpdateOpen(true)}
           onManagePortal={channel => { setPublishError(''); setSuccessMessage(''); setManagePortal(channel) }}
           onRefreshPortal={handleRefreshPortal}
           portalBusy={Boolean(portalAction) || publishing || publishingPrivateProperty}
@@ -2001,12 +2063,14 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
           onRetryAdvertising={() => void checkAdvertisingStatus(true)}
           landlordPanel={<RentalListingLandlordPanel key={`${organisationId}:${listingId}`} listing={listing} scope={rentalScope} onSaved={(saved) => { if (!mountedRef.current) return; loadRequestRef.current += 1; setLoading(false); setListing(saved); setEditForm(buildRentalListingEditForm(saved)) }} />}
         />
+        {priceUpdateOpen ? <ListingPriceUpdateDialog currentPrice={buildRentalListingEditForm(listing).monthlyRent} currentReduced={Boolean(buildRentalListingEditForm(listing).showReducedBanner)} listingStatus={listing.listingStatus || listing.listing_status} listingType="rental" externalBusy={savingEdit || savingMedia || Boolean(portalAction)} onClose={() => setPriceUpdateOpen(false)} onPublish={saveAndPublishRentalPrice} /> : null}
         {managePortal && portalChannels.find(channel => channel.key === managePortal) ? <RentalPortalManagementPanel
           key={managePortal}
           channel={portalChannels.find(channel => channel.key === managePortal)}
           listing={{ ...listing, address: formatRentalHeroAddress(detail.row), imageUrl: detail.row.imageUrl, priceLabel: formatCurrency(detail.row.monthlyRent), reference: listing.arch9Reference || listing.listingReference || listing.listingCode }}
           busy={Boolean(portalAction) || publishing || publishingPrivateProperty || savingMedia}
           onClose={() => setManagePortal('')}
+          onUpdatePrice={() => setPriceUpdateOpen(true)}
           onRefresh={() => handleRefreshPortal(managePortal)}
           onChangeStatus={status => handlePortalStatusChange(managePortal,status)}
           onVerifyLink={url => handleVerifyPortalLink(managePortal,url)}

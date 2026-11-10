@@ -1133,6 +1133,18 @@ automatic inactivity logout is skipped because activity in other tabs cannot
 be verified. Focused checks: `src/lib/__tests__/sessionInactivity.test.js` and
 `scripts/auth-session-resilience.test.mjs`.
 
+Startup uses one consolidated workspace request per attempt. A timeout, transport
+failure or access denial ends that attempt instead of launching legacy profile
+and membership reads. Only an absent RPC retains the compatibility fallback;
+the resolver does not request that RPC twice. Optional signup and health reads
+start after required profile access succeeds. Timed-out workspace query builders
+and health probes cancel their SDK transport, and workspace timeouts enter the
+existing bounded retry policy. These changes are locally verified and require a
+release before they affect production. Focused checks:
+`src/lib/__tests__/authBootProfileRecovery.test.js`,
+`src/services/__tests__/workspaceResolutionService.test.js` and
+`scripts/auth-bridge-bootstrap-timeout.test.mjs`.
+
 Local development and Vitest use separate Vite cache directories:
 `node_modules/.vite-dev` and `node_modules/.vite-vitest`. This keeps a test run
 from replacing dependencies referenced by an already running development server,

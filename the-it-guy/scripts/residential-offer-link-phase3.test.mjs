@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
@@ -171,7 +172,7 @@ assert.match(listingOffersService, /sourceContext: \{ invite, listing \}/)
 assert.match(listingOffersService, /submitBuyerOnboarding/)
 assert.match(listingOffersService, /buyerOnboardingNextAction: 'prepare_otp_transaction'/)
 
-const buyerLifecycleService = await readFile(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+const buyerLifecycleService = await readLeadServiceSource(new URL('../src/lib/buyerLifecycleService.js', import.meta.url))
 assert.match(buyerLifecycleService, /submitCanonicalBuyerOnboarding/)
 assert.match(buyerLifecycleService, /BUYER_LIFECYCLE_EVENTS\.ONBOARDING_STARTED/)
 assert.match(buyerLifecycleService, /buyerOnboardingNextAction: 'prepare_otp_transaction'/)

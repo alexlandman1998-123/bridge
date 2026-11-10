@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { parse } from '@babel/parser'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -6,18 +7,12 @@ import { dirname, resolve } from 'node:path'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const detailSource = readFileSync(resolve(root, 'src/pages/DevelopmentDetail.jsx'), 'utf8')
 
-assert.ok(
-  detailSource.includes('updateTransactionLifecycleStage,'),
-  'development detail should import transaction lifecycle updates for linked transactions',
-)
-
-assert.ok(
-  detailSource.includes('const DEVELOPMENT_UNIT_STATUS_OPTIONS = [') &&
-    detailSource.includes("{ value: 'OTP Signed', label: 'OTP'") &&
-    detailSource.includes("{ value: 'Sold', label: 'Sold'") &&
-    detailSource.includes("{ value: 'Registered', label: 'Registered'"),
-  'development units should share a broad stock status vocabulary',
-)
+assert.match(detailSource, /saveDevelopmentUnitStatus,/, 'Development detail must use the atomic stock/lifecycle command.')
+const ast = parse(detailSource, { sourceType: 'module', plugins: ['jsx'] })
+const statuses = ast.program.body.flatMap(node => node.declarations || []).find(node => node.id?.name === 'DEVELOPMENT_UNIT_STATUS_OPTIONS').init.elements.map(node => Object.fromEntries(node.properties.map(property => [property.key.name, property.value.value])))
+for (const [value, label] of [['OTP Signed', 'OTP'], ['Sold', 'Sold'], ['Registered', 'Registered']]) {
+  assert.equal(statuses.find(option => option.value === value)?.label, label, 'Unit status vocabulary must retain ' + value)
+}
 
 assert.ok(
   detailSource.includes('function resolveDevelopmentTrackerMainStage') &&
@@ -34,14 +29,14 @@ assert.ok(
 
 assert.ok(
   detailSource.includes('async function handleUnitStatusQuickChange(unit, nextStatus)') &&
-    detailSource.includes('await saveDevelopmentUnit(buildUnitQuickSavePayload(unit, { status: nextStatusValue }))'),
-  'unit table should save quick status changes directly onto the stock row',
+    detailSource.includes('const savedUnit = await saveDevelopmentUnitStatus({'),
+  'unit table should save quick stock status and lifecycle changes atomically',
 )
 
 assert.ok(
-  detailSource.includes('if (unit.currentTransactionId && statusOption.lifecycleStage)') &&
-    detailSource.includes("source: 'development_unit_status_quick_update'"),
-  'quick status changes should sync lifecycle only when an Arch9 transaction exists',
+  detailSource.includes('transactionId: unit.currentTransactionId || null') &&
+    detailSource.includes('expectedStatus: unit.status, status: nextStatusValue'),
+  'the server command must receive the exact transaction association and original stock status',
 )
 
 assert.ok(
@@ -53,9 +48,9 @@ assert.ok(
 )
 
 assert.ok(
-  detailSource.includes('openDevelopmentTransactionWizard({ unitId: row.unit?.id })') &&
+  detailSource.includes('void handleUnitTransactionRecovery(row.unit)') && detailSource.includes('openDevelopmentTransactionWorkspace(row)') &&
     !detailSource.includes('openUnitModal(unit || row.unit)'),
-  'manual development transaction rows should open transaction setup, not the stock-master unit drawer',
+  'manual development transaction rows should recover and open their transaction workspace, not the stock-master unit drawer',
 )
 
 assert.ok(

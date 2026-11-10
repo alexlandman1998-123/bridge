@@ -129,7 +129,7 @@ function assertResolverInput(input = {}) {
 }
 
 function requireClient(client = supabase) {
-  if (!client || !isSupabaseConfigured) throw new Error('Supabase is required for canonical document requirement resolution.')
+  if (!client || (client === supabase && !isSupabaseConfigured)) throw new Error('Supabase is required for canonical document requirement resolution.')
   return client
 }
 

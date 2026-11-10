@@ -182,6 +182,7 @@ export function buildRentalListingEditForm(listing = {}) {
     property24SuburbId: normalizeText(raw.property24SuburbId || raw.property24_suburb_id || publication.property24SuburbId || publication.property24_suburb_id || rentalInfo.property24SuburbId || rentalInfo.property24_suburb_id),
     marketingApprovalStatus: normalizeText(row.marketingApprovalStatus) || RENTAL_LISTING_INITIAL_FORM.marketingApprovalStatus,
     description: normalizeText(raw.description || raw.listingPreviewDescription || raw.listing_preview_description),
+    showReducedBanner: propertyProfile.showReducedBanner === true || (Array.isArray(publication.features) && publication.features.includes('reduced_banner')),
     selectedFeatures: Array.isArray(propertyProfile.selectedFeatures)
       ? propertyProfile.selectedFeatures
       : Array.isArray(publication.features)

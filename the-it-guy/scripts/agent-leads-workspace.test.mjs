@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -467,7 +468,7 @@ try {
   assert.ok(!workspaceSource.includes("onMore={() => setActiveTab('timeline')}"), 'More should no longer be a direct timeline shortcut')
   }
 
-  const appointmentServiceSource = await readFile(new URL('../src/lib/agencyPipelineService.js', import.meta.url), 'utf8')
+  const appointmentServiceSource = await readLeadServiceSource(new URL('../src/lib/agencyPipelineService.js', import.meta.url))
   assert.match(appointmentServiceSource, /await saveAppointmentCommand\(/, 'appointment creation must use the atomic scheduling command')
   assert.match(appointmentServiceSource, /verifiedSaved\.mutationReplayed/, 'a replay must not duplicate post-save lead actions')
   const notificationMigration = await readFile(new URL('../../supabase/migrations/20261008184511_calendar_durable_notifications.sql', import.meta.url), 'utf8')

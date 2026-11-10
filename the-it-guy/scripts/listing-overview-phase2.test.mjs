@@ -1,3 +1,4 @@
+import { readLeadServiceSource, readDomainApiSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
@@ -94,7 +95,7 @@ assert.match(bookingMigration, /v_emails <> 3 or v_pending <> 3/)
 
 const listingDetailSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const rsvpPageSource = await readFile(new URL('../src/pages/AppointmentRsvpPage.jsx', import.meta.url), 'utf8')
-const pipelineSource = await readFile(new URL('../src/lib/agencyPipelineService.js', import.meta.url), 'utf8')
+const pipelineSource = readLeadServiceSource(new URL('../src/lib/agencyPipelineService.js', import.meta.url)) + '\n' + readDomainApiSource()
 const modalSource = await readFile(new URL('../src/components/listings/ListingBuyerActionModals.jsx', import.meta.url), 'utf8')
 assert.match(listingDetailSource, /onClick=\{\(\) => openViewingRequestModal\(\)\}/)
 assert.match(listingDetailSource, /onClick=\{openBuyerLeadModal\}/)
@@ -104,11 +105,11 @@ assert.match(rsvpPageSource, /Accept proposed time/)
 assert.match(rsvpPageSource, /Decline/)
 assert.match(rsvpPageSource, /Request another time/)
 assert.match(rsvpPageSource, /is_managed_listing_viewing_rsvp/)
-assert.match(pipelineSource, /initialize_listing_viewing_request/)
-assert.match(pipelineSource, /book_listing_viewing_by_agent/)
+assert.match(pipelineSource, /save_calendar_appointment_with_delivery/)
+assert.doesNotMatch(pipelineSource, /rpc\('(?:initialize_listing_viewing_request|book_listing_viewing_by_agent)'/)
 assert.match(pipelineSource, /managedViewing\.data\?\.listing_viewing_round_number/)
 assert.match(pipelineSource, /participant\.data\.participant_role\) !== 'agent'/)
-assert.match(pipelineSource, /!suppressNotifications && !managedListingViewing/)
+assert.match(pipelineSource, /receipt\?\.verified !== true/, 'calendar writes require the atomic server receipt before reporting success')
 assert.match(modalSource, /Required participants/)
 assert.match(modalSource, /Book Viewing/)
 assert.match(modalSource, /Viewing details/)

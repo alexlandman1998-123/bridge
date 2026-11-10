@@ -228,6 +228,7 @@ export default function DevelopmentAvailabilityWorkspace({
   unitStatusOptions = [],
   unitStatusSaving = false,
   inventoryManagement = null,
+  reservationWorkspace = null,
   legacySalesPanelEnabled = false,
 }) {
   const [workspaceView, setWorkspaceView] = useState("availability");
@@ -798,6 +799,7 @@ export default function DevelopmentAvailabilityWorkspace({
           </div>
         </div>
       </section>
+      {reservationWorkspace}
       {workspaceView === "availability" ? <section className="grid gap-2.5 rounded-[18px] border border-[#dce5ee] bg-white p-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Availability filters">{inventoryFilters}</section> : null}
       {workspaceView === "site-plan" ? (
       <section className="overflow-hidden rounded-[22px] border border-[#dce5ee] bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">

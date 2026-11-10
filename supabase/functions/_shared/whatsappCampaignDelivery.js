@@ -1,3 +1,4 @@
+import { checkDevelopmentCampaignSource } from './developmentCampaignSource.js'
 import { templateIdentity } from './whatsappCampaign.js'
 
 export const campaignResult = async (query) => {
@@ -29,6 +30,11 @@ export function createCampaignDelivery({ db, meta }) {
   }
   async function deliver(row, leaseToken, { limit = 50, now = Date.now, budgetMs = 45000 } = {}) {
     const started = now()
+    const source = await checkDevelopmentCampaignSource({ db, campaign: row, now: new Date(started) })
+    // No recipient is claimed on a transient source read failure. Normal job
+    // completion sees the remaining queue and retries on the next server tick.
+    if (!source.ready && source.retryable) return
+    if (!source.ready) throw new Error(source.reason)
     const connection = await sender(row.organisation_id, row.sender_id)
     if (connection.phone_number_id !== row.phone_number_id || connection.waba_id !== row.waba_id) throw new Error('The sender changed. Remaining messages have been paused.')
     const available = await templates(connection, row.template.name)

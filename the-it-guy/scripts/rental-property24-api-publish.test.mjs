@@ -25,6 +25,7 @@ const response = await createProperty24ApiResponse({
   method: 'POST',
   url: `/api/property24/rentals/${listingId}/publish`,
   headers: { authorization: 'Bearer test-token' },
+  body: { status: 'ReducedPrice', photosChanged: false },
   env,
   dependencies: {
     createSupabase: () => ({ name: 'supabase' }),
@@ -70,6 +71,8 @@ assert.equal(response.status, 200)
 assert.equal(response.body.route, 'publishRentalListing')
 assert.equal(response.body.status, 'SUBMITTED')
 assert.equal(response.body.report.phase, 'property24-rental-publish-listing')
+assert.equal(buildArgs.status, 'ReducedPrice')
+assert.equal(buildArgs.photosChanged, false)
 assert.equal(buildArgs.sandboxPayloadTestMode, false)
 assert.equal(buildArgs.loadImageBytes, true)
 assert.equal(buildArgs.convertImagesToJpeg, true)

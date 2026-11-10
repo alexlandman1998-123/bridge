@@ -1,4 +1,5 @@
 // Extracted without changing validation, persistence order or recovery behaviour.
+import { saveDevelopmentUnitStatus } from './reliableWrites.js'
 import { requireClient, normalizeTextValue, normalizeNullableText, isMissingColumnError, normalizeOptionalNumber, normalizeNullableBoolean } from '../../lib/api/shared/readHelpers.js'
 import { normalizeDevelopmentUnitRow } from './unitReadApi.js'
 import { persistDevelopmentMedia } from '../../lib/developmentMediaStorage.js'
@@ -61,6 +62,12 @@ export async function saveDevelopmentUnit(input = {}) {
     unit_type_id: normalized.unitTypeId,
     catalogue_floorplan_id: normalized.catalogueFloorplanId,
     notes: normalizeNullableText(normalized.notes),
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'expectedStatus')) {
+    const { id: unitId, development_id: developmentId, ...unitPatch } = payload
+    return saveDevelopmentUnitStatus({ developmentId, unitId, transactionId: input.transactionId || null,
+      expectedStatus: input.expectedStatus, status: payload.status, unitPatch })
   }
 
   const { data, error } = await client

@@ -737,3 +737,14 @@ it('lists the concrete failed sender and audience checks instead of a generic pr
  expect(screen.getByRole('alert').textContent).toContain('No eligible recipients')
  expect(mocks.schedule).not.toHaveBeenCalled()
 })
+
+it('starts a prepared development draft with its real content and constrained audience, preserving sender and consent selection', async () => {
+  const context = {source:'development_workspace',version:1,development_id:'madison',development_name:'Madison Place',organisation_id:'org'}
+  const preparedCampaign = {context,email:{name:'Madison launch',subject:'Visit Madison Place',previewText:'Current availability',audienceFilter:{development_id:'madison'},contentJson:createEmailDocument()}}
+  render(<EmailCampaignBuilder workspace={workspace} developmentContext={context} preparedCampaign={preparedCampaign} onBack={()=>{}} />)
+  expect(screen.getByRole('textbox',{name:'Campaign title'}).value).toBe('Madison launch')
+  expect(screen.getByLabelText(/Subject line/).value).toBe('Visit Madison Place')
+  fireEvent.click(screen.getByRole('button',{name:'Save as draft'}))
+  await waitFor(()=>expect(mocks.save).toHaveBeenCalled())
+  expect(mocks.save.mock.calls[0][0].campaign).toMatchObject({developmentContext:context,audienceFilter:{development_id:'madison'},senderIdentityId:'',subscriptionTypeId:''})
+})

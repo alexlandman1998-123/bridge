@@ -315,3 +315,22 @@ it('pauses automatic campaign result checks while hidden and reconciles on visib
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
   }
 })
+it('preselects matched development contacts and applies saved details only through approved template variables',async()=>{
+ const context={source:'development_workspace',version:1,organisation_id:'org-one',development_id:'dev',development_name:'Madison Place'}
+ const preparedCampaign={name:'Madison invitation',context,label:'Invitation: Launch',warnings:[],whatsapp:{contactIds:['contact-one'],suggestions:{'Development name':'Madison Place','Event details':'Launch on Sunday'}}}
+ render(<CreateWhatsAppCampaign developmentContext={context} preparedCampaign={preparedCampaign} onBack={vi.fn()} />)
+ expect((await screen.findByLabelText('Campaign name')).value).toBe('Madison invitation')
+ expect(screen.getByLabelText('WhatsApp sender').value).toBe('')
+ fireEvent.change(screen.getByLabelText('WhatsApp sender'),{target:{value:'sender-one'}})
+ fireEvent.click(screen.getByRole('button',{name:'Next'}))
+ expect(screen.getByRole('checkbox',{name:/Alex Buyer/}).checked).toBe(true)
+ fireEvent.click(screen.getByRole('button',{name:'Next'}))
+ await screen.findByRole('option',{name:/new_listing/})
+ fireEvent.change(screen.getByLabelText('Approved template & language'),{target:{value:'template-one'}})
+ fireEvent.click(screen.getByRole('button',{name:'Use development name'}))
+ fireEvent.click(screen.getByRole('button',{name:'Save draft'}))
+ await screen.findByText('Draft saved.')
+ const saved=mocks.request.mock.calls.find(call=>call[1]==='save')[2].campaign
+ expect(saved).toMatchObject({contact_ids:['contact-one'],parameter_values:{__arch9_context:context,'body.1':{source:'text',text:'Madison Place'}}})
+ expect(mocks.request.mock.calls.some(call=>['prepare','dispatch'].includes(call[1]))).toBe(false)
+})

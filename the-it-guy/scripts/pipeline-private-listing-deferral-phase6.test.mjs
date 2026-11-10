@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -6,7 +7,7 @@ const pipelinePath = path.resolve('src/pages/agency/AgencyPipelinePage.jsx')
 const buyerLifecyclePath = path.resolve('src/lib/buyerLifecycleService.js')
 
 const pipelineSource = fs.readFileSync(pipelinePath, 'utf8')
-const buyerLifecycleSource = fs.readFileSync(buyerLifecyclePath, 'utf8')
+const buyerLifecycleSource = readLeadServiceSource(buyerLifecyclePath)
 
 assert.doesNotMatch(
   pipelineSource,

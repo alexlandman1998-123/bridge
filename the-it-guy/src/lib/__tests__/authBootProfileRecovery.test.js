@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createClient } from '@supabase/supabase-js'
 
 const dependencies = vi.hoisted(() => ({
   loadProfile: vi.fn(),
@@ -37,6 +38,7 @@ import {
   buildDegradedBridgeAuthState,
   loadBridgeAuthState,
   persistLastGoodBridgeAuthState,
+  probeAuthBootHealth,
 } from '../authBoot.js'
 import { buildWorkspaceResolution } from '../../services/workspaceResolutionService.js'
 
@@ -101,6 +103,57 @@ async function expectFailedProfileBoot(error) {
 }
 
 describe('existing workspace profile recovery', () => {
+  it('aborts a stalled health probe through the SDK transport', async () => {
+    let signal
+    const client = createClient('https://startup-fixture.invalid', 'fixture-public-key', {
+      accessToken: async () => 'fixture-access-token',
+      global: { fetch: async (_url, options) => {
+        signal = options.signal
+        return new Promise((_resolve, reject) => signal.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'))
+        }, { once: true }))
+      } },
+    })
+    const health = probeAuthBootHealth({ user: session.user, client })
+    await vi.advanceTimersByTimeAsync(2500)
+    expect((await health).status).toBe('timeout')
+    expect(signal.aborted).toBe(true)
+  })
+
+  it.each([
+    { code: 'WORKSPACE_QUERY_TIMEOUT', message: 'workspace.context.rpc timed out.' },
+    { code: 'PGRST003', message: 'Connection pool acquisition timed out.' },
+    { code: '42501', message: 'permission denied' },
+  ])('does not multiply startup reads after a failed consolidated request ($code)', async error => {
+    dependencies.loadContext.mockRejectedValue(error)
+    await expect(loadBridgeAuthState({ session, selectedWorkspaceId: firm.id })).rejects.toMatchObject(error)
+    expect(dependencies.loadProfile).not.toHaveBeenCalled()
+    expect(dependencies.resolveWorkspace).not.toHaveBeenCalled()
+    expect(dependencies.client.from).not.toHaveBeenCalled()
+  })
+
+  it('retains the legacy fallback for an absent RPC without requesting it twice', async () => {
+    dependencies.loadContext.mockRejectedValue({ code: 'PGRST202', message: 'Could not find the function bridge_resolve_current_workspace_context' })
+    const state = await loadBridgeAuthState({ session, selectedWorkspaceId: firm.id })
+    expect(state.currentWorkspace.id).toBe(firm.id)
+    expect(dependencies.loadProfile).toHaveBeenCalledOnce()
+    expect(dependencies.resolveWorkspace.mock.calls[0][1].skipWorkspaceContextRpc).toBe(true)
+  })
+
+  it('coalesces concurrent outage attempts and permits a clean successful retry', async () => {
+    dependencies.loadContext.mockRejectedValueOnce({ code: 'PGRST003', message: 'Connection acquisition failed' })
+    const failed = await Promise.allSettled([
+      loadBridgeAuthState({ session, selectedWorkspaceId: firm.id }),
+      loadBridgeAuthState({ session, selectedWorkspaceId: firm.id }),
+    ])
+    expect(failed.map(result => result.status)).toEqual(['rejected', 'rejected'])
+    expect(dependencies.loadContext).toHaveBeenCalledOnce()
+    expect(dependencies.loadProfile).not.toHaveBeenCalled()
+    const recovered = await loadBridgeAuthState({ session, selectedWorkspaceId: firm.id })
+    expect(recovered.currentWorkspace.id).toBe(firm.id)
+    expect(dependencies.loadContext).toHaveBeenCalledTimes(2)
+  })
+
   it('does not turn a slow profile read into an onboarding redirect', async () => {
     dependencies.loadProfile.mockImplementation(() => new Promise(() => {}))
     await expectFailedProfileBoot({ code: 'AUTH_BOOT_STEP_TIMEOUT' })

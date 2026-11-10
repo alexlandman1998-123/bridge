@@ -58,6 +58,26 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   useEffect(() => { setSellerContext(null); setSellerError('') }, [transactionId])
 
   useEffect(() => {
+    if (busy || isDirty || !['pending', 'failed'].includes(reviewTransaction?.deal_setup_sync_status)) return undefined
+    let active = true
+    let loading = false
+    const timer = window.setInterval(() => {
+      if (loading) return
+      loading = true
+      loadCanonicalDealSetup({ transactionId }).then((result) => {
+        if (!active) return
+        setReviewTransaction(result.transaction)
+        setDraft(result.setup)
+        setSyncReceipt(null)
+        if (result.transaction.deal_setup_sync_status === 'complete') {
+          window.dispatchEvent(new CustomEvent('deal-setup:updated', { detail: { transactionId } }))
+        }
+      }).catch(() => { /* Preserve the saved values; the next poll can recover. */ }).finally(() => { loading = false })
+    }, 10000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [transactionId, reviewTransaction?.deal_setup_sync_status, busy, isDirty])
+
+  useEffect(() => {
     if (!sellerEnabled) return undefined
     let active = true
     setSellerError('')
@@ -110,7 +130,7 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
   return <section className="space-y-5">
     {canEdit && reviewTransaction && (reviewStatus || identifyDealImport(reviewTransaction).status !== 'not_identified') ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-warning/20 bg-warningSoft p-5"><div><h3 className="font-semibold text-textStrong">Review imported details</h3><div className="mt-2"><ImportedDealReviewBadge status={reviewStatus} /></div><p className="mt-1 text-sm text-textMuted">Check buyers, sellers, the property, captured attorney details and funding against the original document.</p>{reviewStatuses.error ? <p role="status" className="mt-1 text-xs text-warning">{reviewStatuses.error}</p> : null}{isDirty ? <p className="mt-1 text-xs text-warning">Save Deal Setup changes before reviewing details.</p> : null}</div><Button type="button" variant="secondary" disabled={busy || isDirty} onClick={() => setReviewOpen(true)}>Review details</Button></div> : null}
     {sellerError&&<div role="alert" className="p-3 text-sm text-danger">{sellerError}<Button variant="ghost" onClick={()=>setSellerRetry(value=>value+1)}>Retry seller details</Button></div>}
-    {(syncReceipt?.reconciliation?.status === 'pending' || syncReceipt?.reconciliation?.status === 'failed' || ['pending','failed'].includes(reviewTransaction?.deal_setup_sync_status))&&<div role="status" className="p-3 text-sm">Deal terms are saved. Related workflow updates still need attention.<Button disabled={!canEdit||busy||isDirty} onClick={async()=>{const id=transactionId;setBusy(true);try{const result=await retryDealSetupReconciliation({transactionId:id,termsVersion:reviewTransaction?.deal_setup_terms_version||syncReceipt?.persistence?.termsVersion});if(activeTransaction.current===id){setSyncReceipt(result);setReviewTransaction(result.transaction);setDraft(result.setup)}}catch(cause){if(activeTransaction.current===id)setError(cause.message)}finally{if(activeTransaction.current===id)setBusy(false)}}}>Retry workflow updates</Button></div>}
+    {(syncReceipt?.reconciliation?.status === 'pending' || syncReceipt?.reconciliation?.status === 'failed' || ['pending','failed'].includes(reviewTransaction?.deal_setup_sync_status))&&<div role="status" className="p-3 text-sm">Deal terms are saved. Related workflow updates are pending.<Button disabled={!canEdit||busy||isDirty} onClick={async()=>{const id=transactionId;setBusy(true);try{const result=await retryDealSetupReconciliation({transactionId:id,termsVersion:reviewTransaction?.deal_setup_terms_version||syncReceipt?.persistence?.termsVersion});if(activeTransaction.current===id){setSyncReceipt(result);setReviewTransaction(result.transaction);setDraft(result.setup)}}catch(cause){if(activeTransaction.current===id)setError(cause.message)}finally{if(activeTransaction.current===id)setBusy(false)}}}>Retry workflow updates</Button></div>}
     {sellerDetails ? <div role="tablist" aria-label="Deal setup party" className="flex gap-2 rounded-[14px] border border-borderDefault bg-surface p-2">
       {['overview', 'buyer', 'seller'].map((party) => <button key={party} type="button" role="tab" aria-selected={activeParty === party} aria-controls={`deal-setup-${party}`} onClick={() => setActiveParty(party)} className={`flex-1 rounded-control px-4 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 ${activeParty === party ? 'bg-primary text-white' : 'text-textMuted hover:bg-surfaceAlt'}`}>{({ overview: 'Overview', buyer: 'Buyer', seller: 'Seller' })[party]}</button>)}
     </div> : null}

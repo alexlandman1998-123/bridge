@@ -9,7 +9,7 @@ function normalise(value: string) { return value.trim().toLowerCase().replace(/[
 
 /** Turns persisted checkbox keys into the public presentation model. Older free-text values stay visible without an invented icon. */
 export function presentListingFeatures(values: string[]): ListingFeature[] {
-  return values.map((value) => {
+  return values.filter(value => normalise(String(value || '')) !== 'reduced_banner').map((value) => {
     const rawKey = normalise(String(value || ''))
     const key = ({ pool: 'swimming_pool', fibre: 'fibre_ready' } as Record<string, string>)[rawKey] || rawKey
     const known = LISTING_FEATURES[key as ListingFeatureKey]

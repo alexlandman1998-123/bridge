@@ -22,7 +22,7 @@ export default function ListingChannelManageDialog({
   channelName, listingStatus, listing = {}, portal = {}, expiryDate = '', minExpiryDate,
   isSale = true, canUpdateExpiry = false, initialResults = [], externalBusy = false,
   canUpdate = false, canPublish = false, canRelist = false, canWithdraw = false, expirySetting, activeExpiryChannels = [], preparationMessage = '',
-  onClose, onSave, onFix, onRefresh, onPreview, onUpdate, onPublish, onRetry, onRelist, onWithdraw, onSaveExpiry, onVerify, onSavePublicUrl,
+  onClose, onSave, onUpdatePrice, onFix, onRefresh, onPreview, onUpdate, onPublish, onRetry, onRelist, onWithdraw, onSaveExpiry, onVerify, onSavePublicUrl,
   renderChannelSettings, confirmWithdrawal = false, updateUnavailableMessage = '', streamlinedUpdate = false,
 }) {
   const id = useId()
@@ -149,6 +149,7 @@ export default function ListingChannelManageDialog({
       <div role="tablist" aria-label={`${channelName} listing sections`} className="flex gap-5 border-b border-[#e3ebf2]">
         {[['overview', 'Overview'], ['activity', 'Recent activity']].map(([key, label]) => <button key={key} id={`${id}-${key}-tab`} type="button" role="tab" aria-selected={tab === key} aria-controls={`${id}-${key}`} className={`pb-3 text-sm font-semibold ${tab === key ? 'border-b-2 border-[#176f52] text-[#176f52]' : 'text-[#607387]'}`} onClick={() => setTab(key)}>{key === 'activity' ? <History size={14} className="mr-1.5 inline" /> : null}{label}</button>)}
       </div>
+      {onUpdatePrice && !['sold','withdrawn','expired','archived','deleted','transaction_created','let','rented'].includes(listingStatus) ? <Button type="button" variant="secondary" disabled={disabled} onClick={() => { onClose(); onUpdatePrice() }}>Update price</Button> : null}
       <div id={`${id}-overview`} role="tabpanel" aria-labelledby={`${id}-overview-tab`} hidden={tab !== 'overview'}>
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_190px]">
           <div className="min-w-0 space-y-4">

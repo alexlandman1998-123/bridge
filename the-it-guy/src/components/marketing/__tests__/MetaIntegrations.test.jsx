@@ -11,12 +11,13 @@ vi.mock('../../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>({organisat
 vi.mock('../../../services/metaIntegrationService',()=>({metaIntegrationRequest:mocks.request,launchWhatsAppSignup:vi.fn(),prepareFacebookSdk:vi.fn()}))
 const conversation={id:'conversation-one',contact_phone:'27821234567',contact_name:'Customer One',last_message_preview:'Private customer message',assignment_version:1,status:'open',canReply:true}
 const page={id:'page-one',page_name:'Agency Page',canPost:true}
-beforeEach(()=>{mocks.org='org-one';mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action)=>{
+beforeEach(()=>{mocks.org='org-one';mocks.senders=[{connection_status:'connected'}];mocks.request.mockImplementation(async(_org,action,fields={})=>{
   if(action==='inbox_page')return {conversations:[conversation]}
   if(action==='message_page')return {conversation,messages:[]}
   if(action==='message_receipt')return {message:{delivery_status:'sent'}}
   if(action==='campaign_reply_status')return {}
   if(action==='crm_context')return {}
+  if(action==='inbox_work')return fields.operation==='draft' ? {draft:{version:(fields.fields.version||0)+1}} : {draft:null,notes:[],presence:[],snippets:[]}
   if(action==='workspace')return {pages:[page]}
   if(action==='listing_posts')return {posts:[]}
   if(action==='preview_post')return {post:{id:'post-one',status:'draft',snapshot_json:{caption:'Reviewed listing caption',mode:'text'}}}

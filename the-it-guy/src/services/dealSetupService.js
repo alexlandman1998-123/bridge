@@ -111,16 +111,13 @@ export async function auditDealSetupCompatibility({ transactionId, client = supa
 export async function retryDealSetupReconciliation({ transactionId, termsVersion, client = supabase } = {}) {
   const current = await loadCanonicalDealSetup({ transactionId, client })
   if (!termsVersion || current.transaction.deal_setup_terms_version !== termsVersion) throw new Error('Deal Setup changed. Reload before retrying its updates.')
-  const failures = []
-  for (const [name, sync] of [['attorney', syncDealSetupAttorneyHandoff], ['documents', syncDealSetupDownstream]]) {
-    try { await sync({ transactionId, client }) } catch (error) { failures.push({ section: name, message: error.message || 'Update unavailable' }) }
-  }
-  const status = failures.length ? 'failed' : 'complete'
-  const receipt = await client.from('transactions').update({ deal_setup_sync_status: status, deal_setup_sync_error: failures.map(item => `${item.section}: ${item.message}`).join('; ').slice(0,2000) || null })
-    .eq('id', text(transactionId)).eq('deal_setup_terms_version', termsVersion).select('updated_at').maybeSingle()
-  if (receipt.error) failures.push({ section: 'receipt', message: 'Updates could not be confirmed. Retry from the saved Deal Setup.' })
+  const queued = await client.rpc('bridge_retry_deal_setup_reconciliation', {
+    p_transaction_id: text(transactionId), p_terms_version: termsVersion,
+  })
+  if (queued.error) throw queued.error
+  if (queued.data?.automatic !== true || !['pending', 'failed', 'complete'].includes(queued.data?.status)) throw new Error('Workflow recovery could not be confirmed. Reload Deal Setup.')
   const deal = await loadCanonicalDealSetup({ transactionId, client })
-  return { ...deal, persistence: { saved: true, termsVersion }, reconciliation: { status: failures.length ? 'failed' : receipt.data ? status : 'superseded', failures } }
+  return { ...deal, persistence: { saved: true, termsVersion }, reconciliation: { status: queued.data.status, automatic: true, failures: [] } }
 }
 
 export async function saveCanonicalDealTerms({ transactionId, terms = {}, finance = {}, expectedUpdatedAt, client = supabase } = {}) {

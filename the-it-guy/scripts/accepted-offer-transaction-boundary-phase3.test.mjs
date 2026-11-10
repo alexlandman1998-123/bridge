@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
@@ -5,7 +6,7 @@ import {
 } from '../src/core/transactions/mvpAcceptedOfferConversionReceipt.js'
 
 const transactionLifecycleSource = readFileSync(new URL('../src/lib/transactionLifecycleService.js', import.meta.url), 'utf8')
-const buyerLifecycleSource = readFileSync(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+const buyerLifecycleSource = readLeadServiceSource(new URL('../src/lib/buyerLifecycleService.js', import.meta.url))
 
 const validReuse = assessMvpAcceptedOfferConversionReceipt({
   acceptedOfferId: 'offer-phase3',

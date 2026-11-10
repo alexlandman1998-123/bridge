@@ -6,7 +6,7 @@ import { RENTAL_PORTAL_STATUSES } from '../../services/rentals/rentalListingChan
 import { getRentalPortalReadiness } from '../../services/rentals/rentalListingReadinessPresentation'
 import { rentalChannelStatus } from '../../services/rentals/rentalChannelStatus'
 
-export default function RentalPortalManagementPanel({ channel, listing = {}, busy, onClose, onRefresh, onChangeStatus, onVerifyLink, onCheck, onPublish, onWithdraw, onFix, preview, previewError = '', checking = false, historyError }) {
+export default function RentalPortalManagementPanel({ channel, listing = {}, busy, onClose, onUpdatePrice, onRefresh, onChangeStatus, onVerifyLink, onCheck, onPublish, onWithdraw, onFix, preview, previewError = '', checking = false, historyError }) {
   const [status, setStatus] = useState(RENTAL_PORTAL_STATUSES[channel.key][0])
   const [url, setUrl] = useState(channel.publicUrl || '')
   const [confirmed, setConfirmed] = useState(false)
@@ -45,6 +45,7 @@ export default function RentalPortalManagementPanel({ channel, listing = {}, bus
     canWithdraw={canMutate && hasAdvert && !inactive}
     updateUnavailableMessage={channel.requiresReconciliation ? 'Reconcile the previous request before sending another change.' : inactive ? 'This advert is inactive. Review its portal status before sending content updates.' : 'Check requirements before updating this advert.'}
     onClose={onClose}
+    onUpdatePrice={onUpdatePrice}
     onRefresh={onRefresh && (hasAdvert || channel.requiresReconciliation) ? onRefresh : undefined}
     onPreview={onCheck}
     onUpdate={hasAdvert && onPublish ? updateExisting ? () => onPublish({ updateExisting: true }) : onPublish : undefined}

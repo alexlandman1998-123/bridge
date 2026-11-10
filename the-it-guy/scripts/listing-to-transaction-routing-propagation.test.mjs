@@ -1,8 +1,9 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const transactionLifecycleSource = await readFile(new URL('../src/lib/transactionLifecycleService.js', import.meta.url), 'utf8')
-const buyerLifecycleSource = await readFile(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+const buyerLifecycleSource = await readLeadServiceSource(new URL('../src/lib/buyerLifecycleService.js', import.meta.url))
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
 assert.match(

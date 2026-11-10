@@ -1,4 +1,4 @@
-// Extracted without changing query, mapping or error behaviour.
+// Development reads, including explicit failures for unavailable event calendars.
 import { requireClient, isMissingTableError, isMissingColumnError, isMissingSchemaError, isPermissionDeniedError, normalizeTextValue, normalizeOptionalNumber } from '../../lib/api/shared/readHelpers.js'
 import { refreshDevelopmentMedia } from '../../lib/developmentMediaStorage.js'
 
@@ -250,7 +250,7 @@ export async function fetchDevelopmentMarketingActivity(developmentId, { limit =
 
 export async function fetchDevelopmentMarketingEvents(developmentId, organisationId = '') {
   const client = requireClient()
-  if (!developmentId || !organisationId) return []
+  if (!developmentId || !organisationId) throw new Error('This development’s event calendar could not be identified. Refresh the workspace.')
   const { data, error } = await client
     .from('marketing_events')
     .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at, created_by')
@@ -260,7 +260,12 @@ export async function fetchDevelopmentMarketingEvents(developmentId, organisatio
     .order('starts_at', { ascending: true })
 
   if (error) {
-    if (isMissingTableError(error, 'marketing_events') || isPermissionDeniedError(error)) return []
+    if (isMissingTableError(error, 'marketing_events')) {
+      throw Object.assign(new Error('Events need the latest database update. Ask your administrator to update this workspace.', { cause: error }), { code: error.code })
+    }
+    if (isPermissionDeniedError(error)) {
+      throw Object.assign(new Error('You do not currently have access to this event calendar. Ask your development administrator to check your access.', { cause: error }), { code: error.code })
+    }
     throw error
   }
   return (data || []).map(normalizeDevelopmentMarketingEventRow)

@@ -170,6 +170,7 @@ export function resolveProperty24ListingType(value = '') {
 export function resolveProperty24Status(value = '', { isNew = true } = {}) {
   const key = normalizeProperty24ListingKey(value)
   if (['reduced_price', 'reducedprice'].includes(key)) return 'ReducedPrice'
+  if (['raised_price', 'raisedprice'].includes(key)) return 'RaisedPrice'
   if (['sold', 'registered', 'completed'].includes(key)) return 'Sold'
   if (['rented', 'let', 'leased'].includes(key)) return 'Rented'
   if (['pending', 'under_offer', 'offer_accepted', 'transaction_created'].includes(key)) return 'Pending'
@@ -727,6 +728,7 @@ export function createProperty24ListingPlan({
     dataBlockers.push(...evaluateProperty24CommercialSaleFacts({ listing, publication, options }).blockers)
   }
   if (isNew && status === 'ReducedPrice') dataBlockers.push('reduced_price_status_requires_existing_listing')
+  if (isNew && status === 'RaisedPrice') dataBlockers.push('raised_price_status_requires_existing_listing')
 
   if (!agencyId) dataBlockers.push('missing_property24_agency_id')
   if (!property24AgentId) {

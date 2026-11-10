@@ -7,6 +7,7 @@
     "node": "22.x"
   },
   "scripts": {
+    "test:deal-setup-recovery": "node --test --test-concurrency=1 scripts/deal-setup-background-recovery.test.mjs src/services/__tests__/transactionDealSetupMigration.test.mjs && vitest run src/services/__tests__/dealSetupService.reliability.test.js src/components/transaction/__tests__/DealSetupPanel.test.jsx --maxWorkers=1 --no-file-parallelism",
     "test:api-baseline": "node scripts/verify-api-baseline.mjs",
     "test:legal-workspace": "node --test scripts/legal-workspace-database.test.mjs scripts/legal-workspace-shell-review.test.mjs scripts/legal-work-documents.test.mjs scripts/legal-firm-overview.test.mjs scripts/legal-trust-pilot.test.mjs && vitest run src/modules/legal/__tests__/LegalWorkspace.test.jsx src/modules/legal/__tests__/LegalWorkDocuments.test.jsx src/modules/legal/__tests__/LegalFirmOverview.test.jsx src/modules/legal/__tests__/LegalTrustPilot.test.jsx --maxWorkers=1",
     "test:legal-matter-foundation": "node --test scripts/legal-matter-foundation.test.mjs src/modules/legal/legalMatterService.test.js",
@@ -147,7 +148,7 @@
     "test:portal-non-production-pilot-phase6": "node scripts/portal-non-production-pilot-phase6.test.mjs",
     "test:development-current-transactions": "node src/core/developments/__tests__/developmentTransactionVisibility.test.js",
     "dev": "vite",
-    "build": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=4096}\" vite build && node scripts/knowledge-factory-login-probe.mjs",
+    "build": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=4096}\" vite build && node scripts/build-deal-setup-recovery.mjs && node scripts/knowledge-factory-login-probe.mjs",
     "build:home-seekers-website": "NODE_OPTIONS=--max-old-space-size=8192 node scripts/build-home-seekers-website.mjs",
     "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/lib/__tests__/partnersRepository.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
     "test:transfer-tax-phase7": "node --test src/services/__tests__/transferTaxCrossRoleAssurance.test.js",

@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -15,7 +16,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agencyPipelinePageSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const buyerOfferSubmissionSource = readFileSync(resolve(appRoot, 'src/pages/BuyerOfferSubmission.jsx'), 'utf8')
-const agencyPipelineServiceSource = readFileSync(resolve(appRoot, 'src/lib/agencyPipelineService.js'), 'utf8')
+const agencyPipelineServiceSource = readLeadServiceSource(resolve(appRoot, 'src/lib/agencyPipelineService.js'))
 const agencyCrmRepositorySource = readFileSync(resolve(appRoot, 'src/lib/agencyCrmRepository.js'), 'utf8')
 
 assert.equal(
@@ -87,7 +88,7 @@ assert.equal(isDeprecatedBuyerOtpStage('OTP Transaction'), false)
 assert.equal(isDeprecatedBuyerOtpAction('Generate OTP'), true)
 assert.equal(isDeprecatedBuyerOtpAction('Upload Offer Document'), false)
 
-assert.match(agencyPipelineServiceSource, /import \{ migrateBuyerProcessLeadRecord \}/)
+assert.match(agencyPipelineServiceSource, /import\s*\{\s*migrateBuyerProcessLeadRecord,?\s*\}/)
 assert.match(agencyPipelineServiceSource, /return migrateBuyerProcessLeadRecord\(normalizedLead\)/)
 assert.match(agencyCrmRepositorySource, /import \{ migrateBuyerProcessLeadRecord \}/)
 assert.match(agencyCrmRepositorySource, /return migrateBuyerProcessLeadRecord\(lead\)/)

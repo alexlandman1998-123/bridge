@@ -1,12 +1,13 @@
-/* global require, __dirname, process */
-const assert = require('node:assert/strict')
-const path = require('node:path')
-const { createServer } = require('vite')
-const React = require('react')
-const { renderToStaticMarkup } = require('react-dom/server')
-const { MemoryRouter } = require('react-router-dom')
+// @vitest-environment node
+import assert from 'node:assert/strict'
+import path from 'node:path'
+import { createServer } from 'vite'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
+import { it } from 'vitest'
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../..')
+const PROJECT_ROOT = path.resolve(import.meta.dirname, '../../../..')
 
 function render(Component, props) {
   return renderToStaticMarkup(
@@ -61,7 +62,7 @@ const developments = [
   },
 ]
 
-async function main() {
+it('renders accurate development portfolio totals, links and filters', async () => {
   const server = await createServer({
     root: PROJECT_ROOT,
     logLevel: 'silent',
@@ -122,12 +123,7 @@ async function main() {
     assert.deepEqual(riskRows.map((row) => row.id), ['dev-high'])
 
     console.log('bond developments portfolio render tests passed')
-  } catch (error) {
-    console.error(error)
-    process.exitCode = 1
   } finally {
     await server.close()
   }
-}
-
-main()
+}, 30_000)

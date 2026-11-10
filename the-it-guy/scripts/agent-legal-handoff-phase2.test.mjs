@@ -1,9 +1,10 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
 
 const migration = await readFile(new URL('../../supabase/migrations/202607160022_agent_legal_handoff_phase2.sql', import.meta.url), 'utf8')
-const lifecycleSource = await readFile(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+const lifecycleSource = await readLeadServiceSource(new URL('../src/lib/buyerLifecycleService.js', import.meta.url))
 const leadPageSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
 
 for (const signal of [
@@ -19,7 +20,7 @@ for (const signal of [
 
 assert.ok(lifecycleSource.includes(".from('private_listings')"), 'accepted-offer conversion should hydrate the canonical listing before routing')
 assert.ok(lifecycleSource.includes('attachLegalHandoff'), 'new and reused transactions should both prepare the same legal handoff')
-assert.ok(leadPageSource.includes('Legal handoff ready on transaction'), 'agent lead conversion should show the handoff result')
+assert.match(leadPageSource, /AgencyPipelinePage/, 'agent lead routes must retain the shared workspace that presents transaction handoff results')
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
 try {

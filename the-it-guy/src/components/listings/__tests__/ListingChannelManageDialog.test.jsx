@@ -379,3 +379,10 @@ it('never exposes credentials through expanded portal failure details', () => {
  expect(screen.getByRole('alert').textContent).toContain('Correct the suburb.')
  expect(screen.getByRole('alert').textContent).not.toContain('hidden-secret')
 })
+
+it('opens the same whole-listing price workflow from Manage listing',()=>{
+ const onUpdatePrice=vi.fn(),onClose=vi.fn()
+ render(<ListingChannelManageDialog {...props} onClose={onClose} onUpdatePrice={onUpdatePrice} />)
+ fireEvent.click(screen.getByRole('button',{name:'Update price'}))
+ expect(onClose).toHaveBeenCalledOnce();expect(onUpdatePrice).toHaveBeenCalledOnce()
+})

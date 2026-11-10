@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'vite'
@@ -86,7 +87,7 @@ assert.equal(changesPatch.conditions_json.approvedConditionWording.status, 'chan
 assert.equal(changesPatch.conditions_json.otpPreGenerationReview.status, 'changes_requested')
 assert.equal(changesPatch.conditions_json.otpPreGenerationReview.agentReviewRequired, true)
 
-const buyerLifecycleSource = await readFile(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+const buyerLifecycleSource = await readLeadServiceSource(new URL('../src/lib/buyerLifecycleService.js', import.meta.url))
 const listingOffersSource = await readFile(new URL('../src/lib/listingOffersService.js', import.meta.url), 'utf8')
 assert.match(buyerLifecycleSource, /reviewCanonicalOfferConditions/)
 assert.match(buyerLifecycleSource, /buildResidentialOfferConditionReviewPatch/)

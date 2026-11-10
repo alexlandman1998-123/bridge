@@ -1,3 +1,5 @@
+import ListingPriceUpdateDialog from '../components/listings/ListingPriceUpdateDialog.jsx'
+import { publishListingPriceUpdate, priceUpdateProperty24Status } from '../services/listings/listingPriceUpdate.js'
 import './mobile/mobile-listing-workspace.css'
 import { listingPhotoPreparationError, listingPhotoPreparationMessages } from '../services/listings/listingPhotoPreparationFeedback.js'
 import useCalendarRead from '../hooks/useCalendarRead'
@@ -3683,7 +3685,8 @@ function AgentListingDetail({ mobile = false } = {}) {
   const [privatePropertyStatusCheck, setPrivatePropertyStatusCheck] = useState(null)
   const [privatePropertyManageOpen, setPrivatePropertyManageOpen] = useState(false)
   const [quickListingAction, setQuickListingAction] = useState('')
-  const [quickListingPrice, setQuickListingPrice] = useState('')
+  const [priceUpdateOpen, setPriceUpdateOpen] = useState(false)
+  useEffect(() => setPriceUpdateOpen(false), [listingId])
   const [quickListingBusy, setQuickListingBusy] = useState(false)
   const [quickListingResults, setQuickListingResults] = useState([])
   const [quickListingResultAction, setQuickListingResultAction] = useState('')
@@ -5076,7 +5079,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       return { ok: false, error }
     }
     const effectiveFeatures = [
-      ...((draftFeatures.length || Object.hasOwn(draft, 'featureFacts')) ? draftFeatures : existingFeatures),
+      ...((draftFeatures.length || Object.hasOwn(draft, 'featureFacts')) ? draftFeatures : existingFeatures).filter(feature => normalizeKey(feature) !== 'reduced_banner'),
       ...(priceOnApplication ? ['price_on_application'] : []),
       ...(draft.showReducedBanner ? ['reduced_banner'] : []),
     ]
@@ -5256,7 +5259,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage(priceHistoryIssue ? 'Listing price saved, but pricing history could not be recorded. Please retry or contact support.' : options.successMessage || 'Listing details saved.')
-      return { ok: true, listing: committedListing, draft: effectiveDraft, distributionSync }
+      return { ok: true, listing: committedListing, draft: effectiveDraft, distributionSync, ...(priceHistoryIssue ? { warning: 'The price is saved, but its price history needs attention.' } : {}) }
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
       setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
@@ -5298,21 +5301,21 @@ function AgentListingDetail({ mobile = false } = {}) {
   }
 
   function openQuickListingAction(action) {
+    if (action === 'price_reduction' || action === 'price_update') { setPriceUpdateOpen(true); return }
     setQuickListingAction(action)
     setQuickListingResultAction(action)
-    setQuickListingPrice(String(listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price || ''))
     setQuickListingResults([])
     setQuickListingError('')
   }
 
   async function sendQuickListingPortalUpdate(channel, action) {
-    if (channel === 'Property24') return action === 'price_reduction'
+    if (channel === 'Property24') return ['price_reduction', 'price_update'].includes(action)
       ? callProperty24ListingAction('publish', {
           ...getProperty24ActionContext(), listingNumber: property24Reference, photosChanged: false,
-          status: normalizeKey(listingRecord?.listingStatus || listingRecord?.listing_status) === 'under_offer' ? 'Pending' : 'ReducedPrice',
+          status: normalizeKey(listingRecord?.listingStatus || listingRecord?.listing_status) === 'under_offer' ? 'Pending' : marketingDraft.showReducedBanner ? 'ReducedPrice' : 'Active',
         }, { fallbackMessage: 'Property24 price update failed.' })
       : callProperty24ListingAction('status-update', { status: action === 'sold' ? 'Sold' : 'Pending', listingNumber: property24Reference }, { fallbackMessage: 'Property24 status update failed.' })
-    if (action === 'price_reduction') {
+    if (['price_reduction', 'price_update'].includes(action)) {
       return callPrivatePropertyListingAction('publish', { confirm: `PRIVATE_PROPERTY_PUBLISH:${listingRecord.id}:production` }, { fallbackMessage: 'Private Property price update failed.' })
     }
     const response = await callPrivatePropertyListingAction('status-update', { propertyStatus: action === 'sold' ? 'Sold' : 'PendingOffer' }, { fallbackMessage: 'Private Property status update failed.' })
@@ -5390,7 +5393,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       if (channel === 'Property24') return publishProperty24Listing()
       if (channel === 'Private Property') return publishPrivatePropertyListing()
     }
-    if (!['Property24', 'Private Property'].includes(channel) || !['under_offer', 'sold', 'price_reduction'].includes(action)) {
+    if (!['Property24', 'Private Property'].includes(channel) || !['under_offer', 'sold', 'price_reduction', 'price_update'].includes(action)) {
       setDetailError('This portal action cannot be retried here. Open Manage to review the channel.')
       return
     }
@@ -5685,6 +5688,65 @@ function AgentListingDetail({ mobile = false } = {}) {
     }
   }
 
+  async function saveAndPublishPrice(values) {
+    if (channelMutationRef.current) throw new Error('A channel update is already running.')
+    if (!listingRecord?.id || !isSupabaseConfigured) throw new Error('Sign in and save this listing first.')
+    if (normalizeKey(marketingDraft.listingType || listingRecord?.listingType) === 'rental') throw new Error('Open this listing in Rentals to update its rental price.')
+    if (marketingDraftDirtyRef.current) throw new Error('Save your other listing edits first, then update the price.')
+    channelMutationRef.current = true
+    setChannelManageBusy(true)
+    let savedDraft = marketingDraft
+    try {
+      const [agency, kingdom] = await Promise.all([getWebsiteListingPublicationStatus(listingRecord.id, { includePartner: false }), getKingdomWebsitePublicationStatus(listingRecord.id)])
+      const channels = [
+        ...(property24Published && property24Reference ? ['Property24'] : []),
+        ...(['published','live','active','pendingoffer','pending_offer','under_offer'].includes(privatePropertyExternalStatus || privatePropertyStatusKey) && privatePropertyHasChannel ? ['Private Property'] : []),
+        ...(agency?.status === 'published' ? ['Agency Website'] : []),
+        ...(kingdom?.status === 'published' ? ['Kingdom Website'] : []),
+      ]
+      if (channels.includes('Private Property') && !await requireSyndicationReviewBeforePublish('privateProperty')) { setPriceUpdateOpen(false); return { cancelled: true } }
+      const record = async (type, title, metadata) => {
+        const row = await createPrivateListingActivity({ privateListingId: listingRecord.id, activityType: type, activityTitle: title, visibility: 'internal', metadata })
+        if (!row?.id) throw new Error('The price update history could not be saved.')
+      }
+      const outcome = await publishListingPriceUpdate({ ...values, listingStatus: marketingDraft.listingStatus, pricePresentation: marketingDraft.pricePresentation, activeChannels: channels, currentPrice: marketingDraft.price, currentReduced: marketingDraft.showReducedBanner }, {
+        check: channel => {
+          if (channel === 'Private Property' && !privatePropertyPortalReference) throw Object.assign(new Error('Refresh Private Property status to recover its advert reference before updating its price.'), { code: 'LISTING_PUBLICATION_UNSETTLED' })
+          return requireSettledListingPublication(listingRecord.id, [getListingPublicationChannelKey(channel)])
+        },
+        save: async change => {
+          const saved = await saveMarketingDraft({ ...marketingDraft, price: String(change.price), showReducedBanner: change.showReducedBanner }, { successMessage: '' })
+          if (saved?.draft) savedDraft = saved.draft
+          return saved
+        },
+        recordStarted: (targets, change) => record('listing_portal_update_started', 'Price update started', { action: 'price_update', ...change, channelResults: targets.map(channel => ({ channel, status: 'pending' })) }),
+        recordStage: (channel, stage, change, saved, error) => recordListingPublicationStage(channel, stage === 'uncertain' ? 'submitted' : stage, saved?.draft || { ...savedDraft, price: String(change.price), showReducedBanner: change.showReducedBanner }, { action: 'price_update', ...(error ? { error: error.message } : {}) }),
+        send: async (channel, change) => {
+          if (channel === 'Property24') {
+            const response = await callProperty24ListingAction('publish', { ...getProperty24ActionContext(), environment: 'production', listingNumber: property24Reference, photosChanged: false, status: priceUpdateProperty24Status({ ...change, listingStatus: savedDraft.listingStatus }) }, { fallbackMessage: 'Property24 price update failed.' })
+            if (!isQuickListingPortalUpdateAccepted(channel, 'price_update', response)) throw new Error(getProperty24ApiMessage(response, 'Property24 did not confirm the price update.'))
+          } else if (channel === 'Private Property') {
+            const response = await callPrivatePropertyListingAction('publish', { confirm: `PRIVATE_PROPERTY_PUBLISH:${listingRecord.id}:production` }, { fallbackMessage: 'Private Property price update failed.' })
+            if (!isQuickListingPortalUpdateAccepted(channel, 'price_update', response)) throw new Error(getPrivatePropertyApiMessage(response, 'Private Property did not confirm the price update.'))
+          } else {
+            const result = channel === 'Agency Website' ? await setWebsiteListingPublication(listingRecord.id, 'update', { includePartner: false }) : await publishKingdomWebsiteListing(listingRecord.id, 'update')
+            if (result?.status !== 'published') throw new Error(`${channel} did not confirm the price update.`)
+            if (channel === 'Agency Website') setAgencyWebsitePublication(result)
+            else setKingdomWebsitePublication(result)
+          }
+        },
+        recordFinished: (results, change) => record('listing_portal_update_retried', 'Listing price channels updated', { action: 'price_update', ...change, nextPrice: change.price, channelResults: results }),
+        onProgress: values.onProgress,
+      })
+      setQuickListingResults(outcome.results)
+      setQuickListingResultAction('price_update')
+      await loadListingData({ showLoading: false })
+      setWebsiteRefreshKey(key => key + 1)
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      return outcome
+    } finally { channelMutationRef.current = false; setChannelManageBusy(false) }
+  }
+
   async function applyQuickListingAction() {
     if (['sold', 'under_offer'].includes(quickListingAction)) {
       setQuickListingBusy(true)
@@ -5699,117 +5761,6 @@ function AgentListingDetail({ mobile = false } = {}) {
         setQuickListingBusy(false)
       }
       return
-    }
-    if (!listingRecord?.id || !isSupabaseConfigured) {
-      setQuickListingError('Sign in and save this listing before changing its public status or price.')
-      return
-    }
-    if (marketingDraftDirtyRef.current) {
-      setQuickListingError('Save your other listing edits first, then run this action so they are not sent to the portals unexpectedly.')
-      return
-    }
-    const isPriceChange = quickListingAction === 'price_reduction'
-    const isSold = quickListingAction === 'sold'
-    const currentListingStatus = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus)
-    if (['sold', 'withdrawn'].includes(currentListingStatus) || (isSold && !['active', 'under_offer'].includes(currentListingStatus)) || (!isPriceChange && !isSold && currentListingStatus !== 'active')) {
-      setQuickListingError(isPriceChange ? 'Sold or withdrawn listings cannot be reduced.' : isSold ? 'Only an active or under-offer listing can be marked sold.' : 'Only an active listing can be marked under offer.')
-      return
-    }
-    if (normalizeKey(marketingDraft.listingType || listingRecord?.listingType) === 'rental') {
-      setQuickListingError('These quick actions are for sale listings. Use the rental listing workflow for a rental.')
-      return
-    }
-    const previousPrice = Number(listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price || 0)
-    const nextPrice = Number(String(quickListingPrice).replace(/[^0-9.]/g, ''))
-    if (isPriceChange && (!Number.isFinite(nextPrice) || nextPrice <= 0 || nextPrice >= previousPrice || normalizeKey(marketingDraft.pricePresentation) === 'poa')) {
-      setQuickListingError('Enter a lower positive asking price. Price-on-application listings need their price presentation changed in Property first.')
-      return
-    }
-    if (!isPriceChange && !isSold && normalizeKey(marketingDraft.listingStatus) === 'under_offer') {
-      setQuickListingError('This listing is already under offer.')
-      return
-    }
-    const sendProperty24 = property24Published && Boolean(property24Reference)
-    const sendPrivateProperty = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
-    if (isPriceChange && sendPrivateProperty && !await requireSyndicationReviewBeforePublish('privateProperty')) {
-      setQuickListingError('Review the Private Property channel, then confirm this price change again.')
-      return
-    }
-    const nextDraft = isPriceChange
-      ? {
-          ...marketingDraft,
-          price: String(nextPrice),
-          showReducedBanner: false,
-        }
-      : { ...marketingDraft, listingStatus: isSold ? 'sold' : 'under_offer' }
-    setQuickListingBusy(true)
-    setQuickListingError('')
-    setQuickListingResults([])
-    const results = []
-    try {
-      const saved = await saveMarketingDraft(nextDraft, { successMessage: '', skipPriceHistory: isPriceChange })
-      if (saved?.ok === false || saved?.localOnly) throw saved?.error || new Error('Arch9 could not save this change to the live listing.')
-      results.push({ channel: 'Arch9', status: 'saved', detail: isPriceChange ? `${formatMoneyValue(previousPrice)} → ${formatMoneyValue(nextPrice)}` : isSold ? 'Listing marked sold.' : 'Listing marked under offer.' })
-      setQuickListingResults([...results])
-      if (sendProperty24 || sendPrivateProperty) {
-        const started = await createPrivateListingActivity({
-          privateListingId: listingRecord.id,
-          activityType: 'listing_portal_update_started',
-          activityTitle: 'Portal listing update started',
-          visibility: 'internal',
-          metadata: {
-            action: quickListingAction,
-            channelResults: [
-              ...(sendProperty24 ? [{ channel: 'Property24', status: 'pending' }] : []),
-              ...(sendPrivateProperty ? [{ channel: 'Private Property', status: 'pending' }] : []),
-            ],
-          },
-        })
-        if (!started?.id) throw new Error('Arch9 saved the change, but could not start portal monitoring. No portal update was sent.')
-      }
-      for (const [channel, enabled] of [
-        ['Property24', sendProperty24],
-        ['Private Property', sendPrivateProperty],
-      ]) {
-        if (!enabled) {
-          results.push({ channel, status: 'not_connected', detail: 'No confirmed live listing to update.' })
-          setQuickListingResults([...results])
-          continue
-        }
-        try {
-          await recordListingPublicationStage(channel, 'submitted', nextDraft, { action: quickListingAction })
-          const response = await sendQuickListingPortalUpdate(channel, quickListingAction)
-          if (!isQuickListingPortalUpdateAccepted(channel, quickListingAction, response)) throw new Error(`${channel} did not accept the update.`)
-          await recordListingPublicationStage(channel, 'accepted', nextDraft, { action: quickListingAction })
-          results.push({ channel, status: 'sent', detail: `${isPriceChange ? channel === 'Property24' && currentListingStatus === 'under_offer' ? 'Lower price with Pending status' : 'Price reduction' : isSold ? 'Sold status' : 'Under-offer status'} accepted; refresh portal status to confirm the live page.` })
-        } catch (error) {
-          await recordListingPublicationStage(channel, 'failed', nextDraft, { action: quickListingAction, error: error?.message || 'Portal update failed.' }).catch(() => null)
-          results.push({ channel, status: 'failed', detail: error?.message || 'Portal update failed. Retry from the channel controls.' })
-        }
-        setQuickListingResults([...results])
-      }
-      try {
-        const activity = await createPrivateListingActivity({
-          privateListingId: listingRecord.id,
-          activityType: isPriceChange ? 'listing_price_changed' : isSold ? 'listing_sold' : 'listing_under_offer',
-          activityTitle: isPriceChange ? 'Asking price reduced' : isSold ? 'Listing marked sold' : 'Listing marked under offer',
-          activityDescription: isPriceChange ? `Asking price reduced from ${formatMoneyValue(previousPrice)} to ${formatMoneyValue(nextPrice)}.` : isSold ? 'Agent marked the listing sold.' : 'Agent marked the listing under offer.',
-          performedBy: profile?.id || null,
-          visibility: 'internal',
-          metadata: { action: quickListingAction, ...(isPriceChange ? { previousPrice, nextPrice, portalReducedBanner: 'unsupported' } : {}), channelResults: results },
-        })
-        if (!activity?.id) throw new Error('Activity record was not created.')
-      } catch {
-        results.push({ channel: 'Activity', status: 'failed', detail: 'The listing changed, but its audit entry could not be recorded.' })
-        setQuickListingResults([...results])
-      }
-      await loadListingData({ showLoading: false })
-      setDetailMessage(results.some((item) => item.status === 'failed') ? 'Arch9 saved the change, but at least one follow-up needs attention.' : 'Listing change saved. Check each channel result below.')
-      window.dispatchEvent(new Event('itg:listings-updated'))
-    } catch (error) {
-      setQuickListingError(error?.message || 'The listing could not be updated.')
-    } finally {
-      setQuickListingBusy(false)
     }
   }
 
@@ -12812,7 +12763,7 @@ function AgentListingDetail({ mobile = false } = {}) {
     const saleClosed = ['sold', 'under_offer', 'transaction_created', 'deleted'].includes(currentStatus)
     const statusRetry = ['sold', 'under_offer'].includes(updateState?.action) && updateState.action === currentStatus
     const expiryRetry = isP24 && updateState?.action === 'expiry' && property24Published && property24HasReference
-    const contentRetry = ['publish', 'update', 'price_reduction'].includes(updateState?.action) && hasAdvert && !inactive && !['sold', 'withdrawn', 'expired', 'archived', 'transaction_created', 'deleted'].includes(currentStatus)
+    const contentRetry = ['publish', 'update', 'price_reduction', 'price_update'].includes(updateState?.action) && hasAdvert && !inactive && !['sold', 'withdrawn', 'expired', 'archived', 'transaction_created', 'deleted'].includes(currentStatus)
     const retryAvailable = updateState?.status === 'needs_attention' && updateState.retriable !== false && (statusRetry || expiryRetry || contentRetry)
     const failedUpdates = retryAvailable && (statusRetry || expiryRetry)
       ? [{ channel: channelName, action: updateState.action, status: 'failed', detail: updateState.detail }] : []
@@ -12880,8 +12831,8 @@ function AgentListingDetail({ mobile = false } = {}) {
     const retry = async () => {
       if (['publish', 'update'].includes(updateState?.action)) return update()
       if (['sold', 'under_offer', 'expiry'].includes(updateState?.action)) return saveSimpleChannelManagement(channelName, { listingStatus: currentStatus, expiryDate: marketingDraft.property24ExpiryDate, retryResults: [{ channel: channelName, action: updateState.action, status: 'failed' }] })
-      if (updateState?.action === 'price_reduction') {
-        await retryListingChannelUpdate(channelName, 'price_reduction', { fromManage: true })
+      if (['price_reduction', 'price_update'].includes(updateState?.action)) {
+        await retryListingChannelUpdate(channelName, updateState.action, { fromManage: true })
         return { ok: true, message: 'Price update accepted. Check the public advert.' }
       }
       throw new Error('Check latest status and review the advert before retrying this action.')
@@ -12913,6 +12864,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       isSale={normalizeKey(marketingDraft.listingType || listingRecord?.listingType) !== 'rental'}
       onClose={onClose}
       onSave={values => saveSimpleChannelManagement(channelName, values)}
+      onUpdatePrice={() => setPriceUpdateOpen(true)}
       onFix={openPropertyDetailsFromMarketing}
       onRefresh={hasAdvert || (!isP24 && !isPP) ? refresh : undefined}
       onPreview={isP24 || isPP ? preview : undefined}
@@ -12955,7 +12907,7 @@ function AgentListingDetail({ mobile = false } = {}) {
           {property24Reference || privatePropertyHasChannel ? <Button type="button" size="sm" variant="secondary" onClick={() => setRelistChannel('')} disabled={quickListingBusy || channelManageBusy || ['sold', 'under_offer', 'transaction_created', 'deleted'].includes(currentStatus)}>Relist listing</Button> : null}
           <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('under_offer')} disabled={quickListingBusy || !isSale || currentStatus !== 'active'}>Under offer</Button>
           <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('sold')} disabled={quickListingBusy || !isSale || !['active', 'under_offer'].includes(currentStatus)}>Sold</Button>
-          <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('price_reduction')} disabled={quickListingBusy || !isSale || ['sold', 'withdrawn'].includes(currentStatus)}>Reduce price</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('price_reduction')} disabled={quickListingBusy || ['sold', 'withdrawn', 'expired', 'archived'].includes(currentStatus)}>Update price</Button>
         </div>
       </div>
     </section>
@@ -13082,6 +13034,7 @@ function AgentListingDetail({ mobile = false } = {}) {
           <div className="border-b border-[#edf2f7] p-5">
             <div>
               <h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3>
+              <Button type="button" variant="secondary" size="sm" disabled={channelManageBusy || quickListingBusy || ['sold','withdrawn','expired','archived'].includes(normalizeKey(marketingDraft.listingStatus))} onClick={() => setPriceUpdateOpen(true)}>Update price</Button>
             </div>
           </div>
 
@@ -17703,16 +17656,17 @@ function AgentListingDetail({ mobile = false } = {}) {
         onContinueProperty24={() => continueSyndicationReview('property24', previewProperty24Listing)}
       />
 
+      {priceUpdateOpen ? <ListingPriceUpdateDialog currentPrice={listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price} currentReduced={Boolean(marketingDraft.showReducedBanner)} listingStatus={marketingDraft.listingStatus} pricePresentation={marketingDraft.pricePresentation} externalBusy={channelManageBusy || quickListingBusy} onClose={() => setPriceUpdateOpen(false)} onPublish={saveAndPublishPrice} /> : null}
       <Modal
         open={Boolean(quickListingAction)}
         onClose={quickListingBusy ? undefined : () => setQuickListingAction('')}
-        title={quickListingAction === 'price_reduction' ? 'Reduce asking price' : quickListingAction === 'sold' ? 'Mark listing sold' : 'Mark listing under offer'}
+        title={quickListingAction === 'sold' ? 'Mark listing sold' : 'Mark listing under offer'}
         subtitle="Arch9 saves first, then updates every active Property24, Private Property and website channel. Each result is shown separately."
         className="max-w-lg"
-        footer={<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setQuickListingAction('')} disabled={quickListingBusy}>Close</Button>{quickListingResults.some((result) => result.status === 'failed' && result.channel !== 'Activity') ? <Button type="button" variant="secondary" onClick={() => void retryFailedQuickListingChannels()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Retry failed updates</Button> : null}{!quickListingResults.length ? <Button type="button" onClick={() => void applyQuickListingAction()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{quickListingAction === 'price_reduction' ? 'Save reduced price' : quickListingAction === 'sold' ? 'Confirm sold' : 'Confirm under offer'}</Button> : null}</div>}
+        footer={<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setQuickListingAction('')} disabled={quickListingBusy}>Close</Button>{quickListingResults.some((result) => result.status === 'failed' && result.channel !== 'Activity') ? <Button type="button" variant="secondary" onClick={() => void retryFailedQuickListingChannels()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Retry failed updates</Button> : null}{!quickListingResults.length ? <Button type="button" onClick={() => void applyQuickListingAction()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{quickListingAction === 'sold' ? 'Confirm sold' : 'Confirm under offer'}</Button> : null}</div>}
       >
         <div className="space-y-4 text-sm text-[#43566d]">
-          {quickListingAction === 'price_reduction' ? <><p>Current asking price: {formatMoneyValue(Number(listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price || 0))}</p><label className="grid gap-2 font-semibold text-[#243d56]">New lower asking price (R)<Field type="number" min="1" step="1" inputMode="numeric" value={quickListingPrice} onChange={(event) => setQuickListingPrice(event.target.value)} disabled={quickListingBusy || quickListingResults.length > 0} /></label><p>Old and new prices will be recorded in listing activity.</p><label className="flex items-start gap-2 text-sm text-[#607387]"><input type="checkbox" disabled checked={false} readOnly />Add a reduced-price banner on the portals <span className="font-semibold">(unavailable: portal support not confirmed)</span></label><p>Property24 will receive its ReducedPrice status for an active listing; a listing already under offer keeps Pending. Private Property receives the lower price. A reduced-price banner is not guaranteed on either portal.</p></> : quickListingAction === 'sold' ? <p>Mark this property sold in Arch9 and update every active channel, including the websites.</p> : <p>Mark this property under offer in Arch9 and update every active channel, including the websites.</p>}
+          {quickListingAction === 'sold' ? <p>Mark this property sold in Arch9 and update every active channel, including the websites.</p> : <p>Mark this property under offer in Arch9 and update every active channel, including the websites.</p>}
           {quickListingError ? <p role="alert" className="rounded-lg border border-[#f1c6c2] bg-[#fff5f5] p-3 font-semibold text-[#a13b35]">{quickListingError}</p> : null}
           {quickListingResults.length ? <div className="space-y-2" aria-live="polite">{quickListingResults.map((result) => <div key={result.channel} className="rounded-lg border border-[#e0e8f0] bg-[#f8fbff] p-3"><strong className="text-[#142132]">{result.channel}: {result.status === 'saved' ? 'Saved' : result.status === 'sent' ? 'Accepted' : result.status === 'failed' ? 'Needs attention' : 'Not sent'}</strong><p className="mt-1">{result.detail}</p></div>)}<p className="text-xs">An accepted portal update is not proof the public page has changed. Use Refresh status in Listing Channels to confirm it.</p></div> : null}
         </div>

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
+import { createClient } from '@supabase/supabase-js'
 
 const server = await createServer({
   root: process.cwd(),
@@ -14,7 +15,32 @@ try {
     mergeAttorneyFirmBrandingRows,
     WORKSPACE_RESOLUTION_STATUSES,
     __workspaceResolutionTestUtils,
+    fetchWorkspaceResolutionContextRpc,
+    resolveCurrentWorkspace,
   } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
+
+  // Exercise cancellation through the real SDK transport, without a real host.
+  let transportAborted = false
+  const requests = []
+  const stalledClient = createClient('https://startup-fixture.invalid', 'fixture-public-key', {
+    accessToken: async () => 'fixture-access-token',
+    global: { fetch: async (url, options) => {
+      requests.push(new URL(url).pathname)
+      return new Promise((_resolve, reject) => options.signal?.addEventListener('abort', () => {
+        transportAborted = true
+        reject(new DOMException('Aborted', 'AbortError'))
+      }, { once: true }))
+    } },
+  })
+  await assert.rejects(() => fetchWorkspaceResolutionContextRpc(stalledClient, {
+    userId: 'fixture-user', timeoutMs: 25,
+  }), { code: 'WORKSPACE_QUERY_TIMEOUT' })
+  assert.equal(transportAborted, true, 'the timed-out RPC must release its transport before retrying')
+  requests.length = 0
+  await assert.rejects(() => resolveCurrentWorkspace('fixture-user', {
+    client: stalledClient, user: { id: 'fixture-user' }, profile: { id: 'fixture-user' }, queryTimeoutMs: 25,
+  }), { code: 'WORKSPACE_QUERY_TIMEOUT' })
+  assert.deepEqual(requests, ['/rest/v1/rpc/bridge_resolve_current_workspace_context'], 'an RPC timeout must not start legacy reads')
 
   assert.deepEqual(buildWorkspacePreferenceIdentity({id:'firm-1',type:'attorney_firm',organisationId:'org-1'}),{active_workspace_id:'org-1',active_attorney_firm_id:'firm-1'})
   assert.deepEqual(buildWorkspacePreferenceIdentity({id:'firm-2',type:'attorney_firm',organisationId:'org-1'}),{active_workspace_id:'org-1',active_attorney_firm_id:'firm-2'})

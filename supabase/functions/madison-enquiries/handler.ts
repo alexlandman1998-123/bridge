@@ -31,8 +31,9 @@ export async function handleMadisonEnquiry(request: Request, deps: { client: any
   const ip = text(request.headers.get('x-forwarded-for')).split(',')[0] || 'unknown';
   // Private, keyed digests. Never persist IP addresses or trust a client-supplied tenant/owner.
   const fingerprint = await digest(JSON.stringify([name, email, phone, interest, message]));
-  const { data, error } = await deps.client.rpc('madison_capture_website_enquiry', {
+  const { data, error } = await deps.client.rpc('madison_capture_campaign_enquiry', {
     p_id: id, p_name: name, p_email: email, p_phone: phone, p_interest: interest, p_message: message,
+    p_attribution_token: /^[a-f0-9]{32}$/i.test(text(body.attributionToken)) ? text(body.attributionToken).toLowerCase() : null,
     p_fingerprint: fingerprint, p_ip_hash: await digest(`${deps.hashSalt}:${ip}`),
   });
   if (error) {

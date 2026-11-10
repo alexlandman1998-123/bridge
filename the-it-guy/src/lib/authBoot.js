@@ -8,6 +8,7 @@ import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './s
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
 import {
   fetchWorkspaceResolutionContextRpc,
+  isMissingWorkspaceContextRpcError,
   normalizeWorkspaceResolutionRpcContext,
   resolveCurrentWorkspace,
 } from '../services/workspaceResolutionService'
@@ -323,6 +324,8 @@ function withStepTimeout(task, {
   label = 'auth boot step',
   timeoutMs = AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
 } = {}) {
+  const controller = typeof task?.abortSignal === 'function' ? new AbortController() : null
+  const request = controller ? task.abortSignal(controller.signal) : task
   let timeoutId = null
   const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
     ? window.setTimeout.bind(window)
@@ -331,12 +334,13 @@ function withStepTimeout(task, {
     ? window.clearTimeout.bind(window)
     : clearTimeout
   return Promise.race([
-    task,
+    request,
     new Promise((_, reject) => {
       timeoutId = setTimer(() => {
         const error = new Error(`${label} timed out.`)
         error.code = 'AUTH_BOOT_STEP_TIMEOUT'
         reject(error)
+        controller?.abort()
       }, timeoutMs)
     }),
   ]).finally(() => {
@@ -686,6 +690,13 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
         return rpcProfile
       }
 
+      // A slow or rejected modern endpoint is not evidence of an older schema.
+      // Let bounded boot recovery retry it instead of adding legacy requests to
+      // the same unavailable service. Only a genuinely absent RPC may fall back.
+      if (workspaceContextError && !isMissingWorkspaceContextRpcError(workspaceContextError)) {
+        throw workspaceContextError
+      }
+
       startupBootstrapMode = 'legacy_profile'
 
       if (workspaceContextError) {
@@ -709,6 +720,10 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
     },
     { userId: user.id },
   )
+
+  // Start optional reads only after the required request succeeds. Otherwise a
+  // failed attempt would leave signup/health traffic behind during its retry.
+  const profile = await profileBootstrap
 
   const signupIntentBootstrap = runAuthBootStep(
     'signupIntent.load',
@@ -742,8 +757,6 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
   // Profile and workspace resolution decide whether the user can enter the app.
   // Health telemetry and a completed user's historic signup intent must never
   // keep the dashboard behind a loading screen.
-  const profile = await profileBootstrap
-
   const recordBootHealth = (bootHealth) => {
     if (!bootHealth?.ok) {
       markBackendDegraded({ ttlMs: 120_000 })
@@ -813,6 +826,7 @@ async function loadBridgeAuthStateUncoalesced({ session, selectedWorkspaceId = '
           user,
           profile,
           workspaceContext,
+          skipWorkspaceContextRpc: true,
           requestedWorkspaceId: selectedWorkspaceId,
         }),
         {

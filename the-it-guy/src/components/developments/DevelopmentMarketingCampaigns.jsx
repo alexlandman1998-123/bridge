@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { ArrowUpRight, CheckCheck, Mail, Megaphone, MessageCircle, RefreshCw, Search, Send, UsersRound } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
+import { loadDevelopmentCampaignPreparation, prepareDevelopmentCampaign } from '../../services/developmentCampaignPreparation'
 import { developmentCampaignContext, fetchDevelopmentCampaigns } from '../../services/developmentCampaignService'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
@@ -21,13 +22,17 @@ const date = timestamp => { const result = timestamp ? new Date(timestamp) : nul
 export default function DevelopmentMarketingCampaigns(props) {
   const { authState } = useAuthSession()
   const organisationId = String(authState?.currentWorkspace?.organisationId || authState?.currentWorkspace?.organisation_id || authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '')
-  return <DevelopmentMarketingCampaignsWorkspace key={`${organisationId}:${props.development.id}`} {...props} organisationId={organisationId} />
+  return <DevelopmentMarketingCampaignsWorkspace key={`${organisationId}:${authState?.user?.id || ''}:${props.development.id}:${props.initialEventId || ''}`} {...props} organisationId={organisationId} />
 }
 
-export function DevelopmentMarketingCampaignsWorkspace({ development, organisationId, organisationUsers = [], canManage = false, loadCampaigns = fetchDevelopmentCampaigns }) {
+export function DevelopmentMarketingCampaignsWorkspace({ development, organisationId, organisationUsers = [], canManage = false, loadCampaigns = fetchDevelopmentCampaigns, loadPreparation = loadDevelopmentCampaignPreparation, initialEventId = null }) {
   const [refresh, setRefresh] = useState(0)
   const [request, setRequest] = useState(null)
   const [editor, setEditor] = useState(null)
+  const [preparation, setPreparation] = useState(null)
+  const [prepareAttempt, setPrepareAttempt] = useState(0)
+  const [selectedEvent, setSelectedEvent] = useState(initialEventId || '')
+  const [prepareError, setPrepareError] = useState('')
   const [tab, setTab] = useState('past')
   const [channel, setChannel] = useState('all')
   const [search, setSearch] = useState('')
@@ -39,44 +44,80 @@ export function DevelopmentMarketingCampaignsWorkspace({ development, organisati
     }).catch(() => { if (!cancelled) setRequest({ key, campaigns: [], errors: ['Campaign history could not be loaded. Refresh to try again.'] }) })
     return () => { cancelled = true }
   }, [organisationId, development.id, key, loadCampaigns])
+  const prepareKey = `${organisationId}:${development.id}:${prepareAttempt}`
+  useEffect(() => {
+    if (editor?.mode !== 'prepare') return
+    let cancelled = false
+    Promise.resolve().then(() => loadPreparation({ organisationId, developmentId: development.id })).then(data => {
+      if (!cancelled) setPreparation({ key: prepareKey, data })
+    }).catch(error => { if (!cancelled) setPreparation({ key: prepareKey, error: error.message }) })
+    return () => { cancelled = true }
+  }, [editor?.mode, organisationId, development.id, prepareKey, loadPreparation])
+  function prepare() {
+    try {
+      const preparedCampaign = prepareDevelopmentCampaign(preparation.data, selectedEvent || null)
+      setPrepareError('')
+      setEditor({ ...editor, mode: 'create', preparedCampaign })
+    } catch (error) { setPrepareError(error.message) }
+  }
   const loading = request?.key !== key
   const campaigns = loading ? [] : request.campaigns || []
   const errors = loading ? [] : request.errors || []
+  const warnings = loading ? [] : request.warnings || []
   const past = campaigns.filter(campaign => !activeStatuses.has(campaign.status))
   const drafts = campaigns.filter(campaign => activeStatuses.has(campaign.status))
   const rows = (tab === 'past' ? past : drafts).filter(campaign => (channel === 'all' || campaign.channel === channel) && campaign.name.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0))
   function total(metric) { return loading || errors.length || campaigns.some(campaign => campaign[metric] == null) ? null : campaigns.reduce((sum, campaign) => sum + campaign[metric], 0) }
   function back() { setEditor(null); setRefresh(previous => previous + 1) }
   function openCampaign(campaign) { if (canManage) setEditor({ channel: campaign.channel, id: campaign.id, mode: campaign.status === 'draft' ? 'create' : 'detail' }) }
+  if (editor?.mode === 'prepare') {
+    const ready = preparation?.key === prepareKey
+    return <section className="development-campaign-editor" aria-label="Prepare development campaign">
+      <Button type="button" variant="secondary" onClick={back}>Back to development campaigns</Button>
+      <h3>Prepare {channelLabel(editor.channel)} campaign</h3>
+      {!ready ? <p role="status">Loading saved development content and interested contacts…</p> : preparation.error ? <div role="alert"><p>{preparation.error}</p><Button type="button" onClick={() => setPrepareAttempt(value => value + 1)}>Retry preparation</Button></div> : <>
+        <p>Use saved content from {preparation.data.development.name}. Review the message and eligible recipients in the channel builder before sending.</p>
+        <label>Campaign purpose<Field as="select" value={selectedEvent} onChange={event => { setSelectedEvent(event.target.value); setPrepareError('') }}>
+          <option value="">Development update</option>
+          {selectedEvent && !preparation.data.events.some(event => event.id === selectedEvent) ? <option value={selectedEvent}>Selected event unavailable — choose another purpose</option> : null}
+          {preparation.data.events.map(event => <option key={event.id} value={event.id}>Invitation: {event.title}</option>)}
+        </Field></label>
+        <p>{editor.channel === 'email' ? 'The initial email audience is limited to CRM contacts linked to this development. Email consent and subscription checks still apply.' : `${preparation.data.whatsappContactIds.length} currently opted-in WhatsApp contacts match this development. Select and review an approved template.`}</p>
+        {prepareError ? <p role="alert">{prepareError}</p> : null}
+        <Button type="button" onClick={prepare}>Continue to {channelLabel(editor.channel)} builder</Button>
+      </>}
+    </section>
+  }
   if (editor) {
     const Builder = editor.channel === 'email' ? EmailBuilder : WhatsAppBuilder
     const Detail = editor.channel === 'email' ? EmailDetail : WhatsAppDetail
-    return <section className="development-campaign-editor" aria-label={`${channelLabel(editor.channel)} campaign workspace`}><p className="development-campaign-context">Campaigns · {development.name}</p><Suspense fallback={<p role="status">Opening campaign workspace…</p>}>{editor.mode === 'create' ? <Builder campaignId={editor.id} developmentContext={developmentCampaignContext(development)} onBack={back} /> : <Detail campaignId={editor.id} onBack={back} onEdit={id => setEditor({ channel: editor.channel, id, mode: 'create' })} />}</Suspense></section>
+    return <section className="development-campaign-editor" aria-label={`${channelLabel(editor.channel)} campaign workspace`}><p className="development-campaign-context">Campaigns · {development.name}</p><Suspense fallback={<p role="status">Opening campaign workspace…</p>}>{editor.mode === 'create' ? <Builder campaignId={editor.id} developmentContext={editor.preparedCampaign?.context || developmentCampaignContext(development)} preparedCampaign={editor.preparedCampaign} onBack={back} /> : <Detail campaignId={editor.id} onBack={back} onEdit={id => setEditor({ channel: editor.channel, id, mode: 'create' })} />}</Suspense></section>
   }
   return <section className="development-marketing-campaigns" aria-label="Development campaigns" aria-busy={loading}>
     <header className="development-campaign-heading"><Button type="button" variant="secondary" size="sm" onClick={() => setRefresh(previous => previous + 1)} disabled={loading}><RefreshCw size={15} aria-hidden="true" />Refresh</Button></header>
+    {initialEventId ? <p className="development-campaign-context">Choose Email or WhatsApp to prepare the selected development event invitation.</p> : null}
     <div className="development-campaign-actions">
-      <button type="button" className="development-campaign-action is-email" disabled={!canManage} onClick={() => setEditor({ channel: 'email', mode: 'create' })}><span className="development-campaign-action-icon"><Mail size={26} aria-hidden="true" /></span><strong>Email Campaign</strong><small>Tell the story. Spark the next enquiry.</small><ArrowUpRight size={20} aria-hidden="true" /></button>
-      <button type="button" className="development-campaign-action is-whatsapp" disabled={!canManage} onClick={() => setEditor({ channel: 'whatsapp', mode: 'create' })}><span className="development-campaign-action-icon"><MessageCircle size={26} aria-hidden="true" /></span><strong>WhatsApp Campaign</strong><small>Start a conversation with your buyers.</small><ArrowUpRight size={20} aria-hidden="true" /></button>
+      <button type="button" className="development-campaign-action is-email" disabled={!canManage} onClick={() => setEditor({ channel: 'email', mode: 'prepare' })}><span className="development-campaign-action-icon"><Mail size={26} aria-hidden="true" /></span><strong>Email Campaign</strong><small>Tell the story. Spark the next enquiry.</small><ArrowUpRight size={20} aria-hidden="true" /></button>
+      <button type="button" className="development-campaign-action is-whatsapp" disabled={!canManage} onClick={() => setEditor({ channel: 'whatsapp', mode: 'prepare' })}><span className="development-campaign-action-icon"><MessageCircle size={26} aria-hidden="true" /></span><strong>WhatsApp Campaign</strong><small>Start a conversation with your buyers.</small><ArrowUpRight size={20} aria-hidden="true" /></button>
       <button type="button" className="development-campaign-action is-meta" disabled><span className="development-campaign-action-icon"><Megaphone size={26} aria-hidden="true" /></span><strong>Meta Campaign</strong><small>Reach new audiences on Facebook and Instagram.</small><span className="development-campaign-soon">Coming soon</span></button>
     </div>
     {!canManage ? <p className="development-campaign-note">You can review campaigns. Ask a development manager to create a new campaign.</p> : null}
-    {errors.length ? <div role="alert" className="development-campaign-error">{errors.map(error => <p key={error}>{error}</p>)}</div> : null}
+    {errors.length || warnings.length ? <div role="alert" className="development-campaign-error">{[...errors, ...warnings].map(error => <p key={error}>{error}</p>)}</div> : null}
     <div className="development-campaign-stats" aria-label="Campaign results">{[
       [Send, 'Campaigns sent', loading || errors.length ? null : campaigns.filter(campaign => ['sent', 'partial', 'partially_failed'].includes(campaign.status)).length],
       [UsersRound, 'Recipients', total('recipients')],
       [CheckCheck, 'Delivered', total('delivered')],
-    ].map(([icon, label, count]) => { const Icon = icon; return <article key={label}><span><Icon size={17} aria-hidden="true" />{label}</span><strong>{value(count)}</strong></article> })}<article><span><UsersRound size={17} aria-hidden="true" />Leads generated</span><strong className="is-untracked">Not tracked</strong></article></div>
+    ].map(([icon, label, count]) => { const Icon = icon; return <article key={label}><span><Icon size={17} aria-hidden="true" />{label}</span><strong>{value(count)}</strong></article> })}<article><span><UsersRound size={17} aria-hidden="true" />Attributed leads</span><strong>{value(total('leadsGenerated'))}</strong></article></div>
     <article className="development-campaign-history">
       <div className="development-campaign-history-heading"><div><span className="development-campaign-eyebrow">Campaign history</span><h4>See what connected.</h4><p>Campaigns created here are linked to this development.</p></div><span className="development-campaign-count">{loading ? '…' : campaigns.length}</span></div>
       <div className="development-campaign-tabs" aria-label="Campaign history view"><button type="button" aria-pressed={tab === 'past'} onClick={() => setTab('past')}>Past campaigns <span>{past.length}</span></button><button type="button" aria-pressed={tab === 'drafts'} onClick={() => setTab('drafts')}>Drafts & scheduled <span>{drafts.length}</span></button></div>
       <div className="development-campaign-filters"><label className="development-campaign-search"><Search size={16} aria-hidden="true" /><input type="search" aria-label="Search development campaigns" placeholder="Search campaigns" value={search} onChange={event => setSearch(event.target.value)} /></label><Field as="select" aria-label="Campaign channel" value={channel} onChange={event => setChannel(event.target.value)}><option value="all">All channels</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option></Field></div>
-      {loading ? <p className="development-campaign-empty" role="status">Loading campaign history…</p> : rows.length ? <div className="development-campaign-table-wrap"><table><thead><tr><th scope="col">Campaign</th><th scope="col">Recipients</th><th scope="col">Delivered</th><th scope="col">Engagement</th><th scope="col">Leads generated</th></tr></thead><tbody>{rows.map(campaign => {
+      {loading ? <p className="development-campaign-empty" role="status">Loading campaign history…</p> : rows.length ? <div className="development-campaign-table-wrap"><table><thead><tr><th scope="col">Campaign</th><th scope="col">Recipients</th><th scope="col">Delivered</th><th scope="col">Engagement</th><th scope="col">Attributed leads</th></tr></thead><tbody>{rows.map(campaign => {
         const agent = organisationUsers.find(user => campaign.createdBy && [user.id, user.userId, user.user_id].includes(campaign.createdBy))
         const name = agent?.fullName || agent?.full_name || agent?.name || [agent?.firstName || agent?.first_name, agent?.lastName || agent?.last_name].filter(Boolean).join(' ')
-        return <tr key={`${campaign.channel}:${campaign.id}`}><th scope="row"><button type="button" disabled={!canManage} onClick={() => openCampaign(campaign)}><strong>{campaign.name}{canManage ? <ArrowUpRight size={14} aria-hidden="true" /> : null}</strong><span>{channelLabel(campaign.channel)} · {date(campaign.date)} · {String(campaign.status || 'draft').replaceAll('_', ' ')}</span>{name ? <small>Created by {name}</small> : null}</button></th><td>{value(campaign.recipients)}</td><td>{value(campaign.delivered)}</td><td>{value(campaign.engaged)}<small>{campaign.channel === 'email' ? 'clicked' : 'read'}</small></td><td><span className="development-campaign-untracked">Not tracked</span></td></tr>
+        return <tr key={`${campaign.channel}:${campaign.id}`}><th scope="row"><button type="button" disabled={!canManage} onClick={() => openCampaign(campaign)}><strong>{campaign.name}{canManage ? <ArrowUpRight size={14} aria-hidden="true" /> : null}</strong><span>{channelLabel(campaign.channel)} · {date(campaign.date)} · {String(campaign.status || 'draft').replaceAll('_', ' ')}</span>{name ? <small>Created by {name}</small> : null}</button></th><td>{value(campaign.recipients)}</td><td>{value(campaign.delivered)}</td><td>{value(campaign.engaged)}<small>{campaign.channel === 'email' ? 'clicked' : 'read'}</small></td><td>{value(campaign.leadsGenerated)}{campaign.planId ? <small><a href={`/marketing?section=campaigns&view=detail&id=${encodeURIComponent(campaign.planId)}`}>View campaign plan</a></small> : null}</td></tr>
       })}</tbody></table></div> : <div className="development-campaign-empty"><Mail size={27} aria-hidden="true" /><strong>{errors.length ? 'History is partially unavailable' : search || channel !== 'all' ? 'No matching campaigns' : tab === 'past' ? 'Your campaign history starts here' : 'No drafts or scheduled campaigns'}</strong><p>{errors.length ? 'Refresh to check for additional campaigns.' : 'Create an email or WhatsApp campaign for this development to see it here.'}</p></div>}
-      <p className="development-campaign-footnote">Delivery, email clicks and WhatsApp reads come from campaign results. Leads generated will appear once campaign-to-lead attribution is connected.</p>
+      <p className="development-campaign-footnote">Delivery, email clicks and WhatsApp reads come from campaign results. Attributed leads count CRM-confirmed campaign conversions; clicks and reads are not leads.</p>
     </article>
   </section>
 }

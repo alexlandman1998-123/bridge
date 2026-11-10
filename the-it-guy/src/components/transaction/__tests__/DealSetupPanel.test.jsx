@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), buyerProps: vi.fn(), sellerLoad: vi.fn(), captureProps: vi.fn() }))
@@ -30,7 +30,30 @@ beforeEach(() => {
   mocks.sellerLoad.mockResolvedValue(sellerContext)
   mocks.save.mockImplementation(async ({ terms, finance }) => ({ setup: { terms, finance } }))
 })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks() })
+
+it('refreshes pending workflow updates when server recovery completes', async () => {
+  vi.useFakeTimers()
+  mocks.load.mockResolvedValueOnce({ setup, transaction: { id: 'recovering', deal_setup_sync_status: 'pending' } })
+    .mockResolvedValue({ setup: { ...setup, revision: 'recovered' }, transaction: { id: 'recovering', deal_setup_sync_status: 'complete' } })
+  await act(async () => { render(<DealSetupPanel transactionId="recovering" canEdit />) })
+  expect(screen.getByRole('button', { name: 'Retry workflow updates' })).toBeTruthy()
+  await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+  expect(screen.queryByRole('button', { name: 'Retry workflow updates' })).toBeNull()
+  expect(mocks.load).toHaveBeenCalledTimes(2)
+  expect(mocks.save).not.toHaveBeenCalled()
+})
+
+it('preserves unsaved edits while server recovery is pending', async () => {
+  vi.useFakeTimers()
+  mocks.load.mockResolvedValue({ setup, transaction: { id: 'recovering', deal_setup_sync_status: 'pending' } })
+  await act(async () => { render(<DealSetupPanel transactionId="recovering" canEdit />) })
+  fireEvent.change(screen.getByLabelText('Purchase price'), { target: { value: '1350000' } })
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+  expect(screen.getByLabelText('Purchase price').value).toBe('1350000')
+  expect(mocks.load).toHaveBeenCalledTimes(1)
+  expect(mocks.save).not.toHaveBeenCalled()
+})
 
 describe('agent deal setup', () => {
   it('opens Overview with basic buyer and seller details and three navigation buttons', async () => {

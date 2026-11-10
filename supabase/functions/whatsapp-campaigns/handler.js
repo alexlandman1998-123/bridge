@@ -1,3 +1,4 @@
+import { checkDevelopmentCampaignSource } from '../_shared/developmentCampaignSource.js'
 import { replyPlan } from '../_shared/whatsappAudience.js'
 import { campaignResult as result, createCampaignDelivery } from '../_shared/whatsappCampaignDelivery.js'
 
@@ -31,6 +32,8 @@ export function createCampaignHandler({ db, authorize, meta, functionBaseUrl }) 
     return new Map(rows.map(row=>[row.campaign_id,row]))
   }
   async function validateCampaign(org, row) {
+    const source = await checkDevelopmentCampaignSource({ db, campaign: row })
+    if (!source.ready) throw new Error(source.reason)
     const connection = await sender(org, row.sender_id)
     const available = await templates(connection, row.template?.name)
     const template = available.find((t) => t.id === row.template?.id && t.language === row.template?.language)

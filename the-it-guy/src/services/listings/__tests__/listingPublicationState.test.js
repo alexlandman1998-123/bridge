@@ -29,6 +29,17 @@ test('publication snapshots normalize unordered feature fields', () => {
   assert.deepEqual(diffListingPublicationSnapshots(first, second), [])
 })
 
+test('Reduced label changes are tracked without making unchanged historical adverts look out of date', () => {
+  const current = buildListingPublicationSnapshot(baseDraft)
+  const historical = { ...current }
+  delete historical.showReducedBanner
+  assert.deepEqual(diffListingPublicationSnapshots(current, historical), [])
+  const reduced = buildListingPublicationSnapshot({ ...baseDraft, showReducedBanner: true })
+  assert.deepEqual(diffListingPublicationSnapshots(reduced, current).map(change => change.key), ['showReducedBanner'])
+  const oldReduced = { ...historical, features: ['reduced_banner'] }
+  assert.deepEqual(diffListingPublicationSnapshots({ ...oldReduced, showReducedBanner: true }, oldReduced), [])
+})
+
 test('shared website names retain the explicit owned or partner publication history', () => {
   const snapshot = buildListingPublicationSnapshot(baseDraft)
   for (const channelKey of ['agency_website', 'kingdom_website']) {

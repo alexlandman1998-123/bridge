@@ -75,3 +75,10 @@ it('keeps an unsent rental without either portal identity unable to withdraw',()
  render(<RentalPortalManagementPanel channel={{...channel,reference:'',hasAdvertIdentity:false}} onWithdraw={vi.fn()} onClose={()=>{}} />)
  expect(screen.getByRole('button',{name:'Withdraw advert'}).disabled).toBe(true)
 })
+
+it('exposes the shared price workflow for an existing rental advert',()=>{
+ const update=vi.fn()
+ render(<RentalPortalManagementPanel channel={channel} listing={{listingStatus:'active'}} onClose={()=>{}} onUpdatePrice={update} />)
+ fireEvent.click(screen.getByRole('button',{name:'Update price'}))
+ expect(update).toHaveBeenCalledOnce()
+})

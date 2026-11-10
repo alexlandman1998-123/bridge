@@ -166,7 +166,7 @@ try {
   )
   assert.match(
     organisationContextSource,
-    /nextState = await fetchAgencyOnboardingSettings\(\)/,
+    /nextState = await fetchAgencyOnboardingSettings\(\{ authContext: authState \}\)/,
     'initial organisation hydration must retain the shared bootstrap cache/in-flight request',
   )
 

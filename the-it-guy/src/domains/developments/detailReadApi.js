@@ -19,7 +19,7 @@ export async function fetchDevelopmentProfile(client, developmentId, { strictMed
   let profileQuery = await client
     .from('development_profiles')
     .select(
-      'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, seller_details, marketing_content',
+      'development_id, revision, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, seller_details, marketing_content',
     )
     .eq('development_id', developmentId)
     .maybeSingle()
@@ -28,7 +28,7 @@ export async function fetchDevelopmentProfile(client, developmentId, { strictMed
     profileQuery = await client
       .from('development_profiles')
       .select(
-        'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
+        'development_id, revision, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
       )
       .eq('development_id', developmentId)
       .maybeSingle()
@@ -47,7 +47,7 @@ export async function fetchDevelopmentProfile(client, developmentId, { strictMed
     profileQuery = await client
       .from('development_profiles')
       .select(
-        'development_id, code, location, suburb, city, province, country, address, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents',
+        'development_id, revision, code, location, suburb, city, province, country, address, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents',
       )
       .eq('development_id', developmentId)
       .maybeSingle()
@@ -57,7 +57,7 @@ export async function fetchDevelopmentProfile(client, developmentId, { strictMed
     profileQuery = await client
       .from('development_profiles')
       .select(
-        'development_id, location, address, description, status, plans, site_plans, image_links, supporting_documents',
+        'development_id, revision, location, address, description, status, plans, site_plans, image_links, supporting_documents',
       )
       .eq('development_id', developmentId)
       .maybeSingle()
@@ -156,7 +156,7 @@ export async function fetchDevelopmentDetail(developmentId, { deferOptionalData 
     documents,
     marketingAccess,
     marketingActivity,
-    marketingEvents,
+    marketingEventsResult,
     visualAnalytics,
     productCatalogue,
     structureNodes,
@@ -173,7 +173,9 @@ export async function fetchDevelopmentDetail(developmentId, { deferOptionalData 
     deferOptionalData ? undefined : fetchDevelopmentDocuments(developmentId),
     deferOptionalData ? undefined : fetchDevelopmentMarketingAccess(developmentId),
     deferOptionalData ? undefined : fetchDevelopmentMarketingActivity(developmentId),
-    deferOptionalData ? undefined : fetchDevelopmentMarketingEvents(developmentId, development.organisation_id),
+    deferOptionalData ? undefined : fetchDevelopmentMarketingEvents(developmentId, development.organisation_id)
+      .then(events => ({ events, error: '' }))
+      .catch(error => ({ events: undefined, error: error.message || 'Development events could not be loaded.' })),
     deferOptionalData ? undefined : fetchDevelopmentVisualAnalytics(developmentId),
     deferOptionalData ? undefined : fetchDevelopmentProductCatalogue(client, developmentId),
     deferOptionalData ? undefined : fetchDevelopmentStructureNodes(client, developmentId),
@@ -258,7 +260,8 @@ export async function fetchDevelopmentDetail(developmentId, { deferOptionalData 
     documents,
     marketingAccess,
     marketingActivity,
-    marketingEvents,
+    marketingEvents: marketingEventsResult?.events,
+    marketingEventsError: marketingEventsResult?.error,
     visualAnalytics,
     productCatalogue,
     structureNodes,

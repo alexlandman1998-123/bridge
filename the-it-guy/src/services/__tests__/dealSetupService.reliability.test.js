@@ -12,11 +12,35 @@ function fixture(){
 }
 const args={transactionId:'tx',expectedUpdatedAt:'v1',terms:{purchasePrice:200,depositAmount:0},finance:{type:'cash',cashAmount:200}}
 beforeEach(()=>{vi.clearAllMocks();api.parties.mockResolvedValue([]);api.documents.mockResolvedValue({});api.requests.mockResolvedValue({})})
-it('atomically marks saved terms pending and preserves a retryable receipt when attorney reconciliation fails',async()=>{
- const {state,client}=fixture();client.rpc.mockResolvedValueOnce({data:null,error:Error('Attorney unavailable')}).mockResolvedValue({data:{},error:null})
- const result=await saveCanonicalDealTerms({...args,client});expect(result.persistence.saved).toBe(true);expect(result.reconciliation.status).toBe('failed');expect(state.writes[0]).toMatchObject({purchase_price:200,sales_price:200,deal_setup_sync_status:'pending'});expect(state.row.deal_setup_sync_status).toBe('failed');expect(api.documents).toHaveBeenCalledOnce()
- const version=state.row.deal_setup_terms_version;const retry=await retryDealSetupReconciliation({transactionId:'tx',termsVersion:version,client});expect(retry.reconciliation.status).toBe('complete');expect(state.writes.filter(p=>p.purchase_price!==undefined)).toHaveLength(1);expect(state.row.deal_setup_terms_version).toBe(version)
+it('requeues a previously failed saved version without rewriting commercial terms',async()=>{
+ const {state,client}=fixture();state.row.deal_setup_terms_version='saved-version';state.row.deal_setup_sync_status='failed'
+ client.rpc.mockResolvedValue({data:{status:'failed',automatic:true},error:null})
+ const retry=await retryDealSetupReconciliation({transactionId:'tx',termsVersion:'saved-version',client})
+ expect(retry.reconciliation).toMatchObject({status:'failed',automatic:true});expect(state.writes).toHaveLength(0)
+ expect(state.row.purchase_price).toBe(100);expect(state.row.deal_setup_terms_version).toBe('saved-version');expect(api.documents).not.toHaveBeenCalled()
 })
 it('rejects stale screen versions before writing or reconciling anything',async()=>{const {client,state}=fixture();await expect(saveCanonicalDealTerms({...args,expectedUpdatedAt:'old',client})).rejects.toThrow('Someone changed');expect(state.writes).toHaveLength(0);expect(client.rpc).not.toHaveBeenCalled()})
 it('rejects a concurrent update between reading and saving using the database predicate',async()=>{const {client,state}=fixture();state.race=true;await expect(saveCanonicalDealTerms({...args,client})).rejects.toThrow('Someone changed');expect(state.row.purchase_price).toBe(100);expect(state.writes).toHaveLength(0)})
 it('rejects retry receipts from older commercial versions',async()=>{const {client}=fixture();await expect(retryDealSetupReconciliation({transactionId:'tx',termsVersion:'stale',client})).rejects.toThrow('changed');expect(client.rpc).not.toHaveBeenCalled()})
+
+it('leaves downstream work to the durable server queue without browser writes',async()=>{
+ const {state,client}=fixture();client.rpc.mockResolvedValue({data:{status:'pending',automatic:true},error:null})
+ const saved=await saveCanonicalDealTerms({...args,client})
+ expect(saved.persistence.saved).toBe(true);expect(saved.reconciliation).toMatchObject({status:'pending',automatic:true})
+ expect(state.writes).toHaveLength(1);expect(api.documents).not.toHaveBeenCalled();expect(api.requests).not.toHaveBeenCalled()
+ expect(client.rpc).toHaveBeenCalledExactlyOnceWith('bridge_retry_deal_setup_reconciliation',{p_transaction_id:'tx',p_terms_version:state.row.deal_setup_terms_version})
+})
+
+it('keeps an accepted save pending if the queue response is lost; it never retries business writes in the browser',async()=>{
+ const {state,client}=fixture();client.rpc.mockResolvedValue({error:{code:'NETWORK',message:'response lost'}})
+ const saved=await saveCanonicalDealTerms({...args,client})
+ expect(saved.persistence.saved).toBe(true);expect(saved.reconciliation.status).toBe('pending')
+ expect(state.row.deal_setup_sync_status).toBe('pending');expect(state.writes).toHaveLength(1);expect(api.documents).not.toHaveBeenCalled()
+})
+
+it('does not bypass queue authorization failures through browser writes',async()=>{
+ const {client,state}=fixture();state.row.deal_setup_terms_version='version'
+ client.rpc.mockResolvedValue({error:{code:'42501',message:'permission denied'}})
+ await expect(retryDealSetupReconciliation({transactionId:'tx',termsVersion:'version',client})).rejects.toMatchObject({code:'42501'})
+ expect(api.documents).not.toHaveBeenCalled();expect(state.writes).toHaveLength(0)
+})

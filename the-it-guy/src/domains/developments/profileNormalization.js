@@ -517,6 +517,7 @@ export function normalizeListValue(value) {
 
 export function normalizeDevelopmentProfile(rawProfile = {}) {
   return {
+    revision: Number.isSafeInteger(rawProfile.revision) ? rawProfile.revision : null,
     code: normalizeTextValue(rawProfile.code),
     location: normalizeTextValue(rawProfile.location),
     suburb: normalizeTextValue(rawProfile.suburb),

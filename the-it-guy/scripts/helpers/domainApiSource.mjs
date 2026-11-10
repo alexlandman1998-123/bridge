@@ -1,11 +1,23 @@
 // Test-only source access for historical contracts after the runtime facade was retired.
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parse } from '@babel/parser'
 import contract from '../../src/lib/api/__tests__/fixtures/domain-api-contract.json' with { type: 'json' }
 
 const appRoot = resolve(import.meta.dirname, '../..')
 const oldLocation = resolve(appRoot, 'src/lib/api.js')
+
+// Historical source contracts follow the owners of the implementation, while
+// runtime callers continue to use the unchanged service facades.
+export function readLeadServiceSource(location) {
+  const file = location instanceof URL ? fileURLToPath(location) : String(location)
+  const match = file.match(/(agencyPipeline|buyerLifecycle)Service\.js$/)
+  if (!match) throw new Error(`Unknown lead service source: ${file}`)
+  return ['Model', 'Workflow'].map(kind => readFileSync(
+    resolve(dirname(file), `${match[1]}${kind}.js`), 'utf8',
+  )).join('\n')
+}
 
 export function canonicalDeclaration(source, location) {
   const ast = parse(source, { sourceType: 'module' })

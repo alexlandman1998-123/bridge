@@ -19,5 +19,20 @@ it('offers no confirmation action on an expired hold',async()=>{
  mocks.rows=[{...row,expires_at:'2020-01-01T10:00:00Z'}];render(<MadisonReservationWorkspace developmentId="development"/>);await screen.findByText(/Expired — awaiting automatic release/);expect(screen.queryByRole('button',{name:'Review deposit'})).toBeNull()
 })
 it('saves the settings through the scoped RPC without prefilled banking details',async()=>{
- render(<MadisonReservationWorkspace developmentId="development"/>);await screen.findByText(/Unit 042 · MP-123/);fireEvent.click(screen.getByText(/Trust payment details and activation/));expect(screen.getByLabelText('Account number').value).toBe('');fireEvent.click(screen.getByRole('button',{name:'Save reservation settings'}));await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('madison_save_reservation_settings',{p_development_id:'development',p_settings:expect.objectContaining({enabled:false,account_number:''})}))
+ render(<MadisonReservationWorkspace developmentId="development"/>);await screen.findByText(/Unit 042 · MP-123/);fireEvent.click(screen.getByRole('button',{name:'Reservation settings'}));expect(screen.getByLabelText('Account number').value).toBe('');fireEvent.click(screen.getByRole('button',{name:'Save reservation settings'}));await waitFor(()=>expect(mocks.rpc).toHaveBeenCalledWith('madison_save_reservation_settings',{p_development_id:'development',p_settings:expect.objectContaining({enabled:false,account_number:''})}))
+})
+it('shows the empty reservation workspace and opens accessible settings without a native details dropdown',async()=>{
+ mocks.rows=[]
+ const {container}=render(<MadisonReservationWorkspace developmentId="development"/>)
+ await screen.findByText('No website reservation requests yet.')
+ expect(container.querySelector('details')).toBeNull()
+ expect(screen.getByText('Requests disabled')).toBeTruthy()
+ const settings=screen.getByRole('button',{name:'Reservation settings'})
+ expect(settings.getAttribute('aria-expanded')).toBe('false')
+ fireEvent.click(settings)
+ expect(settings.getAttribute('aria-expanded')).toBe('true')
+ expect(document.getElementById(settings.getAttribute('aria-controls'))).toBeTruthy()
+ expect(screen.getByLabelText('Trust account holder')).toBeTruthy()
+ fireEvent.click(settings)
+ expect(screen.queryByLabelText('Trust account holder')).toBeNull()
 })

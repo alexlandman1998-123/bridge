@@ -1,4 +1,4 @@
-// Extracted without changing validation, persistence order or recovery behaviour.
+// Settings and managed default participants commit together through the database.
 import { DEVELOPMENT_TEAM_ROLE_MAP, normalizeStakeholderTeamParticipant } from './participantReadApi.js'
 import { normalizeNullableText, isMissingColumnError, isMissingTableError, isMissingSchemaError, requireClient, normalizeOptionalNumber, isPermissionDeniedError, normalizeOptionalDate, normalizeTextValue } from '../../lib/api/shared/readHelpers.js'
 import { normalizeEmailAddress } from './profileNormalization.js'
@@ -33,98 +33,39 @@ export function buildDevelopmentParticipantRowsFromTeams(stakeholderTeams = {}) 
   return rows
 }
 
-export async function syncDevelopmentParticipantsFromSettings(client, { developmentId, stakeholderTeams = {} } = {}) {
-  if (!developmentId) {
-    return
-  }
+export async function syncDevelopmentParticipantsFromSettings(
+  client, { developmentId, stakeholderTeams = {}, settingsPayload = null } = {},
+) {
+  if (!developmentId) throw new Error('Development is required.')
 
   const desiredRows = buildDevelopmentParticipantRowsFromTeams(stakeholderTeams)
-  const comparableEmails = desiredRows.map((row) => row.participant_email).filter(Boolean)
-  const profileIdByEmail = await resolveProfileIdsByEmail(client, comparableEmails)
+  const profileIdByEmail = await resolveProfileIdsByEmail(
+    client, desiredRows.map((row) => row.participant_email).filter(Boolean),
+  )
   const rowsWithUsers = desiredRows.map((row) => ({
-    development_id: developmentId,
-    user_id: row.participant_email ? profileIdByEmail[row.participant_email] || null : null,
     ...row,
+    user_id: row.participant_email ? profileIdByEmail[row.participant_email] || null : null,
   }))
-  const managedRoles = [...new Set(Object.values(DEVELOPMENT_TEAM_ROLE_MAP).map((definition) => definition.roleType))]
-
-  const clearManagedAssignments = async () => {
-    if (!managedRoles.length) {
-      return
+  // The settings and replacement assignments commit together. There is no
+  // browser-side delete fallback: a failed insert must leave the old team intact.
+  const { data, error } = await client.rpc('bridge_save_development_settings', {
+    target_development_id: developmentId,
+    settings_patch: settingsPayload,
+    default_participants: rowsWithUsers,
+  })
+  if (error) {
+    if (['PGRST202', '42883'].includes(error.code)) {
+      throw Object.assign(new Error(
+        'Development settings could not be saved because this workspace needs a database update. Please contact your administrator.',
+        { cause: error },
+      ), { code: error.code })
     }
-
-    let deleteQuery = client
-      .from('development_participants')
-      .delete()
-      .eq('development_id', developmentId)
-      .in('role_type', managedRoles)
-      .eq('assignment_source', 'development_default')
-
-    let deleteResult = await deleteQuery
-    if (deleteResult.error && isMissingColumnError(deleteResult.error, 'assignment_source')) {
-      deleteResult = await client
-        .from('development_participants')
-        .delete()
-        .eq('development_id', developmentId)
-        .in('role_type', managedRoles)
-    }
-
-    if (deleteResult.error) {
-      if (
-        isMissingTableError(deleteResult.error, 'development_participants') ||
-        isMissingSchemaError(deleteResult.error)
-      ) {
-        return
-      }
-      throw deleteResult.error
-    }
+    throw error
   }
-
-  await clearManagedAssignments()
-  if (!rowsWithUsers.length) {
-    return
+  if (data?.development_id !== developmentId || data?.participants_saved !== rowsWithUsers.length) {
+    throw new Error('The saved development settings and team assignments could not be confirmed.')
   }
-
-  const insertVariants = [
-    rowsWithUsers,
-    rowsWithUsers.map((row) => {
-      const clone = { ...row }
-      delete clone.user_id
-      delete clone.organisation_name
-      delete clone.is_primary
-      delete clone.can_create_transactions
-      delete clone.assignment_source
-      delete clone.is_active
-      return clone
-    }),
-    rowsWithUsers.map((row) => ({
-      development_id: row.development_id,
-      role_type: row.role_type,
-      participant_name: row.participant_name,
-      participant_email: row.participant_email,
-    })),
-  ]
-
-  let lastInsertError = null
-  for (const payload of insertVariants) {
-    const insertResult = await client.from('development_participants').insert(payload)
-    if (!insertResult.error) {
-      return
-    }
-
-    if (
-      isMissingTableError(insertResult.error, 'development_participants') ||
-      isMissingSchemaError(insertResult.error)
-    ) {
-      return
-    }
-
-    lastInsertError = insertResult.error
-  }
-
-  if (lastInsertError) {
-    throw lastInsertError
-  }
+  return data.settings
 }
 
 export async function syncPrimaryAttorneyDevelopmentParticipant(
@@ -361,54 +302,16 @@ export async function updateDevelopmentSettings(developmentId, settings) {
     },
   }
 
-  const selectClause =
-    'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, reservation_deposit_payment_details, reservation_deposit_notification_recipients, default_alteration_charge_treatment, enabled_modules, stakeholder_teams'
-
-  const settingsResult = await upsertByDevelopmentIdWithFallback(client, {
-    table: 'development_settings',
-    payload,
-    selectClause,
-    expectSingleRow: true,
+  const normalized = normalizeDevelopmentSettingsRow(payload)
+  const savedSettings = await syncDevelopmentParticipantsFromSettings(client, {
+    developmentId,
+    stakeholderTeams: normalized.stakeholderTeams,
+    settingsPayload: payload,
   })
-
-  const { data, error } = settingsResult
-
-  if (error) {
-    if (
-      error.code === '42P01' ||
-      isMissingColumnError(error, 'enabled_modules') ||
-      isMissingColumnError(error, 'reservation_deposit_enabled_by_default') ||
-      isMissingColumnError(error, 'reservation_deposit_amount') ||
-      isMissingColumnError(error, 'reservation_deposit_amount_type') ||
-      isMissingColumnError(error, 'reservation_deposit_treatment') ||
-      isMissingColumnError(error, 'reservation_deposit_payable_to') ||
-      isMissingColumnError(error, 'reservation_deposit_payment_details') ||
-      isMissingColumnError(error, 'reservation_deposit_notification_recipients') ||
-      isMissingColumnError(error, 'default_alteration_charge_treatment')
-    ) {
-      throw new Error('development_settings table not found. Run sql/schema.sql first.')
-    }
-
-    throw error
+  if (savedSettings?.development_id !== developmentId) {
+    throw new Error('The saved development settings could not be confirmed.')
   }
-
-  const normalized = normalizeDevelopmentSettingsRow(data)
-  try {
-    await syncDevelopmentParticipantsFromSettings(client, {
-      developmentId,
-      stakeholderTeams: normalized.stakeholderTeams,
-    })
-  } catch (participantSyncError) {
-    if (!isPermissionDeniedError(participantSyncError)) {
-      throw participantSyncError
-    }
-    console.warn(
-      '[Developments] Participant defaults were not synced because development_participants RLS blocked the write.',
-      participantSyncError,
-    )
-  }
-
-  return normalized
+  return normalizeDevelopmentSettingsRow(savedSettings)
 }
 
 export async function syncDevelopmentAttorneyRequiredDocs(client, configId, selectedDocuments = []) {

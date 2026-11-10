@@ -1500,6 +1500,7 @@ export async function createProperty24ApiResponse({
         expiryDate: resolvedConfig.expiryDate,
         defaultExpiryDate: resolvedConfig.defaultExpiryDate,
         listingNumber: resolvedConfig.listingNumber,
+        status: resolvedConfig.status,
         storageBaseUrl: resolvedConfig.supabaseUrl,
         maxImages: resolvedConfig.maxImages,
         photosChanged: resolvedConfig.photosChanged,

@@ -7,9 +7,9 @@ import { refreshDevelopmentMedia } from '../../lib/developmentMediaStorage.js'
 
 export const DEVELOPMENT_OVERVIEW_PAGE_SIZE = 25
 
-const developmentFields = 'id, organisation_id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, assigned_attorney_id, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled'
+const developmentFields = 'revision,id, organisation_id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, assigned_attorney_id, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled'
 // Marketing media, floorplan lists and site-plan state belong to opened sections.
-const profileFields = 'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, seller_details'
+const profileFields = 'revision,development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, seller_details'
 const coverFields = 'overview_cover:marketing_content->mediaLibrary->>coverImageUrl,overview_hero:marketing_content->mediaLibrary->>heroImageUrl,overview_legacy_cover:marketing_content->media_library->>cover_image_url,overview_legacy_hero:marketing_content->media_library->>hero_image_url,overview_logo:marketing_content->mediaLibrary->>developmentLogoUrl,overview_light_logo:marketing_content->mediaLibrary->>developmentLogoLightUrl,overview_dark_logo:marketing_content->mediaLibrary->>developmentLogoDarkUrl,overview_gallery:marketing_content->mediaLibrary->galleryImageUrls->>0,overview_legacy_gallery:marketing_content->media_library->gallery_image_urls->>0,overview_first_image:image_links->0'
 
 function normalizeOverviewRow(row) {

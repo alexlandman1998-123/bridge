@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { buildDevelopmentSitePlanSyndicationPayload } from '../src/core/developments/developmentSitePlanSyndication.js'
 
 const appRoot = resolve(import.meta.dirname, '..')
 const read = (path) => readFile(resolve(appRoot, path), 'utf8')
@@ -14,37 +15,40 @@ const [detailPage, availabilityWorkspace, desktopPublicPage, mobilePublicPage] =
 
 assert.match(detailPage, /sitePlanUrl=\{marketingForm\.mediaLibrary\.sitePlanUrl \|\| marketingForm\.mediaLibrary\.masterplanUrl\}/)
 assert.match(detailPage, /sitePlanMap=\{marketingForm\.mediaLibrary\.sitePlanMap\}/)
-assert.match(detailPage, /sitePlanMap,\n\s*},/)
+assert.match(detailPage, /updateMasterplanScene\(normalizedMarketing\.mediaLibrary\.visualMap,\s*\{\s*sitePlanMap\s*\}\)/)
+assert.match(detailPage, /mediaLibrary: hydrateVisualMapMediaLibrary\(\{[\s\S]*?visualMap/)
 assert.match(detailPage, /handleAvailabilitySitePlanUpload\(event\)/)
-assert.match(detailPage, /renderSitePlanPdfFirstPage\(sourceFile\)/)
+assert.match(detailPage, /renderSitePlanUploadImage\(sourceFile\)/)
 assert.match(detailPage, /Original source PDF retained for this site plan/)
 assert.match(detailPage, /onOpenSitePlanPublicationControls=\{\(\) => openMarketingHubSection\('public-page'\)\}/)
 assert.match(detailPage, /buildDevelopmentSitePlanSyndicationPayload/)
-assert.match(detailPage, /External portal exports receive the approved plan image only/)
+const externalPlan = buildDevelopmentSitePlanSyndicationPayload({ mediaLibrary: { sitePlanUrl: 'https://fixture.test/plan.png', sitePlanMap: { unit: { x: 12, y: 24 } } } })
+assert.equal(externalPlan.mode, 'asset_only')
+assert.equal(externalPlan.sitePlanAsset.url, 'https://fixture.test/plan.png')
+assert.equal(externalPlan.interactiveMap, undefined, 'Ordinary external portals must not receive interactive markers.')
 assert.match(detailPage, /extractSitePlanPdfTextAnchors\(sourceFile\)/)
 assert.match(detailPage, /buildPdfSitePlanUnitSuggestions/)
 assert.match(detailPage, /evaluateDevelopmentSitePlanQuality/)
 assert.match(detailPage, /sitePlanQuality=\{sitePlanQuality\}/)
 assert.match(detailPage, /nextMediaLibrary\.sitePlanUrl = urls\[0\] \|\| nextMediaLibrary\.sitePlanUrl/)
 
-assert.match(availabilityWorkspace, /\[selectedUnit\.id\]: \{\n\s*x:/)
-assert.match(availabilityWorkspace, /onSaveSitePlanMap\?\.\(/)
-assert.match(availabilityWorkspace, /backgroundImage: sitePlanUrl/)
-assert.match(availabilityWorkspace, /beginNextSitePlanPlacement/)
-assert.match(availabilityWorkspace, /Place next \(\$\{unplacedUnits\[0\]\.displayNumber\}\)/)
-assert.match(availabilityWorkspace, /sitePlanUrl \? visibleUnits\.filter\(\(unit\) => hasSavedMapPosition\(sitePlanMap, unit\.id\)\) : visibleUnits/)
-assert.match(availabilityWorkspace, /Map review/)
-assert.match(availabilityWorkspace, /Publishing controls/)
-assert.match(availabilityWorkspace, /PDF label suggestion/)
-assert.match(availabilityWorkspace, /Apply suggestions/)
-assert.match(availabilityWorkspace, /Map checks need attention/)
-assert.match(availabilityWorkspace, /sitePlanQuality\.issues/)
-
-assert.match(desktopPublicPage, /const map = media\.sitePlanMap \|\| \{\}/)
-assert.match(desktopPublicPage, /media\.masterplanUrl \|\| media\.sitePlanUrl/)
-assert.match(desktopPublicPage, /Number\.isFinite\(Number\(map\[unit\.id\]\?\.x\)\)/)
-assert.match(mobilePublicPage, /const map = media\.sitePlanMap \|\| \{\}/)
-assert.match(mobilePublicPage, /media\.masterplanUrl \|\| media\.sitePlanUrl/)
-assert.match(mobilePublicPage, /Number\.isFinite\(Number\(map\[unit\.id\]\?\.x\)\)/)
-
+// Placement, crop review and publication are independent controls. The visual
+// scene now owns coordinates; the old inline public map was retired.
+for (const pattern of [
+  /onSaveSitePlanMap\?\.\(/,
+  /sitePlanBackgroundStyle\(sitePlanUrl/,
+  /reviewSitePlanPlacement/,
+  /hasSavedMapPosition\(sitePlanMap, unit\.id\)/,
+  /visibleSitePlanSuggestions/,
+  /remapSitePlanCoordinates/,
+  /onOpenSitePlanPublicationControls/,
+  /Map checks need attention/,
+  /sitePlanQuality\.issues/,
+]) assert.match(availabilityWorkspace, pattern)
+for (const page of [desktopPublicPage,mobilePublicPage]) {
+  assert.match(page, /<PublicDevelopmentVisualExplorer/)
+  assert.match(page, /inventory=\{inventory\}/)
+  assert.match(page, /media=\{media\}/)
+  assert.match(page, /visualMapOverride=\{renderVisualMap\}/)
+}
 console.log('development site-plan foundation contract checks passed')

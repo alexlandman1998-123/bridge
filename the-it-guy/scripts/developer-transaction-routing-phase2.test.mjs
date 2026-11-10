@@ -25,9 +25,11 @@ assert.match(
 
 assert.match(
   source,
-  /workspaceLabel=\{isDeveloperTransactionView \? 'Development Transaction Workspace'/,
-  'Developer transactions must render the shared workspace header with a developer label.',
+  /tabs=\{isTransactionOperatorView[\s\S]*?workspaceMenuTabs\.map[\s\S]*?activeTab=\{isTransactionOperatorView \? activeWorkspaceMenu[\s\S]*?onTabChange=\{isTransactionOperatorView \? openWorkspaceMenu/,
+  'Developer transactions must wire the shared header to the operator tabs and navigation.',
 )
+
+assert.doesNotMatch(source, /onSendSellerReminder=/, 'The retired seller-reminder prop must not be reintroduced into the operator overview.')
 
 for (const workspaceName of ['documents', 'activity', 'stakeholders']) {
   assert.match(
@@ -39,13 +41,13 @@ for (const workspaceName of ['documents', 'activity', 'stakeholders']) {
 
 assert.match(
   source,
-  /onSendSellerReminder=\{isDeveloperTransactionView \? null : \(\) => void handleSendSellerPortalLink\(\)\}/,
-  'Developer transaction overview must not expose seller onboarding reminders.',
+  /developerOverview=\{isDeveloperTransactionView\}/,
+  'Developer transaction overview must use the developer journey variant.',
 )
 
 assert.match(
   source,
-  /if \(!isTransactionOperatorView \|\| !workspaceOrganisationId\)/,
+  /useTransactionPartnerOptions\(\{[\s\S]*?enabled:[\s\S]*?organisationId: workspaceOrganisationId/,
   'Developer transaction workspace must load scoped partner defaults.',
 )
 

@@ -423,6 +423,7 @@ export function buildRentalCanonicalFacts(form = {}) {
     city: normalizeText(form.city),
     province: normalizeText(form.province),
     propertyProfile: {
+      showReducedBanner: Boolean(form.showReducedBanner),
       propertyCategory: normalizeText(form.propertyCategory) || 'residential',
       propertyType: normalizeText(form.propertyType) || 'Apartment',
       bedrooms: normalizeNumber(form.bedrooms),
@@ -581,7 +582,7 @@ export function buildRentalPublicationDraft(form = {}) {
     floorSize: normalizeNumber(form.floorSize),
     erfSize: normalizeNumber(form.erfSize),
     description: normalizeText(form.description),
-    features: normalizeTextArray([...(Array.isArray(form.selectedFeatures) ? form.selectedFeatures : []), ...rentalFeatures]),
+    features: normalizeTextArray([...(form.showReducedBanner ? ['reduced_banner'] : []),...(Array.isArray(form.selectedFeatures) ? form.selectedFeatures.filter(feature => String(feature).toLowerCase().replace(/[ -]/g,'_') !== 'reduced_banner') : []), ...rentalFeatures]),
     amenities: normalizeTextArray(form.amenities),
     rentalTerms: {
       rentalPriceFrequency: normalizeRentalPriceFrequency(form.rentalPriceFrequency),

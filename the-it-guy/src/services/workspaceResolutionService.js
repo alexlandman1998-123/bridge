@@ -89,6 +89,8 @@ async function withWorkspaceQueryTimeout(task, {
   metadata = {},
 } = {}) {
   const resolvedTimeoutMs = normalizeTimeoutMs(timeoutMs, WORKSPACE_QUERY_TIMEOUT_MS)
+  const controller = typeof task?.abortSignal === 'function' ? new AbortController() : null
+  const request = controller ? task.abortSignal(controller.signal) : task
   let timeoutId = null
   const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
     ? window.setTimeout.bind(window)
@@ -99,10 +101,11 @@ async function withWorkspaceQueryTimeout(task, {
 
   try {
     return await Promise.race([
-      typeof task === 'function' ? Promise.resolve().then(task) : Promise.resolve(task),
+      typeof request === 'function' ? Promise.resolve().then(request) : Promise.resolve(request),
       new Promise((_, reject) => {
         timeoutId = setTimer(() => {
           reject(createWorkspaceQueryTimeoutError(label, resolvedTimeoutMs, metadata))
+          controller?.abort()
         }, resolvedTimeoutMs)
       }),
     ])
@@ -150,7 +153,7 @@ function isRecoverableSchemaError(error, tableName = '', columnName = '') {
   return isMissingTableError(error, tableName) || (columnName ? isMissingColumnError(error, columnName) : false)
 }
 
-function isMissingWorkspaceContextRpcError(error = null) {
+export function isMissingWorkspaceContextRpcError(error = null) {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
@@ -937,7 +940,7 @@ export function buildWorkspaceResolution({
 
 function requireClient(client = null) {
   const resolvedClient = client || supabase
-  if (!isSupabaseConfigured || !resolvedClient) {
+  if (!resolvedClient || (!client && !isSupabaseConfigured)) {
     throw new Error('Supabase is required for workspace resolution.')
   }
   return resolvedClient
@@ -1534,7 +1537,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
         timeoutMs: queryTimeoutMs,
       })
     } catch (error) {
-      if (isMissingWorkspaceContextRpcError(error) || isWorkspaceQueryTimeoutError(error)) {
+      if (isMissingWorkspaceContextRpcError(error)) {
         workspaceContextRpcUnavailable = true
         console.warn('[WORKSPACE_RESOLUTION] consolidated workspace resolver RPC unavailable; falling back to legacy queries', {
           rpc: WORKSPACE_CONTEXT_RPC_NAME,

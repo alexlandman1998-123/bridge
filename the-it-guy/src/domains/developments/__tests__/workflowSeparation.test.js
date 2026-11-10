@@ -141,10 +141,14 @@ it('returns a saved invitation when email delivery fails instead of duplicating 
 })
 
 it('keeps a saved marketing event when its optional audit write fails', async () => {
-  state.handlers.development_marketing_activity = () => ({ data: null, error: new Error('Offline') })
+  state.rpcHandlers.bridge_create_development_marketing_event = args => ({ data: {
+    requestId: args.p_request_id, developmentId, activitySaved: false,
+    event: { ...args.p_event, id: 'saved', subject_type: 'development', subject_id: developmentId },
+  }, error: null })
   const event = await createDevelopmentMarketingEvent({ developmentId, organisationId: developmentId, title: 'Show day', startsAt: '2027-01-01T10:00:00Z' })
-  expect(event.id).toBe('saved')
-  expect(state.calls.filter((call) => call.table === 'marketing_events' && call.operation === 'insert')).toHaveLength(1)
+  expect(event).toMatchObject({ id: 'saved', activityWarning: true })
+  expect(state.calls.filter(call => call.rpc === 'bridge_create_development_marketing_event')).toHaveLength(1)
+  expect(state.calls.some(call => call.table === 'marketing_events')).toBe(false)
 })
 
 it('keeps duplicate partner invites from creating another relationship', async () => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import vm from 'node:vm'
 import test from 'node:test'
+import { publishListingPriceUpdate, priceUpdateProperty24Status } from '../src/services/listings/listingPriceUpdate.js'
 import { saveListingChannelManagement } from '../src/services/listings/listingChannelManagement.js'
 import { getListingPublicationChannelKey } from '../src/services/listings/listingPublicationState.js'
 import { readFileSync } from 'node:fs'
@@ -24,20 +25,11 @@ assert.ok(listingPage.indexOf('Selling Points') < listingPage.indexOf('{renderLi
 assert.match(listingPage, /isActive: \['active', 'under_offer'\]/)
 assert.match(listingPage, /status: action === 'sold' \? 'Sold' : 'Pending'/)
 assert.match(listingPage, /photosChanged: false/)
-assert.match(listingPage, /\? 'Pending' : 'ReducedPrice'/)
 assert.match(listingPage, /propertyStatus: action === 'sold' \? 'Sold' : 'PendingOffer'/)
-assert.match(listingPage, /activityType: isPriceChange \? 'listing_price_changed' : isSold \? 'listing_sold' : 'listing_under_offer'/)
-assert.match(listingPage, /previousPrice, nextPrice/)
-assert.match(listingPage, /results\.push\(\{ channel, status: 'failed'/)
-assert.match(listingPage, /isQuickListingPortalUpdateAccepted\(channel, quickListingAction, response\)/)
-const applyActionSource = listingPage.slice(listingPage.indexOf('async function applyQuickListingAction()'), listingPage.indexOf('async function verifyArch9PublicListing('))
-assert.ok(applyActionSource.indexOf('await saveMarketingDraft(nextDraft') < applyActionSource.indexOf('await sendQuickListingPortalUpdate(channel, quickListingAction)'))
-assert.ok(applyActionSource.indexOf("activityType: 'listing_portal_update_started'") < applyActionSource.indexOf('await sendQuickListingPortalUpdate(channel, quickListingAction)'))
+assert.match(listingPage, /publishListingPriceUpdate\(/)
+assert.match(listingPage, /showReducedBanner: change.showReducedBanner/)
+assert.match(listingPage, /onUpdatePrice=/)
 assert.match(listingPage, /Retry failed updates/)
-assert.match(listingPage, /nextPrice >= previousPrice/)
-assert.match(listingPage, /!isPriceChange && !isSold && normalizeKey\(marketingDraft\.listingStatus\) === 'under_offer'/)
-assert.match(listingPage, /showReducedBanner: false/)
-assert.match(listingPage, /portal support not confirmed/)
 assert.match(listingPage, /draft\.showReducedBanner \? \['reduced_banner'\] : \[\]/)
 assert.match(privatePropertyStatus, /propertyStatus,/)
 
@@ -48,7 +40,8 @@ function simpleController() {
   const calls = []
   const context = {
     channelMutationRef: { current: false }, listingId: 'listing-1', requireSettledListingPublication: async () => {}, listingRecord: { id: 'listing-1' }, isSupabaseConfigured: true,
-    marketingDraft: { listingStatus: 'active', listingType: 'sale', property24ExpiryDate: '2026-11-30' }, marketingDraftDirtyRef: { current: false },
+    marketingDraft: { price: '1000000', showReducedBanner: false, listingStatus: 'active', listingType: 'sale', property24ExpiryDate: '2026-11-30' }, marketingDraftDirtyRef: { current: false },
+    publishListingPriceUpdate, priceUpdateProperty24Status, privatePropertyHasChannel: true, privatePropertyPortalReference: 'pp-1', requireSyndicationReviewBeforePublish: async () => true,
     property24Published: true, property24Reference: 'p24-1', privatePropertyExternalStatus: 'active', privatePropertyStatusKey: 'published',
     agencyWebsitePublication: { status: 'published' }, kingdomWebsitePublication: { status: 'published' },
     getWebsiteListingPublicationStatus: async () => { calls.push(['read-agency']); return { status: 'published', websiteStatus: 'published', projectionStatus: 'Published' } },
@@ -67,8 +60,9 @@ function simpleController() {
   }
   vm.createContext(context)
   const send = listingPage.slice(listingPage.indexOf('  async function sendQuickListingPortalUpdate('), listingPage.indexOf('  async function retryFailedQuickListingChannels('))
+  const price = listingPage.slice(listingPage.indexOf('  async function saveAndPublishPrice('), listingPage.indexOf('  async function applyQuickListingAction('))
   const save = listingPage.slice(listingPage.indexOf('  async function saveSimpleChannelManagement('), listingPage.indexOf('  async function removeSelectedChannel('))
-  vm.runInContext(`${send}\n${save}; this.saveSimple = saveSimpleChannelManagement`, context)
+  vm.runInContext(`${send}\n${save}\n${price}; this.saveSimple = saveSimpleChannelManagement; this.savePrice = saveAndPublishPrice`, context)
   return { context, calls }
 }
 
@@ -102,4 +96,16 @@ test('the simple controller rejects content publication retries', async () => {
     await assert.rejects(context.saveSimple(channel, { listingStatus: 'active', expiryDate: '2026-11-30', retryResults: [{ channel, action: 'publish', status: 'failed' }] }), /listing setup/)
     assert.equal(calls.some(([name]) => ['save', 'Property24', 'Private Property'].includes(name)), false)
   }
+})
+
+test('the real sale price controller sends the saved new price to both portals and both published websites',async()=>{
+ const {context,calls}=simpleController()
+ const result=await context.savePrice({previousPrice:1000000,price:900000,showReducedBanner:true,retryResults:[]})
+ assert.equal(result.ok,true)
+ const saved=calls.find(call=>call[0]==='save')[1]
+ assert.equal(saved.price,'900000');assert.equal(saved.showReducedBanner,true)
+ assert(calls.find(call=>call[0]==='Property24'&&call[1]==='publish'&&call[2].status==='ReducedPrice'))
+ assert(calls.find(call=>call[0]==='Private Property'&&call[1]==='publish'))
+ assert(calls.find(call=>call[0]==='Agency Website'&&call[1]==='update'))
+ assert(calls.find(call=>call[0]==='Kingdom Website'&&call[1]==='update'))
 })

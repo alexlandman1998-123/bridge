@@ -101,6 +101,7 @@ export default function EmailCampaignBuilder({
   campaignId,
   onDraftCreated,
   developmentContext,
+  preparedCampaign,
   onOpenMarketingCampaign,
 }) {
   const {
@@ -123,7 +124,7 @@ export default function EmailCampaignBuilder({
     }),
     [currentWorkspace],
   );
-  const [draft, setDraft] = useState(() => ({ ...blank(brand), ...(developmentContext ? { name: `${developmentContext.development_name} campaign`, developmentContext } : {}) }));
+  const [draft, setDraft] = useState(() => ({ ...blank(brand), ...(developmentContext ? { name: `${developmentContext.development_name} campaign`, developmentContext } : {}), ...(preparedCampaign ? { ...preparedCampaign.email, developmentContext: preparedCampaign.context } : {}) }));
   const [ready, setReady] = useState(!campaignId);
   const [step, setStep] = useState(0);
   const [importCodeView,setImportCodeView]=useState(false);
@@ -756,6 +757,7 @@ export default function EmailCampaignBuilder({
           {notice}
         </p>
       )}
+      {preparedCampaign?.warnings?.map(warning => <p key={warning} role="note" className="eb-notice">{warning}</p>)}
       {!ready ? (
         <p>Restoring your saved draft…</p>
       ) : (
@@ -770,7 +772,7 @@ export default function EmailCampaignBuilder({
                   "September buyer update",
                   "",
                 )}
-                <EmailDevelopmentSelector organisationId={organisationId} value={draft.developmentContext} onChange={developmentContext=>{const contentJson={...draft.contentJson};delete contentJson.arch9_context;update({developmentContext,contentJson})}}/>
+                {draft.developmentContext?.source === 'development_workspace' ? <p>Linked to {draft.developmentContext.development_name}. Create a separate campaign to choose another development or event.</p> : <EmailDevelopmentSelector organisationId={organisationId} value={draft.developmentContext} onChange={developmentContext=>{const contentJson={...draft.contentJson};delete contentJson.arch9_context;update({developmentContext,contentJson})}}/>}
                 {field(
                   "Subject line",
                   "subject",
@@ -908,6 +910,7 @@ export default function EmailCampaignBuilder({
           {step === 1 && (
             <section className="eb-basics eb-audience">
               {draft.contentJson.arch9_campaign?.audience_pending && <div className="wa-info-panel"><h3>Choose an audience for this campaign</h3><p>No recipients are selected yet. Choose contacts or filters below.</p><button type="button" className="wa-secondary-button" onClick={() => update({ audienceFilter: {}, contentJson: { ...draft.contentJson, arch9_campaign: { ...draft.contentJson.arch9_campaign, audience_pending: false } } })}>Use all eligible contacts</button></div>}
+              {draft.audienceFilter.development_id ? <p role="note">This audience is limited to contacts linked to {draft.developmentContext?.development_name || 'this development'}. Selecting another saved audience changes that targeting.</p> : null}
               <EmailAudienceCards organisationId={organisationId} subscriptionId={draft.subscriptionTypeId} audienceFilter={draft.audienceFilter} onSelect={audience=>{
                 update({audienceFilter:{shared_audience_id:audience.id,audience_revision:audience.revision},contentJson:{...draft.contentJson,...(draft.contentJson.arch9_campaign?{arch9_campaign:{...draft.contentJson.arch9_campaign,audience_pending:false}}:{})}});
                 setNotice(`Selected “${audience.name}”.`);

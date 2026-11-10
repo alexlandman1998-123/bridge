@@ -131,3 +131,18 @@ it('does not refresh closed inventory sections when the overview receives an upd
   await act(async () => result.current.setActiveSections(['inventory']))
   expect(mocks.section).toHaveBeenCalledTimes(2)
 })
+
+it('loads event scope separately, retries only events and rejects a superseded event response', async () => {
+  const oldRead = deferred()
+  mocks.core.mockResolvedValue({ development: { id: 'one', organisation_id: 'org' } })
+  mocks.section.mockReturnValueOnce(oldRead.promise).mockResolvedValue({ marketingEvents: [{ id: 'fresh-event' }] })
+  const { result } = renderHook(() => useDevelopmentDetailData(props))
+  await waitFor(() => expect(result.current.data).not.toBeNull())
+  act(() => { void result.current.loadSections(['marketingEvents']) })
+  expect(mocks.section).toHaveBeenCalledWith('one','marketingEvents',{ organisationId: 'org' })
+  await act(async () => result.current.loadSections(['marketingEvents'], { refresh: true }))
+  expect(result.current.data.marketingEvents[0].id).toBe('fresh-event')
+  await act(async () => oldRead.resolve({ marketingEvents: [] }))
+  expect(result.current.data.marketingEvents[0].id).toBe('fresh-event')
+  expect(mocks.core).toHaveBeenCalledTimes(1)
+})

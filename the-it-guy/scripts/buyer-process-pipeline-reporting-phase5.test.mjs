@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -6,7 +7,7 @@ import { createServer } from 'vite'
 const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agencyPipelinePageSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
-const agencyPipelineServiceSource = readFileSync(resolve(appRoot, 'src/lib/agencyPipelineService.js'), 'utf8')
+const agencyPipelineServiceSource = readLeadServiceSource(resolve(appRoot, 'src/lib/agencyPipelineService.js'))
 
 assert.equal(
   packageJson.scripts?.['test:buyer-process-pipeline-reporting-phase5'],

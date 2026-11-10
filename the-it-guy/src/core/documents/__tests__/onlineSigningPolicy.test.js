@@ -231,7 +231,7 @@ test('wet-ink offer execution requires uploaded evidence and an authorised revie
 test('transaction conversion is blocked until the wet-ink OTP has been reviewed and executed', async () => {
   const [migration, lifecycleService, listingPage] = await Promise.all([
     readFile(new URL('../../../../../supabase/migrations/20260925112807_enforce_wet_ink_offer_transaction_conversion.sql', import.meta.url), 'utf8'),
-    readFile(new URL('../../../lib/buyerLifecycleService.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../../lib/buyerLifecycleWorkflow.js', import.meta.url), 'utf8'),
     readFile(new URL('../../../pages/AgentListingDetail.jsx', import.meta.url), 'utf8'),
   ])
 

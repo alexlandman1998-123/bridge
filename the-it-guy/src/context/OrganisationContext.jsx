@@ -359,7 +359,7 @@ export function OrganisationProvider({ children }) {
           // Auth and workspace changes already clear the scoped runtime cache.
           // Keep initial hydration coalescible for StrictMode and colocated
           // consumers; explicit user-triggered refreshes still force a reload.
-          nextState = await fetchAgencyOnboardingSettings()
+          nextState = await fetchAgencyOnboardingSettings({ authContext: authState })
           if (active) {
             applyOrganisationState(nextState)
           } else {

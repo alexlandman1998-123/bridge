@@ -349,7 +349,7 @@ function getEnvFlag(name) {
 }
 
 function requireClient(client = supabase) {
-  if (!client || !isSupabaseConfigured) throw new Error('Supabase is required for canonical document adapter sync.')
+  if (!client || (client === supabase && !isSupabaseConfigured)) throw new Error('Supabase is required for canonical document adapter sync.')
   return client
 }
 

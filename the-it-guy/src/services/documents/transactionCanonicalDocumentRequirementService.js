@@ -382,7 +382,7 @@ async function loadTransactionPropertySource(client, transaction) {
 }
 
 function requireClient(client = supabase) {
-  if (!client || !isSupabaseConfigured) throw new Error('Supabase is required for transaction canonical document resolution.')
+  if (!client || (client === supabase && !isSupabaseConfigured)) throw new Error('Supabase is required for transaction canonical document resolution.')
   return client
 }
 

@@ -15,8 +15,8 @@ export function normalizeDevelopmentCampaign(row, channel, performance = null) {
     createdBy: row.created_by,
     recipients: metric(stats.recipients), delivered: metric(stats.delivered),
     engaged: metric(channel === 'email' ? stats.clicked : stats.read),
-    // Delivery and engagement are recorded. CRM lead attribution is not yet stored.
     leadsGenerated: null,
+    planId: null,
   }
 }
 
@@ -47,5 +47,25 @@ export async function fetchDevelopmentCampaigns({ organisationId, developmentId 
   if (!organisationId || !developmentId || !supabase) throw new Error('Choose an organisation workspace to view campaigns.')
   const results = await Promise.allSettled([emailCampaigns(organisationId, developmentId), whatsappCampaigns(organisationId, developmentId)])
   const errors = results.flatMap((result, index) => result.status === 'rejected' ? [`${index ? 'WhatsApp' : 'Email'} campaign history could not be loaded.`] : [])
-  return { campaigns: results.flatMap(result => result.status === 'fulfilled' ? result.value : []), errors }
+  const campaigns = results.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+  const warnings = []
+  for (const channel of ['email', 'whatsapp']) {
+    const group = campaigns.filter(campaign => campaign.channel === channel)
+    for (let offset = 0; offset < group.length; offset += 100) {
+      const page = group.slice(offset, offset + 100), ids = page.map(campaign => campaign.id)
+      const [outcomes, links] = await Promise.allSettled([
+        supabase.from('marketing_campaign_outcomes').select('campaign_id,leads').eq('organisation_id', organisationId).eq('channel', channel).in('campaign_id', ids),
+        supabase.from('marketing_campaign_activities').select(`campaign_id,${channel}_campaign_id`).eq('organisation_id', organisationId).eq('channel', channel).in(`${channel}_campaign_id`, ids),
+      ])
+      const counts = outcomes.status === 'fulfilled' && !outcomes.value.error ? new Map((outcomes.value.data || []).map(row => [row.campaign_id, row.leads])) : null
+      const plans = links.status === 'fulfilled' && !links.value.error ? new Map((links.value.data || []).map(row => [row[`${channel}_campaign_id`], row.campaign_id])) : null
+      if (!counts) warnings.push('Attributed lead results could not be loaded.')
+      if (!plans) warnings.push('Campaign plan links could not be loaded.')
+      for (const campaign of page) {
+        campaign.leadsGenerated = counts ? metric(counts.get(campaign.id) ?? 0) : null
+        campaign.planId = plans?.get(campaign.id) || null
+      }
+    }
+  }
+  return { campaigns, errors, warnings: [...new Set(warnings)] }
 }

@@ -71,5 +71,9 @@ for (const component of ['WorkspaceCalendar', 'DocumentRequirementManager', 'Sel
 }
 assert.equal([...initialInputs].some(file => file.endsWith('/privateListingService.js')), false,
   'listing actions and matching must not pull the full listing service into the opening workspace')
+for (const workflow of ['agencyPipelineWorkflow.js', 'buyerLifecycleWorkflow.js']) {
+  assert.equal([...initialInputs].some(file => file.endsWith(`/${workflow}`)), false,
+    `${workflow} must wait for an operation that needs it`)
+}
 
 console.log(`seller leads workspace entry phase 4 checks passed (${bundleInputs.length} bundle inputs, no legacy Pipeline module)`)

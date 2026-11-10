@@ -1,3 +1,4 @@
+import { checkDevelopmentCampaignSource } from './developmentCampaignSource.js'
 // Shared by authenticated review and the service-role delivery worker. The model
 // never supplies these facts: they are copied from the authorised listing row.
 // mandate_signed is explicitly live/active_market in the listing lifecycle;
@@ -93,6 +94,8 @@ export function inspectCampaignEventFreshness(campaign, event, now = new Date())
 }
 
 export async function checkCampaignSourceFreshness({ db, campaign, now = new Date() }) {
+  const development = await checkDevelopmentCampaignSource({ db, campaign, now })
+  if (!development.ready) return development
   const metadata = sourceMetadata(campaign, now)
   if (metadata) return metadata
   try {

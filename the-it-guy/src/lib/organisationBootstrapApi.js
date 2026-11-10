@@ -6,7 +6,7 @@ import {
 } from './agencyOnboarding'
 import { getDefaultEmailTemplateSettings } from './emailTemplateSettings'
 import { isUnsafeFallbackAllowed } from './envValidation'
-import { getOrCreateUserProfile } from './profileApi'
+import { buildDefaultProfileFromUser, getOrCreateUserProfile } from './profileApi'
 import {
   clearSupabaseLocalAuthState,
   isSupabaseConfigured,
@@ -108,6 +108,7 @@ const DEFAULT_ORGANISATION_SETTINGS = {
 
 let organisationContextCache = null
 let organisationContextInflight = null
+let organisationContextGeneration = 0
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -133,6 +134,7 @@ function isFreshCacheEntry(entry) {
 }
 
 export function clearOrganisationRuntimeCache() {
+  organisationContextGeneration += 1
   organisationContextCache = null
   organisationContextInflight = null
 }
@@ -522,9 +524,42 @@ async function syncProfileRoleFromMembership({ userId, profile, membershipRole }
   return profile
 }
 
-async function ensureOrganisationContext(client) {
+function verifiedBootstrapSnapshot(authContext, user) {
+  const membership = authContext?.currentMembership
+  const workspace = authContext?.currentWorkspace
+  const memberActor = membership?.userId || membership?.user_id || membership?.raw?.user_id
+  if (authContext?.status !== 'authenticated' || authContext.workspaceAccessDegraded || authContext.onboardingRequiredReason ||
+      authContext.user?.id !== user.id || authContext.profile?.id !== user.id ||
+      !membership?.id || !workspace?.id || membership.workspaceId !== workspace.id ||
+      (memberActor && memberActor !== user.id) ||
+      !['organisation_users', 'organization_members'].includes(membership.source) ||
+      !isActiveMembershipStatus(membership.status) ||
+      !Array.isArray(authContext.activeMemberships) ||
+      !authContext.activeMemberships.some(entry => entry.id === membership.id && entry.source === membership.source && entry.workspaceId === workspace.id && isActiveMembershipStatus(entry.status))) return null
+  return authContext
+}
+
+async function ensureOrganisationContext(client, authContext = null, actorId = '') {
   const user = await getAuthenticatedUser()
-  let profile = await getOrCreateUserProfile({ user })
+  if (actorId && user.id !== actorId) throw new Error('The signed-in account changed while loading organisation settings. Retry.')
+  const snapshot = verifiedBootstrapSnapshot(authContext, user)
+  let profile
+  if (snapshot) {
+    const defaults = buildDefaultProfileFromUser(user)
+    const resolved = snapshot.profile
+    profile = {
+      ...defaults,
+      ...resolved,
+      companyName: resolved.companyName || resolved.company_name || defaults.companyName,
+      phoneNumber: resolved.phoneNumber || resolved.phone_number || defaults.phoneNumber,
+      avatarUrl: resolved.avatarUrl || resolved.avatar_url || defaults.avatarUrl,
+      attorneyRole: resolved.attorneyRole || resolved.attorney_role || defaults.attorneyRole,
+      createdAt: resolved.createdAt || resolved.created_at || defaults.createdAt,
+      updatedAt: resolved.updatedAt || resolved.updated_at || defaults.updatedAt,
+    }
+  } else {
+    profile = await getOrCreateUserProfile({ user })
+  }
   console.debug('[ONBOARDING] org-context:start', {
     userId: user?.id || null,
     role: profile?.role || null,
@@ -535,7 +570,9 @@ async function ensureOrganisationContext(client) {
     let membership = null
 
     try {
-      const workspaceResolution = await resolveCurrentWorkspace(user.id, {
+      // The provider already resolved this actor and workspace during sign-in.
+      // Supporting organisation/settings reads below still run under table RLS.
+      const workspaceResolution = snapshot || await resolveCurrentWorkspace(user.id, {
         client,
         user,
         profile,
@@ -851,27 +888,43 @@ async function ensureOrganisationContext(client) {
   }
 }
 
-async function ensureOrganisationContextCached(client) {
-  if (isFreshCacheEntry(organisationContextCache)) {
+async function ensureOrganisationContextCached(client, authContext = null) {
+  const session = await client.auth.getSession()
+  if (session.error) throw session.error
+  const actorId = session.data?.session?.user?.id || ''
+  if (!actorId) throw new Error('Authenticated user is required.')
+  // This gates reuse only. A cache miss still verifies the user with getUser.
+  const cacheableHint = !authContext || Boolean(verifiedBootstrapSnapshot(authContext, session.data.session.user))
+  const membership = authContext?.currentMembership
+  const scope = JSON.stringify([
+    actorId, authContext?.currentWorkspace?.id || '', membership?.id || '', membership?.source || '',
+    membership?.workspaceRole || membership?.role || '', membership?.status || '',
+    membership?.branchId || null, membership?.primaryBranchId || null, membership?.branchScope || null,
+    authContext?.profile?.onboardingCompleted === true,
+  ])
+  if (cacheableHint && organisationContextCache?.scope === scope && isFreshCacheEntry(organisationContextCache)) {
     return organisationContextCache.value
   }
-  if (organisationContextInflight) {
-    return organisationContextInflight
+  if (cacheableHint && organisationContextInflight?.scope === scope) {
+    return organisationContextInflight.promise
   }
-
-  organisationContextInflight = ensureOrganisationContext(client)
+  const generation = organisationContextGeneration
+  const promise = ensureOrganisationContext(client, authContext, actorId)
     .then((context) => {
+      if (!cacheableHint || generation !== organisationContextGeneration || organisationContextInflight?.promise !== promise) return context
       organisationContextCache = {
+        scope,
         value: context,
         expiresAt: Date.now() + ORGANISATION_CONTEXT_CACHE_TTL_MS,
       }
       return context
     })
     .finally(() => {
-      organisationContextInflight = null
+      if (organisationContextInflight?.promise === promise) organisationContextInflight = null
     })
 
-  return organisationContextInflight
+  organisationContextInflight = { scope, promise }
+  return promise
 }
 
 function resolveBrandingAssetSource({ bucket = '', path = '', fallbackUrl = '' } = {}) {
@@ -1007,7 +1060,7 @@ async function hydrateAgencyOnboardingBrandingUrls(client, onboarding = {}) {
   }
 }
 
-export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {}) {
+export async function fetchAgencyOnboardingSettings({ forceRefresh = false, authContext = null } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     if (!isUnsafeFallbackAllowed()) {
       blockUnsafeSettingsFallback({
@@ -1032,7 +1085,7 @@ export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {
       clearOrganisationRuntimeCache()
     }
     const client = requireClient()
-    const context = await ensureOrganisationContextCached(client)
+    const context = await ensureOrganisationContextCached(client, forceRefresh ? null : authContext)
     const mergedOnboarding = mergeAgencyOnboardingDraft(context.organisationSettings?.agencyOnboarding, {}, context.profile)
     const hydratedOnboarding = await hydrateAgencyOnboardingBrandingUrls(client, mergedOnboarding)
     const response = {

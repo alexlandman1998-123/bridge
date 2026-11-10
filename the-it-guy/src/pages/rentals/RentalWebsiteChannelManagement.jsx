@@ -3,7 +3,7 @@ import { SlidersHorizontal } from 'lucide-react'
 import ListingChannelManageMenu from '../../components/listings/ListingChannelManageMenu'
 import ListingChannelManageDialog from '../../components/listings/ListingChannelManageDialog'
 
-export default function RentalWebsiteChannelManagement({ channelName, listing, publicationState, publication, statusLabel, publicUrl, busy, error, issues = [], infrastructureBlocked, historyError, activity = [], onEdit, onRefresh, onPublish, onUpdate, onWithdraw }) {
+export default function RentalWebsiteChannelManagement({ channelName, listing, publicationState, publication, statusLabel, publicUrl, busy, error, issues = [], infrastructureBlocked, historyError, activity = [], onEdit, onUpdatePrice, onRefresh, onPublish, onUpdate, onWithdraw }) {
   const [open, setOpen] = useState(false)
   const published = publication?.status === 'published'
   const listingStatus = listing.listingStatus || listing.listing_status || 'draft'
@@ -26,6 +26,7 @@ export default function RentalWebsiteChannelManagement({ channelName, listing, p
       canPublish={!published && !inactive && !infrastructureBlocked}
       canWithdraw={published || publication?.mediaCleanupPending > 0}
       onClose={close}
+      onUpdatePrice={onUpdatePrice}
       onFix={edit}
       onRefresh={onRefresh}
       onUpdate={published ? onUpdate : undefined}

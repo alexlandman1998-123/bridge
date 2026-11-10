@@ -33,3 +33,12 @@ it('shows click totals separately from saved submissions',()=>{
  render(<DevelopmentWebsiteAnalyticsDashboard analytics={{summary:{sessions:15,enquiries:10,submittedEnquiries:3}}} days={30}/>);
  expect(screen.getByRole('button',{name:/10 Enquiry clicks/})).toBeTruthy();expect(screen.getByRole('button',{name:/3 Enquiries submitted/})).toBeTruthy();
 });
+
+it('carries an incoming campaign capability through the actual enquiry submission',async()=>{
+ window.history.replaceState({},'',`/?arch9_attribution=${'a'.repeat(32)}`)
+ mock.invoke.mockResolvedValue({data:{saved:true,reference:'MP-E-ATTRIBUTED'},error:null})
+ const el=form();fireEvent.submit(el)
+ await waitFor(()=>expect(screen.getByRole('status').textContent).toContain('MP-E-ATTRIBUTED'))
+ expect(mock.invoke.mock.calls[0][1].body.attributionToken).toBe('a'.repeat(32))
+ window.history.replaceState({},'','/')
+})

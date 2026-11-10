@@ -1,6 +1,7 @@
-// Extracted without changing validation, persistence order or recovery behaviour.
-import { normalizeTextValue, requireClient, isMissingTableError, normalizeNullableText, isPermissionDeniedError } from '../../lib/api/shared/readHelpers.js'
+// Development collaboration and recoverable marketing event writes.
+import { normalizeTextValue, requireClient, isMissingTableError, normalizeNullableText } from '../../lib/api/shared/readHelpers.js'
 import { normalizeDevelopmentMarketingAccessRow, normalizeDevelopmentMarketingEventRow } from './readApi.js'
+import { invokeDevelopmentWrite } from './writeRecovery.js'
 import { invokeEdgeFunction } from '../../lib/supabaseClient'
 
 export function buildDevelopmentMarketingInviteUrl(token = '') {
@@ -108,58 +109,26 @@ export async function acceptDevelopmentMarketingInvite(token) {
 }
 
 export async function createDevelopmentMarketingEvent({
-  developmentId,
-  organisationId,
-  developmentName = '',
-  title,
-  eventType = 'show_day',
-  status = 'upcoming',
-  startsAt,
-  location = '',
-  description = '',
+  developmentId, organisationId, developmentName = '', title,
+  eventType = 'show_day', status = 'upcoming', startsAt,
+  location = '', description = '', requestId,
 } = {}) {
   const client = requireClient()
   if (!developmentId || !organisationId) throw new Error('Development and organisation are required.')
   if (!normalizeTextValue(title)) throw new Error('Event title is required.')
+  if (normalizeTextValue(title).length > 180) throw new Error('Keep the event title to 180 characters or fewer.')
   if (!['show_day', 'launch'].includes(eventType)) throw new Error('Choose a valid event type.')
+  if (!['draft', 'planning', 'upcoming', 'completed', 'cancelled'].includes(status)) throw new Error('Choose a valid event status.')
   if (!startsAt || !Number.isFinite(new Date(startsAt).getTime())) throw new Error('Choose a valid event date and time.')
-  const { data: authData, error: authError } = await client.auth.getUser()
-  if (authError) throw authError
-  if (!authData?.user?.id) throw new Error('Sign in before creating an event.')
-
-  const { data, error } = await client
-    .from('marketing_events')
-    .insert({
-      organisation_id: organisationId,
-      event_type: eventType,
-      status: normalizeTextValue(status) || 'upcoming',
-      title: normalizeTextValue(title),
-      subject_type: 'development',
-      subject_id: developmentId,
-      subject_label: normalizeTextValue(developmentName) || normalizeTextValue(title),
-      starts_at: startsAt || null,
-      location: normalizeNullableText(location),
-      address: normalizeNullableText(location),
-      description: normalizeNullableText(description),
-      created_by: authData.user.id,
-    })
-    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at, created_by')
-    .single()
-
-  if (error) throw error
-  try {
-    const activityResult = await client
-      .from('development_marketing_activity')
-      .insert({
-        development_id: developmentId,
-        actor_user_id: authData.user.id,
-        action_type: 'event_created',
-        metadata: { title: normalizeTextValue(title), event_type: eventType },
-      })
-    if (activityResult.error && !isMissingTableError(activityResult.error, 'development_marketing_activity') && !isPermissionDeniedError(activityResult.error)) throw activityResult.error
-  } catch {
-    // The authoritative event is already saved. A retry must not create it twice.
-    console.warn('[Development events] Event saved; activity history could not be recorded.')
+  const payload = {
+    organisation_id: organisationId, event_type: eventType, status,
+    title: normalizeTextValue(title), subject_label: normalizeTextValue(developmentName) || normalizeTextValue(title),
+    starts_at: new Date(startsAt).toISOString(), location: normalizeNullableText(location), description: normalizeNullableText(description),
   }
-  return normalizeDevelopmentMarketingEventRow(data)
+  const receipt = await invokeDevelopmentWrite(client, 'bridge_create_development_marketing_event', developmentId,
+    { p_event: payload }, result => result.event?.id && result.event.organisation_id === organisationId &&
+      result.event.subject_type === 'development' && result.event.subject_id === developmentId &&
+      result.event.title === payload.title && result.event.event_type === eventType && result.event.status === status &&
+      new Date(result.event.starts_at).getTime() === new Date(payload.starts_at).getTime(), { requestId })
+  return { ...normalizeDevelopmentMarketingEventRow(receipt.event), activityWarning: receipt.activitySaved === false }
 }

@@ -30,7 +30,7 @@ try {
     WorkspaceContextError,
   )
 
-  assert.rejects(
+  await assert.rejects(
     () => listAppointmentsAsync('default'),
     WorkspaceContextError,
   )

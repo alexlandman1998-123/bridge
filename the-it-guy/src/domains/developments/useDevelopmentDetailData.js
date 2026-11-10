@@ -8,7 +8,7 @@ const definedFields = payload => Object.fromEntries(Object.entries(payload || {}
 // Each mounted scope owns its data and pending requests. The mutable request
 // bookkeeping stays outside React's render; subscribers receive new snapshots.
 function createDetailLoader({ developmentId, scopeKey, enabled }) {
-  const context = { owner: `${scopeKey}:${developmentId}`, version: 0, data: null, loading: true, error: '', sections: {}, requested: new Set(), pending: new Map() }
+  const context = { owner: `${scopeKey}:${developmentId}`, version: 0, data: null, loading: true, error: '', sections: {}, requested: new Set(), pending: new Map(), generations: new Map() }
   const listeners = new Set()
   let snapshot = { ...context }
   const publish = () => {
@@ -17,23 +17,32 @@ function createDetailLoader({ developmentId, scopeKey, enabled }) {
     listeners.forEach(listener => listener())
   }
 
-  const loadSections = async sections => {
+  const loadSections = async (sections, { refresh = false } = {}) => {
     sections.forEach(section => context.requested.add(section))
     if (!context.data || context.loading || context.disposed) return
     const version = context.version
     const tasks = sections.map(section => {
+      if (refresh) {
+        context.sections = { ...context.sections, [section]: undefined }
+        context.pending.delete(section)
+      }
       if (context.sections[section]?.status === 'ready') return undefined
       if (context.pending.has(section)) return context.pending.get(section)
       context.sections = { ...context.sections, [section]: { status: 'loading' } }
-      const task = fetchDevelopmentDetailSection(developmentId, section).then(payload => {
-        if (context.disposed || context.version !== version) return
+      const generation = (context.generations.get(section) || 0) + 1
+      context.generations.set(section, generation)
+      const request = section === 'marketingEvents'
+        ? fetchDevelopmentDetailSection(developmentId, section, { organisationId: context.data.development?.organisation_id || context.data.development?.organisationId })
+        : fetchDevelopmentDetailSection(developmentId, section)
+      const task = request.then(payload => {
+        if (context.disposed || context.version !== version || context.generations.get(section) !== generation) return
         context.data = { ...context.data, ...definedFields(payload) }
         context.sections = { ...context.sections, [section]: { status: 'ready' } }
       }).catch(cause => {
-        if (context.disposed || context.version !== version) return
+        if (context.disposed || context.version !== version || context.generations.get(section) !== generation) return
         context.sections = { ...context.sections, [section]: { status: 'error', error: cause.message || 'This section could not be loaded.' } }
       }).finally(() => {
-        if (context.version !== version) return
+        if (context.version !== version || context.generations.get(section) !== generation) return
         context.pending.delete(section)
         publish()
       })

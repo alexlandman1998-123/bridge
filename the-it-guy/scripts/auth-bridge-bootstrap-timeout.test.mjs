@@ -10,6 +10,7 @@ assert.equal(retryReason({message:'canceling statement due to statement timeout'
 assert.equal(retryReason({code:'42501',message:'permission denied'}),'','Denied access must not be retried as a database timeout')
 assert.equal(retryReason({code:'PGRST002',message:'Could not query the database for the schema cache'}),'schema_cache')
 assert.equal(retryReason({code:'PGRST003',message:'Connection acquisition failed'}),'schema_cache')
+assert.equal(retryReason({code:'WORKSPACE_QUERY_TIMEOUT',message:'workspace.context.rpc timed out.'}),'workspace_timeout')
 assert.equal(retryReason({message:'Could not query the database for the schema cache'}),'schema_cache')
 
 assert.match(

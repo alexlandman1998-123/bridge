@@ -1,11 +1,10 @@
-// Extracted without changing validation, persistence order or recovery behaviour.
-import { requireClient, normalizeTextValue, normalizeOptionalNumber, normalizeNullableText, normalizeOptionalDate, isMissingColumnError, isMissingTableError, isPermissionDeniedError, isMissingSchemaError } from '../../lib/api/shared/readHelpers.js'
+// Development detail writes require confirmed receipts for every required save.
+import { requireClient, normalizeTextValue, normalizeOptionalNumber, normalizeNullableText, normalizeOptionalDate, isMissingColumnError } from '../../lib/api/shared/readHelpers.js'
 import { normalizeListValue, normalizeDevelopmentSellerDetails, normalizeMarketingContent, DEFAULT_DEVELOPMENT_PROFILE, normalizeDevelopmentProfile } from './profileNormalization.js'
 import { retireLegacyVisualMapFields } from '../../core/developments/developmentVisualMap.js'
 import { persistDevelopmentMedia } from '../../lib/developmentMediaStorage.js'
-import { upsertByDevelopmentIdWithFallback } from './persistenceHelpers.js'
-import { ensureDevelopmentSettings, DEFAULT_DEVELOPMENT_SETTINGS } from './configurationApi.js'
-import { updateDevelopmentSettings } from './configurationActions.js'
+import { invokeDevelopmentWrite } from './reliableWrites.js'
+import { DEFAULT_DEVELOPMENT_SETTINGS } from './configurationApi.js'
 import { invalidateDevelopmentOptionsCache } from './selectionReadApi.js'
 
 export function normalizeDevelopmentProfileStatus(value = '') {
@@ -14,9 +13,8 @@ export function normalizeDevelopmentProfileStatus(value = '') {
   return ['draft', 'active', 'completed', 'archived'].includes(normalized) ? normalized : 'active'
 }
 
-export async function saveDevelopmentDetails(developmentId, input = {}, { allowNoopUpdate = false, reportWarnings = false } = {}) {
+export async function saveDevelopmentDetails(developmentId, input = {}, { allowNoopUpdate = false, reportWarnings = false, reportReceipt = false } = {}) {
   const client = requireClient()
-  const warnings = []
 
   if (!developmentId) {
     throw new Error('Development is required.')
@@ -44,44 +42,10 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
     total_units_expected: Math.trunc(normalizeOptionalNumber(input.totalUnitsExpected ?? input.plannedUnits) ?? 0),
     launch_date: normalizeOptionalDate(input.launchDate),
     expected_completion_date: normalizeOptionalDate(input.expectedCompletionDate),
-    handover_enabled: input.handoverEnabled === undefined ? true : Boolean(input.handoverEnabled),
-    snag_tracking_enabled: input.snagTrackingEnabled === undefined ? true : Boolean(input.snagTrackingEnabled),
-    alterations_enabled: input.alterationsEnabled === undefined ? false : Boolean(input.alterationsEnabled),
-    onboarding_enabled: input.onboardingEnabled === undefined ? true : Boolean(input.onboardingEnabled),
-  }
-
-  let updatePayload = { ...developmentPayload }
-  let updateResult = null
-  for (let attempt = 0; attempt <= DEVELOPMENT_CREATE_OPTIONAL_COLUMNS.length; attempt += 1) {
-    updateResult = await client
-      .from('developments')
-      .update(updatePayload)
-      .eq('id', developmentId)
-      .select('id')
-      .maybeSingle()
-
-    if (!updateResult.error || !isDevelopmentCreateMissingColumnError(updateResult.error)) {
-      break
-    }
-
-    const missingColumnName = getMissingColumnNameFromError(updateResult.error, DEVELOPMENT_CREATE_OPTIONAL_COLUMNS)
-    if (!missingColumnName || !Object.prototype.hasOwnProperty.call(updatePayload, missingColumnName)) {
-      break
-    }
-    delete updatePayload[missingColumnName]
-  }
-
-  if (updateResult.error) {
-    throw updateResult.error
-  }
-
-  if (!updateResult.data && !allowNoopUpdate) {
-    throw new Error(
-      'Development details were not saved because this workspace does not have update access to the development.',
-    )
-  }
-  if (!updateResult.data) {
-    warnings.push({ message: 'The development was created, but its details update could not be confirmed.' })
+    ...(input.handoverEnabled !== undefined ? { handover_enabled: Boolean(input.handoverEnabled) } : {}),
+    ...(input.snagTrackingEnabled !== undefined ? { snag_tracking_enabled: Boolean(input.snagTrackingEnabled) } : {}),
+    ...(input.alterationsEnabled !== undefined ? { alterations_enabled: Boolean(input.alterationsEnabled) } : {}),
+    ...(input.onboardingEnabled !== undefined ? { onboarding_enabled: Boolean(input.onboardingEnabled) } : {}),
   }
 
   const profilePayload = {
@@ -121,88 +85,30 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
 
   Object.assign(profilePayload, persistDevelopmentMedia(client, profilePayload, developmentId))
 
-  let profileResult = await upsertByDevelopmentIdWithFallback(client, {
-    table: 'development_profiles',
-    payload: profilePayload,
-  })
-
-  if (profileResult.error && isMissingColumnError(profileResult.error, 'seller_details')) {
-    const fallbackPayload = { ...profilePayload }
-    delete fallbackPayload.seller_details
-    profileResult = await upsertByDevelopmentIdWithFallback(client, {
-      table: 'development_profiles',
-      payload: fallbackPayload,
-    })
+  let expectedDevelopmentRevision = input.expectedDevelopmentRevision
+  let expectedProfileRevision = input.expectedProfileRevision
+  if (allowNoopUpdate && reportWarnings && expectedDevelopmentRevision === undefined) {
+    // Creation owns a fresh record; ordinary editors must supply the revision
+    // they actually opened, never fetch a newer revision immediately before saving.
+    const development = await client.from('developments').select('revision').eq('id', developmentId).single()
+    const profile = await client.from('development_profiles').select('revision').eq('development_id', developmentId).maybeSingle()
+    if (development.error) throw development.error
+    if (profile.error) throw profile.error
+    expectedDevelopmentRevision = development.data?.revision
+    expectedProfileRevision = profile.data?.revision ?? null
   }
-
-  const modernProfileColumns = [
-    'address',
-    'formatted_address',
-    'street_address',
-    'suburb',
-    'city',
-    'province',
-    'country',
-    'postal_code',
-    'latitude',
-    'longitude',
-    'google_place_id',
-    'marketing_content',
-  ]
-
-  if (profileResult.error && modernProfileColumns.some((column) => isMissingColumnError(profileResult.error, column))) {
-    if (input.marketingContent !== undefined) {
-      warnings.push({ message: 'The development type could not be saved because this environment has an older development profile.' })
-    }
-    const legacyPayload = { ...profilePayload }
-    for (const column of modernProfileColumns) {
-      delete legacyPayload[column]
-    }
-    profileResult = await upsertByDevelopmentIdWithFallback(client, {
-      table: 'development_profiles',
-      payload: legacyPayload,
-    })
+  if (!Number.isSafeInteger(expectedDevelopmentRevision) || expectedProfileRevision === undefined ||
+      (expectedProfileRevision !== null && !Number.isSafeInteger(expectedProfileRevision))) {
+    throw new Error('Refresh this development to load its current version before saving. Your edits have not been submitted.')
   }
-
-  if (
-    profileResult.error &&
-    !isMissingTableError(profileResult.error, 'development_profiles') &&
-    !isPermissionDeniedError(profileResult.error)
-  ) {
-    throw profileResult.error
-  } else if (profileResult.error && isPermissionDeniedError(profileResult.error)) {
-    console.warn(
-      '[Developments] Development profile was not saved because development_profiles RLS blocked the write.',
-      profileResult.error,
-    )
-  }
-  if (profileResult.error) {
-    warnings.push({ message: 'The development profile, including its type, could not be saved. Check it in the development workspace.' })
-  }
-
-  // Keep development_settings feature toggles aligned with development-level module switches
-  // so transaction and portal views resolve the same module state.
-  try {
-    const currentSettings = await ensureDevelopmentSettings(client, developmentId)
-    await updateDevelopmentSettings(developmentId, {
-      ...currentSettings,
-      snag_reporting_enabled: developmentPayload.snag_tracking_enabled,
-      alteration_requests_enabled: developmentPayload.alterations_enabled,
-    })
-  } catch (settingsSyncError) {
-    if (!(
-      isMissingSchemaError(settingsSyncError) ||
-      isMissingColumnError(settingsSyncError, 'enabled_modules') ||
-      isPermissionDeniedError(settingsSyncError) ||
-      /development_settings table not found/i.test(String(settingsSyncError?.message || ''))
-    )) {
-      throw settingsSyncError
-    }
-  }
-
+  const receipt = await invokeDevelopmentWrite(client, 'bridge_save_development_details', developmentId, {
+    p_details: developmentPayload, p_profile: profilePayload,
+    p_expected_development_revision: expectedDevelopmentRevision, p_expected_profile_revision: expectedProfileRevision,
+  }, data => Number.isSafeInteger(data.developmentRevision) && data.developmentRevision > expectedDevelopmentRevision &&
+    Number.isSafeInteger(data.profileRevision) && data.profileRevision >= 0 &&
+    (expectedProfileRevision === null || data.profileRevision > expectedProfileRevision))
   invalidateDevelopmentOptionsCache()
-
-  return reportWarnings ? { saved: Boolean(updateResult.data), warnings } : true
+  return reportReceipt ? receipt : reportWarnings ? { saved: true, warnings: [] } : true
 }
 
 export const DEVELOPMENT_CREATE_OPTIONAL_COLUMNS = [

@@ -74,7 +74,7 @@ export default function PublicDevelopmentEnquiryForm({ developmentName, agency, 
       setSaving(true); setStatus("");
       try {
         if (!supabase) throw new Error("Enquiries are temporarily unavailable. Please try again shortly.");
-        const { data, error } = await supabase.functions.invoke("madison-enquiries", { body: { ...payload, requestId: request.current.id } });
+        const { data, error } = await supabase.functions.invoke("madison-enquiries", { body: { ...payload, requestId: request.current.id, attributionToken: new URLSearchParams(window.location.search).get('arch9_attribution') || null } });
         if (error) {
           let message = "Your enquiry could not be saved. Please try again; your details are still here.";
           try { message = (await error.context.json()).error || message; } catch { /* Keep the actionable default. */ }

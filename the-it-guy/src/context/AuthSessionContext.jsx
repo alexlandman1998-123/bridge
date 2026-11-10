@@ -164,6 +164,7 @@ function getBridgeBootstrapRetryReason(error) {
     return 'network_failure'
   }
   if (error?.code === 'AUTH_BOOT_STEP_TIMEOUT') return 'step_timeout'
+  if (error?.code === 'WORKSPACE_QUERY_TIMEOUT') return 'workspace_timeout'
   if (message.includes('authentication bootstrap timed out')) return 'bootstrap_timeout'
   if (message.includes('workspace.resolvecurrentworkspace') && message.includes('timed out')) return 'workspace_timeout'
   if (

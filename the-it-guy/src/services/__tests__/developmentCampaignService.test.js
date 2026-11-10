@@ -17,20 +17,20 @@ it('scopes both channels to the organisation and development and keeps unavailab
   const email = query({ data: [{ id: 'email-1', name: 'Launch', status: 'sent' }] })
   const metrics = query({ error: new Error('Performance unavailable') })
   const whatsapp = query({ data: [{ id: 'wa-1', name: 'Follow up', display_status: 'sent', recipients: 12, delivered: 9, read: 6 }] })
-  mocks.from.mockImplementation(table => ({ email_campaigns: email, email_campaign_performance: metrics, whatsapp_campaign_performance: whatsapp })[table])
+  mocks.from.mockImplementation(table => ({ email_campaigns: email, email_campaign_performance: metrics, whatsapp_campaign_performance: whatsapp, marketing_campaign_outcomes: query({data:[]}), marketing_campaign_activities: query({data:[]}) })[table])
   const result = await fetchDevelopmentCampaigns({ organisationId: 'org-1', developmentId: 'development-1' })
   expect(email.eq).toHaveBeenCalledWith('organisation_id', 'org-1')
   expect(email.eq).toHaveBeenCalledWith('content_json->arch9_context->>development_id', 'development-1')
   expect(whatsapp.eq).toHaveBeenCalledWith('organisation_id', 'org-1')
   expect(whatsapp.eq).toHaveBeenCalledWith('parameter_values->__arch9_context->>development_id', 'development-1')
   expect(metrics.in).toHaveBeenCalledWith('campaign_id', ['email-1'])
-  expect(result.campaigns[0]).toMatchObject({ delivered: null, engaged: null, leadsGenerated: null })
-  expect(result.campaigns[1]).toMatchObject({ delivered: 9, engaged: 6, leadsGenerated: null })
+  expect(result.campaigns[0]).toMatchObject({ delivered: null, engaged: null, leadsGenerated: 0 })
+  expect(result.campaigns[1]).toMatchObject({ delivered: 9, engaged: 6, leadsGenerated: 0 })
 })
 
 it('keeps one channel available if the other channel cannot be read', async () => {
   mocks.from.mockImplementation(table => query(table === 'email_campaigns' ? { error: new Error('Denied') } : { data: [] }))
-  expect(await fetchDevelopmentCampaigns({ organisationId: 'org', developmentId: 'dev' })).toEqual({ campaigns: [], errors: ['Email campaign history could not be loaded.'] })
+  expect(await fetchDevelopmentCampaigns({ organisationId: 'org', developmentId: 'dev' })).toEqual({ campaigns: [], errors: ['Email campaign history could not be loaded.'], warnings: [] })
   expect(normalizeDevelopmentCampaign({ id: 'x', recipients: 0, delivered: 0, read: 0 }, 'whatsapp')).toMatchObject({ recipients: 0, delivered: 0, engaged: 0, leadsGenerated: null })
 })
 
@@ -44,4 +44,17 @@ it('persists email development context and excludes WhatsApp context from the ou
   const values = { 'body.1': { source: 'text', text: 'Alex' } }
   const recipient = { phone: '+27821234567' }
   expect(buildTemplateMessage(template, { ...values, __arch9_context: context }, recipient)).toEqual(buildTemplateMessage(template, values, recipient))
+})
+
+it('reads CRM-confirmed attributed leads and plan links without counting clicks as leads',async()=>{
+ mocks.from.mockImplementation(table=>query({data:table==='email_campaigns'?[{id:'email',name:'Development campaign'}]:table==='email_campaign_performance'?[{campaign_id:'email',clicked:50}]:table==='marketing_campaign_outcomes'?[{campaign_id:'email',leads:3}]:table==='marketing_campaign_activities'?[{email_campaign_id:'email',campaign_id:'plan'}]:[]}))
+ const result=await fetchDevelopmentCampaigns({organisationId:'org',developmentId:'dev'})
+ expect(result.campaigns[0]).toMatchObject({engaged:50,leadsGenerated:3,planId:'plan'})
+})
+it('keeps failed attribution unknown while preserving available delivery results',async()=>{
+ mocks.from.mockImplementation(table=>query(table==='marketing_campaign_outcomes'?{error:Error('temporary')}:{data:table==='email_campaigns'?[{id:'email'}]:table==='email_campaign_performance'?[{campaign_id:'email',delivered:10}]:[]}))
+ const result=await fetchDevelopmentCampaigns({organisationId:'org',developmentId:'dev'})
+ expect(result.campaigns[0]).toMatchObject({delivered:10,leadsGenerated:null})
+ expect(result.errors).toEqual([])
+ expect(result.warnings).toContain('Attributed lead results could not be loaded.')
 })

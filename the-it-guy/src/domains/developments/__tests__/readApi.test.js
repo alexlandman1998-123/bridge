@@ -23,6 +23,39 @@ import { fetchDevelopmentDetailSection } from '../detailSectionReadApi.js'
 import { getKnownMissingOptionalRelations, resetKnownMissingOptionalRelations, rememberMissingOptionalRelation } from '../../../lib/api/shared/schemaReadCompatibility.js'
 beforeEach(() => { state.calls = []; state.responses = []; state.tables = {} })
 
+it('loads statistics listing references in scoped pages without inventory, media or directory reads', async () => {
+  state.tables.private_listings = [
+    { data: Array.from({ length: 1000 }, (_, i) => ({ id: `listing-${i}`, organisation_id: 'agency', listing_status: 'active', updated_at: '2026-11-09' })) },
+    { data: [
+      { id: 'archived', organisation_id: 'agency', listing_status: 'archived' },
+      { id: 'inactive', organisation_id: 'agency', listing_status: 'active', is_active: false },
+      { id: 'draft', organisation_id: 'agency', listing_status: 'draft', is_active: false },
+    ] },
+  ]
+  state.tables.development_profiles = { data: { configuration: { publicVisibility: true, marketingStatus: 'live' } } }
+  const result = await fetchDevelopmentDetailSection('dev', 'channelStatistics')
+  expect(result.channelStatisticsListings).toHaveLength(1001)
+  expect(result.channelStatisticsListings[0]).toEqual({ id: 'listing-0', organisationId: 'agency', updatedAt: '2026-11-09' })
+  expect(result.channelStatisticsListings.at(-1).id).toBe('draft')
+  expect(result.channelStatisticsWebsitePublished).toBe(true)
+  expect(result.rows).toBeUndefined()
+  expect(result.listings).toBeUndefined()
+  expect(state.calls.map(call => call.table)).toEqual(['private_listings', 'private_listings', 'development_profiles'])
+  for (const call of state.calls) expect(call.filters).toContainEqual(['eq', 'development_id', 'dev'])
+  expect(state.calls[0].filters).toContainEqual(['range', 0, 999])
+  expect(state.calls[1].filters).toContainEqual(['range', 1000, 1999])
+  expect(state.calls[0].filters).toContainEqual(['select', 'id,organisation_id,listing_status,is_active,updated_at'])
+})
+
+it('does not broaden statistics scope or show empty counts after a denied read', async () => {
+  state.tables.private_listings = { data: null, error: { code: '42501', message: 'Permission denied' } }
+  await expect(fetchDevelopmentDetailSection('dev', 'channelStatistics')).rejects.toMatchObject({ code: '42501' })
+  expect(state.calls).toHaveLength(1)
+  state.calls = []
+  await expect(fetchDevelopmentDetailSection('', 'channelStatistics')).rejects.toThrow('Development is required.')
+  expect(state.calls).toHaveLength(0)
+})
+
 it('opens the overview without optional libraries, histories, analytics or financial reads', async () => {
   state.tables.developments = { data: { id: 'slim-dev', organisation_id: 'org', name: 'Development' }, error: null }
   state.tables.units = { data: [{ id: 'unit', development_id: 'slim-dev', unit_number: '1', status: 'Available' }], error: null }
@@ -115,6 +148,8 @@ it('preserves the older development-column fallback and optional-table defaults'
   state.tables.development_financials = { data: null, error: { code: '42P01', message: 'relation does not exist' } }
   const result = await reads.fetchDevelopmentDetail('dev')
   expect(result.development.name).toBe('Legacy')
+  expect(result.marketingEvents).toBeUndefined()
+  expect(result.marketingEventsError).toContain('could not be identified')
   expect(result.financials.developmentId).toBe('dev')
   const queries = state.calls.filter((call) => call.table === 'developments')
   expect(queries[1].filters).toContainEqual(['select', 'id, name, planned_units'])
@@ -185,4 +220,13 @@ it('keeps explicit history reads available for archived development documents', 
   state.tables.development_documents = { data: [{ id: 'current', title: 'Current', document_type: 'marketing' }, { id: 'archived', title: 'Previous', document_type: 'marketing', archived_at: '2026-11-01T12:00:00Z' }], error: null }
   const documents = await reads.fetchDevelopmentDocuments('development-one', { includeHistory: true })
   expect(documents.map(row => row.id)).toEqual(['current', 'archived'])
+})
+
+it('keeps event read errors explicit without hiding the rest of a complete development', async () => {
+  state.tables.developments = { data: { id: 'dev', organisation_id: 'org', name: 'Development' }, error: null }
+  state.tables.marketing_events = { data: null, error: { code: '42501', message: 'Events denied' } }
+  const result = await reads.fetchDevelopmentDetail('dev')
+  expect(result.development.name).toBe('Development')
+  expect(result.marketingEvents).toBeUndefined()
+  expect(result.marketingEventsError).toContain('do not currently have access')
 })

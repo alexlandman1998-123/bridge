@@ -20,7 +20,8 @@ for (const token of [
   'Phone qualification questions',
   'Activity Logger',
   'Capture touchpoint',
-  'Set as next action',
+  'Save as follow-up note',
+  'checked={activityDraft.setAsNextAction}',
   'Log Activity',
 ]) {
   assert.match(
@@ -32,8 +33,8 @@ for (const token of [
 
 assert.match(
   pageSource,
-  /grid lg:grid-cols-\[minmax\(0,1\.35fr\)_minmax\(360px,0\.95fr\)\]/,
-  'developer lead workspace header should use the split hero grid from the reference design',
+  /grid lg:grid-cols-\[minmax\(0,[\d.]+fr\)_minmax\(\d+px,[\d.]+fr\)\]/,
+  'developer lead workspace header should use the split hero grid without fixing presentation-only column sizes',
 )
 
 assert.match(

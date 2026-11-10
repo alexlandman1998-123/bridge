@@ -12,6 +12,7 @@ const SNAPSHOT_FIELDS = Object.freeze([
   ['listingPreviewDescription', 'Preview description', 'Content'],
   ['price', 'Price', 'Pricing'],
   ['pricePresentation', 'Price presentation', 'Pricing'],
+  ['showReducedBanner', 'Reduced label', 'Pricing'],
   ['listingStatus', 'Listing status', 'Status'],
   ['address', 'Address', 'Property'],
   ['exactAddressVisibility', 'Street address display', 'Property'],
@@ -137,6 +138,7 @@ export function buildListingPublicationSnapshot(draft = {}) {
     listingPreviewDescription: text(draft.listingPreviewDescription),
     price: numberText(draft.price),
     pricePresentation: text(draft.pricePresentation),
+    showReducedBanner: Boolean(draft.showReducedBanner),
     listingStatus: text(draft.listingStatus),
     address: text(draft.formattedAddress || draft.addressLine1 || draft.streetAddress),
     exactAddressVisibility: text(draft.exactAddressVisibility) || 'hide_street_address',
@@ -188,6 +190,12 @@ function publicationStatusComparable(value, channel) {
   return status
 }
 
+function reducedLabelComparable(snapshot) {
+  if (snapshot.showReducedBanner != null) return Boolean(snapshot.showReducedBanner)
+  return Array.isArray(snapshot.features) && snapshot.features.some(feature =>
+    text(feature).toLowerCase().replace(/[ -]/g, '_') === 'reduced_banner')
+}
+
 export function diffListingPublicationSnapshots(current = {}, published = {}, { channel = '' } = {}) {
   return SNAPSHOT_FIELDS.flatMap(([key, label, group]) => {
     const media = ['coverImage', 'gallery', 'floorplans'].includes(key)
@@ -199,6 +207,7 @@ export function diffListingPublicationSnapshots(current = {}, published = {}, { 
       ? comparable(Array.isArray(snapshot[key]) ? snapshot[key].map(mediaIdentity) : mediaIdentity(snapshot[key] || ''))
       : area ? areaComparable(snapshot, key)
       : key === 'listingStatus' ? publicationStatusComparable(snapshot[key], channel)
+      : key === 'showReducedBanner' ? reducedLabelComparable(snapshot)
       : key === 'exactAddressVisibility' ? text(snapshot[key])
       : comparable(snapshot[key])
     if (normalize(current) === normalize(published)) return []

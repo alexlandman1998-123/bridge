@@ -20,7 +20,7 @@ function setup(overrides = {}) {
     createTransactionForUnitStatus: vi.fn(async () => ({ transactionId: 'new-tx', stage: 'Finance' })),
     applyUnitQuickUpdate: vi.fn(), loadData: vi.fn(async () => {}), refreshUnitStatusViews: vi.fn(async () => {}),
     saveDevelopmentUnit: vi.fn(async payload => payload), buildUnitQuickSavePayload: (record, patch) => ({ ...record, ...patch }),
-    updateTransactionLifecycleStage: vi.fn(async () => {}), ...overrides,
+    saveDevelopmentUnitStatus: vi.fn(async payload => payload), data: { development: { id: 'dev' } }, ...overrides,
   }
   return { ...dependencies, run: bindFunction('handleUnitStatusQuickChange', 'async function refreshUnitStatusViews', dependencies) }
 }
@@ -28,15 +28,15 @@ function setup(overrides = {}) {
 it('saves the stock and linked lifecycle before refreshing all views and reporting success', async () => {
   const context = setup()
   await context.run({ ...unit, currentTransactionId: 'tx' }, 'Finance Pending')
-  expect(context.saveDevelopmentUnit).toHaveBeenCalledWith(expect.objectContaining({ status: 'Finance Pending' }))
-  expect(context.updateTransactionLifecycleStage).toHaveBeenCalledWith('tx', 'finance', expect.objectContaining({ source: 'development_unit_status_quick_update' }))
+  expect(context.saveDevelopmentUnitStatus).toHaveBeenCalledWith(expect.objectContaining({ unitId: 'unit-1', transactionId: 'tx', expectedStatus: 'Available', status: 'Finance Pending' }))
+  expect(context.saveDevelopmentUnit).not.toHaveBeenCalled()
   expect(context.refreshUnitStatusViews).toHaveBeenCalledWith('tx')
   expect(context.setFeedback).toHaveBeenLastCalledWith('Unit 101 marked Finance Pending.')
   expect(context.unitStatusChangeLock.current).toBe(false)
 })
 
 it('reconciles partial failures without claiming success or keeping an optimistic status', async () => {
-  const context = setup({ updateTransactionLifecycleStage: vi.fn(async () => { throw Error('Lifecycle save failed') }) })
+  const context = setup({ saveDevelopmentUnitStatus: vi.fn(async () => { throw Error('Lifecycle save failed') }) })
   await context.run({ ...unit, currentTransactionId: 'tx' }, 'Finance Pending')
   expect(context.loadData).toHaveBeenCalledOnce()
   expect(context.applyUnitQuickUpdate).not.toHaveBeenCalled()
@@ -71,7 +71,7 @@ it('does not write for unchanged statuses, viewers, concurrent saves or stock st
 })
 
 it('evicts transaction and development caches and notifies the existing subscribers', async () => {
-  const dependencies = { invalidateTransactionsListCache: vi.fn(), invalidateDevelopmentOptionsCache: vi.fn(async () => {}), invalidateTransactionWorkspaceCoreCache: vi.fn(async () => {}), window: { dispatchEvent: vi.fn() }, Event }
+  const dependencies = { refreshOverviewSummary: vi.fn(async () => {}), invalidateTransactionsListCache: vi.fn(), invalidateDevelopmentOptionsCache: vi.fn(async () => {}), invalidateTransactionWorkspaceCoreCache: vi.fn(async () => {}), window: { dispatchEvent: vi.fn() }, Event }
   const refresh = bindFunction('refreshUnitStatusViews', 'function openUnitModal', dependencies)
   await refresh('tx')
   expect(dependencies.invalidateTransactionWorkspaceCoreCache).toHaveBeenCalledWith('tx')
@@ -127,4 +127,50 @@ it('blocks stale readiness and concurrent duplicate commands before writing anyt
   const locked = reservationSetup({ unitReservationLock: { current: true } })
   await locked.run({ developerLeadId: 'buyer', unitId: unit.id })
   expect(locked.setDevelopmentLeadReservation).not.toHaveBeenCalled()
+})
+
+function bulkSetup(overrides = {}) {
+  const dependencies = {
+    bulkUnitSaveLock: { current: false }, bulkUnitForm: { step: 'review', generatedRows: [{ unitNumber: '001' }, { unitNumber: '002' }] },
+    handleBulkUnitNext: vi.fn(), buildBulkUnitRows: vi.fn(), unitRows: [],
+    setError: vi.fn(), setFeedback: vi.fn(), setBulkUnitSaving: vi.fn(),
+    saveDevelopmentUnitsBatch: vi.fn(async () => []), data: { development: { id: 'dev' } },
+    formatNumber: String, setBulkUnitForm: vi.fn(), DEFAULT_BULK_UNIT_FORM: {},
+    setBulkUnitModalOpen: vi.fn(), window: { dispatchEvent: vi.fn() }, Event,
+    loadData: vi.fn(async () => {}), ...overrides,
+  }
+  return { ...dependencies, run: bindFunction('handleBulkUnitSave', 'async function handleStructureSetupSave', dependencies) }
+}
+it('creates bulk stock with one server command before closing the dialog', async () => {
+  const context = bulkSetup()
+  await context.run({ preventDefault() {} })
+  expect(context.saveDevelopmentUnitsBatch).toHaveBeenCalledWith('dev', [{ unitNumber: '001' }, { unitNumber: '002' }])
+  expect(context.setBulkUnitModalOpen).toHaveBeenCalledWith(false)
+  expect(context.loadData).toHaveBeenCalledOnce()
+})
+it('keeps generated rows for retry and refreshes stock after an uncertain bulk response', async () => {
+  const context = bulkSetup({ saveDevelopmentUnitsBatch: vi.fn(async () => { throw Error('Save response lost; retry to check') }) })
+  await context.run({ preventDefault() {} })
+  expect(context.setBulkUnitForm).not.toHaveBeenCalled()
+  expect(context.setBulkUnitModalOpen).not.toHaveBeenCalled()
+  expect(context.loadData).toHaveBeenCalledOnce()
+  expect(context.setError).toHaveBeenCalledWith('Save response lost; retry to check')
+})
+
+it('distinguishes a committed status change from a failed view refresh', async () => {
+  const context = setup({ refreshUnitStatusViews: vi.fn(async () => { throw Error('Refresh unavailable') }) })
+  await context.run({ ...unit, currentTransactionId: 'tx' }, 'Finance Pending')
+  expect(context.setError).toHaveBeenLastCalledWith(expect.stringContaining('was saved'))
+  expect(context.unitStatusChangeLock.current).toBe(false)
+})
+it('blocks a second bulk submission while the first is in progress', async () => {
+  const context = bulkSetup({ bulkUnitSaveLock: { current: true } })
+  await context.run({ preventDefault() {} })
+  expect(context.saveDevelopmentUnitsBatch).not.toHaveBeenCalled()
+})
+it('requires new bulk stock to start in an availability status', async () => {
+  const context = bulkSetup({ bulkUnitForm: { step: 'review', generatedRows: [{ unitNumber: '001', status: 'Finance Pending' }] } })
+  await context.run({ preventDefault() {} })
+  expect(context.saveDevelopmentUnitsBatch).not.toHaveBeenCalled()
+  expect(context.setError).toHaveBeenCalledWith(expect.stringContaining('must start as'))
 })

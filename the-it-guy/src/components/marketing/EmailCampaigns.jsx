@@ -216,9 +216,9 @@ export function EmailCampaignOverview({ onCreateCampaign, onOpenCampaign, select
   </div>
 }
 
-export function CreateEmailCampaign({ initialListingId, initialObjective, initialEventId, openAiAssistant, initialScheduleDate, onBack, campaignId, onDraftCreated, developmentContext, onOpenMarketingCampaign }) {
+export function CreateEmailCampaign({ initialListingId, initialObjective, initialEventId, openAiAssistant, initialScheduleDate, onBack, campaignId, onDraftCreated, developmentContext, preparedCampaign, onOpenMarketingCampaign }) {
   const workspace = useCampaigns()
-  return <EmailCampaignBuilder key={`${workspace.organisationId}:${workspace.userId}`} initialListingId={initialListingId} initialObjective={initialObjective} initialEventId={initialEventId} openAiAssistant={openAiAssistant} initialScheduleDate={initialScheduleDate} workspace={workspace} AudienceStudio={AudienceStudio} onBack={onBack} campaignId={campaignId} onDraftCreated={onDraftCreated} developmentContext={developmentContext} onOpenMarketingCampaign={onOpenMarketingCampaign} />
+  return <EmailCampaignBuilder key={`${workspace.organisationId}:${workspace.userId}`} initialListingId={initialListingId} initialObjective={initialObjective} initialEventId={initialEventId} openAiAssistant={openAiAssistant} initialScheduleDate={initialScheduleDate} workspace={workspace} AudienceStudio={AudienceStudio} onBack={onBack} campaignId={campaignId} onDraftCreated={onDraftCreated} developmentContext={developmentContext} preparedCampaign={preparedCampaign} onOpenMarketingCampaign={onOpenMarketingCampaign} />
 }
 
 export function EmailCampaignDetail(props) {

@@ -8,6 +8,14 @@ afterEach(cleanup)
 const unit = { id: 'unit-1', unitNumber: '101', unitType: 'Studio', status: 'Available', currentPrice: 1500000 }
 const options = ['Available', 'Reserved', 'Finance Pending', 'Sold', 'Not Released'].map(value => ({ value, label: value }))
 
+it('places reservations immediately below the gradient workspace banner and before filters', () => {
+  render(<DevelopmentAvailabilityWorkspace units={[unit]} reservationWorkspace={<section aria-label="Reservation controls">Reservations</section>} />)
+  const banner = screen.getByRole('heading', { name: 'Availability workspace' }).closest('section')
+  const reservations = screen.getByRole('region', { name: 'Reservation controls' })
+  expect(banner.nextElementSibling).toBe(reservations)
+  expect(reservations.nextElementSibling).toBe(screen.getByRole('region', { name: 'Availability filters' }))
+})
+
 it('defaults to cards and saves list statuses without opening the unit workspace', () => {
   const save = vi.fn()
   const { rerender } = render(<DevelopmentAvailabilityWorkspace units={[unit]} canManageInventory unitStatusOptions={options} onChangeUnitStatus={save} />)

@@ -1,3 +1,4 @@
+import { readLeadServiceSource } from './helpers/domainApiSource.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { assertMvpAtomicTransactionCreation, assessMvpAtomicTransactionCreation } from '../src/core/transactions/mvpAtomicTransactionCreation.js'
@@ -38,7 +39,7 @@ assert.throws(
 const lifecycleSource = fs.readFileSync('src/lib/transactionLifecycleService.js', 'utf8')
 const migrationSource = fs.readFileSync('../supabase/migrations/202607180046_mvp_atomic_transaction_creation_phase2a.sql', 'utf8')
 const handoffMigrationSource = fs.readFileSync('../supabase/migrations/20260927084256_transaction_source_handoff_phase2.sql', 'utf8')
-const offerConversionSource = fs.readFileSync('src/lib/buyerLifecycleService.js', 'utf8')
+const offerConversionSource = readLeadServiceSource('src/lib/buyerLifecycleService.js')
 assert.match(lifecycleSource, /bridge_create_mvp_transaction/)
 assert.match(lifecycleSource, /assertMvpAtomicTransactionCreation/)
 assert.match(migrationSource, /pg_advisory_xact_lock/)
