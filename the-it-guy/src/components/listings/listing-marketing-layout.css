@@ -8,7 +8,10 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-height: 0;
 }
+
+.listing-marketing-panels > article { min-height: 0; }
 
 .listing-marketing-details-footer {
   margin-top: 0;
@@ -27,19 +30,34 @@
 @media (min-width: 1280px) {
   .listing-marketing-panels {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    /* A definite row height lets the contents scroll instead of sizing the row. */
+    grid-template-rows: minmax(0, 46rem);
+  }
+
+  .listing-marketing-details {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    overflow: hidden;
   }
 
   .listing-marketing-description {
     display: flex;
-    flex: 1;
     flex-direction: column;
     min-height: 0;
   }
 
   .listing-marketing-description [aria-label="Listing description"] {
-    flex: 1;
-    height: 14rem;
+    flex: 1 1 0;
     min-height: 0;
+    max-height: none;
+  }
+
+  .listing-marketing-gallery {
+    height: 100%;
+  }
+
+  .listing-marketing-gallery-scroll {
+    flex: 1 1 0;
     max-height: none;
   }
 }
