@@ -3,11 +3,14 @@ import { readFileSync } from 'node:fs'
 
 const detailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const panelSource = readFileSync(new URL('../src/components/listings/ListingShowDaysPanel.jsx', import.meta.url), 'utf8')
+const composerSource = readFileSync(new URL('../src/components/listings/ListingFacebookPostPanel.jsx', import.meta.url), 'utf8')
 const repositorySource = readFileSync(new URL('../src/services/marketingEventRepository.js', import.meta.url), 'utf8')
 
 const channelsIndex = detailSource.indexOf('id="listing-distribution-channels"')
-const showDaysIndex = detailSource.indexOf('<ListingShowDaysPanel')
+const showDaysIndex = detailSource.indexOf('<ListingFacebookPostPanel')
 assert.ok(channelsIndex >= 0 && showDaysIndex > channelsIndex, 'Show Days must appear below Listing Channels.')
+assert.match(composerSource, /<ListingShowDaysPanel[^>]*embedded/, 'The show-day controls belong inside the shared Facebook panel.')
+assert.doesNotMatch(detailSource, /<ListingShowDaysPanel/, 'The listing must not render a separate show-day container.')
 assert.match(panelSource, /createMarketingEvent/, 'Listing show days must use the canonical marketing-event repository.')
 assert.match(panelSource, /buildListingShowDayRsvpPath/, 'A saved show day must expose its canonical RSVP route.')
 assert.match(panelSource, /section=show-days&view=detail&id=/, 'Created show days must link into Marketing → Events → Show Days.')

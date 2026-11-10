@@ -103,3 +103,22 @@ export function buildListingShowDayRsvpPath(event = {}) {
   const token = text(event.publicToken || event.public_token)
   return token ? `/marketing/rsvp/${encodeURIComponent(token)}` : ''
 }
+
+export function buildListingShowDayPostSource(event, listing = {}, { now = Date.now(), origin = 'https://app.arch9.co.za' } = {}) {
+  if (!event?.id || String(event.listingId) !== String(listing.id) ||
+      text(event.status).toLowerCase() !== 'upcoming' || event.visibility !== 'public' ||
+      event.registrationEnabled === false || !text(event.publicToken || event.public_token)) return null
+  const starts = Date.parse(event.startsAt), ends = Date.parse(event.endsAt)
+  if (!Number.isFinite(starts) || !Number.isFinite(ends) || ends <= starts || ends <= now) return null
+  const base = new URL(origin)
+  if (base.protocol !== 'https:' || base.username || base.password) return null
+  const rsvpUrl = new URL(buildListingShowDayRsvpPath(event), base.origin).href
+  const date = new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Johannesburg' }).format(new Date(starts))
+  const time = value => new Intl.DateTimeFormat('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Africa/Johannesburg' }).format(new Date(value))
+  const title = text(event.title) || `Show day · ${text(listing.title)}`
+  const address = text(event.address || listing.address)
+  const host = text(event.hostName)
+  // Only public event details enter the caption; attendee and CRM data stay out.
+  const caption = ['SHOW DAY', title, address, `${date} · ${time(starts)}–${time(ends)} SAST`, host ? `Hosted by ${host}` : '', `RSVP: ${rsvpUrl}`].filter(Boolean).join('\n\n')
+  return { id: event.id, caption, rsvpUrl, label: `${title} · ${date}`, signature: JSON.stringify([event.id, title, address, starts, ends, host, rsvpUrl]) }
+}

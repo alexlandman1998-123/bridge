@@ -10,6 +10,78 @@ This seller contract must be read as the seller side of that lifecycle.
 
 ## Current seller data ownership contract
 
+### Production seller identity and document repair — 10 November 2026
+
+The primary app's agency client index now derives a new transaction seller from
+the exact, same-organisation listing seller relationship. The deployed forward
+migration is `20261110063824_seller_transaction_identity_parent.sql`. A contact
+email or telephone number on a transaction can belong to a representative and
+must not select or enrich the legal owner's identity. Without an authoritative
+listing parent, the linker retains the existing source identity or creates a
+separate identity. Buyer matching is unchanged. An explicit listing reassignment
+re-resolves the seller association; ordinary saves preserve reviewed source links.
+
+This migration does not backfill historical client associations. The approved
+incident repair moved one transaction seller link and its 47 attributed activity
+rows to the reviewed seller profile, corrected that profile's placeholder name,
+and retained the other client's separate profile, listing and contact identifiers.
+The repair was rehearsed with rollback before committing, and repeated ingestion
+was verified to preserve the corrected association.
+
+The mandate projection in that incident predated the deployed
+`20261104084343_seller_upload_document_audience.sql` guard. Its source was approved
+and seller-visible, but its transaction document was still internal. The reviewed
+repair restored the transaction projection to shared visibility with the explicit
+seller recipient. No source document, approval, canonical requirement, stored
+object or signed bytes were replaced. The existing audience guard checks the exact
+listing, source document, bucket and object before preserving that seller audience
+on future promotion writes. It deliberately does not rewrite historical rows.
+
+Verification included the native PostgreSQL identity regressions and code rollback,
+25 client-directory/service tests, an executable audience regression against the
+deployed guard, scoped lint, production assigned-agent read checks and a signed-in
+browser walkthrough. Both the purchase agreement and verified mandate were visible
+in the transaction. At the initial browser check, the principal account's
+client-summary Transactions tab used the participant-only reader and omitted deals
+assigned to another agent; the full transaction remained accessible. The initial
+data repair did not change that reader or permissions. Private recovery and release evidence is held outside the
+source contract in the local incident packet.
+
+The subsequent principal-summary fix is implemented in the primary app source:
+principal/owner memberships use the organisation-scoped transaction summary reader,
+with the signed-in user's database policies still applied. Ordinary agents retain
+the participant reader. Principal history includes completed deals, excludes
+deliberately deleted/inactive transactions, pages
+past the API row limit, batches seller details, and loads card details only for the
+selected client's linked transaction ids. Summary caches separate actors and
+requested transaction ids. Focused coverage includes returning from principal to
+agent scope and rejecting a failed later page without caching partial history.
+This application follow-up was deployed on 10 November 2026 from commit
+`f50546556f5f3a774f653d532fbd8bf8f55136c4` as deployment
+`dpl_6tuhpwVUWHbhBwUFXzzfMpqnm2Bg`. All five existing primary-app aliases point to
+that deployment. The signed-in Kingdom principal's client tab showed one linked
+transaction instead of zero, the card opened the correct full transaction, and
+both the mandate and purchase agreement appeared as verified in its document
+groups. The live release stamp, production database target, 35 focused tests,
+transaction-reader regressions, scoped lint and cloud release checks passed.
+
+The follow-up review found that the two remaining historical seller-index
+differences belong to transactions `AG-532775` and `AG-F44BB9` on the same listing.
+Both have recorded deletion events from 24 October 2026 and are inactive. Neither
+has transaction documents, document-upload events or directly scoped Storage
+objects; the listing has no document rows or document Storage objects either.
+The listing capture describes a company and its representative separately.
+Retain these deleted records and their audit history without merging people or
+restoring transactions. The corresponding active-transaction mismatch check
+returned zero. This review made no remote changes.
+
+Focused checks:
+
+```sh
+node the-it-guy/scripts/client-identity.test.mjs
+npm --prefix the-it-guy run test:seller-document-continuity-p0-6
+```
+
 The October 2026 alignment work extends this contract to the seller lead,
 listing, transaction and seller portal. Phase 1 implements the field ownership
 and relationship inspection foundation in the primary app. Phases 2 and 3 now

@@ -1,0 +1,45 @@
+.listing-marketing-panels {
+  display: grid;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.listing-marketing-details {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.listing-marketing-details-footer {
+  margin-top: 0;
+}
+
+.listing-channel-brand-logo {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 120px;
+  max-height: 24px;
+  object-fit: contain;
+  object-position: left;
+}
+
+@media (min-width: 1280px) {
+  .listing-marketing-panels {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+
+  .listing-marketing-description {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .listing-marketing-description [aria-label="Listing description"] {
+    flex: 1;
+    height: 14rem;
+    min-height: 0;
+    max-height: none;
+  }
+}

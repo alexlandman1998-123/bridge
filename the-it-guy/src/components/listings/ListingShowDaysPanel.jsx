@@ -12,6 +12,7 @@ import {
 import {
   buildListingShowDayPayload,
   buildListingShowDayRsvpPath,
+  buildListingShowDayPostSource,
   validateListingShowDayDraft,
   showDayToday,
 } from '../../services/listings/listingShowDayModel'
@@ -36,7 +37,7 @@ function formatEventDate(event = {}) {
   return new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Johannesburg' }).format(date)
 }
 
-export default function ListingShowDaysPanel({ organisationId = '', listing = {}, publicListingReady = false }) {
+export default function ListingShowDaysPanel({ organisationId = '', listing = {}, publicListingReady = false, embedded = false, selectedEventId = '', onSelectForPost, postBusy = false }) {
   const saveLock = useRef(false)
   const refreshVersion = useRef(0)
   const [events, setEvents] = useState([])
@@ -145,25 +146,34 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
 
   return (
     <>
-      <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-        <div className="flex flex-col gap-3 border-b border-[#edf2f7] p-5 sm:flex-row sm:items-center sm:justify-between">
+      <section id="listing-show-days" tabIndex={-1} aria-labelledby="listing-show-days-heading" className={embedded ? 'mt-5 min-w-0 border-t border-[#edf2f7] pt-5' : 'scroll-mt-24 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]'}>
+        <div className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${embedded ? '' : 'border-b border-[#edf2f7] p-5'}`}>
           <div>
-            <h3 className="text-base font-semibold text-[#142132]">Show Days</h3>
+            <h3 id="listing-show-days-heading" className="text-base font-semibold text-[#142132]">Show Days</h3>
             <p className="mt-1 text-sm text-[#607387]">Create a listing-linked event and share its RSVP page.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {embedded ? <Button type="button" size="sm" variant="ghost" disabled={postBusy || loading} onClick={() => { onSelectForPost?.(null); void refresh() }}>Refresh show days</Button> : null}
             <Link to="/marketing?section=show-days" className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
               View all show days
               <ExternalLink size={14} />
             </Link>
-            <Button type="button" size="sm" onClick={openCreate} disabled={!listing.id || !organisationId}>
+            <Button type="button" size="sm" onClick={openCreate} disabled={postBusy || !listing.id || !organisationId}>
               <Plus size={15} />
               Create show day
             </Button>
           </div>
         </div>
         {loadError ? <p role="alert" className="border-b border-[#f1c6c2] bg-[#fff5f5] px-5 py-3 text-sm font-semibold text-[#a13b35]">{loadError}</p> : null}
-        {loading ? (
+        {embedded ? loading ? <p role="status" className="mt-4 text-sm text-[#607387]">Loading show days…</p> : <div className="mt-4 space-y-3">
+          <label className="grid gap-2 text-sm font-semibold text-[#243d56]">Show day
+            <select className="min-w-0 rounded-lg border border-[#dbe6f2] bg-white p-2.5 font-normal" disabled={postBusy || Boolean(loadError)} value={selectedEventId} onChange={event => onSelectForPost?.(events.find(row => row.id === event.target.value) || null)}>
+              <option value="">Choose a published show day</option>
+              {events.map(event => { const source = buildListingShowDayPostSource(event, listing); return source ? <option key={event.id} value={event.id}>{source.label}</option> : null })}
+            </select>
+          </label>
+          {!events.some(event => buildListingShowDayPostSource(event, listing)) ? <p className="text-sm text-[#607387]">Create and publish a public show day to prepare its Facebook post. Draft, private and ended events are not available for posting.</p> : null}
+        </div> : (loading ? (
           <div className="flex items-center gap-2 px-5 py-5 text-sm font-semibold text-[#607387]"><Loader2 size={16} className="animate-spin" /> Loading show days…</div>
         ) : events.length ? (
           <div className="divide-y divide-[#edf2f7]">
@@ -186,7 +196,7 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
           </div>
         ) : (
           <div className="px-5 py-5 text-sm text-[#607387]">No show days have been created for this listing yet.</div>
-        )}
+        ))}
       </section>
 
       <Modal
@@ -198,6 +208,7 @@ export default function ListingShowDaysPanel({ organisationId = '', listing = {}
         footer={createdEvent ? (
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={closeCreate}>Close</Button>
+            {embedded && buildListingShowDayPostSource(createdEvent, listing) ? <Button type="button" disabled={postBusy} onClick={() => { onSelectForPost?.(createdEvent); closeCreate() }}>Use this show day</Button> : null}
             {detailPath ? <Link to={detailPath} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#35546c]">Open in Show Days <ExternalLink size={14} /></Link> : null}
             {rsvpPath && String(createdEvent.status || '').toLowerCase() === 'upcoming' ? <a href={rsvpPath} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#123955] px-4 text-sm font-semibold text-white">Preview RSVP page <ExternalLink size={14} /></a> : null}
           </div>

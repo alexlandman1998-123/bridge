@@ -10,10 +10,10 @@ function props(overrides = {}) {
   return { images: photos, coverImageId: 'cover', title: 'Sales listing', onCover: vi.fn(), onMove: vi.fn(), onRemove: vi.fn(), onUpload: vi.fn(), onEdit: vi.fn(), onRetry: vi.fn(), ...overrides }
 }
 
-it('acts on the displayed photo IDs without changing the saved order to put the cover first', () => {
+it('previews the cover first while actions retain the photo IDs and saved ordering', () => {
   const handlers = props()
   render(<ListingMarketingGallery {...handlers} />)
-  expect(screen.getAllByRole('img').map(image => image.getAttribute('src'))).toEqual(['/one.jpg', '/two.jpg', '/three.jpg'])
+  expect(screen.getAllByRole('img').map(image => image.getAttribute('src'))).toEqual(['/two.jpg', '/one.jpg', '/three.jpg'])
   expect(screen.queryByRole('button', { name: 'Set photo 2 as cover' })).toBeNull()
   expect(screen.getByRole('button', { name: 'Move photo 1 earlier' }).disabled).toBe(true)
   expect(screen.getByRole('button', { name: 'Move photo 3 later' }).disabled).toBe(true)

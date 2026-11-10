@@ -161,9 +161,6 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
       <>
         <div className="listing-channel-columns">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]">
-              <Globe2 size={21} />
-            </span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{websiteLabel}</p>
               <p className="truncate text-xs leading-5 text-[#607387]">{publication.hostname}</p>

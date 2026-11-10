@@ -1,6 +1,6 @@
 import './listing-channel-table.css'
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink, Globe2, Loader2, RefreshCw } from 'lucide-react'
+import { ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import Button from '../ui/Button'
 import ListingChannelManageMenu from './ListingChannelManageMenu'
 import ListingChannelLastUpdate from './ListingChannelLastUpdate'
@@ -86,7 +86,6 @@ export default function KingdomWebsitePublicationChannel({ listingId, listingTit
   return <>
     <div className="listing-channel-columns border-t border-[#edf2f7]">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]"><Globe2 size={21} /></span>
         <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#142132]">Kingdom Website</p></div>
       </div>
       <div className="min-w-0"><p className="truncate text-sm font-semibold text-[#243d56]">{listingReference || 'Not assigned'}</p>{link ? <a href={link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] hover:underline">View listing <ExternalLink size={12} /></a> : <p className="mt-1 text-xs text-[#8a98a8]">Listing link unavailable</p>}</div>

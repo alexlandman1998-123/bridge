@@ -1,18 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Facebook, RefreshCw } from 'lucide-react'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
+import ListingShowDaysPanel from './ListingShowDaysPanel'
+import { buildListingShowDayPostSource } from '../../services/listings/listingShowDayModel'
+import { listMarketingEvents } from '../../services/marketingEventRepository'
 import { metaIntegrationRequest } from '../../services/metaIntegrationService'
 
-export default function ListingFacebookPostPanel({ organisationId, listingId }) {
+export default function ListingFacebookPostPanel({ organisationId, listingId, listing, publicListingReady = false }) {
   const key = `${organisationId}:${listingId}`, generation = useRef(0), lock = useRef(false), currentKey = useRef(key)
   currentKey.current = key
   const invalidate = useCallback(() => { generation.current++ }, [])
   const [state, setState] = useState({ key: '', pages: [], posts: [], loading: true, error: '' })
-  const [draft, setDraft] = useState({ key: '', pageId: '', caption: undefined, mode: undefined }), [preview, setPreview] = useState(null), [busy, setBusy] = useState(''), [error, setError] = useState('')
+  const eventListing = useMemo(() => ({ ...listing, id: listingId }), [listing, listingId])
+  const [selection, setSelection] = useState({ key: '', type: 'normal', event: null })
+  const type = selection.key === key ? selection.type : 'normal'
+  const selectedEvent = type === 'show_day' ? selection.event : null
+  const source = buildListingShowDayPostSource(selectedEvent, eventListing)
+  const draftKey = type === 'normal' ? 'normal' : `show_day:${selectedEvent?.id || ''}`
+  const [drafts, setDrafts] = useState({}), [preview, setPreview] = useState(null), [busy, setBusy] = useState(''), [error, setError] = useState('')
   const data = state.key === key ? state : { pages: [], posts: [], loading: true, error: '' }
-  const input = draft.key === key ? draft : { pageId: '', caption: undefined, mode: undefined }
+  const savedInput = drafts.key === key ? drafts[draftKey] || {} : {}
+  const input = source && savedInput.sourceSignature !== source.signature ? {} : savedInput
+  const caption = input.caption ?? source?.caption
+  const mode = input.mode || (type === 'show_day' ? 'text' : undefined)
   const currentPreview = preview?.key === key ? preview.post : null
   const previewPageName = preview?.key === key ? preview.pageName : ''
   const failedRequest = preview?.key === key && preview.failedRequest
@@ -32,18 +44,34 @@ export default function ListingFacebookPostPanel({ organisationId, listingId }) 
       }
     } catch (failure) { if (current === generation.current) setState({ key, pages: [], posts: [], error: failure.message, loading: false }) }
   }, [key, organisationId, listingId])
-  useEffect(() => { setDraft({ key, pageId: '', caption: undefined, mode: undefined }); setPreview(null); setBusy(''); setError(''); void refresh(); return invalidate }, [key, refresh, invalidate])
+  useEffect(() => { setDrafts({ key }); setSelection({ key, type: 'normal', event: null }); setPreview(null); setBusy(''); setError(''); void refresh(); return invalidate }, [key, refresh, invalidate])
   const page = data.pages.find(row => row.id === input.pageId) || data.pages.find(row => row.canPost)
-  function update(field, value) { setDraft(old => ({ ...(old.key === key ? old : {}), key, [field]: value })); setPreview(null); setError('') }
+  function saveDraft(values) {
+    setDrafts(old => ({ ...(old.key === key ? old : {}), key, [draftKey]: { ...input, ...values, sourceSignature: source?.signature } }))
+  }
+  function update(field, value) { saveDraft({ [field]: value }); setPreview(null); setError('') }
+  function choose(type, event = null) {
+    if (lock.current || needsStatusCheck) return
+    setSelection({ key, type, event }); setPreview(null); setError('')
+  }
+  async function verifyShowDay(event) {
+    if (!event) return
+    const expected = buildListingShowDayPostSource(event, eventListing)
+    const rows = await listMarketingEvents(organisationId, 'showDays')
+    const latest = buildListingShowDayPostSource(rows.find(row => row.id === event.id), eventListing)
+    if (!expected || !latest || latest.signature !== expected.signature) throw new Error('This show day has changed or is no longer public. Refresh show days and select it again before preparing a new preview.')
+  }
   async function prepare() {
-    if (lock.current) return
+    if (lock.current || !page?.canPost || (type === 'show_day' && !source)) return
     lock.current = true; setBusy('preview'); setError('')
     const current = generation.current
     try {
-      const response = await metaIntegrationRequest(organisationId, 'preview_post', { listingId, connectionId: page?.id, ...(input.caption !== undefined ? { caption: input.caption } : {}), ...(input.mode ? { mode: input.mode } : {}) })
-      if (current !== generation.current) return
-      setDraft({ key, pageId: page.id, caption: response.post.snapshot_json.caption, mode: response.post.snapshot_json.mode })
-      setPreview({ key, post: response.post, pageName: response.pageName || page.page_name, failedRequest: false })
+      await verifyShowDay(selectedEvent)
+      if (current !== generation.current || currentKey.current !== key) return
+      const response = await metaIntegrationRequest(organisationId, 'preview_post', { listingId, connectionId: page?.id, ...(caption !== undefined ? { caption } : {}), ...(mode ? { mode } : {}) })
+      if (current !== generation.current || currentKey.current !== key) return
+      saveDraft({ pageId: page.id, caption: response.post.snapshot_json.caption, mode: response.post.snapshot_json.mode })
+      setPreview({ key, post: response.post, pageName: response.pageName || page.page_name, failedRequest: false, showDay: selectedEvent })
     } catch (failure) { if (current === generation.current) setError(failure.message) }
     finally { lock.current = false; if (current === generation.current) setBusy('') }
   }
@@ -51,6 +79,13 @@ export default function ListingFacebookPostPanel({ organisationId, listingId }) 
     if (lock.current || !currentPreview || currentPreview.status !== 'draft' || failedRequest) return
     lock.current = true; setBusy('publish'); setError('')
     const current = key, postId = currentPreview.id
+    try { await verifyShowDay(preview.showDay) }
+    catch (failure) {
+      if (current === currentKey.current) { setPreview(null); setError(failure.message); setBusy('') }
+      lock.current = false
+      return
+    }
+    if (current !== currentKey.current) { lock.current = false; return }
     try {
       const response = await metaIntegrationRequest(organisationId, 'publish_post', { postId: currentPreview.id })
       if (current !== currentKey.current) return
@@ -71,13 +106,21 @@ export default function ListingFacebookPostPanel({ organisationId, listingId }) 
     try { await refresh() }
     finally { lock.current = false; if (current === currentKey.current) setBusy('') }
   }
-  return <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-sm">
-    <header className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="flex items-center gap-2 text-base font-semibold text-[#142132]"><Facebook size={18} />Post to Facebook</h3><p className="mt-1 text-sm text-slate-600">Review a post from this listing’s public details, then publish it to your connected Page.</p></div><Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void refresh()}><RefreshCw size={15} />Refresh</Button></header>
+  return <section id="listing-facebook-post" tabIndex={-1} aria-labelledby="listing-facebook-heading" className="scroll-mt-24 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-sm">
+    <header className="flex flex-wrap items-center justify-between gap-3"><div><h3 id="listing-facebook-heading" className="flex items-center gap-2 text-base font-semibold text-[#142132]"><Facebook size={18} />Post to Facebook</h3><p className="mt-1 text-sm text-slate-600">Review a post from this listing’s public details, then publish it to your connected Page.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="ghost" size="sm" disabled={Boolean(busy) || Boolean(needsStatusCheck)} onClick={() => void refresh()}><RefreshCw size={15} />Refresh</Button></div></header>
+    <fieldset className="mt-5 grid gap-3 sm:grid-cols-2" disabled={Boolean(busy) || Boolean(needsStatusCheck)}>
+      <legend className="mb-2 text-sm font-semibold text-[#243d56]">What would you like to post?</legend>
+      {[['normal', 'Normal Facebook post', 'Share the property with your own caption.'], ['show_day', 'Show day post', 'Promote a show day with its date, time and RSVP link.']].map(([value, label, description]) => <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${type === value ? 'border-[#167052] bg-[#eef8f3]' : 'border-[#dbe6f2] bg-white hover:bg-slate-50'}`}>
+        <input type="radio" name={`facebook-post-type-${listingId}`} value={value} checked={type === value} onChange={() => choose(value)} className="mt-1 accent-[#167052]" />
+        <span><span className="block text-sm font-semibold text-[#142132]">{label}</span><span className="mt-1 block text-xs leading-5 text-[#607387]">{description}</span></span>
+      </label>)}
+    </fieldset>
+    {type === 'show_day' ? <ListingShowDaysPanel key={key} embedded organisationId={organisationId} listing={eventListing} publicListingReady={publicListingReady} selectedEventId={selectedEvent?.id || ''} onSelectForPost={event => choose('show_day', event)} postBusy={Boolean(busy) || Boolean(needsStatusCheck)} /> : null}
     {(error || data.error) ? <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error || data.error}</p> : null}
     {data.loading ? <p role="status" className="mt-4 text-sm">Loading Facebook connections…</p> : data.pages.some(row => row.canPost) ? <div className="mt-5 grid gap-4">
-      <div className="grid gap-4 sm:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">Facebook Page<select className="rounded-lg border p-2.5 font-normal" value={page?.id || ''} disabled={Boolean(busy)} onChange={event => update('pageId', event.target.value)}>{data.pages.map(row => <option key={row.id} value={row.id} disabled={!row.canPost}>{row.page_name}{row.canPost ? '' : ' · reconnect for posting'}</option>)}</select></label><label className="grid gap-2 text-sm font-semibold">Post format<select className="rounded-lg border p-2.5 font-normal" value={input.mode || ''} disabled={Boolean(busy)} onChange={event => update('mode', event.target.value || undefined)}><option value="">Choose from listing details</option><option value="photo">Listing photo</option><option value="link">Public listing link</option><option value="text">Text</option></select></label></div>
-      <label className="grid gap-2 text-sm font-semibold">Caption<textarea className="min-h-28 rounded-xl border p-3 font-normal" maxLength={5000} disabled={Boolean(busy)} value={input.caption ?? ''} placeholder="Leave empty for a caption from the saved public listing details." onChange={event => update('caption', event.target.value || undefined)} /></label>
-      <div><Button disabled={Boolean(busy) || !page?.canPost} onClick={() => void prepare()}>{busy === 'preview' ? 'Preparing…' : 'Preview Facebook post'}</Button></div>
+      <div className="grid gap-4 sm:grid-cols-2"><label className="grid gap-2 text-sm font-semibold">Facebook Page<select className="rounded-lg border p-2.5 font-normal" value={page?.id || ''} disabled={Boolean(busy)} onChange={event => update('pageId', event.target.value)}>{data.pages.map(row => <option key={row.id} value={row.id} disabled={!row.canPost}>{row.page_name}{row.canPost ? '' : ' · reconnect for posting'}</option>)}</select></label><label className="grid gap-2 text-sm font-semibold">Post format<select className="rounded-lg border p-2.5 font-normal" value={mode || ''} disabled={Boolean(busy)} onChange={event => update('mode', event.target.value || undefined)}>{type === 'normal' ? <option value="">Choose from listing details</option> : null}<option value="photo">Listing photo</option>{type === 'normal' ? <option value="link">Public listing link</option> : null}<option value="text">Text</option></select></label></div>
+      <label className="grid gap-2 text-sm font-semibold">Caption<textarea className="min-h-28 rounded-xl border p-3 font-normal" maxLength={5000} disabled={Boolean(busy)} value={caption ?? ''} placeholder="Leave empty for a caption from the saved public listing details." onChange={event => update('caption', event.target.value || undefined)} /></label>
+      <div><Button disabled={Boolean(busy) || !page?.canPost || (type === 'show_day' && !source)} onClick={() => void prepare()}>{busy === 'preview' ? 'Preparing…' : 'Preview Facebook post'}</Button></div>
     </div> : <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm"><p>{data.pages.length ? 'Reconnect your Facebook Page with permission to create Page posts.' : 'Connect a Facebook Page to publish this listing from Arch9.'}</p><Link className="mt-3 inline-block font-semibold text-blue-800" to="/settings/integrations/meta">Connect Facebook Page</Link></div>}
     {data.posts.length ? <div className="mt-5 border-t pt-4"><h4 className="text-sm font-semibold">Recent posts</h4><ul className="mt-2 space-y-2 text-sm">{data.posts.map(post => <li key={post.id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 p-3"><span>{new Date(post.created_at).toLocaleString()} · {post.status === 'unknown' || post.status === 'publishing' ? 'Unconfirmed—check the Facebook Page' : post.status}</span>{post.public_url ? <a className="font-semibold text-blue-800" href={post.public_url} target="_blank" rel="noreferrer">Open post</a> : null}{post.error_message ? <p className="w-full text-xs text-red-800">{post.error_message}</p> : null}</li>)}</ul></div> : null}
     <Modal open={Boolean(currentPreview)} title="Review Facebook post" subtitle={previewPageName} onClose={busy === 'publish' ? undefined : () => setPreview(null)} footer={currentPreview?.status === 'draft' && !failedRequest ? <Button disabled={Boolean(busy)} onClick={() => void publish()}>{busy === 'publish' ? 'Publishing…' : 'Publish to Facebook'}</Button> : <>{needsStatusCheck ? <Button disabled={Boolean(busy)} onClick={() => void checkStatus()}>{busy === 'check' ? 'Checking…' : 'Check post status'}</Button> : null}<Button variant="secondary" disabled={Boolean(busy)} onClick={() => setPreview(null)}>Close</Button></>}>

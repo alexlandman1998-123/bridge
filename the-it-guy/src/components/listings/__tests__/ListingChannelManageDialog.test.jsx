@@ -14,15 +14,17 @@ const props = {
 }
 const click = name => fireEvent.click(screen.getByRole('button', { name, exact: true }))
 
-it('shows this portal, saved changes and separate sent/check timestamps', () => {
+it('shows portal details and timestamps without the removed comparison and acceptance sections', () => {
   render(<ListingChannelManageDialog {...props} />)
   expect(screen.getByRole('heading', { name: 'Manage Property24 listing' })).toBeTruthy()
   expect(screen.getByText('24 Oak Avenue')).toBeTruthy()
   expect(screen.getByText('Last sent')).toBeTruthy()
   expect(screen.getByText('Last status check')).toBeTruthy()
-  expect(screen.getByText(/accepted the last submission/)).toBeTruthy()
-  fireEvent.click(screen.getByText('Review changes (1)'))
-  expect(screen.getByText('2500000 → 2450000')).toBeTruthy()
+  expect(screen.queryByText(/accepted the last submission/)).toBeNull()
+  expect(screen.queryByText('Saved changes')).toBeNull()
+  expect(screen.queryByText('Review changes (1)')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Manage portal' })).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Manage listing' })).toBeTruthy()
   expect(screen.queryByText('Private Property')).toBeNull()
 })
 it('opens the actual public advert with safe new-tab attributes', () => {
@@ -232,13 +234,13 @@ it('opens channel-specific activity without sending requests', () => {
   fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
   expect(screen.getByText('Portal status')).toBeTruthy()
 })
-it('confirms public-page verification before recording it', async () => {
+it('does not offer manual public-page verification or record it during a status check', async () => {
   const onVerify = vi.fn(async () => ({ ok: true }))
   render(<ListingChannelManageDialog {...props} onVerify={onVerify} />)
-  click('Confirm public advert is current')
+  expect(screen.queryByRole('button', { name: 'Confirm public advert is current' })).toBeNull()
+  click('Check latest status')
+  await screen.findByText('Latest channel status checked.')
   expect(onVerify).not.toHaveBeenCalled()
-  click('Confirm verification')
-  await waitFor(() => expect(onVerify).toHaveBeenCalledOnce())
 })
 it('hands off required syndication review without falsely reporting success', async () => {
   render(<ListingChannelManageDialog {...props} onUpdate={async () => ({ deferred: true })} />)
@@ -316,7 +318,8 @@ it('saves and updates an existing Private Property advert with one action, then 
   const onRefresh = vi.fn(async () => ({ ok: true, portalStatus: 'submitted' }))
   render(<ListingChannelManageDialog {...props} channelName="Private Property" streamlinedUpdate onUpdate={onUpdate} onRefresh={onRefresh} />)
   expect(screen.queryByRole('button', { name: 'Send update' })).toBeNull()
-  expect(screen.getByText('More actions').closest('details').open).toBe(false)
+  expect(screen.queryByText('More actions')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Check requirements' })).toBeTruthy()
   click('Save and update Private Property')
   await screen.findByText(/^Processing\. Private Property accepted the update/)
   expect(onUpdate).toHaveBeenCalledOnce()
@@ -324,7 +327,6 @@ it('saves and updates an existing Private Property advert with one action, then 
   expect(onUpdate.mock.invocationCallOrder[0]).toBeLessThan(onRefresh.mock.invocationCallOrder[0])
   expect(props.onPreview).not.toHaveBeenCalled()
   expect(props.onClose).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByText('More actions'))
   expect(screen.getByRole('button', { name: 'Withdraw advert' })).toBeTruthy()
 })
 it('retains an accepted update when the automatic status check fails', async () => {

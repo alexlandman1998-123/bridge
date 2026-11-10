@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { PGlite } from '@electric-sql/pglite'
+import { randomUUID } from 'node:crypto'
 import { buildSellerDocumentTransactionContinuityReport } from '../src/lib/sellerDocumentTransactionContinuity.js'
 
 const healthy = {
@@ -88,4 +90,44 @@ const packageSource = await readFile(new URL('../package.json', import.meta.url)
 assert.match(packageSource, /test:seller-document-continuity-p0-6/)
 assert.match(packageSource, /audit:seller-document-continuity/)
 
-console.log('seller document transaction continuity P0-6 tests passed')
+// Execute the already-deployed audience guard against an older hidden upload.
+// The repair must preserve its exact listing, object and seller-only recipient.
+const db = new PGlite()
+try {
+  await db.exec(`
+    create role anon; create role authenticated; create schema document_security;
+    create table transactions(id uuid primary key, listing_id uuid);
+    create table private_listing_documents(id uuid primary key, private_listing_id uuid, storage_path text, visibility text);
+    create table documents(id uuid primary key, transaction_id uuid, source text, uploaded_by_party text, source_document_id uuid, file_path text, file_bucket text, visibility_scope text, client_recipient_role text, is_client_visible boolean);
+  `)
+  const listing = randomUUID(), transaction = randomUUID(), source = randomUUID(), document = randomUUID()
+  await db.query('insert into transactions values ($1,$2)', [transaction,listing])
+  await db.query("insert into private_listing_documents values ($1,$2,'fixture/mandate.pdf','seller_visible')", [source,listing])
+  await db.query("insert into documents values ($1,$2,'seller_portal','seller',$3,'fixture/mandate.pdf','documents','internal',null,false)",[document,transaction,source])
+  const audience = await readFile(new URL('../../supabase/migrations/20261104084343_seller_upload_document_audience.sql', import.meta.url), 'utf8')
+  await db.exec(audience)
+  // Installation deliberately does not rewrite historical files.
+  assert.equal((await db.query('select visibility_scope from documents')).rows[0].visibility_scope,'internal')
+  for (let attempt=0;attempt<2;attempt++) {
+    await db.query("update documents set visibility_scope='shared',client_recipient_role='seller',is_client_visible=true where id=$1",[document])
+    const row=(await db.query('select * from documents where id=$1',[document])).rows[0]
+    assert.equal(row.visibility_scope,'shared')
+    assert.equal(row.client_recipient_role,'seller')
+    assert.equal(row.is_client_visible,true)
+    assert.equal(row.file_path,'fixture/mandate.pdf')
+    assert.equal(row.source_document_id,source)
+  }
+  // Subsequent promotion's legacy internal default cannot hide the source again.
+  await db.query("update documents set visibility_scope='internal',client_recipient_role=null,is_client_visible=false where id=$1",[document])
+  assert.equal((await db.query('select visibility_scope from documents where id=$1',[document])).rows[0].visibility_scope,'shared')
+  // A wrong file, another listing, private source or wrong bucket cannot gain access.
+  for (const mismatch of ['object','listing','private','bucket','source']) {
+    await db.query("update private_listing_documents set private_listing_id=$1,visibility=$2 where id=$3",[mismatch==='listing'?randomUUID():listing,mismatch==='private'?'internal':'seller_visible',source])
+    const id=randomUUID()
+    await db.query("insert into documents values($1,$2,$3,'seller',$4,$5,$6,'internal',null,false)",[id,transaction,mismatch==='source'?'unrelated':'seller_portal',source,mismatch==='object'?'fixture/other.pdf':'fixture/mandate.pdf',mismatch==='bucket'?'another-bucket':'documents'])
+    const row=(await db.query('select * from documents where id=$1',[id])).rows[0]
+    assert.equal(row.visibility_scope,'internal')
+    assert.equal(row.is_client_visible,false)
+  }
+  console.log('seller document transaction continuity and audience repair tests passed')
+} finally { await db.close() }

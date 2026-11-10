@@ -25,7 +25,7 @@ try {
     create table leads(lead_id uuid primary key,organisation_id uuid,assigned_user_id uuid,assigned_agent_id uuid,contact_id uuid,created_at timestamptz default now());
     create table buyers(id uuid primary key,organisation_id uuid,name text,email text,phone text,created_at timestamptz default now(),is_demo_data boolean default false);
     create table canvassing_prospects(id uuid primary key,organisation_id uuid,assigned_user_id uuid,assigned_agent_id uuid,first_name text,last_name text,email text,phone text,created_at timestamptz default now());
-    create table transactions(id uuid primary key,organisation_id uuid,assigned_user_id uuid,assigned_agent_id uuid,owner_user_id uuid,buyer_id uuid,seller_name text,seller_email text,seller_phone text,created_at timestamptz default now());
+    create table transactions(id uuid primary key,organisation_id uuid,assigned_user_id uuid,assigned_agent_id uuid,owner_user_id uuid,buyer_id uuid,seller_name text,seller_email text,seller_phone text,listing_id uuid,created_at timestamptz default now());
     create table private_listings(id uuid primary key,organisation_id uuid,assigned_agent_id uuid,seller_lead_id text,seller_canonical_facts_json jsonb,created_at timestamptz default now());
     create table private_listing_seller_onboarding(private_listing_id uuid primary key,form_data jsonb,canonical_facts_json jsonb);
     create function bridge_agency_open_operations(p_organisation_id uuid) returns boolean language sql stable security definer set search_path=public as $$
@@ -41,6 +41,9 @@ try {
   await db.query('insert into contacts(contact_id,organisation_id,assigned_agent_id,first_name,last_name,email,phone) values ($1,$2,$3,$4,$5,$6,$7),($8,$2,$3,$4,$5,$9,$7)', [contactA,org,agent,'Alex','Test','A@example.test','0821234567',contactB,'b@example.test'])
   await db.query('insert into leads(lead_id,organisation_id,assigned_user_id,contact_id) values ($1,$2,$3,$4),($5,$2,$3,$6)', [leadA,org,agent,contactA,leadB,contactB])
   await db.exec(await readFile(new URL('../../supabase/migrations/20261009113042_agency_client_identity_and_reviewed_merge.sql', import.meta.url),'utf8'))
+  const legacyDefinitions=(await db.query("select pg_get_functiondef(p.oid) definition from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='arch9_client_private' and p.proname in ('ingest','source_trigger')")).rows
+  const legacyTrigger=(await one("select pg_get_triggerdef(oid) definition from pg_trigger where tgrelid='public.transactions'::regclass and tgname='agency_client_identity_sync'")).definition
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261110063824_seller_transaction_identity_parent.sql', import.meta.url),'utf8'))
   let a = await profileFor('lead',leadA), b = await profileFor('lead',leadB)
   assert.notEqual(a.id,b.id,'A shared name and phone must not merge identities')
   assert.equal(a.id,(await profileFor('contact',contactA)).id,'The enquiry and its contact share an identity')
@@ -122,10 +125,58 @@ try {
   assert.equal((await asActor(agent,'select * from agency_client_profiles where id=$1',[a.id])).rows.length,0)
   assert.equal((await asActor(agent,'select * from agency_client_identifiers where client_id=$1',[a.id])).rows.length,0)
   assert.equal((await asActor(owner,'select * from agency_client_profiles where id=$1',[a.id])).rows.length,1)
+  // Listing ownership must win over a representative's/shared contact email.
+  const ownerContact=randomUUID(),repContact=randomUUID(),ownerLead=randomUUID(),ownerListing=randomUUID(),repListing=randomUUID()
+  await db.query('insert into contacts(contact_id,organisation_id,assigned_agent_id,first_name,email) values ($1,$2,$3,$4,$5),($6,$2,$3,$7,$8)',[ownerContact,org,agent,'Legal Owner','owner-identity@example.test',repContact,'Separate Contact','representative@example.test'])
+  const legalOwner=await profileFor('contact',ownerContact),representative=await profileFor('contact',repContact)
+  await db.query('insert into leads(lead_id,organisation_id,assigned_user_id,contact_id) values ($1,$2,$3,$4)',[ownerLead,org,agent,ownerContact])
+  await db.query('insert into private_listings(id,organisation_id,assigned_agent_id,seller_lead_id,seller_canonical_facts_json) values ($1,$2,$3,$4,$5::jsonb)',[ownerListing,org,agent,ownerLead,JSON.stringify({fullName:'Legal Owner',email:'representative@example.test'})])
+  assert.equal((await profileFor('listing_seller',ownerListing)).id,legalOwner.id)
+  const ownerTransaction=randomUUID()
+  await db.query('insert into transactions(id,organisation_id,assigned_user_id,buyer_id,listing_id,seller_name,seller_email) values ($1,$2,$3,$4,$5,$6,$7)',[ownerTransaction,org,agent,buyerId,ownerListing,'Legal Owner','representative@example.test'])
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,legalOwner.id)
+  assert.equal((await profileFor('transaction_buyer',ownerTransaction)).id,(await profileFor('buyer',buyerId)).id)
+  assert.equal((await one("select client_id from agency_client_identifiers where organisation_id=$1 and kind='email' and value='representative@example.test'",[org])).client_id,representative.id)
+  await db.query('update transactions set seller_name=$1,seller_email=$2 where id=$3',['Legal Owner','representative@example.test',ownerTransaction])
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,legalOwner.id)
+  // No confirmed parent, or a foreign parent, must not mean email-based ownership.
+  const missingParent=randomUUID(),foreignListing=randomUUID()
+  await db.query('insert into private_listings(id,organisation_id,assigned_agent_id) values ($1,$2,$3)',[missingParent,org,agent])
+  await db.query('insert into private_listings(id,organisation_id,assigned_agent_id,seller_canonical_facts_json) values ($1,$2,$3,$4::jsonb)',[foreignListing,otherOrg,outsider,JSON.stringify({fullName:'Foreign Owner',email:'foreign-owner@example.test'})])
+  for (const listingId of [null,missingParent,foreignListing]) {
+    const separate=randomUUID()
+    await db.query('insert into transactions(id,organisation_id,assigned_user_id,listing_id,seller_name,seller_email) values ($1,$2,$3,$4,$5,$6)',[separate,org,agent,listingId,'Unverified Owner','representative@example.test'])
+    const identity=await profileFor('transaction_seller',separate)
+    assert.notEqual(identity.id,representative.id)
+    assert.equal(identity.organisation_id,org)
+    if (listingId===foreignListing) assert.notEqual(identity.id,(await profileFor('listing_seller',foreignListing)).id)
+  }
+  await db.query('insert into private_listings(id,organisation_id,assigned_agent_id,seller_canonical_facts_json) values ($1,$2,$3,$4::jsonb)',[repListing,org,agent,JSON.stringify({fullName:'Separate Contact',email:'representative@example.test'})])
+  await db.query('update transactions set listing_id=$1 where id=$2',[repListing,ownerTransaction])
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,representative.id,'An explicit listing change refreshes seller identity')
+  await db.query('update transactions set listing_id=$1 where id=$2',[ownerListing,ownerTransaction])
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,legalOwner.id)
+  // Historical data is never silently backfilled; a reviewed correction sticks.
+  await db.query("update agency_client_links set client_id=$1 where source_kind='transaction_seller' and source_id=$2",[representative.id,ownerTransaction])
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261110063824_seller_transaction_identity_parent.sql', import.meta.url),'utf8'))
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,representative.id)
+  await db.query("update agency_client_links set client_id=$1 where source_kind='transaction_seller' and source_id=$2",[legalOwner.id,ownerTransaction])
+  await db.query('update transactions set seller_email=$1 where id=$2',['representative@example.test',ownerTransaction])
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,legalOwner.id)
+  assert.equal((await one('select merged_into from agency_client_profiles where id=$1',[representative.id])).merged_into,null)
+  await assert.rejects(asActor(agent,'select arch9_client_private.ingest($1,$2::jsonb)',['transactions',JSON.stringify({id:ownerTransaction,organisation_id:org})]),/permission denied/)
+  console.log('Seller-link regressions passed: exact listing ownership, representative separation, absent/foreign parents, reassignment and repair stability.')
   // Merge chains flatten old references without changing earlier audit snapshots.
   const seller=await profileFor('transaction_seller',transactionId)
+  a=await profileFor('lead',leadA)
   await asActor(owner,'select agency_client_merge($1,$2,$3,$4,$5)',[seller.id,a.id,seller.version,a.version,'Synthetic chain verification'])
   assert.equal((await one('select merged_into from agency_client_profiles where id=$1',[b.id])).merged_into,seller.id)
   assert.equal((await one('select before_snapshot from agency_client_merge_audit where id=$1',[merged.audit_id])).before_snapshot.secondary.id,b.id)
+  // The scoped code rollback restores definitions without undoing repaired data.
+  const repairedBeforeRollback=await profileFor('transaction_seller',ownerTransaction)
+  await db.exec(`begin;${legacyDefinitions.map(row=>row.definition+';').join('\n')}drop trigger agency_client_identity_sync on transactions;${legacyTrigger};commit;`)
+  assert.equal((await profileFor('transaction_seller',ownerTransaction)).id,repairedBeforeRollback.id)
+  await db.exec(await readFile(new URL('../../supabase/migrations/20261110063824_seller_transaction_identity_parent.sql', import.meta.url),'utf8'))
+  assert.match((await one("select pg_get_triggerdef(oid) definition from pg_trigger where tgrelid='public.transactions'::regclass and tgname='agency_client_identity_sync'")).definition,/listing_id/)
   console.log('Client identity database checks passed: backfill, automatic intake, aliases, reviewed merge, audit, redirects, version conflicts, original-record preservation, agency/staff isolation and denied bypasses.')
 } catch (error) { console.error(error.message, error.code || '', error.position || '', error.where || ''); process.exitCode=1 } finally { await db.close() }

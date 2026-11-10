@@ -1,0 +1,85 @@
+.ui-modal.listing-channel-manage-dialog {
+  width: min(1180px, calc(100vw - 32px));
+  max-width: 1180px;
+}
+
+.listing-channel-manage-dialog .ui-modal-head,
+.listing-channel-manage-dialog .ui-modal-footer { padding: 20px 28px; }
+.listing-channel-manage-dialog .ui-modal-body { padding: 24px 28px; }
+
+.channel-manage-property {
+  padding: 16px;
+  border: 1px solid #e3ebf2;
+  border-radius: 16px;
+  background: #fafcfb;
+}
+
+.channel-manage-tabs {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid #e3ebf2;
+  border-radius: 12px;
+  background: #f5f8fa;
+}
+.channel-manage-tabs button { border: 0; border-radius: 8px; padding: 9px 16px; }
+.channel-manage-tabs button[aria-selected="true"] {
+  background: white;
+  box-shadow: 0 1px 4px #14213212;
+}
+
+.channel-manage-columns { display: grid; gap: 24px; align-items: start; }
+.channel-manage-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; align-items: start; }
+.channel-manage-action-card {
+  padding: 18px;
+  border: 1px solid #dfe9e4;
+  border-radius: 16px;
+  background: #f7faf8;
+}
+.channel-manage-action-card.is-listing { border-color: #e3e9f0; background: #f8fafc; }
+.channel-manage-action-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.channel-manage-action-heading h4 { font-size: 14px; font-weight: 650; color: #193c31; }
+.channel-manage-action-heading p { margin-top: 3px; font-size: 12px; line-height: 1.5; color: #64778a; }
+.channel-manage-action-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #246b51;
+  background: #e7f1eb;
+}
+.is-listing .channel-manage-action-icon { color: #42617f; background: #eaf0f7; }
+.channel-manage-action-list { display: grid; gap: 10px; }
+.channel-manage-tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.channel-manage-actions button {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  justify-content: flex-start;
+  padding: 11px 12px;
+  white-space: normal;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  border-radius: 10px;
+  box-shadow: none;
+}
+.channel-manage-actions button svg { flex-shrink: 0; }
+.channel-manage-tool-grid button { min-height: 58px; }
+.channel-manage-actions .channel-manage-withdraw { color: #a43d35; }
+.channel-manage-action-note { font-size: 12px; line-height: 1.6; color: #64778a; }
+
+@media (min-width: 1180px) {
+  .channel-manage-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
+}
+
+@media (max-width: 640px) {
+  .channel-manage-actions { grid-template-columns: minmax(0, 1fr); }
+  .listing-channel-manage-dialog .ui-modal-head,
+  .listing-channel-manage-dialog .ui-modal-body,
+  .listing-channel-manage-dialog .ui-modal-footer { padding: 16px; }
+}

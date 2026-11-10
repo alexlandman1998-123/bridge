@@ -24,6 +24,7 @@ import PrintableMandateTerms from '../components/documents/PrintableMandateTerms
 import { buildSellerMandateTermsFormPatch, getSellerMandatePreparationIssues, isMandateCalendarDate, readSellerMandateTerms } from '../lib/sellerMandateCapture.js'
 import SellerPortalAccessControls from '../components/client-portal/SellerPortalAccessControls.jsx'
 import ListingMarketingGallery from '../components/listings/ListingMarketingGallery.jsx'
+import '../components/listings/listing-marketing-layout.css'
 import '../components/listings/property24-manage.css'
 import ListingChannelLastUpdate from '../components/listings/ListingChannelLastUpdate'
 import ListingChannelManageMenu from '../components/listings/ListingChannelManageMenu'
@@ -100,7 +101,6 @@ import ListingSellerInformationEditor from '../components/listings/ListingSeller
 import ListingSellerCollaborationPanel from '../components/listings/ListingSellerCollaborationPanel'
 import ListingSellerHistoricalNormalizationBanner from '../components/listings/ListingSellerHistoricalNormalizationBanner'
 import ListingSellerLeadLinkPanel from '../components/listings/ListingSellerLeadLinkPanel'
-import ListingShowDaysPanel from '../components/listings/ListingShowDaysPanel'
 import {
   ListingViewingDetailsModal,
   ListingViewingRequestModal,
@@ -2358,25 +2358,20 @@ function MarketingSummaryItem({ icon = Info, value, label, actionLabel = '', onA
   )
 }
 
-function PlatformLogo({ src = '', icon = ExternalLink, label = '' }) {
-  const Icon = icon
-  if (src) {
+function PlatformLogo({ src = '', label = '' }) {
+  const [failedSource, setFailedSource] = useState('')
+  if (src && failedSource !== src) {
     return (
-      <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-[#dbe6f2] bg-white">
-        <img src={src} alt={`${label} logo`} className="max-h-7 max-w-8 object-contain" />
-      </span>
+      <img src={src} alt={`${label} logo`} className="listing-channel-brand-logo" onError={() => setFailedSource(src)} />
     )
   }
 
   return (
-    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#dbe6f2] bg-white text-[#1f4f78]">
-      <Icon size={18} />
-    </span>
+    <span className="text-sm font-semibold leading-5 text-[#142132]">{label}</span>
   )
 }
 
 function DistributionChannel({
-  icon = ExternalLink,
   logoSrc = '',
   name,
   subtitle = '',
@@ -2393,7 +2388,6 @@ function DistributionChannel({
   secondaryAction = null,
   menuActions = [],
 }) {
-  const Icon = icon
   const statusKey = normalizeKey(status || statusLabel)
   const live = ['live', 'published', 'active', 'done', 'complete', 'current'].includes(statusKey)
   const syncing = ['syncing', 'updating', 'publishing', 'loading', 'awaiting_verification'].includes(statusKey)
@@ -2413,10 +2407,9 @@ function DistributionChannel({
   const extendedContextDetail = summarizeListingPortalError(contextDetail, { maxLength: 2000 })
   return (
     <div className="listing-channel-columns border-b border-[#edf2f7] last:border-b-0">
-      <div className="flex min-w-0 items-center gap-3">
-        <PlatformLogo src={logoSrc} icon={Icon} label={name} />
+      <div className="min-w-0 space-y-1">
+        <PlatformLogo src={logoSrc} label={name} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{name}</p>
           {subtitle ? <p className="truncate text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
           {contextTitle ? <p className="mt-1 text-xs font-semibold leading-5 text-[#8a5b13]">{contextTitle}</p> : null}
           {contextDetail ? <p className="mt-0.5 break-words text-xs leading-5 text-[#607387]">{safeContextDetail}</p> : null}
@@ -7446,11 +7439,13 @@ function AgentListingDetail({ mobile = false } = {}) {
     }
   }
 
-  async function handleOpenSellerDocument(doc) {
+  async function handleOpenSellerDocument(doc, { download = false } = {}) {
+    if (doc?.canDownload === false || doc?.can_download === false) { setDetailError('You do not have permission to download this document.'); return }
     if (!doc?.uploaded && !getSellerPhysicalSigningCopy(doc) && !(doc?.status === 'approved' && (doc?.generatedHtml || doc?.generated_html))) return
     setDetailError('')
     setOpeningSellerDocumentKey(doc.key)
-    if (getSellerPhysicalSigningCopy(doc)) {
+    const downloadSavedFile = download && doc.uploaded && Boolean(doc.filePath || doc.url || (doc.packetId && doc.packetVersionId))
+    if (getSellerPhysicalSigningCopy(doc) && !downloadSavedFile) {
       try {
         await downloadSellerPhysicalSigningCopy(doc, downloadGeneratedSellerDocumentPdf)
       } catch (error) {
@@ -7460,7 +7455,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       }
       return
     }
-    if (doc.generatedHtml || doc.generated_html) {
+    if ((doc.generatedHtml || doc.generated_html) && !downloadSavedFile) {
       try {
         await downloadGeneratedSellerDocumentPdf(
           doc.generatedHtml || doc.generated_html,
@@ -7502,10 +7497,15 @@ function AgentListingDetail({ mobile = false } = {}) {
           })
         : fallbackUrl
       if (!downloadUrl) throw new Error('No downloadable file is linked to this document yet.')
+      // Supabase's attachment option is a download query parameter on the signed URL.
+      const target = download ? new URL(downloadUrl) : null
+      if (target && !['https:', 'http:'].includes(target.protocol)) throw new Error('This document link cannot be downloaded.')
+      if (target?.pathname.includes('/storage/v1/object/')) target.searchParams.set('download', '')
+      const accessUrl = target?.href || downloadUrl
       if (pendingWindow) {
-        pendingWindow.location.href = downloadUrl
+        pendingWindow.location.href = accessUrl
       } else if (typeof window !== 'undefined') {
-        window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+        window.open(accessUrl, '_blank', 'noopener,noreferrer')
       }
     } catch (error) {
       if (pendingWindow) pendingWindow.close()
@@ -12972,40 +12972,23 @@ function AgentListingDetail({ mobile = false } = {}) {
         </section>
 
         <section>
-          <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]">
-            <article className={`min-w-0 space-y-5 border border-[#dde4ee] bg-white p-5 ${mobile ? 'order-2 rounded-xl shadow-none' : 'rounded-[22px] shadow-[0_12px_28px_rgba(15,23,42,0.055)]'}`}>
-              <div className={mobile ? 'flex items-start gap-3' : 'flex flex-wrap items-start justify-between gap-3'}>
-                {mobile ? (
-                  <>
-                    <h3 className="min-w-0 flex-1 break-words text-base font-semibold leading-6 text-[#142132]">{marketingDraft.headline || 'No headline added'}</h3>
-                  </>
-                ) : (
-                  <>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="text-sm font-semibold text-[#607387]">Headline</h4>
-                      <p className="mt-2 break-words text-lg font-semibold text-[#243d56]">{marketingDraft.headline || 'No headline added'}</p>
-                    </div>
-                    <Button type="button" size="sm" className="shrink-0" onClick={openPropertyDetailsFromMarketing}>Edit property details<ChevronRight size={15} /></Button>
-                  </>
-                )}
-              </div>
-              <div className="border-t border-[#edf2f7] pt-5">
+          <div className="listing-marketing-panels">
+            <article className={`listing-marketing-details min-w-0 border border-[#dde4ee] bg-white p-5 ${mobile ? 'order-2 rounded-xl shadow-none' : 'rounded-[22px] shadow-[0_12px_28px_rgba(15,23,42,0.055)]'}`}>
+              <h3 className="break-words text-xl font-semibold leading-7 text-[#243d56]">{marketingDraft.headline || 'No headline added'}</h3>
+              <div className="listing-marketing-description border-t border-[#edf2f7] pt-4">
                 <h4 className="text-sm font-semibold text-[#243d56]">Description</h4>
-                <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap break-words pr-2 text-sm leading-6 text-[#607387]" tabIndex={0} role="region" aria-label="Listing description">{marketingDraft.description || 'No public description added'}</p>
+                <p className="mt-3 max-h-56 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words pr-2 text-sm leading-6 text-[#607387]" tabIndex={0} role="region" aria-label="Listing description">{marketingDraft.description || 'No public description added'}</p>
               </div>
-              <div className="border-t border-[#edf2f7] pt-5">
+              <div className="min-h-0 border-t border-[#edf2f7] pt-4">
                 <h4 className="text-sm font-semibold text-[#243d56]">Features</h4>
                 {marketingSellingPoints.length ? (
-                  <div className={mobile ? 'mt-3 flex flex-nowrap gap-2 overflow-x-auto pb-2' : 'mt-3 flex flex-wrap gap-2'} tabIndex={mobile ? 0 : undefined} role={mobile ? 'region' : undefined} aria-label={mobile ? 'Listing features' : undefined}>{marketingSellingPoints.map(point => <span key={point} className={`rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs text-[#2d445e]${mobile ? ' shrink-0 whitespace-nowrap' : ''}`}>{point}</span>)}</div>
+                  <div className="mt-3 flex max-h-40 flex-wrap gap-2 overflow-y-auto overscroll-contain pr-2" tabIndex={0} role="region" aria-label="Listing features">{marketingSellingPoints.map(point => <span key={point} className="max-w-full break-words rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs text-[#2d445e]">{point}</span>)}</div>
                 ) : <p className="mt-3 text-sm text-[#607387]">No features added.</p>}
               </div>
-              {mobile && (
-                <div className="border-t border-[#edf2f7] pt-5">
-                  <button type="button" onClick={openPropertyDetailsFromMarketing} className="flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-3 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">
-                    <Pencil size={16} aria-hidden="true" />Edit listing
-                  </button>
-                </div>
-              )}
+              <footer className="listing-marketing-details-footer border-t border-[#edf2f7] pt-4">
+                {mobile ? <button type="button" onClick={openPropertyDetailsFromMarketing} className="flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-3 text-sm font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"><Pencil size={16} aria-hidden="true" />Edit listing</button>
+                  : <Button type="button" size="sm" onClick={openPropertyDetailsFromMarketing}>Edit property details<ChevronRight size={15} /></Button>}
+              </footer>
             </article>
             <article className={`min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]${mobile ? ' order-1' : ''}`}>
               <ListingMarketingGallery
@@ -13034,7 +13017,6 @@ function AgentListingDetail({ mobile = false } = {}) {
           <div className="border-b border-[#edf2f7] p-5">
             <div>
               <h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3>
-              <Button type="button" variant="secondary" size="sm" disabled={channelManageBusy || quickListingBusy || ['sold','withdrawn','expired','archived'].includes(normalizeKey(marketingDraft.listingStatus))} onClick={() => setPriceUpdateOpen(true)}>Update price</Button>
             </div>
           </div>
 
@@ -13043,7 +13025,6 @@ function AgentListingDetail({ mobile = false } = {}) {
           {channelRows.map((channel) => (
             <DistributionChannel
               key={channel.key}
-              icon={channel.icon}
               logoSrc={channel.logoSrc}
               name={channel.name}
               subtitle={channel.subtitle}
@@ -13094,15 +13075,16 @@ function AgentListingDetail({ mobile = false } = {}) {
             onWithdraw={openListingWithdrawal}
             onUnderOffer={() => openQuickListingAction('under_offer')}
             onSold={() => openQuickListingAction('sold')}
-          />
+          >
+            <Button type="button" variant="secondary" disabled={channelManageBusy || quickListingBusy || ['sold','withdrawn','expired','archived'].includes(normalizeKey(marketingDraft.listingStatus))} onClick={() => setPriceUpdateOpen(true)}>Update price</Button>
+          </ListingChannelActions>
         </article>
 
         {!mobile && (
           <>
-            <ListingFacebookPostPanel organisationId={listingOrganisationId} listingId={listingRecord?.id} />
-            <ListingShowDaysPanel
-              key={`${listingOrganisationId}:${listingShowDaySnapshot.id}`}
+            <ListingFacebookPostPanel
               organisationId={listingOrganisationId}
+              listingId={listingRecord?.id}
               listing={listingShowDaySnapshot}
               publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive || kingdomWebsiteLive)}
             />
@@ -16950,6 +16932,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                       <h2 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">Seller Documents</h2>
                     </div>
                   </div>
+                  <Button type="button" size="sm" onClick={() => setSellerDocumentUploadModalOpen(true)} disabled={Boolean(sellerDocumentUploadKey)}><Upload size={15} />Upload documents</Button>
                 </div>
 
                 <div className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 sm:grid-cols-3">
@@ -17108,6 +17091,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                           const uploadProgress = sellerDocumentUploadProgress[getSellerDocumentUploadKey(doc)]
                           const baseStatus = resolveListingSellerDocumentStatus(doc)
                           const actions = resolveListingSellerDocumentActions(doc)
+                          const downloadable = actions.canOpen && (doc.uploaded || (doc.status === 'approved' && Boolean(doc.generatedHtml || doc.generated_html)))
                           const activity = resolveListingSellerDocumentActivity(doc)
                           const delivery = sellerDocumentDeliveryIndex.forDocument(doc)
                           const deliveryPresentation = getSellerDocumentDeliveryPresentation(delivery)
@@ -17146,7 +17130,34 @@ function AgentListingDetail({ mobile = false } = {}) {
                               ) : null}
                             </div>
                             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                              <ListingDocumentActions label={doc.label}>
+                              {!SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] && actions.canUpload ? (
+                                <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition focus-within:ring-2 focus-within:ring-[#2f6f9f] ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                                  {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                  {actions.uploadLabel}
+                                  <input
+                                    type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
+                                    className="sr-only"
+                                    aria-label={`${actions.uploadLabel} ${doc.label}`}
+                                    accept={DOCUMENT_UPLOAD_ACCEPT}
+                                    disabled={Boolean(sellerDocumentUploadKey)}
+                                    onChange={(event) => void handleSellerDocumentUpload(doc, event)}
+                                  />
+                                </label>
+                              ) : null}
+                              <Button type="button" size="sm" variant="secondary" aria-label={`Download ${doc.label}`} title={downloadable ? 'Download saved document' : 'No downloadable file is available yet'} disabled={!downloadable || Boolean(openingSellerDocumentKey || sellerDocumentUploadKey)} onClick={() => void handleOpenSellerDocument(doc, { download: true })}>
+                                {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}Download
+                              </Button>
+                              {SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? <SellerDocumentWorkflowActions
+                                compact
+                                item={doc} copy={physicalCopy} request={portalRequest}
+                                busy={Boolean(sellerPortalSigningBusy || sellerDocumentUploadKey || openingSellerDocumentKey)} onlineEnabled={SELLER_PORTAL_SIGNING_ENABLED}
+                                onDownload={() => physicalCopy ? void handleOpenSellerDocument(doc) : prepareSellerDocumentAction(portalDocumentKey, 'manual_upload')}
+                                onSend={() => physicalCopy?.signingRoute === 'digital_pack' ? void handleSellerPortalSigningAction(portalDocumentKey) : prepareSellerDocumentAction(portalDocumentKey, 'digital_pack')}
+                                onUpload={event => void handleSellerDocumentUpload({ ...doc, uploadExisting: true }, event)}
+                                onReview={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)}
+                                onRefresh={() => void refreshSellerDocumentSigning()}
+                              /> : null}
+                              {actions.canRequest || delivery?.retryable || (!physicalCopy && (actions.canOpen || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html)))) ? <ListingDocumentActions label={doc.label}>
                               {actions.canRequest ? (
                                 <Button type="button" size="sm" onClick={() => void handleSellerDocumentRequest(doc)} disabled={Boolean(sellerDocumentWorkflowAction)}>
                                   {sellerDocumentWorkflowAction === `${doc.key || doc.id}:request` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
@@ -17159,22 +17170,6 @@ function AgentListingDetail({ mobile = false } = {}) {
                                   Retry message
                                 </Button>
                               ) : null}
-                              {!SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] && actions.canUpload ? (
-                                <><label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
-                                  {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                                  {actions.uploadLabel}
-                                  <input
-                                    type="file" title={DOCUMENT_UPLOAD_HELP_TEXT}
-                                    className="hidden"
-                                    aria-label={`${actions.uploadLabel} ${doc.label}`}
-                                    accept={DOCUMENT_UPLOAD_ACCEPT}
-                                    disabled={Boolean(sellerDocumentUploadKey)}
-                                    onChange={(event) => void handleSellerDocumentUpload(doc, event)}
-                                  />
-                                
-                                </label>
-</>
-                              ) : null}
                               {!physicalCopy && (actions.canOpen || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html))) ? (
                                 <button
                                   type="button"
@@ -17186,17 +17181,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                                   {getSellerPhysicalSigningCopy(doc) ? 'Generate and download' : 'View'}
                                 </button>
                               ) : null}
-                              {SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? <SellerDocumentWorkflowActions
-                                compact
-                                item={doc} copy={physicalCopy} request={portalRequest}
-                                busy={Boolean(sellerPortalSigningBusy || sellerDocumentUploadKey || openingSellerDocumentKey)} onlineEnabled={SELLER_PORTAL_SIGNING_ENABLED}
-                                onDownload={() => physicalCopy ? void handleOpenSellerDocument(doc) : prepareSellerDocumentAction(portalDocumentKey, 'manual_upload')}
-                                onSend={() => physicalCopy?.signingRoute === 'digital_pack' ? void handleSellerPortalSigningAction(portalDocumentKey) : prepareSellerDocumentAction(portalDocumentKey, 'digital_pack')}
-                                onUpload={event => void handleSellerDocumentUpload({ ...doc, uploadExisting: true }, event)}
-                                onReview={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)}
-                                onRefresh={() => void refreshSellerDocumentSigning()}
-                              /> : null}
-                              </ListingDocumentActions>
+                              </ListingDocumentActions> : null}
                               <SellerDocumentReviewActions
                                 item={doc}
                                 busyAction={sellerDocumentWorkflowAction}

@@ -10,7 +10,7 @@ test('Marketing tab omits the operational health card while retaining channel ac
   const source = await readFile(path.join(appRoot, 'src/pages/AgentListingDetail.jsx'), 'utf8')
   assert.doesNotMatch(source, /ListingMarketingOperationalHealthPanel|refreshMarketingOperationalHealth/)
   assert.match(source, /id="listing-distribution-channels"/)
-  assert.match(source, /<ListingShowDaysPanel/)
+  assert.match(source, /<ListingFacebookPostPanel/)
 })
 
 test('operational health detects drift and remains observational', async () => {

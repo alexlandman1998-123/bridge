@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import test from 'node:test'
-import { applyListingWithdrawalResults, buildListingWithdrawalPlan, listingWithdrawalIsComplete } from '../src/services/listings/listingWithdrawalModel.js'
+import { applyListingWithdrawalResults, buildListingWithdrawalPlan, listingWithdrawalIsComplete, listingWithdrawalConfirmed, getArchivedListingStatus } from '../src/services/listings/listingWithdrawalModel.js'
 
 const detailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const modelSource = readFileSync(new URL('../src/services/listings/listingWithdrawalModel.js', import.meta.url), 'utf8')
@@ -16,7 +16,9 @@ assert.match(detailSource, /publishKingdomWebsiteListing\(listingRecord\.id, 'un
 assert.match(detailSource, /Retry remaining channels/, 'Failed channel withdrawals must remain retryable.')
 assert.match(detailSource, /activityType: completeBeforeSave \? 'listing_withdrawn' : 'listing_withdrawal_incomplete'/, 'Complete and partial withdrawal attempts must be auditable.')
 assert.match(modelSource, /listingWithdrawalIsComplete/, 'The listing must have an explicit all-channel completion gate.')
-assert.match(modelSource, /listingStatus: 'withdrawn'/, 'The listing must only transition to withdrawn through the completion model.')
+assert.match(modelSource, /complete \? \{ listingStatus: getArchivedListingStatus\(draft\)/, 'Only a completed withdrawal may change the listing status, preserving completed sales.')
+assert.equal(applyListingWithdrawalResults({ listingStatus: 'sold' }, [], { complete: true }).listingStatus, 'sold', 'Archiving must preserve a completed sale.')
+assert.equal(applyListingWithdrawalResults({ listingStatus: 'active' }, [], { complete: false }).listingStatus, 'active', 'Incomplete withdrawals must retain the active status.')
 
 console.log('Listing marketing phase 5 withdrawal contract passed')
 
@@ -35,13 +37,15 @@ function withdrawalContext({ dirty = true, saveResult, savedListing } = {}) {
   const draft = { listingStatus: 'active', publicationStatus: 'Published', price: '1250000', description: 'Edited description', galleryImages: [{ id: 'photo', url: 'blob:pending-photo' }], floorplans: [], selectedFeatures: [], amenities: [], externalLinks: [], headline: 'Fixture', addressLine1: 'Fixture address', suburb: 'Fixture suburb', province: 'Fixture province', propertyType: 'House', listingType: 'Sale' }
   let persisted = original
   const context = {
+    URLSearchParams,
     marketingDraft: draft,
     marketingDraftDirtyRef: { current: dirty },
     listingRecord: original,
     listingWithdrawalResults: [],
     property24Reference: 'fixture-reference',
     getListingWithdrawalPlan: () => buildListingWithdrawalPlan({ property24Live: true, property24Reference: 'fixture-reference', agencyWebsiteLive: true, arch9Live: true }),
-    applyListingWithdrawalResults, listingWithdrawalIsComplete,
+    applyListingWithdrawalResults, listingWithdrawalIsComplete, listingWithdrawalConfirmed, getArchivedListingStatus,
+    getPrivateListing: async () => persisted,
     saveMarketingDraft: async value => {
       events.push('save')
       context.saveDraft = value
@@ -51,10 +55,10 @@ function withdrawalContext({ dirty = true, saveResult, savedListing } = {}) {
       }
       return saveResult ?? { ok: true, draft: { ...value, galleryImages: [{ id: 'photo', url: 'https://fixture.invalid/saved-photo.jpg' }] } }
     },
-    callProperty24ListingAction: async () => { events.push('property24'); },
+    callProperty24ListingAction: async action => { if (action !== 'status') events.push('property24'); return { status: { portalCheck: { isOnPortal: false } } }; },
     callPrivatePropertyListingAction: async () => { events.push('private-property'); },
-    setWebsiteListingPublication: async () => { events.push('website'); return {}; },
-    publishKingdomWebsiteListing: async () => { events.push('kingdom'); return {}; },
+    setWebsiteListingPublication: async () => { events.push('website'); return { status: 'unpublished' }; },
+    publishKingdomWebsiteListing: async () => { events.push('kingdom'); return { status: 'unpublished' }; },
     setAgencyWebsitePublication: () => {}, setKingdomWebsitePublication: () => {},
     setListingWithdrawalResults: value => { context.results = value; },
     setListingWithdrawalComplete: value => { context.complete = value; },
@@ -88,7 +92,7 @@ test('withdrawal saves pending edits before any channel changes and uses uploade
   assert.equal(context.distribution.publicationData.askingPrice, 1250000)
   assert.equal(context.distribution.publicationData.description, 'Edited description')
   assert.equal(context.distribution.media.galleryImages[0].url, 'https://fixture.invalid/saved-photo.jpg')
-  assert.equal(context.complete, true)
+  assert.equal(context.complete, true, context.error)
   assert.equal(context.displayRecord.listingStatus, 'withdrawn')
   assert.equal(context.displayRecord.description, 'Edited description')
   assert.equal(context.displayRecord.askingPrice, 1250000)
@@ -141,10 +145,10 @@ test('partial channel failures keep saved edits and retain successful removals f
   assert.equal(context.displayRecord.listingStatus, 'active')
   context.listingWithdrawalResults = context.results
   context.marketingDraft = context.nextDraft
-  context.callProperty24ListingAction = async () => { events.push('property24-retry'); }
+  context.callProperty24ListingAction = async action => { if (action !== 'status') events.push('property24-retry'); return { status: { portalCheck: { isOnPortal: false } } }; }
   await context.withdraw()
   assert.deepEqual(events, ['save', 'property24', 'website', 'reload', 'property24-retry', 'reload'])
-  assert.equal(context.complete, true)
+  assert.equal(context.complete, true, context.error)
   assert.equal(context.displayRecord.listingStatus, 'withdrawn')
   assert.equal(context.displayRecord.description, 'Edited description')
   assert.equal(context.displayRecord.askingPrice, 1250000)
@@ -156,8 +160,8 @@ test('unified withdrawal calls the Kingdom service and records the returned stat
   context.setKingdomWebsitePublication = publication => { context.kingdomStatus = publication }
   await context.withdraw()
   assert.deepEqual(events, ['kingdom', 'reload'])
-  assert.deepEqual(context.kingdomStatus, {})
-  assert.equal(context.complete, true)
+  assert.deepEqual(context.kingdomStatus, { status: 'unpublished' })
+  assert.equal(context.complete, true, context.error)
 })
 
 
@@ -166,7 +170,7 @@ test('each simplified removal acts on exactly the selected channel and keeps the
   const removeEnd = detailSource.indexOf('  async function applyQuickListingAction()', removeStart)
   const source = detailSource.slice(removeStart, removeEnd)
   for (const [channel, action, expected] of [
-    ['Property24', 'withdraw', 'p24-withdraw'], ['Property24', 'expire', 'p24-expire'],
+    ['Property24', 'withdraw', 'p24-withdraw'],
     ['Private Property', 'withdraw', 'pp-withdraw'], ['Agency Website', 'withdraw', 'agency-withdraw'], ['Kingdom Website', 'withdraw', 'kingdom-withdraw'],
   ]) {
     const calls = []
