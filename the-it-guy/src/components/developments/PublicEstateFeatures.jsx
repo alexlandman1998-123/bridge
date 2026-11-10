@@ -20,9 +20,9 @@ export default function PublicEstateFeatures() {
         </div>
         <div className="estate-features__parks">
           <div className="estate-features__parks-title"><Trees size={27} strokeWidth={1.2} /><h3>Two parks. So many possibilities.</h3></div>
-          <p className="estate-features__total">25,000<span>m²</span></p>
+          <p className="estate-features__total">20,800<span>m²</span></p>
           <p className="estate-features__total-label">Combined park area</p>
-          <dl><div><dt>Park one</dt><dd>17,000<span>m²</span></dd></div><div><dt>Park two</dt><dd>8,000<span>m²</span></dd></div></dl>
+          <dl><div><dt>Park one</dt><dd>17,000<span>m²</span></dd></div><div><dt>Park two</dt><dd>3,800<span>m²</span></dd></div></dl>
         </div>
       </div>
       <ul className="estate-features__grid">
