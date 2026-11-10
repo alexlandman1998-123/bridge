@@ -76,7 +76,8 @@ Deno.test({
         `${fileName} should resolve the shared branding contract`,
       );
       if (!source.includes("formatEmailSender") &&
-        !source.includes("resolveAudienceEmailSender")) {
+        !source.includes("resolveAudienceEmailSender") &&
+        !source.includes("resolveArch9InvitationSender")) {
         throw new Error(`${fileName} should apply the branded sender display name`);
       }
       assertNotIncludes(

@@ -1,4 +1,5 @@
 import AddressInput from '../components/location/AddressInput'
+import { partnerInvitationEmailPresentation } from '../lib/partnerInvitationDelivery'
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -1837,7 +1838,7 @@ function invitationTimelineLabel(invitation = {}, status = '') {
   if (normalizedStatus === 'expired' && invitation.expiresAt) {
     return `Expired ${formatDate(invitation.expiresAt)}`
   }
-  return `Sent ${formatDate(invitation.createdAt)}`
+  return `Created ${formatDate(invitation.createdAt)}`
 }
 
 function invitationStatusSummary({ isReceived = false, status = '' } = {}) {
@@ -1923,7 +1924,7 @@ function PartnerInvitationActionDialog({
   )
 }
 
-function PartnerInvitationCard({
+export function PartnerInvitationCard({
   invitation,
   organisationId,
   invitationAction,
@@ -1944,7 +1945,10 @@ function PartnerInvitationCard({
   const canDeleteSentInvitation = !isReceived && SENT_INVITATION_DELETABLE_STATUSES.has(status)
   const directionLabel = isReceived ? 'Received' : 'Sent'
   const statusLabel = invitationStatusLabel(status)
-  const statusSummary = invitationStatusSummary({ isReceived, status })
+  const emailPresentation = partnerInvitationEmailPresentation(invitation)
+  const statusSummary = !isReceived && status === 'pending'
+    ? emailPresentation.summary
+    : invitationStatusSummary({ isReceived, status })
   const timelineLabel = invitationTimelineLabel(invitation, status)
   const message = normalizeText(invitation.message)
   const contactEmail = normalizeText(invitation.invitedEmail || invitation.recipientContactEmail)
@@ -1967,15 +1971,20 @@ function PartnerInvitationCard({
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusBadge className={isReceived ? 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]' : 'border-[#e4ebf4] bg-[#f8fafc] text-[#52677f]'}>
-                {directionLabel}
+                {isReceived ? directionLabel : 'Outgoing'}
               </StatusBadge>
+              {!isReceived ? (
+                <StatusBadge className={emailPresentation.sent ? 'border-[#d9e7ff] bg-[#f3f7ff] text-[#1e4d82]' : 'border-[#f0d4d4] bg-[#fff7f7] text-[#9b2c2c]'}>
+                  {emailPresentation.label}
+                </StatusBadge>
+              ) : null}
               {invitation.preferred ? <StatusBadge className={relationshipBadgeClass('preferred')}>Preferred</StatusBadge> : null}
               <span className="text-xs font-medium text-[#7a8ba3]">{timelineLabel}</span>
             </div>
             <p className="mt-3 text-sm leading-6 text-[#40556c]">{message || statusSummary}</p>
             {visibleContactEmail ? (
               <p className="mt-2 text-xs font-semibold text-[#60758d]">
-                Contact emailed: {visibleContactEmail}
+                Contact email: {visibleContactEmail}
               </p>
             ) : null}
           </div>
@@ -3299,6 +3308,7 @@ export default function PartnersPage() {
       await loadSnapshot()
     } catch (inviteError) {
       setError(inviteError?.message || 'Unable to send partner invitation.')
+      await loadSnapshot()
     } finally {
       setInviteSubmitting(false)
     }
@@ -3598,6 +3608,7 @@ export default function PartnersPage() {
       await loadSnapshot()
     } catch (resendError) {
       setError(resendError?.message || 'Unable to resend partner invitation.')
+      await loadSnapshot()
     } finally {
       setInvitationAction({ id: '', type: '' })
     }

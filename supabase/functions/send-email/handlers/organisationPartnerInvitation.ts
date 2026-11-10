@@ -10,10 +10,8 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
-import {
-  formatEmailSender,
-  resolveEmailBranding,
-} from "../services/emailBranding.ts";
+import { resolveEmailBranding } from "../services/emailBranding.ts";
+import { resolveArch9InvitationSender } from "../services/arch9InvitationSender.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendOrganisationPartnerInvitationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -144,12 +142,6 @@ export async function handleOrganisationPartnerInvitationEmail(
       website: arch9Website,
     },
   });
-  const from = formatEmailSender(
-    normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
-      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-      "Arch9 <no-reply@arch9.co.za>",
-    "Arch9",
-  );
   const subject = `${fromOrganisation} invited you to review a company connection on Arch9`;
   const summary = `${fromOrganisation} has invited your organisation to connect on Arch9.`;
 
@@ -243,6 +235,13 @@ export async function handleOrganisationPartnerInvitationEmail(
     `${fromOrganisation} | Powered by Arch9`,
   ].filter(Boolean).join("\n");
 
+  let sender: { from: string; domainId: string } | undefined;
+  let senderError = "";
+  try {
+    sender = await resolveArch9InvitationSender({ apiKey: resendApiKey });
+  } catch {
+    senderError = "Invitation email was not sent: the verified Arch9 sender is currently unavailable. Please contact support or try again shortly.";
+  }
   const delivery = await prepareEmailDelivery(
     payload as Record<string, unknown>,
     {
@@ -256,6 +255,8 @@ export async function handleOrganisationPartnerInvitationEmail(
           payload.organisationId ?? payload.organisation_id,
         ),
         metadata: {
+          senderFrom: sender?.from || null,
+          senderDomainId: sender?.domainId || null,
           partnerInvitationId: normalizeText(
             payload.invitationId ?? payload.invitation_id,
           ) || null,
@@ -272,13 +273,20 @@ export async function handleOrganisationPartnerInvitationEmail(
     },
   );
 
+  if (!sender) {
+    await markEmailDeliveryFailed(delivery?.id || "", { errorMessage: senderError });
+    return jsonResponse(503, { error: senderError, sent: false, deliveryId: delivery?.id || null });
+  }
+
   const sendResult = await sendViaResendApi({
     apiKey: resendApiKey,
-    from,
+    from: sender.from,
     to: recipientEmail,
     subject,
     html,
     text,
+    timeoutMs: 15000,
+    idempotencyKey: `partner-invite:${normalizeText(payload.invitationId ?? payload.invitation_id)}:${normalizeText((payload as Record<string, unknown>).deliveryAttemptId) || "legacy"}`,
   });
 
   if (!sendResult.ok) {
@@ -288,6 +296,8 @@ export async function handleOrganisationPartnerInvitationEmail(
     });
     return jsonResponse(502, {
       error: "Resend rejected the organisation partner invitation email.",
+      sent: false,
+      deliveryId: delivery?.id || null,
       details: sendResult.error,
       status: sendResult.status,
     });

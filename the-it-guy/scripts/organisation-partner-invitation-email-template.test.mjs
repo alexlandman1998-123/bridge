@@ -12,7 +12,7 @@ for (const token of [
   'renderBridgeEmailLayout',
   'renderBridgeCta("Review Invitation"',
   'resolveEmailBranding',
-  'formatEmailSender',
+  'resolveArch9InvitationSender',
   'Partner Invitation',
   'This invitation expires in',
   'What accepting means',

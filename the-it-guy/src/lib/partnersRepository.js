@@ -1,4 +1,5 @@
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from './supabaseClient'
+import { assertPartnerInvitationEmailAccepted, attachPartnerInvitationDeliveries } from './partnerInvitationDelivery'
 
 const PARTNER_DEMO_STORAGE_KEY = 'itg:partners-demo:v1'
 const PARTNERS_DEMO_MODE = false
@@ -984,6 +985,7 @@ async function sendPartnerInvitationEmail(invitation = {}) {
       to: recipientEmail,
       organisationId: invitation.fromOrganisationId,
       invitationId: invitation.id,
+      deliveryAttemptId: crypto.randomUUID(),
       inviteUrl: buildPartnerInvitationLink(invitation.id),
       invitationLink: buildPartnerInvitationLink(invitation.id),
       invitingOrganisationName: invitation.fromOrganisationName,
@@ -1005,7 +1007,8 @@ async function sendPartnerInvitationEmail(invitation = {}) {
     },
   })
   if (error) throw new Error(error.message || 'Partner invitation email could not be sent.')
-  return data || { sent: true }
+  assertPartnerInvitationEmailAccepted(data)
+  return data
 }
 
 function assertPartnerInvitationEmailSent(result, expectedEmail = '') {
@@ -1041,6 +1044,23 @@ async function fetchInvitationRows(scopedOrganisationId) {
     ...row,
     status: normalizeInvitationPayloadText(row.status),
   }))
+}
+
+async function fetchInvitationEmailDeliveries(organisationId, invitations) {
+  const ids = invitations.filter((row) => row.fromOrganisationId === organisationId).map((row) => row.id)
+  const deliveries = []
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const { data, error } = await supabase.from('communication_deliveries')
+      .select('id,status,created_at,sent_at,delivered_at,provider_message_id,metadata_json')
+      .eq('organisation_id', organisationId)
+      .eq('communication_type', 'organisation_partner_invitation')
+      .in('metadata_json->>partnerInvitationId', ids.slice(offset, offset + 100))
+      .order('created_at', { ascending: false })
+      .limit(1000)
+    // Missing or inaccessible receipts must display as unconfirmed, never sent.
+    if (!error) deliveries.push(...(data || []))
+  }
+  return deliveries
 }
 
 async function fetchRelationshipRows(scopedOrganisationId) {
@@ -1207,7 +1227,9 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
         ]))
           .filter((row) => normalizeText(row.id) !== scopedOrganisationId)
           .map(mapOrganisation)
-    const invitations = enrichInvitations(invitationResult || [], organisations)
+    const enrichedInvitations = enrichInvitations(invitationResult || [], organisations)
+    const invitations = attachPartnerInvitationDeliveries(enrichedInvitations,
+      await fetchInvitationEmailDeliveries(scopedOrganisationId, enrichedInvitations))
     const relationships = enrichRelationships(
       filterPartnerRelationshipsByScope(
         mergeAcceptedInvitationRelationships(
